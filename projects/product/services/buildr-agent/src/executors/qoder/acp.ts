@@ -1,6 +1,7 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { nativeCommand, closeOwnedProcess } from '../native-process.ts';
+import { nativeCommand, closeOwnedProcess, OwnedControlResource } from '../native-process.ts';
+import type { ExecutionRef } from '../../contracts.ts';
 
 export interface AcpUpdate {
   sessionUpdate?: string;
@@ -25,7 +26,9 @@ export interface AcpClientOptions {
 /** Newline-delimited JSON-RPC over stdio. The CLI owns native sessions and tools. */
 export class AcpClient {
   private readonly child: ChildProcessWithoutNullStreams;
-  private readonly pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer?: ReturnType<typeof setTimeout> }>();
+  private readonly control: OwnedControlResource;
+  private closing?: Promise<void>;
+  private readonly pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer?: ReturnType<typeof setTimeout>; onResult?: (value: any) => void }>();
   private nextId = 1;
   private closed = false;
   private exitReason = 'acp_transport_closed';
@@ -35,9 +38,8 @@ export class AcpClient {
   private constructor(options: AcpClientOptions) {
     this.options = options;
     const command = nativeCommand(options.executable);
-    this.child = spawn(command.command, [...command.prefix, ...options.args], {
-      cwd: options.cwd, env: options.environment ?? process.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
-    });
+    this.control=new OwnedControlResource(command.command,[...command.prefix,...options.args],{cwd:options.cwd,env:options.environment??process.env});
+    this.child=this.control.child;
     createInterface({ input: this.child.stdout }).on('line', line => this.receive(line));
     // Native stderr never becomes a user-visible payload; it is only a transport signal.
     createInterface({ input: this.child.stderr }).on('line', line => { try { options.diagnostics?.(line); } catch { /* diagnostics stay private */ } });
@@ -49,6 +51,13 @@ export class AcpClient {
 
   get transportClosed(): boolean { return this.closed; }
   get closedReason(): string { return this.exitReason; }
+  executionRef(id:string,contextId:string,binding:string):ExecutionRef { return this.control.executionRef(id,contextId,binding); }
+  async stopExecution(ref:ExecutionRef,contextId:string,binding:string):Promise<boolean> {
+    return this.control.stopExecution(ref,contextId,binding);
+  }
+  async released(ref:ExecutionRef,contextId:string,binding:string,ended:boolean):Promise<boolean> {
+    return this.control.canReleaseExecution(ref,contextId,binding,ended,this.closed);
+  }
 
   private receive(line: string): void {
     if (!line.trim()) return;
@@ -63,7 +72,10 @@ export class AcpClient {
     this.pending.delete(message.id);
     if (waiting.timer) clearTimeout(waiting.timer);
     if (message.error) waiting.reject(Object.assign(new Error(typeof message.error.message === 'string' ? message.error.message : 'acp_request_failed'), { acpCode: message.error.code }));
-    else waiting.resolve(message.result);
+    else {
+      try { waiting.onResult?.(message.result); waiting.resolve(message.result); }
+      catch(error) { waiting.reject(error instanceof Error ? error : new Error('acp_result_projection_failed')); }
+    }
   }
 
   private async answerServerRequest(request: { id: number; method: string; params?: Record<string, unknown> }): Promise<void> {
@@ -76,13 +88,13 @@ export class AcpClient {
     }
   }
 
-  request<T = any>(method: string, params: Record<string, unknown>, timeoutMs = 60_000): Promise<T> {
+  request<T = any>(method: string, params: Record<string, unknown>, timeoutMs = 60_000, onResult?: (value: T) => void): Promise<T> {
     if (this.closed) return Promise.reject(new Error(this.exitReason));
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
       const timer = timeoutMs > 0 ? setTimeout(() => { this.pending.delete(id); reject(new Error('acp_request_timeout')); }, timeoutMs) : undefined;
       timer?.unref?.();
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer, onResult });
       try { this.child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n'); }
       catch (error) { this.pending.delete(id); if (timer) clearTimeout(timer); reject(error instanceof Error ? error : new Error('acp_transport_write_failed')); }
     });
@@ -102,10 +114,10 @@ export class AcpClient {
   }
 
   async close(): Promise<void> {
-    if (this.closed) return;
-    this.closed = true; this.exitReason = 'acp_closed';
-    for (const [, waiting] of this.pending) { if (waiting.timer) clearTimeout(waiting.timer); waiting.reject(new Error('acp_closed')); }
-    this.pending.clear();
-    await closeOwnedProcess(this.child);
+    if(this.closing)return this.closing;
+    // A failed transport does not prove that its owned child has exited.
+    this.fail('acp_closed');
+    this.closing=closeOwnedProcess(this.child);
+    return this.closing;
   }
 }

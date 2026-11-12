@@ -4,7 +4,6 @@ import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
 import { performance } from 'node:perf_hooks';
-import { DatabaseSync } from 'node:sqlite';
 import { stopAgentProcess } from '@buildr-ai/buildr-agent';
 
 import { buildrWebDataRoot } from '../../modules/workspace/module.ts';
@@ -21,6 +20,7 @@ import {
   type PreviewReuseFacet,
   type PreviewReuseSelection,
 } from './preview-reuse.ts';
+import { computePreviewCandidateDigest, preparePreviewCandidateArtifacts } from './preview-candidate.ts';
 
 const PREVIEW_SCHEMA = 'buildr.local-app-preview/v1';
 const PREVIEW_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -33,7 +33,6 @@ export type TaskPreviewWorktree = {
   evidencePath: string;
   planDigest: string;
   repositorySet: PreviewRepository[];
-  taskStore?: { source: 'canonical' | 'existing'; seeded: boolean } | null;
 };
 
 export type PreviewOwner = {
@@ -56,6 +55,8 @@ export type PreviewOwner = {
   taskStore?: { source: 'canonical' | 'existing'; seeded: boolean } | null;
   reuse?: PreviewReuseFacts;
   managedProcess?: { pid: number; url?: string; state: 'healthy' | 'cleanup-failed' };
+  agent?: { digest: string; generation?: string; accepting?: boolean };
+  frontendSource?: string;
 };
 
 export type PreviewCaller = {
@@ -93,6 +94,7 @@ type PreviewStartOptions = {
   cliPath?: string;
   dataRoot?: string;
   startupTimeoutMs?: number;
+  candidateReadyTimeoutMs?: number;
   reuse?: { env?: NodeJS.ProcessEnv; home?: string; platform?: NodeJS.Platform; registry?: readonly PreviewReuseFacet[] };
 };
 type PreviewStopOptions = { dataRoot?: string; caller?: PreviewCaller | null; retainOwner?: boolean; purge?: boolean };
@@ -140,6 +142,16 @@ function parseManagedProcess(value: unknown): PreviewOwner['managedProcess'] {
   return { pid: Number(item.pid), url: optionalString(item.url) || undefined, state: item.state };
 }
 
+function parsePreviewAgent(value: unknown): PreviewOwner['agent'] {
+  const item = record(value);
+  if (!item || typeof item.digest !== 'string' || !/^[a-f0-9]{64}$/.test(item.digest)) return undefined;
+  return {
+    digest: item.digest,
+    generation: optionalString(item.generation) || undefined,
+    accepting: typeof item.accepting === 'boolean' ? item.accepting : undefined,
+  };
+}
+
 function parsePreviewOwner(value: unknown, expectedName?: string): PreviewOwner | null {
   const item = record(value);
   if (!item
@@ -181,6 +193,8 @@ function parsePreviewOwner(value: unknown, expectedName?: string): PreviewOwner 
     taskStore: parseTaskStore(item.taskStore),
     reuse: readPreviewReuseFacts(item.reuse) ?? undefined,
     managedProcess: parseManagedProcess(item.managedProcess),
+    agent: parsePreviewAgent(item.agent),
+    frontendSource: optionalString(item.frontendSource) || undefined,
   };
 }
 
@@ -257,7 +271,7 @@ export function previewOwnerForWorktree(name: string, targetRoot: string, produc
     productCheckout: productCheckout ? path.resolve(productCheckout) : null,
     repositorySet: taskWorktree?.repositorySet || [{ selector: 'workspace', checkoutPath: worktree, branch, head }],
     identityMode: taskWorktree ? 'task-worktree-v1' : 'standalone-checkout',
-    taskStore: taskWorktree?.taskStore || null,
+    taskStore: null,
   };
 }
 
@@ -364,6 +378,33 @@ function requestInstanceShutdown(instance: PreviewInstance): Promise<void> {
   });
 }
 
+type CandidateAgentReadiness = { generation: string; accepting: boolean };
+
+// The preview only holds the instance secret, so candidate readiness rides the
+// authenticated health endpoint rather than the session-token agent API.
+async function readInstanceAgentRuntime(instance: PreviewInstance): Promise<Record<string, unknown> | null> {
+  try {
+    const response = await fetch(`${instance.url}/api/v1/health`, {
+      headers: { 'x-buildr-instance': instance.secret },
+      signal: AbortSignal.timeout(1000),
+    });
+    if (!response.ok) return null;
+    return record((await response.json())?.agentRuntime);
+  } catch { return null; }
+}
+
+async function waitForCandidateAgentReady(instance: PreviewInstance, candidateDigest: string, timeoutMs: number): Promise<CandidateAgentReadiness | null> {
+  const began = performance.now();
+  while (performance.now() - began < timeoutMs) {
+    const runtime = await readInstanceAgentRuntime(instance);
+    if (runtime && runtime.currentDigest === candidateDigest && runtime.accepting === true && !runtime.pendingDigest && typeof runtime.generation === 'string') {
+      return { generation: runtime.generation, accepting: true };
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  }
+  return null;
+}
+
 export function readPreviewIdentityFromEnvironment(env: NodeJS.ProcessEnv = process.env): PreviewOwner | null {
   const raw = env.BUILDR_LOCAL_APP_PREVIEW;
   if (!raw) return null;
@@ -387,60 +428,6 @@ export function resolveTaskPreviewWorktree(runtime: PreviewRuntime, workspaceRoo
     planDigest: stored.evidence.planDigest,
     repositorySet: inspected.repositories.filter((repository) => repository.state === 'ready').map((repository) => ({ selector: repository.selector, checkoutPath: repository.checkoutPath || '', branch: repository.branch, head: repository.head })),
   };
-}
-
-// 预览以服务目标工作树为 workspace；其本地 structured store 是隔离本机现场。
-// 缺失时以 canonical 库播种一致副本，已存在时复用——canonical 保持唯一数据权威。
-function prepareTaskPreviewStore(taskWorktree: TaskPreviewWorktree): PreviewOwner['taskStore'] {
-  const targetLocation = workspaceStructuredStoreLocation(taskWorktree.worktree);
-  const sourceLocation = workspaceStructuredStoreLocation(taskWorktree.workspaceRoot);
-  const target = targetLocation.file;
-  const source = sourceLocation.file;
-  if (sameFilesystemPath(target, source)) return { source: 'existing', seeded: false };
-  if (targetLocation.assertSafe()) return { source: 'existing', seeded: false };
-  if (!sourceLocation.assertSafe()) {
-    throw codedError('Task preview 需要 canonical Workspace 的本地结构化存储作为数据源，但当前不可读取。', 'preview_task_store_unavailable', { source });
-  }
-  let staging: string | null = null;
-  let database: DatabaseSync | null = null;
-  let primaryError: unknown = null;
-  try {
-    sourceLocation.assertSafe(); targetLocation.assertSafe();
-    fs.mkdirSync(targetLocation.directory, { recursive: true, mode: 0o700 });
-    sourceLocation.assertSafe(); targetLocation.assertSafe();
-    staging = targetLocation.createTemporary();
-    sourceLocation.assertSafe(); targetLocation.assertTemporary(staging);
-    database = new DatabaseSync(source, { readOnly: true });
-    sourceLocation.assertSafe(); targetLocation.assertTemporary(staging);
-    database.exec(`VACUUM INTO '${staging.replaceAll("'", "''")}'`);
-    sourceLocation.assertSafe(); targetLocation.assertTemporary(staging);
-    // A second legitimate preview may publish its own store during the snapshot.
-    // Reuse that observed store instead of replacing it with our snapshot.
-    if (targetLocation.assertSafe()) return { source: 'existing', seeded: false };
-    sourceLocation.assertSafe(); targetLocation.assertTemporary(staging);
-    fs.renameSync(staging, target);
-    staging = null;
-    sourceLocation.assertSafe(); targetLocation.assertSafe();
-    return { source: 'canonical', seeded: true };
-  } catch (error) {
-    primaryError = error && typeof error === 'object' && 'structuredStoreBusiness' in error
-      ? error
-      : codedError(`Task preview 数据源快照失败：${errorMessage(error)}`, 'preview_task_store_unavailable', { source });
-    throw primaryError;
-  } finally {
-    try { database?.close(); } catch {}
-    if (staging) {
-      try {
-        targetLocation.assertTemporary(staging);
-        fs.rmSync(staging, { force: true });
-      } catch (cleanupError) {
-        if (!primaryError) throw cleanupError;
-        if (typeof primaryError === 'object') {
-          try { Object.defineProperty(primaryError, 'previewStoreCleanupError', { value: cleanupError, configurable: true }); } catch {}
-        }
-      }
-    }
-  }
 }
 
 function optionValues(args: string[], name: string): string[] {
@@ -501,18 +488,15 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   const dataRoot = options.dataRoot || buildrWebDataRoot();
   const startupTimeoutMs = options.startupTimeoutMs ?? 10_000;
   const instance = assertPreviewName(name);
-  runtime.assertNoUnknownOptions(args, new Set(['--target', '--task', '--port', '--workspace', '--workspace-mode', '--no-open', '--json', '--reuse', '--refresh-reuse']), new Set(['--no-open', '--json', '--refresh-reuse']));
-  const workspaceMode = runtime.optionValue(args, '--workspace-mode', 'shared');
-  if (workspaceMode !== 'shared' && workspaceMode !== 'snapshot') {
-    throw codedError('--workspace-mode 必须为 shared 或 snapshot。', 'preview_workspace_mode_invalid');
-  }
-  const rawReuse = runtime.optionValue(args, '--reuse', null);
+  runtime.assertNoUnknownOptions(args, new Set(['--target', '--task', '--port', '--workspace', '--no-open', '--json', '--reuse', '--refresh-reuse']), new Set(['--no-open', '--json', '--refresh-reuse']));
+  const rawReuse = runtime.optionValue(args, '--reuse', 'development') ?? 'development';
+  const reuseNone = rawReuse === 'none';
   const refreshReuse = args.includes('--refresh-reuse');
-  if (refreshReuse && !rawReuse) {
-    throw previewReuseError('--refresh-reuse 需要同时提供 --reuse。', 'preview_reuse_invalid', { argument: '--refresh-reuse', reason: 'selection_required' });
-  }
   const reuseRegistry = options.reuse?.registry;
-  const reuseSelection: PreviewReuseSelection | null = rawReuse ? parsePreviewReuseSelection(rawReuse, reuseRegistry) : null;
+  const reuseSelection: PreviewReuseSelection | null = reuseNone ? null : parsePreviewReuseSelection(rawReuse, reuseRegistry);
+  if (refreshReuse && !reuseSelection) {
+    throw previewReuseError('--refresh-reuse 不能与 --reuse none 同时使用。', 'preview_reuse_invalid', { argument: '--refresh-reuse', reason: 'selection_required' });
+  }
   const reuseSource = reuseSelection ? resolvePreviewReuseSource(reuseSelection.source, options.reuse) : null;
   const workspaceRoots = optionValues(args, '--workspace').map((value) => {
     const root = path.resolve(value);
@@ -528,6 +512,11 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   if (taskId) {
     const workspaceRoot = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(requestedRoot));
     taskWorktree = resolveTaskPreviewWorktree(runtime, workspaceRoot, taskId);
+    // 不再播种工作树副本，但 canonical 不可读仍须 fail closed，避免空库冒充任务数据。
+    const sourceLocation = workspaceStructuredStoreLocation(taskWorktree.workspaceRoot);
+    if (!sourceLocation.assertSafe()) {
+      throw codedError('Task preview 以 canonical Workspace 为唯一数据目标，但其本地结构化存储当前不可读取。', 'preview_task_store_unavailable', { source: sourceLocation.file });
+    }
     targetRoot = taskWorktree.worktree;
     // Product checkout 在目标工作树内的位置等于调用方 product 相对其自身 checkout 根的路径；
     // 调用方可以来自 canonical 或任一 linked worktree，不能直接以 canonical 根取相对值。
@@ -555,8 +544,8 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
       portNote = desiredPort === remembered ? `复用上次端口 ${remembered}。` : `上次端口 ${remembered} 被占用，改用随机端口。`;
     }
   }
-  const environmentRoot = workspaceMode === 'shared' && taskWorktree ? taskWorktree.workspaceRoot : targetRoot;
-  let owner: PreviewOwner = { ...previewOwnerForWorktree(instance, targetRoot, appInvocation.sourceRoot, taskWorktree), workspaceMode, environmentRoot };
+  const environmentRoot = taskWorktree ? taskWorktree.workspaceRoot : targetRoot;
+  let owner: PreviewOwner = { ...previewOwnerForWorktree(instance, targetRoot, appInvocation.sourceRoot, taskWorktree), workspaceMode: 'shared', environmentRoot };
   const existingOwner = readPreviewOwner(instance, dataRoot);
   const existingInstance = readPreviewInstance(instance, dataRoot);
   const healthy = await healthyInstance(existingInstance);
@@ -565,6 +554,11 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   }
   if (healthy && existingOwner) {
     let reusedOwner = existingOwner;
+    if (reuseNone && existingOwner.reuse) {
+      reusedOwner = { ...existingOwner, reuse: undefined };
+      writeOwner(runtime, reusedOwner, dataRoot);
+      runtime.removePath(previewReusePath(instance, dataRoot));
+    }
     if (reuseSelection && reuseSource) {
       const reuse = await applyPreviewReuse({
         selection: reuseSelection,
@@ -586,14 +580,18 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
     throw codedError(`预览实例 ${instance} 留有其他 worktree 的陈旧记录；请由原 owner 执行 preview stop 后再复用。`, 'preview_owner_stale_conflict', { instance, owner: existingOwner });
   }
   const retainedRegistry = record(readJson(path.join(previewDataRoot(instance, dataRoot), 'workspace-registry.json')));
-  if (workspaceMode === 'shared' && taskWorktree && Array.isArray(retainedRegistry?.roots)
+  if (taskWorktree && Array.isArray(retainedRegistry?.roots)
     && retainedRegistry.roots.some(root => typeof root === 'string' && sameFilesystemPath(root, taskWorktree.worktree))) {
     throw codedError(`预览实例 ${instance} 保留了工作树快照登记；请使用新实例名，或由原 owner 执行 preview stop --purge 后重建，不能混用真实工作空间。`, 'preview_workspace_mode_conflict');
   }
-  // Only snapshot mode prepares a local store, and never before ownership has
-  // been checked: a rejected mode switch must not seed or overwrite data.
-  if (workspaceMode === 'snapshot' && taskWorktree) {
-    owner = { ...owner, taskStore: prepareTaskPreviewStore(taskWorktree) };
+  // Task previews run the worktree's own code: prepare its candidate artifacts and
+  // pin the exact Agent runtime digest before the host launches. Every write stays
+  // inside the worktree; the development instance and its data root are untouched.
+  let candidateDigest: string | null = null;
+  if (taskWorktree) {
+    const candidate = preparePreviewCandidateArtifacts({ serviceRoot: appInvocation.sourceRoot, node: appInvocation.command });
+    candidateDigest = computePreviewCandidateDigest({ serviceRoot: appInvocation.sourceRoot, node: appInvocation.command });
+    owner = { ...owner, agent: { digest: candidateDigest }, frontendSource: candidate.webDist };
   }
   const root = previewDataRoot(instance, dataRoot);
   fs.mkdirSync(root, { recursive: true });
@@ -607,8 +605,9 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
       previous: previousReuse,
       registry: reuseRegistry,
     })
-    : previousReuse;
+    : reuseNone ? null : previousReuse;
   if (reuse) runtime.atomicWriteJson(previewReusePath(instance, dataRoot), reuse, { mode: 0o600 });
+  else if (reuseNone && previousReuse) runtime.removePath(previewReusePath(instance, dataRoot));
   const ownedOwner: PreviewOwner = reuse ? { ...owner, reuse } : owner;
   writeOwner(runtime, ownedOwner, dataRoot);
   const logFile = path.join(root, 'preview.log');
@@ -619,7 +618,7 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
       cwd: environmentRoot,
       detached: true,
       stdio: ['ignore', logDescriptor, logDescriptor],
-      env: { ...process.env, BUILDR_APP_DATA_DIR: root, BUILDR_LOCAL_APP_PREVIEW: JSON.stringify(ownedOwner) },
+      env: { ...process.env, BUILDR_APP_DATA_DIR: root, BUILDR_LOCAL_APP_PREVIEW: JSON.stringify(ownedOwner), ...(candidateDigest ? { BUILDR_PREVIEW_AGENT_DIGEST: candidateDigest } : {}) },
     });
   } finally { fs.closeSync(logDescriptor); }
   const startup: PreviewStartup = { spawnError: null, processError: null, phase: 'spawned', elapsedMs: 0 };
@@ -648,10 +647,38 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
     const code = !['terminated', 'already-exited'].includes(cleanup) ? 'preview_start_cleanup_failed' : failed ? 'preview_start_failed' : 'preview_start_timeout';
     throw codedError(message, code, { instance, pid: child.pid ?? null, phase: startup.phase, elapsedMs: startup.elapsedMs, exitCode: child.exitCode, signal: child.signalCode, cleanup, logFile, diagnostic });
   }
+  let candidateReady: CandidateAgentReadiness | null = null;
+  if (candidateDigest) {
+    candidateReady = await waitForCandidateAgentReady(started, candidateDigest, options.candidateReadyTimeoutMs ?? 60_000);
+    if (!candidateReady) {
+      // Fail closed: a stale or absent candidate backend is recycled, never
+      // silently replaced by the development backend. An unconfirmed stop keeps
+      // the scene so the owner can still be stopped explicitly.
+      let cleanup: string;
+      try {
+        try { await requestInstanceShutdown(started); } catch { /* graceful quit is best effort */ }
+        cleanup = await reclaimPreviewChild(child, startup);
+        await stopAgentProcess({ dataRoot: root });
+        const state = readPreviewInstance(instance, dataRoot);
+        if (state?.pid === child.pid) runtime.removePath(previewInstancePath(instance, dataRoot));
+        clearOwner(instance, dataRoot);
+      } catch (error) {
+        cleanup = errorMessage(error);
+        writeOwner(runtime, { ...ownedOwner, managedProcess: { pid: started.pid, url: started.url, state: 'cleanup-failed' } }, dataRoot);
+      }
+      let diagnostic: string | null = null;
+      try { diagnostic = fs.readFileSync(logFile, 'utf8').trim().slice(-4096) || null; } catch {}
+      throw codedError(`预览实例 ${instance} 的候选执行后台未以钉住 digest 就绪，已回收，未回退开发版后台。digest=${candidateDigest} cleanup=${cleanup}${diagnostic ? `\n${diagnostic}` : ''}`, 'preview_candidate_not_ready', { instance, digest: candidateDigest, cleanup, logFile, diagnostic });
+    }
+  }
   if (workspaceRoots.length) seedPreviewWorkspaces(root, workspaceRoots);
   const startedPort = Number(new URL(started.url).port);
   if (Number.isInteger(startedPort) && startedPort > 0) writePreferredPort(instance, startedPort, dataRoot);
-  const managedOwner: PreviewOwner = { ...ownedOwner, managedProcess: { pid: started.pid, url: started.url, state: 'healthy' } };
+  const managedOwner: PreviewOwner = {
+    ...ownedOwner,
+    managedProcess: { pid: started.pid, url: started.url, state: 'healthy' },
+    ...(candidateDigest ? { agent: { digest: candidateDigest, generation: candidateReady?.generation, accepting: candidateReady?.accepting } } : {}),
+  };
   writeOwner(runtime, managedOwner, dataRoot);
   const result: PreviewResult = { schemaVersion: PREVIEW_SCHEMA, status: 'started', owner: managedOwner, url: started.url, pid: started.pid, portNote };
   if (!args.includes('--no-open')) openBrowser(started.url);
@@ -687,6 +714,61 @@ function processAlive(pid: number): boolean {
   catch (error) { return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'EPERM'); }
 }
 
+/** Exact Agent backend PIDs owned by one disposable preview data root. */
+function previewAgentPids(dataRoot: string): number[] {
+  const control = path.join(dataRoot, 'agent-service/process');
+  const records: string[] = [path.join(control, 'instance.json')];
+  try {
+    for (const name of fs.readdirSync(path.join(control, 'instances'))) {
+      if (/^[a-f0-9-]{36}\.json$/.test(name)) records.push(path.join(control, 'instances', name));
+    }
+  } catch { /* No retained Agent backend is a valid preview state. */ }
+  const pids = new Set<number>();
+  for (const file of records) {
+    const item = record(readJson(file));
+    const pid = item?.identity && record(item.identity)?.pid;
+    if (Number.isInteger(pid) && Number(pid) > 1) pids.add(Number(pid));
+  }
+  return [...pids];
+}
+
+async function reclaimConfirmedAgent(pids: number[]): Promise<void> {
+  for (const pid of pids) {
+    // The backend writes stopped/confirmed before closing its HTTP channel.
+    // A close-race can leave the listening handle behind; only after the
+    // graceful stop succeeded is it safe to reclaim this disposable preview.
+    for (let index = 0; index < 20 && processAlive(pid); index += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+    if (!processAlive(pid)) continue;
+    try { process.kill(process.platform === 'win32' ? pid : -pid, 'SIGKILL'); }
+    catch (error) {
+      if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ESRCH') throw error;
+    }
+    for (let index = 0; index < 20 && processAlive(pid); index += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+    if (processAlive(pid)) throw codedError('预览执行后台停止未确认，保留现场。', 'preview_stop_unconfirmed', { pid });
+  }
+}
+
+async function terminatePreviewWeb(pid: number): Promise<void> {
+  const signal = (name: NodeJS.Signals) => {
+    try { process.kill(process.platform === 'win32' ? pid : -pid, name); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+  };
+  signal('SIGTERM');
+  for (let index = 0; index < 40 && processAlive(pid); index += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+  }
+  if (!processAlive(pid)) return;
+  signal('SIGKILL');
+  for (let index = 0; index < 40 && processAlive(pid); index += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  }
+  if (processAlive(pid)) throw codedError('预览实例进程停止未确认，保留现场。', 'preview_stop_unconfirmed', { pid });
+}
+
 async function assertPreviewStopped(instance: string, dataRoot: string): Promise<void> {
   const state = readPreviewInstance(instance, dataRoot);
   if (!state || !processAlive(state.pid)) return;
@@ -707,24 +789,7 @@ function assertPurgeTargetSafe(instance: string, dataRoot: string): string {
   const stat = fs.lstatSync(target, { throwIfNoEntry: false });
   if (!stat) throw codedError(`预览实例 ${instance} 的实例目录不存在。`, 'preview_purge_unsafe', { instance });
   if (stat.isSymbolicLink() || !stat.isDirectory()) throw codedError(`预览实例 ${instance} 的清理目标不是真实目录。`, 'preview_purge_unsafe', { instance });
-  const realRoot = fs.realpathSync(target);
-  const walk = (directory: string): void => {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const file = path.join(directory, entry.name);
-      const info = fs.lstatSync(file);
-      if (info.isSymbolicLink()) {
-        let resolved: string;
-        try { resolved = fs.realpathSync(file); }
-        catch { continue; } // A broken link is removed with its directory, never followed.
-        if (resolved !== realRoot && !resolved.startsWith(`${realRoot}${path.sep}`)) {
-          throw codedError(`预览实例 ${instance} 包含越界符号链接，拒绝清理。`, 'preview_purge_unsafe', { instance });
-        }
-        continue;
-      }
-      if (info.isDirectory()) walk(file);
-    }
-  };
-  walk(target);
+  // rmSync 递归只 unlink 符号链接条目（含宿主缓存声明与断链），从不跟随，故越界链接不构成清理风险。
   return target;
 }
 
@@ -744,7 +809,40 @@ export async function stopPreview(name: string, options: PreviewStopOptions = {}
     }
     if (await healthyInstance(readPreviewInstance(instance, dataRoot))) throw codedError(`预览实例 ${instance} 停止后仍保持健康。`, 'preview_stop_unconfirmed');
   }
-  await stopAgentProcess({ dataRoot: previewDataRoot(instance, dataRoot) });
+  // Health can turn non-ready before the web process exits, and an already
+  // non-ready receipt may still own a live process. The detached Agent backend
+  // is owned by that process, so never release preview data before its exact
+  // PID is gone; otherwise a late host shutdown can leave an orphan writer.
+  if (state && Number.isInteger(state.pid)) {
+    for (let index = 0; index < 100 && processAlive(state.pid); index += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+    if (processAlive(state.pid)) {
+      // A preview can lose health while its event loop is warming a runtime
+      // unit. It still owns the disposable preview root, so terminate only the
+      // exact process group recorded by this preview and verify its exit.
+      await terminatePreviewWeb(state.pid);
+    }
+  }
+  const agentRoot = previewDataRoot(instance, dataRoot);
+  const ownedAgentPids = new Set<number>(previewAgentPids(agentRoot));
+  let stopFailure: unknown;
+  for (let round = 0; round < 8; round += 1) {
+    try {
+      await stopAgentProcess({ dataRoot: agentRoot });
+    } catch (error) {
+      // Once a stop result is unconfirmed, a later disappearance of its record
+      // cannot prove release. Keep the first failure and fail closed.
+      stopFailure ??= error;
+    }
+    for (const pid of previewAgentPids(agentRoot)) ownedAgentPids.add(pid);
+    await reclaimConfirmedAgent([...ownedAgentPids]);
+    if (![...ownedAgentPids].some(processAlive) && previewAgentPids(agentRoot).length === 0) {
+      break;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 250));
+  }
+  if (stopFailure) throw stopFailure;
   if (options.purge) {
     await assertPreviewStopped(instance, dataRoot);
     const target = assertPurgeTargetSafe(instance, dataRoot);
@@ -753,4 +851,43 @@ export async function stopPreview(name: string, options: PreviewStopOptions = {}
   }
   if (!options.retainOwner) clearOwner(instance, dataRoot);
   return { schemaVersion: PREVIEW_SCHEMA, status: healthy ? 'stopped' : 'stale_cleaned', instance, owner };
+}
+
+export type PreviewPruneEntry = { instance: string; status: 'pruned' | 'skipped'; reason?: string };
+
+export function pruneOrphanPreviews(options: { dataRoot?: string } = {}): { schemaVersion: typeof PREVIEW_SCHEMA; results: PreviewPruneEntry[] } {
+  const dataRoot = options.dataRoot || buildrWebDataRoot();
+  const root = path.join(path.resolve(dataRoot), 'previews');
+  const results: PreviewPruneEntry[] = [];
+  if (!fs.existsSync(root)) return { schemaVersion: PREVIEW_SCHEMA, results };
+  // 删除不可逆：登记文件存在但读不懂时按有主/未知跳过，只有记录缺失或能确认进程已死才算无主。
+  const liveRecord = (file: string): string | null => {
+    if (!fs.existsSync(file)) return null;
+    const item = record(readJson(file));
+    if (!item || !Number.isInteger(item.pid)) return '记录无法解析，无法确认进程已死';
+    return processAlive(Number(item.pid)) ? '进程存活' : null;
+  };
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !PREVIEW_NAME.test(entry.name)) continue;
+    const instance = entry.name;
+    try {
+      const directory = previewDataRoot(instance, dataRoot);
+      if (fs.existsSync(path.join(directory, 'preview.json'))) {
+        results.push({ instance, status: 'skipped', reason: 'owner 登记存在，归托管 stop/purge' });
+        continue;
+      }
+      const reason = liveRecord(path.join(directory, 'instance.json'))
+        || liveRecord(path.join(directory, 'agent-service', 'process', 'instance.json'));
+      if (reason) {
+        results.push({ instance, status: 'skipped', reason });
+        continue;
+      }
+      const target = assertPurgeTargetSafe(instance, dataRoot);
+      fs.rmSync(target, { recursive: true, force: false });
+      results.push({ instance, status: 'pruned' });
+    } catch (error) {
+      results.push({ instance, status: 'skipped', reason: errorMessage(error) });
+    }
+  }
+  return { schemaVersion: PREVIEW_SCHEMA, results };
 }

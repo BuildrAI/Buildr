@@ -139,9 +139,9 @@ export function resolvePreviewReuseSource(
   if (source !== 'development') throw previewReuseError(`预览沿用来源不受支持：${source}。`, 'preview_reuse_source_unavailable', { source });
   const root = defaultWebDataRoot(source, options);
   const stat = fs.statSync(root, { throwIfNoEntry: false });
-  if (!stat?.isDirectory()) throw previewReuseError('预览沿用来源 development 不可用：开发版应用数据根不存在。', 'preview_reuse_source_unavailable', { source });
+  if (!stat?.isDirectory()) throw previewReuseError('预览沿用来源 development 不可用：开发版应用数据根不存在。如无需沿用，可显式使用 --reuse none 启动。', 'preview_reuse_source_unavailable', { source });
   try { fs.accessSync(root, fs.constants.R_OK | fs.constants.X_OK); }
-  catch { throw previewReuseError('预览沿用来源 development 不可读。', 'preview_reuse_source_unavailable', { source }); }
+  catch { throw previewReuseError('预览沿用来源 development 不可读。如无需沿用，可显式使用 --reuse none 启动。', 'preview_reuse_source_unavailable', { source }); }
   return { id: source, root: path.resolve(root) };
 }
 

@@ -1,20 +1,22 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: conversation-title-error-reminder
-change: conversation-title-failure-reminder
-operation: reconcile
+task: model-provider-byok
+change: model-provider-byok
+operation: assess
 impacts:
   - type: technical-architecture
     target: knowledge/docs/architecture/agent-integration.md
-    reason: 自动标题两个有界阶段都失败后回填失败提醒标题，历史记录启动补齐，手动名称优先；标题说明同步校准。
+    reason: 新增 BYOK 自定义供应商（用户声明 Base URL、四种 API 协议、可选 API Key、发现或手工模型列表），并把模型接入界面术语统一为“供应商”；文档需说明 Chat Completions、OpenAI Responses、Anthropic Messages 与 Gemini 的端点、认证、发现差异及 Gemini 转换边界，并按实现事实校准用词。
     status: updated
     sourceIdentities:
-      - services/buildr-agent/src/application/conversation-application.ts
-      - services/buildr-agent/src/persistence/conversation-repository.ts
-      - openspec/changes/conversation-title-failure-reminder/specs/agent-conversations/spec.md
-  - type: code-map
-    target: knowledge/code-map/technical-layers.md
-    reason: 对话应用的短标题职责补充最终失败提醒与历史补齐说明。
-    status: updated
-    sourceIdentities:
-      - services/buildr-agent/src/application/conversation-application.ts
+      - openspec/changes/model-provider-byok/specs/custom-model-providers/spec.md
+      - openspec/changes/model-provider-byok/specs/model-provider-api-access/spec.md
+      - openspec/changes/model-provider-byok/design.md
+      - services/buildr-agent/src/model-access/application.ts
+      - services/buildr-agent/src/model-access/contracts.ts
+      - services/buildr-agent/src/model-access/providers/custom.ts
+      - services/buildr-agent/src/model-access/providers/private-api-key.ts
+      - services/buildr-agent/src/model-access/providers/openai-api.ts
+      - services/buildr-agent/src/model-access/protocols.ts
+      - services/buildr-agent/src/model-access/tool-stream-guard.ts
+      - services/buildr-web/src/features/agent-conversations/CustomProviderForm.tsx
 unresolvedItems: []

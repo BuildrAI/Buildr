@@ -3,6 +3,23 @@ import { stripTypeScriptTypes } from 'node:module';
 let parseModule: any;
 const syntaxCache = new Map<string, any>();
 
+/** Shared syntax observation; callers choose their own conservative fallback. */
+export function parseVerificationModule(source: string): any {
+  if (!parseModule) {
+    const native = (process as any).binding('natives')['internal/deps/acorn/acorn/dist/acorn'];
+    if (typeof native !== 'string') throw new Error('Embedded parser unavailable.');
+    const module = { exports: {} as any };
+    new Function('exports', 'module', native)(module.exports, module);
+    parseModule = module.exports.parse;
+  }
+  let file = syntaxCache.get(source);
+  if (!file) {
+    file = parseModule(stripTypeScriptTypes(source), { sourceType: 'module', ecmaVersion: 'latest' });
+    syntaxCache.set(source, file);
+  }
+  return file;
+}
+
 // Shared by working-tree and immutable Git input readers. This only resolves
 // known execution semantics; unknown dynamic readers retain their fallback.
 export function discoveredVerificationFiles(step: any, files: string[]): { selected: string[]; inventory: string[] } {
@@ -43,15 +60,7 @@ export function verificationModuleSlice(source: string, names: Set<string> | nul
   // If a future Node omits it, retain the complete module conservatively.
   let file: any;
   try {
-    if (!parseModule) {
-      const native = (process as any).binding('natives')['internal/deps/acorn/acorn/dist/acorn'];
-      if (typeof native !== 'string') throw new Error('Embedded parser unavailable.');
-      const module = { exports: {} as any };
-      new Function('exports', 'module', native)(module.exports, module);
-      parseModule = module.exports.parse;
-    }
-    file = syntaxCache.get(source);
-    if (!file) { file = parseModule(stripTypeScriptTypes(source), { sourceType: 'module', ecmaVersion: 'latest' }); syntaxCache.set(source, file); }
+    file = parseVerificationModule(source);
   } catch {
     return { text: source, imports: new Map(executableModuleInputs(source).imports.map(target => [target, null])) };
   }

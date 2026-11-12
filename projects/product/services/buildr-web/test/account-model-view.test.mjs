@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {modelSourceViews} from '../src/features/agent-conversations/account-model-view.ts';
+import {modelSourceViews,newModelSourceProvider} from '../src/features/agent-conversations/account-model-view.ts';
 const group={id:'chatgpt',label:'ChatGPT'};
 const subscription={id:'native-codex',identity:'subscription',provider:'native-codex',connectionId:'codex',label:'Codex / ChatGPT',authType:'oauth',group,modeLabel:'订阅',revision:'r1',enabled:true,status:'ready',accountLabel:'订阅账号',models:[{id:'gpt-sub',label:'GPT 订阅',images:false,tools:true,enabled:true}]};
 const api={id:'api',identity:'api',provider:'openai',label:'ChatGPT',authType:'api-key',group,modeLabel:'API Key',revision:'r2',enabled:true,status:'ready',credentialConfigured:true,accountLabel:'ChatGPT API',models:[{id:'gpt-api',label:'GPT API',images:false,tools:true,enabled:true}]};
@@ -11,7 +11,7 @@ test('账号视图保留真实额度窗口和上下文覆盖，基础模型与�
 
 test('未知额度不填零，旧空重复账号不占主要界面且保留 Devin 与独立 ChatGPT API 入口',()=>{
  const account={id:'a',provider:'codex',label:'Codex',revision:'r',enabled:true,status:'not-authenticated',models:[],quota:{available:false,observedAt:'2026-10-25T00:00:00Z'}};
- const views=modelSourceViews([account,{...account,id:'native-qoder',provider:'native-qoder',connectionId:'qoder',status:'ready'}],[{id:'qoder',enabled:true}]);assert.equal(views.length,3);assert.deepEqual(views.map(view=>view.providerLabel),['ChatGPT API','Devin','Qoder']);assert.deepEqual(views.find(view=>view.id==='native-qoder').windows,[]);assert.equal(views.find(view=>view.id==='new-devin').status,'not-authenticated');assert.equal(views.find(view=>view.id==='new-openai').providerLabel,'ChatGPT API');
+ const views=modelSourceViews([account,{...account,id:'native-qoder',provider:'native-qoder',connectionId:'qoder',status:'ready'}],[{id:'qoder',enabled:true}]);assert.equal(views.length,2);assert.deepEqual(views.map(view=>view.providerLabel),['Devin','Qoder']);assert.deepEqual(views.find(view=>view.id==='native-qoder').windows,[]);assert.equal(views.find(view=>view.id==='new-devin').status,'not-authenticated');assert.equal(views.some(view=>view.id==='new-openai'),false);assert.equal(views.some(view=>view.provider==='anthropic'),false);
 });
 
 test('ChatGPT 订阅与 API Key 作为两个来源可同时启用并分别提供模型',()=>{
@@ -45,10 +45,17 @@ test('ChatGPT API 模型已观察但余额不可读时显示模型观察时间�
  assert.equal(view.observedLabel.includes('尚未读取'),false);
 });
 
+test('仅 ChatGPT API 来源提供 OpenAI 平台账单入口',()=>{
+ const apiView=modelSourceViews([api],[]).find(view=>view.id===api.id);
+ assert.equal(apiView.billingUrl,'https://platform.openai.com/settings/organization/billing/overview');
+ const subscriptionView=modelSourceViews([subscription],[]).find(view=>view.id===subscription.id);
+ assert.equal(subscriptionView.billingUrl,undefined);
+});
+
 test('DSH 接入的 DeepSeek 模型来源显示 DeepSeek，不显示执行智能体名称',()=>{
  const dsh={id:'native-dsh',identity:'deepseek',provider:'native-dsh',connectionId:'dsh',label:'DeepSeek',authType:'oauth',revision:'r3',enabled:true,status:'ready',accountLabel:'DeepSeek',models:[{id:'deepseek-v4',label:'DeepSeek-V4',images:false,tools:true,enabled:true}]};
  const view=modelSourceViews([dsh],[]).find(view=>view.id===dsh.id);
- assert.equal(view.providerLabel,'DeepSeek');
+ assert.equal(view.providerLabel,'DeepSeek Harness');
  assert.equal(view.models[0].label,'DeepSeek-V4');
 });
 
@@ -69,4 +76,46 @@ test('登录准备显示实际进度，失败原因优先于旧账号检查提�
  const pending=view('initializing','正在下载官方登录程序');assert.equal(pending.diagnostic,undefined);assert.equal(pending.loginMessage,'正在下载官方登录程序');assert.equal(pending.loginPending,true);
  const failed=view('failed','程序下载失败，请重试');assert.equal(failed.diagnostic,'程序下载失败，请重试');assert.equal(failed.loginPending,false);
  assert.equal(view('cancelled').loginPending,false);
+});
+
+test('自定义供应商按用户名称显示，未就绪时仍保留已接入的卡片',()=>{
+ const custom={id:'custom',provider:'custom',label:'我的网关',revision:'r9',enabled:true,status:'not-authenticated',modeLabel:'OpenAI 兼容',credentialConfigured:false,observedAt:'2026-11-12T07:10:00.000Z',models:[{id:'m',label:'M',images:false,tools:true,enabled:true}],custom:{protocol:'chat-completions',baseUrl:'https://models.example.com/v1',useApiKey:false,models:[{id:'m'}]}};
+ const view=modelSourceViews([custom],[]).find(item=>item.id==='custom');
+ assert.ok(view);
+ assert.equal(view.providerLabel,'我的网关');
+ assert.equal(view.modeLabel,'OpenAI 兼容');
+ assert.equal(view.planLabel,'OpenAI 兼容');
+ assert.deepEqual(view.windows,[]);
+ assert.equal(view.observedLabel,new Date(custom.observedAt).toLocaleString());
+ assert.equal(view.observedLabel.includes('尚未读取'),false);
+ assert.match(view.quotaNote,/自定义供应商没有额度接口/);
+ assert.equal(view.custom?.baseUrl,'https://models.example.com/v1');
+ assert.equal(view.custom?.protocol,'chat-completions');
+ assert.equal(view.custom?.useApiKey,false);
+ assert.deepEqual(view.custom?.models,[{id:'m'}]);
+ assert.equal(modelSourceViews([{...custom,sourceEnabled:false}],[]).some(item=>item.id==='custom'),false);
+ assert.equal(modelSourceViews([{...custom,sourceEnabled:false}],[],true).find(item=>item.id==='custom').sourceEnabled,false);
+});
+
+test('disabled sources stay hidden without synthesizing a logged-out replacement',()=>{
+ const account={id:'native-dsh',provider:'native-dsh',connectionId:'dsh',label:'DeepSeek',status:'ready',enabled:true,sourceEnabled:false,models:[]};
+ assert.equal(modelSourceViews([account],[]).some(source=>source.id===account.id),false);
+ assert.equal(modelSourceViews([account],[],true).find(source=>source.id===account.id).sourceEnabled,false);
+ for(const provider of ['devin','openai','anthropic']){
+  const off={...account,id:'account-'+provider,provider,connectionId:undefined};
+  assert.equal(modelSourceViews([off],[]).some(source=>source.provider===provider),false);
+ }
+});
+
+
+test('Claude API preserves an existing account without synthesizing a new placeholder entry',()=>{
+ const row={...api,id:'anthropic-account',provider:'anthropic',label:'Claude API',status:'not-authenticated',models:[]};
+ const views=modelSourceViews([row],[]);
+ const claude=views.filter(view=>view.provider==='anthropic');
+ assert.equal(claude[0].providerLabel,'Claude API');
+ assert.equal(claude.length,1);assert.equal(claude[0].id,'anthropic-account');
+ assert.match(claude[0].quotaNote,/Anthropic/);assert.ok(!claude[0].quotaNote.includes('OpenAI'));
+ assert.equal(views.some(view=>view.id==='new-anthropic'),false);
+ assert.equal(newModelSourceProvider('new-anthropic'),undefined);
+ assert.equal(newModelSourceProvider('stale-unknown'),undefined);
 });

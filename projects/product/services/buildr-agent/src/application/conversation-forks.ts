@@ -15,6 +15,7 @@ export class ConversationForks {
     load(scope: string, id: string): StoredConversation;
     candidate(scope: string, input: { cwd: string; taskId?: string }): Promise<StoredConversation>;
     runtime(record: StoredConversation, participant: StoredParticipant): Promise<AgentRuntime>;
+    rebindReasoning?(source: AgentRuntime, target: AgentRuntime, value: string): Promise<string>;
     save(record: StoredConversation, initial?: boolean): void;
     view(record: StoredConversation): ConversationView;
   };
@@ -95,6 +96,7 @@ export class ConversationForks {
       this.checkpoint(child);
       const contextRef = await targetRuntime.forkContext({
         source: sourceRuntime, contextRef: participant.contextRef, cwd: child.view.cwd,
+        rebindReasoning: this.options.rebindReasoning ? value => this.options.rebindReasoning!(sourceRuntime, targetRuntime, value) : undefined,
         executionRef: attempt.executionRef, itemId: sourceKey.slice(participant.id.length + ':message:'.length),
         inputItemIds: [...new Set(nativeSource.attempts.filter(value => value.runId === runId && value.participantId === participant.id && value.accepted).flatMap(value => [value.clientRequestId, ...(value.nativeInputItemId ? [value.nativeInputItemId] : [])]))],
         onCreated: ref => { receiving.contextRef = ref; this.checkpoint(child); },

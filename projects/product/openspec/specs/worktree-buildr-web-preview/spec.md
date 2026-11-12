@@ -109,34 +109,6 @@ Buildr Web Preview MUST在自身实例store中保存Task ID、canonical Workspac
 - **THEN** 预览 MUST 解析到与 canonical 目标一致的证据与工作树 checkout
 - **AND** MUST NOT 因目标拼写形式报工作树不可读取
 
-### Requirement: task preview 必须保证任务数据可读
-
-`--task` 预览 MUST 将任务代码来源与工作空间数据目标分开。默认 `--workspace-mode shared` MUST 从任务受管工作树运行产品代码，以证据中的 canonical workspace 为服务目标并使用开发版共享登记；MUST NOT 为此登记同 ID 的工作树或播种其数据库。显式 `--workspace-mode snapshot` MUST 以工作树为服务目标：目标 `.buildr/local/workspace.sqlite` 缺失时从 canonical workspace 播种一致的 SQLite 副本，已存在时复用并不覆盖。快照写入 MUST 只作用于副本。共享模式 MUST 保留所有既有业务写入和候选来源校验，不将读取共享登记解释为解除写入保护。
-
-#### Scenario: 默认直接使用真实工作空间
-
-- **WHEN** 任务预览未显式选择 snapshot，开发版已登记其 canonical workspace
-- **THEN** 预览 MUST 使用任务工作树代码成功启动并访问该真实工作空间
-- **AND** MUST NOT 将同 ID 工作树再登记或创建工作树数据库副本
-
-#### Scenario: 首次启动播种快照
-
-- **WHEN** 显式选择 snapshot 且目标工作树没有本地 workspace.sqlite
-- **THEN** 预览 MUST 从 canonical workspace 生成一致副本并继续启动
-- **AND** 结果 MUST 标识本次数据为指定时点的快照来源
-
-#### Scenario: 已存在本地副本复用
-
-- **WHEN** 显式选择 snapshot 且目标工作树已有本地 workspace.sqlite
-- **THEN** 预览 MUST 复用现有副本
-- **AND** MUST NOT 静默以 canonical 最新数据覆盖
-
-#### Scenario: canonical 库不可读
-
-- **WHEN** snapshot 模式需要播种而 canonical workspace.sqlite 缺失或损坏
-- **THEN** 预览启动 MUST fail closed 并报告数据不可准备
-- **AND** MUST NOT 创建空库冒充任务数据
-
 ### Requirement: 安全追加工作树成员不得改变既有预览归属
 
 同一任务（Task）安全追加工作树（Worktree）成员后，预览（Preview）MUST 通过同一任务（Task）、主工作空间（Canonical Workspace）、已有根目录、登记文件及原有成员路径和分支（Branch）的当前核验继续判断归属，MUST NOT 仅因 `planDigest` 改变而拒绝复用或停止。已有成员减少或身份变化 MUST 继续拒绝；停止仍须认证目标实例并保持原有资源边界。
@@ -156,21 +128,113 @@ Buildr Web Preview MUST在自身实例store中保存Task ID、canonical Workspac
 - **WHEN** 同名记录的原有成员被移除、路径或分支（Branch）改变，或当前事实无法核验其身份
 - **THEN** 预览（Preview）MUST 拒绝复用或停止，不把摘要变化本身当成安全追加证明
 
-### Requirement: 预览实例可见共享登记工作空间
+### Requirement: 任务预览必须准备并钉住候选运行产物
 
-shared 模式 Preview MUST 在保留自身独立 Workspace registry 的同时，提供开发版共享 Profile 登记列表的只读来源视图；共享条目标记来源，移除或其他登记写操作 MUST 不作用于共享登记文件。snapshot 模式 MUST 不合并共享登记，以免同 ID 的 canonical 与任务副本同时出现。该选择 MUST NOT 改变预览实例、会话、启动锁和自身登记的独立边界。
+任务预览（`--task`）启动 MUST 在拉起候选宿主前，于该任务工作树内准备候选运行产物：构建 Agent 私有包并物化到工作树宿主的 `node_modules/@buildr-ai/buildr-agent`，并构建 `web-dist`（含所需 DTO）。工作树相关源码相对上次准备发生变化时 MUST 重新准备；未变化时 MAY 复用已准备产物。准备的所有写入 MUST 限定在任务工作树内，MUST NOT 写入开发版应用数据根、canonical Workspace 或其他预览。准备失败 MUST 在启动宿主前 fail closed 并报告失败阶段，MUST NOT 以陈旧或未准备的私有包冒充候选代码。
+
+#### Scenario: 首次启动准备候选产物
+- **WHEN** 任务工作树尚无已准备的候选私有包或 `web-dist`，调用方启动任务预览
+- **THEN** 预览 MUST 先在工作树构建 Agent 私有包与 `web-dist`，再拉起宿主
+- **AND** 构建写入 MUST 只出现在该任务工作树内
+
+#### Scenario: 源码变化后重新准备
+- **WHEN** 工作树 Agent 或前端源码相对上次准备已变化，再次启动同一任务预览
+- **THEN** 预览 MUST 重新准备受影响的候选产物
+- **AND** MUST NOT 复用与当前源码不一致的陈旧私有包或 `web-dist`
+
+#### Scenario: 准备失败不启动
+- **WHEN** 候选产物准备在某一阶段失败
+- **THEN** 预览 MUST 在拉起宿主前失败关闭并报告失败阶段与原因
+- **AND** MUST NOT 报告 `started`，MUST NOT 写入开发版数据根或 canonical Workspace
+
+### Requirement: 任务预览必须等待候选后台就绪
+
+任务预览 MUST 以工作树已物化私有包计算候选 Agent 运行单元 digest，并使候选宿主以该运行单元连接其独立数据根下的后台。预览 MUST 观察后台运行状态，仅当实际 `currentDigest` 与候选 digest 一致、`accepting` 为真且无待切换运行单元时才宣告 `started`。候选 digest 不符、后台未 accepting、换版待定或观察超时 MUST fail closed，报告明确 codedError 并回收已启动进程；MUST NOT 静默回退开发版后台，MUST NOT 在后台未就绪时报告启动成功。候选后台 MUST 只绑定预览独立数据根，MUST NOT 接管、恢复或重放开发版执行。
+
+#### Scenario: 候选后台就绪才宣告启动
+- **WHEN** 候选宿主后台以候选 digest 启用且 accepting
+- **THEN** 预览 MUST 在观察到该一致状态后返回 `started`
+- **AND** 启动结果 MUST 包含该候选 digest 与后台 generation
+
+#### Scenario: 实际 digest 与候选不符
+- **WHEN** 后台实际 `currentDigest` 与候选 digest 不一致
+- **THEN** 预览 MUST fail closed 并报告来源不一致
+- **AND** MUST NOT 报告 `started` 或回退开发版后台
+
+#### Scenario: 就绪超时回收
+- **WHEN** 在超时内后台仍未达到候选 digest 且 accepting
+- **THEN** 预览 MUST 报告候选后台未就绪的 codedError，并认证停止已启动的预览进程
+- **AND** 停止未确认时 MUST 保留现场并报告，MUST NOT 冒充清理成功
+
+#### Scenario: 不接管开发版执行
+- **WHEN** 候选后台在预览独立数据根下启动
+- **THEN** 候选后台 MUST NOT 读取开发版进程记录作为控制入口，MUST NOT 恢复或重放开发版中断执行
+- **AND** 开发版后台与其执行 MUST 保持不变
+
+### Requirement: 预览必须表达组件级来源且身份条可见
+
+在数据目标与 reuse 来源可观察的基础上，任务预览的启动输出、列表结果、受认证 health 与页面预览身份条 MUST 进一步表达组件级来源：宿主工作树与 Product checkout、前端产物来源、Agent 运行单元 digest/generation 与 accepting 状态。预览身份条 MUST 对预览页面可见并表达上述来源；默认 Buildr Web MUST NOT 显示预览身份条。来源表达 MUST NOT 暴露凭证、令牌或来源数据根的敏感路径细节。新增来源字段 MUST 以可选字段出现，缺少该字段的旧实例 MUST 仍可被安全停止。
+
+#### Scenario: 启动输出含组件来源
+
+- **WHEN** 任务预览启动成功
+- **THEN** 输出 MUST 同时表达宿主工作树/Product checkout、前端产物来源、Agent digest/generation、数据目标与 reuse 来源
+- **AND** Agent 未就绪时 MUST NOT 输出冒充就绪的来源
+
+#### Scenario: 页面身份条可见
+
+- **WHEN** 用户打开任务预览页面
+- **THEN** 页面 MUST 显示预览身份条，表达实例、工作树、Product checkout 与 Agent 组件来源
+- **AND** 该身份 MUST 只读，MUST NOT 写入 Workspace 源资产
+
+#### Scenario: 默认 Web 不显示
+
+- **WHEN** 用户打开默认 Buildr Web（非预览）
+- **THEN** 页面 MUST NOT 显示预览身份条
+
+#### Scenario: 旧实例缺少来源字段仍可停止
+
+- **WHEN** 健康旧实例的 owner 缺少新增组件来源字段
+- **THEN** 预览 MUST 允许按原 owner 安全停止
+- **AND** MUST NOT 因缺少新字段拒绝停止或清理
+
+### Requirement: task preview 必须使用单一真实数据目标
+
+`--task` 预览 MUST 将任务代码来源与工作空间数据目标分开：从任务受管工作树运行产品代码，以证据中的 canonical workspace 为服务目标并使用开发版共享登记；MUST NOT 为此登记同 ID 的工作树或播种其数据库。预览 MUST NOT 提供工作空间数据模式选项；传入旧 `--workspace-mode` 参数 MUST 按未知选项在预览写入和启动前显式失败。共享数据目标 MUST 保留所有既有业务写入和候选来源校验，不将读取共享登记解释为解除写入保护。
+
+#### Scenario: 默认直接使用真实工作空间
+
+- **WHEN** 任务预览启动，开发版已登记其 canonical workspace
+- **THEN** 预览 MUST 使用任务工作树代码成功启动并访问该真实工作空间
+- **AND** MUST NOT 将同 ID 工作树再登记或创建工作树数据库副本
+
+#### Scenario: 旧模式参数显式失败
+
+- **WHEN** 调用方传入 `--workspace-mode shared` 或 `--workspace-mode snapshot`
+- **THEN** 预览 MUST 按未知选项失败并给出明确诊断
+- **AND** MUST NOT 播种、登记或启动任何进程
+
+#### Scenario: canonical 数据不可读
+
+- **WHEN** 任务预览的 canonical workspace 未登记或数据不可读
+- **THEN** 预览启动 MUST fail closed 并报告数据不可准备
+- **AND** MUST NOT 创建空库或工作树副本冒充任务数据
+
+### Requirement: 预览共享登记只读视图与旧实例边界
+
+Preview MUST 在保留自身独立 Workspace registry 的同时，提供开发版共享 Profile 登记列表的只读来源视图；共享条目标记来源，移除或其他登记写操作 MUST 不作用于共享登记文件。仍在运行的旧 snapshot 实例 MUST 保持不合并共享登记的既有边界，以免同 ID 的 canonical 与任务副本同时出现。该选择 MUST NOT 改变预览实例、会话、启动锁和自身登记的独立边界。
 
 #### Scenario: 预览展示共享登记条目
 
-- **WHEN** 共享 Profile 已登记真实 Workspace，shared 模式的 Task 或 standalone Preview 查询列表
+- **WHEN** 共享 Profile 已登记真实 Workspace，Task 或 standalone Preview 查询列表
 - **THEN** 结果 MUST 合并共享条目并标注来源，保留自身登记
 - **AND** 共享登记文件 MUST 保持不变
 
-#### Scenario: 快照不产生同 ID 冲突
+#### Scenario: 旧快照实例不产生同 ID 冲突
 
-- **WHEN** snapshot 模式启动，工作树与开发版主目录拥有相同 UUID
-- **THEN** 列表 MUST 仅解析预览自身的任务副本而不合并共享主目录
-- **AND** MUST NOT 因共享主目录同 ID 拒绝启动
+- **WHEN** 旧 snapshot 实例仍在运行，工作树与开发版主目录拥有相同 UUID
+- **THEN** 该实例列表 MUST 仅解析其自身的任务副本而不合并共享主目录
+- **AND** MUST NOT 因共享主目录同 ID 拒绝启动或停止
 
 #### Scenario: 同一真实目录的路径别名
 
@@ -180,27 +244,46 @@ shared 模式 Preview MUST 在保留自身独立 Workspace registry 的同时，
 
 #### Scenario: 从页面直接进入共享工作空间
 
-- **WHEN** 用户在 shared 预览列表点击已登记的真实工作空间
+- **WHEN** 用户在预览列表点击已登记的真实工作空间
 - **THEN** 打开接口 MUST 返回可导航的工作空间身份，页面 MUST 能进入该空间
 - **AND** MUST NOT 将导航变成资源准备、投射刷新、管理归属接管或共享登记写入
 
-### Requirement: 预览数据模式必须可观察且不可无声切换
+### Requirement: 预览配置沿用默认开发版且旧实例兼容
 
-预览 MUST 接受 `--workspace-mode shared|snapshot`，默认 shared，非法值 MUST 在预览写入和启动前失败。owner、启动与列表结果 MUST 表达工作空间模式和实际服务数据根 `environmentRoot`，同时保留任务工作树代码身份。健康实例的模式或数据根不同 MUST 拒绝复用，旧 owner 缺少模式时 MUST 按旧快照语义比较，但继续支持安全停止。
+预览 MUST 默认以 `development` 为配置沿用来源，从开发版应用数据根沿用模型目录与智能体运行配置；调用方 MUST 能以 `--reuse none` 显式不沿用，或以 `--reuse development[:facet,…]` 显式选择 facet。`--refresh-reuse` MUST 可单独作用于默认沿用并刷新已沿用内容。默认沿用来源不可用时预览 MUST fail closed，报告明确 codedError 并提示显式退出方式，MUST NOT 无声降级为不沿用。owner、启动与列表结果 MUST 表达实际服务数据根 `environmentRoot` 与 reuse 来源，同时保留任务工作树代码身份。旧 owner 记录（含 snapshot 模式或缺失模式字段）MUST 仍可被原 owner 安全停止；健康旧实例的数据目标或模式与新请求不一致时 MUST 拒绝复用；保留工作树快照登记的实例 MUST 拒绝混用真实工作空间。
 
-#### Scenario: 模式不同拒绝复用
+#### Scenario: 默认沿用开发版配置
 
-- **WHEN** 同实例名已有健康快照预览，调用方以 shared 模式启动
+- **WHEN** 任务预览未提供 `--reuse` 启动且开发版数据根可用
+- **THEN** 预览 MUST 沿用 development 的默认 facet 并在 owner 与启动结果中如实表达 reuse 来源
+- **AND** 沿用写入 MUST 限定在预览实例根内
+
+#### Scenario: 显式不沿用
+
+- **WHEN** 调用方提供 `--reuse none`
+- **THEN** 预览 MUST 不沿用任何配置并成功启动
+- **AND** owner MUST NOT 携带 reuse 事实
+
+#### Scenario: 单独刷新默认沿用
+
+- **WHEN** 调用方仅提供 `--refresh-reuse` 启动或复用实例
+- **THEN** 预览 MUST 对默认 development 沿用执行刷新并如实记录 refreshed 结果
+- **AND** `--reuse none --refresh-reuse` MUST 显式失败
+
+#### Scenario: 开发版来源不可用
+
+- **WHEN** 默认沿用所需开发版数据根不存在或不可读
+- **THEN** 预览 MUST fail closed 并报告来源不可用与显式退出方式
+- **AND** MUST NOT 以空配置冒充已沿用
+
+#### Scenario: 健康旧快照实例拒绝复用
+
+- **WHEN** 同实例名已有健康 snapshot 预览，调用方以新逻辑启动
 - **THEN** MUST 拒绝复用，提示使用新实例名或由原 owner 停止
 - **AND** MUST NOT 修改工作树数据库或原预览数据
 
-#### Scenario: 启动身份如实说明来源
+#### Scenario: 旧记录安全停止
 
-- **WHEN** 任务 shared 预览启动成功
-- **THEN** owner MUST 同时报告任务工作树代码身份、shared 模式和 canonical 数据根
-
-#### Scenario: 旧运行实例未声明数据模式
-
-- **WHEN** 健康旧实例没有显式的数据根记录
-- **THEN** MUST 拒绝直接复用以承诺新模式语义，仍允许按原 owner 安全停止
-- **AND** 普通停止后保留的快照登记 MUST NOT 无声混入 shared 模式
+- **WHEN** 旧 owner 记录声明 snapshot 或缺失模式字段，停止请求的 owner 与 secret 匹配
+- **THEN** MUST 允许按原 owner 安全停止并只清理该实例命名空间
+- **AND** 普通停止后保留的快照登记 MUST NOT 无声混入新逻辑实例

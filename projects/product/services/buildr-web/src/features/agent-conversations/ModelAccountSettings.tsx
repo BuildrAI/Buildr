@@ -14,10 +14,10 @@ export function ModelAccountSettings(){
   const active=accounts.filter(account=>waiting(account)).map(account=>account.id+':'+account.loginAttempt!.id).join(',');
   useEffect(()=>{if(!active)return;const controller=new AbortController();let reading=false;const timer=setInterval(()=>{if(reading)return;reading=true;void Promise.all(active.split(',').map(async value=>{const [id,attempt]=value.split(':');const account=await context.api.modelLoginAttempt(id,attempt,controller.signal);if(!controller.signal.aborted)update(account);})).then(()=>context.refreshModelCatalog()).catch(failure=>{if(!controller.signal.aborted)setError(failure instanceof Error?failure.message:'登录观察失败。');}).finally(()=>{reading=false;});},1500);return()=>{controller.abort();clearInterval(timer);};},[active,context.api,context.refreshModelCatalog]);
   return <section className="ac-account-section" aria-label="模型套餐">
-    <header><h3>其他模型账号</h3><Button size="small" disabled={Boolean(busy)} onClick={()=>void refresh().catch(failure=>setError(String(failure)))}>刷新套餐</Button></header>
-    <p className="ac-subtle">Devin 登录后也会自动发现模型。已有的额外套餐账号继续保留。</p>
+    <header><h3>其他模型供应商</h3><Button size="small" disabled={Boolean(busy)} onClick={()=>void refresh().catch(failure=>setError(String(failure)))}>刷新套餐</Button></header>
+    <p className="ac-subtle">Devin 登录后也会自动发现模型。已有的额外供应商继续保留。</p>
     {error&&<Alert type="warning" showIcon message={error}/>}
-    <Button type="link" size="small" onClick={()=>setMore(value=>!value)}>{more?'收起额外账号':'管理额外账号'}</Button>
+    <Button type="link" size="small" onClick={()=>setMore(value=>!value)}>{more?'收起额外供应商':'管理额外供应商'}</Button>
     <Space wrap>{providers.filter(provider=>provider.id==='devin'?!accounts.some(a=>a.provider==='devin'):more).map(provider=><Button key={provider.id} loading={busy==='add:'+provider.id} disabled={Boolean(busy)} onClick={()=>void act('add:'+provider.id,()=>context.api.addModelAccount(provider.id))}>添加 {provider.label}</Button>)}</Space>
 
     {accounts.filter(account=>!account.connectionId&&(account.provider==='devin'||more)).map(account=><section key={account.id} className="ac-model-account" aria-label={account.label}>
@@ -28,8 +28,8 @@ export function ModelAccountSettings(){
       <p>{account.models.length?`${account.models.length} 个模型 · ${account.models.map(model=>model.label).join('、')}`:'登录后发现可用模型'}</p>
       <Space wrap>
         {waiting(account)?<><Button disabled={Boolean(busy)} onClick={()=>void act(account.id,()=>context.api.cancelModelLogin(account))}>取消本次登录</Button>{account.loginAttempt?.url&&<Button type="primary" href={account.loginAttempt.url} target="_blank" rel="noopener noreferrer">打开官方登录页</Button>}</>:account.status!=='ready'&&<Button disabled={Boolean(busy)} loading={busy===account.id+':login'} onClick={()=>void act(account.id+':login',()=>context.api.modelAccountAction(account,'login-attempts'))}>登录 {account.label}</Button>}
-        <Button disabled={Boolean(busy)||Boolean(waiting(account))} onClick={()=>void act(account.id+':check',()=>context.api.modelAccountAction(account,'check'))}>检查账号与模型</Button>
-        {account.enabled&&<Button disabled={Boolean(busy)||Boolean(waiting(account))} onClick={()=>void act(account.id+':disconnect',()=>context.api.modelAccountAction(account,'disconnect'))}>断开套餐</Button>}
+        <Button disabled={Boolean(busy)||Boolean(waiting(account))} onClick={()=>void act(account.id+':check',()=>context.api.modelAccountAction(account,'check'))}>检查供应商与模型</Button>
+        {account.enabled&&<Button disabled={Boolean(busy)||Boolean(waiting(account))} onClick={()=>void act(account.id+':disconnect',()=>context.api.modelAccountAction(account,'disconnect'))}>断开供应商</Button>}
       </Space>
       {account.loginAttempt?.diagnostic&&<p role="status">{account.loginAttempt.diagnostic}</p>}
     </section>)}

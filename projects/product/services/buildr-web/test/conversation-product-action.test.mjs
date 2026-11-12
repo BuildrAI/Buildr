@@ -15,7 +15,8 @@ const storage = () => {
 const ids = () => { const values = ['draft-one', 'request-one']; return () => values.shift() || 'unexpected-id'; };
 
 test('产品动作只选择已启用就绪且支持当前权限的连接', () => {
-  assert.deepEqual(conversationProductActionSelection('workspace-one', modulePreference, null, [connection], catalog), selection);
+  assert.equal(conversationProductActionSelection('workspace-one', modulePreference, null, [connection], catalog), null);
+  assert.deepEqual(conversationProductActionSelection('workspace-one', modulePreference, {version:1,...selection.choice}, [connection], catalog), {...selection,choice:{...selection.choice,reasoningEffort:undefined}});
   assert.equal(conversationProductActionSelection('workspace-one', modulePreference, null, [{ ...connection, status: 'disconnected' }], catalog), null);
   assert.equal(conversationProductActionSelection('workspace-one', modulePreference, null, [{ ...connection, enabled: false }], catalog), null);
   assert.equal(conversationProductActionSelection('workspace-one', modulePreference, null, [{ ...connection, capabilities: { ...connection.capabilities, permissionModes: ['default'] } }], catalog), null);

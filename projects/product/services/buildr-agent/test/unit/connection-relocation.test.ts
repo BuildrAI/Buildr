@@ -147,6 +147,49 @@ test('来源数据根之外的系统程序保持只读引用', (t) => {
   assert.equal(fs.existsSync(path.join(targetRoot, 'agent-service', 'programs')), false);
 });
 
+test('预览根嵌套在来源根内时重定位仍成功且不漏指来源', (t) => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-relocate-nested-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourceRoot = path.join(root, 'dev');
+  const targetRoot = path.join(sourceRoot, 'previews', 'acceptance');
+  const sourceAgent = path.join(sourceRoot, 'agent-service');
+  const targetAgent = path.join(targetRoot, 'agent-service');
+  const executable = path.join(sourceAgent, 'programs', 'qoder', 'qodercli');
+  const config = path.join(sourceAgent, 'connections', 'qoder', 'qoder-config');
+  fs.mkdirSync(path.dirname(executable), { recursive: true });
+  fs.mkdirSync(config, { recursive: true });
+  fs.writeFileSync(executable, '#!/bin/sh\n', { mode: 0o700 });
+  fs.writeFileSync(path.join(config, 'auth.json'), '{"user":"fixture"}\n');
+  const sourceDatabase = path.join(sourceAgent, 'conversations.sqlite');
+  const db = new DatabaseSync(sourceDatabase);
+  schema(db);
+  const info = fs.statSync(config);
+  db.prepare('INSERT INTO connections(id,provider,revision,body) VALUES(?,?,?,?)').run('qoder', 'qoder', 'r1', JSON.stringify({
+    view: { id: 'qoder', provider: 'qoder', label: 'Qoder', revision: 'r1', status: 'ready', enabled: true, executable, configPath: path.join(sourceAgent, 'connections', 'qoder'), capabilities: { text: true }, models: [] },
+    bindingIdentity: 'old-identity',
+    bindingData: { format: 'buildr-native-binding/v2', provider: 'qoder', executable, config, dev: info.dev, ino: info.ino, series: '1.1', observedVersion: '1.1.75' },
+  }));
+  db.close();
+
+  const targetExecutable = path.join(targetAgent, 'programs', 'qoder', 'qodercli');
+  const targetConfig = path.join(targetAgent, 'connections', 'qoder', 'qoder-config');
+  fs.mkdirSync(path.dirname(targetExecutable), { recursive: true });
+  fs.mkdirSync(targetConfig, { recursive: true });
+  fs.copyFileSync(executable, targetExecutable);
+  fs.copyFileSync(path.join(config, 'auth.json'), path.join(targetConfig, 'auth.json'));
+
+  const result = relocateConnections({ sourceRoot, targetRoot });
+  assert.deepEqual(result, { relocated: ['qoder'], failed: [] });
+  const target = new DatabaseSync(path.join(targetAgent, 'conversations.sqlite'), { readOnly: true });
+  const record = JSON.parse((target.prepare("SELECT body FROM connections WHERE id='qoder'").get() as { body: string }).body);
+  target.close();
+  assert.equal(record.view.executable, targetExecutable);
+  assert.equal(record.bindingData.config, targetConfig);
+  const leaked = JSON.stringify(record).includes(`${sourceRoot}${path.sep}`)
+    && !JSON.stringify(record).includes(`${targetRoot}${path.sep}`);
+  assert.equal(leaked, false);
+});
+
 test('升级后的来源别名不再依赖原桌面文件，重定位仍核对实际独立程序', t=>{
   const fixture=seed(t),source=new DatabaseSync(fixture.sourceDatabase),alias=path.join(fixture.root,'removed.app','qodercli');
   const row=source.prepare("SELECT body FROM connections WHERE id='qoder'").get() as {body:string},record=JSON.parse(row.body);

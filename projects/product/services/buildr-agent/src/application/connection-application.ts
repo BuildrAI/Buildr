@@ -85,8 +85,8 @@ export class ConnectionApplication {
       this.runtimes.delete(id);
       for (const [key] of owned) this.gatewayRuntimes.delete(key);
       candidate = await open(original, executable, source);
-      if(['qoder','qoder-cn'].includes(original.view.provider)) {
-        if(!candidate.verifyUpgrade)fail('agent_program_update_verification_failed',`${original.view.provider==='qoder-cn'?'Qoder CN':'Qoder'} 缺少配套对话验证，保留原接入。`,409);
+      if(['qoder','qoder-cn','claude-code'].includes(original.view.provider)) {
+        if(!candidate.verifyUpgrade)fail('agent_program_update_verification_failed',`${original.view.label} 缺少配套验证，保留原接入。`,409);
         await candidate.verifyUpgrade();
       }
       if (original.bindingIdentity && candidate.bindingIdentity !== original.bindingIdentity) fail('agent_binding_changed', '新版未能延续原上下文身份，已保留旧程序。', 409);
@@ -124,6 +124,10 @@ export class ConnectionApplication {
     root: string;
     executors: AgentExecutor[];
     environment: Record<string, string>;
+    /** Account-owned config for model-bound executions, separate from program bindings. */
+    nativeAccountConfigRoots?: Record<string, string>;
+    /** Compose externally visible facts whose login is owned by another source. */
+    present?(view: ConnectionView): ConnectionView;
     generation: string;
     now(): string;
     changed(connection: ConnectionView): void;
@@ -159,11 +163,18 @@ export class ConnectionApplication {
     // Auth URLs live only in the current login attempt, never in persistent records or event diagnostics.
     if (record.view.loginAttempt) delete record.view.loginAttempt.url;
     this.options.repository.saveConnection(record, prior);
-    this.options.changed(structuredClone(record.view));
-    return this.get(record.view.id);
+    const view = this.get(record.view.id);
+    this.options.changed(structuredClone(view));
+    return view;
+  }
+  /** Native account files can live outside the connection's private program config. */
+  private nativeAccountRoot(id: string, record: StoredConnection): string {
+    return this.options.nativeAccountConfigRoots?.[id] ?? record.view.configPath ?? path.join(this.options.root, 'connections', id);
   }
   get(id: string, includeLoginUrl = false): ConnectionView {
     const view = structuredClone(this.stored(id).view);
+    // Product names follow the current descriptor, not cached configuration labels.
+    view.label = this.executors.get(id)?.descriptor.label ?? view.label;
     view.capabilities.maxInputBytes = Math.min(view.capabilities.maxInputBytes, 64 * 1024);
     if (view.capabilities.images) view.capabilities.maxImageBytes = Math.min(view.capabilities.maxImageBytes ?? 8 * 1024 * 1024, 8 * 1024 * 1024);
     if (view.loginAttempt && view.loginAttempt.generation !== this.options.generation && ['initializing', 'waiting-browser', 'checking'].includes(view.loginAttempt.state)) {
@@ -173,7 +184,8 @@ export class ConnectionApplication {
       const navigation = this.loginUrls.get(id);
       if (navigation?.attemptId === view.loginAttempt.id) view.loginAttempt.url = navigation.url;
     }
-    return view;
+    const presented = this.options.present?.(view);
+    return presented ?? view;
   }
   list(): ConnectionView[] { return [...this.executors.keys()].map(id => this.get(id)); }
   programUnavailable(id: string, revision: string, diagnostic: string): ConnectionView {
@@ -256,7 +268,7 @@ export class ConnectionApplication {
     const configRoot = path.join(this.options.root, 'connections', id, 'model-bindings', createHash('sha256').update(gateway.identity).digest('hex'));
     const lifecycle = this.lifecycles.get(id);
     const opening = new AbortController(); this.opening.set(key, opening);
-    const promise = this.openExecutor(this.executors.get(id)!, { interaction: interactionPolicy, connectionId: id, configRoot, executable: record.view.executable, programSource: record.programSource, environment: this.options.environment, signal: opening.signal, gateway, nativeAccountConfigRoot: record.view.configPath ?? path.join(this.options.root, 'connections', id) }).then(async runtime => {
+    const promise = this.openExecutor(this.executors.get(id)!, { interaction: interactionPolicy, connectionId: id, configRoot, executable: record.view.executable, programSource: record.programSource, environment: this.options.environment, signal: opening.signal, gateway, nativeAccountConfigRoot: gateway.nativeHomeRoot ?? this.nativeAccountRoot(id, record) }).then(async runtime => {
       if (this.closing || opening.signal.aborted || this.lifecycles.get(id) !== lifecycle) { await runtime.close(); fail('agent_connection_disabled', '接入已断开。', 409); }
       return runtime;
     }).catch(error => { if (this.gatewayRuntimes.get(key) === promise) this.gatewayRuntimes.delete(key); throw error; }).finally(() => { this.opening.delete(key); });
@@ -271,7 +283,13 @@ export class ConnectionApplication {
     if (!executor?.readPersistedExecution || !record.view.executable) return;
     const base = path.join(this.options.root, 'connections', id);
     const configRoot = input.gatewayIdentity ? path.join(base, 'model-bindings', createHash('sha256').update(input.gatewayIdentity).digest('hex')) : base;
-    return executor.readPersistedExecution({ ...input, configRoot, nativeAccountConfigRoot: record.view.configPath ?? base, executable: record.view.executable, programSource: record.programSource });
+    return executor.readPersistedExecution({ ...input, configRoot, nativeAccountConfigRoot: this.nativeAccountRoot(id, record), executable: record.view.executable, programSource: record.programSource });
+  }
+  async readSupplementReceipt(id: string, input: Omit<Parameters<NonNullable<AgentExecutor['readSupplementReceipt']>>[0], 'configRoot'|'nativeAccountConfigRoot'|'executable'|'programSource'>) {
+    const executor = this.executors.get(id), record = this.stored(id);
+    if (!executor?.readSupplementReceipt) return;
+    const base = path.join(this.options.root, 'connections', id);
+    return executor.readSupplementReceipt({ ...input, configRoot: base, nativeAccountConfigRoot: this.nativeAccountRoot(id, record), executable: record.view.executable ?? '', programSource: record.programSource });
   }
   async releaseGatewayRuntime(runtime: AgentRuntime): Promise<void> {
     const owned = [];

@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { inspectChangeAsset, readChangeAsset, type ChangeQuery, type ChangeModel, type ChangeLifecycle, type Project, type PrototypePage, type PrototypeDiagnostic } from '../../../openspec/module.ts';
+import { inspectChangeAsset, readChangeAsset, type ChangeQuery, type ChangeModel, type ChangeLifecycle, type Project, type PrototypePage, type PrototypeDiagnostic } from '../../../openspec/query.ts';
 import { taskActionId } from '../../application/task-validation.ts';
 import { createTaskProjectDocumentReader, type TaskDocumentWorktreeQuery } from '../../materials/application/task-project-document-reader.ts';
 import { assertMarkdownImageSourceRoot, observeMarkdownImageContext } from '../../../../infrastructure/filesystem/markdown-images.ts';

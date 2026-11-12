@@ -1,0 +1,135 @@
+## ADDED Requirements
+
+### Requirement: 已停止的历史未知执行不得占用当前交互
+
+历史保留执行已记录停止请求、没有活动执行状态且没有运行中工具时，系统 MUST 将其视为历史未知证据，不得仅因未知工具或诊断继续把整条对话判定为活动或显示“状态待确认”。未知工具、诊断、停止请求和已有答复 MUST 原样保留。
+
+停止入口 MUST 只对存在活动执行、运行中工具、可独立停止工具、真实活动状态、有效请求，或尚未取得资源释放证明的 `unknown` 轮显示；同一轮已请求停止后 MUST NOT 重复提供停止，明确 `resourcesReleased=true` 的 `unknown` 轮 MUST NOT 显示停止。
+
+恢复提示 MUST 以用户实际可见的历史判断该轮是否已有最终主答复，包括点击停止时冻结的输出。已有可见最终主答复时 MUST NOT 显示“上次执行未正常答复”或提供通用继续入口。
+
+#### Scenario: 当前轮已完成而历史轮已请求停止
+
+- **WHEN** 当前轮为 `completed` 且有可见最终答复，历史保留轮为 `unknown` 且已请求停止、没有活动执行或运行中工具
+- **THEN** 对话 MUST 不因该历史轮进入活动区或显示“状态待确认”
+- **AND** 历史未知工具、诊断和停止请求 MUST 保持可核对
+
+#### Scenario: 历史未知轮仍有真实工作
+
+- **WHEN** 历史保留轮仍有活动执行、运行中工具或有效待回应请求
+- **THEN** 对话 MUST 继续保持活跃并提供对应的停止或核对入口
+- **AND** MUST NOT 因已记录过停止请求而隐藏真实工作
+
+#### Scenario: 未证明释放的 Unknown 仍有一次真实停止
+
+- **WHEN** 当前或保留轮为 `unknown`、尚未请求停止且 `resourcesReleased` 不为 `true`
+- **THEN** 页面 MUST 显示停止入口，并以下列精确身份投递一次停止：该轮 `runId`、`participantId` 和 `generation`
+- **AND** 点击后 MUST 冻结该轮当时可见输出并撤下重复停止入口，不得只改变按钮而没有对应停止目标
+- **AND** 停止结果未知时 MUST NOT 自动重试，也 MUST NOT 将 Unknown 改写为已确认停止
+- **AND** 一旦取得 `resourcesReleased=true`，停止入口 MUST 隐藏
+
+#### Scenario: 停止后已有可见最终答复
+
+- **WHEN** 用户点击停止时页面已冻结该轮的最终主答复
+- **THEN** 页面 MUST NOT 再显示“上次执行未正常答复”或通用继续提示
+- **AND** 停止请求、未知工具和原答复 MUST 保留
+
+### Requirement: 本地未知发送记录不得阻塞其他输入
+
+本地发送尝试只 MUST 约束其原始发送请求的核对。只有当前草稿文字与附件标识同该尝试完全一致时，系统才可沿用原 `clientRequestId` 核对送达结果；内容不同的新输入 MUST 正常进入当前权威对话的发送路由。
+
+原请求送达未知时，系统 MUST 保留该请求身份、原文字、附件和未知证据；MUST NOT 自动重发、换用新标识重放、改写为成功或静默删除。核对结果不得把整条对话永久锁死；其他内容仍 MUST 可以发送或明确进入新一轮。
+
+#### Scenario: 旧追加未知但用户发送不同内容
+
+- **WHEN** 本地保留了绑定旧保留轮的未知追加尝试，当前对话已完成且用户输入了不同文字
+- **THEN** 系统 MUST NOT 先自动核对或重放旧尝试并因此中止本次发送
+- **AND** 新文字 MUST 按当前权威对话路由发送
+- **AND** 旧尝试的请求身份、原文、附件和未知证据 MUST 继续保留
+
+#### Scenario: 用户再次提交与旧尝试完全相同的内容
+
+- **WHEN** 当前草稿文字和附件标识与本地未知尝试完全一致
+- **THEN** 系统 MAY 仅以原 `clientRequestId` 核对原请求
+- **AND** 仍为 `unknown` 时 MUST 保留原身份并提示送达尚未确认
+- **AND** MUST NOT 自动生成新身份重复发送
+
+### Requirement: 需要观察的对话必须按有界间隔自愈
+
+页面处于执行中、停止中、待回答、执行未知、待发送或仍有未结束工具，且对应对话页面可见时，系统 MUST 在实时事件连接之外按有界间隔读取权威对话状态。连接存在但不再产生事件、服务重启或最终事件丢失时，页面 MUST 自动收敛到最新状态，不得要求用户刷新或重新打开对话。
+
+兜底读取 MUST 只应用当前选择，并保留已观察修订的冲突保护；MUST NOT 因读取重放输入、发送消息、回答旧问题或改变待发送内容。
+
+#### Scenario: 实时连接保持但完成事件丢失
+
+- **WHEN** 页面仍认为某轮需要观察，但实时连接长时间没有带来新事件
+- **THEN** 页面 MUST 在有界间隔内读取权威对话
+- **AND** 服务端已结束时 MUST 更新为完成状态并撤下仅适用于活动执行的停止、继续和追加占位
+- **AND** 读取 MUST NOT 重发任何消息
+
+#### Scenario: 服务重启后旧页面仍是旧快照
+
+- **WHEN** 服务重启或会话代次变化，旧页面仍保留先前的运行状态
+- **THEN** 后续权威读取 MUST 取得新快照并更新当前对话
+- **AND** 用户草稿与附件 MUST 保留
+- **AND** 旧运行身份 MUST NOT 被当作新执行发送目标
+
+### Requirement: 历史未知证据默认不占据当前交互
+
+非当前轮、没有活动控制或运行中工具的历史 unknown 结果 MUST 保留原工具、诊断、停止请求和答复，但在处理过程折叠时 MUST NOT 作为当前输入区的阻塞式状态显示。展开后可核对原未知证据；系统 MUST NOT 将历史 unknown 改写为成功或已确认停止。
+
+#### Scenario: 当前轮完成且历史轮未知
+
+- **WHEN** 当前轮 `completed` 且有可见最终答复，另一保留轮为无活动控制的 `unknown`
+- **THEN** 折叠状态下 MUST NOT 显示当前停止、继续、追加占位或“本轮结果待核对”阻塞提示
+- **AND** 展开历史记录后未知证据 MUST 仍可核对
+
+### Requirement: 已进入原生执行的补充输入不得误报为送达未知
+
+当补充输入已经派发并进入原生执行，服务端 MUST 能从该执行绑定的原生持久记录中核对准确的用户回执，包括 Qoder CN 普通原生人类 `user` 条目和旧 bridge attachment。回执必须按准确文本、受理时间下限、唯一匹配，以及 session、cwd、sidechain、binding 和 executionRef 身份核对；任一条件不满足时 MUST 保持未知，不得猜测成功。
+
+权威对话读取发现持久 `sending` 或 `unknown` 补充尝试的准确回执时，MAY 将该尝试收敛为 accepted，并同步用户条目状态与来源映射。此修复 MUST NOT 重新派发原生输入、创建新轮次、改写多个尝试或伪造其他执行结果。
+
+#### Scenario: Qoder CN 普通人类用户条目成为唯一回执
+
+- **WHEN** 补充请求在 15 秒内没有返回原生回执，但同一原生执行已写入文本完全一致、时间不早于受理时间且身份匹配的唯一人类 `user` 条目
+- **THEN** 该补充尝试 MUST 收敛为 accepted
+- **AND** 用户条目 MUST 不再显示“是否送达待确认”
+- **AND** 原生输入 MUST 不因收敛动作再次发送
+
+#### Scenario: 回执文本、时间或身份不匹配
+
+- **WHEN** 原生记录只有不同文本、早于受理时间的记录，或多个无法唯一归属的相同文本记录
+- **THEN** 原补充尝试 MUST 保持 `unknown`
+- **AND** MUST NOT 改写为 accepted
+
+#### Scenario: 发送响应先返回 Unknown，权威读取随后确认
+
+- **WHEN** 补充发送响应返回 `delivery=unknown`，随后同一请求的权威读取返回 accepted
+- **THEN** 页面 MUST 清除该请求对应的草稿和附件
+- **AND** MUST NOT 显示黄色送达待确认告警，也 MUST NOT 再次发送该请求
+
+### Requirement: ACP 终态帧丢失时按原生 transcript 收敛完成
+
+Qoder CN 的 `session/prompt` 终态响应可能丢失，而原生执行已经完成并写入 transcript。此时服务端 MUST 能从该执行绑定、追加写入的原生 transcript 中核对完成事实：本轮已受理输入必须按准确文本、受理时间下限、唯一匹配和 session/cwd/sidechain 身份对应；每个对应回合 MUST 有 `end_turn` 终态；区间内每个工具调用 MUST 有结果；且 MUST NOT 借用后续其他输入的终态。任一条件不满足时 MUST 保持未知，不得猜测完成。
+
+实时等待 MUST 同时接受 ACP 终态响应与准确的 transcript 完成证据。权威读取发现执行仍为活动或未知状态时，MUST 仅只读 transcript 即可把该轮收敛为 `completed`、`executionState=ended`，并把准确证据记为持久结束；MUST NOT 打开新的原生执行、获取原控制资源、重发输入或伪造工具成功。
+
+#### Scenario: ACP 终态响应丢失但原生回合正常结束
+
+- **WHEN** 本轮输入已被原生 transcript 记录，最终助手条目为 `end_turn`，工具调用均有结果，但 `session/prompt` 终态响应始终未返回
+- **THEN** 本轮 MUST 在收到准确 transcript 完成证据后收敛为 `completed`
+- **AND** 页面 MUST 撤下仅适用于活动执行的停止、继续和“状态未确认”入口
+- **AND** MUST NOT 重发原输入
+
+#### Scenario: 冷读取核对已完成的原生回合
+
+- **WHEN** 原后台状态仍为 `running` 或 `unknown`，但只读 transcript 证明本次已受理的全部输入均以 `end_turn` 结束且工具均有结果
+- **THEN** 权威读取 MUST 将该轮收敛为 `completed`，并保留原执行身份
+- **AND** MUST NOT 打开原生进程、占有原控制资源或改写未知操作的结果
+
+#### Scenario: transcript 证据不唯一或仍有未完成回合
+
+- **WHEN** 输入文本或受理时间不唯一匹配、存在后续其他输入、回合缺少 `end_turn`、工具调用缺少结果，或 transcript 仍在变化无法形成完整快照
+- **THEN** 该轮 MUST 保持原活动或未知状态
+- **AND** MUST NOT 将证据部分匹配当作完成

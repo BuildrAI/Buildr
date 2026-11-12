@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createAgentConversationFixture,type AgentConversationFixture} from './agent-conversation-fixture.ts';
 
-type ConversationScrollSample={at:number;top:number;height:number;viewport:number;visible:boolean;entries:number;listBottom:number|null;streamBottom:number|null;listTop:number|null;streamTop:number|null};
+type ConversationScrollSample={conversationId:string|null;at:number;top:number;height:number;viewport:number;visible:boolean;entries:number;listBottom:number|null;streamBottom:number|null;listTop:number|null;streamTop:number|null};
 
 /** history 场景使用独立准备的对话现场。 */
 const historyRuns = {
@@ -17,7 +17,7 @@ const historyRuns = {
       const notice=()=>panel().locator('[data-context-compaction="compact"]');
       await notice().waitFor();assert.match(await notice().innerText(),/正在压缩上下文，请等待/);
       assert.match(await notice().locator('time').innerText(),/00:00:4[2-9]/);
-      await panel().getByRole('button',{name:'停止本次执行',exact:true}).waitFor();
+      await panel().getByRole('button',{name:'停止对话',exact:true}).waitFor();
       await fixture.capture(page,'conversation-context-compaction.png');
       await page.reload();await input().waitFor();await notice().waitFor();
       assert.notEqual(await notice().locator('time').innerText(),'00:00:00');
@@ -409,7 +409,7 @@ const historyRuns = {
         const stream=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');
         const list=stream?.querySelector<HTMLElement>('.ac-message-list');
         const entries=stream?[...stream.querySelectorAll<HTMLElement>('[data-entry-id]')].filter(node=>node.getClientRects().length).length:0;
-        trace.push({at:performance.now(),top:stream?.scrollTop??0,height:stream?.scrollHeight??0,viewport:stream?.clientHeight??0,visible:Boolean(stream?.getClientRects().length&&list),entries,listBottom:list?.getBoundingClientRect().bottom??null,streamBottom:stream?.getBoundingClientRect().bottom??null,listTop:list?.getBoundingClientRect().top??null,streamTop:stream?.getBoundingClientRect().top??null});
+        trace.push({conversationId:document.querySelector('#agent-conversation-panel')?.getAttribute('data-conversation-id')??null,at:performance.now(),top:stream?.scrollTop??0,height:stream?.scrollHeight??0,viewport:stream?.clientHeight??0,visible:Boolean(stream?.getClientRects().length&&list),entries,listBottom:list?.getBoundingClientRect().bottom??null,streamBottom:stream?.getBoundingClientRect().bottom??null,listTop:list?.getBoundingClientRect().top??null,streamTop:stream?.getBoundingClientRect().top??null});
         if(++frames<240)requestAnimationFrame(sample);
       };
       requestAnimationFrame(sample);
@@ -420,7 +420,7 @@ const historyRuns = {
     await entryReadStarted;
     await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
     const beforeFill:ConversationScrollSample[]=await page.evaluate(()=>(window as any).__conversationScrollTrace as ConversationScrollSample[]);
-    const visible=beforeFill.filter(sample=>sample.visible&&sample.entries>0);
+    const visible=beforeFill.filter(sample=>sample.conversationId===targetId&&sample.visible&&sample.entries>0);
     assert.ok(visible.length,'首批最新记录应在补页请求挂起时可见');
     const misplaced=visible.find(sample=>sample.listTop===null||sample.streamTop===null||Math.abs(sample.listTop-sample.streamTop)>1||sample.top!==0);
     assert.equal(misplaced,undefined,'补页期间不足一屏的内容必须顶对齐，不能撑高或产生滚动：'+JSON.stringify(visible.slice(-8)));
@@ -1063,7 +1063,7 @@ const historyRuns = {
       const entry=(id:string,sequence:number,role:string,text:string)=>({id,sequence,kind:'message',role,text,provider:'codex',participantId:'participant-codex',runId:'run-fixture',createdAt:new Date().toISOString(),status:'completed'});
       const long=Array.from({length:25},(_,i)=>`${i+1}. 保留完整用户要求，展开后在固定区域阅读。`).join('\n');
       update({participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],entries:[entry('long-user',1,'user',long),entry('live-narration',2,'assistant',Array.from({length:40},(_,i)=>'自然执行过程 '+i).join('\n\n'))],run:run('running','codex',{startedAt,model:'fixture-model'}),requests:[]});await page.reload();await input().fill('');
-      assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),true);assert.equal(await panel().locator('.ac-compose-wrap').getByRole('button',{name:'停止本次执行',exact:true}).count(),1);assert.equal(await panel().locator('.ac-thread-actions').getByRole('button',{name:'停止本次执行',exact:true}).count(),0);
+      assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),true);assert.equal(await panel().locator('.ac-compose-wrap').getByRole('button',{name:'停止对话',exact:true}).count(),1);assert.equal(await panel().locator('.ac-thread-actions').getByRole('button',{name:'停止对话',exact:true}).count(),0);
       const stream=panel().locator('.ac-stream');await stream.evaluate((node:HTMLElement)=>node.scrollTop=300);const stickyHead=panel().locator('.ac-turn.is-executing>.ac-turn-head');const sticky=await stickyHead.evaluate((node:HTMLElement)=>({top:node.getBoundingClientRect().top,stream:node.closest('.ac-stream')!.getBoundingClientRect().top,position:getComputedStyle(node).position}));assert.equal(sticky.position,'sticky');assert.ok(Math.abs(sticky.top-sticky.stream)<2,JSON.stringify(sticky));assert.equal(await panel().locator('.ac-turn.is-executing>.ac-turn-head>.ac-turn-context').evaluate((node:HTMLElement)=>getComputedStyle(node).position),'static','气泡自身不吸顶，随吸顶头一起固定');
       await panel().getByRole('button',{name:'展开内容',exact:true}).first().click();assert.equal(await panel().locator('.ac-turn-prompt-content').first().evaluate((node:HTMLElement)=>getComputedStyle(node).overflowY),'auto');await panel().getByRole('button',{name:'收起内容',exact:true}).click();assert.match(await panel().locator('.ac-turn-identity').first().innerText(),/Codex · Fixture model/);assert.ok(await panel().locator('.ac-turn-identity .ac-execution-indicator').first().innerText()!=='0:00');
       // Legacy supplementary entries remain readable; new input no longer creates them.
@@ -1127,6 +1127,32 @@ const historyRuns = {
         const headStyles=await panel().locator('.ac-turn-head').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>({position:getComputedStyle(node).position,shadow:getComputedStyle(node).boxShadow})));for(const s of headStyles){assert.equal(s.position,'static',status);assert.equal(s.shadow,'none',status);}
       }
       await capture(page,'conversation-running-context-history.png');fixture.conversation=previous;await page.reload();await input().waitFor();
+  },
+  'history/continuation-prompt': async (fixture: AgentConversationFixture) => {
+    const {capture,input,page,panel,run,update}=fixture;
+    const previous=structuredClone(fixture.conversation),at=new Date().toISOString();
+    const source={id:'continuation-source',sequence:1,kind:'message',role:'user',text:'这是要继续的原始要求',runId:'source-run',createdAt:at,status:'accepted'};
+    try{
+      update({
+        participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],
+        entries:[
+          source,
+          {id:'continuation-notice',sequence:2,kind:'notice',role:'system',text:'已请求继续上次执行。',runId:'continuation-run',createdAt:at,status:'accepted'},
+          {id:'continuation-progress',sequence:3,kind:'message',role:'assistant',text:Array.from({length:35},(_,i)=>'接续执行过程 '+(i+1)).join('\n\n'),runId:'continuation-run',createdAt:at,status:'running'},
+        ],
+        nextEntryCursor:undefined,
+        requests:[],
+        run:run('running','codex',{id:'continuation-run',model:'fixture-model',continuedFrom:{runId:'source-run',userEntryId:'continuation-source',prompt:source}}),
+      });
+      await page.reload();await input().waitFor();
+      const executing=panel().locator('.ac-turn.is-executing');
+      await executing.locator('.ac-turn-prompt').filter({hasText:'这是要继续的原始要求'}).waitFor();
+      assert.equal(await executing.locator('.ac-continuation-prompt-label').innerText(),'继续上次要求');
+      await panel().locator('.ac-stream').evaluate((node:HTMLElement)=>{const turn=node.querySelector<HTMLElement>('.ac-turn.is-executing')!;node.scrollTop+=turn.getBoundingClientRect().top-node.getBoundingClientRect().top+220;});
+      const sticky=await executing.locator('.ac-turn-head').evaluate((node:HTMLElement)=>({position:getComputedStyle(node).position,top:node.getBoundingClientRect().top,stream:node.closest('.ac-stream')!.getBoundingClientRect().top}));
+      assert.equal(sticky.position,'sticky');assert.ok(Math.abs(sticky.top-sticky.stream)<2,JSON.stringify(sticky));
+      await capture(page,'conversation-continuation-prompt.png');
+    }finally{fixture.conversation=previous;await page.reload();await input().waitFor();}
   },
   'history/reading-position': async (fixture: AgentConversationFixture) => {
   const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;

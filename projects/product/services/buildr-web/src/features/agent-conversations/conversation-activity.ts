@@ -1,4 +1,5 @@
 import type { ConversationSummary } from './types';
+import {executionAgentName} from '../../lib/model-picker.ts';
 export type ActivityState = 'running'|'waiting'|'unknown'|'unseen'|'send-waiting'|'send-failed'|null;
 export type ActivityFilter = Exclude<ActivityState,null>|'attention'|null;
 export type ActivityCounts = {pendingSend?:number;active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number};
@@ -41,9 +42,11 @@ export function activityState(row:ConversationSummary):ActivityState {
   if(['waiting-approval','waiting-question'].includes(row.run?.status??''))return 'waiting';
   if(isExecuting(row))return 'running';
   if(row.activity&&row.activity.version>row.activity.seenThrough)return 'unseen';
+  // Residual active rows (e.g. retained unknown runs) stay explainable, never silently pinned.
+  if(row.activity?.active&&!unacceptedStopSettled(row))return 'unknown';
   return null;
 }
-/** The global activity snapshot keeps rows that are active only for an old unknown run; they belong to no reminder group. */
+/** The global activity snapshot keeps rows active only for an old unknown run; they join the pending group as pending confirmation. */
 export function reminderFallbackRows<T extends ConversationSummary>(rows:readonly T[]) {
   const pending:T[]=[],running:T[]=[];
   for(const row of rows){
@@ -60,9 +63,8 @@ export function orderActivityItems<T extends {id:string;state:ActivityState;upda
   return [...items].sort((a,b)=>priority(a)-priority(b)||(at(a)&&at(b)?at(b)!.localeCompare(at(a)!)||b.id.localeCompare(a.id):0));
 }
 export function conversationMetadata(row:ConversationSummary,workspaceName?:string,modelLabel?:string) {
-  const names:Record<string,string>={codex:'Codex',dsh:'DSH',qoder:'Qoder'};
   const background=[row.run,...row.retainedRuns??[]].some(run=>run&&!run.supersededBy&&run.status==='tools-active');
-  return [background?'后台作业运行中':undefined,workspaceName, row.run?(names[row.run.provider]||row.run.provider):undefined,modelLabel??row.run?.model].filter(Boolean).join(' · ');
+  return [background?'后台作业运行中':undefined,workspaceName, row.run?executionAgentName(row.run.provider):undefined,modelLabel??row.run?.model].filter(Boolean).join(' · ');
 }
 
 /** Preserve the caller's priority order without splitting a workspace by status. */

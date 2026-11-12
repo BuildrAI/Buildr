@@ -343,6 +343,10 @@ export function validateVerificationRegistry(steps: any = verificationSteps): an
     else for (const pattern of item.inputExclusions ?? []) {
       try { normalizeProductPath(pattern); } catch { findings.push({ step: item.id, code: 'invalid_input_exclusion', value: pattern }); }
     }
+    if (item.behaviorOnlyInputs != null && !Array.isArray(item.behaviorOnlyInputs)) findings.push({ step: item.id, code: 'invalid_behavior_only_inputs' });
+    else for (const pattern of item.behaviorOnlyInputs ?? []) {
+      try { normalizeProductPath(pattern); } catch { findings.push({ step: item.id, code: 'invalid_behavior_only_input', value: pattern }); }
+    }
     const classification: any = item.testing;
     if (!classification || typeof classification !== 'object') findings.push({ step: item.id, code: 'missing_testing_classification' });
     else {
@@ -632,6 +636,66 @@ export function estimateVerificationPlan(plan: any, options: any = {}): any  {
   });
 }
 
+// Candidate discovery remains complete. Only the ordinary automatic related
+// execution is budgeted; explicit requests and repair runs retain their scope.
+export function budgetRelatedVerificationPlan(plan: any, request: any): any {
+  if (request.mode !== 'related' || request.checks?.length || request.tags?.length || request.failedFrom) return plan;
+  const limit = 10;
+  const byId = new Map<string, any>(plan.steps.map((step: any) => [step.id, step]));
+  const directTest = (step: any) => (step.reasons ?? []).some((reason: string) => {
+    const [file, pattern] = reason.split(' matches ');
+    return pattern && /\.test\.[cm]?[jt]sx?$/u.test(file) && !pattern.includes('**')
+      && !pattern.includes('full-scope owner')
+      // Shared browser harnesses are not independently modified journeys.
+      && plan.steps.filter((owner: any) => ['Integration', 'E2E'].includes(owner.testing?.executionBoundary)
+        && (owner.reasons ?? []).some((entry: string) => entry.startsWith(`${file} matches `))).length <= 1;
+  });
+  const priority = (step: any) => directTest(step) ? 0
+    : ['Static', 'Unit'].includes(step.testing?.executionBoundary) ? 1
+      : (step.reasons ?? []).some((reason: string) => reason.includes(' matches ') && !reason.includes('full-scope owner')) ? 2 : 3;
+  const cost = (step: any) => Number.isFinite(step.schedulingCostMs) && step.schedulingCostMs > 0
+    ? step.schedulingCostMs : Infinity;
+  const ranked = [...plan.steps].sort((a: any, b: any) =>
+    priority(a) - priority(b) || (cost(a) < cost(b) ? -1 : cost(a) > cost(b) ? 1 : 0) || a.id.localeCompare(b.id));
+  const selected = new Set<string>();
+  const closure = (id: string, result = new Set<string>()): Set<string> => {
+    if (result.has(id)) return result;
+    if (!byId.has(id)) throw new Error(`Missing budget dependency: ${id}`);
+    result.add(id);
+    for (const dependency of byId.get(id).dependsOn ?? []) closure(dependency, result);
+    return result;
+  };
+  const admit = (step: any): boolean => {
+    const additions = [...closure(step.id)].filter(id => !selected.has(id));
+    if (selected.size + additions.length > limit) return false;
+    for (const id of additions) selected.add(id);
+    return true;
+  };
+  for (const step of ranked.filter((item: any) => priority(item) === 0)) admit(step);
+  // Reserve up to two direct behavioral checks, rather than spending all ten
+  // slots on broad static checks. This is a small sampling policy, not coverage.
+  let behavioralSlots = 0;
+  for (const step of ranked.filter((item: any) => ['Integration', 'E2E'].includes(item.testing?.executionBoundary)
+    && priority(item) <= 2)) {
+    if (behavioralSlots >= 2) break;
+    if (selected.has(step.id) || admit(step)) behavioralSlots++;
+  }
+  for (const step of ranked) admit(step);
+  const deferred = plan.steps.filter((step: any) => !selected.has(step.id)).map((step: any) => ({
+    id: step.id, reasons: step.reasons, executionBoundary: step.testing?.executionBoundary,
+    estimatedDurationMs: Number.isFinite(step.schedulingCostMs) && step.schedulingCostMs > 0 ? step.schedulingCostMs : null,
+    reason: 'daily-group-budget: lower priority or dependency closure exceeds remaining slots; not verified',
+  }));
+  return {
+    ...plan,
+    // Preserve dependency/topological order from the complete candidate plan.
+    steps: plan.steps.filter((step: any) => selected.has(step.id)),
+    selectionBudget: { limit, candidateCount: plan.steps.length, selectedCount: selected.size, deferred,
+      policy: 'independently-changed-tests; reserve-two-direct-behavior; foundations, direct, indirect; shorter-first-within-tier',
+      proofScope: 'targeted', fullCoverage: false },
+  };
+}
+
 export function createVerificationPlan(request: any = {}, steps: any = verificationSteps): any  {
   const validation: any = validateVerificationRegistry(steps);
   if (!validation.ok) throw new Error(`Invalid verification registry:\n${validation.findings.map((item: any) => `${item.step}: ${item.code}${item.value ? ` (${item.value})` : ''}`).join('\n')}`);
@@ -649,11 +713,26 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
   const groups: any[] = [...new Set(request.groups ?? [])];
   const excludeGroups: any[] = [...new Set(request.excludeGroups ?? [])];
   const stepIds: any[] = [...new Set(request.stepIds ?? [])];
-  const tags: string[] = [...new Set<string>([...(request.tags ?? []), ...(request.semantic ? semanticTagsForPaths(paths) : [])])];
+  const contentChanges: any = new Map();
+  for (const evidence of request.contentChanges ?? []) {
+    const file = normalizeProductPath(evidence.path);
+    const valid = paths.includes(file) && ['byte-identical', 'additive-exports', 'verification-metadata'].includes(evidence.kind)
+      && /^[a-f0-9]{64}$/u.test(evidence.beforeDigest ?? '') && /^[a-f0-9]{64}$/u.test(evidence.afterDigest ?? '')
+      && (evidence.kind !== 'byte-identical' || evidence.beforeDigest === evidence.afterDigest);
+    if (!valid || contentChanges.has(file)) throw new Error(`Invalid or duplicate content evidence: ${file}`);
+    contentChanges.set(file, evidence);
+  }
+  const semanticPaths = paths.filter(file => !contentChanges.has(file));
+  const tags: string[] = [...new Set<string>([...(request.tags ?? []), ...(request.semantic ? semanticTagsForPaths(semanticPaths) : [])])];
   const knownTags = new Set(steps.flatMap((step: any) => step.tags ?? []));
   for (const tag of request.tags ?? []) if (!knownTags.has(tag)) throw new Error(`Unknown semantic tag: ${tag}`);
   for (const step of steps) {
-    const matched = tags.filter(tag => step.tags?.includes(tag));
+    // Explicit concerns always add coverage. Automatic name hints respect the
+    // same declared unaffected domains as path edges; a provider filename must
+    // not undo its real lifecycle fixture ownership merely by saying "handoff".
+    const inferred = request.semantic ? semanticTagsForPaths(semanticPaths.filter(file =>
+      !(step.inputExclusions ?? []).some((pattern: string) => matchesInput(file, pattern)))) : [];
+    const matched = [...new Set<string>([...(request.tags ?? []), ...inferred])].filter(tag => step.tags?.includes(tag));
     if (!matched.length || !eligible(step) || step.selection === 'explicit-only') continue;
     selected.add(step.id);
     reasons.set(step.id, matched.map(tag => `semantic tag ${tag}`));
@@ -698,7 +777,15 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
     }
   }
   const browserPlan: any = browserPaths.length ? selectBrowserSelectors(browserPaths) : { selectors: [], diagnostics: [] };
-  const selectedBrowsers = new Set<string>(browserPlan.selectors?.includes('all') ? steps.filter((step:any)=>step.browserSelector).map((step:any)=>step.browserSelector) : browserPlan.selectors ?? []);
+  const browserOwnersByPath = new Map<string, Set<string>>();
+  for (const reason of browserPlan.reasons ?? []) {
+    if (!reason.selector) continue;
+    const owners = browserOwnersByPath.get(reason.path) ?? new Set<string>();
+    const selectors = reason.selector === 'all'
+      ? steps.filter((step: any) => step.browserSelector).map((step: any) => step.browserSelector) : [reason.selector];
+    for (const selector of selectors) owners.add(selector);
+    browserOwnersByPath.set(reason.path, owners);
+  }
   for (const diagnostic of browserPlan.diagnostics ?? []) gaps.push({ code: 'browser-selection-gap', ...diagnostic });
   for (const profile of profiles) {
     if (!VERIFICATION_PROFILES.includes(profile)) throw new Error(`Unknown verification profile: ${profile}`);
@@ -721,8 +808,21 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
   const delegatedPaths: any[] = [];
   const mappedPaths: any[] = [];
   const ignoredPaths: any[] = [];
+  const refinements: any[] = [];
   for (const productPath of paths) {
-    const matched: any = steps.filter((item: any) => matchedStepInput(item, productPath, selectedBrowsers));
+    const selectedBrowsers = browserOwnersByPath.get(productPath) ?? new Set<string>();
+    const direct: any[] = steps.filter((item: any) => matchedStepInput(item, productPath, selectedBrowsers));
+    const evidence = contentChanges.get(productPath);
+    // Ownership decides which edges mean behavioral impact. Static/public
+    // contract owners are never removed just because an export is additive.
+    const skipped = evidence ? direct.filter(item =>
+      ['Integration', 'E2E'].includes(item.testing?.executionBoundary)
+      && (item.behaviorOnlyInputs ?? []).some((pattern: string) => matchesInput(productPath, pattern))) : [];
+    const matched: any = direct.filter(item => !skipped.includes(item));
+    if (evidence) refinements.push(Object.freeze({
+      ...evidence, skippedOwnerIds: Object.freeze(skipped.map(item => item.id)),
+      retainedOwnerIds: Object.freeze(matched.map((item: any) => item.id)),
+    }));
     const releaseOwners: any = steps
       .filter((item: any) => item.testing?.primaryIntent === 'Delivery / Release' && ownedStepInput(item, productPath))
       .map((item: any) => item.id);
@@ -804,6 +904,8 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
     groups: Object.freeze(groups),
     excludeGroups: Object.freeze(excludeGroups),
     tags: Object.freeze(tags),
+    refinements: Object.freeze(refinements),
+    contentFallback: paths.length ? 'Paths without bounded content proof retain declared ownership; missing/opaque content and arbitrary refactors are conservative.' : null,
     stepIds: Object.freeze(stepIds),
     scope: Object.freeze({ mode: scopeMode, reasons: Object.freeze(scopeReasons) }),
     delegated: Object.freeze(delegatedPaths),

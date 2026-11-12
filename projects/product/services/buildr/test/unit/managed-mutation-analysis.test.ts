@@ -1,7 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { findManagedMutationViolations } from '../verification/integrity/managed-mutation-analysis.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
+
+test('programmatic credentials have only one narrowly reviewed filesystem writer', () => {
+  const file = 'src/modules/agent-service/persistence/programmatic-credentials.ts';
+  const source = readFileSync(new URL('../../' + file, import.meta.url), 'utf8');
+  const violations = findManagedMutationViolations(source, file);
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /direct mutation in saveToken$/);
+  assert.deepEqual(findManagedMutationViolations(source, file, new Set(['saveToken'])), []);
+  const unrelated = source + '\nfunction unreviewed() { fs.writeFileSync(file, token); }\n';
+  assert.match(findManagedMutationViolations(unrelated, file, new Set(['saveToken']))[0], /direct mutation in unreviewed$/);
+});
 
 test('managed mutations recognize async functions and class methods rather than the preceding reader', () => {
   const source = `function read() { return ''; }

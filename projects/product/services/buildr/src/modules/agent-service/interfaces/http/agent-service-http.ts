@@ -18,6 +18,9 @@ function numberQuery(value: string | null): number | undefined { if (value === n
 
 export function createAgentServiceHttpContribution(resolve: () => AgentService | AgentOperations | Promise<AgentService | AgentOperations>, options: { defaultWorkspace?: () => { rootPath: string }; registeredWorkspaceIds?: () => string[]; runtimeStatus?: () => Promise<unknown>; restartRuntime?: (input: {expectedGeneration:string}) => Promise<unknown>; runtimeAligning?: () => Promise<boolean>; prepareDefaultWorkspace?: () => void } = {}) {
   const { defaultWorkspace, registeredWorkspaceIds = () => [] } = options;
+  // Stable-epoch reuse: when the compact change key is unchanged the overview
+  // projection cannot differ, so polling skips the full aggregate entirely.
+  let activitySummaryCache: { key: string; value: ReturnType<typeof agentActivitySummary> } | undefined;
   const contribution = {
     id: 'agent-service.http', schemas: SCHEMAS, operations: AGENT_SERVICE_HTTP_OPERATIONS,
     async handleTopLevel(context: any) {
@@ -42,34 +45,40 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         const revision = searchParams.get('revision') ?? undefined;
         if (revision !== undefined && !/^[a-f0-9]{64}$/.test(revision)) throw inputError();
         const service = await resolve();
-        const [page, pending] = await Promise.all([
-          service.conversations.listAll(registeredWorkspaceIds(), {activeOnly:true,limit:100}),
-          service.conversations.pendingSummary(),
-        ]);
-        return result('activitySummary', agentActivitySummary(page, pending.conversations, revision));
+        const workspaceIds = registeredWorkspaceIds();
+        const epoch = typeof service.conversations.activityEpoch === 'function' ? await service.conversations.activityEpoch(workspaceIds) : undefined;
+        const cacheKey = epoch === undefined ? undefined : JSON.stringify([workspaceIds, epoch]);
+        let summary: ReturnType<typeof agentActivitySummary>;
+        if (cacheKey !== undefined && activitySummaryCache?.key === cacheKey) summary = activitySummaryCache.value;
+        else {
+          const [page, pending] = await Promise.all([
+            service.conversations.listAll(workspaceIds, {activeOnly:true,limit:100}),
+            service.conversations.pendingSummary(),
+          ]);
+          summary = agentActivitySummary(page, pending.conversations);
+          if (cacheKey !== undefined) activitySummaryCache = { key: cacheKey, value: summary };
+        }
+        return result('activitySummary', revision === summary.revision ? { revision, unchanged: true as const } : summary);
       }
       // 任务按空间的默认工作空间列表沿用单空间入口；其余默认工作空间对话操作同样委派。
       if (pathname === `${prefix}/conversations` || pathname.startsWith(`${prefix}/conversations/`)) {
         return this.handle({ ...context, workspaceId: '@default', suffix: '/agent-conversations' + pathname.slice(`${prefix}/conversations`.length) });
       }
       if (request.method === 'GET') authorizeRead(); else authorizeWrite();
-      query(searchParams, []);
+      const modelAccountsRead = pathname === `${prefix}/model-accounts` && request.method === 'GET';
+      query(searchParams, modelAccountsRead ? ['includeDisabled'] : []);
+      if (modelAccountsRead && searchParams.has('includeDisabled') && !['true','false'].includes(searchParams.get('includeDisabled')!)) throw inputError();
       if (pathname === `${prefix}/default-workspace` && request.method === 'GET' && defaultWorkspace) return result('defaultWorkspace', defaultWorkspace());
       if (pathname === `${prefix}/runtime` && request.method === 'GET' && options.runtimeStatus) return result('runtimeStatus', await options.runtimeStatus());
       if (pathname === `${prefix}/runtime/restart` && request.method === 'POST' && options.restartRuntime) return result('runtimeStatus', await options.restartRuntime(validate('runtimeRestart', await readJsonBody())));
       const service = await resolve();
-      if (pathname === `${prefix}/webhook-settings`) {
-        if (request.method === 'GET') return result('webhookSettings', await service.webhooks.read());
-        if (request.method === 'POST') return result('webhookSettings', await service.webhooks.save(validate('webhookSettingsInput', await readJsonBody())));
-      }
-      if (pathname === `${prefix}/webhook-settings/reveal` && request.method === 'POST') return result('webhookSecret', await service.webhooks.reveal(validate('revision', await readJsonBody())));
-      if (pathname === `${prefix}/webhook-settings/test` && request.method === 'POST') return result('webhookTest', await service.webhooks.test(validate('revision', await readJsonBody())));
       if (pathname === `${prefix}/model-accounts`) {
-        if (request.method === 'GET') return result('modelAccounts', await service.models.accounts.list({refresh:false}));
+        if (request.method === 'GET') return result('modelAccounts', await service.models.accounts.list({refresh:false,includeDisabled:searchParams.get('includeDisabled')==='true'}));
         if (request.method === 'POST') return result('modelAccount', await service.models.accounts.add(validate('addModelAccount', await readJsonBody())), 201);
       }
+      if (pathname === `${prefix}/model-custom/discovery` && request.method === 'POST') return result('modelCustomDiscoveryResult', await service.models.accounts.discoverCustom(validate('modelCustomDiscovery', await readJsonBody())));
       if (pathname === `${prefix}/model-catalog` && request.method === 'GET') return result('modelCatalog', await service.models.catalog.list({refresh:false}));
-      const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-zA-Z0-9_-]{1,100})(?:\/(check|disconnect|login-attempts|preferences|api-key)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
+      const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-zA-Z0-9_-]{1,100})(?:\/(check|disconnect|login-attempts|preferences|api-key|custom)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
       if (accountRoute) {
         const [, accountId, action, attemptId, cancel] = accountRoute;
         if (request.method === 'GET' && !action) return result('modelAccount', await service.models.accounts.read(accountId));
@@ -77,6 +86,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         if (request.method !== 'POST') return null;
         if(action==='preferences'&&!attemptId&&!cancel)return result('modelAccount',await service.models.accounts.preferences(accountId,validate('modelPreferences',await readJsonBody())));
         if(action==='api-key'&&!attemptId&&!cancel)return result('modelAccount',await service.models.accounts.configure(accountId,validate('modelApiKey',await readJsonBody())));
+        if(action==='custom'&&!attemptId&&!cancel)return result('modelAccount',await service.models.accounts.configureCustom(accountId,validate('modelCustomConfigure',await readJsonBody())));
         const body = validate('revision', await readJsonBody());
         if (action === 'check') return result('modelAccount', await service.models.accounts.check(accountId, body));
         if (action === 'disconnect') return result('modelAccount', await service.models.accounts.disconnect(accountId, body));
@@ -141,9 +151,10 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       }
       if (suffix === '/agent-conversations') {
         if (request.method === 'GET') {
-          query(searchParams, ['taskId', 'cursor', 'limit', 'hidden', 'query']);
-          if (searchParams.has('hidden') && !['true', 'false'].includes(searchParams.get('hidden'))) throw inputError();
-          return result('conversations', await service.conversations.list(workspaceId, { taskId: searchParams.get('taskId') ?? undefined, workspaceIds:[...new Set([...registeredWorkspaceIds(),workspaceId])], cursor: searchParams.get('cursor') ?? undefined, limit: numberQuery(searchParams.get('limit')), hidden: searchParams.get('hidden') === 'true', query: searchParams.get('query') ?? undefined }));
+          query(searchParams, ['taskId', 'cursor', 'limit', 'hidden', 'query', 'active', 'attention', 'fields']);
+          for (const key of ['hidden', 'active', 'attention']) if (searchParams.has(key) && !['true', 'false'].includes(searchParams.get(key)!)) throw inputError();
+          if (searchParams.has('fields') && searchParams.get('fields') !== 'summary') throw inputError();
+          return result('conversations', await service.conversations.list(workspaceId, { taskId: searchParams.get('taskId') ?? undefined, workspaceIds:[...new Set([...registeredWorkspaceIds(),workspaceId])], cursor: searchParams.get('cursor') ?? undefined, limit: numberQuery(searchParams.get('limit')), hidden: searchParams.get('hidden') === 'true', query: searchParams.get('query') ?? undefined, active: searchParams.get('active') === 'true', attention: searchParams.get('attention') === 'true', fields: searchParams.get('fields') === 'summary' ? 'summary' : undefined }));
         }
         query(searchParams, []);
         if (request.method === 'POST') {
@@ -167,12 +178,12 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       }
       const historyMatch=suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})\/history-source$/);
       if(historyMatch&&request.method==='GET'){
-        query(searchParams,['sourceId','roundId','cursor','limit']);
-        return result('historyPage',await service.conversations.readHistory(workspaceId,historyMatch[1],validate('historyQuery',{sourceId:searchParams.get('sourceId'),roundId:searchParams.get('roundId')??undefined,cursor:numberQuery(searchParams.get('cursor')),limit:numberQuery(searchParams.get('limit'))})));
+        query(searchParams,['sourceId','roundId','cursor','limit','view']);
+        return result('historyPage',await service.conversations.readHistory(workspaceId,historyMatch[1],validate('historyQuery',{sourceId:searchParams.get('sourceId'),roundId:searchParams.get('roundId')??undefined,cursor:numberQuery(searchParams.get('cursor')),limit:numberQuery(searchParams.get('limit')),view:searchParams.get('view')??undefined})));
       }
       const detailMatch=suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})\/entry-detail\/([^/]+)$/);
       if(detailMatch&&request.method==='GET'){query(searchParams,['revision','sourceId']);const revision=searchParams.get('revision');if(!revision||!(/^[a-f0-9]{64}$/).test(revision))throw inputError();let entryId:string;try{entryId=decodeURIComponent(detailMatch[2]);}catch{throw inputError();}if(!entryId||entryId.length>1024)throw inputError();return result('entry',await service.conversations.readEntry(workspaceId,detailMatch[1],entryId,revision,searchParams.get('sourceId')??undefined));}
-      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(webhook-replay|fork|prepare-send|send|supplement|pending-send|cancel-pending-send|generate-title|children|seen|observe|stop|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
+      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(fork|prepare-send|send|messages|supplement|pending-send|cancel-pending-send|generate-title|children|seen|observe|observe-run|stop|stop-all|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
       if (!match) return null;
       const [, id, action, childId, reply] = match;
       if (request.method === 'GET') {
@@ -210,15 +221,33 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (action === 'children' && !childId) return result('conversation',await service.conversations.createChild(workspaceId,id,validate('createChild',await readJsonBody())),201);
       if (action === 'prepare-send') return result('preview', await service.conversations.prepareHandoff(workspaceId, id, validate('draft', await readJsonBody(128 * 1024))));
       if (action === 'send') return result('sent', await service.conversations.send(workspaceId, id, validate('send', await readJsonBody(128 * 1024))), 202);
+      if (action === 'messages') {
+        const input = validate('messages', await readJsonBody(128 * 1024));
+        const view = await service.conversations.read(workspaceId, id);
+        const lastRun = view.run ?? view.retainedRuns?.at(-1);
+        const participant = lastRun ? view.participants.find(item => item.id === lastRun.participantId) : undefined;
+        if (!lastRun || !participant) throw new AgentServiceError('agent_conversation_idle', '对话尚无可复用的执行选择，请先发送首条消息。', 409);
+        const expectedRevision = input.expectedRevision ?? view.revision;
+        // A single-step continuation inherits the latest run's authorization
+        // unless the caller explicitly selects a mode for this round.
+        const permissionMode: 'default' | 'full-access' = input.permissionMode ?? lastRun.permissionMode ?? 'default';
+        const selection = { connectionId: participant.connectionId, permissionMode,
+          ...(lastRun.modelAccountId ? { modelAccountId: lastRun.modelAccountId } : {}), ...(lastRun.model ? { model: lastRun.model } : {}), ...(lastRun.serviceTier ? { serviceTier: lastRun.serviceTier } : {}), ...(lastRun.reasoningEffort ? { reasoningEffort: lastRun.reasoningEffort } : {}) };
+        // send() re-runs prepare atomically. Omitting the preview token keeps
+        // the running-conflict check (agent_native_supplement_required) intact;
+        // a separate prepare would only duplicate work and race the send.
+        return result('sent', await service.conversations.send(workspaceId, id, { text: input.text, expectedRevision, ...selection, clientRequestId: input.clientRequestId }), 202);
+      }
       if (action === 'pending-send') return result('conversation', await service.conversations.queueSend(workspaceId, id, validate('queueSend', await readJsonBody(128 * 1024))), 202);
       if (action === 'cancel-pending-send') return result('conversation', await service.conversations.cancelPendingSend(workspaceId, id, validate('cancelPendingSend', await readJsonBody())));
-      if (action === 'webhook-replay') return result('webhookReplayed', await service.conversations.replayWebhook(workspaceId,id,validate('webhookReplay',await readJsonBody())));
       if (action === 'supplement') return result('supplemented', await service.conversations.supplement(workspaceId, id, validate('supplement', await readJsonBody(128 * 1024))), 202);
       if (action === 'seen') return result('seenResult',await service.conversations.markSeen(workspaceId,id,validate('seen',await readJsonBody())));
       if (action === 'observe') { validate('empty', await readJsonBody()); return result('conversation', await service.conversations.observe(workspaceId, id)); }
       if (action === 'observe-run') return result('conversation',await service.conversations.observeRun(workspaceId,id,validate('control',await readJsonBody())));
+      if (action === 'settle-retained-run') return result('conversation',await service.conversations.settleRetainedRun(workspaceId,id,validate('control',await readJsonBody())));
       if (action === 'fork') return result('conversation', await service.conversations.fork(workspaceId, id, validate('fork', await readJsonBody())), 201);
       if (action === 'generate-title') return result('conversation', await service.conversations.generateTitle(workspaceId, id, validate('revision', await readJsonBody())));
+      if (action === 'stop-all') return result('conversation', await service.conversations.stopAll(workspaceId,id,validate('stopAll',await readJsonBody())));
       if (action === 'stop') return result('conversation', await service.conversations.stop(workspaceId, id, validate('stop', await readJsonBody())));
       if (action === 'requests' && childId && reply) return result('conversation', await service.conversations.reply(workspaceId, id, childId, validate('reply', await readJsonBody())));
       if (action === 'attachments' && !childId) {

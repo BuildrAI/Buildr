@@ -141,11 +141,15 @@ export default {
     "inputExclusions": []
   },
 "repository-onboarding": {
+    "behaviorOnlyInputs": ["services/*/tools/testing/verification-checks.ts"],
     "inputs": [
       "buildr",
       "tools/development/run-development-cli",
       "test/verification/onboarding/repository.ts",
-      "services/**",
+      "services/*/package.json",
+      "services/*/package-lock.json",
+      "services/*/tsconfig*.json",
+      "services/*/tools/**",
       "package.json",
       "package-lock.json",
       "README.md"

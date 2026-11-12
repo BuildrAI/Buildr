@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { continuationDraft, stoppedContinuation } from '../../src/domain/conversation-continuation.ts';
+import { continuationDraft, continuationPrompt, stoppedContinuation } from '../../src/domain/conversation-continuation.ts';
 import { messageSignature } from '../../src/domain/conversation-activity.ts';
 import type { StoredConversation } from '../../src/domain/agent-state.ts';
 import type { ConversationEntry, SendDraft } from '../../src/contracts.ts';
@@ -12,6 +12,26 @@ const record = (entries: ConversationEntry[]): StoredConversation => ({
   view: { entries, run: undefined, requests: [] }, participants: [], attempts: [{ runId: 'run-1', participantId: 'p', executionRef: 'exec', through: 1 }], sources: {},
 } as unknown as StoredConversation);
 const send = { text: '', conversationId: 'c', clientRequestId: 'r', expectedRevision: '1', continueRunId: 'run-1' } as unknown as SendDraft;
+
+test('continuation prompt follows the chain to the first real user input and never guesses', () => {
+  const base = record([
+    message(1, { id: 'original-input', role: 'user', text: '原始要求', runId: 'source' }),
+    { id: 'first-continuation', sequence: 2, kind: 'notice', role: 'system', text: '已请求继续上次执行。', runId: 'middle', createdAt: '2026-11-01T00:00:00Z' },
+    { id: 'second-continuation', sequence: 3, kind: 'notice', role: 'system', text: '已请求继续上次执行。', runId: 'current', createdAt: '2026-11-01T00:00:00Z' },
+  ]);
+  base.attempts = [
+    { clientRequestId: 'source', inputDigest: 'd', runId: 'source', participantId: 'p', through: 1, userEntryId: 'original-input', accepted: true },
+    { clientRequestId: 'middle', inputDigest: 'd', runId: 'middle', participantId: 'p', through: 2, userEntryId: 'first-continuation', accepted: true, continuationOf: 'source' },
+    { clientRequestId: 'current', inputDigest: 'd', runId: 'current', participantId: 'p', through: 3, userEntryId: 'second-continuation', accepted: true, continuationOf: 'middle' },
+  ];
+  assert.deepEqual(continuationPrompt(base, 'current'), { runId: 'source', userEntryId: 'original-input', prompt: base.view.entries[0] });
+  const orphan = structuredClone(base);
+  orphan.attempts[2]!.continuationOf = 'missing';
+  assert.equal(continuationPrompt(orphan, 'current'), undefined);
+  const loop = structuredClone(base);
+  loop.attempts[2]!.continuationOf = 'current';
+  assert.equal(continuationPrompt(loop, 'current'), undefined);
+});
 
 test('a run that only produced thinking still counts as unanswered when the user continues', () => {
   const run = { id: 'run-1', participantId: 'p', accepted: true, status: 'completed', tools: [], startedAt: '2026-11-01T00:00:00Z' } as never;

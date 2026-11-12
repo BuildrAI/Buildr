@@ -1,5 +1,6 @@
-import { inspectChangeChecklist, parseChangeChecklistText } from './application/change-checklist.ts';
-import { createChangeQuery, type ProjectQuery } from './application/change-query.ts';
+import { createOpenSpecQuery, OPENSPEC_QUERY } from './query.ts';
+import type { ProjectQuery } from './application/change-query.ts';
+export { OPENSPEC_QUERY } from './query.ts';
 export type { ChangeQuery, ChangeModel, ChangeLifecycle, Project, PrototypePage, PrototypeDiagnostic } from './application/change-query.ts';
 export { inspectChangeAsset, readChangeAsset } from './application/change-assets.ts';
 export type { ChangeAsset, ChangeAssetKind, ChangeAssetDiagnostic } from './application/change-assets.ts';
@@ -9,7 +10,6 @@ import { AGENT_ASSETS_OPENSPEC_SUPPORT, createOpenSpecAssetSupport, type OpenSpe
 
 export const OPENSPEC_MODULE_ID = 'openspec';
 export const OPENSPEC_APPLICATION = 'openspec.application';
-export const OPENSPEC_QUERY = 'openspec.query';
 
 type OpenSpecApplication = ReturnType<typeof registerOpenSpecApplication>;
 type CliApplication = Pick<OpenSpecApplication, 'openspecConverge' | 'openspecConvergencePreflight' | 'openspecConvergenceInspect'>;
@@ -87,11 +87,7 @@ export function createOpenSpecModule(runtime: OpenSpecRuntime) {
       const composition: OpenSpecRuntime = Object.assign(Object.create(runtime), support);
       const registered = registerOpenSpecApplication(composition, { projectQuery: requires[WORKSPACE_QUERY] });
       const application = methodPort(registered, APPLICATION_METHODS);
-      const query = Object.freeze({
-        ...createChangeQuery(requires[WORKSPACE_QUERY]),
-        inspectChangeChecklist,
-        parseChangeChecklistText,
-      });
+      const query = createOpenSpecQuery(requires[WORKSPACE_QUERY]);
       return Object.freeze({
         provides: {
           [OPENSPEC_APPLICATION]: application,

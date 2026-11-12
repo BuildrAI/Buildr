@@ -7,12 +7,15 @@ import { createCodexExecutor } from './codex/index.ts';
 import { createDshExecutor } from './dsh/index.ts';
 import { createQoderExecutor } from './qoder/index.ts';
 import { createQoderCnExecutor } from './qoder-cn/index.ts';
-export { createCodexExecutor, createDshExecutor, createQoderExecutor, createQoderCnExecutor };
+import { createClaudeExecutor } from './claude/index.ts';
+import { readClaudeTool } from './claude/content.ts';
+export { createCodexExecutor, createDshExecutor, createQoderExecutor, createQoderCnExecutor, createClaudeExecutor };
 /** Only real, explicitly supported providers are installed. */
-export function createNativeExecutors(): AgentExecutor[] { return [createCodexExecutor(), createDshExecutor(), createQoderExecutor(), createQoderCnExecutor()]; }
+export function createNativeExecutors(): AgentExecutor[] { return [createCodexExecutor(), createDshExecutor(), createQoderExecutor(), createQoderCnExecutor(), createClaudeExecutor()]; }
 
 /** Each provider owns its native record format and detail projection. */
 export function readNativeTool(root:string,reference:NativeToolContent) {
+  if(reference.provider==='claude-code')return readClaudeTool(root,reference);
   if(reference.provider==='codex')return readCodexTool(root,reference);
   if(reference.provider==='dsh')return readDshTool(root,reference);
   if(reference.provider==='qoder')return readQoderTool(root,reference);

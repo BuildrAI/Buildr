@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
 import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, qoderGatewaySettings, type ExecutorGateway } from '../../../src/executors/model-gateway.ts';
 import { writeGatewayPatch, DshRuntime } from '../../../src/executors/dsh/index.ts';
 import { createCodexExecutor } from '../../../src/executors/codex/index.ts';
@@ -51,10 +53,36 @@ test('Codex gateway consumes a private catalog and can run without an OpenAI acc
     assert.equal(launch.key, lease.apiKey);
     assert.ok(launch.args.includes('model_providers.buildr-models.requires_openai_auth=false'));
     assert.ok(!launch.args.join(' ').includes(lease.apiKey));
-    const catalog = JSON.parse(await readFile(join(root, 'codex-home/buildr-model-catalog.json'), 'utf8'));
+    // The lease-specific catalog lives in the lease root, not the shared native home.
+    const catalog = JSON.parse(await readFile(join(root, 'buildr-model-catalog.json'), 'utf8'));
     assert.equal(catalog.models[0].slug, lease.models[0].id);
     assert.equal(catalog.models[0].context_window, 200000);
+    await assert.rejects(readFile(join(root, 'codex-home/buildr-model-catalog.json')), { code: 'ENOENT' });
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
+});
+test('Codex gateway leases share one home per connection; lease files stay out of the shared home', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-shared-home-'));
+  let a: Awaited<ReturnType<ReturnType<typeof createCodexExecutor>['open']>> | undefined;
+  let b: Awaited<ReturnType<ReturnType<typeof createCodexExecutor>['open']>> | undefined;
+  try {
+    const shared = join(root, 'connections', 'codex');
+    const leaseA = join(shared, 'model-bindings', 'lease-a');
+    const leaseB = join(shared, 'model-bindings', 'lease-b');
+    const executable = join(root, 'codex.mjs');
+    const source = (await readFile(new URL('./fixtures/codex-cli.mjs', import.meta.url), 'utf8')).replace("if(m.method==='initialize'){", "if(m.method==='initialize'){fs.writeFileSync(path.join(process.env.CODEX_HOME,'launch.json'),JSON.stringify({home:process.env.CODEX_HOME}));");
+    await writeFile(executable, source);
+    a = await createCodexExecutor().open({ connectionId: 'codex', configRoot: leaseA, nativeAccountConfigRoot: shared, executable, environment: { PATH: process.env.PATH ?? '' }, gateway: lease });
+    b = await createCodexExecutor().open({ connectionId: 'codex', configRoot: leaseB, nativeAccountConfigRoot: shared, executable, environment: { PATH: process.env.PATH ?? '' }, gateway: lease });
+    // Both leases resolve to the same shared native home, not a per-lease home.
+    const launch = JSON.parse(await readFile(join(shared, 'codex-home/launch.json'), 'utf8'));
+    assert.equal(launch.home, join(shared, 'codex-home'));
+    await assert.rejects(readFile(join(leaseA, 'codex-home/launch.json')), { code: 'ENOENT' });
+    await assert.rejects(readFile(join(leaseB, 'codex-home/launch.json')), { code: 'ENOENT' });
+    // Lease-specific catalogs live in each lease root, never in the shared home.
+    assert.ok(JSON.parse(await readFile(join(leaseA, 'buildr-model-catalog.json'), 'utf8')).models.length);
+    assert.ok(JSON.parse(await readFile(join(leaseB, 'buildr-model-catalog.json'), 'utf8')).models.length);
+    await assert.rejects(readFile(join(shared, 'codex-home/buildr-model-catalog.json')), { code: 'ENOENT' });
+  } finally { await a?.close(); await b?.close(); await rm(root, { recursive: true, force: true }); }
 });
 test('Qoder SDK uses the query-local direct provider for every model purpose without changing native account settings', { timeout: 15000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-gateway-')); let runtime: Awaited<ReturnType<ReturnType<typeof createQoderExecutor>['open']>> | undefined;
@@ -131,4 +159,102 @@ test('Qoder rejects an unavailable external model route before any work input is
     const contextRef = await runtime.createContext({ cwd: root });
     await assert.rejects(runtime.send({ contextRef, cwd: root, text: 'must not reach native work', images: [], model: lease.models[0].id, clientRequestId: '1bc40922-e013-4f49-a502-cfcff95fb7cd', onEvent() { assert.fail('preflight failure emitted work'); } }), /qoder_gateway_model_unavailable/);
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
+});
+test('Codex forks within one shared home without copying the source rollout', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-shared-fork-'));
+  let source: Awaited<ReturnType<ReturnType<typeof createCodexExecutor>['open']>> | undefined;
+  let target: Awaited<ReturnType<ReturnType<typeof createCodexExecutor>['open']>> | undefined;
+  try {
+    const executable = join(root, 'codex.mjs');
+    await writeFile(executable, await readFile(new URL('./fixtures/codex-cli.mjs', import.meta.url)));
+    const shared = join(root, 'connections', 'codex');
+    await mkdir(join(shared, 'codex-home'), { recursive: true });
+    const parent = { id: 'parent', cwd: root, turns: ['one', 'two'].map(id => ({ id, status: 'completed', items: [{ id: 'answer-' + id, type: 'agentMessage', text: id }] })) };
+    await writeFile(join(shared, 'codex-home', 'state.json'), JSON.stringify({ parent }));
+    const open = (leaseName: string) => createCodexExecutor().open({ connectionId: 'codex', configRoot: join(shared, 'model-bindings', leaseName), nativeAccountConfigRoot: shared, executable, environment: { PATH: process.env.PATH ?? '' } });
+    source = await open('lease-a');
+    const ref = (source as any).context('parent', root);
+    target = await open('lease-b');
+    let known = '';
+    const child = await target.forkContext!({ source, contextRef: ref, cwd: root, executionRef: { id: 'one' }, itemId: 'answer-one', onCreated(value: { id: string }) { known = value.id; } });
+    assert.equal(known, child.id); assert.notEqual(child.id, ref.id); assert.ok(known.startsWith('fork-'));
+    assert.deepEqual((await target.readHistory({ contextRef: child, cwd: root })).map(item => item.text), ['one']);
+    assert.equal((await source.readHistory({ contextRef: ref, cwd: root })).length, 2);
+    // Same shared home: no per-lease native home and no imported rollout copy.
+    await assert.rejects(readFile(join(shared, 'model-bindings', 'lease-a', 'codex-home', 'state.json')), { code: 'ENOENT' });
+    await assert.rejects(readFile(join(shared, 'model-bindings', 'lease-b', 'codex-home', 'state.json')), { code: 'ENOENT' });
+    const files = await readdir(join(shared, 'codex-home', 'sessions'));
+    assert.equal(files.filter(file => file.startsWith('parent')).length, 1, 'the source rollout is not duplicated');
+    assert.ok(files.some(file => file.startsWith('fork-')), 'the fork lives in the same shared home');
+  } finally { await source?.close(); await target?.close(); await rm(root, { recursive: true, force: true }); }
+});
+test('Codex gateway and native login use one root sequentially without touching auth.json', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-same-root-'));
+  let gatewayRuntime: Awaited<ReturnType<ReturnType<typeof createCodexExecutor>['open']>> | undefined;
+  let nativeRuntime: Awaited<ReturnType<ReturnType<typeof createCodexExecutor>['open']>> | undefined;
+  try {
+    const executable = join(root, 'codex.mjs');
+    await writeFile(executable, await readFile(new URL('./fixtures/codex-cli.mjs', import.meta.url)));
+    const shared = join(root, 'connections', 'codex');
+    await mkdir(join(shared, 'codex-home'), { recursive: true });
+    const auth = join(shared, 'codex-home', 'auth.json');
+    await writeFile(auth, 'native-credential');
+    // Gateway mode first: credentials travel by lease key, never through auth.json.
+    gatewayRuntime = await createCodexExecutor().open({ connectionId: 'codex', configRoot: join(shared, 'model-bindings', 'lease'), nativeAccountConfigRoot: shared, executable, environment: { PATH: process.env.PATH ?? '' }, gateway: lease });
+    assert.equal((await gatewayRuntime.inspectAccount()).status, 'ready');
+    assert.equal(await readFile(auth, 'utf8'), 'native-credential');
+    await gatewayRuntime.close(); gatewayRuntime = undefined;
+    // Native login second on the same root: home continuity, auth.json still untouched.
+    nativeRuntime = await createCodexExecutor().open({ connectionId: 'codex', configRoot: shared, executable, environment: { PATH: process.env.PATH ?? '' } });
+    assert.equal((await nativeRuntime.inspectAccount()).status, 'ready');
+    assert.equal(await readFile(auth, 'utf8'), 'native-credential');
+    await assert.rejects(readFile(join(shared, 'model-bindings', 'lease', 'codex-home', 'auth.json')), { code: 'ENOENT' });
+  } finally { await gatewayRuntime?.close(); await nativeRuntime?.close(); await rm(root, { recursive: true, force: true }); }
+});
+// Explicit opt-in exercises the real managed program against a local synthetic model only.
+if (process.env.BUILDR_CODEX_FORK_EXECUTABLE) test('real Codex resumes a real turn across processes on one shared home', { timeout: 90_000 }, async () => {
+  const root = await realpath(await mkdtemp('/tmp/buildr-shared-home-resume-'));
+  let calls = 0;
+  let a: Awaited<ReturnType<ReturnType<typeof createCodexExecutor>['open']>> | undefined;
+  let b: Awaited<ReturnType<ReturnType<typeof createCodexExecutor>['open']>> | undefined;
+  const server = createServer(async (request, response) => {
+    for await (const _chunk of request) { /* drain input without inspecting it */ }
+    calls++;
+    const id = 'response-' + calls, item = { id: 'message-' + calls, type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'Synthetic answer ' + calls, annotations: [] }] };
+    response.writeHead(200, { 'content-type': 'text/event-stream' });
+    for (const event of [
+      { type: 'response.created', response: { id, status: 'in_progress', output: [] } },
+      { type: 'response.output_item.added', output_index: 0, item: { ...item, status: 'in_progress', content: [] } },
+      { type: 'response.output_text.delta', item_id: item.id, output_index: 0, content_index: 0, delta: 'Synthetic answer ' + calls },
+      { type: 'response.output_item.done', output_index: 0, item },
+      { type: 'response.completed', response: { id, status: 'completed', output: [item], usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } } },
+    ]) response.write('event: ' + event.type + '\ndata: ' + JSON.stringify(event) + '\n\n');
+    response.end();
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  const shared = join(root, 'connections', 'codex');
+  const open = (leaseName: string) => createCodexExecutor().open({ connectionId: 'codex', configRoot: join(shared, 'model-bindings', leaseName), nativeAccountConfigRoot: shared, executable: process.env.BUILDR_CODEX_FORK_EXECUTABLE, environment: { PATH: process.env.PATH ?? '' },
+    gateway: { identity: 'synthetic-' + leaseName, baseUrl: 'http://127.0.0.1:' + address.port, apiKey: 'synthetic-key', models: [{ id: 'synthetic-model', label: 'Synthetic model', isDefault: true, tools: false }] } });
+  try {
+    a = await open('lease-a');
+    const ref = await a.createContext({ cwd: root });
+    await a.send({ contextRef: ref, cwd: root, text: 'Synthetic question 1', images: [], clientRequestId: randomUUID(), onEvent() {} });
+    assert.equal(calls, 1, 'the first turn made exactly one synthetic model request');
+    await a.close(); a = undefined;
+    // A different process on the SAME shared home resumes the real turn from the shared rollout.
+    b = await open('lease-a');
+    await b.resumeContext({ contextRef: ref, cwd: root });
+    const history = await b.readHistory({ contextRef: ref, cwd: root });
+    assert.ok(history.some(item => item.text === 'Synthetic question 1'), 'cross-process resume reads the original question');
+    assert.ok(history.some(item => item.text === 'Synthetic answer 1'), 'cross-process resume reads the original answer');
+    await b.send({ contextRef: ref, cwd: root, text: 'Synthetic question 2', images: [], clientRequestId: randomUUID(), onEvent() {} });
+    assert.equal(calls, 2);
+    const continued = await b.readHistory({ contextRef: ref, cwd: root });
+    assert.ok(continued.some(item => item.text === 'Synthetic answer 2'), 'the resumed context continues in the second process');
+  } finally {
+    await a?.close(); await b?.close();
+    server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
+    await rm(root, { recursive: true, force: true });
+  }
 });

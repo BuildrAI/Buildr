@@ -2,6 +2,7 @@
 import { Lexer, Marked } from 'marked';
 import { decodeHTML } from 'entities';
 import { markdownDestination } from './lib/markdownDestination.ts';
+import { localFilePath } from './lib/localFileLink.ts';
 import { copyText } from './lib/copyText.ts';
 import { cachedDiagramSvg, setDiagramSvg } from './lib/markdownDiagramSvg.ts';
 /** Failed destinations stay textual across re-renders; a new document load starts with a clean view. */
@@ -26,7 +27,7 @@ export type MarkdownRenderOptions = {
 
 function resolveSafeHref(href, { allowRelativeLinks = false, allowParentRelativeLinks = false, allowAbsoluteFileLinks = false } = {}) {
   const value = markdownDestination(String(href ?? ''));
-  if (!value) return null;
+  if (!value) return { error: '链接目的地为空或包含非法字符' };
 
   if (/^https?:\/\//i.test(value)) {
     try {
@@ -35,16 +36,24 @@ function resolveSafeHref(href, { allowRelativeLinks = false, allowParentRelative
         return { href: value, external: true };
       }
     } catch {
-      return null;
+      return { error: '链接地址无效' };
     }
-    return null;
+    return { error: '链接地址无效' };
   }
 
-  if (!allowRelativeLinks) return null;
-  if (allowAbsoluteFileLinks && (/^\/(?!\/)/.test(value) || /^[a-z]:[\\/]/i.test(value)) && !/[\0\r\n]/.test(value)) return {href:value,external:false};
+  if (/^file:/i.test(value)) {
+    const path = localFilePath(value);
+    if (!path) return { error: '仅支持本机 file:// 文件链接' };
+    if (!allowAbsoluteFileLinks) return { error: '当前视图不允许打开本地文件' };
+    return { href: path, external: false, localFile: true };
+  }
+
+  if (!allowRelativeLinks) return { error: '当前视图不允许打开此链接' };
+  if (allowAbsoluteFileLinks && (/^\/(?!\/)/.test(value) || /^[a-z]:[\\/]/i.test(value)) && !/[\0\r\n]/.test(value)) return {href:value,external:false,localFile:true};
+  if (value.startsWith('//')) return { error: '不支持协议相对链接' };
   const citation = /^[^:?#]+:[1-9]\d*(?::[1-9]\d*)?$/.test(value);
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value) && !citation) return null;
-  if (value.startsWith('//') || value.startsWith('/') || value.includes('\\')) return null;
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value) && !citation) return { error: '不支持此链接协议' };
+  if (value.startsWith('/') || value.includes('\\')) return { error: '链接路径包含非法字符' };
 
   const hashIndex = value.indexOf('#');
   const queryIndex = value.indexOf('?');
@@ -54,10 +63,10 @@ function resolveSafeHref(href, { allowRelativeLinks = false, allowParentRelative
   const pathPart = value.slice(0, pathEnd);
   const suffix = value.slice(pathEnd);
   const segments = pathPart.split('/');
-  if (!allowParentRelativeLinks && segments.some((segment) => segment === '..')) return null;
+  if (!allowParentRelativeLinks && segments.some((segment) => segment === '..')) return { error: '链接路径超出允许范围' };
 
   const normalizedPath = segments.filter((segment) => segment && segment !== '.').join('/');
-  if (!normalizedPath && !suffix.startsWith('#')) return null;
+  if (!normalizedPath && !suffix.startsWith('#')) return { error: '链接目的地无效' };
   // A root filename with a line suffix must not become a browser URL scheme.
   return { href: `${citation ? './' : ''}${normalizedPath}${suffix}`, external: false };
 }
@@ -76,6 +85,23 @@ function inlineText(tokens) {
   return tokens.map(token => token.tokens ? inlineText(token.tokens) : ['codespan', 'html'].includes(token.type) ? token.text : decodeHTML(token.text || '')).join('');
 }
 
+function linkFallback(doc, tokens, destination, reason, linkOptions) {
+  const fallback = doc.createElement('span');
+  fallback.className = 'markdown-link-fallback';
+  fallback.setAttribute('title', `${reason}：${destination}`);
+  const label = doc.createElement('span');
+  label.className = 'markdown-link-fallback-label';
+  appendInline(label, tokens, doc, linkOptions);
+  const note = doc.createElement('span');
+  note.className = 'markdown-link-fallback-note';
+  note.append(doc.createTextNode(`（${reason}：`));
+  const path = doc.createElement('code');
+  path.textContent = destination;
+  note.append(path, doc.createTextNode('）'));
+  fallback.append(label, note);
+  return fallback;
+}
+
 function appendInline(parent, tokens, doc, linkOptions) {
   for (const token of tokens) {
     if (['strong', 'em', 'del'].includes(token.type)) {
@@ -85,7 +111,7 @@ function appendInline(parent, tokens, doc, linkOptions) {
     } else if (token.type === 'link') {
       const destination = decodeHTML(token.href);
       const resolved = resolveSafeHref(destination, linkOptions);
-      if (!resolved) { parent.append(doc.createTextNode(token.raw)); continue; }
+      if (resolved.error) { parent.append(linkFallback(doc, token.tokens, markdownDestination(destination) ?? destination, resolved.error, linkOptions)); continue; }
       const link = doc.createElement('a');
       link.setAttribute('href', resolved.href);
       if (resolved.external) {
@@ -93,8 +119,8 @@ function appendInline(parent, tokens, doc, linkOptions) {
         link.setAttribute('target', '_blank');
       } else {
         link.className = 'markdown-relative-link';
-        link.setAttribute('data-markdown-href', destination);
-        link.setAttribute('title', `相对路径：${resolved.href}`);
+        link.setAttribute('data-markdown-href', resolved.localFile ? resolved.href : destination);
+        link.setAttribute('title', `${resolved.localFile ? '本地文件' : '相对路径'}：${resolved.href}`);
       }
       appendInline(link, token.tokens, doc, linkOptions);
       parent.append(link);

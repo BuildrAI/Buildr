@@ -63,7 +63,7 @@ test('Qoder normal completion survives automatic source release and reopening wi
   } finally { await reader?.close(); await service.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-test('Qoder native background continuation converges through conversation storage and automatic exact resource release', { timeout: 15000 }, async () => {
+test('Qoder native background continuation converges through conversation storage and automatic exact resource release', { timeout: 15000 }, async t => {
   const { root, executable, open } = await fixture(), service = open();
   try {
     await service.connections.connect('qoder', { expectedRevision: 'unconfigured', executable });
@@ -81,6 +81,20 @@ test('Qoder native background continuation converges through conversation storag
     await until(read, value => value.run?.status === 'tools-active');
     assert.equal(read().run?.resourcesReleased, undefined);
     const config = join(root, 'agent-service/connections/qoder/qoder-config');
+    await writeFile(join(config, 'report-background-progress'), 'yes');
+    const progress = await until(read, value => value.entries.some(entry => entry.text.includes('integration checks are running')));
+    assert.equal(progress.run?.status, 'tools-active');
+    assert.ok(progress.entries.some(entry => entry.runId === runId && entry.text.includes('integration checks are running')));
+    assert.ok(!progress.entries.some(entry => entry.text.includes('foreign background progress')));
+    if (process.getuid) {
+      const sessionId = progress.participants[0].contextId;
+      const jobRoot = join(tmpdir(), `qoder-cli-${process.getuid()}`, 'buildr-test-' + sessionId);
+      t.after(() => rm(jobRoot, {recursive: true, force: true}));
+      const taskDir = join(jobRoot, sessionId, 'tasks');
+      await mkdir(taskDir, {recursive: true});
+      await writeFile(join(taskDir, 'continued-task.output'), 'actual command stdout');
+      await until(read, value => value.entries.some(entry => entry.runId === runId && entry.text.includes('actual command stdout')));
+    }
     await writeFile(join(config, 'continue-background'), 'yes');
     await until(read, value => value.run?.status === 'running' && value.run.tools.some(tool => tool.id === 'continuation-tool'));
     assert.equal(read().run?.id, runId);

@@ -43,6 +43,20 @@ function connectionEvent(revision: string, padding = ''): Omit<ServiceEvent, 'cu
   } } };
 }
 
+test('snapshot queue sizing serializes one shared publication only once', () => {
+  const events = new ConversationEvents('generation-one');
+  const snapshot = { ...change('initial'), type: 'snapshot' as const };
+  events.subscribe(snapshot, () => true);
+  events.subscribe(snapshot, () => true);
+  const event = change('next', 'output');
+  const conversation = event.payload.conversation!;
+  let measured = 0;
+  Object.defineProperty(conversation, 'toJSON', { value: () => { measured++; return { ...conversation }; } });
+  events.publish(event);
+  assert.equal(measured, 1);
+  events.close();
+});
+
 test('the byte limit still closes a slow observer and does not replay an overflowing event', async () => {
   const events = new ConversationEvents('generation-one');
   const subscription = events.subscribe({ ...change('snapshot'), type: 'snapshot' }, () => true);

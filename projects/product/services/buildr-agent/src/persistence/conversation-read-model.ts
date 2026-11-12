@@ -2,10 +2,14 @@ import type { NativeContentReader } from '../storage/native-content.ts';
 import { ConversationEntryStore, type PreparedEntries } from './conversation-entry-store.ts';
 import { createHash } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import type { ConversationEntry } from '../contracts.ts';
-import { unfinishedRun, type StoredConversation } from '../domain/agent-state.ts';
+import type { ConversationEntry, RunView } from '../contracts.ts';
+import { conversationRuns, unfinishedRun, type StoredConversation } from '../domain/agent-state.ts';
+import { continuationPrompt } from '../domain/conversation-continuation.ts';
 
-export type ConversationReadState = Pick<StoredConversation, 'view' | 'participants' | 'attachments'>;
+export type ConversationReadState = Pick<StoredConversation, 'view' | 'participants' | 'attachments'> & {
+  continuations?: Record<string, NonNullable<RunView['continuedFrom']>>;
+  continuationVersion?: 1;
+};
 const busy = "('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active')";
 const tools = (value: string) => `EXISTS(SELECT 1 FROM json_each(${value},'$.tools') AS pending_tool WHERE coalesce(json_extract(pending_tool.value,'$.status'),'unknown')<>'completed')`;
 const retained = `EXISTS(SELECT 1 FROM json_each(NEW.body,'$.view.retainedRuns') AS retained_run WHERE json_extract(retained_run.value,'$.status') IN ${busy} OR ${tools('retained_run.value')})`;
@@ -43,12 +47,16 @@ export class ConversationReadModel {
       END;
       COMMIT;`);
   }
-  static saveHeader(db: DatabaseSync, record: ConversationReadState): void {
+  static saveHeader(db: DatabaseSync, record: StoredConversation): void {
     const view = record.view;
     const common = view.requests.length > 0 || view.retainedRuns?.some(unfinishedRun) || view.run?.tools.some(tool => tool.status !== 'completed');
+    const continuations = Object.fromEntries(conversationRuns(view).flatMap(run => {
+      const continuation = continuationPrompt(record, run.id);
+      return continuation ? [[run.id, continuation]] : [];
+    }));
     db.prepare(`INSERT INTO conversation_read_states(id,revision,updated_at,state,pending,active,title_work) VALUES(?,?,?,?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,updated_at=excluded.updated_at,state=excluded.state,pending=excluded.pending,active=excluded.active,title_work=excluded.title_work,message_revision=NULL`).run(
-      view.id, view.revision, view.updatedAt, JSON.stringify({view: {...view, entries: []}, participants: record.participants, attachments: record.attachments}),
+      view.id, view.revision, view.updatedAt, JSON.stringify({view: {...view, entries: []}, participants: record.participants, attachments: record.attachments, continuations, continuationVersion: 1}),
       Number(Boolean(common || ['unknown', 'tools-active'].includes(view.run?.status ?? ''))),
       Number(Boolean(common || view.run && unfinishedRun(view.run))), Number(view.titleState?.status === 'generating'));
   }
@@ -98,22 +106,83 @@ export class ConversationReadModel {
     // Select only positions/sizes first. Large omitted bodies never cross the database boundary.
     const normalized = ConversationEntryStore.available(db);
     if (normalized) ConversationEntryStore.assertPositions(db, id);
-    const positions = db.prepare(`SELECT sequence,round_id,${bytes} AS bytes FROM conversation_read_entries WHERE conversation_id=? ${normalized ? "AND scope='main'" : ''} AND sequence<? ORDER BY sequence DESC LIMIT ?`).all(id, before ?? Number.MAX_SAFE_INTEGER, (limit ?? 200) + 1) as Array<{sequence: number; round_id: string; bytes: number}>;
-    const rounds = new Set<string>(); let size = 2; const selected: number[] = [];
-    for (const position of positions) {
-      if (selected.length >= (limit ?? 200) || limit === undefined && !rounds.has(position.round_id) && rounds.size >= 5 || selected.length && size + position.bytes + 1 > (compact ? 256 * 1024 : 4 * 1024 * 1024)) break;
-      selected.push(position.sequence); rounds.add(position.round_id); size += position.bytes + 1;
+    const pageBytes = compact ? 256 * 1024 : 4 * 1024 * 1024;
+    const maxSequence = before ?? Number.MAX_SAFE_INTEGER;
+    const positionQuery = db.prepare(`SELECT sequence,round_id,${bytes} AS bytes FROM conversation_read_entries WHERE conversation_id=? ${normalized ? "AND scope='main'" : ''} AND sequence<? ORDER BY sequence DESC LIMIT ?`);
+    type Position = {sequence: number; round_id: string; bytes: number};
+    type NormalizedPageRow = {sequence: number; id: string; compact: string | null; codec: string; body_bytes: number; body: string; content_revision: string};
+    const selected: number[] = [], rounds = new Set<string>();
+    let size = 2, nextEntryCursor: number | undefined;
+    if (limit !== undefined) {
+      const positions = positionQuery.all(id, maxSequence, limit + 1) as Position[];
+      for (const position of positions) {
+        if (selected.length >= limit || selected.length > 0 && size + position.bytes + 1 > pageBytes) break;
+        selected.push(position.sequence); rounds.add(position.round_id); size += position.bytes + 1;
+      }
+      nextEntryCursor = positions.length > selected.length ? selected.at(-1) : undefined;
+    } else {
+      // A default page follows round boundaries. The byte budget still bounds the
+      // response; a fixed entry count must not cut off the current round's input.
+      let cursor = maxSequence, hasMore = false;
+      for (;;) {
+        const positions = positionQuery.all(id, cursor, 512) as Position[];
+        for (const position of positions) {
+          const outsideRoundWindow = !rounds.has(position.round_id) && rounds.size >= 5;
+          const exceedsPageBytes = selected.length > 0 && size + position.bytes + 1 > pageBytes;
+          if (outsideRoundWindow || exceedsPageBytes) {
+            hasMore = true; break;
+          }
+          selected.push(position.sequence); rounds.add(position.round_id); size += position.bytes + 1; cursor = position.sequence;
+        }
+        if (hasMore || positions.length < 512) break;
+      }
+      nextEntryCursor = hasMore ? selected.at(-1) : undefined;
     }
     if (normalized) {
-      const rows = selected.length ? db.prepare(`SELECT e.id,e.compact,c.codec,c.body_bytes,${compact ? 'CASE WHEN e.compact IS NULL THEN c.body END' : 'c.body'} AS body,e.content_revision
+      let rows = selected.length ? db.prepare(`SELECT e.sequence,e.id,e.compact,c.codec,c.body_bytes,${compact ? 'CASE WHEN e.compact IS NULL THEN c.body END' : 'c.body'} AS body,e.content_revision
         FROM conversation_read_entries e LEFT JOIN conversation_entry_contents c
         ON c.conversation_id=e.conversation_id AND c.content_revision=e.content_revision
-        WHERE e.conversation_id=? AND e.scope='main' AND e.sequence>=? AND e.sequence<? ORDER BY e.sequence`).all(id, selected.at(-1)!, before ?? Number.MAX_SAFE_INTEGER) : [];
+        WHERE e.conversation_id=? AND e.scope='main' AND e.sequence>=? AND e.sequence<? ORDER BY e.sequence`).all(id, selected.at(-1)!, maxSequence) as NormalizedPageRow[] : [];
+      if (limit === undefined && before === undefined && selected.length && rounds.size) {
+        // A single oversized round is split by the byte budget. Keep the tail
+        // contiguous for pagination, but pin its first user input so the active
+        // turn can render the prompt before any earlier page is loaded.
+        const roundIds = [...rounds], placeholders = roundIds.map(() => '?').join(',');
+        const prompts = db.prepare(`WITH candidates AS (
+          SELECT e.sequence,e.id,e.compact,c.codec,c.body_bytes,${compact ? 'CASE WHEN e.compact IS NULL THEN c.body END' : 'c.body'} AS body,e.content_revision,
+            row_number() OVER (PARTITION BY e.round_id ORDER BY e.sequence) AS prompt_rank
+          FROM conversation_read_entries e JOIN conversation_entry_contents c
+          ON c.conversation_id=e.conversation_id AND c.content_revision=e.content_revision
+          WHERE e.conversation_id=? AND e.scope='main' AND e.visible=1 AND e.sequence<?
+            AND e.round_id IN (${placeholders})
+            AND c.codec='raw'
+            AND json_extract(c.body,'$.kind')='message' AND json_extract(c.body,'$.role')='user'
+        ) SELECT sequence,id,compact,codec,body_bytes,body,content_revision FROM candidates
+          WHERE prompt_rank=1 ORDER BY sequence`).all(id, selected.at(-1)!, ...roundIds) as NormalizedPageRow[];
+        if (prompts.length) rows = [...prompts, ...rows].sort((left, right) => left.sequence - right.sequence);
+      }
       record.view.entries = rows.map(row => compact && row.compact !== null ? JSON.parse(row.compact as string) : ConversationEntryStore.decode(row as any, reader, row.codec === 'native-tool' || row.compact !== null, row.compact as string));
     } else {
-      record.view.entries = selected.length ? (db.prepare(`SELECT ${column} AS body FROM conversation_read_entries WHERE conversation_id=? AND sequence>=? AND sequence<? ORDER BY sequence`).all(id, selected.at(-1)!, before ?? Number.MAX_SAFE_INTEGER) as Array<{body: string}>).map(row => JSON.parse(row.body)) : [];
+      let rows = selected.length ? db.prepare(`SELECT sequence,${column} AS body FROM conversation_read_entries WHERE conversation_id=? AND sequence>=? AND sequence<? ORDER BY sequence`).all(id, selected.at(-1)!, maxSequence) as Array<{sequence: number; body: string}> : [];
+      if (limit === undefined && before === undefined && selected.length && rounds.size) {
+        const roundIds = [...rounds], placeholders = roundIds.map(() => '?').join(',');
+        const prompts = db.prepare(`WITH candidates AS (
+          SELECT sequence,${column} AS body,
+            row_number() OVER (PARTITION BY round_id ORDER BY sequence) AS prompt_rank
+          FROM conversation_read_entries
+          WHERE conversation_id=? AND sequence<? AND round_id IN (${placeholders})
+            AND json_extract(body,'$.kind')='message' AND json_extract(body,'$.role')='user'
+        ) SELECT sequence,body FROM candidates WHERE prompt_rank=1 ORDER BY sequence`).all(id, selected.at(-1)!, ...roundIds) as Array<{sequence: number; body: string}>;
+        if (prompts.length) rows = [...prompts, ...rows].sort((left, right) => left.sequence - right.sequence);
+      }
+      record.view.entries = rows.map(row => JSON.parse(row.body));
     }
-    record.view.nextEntryCursor = positions.length > selected.length ? selected.at(-1) : undefined;
+    record.view.nextEntryCursor = nextEntryCursor;
+    if (record.continuationVersion !== 1) {
+      const runs = new Set(record.view.entries.flatMap(entry => entry.runId ? [entry.runId] : []));
+      const prompts = new Set(record.view.entries.filter(entry => entry.runId && entry.kind === 'message' && entry.role === 'user').map(entry => entry.runId!));
+      if ([...runs].some(runId => !prompts.has(runId))) return;
+    }
     return record;
   }
 }

@@ -1,6 +1,8 @@
 import { connectAgentProcess, prepareAgentRuntime, stopAgentProcess, AgentServiceError } from '@buildr-ai/buildr-agent';
 import type { AgentRuntimeUnit } from '@buildr-ai/buildr-agent';
 
+const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
 /** Activation proves the exact prepared package, independently of old-process retirement. */
 export async function activateAgentServiceRuntime(input: {dataRoot: string; profileId: string; runtime?: AgentRuntimeUnit; timeoutMs?: number}) {
   let stage='prepare';
@@ -15,11 +17,28 @@ export async function activateAgentServiceRuntime(input: {dataRoot: string; prof
         // The lifecycle owner may drain only proven-idle generations; a busy or
         // uncertain generation rejects this without interrupting its execution.
         stage='release-idle-preparation';
-        await stopAgentProcess({dataRoot:input.dataRoot,profileId:input.profileId,mode:'if-idle'});
-        stage='prepare';runtime=prepareAgentRuntime({dataRoot:input.dataRoot});
+        try { await stopAgentProcess({dataRoot:input.dataRoot,profileId:input.profileId,mode:'if-idle'}); }
+        catch (stopError) {
+          const cannotConfirmIdle = stopError instanceof AgentServiceError
+            ? stopError.code==='agent_process_busy'
+            : ['ABORT_ERR','ECONNREFUSED'].includes(String((stopError as {code?:unknown})?.code)) || (stopError as {name?:unknown})?.name==='AbortError';
+          if (!cannotConfirmIdle) throw stopError;
+          // Busy, stalled or unreachable owner: retain it and wait for the short storage lock
+          // to free so connect can hand the prepared target over through the
+          // retained adoption (/runtime -> pendingRuntime -> adoptParallel).
+          const deadline=Date.now()+30_000;
+          for (;;) {
+            await pause(250);
+            try { runtime=prepareAgentRuntime({dataRoot:input.dataRoot}); break; }
+            catch (retryError) {
+              if (!(retryError instanceof AgentServiceError) || retryError.code!=='agent_process_owned' || Date.now()>=deadline) throw retryError;
+            }
+          }
+        }
+        if (!runtime) { stage='prepare'; runtime=prepareAgentRuntime({dataRoot:input.dataRoot}); }
       }
     }
-    const connect = () => connectAgentProcess({dataRoot: input.dataRoot, profileId: input.profileId, sourceId: 'buildr', legacySourceId: 'buildr', runtime, requireRuntime: true, activationTimeoutMs: input.timeoutMs});
+    const connect = () => connectAgentProcess({dataRoot: input.dataRoot, profileId: input.profileId, sourceId: 'buildr', legacySourceId: 'buildr', runtime, requireRuntime: true, activationTimeoutMs: input.timeoutMs ?? 120_000});
     stage='connect';connection=await connect();
     stage='probe';
     try { await connection.operations.conversations.listAll(['@default'], {limit:1}); }

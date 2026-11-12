@@ -129,10 +129,10 @@ const graph: any = new Map();
 for (const file of sourceFiles) {
   const relative: any = path.relative(sourceRoot, file).split(path.sep).join('/');
   const content: any = fs.readFileSync(file, 'utf8');
-  if (/import\s+\*\s+as\s+platform\b/.test(content) && relative !== 'bootstrap/runtime.ts') {
+  if (/import\s+\*\s+as\s+platform\b/.test(content) && relative !== 'bootstrap/runtime-infrastructure.ts') {
     problems.push(`wide platform namespace import: src/${relative}`);
   }
-  if (relative !== 'bootstrap/runtime.ts' && /from\s+['"][^'"]*infrastructure\/platform\.ts['"]/.test(content)) {
+  if (relative !== 'bootstrap/runtime-infrastructure.ts' && /from\s+['"][^'"]*infrastructure\/platform\.ts['"]/.test(content)) {
     problems.push(`composition-only platform registry import: src/${relative}`);
   }
   if (/const\s+(register[A-Za-z0-9_]+)\s*=\s*\(\.\.\.args\)\s*=>\s*runtime\.\1\(\.\.\.args\)/.test(content)) {

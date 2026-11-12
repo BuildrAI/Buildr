@@ -73,7 +73,11 @@ test('parallel versions retain old controls, dispatch durable next instructions 
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dataRoot,'native-inputs.jsonl'),'utf8').trim()),{text:'continue original execution',version:'old'},'new clients route supplementary input to the original runtime');
     const fresh=await start('new independent work');
     assert.equal(fresh.run?.generation,adopted.identity.generation);
-    first=await observer.operations.conversations.stop(scope,first.id,{expectedRevision:first.revision,runId:first.run!.id,participantId:first.run!.participantId,generation:first.run!.generation});
+    const aggregateStopId=randomUUID(),oldRunId=first.run!.id;
+    first=await observer.operations.conversations.stopAll(scope,first.id,{expectedRevision:first.revision,clientRequestId:aggregateStopId});
+    assert.equal(first.stopRequest?.id,aggregateStopId);assert.deepEqual(first.stopRequest?.runIds,[oldRunId]);
+    assert.equal((await observer.operations.conversations.read(scope,second.id)).run?.status,'running','aggregate stop routes to the exact old owner and keeps its other conversation');
+    first=await until(()=>observer!.operations.conversations.read(scope,first.id),value=>value.run?.status==='tools-active');
     assert.equal(first.run?.status,'tools-active');
     const original=first.run!;
     await main.close();main=undefined;
@@ -95,7 +99,8 @@ test('parallel versions retain old controls, dispatch durable next instructions 
       }catch(error){
         // The no-host pump can update its reason after the observation. Retry
         // only an explicitly rejected edit, never an uncertain send.
-        if(attempt>=2||!['agent_pending_conflict','agent_revision_conflict'].includes((error as {code?:string}).code??''))throw error;
+        if(attempt>=50||!['agent_pending_conflict','agent_revision_conflict'].includes((error as {code?:string}).code??''))throw error;
+        await new Promise<void>(resolve=>setTimeout(resolve,50));
       }
     }
     await assert.rejects(observer.operations.conversations.cancelPendingSend(scope,first.id,{expectedPendingRevision:queuedRevision}),{code:'agent_pending_conflict'});
@@ -117,8 +122,9 @@ test('parallel versions retain old controls, dispatch durable next instructions 
         first=await observer.operations.conversations.cancelPendingSend(scope,first.id,{expectedPendingRevision:first.pendingSend.revision});
         break;
       }catch(error){
-        if(attempt>=2||!['agent_pending_conflict','agent_revision_conflict'].includes((error as {code?:string}).code??''))throw error;
-        first=await observer.operations.conversations.read(scope,first.id);
+        if(attempt>=50||!['agent_pending_conflict','agent_revision_conflict'].includes((error as {code?:string}).code??''))throw error;
+        await new Promise<void>(resolve=>setTimeout(resolve,50));
+        first=await main.call('conversations.read',[scope,first.id]);
       }
     }
     const confirmedRequestId=randomUUID();
@@ -132,16 +138,20 @@ test('parallel versions retain old controls, dispatch durable next instructions 
         // The no-host pump may advance the saved instruction between the read
         // and preview. Retry only an explicit optimistic-concurrency rejection;
         // the fixed request identity keeps the actual send idempotent.
-        if(attempt>=2||!['agent_pending_conflict','agent_revision_conflict'].includes((error as {code?:string}).code??''))throw error;
-        first=await observer.operations.conversations.read(scope,first.id);
+        if(attempt>=50||!['agent_pending_conflict','agent_revision_conflict'].includes((error as {code?:string}).code??''))throw error;
+        await new Promise<void>(resolve=>setTimeout(resolve,50));
+        first=await main.call('conversations.read',[scope,first.id]);
       }
     }
-    first=await until(()=>observer!.operations.conversations.read(scope,first.id),value=>value.run?.generation===adopted.identity.generation&&value.run?.status==='completed');
+    // The new round may complete before a heavily loaded observer can read the
+    // retired generation's live status. Wait for both facts from one snapshot;
+    // delivery still must not wait for the old stop itself.
+    first=await until(()=>observer!.operations.conversations.read(scope,first.id),value=>value.run?.generation===adopted.identity.generation&&value.run?.status==='completed'
+      &&value.retainedRuns?.find(run=>run.id===original.id)?.status==='tools-active',20000);
     const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
     assert.equal(sent.filter(value=>value.text==='queued revised').length,1,`queued revised sends: ${JSON.stringify(sent.filter(value=>value.text==='queued revised'))}`);
     assert.equal(sent.find(value=>value.text==='queued revised').version,'new');
     assert.equal(sent.filter(value=>value.text==='queued original').length,0,`queued original sends: ${JSON.stringify(sent.filter(value=>value.text==='queued original'))}`);
-    assert.equal(first.retainedRuns?.find(run=>run.id===original.id)?.status,'tools-active','delivery must not wait for the old stop');
     fs.writeFileSync(path.join(dataRoot,'finish-stop'),'yes');
     // Withdrawing the saved instruction never replays it behind the explicit send.
     assert.equal((await observer.operations.conversations.lookupRequest(scope,first.id,requestId)).runId,undefined);

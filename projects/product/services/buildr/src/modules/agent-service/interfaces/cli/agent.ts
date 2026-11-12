@@ -3,12 +3,12 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { parseWorkspaceManifest } from '../../../workspace/persistence/workspace-manifest-repository.ts';
 
-const usage = 'buildr agent <send|read|stop|list|reply|continue|supplement|replay> [参数] [--target <workspace> | --workspace-id <id>] [--permission-mode <default|full-access>] [--before <sequence>] [--limit <count>] [--json]';
+const usage = 'buildr agent <send|read|stop|list|reply|continue|supplement> [参数] [--target <workspace> | --workspace-id <id>] [--permission-mode <default|full-access>] [--before <sequence>] [--limit <count>] [--json]';
 function fail(message: string, code = 'agent_cli_input_invalid'): never { throw Object.assign(new Error(message), { code, usage }); }
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 export function parseAgentArgs(action: string, args: string[]) {
-  if (!['send', 'read', 'stop', 'list', 'reply', 'continue', 'supplement', 'replay'].includes(action)) fail('未知的 agent 子命令。');
-  const count = action === 'list' ? 0 : action === 'reply' ? (args[2] && !args[2].startsWith('--') ? 3 : 2) : ['continue','supplement','replay'].includes(action) ? 2 : 1;
+  if (!['send', 'read', 'stop', 'list', 'reply', 'continue', 'supplement'].includes(action)) fail('未知的 agent 子命令。');
+  const count = action === 'list' ? 0 : action === 'reply' ? (args[2] && !args[2].startsWith('--') ? 3 : 2) : ['continue','supplement'].includes(action) ? 2 : 1;
   const values = args.slice(0, count);
   const tail = args.slice(count);
   const value = values[0] ?? '';
@@ -38,7 +38,6 @@ export function parseAgentArgs(action: string, args: string[]) {
   for (const key of ['--before', '--limit']) if (options[key] !== undefined && (!/^\d+$/.test(options[key]) || !Number.isSafeInteger(Number(options[key])) || (key === '--limit' && Number(options[key]) < 1))) fail(`无效分页值：${key}`);
   if (Boolean(options['--conversation']) !== Boolean(options['--skip-questions'])) fail('--conversation 与 --skip-questions 必须同时使用。');
   if (options['--conversation'] && (!uuid.test(options['--conversation']) || ['--model', '--permission-mode'].some(key => options[key]))) fail('跳过问题需要有效对话标识，并沿用原连接、模型与权限。');
-  if(action==='replay'&&!/^[a-f0-9]{64}$/.test(values[1])) fail('事件标识必须为 64 位十六进制 eventId。');
   let answer: unknown = message;
   if (action === 'reply') {
     if (Number(message !== undefined) + Number(selections.length > 0) + Number(options['--answer-json'] !== undefined) !== 1) fail('reply 必须且只能使用文本、--option/--other 或 --answer-json 一种回答方式。');
@@ -52,7 +51,7 @@ export function parseAgentArgs(action: string, args: string[]) {
     }
     if (Buffer.byteLength(JSON.stringify(answer)) > 64 * 1024) fail('回答超过 65536 字节。');
   }
-  return { action, value, options, message, answer, selections, eventId: action==='replay'?values[1]:undefined, requestId: action === 'reply' ? values[1] : undefined };
+  return { action, value, options, message, answer, selections, requestId: action === 'reply' ? values[1] : undefined };
 }
 
 /** Validate against the observed card; never infer IDs from labels or positions. */
@@ -141,7 +140,6 @@ export async function executeAgentCommand(input: ReturnType<typeof parseAgentArg
     }
   }
   const route = `${base}/${encodeURIComponent(options['--conversation'] || value)}`;
-  if(action==='replay') return request(route+'/webhook-replay',{eventId:input.eventId});
   if(action==='supplement') {
     const conversation=await request(route+'/observe',{}), run=conversation.run;
     if(!run?.accepted||!['running','waiting-approval'].includes(run.status)||!run.id||!run.participantId||!run.generation||conversation.pendingSend||conversation.requests?.some((item:any)=>item.runId===run.id&&item.kind==='question')) fail('原执行尚不能接收补充，或已有待发送内容；请先读取对话。');
@@ -187,9 +185,9 @@ export async function executeAgentCommand(input: ReturnType<typeof parseAgentArg
 }
 
 export function createAgentCliContributions(readLocalInstance: () => any = () => undefined) {
-  return ['send', 'read', 'stop', 'list', 'reply', 'continue', 'supplement', 'replay'].map(action => ({
-    key: `agent ${action}`, surface: 'primary', summary: { send: '发送消息；默认新建对话，可显式跳过当前对话的问题卡片。', read: '读取对话状态与进展。', stop: '停止已观察到的对话执行。', list: '列出工作空间全部对话。', reply: '正式提交用户明确给出的回答。', continue: '在空闲的已有对话中继续发送消息。', supplement:'向原执行补充新内容，不新建对话。', replay:'按 eventId 重放已保存的通知事件。' }[action],
-    help: [`用法：${usage}`, `命令格式：buildr agent ${action} ${{ send: '<message> [--conversation <conversation-id> --skip-questions]', read: '<conversation-id>', stop: '<conversation-id>', list: '[--query <文字>] [--limit <每页数量>]', reply: '<conversation-id> <request-id> [<message> | --option <问题ID=选项ID> | --other <问题ID=文本> | --answer-json <JSON>]', continue: '<conversation-id> <message>', supplement:'<conversation-id> <message>', replay:'<conversation-id> <event-id>' }[action]}`, '', '只调用本机已有 HTTP 接口，不修改任务数据；list 默认显示中文列表，--json 输出原始数据。其余命令输出 JSON。', 'send 默认新建对话并仅自动选择唯一就绪连接；--conversation 与 --skip-questions 配对使用，在同一对话放弃卡片回答并开启新一轮，沿用原执行配置。reply 文本原样提交；--option/--other 可重复，使用卡片中的准确 ID；--answer-json 接收问题 ID 到字符串或字符串数组的对象，三种方式互斥。跳过问题不代表回答或同意。continue 仅支持空闲对话；supplement 用于原执行的运行中补充，不回答卡片；replay 只重放通知，不执行模型任务。send 不接受 --connection 或 --model。'],
+  return ['send', 'read', 'stop', 'list', 'reply', 'continue', 'supplement'].map(action => ({
+    key: `agent ${action}`, surface: 'primary', summary: { send: '发送消息；默认新建对话，可显式跳过当前对话的问题卡片。', read: '读取对话状态与进展。', stop: '停止已观察到的对话执行。', list: '列出工作空间全部对话。', reply: '正式提交用户明确给出的回答。', continue: '在空闲的已有对话中继续发送消息。', supplement:'向原执行补充新内容，不新建对话。' }[action],
+    help: [`用法：${usage}`, `命令格式：buildr agent ${action} ${{ send: '<message> [--conversation <conversation-id> --skip-questions]', read: '<conversation-id>', stop: '<conversation-id>', list: '[--query <文字>] [--limit <每页数量>]', reply: '<conversation-id> <request-id> [<message> | --option <问题ID=选项ID> | --other <问题ID=文本> | --answer-json <JSON>]', continue: '<conversation-id> <message>', supplement:'<conversation-id> <message>' }[action]}`, '', '只调用本机已有 HTTP 接口，不修改任务数据；list 默认显示中文列表，--json 输出原始数据。其余命令输出 JSON。', 'send 默认新建对话并仅自动选择唯一就绪连接；--conversation 与 --skip-questions 配对使用，在同一对话放弃卡片回答并开启新一轮，沿用原执行配置。reply 文本原样提交；--option/--other 可重复，使用卡片中的准确 ID；--answer-json 接收问题 ID 到字符串或字符串数组的对象，三种方式互斥。跳过问题不代表回答或同意。continue 仅支持空闲对话；supplement 用于原执行的运行中补充，不回答卡片。send 不接受 --connection 或 --model。'],
     match: (context: any) => context.domain === 'agent' && context.action === action,
     run: async (_runtime: unknown, context: any) => {
       const input = parseAgentArgs(action, context.rawArgs.slice(2));

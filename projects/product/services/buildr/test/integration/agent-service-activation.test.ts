@@ -3,8 +3,11 @@ import test from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { connectAgentProcess, prepareAgentRuntime, stopAgentProcess } from '@buildr-ai/buildr-agent';
 import { activateAgentServiceRuntime } from '../../src/modules/agent-service/application/activate-runtime.ts';
+
+const isLive=(pid:number)=>{try{process.kill(pid,0);return true;}catch{return false;}};
 
 // The same activation owner used after launcher installation, with real private
 // transport and child processes, no vendor programs or real model accounts.
@@ -87,4 +90,55 @@ test('preparation lock contention drains an idle backend through lifecycle owner
   },5);t.after(()=>clearInterval(timer));
   const result=await activateAgentServiceRuntime({dataRoot,profileId,timeoutMs:10000});
   assert.equal(released,true);assert.equal(result.status,'ready');assert.equal(result.currentDigest,runtime.digest);assert.notEqual(result.pid,before.pid);
+});
+
+test('activation retains a busy owner and completes through parallel adoption when preparation is lock-contended', {timeout:90_000}, async t => {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-activation-busy-')),dataRoot=path.join(root,'profile'),packageRoot=path.join(root,'package'),profileId='activation-busy-handoff';
+  const livePids:number[]=[];
+  t.after(async()=>{
+    try{fs.writeFileSync(path.join(dataRoot,'release-slow'),'yes');}catch{}
+    await stopAgentProcess({dataRoot,profileId,mode:'stop-owned'}).catch(()=>{});
+    for(let attempt=0;attempt<200&&livePids.some(pid=>isLive(pid));attempt++)await new Promise(resolve=>setTimeout(resolve,50));
+    fs.rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});
+  });
+  fs.cpSync(path.resolve(import.meta.dirname,'../../node_modules/@buildr-ai/buildr-agent'),packageRoot,{recursive:true,mode:fs.constants.COPYFILE_FICLONE});
+  fs.copyFileSync(path.resolve(import.meta.dirname,'../../../buildr-agent/test/integration/fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/activation-fixture.mjs'));
+  fs.writeFileSync(path.join(packageRoot,'build/fixture-version.json'),JSON.stringify({version:'old'}));
+  const old=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/activation-fixture.mjs'});
+  const legacy=await connectAgentProcess({dataRoot,profileId,runtime:old,sourceId:'buildr',legacySourceId:'buildr',host:{
+    resolveExecutionScope:async({ref})=>({ref,revision:'fixture',rootPath:root}),
+    verifyWorkObject:async()=>{throw Error('unused');},
+    listExecutionScopes:async()=>({refs:[{sourceId:'buildr',id:'workspace'}],revision:'fixture'}),
+  }});
+  const oldIdentity=await legacy.lifecycle.identity();
+  livePids.push(oldIdentity.pid);
+  const connection=await legacy.operations.connections.read('first');
+  await legacy.operations.connections.connect('first',{expectedRevision:connection.revision});
+  const added=await legacy.operations.models.accounts.add({provider:'fixture-model'});
+  const checked=await legacy.operations.models.accounts.check(added.id);
+  await legacy.operations.models.accounts.preferences(added.id,{expectedRevision:checked.revision,models:[{id:'fixture',enabled:true}]});
+  const chat=await legacy.operations.conversations.create('workspace',{cwd:root,title:'busy handoff'});
+  const draft={expectedRevision:chat.revision,connectionId:'first',modelAccountId:added.id,model:'fixture',text:'hold:slow'};
+  const preview=await legacy.operations.conversations.prepareSend('workspace',chat.id,draft);
+  await legacy.operations.conversations.send('workspace',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+  for(let attempt=0;attempt<200&&!(await legacy.lifecycle.status()).activity.busy;attempt++)await new Promise(resolve=>setTimeout(resolve,25));
+  assert.equal((await legacy.lifecycle.status()).activity.busy,true,'the old owner must be busy before activation');
+  await legacy.disconnect();
+  const control=path.join(dataRoot,'agent-service/process'),lock=path.join(control,'storage.lock');
+  fs.mkdirSync(lock,{mode:0o700});fs.writeFileSync(path.join(lock,'identity.json'),JSON.stringify({pid:process.pid,nonce:'fixture-busy-preparation'}),{mode:0o600});
+  const release=setTimeout(()=>{try{fs.rmSync(lock,{recursive:true,force:true});}catch{}},750);t.after(()=>clearTimeout(release));
+  const result=await activateAgentServiceRuntime({dataRoot,profileId,timeoutMs:60_000});
+  livePids.push(result.pid);
+  // Activation prepares the installed package, not the fixture package the old
+  // owner runs; the digests differ, so the busy owner must hand over via adoption.
+  const expected=prepareAgentRuntime({dataRoot});
+  assert.equal(result.status,'ready');assert.equal(result.currentDigest,expected.digest);assert.notEqual(result.currentDigest,old.digest);
+  assert.notEqual(result.generation,oldIdentity.generation,'the successor must own new work');
+  assert.ok(isLive(oldIdentity.pid),'the busy old generation is retained, not stopped');
+  const observer=await connectAgentProcess({dataRoot,profileId,runtime:expected,sourceId:'buildr',legacySourceId:'buildr'});
+  try{
+    const view=await observer.operations.conversations.read('workspace',chat.id);
+    assert.equal(view.run?.status,'running','the retained execution keeps running on the old generation');
+    assert.equal(view.run?.generation,oldIdentity.generation);
+  }finally{await observer.disconnect();}
 });

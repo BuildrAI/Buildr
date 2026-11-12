@@ -273,10 +273,37 @@ test('多次同轮补充保持首条输入与稳定轮次，缺少身份或独�
  assert.equal(legacy.length,2);
 });
 
+test('字节截断后的稀疏首条输入与尾段仍聚合为同一执行轮',()=>{
+ const prompt={...message('prompt','本轮要求','run','user'),sequence:1};
+ const tail=[{...tool('tail-1',{runId:'run'}),sequence:125},{...tool('tail-2',{runId:'run'}),sequence:126}];
+ const turns=conversationStreamTurns(groupConversationStream([prompt,...tail],{id:'run',status:'running'}));
+ assert.equal(turns.length,1);
+ assert.equal(turns[0].prompt.id,'prompt');
+ assert.deepEqual(turns[0].items.flatMap(item=>item.type==='process-block'?item.entries:item.type==='entry'?[item.entry]:[]).map(entry=>entry.id),['tail-1','tail-2']);
+});
+
 test('首条输入前的交接回执不能冒充原用户输入',()=>{
  const receipt={...message('receipt','接续','new','system'),kind:'handoff'};
  const turns=conversationStreamTurns(groupConversationStream([receipt,message('first','新要求','new','user'),message('extra','补充','new','user')]));
  assert.equal(turns.at(-1).prompt.id,'first');assert.equal(turns.at(-1).items[0].entry.id,'extra');
+});
+
+test('纯接续执行轮借用准确来源输入，直接输入优先且缺失来源不猜测',()=>{
+ const source={...message('source-prompt','原始要求','source','user'),sequence:1};
+ const notice={...message('continue-notice','已请求继续上次执行。','current','system'),kind:'notice',status:'accepted'};
+ const run={id:'current',status:'running',continuedFrom:{runId:'source',userEntryId:'source-prompt',prompt:source}};
+ const turns=conversationStreamTurns(groupConversationStream([notice,tool('tail',{runId:'current'})],run),[run]);
+ assert.equal(turns.at(-1).continuedFrom.prompt.id,'source-prompt');
+ assert.equal(turns.at(-1).prompt,undefined);
+ const historical=conversationStreamTurns(groupConversationStream([source,notice,tool('tail',{runId:'current'})],run),[run]);
+ assert.ok(historical.some(turn=>turn.prompt?.id==='source-prompt'));
+ assert.equal(historical.at(-1).continuedFrom.prompt.id,'source-prompt');
+ const direct=conversationStreamTurns(groupConversationStream([message('direct','本轮新要求','current','user'),tool('tail',{runId:'current'})],run),[run]);
+ assert.equal(direct.at(-1).prompt.id,'direct');
+ assert.equal(direct.at(-1).continuedFrom,undefined);
+ const missing=conversationStreamTurns(groupConversationStream([notice,tool('tail',{runId:'current'})],{...run,continuedFrom:undefined}));
+ assert.equal(missing.at(-1).prompt,undefined);
+ assert.equal(missing.at(-1).continuedFrom,undefined);
 });
 
 
@@ -285,4 +312,41 @@ test('工具等待原生详情就绪时保持现有订阅，切换后按执行�
  assert.equal(needsConversationObservation(conversation),true);
  conversation.entries[0].detail={revision:'r'};
  assert.equal(needsConversationObservation(conversation),false);
+});
+test('上游拆分的多段助手消息合并为一条正式答复，思考留在过程',()=>{
+ const thinking=id=>({...message(id,'思考'),kind:'thinking',thinking:true});
+ const entries=[message('u','问','r1','user'),thinking('th1'),message('a','不高'),thinking('th2'),message('b','，而且是一次性对账。')];
+ const items=groupConversationStream(entries,{id:'r1',status:'completed',executionState:'ended',tools:[]});
+ assert.deepEqual(items.map(item=>item.type),['entry','process-block','entry']);
+ assert.equal(items[2].entry.text,'不高，而且是一次性对账。');
+ assert.equal(items[2].entry.id,'b');
+ assert.deepEqual(items[1].entries.map(entry=>entry.id),['th1','th2']);
+});
+test('工具之后的单段答复仍独立成正式答复，进度说明留在过程',()=>{
+ const entries=[message('u','问','r1','user'),message('n','正在核对。'),tool('t'),message('a','收尾完成。')];
+ const items=groupConversationStream(entries,{id:'r1',status:'completed',executionState:'ended',tools:[]});
+ assert.deepEqual(items.map(item=>item.type),['entry','process-block','entry']);
+ assert.deepEqual(items[1].entries.map(entry=>entry.id),['n','t']);
+ assert.equal(items[2].entry.text,'收尾完成。');
+});
+test('过程区里被思考拆开的进度说明也合并为连贯一条，不出现脱落的开头',()=>{
+ const thinking=id=>({...message(id,'思考'),kind:'thinking',thinking:true});
+ const entries=[message('a','不高'),thinking('th'),message('b','，而且是一次性对账。'),tool('t')];
+ const items=groupConversationStream(entries,{id:'r1',status:'running'});
+ assert.equal(items.length,1);assert.equal(items[0].type,'process-block');
+ assert.equal(items[0].entries[0].text,'不高，而且是一次性对账。');
+ assert.deepEqual(items[0].entries.map(entry=>entry.id),['a','th','t']);
+});
+test('无思考间隔的相邻助手段也合并为一条正式答复',()=>{
+ const entries=[message('u','问','r1','user'),message('a','不高'),message('b','，而且是一次性对账。')];
+ const items=groupConversationStream(entries,{id:'r1',status:'completed',executionState:'ended',tools:[]});
+ assert.deepEqual(items.map(item=>item.type),['entry','entry']);
+ assert.equal(items[1].entry.text,'不高，而且是一次性对账。');
+});
+test('无思考间隔的相邻进度说明在过程区合并，工具仍独立',()=>{
+ const entries=[message('a','不高'),message('b','，而且是一次性对账。'),tool('t')];
+ const items=groupConversationStream(entries,{id:'r1',status:'running'});
+ assert.equal(items.length,1);assert.equal(items[0].type,'process-block');
+ assert.equal(items[0].entries[0].text,'不高，而且是一次性对账。');
+ assert.deepEqual(items[0].entries.map(entry=>entry.id),['a','t']);
 });

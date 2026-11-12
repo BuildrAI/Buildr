@@ -14,7 +14,12 @@ export function configRoot(root: string, record: {view: Pick<StoredConversation[
   try { if (participant.contextRef && parseReference(String(participant.contextRef.data?.native ?? ''),participant.provider,record.view.cwd,participant.bindingIdentity).nativeSessionId !== participant.contextRef.id) return; }
   catch { return; }
   const base = path.join(root,'connections',participant.provider);
-  if (!participant.modelAccountId || participant.provider==='qoder' || participant.provider==='qoder-cn') return base;
+  // Persisted shared/lease home root wins; only legacy participants without it reverse-compute the lease dir.
+  if (participant.nativeHomeRoot) return participant.nativeHomeRoot;
+  // Qoder CN execution and login share this account-owned root (agent-service.ts).
+  // Gateway bindings remain under connections/, but they do not own transcripts.
+  if(participant.provider==='qoder-cn')return path.join(root,'model-access','accounts','native-qoder-cn');
+  if (!participant.modelAccountId || participant.provider==='qoder') return base;
   if (!participant.modelAccountIdentity || !participant.modelId || participant.modelConfiguration === undefined) return;
   let configuration=participant.modelLeaseConfiguration??participant.modelConfiguration;
   if(participant.modelLeaseConfiguration!==undefined){
@@ -78,7 +83,7 @@ export class NativeContentResolver {
       const run=origin.view.run;
       const context=original.context??(original.reason==='historical_context_unproven'&&run&&run.id===entry.runId&&run.participantId===participant.id?participant.contextRef?.id:undefined);
       const config=configRoot(this.root,origin,participant);if(!context||!config)return;
-      if(record.nativeTools?.[entry.id] && ['codex','dsh','qoder','qoder-cn'].includes(participant.provider)) {
+      if(record.nativeTools?.[entry.id] && ['codex','dsh','qoder','qoder-cn','claude-code'].includes(participant.provider)) {
         const skeleton = {...entry, text: ''};
         delete skeleton.input;
         delete skeleton.detail;

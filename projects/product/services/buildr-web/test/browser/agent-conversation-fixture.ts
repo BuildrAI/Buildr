@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import {canCloseUncertainConversation} from '../../src/features/agent-conversations/conversation-state.ts';
 import {resolveQuestionAnswer,questionAnswerDisplay} from '../../../buildr-agent/src/domain/question-answer.ts';
 import type {ConnectionView} from '../../src/features/agent-conversations/types.ts';
+import {modelSourceName} from '../../src/lib/model-picker.ts';
 
 /** Actual hosted UI; only the new HTTP transport is replaced with explicit fixtures. */
 export async function createAgentConversationFixture({t,page,workspaceUrl,workspaceRoot,otherWorkspaceId,capture:capturePage,expectedBrowserErrors,scenarioSelectionHandled=false}:any){
@@ -22,8 +23,23 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   const quotaOverrides=new Map<string,any>();
   const nativeAccounts=()=>connections.map(connection=>({id:'native-'+connection.id,identity:'identity-'+connection.id,connectionId:connection.id,provider:connection.provider,label:connection.label,accountLabel:'fixture account',revision:'model-account-'+connection.id,enabled:connection.enabled,status:disconnectedAccounts.has(connection.id)?'not-authenticated':connection.status,models:connection.models.map(model=>{const patch=preferenceOverrides.get('native-'+connection.id)?.get(model.id);const override=patch?.contextWindow===undefined?undefined:patch.contextWindow===null?undefined:patch.contextWindow;return {...model,enabled:patch?.enabled??true,contextWindow:override??32000,contextWindowOverride:override,images:connection.capabilities.images,tools:true};}),quota:quotaOverrides.get(connection.id)??{available:false,planLabel:'Fixture套餐',observedAt:'2026-10-25T00:00:00Z'}}));
   let catalogDiagnostic:string|undefined;
-  let sharedModels:any[]=[];let latestPreview:any;let forceCapacity=false,prepareError:{code:string;message:string}|undefined;
+  // The picker consumes the shared catalog, not connection.models. Keep the
+  // default HTTP observation consistent with the account observation; explicit
+  // catalog overrides (including an empty list) remain available to scenarios.
+  let sharedModels:any[]|undefined;
+  const modelCatalog=()=>sharedModels??nativeAccounts().flatMap(account=>account.models.map(model=>({
+    ...model,id:account.id+'::'+model.id,modelId:model.id,accountId:account.id,
+    accountIdentity:account.identity,accountRevision:account.revision,accountLabel:account.accountLabel,
+    provider:account.provider,available:account.enabled&&account.status==='ready'&&model.enabled,
+  })));
+  let latestPreview:any;let forceCapacity=false,prepareError:{code:string;message:string}|undefined;
   let loseFirstResponse=false;let draftImageRevision=0;const draftImages:any[]=[];const firstResponses=new Map<string,any>();
+  /** Draft attachments live in the fixture, outside sessionStorage; scenarios must clear them explicitly. */
+  const clearDraftAttachments=()=>{draftImages.splice(0,draftImages.length);draftImageRevision++;};
+  const restoreNativeModelState=()=>{
+    disconnectedAccounts.clear();preferenceOverrides.clear();
+    for(const connection of connections){connection.enabled=true;connection.status='ready';}
+  };
   let conversation:any=null,revision=0,sends=0,prepares=0,stops=0,replies=0,cursor=0,creations=0;
   let additionalConversations:any[]=[];
   const historyPages=new Map<number,any>();let entryReads=0,failEntryRead=false,holdEntryRead=false,releaseEntryRead:(()=>void)|undefined,entryReadStarted:(()=>void)|undefined;
@@ -37,23 +53,31 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   let holdTaskList=false,releaseTaskList:(()=>void)|undefined,taskListStarted:(()=>void)|undefined;
   let holdTitle=false,releaseTitle:(()=>void)|undefined,titleStarted:(()=>void)|undefined,titleGenerations=0;
   let supplementaryCalls=0,holdSupplement=false,releaseSupplement:(()=>void)|undefined,supplementStarted:(()=>void)|undefined;let supplementaryDelivery:'accepted'|'rejected'|'unknown'|'continued'='accepted';
+  let repairSupplementOnRead=false,lastSupplementRequestId:string|undefined;
   const supplementaryInputs:any[]=[];
   const uploadedMedia=new Map<string,{mimeType:string;bytes:Buffer;video?:any}>();
   let attachmentUploads=0,holdUploadAt=0,releaseUpload:(()=>void)|undefined,uploadStarted:(()=>void)|undefined;
   let preferencePosts=0,holdPreferences=false,releasePreferences:(()=>void)|undefined,preferencesStarted:(()=>void)|undefined;
   const preferenceBodies:any[]=[];
   let connectionProbeBarrier:Promise<void>|undefined,releaseConnectionProbe:(()=>void)|undefined;
-  let connectionReads=0,conversationReads=0,connectionEventProbe=false,dropEventStreams=0,eventStreams=0,observes=0,recoverNextObserve=false;
+  let connectionReads=0,conversationReads=0,connectionEventProbe=false,dropEventStreams=0,eventStreams=0,observes=0,recoverNextObserve=false,recoverNextRead=false;
   let eventStreamHook:(()=>void|Promise<void>)|undefined;
   let programScenario='ready';
   const programAttempts:Record<string,any>={};
   const preparedInputs:any[]=[],sentInputs:any[]=[];
   const update=(input:any={})=>conversation={...conversation,...input,revision:'r'+(++revision),updatedAt:new Date().toISOString()};
-  const run=(status:string,provider='codex',options:any={})=>({id:'run-fixture',participantId:'participant-'+provider,provider,generation:'generation-fixture',status,accepted:true,permissionMode:'default',tools:[],startedAt:new Date().toISOString(),updatedAt:new Date().toISOString(),...options});
+  const run=(status:string,provider='codex',options:any={})=>{
+    const model=connections.find(item=>item.id===provider)?.models.find(item=>item.isDefault);
+    return {id:'run-fixture',participantId:'participant-'+provider,provider,generation:'generation-fixture',status,accepted:true,permissionMode:'default',tools:[],
+      // Legacy observed runs may omit account metadata; explicit modern runs
+      // pass it through options. Both still record the actual model.
+      model:model?.id,
+      startedAt:new Date().toISOString(),updatedAt:new Date().toISOString(),...options};
+  };
   const route=async(route:any)=>{
     const request=route.request(),url=new URL(request.url()),method=request.method();
     if(url.pathname.startsWith('/api/v1/app/agent-service/program-updates'))return route.fulfill({json:{programs:connections.map(connection=>({connectionId:connection.id,provider:connection.provider,label:connection.label,revision:connection.revision,executable:connection.enabled?'/isolated/'+connection.id:undefined,status:connection.enabled?'unchecked':'not-connected',managed:true,versionKind:'program',packageName:connection.id,updateUrl:'https://fixture.invalid'}))}});
-    if(url.pathname==='/api/v1/app/agent-service/model-catalog'){return route.fulfill({json:{models:sharedModels,hasSnapshot:sharedModels.length>0,...(catalogDiagnostic?{diagnostic:catalogDiagnostic}:{})}});}
+    if(url.pathname==='/api/v1/app/agent-service/model-catalog'){return route.fulfill({json:{models:modelCatalog(),hasSnapshot:true,...(catalogDiagnostic?{diagnostic:catalogDiagnostic}:{})}});}
     if(url.pathname==='/api/v1/app/agent-service/model-accounts')return route.fulfill({json:{accounts:nativeAccounts(),providers:[]}});
     if(url.pathname.startsWith('/api/v1/app/agent-service/model-accounts/')){
       const parts=url.pathname.split('/'),account=nativeAccounts().find(item=>item.id===parts[6]);assert.ok(account,'model action targets an observed native account');
@@ -205,6 +229,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     if(url.pathname.includes('/attachments/')&&method==='GET'){const stored=uploadedMedia.get(url.pathname.split('/').at(-1)!);return route.fulfill(stored?{contentType:stored.mimeType,body:stored.bytes}:{contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=','base64')});}
     if(url.pathname.endsWith('/supplement')){
       supplementaryCalls++;const body=request.postDataJSON();supplementaryInputs.push(body);assert.equal(body.runId,conversation.run.id);assert.equal(body.participantId,conversation.run.participantId);assert.equal(body.generation,conversation.run.generation);
+      lastSupplementRequestId=body.clientRequestId;
       const entry={id:body.clientRequestId,sequence:conversation.entries.length+1,kind:'message',role:'user',text:body.text,attachments:body.attachmentIds,participantId:body.participantId,provider:conversation.run.provider,runId:body.runId,status:supplementaryDelivery==='accepted'?'accepted':supplementaryDelivery==='rejected'?'failed':'unknown',deliveryDiagnostic:supplementaryDelivery==='unknown'?'消息已保存，是否送达仍待确认，请勿重复发送。':supplementaryDelivery==='rejected'?'这条消息未发送成功，文字与图片仍保留在输入框。':undefined,createdAt:new Date().toISOString()};
       if(holdSupplement){holdSupplement=false;await new Promise<void>(resolve=>{releaseSupplement=resolve;supplementStarted?.();});}
       if(supplementaryDelivery==='continued'){
@@ -217,6 +242,15 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       if(prepareError){const error=prepareError;prepareError=undefined;expectedBrowserErrors?.add(request.url());return route.fulfill({status:409,json:{error}});}
       if(forceCapacity){expectedBrowserErrors?.add(request.url());return route.fulfill({status:413,json:{error:{code:'agent_handoff_capacity',message:'必要交接资料仍超出接收容量，请选择容量更大的模型；草稿与本地资料保留。'}}});}
       sends++;const body=request.postDataJSON();sentInputs.push(body);const admittedRunId=body.continueRunId||'run-fixture-'+sends;const provider=body.connectionId;const model=connections.find(item=>item.id===provider)?.models.find(item=>body.model?item.id===body.model:item.isDefault);if(latestPreview?.switching)conversation.entries.push({id:'handoff-'+sends,sequence:conversation.entries.length+1,kind:'handoff',role:'system',text:'交接已接收',status:'accepted',handoff:latestPreview.handoff,createdAt:new Date().toISOString()});if(!conversation.participants.some((item:any)=>item.connectionId===provider))conversation.participants.push({id:'participant-'+provider,connectionId:provider,provider,label:provider,deliveredThrough:0,contextId:'native-'+provider});update({entries:[...conversation.entries,{id:'user-'+sends,sequence:conversation.entries.length+1,runId:admittedRunId,participantId:'participant-'+provider,kind:body.continueRunId?'notice':'message',role:body.continueRunId?'system':'user',text:body.continueRunId?'已请求继续上次执行。':body.text,attachments:body.attachmentIds,provider,createdAt:new Date().toISOString()}],run:run('running',provider,{id:admittedRunId,modelAccountId:body.modelAccountId,modelAccountRevision:body.modelAccountRevision,modelAccountIdentity:body.modelAccountIdentity,serviceTier:body.serviceTier,model:body.model||model?.id,reasoningEffort:body.reasoningEffort||model?.defaultReasoningEffort,permissionMode:body.permissionMode||'default'})});const response=JSON.parse(JSON.stringify({conversation,run:conversation.run}));if(draftRoute){firstResponses.set(draftRoute[1]+':'+body.clientRequestId,response);for(const id of body.attachmentIds??[]){const index=draftImages.findIndex(image=>image.id===id);if(index>=0)draftImages.splice(index,1);}draftImageRevision++;}if(holdSend){holdSend=false;await new Promise<void>(resolve=>{releaseSend=resolve;sendStarted?.();});}if(draftRoute&&loseFirstResponse){loseFirstResponse=false;expectedBrowserErrors?.add(request.url());return route.abort('failed');}return route.fulfill({json:response});}
+    if(url.pathname.endsWith('/stop-all')){
+      stops++;const body=request.postDataJSON();let target=additionalConversations.find(item=>url.pathname.includes('/'+item.id+'/'))||conversation;
+      const cancelledSend=target.pendingSend?{id:target.pendingSend.id,draft:target.pendingSend.draft}:undefined;
+      const targets=[...(target.run?[target.run]:[]),...(target.retainedRuns??[])].filter((r:any)=>!['completed','stopped','failed'].includes(r.status)||r.tools?.some((tool:any)=>tool.status!=='completed'));
+      const runIds=targets.map((r:any)=>r.id),settle=(r:any)=>runIds.includes(r.id)?{...r,status:unknownStop?'unknown':'stopped',stopRequested:true,executionState:unknownStop?'unknown':'ended',tools:unknownStop?r.tools:[]}:r;
+      const patch={run:target.run&&settle(target.run),retainedRuns:target.retainedRuns?.map(settle),pendingSend:undefined,requests:unknownStop?target.requests:[],stopRequest:{id:body.clientRequestId,runIds,createdAt:new Date().toISOString(),cancelledSend}};
+      if(target===conversation)target=update(patch);else{Object.assign(target,patch);target.revision='r'+(++revision);}
+      const response=JSON.parse(JSON.stringify(target));if(holdStop){holdStop=false;await new Promise<void>(resolve=>{releaseStop=resolve;stopStarted?.();});}return route.fulfill({json:response});
+    }
     if(url.pathname.endsWith('/stop')){stops++;let target=additionalConversations.find(item=>url.pathname.includes('/'+item.id+'/'))||conversation;const stopped=run(unknownStop?'unknown':'stopped',target.run.provider,{id:target.run.id,participantId:target.run.participantId,modelAccountId:target.run.modelAccountId,modelAccountRevision:target.run.modelAccountRevision,modelAccountIdentity:target.run.modelAccountIdentity,serviceTier:target.run.serviceTier,model:target.run.model,reasoningEffort:target.run.reasoningEffort,permissionMode:target.run.permissionMode||'default'});if(target===conversation)target=update({run:stopped,requests:unknownStop?target.requests:[]});else{target.run=stopped;if(!unknownStop)target.requests=[];target.revision='r'+(++revision);}const response=JSON.parse(JSON.stringify(target));if(holdStop){holdStop=false;await new Promise<void>(resolve=>{releaseStop=resolve;stopStarted?.();});}return route.fulfill({json:response});}
     if(url.pathname.includes('/requests/')&&url.pathname.endsWith('/reply')){replies++;const body=request.postDataJSON();assert.equal(body.participantId,conversation.requests[0].participantId);assert.equal(body.runId,conversation.requests[0].runId);const question=conversation.requests[0];const resolved=resolveQuestionAnswer(question,body.answer,ids=>({images:ids.map(id=>({id,path:'/fixture/attachments/'+id,mimeType:'image/png'})),description:''}));conversation.entries.push({id:'reply-'+question.id,sequence:conversation.entries.length+1,kind:'notice',role:'user',runId:body.runId,attachments:resolved.attachmentIds,text:JSON.stringify({请求标识:question.id,问题:question.title,问题列表:question.questions,选项:question.options,回答:resolved.answer,...(resolved.attachmentIds.length?{显示回答:questionAnswerDisplay(body.answer)}:{}),授权性质:'原请求范围'}),createdAt:new Date().toISOString()});update({run:run('running',conversation.run.provider,{permissionMode:conversation.run.permissionMode||'default'}),requests:[]});return route.fulfill({json:conversation});}
     if(url.pathname.endsWith('/observe')){observes++;if(recoverNextObserve){recoverNextObserve=false;update({run:{...conversation.run,status:'completed',executionState:'ended',tools:[]}});}return route.fulfill({json:conversation});}
@@ -237,12 +271,21 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       return route.fulfill({json:isCurrent?conversation:target});
     }
     if(method==='POST'&&url.pathname.endsWith('/seen')){const body=request.postDataJSON();const target=[...additionalConversations,...additionalPending].find(item=>url.pathname.includes('/'+item.id+'/'))||conversation;const activity={version:Math.max(body.through,target?.activity?.version??body.through),seenThrough:body.through,updatedAt:new Date().toISOString(),active:target?.activity?.active??true};if(target)target.activity=activity;return route.fulfill({json:{activity}});}
-    if(method==='GET'){conversationReads++;return route.fulfill({json:[...additionalConversations,...additionalPending].find(item=>url.pathname.endsWith('/'+item.id))||conversation});}
+    if(method==='GET'){
+      conversationReads++;
+      if(recoverNextRead&&url.pathname.endsWith('/'+conversation.id)){
+        recoverNextRead=false;
+        update({run:{...conversation.run,status:'completed',executionState:'ended',tools:[]}});
+      }
+      if(repairSupplementOnRead&&lastSupplementRequestId&&url.pathname.endsWith('/'+conversation.id)){
+        const entry=conversation.entries.find((item:any)=>item.id===lastSupplementRequestId&&item.status==='unknown');
+        if(entry){entry.status='accepted';delete entry.deliveryDiagnostic;repairSupplementOnRead=false;}
+      }
+      return route.fulfill({json:[...additionalConversations,...additionalPending].find(item=>url.pathname.endsWith('/'+item.id))||conversation});
+    }
     return route.fallback();
   };
-  const webhookRoute=async(route:any)=>route.fulfill({json:{revision:'fixture-webhook',source:'private-file',writable:true,state:'unconfigured',url:'',hasSecret:false}});
   await page.route('**/api/v1/app/agent-service/**',route);
-  await page.route('**/api/v1/app/agent-service/webhook-settings',webhookRoute);
   await page.route('**/api/v1/workspaces/*/agent-conversations**',route);
   const panel=()=>page.locator('#agent-conversation-panel');
   const input=()=>page.getByRole('textbox',{name:'对话输入',exact:true});
@@ -267,9 +310,25 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   const modelSettings=()=>page.getByRole('dialog',{name:'模型与推理强度设置',exact:true});
   const openModelSettings=async()=>{if(await modelTrigger().getAttribute('aria-expanded')!=='true')await modelTrigger().click();await modelSettings().waitFor();return modelSettings();};
   const closeModelSettings=async()=>{await modelSettings().getByRole('combobox',{name:'执行模型',exact:true}).focus();await page.keyboard.press('Escape');await modelSettings().waitFor({state:'hidden'});assert.equal(await modelTrigger().getAttribute('aria-expanded'),'false');assert.equal(await modelTrigger().evaluate((node:HTMLElement)=>node===document.activeElement),true,'关闭设置后焦点回到模型入口');};
-  const chooseModel=async(label:string)=>chooseOption('执行模型',label,await openModelSettings());
+  const chooseModel=async(label:string)=>{
+    const dialog=await openModelSettings(),combo=dialog.getByRole('combobox',{name:'执行模型',exact:true});
+    await combo.focus();await combo.press('ArrowDown');
+    const popup=page.locator('.ac-model-list-popup:visible');
+    if(modelCatalog().filter(model=>model.label===label).length>1){
+      const agent=await panel().locator('.ac-provider-select .ant-select-selection-item').innerText();
+      const connection=connections.find(item=>item.label===agent);assert.ok(connection,'按当前智能体明确选择同名原生模型来源');
+      await popup.getByRole('textbox',{name:'搜索模型',exact:true}).fill(modelSourceName(connection.provider));
+    }
+    await popup.getByText(label,{exact:true}).click();await popup.waitFor({state:'hidden'});
+  };
   const setHighEffort=async()=>{const dialog=await openModelSettings(),slider=dialog.getByRole('slider',{name:'思考深度',exact:true});await slider.press('End');assert.equal(await slider.getAttribute('aria-valuenow'),await slider.getAttribute('aria-valuemax'));assert.equal(await slider.getAttribute('aria-valuetext'),'高');};
-  const assertModelSummary=async(model:string,effort?:string)=>{const label=modelTrigger().locator('.ac-model-label');await label.filter({hasText:model}).waitFor();assert.equal(await label.innerText(),model);const depth=modelTrigger().locator('.ac-model-effort');if(effort){await depth.filter({hasText:effort}).waitFor();assert.equal(await depth.innerText(),effort);}else assert.equal(await depth.count(),0);};
+  const assertModelSummary=async(model:string,effort?:string)=>{
+    const agent=await panel().locator('.ac-provider-select .ant-select-selection-item').innerText();
+    const connection=connections.find(item=>item.label===agent);
+    const expected=model==='请选择模型'||model.includes(' / ')?model:modelSourceName(connection!.provider)+' / '+model;
+    const label=modelTrigger().locator('.ac-model-label');await label.filter({hasText:expected}).waitFor();assert.equal(await label.innerText(),expected);
+    const depth=modelTrigger().locator('.ac-model-effort');if(effort){await depth.filter({hasText:effort}).waitFor();assert.equal(await depth.innerText(),effort);}else assert.equal(await depth.count(),0);
+  };
   const reset=async()=>{await page.goto(workspaceUrl+'/overview');await page.evaluate(()=>sessionStorage.clear());await page.reload();await page.locator('#workbench-overview').waitFor();};
   // 固定/专注下标题栏不再重复列表与返回入口，统一走导轨（手机为顶栏）；暂看仍用标题栏以保持不固定布局。
   const isPeeking=()=>panel().evaluate((node:HTMLElement)=>node.classList.contains('is-peeking'));
@@ -297,16 +356,19 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     if(part==='all'||part==='setup')return;
     if(part==='selection')additionalConversations.push({id:'selection-history',workspaceId,cwd:'/isolated/selection',title:'已有对话',revision:'selection-r1',hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[{id:'selection-entry',sequence:1,kind:'message',role:'user',text:'已有内容',createdAt:new Date().toISOString()}],requests:[]});
     if(part==='models')connections[1].models=connections[1].models.map(item=>({...item,isDefault:item.id==='fixture-fast'}));
-    await page.setViewportSize({width:1600,height:1000});await reset();await openDesktopConversation();await input().waitFor();
+    await page.setViewportSize({width:1600,height:1000});await reset();
+    if(part==='stop-all')conversation={id:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',workspaceId,cwd:workspaceRoot,title:'停止专项现场',revision:'stop-seed',hidden:false,updatedAt:new Date().toISOString(),participants:[{id:'participant-codex',provider:'codex',connectionId:'codex',label:'Codex',deliveredThrough:0,contextId:'stop-native'}],entries:[],requests:[],run:run('stopped')};
+    await openDesktopConversation();await input().waitFor();
     if(['history','handoff','tasks','models','recovery'].includes(part)){
       await chooseOption('新对话工作空间',await page.locator('.workspace-switcher strong').innerText());
       await chooseModel('Fixture model');await setHighEffort();await closeModelSettings();await chooseOption('执行权限','完全访问');
       await input().fill('第一轮');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();
-      await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();await input().fill('下一轮仍是草稿');
+      await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();await input().fill('下一轮仍是草稿');
     }
   };
-  const dispose=async()=>{releaseEntryRead?.();releaseSend?.();releasePrepare?.();releaseCreate?.();releaseUpload?.();releaseConnections?.();releaseStop?.();releaseTaskList?.();releaseTitle?.();releaseSupplement?.();releaseConnectionProbe?.();await page.evaluate(()=>{(window as any).__releaseTaskSpinnerMotion?.();sessionStorage.removeItem('__buildrHoldTaskSpinnerMotion');}).catch(()=>{});await page.unroute('**/api/v1/app/agent-service/webhook-settings',webhookRoute);await page.unroute('**/api/v1/app/agent-service/**',route);await page.unroute('**/api/v1/workspaces/*/agent-conversations**',route);await page.setViewportSize({width:1280,height:900});await page.evaluate(()=>sessionStorage.clear()).catch(()=>{});if(scenarioFocus.length)assert.ok(stepIndex>0,'BUILDR_AGENT_SCENARIO_FOCUS 没有匹配任何场景');};
+  const dispose=async()=>{releaseEntryRead?.();releaseSend?.();releasePrepare?.();releaseCreate?.();releaseUpload?.();releaseConnections?.();releaseStop?.();releaseTaskList?.();releaseTitle?.();releaseSupplement?.();releaseConnectionProbe?.();await page.evaluate(()=>{(window as any).__releaseTaskSpinnerMotion?.();sessionStorage.removeItem('__buildrHoldTaskSpinnerMotion');}).catch(()=>{});await page.unroute('**/api/v1/app/agent-service/**',route);await page.unroute('**/api/v1/workspaces/*/agent-conversations**',route);await page.setViewportSize({width:1280,height:900});await page.evaluate(()=>sessionStorage.clear()).catch(()=>{});if(scenarioFocus.length)assert.ok(stepIndex>0,'BUILDR_AGENT_SCENARIO_FOCUS 没有匹配任何场景');};
   return {
+    restoreNativeModelState,
     quotaOverrides,otherWorkspaceId,
     get additionalConversations(){return additionalConversations;}, set additionalConversations(value){additionalConversations=value;},
     get additionalPending(){return additionalPending;}, set additionalPending(value){additionalPending=value;},
@@ -315,6 +377,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     assertNavigationHighlight,
     assertReminderGap,
     get attachmentUploads(){return attachmentUploads;}, set attachmentUploads(value){attachmentUploads=value;},
+    clearDraftAttachments,
     capture,
     get catalogDiagnostic(){return catalogDiagnostic;}, set catalogDiagnostic(value){catalogDiagnostic=value;},
     chooseAgent,
@@ -371,6 +434,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     programAttempts,
     get programScenario(){return programScenario;}, set programScenario(value){programScenario=value;},
     get recoverNextObserve(){return recoverNextObserve;}, set recoverNextObserve(value){recoverNextObserve=value;},
+    get recoverNextRead(){return recoverNextRead;}, set recoverNextRead(value){recoverNextRead=value;},
     get releaseConnectionProbe(){return releaseConnectionProbe;}, set releaseConnectionProbe(value){releaseConnectionProbe=value;},
     get releaseConnections(){return releaseConnections;}, set releaseConnections(value){releaseConnections=value;},
     get releaseCreate(){return releaseCreate;}, set releaseCreate(value){releaseCreate=value;},
@@ -398,7 +462,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     get sendStarted(){return sendStarted;}, set sendStarted(value){sendStarted=value;},
     sentInputs,
     setHighEffort,
-    get sharedModels(){return sharedModels;}, set sharedModels(value){sharedModels=value;},
+    get sharedModels(){return modelCatalog();}, set sharedModels(value){sharedModels=value;},
     step,
     get unknownStop(){return unknownStop;},set unknownStop(value){unknownStop=value;},
     get stops(){return stops;}, set stops(value){stops=value;},
@@ -407,6 +471,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     get supplementaryDelivery(){return supplementaryDelivery;}, set supplementaryDelivery(value){supplementaryDelivery=value;},
     supplementaryInputs,
     get supplementStarted(){return supplementStarted;}, set supplementStarted(value){supplementStarted=value;},
+    get repairSupplementOnRead(){return repairSupplementOnRead;}, set repairSupplementOnRead(value){repairSupplementOnRead=value;},
     get taskListStarted(){return taskListStarted;}, set taskListStarted(value){taskListStarted=value;},
     get titleGenerations(){return titleGenerations;}, set titleGenerations(value){titleGenerations=value;},
     get titleStarted(){return titleStarted;}, set titleStarted(value){titleStarted=value;},

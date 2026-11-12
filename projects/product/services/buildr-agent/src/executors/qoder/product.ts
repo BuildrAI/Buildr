@@ -3,6 +3,9 @@
  * signing scheme and the `/algo/api/v2` service shape, never an account. */
 export type QoderProductId = 'qoder' | 'qoder-cn';
 
+/** Independent model account that owns the Qoder CN login used by model-bound execution. */
+export const qoderCnModelAccountId = 'native-qoder-cn';
+
 export interface QoderProduct {
   id: QoderProductId;
   label: string;

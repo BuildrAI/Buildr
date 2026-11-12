@@ -9,17 +9,17 @@ export interface AgentSubscription { events: AsyncIterable<ServiceEvent>; close(
 /** Public asynchronous operations; native SDK objects never cross this boundary. */
 export interface AgentOperations {
   generation: string;
-  webhooks: RemoteMethods<AgentService['webhooks']>;
+  pushback: RemoteMethods<AgentService['pushback']>;
   connections: RemoteMethods<AgentService['connections']>;
   conversations: Omit<RemoteMethods<AgentService['conversations']>, 'subscribe' | 'recoverInterrupted' | 'observeForRelease' | 'retainsConversationSource'> & { subscribe(scope: string, id: string): Promise<AgentSubscription> };
   models: { accounts: Omit<RemoteMethods<AgentService['models']['accounts']>, 'snapshot'>; catalog: RemoteMethods<AgentService['models']['catalog']>; generate: AgentService['models']['generate'] };
 }
 
 const names = {
-  webhooks: ['read','save','reveal','test'],
+  pushback: ['read','save','reveal','test','markTakeover','recordStop','listEvents','migrateGlobal'],
   connections: ['upgradeProgram','programUpdates','checkProgramUpdates','list','read','prepare','preparation','currentPreparation','cancelPreparation','connect','check','login','loginAttempt','cancelLogin','disconnect'],
-  conversations: ['readHistory','replayWebhook','participation','participationSummary','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','readEntry','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','releaseQuestionWait','stop','reply','addAttachment','readAttachment','pending','pendingSummary','lookupRequest'],
-  'models.accounts': ['list','read','preferences','add','configure','login','attempt','cancelLogin','check','disconnect'],
+  conversations: ['readHistory','participation','participationSummary','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','activityEpoch','readEntry','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','releaseQuestionWait','settleRetainedRun','stop','stopAll','reply','addAttachment','readAttachment','pending','pendingSummary','lookupRequest'],
+  'models.accounts': ['list','read','preferences','add','configure','configureCustom','discoverCustom','login','attempt','cancelLogin','check','disconnect'],
   'models.catalog': ['list'],
 } as const;
 export const OPERATION_NAMES: readonly string[] = Object.entries(names).flatMap(([group, methods]) => methods.map(method => group + '.' + method));
@@ -28,8 +28,7 @@ const Constructor: any = Ajv2020;
 const ajv = new Constructor({ strict: true, allErrors: true, allowUnionTypes: true });
 const validators = new Map(Object.entries(AGENT_OPERATION_SCHEMAS).map(([name, schema]) => [name, ajv.compile(schema)]));
 const inputs: Record<string, [number, string]> = {
-  'webhooks.save':[0,'webhookSettingsInput'], 'webhooks.reveal':[0,'revision'], 'webhooks.test':[0,'revision'],
-  'conversations.replayWebhook':[2,'webhookReplay'],
+  'pushback.save':[1,'pushbackSettingsInput'], 'pushback.reveal':[1,'revision'], 'pushback.test':[1,'revision'], 'pushback.listEvents':[2,'pushbackEventsQuery'], 'pushback.migrateGlobal':[1,'pushbackMigrate'],
   'conversations.participation':[2,'participationQuery'], 'conversations.participationSummary':[1,'participationSummaryQuery'],
   'conversations.startDraft':[2,'startDraft'], 'conversations.removeDraftImage':[2,'removeDraftImage'],
   'conversations.queueSend': [2, 'queueSend'], 'conversations.cancelPendingSend': [2, 'cancelPendingSend'],
@@ -37,8 +36,8 @@ const inputs: Record<string, [number, string]> = {
   'connections.checkProgramUpdates':[0,'programUpdateCheck'],
   'connections.prepare':[1,'prepare'], 'connections.connect':[1,'connect'], 'connections.check':[1,'check'], 'connections.login':[1,'revision'], 'connections.disconnect':[1,'revision'], 'connections.cancelLogin':[2,'revision'],
   'conversations.createChild':[2,'createChild'],
-  'conversations.readHistory':[2,'historyQuery'], 'conversations.fork':[2,'fork'], 'conversations.create':[1,'create'], 'conversations.update':[2,'update'], 'conversations.markSeen':[2,'seen'], 'conversations.generateTitle':[2,'revision'], 'conversations.prepareHandoff':[2,'draft'], 'conversations.prepareSend':[2,'draft'], 'conversations.send':[2,'send'], 'conversations.supplement':[2,'supplement'], 'conversations.observeRun':[2,'control'], 'conversations.releaseQuestionWait':[2,'control'], 'conversations.stop':[2,'stop'], 'conversations.reply':[3,'reply'],
-  'models.accounts.preferences':[1,'modelPreferences'], 'models.accounts.add':[0,'addModelAccount'], 'models.accounts.configure':[1,'modelApiKey'], 'models.accounts.login':[1,'revision'], 'models.accounts.cancelLogin':[2,'revision'], 'models.accounts.check':[1,'check'], 'models.accounts.disconnect':[1,'revision'],
+  'conversations.readHistory':[2,'historyQuery'], 'conversations.fork':[2,'fork'], 'conversations.create':[1,'create'], 'conversations.update':[2,'update'], 'conversations.markSeen':[2,'seen'], 'conversations.generateTitle':[2,'revision'], 'conversations.prepareHandoff':[2,'draft'], 'conversations.prepareSend':[2,'draft'], 'conversations.send':[2,'send'], 'conversations.supplement':[2,'supplement'], 'conversations.observeRun':[2,'control'], 'conversations.releaseQuestionWait':[2,'control'], 'conversations.settleRetainedRun':[2,'control'], 'conversations.stopAll':[2,'stopAll'], 'conversations.stop':[2,'stop'], 'conversations.reply':[3,'reply'],
+  'models.accounts.preferences':[1,'modelPreferences'], 'models.accounts.add':[0,'addModelAccount'], 'models.accounts.configure':[1,'modelApiKey'], 'models.accounts.configureCustom':[1,'modelCustomConfigure'], 'models.accounts.discoverCustom':[0,'modelCustomDiscovery'], 'models.accounts.login':[1,'revision'], 'models.accounts.cancelLogin':[2,'revision'], 'models.accounts.check':[1,'check'], 'models.accounts.disconnect':[1,'revision'],
 };
 export function validateOperation(name: string, args: unknown): asserts args is any[] {
   if (!OPERATION_NAMES.includes(name) || !Array.isArray(args) || args.length > 6) throw new AgentServiceError('agent_process_operation_invalid', '不支持的执行操作。');

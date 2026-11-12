@@ -23,7 +23,7 @@ test('模型调用限流显示排队原因与重试建议',()=>{
   const reason=conversationFailureReason('stream disconnected before completion: 403: {"code":"10605","message":"{\\"isQueued\\":true,\\"modelKey\\":\\"lmodel\\",\\"retryAfterSeconds\\":30}","subCode":"CALL_COUNT_LIMIT"}');
   assert.match(reason.summary,/模型调用达到当前上限/);
   assert.match(reason.action,/30 秒后重试/);
-  assert.match(reason.action,/其他模型\/账号/);
+  assert.match(reason.action,/其他模型\/供应商/);
   assert.doesNotMatch(reason.summary,/CALL_COUNT_LIMIT|isQueued/);
 });
 

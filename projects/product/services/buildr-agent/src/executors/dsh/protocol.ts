@@ -10,6 +10,16 @@ function isUserInput(event: any): boolean {
 export function dshToolOutcomeUnknown(event:any):boolean {
   return event?.type==='tool/result'&&event.data?.error?.code==='TOOL_OUTCOME_UNKNOWN';
 }
+/** 归属不明的接续标记只提示不确定性，不是仍在执行的命令。 */
+export const dshContinuationMarker = (tool: { id: string }): boolean => tool.id.startsWith('dsh-continuation:');
+/** 已结束的轮次不带合成接续标记：留着会让整轮永久停留在未知状态。 */
+export const withoutDshContinuationMarkers = <T extends { id: string }>(tools: readonly T[]): T[] => tools.filter(tool => !dshContinuationMarker(tool));
+/** 已结束轮次的状态只由真实工具决定；调用方须先排除合成接续标记。 */
+export function dshFinishedTurnStatus(tools: readonly { status: string }[], stopped: boolean): 'tools-active' | 'unknown' | 'stopped' | 'idle' {
+  if (tools.some(tool => tool.status === 'running')) return 'tools-active';
+  if (tools.some(tool => tool.status === 'unknown')) return 'unknown';
+  return stopped ? 'stopped' : 'idle';
+}
 
 /** Native provenance, never assistant prose, connects autonomous follow-up turns. */
 export class DshExecutionLineage {
@@ -146,8 +156,9 @@ export function dshExecutionObservation(events: any[], requestId: string, knownI
     if (event.type === 'turn/end' && event.data.turn === targetTurn) end = event.data.reason?.kind;
   }
   const merged = lineage.mergeTools([...tools.values()], new Set([requestId]));
-  tools.clear(); for (const tool of merged) tools.set(tool.id, tool);
+  // 轮次已结束时不再保留合成接续标记，避免把正常完成的轮次永久判成未知。
+  tools.clear(); for (const tool of end === undefined ? merged : withoutDshContinuationMarkers(merged)) tools.set(tool.id, tool);
   if ([...tools.values()].some(tool => tool.status === 'running')) return { status: 'tools-active', executionRef: { id: requestId }, tools: [...tools.values()] };
   if (end && !['completed','aborted','cancelled','interrupted'].includes(end)) return {status:'unknown',executionRef:{id:requestId},tools:[...tools.values()],diagnostic:'dsh_native_execution_failed'};
-  return { status: [...tools.values()].some(tool => tool.status === 'unknown') ? 'unknown' : !end ? 'unknown' : ['aborted', 'cancelled', 'interrupted'].includes(end) ? 'stopped' : 'idle', executionRef: { id: requestId }, tools: [...tools.values()] };
+  return { status: !end ? 'unknown' : dshFinishedTurnStatus([...tools.values()], ['aborted', 'cancelled', 'interrupted'].includes(end)), executionRef: { id: requestId }, tools: [...tools.values()] };
 }

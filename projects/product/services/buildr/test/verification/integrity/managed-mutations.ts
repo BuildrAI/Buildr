@@ -34,6 +34,9 @@ const allowed: any = new Map([
   ['src/infrastructure/filesystem/index.ts', new Set(['copyDirectory', 'removePath'])],
   ['src/infrastructure/filesystem/atomic-files.ts', new Set(['atomicWriteFile'])],
   ['src/infrastructure/filesystem/exclusive-file-lock.ts', new Set(['publishCandidate', 'moveAndRemove'])],
+  // Only saveToken writes a new profile-private credential: exclusive no-follow
+  // descriptor, mode 0600, fsync, and cleanup limited to this attempt's file.
+  ['src/modules/agent-service/persistence/programmatic-credentials.ts', new Set(['saveToken'])],
   ['src/infrastructure/filesystem/workspace-mutation.ts', new Set([
     'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
   ])],
@@ -46,7 +49,9 @@ const allowed: any = new Map([
     'acquireBuildrWebStartLock', 'releaseBuildrWebStartLock', 'clearBuildrWebInstance',
   ])],
   ['src/bootstrap/cli/main.ts', new Set(['writeInternalDownload'])],
-  ['src/web/application/preview-lifecycle.ts', new Set(['clearOwner', 'prepareTaskPreviewStore', 'writePreferredPort', 'seedPreviewWorkspaces', 'stopPreview'])],
+  // prune deletes only orphan directories without owner records and with confirmed-dead
+  // processes, through the same preview-root containment and symlink-safe removal as purge.
+  ['src/web/application/preview-lifecycle.ts', new Set(['clearOwner', 'prepareTaskPreviewStore', 'writePreferredPort', 'seedPreviewWorkspaces', 'stopPreview', 'pruneOrphanPreviews'])],
   // Reuse copies stage every facet in an owned sibling, verify, then rename; purge is
   // guarded by stop confirmation, owner identity, preview-root containment and symlinks.
   ['src/web/application/preview-reuse-files.ts', new Set(['copyTree', 'replacePreviewDirectory'])],

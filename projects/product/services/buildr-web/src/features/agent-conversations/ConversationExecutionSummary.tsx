@@ -13,6 +13,6 @@ export function ConversationExecutionSummary({stats,stale,modelLabel,sourceLabel
         ? <button key={JSON.stringify([row.accountId,row.model])} type="button" className={'ac-execution-chip'+(selected?' is-selected':'')} aria-pressed={selected} onClick={()=>onFilter(selected?null:{kind:'model',value:row.model})}>{label}</button>
         : <span key={JSON.stringify([row.accountId,row.model])}>{label}</span>;
     })}</div>}
-    {!!count&&!stats?.modelExecutions&&<small>账号与模型明细尚未读取</small>}
+    {!!count&&!stats?.modelExecutions&&<small>供应商与模型明细尚未读取</small>}
   </section>;
 }

@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { collectChangedProductPaths, resolveVerificationBase, isVerificationWorkflowTriggerOnlyChange } from '../verification/changed-paths.ts';
+import { collectChangedProductPaths, resolveVerificationBase, isVerificationWorkflowTriggerOnlyChange, contentChangesAtSnapshot } from '../verification/changed-paths.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
 import { serviceVerificationChecks as pluginChecks } from '../../../dsh-plugin/tools/testing/verification-checks.ts';
 import { collectVerificationContentSnapshot } from '../verification/content-snapshot.ts';
@@ -224,4 +224,48 @@ test('workflow classification never exempts execution, unknown, or malformed cha
     base + 'jobs: {}\n', 'on: [push]\njobs: {}', 'on: [',
     'jobs: {check: {runs-on: ubuntu-latest}}',
   ]) assert.equal(isVerificationWorkflowTriggerOnlyChange(base, current), false, current);
+});
+
+test('source refinement binds actual Git and working bytes, never dirty or missing provenance', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-source-refinement-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const projectRoot = path.join(root, 'projects/product');
+  const productRoot = path.join(projectRoot, 'services/buildr');
+  const agent = path.join(projectRoot, 'services/buildr-agent/src');
+  fs.mkdirSync(productRoot, { recursive: true }); fs.mkdirSync(agent, { recursive: true });
+  const entry = path.join(agent, 'index.ts');
+  const previous = "export { prepare } from './runtime.ts';\n";
+  const current = "export { prepare, digest } from './runtime.ts';\n";
+  fs.writeFileSync(entry, previous);
+  fs.writeFileSync(path.join(agent, 'runtime.ts'), 'export function prepare() {} export function digest() { return 1; }\n');
+  git(root, ['init']); git(root, ['config', 'user.email', 'fixture@example.invalid']); git(root, ['config', 'user.name', 'Fixture']);
+  git(root, ['add', '.']); git(root, ['commit', '-m', 'base']);
+  const base = git(root, ['rev-parse', 'HEAD']).trim(), options = { productRoot, projectRoot, base };
+  fs.writeFileSync(entry, current);
+  git(root, ['add', '.']); git(root, ['commit', '-m', 'additive']);
+  const head = git(root, ['rev-parse', 'HEAD']).trim();
+  const changed = collectChangedProductPaths(options);
+  assert.equal(changed.contentChanges.length, 1);
+  assert.equal(changed.contentChanges[0].kind, 'additive-exports');
+  const snapshot = collectVerificationContentSnapshot(options);
+  assert.equal(contentChangesAtSnapshot(changed, snapshot, options).length, 1);
+  const selected = createVerificationPlan({ ...changed, related: true, semantic: true, target: 'source' });
+  assert.deepEqual(selected.steps.map((step: any) => step.id).sort(),
+    ['agent-source-boundaries', 'agent-typecheck', 'agent-unit', 'generated-contracts'].sort());
+  fs.writeFileSync(entry, current + 'startExecution();\n');
+  assert.deepEqual(contentChangesAtSnapshot(changed, snapshot, options), [], 'old proof cannot narrow different execution bytes');
+  assert.deepEqual(collectChangedProductPaths(options).contentChanges, [], 'dirty execution change invalidates the proof');
+  assert.equal(collectChangedProductPaths({ ...options, head }).contentChanges[0].kind, 'additive-exports', 'immutable head ignores unrelated dirty bytes');
+  fs.writeFileSync(entry, previous);
+  assert.equal(collectChangedProductPaths(options).contentChanges[0].kind, 'byte-identical', 'net unchanged bytes can retain cheap contract owners');
+  fs.writeFileSync(entry, current);
+  fs.writeFileSync(path.join(agent, 'new-module.ts'), 'export const value = 1;');
+  assert.ok(!collectChangedProductPaths(options).contentChanges.some((item: any) => item.path.endsWith('new-module.ts')));
+  if (process.platform !== 'win32') {
+    fs.chmodSync(entry, 0o755);
+    assert.ok(!collectChangedProductPaths(options).contentChanges.some((item: any) => item.path.endsWith('index.ts')), 'mode changes keep conservative ownership');
+    fs.chmodSync(entry, 0o644);
+    fs.rmSync(entry); fs.symlinkSync('runtime.ts', entry);
+    assert.ok(!collectChangedProductPaths(options).contentChanges.some((item: any) => item.path.endsWith('index.ts')), 'symlink identity is not a barrel proof');
+  }
 });

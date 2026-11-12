@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { codeGit, codeFailure, localPath, relativeCodePath, type CodeSource } from './code-file-reader.ts';
+import { codeGit, codeGitAsync, codeFailure, localPath, relativeCodePath, type CodeSource } from './code-file-reader.ts';
 import { parseGitCommitObject } from '../../task/commits/domain/task-commit.ts';
 import type { CodeBranch, CodeChange, CodeChangeArea, CodeHistoryCommit } from '../domain/source-control.ts';
 
@@ -31,9 +31,19 @@ function entry(source:CodeSource, area: CodeChangeArea, relative: string, code: 
   return { repositoryId:source.repositoryId,worktreeId:source.worktreeId||null, area, path: relative, previousPath, kind: area === 'untracked' ? 'untracked' : 'tracked', status: area === 'untracked' ? 'untracked' : statusName(code), additions: null, deletions: null, preview: null, previewTruncated: false };
 }
 
+const statusArgs = ['status', '--porcelain=v2', '-z', '--untracked-files=all', '--branch'];
+
 /** Metadata only: preserve both XY columns and never pre-read patches or file contents. */
 export function observeSourceControl(source: CodeSource, options: { gitConfig?: string[] } = {}) {
-  const raw = codeGit(source.location, ['status', '--porcelain=v2', '-z', '--untracked-files=all', '--branch'], SOURCE_CONTROL_LIMITS.bytes, undefined, options.gitConfig).toString('utf8');
+  return parseSourceControl(source, codeGit(source.location, statusArgs, SOURCE_CONTROL_LIMITS.bytes, undefined, options.gitConfig));
+}
+
+export async function observeSourceControlAsync(source: CodeSource) {
+  return parseSourceControl(source, await codeGitAsync(source.location, statusArgs, SOURCE_CONTROL_LIMITS.bytes));
+}
+
+function parseSourceControl(source: CodeSource, output: Buffer) {
+  const raw = output.toString('utf8');
   const records = raw.split('\0'), files: CodeChange[] = [];
   let branch: string | null = null, head: string | null = null, upstream: string | null = null, ahead: number | null = null, behind: number | null = null;
   for (let index = 0; index < records.length; index++) {

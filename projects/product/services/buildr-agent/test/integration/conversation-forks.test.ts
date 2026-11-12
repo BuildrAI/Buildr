@@ -40,11 +40,9 @@ function fixture(settings: { remap?: boolean; failFork?: boolean; modelBacked?: 
         if(hold)await new Promise<void>(resolve=>{release=resolve;});
         const item:ExecutorItem={id:randomUUID(),kind:'message',role:'assistant',text:'回答：'+input.text,executionId:id,status:'completed'};
         items.push(item);input.onEvent({type:'item',item});
-        input.onEvent({type:'title',title:'不应继承的旧主题'});
         input.onEvent({type:'completed',status:'completed'});
       },
       async generateTitle(input){titles.push(input.description);return '新方向标题';},
-      async readTitle(){return '不应继承的旧主题';},
       async observe({executionRef}){return {status:'idle',executionRef,tools:[]};},
       async reply(){},async stop(){release?.();return {status:'stopped',tools:[]};},async close(){closes++;release?.();},
     };

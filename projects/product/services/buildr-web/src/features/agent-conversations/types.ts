@@ -10,8 +10,8 @@ import type { AgentServiceConnectionConnection, AgentConversationConversation, A
 import type { AgentServicePreparationPreparation } from '../../../build/generated/agent-service-http-dto';
 
 // Display choices are the three validated executors; HTTP views come from the host schema.
-export type ProviderId = 'codex' | 'dsh' | 'qoder' | 'qoder-cn';
-export const providerNames: Record<string,string> = {codex:'Codex',dsh:'DSH',qoder:'Qoder','qoder-cn':'Qoder CN'};
+export type ProviderId = 'codex' | 'dsh' | 'qoder' | 'qoder-cn' | 'claude-code';
+export const providerNames: Record<string,string> = {codex:'Codex',dsh:'DSH',qoder:'Qoder','qoder-cn':'Qoder CN','claude-code':'Claude Code'};
 export type ConnectionView = AgentServiceConnectionConnection;
 export type PreparationView = AgentServicePreparationPreparation;
 export type ConversationView = AgentConversationConversation;
@@ -29,5 +29,3 @@ export type ConversationSummary = Omit<ConversationView,'entries'|'requests'> & 
 export type PendingConversation = {conversationId:string;workspaceId:string;title:string;status:RunStatus;count?:number};
 
 export type { AgentConversationSupplementRequestSupplement as SupplementInput, AgentConversationSupplementResultSupplemented as SupplementResult } from '../../../build/generated/agent-service-http-dto';
-
-export type { AgentWebhookSettingsWebhookSettings as WebhookSettingsView, AgentWebhookSettingsInputWebhookSettingsInput as WebhookSettingsInput, AgentWebhookTestWebhookTest as WebhookDeliveryResult } from '../../../build/generated/agent-service-http-dto';

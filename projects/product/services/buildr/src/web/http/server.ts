@@ -18,6 +18,7 @@ export function createLocalWorkspaceServer(runtime: any, {
   productIdentity = null,
   webProfile = null,
   previewIdentity = null,
+  agentRuntimeStatus = null,
   onShutdown = null,
   beforeShutdown = null,
   spawnSuccessor = null,
@@ -114,6 +115,7 @@ export function createLocalWorkspaceServer(runtime: any, {
     productIdentity,
     webProfile,
     previewIdentity,
+    agentRuntimeStatus,
     httpContributions,
     origin: () => origin,
     isClosing: () => closing,
@@ -158,18 +160,30 @@ export function createLocalWorkspaceServer(runtime: any, {
     if (hostWasListening) void closeResources().catch(error => console.error('Buildr Web resource shutdown failed:', error));
   });
 
-  const ready: Promise<any> = new Promise((resolve: any, reject: any) => {
-    server.once('error', reject);
-    server.listen(port, '127.0.0.1', async () => {
-      try {
-        await onReady?.();
+  const ready: Promise<any> = (async () => {
+    try {
+      await onReady?.();
+    } catch (error) {
+      await closeResources().catch(cleanupError => console.error('Buildr Web resource shutdown failed:', cleanupError));
+      throw error;
+    }
+    if (closing) throw new Error('Buildr Web stopped during startup.');
+
+    // A bound port can receive HTTP requests immediately. Complete asynchronous
+    // initialization first, then publish the loopback origin in the listen callback.
+    return new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(port, '127.0.0.1', () => {
         server.removeListener('error', reject);
         const address = server.address();
-        if (!address || typeof address === 'string') throw new Error('Buildr Web server did not bind a TCP address.');
+        if (!address || typeof address === 'string') {
+          reject(new Error('Buildr Web server did not bind a TCP address.'));
+          return;
+        }
         origin = `http://127.0.0.1:${address.port}`;
         resolve({ server, url: origin, initialWorkspaceId, sessionToken, instanceSecret: healthSecret });
-      } catch(error) { reject(error); }
+      });
     });
-  });
+  })();
   return { server, ready, shutdown };
 }

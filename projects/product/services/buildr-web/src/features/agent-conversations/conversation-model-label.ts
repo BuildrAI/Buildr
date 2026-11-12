@@ -18,8 +18,11 @@ export function conversationModelLabel(model:string|undefined,connections:Connec
   return names.size===1?[...names][0]:'模型名称待确认';
 }
 
-/** Brand comes from the bound catalog provider, never from account display text. */
+/** Brand comes from the bound catalog provider; custom providers display the user-given name. */
 export function conversationModelSourceLabel(accountId:string,catalog:CatalogModel[]):string {
-  const provider=catalog.find(item=>item.accountId===accountId)?.provider.replace(/^native-/, '');
-  return provider?({codex:'ChatGPT',openai:'ChatGPT API',devin:'Devin',dsh:'DeepSeek',qoder:'Qoder','qoder-cn':'Qoder CN',deepseek:'DeepSeek'} as Record<string,string>)[provider]??provider:'账号未记录';
+  const source=catalog.find(item=>item.accountId===accountId);
+  const provider=source?.provider.replace(/^native-/, '');
+  if(!provider)return '供应商未记录';
+  if(provider==='custom')return source?.accountLabel||'自定义供应商';
+  return ({codex:'ChatGPT',openai:'ChatGPT API',anthropic:'Claude API',devin:'Devin',dsh:'DeepSeek',qoder:'Qoder','qoder-cn':'Qoder CN',deepseek:'DeepSeek'} as Record<string,string>)[provider]??provider;
 }

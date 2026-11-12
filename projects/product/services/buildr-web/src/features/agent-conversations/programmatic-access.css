@@ -1,0 +1,65 @@
+.pas-root{display:flex;flex-direction:column;gap:20px;color:var(--soft-ink);container:programmatic / inline-size}
+.pas-intro{display:flex;align-items:center;justify-content:space-between;gap:20px}
+.pas-intro h3{margin:0 0 6px;font-size:var(--font-size-heading);font-weight:600;letter-spacing:-.2px}
+.pas-intro p{margin:0;color:var(--soft-muted);font-size:var(--font-size-secondary);line-height:1.6}
+.pas-intro>.ant-btn{flex:none}
+.pas-connection{padding:16px 18px;background:var(--soft-surface);border:1px solid var(--soft-line);border-radius:10px}
+.pas-endpoint{display:flex;align-items:flex-start;gap:14px;min-width:0}
+.pas-endpoint-label{display:inline-flex;align-items:center;gap:7px;padding-top:3px;color:var(--soft-muted);font-size:var(--font-size-meta);white-space:nowrap}
+.pas-url{min-width:0;overflow-wrap:anywhere;font-size:var(--font-size-secondary)}
+.pas-url code{margin:0;background:transparent;border:0;padding:0;font-size:inherit}
+.pas-documents{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-top:1px solid var(--soft-line);margin-top:14px;padding-top:10px}
+.pas-documents>.ant-btn{color:var(--soft-primary);margin-left:-4px}
+.pas-documents>span{font-size:var(--font-size-meta);color:var(--soft-muted);margin-left:auto}
+.pas-section-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px}
+.pas-section-heading h4{margin:0;font-size:var(--font-size-subheading);font-weight:600}
+.pas-section-heading>span{font-size:var(--font-size-meta);color:var(--soft-muted)}
+.pas-credential-list{display:flex;flex-direction:column;gap:10px}
+.pas-credential{background:var(--soft-surface);border:1px solid var(--soft-line);border-radius:10px;overflow:hidden}
+.pas-credential-header{display:flex;align-items:center;gap:12px;padding:16px}
+.pas-program-icon{display:grid;place-items:center;flex:none;width:36px;height:36px;background:var(--soft-primary-bg,#edf5f1);color:var(--soft-primary);border-radius:9px;font-size:var(--icon-size-large)}
+.pas-credential-summary{min-width:0;flex:1}
+.pas-credential-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pas-credential-title h4{margin:0;font-size:var(--font-size-body);font-weight:600;overflow-wrap:anywhere}
+.pas-status{display:inline-flex;align-items:center;gap:5px;color:var(--soft-primary);font-size:var(--font-size-meta);white-space:nowrap}
+.pas-status i{width:5px;height:5px;border-radius:50%;background:currentColor}
+.pas-status.is-revoked{color:var(--soft-muted)}
+.pas-credential-summary p{display:flex;align-items:baseline;flex-wrap:wrap;gap:7px;margin:5px 0 0;color:var(--soft-muted);font-size:var(--font-size-meta);line-height:1.5;overflow-wrap:anywhere}
+.pas-summary-divider{color:var(--soft-line)}
+.pas-credential-actions{display:flex;align-items:center;gap:6px;flex:none}
+.pas-credential-actions>.ant-btn-text{color:var(--soft-muted)}
+.pas-chevron{font-size:var(--icon-size-tiny);transition:transform .15s}
+.pas-chevron.is-open{transform:rotate(180deg)}
+.pas-credential.is-revoked .pas-program-icon{background:var(--soft-bg);color:var(--soft-muted)}
+.pas-credential-details{padding:16px 18px 18px;border-top:1px solid var(--soft-line)}
+.pas-legacy{border-left:2px solid var(--soft-line);padding:0 0 0 12px;margin-bottom:18px;font-size:var(--font-size-secondary)}
+.pas-legacy strong{font-weight:500}
+.pas-legacy p{margin:6px 0 10px;color:var(--soft-muted);line-height:1.7}
+.pas-detail-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:var(--font-size-secondary);margin-bottom:10px}
+.pas-detail-heading>span{font-size:var(--font-size-meta);color:var(--soft-muted)}
+.pas-handoff{white-space:pre-wrap;overflow-wrap:anywhere;padding:14px;background:var(--soft-bg);border-radius:7px;font-size:var(--font-size-meta);line-height:1.8}
+.pas-metadata{display:grid;grid-template-columns:72px minmax(0,1fr);column-gap:16px;row-gap:10px;margin:0;font-size:var(--font-size-meta);line-height:1.7}
+.pas-metadata dt{color:var(--soft-muted)}
+.pas-metadata dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.pas-metadata dd .ant-tag{font-size:inherit;margin-bottom:2px}
+.pas-footnote{margin:0;font-size:var(--font-size-meta);line-height:1.7;color:var(--soft-muted)}
+.pas-modal-intro,.pas-form-note{color:var(--soft-muted);font-size:var(--font-size-secondary);line-height:1.7}
+.pas-modal-intro{margin:2px 0 20px}
+.pas-form-drawer .ant-alert{margin-bottom:16px}
+.pas-read-grant{display:flex;align-items:center;justify-content:space-between;color:var(--soft-ink);font-size:var(--font-size-secondary);padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid var(--soft-line)}
+.pas-read-grant>span{font-size:var(--font-size-meta);color:var(--soft-muted)}
+.pas-permissions{display:flex;flex-direction:column;gap:12px}
+.pas-permissions .ant-checkbox-wrapper{align-items:flex-start}
+.pas-permission-label{display:block;line-height:1.6}
+.pas-permission-label small{display:block;font-size:var(--font-size-meta);color:var(--soft-muted);line-height:1.5}
+.pas-full-access{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pas-full-access-hint{color:var(--soft-muted);font-size:var(--font-size-meta);line-height:1.5}
+.pas-form-note{font-size:var(--font-size-meta);margin:0 0 20px}
+.pas-migration-note{margin:0 0 12px;font-size:var(--font-size-meta);line-height:1.7;color:var(--soft-muted)}
+.pas-pushback{margin-top:16px;padding-top:16px;border-top:1px solid var(--soft-line)}
+.pas-pushback .ant-form-item{margin-bottom:14px}
+.pas-pushback-deliveries{margin-top:14px;font-size:var(--font-size-meta);line-height:1.7}
+.pas-pushback-deliveries ul{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.pas-pushback-deliveries li{display:flex;align-items:center;gap:8px;color:var(--soft-ink);overflow-wrap:anywhere}
+.pas-pushback-deliveries li .ant-tag{margin:0}
+@container programmatic (max-width:540px){.pas-intro{align-items:flex-start;gap:12px}.pas-intro h3{font-size:var(--font-size-subheading)}.pas-intro p{max-width:240px}.pas-connection{padding:14px}.pas-endpoint{flex-direction:column;gap:6px}.pas-documents{gap:4px}.pas-documents>span{width:100%;margin:4px 0 0}.pas-credential-header{display:grid;grid-template-columns:32px minmax(0,1fr);gap:10px;padding:14px}.pas-program-icon{width:32px;height:32px}.pas-credential-actions{grid-column:2;justify-self:end}.pas-detail-heading{align-items:flex-start;flex-direction:column;gap:3px}.pas-metadata{grid-template-columns:64px minmax(0,1fr);column-gap:10px}}

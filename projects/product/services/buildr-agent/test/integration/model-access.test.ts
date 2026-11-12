@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { createCustomModelProvider } from '../../src/model-access/providers/custom.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
@@ -85,7 +87,8 @@ function frames(values:unknown[]){return new Response(values.map(value=>'data: '
 
 test('gateway preserves a bounded HTTP failure before streaming without exposing credentials or HTML',async()=>{
   const root=await mkdtemp(join(tmpdir(),'buildr-model-error-'));let mode='json';
-  const access=createModelAccess({root,providers:[provider(async()=>mode==='json'?Response.json({error:{code:'model_devin_quota_or_rate_limit',message:'Devin · 请求响应：HTTP 429 Authorization: Bearer private-token'}},{status:429}):new Response('<html>private upstream body</html>',{status:503}))]});
+  const failures: ProtocolJson[] = [];
+  const access=createModelAccess({root,diagnostics:event=>failures.push(event),providers:[provider(async()=>mode==='json'?Response.json({error:{code:'model_devin_quota_or_rate_limit',message:'Devin · 请求响应：HTTP 429 Authorization: Bearer private-token'}},{status:429}):new Response('<html>private upstream body</html>',{status:503}))]});
   try{
     const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id);
     const lease=await access.leases.create({accountId:ready.id,modelId:model.id,agentId:'codex',conversationId:'one',runId:'one'});
@@ -93,7 +96,32 @@ test('gateway preserves a bounded HTTP failure before streaming without exposing
     const response=await request();assert.equal(response.status,429);const result=await response.json();
     assert.equal(result.error.code,'model_devin_quota_or_rate_limit');assert.match(result.error.message,/请求响应.*429/);assert.ok(!JSON.stringify(result).includes('private-token'));
     mode='html';const other=await request();assert.equal(other.status,503);assert.ok(!(await other.text()).includes('private upstream body'));
+    assert.deepEqual(failures.map(({phase,httpStatus,upstreamHttpStatus,conversationId,runId})=>({phase,httpStatus,upstreamHttpStatus,conversationId,runId})),[
+      {phase:'provider-response',httpStatus:429,upstreamHttpStatus:429,conversationId:'one',runId:'one'},
+      {phase:'provider-response',httpStatus:503,upstreamHttpStatus:503,conversationId:'one',runId:'one'},
+    ]);
+    assert.notEqual(failures[0]?.requestId,failures[1]?.requestId);
+    assert.doesNotMatch(JSON.stringify(failures),/private-token|private upstream body/);
   }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('Messages keeps parallel tool results adjacent to their call before follow-up text', () => {
+  const body = translateRequest({messages:[
+    {role:'user',content:'Read both files'},
+    {role:'assistant',content:[
+      {type:'tool_use',id:'first',name:'read',input:{}},
+      {type:'tool_use',id:'second',name:'read',input:{}},
+    ]},
+    {role:'user',content:[
+      {type:'tool_result',tool_use_id:'second',content:'second output'},
+      {type:'tool_result',tool_use_id:'first',content:'first output'},
+      {type:'text',text:'Follow-up context'},
+    ]},
+  ]},'anthropic-messages','chat-completions',noOpaque);
+  const messages = body.messages as ProtocolJson[];
+  assert.deepEqual(messages.map(message=>message.role),['user','assistant','tool','tool','user']);
+  assert.deepEqual(messages.slice(2,4).map(message=>message.tool_call_id),['second','first']);
+  assert.equal(messages[4]?.content,'Follow-up context');
 });
 
 test('account checks only rotate revisions for material changes in that account',async()=>{
@@ -544,4 +572,50 @@ test('native decimal balances survive account persistence and failed observation
     await access.close(); access = createModelAccess({root,providers:[source]});
     assert.deepEqual(access.accounts.read(added.id).quota?.balances,balances);
   } finally { await access.close(); await rm(root,{recursive:true,force:true}); }
+});
+
+test('gateway bounds actual output to provider capability without overwriting native request defaults',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-output-capability-'));const seen:ProtocolJson[]=[];
+ const source=provider(async input=>{seen.push(structuredClone(input.body));return chat({role:'assistant',content:'ok'});});
+ const originalOpen=source.open;source.open=async input=>{const runtime=await originalOpen(input),inspect=runtime.inspect;runtime.inspect=async()=>{const value=await inspect();return {...value,models:value.models.map(model=>({...model,maxOutputTokens:2048}))};};return runtime;};
+ const access=createModelAccess({root,providers:[source]});
+ try{
+  const added=await access.accounts.add({provider:'fixture'}),account=await checkEnabled(access,added.id),lease=await access.leases.create({accountId:account.id,modelId:model.id,agentId:'dsh',conversationId:'one',runId:'run'});
+  for(const max_tokens of [128000,512,undefined]){
+   const response=await fetch(lease.baseUrl+'/chat/completions',{method:'POST',headers:{authorization:'Bearer '+lease.apiKey,'content-type':'application/json'},body:JSON.stringify({model:lease.model,messages:[],...(max_tokens?{max_tokens}:{})})});assert.equal(response.status,200);await response.text();
+  }
+  assert.deepEqual(seen.map(body=>body.max_tokens),[2048,512,undefined]);assert.equal(lease.offering.maxOutputTokens,2048);
+ }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('legacy custom account keeps its identity and model preferences after reading the catalog', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-model-legacy-catalog-'));
+  const baseUrl = 'https://gateway.example.com/v1';
+  const legacyIdentity = createHash('sha256').update(`custom:chat-completions:${baseUrl}:anonymous`).digest('hex');
+  const requests:string[]=[];
+  const provider = createCustomModelProvider({fetch:async input => {requests.push(String(input));return Response.json({data:[{id:'manual-model'}]});}});
+  const accountId = 'existing-custom';
+  await writeFile(join(root,'accounts.json'),JSON.stringify({
+    version:1, accounts:[{id:accountId,provider:'custom',label:'现有网关',identity:legacyIdentity,revision:'old',enabled:true,status:'ready',
+      custom:{baseUrl,protocol:'chat-completions',useApiKey:false,models:[{id:'manual-model'}]},
+      models:[{id:'manual-model',label:'旧模型',images:false,tools:true}]}],
+    preferences:{[accountId]:{'manual-model':{enabled:true,contextWindow:16000}}},
+  }),{mode:0o600});
+  const access=createModelAccess({root,providers:[provider]});
+  try {
+    const refreshed=await access.accounts.check(accountId);
+    assert.equal(refreshed.identity,legacyIdentity);
+    assert.equal(refreshed.models[0]?.enabled,true);
+    assert.equal(refreshed.models[0]?.contextWindow,16000);
+    await assert.rejects(access.accounts.add({provider:'custom',custom:{label:'重复网关',baseUrl,protocol:'chat-completions',useApiKey:false}}),/已接入/);
+    await access.accounts.discoverCustom({accountId,baseUrl,protocol:'chat-completions',modelsPath:'/catalog',useApiKey:false});
+    assert.equal(requests.at(-1),baseUrl+'/catalog');
+    const configuration={label:'现有网关',baseUrl,protocol:'chat-completions' as const,useApiKey:false};
+    const removed=await access.accounts.configureCustom(accountId,{...configuration,expectedRevision:refreshed.revision,models:[]});
+    assert.equal(removed.identity,legacyIdentity);
+    assert.deepEqual(removed.models,[]);
+    const restored=await access.accounts.configureCustom(accountId,{...configuration,expectedRevision:removed.revision,models:[{id:'manual-model'}]});
+    assert.equal(restored.models[0]?.contextWindow,16000);
+    assert.equal(restored.models[0]?.enabled,true);
+  } finally {await access.close();await rm(root,{recursive:true,force:true});}
 });

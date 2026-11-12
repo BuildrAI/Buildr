@@ -92,13 +92,13 @@ test('快速档位显式绑定原生来源，保留合法强度并不修改原�
   assert.equal(original.modelAccountId,undefined);
 });
 
-test('浮窗显示真实账号与模型，旧响应不猜账号，失败保留观察',()=>{
+test('浮窗显示真实供应商与模型，旧响应不猜供应商，失败保留观察',()=>{
   const stats={agents:[{label:'codex',count:3}],models:[{label:'m',count:3}],executions:[{provider:'codex',model:'m',count:3}],modelExecutions:[{accountId:'one',accountLabel:'账号甲',model:'m',count:2},{accountId:'two',accountLabel:'账号乙',model:'m',count:1}]};
   const html=renderToStaticMarkup(React.createElement(ConversationExecutionSummary,{stats,stale:true,modelLabel:()=> '完整模型名',sourceLabel:id=>id==='one'?'Devin':'ChatGPT'}));
   assert.match(html,/执行中模型/);assert.match(html,/>Devin · 完整模型名<\/span>/);assert.match(html,/>ChatGPT · 完整模型名<\/span>/);assert.match(html,/未更新/);assert.doesNotMatch(html,/账号甲|账号乙|title=/);
   assert.doesNotMatch(html,/Codex|Qoder|按智能体|按模型|<button/);
   const legacy=renderToStaticMarkup(React.createElement(ConversationExecutionSummary,{stats:{agents:stats.agents,models:stats.models,executions:stats.executions},modelLabel:()=> '完整模型名',sourceLabel:id=>id==='one'?'Devin':'ChatGPT'}));
-  assert.match(legacy,/账号与模型明细尚未读取/);assert.doesNotMatch(legacy,/Codex ·/);
+  assert.match(legacy,/供应商与模型明细尚未读取/);assert.doesNotMatch(legacy,/Codex ·/);
 });
 
 test('工作空间只分一组，混合状态保留组内优先顺序',()=>{
@@ -109,17 +109,17 @@ test('工作空间只分一组，混合状态保留组内优先顺序',()=>{
   assert.deepEqual(groupConversationWorkspaces([]).size,0);
   assert.equal(items.length,3);
 });
-test('浮窗首帧只选提醒分组内的行，历史未知保留执行不闪现',()=>{
+test('浮窗首帧只选提醒分组内的行，历史未知保留执行以待确认可见',()=>{
   const running={id:'running',title:'执行中',run:{status:'running'},activity:{version:4,seenThrough:4}};
   const decided={id:'decided',title:'待决策',run:{status:'running'},activity:{version:2,seenThrough:2,pendingDecisionCount:1}};
   const unseen={id:'unseen',title:'待查看',run:{status:'completed'},activity:{version:6,seenThrough:5}};
   const unknown={id:'unknown',title:'未知执行',run:{status:'unknown'},activity:{version:3,seenThrough:3}};
   const stale={id:'stale',title:'历史未知保留执行',run:{status:'completed'},retainedRuns:[{id:'old',status:'unknown'}],activity:{version:7,seenThrough:7,active:true}};
-  assert.equal(activityState(stale),null,'活动快照仍会返回只剩历史未知保留执行的行');
+  assert.equal(activityState(stale),'unknown','仅因历史未知保留执行而活跃的行必须可见为状态待确认');
   const fallback=reminderFallbackRows([stale,unseen,decided,running,unknown]);
   assert.deepEqual(fallback.running.map(row=>row.id),['decided','running']);
-  assert.deepEqual(fallback.pending.map(row=>row.id),['unseen','decided','unknown']);
-  assert.equal([...fallback.pending,...fallback.running].some(row=>row.id==='stale'),false,'首帧不能先显示随后被分组结果替换的行');
+  assert.deepEqual(fallback.pending.map(row=>row.id),['stale','unseen','decided','unknown']);
+  assert.equal(fallback.running.some(row=>row.id==='stale'),false,'待确认行不冒充执行中');
 });
 test('入口悬停提示固定，未知执行只保留条目徽标与入口说明',()=>{
   assert.match(render({active:true}),/title="对话列表"/);
@@ -166,7 +166,24 @@ test('waiting and failed submissions remain active without pretending to execute
  assert.equal(pendingSendReason({...pending,state:'dispatching'}),'正在投递，尚未确认受理。');
  assert.equal(pendingSendReason({...pending,state:'failed'}),pending.reason);
  assert.equal(activityState({...row,pendingSend:{...pending,state:'failed'}}),'send-failed','current full view overrides an older display snapshot');
- assert.equal(activityState({...row,activity:{...row.activity,pendingSend:undefined}}),null);
+ assert.equal(activityState({...row,activity:{...row.activity,pendingSend:undefined}}),'unknown','残余活跃行保持可解释，不无声置顶');
  assert.equal(activityState({...row,run:{status:'running'},activity:{...row.activity,pendingSend:undefined}}),'running');
  assert.deepEqual(activityBadge({active:1,running:0,waiting:0,unseen:0,unknown:0,attention:0,pendingSend:1}),{kind:'active',count:1,label:'活动中'});
+});
+
+test('残余活跃行归为状态待确认，结算入口只放行无在途工作的保留未知轮',async()=>{
+ assert.equal(activityState({run:{status:'completed'},activity:{version:2,seenThrough:2,active:true}}),'unknown');
+ assert.equal(activityState({run:{status:'completed'},activity:{version:2,seenThrough:2,active:false}}),null);
+ assert.equal(activityState({run:{status:'completed'},activity:{version:2,seenThrough:1,active:true}}),'unseen','未读仍优先于残余待确认');
+ const {canSettleRetainedRun}=await import('../src/features/agent-conversations/conversation-state.ts');
+ const run={id:'old',status:'unknown',executionState:'unknown',tools:[{id:'t',status:'unknown'}]};
+ const conversation={run:{id:'current',status:'completed',tools:[]},retainedRuns:[run],requests:[]};
+ assert.equal(canSettleRetainedRun(conversation,run),true);
+ assert.equal(canSettleRetainedRun(conversation,{...run,tools:[{id:'t',status:'running'}]}),false,'running 工具不可结算');
+ assert.equal(canSettleRetainedRun(conversation,{...run,executionState:'active'}),false,'active 执行不可结算');
+ assert.equal(canSettleRetainedRun(conversation,{...run,attentionSettled:true}),false,'已结算不重复入口');
+ assert.equal(canSettleRetainedRun(conversation,{...run,supersededBy:'new'}),false,'被替代轮不属保留入口');
+ assert.equal(canSettleRetainedRun({...conversation,requests:[{id:'q',runId:'old'}]},run),false,'有效问题不可结算');
+ assert.equal(canSettleRetainedRun(conversation,conversation.run),false,'当前轮不走保留结算');
+ assert.equal(canSettleRetainedRun(null,run),false);
 });

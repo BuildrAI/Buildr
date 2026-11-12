@@ -2,7 +2,7 @@ import {createConversationInputAttempts} from '../src/features/agent-conversatio
 import {finalReplyIds,forkableReplyIds} from '../src/features/agent-conversations/conversation-fork.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {needsConversationObservation,conversationObservationKey,conversationTurnTiming,conversationStreamTurns} from '../src/features/agent-conversations/conversation-state.ts';
+import {needsConversationObservation,conversationObservationKey,conversationTurnTiming,conversationStreamTurns,historicalStopSettled} from '../src/features/agent-conversations/conversation-state.ts';
 import {conversationActionKey,createConversationActions} from '../src/features/agent-conversations/conversation-actions.ts';
 import { registerHooks } from 'node:module';
 import { existsSync } from 'node:fs';
@@ -18,6 +18,44 @@ registerHooks({resolve(specifier,context,next){
 const {createAgentConversationsClient}=await import('../src/features/agent-conversations/api/agent-conversations-api.ts');
 const session={writeHeaders:()=>({'x-buildr-session':'native-test-session','content-type':'application/json'})};
 const conversation={id:'chat/id',workspaceId:'saved/ws',revision:'r1',cwd:'/saved/root',title:'Work',hidden:false,updatedAt:'2026-10-23',participants:[],entries:[],requests:[{id:'approval/id',runId:'run/1',participantId:'original-codex',generation:'generation-1',kind:'approval',title:'Allow?'}],run:{id:'run/1',participantId:'original-codex',generation:'generation-1',provider:'codex',status:'running'}};
+
+test('账号列表合并并发读取，取消一个观察者不影响另一个', async()=>{
+  let count=0;
+  const started=Promise.withResolvers(),response=Promise.withResolvers();
+  const api=createAgentConversationsClient(async()=>{count++;started.resolve();return response.promise;},session);
+  const controller=new AbortController();
+  const first=api.modelAccounts(controller.signal,true);
+  const second=api.modelAccounts(undefined,true);
+  await started.promise;
+  controller.abort();
+  await assert.rejects(first,{name:'AbortError'});
+  response.resolve({accounts:[],providers:[]});
+  assert.deepEqual(await second,{accounts:[],providers:[]});
+  assert.equal(count,1);
+});
+
+test('对话读取遇到 503 会恢复，取消后不再重试', async()=>{
+  const attempts=[];
+  const api=createAgentConversationsClient(async(path,options)=>{
+    attempts.push(options?.method ?? 'GET');
+    if(attempts.length===1)throw Object.assign(new Error('后台暂不可用'),{status:503});
+    return conversation;
+  },session);
+  assert.equal(await api.read(conversation.workspaceId,conversation.id),conversation);
+  assert.deepEqual(attempts,['GET','GET']);
+
+  const controller=new AbortController(),first=Promise.withResolvers();
+  let count=0;
+  const cancelled=createAgentConversationsClient(async()=>{
+    count++;first.resolve();
+    throw Object.assign(new Error('后台暂不可用'),{status:503});
+  },session);
+  const pending=cancelled.read(conversation.workspaceId,conversation.id,controller.signal);
+  await first.promise;
+  controller.abort();
+  await assert.rejects(pending,{name:'AbortError'});
+  assert.equal(count,1);
+});
 
 test('整轮时间覆盖最后答复与未知过程，不截成首次说明的8秒',()=>{
   const startedAt='2026-11-02T05:11:24.000Z',first='2026-11-02T05:11:32.000Z',finishedAt='2026-11-02T05:17:21.000Z';
@@ -181,6 +219,18 @@ test('历史分页遇到流式更新保留较新的执行事实，更新当前�
   const page={...conversation,revision:'older-revision',entries:[earlier,{...latest,text:'stale streamed text'}],run:{...conversation.run,status:'stopped'},nextEntryCursor:1};
   const paged=prependConversationEntries(current,page);assert.equal(paged.revision,'new-revision');assert.equal(paged.run.status,'running');assert.equal(paged.entries.at(-1).text,'streamed text');
   const updated=mergeConversationView(paged,{...current,entries:[{...latest,text:'new chunk'}],nextEntryCursor:100});assert.deepEqual(updated.entries.map(item=>item.text),['old history','new chunk']);assert.equal(updated.nextEntryCursor,1);
+});
+
+test('稀疏首条输入不会让流式快照丢弃已载入的中间历史',()=>{
+  const prompt={id:'prompt',sequence:1,kind:'message',role:'user',runId:'run',text:'本轮输入'};
+  const middle={id:'middle',sequence:60,kind:'tool',role:'system',runId:'run',text:'已载入的中间过程'};
+  const tail={id:'tail',sequence:125,kind:'tool',role:'system',runId:'run',text:'旧尾段'};
+  const current={...conversation,revision:'loaded-page',entries:[prompt,middle,tail],nextEntryCursor:undefined};
+  const streamed={...conversation,revision:'streamed-page',entries:[prompt,{...tail,text:'新尾段'}],nextEntryCursor:125};
+  const merged=mergeConversationView(current,streamed);
+  assert.deepEqual(merged.entries.map(entry=>entry.id),['prompt','middle','tail']);
+  assert.equal(merged.entries.at(-1).text,'新尾段');
+  assert.equal(merged.nextEntryCursor,undefined,'已加载全部更早记录时不能重新出现旧游标');
 });
 
 
@@ -546,8 +596,10 @@ test('异常恢复入口只取决于原执行状态，与选择模型或智能�
   assert.deepEqual(conversationRecoveryAction(view('failed')),{kind:'recover',label:'继续'});
   assert.deepEqual(conversationRecoveryAction(view('stopped')),{kind:'recover',label:'继续'});
   assert.deepEqual(conversationRecoveryAction(view('completed')),{kind:'recover',label:'继续'});
-  const reply={kind:'message',role:'assistant',runId:base.run.id,text:'已完成并答复',createdAt:'2026-10-28T00:00:01Z'};
+  const reply={id:'final-reply',kind:'message',role:'assistant',runId:base.run.id,text:'已完成并答复',createdAt:'2026-10-28T00:00:01Z'};
   assert.equal(conversationRecoveryAction(view('completed',true,[reply])),null);
+  assert.equal(conversationRecoveryAction(view('stopped',true,[reply])),null,'stopped output with a visible final reply is not a missing answer');
+  assert.equal(conversationRecoveryAction(view('failed',true,[reply])),null,'a failed process after a visible final reply does not claim the answer is missing');
   assert.deepEqual(conversationRecoveryAction(view('completed',true,[{...reply,parentToolId:'agent-tool'}])),{kind:'recover',label:'继续'},'子报告不代替缺失的主答复');
   assert.deepEqual(conversationRecoveryAction(view('unknown')),{kind:'observe',label:'核对状态'});
   for(const status of ['starting','running','stopping','waiting-approval','waiting-question']) assert.equal(conversationRecoveryAction(view(status)),null);
@@ -630,6 +682,12 @@ test('结束轮次退出观察，未知/工具/待回应/待发送保持观察�
   for(const status of ['running','unknown'])assert.equal(needsConversationObservation({...ended,run:{...ended.run,tools:[{id:'tool',status}]}}),true,status);
   const old={...conversation.run,status:'unknown',tools:[{id:'uncertain',status:'unknown'}]};
   assert.equal(needsConversationObservation({...ended,retainedRuns:[old]}),true);
+  const stoppedOld={...old,stopRequested:true,executionState:'unknown'};
+  assert.equal(historicalStopSettled(stoppedOld),true);
+  assert.equal(needsConversationObservation({...ended,retainedRuns:[stoppedOld]}),false,'已请求停止且无活动控制的历史未知轮不再维持观察');
+  assert.equal(conversationObservationKey({...ended,retainedRuns:[stoppedOld]}),null);
+  assert.equal(needsConversationObservation({...ended,retainedRuns:[{...stoppedOld,tools:[{id:'live',status:'running'}]}]}),true,'运行中的工具仍保护观察');
+  assert.equal(needsConversationObservation({...ended,retainedRuns:[{...stoppedOld,executionState:'active'}]}),true,'活动执行仍保护观察');
   assert.equal(needsConversationObservation({...ended,retainedRuns:[{...old,supersededBy:ended.run.id}]}),false,'系统善后不维持前端观察循环');
   assert.equal(needsConversationObservation({...ended,requests:conversation.requests}),true);
   assert.equal(needsConversationObservation({...ended,pendingSend:{id:'queued',state:'waiting'}}),true);
@@ -671,8 +729,9 @@ test('只在每轮最终答复提供分叉，后续执行不遮蔽较早答复',
     {id:'final',runId:'old',role:'assistant',kind:'message'},
     {id:'running',runId:'new',role:'assistant',kind:'message'},
   ]};
-  assert.deepEqual([...forkableReplyIds(view)],['final']);
-  assert.deepEqual([...forkableReplyIds({...view,run:{id:'new',status:'completed'}})],['final','running']);
+  // 连续助手段（note+final）同属一条最终答复，均可分叉；未结束的当前轮不提升。
+  assert.deepEqual([...forkableReplyIds(view)],['note','final']);
+  assert.deepEqual([...forkableReplyIds({...view,run:{id:'new',status:'completed'}})],['note','final','running']);
   assert.equal(forkableReplyIds({...view,forkState:{status:'failed'}}).size,0);
 });
 
@@ -791,16 +850,6 @@ test('新轮未受理或失败时旧卡片仍可回答，问题结束标记不�
   const ended={...view,retainedRuns:[{...old,questionsEndedBy:'new'}],requests:[request,{...request,id:'approval',kind:'approval'}]};
   assert.deepEqual(currentConversationRequests(ended).map(value=>value.id),['approval']);assert.equal(ended.retainedRuns[0].tools[0].status,'running');
  }
-});
-
-test('Webhook client keeps normal reads secret-free and sends reveal/test as explicit versioned mutations',async()=>{
- const calls=[];
- const api=createAgentConversationsClient(async(url,init)=>{calls.push({url,init});return url.endsWith('/reveal')?{secret:'test-key'}:{revision:'v1'};},session);
- await api.webhookSettings();assert.equal(calls.length,1);assert.ok(calls[0].url.endsWith('/webhook-settings'));assert.equal(calls[0].init.method,undefined);
- await api.revealWebhookSecret('v1');assert.equal(calls[1].init.method,'POST');assert.deepEqual(JSON.parse(calls[1].init.body),{expectedRevision:'v1'});
- await api.saveWebhookSettings({expectedRevision:'v1',enabled:false,url:'https://receiver.test'});assert.equal('secret' in JSON.parse(calls[2].init.body),false);
- await api.testWebhook('v2');assert.ok(calls[3].url.endsWith('/test'));assert.deepEqual(JSON.parse(calls[3].init.body),{expectedRevision:'v2'});
- assert.ok(calls.every(call=>call.init.headers['x-buildr-session']==='native-test-session'));
 });
 
 test('实时订阅对旧HTTP服务只读回退v1，不重用失败基线',async()=>{

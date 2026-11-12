@@ -39,7 +39,7 @@ export function conversationProductActionSelection(
   const available = connections.filter(connection => connection.enabled && connection.status === 'ready');
   const choice = preferredConversationChoice(modulePreference, modelPreference, available, catalog);
   const connection = available.find(item => item.id === choice?.connectionId);
-  if (!choice || !connection) return null;
+  if (!choice?.model || !connection) return null;
   const permissionMode = rememberedConversationPermission(modulePreference, workspaceId);
   return supportsConversationPermission(connection, permissionMode) ? { choice, permissionMode } : null;
 }

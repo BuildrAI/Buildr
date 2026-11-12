@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -24,18 +25,26 @@ export type WorktreeStatusResult = {
 export type CommitFilesResult = { files: TaskCommitFile[]; failures: ChangedFileReadFailure[]; truncated: boolean };
 
 const timedOut = (error: Error | undefined) => error && 'code' in error && error.code === 'ETIMEDOUT';
+type GitOutput = { ok: boolean; text: string; status: number };
+const STATUS_ARGS = ['status', '--porcelain=v2', '-z', '--untracked-files=all'];
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
 /** Read-only Git observations for changed files: working-tree status and per-commit file lists. */
 export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_FILE_LIMITS) {
-  function git(root: string, args: string[], input?: string) {
+  function gitOptions() {
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
-    return spawnSync('git', ['--no-optional-locks', '--no-replace-objects', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false', '-C', root, ...args], {
+    return {
       env: { ...env, GIT_OPTIONAL_LOCKS: '0', GIT_NO_LAZY_FETCH: '1', GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1', LC_ALL: 'C' },
-      input, timeout: limits.timeoutMs, maxBuffer: limits.maxBytes, windowsHide: true,
-    });
+      timeout: limits.timeoutMs, maxBuffer: limits.maxBytes, windowsHide: true,
+    };
   }
-  function output(root: string, args: string[], input?: string): { ok: boolean; text: string; status: number } {
+  function gitArgs(root: string, args: string[]) {
+    return ['--no-optional-locks', '--no-replace-objects', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false', '-C', root, ...args];
+  }
+  function git(root: string, args: string[], input?: string) {
+    return spawnSync('git', gitArgs(root, args), { ...gitOptions(), input });
+  }
+  function output(root: string, args: string[], input?: string): GitOutput {
     const result = git(root, args, input);
     return { ok: !result.error && result.status === 0, text: result.stdout?.toString('utf8') ?? '', status: result.status ?? -1 };
   }
@@ -72,13 +81,13 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
     } catch { return { value: null, truncated: true }; }
   }
 
-  function parseStatus(checkout: string, repositoryId: string, options: { filePath?: string; fullContext?: boolean; metadataOnly?: boolean } = {}): { files: TaskChangedFile[]; failures: ChangedFileReadFailure[]; truncated: boolean; branch: string | null; ahead: number | null } {
+  function parseStatus(checkout: string, repositoryId: string, options: { filePath?: string; fullContext?: boolean; metadataOnly?: boolean } = {}, observedStatus?: GitOutput): { files: TaskChangedFile[]; failures: ChangedFileReadFailure[]; truncated: boolean; branch: string | null; ahead: number | null } {
     const failures: ChangedFileReadFailure[] = [];
     const entries = new Map<string, TaskChangedFile>();
     const paths = options.filePath ? ['--', options.filePath] : [];
     const lineLimit = options.fullContext ? 5000 : limits.previewLineLimit;
     const context = options.fullContext ? ['--unified=2147483647'] : [];
-    const status = output(checkout, ['status', '--porcelain=v2', '-z', '--untracked-files=all', '--branch', ...(options.fullContext ? [] : paths)]);
+    const status = observedStatus ?? output(checkout, [...STATUS_ARGS, '--branch', ...(options.fullContext ? [] : paths)]);
     if (!status.ok || status.status !== 0) failures.push({ code: 'task_changed_files_status_failed', message: '该检出位置的工作区状态读取失败。' });
     const fields = status.text.split('\0');
     if (options.fullContext && options.filePath) {
@@ -190,6 +199,16 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
     return { branch: parsed.branch, upstreamAhead: parsed.ahead, files: parsed.files, failures, truncated };
   }
 
+  // The repository scope has already resolved and verified this checkout root.
+  async function countStatus(verifiedRoot: string, repository: GitRepository) {
+    const observed = await new Promise<GitOutput>(resolve => {
+      execFile('git', gitArgs(verifiedRoot, STATUS_ARGS), { ...gitOptions(), encoding: 'utf8' }, (error, text) => {
+        resolve({ ok: !error, text, status: error ? (typeof error.code === 'number' ? error.code : -1) : 0 });
+      });
+    });
+    return parseStatus(verifiedRoot, repository.id, { metadataOnly: true }, observed);
+  }
+
   function commitFiles(repository: GitRepository, hash: string, repositoryId: string, options: { filePath?: string; fullContext?: boolean } = {}): CommitFilesResult {
     const failures: ChangedFileReadFailure[] = [];
     let truncated = false;
@@ -266,5 +285,5 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
     return { files, failures, truncated };
   }
 
-  return { worktreeStatus, commitFiles, branchInfo };
+  return { worktreeStatus, countStatus, commitFiles, branchInfo };
 }

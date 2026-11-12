@@ -61,17 +61,25 @@ function unacceptedStopSettled(run: NonNullable<ConversationView['run']>): boole
   return run.status === 'unknown' && run.stopRequested === true && run.accepted === false &&
     run.executionState !== 'active' && (run.tools ?? []).every(tool => tool.status === 'completed');
 }
+/** A historical stop request with no live owner or running tool is evidence, not current activity. */
+function historicalStopSettled(run: NonNullable<ConversationView['run']>): boolean {
+  return run.stopRequested === true && run.executionState !== 'active' &&
+    !run.tools.some(tool => tool.status === 'running');
+}
 /** Historical uncertainty is evidence, not proof of currently running work. */
 export function conversationActive(view: ConversationView, version: number, seenThrough: number): boolean {
   const pending=(run:NonNullable<ConversationView['run']>, historical=false)=>{
     if(run.supersededBy)return false;
     if(unacceptedStopSettled(run))return false;
+    if(historical && historicalStopSettled(run))return false;
     if(run.status==='tools-active')return run.tools.some(tool=>tool.status==='unknown'); // Model ended; retain job controls without claiming model activity.
     // Historical uncertainty without any in-flight work is evidence, not a
     // reason to keep the conversation at the top of the list. Running or
     // unknown tools and an active execution state still protect real work.
     if(historical && run.status==='unknown' && run.executionState!=='active' && !run.tools.some(tool=>tool.status==='running'||tool.status==='unknown'))return false;
     if(historical && run.resourcesReleased && run.executionState!=='active' && !run.tools.some(tool=>tool.status==='running'))return false;
+    // User-confirmed settlement closes the attention, never the evidence; real in-flight work still protects itself.
+    if(historical && run.attentionSettled && run.executionState!=='active' && !run.tools.some(tool=>tool.status==='running'))return false;
     return run.executionState==='active' || (!run.resourcesReleased&&BUSY_STATES.has(run.status)) || run.tools.some(tool=>tool.status!=='completed');
   };
   return pendingDecisionCount(view)>0 || !hiddenReleasedOutcome(view) &&

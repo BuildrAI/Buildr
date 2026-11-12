@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { createReleaseToolRuntime } from './runtime.ts';
 import { observeCandidatePackage, candidateRunTimings } from './candidate-run-observation.ts';
@@ -51,10 +51,17 @@ const workspaceRoot: any = path.resolve(serviceRoot, '../../../..');
 const VERSION: any = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u;
 const TASK: any = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
 
+/** Verification rules must come from the frozen release checkout, not the tool checkout. */
+export function frozenVerificationOwnerUrl(repo: string): string {
+  const file = path.resolve(repo, 'projects/product/services/buildr/test/verification/release-verification.ts');
+  if (!fs.statSync(file, { throwIfNoEntry: false })?.isFile()) throw new Error(`Frozen release checkout is missing source verification: ${file}`);
+  return pathToFileURL(file).href;
+}
+
 async function prepareLocalSourceVerification(options: any): Promise<any> {
-  // Source execution tools stay outside the production import graph. This
-  // source-checkout release owner loads them only before a new dispatch.
-  const owner = await import(new URL('../../../projects/product/services/buildr/test/verification/release-verification.ts', import.meta.url).href);
+  // Source execution tools stay outside the production import graph. Load them
+  // from the frozen checkout so a newer tool checkout cannot change the rules.
+  const owner = await import(frozenVerificationOwnerUrl(options.repo));
   return owner.prepareLocalSourceVerification(options);
 }
 

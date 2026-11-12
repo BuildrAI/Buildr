@@ -1,12 +1,43 @@
-import {runWebhookSettingsJourney} from './webhook-settings-journey.ts';
+import {runPushbackSettingsJourney} from './pushback-settings-journey.ts';
+import {runProgrammaticCredentialEditJourney} from './programmatic-credential-edit-journey.ts';
 import {runAgentProgramUpdatesJourney} from './agent-program-updates-journey.ts';
 import assert from 'node:assert/strict';
 import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 
 /** setup 场景使用独立准备的对话现场。 */
 export async function runSetupScenarios(fixture:AgentConversationFixture){
-  await runWebhookSettingsJourney(fixture);
+  await runPushbackSettingsJourney(fixture);
+  await runProgrammaticCredentialEditJourney(fixture);
   const {assertFixed,assertModelSummary,assertNavigationHighlight,assertReminderGap,capture,chooseAgent,chooseModel,chooseOption,closeConversation,closeModelSettings,connections,expectedBrowserErrors,input,modelSettings,openDesktopConversation,openModelSettings,page,panel,preferenceBodies,preparedInputs,programAttempts,reset,run,sentInputs,setHighEffort,step,workspaceId}=fixture;
+await step('模型设置使用供应商侧栏、账号与额度/模型页签并只提供两个官方 API 预设',async()=>{
+  await reset();
+  const drawer=page.getByRole('dialog',{name:/^智能体与模型/});
+  await page.getByRole('button',{name:'智能体与模型设置',exact:true}).click();
+  await drawer.waitFor();
+  const accounts=drawer.locator('.ams-accounts');await accounts.waitFor();
+  await accounts.getByRole('button',{name:'添加自定义供应商',exact:true}).click();
+  const provider=page.getByRole('dialog',{name:/添加供应商/});
+  await provider.waitFor();
+  await provider.getByLabel('显示名称').waitFor();
+  await provider.locator('.ant-select').first().click();
+  const dropdown=page.locator('.ant-select-dropdown:visible');
+  await dropdown.waitFor();
+  const presetTexts=await dropdown.locator('.ant-select-item-option').allInnerTexts();
+  assert.deepEqual(presetTexts,['ChatGPT API','DeepSeek API','其他自定义供应商']);
+  assert.equal(presetTexts.some(text=>text.includes('Claude')),false,'添加抽屉不再提供 Claude API');
+  await dropdown.getByText('其他自定义供应商',{exact:true}).click();
+  await provider.getByLabel('显示名称').waitFor();
+  assert.equal(await provider.getByLabel('模型列表路径').inputValue(),'/models');
+  assert.equal(await provider.getByRole('switch').count(),0);
+  await provider.getByLabel('API Key',{exact:true}).waitFor();
+  await provider.getByRole('button',{name:'关闭供应商配置',exact:true}).click();
+  await provider.waitFor({state:'hidden'});
+  assert.equal(await accounts.getByText('账号与额度',{exact:true}).count(),1);
+  assert.equal(await accounts.getByText('供应商与额度',{exact:true}).count(),0);
+  await capture(page,'agent-provider-management-layout.png');
+  await drawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();
+  await drawer.waitFor({state:'hidden'});
+});
 await step('文档附件支持九份、拒绝第十份并刷新恢复文件名',async()=>{
   await reset();await openDesktopConversation();await input().waitFor();
   await input().fill('读取上传文档');
@@ -32,10 +63,11 @@ await step('文档附件支持九份、拒绝第十份并刷新恢复文件名',
   await panel().getByRole('button',{name:'移除文档 说明8.md',exact:true}).waitFor({state:'hidden'});
   assert.equal(await panel().locator('.ac-document-thumbnail').count(),8);
   assert.equal(fixture.sends,0,'上传与恢复不自动发送');
+  fixture.clearDraftAttachments();
 });
 
 await step('新对话欢迎内容在高矮视口居中，空间不足时仍可完整滚动阅读',async()=>{
-  await reset();const viewport=page.viewportSize();await openDesktopConversation();
+  await reset();fixture.clearDraftAttachments();const viewport=page.viewportSize();await openDesktopConversation();
   const stream=panel().locator('.ac-stream'),welcome=stream.locator('.ac-welcome');await welcome.waitFor();
   const settle=()=>page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
   let focused=false;
@@ -84,7 +116,7 @@ await step('智能体设置自定义内容在桌面与窄屏保留留白，长�
   await page.route(matcher,route);
   const drawer=page.getByRole('dialog',{name:/^智能体与模型/});
   try{
-    await page.getByRole('button',{name:'账号与配置',exact:true}).click();await drawer.waitFor();
+    await page.getByRole('button',{name:'智能体与模型设置',exact:true}).click();await drawer.waitFor();
     await drawer.locator('.ams-setup').getByRole('tab',{name:'智能体',exact:true}).click();
     const program=drawer.locator('[data-program="codex"]');await program.waitFor();await program.locator('summary').click();await program.locator('.ac-program-update-path').waitFor();
     for(const width of [1280,390]){
@@ -105,7 +137,7 @@ await step('智能体设置自定义内容在桌面与窄屏保留留白，长�
     await drawer.locator('.ams-setup').getByRole('tab',{name:'模型',exact:true}).click();await drawer.locator('.ams-accounts').waitFor();
     await capture(page,'agent-settings-models-after-layout-fix.png');
   }finally{
-    if(await drawer.isVisible())await drawer.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();
+    if(await drawer.isVisible())await drawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();
     await page.unroute(matcher,route);if(viewport)await page.setViewportSize(viewport);
   }
 });
@@ -114,14 +146,20 @@ await step('账号入口悬停与聚焦显示所有已登录账号的真实额�
   const observedAt=new Date().toISOString();
   fixture.quotaOverrides.set('codex',{available:true,observedAt,windows:[{id:'week',label:'周限额',remainingPercent:82},{id:'hour',label:'5小时限额',remainingPercent:45,resetsAt:new Date(Date.now()+3600000).toISOString()}]});
   fixture.quotaOverrides.set('dsh',{available:true,observedAt,balances:[{currency:'CNY',total:'123.45600000000000',toppedUp:'120.00600000000000',granted:'3.45'}]});
-  fixture.quotaOverrides.set('qoder',{available:false,observedAt});
+  fixture.quotaOverrides.set('qoder',{available:true,observedAt,windows:[{id:'credits',label:'套餐内 Credits',remainingPercent:0,remainingCredits:0,totalCredits:1000},{id:'add-on',label:'资源包',remainingPercent:59.2,remainingCredits:1599,totalCredits:2700}]});
   try{
-    const button=page.getByRole('button',{name:'账号与配置',exact:true}),overview=page.getByTestId('account-quota-overview');
+    const button=page.getByRole('button',{name:'智能体与模型设置',exact:true}),overview=page.getByTestId('account-quota-overview');
     const leaveQuota=async()=>{await button.evaluate((node:HTMLElement)=>node.blur());await page.mouse.move(70,100);await overview.waitFor({state:'hidden'});};
+    const quotaRow=(label:string)=>overview.locator('.ac-account-quota-row').filter({has:page.getByText(label,{exact:true})});
     await button.hover();await overview.waitFor({state:'visible'});
-    await overview.getByText('周限额 · 剩余 82%',{exact:true}).waitFor();await overview.getByText('5小时限额 · 剩余 45%',{exact:false}).waitFor();
+    await quotaRow('周限额').getByText('剩余 82%',{exact:true}).waitFor();await quotaRow('5小时限额').getByText('剩余 45%',{exact:true}).waitFor();
     await overview.getByText('CNY 123.46',{exact:true}).waitFor();
-    assert.equal(await overview.locator('section').count(),3);await overview.getByText('额度暂不可读取',{exact:true}).waitFor();
+    await quotaRow('套餐内 Credits').getByText(/^剩余 0%/).waitFor();
+    await quotaRow('套餐内 Credits').getByText('· 0 / 1,000',{exact:true}).waitFor();
+    await quotaRow('资源包').getByText(/^剩余 59.2%/).waitFor();
+    await quotaRow('资源包').getByText('· 1,599 / 2,700',{exact:true}).waitFor();
+    assert.deepEqual(await overview.locator('section').evaluateAll((nodes:any[])=>nodes.map(node=>node.getAttribute('data-account-id'))),['native-codex','native-dsh','native-qoder']);
+    assert.equal(await overview.locator('section').count(),3);
     assert.doesNotMatch(await overview.innerText(),/观察时间|重置|充值|赠送/);
     // Measure the settled popover, not a scaled frame of its entrance animation.
     await overview.evaluate(async(node:HTMLElement)=>{
@@ -140,7 +178,7 @@ await step('账号入口悬停与聚焦显示所有已登录账号的真实额�
       assert.equal(await overview.innerText(),before);assert.equal(await overview.locator('.ant-spin').count(),0);
       assert.deepEqual(await overview.boundingBox(),boundsBefore);
       fixture.quotaOverrides.set('codex',{available:true,observedAt:new Date().toISOString(),windows:[{id:'week',label:'周限额',remainingPercent:81},{id:'hour',label:'5小时限额',remainingPercent:45}]});
-      release();await overview.getByText('周限额 · 剩余 81%',{exact:true}).waitFor();
+      release();await quotaRow('周限额').getByText('剩余 81%',{exact:true}).waitFor();
       assert.deepEqual(await overview.boundingBox(),boundsBefore);
     }finally{release();await page.unroute('**/api/v1/app/agent-service/model-accounts',holdAccounts);}
     await leaveQuota();
@@ -150,14 +188,14 @@ await step('账号入口悬停与聚焦显示所有已登录账号的真实额�
     await page.mouse.up();
     const drawer=page.getByRole('dialog',{name:/^智能体与模型/});await drawer.waitFor();await overview.waitFor({state:'hidden'});
     await drawer.getByText('账户余额 CNY 123.46（充值 120.01 · 赠送 3.45）',{exact:true}).waitFor();
-    await drawer.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();await drawer.waitFor({state:'hidden'});
+    await drawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();await drawer.waitFor({state:'hidden'});
     await page.waitForTimeout(650);assert.equal(await overview.isVisible(),false,'设置关闭后恢复焦点不得重开额度预览');
     await leaveQuota();
     await button.focus();await overview.waitFor({state:'visible'});
     await button.press('Escape');await overview.waitFor({state:'hidden'});
     await button.focus();await overview.waitFor({state:'visible'});await button.press('Enter');
     await drawer.waitFor();await overview.waitFor({state:'hidden'});
-    await drawer.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();await drawer.waitFor({state:'hidden'});await leaveQuota();
+    await drawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();await drawer.waitFor({state:'hidden'});await leaveQuota();
     await page.setViewportSize({width:800,height:900});await button.hover();await overview.waitFor({state:'visible'});
     const bounds=await overview.boundingBox();assert.ok(bounds&&bounds.x>=0&&bounds.x+bounds.width<=800,'紧凑桌面额度概览不越界');
     await capture(page,'agent-account-balance-hover-compact.png');
@@ -170,13 +208,31 @@ await step('账号入口悬停与聚焦显示所有已登录账号的真实额�
     const emptyAccounts=async(route:any)=>route.fulfill({json:{accounts:[],providers:[]}});
     await page.route('**/api/v1/app/agent-service/model-accounts',emptyAccounts);
     try{
-      await button.hover();await overview.getByText('尚无已登录账号，点击图标接入',{exact:true}).waitFor();assert.equal(await overview.locator('section').count(),0);
+      await button.hover();await overview.getByText('尚无已接入的供应商，点击图标接入',{exact:true}).waitFor();assert.equal(await overview.locator('section').count(),0);
       await leaveQuota();await button.hover();await overview.waitFor({state:'visible'});
       assert.equal(await overview.locator('.ant-spin').count(),0,'已读取的空结果在再次刷新时不切换成加载画面');
     }
     finally{await page.unroute('**/api/v1/app/agent-service/model-accounts',emptyAccounts);await leaveQuota();}
   }finally{fixture.quotaOverrides.clear();await page.setViewportSize({width:1280,height:900});}
 });
+await step('模型设置页额度窗口显示 Qoder 剩余 credits',async()=>{
+  await reset();
+  const observedAt=new Date().toISOString();
+  fixture.quotaOverrides.set('qoder',{available:true,observedAt,windows:[{id:'credits',label:'套餐内 Credits',remainingPercent:0,remainingCredits:0,totalCredits:1000},{id:'add-on',label:'资源包',remainingPercent:59.2,remainingCredits:1599,totalCredits:2700}]});
+  try{
+    await page.getByRole('button',{name:'智能体与模型设置',exact:true}).click();
+    const drawer=page.getByRole('dialog',{name:/^智能体与模型/});await drawer.waitFor();
+    await drawer.locator('.ams-setup').getByRole('tab',{name:'模型',exact:true}).click();
+    await drawer.locator('.amm-source-list').getByRole('button').filter({hasText:/Qoder/}).click();
+    const card=drawer.locator('.amm-quota-card');
+    await card.getByText('套餐内 Credits',{exact:true}).waitFor();
+    await card.getByText('0 / 1,000 credits',{exact:true}).waitFor();
+    await card.getByText('1,599 / 2,700 credits',{exact:true}).waitFor();
+    await capture(page,'agent-account-qoder-credits.png');
+    await drawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();await drawer.waitFor({state:'hidden'});
+  }finally{fixture.quotaOverrides.delete('qoder');}
+});
+
 await step('两处程序更新共用结果，Buildr 发布失败与单项失败独立',async()=>{await reset();await runAgentProgramUpdatesJourney({page,capture,expectedBrowserErrors});});
 await step('悬停预览与点击固定分离，重复点击收起，切组和键盘保留工作屏',async()=>{
       await page.setViewportSize({width:1600,height:1000});await reset();
@@ -197,7 +253,7 @@ await step('悬停预览与点击固定分离，重复点击收起，切组和�
     });
 
 await step('账号与模型配置固定在竖条最底部，展开或收起都可直接打开',async()=>{
-      await reset();const rail=page.getByRole('complementary',{name:'当前对话与所有对话',exact:true}),settings=rail.getByRole('button',{name:'账号与配置',exact:true});
+      await reset();const rail=page.getByRole('complementary',{name:'当前对话与所有对话',exact:true}),settings=rail.getByRole('button',{name:'智能体与模型设置',exact:true});
       const counts=[fixture.sends,fixture.creations],drawer=page.getByRole('dialog',{name:/^智能体与模型/});
       for(const view of ['collapsed','conversation','history']){
         if(view==='conversation')await openDesktopConversation();
@@ -205,9 +261,9 @@ await step('账号与模型配置固定在竖条最底部，展开或收起都�
         const currentState=await rail.locator('.ac-current-conversation').getAttribute('aria-expanded'),historyState=await rail.locator('.ac-all-conversations').getAttribute('aria-pressed');
         const bounds=await rail.boundingBox(),icon=await settings.boundingBox(),list=await rail.locator('.ac-all-conversations').boundingBox();
         assert.ok(bounds&&icon&&list&&Math.abs(bounds.y+bounds.height-icon.y-icon.height-10)<=2&&icon.y>list.y+list.height+80,'配置入口固定在竖条底部，与上方对话入口分区');
-        assert.equal(await panel().getByRole('button',{name:'账号与配置',exact:true}).count(),0,'不在对话列表内容底部保留重复入口');
+        assert.equal(await panel().getByRole('button',{name:'智能体与模型设置',exact:true}).count(),0,'不在对话列表内容底部保留重复入口');
         await settings.click();await drawer.waitFor();assert.deepEqual([fixture.sends,fixture.creations],counts);
-        await drawer.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();await drawer.waitFor({state:'hidden'});
+        await drawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();await drawer.waitFor({state:'hidden'});
         assert.equal(await rail.locator('.ac-current-conversation').getAttribute('aria-expanded'),currentState);assert.equal(await rail.locator('.ac-all-conversations').getAttribute('aria-pressed'),historyState);
       }
       await capture(page,'agent-settings-rail-bottom.png');await rail.locator('.ac-all-conversations').click();
@@ -216,46 +272,48 @@ await step('账号与模型配置固定在竖条最底部，展开或收起都�
 await step('模型目录初次读取和无关账号核对失败不打扰对话',async()=>{
       await reset();
       await openDesktopConversation();await input().waitFor();assert.equal(await panel().getByText(/正在获取|正在刷新|刷新成功|恢复成功/).count(),0);
-      fixture.catalogDiagnostic='部分模型账号核对失败，已保留已有模型列表。';await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+      fixture.catalogDiagnostic='部分供应商核对失败，已保留已有模型列表。';await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
       await page.waitForTimeout(200);assert.equal(await panel().getByText(fixture.catalogDiagnostic,{exact:true}).count(),0);await input().fill('刷新异常不丢失草稿');
       fixture.catalogDiagnostic=undefined;await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
-      await panel().getByText('部分模型账号核对失败，已保留已有模型列表。',{exact:true}).waitFor({state:'hidden'});
+      await panel().getByText('部分供应商核对失败，已保留已有模型列表。',{exact:true}).waitFor({state:'hidden'});
       assert.equal(await input().inputValue(),'刷新异常不丢失草稿');assert.equal(await panel().getByText(/刷新成功|恢复成功/).count(),0);
       await input().fill('');await closeConversation();
     });
 
 await step('统一账号来源按真实登录观察更新，登录链接和迟到接入列表不冒充账号已连接',async()=>{
-      connections[0].status='expired';await openDesktopConversation();await page.getByRole('button',{name:'账号与配置',exact:true}).click();const drawer=page.getByRole('dialog',{name:/^智能体与模型/});await drawer.waitFor();await drawer.locator('.ams-setup').getByRole('tab',{name:'模型',exact:true}).click();await drawer.locator('.amm-source-list').getByRole('button').filter({hasText:/ChatGPT(?!\s*API)/}).click();const card=drawer.locator('.amm-quota-card');await card.getByText('登录已过期',{exact:true}).waitFor();
+      connections[0].status='expired';await openDesktopConversation();await page.getByRole('button',{name:'智能体与模型设置',exact:true}).click();const drawer=page.getByRole('dialog',{name:/^智能体与模型/});await drawer.waitFor();await drawer.locator('.ams-setup').getByRole('tab',{name:'模型',exact:true}).click();await drawer.locator('.amm-source-list').getByRole('button').filter({hasText:/ChatGPT(?!\s*API)/}).click();const card=drawer.locator('.amm-quota-card');await card.getByText('登录已过期',{exact:true}).waitFor();
       await card.getByRole('button',{name:'重新登录',exact:true}).click();const login=card.getByRole('link',{name:'打开登录页',exact:true});await login.waitFor();assert.match(await login.getAttribute('href'),/^https:\/\/auth\.openai\.com\//);assert.equal(await card.getByText('已登录',{exact:true}).count(),0,'等待官方登录不冒充已登录');
       (connections[0] as any).loginAttempt.state='checking';connections[0].revision='connection-'+(++fixture.revision);await card.getByText('正在核对登录结果',{exact:true}).waitFor();assert.equal(await card.getByText('正在等待官方登录',{exact:true}).count(),0,'官方已返回时不再要求等待浏览器登录');
       connections[0].status='ready';(connections[0] as any).loginAttempt.state='completed';connections[0].revision='connection-'+(++fixture.revision);await card.getByText('已登录',{exact:true}).waitFor();await card.getByRole('button',{name:'刷新ChatGPT额度',exact:true}).click();await capture(page,'agent-conversation-account.png');
       await drawer.locator('.amm-tabs').getByRole('tab',{name:/^模型/}).click();const fixtureSwitch=drawer.getByRole('switch',{name:'停用 Fixture model',exact:true});await fixtureSwitch.waitFor();fixture.holdPreferences=true;const saving=new Promise<void>(resolve=>{fixture.preferencesStarted=resolve;});const preferenceSaved=page.waitForResponse((response:any)=>response.url().endsWith('/preferences'));await fixtureSwitch.click();await saving;assert.equal(await drawer.getByRole('switch',{name:'启用 Fixture model',exact:true}).count(),1,'启停用先生效，不等保存回执');assert.equal(await drawer.getByRole('switch',{name:'停用 Fast model',exact:true}).isDisabled(),false,'保存期间不锁定其他控件');assert.equal(await page.getByText('模型设置已保存',{exact:true}).count(),0,'保存不再弹成功提示');fixture.releasePreferences!();await preferenceSaved;await drawer.locator('.amm-model-summary').getByText(/已启用 1/).waitFor();assert.equal(fixture.preferencePosts,1);assert.equal(preferenceBodies.at(-1).expectedRevision,'model-account-codex','偏好写入携带已观察版本');assert.deepEqual(preferenceBodies.at(-1).models,[{id:'fixture-model',enabled:false}],'只写入本次改动的字段');assert.equal(await page.getByText('模型设置已保存',{exact:true}).count(),0,'保存完成后也不补成功提示');
-      await drawer.locator('.amm-tabs').getByRole('tab',{name:'账号与额度',exact:true}).click();await card.getByText('已登录',{exact:true}).waitFor();
-      fixture.holdConnections=true;const oldRead=new Promise<void>(resolve=>{fixture.connectionsStarted=resolve;});await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await oldRead;await card.getByRole('button',{name:'ChatGPT更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'断开账号',exact:true}).click();await card.getByText('未登录',{exact:true}).waitFor();const oldReadResponse=page.waitForResponse((response:any)=>response.url().endsWith('/agent-service/connections'));fixture.releaseConnections!();await oldReadResponse;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));assert.equal(await card.getByText('未登录',{exact:true}).isVisible(),true,'迟到接入列表不覆盖已确认的模型账号断开状态');assert.equal(connections[0].enabled,true,'断开模型账号保留已准备程序');assert.equal(connections[0].status,'ready');
-      await drawer.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();await closeConversation();await panel().waitFor({state:'hidden'});assert.equal(fixture.sends,0);
+      await drawer.locator('.amm-tabs').getByRole('tab',{name:'供应商与额度',exact:true}).click();await card.getByText('已登录',{exact:true}).waitFor();
+      fixture.holdConnections=true;const oldRead=new Promise<void>(resolve=>{fixture.connectionsStarted=resolve;});await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await oldRead;await card.getByRole('button',{name:'ChatGPT更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'断开供应商',exact:true}).click();await card.getByText('未登录',{exact:true}).waitFor();const oldReadResponse=page.waitForResponse((response:any)=>response.url().endsWith('/agent-service/connections'));fixture.releaseConnections!();await oldReadResponse;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));assert.equal(await card.getByText('未登录',{exact:true}).isVisible(),true,'迟到接入列表不覆盖已确认的模型账号断开状态');assert.equal(connections[0].enabled,true,'断开模型账号保留已准备程序');assert.equal(connections[0].status,'ready');
+      await drawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();await closeConversation();await panel().waitFor({state:'hidden'});assert.equal(fixture.sends,0);
     });
 
 await step('智能体与模型分开管理，程序准备、取消与刷新恢复不登录账号也不改变执行者',async()=>{
       connections[0].enabled=false;connections[0].status='disconnected';fixture.programScenario='missing';await page.reload();await page.locator('#workbench-overview').waitFor();await openDesktopConversation();const initialAgent=await panel().locator('.ac-provider-select .ant-select-selection-item').innerText(),loginsBefore=fixture.nativeLoginPosts;
       const drawer=page.getByRole('dialog',{name:/^智能体与模型/});
-      const openSettings=async()=>{await page.getByRole('button',{name:'账号与配置',exact:true}).click();await drawer.waitFor();await drawer.locator('.ams-setup').getByRole('tab',{name:'智能体',exact:true}).click();};
+      const openSettings=async()=>{await page.getByRole('button',{name:'智能体与模型设置',exact:true}).click();await drawer.waitFor();await drawer.locator('.ams-setup').getByRole('tab',{name:'智能体',exact:true}).click();};
       const executor=(provider:string)=>drawer.locator('.ac-program-update[data-program="'+provider.toLowerCase()+'"]');
       let program=executor('Codex').getByTestId('agent-program-preparation');
       const expand=async(provider:string)=>{const row=executor(provider);program=row.getByTestId('agent-program-preparation');if(await row.locator('details').getAttribute('open')===null)await row.locator('summary').click();await program.waitFor();};
       await openSettings();await executor('Codex').getByRole('button',{name:/^接\s*入$/}).click();await program.getByRole('link',{name:'查看官方安装说明',exact:true}).waitFor();assert.match(await program.getByRole('link',{name:'查看官方安装说明',exact:true}).getAttribute('href'),/^https:\/\/learn\.chatgpt\.com\//);
       await program.getByRole('button',{name:'准备独立程序 · 0.163.0',exact:true}).click();await program.getByRole('button',{name:'取消准备',exact:true}).waitFor();const pendingId=programAttempts.codex.id;
-      await expand('DSH');await program.getByRole('button',{name:'准备并连接',exact:true}).waitFor();assert.equal(programAttempts.codex.id,pendingId,'切换智能体不接管原准备');assert.equal(programAttempts.codex.state,'installing');
+      await expand('DSH');await program.locator('[data-state="ready"]').waitFor();assert.equal(programAttempts.codex.id,pendingId,'切换智能体不接管原准备');assert.equal(programAttempts.codex.state,'installing');
       await expand('Codex');await program.getByRole('button',{name:'取消准备',exact:true}).click();await program.getByText('已取消本次准备；已有程序、账号和对话均保留。',{exact:true}).waitFor();
       fixture.programScenario='multiple';await program.getByRole('button',{name:'准备并连接',exact:true}).click();await program.getByText('发现多个兼容程序，请选择来源。',{exact:true}).waitFor();assert.equal(await program.getByRole('button',{name:'准备并连接',exact:true}).isDisabled(),true);
       await chooseOption('选择接入程序','ChatGPT 内的 Codex · 0.163.0-alpha.11.2',program);fixture.programScenario='ready';await program.getByRole('button',{name:'准备并连接',exact:true}).click();await program.locator('[data-state="ready"]').waitFor();
       assert.equal(fixture.nativeLoginPosts,loginsBefore,'准备程序不自动登录模型账号');assert.equal(await panel().locator('.ac-provider-select .ant-select-selection-item').innerText(),initialAgent);
-      const resumedId=programAttempts.codex.id;programAttempts.codex.state='installing';programAttempts.codex.message='正在下载并准备独立程序。';await drawer.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();await page.reload();await input().waitFor();await openSettings();await expand('Codex');await program.getByRole('button',{name:'取消准备',exact:true}).waitFor();assert.equal(programAttempts.codex.id,resumedId,'刷新恢复当前准备身份');
-      programAttempts.codex.state='ready';programAttempts.codex.message='程序已就绪。';await program.getByText('程序已就绪。',{exact:true}).waitFor();
+      const resumedId=programAttempts.codex.id;programAttempts.codex.state='installing';programAttempts.codex.message='正在下载并准备独立程序。';await drawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();await page.reload();await input().waitFor();await openSettings();await expand('Codex');await program.getByRole('button',{name:'取消准备',exact:true}).waitFor();assert.equal(programAttempts.codex.id,resumedId,'刷新恢复当前准备身份');
+      programAttempts.codex.state='ready';programAttempts.codex.message='程序已就绪。';await program.locator('[data-state="ready"]').waitFor();
       await drawer.locator('.ams-setup').getByRole('tab',{name:'模型',exact:true}).click();await drawer.locator('.amm-source-list').getByRole('button').filter({hasText:/ChatGPT(?!\s*API)/}).click();await drawer.locator('.amm-quota-card').getByText('未登录',{exact:true}).waitFor();assert.equal(fixture.nativeLoginPosts,loginsBefore,'程序就绪与模型账号未登录可以同时成立');
-      await capture(page,'agent-program-prepared.png');await drawer.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();await closeConversation();await panel().waitFor({state:'hidden'});assert.equal(fixture.sends,0,'程序管理不发送工作指令');
+      await capture(page,'agent-program-prepared.png');await drawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();await closeConversation();await panel().waitFor({state:'hidden'});assert.equal(fixture.sends,0,'程序管理不发送工作指令');
     });
 
 await step('全局对话保留草稿与执行位置，左右停靠到一级导航外侧，刷新不发送',async()=>{
+      // 前两项故意断开账号、停用模型与程序；后续草稿流程从正常账号开始。
+      fixture.restoreNativeModelState();
       await page.setViewportSize({width:1600,height:1000});await reset();
       assert.equal(await page.locator('#global-conversations-entry').isHidden(),true,'桌面顶部不重复提供对话主按钮');await openDesktopConversation();await panel().waitFor();assert.equal(await panel().locator('.ac-location-settings .ant-select-selection-item').innerText(),await page.locator('.workspace-switcher strong').innerText(),'首次新建默认当前页面工作空间');await input().fill('草稿只保存，不自动执行');
       await assertFixed(true);assert.equal(await panel().locator('.ac-thread-header .ant-btn').count(),1,'固定布局顶部只留更多，新建/列表/返回归导轨');await closeConversation();await panel().waitFor({state:'hidden'});await assertFixed(false);await page.getByRole('complementary',{name:'当前对话与所有对话',exact:true}).getByRole('button',{name:'展开当前对话',exact:true}).click();await input().waitFor();assert.equal(await input().inputValue(),'草稿只保存，不自动执行');await assertFixed(true);
@@ -306,11 +364,11 @@ await step('全局对话保留草稿与执行位置，左右停靠到一级导�
       await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
       await activityMenu().locator('button[data-activity-id="unknown-reminder"] .ac-activity-status').getByText('状态待确认',{exact:true}).waitFor();await activityBadge.waitFor();
       assert.equal(await activityMenu().locator('.ant-alert').count(),0,'浮窗不再显示未知执行聚合提示条');
-      fixture.additionalPending=[{...originalPending[0],id:'running-reminder',title:'仍在执行的对话',run:run('running')}];
+      fixture.additionalPending=[{...originalPending[0],id:'running-reminder',title:'仍在执行的对话',run:run('running','codex',{model:undefined})}];
       await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
       await railActivity.locator('[data-count-kind="running"][aria-label="1 个执行中对话"]').waitFor();
       await activityMenu().locator('button[data-activity-id="running-reminder"]').waitFor();
-      await activityMenu().locator('.ac-execution-summary').getByText('账号未记录 · 模型未记录',{exact:true}).waitFor();
+      await activityMenu().locator('.ac-execution-summary').getByText('供应商未记录 · 模型未记录',{exact:true}).waitFor();
       await capture(page,'agent-execution-account-unknown.png');
       assert.equal(await activityMenu().locator('.ac-execution-summary').getByText('测试账号',{exact:true}).count(),0,'提醒摘要不显示账号名');
       fixture.reminderPaging=true;
@@ -362,7 +420,7 @@ await step('模型设置按真实弹层和滑块交互，切换与恢复默认�
       await page.mouse.move(handleBox!.x+handleBox!.width/2,handleBox!.y+handleBox!.height/2);await page.mouse.down();await page.mouse.move(railBox!.x+railBox!.width,railBox!.y+railBox!.height/2,{steps:8});await page.mouse.up();assert.equal(await slider.getAttribute('aria-valuetext'),'高','鼠标可拖动到最高档');await slider.press('Home');assert.equal(await slider.getAttribute('aria-valuetext'),'中');
       await setHighEffort();await chooseModel('Fast model');await chooseModel('Fixture model');assert.equal(await slider.getAttribute('aria-valuetext'),'高','切换模型恢复上次选择的强度');
       await setHighEffort();await closeModelSettings();await assertModelSummary('Fixture model','高');assert.equal((await panel().locator('.ac-compose-toolbar').boundingBox())!.height,modelToolbarBefore!.height,'弹层与输入工具栏布局独立');
-      await chooseAgent('DSH');await assertModelSummary('Fixture model');await openModelSettings();await modelSettings().getByText('此模型未提供可调节的推理强度',{exact:true}).waitFor();await closeModelSettings();
+      await chooseAgent('DSH');await chooseModel('Fixture model');await closeModelSettings();await assertModelSummary('Fixture model');await openModelSettings();await modelSettings().getByText('此模型未提供可调节的推理强度',{exact:true}).waitFor();await closeModelSettings();
       await chooseAgent('Codex');await assertModelSummary('Fixture model','高');await chooseModel('Fixture model');await setHighEffort();await closeModelSettings();
       assert.equal(await input().inputValue(),draft,'模型与推理配置不清空草稿');assert.equal(fixture.sends,0,'选择执行者、模型、强度与恢复默认不会执行');
       const toolbar=await panel().locator('.ac-compose-toolbar').boundingBox();const controls=await panel().locator('.ac-provider-select,.ac-model-trigger').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>({text:node.innerText,left:node.getBoundingClientRect().left,right:node.getBoundingClientRect().right,height:node.getBoundingClientRect().height})));
@@ -384,7 +442,7 @@ await step('shared image draft survives refresh and workspace clearing without c
 
 await step('输入法和换行不误发送，执行中保留草稿，停止独立响应',async()=>{
       assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'完全访问','未设置权限的新草稿初始完全访问');await chooseOption('执行权限','默认权限');await chooseOption('执行权限','完全访问');await input().fill('第一轮');await input().dispatchEvent('compositionstart');await input().press('Enter');assert.equal(fixture.sends,0);await input().dispatchEvent('compositionend');await input().press('Shift+Enter');assert.equal(fixture.sends,0);
-      fixture.holdSend=true;const started=new Promise<void>(resolve=>{fixture.sendStarted=resolve;});await panel().getByRole('button',{name:'发送对话',exact:true}).click();await started;await input().fill('下一轮仍是草稿');fixture.releaseSend!();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,1);assert.equal(await panel().locator('.ac-thread-header .ac-stop-button').count(),0);assert.equal(await panel().locator('.ac-execution-statusbar .ac-stop-button').count(),1);assert.equal(await input().inputValue(),'下一轮仍是草稿','发送接受前继续输入的下一轮草稿不能被清空');assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isEnabled(),true,'执行中有内容也可发送');await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();assert.equal(fixture.stops,1);assert.equal(await input().inputValue(),'下一轮仍是草稿');
+      fixture.holdSend=true;const started=new Promise<void>(resolve=>{fixture.sendStarted=resolve;});await panel().getByRole('button',{name:'发送对话',exact:true}).click();await started;await input().fill('下一轮仍是草稿');fixture.releaseSend!();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,1);assert.equal(await panel().locator('.ac-thread-header .ac-stop-button').count(),0);assert.equal(await panel().getByRole('button',{name:'停止对话',exact:true}).count(),1);assert.equal(await input().inputValue(),'下一轮仍是草稿','发送接受前继续输入的下一轮草稿不能被清空');assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isEnabled(),true,'执行中有内容也可发送');await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();assert.equal(fixture.stops,1);assert.equal(await input().inputValue(),'下一轮仍是草稿');
       assert.equal(preparedInputs.length,0,'first submission does not create a conversation for preview');assert.equal(sentInputs[0].model,'fixture-model');assert.equal(sentInputs[0].reasoningEffort,'high');assert.equal(sentInputs[0].permissionMode,'full-access');assert.equal(fixture.conversation.run.permissionMode,'full-access');const firstRunIdentity=await panel().locator('.ac-turn-identity').innerText();assert.match(firstRunIdentity,/Codex.*Fixture model/,'本轮身份显示实际智能体与模型');assert.ok(!firstRunIdentity.includes('fixture account'),'执行身份不显示模型来源账号标签');assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'完全访问','已停止轮次保留实际权限选择');await page.reload();await panel().locator('[data-run-status="stopped"]').waitFor();await assertModelSummary('Fixture model','高');await openModelSettings();assert.equal(await modelSettings().getByRole('slider',{name:'思考深度',exact:true}).getAttribute('aria-valuetext'),'高','刷新从最近执行恢复实际思考配置');await closeModelSettings();assert.equal(await input().inputValue(),'下一轮仍是草稿');assert.equal(fixture.sends,1);assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'完全访问','刷新恢复同一对话权限选择');
     });
 }

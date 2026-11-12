@@ -2,6 +2,7 @@ export const productLayerOf = (relative: string): string => {
   // This shared value algorithm has no environment or infrastructure access.
   if (relative === 'infrastructure/semantic-version.ts') return 'domain';
   if (relative === 'infrastructure/contracts/public-json.ts') return 'infrastructure';
+  if (relative === 'modules/openspec/query.ts') return 'module';
   const parts: any = relative.split('/');
   if (parts[0] === 'infrastructure') return 'infrastructure';
   const registeredSubmodule = parts[0] === 'modules' && ((parts[1] === 'task' && ['change', 'commits', 'changed-files', 'work-context', 'materials'].includes(parts[2])) || (parts[1] === 'agent-assets' && parts[2] === 'source'));
@@ -69,7 +70,10 @@ const allowedCrossModulePorts: any = new Set([
   'bootstrap/runtime.ts -> modules/openspec/module.ts',
   'bootstrap/runtime.ts -> modules/task/change/module.ts',
   'modules/openspec/module.ts -> modules/workspace/module.ts',
-  'modules/task/change/module.ts -> modules/openspec/module.ts',
+  'modules/task/change/module.ts -> modules/openspec/query.ts',
+  'modules/openspec/module.ts -> modules/openspec/query.ts',
+  'bootstrap/task-read-runtime.ts -> modules/task/change/module.ts',
+  'bootstrap/task-read-runtime.ts -> modules/task/changed-files/module.ts',
   'modules/task/change/module.ts -> modules/workspace/module.ts',
   'modules/publication/module.ts -> modules/workspace/module.ts',
   'modules/publication/module.ts -> modules/task/module.ts',

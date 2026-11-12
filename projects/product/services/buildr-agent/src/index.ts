@@ -7,7 +7,7 @@ export { connectAgentProcess, stopAgentProcess, restartAgentProcess } from './pr
 export { assertAgentUpgradeIdle, withAgentDataOffline } from './process/offline-data.ts';
 export type { AgentProcessConnection, AgentProcessConnectionOptions } from './process/client.ts';
 export type { AgentOperations, AgentSubscription } from './process/operations.ts';
-export { prepareAgentRuntime, validateAgentRuntime } from './process/runtime-unit.ts';
+export { prepareAgentRuntime, validateAgentRuntime, computeAgentRuntimeDigest } from './process/runtime-unit.ts';
 export { startAgentExecutionServer } from './process/server.ts';
 export * from './model-access/contracts.ts';
 export { AgentServiceError } from './domain/agent-state.ts';

@@ -8,7 +8,7 @@ export async function runVideoScenarios(fixture:AgentConversationFixture){
   const {capture,chooseAgent,conversation,input,page,panel,run,sentInputs,step,update,uploadedMedia,workspaceRoot}=fixture;
 await step('视频选择、粘贴与拖入均保留原件和画面，发送及刷新可播放，解码失败保留文字',async()=>{
       await page.setViewportSize({width:1280,height:900});
-      await fixture.startNewConversation();await input().waitFor();await chooseAgent('Codex');await input().fill('录屏说明保留');
+      await fixture.startNewConversation();await input().waitFor();await chooseAgent('Codex');await fixture.chooseModel('Fixture model');await fixture.closeModelSettings();await input().fill('录屏说明保留');
       const recording=await page.evaluate(async()=>{
         const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;const drawing=canvas.getContext('2d')!;
         drawing.fillStyle='#256d4f';drawing.fillRect(0,0,160,90);
@@ -42,7 +42,7 @@ await step('视频选择、粘贴与拖入均保留原件和画面，发送及�
       await panel().locator('.ac-message-images video').waitFor();await page.reload();await panel().locator('.ac-message-images video').waitFor();
       await page.waitForFunction(()=>{const video=document.querySelector<HTMLVideoElement>('.ac-message-images video');return Boolean(video&&video.readyState>=2&&video.videoWidth===160);});
       await capture(page,'agent-conversation-video.png');
-      await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+      await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
     });
   await step('对话 Markdown 图片按可访问路径显示，缺失图片给出说明',async()=>{
     const imagePath=path.join(workspaceRoot,'conversation-markdown.png');

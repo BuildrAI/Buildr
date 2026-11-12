@@ -8,7 +8,7 @@ import { CODE_MODULE, CODE_GENERATION_APPLICATION, CODE_SOURCE_CONTROL_OBSERVATI
 import { AGENT_SERVICE_APPLICATION, createAgentServiceModule } from '../modules/agent-service/module.ts';
 import { WORKBENCH_MODULE } from '../modules/workbench/module.ts';
 import { createKnowledgeModule } from '../modules/knowledge/module.ts';
-import * as platform from '../infrastructure/platform.ts';
+import { createRuntimeInfrastructure } from './runtime-infrastructure.ts';
 import {
   AGENT_ASSETS_CAPABILITY_QUERY,
   AGENT_ASSETS_DIAGNOSTICS_BINDER,
@@ -36,9 +36,7 @@ import { createWebModule, WEB_INSTANCE_LIFECYCLE, readLocalBuildrWebInstance } f
 import { createWorkspaceModule, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_APPLICATION, WORKSPACE_QUERY } from '../modules/workspace/module.ts';
 import { createSystemInstallationModule, readCurrentProductIdentity, SYSTEM_INSTALLATION_APPLICATION, SYSTEM_INSTALLATION_WEB_BINDER } from '../modules/installation/module.ts';
 import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../modules/diagnostics/module.ts';
-import { registerInfrastructure } from '../infrastructure/index.ts';
 import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.ts';
-import { registerProductInvocation } from '../infrastructure/product-invocation/index.ts';
 import { createPublicationModule } from '../modules/publication/module.ts';
 import { createOpenSpecModule } from '../modules/openspec/module.ts';
 import { createArtifactLifecycleModule } from '../modules/artifact-lifecycle/module.ts';
@@ -57,9 +55,7 @@ function warnRecoveryFailure(error: unknown): void {
 }
 
 export function createRuntime(options: { agentRuntime?: import('@buildr-ai/buildr-agent').AgentRuntimeUnit } = {}): any  {
-  const runtime: any = { ...platform };
-  registerInfrastructure(runtime);
-  registerProductInvocation(runtime);
+  const runtime = createRuntimeInfrastructure();
   const registry = createModuleRegistry();
   registry.install(createAgentAssetsRuntimeModule());
   registry.install(createWorkspaceModule(runtime, {
@@ -93,9 +89,15 @@ export function createRuntime(options: { agentRuntime?: import('@buildr-ai/build
   registry.install(createParentCoordinationModule(runtime));
   registry.install(createArtifactLifecycleModule(runtime));
   registry.install(createSystemInstallationModule(runtime));
-  registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), onReady: async () => {
-    // start() resolves the service lazily; a synchronous throw here must not
-    // escape the listen callback and kill the process.
+  registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), agentRuntimeStatus: async () => {
+    // Health must stay responsive while the backend activates a pinned runtime;
+    // a slow or failing status read reports null instead of blocking readiness.
+    try {
+      const status = registry.provide(AGENT_SERVICE_APPLICATION).runtimeStatus();
+      const timeout = new Promise<null>((resolve) => { const timer = setTimeout(() => resolve(null), 500); timer.unref?.(); });
+      return await Promise.race([Promise.resolve(status).catch(() => null), timeout]);
+    } catch { return null; }
+  }, onReady: async () => {
     // Publish readiness only after the backend retains the package bytes. An npm
     // update may replace this source installation immediately after the receipt.
     try { await registry.provide(AGENT_SERVICE_APPLICATION).start(); }

@@ -41,17 +41,30 @@ function digestTree(root: string, names: string[], node: string, entry: string):
   }
   return digest.digest('hex');
 }
+function runtimeFileNames(packageRoot: string): string[] {
+  const build = path.join(packageRoot, 'build');
+  if (!fs.existsSync(build)) throw new AgentServiceError('agent_runtime_entry_missing', '执行运行单元尚未构建。', 409);
+  const names = files(build).map(name => path.join('build', name));
+  if (fs.existsSync(path.join(packageRoot, 'node_modules'))) names.push(...files(path.join(packageRoot, 'node_modules')).map(name => path.join('node_modules', name)));
+  names.push('package.json');
+  return names.sort();
+}
+/** Pure content digest of an already prepared private package; no materialization or contract validation. */
+export function computeAgentRuntimeDigest(input: { packageRoot: string; entry?: string; node?: string }): string {
+  const packageRoot = fs.realpathSync(input.packageRoot);
+  const entry = input.entry ?? 'build/process/entry.js';
+  const node = fs.realpathSync(input.node ?? process.execPath);
+  if (!entry.startsWith('build/') || entry.includes('..') || !fs.statSync(path.join(packageRoot, entry), { throwIfNoEntry: false })?.isFile()) throw new AgentServiceError('agent_runtime_entry_missing', '执行运行单元尚未构建。', 409);
+  return digestTree(packageRoot, runtimeFileNames(packageRoot), node, entry);
+}
 /** Materialize the already prepared private package; no source or global installation fallback. */
 export function prepareAgentRuntime(input: { dataRoot: string; packageRoot?: string; entry?: string; node?: string }, checkCancelled: () => void = () => {}): AgentRuntimeUnit {
   checkCancelled();
   const packageRoot = fs.realpathSync(input.packageRoot ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'));
   const entry = input.entry ?? 'build/process/entry.js';
   const node = fs.realpathSync(input.node ?? process.execPath);
-  if (!entry.startsWith('build/') || entry.includes('..') || !fs.statSync(path.join(packageRoot, entry), { throwIfNoEntry: false })?.isFile()) throw new AgentServiceError('agent_runtime_entry_missing', '执行运行单元尚未构建。', 409);
-  const names = files(path.join(packageRoot, 'build')).map(name => path.join('build', name));
-  if (fs.existsSync(path.join(packageRoot, 'node_modules'))) names.push(...files(path.join(packageRoot, 'node_modules')).map(name => path.join('node_modules', name)));
-  names.push('package.json');
-  const digest = digestTree(packageRoot, names.sort(), node, entry);
+  const names = runtimeFileNames(packageRoot);
+  const digest = computeAgentRuntimeDigest({ packageRoot, entry, node });
   checkCancelled();
   const compatibility = readPrivate<{ parallelCompatibility?: 1 | 2 | 3 }>(path.join(packageRoot, 'build/runtime-contracts.json'));
   const lock = claimStorage(input.dataRoot);

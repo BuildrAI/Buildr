@@ -2,11 +2,17 @@ import test from 'node:test';
 
 import assert from 'node:assert/strict';
 
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { translateRequest, translateResponse, type OpaqueReasoning } from '../../src/model-access/protocols.ts';
 import { modelQuotaFailure } from '../../src/model-access/quota.ts';
 import { upstreamFailure } from '../../src/model-access/errors.ts';
+import { createModelAccess } from '../../src/model-access/application.ts';
+import { createCustomModelProvider } from '../../src/model-access/providers/custom.ts';
 
-import type { ProtocolJson } from '../../src/model-access/contracts.ts';
+import type { CustomProviderConfigureInput, ModelProvider, ProtocolJson } from '../../src/model-access/contracts.ts';
 
 const model={id:'source-model',label:'真实来源模型',images:true,tools:true,contextWindow:32000};
 
@@ -159,4 +165,78 @@ test('cross-protocol buffering is bounded after a tool while preceding text rema
   const oversized=await translateResponse(protocolFrames([addedCall('a','Read'),{type:'response.output_text.delta',delta:'x'.repeat(4*1024*1024)},{type:'response.output_text.delta',delta:'x'.repeat(4*1024*1024)},doneCall('a','Read','{}'),completedCalls()]),'responses','chat-completions',protocolOptions());
   const events=protocolEvents(await oversized.text());assert.equal((events.find(event=>event.error)?.error as ProtocolJson).code,'model_stream_too_large');
   assert.ok(!events.some(event=>(event.choices as ProtocolJson[]|undefined)?.some(choice=>(choice.delta as ProtocolJson).tool_calls)));
+});
+
+const plainProvider: ModelProvider = {
+  id: 'fixture', label: 'Fixture',
+  async open() { return { protocol: 'chat-completions', inspect: async () => ({ status: 'ready' as const, models: [] }), beginLogin: async () => {}, cancelLogin: async () => {}, infer: async () => Response.json({}), close: async () => {} }; },
+};
+
+test('custom accounts persist user endpoints while keeping API keys private and rejecting invalid declarations', {timeout:10000}, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-custom-account-'));
+  const requests: Array<{ url: string; authorization: string | null; redirect: string | undefined }> = [];
+  const mock: typeof fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), authorization: new Headers(init.headers).get('authorization'), redirect: init.redirect as string | undefined });
+    if (String(url) === 'https://gateway.example.com/v1/models') return Response.json({ data: [{ id: 'discovered-model', name: 'Discovered Model' }] });
+    throw new Error('unexpected_test_network');
+  };
+  const access = createModelAccess({ root, providers: [createCustomModelProvider({ fetch: mock }), plainProvider] });
+  t.after(async () => { await access.close(); await rm(root, { recursive: true, force: true }); });
+  assert.deepEqual(access.accounts.list().providers.map(provider => [provider.id, provider.custom]), [['custom', true], ['fixture', undefined]]);
+  const config: CustomProviderConfigureInput = { label: ' 我的网关 ', baseUrl: 'https://gateway.example.com/v1/', protocol: 'chat-completions', useApiKey: true, apiKey: 'sk-private', models: [{ id: 'my-model-v2', label: 'My Model', contextWindow: 32000 }] };
+  const created = await access.accounts.add({ provider: 'custom', custom: config });
+  assert.equal(created.label, '我的网关');
+  assert.deepEqual(created.custom, { protocol: 'chat-completions', baseUrl: 'https://gateway.example.com/v1', useApiKey: true, models: [{ id: 'my-model-v2', label: 'My Model', contextWindow: 32000 }] });
+  assert.equal(created.status, 'ready');
+  assert.equal(created.credentialConfigured, true);
+  assert.deepEqual(created.models.map(model => [model.id, model.label, model.contextWindow, model.enabled]), [['my-model-v2', 'My Model', 32000, false]]);
+  assert.ok(!JSON.stringify(access.accounts.list()).includes('sk-private'));
+  assert.equal((await readFile(join(root, 'accounts.json'), 'utf8')).includes('sk-private'), false);
+  if (process.platform !== 'win32') assert.equal((await stat(join(root, 'accounts', created.id, 'model-api-key.json'))).mode & 0o777, 0o600);
+  assert.deepEqual(requests, [{ url: 'https://gateway.example.com/v1/models', authorization: 'Bearer sk-private', redirect: 'error' }]);
+  const before = access.accounts.list().accounts.length;
+  const invalid: Array<[Partial<CustomProviderConfigureInput>, string]> = [
+    [{ baseUrl: 'ftp://gateway.example.com/v1' }, 'model_custom_url_invalid'],
+    [{ baseUrl: 'https://user:pass@gateway.example.com/v1' }, 'model_custom_url_credentials'],
+    [{ baseUrl: 'gateway.example.com/v1' }, 'model_custom_url_invalid'],
+    [{ baseUrl: 'https://gateway.example.com/v1?token=1' }, 'model_custom_url_invalid'],
+    [{ baseUrl: 'https://' + 'a'.repeat(2050) + '.com' }, 'model_custom_url_invalid'],
+    [{ protocol: 'openai-responses' }, 'model_custom_protocol_unsupported'],
+    [{ label: '   ' }, 'model_custom_name_invalid'],
+  ];
+  for (const [patch, code] of invalid) await assert.rejects(access.accounts.add({ provider: 'custom', custom: { ...config, ...patch } }), { code });
+  assert.equal(access.accounts.list().accounts.length, before, 'invalid declarations must not create accounts');
+  assert.equal(requests.length, 1, 'invalid declarations never reach the endpoint');
+  await assert.rejects(access.accounts.add({ provider: 'custom' }), { code: 'model_custom_config_required' });
+  await assert.rejects(access.accounts.add({ provider: 'fixture', custom: config }), { code: 'model_custom_unsupported' });
+});
+
+test('custom identity rotation releases account leases while observation-only changes keep revisions', {timeout:10000}, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-custom-identity-'));
+  let tick = 0;
+  const mock: typeof fetch = async url => {
+    if (String(url) === 'https://gateway.example.com/v1/models') return Response.json({ data: [{ id: 'ignored' }] });
+    throw new Error('unexpected_test_network');
+  };
+  const access = createModelAccess({ root, now: () => new Date(Date.UTC(2026, 10, 12, 0, 0, tick++)), providers: [createCustomModelProvider({ fetch: mock })] });
+  t.after(async () => { await access.close(); await rm(root, { recursive: true, force: true }); });
+  const base: CustomProviderConfigureInput = { label: '我的网关', baseUrl: 'https://gateway.example.com/v1', protocol: 'chat-completions', useApiKey: true, apiKey: 'sk-one', models: [{ id: 'model-a' }] };
+  const added = await access.accounts.add({ provider: 'custom', custom: base });
+  const enabled = await access.accounts.preferences(added.id, { expectedRevision: added.revision, models: [{ id: 'model-a', enabled: true }] });
+  const lease = await access.leases.create({ accountId: added.id, modelId: 'model-a', expectedIdentity: enabled.identity, agentId: 'dsh', conversationId: 'chat', runId: 'run-one' });
+  const reobserved = await access.accounts.configureCustom(added.id, { ...base, apiKey: undefined, expectedRevision: enabled.revision });
+  assert.equal(reobserved.revision, enabled.revision, 'the same endpoint and credential keep the selection revision');
+  assert.notEqual(reobserved.observedAt, enabled.observedAt, 'a fresh endpoint observation still records its time');
+  assert.equal(reobserved.models.find(model => model.id === 'model-a')?.enabled, true, 'model enablement survives reconfiguration');
+  const rotated = await access.accounts.configureCustom(added.id, { ...base, apiKey: 'sk-two', expectedRevision: reobserved.revision });
+  assert.notEqual(rotated.identity, enabled.identity);
+  assert.notEqual(rotated.revision, reobserved.revision);
+  assert.throws(() => access.leases.updateRun(lease.identity, 'run-two'), { code: 'model_binding_missing' });
+  await assert.rejects(access.leases.create({ accountId: added.id, modelId: 'model-a', expectedIdentity: enabled.identity, agentId: 'dsh', conversationId: 'chat', runId: 'run-two' }), { code: 'model_account_identity_changed' });
+  const fresh = await access.leases.create({ accountId: added.id, modelId: 'model-a', expectedIdentity: rotated.identity, agentId: 'dsh', conversationId: 'chat', runId: 'run-two' });
+  assert.notEqual(fresh.identity, lease.identity);
+  assert.equal(fresh.baseUrl.startsWith('http://127.0.0.1:'), true);
+  const stored = await readFile(join(root, 'accounts.json'), 'utf8');
+  assert.ok(!stored.includes('sk-one') && !stored.includes('sk-two'));
+  assert.match(await readFile(join(root, 'accounts', added.id, 'model-api-key.json'), 'utf8'), /sk-two/);
 });

@@ -109,7 +109,7 @@ function isBrowserOwnedPath(value: any): any  {
   const relative: any = buildrRelative(normalized);
   return normalized.startsWith('services/buildr-web/')
     || (relative.startsWith('src/web/') && !relative.startsWith('src/web/http/'))
-    || relative.startsWith('test/e2e/')
+    || ['test/e2e/buildr-web-browser.test.ts', 'test/e2e/connection-skills.ts'].includes(relative)
     || relative === 'test/verification/browser-selector-dispatcher.ts'
     || relative === 'test/verification/web-dist.ts';
 }
@@ -157,10 +157,14 @@ export function selectBrowserSelectors(changedPaths: any): any  {
       add(plan, 'connection-skills', originalValue, 'Connection skill page journey changed; verify isolated configuration and candidate authentication.');
       continue;
     }
-    if (value.startsWith('test/e2e/')) {
+    if (value === 'test/e2e/buildr-web-browser.test.ts') {
       plan.mode = 'full';
       plan.selectors = ['all'];
       plan.reasons.push({ path: originalValue, selector: 'all', reason: 'Browser journey implementation changed; run the explicit complete selector set.' });
+      continue;
+    }
+    if (value.startsWith('test/e2e/')) {
+      plan.reasons.push({ path: originalValue, selector: null, reason: 'Independent E2E member; its declared owner selects execution without expanding unrelated browser journeys.' });
       continue;
     }
     if (value === 'verification.yml' || originalValue === 'projects/product/verification.yml' || value === 'test/verification/registry.ts' || value.startsWith('test/verification/browser-') || value === 'test/verification/web-dist.ts') {

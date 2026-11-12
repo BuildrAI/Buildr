@@ -55,4 +55,4 @@
 
 开发环境由[准备声明](../../../preparation.yml)、[Node.js 版本](../../../.node-version)和对应服务（Service）的包清单确定。类型检查、逻辑测试、真实页面交互、安装包消费和目标平台证据分别证明不同边界；构建通过不能替代其他验收。日常按改动选择已有检查，正式发布另行固定源码、完整候选（Candidate）和唯一产物，见[产品验证](verification-framework.md)与[发布流程](../flows/open-source-release.md)。
 
-执行后台（Execution Backend）另以内容摘要保留编译包、完整依赖和 Node.js；主程序版本与后台实际版本分别观察。空闲切换不覆盖活动文件，预览和离线维护共用后台持有边界，详见[进程连接与切换](agent-integration.md#主程序与执行后台怎样连接)。
+执行后台（Execution Backend）另以内容摘要保留编译包、完整依赖和 Node.js；主程序版本与后台实际版本分别观察。空闲切换不覆盖活动文件，预览和离线维护共用后台持有边界；任务预览另在工作树准备候选产物并钉住候选运行单元 digest，未就绪不宣告启动，详见[进程连接与切换](agent-integration.md#主程序与执行后台怎样连接)。

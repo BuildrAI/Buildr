@@ -33,9 +33,18 @@ for(const releasedBeforeAttach of [false,true])test('a replacement owning host k
     await until(()=>observer!.operations.conversations.read(scope,chat.id),view=>view.run?.resourcesReleased===true);
     assert.equal(fs.existsSync(path.join(dataRoot,'remaining-result')),false,'the explicit disabled policy still applies');
   }
+  const recoveryScans = () => fs.readFileSync(path.join(dataRoot, 'recovery-scans'), 'utf8').trim().split('\n').length;
+  assert.equal(recoveryScans(), 1, 'the first host starts recovery only once');
+  for (let read = 0; read < 3; read++) {
+    await main.call('conversations.read', [scope, chat.id]);
+    await main.call('conversations.list', [scope, { fields: 'summary' }]);
+  }
+  assert.equal(recoveryScans(), 1, 'refreshing the same host registration does not scan history');
+
   await main.close();
   main=await actor({dataRoot,profileId,runtime,workspace,legacySourceId:'minimal',autoContinueInterrupted:true});
   assert.equal(main.info.identity.generation,identity.generation,'policy refresh must not interrupt the existing backend');
+  await until(async () => recoveryScans(), count => count === 2);
   fs.writeFileSync(path.join(dataRoot,'release-uncertain-resource'),'yes');
   // Automatic recovery may not open a replacement native session, so the
   // interrupted goal stays unknown and observable instead of being replayed.

@@ -39,6 +39,7 @@ export function createLocalWorkspaceRequestRouter({
   productIdentity,
   webProfile,
   previewIdentity,
+  agentRuntimeStatus,
   httpContributions,
   origin,
   isClosing,
@@ -89,6 +90,7 @@ export function createLocalWorkspaceRequestRouter({
         productIdentity,
         webProfile,
         previewIdentity,
+        agentRuntime: agentRuntimeStatus ? await agentRuntimeStatus() : null,
         restartInProgress: Boolean(restartRequested?.()),
       });
       return;

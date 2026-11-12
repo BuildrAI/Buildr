@@ -18,7 +18,7 @@ await step('新对话跨工作空间恢复软件级选择，无关账号变化�
         assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'完全访问');
         await assertModelSummary('Qoder / Qoder 共享模型','高');assert.equal(await panel().locator('.ac-model-trigger .ac-tier-mark').count(),1);
         const written=await page.evaluate(({moduleKey,modelKey}:{moduleKey:string;modelKey:string})=>({module:JSON.parse(localStorage.getItem(moduleKey)||'null'),model:JSON.parse(localStorage.getItem(modelKey)||'null'),execution:localStorage.getItem('buildr.execution-model')}),{moduleKey:storage.moduleKey,modelKey:storage.modelKey});
-        assert.equal(written.module.agent.connectionId,'qoder');assert.equal(written.module.permission.mode,'full-access');assert.equal(written.module.permission.workspaceId,workspaceId);assert.deepEqual([written.model.connectionId,written.model.modelAccountId,written.model.model,written.model.serviceTier,written.model.reasoningEffort],['qoder','qoder-subscription','qoder-shared-model','fast','high']);assert.equal(written.execution,JSON.stringify(['commit-account','commit-model']),'对话模型选择不写提交说明执行模型偏好');
+        assert.equal(written.module.agent.connectionId,'qoder');assert.equal(written.module.permission.mode,'full-access');assert.equal(written.module.permission.workspaceId,workspaceId);assert.deepEqual([written.model.connections.qoder.connectionId,written.model.connections.qoder.modelAccountId,written.model.connections.qoder.model,written.model.connections.qoder.serviceTier,written.model.connections.qoder.reasoningEffort],['qoder','qoder-subscription','qoder-shared-model','fast','high']);assert.equal(written.execution,JSON.stringify(['commit-account','commit-model']),'对话模型选择不写提交说明执行模型偏好');
         await page.reload();await input().waitFor();assert.equal(await panel().locator('.ac-provider-select .ant-select-selection-item').innerText(),'Qoder');assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'完全访问');await assertModelSummary('Qoder / Qoder 共享模型','高');assert.equal(await panel().locator('.ac-model-trigger .ac-tier-mark').count(),1,'新对话恢复服务档位与思考深度');
         await chooseOption('新对话工作空间','other-workspace');
         assert.equal(await panel().locator('.ac-location-name').innerText(),'other-workspace');assert.equal(await panel().locator('.ac-provider-select .ant-select-selection-item').innerText(),'Qoder','智能体记忆跨工作空间保留');assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'完全访问','未设置空间采用初始策略');await chooseOption('执行权限','默认权限');await assertModelSummary('Qoder / Qoder 共享模型','高');
@@ -30,7 +30,7 @@ await step('新对话跨工作空间恢复软件级选择，无关账号变化�
         const focusTimer=await page.evaluate(()=>window.setInterval(()=>window.dispatchEvent(new Event('focus')),100));
         try{await catalogRefresh;}finally{await page.evaluate((timer:number)=>clearInterval(timer),focusTimer);}await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
         assert.equal(await panel().locator('.ac-provider-select .ant-select-selection-item').innerText(),'Qoder');await assertModelSummary('Qoder / Qoder 共享模型','高');assert.equal(await panel().getByText('对话或套餐状态已变化，已重新读取；套餐登录来源变化时请重新选择模型。草稿保留。',{exact:true}).count(),0);
-        const sendsBefore=fixture.sends;await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,sendsBefore+1);assert.equal(sentInputs.at(-1).modelAccountId,'qoder-subscription');assert.equal(sentInputs.at(-1).modelAccountRevision,'qoder-r1','无关 Devin 账号修订不改变 Qoder 对话来源');await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+        const sendsBefore=fixture.sends;await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,sendsBefore+1);assert.equal(sentInputs.at(-1).modelAccountId,'qoder-subscription');assert.equal(sentInputs.at(-1).modelAccountRevision,'qoder-r1','无关 Devin 账号修订不改变 Qoder 对话来源');await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
         await fixture.startNewConversation();await input().waitFor();assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'完全访问','同工作空间再次新建仍恢复完全访问');assert.equal(await page.evaluate(()=>localStorage.getItem('buildr.execution-model')),JSON.stringify(['commit-account','commit-model']),'全部对话选择不改变执行模型偏好');
       }finally{fixture.sharedModels=previousModels;fixture.prepareError=undefined;await page.evaluate(({moduleKey,modelKey,module,model,execution}:{moduleKey:string;modelKey:string;module:string|null;model:string|null;execution:string|null})=>{for(const [key,value] of [[moduleKey,module],[modelKey,model],['buildr.execution-model',execution]] as const){if(value===null)localStorage.removeItem(key);else localStorage.setItem(key,value);}},storage);}
     });
@@ -57,7 +57,7 @@ await step('不同来源的模型强度独立恢复，能力失效后首次发�
         await modelSettings().waitFor({state:'hidden'});await fixture.openModelSettings();await modelSettings().getByText('此模型未提供可调节的推理强度',{exact:true}).waitFor();await closeModelSettings();
         await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();
         assert.equal(fixture.creations,before+1);assert.equal(sentInputs.at(-1).modelAccountId,'reasoning-a');assert.equal(sentInputs.at(-1).reasoningEffort,undefined,'同名原生模型不能使共享来源发送失效强度');
-        await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+        await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
       }finally{fixture.sharedModels=previousModels;}
     });
 
@@ -80,12 +80,12 @@ await step('唯一新草稿跨空间、旧对话与刷新恢复，默认空间�
     });
 
 await step('lost first-send reply recovers the accepted conversation after refresh without replay',async()=>{
-      await fixture.startNewConversation();await input().waitFor();await chooseAgent('Codex');await input().fill('recover the accepted first input');
+      await fixture.startNewConversation();await input().waitFor();await chooseAgent('Codex');await chooseModel('Fixture model');await closeModelSettings();await input().fill('recover the accepted first input');
       const beforeSends=fixture.sends,beforeCreations=fixture.creations;fixture.loseFirstResponse=true;
       await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByRole('button',{name:'核对并重试原提交',exact:true}).waitFor();
       assert.equal(fixture.sends,beforeSends+1);assert.equal(fixture.creations,beforeCreations+1);const acceptedId=fixture.conversation.id;
       await page.reload();await page.locator('#agent-conversation-panel[data-conversation-id="'+acceptedId+'"]').waitFor();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,beforeSends+1);assert.equal(fixture.creations,beforeCreations+1);
-      await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+      await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
     });
 
 await step('后台升级明确拒绝首轮后保留提示，刷新和重试沿用原文字与附件',async()=>{
@@ -108,7 +108,7 @@ await step('后台升级明确拒绝首轮后保留提示，刷新和重试沿�
         assert.equal(fixture.sends,beforeSends+1);assert.equal(fixture.creations,beforeCreations+1);assert.equal(attempts.length,2);
         assert.equal(attempts[1].clientRequestId,attempts[0].clientRequestId);assert.equal(sentInputs.at(-1).text,'upgrade preserved original');assert.deepEqual(sentInputs.at(-1).attachmentIds,attempts[0].attachmentIds);assert.equal(attempts[0].attachmentIds.length,1);
         assert.equal(await retry().count(),0);
-        await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+        await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
         await fixture.startNewConversation();await input().waitFor();assert.equal(await input().inputValue(),'later edited draft','后来编辑的文字仍保留在共享新草稿中');
       }finally{await page.unroute(match,rejectWhileUpdating);}
     });
@@ -119,6 +119,6 @@ await step('默认工作空间走应用会话路由，空草稿不列出且首�
       await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'default.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10])});await panel().getByRole('button',{name:'移除图片 default.png',exact:true}).waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),null);
       const creationsBefore=fixture.creations;await fixture.openHistoryList();await chooseOption('对话列表工作空间','全部工作空间');await panel().locator('.ac-history-list').first().waitFor({state:'attached'});await panel().locator('.ac-history-body>.ant-spin').waitFor({state:'hidden'});assert.equal(fixture.creations,creationsBefore,'adding an image does not create a conversation');
       await fixture.backToConversation();await input().fill('默认空间首轮');const sent=page.waitForRequest((r:any)=>r.method()==='POST'&&r.url().includes('/api/v1/app/agent-service/conversations/drafts/')&&r.url().endsWith('/send'));await panel().getByRole('button',{name:'发送对话',exact:true}).click();await sent;await panel().locator('[data-run-status="running"]').waitFor();assert.equal(sentInputs.at(-1).permissionMode,'full-access');assert.equal(fixture.conversation.workspaceId,'@default');assert.equal(fixture.creations,creationsBefore+1);
-      await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+      await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
     });
 }

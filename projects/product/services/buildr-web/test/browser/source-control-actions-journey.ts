@@ -84,7 +84,7 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         assert.ok(geometry.center<=2,'内部模型名相对整行居中：'+JSON.stringify(geometry));
         await combo.focus();await combo.press('ArrowDown');
         const modelList=page.locator('.ac-model-list-popup:visible');
-        await modelList.getByRole('navigation',{name:'模型来源快速定位',exact:true}).waitFor();
+        await modelList.getByRole('navigation',{name:'模型供应商快速定位',exact:true}).waitFor();
         assert.equal(await settings.locator('.ac-model-picker input:not([readonly])').count(),0,'模型行不包含可编辑输入框与光标');
         assert.equal(await modelList.getByText('Disabled Model',{exact:true}).count(),0,'未启用模型不出现在执行模型菜单');
         assert.match(await modelList.locator('.ant-select-item-option').filter({hasText:'Offline Model'}).getAttribute('class'),/ant-select-item-option-disabled/,'已启用但来源不可用的模型保留且禁选');

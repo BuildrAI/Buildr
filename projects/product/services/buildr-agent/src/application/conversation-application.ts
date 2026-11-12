@@ -15,29 +15,29 @@ import { reconcileLegacySupersededRuns } from '../domain/superseded-runs.ts';
 import { blocksExecution } from '../domain/interaction-policy.ts';
 import { ConversationAttachments, attachmentRevision, MAX_IMAGE_BYTES, MAX_VISUAL_INPUTS } from './conversation-attachments.ts';
 import type { AttachmentInput } from '../contracts.ts';
-import { continuationDraft, releasedContinuation, stoppedContinuation } from '../domain/conversation-continuation.ts';
+import { continuationDraft, continuationPrompt, releasedContinuation, stoppedContinuation } from '../domain/conversation-continuation.ts';
 import { waitingHandoffQuestions, waitingQuestionText } from '../domain/waiting-question-handoff.ts';
 import { ConversationReadModel, type ConversationReadState } from '../persistence/conversation-read-model.ts';
 import { ConversationEntryStore } from '../persistence/conversation-entry-store.ts';
 import { LOCAL_CREDENTIAL_RETRIES, RETRY_DELAYS, localCredentialFailure, transientFailure } from '../domain/transient-failure.ts';
 import { NativeRequestError } from '../domain/error-diagnostic.ts';
 import {selectedOffering,modelConfiguration} from '../model-access/model-preferences.ts';
-import type {ModelOffering} from '../model-access/contracts.ts';
+import type {ModelAccountView, ModelOffering} from '../model-access/contracts.ts';
 import type { ModelAccess } from '../model-access/application.ts';
 import { modelQuotaFailure } from '../model-access/quota.ts';
-import { isQoderProvider, qoderProduct } from '../executors/qoder/product.ts';
+import { isQoderProvider, qoderCnModelAccountId, qoderProduct } from '../executors/qoder/product.ts';
 import { qoderLoginExpiredMessage } from '../model-access/providers/qoder-auth.ts';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ExecutorInputRejected } from '../contracts.ts';
-import type { AgentRuntime, AgentServiceOptions, ConversationEntry, ConversationView, ExecutorEvent, ExecutorImage, ExecutorItem, ExecutorObservation, RunView, SendDraft, SendPreview } from '../contracts.ts';
+import type { AgentRuntime, AgentServiceOptions, ContextRef, ConversationActivityCounts, ConversationEntry, ConversationSummaryView, ConversationView, ExecutorEvent, ExecutorImage, ExecutorItem, ExecutorObservation, RunView, SendDraft, SendPreview } from '../contracts.ts';
 import { AgentServiceError, BUSY_STATES, conversationRuns, unfinishedRun, expected, fail, nonempty, safeDiagnostic } from '../domain/agent-state.ts';
 import type { StoredConversation, StoredParticipant } from '../domain/agent-state.ts';
 import type { ConversationRepository } from '../persistence/conversation-repository.ts';
 import type { ConnectionApplication } from './connection-application.ts';
 import type { ConversationEvents } from './conversation-events.ts';
-import {HANDOFF_PROMPT,handoffEntries,organizeHandoff,displayRounds,receivingBudget,formatHandoffRounds} from '../domain/handoff-material.ts';
+import {HANDOFF_PROMPT,handoffEntries,organizeHandoff,displayRounds,receivingBudget,formatHandoffRounds,formatHandoffNavigation} from '../domain/handoff-material.ts';
 import {handoffSources,handoffEntry,handoffReceipt,readHandoffSource,handoffSourceEntry,type HandoffHistoryQuery} from './handoff-sources.ts';
 import type { HostContext } from './host-context.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
@@ -47,11 +47,14 @@ import { ConversationDrafts } from './conversation-drafts.ts';
 import { ConversationForks } from './conversation-forks.ts';
 import type { ConversationForkInput } from '../contracts.ts';
 import { ConversationChildren, type CreateChildInput } from './conversation-children.ts';
+import { ConversationStops } from './conversation-stops.ts';
+import type { ConversationStopInput } from '../contracts.ts';
 
-type PreparedSource = { runtime: AgentRuntime; model: string; leaseIdentity?: string };
-const TITLE_TIMEOUT_MS = 45_000;
+type PreparedSource = { runtime: AgentRuntime; model: string; leaseIdentity?: string; nativeHomeRoot?: string };
+const TITLE_TIMEOUT_MS = 10_000;
+const STALE_TITLE_REASON = '标题生成在服务重启后未完成；当前名称已保留，可显式重新生成。';
 const NEUTRAL_TITLE = '新对话';
-const TITLE_FAILURE_REMINDER = '生成标题错误，请手动修改';
+const FALLBACK_TITLE_LIMIT = 60;
 const MAX_TEXT_BYTES = 64 * 1024;
 const MAX_ITEM_BYTES = 1024 * 1024;
 const PAGE_SIZE = 100;
@@ -70,14 +73,21 @@ async function within<T>(work: Promise<T>, milliseconds: number, code: string, s
   finally { if (timer) clearTimeout(timer); if (cancel) signal?.removeEventListener('abort', cancel); }
 }
 const bounded = (value: number | undefined, fallback: number, max: number) => Math.max(1, Math.min(Number.isFinite(value) ? Math.trunc(value!) : fallback, max));
+const needsAttention = (view: ConversationView): boolean => (view.activity?.pendingDecisionCount ?? 0) > 0 || view.run?.status === 'failed' || view.run?.status === 'unknown';
+const conversationSummary = (view: ConversationView): ConversationSummaryView => ({ id: view.id, title: view.title, runStatus: view.run?.status ?? null, updatedAt: view.updatedAt, active: view.activity?.active ?? false, pendingDecisionCount: view.activity?.pendingDecisionCount ?? 0 });
+
+type ConversationListInput = { taskId?: string; workspaceIds?: string[]; cursor?: string; limit?: number; hidden?: boolean; query?: string; active?: boolean; attention?: boolean; fields?: 'summary' };
+type ConversationListResult<T> = { conversations: T[]; nextCursor?: string; activityCounts: ConversationActivityCounts };
 
 export class ConversationApplication {
   readonly drafts: ConversationDrafts;
+  private readonly stops: ConversationStops;
   activity(): Array<{kind:string;count:number}> {
     return [
       {kind:'execution',count:this.workers.size},
+      {kind:'stop',count:this.stops.active},
       {kind:'input',count:this.supplements.size},
-      {kind:'title',count:this.titleWork.size + this.earlyTitles.size},
+      {kind:'title',count:this.titleWork.size},
       {kind:'recovery',count:this.recoveries.size},
       {kind:'reply',count:this.repliesInFlight.size},
       {kind:'observation',count:this.observations.size + this.releaseChecks.size + this.supersededCleanups.size + this.questionReleases.size},
@@ -132,9 +142,8 @@ export class ConversationApplication {
   private readonly observations = new Map<string, Promise<ConversationView>>();
   private readonly questionReleases = new Map<string,Promise<void>>();
   private readonly supersededCleanups = new Map<string,Promise<void>>();
-  private readonly repliesInFlight = new Set<string>();
+  private readonly repliesInFlight = new Map<string, string>();
   private readonly titleWork = new Map<string, AbortController>();
-  private readonly earlyTitles = new Map<string, Promise<void>>();
   private readonly sourceConnections = new Map<string,string>();
   private readonly sourceRuntimes = new Map<string, Promise<{runtime: AgentRuntime; model: string; leaseIdentity?:string}>>();
   private readonly sourceReleasePending = new Map<AgentRuntime,()=>Promise<boolean>>();
@@ -143,6 +152,7 @@ export class ConversationApplication {
   private releasingIdleSources?: Promise<void>;
   private readonly idleReleaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly releaseChecks = new Map<string,Promise<boolean>>();
+  private readonly supplementReceiptChecks = new Map<string,Promise<void>>();
   private readonly releasedRuns = new Set<string>();
   private readonly nativeSourceOwners = new Set<string>();
   private closing = false;
@@ -174,12 +184,24 @@ export class ConversationApplication {
   constructor(options: ConversationApplication['options']) {
     this.options = options;
     this.diagnostics=executionLog(options.root,options.generation);
+    this.stops=new ConversationStops({
+      load:(scope,id)=>this.load(scope,id),save:record=>this.save(record),
+      read:(scope,id)=>this.read(scope,id,{compactTools:true}),pending:this.pendingSends,now:options.now,activeRun:runId=>this.workers.has(runId),
+      invoke:(scope,id,input,action)=>options.controlSupersededRun
+        ?options.controlSupersededRun(scope,id,input,action)
+        :action==='stop'?this.stop(scope,id,input):this.observeRun(scope,id,input),
+    });
     this.idleTimer=setInterval(()=>{void this.collectIdle().catch(()=>{});},60_000);this.idleTimer.unref();
     this.media = new ConversationAttachments({ root: options.root, now: options.now, save: record => this.save(record) });
     this.forks = new ConversationForks({
       repository: options.repository, media: this.media, now: options.now,
       load: (scope, id) => this.load(scope, id), candidate: (scope, input) => this.candidate(scope, input),
       runtime: async (record, participant) => (await this.sourceRuntime(record, participant)).runtime,
+      rebindReasoning: async (source, target, value) => {
+        const from = source.bindingData?.gatewayIdentity, to = target.bindingData?.gatewayIdentity;
+        if (!options.modelAccess || typeof from !== 'string' || typeof to !== 'string') throw new Error('model_binding_missing');
+        return await options.modelAccess.leases.rebindReasoning(from, to, value);
+      },
       save: (record, initial) => this.save(record, initial), view: record => this.view(record),
     });
     this.children = new ConversationChildren({repository:options.repository,media:this.media,now:options.now,
@@ -249,10 +271,20 @@ export class ConversationApplication {
   private async openSource(record:StoredConversation,participant:StoredParticipant,runId?:string):Promise<PreparedSource> {
     const access=this.options.modelAccess;if(!access)fail('agent_model_source_unavailable','模型套餐组件不可用。',409);
     const lease=await access.leases.create({ accountId: participant.modelAccountId!, expectedIdentity: participant.modelAccountIdentity, modelId: participant.modelId!,serviceTier:participant.serviceTier, conversationId: record.view.id, agentId: participant.connectionId, runId: runId ?? 'prepare' });
+    const nativeHomeRoot=this.participantHomeRoot(participant,lease.identity);
     try {const runtime=await this.options.connections.runtime(participant.connectionId, { identity: lease.identity, baseUrl: lease.baseUrl, apiKey: lease.apiKey,
+      ...(nativeHomeRoot?{nativeHomeRoot}:{}),
       ...(nativeLeaseProvider(lease.provider) && participant.connectionId === nativeLeaseProvider(lease.provider) ? { nativeModel: { provider: nativeLeaseProvider(lease.provider)!, id: participant.modelId!, accountIdentity: participant.modelAccountIdentity! } } : {}),
-      models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] });return {runtime,model:lease.model,leaseIdentity:lease.identity};}
+      models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] });return {runtime,model:lease.model,leaseIdentity:lease.identity,nativeHomeRoot};}
     catch(error){access.leases.release(lease.identity);throw error;}
+  }
+  /** New Codex/DSH participants share one home per connection; pre-existing ones keep their original lease home so the binding stays stable. The choice is persisted and never changes. */
+  private participantHomeRoot(participant:StoredParticipant,leaseIdentity:string):string|undefined{
+    if(participant.provider!=='codex'&&participant.provider!=='dsh')return undefined;
+    if(participant.nativeHomeRoot)return participant.nativeHomeRoot;
+    const base=path.join(this.options.root,'connections',participant.connectionId);
+    if(participant.bindingIdentity)return path.join(base,'model-bindings',createHash('sha256').update(leaseIdentity).digest('hex'));
+    return base;
   }
   /** A process keeps the gateway key it started with, so a rejected key is only replaced
    *  by releasing this participant's source. Returns false when release is unconfirmed. */
@@ -322,15 +354,15 @@ export class ConversationApplication {
           if(!held||this.sourceRuntimes.get(member.id)!==member.source||member.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(member.leaseIdentity)){safe=false;break;}
           const key=`${held.workspaceId}/${held.id}`;
           const state=this.options.repository.readState(held.id);
-          if(!state||state.view.workspaceId!==held.workspaceId||conversationRuns(state.view).some(run=>this.workers.has(run.id))||this.recoveries.has(key)||this.observations.has(key)||this.earlyTitles.has(held.id)||this.titleWork.has(held.id)){safe=false;break;}
+          if(!state||state.view.workspaceId!==held.workspaceId||conversationRuns(state.view).some(run=>this.workers.has(run.id))||this.recoveries.has(key)||this.observations.has(key)||this.titleWork.has(held.id)){safe=false;break;}
           const record=this.load(held.workspaceId,held.id),{run,attempt,id:runId}=this.sourceExecution(record,member.id);
           // A finished fork has durable history but has never admitted a work
           // prompt. Its private reader/import process is idle, not an unknown run.
-          if(!run&&record.view.forkState?.status==='ready'&&!record.attempts.length&&!record.view.requests.length&&!this.forks.active&&!this.titleWork.has(held.id)&&!this.earlyTitles.has(held.id)){
+          if(!run&&record.view.forkState?.status==='ready'&&!record.attempts.length&&!record.view.requests.length&&!this.forks.active&&!this.titleWork.has(held.id)){
             candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId:''});
             continue;
           }
-          if(!runId||record.view.requests.some(request=>request.participantId===member.id)||this.workers.has(runId)||this.recoveries.has(runId)||this.observations.has(`${held.workspaceId}/${held.id}`)||this.earlyTitles.has(held.id)||this.titleWork.has(held.id)||this.supplements.size||this.repliesInFlight.size){safe=false;break;}
+          if(!runId||record.view.requests.some(request=>request.participantId===member.id)||this.workers.has(runId)||this.recoveries.has(runId)||this.observations.has(`${held.workspaceId}/${held.id}`)||this.titleWork.has(held.id)||this.supplements.size||this.repliesInFlight.size){safe=false;break;}
           const participant=record.participants.find(value=>value.id===member.id);
           // Older histories may no longer retain this participant's RunView.
           // Only its exact accepted native attempt can prove physical release.
@@ -356,7 +388,7 @@ export class ConversationApplication {
         }
         if(!safe || this.forks.active)continue;
         // Recheck after asynchronous native proof, then freeze reuse before close.
-        if(this.forks.active || candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)||this.sourceRuntimes.get(value.id)!==value.source||this.sourceExecution(this.load(value.workspaceId,value.conversationId),value.id).id!==value.runId||this.workers.has(value.runId)||this.observations.has(`${value.workspaceId}/${value.conversationId}`)||this.recoveries.has(`${value.workspaceId}/${value.conversationId}`)||this.earlyTitles.has(value.conversationId)||this.titleWork.has(value.conversationId)||this.load(value.workspaceId,value.conversationId).view.requests.some(request=>request.participantId===value.id))||this.supplements.size||this.repliesInFlight.size)continue;
+        if(this.forks.active || candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)||this.sourceRuntimes.get(value.id)!==value.source||this.sourceExecution(this.load(value.workspaceId,value.conversationId),value.id).id!==value.runId||this.workers.has(value.runId)||this.observations.has(`${value.workspaceId}/${value.conversationId}`)||this.recoveries.has(`${value.workspaceId}/${value.conversationId}`)||this.titleWork.has(value.conversationId)||this.load(value.workspaceId,value.conversationId).view.requests.some(request=>request.participantId===value.id))||this.supplements.size||this.repliesInFlight.size)continue;
         const finish=async()=>{
           if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)))return false;
           for(const value of candidates)if(value.prepare&&!await value.prepare())return false;
@@ -403,6 +435,35 @@ export class ConversationApplication {
   retainsConversationSource(workspaceId:string,id:string): boolean {
     return this.nativeSourceOwners.has(`${workspaceId}/${id}`) || [...this.sourceOwners.entries()].some(([participant,owner])=>this.sourceRuntimes.has(participant)&&owner.workspaceId===workspaceId && owner.id===id);
   }
+  /** A retiring generation releases idle native sources after a bounded grace.
+   * Ownership proof may never arrive; the exact uncertainty is recorded on the
+   * run and the process may exit instead of retrying a proof that no longer
+   * exists. Live execution, input, recovery, title and reply work is never
+   * touched, and no new effect is ever sent for an unknown run. */
+  async releaseRetiredWork(): Promise<void> {
+    if(this.closing||this.workers.size||this.supplements.size||this.repliesInFlight.size||this.recoveries.size||this.forks.active||this.titleWork.size)return;
+    const runtimes=new Set<AgentRuntime>();
+    for(const [id,source] of [...this.sourceRuntimes]){
+      const value=await Promise.race([source.catch(()=>undefined),new Promise<undefined>(resolve=>setImmediate(()=>resolve(undefined)))]);
+      if(!value)continue;
+      runtimes.add(value.runtime);
+      if(this.sourceRuntimes.get(id)===source){this.sourceRuntimes.delete(id);this.sourceOwners.delete(id);this.sourceConnections.delete(id);}
+    }
+    for(const runtime of runtimes)await Promise.race([this.options.connections.releaseGatewayRuntime(runtime).catch(()=>{}),new Promise<void>(resolve=>{const timer=setTimeout(resolve,10_000);timer.unref?.();})]);
+    for(const saved of this.options.repository.listPendingStates(true)){
+      const record=this.load(saved.view.workspaceId,saved.view.id);
+      let changed=false;
+      for(const run of conversationRuns(record.view)){
+        if(run.generation!==this.options.generation||run.resourcesReleased||!unfinishedRun(run))continue;
+        run.resourcesReleased=true;run.executionState='unknown';
+        if(!['stopped','failed','completed'].includes(run.status)){run.status='unknown';run.interrupted=true;}
+        run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
+        run.diagnostic='执行后台已退役并释放后台连接；本轮结束状态未确认，已有操作结果保留，不会重发。';
+        run.updatedAt=this.options.now();changed=true;
+      }
+      if(changed)this.save(record);
+    }
+  }
   /** A retained process acknowledges release only after the exact native round and
    * all conversation-specific work have ended. Shared writers are never closed here. */
   async observeForRelease(workspaceId:string, id:string, expectedRunId:string, generation:string): Promise<boolean> {
@@ -429,10 +490,10 @@ export class ConversationApplication {
     return record;
   }
   private readonly legacyPresentedFiles = new Map<string, ReturnType<typeof presentedFilesForEntry>>();
-  private view(record: ConversationReadState, before?: number, limit?: number, readLegacyFiles = false, compactTools = true): ConversationView {
+  private view(record: ConversationReadState & Partial<Pick<StoredConversation, 'attempts'>>, before?: number, limit?: number, readLegacyFiles = false, compactTools = true, includeContinuationPrompt = true): ConversationView {
     setConversationTaskLinks(record.view,conversationTaskLinks(record.view));
     normalizeQuestionCapabilities(record);
-    const entries = record.view.entries.filter(entry => before === undefined || entry.sequence < before).map(entry => compactTools ? ConversationEntryStore.preview(entry) : entry);
+    const entries = before === undefined ? record.view.entries : record.view.entries.filter(entry => entry.sequence < before);
     const count = limit === undefined ? undefined : bounded(limit, PAGE_SIZE, 200);
     let inferredRound = {id:'legacy:0'};
     const entryRounds = count === undefined ? entries.map(entry => {
@@ -448,17 +509,19 @@ export class ConversationApplication {
       return inferredRound;
     }) : [];
     const rounds = new Set<string>();
+    const page: ConversationEntry[] = [];
     let pageBytes = 2, start = entries.length;
     while (start > 0) {
-      const entry = entries[start - 1]!;
       const round = entryRounds[start - 1]?.id ?? '';
       if (count !== undefined ? entries.length - start >= count : !rounds.has(round) && rounds.size >= PAGE_ROUNDS) break;
+      const source = entries[start - 1]!;
+      const entry = compactTools ? ConversationEntryStore.preview(source) : source;
       const size = Buffer.byteLength(JSON.stringify(entry)) + Number(start < entries.length);
       if (start < entries.length && pageBytes + size > MAX_PAGE_BYTES) break;
-      pageBytes += size; start--; rounds.add(round);
+      pageBytes += size; start--; rounds.add(round); page.push(entry);
     }
     // Historical tool output can be large; clone only the page that will be sent.
-    const view = structuredClone({ ...record.view, entries: entries.slice(start), nextEntryCursor: start > 0 ? entries[start]!.sequence : record.view.nextEntryCursor });
+    const view = structuredClone({ ...record.view, entries: page.reverse(), nextEntryCursor: start > 0 ? entries[start]!.sequence : record.view.nextEntryCursor });
     view.entries = view.entries.map(entry => {
       if(entry.input===undefined)delete entry.input;
       const live = this.liveTools.get(entry.id);
@@ -487,38 +550,71 @@ export class ConversationApplication {
     });
     view.requests = view.requests.filter(request => conversationRuns(view).some(run => !run.supersededBy && !(request.kind === 'question' && run.questionsEndedBy) && request.runId === run.id && request.participantId === run.participantId && request.generation === run.generation));
     view.attachmentRevision = attachmentRevision(record.attachments ?? {});
+    // A process that died mid-title leaves no live work. Show the failure
+    // instead of a permanent "generating" state; the stored record is untouched.
+    if(view.titleState?.status === 'generating' && !this.titleWork.has(view.id)) view.titleState = { status: 'failed', reason: STALE_TITLE_REASON };
     view.titleState??={status:'unknown'};
     view.participants = record.participants.map(participant => ({
       id: participant.id, provider: participant.provider, connectionId: participant.connectionId,
       label: participant.label, model: participant.modelId, modelAccountId:participant.modelAccountId, deliveredThrough: participant.deliveredThrough, contextId: participant.contextRef?.id ?? '',
     }));
-    for (const run of conversationRuns(view)) if (run.generation !== this.options.generation && !this.options.generationAlive?.(run.generation) && BUSY_STATES.has(run.status)) {
-      run.status = 'unknown'; run.interrupted = true; run.diagnostic = '服务重启后原执行尚待核对，工作记录已保留。';
+    for (const run of conversationRuns(view)) {
+      // Older Claude workers persisted native task IDs in tool observations.
+      run.tools = run.tools.map(({id, label, status, canStop}) => ({id, label, status, canStop}));
+      const continuation = record.continuations?.[run.id] ?? (record.attempts ? continuationPrompt(record as Pick<StoredConversation, 'view' | 'attempts'>, run.id) : undefined);
+      if (continuation) run.continuedFrom = includeContinuationPrompt ? continuation : {runId: continuation.runId, userEntryId: continuation.userEntryId};
+      if (run.generation !== this.options.generation && !this.options.generationAlive?.(run.generation) && BUSY_STATES.has(run.status)) {
+        run.status = 'unknown'; run.interrupted = true; run.diagnostic = '服务重启后原执行尚待核对，工作记录已保留。';
+      }
     }
     view.pendingSend = this.pendingSends.view(this.pendingSends.read(view.workspaceId, view.id));
     return view;
   }
+  private summaryView(record: ConversationReadState & Partial<Pick<StoredConversation, 'attempts'>>): ConversationView {
+    return {...this.view(record, undefined, 1, false, true, false), entries: []};
+  }
   private save(record: StoredConversation, initial = false, textOnly = false, textEntryId?:string): void {
+    const started = performance.now();
     for (const run of conversationRuns(record.view)) if (run.stopRequested || run.supersededBy || run.resourcesReleased || !['running','waiting-approval','waiting-question'].includes(run.status)) delete run.contextCompaction;
     if(record.view.run?.status==='completed'){record.view.run.interrupted=undefined;delete record.interruption;}
     for(const observed of conversationRuns(record.view))if(['completed','failed','stopped','unknown','tools-active'].includes(observed.status)){record.runOutcomes??={};record.runOutcomes[observed.id]={status:observed.status,diagnostic:observed.diagnostic,model:observed.model,provider:observed.provider,contextUsage:observed.contextUsage,generation:observed.generation,updatedAt:observed.updatedAt};}
     const prior = record.view.revision;
     record.view.revision = randomUUID(); record.view.updatedAt = this.options.now();
-    this.options.repository.saveConversation(record, initial ? undefined : prior, {participationUnchanged:textOnly,textEntryId});
+    const persistence = this.options.repository.saveConversation(record, initial ? undefined : prior, {participationUnchanged:textOnly,textEntryId});
+    const persistedAt = performance.now();
     for(const run of conversationRuns(record.view)){
       const attempt=record.attempts.find(a=>a.runId===run.id),participant=record.participants.find(p=>p.id===run.participantId);
       const facts={event:'run-state',conversationId:record.view.id,workspaceId:record.view.workspaceId,runId:run.id,participantId:run.participantId,provider:run.provider,ownerGeneration:run.generation,status:run.status,accepted:run.accepted,stopRequested:run.stopRequested===true,resourcesReleased:run.resourcesReleased===true,executionId:attempt?.executionRef?.id,contextId:participant?.contextRef?.id,childPid:attempt?.executionRef?.data?.resourceGroup,runningTools:run.tools.filter(t=>t.status==='running').length,unknownTools:run.tools.filter(t=>t.status==='unknown').length};
       const signature=JSON.stringify(facts);
       if(this.diagnosticStates.get(run.id)!==signature){this.diagnostics(facts);this.diagnosticStates.delete(run.id);this.diagnosticStates.set(run.id,signature);if(this.diagnosticStates.size>512)this.diagnosticStates.delete(this.diagnosticStates.keys().next().value!);}
     }
-    this.options.events.publish({ type: 'conversation', workspaceId: record.view.workspaceId, conversationId: record.view.id, revision: record.view.revision, payload: { conversation: this.view(record) } });
+    const snapshotStartedAt = performance.now();
+    const conversation = this.view(record);
+    const snapshotAt = performance.now();
+    this.options.events.publish({ type: 'conversation', workspaceId: record.view.workspaceId, conversationId: record.view.id, revision: record.view.revision, payload: { conversation } });
+    const publishedAt = performance.now();
+    const durationMs = Math.round(publishedAt - started);
+    if (durationMs >= 250) this.diagnostics({
+      event: 'conversation-save-slow',
+      conversationId: record.view.id,
+      workspaceId: record.view.workspaceId,
+      durationMs,
+      persistenceMs: Math.round(persistedAt - started),
+      ...persistence,
+      snapshotMs: Math.round(snapshotAt - snapshotStartedAt),
+      publicationMs: Math.round(publishedAt - snapshotAt),
+      entryCount: record.view.entries.length,
+    });
   }
   read(workspaceId: string, id: string, options: { before?: number; limit?: number; compactTools?: boolean } = {}): ConversationView {
+    const started = performance.now();
     const limit=options.limit===undefined?undefined:bounded(options.limit,PAGE_SIZE,200);
     const record=this.options.repository.readPage(id,options.before,limit,options.compactTools)??this.load(workspaceId,id);
     if(record.view.workspaceId!==workspaceId)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
     const result=this.view(record,options.before,limit,true,options.compactTools===true);
     if(options.compactTools)result.entries=result.entries.map(entry=>entry.detail||this.liveTools.has(entry.id)?entry:ConversationReadModel.compact(entry));
+    const durationMs = Math.round(performance.now() - started);
+    if (durationMs >= 250) this.diagnostics({event:'conversation-read-slow',conversationId:id,workspaceId,durationMs});
     return result;
   }
   readHistory(workspaceId:string,id:string,query:HandoffHistoryQuery) {
@@ -542,11 +638,18 @@ export class ConversationApplication {
     if(!current)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
     return [current.revision,current.seenThrough,this.pendingSends.read(workspaceId,id)?.revision].join(':');
   }
-  list(workspaceId: string, input: { taskId?: string; workspaceIds?:string[]; cursor?: string; limit?: number; hidden?: boolean; query?: string } = {}): { conversations: ConversationView[]; nextCursor?: string } {
+  list(workspaceId: string, input: ConversationListInput & { fields: 'summary' }): ConversationListResult<ConversationSummaryView>;
+  list(workspaceId: string, input?: ConversationListInput & { fields?: undefined }): ConversationListResult<ConversationView>;
+  list(workspaceId: string, input?: ConversationListInput): ConversationListResult<ConversationView | ConversationSummaryView>;
+  list(workspaceId: string, input: ConversationListInput = {}): ConversationListResult<ConversationView | ConversationSummaryView> {
     const limit = bounded(input.limit, 30, 100);
-    const records = this.options.repository.listConversations(workspaceId, { taskId: input.taskId, workspaceIds:input.workspaceIds, before: input.cursor, limit: limit + 1, includeHidden: input.hidden, query: input.query?.trim().slice(0, 200) });
+    const query = input.query?.trim().slice(0, 200);
+    const records = this.options.repository.listConversations(workspaceId, { taskId: input.taskId, workspaceIds:input.workspaceIds, before: input.cursor, limit: limit + 1, includeHidden: input.hidden, query, active: input.active, attention: input.attention });
     const chosen = records.slice(0, limit);
-    return { conversations: chosen.map(record => ({ ...this.view(record, undefined, 1), entries: [] })), nextCursor: records.length > limit ? `${chosen.at(-1)!.view.updatedAt}/${chosen.at(-1)!.view.id}` : undefined };
+    const views = chosen.map(record => this.summaryView(record)).filter(view => (input.active !== true || view.activity?.active === true) && (input.attention !== true || needsAttention(view)));
+    const conversations = input.fields === 'summary' ? views.map(conversationSummary) : views;
+    const activityCounts = this.options.repository.querySummaries([workspaceId], { workspaceId, hidden: input.hidden, query, generation: this.options.generation, limit: 0 }, this.options.generationAlive).activityCounts;
+    return { conversations, nextCursor: records.length > limit ? `${chosen.at(-1)!.view.updatedAt}/${chosen.at(-1)!.view.id}` : undefined, activityCounts };
   }
   participation(workspaceId:string,id:string,input:{runId:string}) {
     if(!input || Object.keys(input).some(key=>key!=='runId') || typeof input.runId!=='string')fail('agent_participation_query_invalid','需要准确runId。');
@@ -561,12 +664,13 @@ export class ConversationApplication {
     const record=this.load(workspaceId,id),attempt=record.attempts.find(value=>value.clientRequestId===clientRequestId);
     return attempt ? {found:true,runId:attempt.runId,accepted:attempt.accepted,conversation:this.view(record)} : {found:false};
   }
-  pendingSummary() { return { conversations: this.options.repository.listPendingStates().map(record => pendingConversationSummary(this.view(record, undefined, 1))) }; }
-  pending(): { conversations: ConversationView[] } { return { conversations: this.options.repository.listPendingStates().map(record => ({ ...this.view(record, undefined, 1), entries: [] })) }; }
-  listAll(workspaceIds:string[],input:{draftConversationIds?:string[];workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;cursor?:string;limit?:number}={}) {
+  pendingSummary() { return { conversations: this.options.repository.listPendingStates().map(record => pendingConversationSummary(this.summaryView(record))) }; }
+  pending(): { conversations: ConversationView[] } { return { conversations: this.options.repository.listPendingStates().map(record => this.summaryView(record)) }; }
+  listAll(workspaceIds:string[],input:{draftConversationIds?:string[];workspaceId?:string;activeOnly?:boolean;active?:boolean;attention?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;cursor?:string;limit?:number}={}) {
     if(input.workspaceId&&!workspaceIds.includes(input.workspaceId))fail('agent_workspace_missing','工作空间未登记。',404);
     const result=this.options.repository.querySummaries(workspaceIds,{...input,draftConversationIds:[...new Set(input.draftConversationIds??[])].sort(),generation:this.options.generation,query:input.query?.trim().slice(0,200),limit:bounded(input.limit,30,100)},this.options.generationAlive);
     for(const view of result.conversations){
+      if(view.titleState?.status==='generating'&&!this.titleWork.has(view.id))view.titleState={status:'failed',reason:STALE_TITLE_REASON};
       if(view.run&&view.run.generation!==this.options.generation&&!this.options.generationAlive?.(view.run.generation)&&BUSY_STATES.has(view.run.status)){view.run.status='unknown';view.run.interrupted=true;}
     }
     return result;
@@ -574,6 +678,9 @@ export class ConversationApplication {
   markSeen(workspaceId:string,id:string,input:{through:number}) {
     if(this.options.repository.readState(id)?.view.workspaceId!==workspaceId)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
     return {activity:this.options.repository.markSeen(workspaceId,id,input.through)};
+  }
+  activityEpoch(workspaceIds: string[]): string | undefined {
+    return this.options.repository.activityEpoch(workspaceIds, this.options.generationAlive);
   }
 
   createChild(workspaceId: string,id: string,input: CreateChildInput): Promise<ConversationView> {
@@ -584,7 +691,7 @@ export class ConversationApplication {
     const limit=bounded(input.limit,30,100);
     const records=this.options.repository.listConversations(workspaceId,{parentConversationId:id,before:input.cursor,limit:limit+1});
     const chosen=records.slice(0,limit);
-    return {conversations:chosen.map(record=>({...this.view(record,undefined,1),entries:[]})),nextCursor:records.length>limit?`${chosen.at(-1)!.view.updatedAt}/${chosen.at(-1)!.view.id}`:undefined};
+    return {conversations:chosen.map(record=>this.summaryView(record)),nextCursor:records.length>limit?`${chosen.at(-1)!.view.updatedAt}/${chosen.at(-1)!.view.id}`:undefined};
   }
   async create(workspaceId: string, input: { cwd?: string; taskId?: string; taskLinks?:ConversationTaskLink[]; title?: string }): Promise<ConversationView> {
     const record = await this.candidate(workspaceId, input);
@@ -627,7 +734,12 @@ export class ConversationApplication {
     return links;
   }
   async update(workspaceId: string, id: string, input: { expectedRevision: string; title?: string; hidden?: boolean; taskId?: string | null; taskIds?: string[]; taskLinks?:ConversationTaskLink[] }): Promise<ConversationView> {
-    const record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision);
+    const record = this.load(workspaceId, id);
+    // Streaming saves change the conversation revision continuously, so a rename
+    // typed during an active run would always look stale. A title is local
+    // metadata whose manual value takes precedence; other fields keep the check.
+    const titleOnly=input.title!==undefined&&input.hidden===undefined&&input.taskId===undefined&&input.taskIds===undefined&&input.taskLinks===undefined;
+    if(!titleOnly)expected(record.view.revision, input.expectedRevision);
     if (input.title !== undefined) { record.view.title = nonempty(input.title, '对话标题', 160); record.titleOrigin = 'manual'; record.view.titleState={status:'manual'}; }
     if([input.taskId,input.taskIds,input.taskLinks].filter(value=>value!==undefined).length>1)fail('agent_input_invalid','不能同时提交多种任务关联字段。');
     if(input.taskLinks!==undefined||input.taskIds!==undefined||input.taskId!==undefined){
@@ -647,14 +759,18 @@ export class ConversationApplication {
   inputBusy(_workspaceId: string, _id: string): boolean { return this.closing; }
   busy(workspaceId: string, id: string): boolean {
     const record = this.load(workspaceId, id);
-    return Boolean(conversationRuns(record.view).some(run => unfinishedRun(run) || this.workers.has(run.id)) || record.view.requests.length || this.titleWork.has(id) || this.earlyTitles.has(id) || this.recoveries.has(`${workspaceId}/${id}`) || this.observations.has(`${workspaceId}/${id}`));
+    return Boolean(conversationRuns(record.view).some(run => unfinishedRun(run) || this.workers.has(run.id)) || record.view.requests.length || this.titleWork.has(id) || this.recoveries.has(`${workspaceId}/${id}`) || this.observations.has(`${workspaceId}/${id}`));
   }
   allowsReleasedContinuation(workspaceId: string, id: string, input: SendDraft): boolean {
     const record = this.load(workspaceId, id), run = record.view.run;
-    return Boolean(!this.closing && run?.generation === this.options.generation && releasedContinuation(record, input) &&
-      !this.workers.has(run.id) && !this.titleWork.has(id) && !this.earlyTitles.has(id) &&
-      !this.recoveries.has(`${workspaceId}/${id}`) && !this.observations.has(`${workspaceId}/${id}`) &&
-      !this.supplements.size && !this.repliesInFlight.size);
+    // Observation and recovery preparation do not own the released execution.
+    // They must yield to a newly submitted round, which changes the saved revision.
+    return Boolean(!this.closing && run && releasedContinuation(record, input) &&
+      !record.view.requests.length && !this.pendingSends.read(workspaceId,id) &&
+      conversationRuns(record.view).every(candidate => !this.workers.has(candidate.id) &&
+        (candidate.id === run.id || candidate.resourcesReleased || !unfinishedRun(candidate))) &&
+      !this.titleWork.has(id) &&
+      !this.supplements.hasPending(workspaceId,id) && ![...this.repliesInFlight.values()].includes(id));
   }
   async verifyNext(workspaceId: string, id: string): Promise<void> {
     const record = this.load(workspaceId, id);
@@ -667,8 +783,8 @@ export class ConversationApplication {
     const draft = this.draft(input);
     for (const attachment of draft.attachmentIds ?? []) this.media.get(record, attachment);
     const account = draft.modelAccountId ? this.options.modelAccess?.accounts.read(draft.modelAccountId) : undefined;
-    if (draft.modelAccountId && !account) fail('agent_model_source_unavailable', '所选模型账号不可用。', 409);
-    if (account && draft.modelAccountIdentity && draft.modelAccountIdentity !== account.identity) fail('agent_model_source_changed', '所选模型账号身份已变化，请重新选择。', 409);
+    if (draft.modelAccountId && !account) fail('agent_model_source_unavailable', '所选模型供应商不可用。', 409);
+    if (account && draft.modelAccountIdentity && draft.modelAccountIdentity !== account.identity) fail('agent_model_source_changed', '所选模型供应商身份已变化，请重新选择。', 409);
     return { ...draft, ...(account ? { modelAccountIdentity: account.identity } : {}) };
   }
   queueSend(workspaceId: string, id: string, input: SendDraft & { clientRequestId: string; expectedPendingRevision?: string; previousRunId?: string }): ConversationView {
@@ -718,11 +834,27 @@ export class ConversationApplication {
     if (stoppedContinuation(record, input) && this.pendingSends.read(record.view.workspaceId, record.view.id)) fail('agent_continue_unavailable', '已有待发送要求，请先处理后再继续。', 409);
     input = continuationDraft(record, input);
     const connection = this.options.connections.get(input.connectionId);
-    if (connection.enabled && isQoderProvider(connection.provider) && connection.status === 'expired') fail('qoder_platform_login_expired', qoderProduct(connection.provider).label === 'Qoder' ? qoderLoginExpiredMessage : `${qoderProduct(connection.provider).label} 登录授权已失效，请重新登录。所选模型来源保持不变。`, 409);
-    if (!connection.enabled || (!input.modelAccountId && connection.status !== 'ready')) fail('agent_account_unavailable', '请先准备智能体程序，并连接所选模型账号。', 409);
-    if (input.modelAccountId && isQoderProvider(connection.provider) && connection.status === 'not-authenticated') fail('qoder_platform_login_required', `${qoderProduct(connection.provider).label} 程序需要先完成基础平台登录；所选套餐不变，不要求使用 Qoder 自有模型。`, 409);
+    // Qoder CN's independent model account is the execution login; selecting the
+    // connection's native models does not require repeating that account identity.
+    if (!input.modelAccountId && connection.provider === 'qoder-cn') input.modelAccountId = qoderCnModelAccountId;
+    // A stale or unknown model account must not mask a Qoder program-level
+    // login failure: the saved draft still needs the account-switch action.
+    // Defer any source lookup failure until the connection checks below.
+    let source: ModelAccountView | undefined;
+    let sourceError: unknown;
+    if (input.modelAccountId) {
+      try { source = this.options.modelAccess?.accounts.snapshot(input.modelAccountId); }
+      catch (error) { sourceError = error; }
+    }
+    // CN's independent account is the same native login used by its executor.
+    // A stale program observation cannot veto a current, ready account; ACP
+    // still validates the actual login before accepting any work.
+    const readyCnAccount = connection.provider === 'qoder-cn' && source?.id === qoderCnModelAccountId && source.provider === qoderCnModelAccountId && source.enabled && source.status === 'ready';
+    if (!readyCnAccount && connection.enabled && isQoderProvider(connection.provider) && connection.status === 'expired') fail('qoder_platform_login_expired', qoderProduct(connection.provider).label === 'Qoder' ? qoderLoginExpiredMessage : `${qoderProduct(connection.provider).label} 登录授权已失效，请重新登录。所选模型来源保持不变。`, 409);
+    if (!connection.enabled || (!input.modelAccountId && connection.status !== 'ready')) fail('agent_account_unavailable', '请先准备智能体程序，并连接所选模型供应商。', 409);
+    if (!readyCnAccount && input.modelAccountId && isQoderProvider(connection.provider) && connection.status === 'not-authenticated') fail('qoder_platform_login_required', `${qoderProduct(connection.provider).label} 程序需要先完成基础平台登录；所选套餐不变，不要求使用 Qoder 自有模型。`, 409);
     if (!(connection.capabilities.permissionModes ?? ['default']).includes(input.permissionMode!)) fail('agent_permission_unavailable', '此接入尚不支持所选权限模式，请明确改选后重试。', 409);
-    const source = input.modelAccountId ? this.options.modelAccess?.accounts.snapshot(input.modelAccountId) : undefined;
+    if (sourceError) throw sourceError;
     if (input.modelAccountId && (!source || !source.enabled || source.status !== 'ready')) fail('agent_model_source_unavailable', '所选套餐尚未连接，请检查账号。', 409);
     if (source && input.modelAccountIdentity && source.identity !== input.modelAccountIdentity) fail('agent_model_source_changed', '套餐登录来源已变化，请重新选择套餐模型。', 409);
     // Qoder resolves third-party models only through its interactive BYOK wizard,
@@ -743,9 +875,10 @@ export class ConversationApplication {
     input.serviceTier=source?(boundModel as ModelOffering|undefined)?.defaultServiceTier:undefined;
     const modelConfig=source&&selectedModel?modelConfiguration(selectedModel as ModelOffering,input.serviceTier):undefined;
     // Native Codex keeps earlier permission instructions in its thread. Devin
-    // rejects the default-mode block even after a later full-access turn.
-    // Match a permission-bound participant and use the normal visible handoff;
-    // never remove native instructions or silently raise the selected mode.
+    // rejects the default-mode block even after a later full-access turn, so its
+    // participant binds the permission into the configuration hash: a mode change
+    // opens a fresh context transparently, never removing native instructions or
+    // silently raising the selected mode. Permission itself is not a handoff.
     const configuration=source?.provider==='devin'&&connection.provider==='codex'?hash({model:modelConfig,permission:input.permissionMode}):modelConfig;
     input.reasoningEffort ??= boundModel?.defaultReasoningEffort;
     if (input.reasoningEffort && !boundModel?.reasoningEfforts?.some(effort => effort.id === input.reasoningEffort)) fail('agent_reasoning_unavailable', '该思考深度不在所选模型的可用目录中。', 409);
@@ -766,22 +899,26 @@ export class ConversationApplication {
       record.view.requests.some(request => request.runId === current.id && request.kind === 'question') &&
       !record.view.requests.some(request => request.runId === current.id && request.kind !== 'question') &&
       !conversationRuns(record.view).some(run => run.id !== current.id && run.participantId === latest.id && unfinishedRun(run)));
-    const held = latest && !replacingQuestion && (!releasedContinuation(record,input) || stoppedContinuation(record,input)) && conversationRuns(record.view).some(run => run.participantId === latest.id && (
+    const continuingReleased = releasedContinuation(record,input) && !stoppedContinuation(record,input);
+    const held = latest && !replacingQuestion && !continuingReleased && conversationRuns(record.view).some(run => run.participantId === latest.id && (
       record.view.requests.some(request => request.runId === run.id) ||
       run.id === record.view.run?.id && unfinishedRun(run) ||
       !run.resourcesReleased && (unfinishedRun(run) || run.generation !== this.options.generation && this.options.generationAlive?.(run.generation) === true)
     ));
-    const participant = held ? undefined : latest;
+    // Interrupted Qoder history can contain native inputs without an exact
+    // mapping. Keep that context and its tools intact, and use a new native
+    // context with the original selection and recorded handoff.
+    const isolatedContinuation = continuingReleased && current?.interrupted &&
+      current.executionState === 'unknown' && isQoderProvider(connection.provider);
+    const participant = held || isolatedContinuation ? undefined : latest;
     const through = record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0;
     const changes = handoffEntries([...(record.inheritedContext?.entries??[]),...record.view.entries],participant?.deliveredThrough??0).map(handoffEntry);
     const previous = record.participants.find(value=>value.id===record.view.run?.participantId) ?? record.participants.at(-1);
-    const previousRun = record.view.run;
     // Native context identity governs control and history, never whether the user changed execution choice.
-    // Reasoning effort is a per-turn parameter of the same native session: every executor receives it with the
-    // new input, so changing it alone reuses the session instead of organizing a user-visible handoff.
+    // Reasoning effort and permission mode are per-turn parameters: every executor receives them with the new
+    // input, so changing either alone reuses the execution combination instead of organizing a user-visible handoff.
     const switching = Boolean(previous && (previous.connectionId!==input.connectionId || previous.modelAccountId!==input.modelAccountId ||
-      previous.modelAccountIdentity!==source?.identity || previous.modelId!==input.model || previous.serviceTier!==input.serviceTier ||
-      previousRun && (previousRun.permissionMode??'default')!==input.permissionMode));
+      previous.modelAccountIdentity!==source?.identity || previous.modelId!==input.model || previous.serviceTier!==input.serviceTier));
     const history = changes.map(entry => ({sequence:entry.sequence,role:entry.role,provider:entry.provider,text:entry.kind==='tool'?`${entry.name??'工具'} · ${entry.status??'结果未知'}（具体内容见本地来源）`:entry.text.length>4096?entry.text.slice(0,4096)+'…（完整原文见本地来源）':entry.text}));
     const maxInputBytes=receivingBudget(connection.capabilities.maxInputBytes,boundModel&&'contextWindow' in boundModel?boundModel.contextWindow:undefined,boundModel&&'maxOutputTokens' in boundModel?boundModel.maxOutputTokens:undefined);
     const localRounds=changes.length ? organizeHandoff(changes,{...record.inheritedContext?.outcomes,...record.runOutcomes,...(record.view.run?{[record.view.run.id]:record.view.run}:{})}) : [];
@@ -806,7 +943,8 @@ export class ConversationApplication {
     const controlInstruction = this.options.conversationControl?.(record.view.workspaceId,record.view.id) ?? '';
     const fullText=controlInstruction + (changes.length||switching||waitingQuestions?`${handoffPrompt}\n工作位置与来源：${context}\n按轮次组织的本地记录：\n${formatHandoffRounds(rounds)}${suffix}`:input.text+materials.description);
     const needsCompression=Buffer.byteLength(fullText)>maxInputBytes;
-    const text=needsCompression&&sources?`${controlInstruction}${handoffPrompt}\n工作位置与来源：${context}\n完整历史共有 ${rounds.length} 轮，记录 #${changes[0]?.sequence??0}–#${through}，超过内联容量。请先读取本地索引 ${sources.index}，使用本对话 history ${JSON.stringify({sourceId:sources.sourceId})} 并指定roundId按轮读取用户要求、授权纠正、失败未知、成果和待办；工具详情用entry及准确修订读取。正文没有省略来源，具体内容需按引用读取。${suffix}`:fullText;
+    const indexedPrefix=`${controlInstruction}${handoffPrompt}\n工作位置与来源：${context}\n历史记录 #${changes[0]?.sequence??0}–#${through} 超过内联容量；以下仅为导航，原始要求与失败未知需按来源读取。\n`;
+    const text=needsCompression&&sources?indexedPrefix+formatHandoffNavigation(rounds,sources.sourceId,Math.min(2048,Math.max(0,maxInputBytes-Buffer.byteLength(indexedPrefix+suffix))))+suffix:fullText;
     const difference:Array<{kind:'agent'|'model';label:string;before:string;after:string}>=[];
     if(previous&&previous.connectionId!==input.connectionId)difference.push({kind:'agent',label:'智能体',before:previous.label,after:connection.label});
     if(previous&&(record.view.run?.model!==input.model||previous.modelAccountId!==input.modelAccountId))difference.push({kind:'model',label:'模型',before:record.view.run?.model??'默认模型',after:boundModel?.label??input.model??'默认模型'});
@@ -865,9 +1003,11 @@ export class ConversationApplication {
     const preview=this.prepare(record,draft,answerMaterials).preview;
     return this.submit(record,{...draft,previewToken:preview.token,clientRequestId:requestId},false,false,answerMaterials);
   }
-  private submit(record: StoredConversation, raw: SendDraft & { previewToken?: string; clientRequestId: string }, systemRecovery = false, initial = false, answerMaterials: string[] = []): { run: RunView; conversation: ConversationView } {
+  private submit(record: StoredConversation, raw: SendDraft & { previewToken?: string; clientRequestId: string }, systemRecovery = false, initial = false, answerMaterials: string[] = [], hostVerified = false): { run: RunView; conversation: ConversationView } {
     const { workspaceId, id } = record.view;
+    if(systemRecovery&&record.view.run&&this.conversationStopRequested(record,record.view.run.id))fail('agent_continue_cancelled','原执行已经请求停止，不会自动续行。',409);
     const clientRequestId = nonempty(raw.clientRequestId, '请求身份', 200);
+    if(record.stops?.some(stop=>stop.pendingSendId===clientRequestId))fail('agent_pending_cancelled','此输入已随对话停止取消，不会自动发送。',409);
     const inputDigest = hash({ ...this.draft(raw), expectedRevision: undefined });
     const repeated = record.attempts.find(attempt => attempt.clientRequestId === clientRequestId);
     if (repeated) {
@@ -933,12 +1073,50 @@ export class ConversationApplication {
     record.view.run = run;
     record.view.hidden = false;
     this.save(record, initial);
-    const work = this.execute(workspaceId, id, run.id, prepared).finally(() => { this.workers.delete(run.id); this.cancelledRetries.delete(run.id); this.scheduleSourceRelease(workspaceId, id); });
+    const work = this.execute(workspaceId, id, run.id, prepared, undefined, hostVerified).finally(() => { this.workers.delete(run.id); this.cancelledRetries.delete(run.id); this.scheduleSourceRelease(workspaceId, id); });
     this.workers.set(run.id, work);
     return { run: structuredClone(run), conversation: this.read(workspaceId, id,{compactTools:true}) };
   }
 
   supplement(workspaceId: string, id: string, input: SupplementInput) { return this.supplements.send(workspaceId, id, input); }
+
+  /** Repair only persisted unknown supplements when a durable native user record proves acceptance. */
+  async reconcileSupplementReceipts(workspaceId:string,id:string):Promise<void> {
+    const key=`${workspaceId}/${id}`;
+    const existing=this.supplementReceiptChecks.get(key);
+    if(existing)return existing;
+    const work=(async()=>{
+      let record=this.load(workspaceId,id);
+      const candidates=record.attempts.filter(attempt=>attempt.supplement&&!attempt.accepted&&attempt.executionRef&&
+        (()=>{const entry=record.view.entries.find(item=>item.id===attempt.userEntryId);return Boolean(entry&&['sending','unknown'].includes(entry.status??''));})());
+      for(const candidate of candidates){
+        record=this.load(workspaceId,id);
+        const attempt=record.attempts.find(item=>item.clientRequestId===candidate.clientRequestId&&item.runId===candidate.runId);
+        const entry=attempt?record.view.entries.find(item=>item.id===attempt.userEntryId):undefined;
+        const participant=attempt?record.participants.find(item=>item.id===attempt.participantId):undefined;
+        if(!attempt?.executionRef||!entry||entry.status!=='unknown'&&entry.status!=='sending'||!participant?.contextRef||!participant.bindingIdentity||!entry.text.trim())continue;
+        try{
+          const receipt=await this.options.connections.readSupplementReceipt(participant.connectionId,{
+            bindingIdentity:participant.bindingIdentity,contextRef:participant.contextRef,executionRef:attempt.executionRef,
+            cwd:record.view.cwd,clientRequestId:attempt.clientRequestId,text:entry.text,createdAt:entry.createdAt,
+          });
+          if(!receipt)continue;
+          record=this.load(workspaceId,id);
+          const current=record.attempts.find(item=>item.clientRequestId===candidate.clientRequestId&&item.runId===candidate.runId);
+          const currentEntry=current?record.view.entries.find(item=>item.id===current.userEntryId):undefined;
+          const currentParticipant=current?record.participants.find(item=>item.id===current.participantId):undefined;
+          if(!current||current.accepted||!currentEntry||currentEntry.status!=='unknown'&&currentEntry.status!=='sending'||!currentParticipant)continue;
+          current.accepted=true;current.nativeInputItemId=receipt.inputItemId;
+          currentEntry.status='accepted';delete currentEntry.deliveryDiagnostic;
+          record.sources[`${currentParticipant.id}:message:${receipt.inputItemId}`]=currentEntry.id;
+          currentParticipant.deliveredThrough=Math.max(currentParticipant.deliveredThrough,current.through);
+          this.save(record);
+        }catch{/* A failed or changed native read preserves the unknown record for the next observation. */}
+      }
+    })();
+    this.supplementReceiptChecks.set(key,work);
+    try{await work;}finally{if(this.supplementReceiptChecks.get(key)===work)this.supplementReceiptChecks.delete(key);}
+  }
 
   private currentRun(workspaceId: string, id: string, runId: string): StoredConversation | undefined {
     const record = this.load(workspaceId, id);
@@ -955,7 +1133,7 @@ export class ConversationApplication {
   }
   private applyItem(record: StoredConversation, participant: StoredParticipant, item: ExecutorItem, runId?: string, live = false): boolean {
     const changed = this.mergeItem(record,participant,item,runId,live);
-    if(changed && ['codex','dsh','qoder','qoder-cn'].includes(participant.provider) && item.kind === 'tool' && item.nativeTool) {
+    if(changed && ['codex','dsh','qoder','qoder-cn','claude-code'].includes(participant.provider) && item.kind === 'tool' && item.nativeTool) {
       const id = record.sources[`${participant.id}:tool:${item.id}`];
       const owned=(record.nativeTools ??= {});
       owned[id] = item.parentToolId ? {parentToolId:item.parentToolId} : owned[id] ?? true;
@@ -992,10 +1170,15 @@ export class ConversationApplication {
       if (originChanged) entry.parentToolId = item.parentToolId;
       if(originChanged&&record.participationTools?.[entry.id])record.participationTools[entry.id]!.entryRevision=createHash('sha256').update(JSON.stringify(entry)).digest('hex');
       if (entry.role === 'user' || entry.role === 'system' && entry.kind === 'notice') return originChanged;
-      if (entry.kind === 'tool' && ['completed', 'failed'].includes(entry.status ?? '') && (!item.status || item.status === 'running' || entry.status==='completed'&&item.status==='unknown')) return originChanged;
+      const entryRunId = entry.runId;
+      const activeBackgroundTool = live && item.backgroundProgress && entry.status === 'completed' &&
+        conversationRuns(record.view).some(run => run.id === entryRunId && run.tools.some(tool => tool.id === item.id && tool.status === 'running'));
+      if (entry.kind === 'tool' && !activeBackgroundTool && ['completed', 'failed'].includes(entry.status ?? '') &&
+        (!item.status || item.status === 'running' || entry.status === 'completed' && item.status === 'unknown')) return originChanged;
       // v3 native tools persist identity and metadata only. Their body is read
       // on demand; comparing a hydrated body with the stored empty skeleton
       // would make identical history look new after every save/reload.
+      const status = activeBackgroundTool ? entry.status : item.status;
       const nativeBody = !live && item.nativeTool && Boolean(record.nativeTools?.[entry.id]);
       const priorParticipation=record.participationTools?.[entry.id]??entry.participation;
       const participation = entry.kind==='tool' ? mergeParticipation(item.input!==undefined&&item.input!==entry.input&&priorParticipation?{...priorParticipation,matches:[]}:priorParticipation,item.participation,item.name??entry.name,item.input??entry.input) : undefined;
@@ -1005,10 +1188,10 @@ export class ConversationApplication {
       const files=item.presentedFiles===undefined?undefined:normalizePresentedFiles(item.presentedFiles);
       const filesChanged=files!==undefined&&JSON.stringify(entry.presentedFiles)!==JSON.stringify(files);
       const thinkingChanged=Boolean(item.thinking)&&!entry.thinking;
-      if ((nativeBody || entry.text === item.text) && entry.status === item.status && !nameChanged && !inputChanged && !filesChanged && !thinkingChanged && !participationChanged) return originChanged;
+      if ((nativeBody || entry.text === item.text) && entry.status === status && !nameChanged && !inputChanged && !filesChanged && !thinkingChanged && !participationChanged) return originChanged;
       if(participationChanged&&participation)(record.participationTools??={})[entry.id]={...participation,entryRevision:record.participationTools?.[entry.id]?.entryRevision};
       if (!nativeBody) entry.text = item.text;
-      entry.status = item.status; if (item.thinking) entry.thinking = true; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; if(filesChanged)entry.presentedFiles=files; if(item.participation&&participation)(record.participationTools??={})[entry.id]={...participation,entryRevision:item.nativeTool?undefined:createHash('sha256').update(JSON.stringify(entry)).digest('hex')}; return true;
+      entry.status = status; if (item.thinking) entry.thinking = true; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; if(filesChanged)entry.presentedFiles=files; if(item.participation&&participation)(record.participationTools??={})[entry.id]={...participation,entryRevision:item.nativeTool?undefined:createHash('sha256').update(JSON.stringify(entry)).digest('hex')}; return true;
     }
     entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, ...(item.thinking?{thinking:true}:{}), ...(item.kind==='tool'?{participation:mergeParticipation(undefined,item.participation,item.name,item.input)}:{}), name: item.name, input: item.input, ...(item.presentedFiles?{presentedFiles:normalizePresentedFiles(item.presentedFiles)}:{}), parentToolId: item.parentToolId, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
     record.view.entries.push(entry); record.sources[source] = entry.id;
@@ -1051,21 +1234,26 @@ export class ConversationApplication {
       if (owner && this.applyItem(record, participant, event.item, owner.runId, true)) this.save(record);
       return;
     }
-    if(event.type==='context-usage'){if(Number.isSafeInteger(event.usedTokens)&&event.usedTokens>=0){run.contextUsage={usedTokens:event.usedTokens,...(Number.isSafeInteger(event.windowTokens)&&event.windowTokens!>0?{windowTokens:event.windowTokens}:{})};run.updatedAt=this.options.now();this.save(record);}return;}
+    if(event.type==='context-usage'){
+      const tokens=Number.isSafeInteger(event.usedTokens)&&event.usedTokens!>=0;
+      const ratio=typeof event.usedRatio==='number'&&Number.isFinite(event.usedRatio)&&event.usedRatio>=0&&event.usedRatio<=1;
+      if(tokens||ratio){run.contextUsage={...(tokens?{usedTokens:event.usedTokens}:{}),...(ratio?{usedRatio:event.usedRatio}:{}),...(Number.isSafeInteger(event.windowTokens)&&event.windowTokens!>0?{windowTokens:event.windowTokens}:{})};run.updatedAt=this.options.now();this.save(record);}return;
+    }
     if (event.type === 'models') {
       const connection = this.options.connections.observeModels(participant.connectionId, participant.bindingIdentity, event.models);
       this.options.events.publish({ type: 'connection', workspaceId, conversationId: id, revision: connection.revision, payload: { connection } }); return;
     }
-    if (event.type === 'title') { if (record.view.run?.id === runId && !record.view.forkedFrom && this.acceptTitle(record, event.title)) this.save(record); return; }
+    if (event.type === 'title') { if (record.view.run?.id === runId && !record.view.forkedFrom && this.acceptTitle(record, event.title, false, true)) this.save(record); return; }
     if (run.resourcesReleased && ['accepted','request'].includes(event.type)) return;
     if (['completed', 'stopped', 'failed'].includes(run.status) && (event.type === 'accepted' || event.type === 'request')) return;
     if (event.type === 'accepted') {
       attempt.accepted = true; attempt.executionRef = event.executionRef; attempt.nativeInputItemId = event.inputItemId;
       for(const receipt of record.view.entries.filter(e=>e.kind==='handoff'&&e.runId===runId))receipt.status='accepted';
       run.accepted = true;
-      run.status = run.status === 'stopping' || record.interruption?.runId === runId && record.interruption.cancelled ? 'stopping' : 'running';
+      run.status = this.conversationStopRequested(record,runId) || run.status === 'stopping' || record.interruption?.runId === runId && record.interruption.cancelled ? 'stopping' : 'running';
       participant.deliveredThrough = Math.max(participant.deliveredThrough, attempt.through);
       const entry = record.view.entries.find(value => value.id === attempt.userEntryId)!; entry.status = 'accepted';
+      this.applyFallbackTitle(record);
       if (event.inputItemId) record.sources[`${participant.id}:message:${event.inputItemId}`] = entry.id;
       this.endReplacedQuestions(record, runId);
     } else if (event.type === 'item') {
@@ -1223,7 +1411,14 @@ export class ConversationApplication {
     this.scheduleQuestionWaitReleases(record);
   }
 
-  private async execute(workspaceId: string, id: string, runId: string, prepared: ReturnType<ConversationApplication['prepare']>, retryCount?: number): Promise<void> {
+  private async verifyExecutionHost(record: StoredConversation): Promise<void> {
+    const {workspaceId,taskId}=record.view;
+    const workspace=await this.options.host.resolve(workspaceId,record.hostScope?.revision);
+    if(record.hostScope && (record.hostScope.ref.sourceId!==workspace.ref.sourceId || record.hostScope.ref.id!==workspace.ref.id || record.hostScope.rootPath!==workspace.rootPath))fail('agent_scope_binding_changed','执行环境身份或位置已变化，请核对原工作。',409);
+    if(taskId)await this.options.host.verify(workspaceId,taskId);
+  }
+
+  private async execute(workspaceId: string, id: string, runId: string, prepared: ReturnType<ConversationApplication['prepare']>, retryCount?: number, hostVerified = false): Promise<void> {
     const attempt = this.currentRun(workspaceId, id, runId)?.attempts.find(value => value.runId === runId);
     const request = attempt?.clientRequestId ?? '';
     const lineage = /^automatic-retry:([^:]+):(\d+)$/.exec(request);
@@ -1234,11 +1429,10 @@ export class ConversationApplication {
     let creatingContext = false;
     try {
       let record = this.currentRun(workspaceId, id, runId); if (!record) return;
-      const workspace = await this.options.host.resolve(workspaceId, record.hostScope?.revision);
-      if (!workspace.rootPath) fail('agent_workspace_missing', '原工作空间不可用。', 409);
-      record = this.currentRun(workspaceId, id, runId); if (!record) return;
-      if(record.hostScope && (record.hostScope.ref.sourceId!==workspace.ref.sourceId || record.hostScope.ref.id!==workspace.ref.id || record.hostScope.rootPath!==workspace.rootPath))fail('agent_scope_binding_changed','执行环境身份或位置已变化，请核对原工作。',409);
-      if (record.view.taskId) await this.options.host.verify(workspaceId, record.view.taskId);
+      if (!hostVerified) {
+        await this.verifyExecutionHost(record);
+        record = this.currentRun(workspaceId, id, runId); if (!record) return;
+      }
       if (!fs.statSync(record.view.cwd, { throwIfNoEntry: false })?.isDirectory()) fail('agent_cwd_missing', '对话保存的工作目录已不可用。', 409);
       const startingParticipant = record.participants.find(value => value.id === record!.view.run!.participantId)!;
       const transition = attempt?.questionWaits?.find(wait => wait.reuse);
@@ -1260,9 +1454,20 @@ export class ConversationApplication {
       const participant = record.participants.find(value => value.id === record!.view.run!.participantId)!;
       if (participant.bindingIdentity && participant.bindingIdentity !== runtime.bindingIdentity) fail('agent_binding_changed', '此参与者的原连接身份不匹配，不能恢复到其他配置。', 409);
       participant.bindingIdentity = runtime.bindingIdentity;
-      if (record.view.run!.status === 'stopping') { record.view.run!.status = 'stopped'; this.save(record); return; }
+      if (selectedRuntime.nativeHomeRoot) participant.nativeHomeRoot = selectedRuntime.nativeHomeRoot;
+      if (this.conversationStopRequested(record,runId) || record.view.run!.status === 'stopping') { record.view.run!.status = 'stopped'; this.save(record); return; }
+      let replacedContext: ContextRef | undefined;
       if (participant.contextRef) {
-        await runtime.resumeContext({ contextRef: participant.contextRef, cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
+        try {
+          await runtime.resumeContext({ contextRef: participant.contextRef, cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
+        } catch (error) {
+          if (!(error instanceof AgentServiceError) || error.code !== 'agent_context_unavailable') throw error;
+          // The native session is gone. Keep the stored transcript and continue
+          // this input in a new session instead of failing every later message.
+          replacedContext = participant.contextRef;
+        }
+      }
+      if (participant.contextRef && !replacedContext) {
         const history = await runtime.readHistory({ contextRef: participant.contextRef, cwd: record.view.cwd });
         let needsReview = false;
         // Native reads are asynchronous: a retained generation may update its
@@ -1292,7 +1497,15 @@ export class ConversationApplication {
         this.retryRecordUpdate(()=>{
           const current=this.currentRun(workspaceId,id,runId);if(!current)return;
           const storedParticipant=current.participants.find(value=>value.id===participant.id)!;
-          storedParticipant.contextRef=ref;storedParticipant.bindingIdentity=runtime.bindingIdentity;this.save(current);
+          storedParticipant.contextRef=ref;storedParticipant.bindingIdentity=runtime.bindingIdentity;
+          if(selectedRuntime.nativeHomeRoot)storedParticipant.nativeHomeRoot=selectedRuntime.nativeHomeRoot;
+          if(replacedContext&&!current.view.entries.some(entry=>entry.id==='native-session-'+runId))current.view.entries.push({
+            id:'native-session-'+runId, sequence:(current.view.entries.at(-1)?.sequence??0)+1, createdAt:this.options.now(),
+            kind:'handoff', role:'system', runId, participantId:participant.id, provider:participant.provider, status:'sending',
+            text:`${participant.label} 的原生会话已无法恢复，已建立新的原生会话继续本轮；此前对话记录与输入已保留。`,
+            nativeSession:{reason:'session-replacement',description:'原原生会话不可恢复，使用新的原生会话',from:{contextId:replacedContext.id},to:{contextId:ref.id,generation:this.options.generation}},
+          });
+          this.save(current);
         });
         record = this.currentRun(workspaceId,id,runId);if(!record)return;
         participant.contextRef = ref;
@@ -1300,7 +1513,9 @@ export class ConversationApplication {
       }
       const beforeDispatch = this.currentRun(workspaceId, id, runId); if (!beforeDispatch) return;
       record = beforeDispatch;
-      const previousAttempt = record.attempts.findLast(value=>value.runId!==runId);
+      const previousAttempt = prepared.draft.continueRunId
+        ? record.attempts.findLast(value=>value.runId===prepared.draft.continueRunId)
+        : record.attempts.findLast(value=>value.runId!==runId);
       const previousParticipant = record.participants.find(value=>value.id===previousAttempt?.participantId);
       const previousRun = conversationRuns(record.view).find(value=>value.id===previousAttempt?.runId);
       const previousGeneration = previousRun?.generation ?? (previousAttempt ? record.runOutcomes?.[previousAttempt.runId]?.generation : undefined);
@@ -1310,6 +1525,12 @@ export class ConversationApplication {
       // remains a separate receipt, so a failed dispatch is never called a handoff success.
       if (!internalRecovery && previousParticipant && (fromContext!==toContext || previousGeneration && previousGeneration!==this.options.generation)) {
         const reason = fromContext===toContext ? 'backend-adoption' as const : 'session-replacement' as const;
+        const description = reason==='backend-adoption' ? '原轮控制已释放，新后台复用原生会话'
+          : prepared.preview.switching ? '用户执行选择变化'
+          : previousRun?.resourcesReleased && prepared.draft.continueRunId===previousRun.id ? '原控制资源已释放，保留原轮结果并在独立会话接续'
+          : previousRun && unfinishedRun(previousRun) ? '原轮仍有在途工作，新要求使用独立会话'
+          : previousRun && !previousRun.resourcesReleased && previousGeneration!==this.options.generation ? '原会话控制资源尚未释放，新要求使用独立会话'
+          : '原上下文不可复用，使用新的原生会话';
         this.retryRecordUpdate(()=>{
           const current=this.currentRun(workspaceId,id,runId);if(!current)return;
           if(current.view.entries.some(entry=>entry.id==='native-session-'+runId))return;
@@ -1318,7 +1539,7 @@ export class ConversationApplication {
           createdAt:this.options.now(), kind:'handoff', role:'system', runId, participantId:participant.id,
           provider:participant.provider, status:'sending',
           text:reason==='backend-adoption'?'后台已接管原生会话，等待本轮受理。':'执行选择或可用上下文变化，已准备新的原生会话，等待本轮受理。',
-          nativeSession:{reason,...(this.options.backendChange?.fromGeneration===previousGeneration?{backendChange:this.options.backendChange}:{}),description:reason==='backend-adoption'?'原轮控制已释放，新后台复用原生会话':prepared.preview.switching?'用户执行选择变化':previousRun&&unfinishedRun(previousRun)?'原轮仍有在途工作，新要求使用独立会话':previousRun&&!previousRun.resourcesReleased&&previousGeneration!==this.options.generation?'原会话控制资源尚未释放，新要求使用独立会话':'原上下文不可复用，使用新的原生会话',from:{contextId:fromContext,generation:previousGeneration},to:{contextId:toContext,generation:this.options.generation}},
+          nativeSession:{reason,...(this.options.backendChange?.fromGeneration===previousGeneration?{backendChange:this.options.backendChange}:{}),description,from:{contextId:fromContext,generation:previousGeneration},to:{contextId:toContext,generation:this.options.generation}},
           });
           this.save(current);
         });
@@ -1338,19 +1559,9 @@ export class ConversationApplication {
       this.save(record);
       this.discoverParticipation(workspaceId,id,runId);
       dispatched = true;
-      let titleStarted = false;
-      const startTitle = () => {
-        if (titleStarted) return;
-        titleStarted = true;
-        const early = this.titleAtRunStart(workspaceId, id, runId, runtime, prepared.text).catch(() => {});
-        this.earlyTitles.set(id, early);
-        void early.finally(() => { if (this.earlyTitles.get(id) === early) this.earlyTitles.delete(id); this.scheduleSourceRelease(workspaceId, id); });
-      };
       await runtime.send({ contextRef: participant.contextRef!, cwd: record.view.cwd, text: prepared.text, images: prepared.images, model: prepared.draft.modelAccountId ? selectedRuntime.model : prepared.draft.model, reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, clientRequestId: record.attempts.find(value => value.runId === runId)!.clientRequestId, onEvent: event => {
         this.event(workspaceId, id, runId, event);
-        // A context can exist long before its input is admitted. Do not spend the
-        // independent title budget on native startup (especially Qoder).
-        if (event.type === 'accepted') startTitle();
+        if (event.type === 'accepted') queueMicrotask(() => { void this.generateAutomaticTitle(workspaceId, id, runId, runtime).catch(() => {}); });
       } });
       // An old stop may already be observing this conversation. Its snapshot
       // cannot stand in for the just-finished new execution.
@@ -1475,7 +1686,7 @@ export class ConversationApplication {
         controller.signal.addEventListener('abort', finish, { once: true });
       });
       record = this.currentRun(workspaceId, id, runId);
-      if (controller.signal.aborted || this.closing || !record || record.view.run?.status !== 'starting') return;
+      if (controller.signal.aborted || this.closing || !record || this.conversationStopRequested(record,runId) || record.interruption?.cancelled || record.view.run?.status !== 'starting') return;
       this.retryWaits.delete(runId);
       record.view.run.status = 'failed'; record.view.run.diagnostic = diagnostic; this.save(record);
       const latestAccount=record.view.run.modelAccountId?this.options.modelAccess?.accounts.snapshot(record.view.run.modelAccountId):undefined;
@@ -1499,62 +1710,36 @@ export class ConversationApplication {
     } finally { if (this.retryWaits.get(runId) === controller) this.retryWaits.delete(runId); }
   }
 
+  /** Only a local fallback title that no newer fact has settled is eligible. */
   private titleEligible(record: StoredConversation): boolean {
-    return !this.closing && record.titleOrigin === 'default' && (record.view.title === NEUTRAL_TITLE || record.view.title === TITLE_FAILURE_REMINDER);
+    if (this.closing || record.titleOrigin === 'manual' || record.titleOrigin === 'generated') return false;
+    const status = record.view.titleState?.status;
+    if (status && !['pending', 'fallback', 'unknown'].includes(status)) return false;
+    return record.view.title === NEUTRAL_TITLE || record.titleOrigin === 'fallback' || status === 'fallback';
   }
-  private titleAttempts(record:StoredConversation, participantId:string): {early?:boolean;completion?:boolean} {
-    if (!record.titleAttemptsByParticipant) {
-      record.titleAttemptsByParticipant={};
-      // Older records consumed global flags. Keep that budget with the participant
-      // that actually attempted the phase, rather than blocking every new executor.
-      const owner=(phase:'early'|'completion')=>{
-        const diagnostic=record.titleDiagnostics?.findLast(value=>value.phase===phase || phase==='completion' && value.phase==='manual');
-        return record.attempts.find(value=>value.runId===diagnostic?.runId)?.participantId ?? record.attempts[0]?.participantId;
-      };
-      for (const [phase,attempted] of [['early',record.earlyTitleAttempted],['completion',record.titleAttempted]] as const) {
-        const id=attempted?owner(phase):undefined;
-        if(id)(record.titleAttemptsByParticipant[id]??={})[phase]=true;
-      }
-    }
-    return record.titleAttemptsByParticipant[participantId]??={};
+  /** A deterministic title from the first visible user message; never a model summary. */
+  private fallbackTitle(record: StoredConversation): string | undefined {
+    const first = record.view.entries.find(entry => entry.role === 'user' && entry.kind === 'message' && !entry.parentToolId && entry.sequence > (record.view.forkedFrom?.throughSequence ?? 0) && entry.text.trim());
+    if (!first) return;
+    const text = first.text.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    const characters = [...text];
+    return characters.length > FALLBACK_TITLE_LIMIT ? characters.slice(0, FALLBACK_TITLE_LIMIT).join('').trimEnd() + '…' : text;
   }
-  /** Backfill once native input is admitted; the completed-run path stays the fallback. */
-  private async titleAtRunStart(workspaceId: string, id: string, runId: string, runtime: AgentRuntime, userText?: string): Promise<void> {
-    const previous=this.earlyTitles.get(id);
-    if (this.titleWork.has(id) && previous) await previous.catch(()=>{});
-    const record = this.currentRun(workspaceId, id, runId);
-    if (!record || !this.titleEligible(record) || this.titleWork.has(id)) return;
-    const participant = record.participants.find(value => value.id === record.view.run!.participantId);
-    const description = this.titleDescription(record, false);
-    if (!participant?.contextRef || !description) return;
-    const attempts=this.titleAttempts(record,participant.id);
-    if(attempts.early || attempts.completion)return;
-    attempts.early=true;record.earlyTitleAttempted = true;
-    if (!runtime.generateTitle) { this.save(record); this.recordTitleFailure(workspaceId, id, runId, 'early', new Error('agent_title_unavailable')); return; }
-    record.view.titleState={status:'generating'}; this.save(record);
-    const controller = new AbortController(); this.titleWork.set(id, controller);
-    const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS + 2_000); timeout.unref();
-    try {
-      let title: string | undefined;
-      if (runtime.readTitle && !record.view.forkedFrom) title = await within(runtime.readTitle({contextRef:participant.contextRef,cwd:record.view.cwd}),2_000,'agent_title_timeout').catch(()=>undefined);
-      const observed=this.currentRun(workspaceId,id,runId);
-      if(!observed || !this.titleEligible(observed) || controller.signal.aborted)return;
-      if(this.acceptTitle(observed,title)){this.save(observed);return;}
-      title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, ...(userText ? { userText } : {}), model: record.view.run?.model, freshInstruction: Boolean(record.view.forkedFrom), signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
-      const current = this.currentRun(workspaceId, id, runId);
-      if (!current || controller.signal.aborted) return;
-      if (!this.titleEligible(current)) return;
-      if (!this.acceptTitle(current, title)) throw new Error(title ? 'agent_title_invalid' : 'agent_title_empty');
-      this.save(current);
-    } catch (error) {
-      controller.abort();
-      this.recordTitleFailure(workspaceId, id, runId, 'early', error);
-    }
-    finally { clearTimeout(timeout); if (this.titleWork.get(id) === controller) this.titleWork.delete(id); this.scheduleSourceRelease(workspaceId, id); }
+  /** Runs synchronously on input acceptance, so every accepted round has a truthful title. */
+  private applyFallbackTitle(record: StoredConversation): boolean {
+    if (record.titleOrigin !== undefined && record.titleOrigin !== 'default' || record.view.title !== NEUTRAL_TITLE) return false;
+    const title = this.fallbackTitle(record);
+    if (!title) return false;
+    record.view.title = title; record.titleOrigin = 'fallback'; record.view.titleState = { status: 'fallback' };
+    return true;
   }
-  private recordTitleFailure(workspaceId: string, id: string, runId: string, phase: 'early'|'completion'|'manual', error: unknown): void {
-    const current = this.currentRun(workspaceId, id, runId);
-    if (!current || this.closing) return;
+  private recordTitleFailure(workspaceId: string, id: string, runId: string, phase: 'automatic'|'manual', error: unknown): void {
+    if (this.closing) return;
+    const current = this.load(workspaceId, id);
+    // A rename during this request still wins; a title explicitly generated
+    // for a previously manual name must record its own failure.
+    if (current.view.run?.id !== runId || current.view.titleState?.status === 'manual' || current.view.titleState?.status === 'generated') return;
     const raw = error instanceof Error ? ('code' in error ? String(error.code) : error.message) : '';
     const code = /^agent_(?:title|native|revision)_[a-z_]+$/.test(raw) ? raw : 'agent_title_failed';
     const explanations: Record<string,string> = {
@@ -1565,7 +1750,6 @@ export class ConversationApplication {
       agent_native_process_closed: '生成标题时原生进程退出',
       agent_native_request_failed: '原生程序拒绝了标题请求',
       agent_title_unavailable: '当前执行方未提供独立标题生成能力',
-      agent_title_not_ready: '原生会话尚未就绪，本次标题生成未开始',
       agent_title_isolation_unverified: '标题请求的隔离权限未能确认',
       agent_title_tools_forbidden: '标题请求尝试使用工具，已拒绝',
       agent_title_invalid: '返回的标题超出长度限制或不合格',
@@ -1573,17 +1757,21 @@ export class ConversationApplication {
       agent_title_output_invalid: '标题返回内容不是有效的结构化标题',
       agent_revision_conflict: '生成期间对话已变化，未覆盖当前名称',
     };
-    const reason = `[${code}] ${explanations[code] ?? '独立标题生成未完成'}；工作执行与回复不受影响。`;
-    current.titleDiagnostics = [...(current.titleDiagnostics ?? []), {runId, phase, code, reason, at:this.options.now()}].slice(-8);
-    if (current.titleOrigin === 'default') current.earlyTitleAttempted = true;
-    if (current.titleOrigin === 'default' || current.view.titleState?.status === 'generating') {
-      current.view.titleState = {status:code==='agent_title_unavailable'?'unavailable':'failed', reason};
-    }
-    if (phase === 'completion' && current.titleOrigin === 'default' && current.view.title === NEUTRAL_TITLE) current.view.title = TITLE_FAILURE_REMINDER;
+    const reason = `[${code}] ${explanations[code] ?? '独立标题生成未完成'}；当前标题已保留，工作执行与回复不受影响。`;
+    current.view.titleState = { status: code === 'agent_title_unavailable' ? 'unavailable' : 'failed', reason };
+    this.diagnostics({ event: 'conversation-title-failed', workspaceId, conversationId: id, runId, phase, code });
     this.save(current);
   }
-  private acceptTitle(record: StoredConversation, raw: string | undefined, explicit = false): boolean {
-    if (!raw || this.closing || !explicit && !this.titleEligible(record)) return false;
+  private acceptTitle(record: StoredConversation, raw: string | undefined, explicit = false, native = false): boolean {
+    // The in-flight request owns the title while it is marked generating; its
+    // run and revision identity are validated by the caller before this point.
+    const state = record.view.titleState?.status;
+    // Native executors may publish a model-generated title after the separate
+    // automatic request failed or returned unavailable. A real fallback title
+    // is still replaceable; manual names and already-generated titles are not.
+    const nativeReplacement = native && record.titleOrigin === 'fallback' && state !== 'manual' && state !== 'generated';
+    if (!raw || this.closing || !explicit && state !== 'generating' && !nativeReplacement && !this.titleEligible(record)) return false;
+    if (nativeReplacement) this.titleWork.get(record.view.id)?.abort();
     const title = raw.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, '').replace(/\s+/g, ' ').trim();
     if (!title || [...title].length > 64) return false;
     record.view.title = title; record.titleOrigin = 'generated'; record.view.titleState={status:'generated'}; return true;
@@ -1599,14 +1787,13 @@ export class ConversationApplication {
     });
     return JSON.stringify({ messages });
   }
+  /** Exactly one automatic attempt, started in parallel with the accepted first round. */
   private async generateAutomaticTitle(workspaceId: string, id: string, runId: string, runtime: AgentRuntime): Promise<void> {
-    // Completion may race the independent early request. Wait for it to settle
-    // before deciding whether the one completion fallback is still necessary.
-    await this.earlyTitles.get(id);
     const record = this.currentRun(workspaceId, id, runId);
-    if (!record || !this.titleEligible(record) || record.view.run?.status !== 'completed') return;
-    if(this.titleAttempts(record,record.view.run.participantId).completion)return;
-    await this.summarizeTitle(workspaceId, id, record.view.revision, runtime, false).catch(() => {});
+    if (!record || this.closing) return;
+    if (record.attempts.filter(attempt => !attempt.supplement && !attempt.automaticRetry).length !== 1) return;
+    if (!this.titleEligible(record) || this.titleWork.has(id)) return;
+    await this.summarizeTitle(workspaceId, id, undefined, runtime, false, false).catch(() => {});
   }
   async generateTitle(workspaceId: string, id: string, input: { expectedRevision: string }): Promise<ConversationView> {
     let record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision); this.assertAccepting(record);
@@ -1620,30 +1807,41 @@ export class ConversationApplication {
     await this.summarizeTitle(workspaceId, id, input.expectedRevision, runtime, true);
     return this.read(workspaceId, id,{compactTools:true});
   }
-  private async summarizeTitle(workspaceId: string, id: string, revision: string, runtime: AgentRuntime, explicit: boolean): Promise<void> {
-    if (this.titleWork.has(id)) fail('agent_title_busy', '正在生成本段对话的标题，请稍后查看。', 409);
-    let record = this.load(workspaceId, id); expected(record.view.revision, revision);
-    const participant = record.participants.find(value => value.id === record.view.run?.participantId);
-    const description = this.titleDescription(record);
-    if (!participant?.contextRef || !description || record.view.run?.status !== 'completed' || !explicit && (!this.titleEligible(record) || this.titleAttempts(record,participant.id).completion)) return;
-    const runId = record.view.run.id; const controller = new AbortController(); this.titleWork.set(id, controller);
-    this.titleAttempts(record,participant.id).completion=true;
-    record.titleAttempted = true; record.view.titleState={status:'generating'}; this.save(record); revision = record.view.revision;
-    const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS + 2_000); timeout.unref();
+  private async summarizeTitle(workspaceId: string, id: string, revision: string | undefined, runtime: AgentRuntime, explicit: boolean, requireAnswer = explicit): Promise<void> {
+    if (this.titleWork.has(id)) { if (explicit) fail('agent_title_busy', '正在生成本段对话的标题，请稍后查看。', 409); return; }
+    let record = this.load(workspaceId, id);
+    if (revision !== undefined) expected(record.view.revision, revision);
+    const run = record.view.run;
+    if (!run) return;
+    const participant = record.participants.find(value => value.id === run.participantId);
+    const description = this.titleDescription(record, requireAnswer);
+    if (!participant?.contextRef || !description || !explicit && !this.titleEligible(record)) return;
+    const runId = run.id;
+    if (!runtime.generateTitle) {
+      if (explicit) fail('agent_title_unavailable', '此执行方尚未提供可用的精短标题，原有标题已保留。', 409);
+      this.recordTitleFailure(workspaceId, id, runId, 'automatic', new Error('agent_title_unavailable'));
+      return;
+    }
+    const controller = new AbortController(); this.titleWork.set(id, controller);
+    record.view.titleState = { status: 'generating' }; this.save(record); revision = record.view.revision;
+    const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS); timeout.unref();
     try {
-      let title: string | undefined;
-      if (runtime.readTitle && !record.view.forkedFrom) title = await within(runtime.readTitle({ contextRef: participant.contextRef, cwd: record.view.cwd }), 2_000, 'agent_title_timeout').catch(() => undefined);
-      record = this.load(workspaceId, id); expected(record.view.revision, revision);
-      if (this.acceptTitle(record, title, explicit)) { this.save(record); return; }
-      if (!runtime.generateTitle) fail('agent_title_unavailable', '此执行方尚未提供可用的精短标题，原有标题已保留。', 409);
-      title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: record.view.run?.model, freshInstruction: Boolean(record.view.forkedFrom), signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
+      const title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: run.model, freshInstruction: Boolean(record.view.forkedFrom), signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
       const current = this.load(workspaceId, id);
-      if (controller.signal.aborted || current.view.run?.id !== runId || current.view.revision !== revision) fail('agent_revision_conflict', '对话已变化，保留当前标题。', 409);
-      if (!this.acceptTitle(current, title, explicit)) fail('agent_title_failed', '未生成符合长度要求的精短标题，原有标题已保留。', 502);
+      if (current.view.run?.id !== runId) {
+        if (current.titleOrigin === 'fallback' && current.view.titleState?.status === 'generating') { current.view.titleState = { status: 'fallback' }; this.save(current); }
+        return;
+      }
+      // Automatic titles start while the first round streams, so the
+      // conversation revision keeps changing. The run identity and the
+      // in-flight "generating" state are the ownership checks; a manual rename
+      // or a newer run still wins through acceptTitle/recordTitleFailure.
+      if (explicit && current.view.revision !== revision) { fail('agent_revision_conflict', '对话已变化，保留当前标题。', 409); }
+      if (!this.acceptTitle(current, title, explicit)) throw new Error(title ? 'agent_title_invalid' : 'agent_title_empty');
       this.save(current);
     } catch (error) {
       controller.abort();
-      this.recordTitleFailure(workspaceId, id, runId, explicit ? 'manual' : 'completion', error);
+      this.recordTitleFailure(workspaceId, id, runId, explicit ? 'manual' : 'automatic', error);
       if (explicit) { if (error && typeof error === 'object' && 'code' in error) throw error; fail('agent_title_failed', '标题生成未完成，原有标题与工作结果已保留。', 502); }
     } finally { clearTimeout(timeout); if (this.titleWork.get(id) === controller) this.titleWork.delete(id); this.scheduleSourceRelease(workspaceId, id); }
   }
@@ -1664,25 +1862,9 @@ export class ConversationApplication {
         });
         const record=this.load(candidate.view.workspaceId,candidate.view.id);
         this.scheduleQuestionWaitReleases(record);
+        for(const stop of record.stops??[])void this.stops.resume(record.view.workspaceId,record.view.id,stop.id).catch(()=>{});
         if(conversationRuns(record.view).some(run=>run.supersededBy))void this.cleanupSuperseded(record.view.workspaceId,record.view.id).catch(()=>{});
       } catch { /* A local conflict must not prevent recovery of unrelated work. */ }
-    }
-    for(const record of this.options.repository.listInterruptedTitles(this.options.generation)){
-      if(record.view.run && this.options.generationAlive?.(record.view.run.generation))continue;
-      if(record.titleOrigin!=='default')continue;
-      record.view.titleState={status:'failed',reason:'标题生成因服务重启中断，原有回复已保留，可显式重新生成。'};
-      try{this.save(record);}catch{/* A concurrent newer record wins; do not block unrelated executions. */}
-    }
-    for(const candidate of this.options.repository.listTitleFailureCandidates()){
-      try{
-        const {workspaceId,id}=candidate.view;
-        const record=this.load(workspaceId,id),participantId=record.view.run?.participantId;
-        if(record.titleOrigin!=='default'||record.view.title!==NEUTRAL_TITLE||!['failed','unavailable'].includes(record.view.titleState?.status??'')||!participantId)continue;
-        const attempts=this.titleAttempts(record,participantId);
-        if(!(attempts.early&&attempts.completion))continue;
-        record.view.title=TITLE_FAILURE_REMINDER;
-        this.save(record);
-      }catch{/* A local conflict must not prevent recovery of unrelated records. */}
     }
     const candidates=this.options.repository.listInterrupted();
     const work=async()=>{
@@ -1723,7 +1905,7 @@ export class ConversationApplication {
       run.interrupted=true;run.diagnostic='服务重启导致执行中断，正在核对原执行。';this.save(record);
     }
     const originalId=run.id,marker=record.interruption;
-    if(marker.runId!==originalId||marker.cancelled||run.status==='completed'||run.status==='failed'&&marker.reason!=='execution-fault')return;
+    if(marker.runId!==originalId||marker.cancelled||this.conversationStopRequested(record,run.id)||run.status==='completed'||run.status==='failed'&&marker.reason!=='execution-fault')return;
     const requestId='host-recovery:'+originalId;
     if(record.attempts.some(attempt=>attempt.clientRequestId===requestId))return;
     const unavailable=(reason:string)=>{
@@ -1747,7 +1929,7 @@ export class ConversationApplication {
       if(run.generation===this.options.generation&&run.status==='running'){
         delete record.interruption;run.interrupted=undefined;run.diagnostic=undefined;this.save(record);return;
       }
-    if(!this.options.autoContinueInterrupted){unavailable('系统中断后执行未完成。工作记录已保留，你可以发送“继续”接着处理。');return;}
+      if(!this.options.autoContinueInterrupted){unavailable('系统中断后执行未完成。工作记录已保留，你可以发送“继续”接着处理。');return;}
       if(marker.awaitingUser){unavailable('执行未完成：中断前有待确认的问题或授权，请查看原问题后继续。');return;}
       const stopped=run.status==='stopped'&&run.tools.every(tool=>tool.status==='completed');
       const released=run.resourcesReleased===true&&run.tools.every(tool=>tool.status!=='running');
@@ -1762,6 +1944,15 @@ export class ConversationApplication {
         record=this.load(workspaceId,id);run=record.view.run;
         if(this.closing||run?.id!==originalId||!record.interruption||record.interruption.cancelled)return;
       }
+      const revision=record.view.revision;
+      try { await this.verifyExecutionHost(record); }
+      catch (error) {
+        if (!(error instanceof AgentServiceError) || error.code !== 'agent_host_unavailable') throw error;
+        unavailable('执行已中断，等待原工作空间连接就绪后自动接续。');
+        return;
+      }
+      record=this.load(workspaceId,id);
+      if(this.closing||record.view.revision!==revision||!record.interruption||this.conversationStopRequested(record,originalId))return;
       const unknown=run.tools.filter(tool=>tool.status==='unknown').map(tool=>tool.id);
       const text='系统自动恢复：上次执行因 Buildr '+(marker.reason==='execution-fault'?'执行协议或运行通道异常':marker.reason==='transport'?'执行观察中断':'服务重启')+'而中断，'+(released?'准确原控制资源已释放，原执行及独立操作结果仍可能未知。':'现已确认原执行停止。')+'请先核对本地对话、当前工作成果与工具结果，继续完成用户尚未完成的目标。不要重新执行全部历史命令，不重发原指令；不确定已生效的操作先核对，不扩大原有授权或代答问题。未知工具引用：'+(unknown.join('、')||'见原轮记录')+'。若需要真实用户决定，请明确提出。';
       const draft:SendDraft={expectedRevision:record.view.revision,connectionId:participant.connectionId,modelAccountId:participant.modelAccountId,modelAccountIdentity:participant.modelAccountIdentity,model:run.model,serviceTier:run.serviceTier,reasoningEffort:run.reasoningEffort,permissionMode:run.permissionMode??'default',text,skipHandoffSummary:true};
@@ -1769,7 +1960,7 @@ export class ConversationApplication {
       if(!record.interruption.attempted)record.attempts.find(value=>value.runId===originalId)!.automaticRetry={rootRunId:lineage.rootRunId,count:lineage.count+1};
       record.interruption.attempted=true;this.save(record);
       draft.expectedRevision=record.view.revision;
-      this.send(workspaceId,id,{...draft,clientRequestId:requestId},true);
+      this.submit(record,{...draft,clientRequestId:requestId},true,false,[],true);
     }catch(error){unavailable('执行未完成，未能自动接续：'+safeDiagnostic(error));}
   }
 
@@ -1842,8 +2033,12 @@ export class ConversationApplication {
       const gatewayIdentity=participant.modelAccountId&&participant.modelAccountIdentity&&participant.modelId&&participant.modelConfiguration!==undefined
         ?modelLeaseIdentity(participant.modelAccountId,participant.modelAccountIdentity,participant.modelId,id,participant.connectionId,participant.modelLeaseConfiguration??participant.modelConfiguration):undefined;
       if(participant.modelAccountId&&!gatewayIdentity)continue;
+      const nativeInputs=record.attempts.filter(value=>value.runId===run.id&&value.executionRef).flatMap(value=>{
+        const entry=record.view.entries.find(item=>item.id===value.userEntryId);
+        return entry?.text.trim()&&(!entry.status||!['failed'].includes(entry.status))?[{clientRequestId:value.clientRequestId,text:entry.text,createdAt:entry.createdAt}]:[];
+      });
       let evidence;
-      try{evidence=await this.options.connections.readPersistedExecution(participant.connectionId,{bindingIdentity:participant.bindingIdentity,contextRef:participant.contextRef,executionRef:attempt.executionRef,cwd:record.view.cwd,gatewayIdentity});}
+      try{evidence=await this.options.connections.readPersistedExecution(participant.connectionId,{bindingIdentity:participant.bindingIdentity,contextRef:participant.contextRef,executionRef:attempt.executionRef,cwd:record.view.cwd,gatewayIdentity,startedAt:run.startedAt,nativeInputs});}
       catch{continue; /* Native observation remains available; unsafe evidence never overrides it. */}
       if(!evidence||!['idle','stopped'].includes(evidence.observation.status)||evidence.observation.tools.some(tool=>tool.status!=='completed')||evidence.observation.executionRef?.id!==attempt.executionRef.id)continue;
       record=this.load(workspaceId,id);
@@ -1874,6 +2069,7 @@ export class ConversationApplication {
   }
 
   async observe(workspaceId: string, id: string): Promise<ConversationView> {
+    await this.reconcileSupplementReceipts(workspaceId,id);
     await this.reconcileReleasedControls(workspaceId,id);
     if(await this.reconcilePersisted(workspaceId,id))return this.read(workspaceId,id,{compactTools:true});
     const key = `${workspaceId}/${id}`;
@@ -1890,6 +2086,7 @@ export class ConversationApplication {
   }
   private async reconcile(workspaceId: string, id: string): Promise<ConversationView> {
     let record = this.load(workspaceId, id);
+    const observedRunId = record.view.run?.id;
     if (record.view.run && this.retryWaits.has(record.view.run.id)) return this.view(record);
     for (const saved of record.participants) {
       if (!saved.contextRef) continue;
@@ -1900,10 +2097,12 @@ export class ConversationApplication {
         if (runtime.bindingIdentity !== saved.bindingIdentity) fail('agent_binding_changed', '参与者的程序或原配置身份已失配。', 409);
         await runtime.resumeContext({ contextRef: saved.contextRef, cwd: record.view.cwd });
         const items = await runtime.readHistory({ contextRef: saved.contextRef, cwd: record.view.cwd });
-        const run = conversationRuns(this.load(workspaceId, id).view).find(run => run.participantId === saved.id);
-        const attempt = run ? this.load(workspaceId, id).attempts.find(value => value.runId === run.id) : undefined;
+        const receiptRecord = this.load(workspaceId, id);
+        if (receiptRecord.view.run?.id !== observedRunId) break;
+        const run = conversationRuns(receiptRecord.view).find(run => run.participantId === saved.id);
+        const attempt = run ? receiptRecord.attempts.find(value => value.runId === run.id) : undefined;
         const needsObservation = run?.participantId === saved.id && (BUSY_STATES.has(run.status) || Boolean(run.interrupted));
-        const receiptRecord = this.load(workspaceId, id), prefix = `${saved.id}:tool:`, receiptEntries = new Map(receiptRecord.view.entries.map(entry => [entry.id, entry]));
+        const prefix = `${saved.id}:tool:`, receiptEntries = new Map(receiptRecord.view.entries.map(entry => [entry.id, entry]));
         const knownItems: ExecutorItem[] = !needsObservation ? [] : Object.entries(receiptRecord.sources).flatMap(([source, entryId]) => {
           const entry = source.startsWith(prefix) ? receiptEntries.get(entryId) : undefined;
           return entry && entry.runId === run?.id && attempt?.executionRef ? [{ id: source.slice(prefix.length), kind: 'tool', role: 'system', text: entry.text, status: entry.status === 'completed' || entry.status === 'failed' ? entry.status : undefined, executionId: attempt.executionRef.id }] : [];
@@ -1911,6 +2110,7 @@ export class ConversationApplication {
         const observedRequests = hash(receiptRecord.view.requests);
         const observation = needsObservation ? await runtime.observe({ contextRef: saved.contextRef, executionRef: attempt?.executionRef, knownItems }) : undefined;
         record = this.load(workspaceId, id);
+        if (record.view.run?.id !== observedRunId) break;
         const requestsUnchanged = hash(record.view.requests) === observedRequests;
         const participant = record.participants.find(value => value.id === saved.id)!;
         let changed = false;
@@ -1936,6 +2136,7 @@ export class ConversationApplication {
         if (changed) this.save(record);
       } catch (error) {
         record = this.load(workspaceId, id);
+        if (record.view.run?.id !== observedRunId) break;
         const target = conversationRuns(record.view).find(run => run.participantId === saved.id);
         if (target && unfinishedRun(target)) { target.status = 'unknown'; target.diagnostic = safeDiagnostic(error); this.save(record); }
       }
@@ -1970,6 +2171,14 @@ export class ConversationApplication {
     });
     return this.read(workspaceId,id,{compactTools:true});
   }
+  private conversationStopRequested(record:StoredConversation,runId:string):boolean { return record.stops?.some(stop=>stop.targets.some(target=>target.runId===runId))===true; }
+  async stopAll(workspaceId:string,id:string,input:ConversationStopInput):Promise<ConversationView> {
+    const view=await this.stops.stop(workspaceId,id,input);
+    // Queue cancellation commits independently of the conversation row; publish
+    // the post-commit projection even when no native execution needed stopping.
+    this.options.events.publish({type:'conversation',workspaceId,conversationId:id,revision:view.revision,payload:{conversation:view}});
+    return view;
+  }
   async stop(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string; toolId?: string }): Promise<ConversationView> {
     const facts={workspaceId,conversationId:id,runId:input.runId,participantId:input.participantId,ownerGeneration:input.generation};
     this.diagnostics({...facts,event:'stop-request',reason:input.toolId?'individual-tool':'whole-run'});
@@ -1990,11 +2199,11 @@ export class ConversationApplication {
    * the native end cannot be proven, while durably recording the stop intent
    * and returning the latest conversation for the client to render.
    */
-  private finalizeUnconfirmedStop(workspaceId:string,id:string,input:{runId:string;participantId:string}):ConversationView|undefined{
+  private finalizeUnconfirmedStop(workspaceId:string,id:string,input:{runId:string;participantId:string;generation:string}):ConversationView|undefined{
     let found=false;
     this.retryRecordUpdate(()=>{
       const record=this.load(workspaceId,id);
-      const run=conversationRuns(record.view).find(value=>value.id===input.runId&&value.participantId===input.participantId);
+      const run=conversationRuns(record.view).find(value=>value.id===input.runId&&value.participantId===input.participantId&&value.generation===input.generation);
       if(!run)return;
       found=true;
       run.stopRequested=true;run.canContinue=false;
@@ -2137,6 +2346,20 @@ export class ConversationApplication {
     }
   }
   /** Internal authenticated control; cannot stop tools or grant an unanswered request. */
+  /** User-confirmed attention settlement for a retained unknown run; never claims completion, kills work, or releases resources. */
+  async settleRetainedRun(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string }): Promise<ConversationView> {
+    const record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision);
+    const run = record.view.retainedRuns?.find(value => value.id === input.runId);
+    if (!run || run.participantId !== input.participantId || run.generation !== input.generation) fail('agent_control_stale', '原执行身份已变化，请重新读取。', 409);
+    if (run.attentionSettled) return this.view(record);
+    if (run.supersededBy || run.status !== 'unknown' || run.executionState === 'active' || run.tools.some(tool => tool.status === 'running') ||
+        this.workers.has(run.id) || record.view.requests.some(request => request.runId === run.id))
+      fail('agent_run_settle_unavailable', '原执行仍有在途工作或有效问题，不能结束提醒；请先核对原执行。', 409);
+    run.attentionSettled = true; run.updatedAt = this.options.now();
+    this.save(record);
+    return this.view(record);
+  }
+
   async releaseQuestionWait(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string }): Promise<ConversationView> {
     let record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision);
     const old = conversationRuns(record.view).find(run => run.id === input.runId);
@@ -2239,13 +2462,14 @@ export class ConversationApplication {
   }
   async reply(workspaceId: string, id: string, requestId: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string; answer: unknown }): Promise<ConversationView> {
     const control = this.control(workspaceId, id, input);
+    if(this.conversationStopRequested(control.record,input.runId))fail('agent_request_stale','本轮已请求停止，不能向已取消的执行提交回答或授权。',409);
     const request = control.record.view.requests.find(value => value.id === requestId);
     const binding = control.record.requests[requestId];
     if (!request || !binding || request.runId !== control.run.id || request.participantId !== control.participant.id || binding.executionRef.id !== control.executionRef?.id || !control.participant.contextRef || request.generation !== this.options.generation) fail('agent_request_stale', '此问题或授权已失效，请重新观察。', 409);
     if (control.record.attempts.find(attempt => attempt.runId === input.runId)?.questionReleaseRequested) fail('agent_question_transition_in_flight', '原问题正在结束等待，回答已保留；请核对原问题状态。', 409);
     if (this.repliesInFlight.has(requestId)) fail('agent_reply_in_flight', '此请求正在回应，请等待原结果。', 409);
     if (this.pendingSends.read(workspaceId,id)?.draft.waitingHandoff) fail('agent_handoff_pending', '已保存交接，回答将交给新模型；如要回应原轮，请先取消待发送。', 409);
-    this.repliesInFlight.add(requestId);
+    this.repliesInFlight.set(requestId,id);
     try {
     const runtime = (await this.sourceRuntime(control.record, control.participant)).runtime;
     // Recheck after asynchronous connection setup before causing a native effect.

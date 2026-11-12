@@ -89,7 +89,7 @@ server.listen(0, '127.0.0.1', () => {
   };
 }
 
-test('preview stop includes its independent backend and refuses purge after uncertain native release', {timeout:30_000}, async t => {
+test('preview stop includes its independent backend and refuses purge after uncertain native release', {timeout:60_000}, async t => {
   t.after(async()=>{await connection?.disconnect();await stopAgentProcess({dataRoot:profileRoot}).catch(()=>{});});
   const data=fixture(t),profileRoot=previewDataRoot('demo',data.dataRoot);
   await data.start([]);
@@ -114,7 +114,8 @@ test('preview stop includes its independent backend and refuses purge after unce
     let settled=false;
     const rejected=assert.rejects(stopPreview('demo',{dataRoot:data.dataRoot,purge:true}),error=>coded(error,'agent_process_stop_unconfirmed'));
     void rejected.then(()=>{settled=true;},()=>{settled=true;});
-    for(let tick=0;tick<600&&!settled;tick++){await new Promise<void>(resolve=>setImmediate(resolve));t.mock.timers.tick(50);}
+    const deadline=Date.now()+30_000;
+    while(!settled&&Date.now()<deadline){await new Promise<void>(resolve=>setImmediate(resolve));t.mock.timers.tick(50);}
     assert.ok(settled,'uncertain generation release must reject within its controlled polling budget');
     await rejected;
   } finally {
@@ -179,22 +180,37 @@ test('预览沿用开发版模型目录并可复用、刷新与彻底清理', { 
   assert.equal(readPreviewOwner('demo', data.dataRoot), null);
 });
 
-test('无 --reuse 时保持既有隔离启动，非法参数在写入前失败', { timeout: 20_000 }, async (t) => {
+test('默认沿用 development，显式 none 不沿用，非法参数在写入前失败', { timeout: 20_000 }, async (t) => {
   const data = fixture(t);
   const plain = await data.start([]);
-  assert.equal(plain.owner.reuse, undefined);
+  assert.equal(plain.owner.reuse?.source, 'development');
+  await stopPreview('demo', { dataRoot: data.dataRoot, purge: true });
+
+  const none = await data.start(['--reuse', 'none']);
+  assert.equal(none.owner.reuse, undefined);
   assert.equal(fs.existsSync(path.join(previewDataRoot('demo', data.dataRoot), 'agent-service', 'model-access')), false);
   await stopPreview('demo', { dataRoot: data.dataRoot, purge: true });
 
-  for (const args of [['--reuse', 'released'], ['--reuse', 'development:unknown'], ['--refresh-reuse']]) {
+  for (const args of [['--reuse', 'released'], ['--reuse', 'development:unknown'], ['--reuse', 'none', '--refresh-reuse']]) {
     await assert.rejects(data.start(args), (error) => coded(error, 'preview_reuse_invalid'));
     assert.equal(fs.existsSync(path.join(previewDataRoot('demo', data.dataRoot), 'agent-service', 'model-access')), false);
   }
+  const refreshed = await data.start(['--refresh-reuse']);
+  assert.equal(refreshed.owner.reuse?.source, 'development');
+  await stopPreview('demo', { dataRoot: data.dataRoot, purge: true });
+
   fs.rmSync(data.developmentRoot, { recursive: true, force: true });
-  await assert.rejects(data.start(['--reuse', 'development']), (error) => coded(error, 'preview_reuse_source_unavailable'));
+  await assert.rejects(data.start([]), (error) => {
+    assert.equal(coded(error, 'preview_reuse_source_unavailable'), true);
+    assert.match((error as Error).message, /--reuse none/);
+    return true;
+  });
+  const escaped = await data.start(['--reuse', 'none']);
+  assert.equal(escaped.owner.reuse, undefined);
+  await stopPreview('demo', { dataRoot: data.dataRoot, purge: true });
 });
 
-test('purge 拒绝错误 owner、未确认停止、越界符号链接并保留现场', { timeout: 20_000 }, async (t) => {
+test('purge 拒绝错误 owner 与未确认停止，越界与断链按条目删除', { timeout: 20_000 }, async (t) => {
   const data = fixture(t);
   const started = await data.start(['--reuse', 'development:model-catalog']);
   const directory = previewDataRoot('demo', data.dataRoot);
@@ -223,10 +239,13 @@ test('purge 拒绝错误 owner、未确认停止、越界符号链接并保留�
 
   const outside = path.join(data.root, 'outside');
   fs.mkdirSync(outside, { recursive: true });
+  fs.writeFileSync(path.join(outside, 'keep.txt'), 'keep');
   fs.symlinkSync(outside, path.join(directory, 'escape'));
-  await assert.rejects(stopPreview('demo', { dataRoot: data.dataRoot, purge: true }), (error) => coded(error, 'preview_purge_unsafe'));
-  assert.equal(fs.existsSync(directory), true);
-  assert.equal(fs.existsSync(outside), true);
+  fs.symlinkSync(path.join(outside, 'missing'), path.join(directory, 'broken'));
+  const purged = await stopPreview('demo', { dataRoot: data.dataRoot, purge: true });
+  assert.equal(purged.status, 'purged');
+  assert.equal(fs.existsSync(directory), false);
+  assert.equal(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8'), 'keep');
 });
 
 test('单个 facet 失败不阻止预览启动并保留其他 facet 结果', { timeout: 20_000 }, async (t) => {

@@ -1,7 +1,7 @@
 import { HISTORY_SCENARIO_CATALOG } from './agent-conversation-history-catalog.ts';
 
 /** 逻辑分组保持可单独选择；完整运行可在隔离页面中复用较重的运行现场。 */
-export const AGENT_CONVERSATION_GROUPS = Object.freeze(["setup","history","handoff","tasks","models","recovery","selection","video","children"] as const);
+export const AGENT_CONVERSATION_GROUPS = Object.freeze(["setup","history","handoff","tasks","models","recovery","selection","video","children","stop-all"] as const);
 export type AgentConversationGroup = typeof AGENT_CONVERSATION_GROUPS[number];
 
 const HISTORY_SCENARIO_IDS = Object.freeze(HISTORY_SCENARIO_CATALOG.map(scenario => scenario.id));
@@ -15,7 +15,7 @@ export const AGENT_CONVERSATION_BATCHES: ReadonlyArray<ReadonlyArray<string>> = 
     ...HISTORY_SCENARIO_IDS.filter((_, index) => index % 3 === 0),
   ]),
   Object.freeze([
-    'handoff', 'models', 'selection', 'video', 'children',
+    'handoff', 'models', 'selection', 'video', 'children', 'stop-all',
     ...HISTORY_SCENARIO_IDS.filter((_, index) => index % 3 !== 0),
   ]),
 ]);

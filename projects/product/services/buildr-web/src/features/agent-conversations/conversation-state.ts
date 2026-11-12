@@ -1,5 +1,11 @@
 import type { ConversationView, ConversationEntry, ConversationEvent, ConversationRun, ConversationTaskLink, CatalogModel } from './types';
 
+/** User-confirmed attention settlement for a retained unknown run; real in-flight work and valid questions stay protected. */
+export function canSettleRetainedRun(conversation: ConversationView | null, run: ConversationRun | undefined): boolean {
+  return Boolean(conversation && run && conversation.retainedRuns?.some(value => value.id === run.id) && !run.supersededBy && run.status === 'unknown' && !run.attentionSettled &&
+    run.executionState !== 'active' && !run.tools.some(tool => tool.status === 'running') && !conversation.requests.some(request => request.runId === run.id));
+}
+
 /** Closing only dismisses a released historical doubt, never a protected owner. */
 export function canCloseUncertainConversation(conversation: ConversationView | null): boolean {
   if (!conversation) return false;
@@ -19,14 +25,14 @@ export function canContinueConversation(conversation: ConversationView | null): 
     (conversation.run?.status === 'unknown' && conversation.run.stopRequested || canContinueReleasedConversation(conversation)));
 }
 
-export function conversationRecoveryAction(conversation: ConversationView | null): {kind:'recover'|'observe';label:string} | null {
+export function conversationRecoveryAction(conversation: ConversationView | null, entries: ConversationView['entries'] = conversation?.entries ?? []): {kind:'recover'|'observe';label:string} | null {
   const run = conversation?.run; if (!conversation || !run) return null;
   if (run.status === 'tools-active' && run.canContinue) return null;
   if (canContinueConversation(conversation)) return {kind:'recover',label:run.stopRequested?'结束等待并继续':'继续工作'};
   if (run.status === 'unknown' || run.status === 'tools-active' || ['failed','stopped','completed'].includes(run.status) && run.tools.some(tool => tool.status !== 'completed')) return {kind:'observe',label:'核对状态'};
   if (executionLocked(run) || currentConversationRequests(conversation).length || run.tools.some(tool => tool.status !== 'completed')) return null;
-  const replied = conversation.entries.some(entry => !entry.parentToolId && !entry.thinking && entry.role === 'assistant' && entry.kind === 'message' && entry.text.trim() && (entry.runId === run.id || !entry.runId && entry.createdAt >= run.startedAt));
-  if (!['failed','stopped','completed'].includes(run.status) || run.status === 'completed' && replied) return null;
+  const replied = finalConversationReplyIds(entries, [run]).size > 0;
+  if (!['failed','stopped','completed'].includes(run.status) || replied) return null;
   return {kind:'recover',label:run.accepted?'继续':'重试'};
 }
 
@@ -35,6 +41,7 @@ export function conversationObservationFeedback(run?: ConversationRun): string {
   if (!run) return '读取完成：当前没有待处理的执行。';
   if (run.resourcesReleased && (run.status === 'unknown' || run.status === 'tools-active' || run.tools.some(tool => tool.status !== 'completed'))) return '读取完成：后台连接已释放，但未读到本轮结束记录。可发送新要求继续，不会重做原操作。';
   if (run.status === 'unknown') return '读取完成：仍无法读取原执行状态，记录已保留。可发送新要求，不会重做原操作。';
+  if (run.status === 'tools-active' && run.tools.some(tool => tool.status === 'running') && !run.tools.some(tool => tool.status === 'unknown')) return '读取完成：后台命令仍在运行。';
   if (run.status === 'tools-active' || run.tools.some(tool => tool.status !== 'completed')) return '读取完成：尚未取得部分命令的结束记录，请查看命令状态。';
   const labels: Record<ConversationRun['status'], string> = {starting:'正在准备执行',running:'仍在执行','waiting-approval':'仍在等待授权','waiting-question':'仍在等待你的回答',stopping:'正在停止',stopped:'已确认停止',completed:'本轮已结束',failed:'本轮执行失败',unknown:'执行状态待确认','tools-active':'仍有命令尚未确认结束'};
   return '读取完成：' + labels[run.status] + '。';
@@ -50,11 +57,16 @@ export function executionLocked(run?: ConversationRun): boolean {
   if (run?.status === 'tools-active' && run.canContinue) return false;
   return Boolean(run && ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown'].includes(run.status));
 }
+/** A historical stop request with no live owner or running tool is evidence, not current activity. */
+export function historicalStopSettled(run?: ConversationRun): boolean {
+  return Boolean(run && run.stopRequested === true && run.executionState !== 'active' &&
+    !run.tools.some(tool => tool.status === 'running'));
+}
 /** Completion or explicitly closing a released doubt ends automatic observation. */
 export function needsConversationObservation(conversation: ConversationView | null): boolean {
   if (!conversation) return false;
   if (conversation.hidden && canCloseUncertainConversation(conversation)) return false;
-  if (conversation.entries.some(entry=>entry.detail?.live) || conversation.pendingSend || conversation.requests.length || conversation.retainedRuns?.some(run=>!run.supersededBy&&(executionLocked(run)||run.tools.some(tool=>tool.status!=='completed')))) return true;
+  if (conversation.entries.some(entry=>entry.detail?.live) || conversation.pendingSend || conversation.requests.length || conversation.retainedRuns?.some(run=>!run.supersededBy&&!historicalStopSettled(run)&&(executionLocked(run)||run.tools.some(tool=>tool.status!=='completed')))) return true;
   const run = conversation.run;
   return Boolean(run && (executionLocked(run) || run.tools.some(tool => tool.status !== 'completed') ||
     run.executionState === 'active' || run.executionState === 'unknown'));
@@ -101,10 +113,13 @@ export function isCurrentConversationEvent(event:ConversationEvent,scope:{worksp
 export function mergeConversationView(current: ConversationView | null,next: ConversationView, observedRevision?: string): ConversationView {
   if(current && current.id===next.id && current.workspaceId===next.workspaceId && observedRevision && current.revision!==observedRevision && current.revision!==next.revision)return current;
   if (!current || current.id !== next.id || current.workspaceId !== next.workspaceId || !next.entries.length) return next;
-  const oldest = next.entries[0].sequence;
-  const older = current.entries.filter(entry => entry.sequence < oldest);
+  // A compact page may pin the round prompt before its byte-bounded tail. The
+  // cursor, not the first rendered entry, marks where that retained tail starts.
+  const oldest = next.nextEntryCursor ?? next.entries[0].sequence;
+  const nextIds = new Set(next.entries.map(entry => entry.id));
+  const older = current.entries.filter(entry => entry.sequence < oldest && !nextIds.has(entry.id));
   if (!older.length) return next;
-  return {...next, entries:[...older,...next.entries], nextEntryCursor:current.nextEntryCursor};
+  return {...next, entries:[...older,...next.entries].sort((left,right)=>left.sequence-right.sequence), nextEntryCursor:current.nextEntryCursor};
 }
 export function prependConversationEntries(current: ConversationView,page: ConversationView): ConversationView {
   if(current.id!==page.id||current.workspaceId!==page.workspaceId)return current;
@@ -208,14 +223,41 @@ export function conversationRunLive(run?:ConversationRun):boolean {
 /** Legacy records have no message phase: the last assistant message of a settled
  * run is its visible reply, regardless of length. Never promote live narration. */
 export function finalConversationReplyIds(entries:readonly ConversationEntry[],runs:readonly ConversationRun[]=[]):Set<string> {
-  const known=new Map(runs.map(run=>[run.id,run])),finals=new Map<string,string>();let legacy=0;
+  const known=new Map(runs.map(run=>[run.id,run])),groups=new Map<string,ConversationEntry[]>();let legacy=0;
   for(const entry of entries){
     if(!entry.runId&&entry.kind==='message'&&entry.role==='user')legacy++;
-    if(entry.kind!=='message'||entry.role!=='assistant'||entry.parentToolId||entry.thinking)continue;
     const key=entry.runId||'legacy:'+legacy;
-    finals.set(key,entry.status==='running'||!conversationRunSettled(entry.runId?known.get(entry.runId):undefined)?'':entry.id);
+    const rows=groups.get(key)??[];rows.push(entry);groups.set(key,rows);
   }
-  return new Set([...finals.values()].filter(Boolean));
+  const finals=new Set<string>();
+  for(const rows of groups.values()){
+    const runId=rows.find(entry=>entry.runId)?.runId;
+    if(!conversationRunSettled(runId?known.get(runId):undefined))continue;
+    // A settled run's reply is its last primary assistant message, extended backwards
+    // over earlier assistant segments separated only by thinking. Upstream gateways can
+    // split one answer into several message items; a tool arriving after the reply does
+    // not demote it, and a tool between segments bounds the reply.
+    let last=-1;
+    for(let index=rows.length-1;index>=0;index--){
+      const entry=rows[index];
+      if(entry.kind==='message'&&entry.role==='assistant'&&!entry.parentToolId&&!entry.thinking){last=index;break;}
+    }
+    if(last<0)continue;
+    if(rows[last].status==='running')continue;
+    // Fold the whole trailing run of assistant segments into the reply, whether they
+    // are separated by thinking or directly adjacent (upstream may split one answer
+    // either way). A tool/user/child entry bounds the reply.
+    for(let index=last;index>=0;index--){
+      const entry=rows[index];
+      if(entry.kind==='thinking'||entry.thinking)continue;
+      if(entry.parentToolId)continue;
+      if(entry.kind==='message'&&entry.role==='assistant'){
+        finals.add(entry.id);continue;
+      }
+      break;
+    }
+  }
+  return finals;
 }
 export function groupConversationStream(entries:readonly ConversationEntry[],currentRun?:ConversationRun,retainedRuns:readonly ConversationRun[]=[]):ConversationStreamItem[] {
   const items:ConversationStreamItem[]=[];
@@ -229,14 +271,41 @@ export function groupConversationStream(entries:readonly ConversationEntry[],cur
     const run:ConversationEntry[]=[];
     while(index<entries.length&&isProcess(entries[index])&&entries[index].runId===first.runId)run.push(entries[index++]);
     const active=conversationRunLive(first.runId?known.get(first.runId):undefined);
-    const result=active?undefined:run.find(entry=>finals.has(entry.id));
-    const process=result?run.filter(entry=>entry!==result):run;
-    if(process.length)items.push({type:'process-block',entries:process,active,finishedAt:result?.createdAt});
-    if(result)items.push({type:'entry',entry:result});
+    const finalEntries=active?[]:run.filter(entry=>finals.has(entry.id));
+    const process=mergeSplitAssistantSegments(run.filter(entry=>!finals.has(entry.id)));
+    if(process.length)items.push({type:'process-block',entries:process,active,finishedAt:finalEntries.at(-1)?.createdAt});
+    if(finalEntries.length){
+      // Fold trailing segments back into one coherent reply (they were a single
+      // streamed answer split by interleaved thinking), keeping the last identity.
+      const last=finalEntries[finalEntries.length-1]!;
+      const merged=finalEntries.length===1?last:{...last,text:finalEntries.map(entry=>entry.text).join('')};
+      items.push({type:'entry',entry:merged});
+    }
   }
   return items;
 }
-export type ConversationTurnItems={key:string;prompt?:ConversationEntry;items:ConversationStreamItem[]};
+/** Upstream gateways may split one streamed message into several assistant items
+ * separated only by thinking. Fold such segments back into a single coherent entry
+ * (keeping the first identity and the interleaved thinking) so neither the reply nor
+ * the process narration shows a detached leading fragment. Segments may be separated
+ * by thinking or directly adjacent; a tool/user/child entry bounds a message. */
+function mergeSplitAssistantSegments(entries:readonly ConversationEntry[]):ConversationEntry[] {
+  const out:ConversationEntry[]=[];
+  for(const entry of entries){
+    if(entry.kind==='message'&&entry.role==='assistant'&&!entry.parentToolId){
+      let index=out.length-1;
+      while(index>=0&&(out[index].kind==='thinking'||out[index].thinking))index--;
+      const base=index>=0?out[index]:undefined;
+      if(base&&base.kind==='message'&&base.role==='assistant'&&!base.parentToolId){
+        out[index]={...base,text:(base.text??'')+(entry.text??'')};
+        continue;
+      }
+    }
+    out.push(entry);
+  }
+  return out;
+}
+export type ConversationTurnItems={key:string;prompt?:ConversationEntry;continuedFrom?:NonNullable<ConversationRun['continuedFrom']>;items:ConversationStreamItem[]};
 /** Time the entire owned turn, including a final answer and an unsettled process block. */
 export function conversationTurnTiming(turn:ConversationTurnItems,runs:readonly ConversationRun[]=[]):{startedAt?:string;finishedAt?:string}{
   const entries=[...(turn.prompt?[turn.prompt]:[]),...turn.items.flatMap(item=>item.type==='entry'?[item.entry]:item.entries)];
@@ -246,8 +315,10 @@ export function conversationTurnTiming(turn:ConversationTurnItems,runs:readonly 
   const times=[...owned.map(entry=>entry.createdAt),...(run?[run.updatedAt]:[])].filter(value=>Number.isFinite(Date.parse(value)));
   return {startedAt:run?.startedAt??turn.prompt?.createdAt??owned[0]?.createdAt,finishedAt:times.sort((a,b)=>Date.parse(a)-Date.parse(b)).at(-1)};
 }
-export function conversationStreamTurns(items:readonly ConversationStreamItem[]):ConversationTurnItems[]{
+export function conversationStreamTurns(items:readonly ConversationStreamItem[],runs:readonly ConversationRun[]=[]):ConversationTurnItems[]{
   const turns:ConversationTurnItems[]=[], owners=new Map<string,ConversationTurnItems>();
+  const continuations=new Map(runs.flatMap(run=>run.continuedFrom?[[run.id,run.continuedFrom] as const]:[]));
+  const runOwner=(runId:string,key='run:'+runId):ConversationTurnItems=>({key,items:[],...(continuations.has(runId)?{continuedFrom:continuations.get(runId)}:{})});
   for(const item of items){
     const entry=item.type==='entry'?item.entry:item.entries[0];
     const inputOwner=entry.runId?owners.get(entry.runId):undefined;
@@ -261,14 +332,14 @@ export function conversationStreamTurns(items:readonly ConversationStreamItem[])
       if(!turns.length)turns.push({key:'earlier',items:[]});
       let owner=entry.runId?owners.get(entry.runId):undefined;
       if(!owner&&entry.kind==='notice'&&entry.runId){
-        owner={key:'run:'+entry.runId,items:[]};turns.push(owner);owners.set(entry.runId,owner);
+        owner=runOwner(entry.runId);turns.push(owner);owners.set(entry.runId,owner);
       }
       const latest=turns.at(-1)!,latestItem=latest.items.at(-1);
       const latestRun=latest.prompt?.runId??(latestItem?.type==='entry'?latestItem.entry.runId:latestItem?.entries[0]?.runId);
       if(!owner&&(item.type==='process-block'||entry.kind==='message')&&entry.runId&&latestRun&&entry.runId!==latestRun){
         // A replayed result may precede the loaded history page. It cannot belong
         // to the latest input merely because it was projected later.
-        owner={key:'history:'+entry.runId,items:[]};turns.unshift(owner);
+        owner=runOwner(entry.runId,'history:'+entry.runId);turns.unshift(owner);
       }
       owner??=turns.at(-1)!;
       let previous:ConversationStreamItem|undefined;
@@ -368,7 +439,8 @@ export type ConversationContextReport = {
   modelAccountIdentity?: string;
   modelSourceLabel?: string;
   serviceTier?: string;
-  usedTokens: number;
+  usedTokens?: number;
+  usedRatio?: number;
   windowTokens?: number;
 };
 
@@ -376,8 +448,11 @@ export type ConversationContextReport = {
 export function rememberContextReport(current: ConversationContextReport | null, conversation: ConversationView | null | undefined): ConversationContextReport | null {
   const run = conversation?.run;
   const usage = run?.contextUsage;
-  if (!conversation || !run || !usage || !Number.isSafeInteger(usage.usedTokens) || usage.usedTokens < 0) return current;
-  if (current?.runId === run.id && current.conversationId === conversation.id && current.usedTokens === usage.usedTokens && current.windowTokens === usage.windowTokens) return current;
+  if (!conversation || !run || !usage) return current;
+  const tokens=Number.isSafeInteger(usage.usedTokens)&&usage.usedTokens!>=0;
+  const ratio=typeof usage.usedRatio==='number'&&Number.isFinite(usage.usedRatio)&&usage.usedRatio>=0&&usage.usedRatio<=1;
+  if(!tokens&&!ratio)return current;
+  if (current?.runId === run.id && current.conversationId === conversation.id && current.usedTokens === usage.usedTokens && current.usedRatio===usage.usedRatio && current.windowTokens === usage.windowTokens) return current;
   return {
     workspaceId: conversation.workspaceId,
     conversationId: conversation.id,
@@ -388,9 +463,17 @@ export function rememberContextReport(current: ConversationContextReport | null,
     modelAccountIdentity: run.modelAccountIdentity,
     modelSourceLabel: run.modelSourceLabel,
     serviceTier: run.serviceTier,
-    usedTokens: usage.usedTokens,
+    ...(tokens?{usedTokens:usage.usedTokens}:{}),
+    ...(ratio?{usedRatio:usage.usedRatio}:{}),
     windowTokens: Number.isSafeInteger(usage.windowTokens) && usage.windowTokens! > 0 ? usage.windowTokens : undefined,
   };
+}
+
+export function contextUsedPercent(report: ConversationContextReport | null | undefined, window?:number):number|undefined {
+  if(!report)return;
+  if(typeof report.usedRatio==='number'&&Number.isFinite(report.usedRatio)&&report.usedRatio>=0&&report.usedRatio<=1)return Math.floor(report.usedRatio*100);
+  if(report.usedTokens!==undefined&&window&&window>0)return Math.min(100,Math.floor(report.usedTokens/window*100));
+  return;
 }
 
 /** A retained report is only visible in the workspace and conversation that produced it. */

@@ -42,7 +42,7 @@ export function resumeDevelopmentWorkspaceRefresh(product: {channel?:string}, se
   setImmediate(() => { void refresh().catch((error:Error) => console.warn('工作空间后台刷新未完成：', error.message)); });
 }
 
-export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: { httpContributions?: unknown[]; closeResources?: () => Promise<void>; onReady?:()=>void | Promise<void> } = {}) {
+export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: { httpContributions?: unknown[]; closeResources?: () => Promise<void>; onReady?:()=>void | Promise<void>; agentRuntimeStatus?: () => Promise<unknown> } = {}) {
   const httpContributions = options.httpContributions || [];
   return Object.freeze({
     id: WEB_MODULE_ID,
@@ -69,8 +69,25 @@ export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: {
       registerWebInstanceLifecycle(composition, {
         httpContributions,
         closeResources: options.closeResources,
-        createLocalWorkspaceServer: (webRuntime, serverOptions) => Reflect.apply(createLocalWorkspaceServer, undefined, [webRuntime, { ...serverOptions, onReady: async () => { if (!serverOptions.previewIdentity) { await options.onReady?.(); resumeUpdate();
-          resumeDevelopmentWorkspaceRefresh(identity.readCurrentProductIdentity!(), serverOptions, workspace.refreshPreparedWorkspaces); } } }]),
+        createLocalWorkspaceServer: (webRuntime, serverOptions) => {
+          let previewWarmup: NodeJS.Timeout | undefined;
+          return Reflect.apply(createLocalWorkspaceServer, undefined, [webRuntime, { ...serverOptions, agentRuntimeStatus: options.agentRuntimeStatus, beforeShutdown: async () => {
+            if (previewWarmup) { clearTimeout(previewWarmup); previewWarmup = undefined; }
+            await serverOptions.beforeShutdown?.();
+          }, onReady: async () => {
+          if (!serverOptions.previewIdentity) {
+            await options.onReady?.(); resumeUpdate();
+            resumeDevelopmentWorkspaceRefresh(identity.readCurrentProductIdentity!(), serverOptions, workspace.refreshPreparedWorkspaces);
+          } else {
+            // A preview must publish its authenticated health endpoint before
+            // the pinned runtime warms up. Runtime-unit preparation can be
+            // CPU-bound; doing it here would block the event loop and make a
+            // healthy child look unreachable during start.
+            previewWarmup = setTimeout(() => { previewWarmup = undefined; void Promise.resolve(options.onReady?.()).catch(error => console.warn('预览执行后台预热未完成，工作记录已保留。', error)); }, 250);
+            previewWarmup.unref?.();
+          }
+        } }]);
+        },
         ensureRegisteredTarget: workspace.ensureRegisteredTarget,
         resolveRegisteredWorkspace: workspace.resolveRegisteredWorkspace,
         readProductIdentity: identity.readCurrentProductIdentity,

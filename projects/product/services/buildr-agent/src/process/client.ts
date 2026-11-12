@@ -18,8 +18,12 @@ import { PendingSendRepository } from '../persistence/pending-send-repository.ts
 import { normalizeSendDraft } from '../domain/send-draft.ts';
 import { validateOperation } from './operations.ts';
 
-/** These projections read only the execution store; they never call a host capability. */
-const LOCAL_CONVERSATION_READS = new Set(['conversations.listAll', 'conversations.pending', 'conversations.pendingSummary']);
+/** These projections can be served without registering a host callback. */
+const LOCAL_READS = new Set([
+  'conversations.listAll', 'conversations.listChildren', 'conversations.activityEpoch',
+  'conversations.pending', 'conversations.pendingSummary', 'connections.list',
+  'models.accounts.list', 'models.catalog.list',
+]);
 
 export interface AgentProcessConnectionOptions {
   dataRoot: string;
@@ -36,6 +40,22 @@ export interface AgentProcessConnectionOptions {
   signal?: AbortSignal;
 }
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+async function reclaimAbortedLaunch(dataRoot: string, pid: number): Promise<void> {
+  // Cancellation can arrive after spawn but before the child publishes its
+  // ownership record. There is no record for a later owner to stop, so the
+  // launcher must reap the exact process group it just created.
+  if (!Number.isInteger(pid) || pid <= 1) return;
+  if (readProcessInstances(dataRoot).some(record => record.identity.pid === pid)) return;
+  try { process.kill(process.platform === 'win32' ? pid : -pid, 'SIGTERM'); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+  for (let attempt = 0; attempt < 20 && live(pid); attempt++) await pause(50);
+  if (live(pid)) {
+    try { process.kill(process.platform === 'win32' ? pid : -pid, 'SIGKILL'); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+    for (let attempt = 0; attempt < 20 && live(pid); attempt++) await pause(50);
+  }
+  if (live(pid)) throw new AgentServiceError('agent_process_stop_unconfirmed', '启动取消后的执行后台停止未确认。', 409);
+}
 function matches(identity: AgentProcessIdentity, options: Pick<AgentProcessConnectionOptions, 'dataRoot' | 'profileId'>): void {
   if (!identity || identity.dataRoot !== path.resolve(options.dataRoot) || identity.profileId !== options.profileId || Object.entries(AGENT_EXECUTION_CONTRACTS).some(([key, value]) => identity.contracts?.[key as keyof typeof AGENT_EXECUTION_CONTRACTS] !== value)) throw new AgentServiceError('agent_process_identity_mismatch', '执行后台来源或契约不匹配，未接管已有实例。', 409);
 }
@@ -83,13 +103,18 @@ async function ensure(options: AgentProcessConnectionOptions & {runtime:AgentRun
         if(retained.some(candidate=>!canRunParallel(candidate.identity.runtime,runtime)))runtime=record?.identity.runtime??retained[0]!.identity.runtime;
         validateAgentRuntime(options.dataRoot, runtime);
         options.signal?.throwIfAborted();
-        launchAgentProcess({ dataRoot: path.resolve(options.dataRoot), profileId: options.profileId, runtime, token: privateToken(), legacySourceId: options.legacySourceId, autoContinueInterrupted: options.autoContinueInterrupted });
+        const launchedPid = launchAgentProcess({ dataRoot: path.resolve(options.dataRoot), profileId: options.profileId, runtime, token: privateToken(), legacySourceId: options.legacySourceId, autoContinueInterrupted: options.autoContinueInterrupted });
         // Give the successor time to claim before another loop considers launching.
-        for (let attempt = 0; attempt < 200; attempt++) {
-          options.signal?.throwIfAborted();
-          const started = readProcessRecord(options.dataRoot);
-          if (started && await healthy(started, options)) return started;
-          await pause(100);
+        try {
+          for (let attempt = 0; attempt < 200; attempt++) {
+            options.signal?.throwIfAborted();
+            const started = readProcessRecord(options.dataRoot);
+            if (started && await healthy(started, options)) return started;
+            await pause(100);
+          }
+        } catch (error) {
+          if (options.signal?.aborted) await reclaimAbortedLaunch(options.dataRoot, launchedPid);
+          throw error;
         }
         break;
       }
@@ -131,18 +156,26 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
     return value;
   };
   const attached = new Map<string, ProcessRecord>();
+  const attaching = new Map<string, Promise<void>>();
   let connecting: Promise<ProcessRecord> | undefined;
   const subscriptions = new Set<AbortController>(), generating = new Map<string, ProcessRecord>();
   async function attachHost(candidate: ProcessRecord): Promise<void> {
     if (!host) return;
-    try {
-      await request(candidate.origin, candidate.token, '/host/attach', {peer:host.peer,autoContinueInterrupted:options.autoContinueInterrupted}, AbortSignal.timeout(3000));
-    } catch (error) {
+    if (closed) throw new AgentServiceError('agent_process_client_closed', '执行后台连接已释放。', 503);
+    const instanceId = candidate.identity.instanceId;
+    const pending = attaching.get(instanceId);
+    if (pending) return pending;
+    const registration = request(candidate.origin, candidate.token, '/host/attach', {
+      peer: host.peer, autoContinueInterrupted: options.autoContinueInterrupted,
+    }, AbortSignal.timeout(3000)).then(() => {
+      attached.set(instanceId, candidate);
+    }).catch(error => {
       if (error instanceof AgentServiceError) throw error;
-      // Registration failed before dispatch: no business operation was sent.
-      // Never expose a raw DOM timeout as an internal HTTP 500 or replay work.
+      // Registration failed before dispatch; no business operation was sent.
       throw new AgentServiceError('agent_host_unavailable', '执行后台宿主连接尚未确认，本次操作尚未发送，原记录与输入已保留。', 503);
-    }
+    }).finally(() => { attaching.delete(instanceId); });
+    attaching.set(instanceId, registration);
+    return registration;
   }
   async function connected(): Promise<ProcessRecord> {
     if (closed) throw new AgentServiceError('agent_process_client_closed', '执行后台连接已释放。', 503);
@@ -155,7 +188,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
       if (host) for (const candidate of readProcessInstances(options.dataRoot).filter(candidate=>!candidate.stopped&&live(candidate.identity.pid))) {
         matches(candidate.identity, options);
         if (attached.has(candidate.identity.instanceId)) continue;
-        try { await attachHost(candidate); attached.set(candidate.identity.instanceId,candidate); }
+        try { await attachHost(candidate); }
         catch (error) { if (candidate.identity.instanceId===record.identity.instanceId) throw error; }
       }
       return record;
@@ -207,12 +240,27 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
   } catch (error) { await host?.close(); throw error; }
   finally { initialStartup?.release(); }
   async function call(route: string, value?: unknown, signal?: AbortSignal): Promise<any> {
-    const current = await connected();
+    let current = await connected();
     // Refresh the callback before an operation can resolve a workspace. The
     // process being alive does not prove its in-memory peer registration survived.
     // Registration is idempotent; never retry the operation itself.
-    const localRead = route === '/operations' && LOCAL_CONVERSATION_READS.has((value as {operation?:string} | undefined)?.operation ?? '');
-    if (host && route === '/operations' && !localRead) await attachHost(current);
+    if (host && route === '/operations') {
+      const operation = value as { operation: string; args: [{ refresh?: boolean }?] };
+      const localRead = LOCAL_READS.has(operation.operation) &&
+        !(operation.operation.startsWith('models.') && operation.args[0]?.refresh === true);
+      if (!localRead) {
+        try { await attachHost(current); }
+        catch (error) {
+          if (operation.operation !== 'conversations.read' || signal?.aborted ||
+              !(error instanceof AgentServiceError) || error.code !== 'agent_host_unavailable') throw error;
+          // The detail read has not been dispatched. Retry only registration,
+          // using the currently selected instance if a handoff happened.
+          current = await connected();
+          await attachHost(current);
+        }
+      }
+    }
+    if (closed) throw new AgentServiceError('agent_process_client_closed', '执行后台连接已释放。', 503);
     try { return await request(current.origin, current.token, route, value, signal); }
     catch (error) {
       if (error instanceof AgentServiceError || signal?.aborted) throw error;
@@ -222,7 +270,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
       throw new AgentServiceError('agent_operation_result_unknown', '执行后台连接中断，操作结果尚待核对；不会自动重发。', 503);
     }
   }
-  const operations: any = { webhooks: {}, connections: {}, conversations: {}, models: { accounts: {}, catalog: {} } };
+  const operations: any = { pushback: {}, connections: {}, conversations: {}, models: { accounts: {}, catalog: {} } };
   Object.defineProperty(operations, 'generation', { get: () => record.identity.generation });
   for (const name of OPERATION_NAMES) {
     const parts = name.split('.'), method = parts.pop()!; let owner = operations;
@@ -257,6 +305,9 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
       let result;
       try { result = await call('/operations', { contract: AGENT_EXECUTION_CONTRACTS.operations, sourceId: options.sourceId, operation: name, args }); }
       catch (error) {
+        // During handoff an old binary may not implement the optional cache key.
+        if (name === 'conversations.activityEpoch' && error instanceof AgentServiceError &&
+            error.code === 'agent_process_operation_invalid') return undefined;
         // Legacy owners scope-check unknown conversation operations before
         // validating their name. Only this argument-free global read may use
         // the already-supported global pending projection in either case.
@@ -313,7 +364,11 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
     closed = true;
     for (const controller of subscriptions) controller.abort();
     for (const [requestId,origin] of generating) await request(origin.origin, origin.token, '/cancel-generation', { requestId }, AbortSignal.timeout(1000)).catch(() => {});
-    if (host) { await Promise.all([...attached.values()].map(origin=>request(origin.origin,origin.token,'/host/detach',{peerId:host.peer.peerId},AbortSignal.timeout(1000)).catch(()=>{}))); await host.close(); }
+    if (host) {
+      await Promise.allSettled(attaching.values());
+      await Promise.all([...attached.values()].map(origin=>request(origin.origin,origin.token,'/host/detach',{peerId:host.peer.peerId},AbortSignal.timeout(1000)).catch(()=>{})));
+      await host.close();
+    }
   } };
 }
 

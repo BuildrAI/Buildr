@@ -23,7 +23,7 @@ type OperationStatus = 'ready' | 'blocked' | 'cleaned';
 type PreflightState = 'create' | 'reused';
 type CommandResult = { status: number | null; stdout: string; stderr: string };
 type WorktreeListEntry = { path: string; branch: string | null; head: string | null; locked?: boolean };
-type WorktreeIdentity = { repository: string; branch: string; head: string; clean: boolean; registered: boolean };
+type WorktreeIdentity = { repository: string; branch: string; head: string; clean: boolean | null; registered: boolean };
 type GitSource = {
   type?: string;
   path?: string;
@@ -124,7 +124,7 @@ type WorktreeResult = {
   evidenceSource?: 'stored' | 'observed' | 'none';
 };
 type PrepareInput = { workspaceRoot: string; taskId: string; branch: string | null; startPoint?: string; includes?: string[] };
-type InspectInput = { workspaceRoot: string; taskId: string; observedCheckouts?: unknown };
+type InspectInput = { workspaceRoot: string; taskId: string; observedCheckouts?: unknown; includeClean?: boolean };
 type CleanupInput = {
   workspaceRoot: string;
   taskId: string;
@@ -240,17 +240,17 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
     return { controlMetadata: paths.filter(controlMetadataPath), source: paths.filter((entry) => !controlMetadataPath(entry)) };
   }
 
-  function worktreeIdentity(targetRoot: string): WorktreeIdentity | null {
+  function worktreeIdentity(targetRoot: string, includeClean = true): WorktreeIdentity | null {
     const root = git(targetRoot, ['rev-parse', '--show-toplevel']);
     const branch = git(targetRoot, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
     const head = git(targetRoot, ['rev-parse', 'HEAD']);
-    const status = git(targetRoot, ['status', '--porcelain']);
-    if ([root, branch, head, status].some((item) => item.status !== 0)) return null;
+    const status = includeClean ? git(targetRoot, ['status', '--porcelain']) : null;
+    if ([root, branch, head].some(item => item.status !== 0) || (status && status.status !== 0)) return null;
     const listed = git(targetRoot, ['worktree', 'list', '--porcelain']);
     const repository = path.resolve(root.stdout.trim());
     const branchName = branch.stdout.trim();
     const registered = listed.status === 0 && parseGitWorktreeList(listed.stdout).some((item) => sameFilesystemPath(item.path, repository) && item.branch === branchName);
-    return { repository, branch: branchName, head: head.stdout.trim(), clean: status.stdout.trim() === '', registered };
+    return { repository, branch: branchName, head: head.stdout.trim(), clean: status ? status.stdout.trim() === '' : null, registered };
   }
 
   function retainedDeliveryRefs(repository: string, targetHead: string, taskBranch: string): string[] | null {
@@ -919,14 +919,14 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
     return { file: evidencePathForRepositories(taskId, plan.repositories), repositories, evidenceSource: 'observed', status: 'ready' };
   }
 
-  function inspectGitWorktrees({ workspaceRoot, taskId, observedCheckouts }: InspectInput): WorktreeResult {
+  function inspectGitWorktrees({ workspaceRoot, taskId, observedCheckouts, includeClean = true }: InspectInput): WorktreeResult {
     try {
       const root = canonicalEvidenceWorkspaceRoot(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
       const stored = currentRepositories(root, taskId, observedCheckouts);
       const repositories = stored.repositories.map((record) => {
         try {
           assertCurrentCheckoutIdentity(record, git, parseGitWorktreeList);
-          const identity = fs.existsSync(record.checkoutPath) ? worktreeIdentity(record.checkoutPath) : null;
+          const identity = fs.existsSync(record.checkoutPath) ? worktreeIdentity(record.checkoutPath, includeClean) : null;
           const matches = Boolean(identity && sameFilesystemPath(identity.repository, record.checkoutPath) && identity.branch === record.branch && identity.registered);
           return { ...record, head: identity?.head ?? null, clean: identity?.clean ?? null, registered: identity?.registered ?? false, state: matches ? 'ready' : 'blocked', diagnostic: matches ? null : 'Current Git identity does not match evidence.' };
         } catch (error) {

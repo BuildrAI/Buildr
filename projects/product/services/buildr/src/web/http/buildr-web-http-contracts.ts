@@ -19,6 +19,7 @@ export const BUILDR_WEB_HTTP_SCHEMAS: Readonly<Record<string, any>> = Object.fre
     productIdentity: nullable({ type: 'object', additionalProperties: true }),
     webProfile: nullable({ type: 'object', additionalProperties: true }),
     previewIdentity: nullable({ type: 'object', additionalProperties: true }),
+    agentRuntime: nullable({ type: 'object', additionalProperties: true }),
     restartInProgress: { type: 'boolean' },
   }, ['schemaVersion', 'status', 'pid'])),
   stoppingResponse: schema('stopping/response', 'BuildrWebStoppingResponse', closed({ status: { const: 'stopping' } }, ['status'])),

@@ -41,6 +41,11 @@ type PreviewIdentity = {
   head: string;
   dirty?: boolean;
   worktree?: string;
+  workspaceMode?: 'shared' | 'snapshot';
+  environmentRoot?: string;
+  frontendSource?: string;
+  agent?: { digest: string; generation?: string; accepting?: boolean };
+  reuse?: { source: string; facets: string[] };
 };
 
 type WebProfile = 'released' | 'development';
@@ -492,13 +497,26 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
             </Dropdown>
             <div
               id="preview-identity"
-              className="preview-identity hidden"
-              aria-hidden="true"
+              className={preview ? 'preview-identity' : 'preview-identity hidden'}
+              aria-hidden={preview ? undefined : true}
               data-preview={preview
                 ? `开发预览：${preview.instance} · ${preview.branch} · ${preview.head.slice(0, 12)}${preview.dirty ? ' · 有未提交修改' : ''}`
                 : undefined}
+              data-workspace-mode={preview?.workspaceMode}
+              data-agent-digest={preview?.agent?.digest}
+              data-frontend-source={preview?.frontendSource}
               title={preview?.worktree || undefined}
-            />
+            >
+              {preview ? (
+                <>
+                  <span className="preview-identity-label">开发预览</span>
+                  <span>{preview.instance} · {preview.branch} · {preview.head.slice(0, 12)}{preview.dirty ? ' · 有未提交修改' : ''}</span>
+                  {preview.workspaceMode ? <span>数据：{preview.workspaceMode === 'shared' ? '开发版工作空间' : '工作树快照（旧实例）'}{preview.reuse ? ` · 沿用 ${preview.reuse.source}` : ''}</span> : null}
+                  {preview.agent ? <span>Agent：{preview.agent.digest.slice(0, 12)}{preview.agent.generation ? ` · generation ${preview.agent.generation}` : ''}{preview.agent.accepting ? ' · 已就绪' : ''}</span> : null}
+                  {preview.frontendSource ? <span title={preview.frontendSource}>前端：工作树构建</span> : null}
+                </>
+              ) : null}
+            </div>
             {!isGlobal ? (
               <Tooltip styles={{ root: { pointerEvents: 'none' } }} title={area === 'workbench' ? '提出新目标' : '交给 Agent'}>
               <Button

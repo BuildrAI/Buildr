@@ -60,7 +60,7 @@ function fixture(t: { after(action: () => void): void }) {
   return { base, root, record, dependencies, application, setWorktrees(value: typeof worktrees) { worktrees = value; } };
 }
 
-test('轻量计数与完整读取一致：同仓库路径去重、重命名和大未跟踪文件', t => {
+test('轻量计数与完整读取一致：同仓库路径去重、重命名和大未跟踪文件', async t => {
   const f = fixture(t);
   write(f.root, 'old.ts', 'old\n'); write(f.root, 'deleted.ts', 'delete\n');
   git(f.root, ['add', '.']); commit(f.root, 'base\n\nBuildr-Task: task-one');
@@ -72,7 +72,7 @@ test('轻量计数与完整读取一致：同仓库路径去重、重命名和�
   write(checkout, 'large.ts', 'same path, different content');
   write(checkout, 'only-task.ts', 'task only');
   const before = snapshot(f.base);
-  const counted = f.application.inspectTaskChangedFileCount(f.root, 'task-one');
+  const counted = await f.application.inspectTaskChangedFileCount(f.root, 'task-one');
   const full = f.application.inspectTaskChangedFiles(f.root, 'task-one');
   assert.equal(counted.fileCount, full.files.length); assert.equal(counted.fileCount, 4);
   assert.equal(counted.status, 'complete');
@@ -83,10 +83,10 @@ test('轻量计数与完整读取一致：同仓库路径去重、重命名和�
 test('轻量计数保留截断和局部来源失败，并拒绝HTTP额外参数', async t => {
   const f = fixture(t); write(f.root, 'a', 'one'); write(f.root, 'b', 'two');
   const limited = createTaskChangedFilesApplication(f.dependencies, TASK_COMMIT_LIMITS, { ...TASK_CHANGED_FILE_LIMITS, fileLimit: 1 });
-  const counted = limited.inspectTaskChangedFileCount(f.root, 'task-one');
+  const counted = await limited.inspectTaskChangedFileCount(f.root, 'task-one');
   assert.equal(counted.fileCount, 1); assert.equal(counted.coverage.truncated, true); assert.equal(counted.status, 'partial');
   f.record.scope.services.push({ project: 'app', service: 'missing' });
-  assert.equal(f.application.inspectTaskChangedFileCount(f.root, 'task-one').status, 'partial');
+  assert.equal((await f.application.inspectTaskChangedFileCount(f.root, 'task-one')).status, 'partial');
   const handler = createTaskChangedFilesHttpContribution();
   const response = await handler.handle({ request: { method: 'GET' }, suffix: '/tasks/task-one/changed-file-count', searchParams: new URLSearchParams(), submitTaskRead: async (operation, taskId) => {
     assert.equal(operation, 'changed-file-count'); return f.application.inspectTaskChangedFileCount(f.root, taskId);
@@ -95,7 +95,7 @@ test('轻量计数保留截断和局部来源失败，并拒绝HTTP额外参数'
   await assert.rejects(handler.handle({ request: { method: 'GET' }, suffix: '/tasks/task-one/changed-file-count', searchParams: new URLSearchParams({ extra: 'x' }), submitTaskRead: async () => { throw Error('must not run'); } }), /不接受查询参数/);
 });
 
-test('轻量计数没有提交历史或差异命令', { skip: process.platform === 'win32' }, t => {
+test('轻量计数没有提交历史或差异命令', { skip: process.platform === 'win32' }, async t => {
   const f = fixture(t); write(f.root, 'a.ts', 'before'); git(f.root, ['add', '.']); commit(f.root, 'base\n\nBuildr-Task: task-one'); write(f.root, 'a.ts', 'after');
   const gitRoot = git(f.root, ['--exec-path']), realGit = path.join(gitRoot, 'git');
   const bin = path.join(f.base, 'bin'), calls = path.join(f.base, 'calls.jsonl'); fs.mkdirSync(bin);
@@ -103,7 +103,7 @@ test('轻量计数没有提交历史或差异命令', { skip: process.platform =
   const originalPath = process.env.PATH;
   try {
     process.env.PATH = `${bin}${path.delimiter}${originalPath}`;
-    assert.equal(f.application.inspectTaskChangedFileCount(f.root, 'task-one').fileCount, 1);
+    assert.equal((await f.application.inspectTaskChangedFileCount(f.root, 'task-one')).fileCount, 1);
   } finally { process.env.PATH = originalPath; }
   const commands: string[][] = fs.readFileSync(calls, 'utf8').trim().split('\n').map(line => JSON.parse(line));
   assert.ok(commands.some(args => args.includes('status')));
@@ -424,7 +424,7 @@ test('组合任务展开直接子任务提交文件及固定差异，不混入�
   assert.throws(() => application.inspectTaskFileDiff(f.root, 'task-one', repositoryId, 'unrelated.ts', unrelated), /提交不属于当前任务/);
 });
 
-test('Git暂时失败的空差异返回503保留来源，确认文件已无改动才返回404', { skip: process.platform === 'win32' }, t => {
+test('Git暂时失败的空差异返回503保留来源，确认文件已无改动才返回404', { skip: process.platform === 'win32' }, async t => {
   const f = fixture(t); write(f.root, 'a.ts', 'before\n'); git(f.root, ['add', 'a.ts']);
   const hash = commit(f.root, 'baseline\n\nBuildr-Task: task-one'); write(f.root, 'a.ts', 'after\n');
   const observed = f.application.inspectTaskChangedFiles(f.root, 'task-one');

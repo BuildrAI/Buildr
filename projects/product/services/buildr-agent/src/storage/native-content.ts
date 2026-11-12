@@ -10,6 +10,7 @@ export const nativeContentHash = (bytes: string | Uint8Array): string => createH
 export const maxNativeSourceBytes = 32 * 1024 * 1024;
 const maxDecoded = 128 * 1024 * 1024, cacheBudget = 32 * 1024 * 1024;
 const roots: Record<string, RegExp> = {
+  'claude-code': /^claude-config\/projects\/.+\.jsonl$/,
   codex: /^codex-home\/sessions\/.+\.jsonl$/,
   qoder: /^qoder-config\/projects\/.+\.jsonl$/,
   'qoder-cn': /^qoder-cn-config\/projects\/.+\.jsonl$/,
@@ -33,7 +34,8 @@ export function nativeValueText(value: unknown, format?: NativeContentValue['for
 /** A stored address grants access only to a declared native content namespace. */
 export function nativeContentPath(root: string, provider: string, relative: string): string {
   if (!roots[provider] || typeof relative !== 'string' || relative.includes('\\') || path.isAbsolute(relative)) throw unavailable();
-  const prefix = `connections/${provider}/`;
+  const accountPrefix='model-access/accounts/native-qoder-cn/';
+  const prefix = provider==='qoder-cn'&&relative.startsWith(accountPrefix)?accountPrefix:`connections/${provider}/`;
   if (!relative.startsWith(prefix)) throw unavailable();
   const local = relative.slice(prefix.length).replace(/^model-bindings\/[a-f0-9]{64}\//, '');
   if (!roots[provider]!.test(local) || relative.split('/').some(part => !part || part === '.' || part === '..')) throw unavailable();

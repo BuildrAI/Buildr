@@ -80,16 +80,19 @@ export function createCodeWorktreeReadSession(registeredLocation: string, _repos
     if (identity.id !== worktreeId || !sameFilesystemPath(identity.commonDirectory, listing.commonDirectory) || !sameFilesystemPath(identity.root, worktree.location)) throw codeFailure('code_worktree_identity_changed', '工作树目录已不再属于该代码库，不能读取替代目录。', 409);
     return { ...worktree, location: identity.root };
   }
-  function verify(worktreeId: string, currentRegisteredLocation: string) {
-    const worktree = listing.worktrees.find(member => member.worktreeId === worktreeId)!;
+  function prepareVerification(currentRegisteredLocation: string, worktreeIds: string[]) {
     const currentDirectory=fs.statSync(currentRegisteredLocation,{bigint:true});
     if(currentDirectory.dev!==registeredDirectory.dev||currentDirectory.ino!==registeredDirectory.ino||currentDirectory.birthtimeNs!==registeredDirectory.birthtimeNs)throw codeFailure('code_worktree_identity_changed','读取期间代码库目录身份已变化，请刷新后继续。',409);
     // The selected checkout closes its own Git identity below. When it differs
     // from the registered source, that source's .git may have been redirected.
-    if(!sameFilesystemPath(currentRegisteredLocation,worktree.location)&&!sameFilesystemPath(gitCommonDirectory(currentRegisteredLocation),listing.commonDirectory))throw codeFailure('code_worktree_identity_changed','读取期间代码库 Git 来源已变化，请刷新后继续。',409);
+    if(worktreeIds.some(id => !listing.worktrees.find(member => member.worktreeId === id)?.isRegistered) && !sameFilesystemPath(gitCommonDirectory(currentRegisteredLocation),listing.commonDirectory))throw codeFailure('code_worktree_identity_changed','读取期间代码库 Git 来源已变化，请刷新后继续。',409);
     const fields = codeGit(currentRegisteredLocation, ['worktree', 'list', '--porcelain', '-z'], 8 * 1024 * 1024).toString('utf8').split('\0');
-    if (!fields.some(field => field.startsWith('worktree ') && sameFilesystemPath(field.slice(9), worktree.location))) throw codeFailure('code_worktree_not_registered', '所选工作树已移除或不属于这个登记代码库，请刷新清单。', 409);
-    resolve(worktreeId,true);
+    const locations = fields.filter(field => field.startsWith('worktree ')).map(field => field.slice(9));
+    return (worktreeId: string) => {
+      const worktree = listing.worktrees.find(member => member.worktreeId === worktreeId);
+      if (!worktree || !locations.some(location => sameFilesystemPath(location, worktree.location))) throw codeFailure('code_worktree_not_registered', '所选工作树已移除或不属于这个登记代码库，请刷新清单。', 409);
+      resolve(worktreeId, true);
+    };
   }
-  return { ...listing, resolve, verify };
+  return { ...listing, resolve, prepareVerification };
 }

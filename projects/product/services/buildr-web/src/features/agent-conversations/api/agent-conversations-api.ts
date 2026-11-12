@@ -1,6 +1,5 @@
 import { timeAttachmentStage } from './attachment-timing.ts';
-import { stopConversationWithRecovery } from '../conversation-stop';
-import type {WebhookSettingsView,WebhookSettingsInput,WebhookDeliveryResult} from '../types';
+import { stopConversationWithRecovery,stopAllWithRecovery } from '../conversation-stop';
 import type { AgentConversationHistoryPageHistoryPage, AgentParticipationParticipation, AgentParticipationSummaryParticipationSummary, AgentParticipationSummaryQueryParticipationSummaryQuery } from '../../../../build/generated/agent-service-http-dto';
 import { sharedConversationRead } from './shared-conversation-read.ts';
 import { conversationTransferDecoder } from './conversation-transfer.ts';
@@ -10,14 +9,30 @@ import type { ActivityCounts, ActivityFilter } from '../conversation-activity';
 import { createApiClient, LocalSessionAdapter } from '../../../api';
 import type { ApiClient, ApiError, SessionAdapter } from '../../../api';
 import { parseEventFrame } from '../conversation-state';
+import type { AgentModelCustomConfigureModelCustomConfigure, AgentModelCustomDiscoveryModelCustomDiscovery, AgentModelCustomDiscoveryResultModelCustomDiscoveryResult } from '../../../../build/generated/agent-service-http-dto';
 import type { ModelAccount, ModelProviderView, CatalogModel, AttachmentView, ConnectionView, ConversationEvent, ConversationSummary, ConversationEntry, ConversationView, PendingConversation, PreparationView, ProviderId, SendInput, SendPreview, SupplementInput, SupplementResult } from '../types';
 
+export type CustomProviderConfigInput=Omit<AgentModelCustomConfigureModelCustomConfigure,'expectedRevision'>;
+export type CustomDiscoveryInput=AgentModelCustomDiscoveryModelCustomDiscovery;
+export type CustomDiscoveryResult=AgentModelCustomDiscoveryResultModelCustomDiscoveryResult;
 export type DraftImages = AgentDraftImagesDraftImages;
 export type StartDraftInput = AgentDraftStartStartDraft;
 export type ConversationPage={conversations:ConversationView[];nextCursor?:string;total?:number;activityCounts?:ActivityCounts;stats?:{modelExecutions?:Array<{accountId:string;accountLabel:string;model:string;count:number}>;executions?:Array<{provider:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>}};
 const appPath = '/api/v1/app/agent-service';
 const path = (workspaceId: string, conversationId?: string) => `${workspaceId === '@default' ? appPath + '/conversations' : '/api/v1/workspaces/' + encodeURIComponent(workspaceId) + '/agent-conversations'}${conversationId ? '/' + encodeURIComponent(conversationId) : ''}`;
 const post = (body: unknown): RequestInit => ({method: 'POST', body: JSON.stringify(body)});
+function waitForConversationRead(delay: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    signal.throwIfAborted();
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', abort);
+      resolve();
+    }, delay);
+    const abort = () => { clearTimeout(timer); reject(signal.reason); };
+    signal.addEventListener('abort', abort, { once: true });
+  });
+}
+
 export function createAgentConversationsClient(client: ApiClient, session: SessionAdapter, fetcher: typeof fetch = fetch) {
   let activityReadGeneration=0;
   let activitySnapshot:(ConversationPage & {revision:string;pending:PendingConversation[]})|undefined;
@@ -37,14 +52,11 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     try{return await request<T>(url,init);}finally{catalogRead=undefined;}
   };
   return {
-    webhookSettings(signal?:AbortSignal) {return request<WebhookSettingsView>(appPath+'/webhook-settings',{signal});},
-    saveWebhookSettings(input:WebhookSettingsInput) {return request<WebhookSettingsView>(appPath+'/webhook-settings',post(input));},
-    revealWebhookSecret(expectedRevision:string) {return request<{secret:string}>(appPath+'/webhook-settings/reveal',post({expectedRevision}));},
-    testWebhook(expectedRevision:string) {return request<WebhookDeliveryResult>(appPath+'/webhook-settings/test',post({expectedRevision}));},
     participation(workspaceId:string,conversationId:string,runId:string,signal?:AbortSignal) { return read<AgentParticipationParticipation>(path(workspaceId,conversationId)+'/participation?runId='+encodeURIComponent(runId),signal); },
     participationSummary(workspaceId:string,input:AgentParticipationSummaryQueryParticipationSummaryQuery={},signal?:AbortSignal) { const query=new URLSearchParams(Object.entries(input).filter(([,v])=>v!==undefined&&v!=='').map(([k,v])=>[k,String(v)])); return read<AgentParticipationSummaryParticipationSummary>(path(workspaceId)+'/participation-summary?'+query,signal); },
     defaultWorkspace(signal?: AbortSignal) { return request<{rootPath: string}>(appPath+'/default-workspace', {signal}); },
-    modelAccounts(signal?:AbortSignal) {return request<{accounts:ModelAccount[];providers:ModelProviderView[]}>(appPath+'/model-accounts',{signal});},
+    modelAccount(id:string) {return request<ModelAccount>(appPath+'/model-accounts/'+encodeURIComponent(id));},
+    modelAccounts(signal?:AbortSignal,includeDisabled=false) {return read<{accounts:ModelAccount[];providers:ModelProviderView[]}>(appPath+'/model-accounts'+(includeDisabled?'?includeDisabled=true':''),signal);},
     modelCatalog(signal?:AbortSignal) {
       // Independently cancellable callers must not cancel a shared read.
       if(signal)return request<{models:CatalogModel[];diagnostic?:string;hasSnapshot?:boolean}>(appPath+'/model-catalog',{signal});
@@ -52,6 +64,10 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       return catalogRead;
     },
     addModelAccount(provider:string) {return changeModels<ModelAccount>(appPath+'/model-accounts',post({provider}));},
+    addCustomModelAccount(input:CustomProviderConfigInput) {return changeModels<ModelAccount>(appPath+'/model-accounts',post({provider:'custom',custom:input}));},
+    configureCustomModelAccount(account:ModelAccount,input:CustomProviderConfigInput) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+encodeURIComponent(account.id)+'/custom',post({expectedRevision:account.revision,...input}));},
+    discoverCustomModels(input:CustomDiscoveryInput,signal?:AbortSignal) {return request<CustomDiscoveryResult>(appPath+'/model-custom/discovery',{...post(input),signal});},
+    modelSourceEnabled(account:ModelAccount,sourceEnabled:boolean) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/preferences',post({expectedRevision:account.revision,sourceEnabled}));},
     modelPreferences(account:ModelAccount,models:Array<{id:string;enabled?:boolean;contextWindow?:number|null}>) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/preferences',post({expectedRevision:account.revision,models}));},
     configureModelAccount(account:ModelAccount,apiKey:string) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/api-key',post({expectedRevision:account.revision,apiKey}));},
     modelAccountAction(account:ModelAccount,action:'check'|'disconnect'|'login-attempts') {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/'+action,post({expectedRevision:account.revision}));},
@@ -108,7 +124,19 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       return blob;
     },
     create(input: {workspaceId: string; cwd?: string; taskId?: string; taskLinks?:{workspaceId:string;taskId:string}[]}) { return request<ConversationView>(path(input.workspaceId), post({cwd: input.cwd, taskId: input.taskId,taskLinks:input.taskLinks})); },
-    read(workspaceId: string, id: string, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id), {signal}); },
+    async read(workspaceId: string, id: string, signal?: AbortSignal) {
+      const deadline = AbortSignal.timeout(15_000);
+      const observation = signal ? AbortSignal.any([signal, deadline]) : deadline;
+      for (const delay of [500, 1500, 3000, 0]) {
+        try {
+          return await read<ConversationView>(path(workspaceId, id), observation);
+        } catch (failure) {
+          if (observation.aborted || !delay || (failure as ApiError)?.status !== 503) throw failure;
+          await waitForConversationRead(delay, observation);
+        }
+      }
+      throw new Error('无法读取对话。');
+    },
     historySource(workspaceId:string,id:string,input:{sourceId:string;roundId?:string;cursor?:number;limit?:number},signal?:AbortSignal) {
       const query=new URLSearchParams(Object.entries(input).filter(([,v])=>v!==undefined).map(([k,v])=>[k,String(v)]));
       return read<AgentConversationHistoryPageHistoryPage>(path(workspaceId,id)+'/history-source?'+query,signal);
@@ -131,7 +159,9 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       return request<SupplementResult>(path(conversation.workspaceId,conversation.id)+'/supplement',post({...input,runId:run.id,participantId:run.participantId,generation:run.generation}));
     },
     stop(conversation: ConversationView, toolId?: string) { return stopConversationWithRecovery(conversation,current=>{const run=current.run!;return request<ConversationView>(path(current.workspaceId,current.id)+'/stop',post({expectedRevision:current.revision,runId:run.id,participantId:run.participantId,generation:run.generation,toolId}));},()=>request<ConversationView>(path(conversation.workspaceId,conversation.id))); },
+    stopAll(conversation:ConversationView,clientRequestId=crypto.randomUUID()) { return stopAllWithRecovery(conversation,clientRequestId,current=>request<ConversationView>(path(current.workspaceId,current.id)+'/stop-all',post({expectedRevision:current.revision,clientRequestId})),()=>request<ConversationView>(path(conversation.workspaceId,conversation.id))); },
     observeRun(conversation:ConversationView) { const run=conversation.run;if(!run)return Promise.reject(new Error('没有可以核对的执行。'));return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/observe-run',post({expectedRevision:conversation.revision,runId:run.id,participantId:run.participantId,generation:run.generation})); },
+    settleRetainedRun(conversation:ConversationView,run:NonNullable<ConversationView['run']>) { return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/settle-retained-run',post({expectedRevision:conversation.revision,runId:run.id,participantId:run.participantId,generation:run.generation})); },
     observe(conversation: ConversationView) { return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/observe', post({})); },
     reply(conversation: ConversationView, requestId: string, input: {answer: unknown}) { const pending = conversation.requests.find(item => item.id === requestId); if (!pending) return Promise.reject(new Error('原请求已经变化，请重新读取。')); return request<ConversationView>(path(conversation.workspaceId, conversation.id) + `/requests/${encodeURIComponent(requestId)}/reply`, post({...input, expectedRevision: conversation.revision, runId: pending.runId, participantId: pending.participantId, generation: pending.generation})); },
     async upload(conversation: ConversationView, file: File, video?: { duration: number; frames: Array<{ id: string; time: number }> }) {

@@ -30,6 +30,14 @@ export class ToolArgumentGuard {
       if(['response.output_item.added','response.output_item.done'].includes(event.type)&&event.item?.type==='function_call')this.argument(String(event.item.id??event.output_index??'default'),event.item.arguments,true);
     }else if(protocol==='anthropic-messages'){
       if(event.type==='content_block_delta'&&event.delta?.type==='input_json_delta')this.argument(String(event.index??0),event.delta.partial_json);
+    }else if(protocol==='gemini'){
+      for(const candidate of Array.isArray(event.candidates)?event.candidates:[]){
+        const parts=object(candidate).content?.parts;
+        for(const [index,part] of (Array.isArray(parts)?parts:[]).entries()){
+          const call=object(part).functionCall;
+          if(call!==undefined)this.argument(String(index),JSON.stringify(object(call).args??{}),true);
+        }
+      }
     }else{
       for(const choice of Array.isArray(event.choices)?event.choices:[]){
         const delta=object(choice.delta);

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "pages": [
+    {"id":"accounts","title":"供应商管理","notes":[
+      {"id":"actions","title":"接入与筛选","text":"左栏顶部可以添加自定义供应商，或显示已停用的配置。","position":"provider-actions"},
+      {"id":"quota","title":"登录与额度","text":"每个供应商接入只保留一个账号或配置。额度显示该连接实际返回的余额或额度窗口，平台未返回时显示暂不可读。","position":"quota-card"}
+    ],"states":[
+      {"id":"add","title":"添加自定义供应商","notes":[{"id":"presets","title":"选择接入方式","text":"ChatGPT API 和 DeepSeek API 使用官方预设，只需填写密钥。抽屉默认展示自定义供应商，可配置协议、Base URL 和模型列表路径。"}]},
+      {"id":"harness","title":"DeepSeek Harness 登录","notes":[{"id":"login","title":"使用账号登录","text":"DeepSeek Harness 在自己的详情里登录。DeepSeek API 从自定义供应商接入。","position":"quota-card"}]},
+      {"id":"expired","title":"Devin 登录过期","notes":[]},
+      {"id":"disabled","title":"已停用的供应商","notes":[{"id":"restore","title":"恢复原配置","text":"勾选「显示已停用」，在卡片的更多菜单重新启用，继续使用已有配置。","position":"provider-actions"}]}
+    ]},
+    {"id":"models","title":"模型管理","notes":[
+      {"id":"visibility","title":"模型统一在这里管理","text":"选定供应商后可以搜索、切换启用状态、调整上下文。对自定义供应商还可读取模型候选、选择加入、手动添加或移除模型。新模型默认停用。","position":"model-visibility"}
+    ],"states":[]},
+    {"id":"agents","title":"智能体","notes":[],"states":[]},
+    {"id":"programmatic","title":"程序接入","notes":[],"states":[]},
+    {"id":"conversation","title":"对话","notes":[],"states":[]}
+  ]
+}

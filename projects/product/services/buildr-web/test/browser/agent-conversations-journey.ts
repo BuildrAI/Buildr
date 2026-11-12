@@ -7,6 +7,7 @@ import {HISTORY_SCENARIOS,runHistoryScenarios} from './agent-conversations-histo
 import {runHandoffScenarios} from './agent-conversations-handoff-scenarios.ts';
 import {runTasksScenarios} from './agent-conversations-tasks-scenarios.ts';
 import {runModelsScenarios} from './agent-conversations-models-scenarios.ts';
+import {runStopAllScenarios} from './agent-conversations-stop-scenarios.ts';
 import {runRecoveryScenarios} from './agent-conversations-recovery-scenarios.ts';
 import {runSelectionScenarios} from './agent-conversations-selection-scenarios.ts';
 import {runVideoScenarios} from './agent-conversations-video-scenarios.ts';
@@ -19,6 +20,7 @@ const scenarios:Record<AgentConversationGroup,(fixture:Awaited<ReturnType<typeof
   tasks:runTasksScenarios,
   models:runModelsScenarios,
   recovery:runRecoveryScenarios,
+  'stop-all':runStopAllScenarios,
   selection:runSelectionScenarios,
   video:runVideoScenarios,
   children:runChildConversationScenarios,

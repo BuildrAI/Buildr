@@ -90,14 +90,14 @@ export function conversationFailureReason(diagnostic?: string, fault?: Pick<Conv
   const text = diagnostic ?? '';
   if (/CALL_COUNT_LIMIT|isQueued|调用次数|调用频率|rate.?limit|too many requests|(?:^|\D)429(?:\D|$)/i.test(text)) {
     const retry = failureRetrySeconds(text);
-    return { summary: '模型调用达到当前上限，请求被服务端排队。', action: retry ? `约 ${retry} 秒后重试，或切换到其他模型/账号。` : '请稍后重试，或切换到其他模型/账号。' };
+    return { summary: '模型调用达到当前上限，请求被服务端排队。', action: retry ? `约 ${retry} 秒后重试，或切换到其他模型/供应商。` : '请稍后重试，或切换到其他模型/供应商。' };
   }
-  if (/quota|额度|余额不足|credit/i.test(text)) return { summary: '模型账号额度不足。', action: '请切换有额度的模型/账号，或稍后重试。' };
+  if (/quota|额度|余额不足|credit/i.test(text)) return { summary: '模型供应商额度不足。', action: '请切换有额度的模型/供应商，或稍后重试。' };
   if (/login[_ -]?expired|not[_ -]?authenticated|未登录|登录已失效|登录已过期|认证失败|API Key 无效|(?:^|\D)(?:401|403)(?:\D|$)/i.test(text)) {
-    return { summary: '模型账号登录失效或没有访问权限。', action: '请检查账号状态并重新登录。' };
+    return { summary: '模型供应商登录失效或没有访问权限。', action: '请检查供应商状态并重新认证。' };
   }
   if (/model[_ -]?(?:unavailable|disabled)|模型.*(?:不可用|已停用)|所选模型/i.test(text)) {
-    return { summary: '所选模型当前不可用。', action: '请重新选择可用模型，或检查账号状态。' };
+    return { summary: '所选模型当前不可用。', action: '请重新选择可用模型，或检查供应商状态。' };
   }
   if (/ETIMEDOUT|timeout|timed out|超时/i.test(text)) return { summary: '模型服务响应超时。', action: '请稍后重试，或切换到其他模型。' };
   if (/ECONN(?:REFUSED|RESET|ABORTED)|ENOTFOUND|fetch failed|network|网络|socket hang up|连接.*(?:中断|失败)/i.test(text)) {
@@ -117,7 +117,7 @@ export function conversationFailureReason(diagnostic?: string, fault?: Pick<Conv
 
 export function conversationModelWarning(ready: boolean, accountId: string | undefined, model: {available: boolean; enabled?: boolean} | undefined): string | undefined {
   if (!ready || !accountId || model?.available) return;
-  return model?.enabled === false ? '所选模型已停用，请重新选择。' : '所选模型账号当前不可用，请检查账号登录状态。';
+  return model?.enabled === false ? '所选模型已停用，请重新选择。' : '所选模型供应商当前不可用，请检查供应商状态。';
 }
 
 /** Model availability is already rendered from current state, including recovery. */

@@ -275,6 +275,10 @@ test('real HTTP reads through the bounded worker, saves escaped large UTF-8, rep
   fs.writeFileSync(path.join(sourceDir, 'references', 'guide.md'), '# A projected reference without a generated header\n');
   applySkillRenderPlan(buildSkillRenderPlan(root, root, [{ id: 'editor-fixture', sourceDir, sourceFile: path.join(sourceDir, 'SKILL.md'), origin: 'workspace', runtimePath: 'editor-fixture', declaredScope: '.' }], 'codex'), root);
   assert.equal(code.editorFile(root, { kind: 'code', repositoryId, checkoutId: gitCheckoutReadId(root), path: '.agents/skills/editor-fixture/references/guide.md' }).readonlyReasonCode, 'file_generated');
+  const projected = await json(await fetch(endpoint + '/code/editor-file?' + new URLSearchParams({
+    kind: 'code', repositoryId, checkoutId: gitCheckoutReadId(root), filePath: '.agents/skills/editor-fixture/references/guide.md',
+  })));
+  assert.equal(projected.readonlyReasonCode, 'file_generated');
   fs.mkdirSync(path.join(root, '.agents', 'skills', 'manual'), { recursive: true }); fs.writeFileSync(path.join(root, '.agents', 'skills', 'manual', 'notes.md'), 'user owned\n');
   assert.equal(code.editorFile(root, { kind: 'code', repositoryId, checkoutId: gitCheckoutReadId(root), path: '.agents/skills/manual/notes.md' }).editable, true);
   const nestedRelative = 'knowledge/docs/architecture/verification-framework.MD', nestedFile = path.join(root, 'projects', 'editor', nestedRelative);

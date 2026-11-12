@@ -3,7 +3,7 @@ import { regenerableToolCaches, toolCacheReclaimable } from '../../storage/tool-
 import { dshContent } from './content.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import { withExecutionFault } from '../../domain/execution-fault.ts';
-import { readFile, writeFile, rm } from 'node:fs/promises';
+import { readFile, writeFile, rm, realpath } from 'node:fs/promises';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import {pausePreviousDshGoal} from './goals.ts';
 import { readDshPersistedExecution } from './durable-history.ts';
@@ -16,21 +16,21 @@ import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorIte
 import { releasedNativeControl, nativeBinding, visibleText, bounded, findExecutable, inspectVersion, accountEnvironment, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
 import { launchDshHost, dshValue, type DshClient } from './client.ts';
 import { dshBalanceQuota } from './balance.ts';
-import { DshExecutionLineage, dshItem, dshHistoryItems, dshExecutionObservation, dshToolOutcomeUnknown } from './protocol.ts';
+import { DshExecutionLineage, dshItem, dshHistoryItems, dshExecutionObservation, dshFinishedTurnStatus, dshToolOutcomeUnknown, withoutDshContinuationMarkers } from './protocol.ts';
 import { modelOptions } from '../model-options.ts';
 import { applyDshPermissions, dshPermissionCatalog } from './permissions.ts';
 import { AgentServiceError } from '../../domain/agent-state.ts';
 import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInputReceipt } from '../../contracts.ts';
 import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
 import type { ExecutorForkInput, ExecutorTitleInput } from '../../contracts.ts';
-import { generateDshTitle } from './title.ts';
+import { generateModelTitle } from '../model-title.ts';
 const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 // @deepseek-ai/dsh-llm-pi-ai Config.reasoningEfforts uses these THINKING_LEVELS keys (0.2.1-rc.3).
 const dshReasoningEfforts = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 export function dshGatewayModels(gateway: ExecutorGateway) {
   return gateway.models.map(model => {
     const efforts = model.reasoningEfforts?.filter(effort => dshReasoningEfforts.has(effort.id));
-    return { id: model.id, name: model.label, ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}), ...(model.maxOutputTokens ? { maxTokens: model.maxOutputTokens } : {}), input: model.vision ? ['text', 'image'] : ['text'], reasoningEfforts: efforts?.length ? Object.fromEntries(efforts.map(effort => [effort.id, effort.id])) : false };
+    return { id: model.id, name: model.label, ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}), input: model.vision ? ['text', 'image'] : ['text'], reasoningEfforts: efforts?.length ? Object.fromEntries(efforts.map(effort => [effort.id, effort.id])) : false };
   });
 }
 export function dshGatewayEffort(gateway: ExecutorGateway, modelId?: string, effort?: string): string | undefined {
@@ -72,6 +72,7 @@ export class DshRuntime implements AgentRuntime {
   private gateway?: ExecutorGateway;
   private modelBridge?: {key:string;addressFile:string};
   private forkBridge?: {key:string;addressFile:string;patch:string};
+  private homeConfig?: string;
   private readonly diagnostics?:ExecutorOpenOptions['diagnostics'];
   private constructor(bindingIdentity: string, host: Awaited<ReturnType<typeof launchDshHost>>, client: DshClient,diagnostics?:ExecutorOpenOptions['diagnostics']) {
     this.bindingIdentity=bindingIdentity;this.host=host;this.client=client;this.diagnostics=diagnostics;
@@ -90,17 +91,19 @@ export class DshRuntime implements AgentRuntime {
   static async open(options: ExecutorOpenOptions, ownerPatch?: string): Promise<DshRuntime> {
     options.signal?.throwIfAborted();
     const gateway = checkedGateway(options.gateway);
-    const { home, temporary } = nativeHome(options.configRoot); const config = join(options.configRoot, 'dsh-home'); const agents = join(options.configRoot, 'dsh-agents-home');
-    const modelBridge = !gateway&&!ownerPatch?{key:randomUUID(),addressFile:join(config,'model-bridge-'+randomUUID()+'.json')}:undefined;
-    const forkBridge = {key:randomUUID(),addressFile:join(config,'fork-bridge-'+randomUUID()+'.json')};
+    const { home, temporary } = nativeHome(options.configRoot); const config = join(options.nativeAccountConfigRoot ?? options.configRoot, 'dsh-home'); const agents = join(options.nativeAccountConfigRoot ?? options.configRoot, 'dsh-agents-home');
+    // Buildr lease-local runtime files stay out of the shared native home.
+    const lease = options.configRoot;
+    const modelBridge = !gateway&&!ownerPatch?{key:randomUUID(),addressFile:join(lease,'model-bridge-'+randomUUID()+'.json')}:undefined;
+    const forkBridge = {key:randomUUID(),addressFile:join(lease,'fork-bridge-'+randomUUID()+'.json')};
     const env = accountEnvironment(options.environment, home, temporary, { DSH_HOME: config, DSH_AGENTS_HOME: agents, DSH_TOOLS_MODE: 'native', BUILDR_DSH_FORK_KEY:forkBridge.key, ...(modelBridge?{BUILDR_DSH_OWNER_KEY:modelBridge.key}:{}), ...(ownerPatch ? { BUILDR_DSH_OWNER_KEY: options.environment.BUILDR_DSH_OWNER_KEY } : {}), ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
     await privateDirectories(options.configRoot, config, agents, ...(env.HOME === home ? [home] : []), ...(env.TMPDIR === temporary ? [temporary] : []));
     const executable = await findExecutable(options.executable, ['dsh', 'dsh.exe'], env); const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('dsh', version)) throw new Error(`dsh_version_unsupported: requires ${nativeProgramPolicy('dsh').compatibility}`);
     const binding = await consumerBinding('dsh', executable, version, config, options);
-    let patch = gateway ? await writeGatewayPatch(config, gateway) : ownerPatch;
-    if(modelBridge){patch=join(config,'buildr-native-model-owner.json');await writeFile(patch,JSON.stringify([{insert:[{id:'buildr-deepseek-model-owner',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./model-source-plugin.ts':'./model-source-plugin.js',import.meta.url)),config:{addressFile:modelBridge.addressFile}}]}]),{mode:0o600});}
-    const forkPatch = join(config, 'buildr-fork-patch-'+randomUUID()+'.json');
+    let patch = gateway ? await writeGatewayPatch(lease, gateway) : ownerPatch;
+    if(modelBridge){patch=join(lease,'buildr-native-model-owner.json');await writeFile(patch,JSON.stringify([{insert:[{id:'buildr-deepseek-model-owner',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./model-source-plugin.ts':'./model-source-plugin.js',import.meta.url)),config:{addressFile:modelBridge.addressFile}}]}]),{mode:0o600});}
+    const forkPatch = join(lease, 'buildr-fork-patch-'+randomUUID()+'.json');
     const patches = patch ? JSON.parse(await readFile(patch, 'utf8')) : [];
     patches.push(...dshCommandDeadlinePatch());
     patches.push({insert:[{id:'buildr-command-deadline',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./command-deadline-plugin.ts':'./command-deadline-plugin.js',import.meta.url))}]});
@@ -121,6 +124,7 @@ export class DshRuntime implements AgentRuntime {
     runtime.bindingData = binding.data; runtime.metadata.version = version;
     runtime.gateway = gateway; runtime.modelBridge=modelBridge;
     runtime.forkBridge={...forkBridge,patch:forkPatch};
+    runtime.homeConfig=config;
     try {
       host.client.ctx.typert.contexts.registerClient('agent', {
         identity: (candidate: any) => candidate?.[runtime.scopeKey],
@@ -183,7 +187,7 @@ export class DshRuntime implements AgentRuntime {
       // its account catalog id, which is not a gateway route, so auxiliary
       // requests always use the lease model rather than resolving that id.
       const model=gatewayModel(this.gateway);
-      return generateDshTitle(input,model.id,'chat-completions',init=>fetch(this.gateway!.baseUrl.replace(/\/$/,'')+'/chat/completions',{
+      return generateModelTitle(input,model.id,'chat-completions',init=>fetch(this.gateway!.baseUrl.replace(/\/$/,'')+'/chat/completions',{
         ...init,headers:{...Object.fromEntries(new Headers(init.headers)),authorization:'Bearer '+this.gateway!.apiKey},redirect:'error',
       }),Math.min(128,model.maxOutputTokens??128));
     }
@@ -191,7 +195,7 @@ export class DshRuntime implements AgentRuntime {
     // The native account bridge is owned by DeepSeek. Never route another
     // configured native provider's selection through that account by guessing.
     if(!selected?.startsWith('deepseek::')||!this.modelBridge)throw new Error('agent_title_unavailable');
-    return generateDshTitle(input,selected.slice('deepseek::'.length),'anthropic-messages',init=>this.requestModel('/anthropic/v1/messages',init));
+    return generateModelTitle(input,selected.slice('deepseek::'.length),'anthropic-messages',init=>this.requestModel('/anthropic/v1/messages',init));
   }
   async beginLogin(update: (value: LoginObservation) => void): Promise<void> {
     if (this.gateway) { update({ state: 'failed', diagnostic: 'agent_gateway_login_managed_by_model_account' }); return; }
@@ -257,7 +261,10 @@ export class DshRuntime implements AgentRuntime {
     if (!forked.sessionId || forked.sessionId === input.contextRef.id) throw new Error('agent_fork_identity_invalid');
     const ref = this.context(forked.sessionId, input.cwd);
     input.onCreated(ref);
-    if (source !== this) {
+    // A shared per-connection home already holds the forked session; only a
+    // foreign (legacy lease) home needs the native export/import transfer.
+    const sameHome = !!source.homeConfig && !!this.homeConfig && await realpath(source.homeConfig) === await realpath(this.homeConfig);
+    if (source !== this && !sameHome) {
       // Use native persistence inside the two private Hosts, not a guessed file
       // layout or a model lease belonging to the original conversation.
       const snapshot = await source.transferFork('export', forked.sessionId);
@@ -642,7 +649,10 @@ export class DshRuntime implements AgentRuntime {
     turn.cancellation=work;return work;
   }
   private activeObservation(turn: ActiveTurn): ExecutorObservation {
-    const tools = turn.lineage.mergeTools([...turn.tools.values()], turn.inputIds ?? new Set([turn.id])).map(tool => ({ ...tool, canStop: Boolean(this.forkBridge && turn.lineage.toolJobs(tool.id,turn.inputIds ?? new Set([turn.id])).length) })); return { contextCompaction: turn.terminal || turn.observationLost ? null : turn.contextCompaction ?? null, status: turn.observationLost || turn.supplementUnknown ? 'unknown' : turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : tools.some(tool=>tool.status==='unknown')?'unknown': turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: this.executionReference(turn.id,turn.input.contextRef.id), tools: turn.observationLost ? tools.map(tool => ({ ...tool, status: tool.status === 'running' ? 'unknown' as const : tool.status })) : tools, requests: [...turn.pending.values()].map(value => value.request), ...(turn.stopRequested&&turn.diagnostic?{diagnostic:turn.diagnostic}:turn.observationLost ? { diagnostic: '无法确认 DSH 原执行状态，自动恢复未成功。' + (turn.observationDiagnostic ? ' 原因：' + turn.observationDiagnostic : '') } : turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
+    const merged = turn.lineage.mergeTools([...turn.tools.values()], turn.inputIds ?? new Set([turn.id])).map(tool => ({ ...tool, canStop: Boolean(this.forkBridge && turn.lineage.toolJobs(tool.id,turn.inputIds ?? new Set([turn.id])).length) }));
+    // 已结束的轮次不带合成接续标记，否则正常完成的一轮会一直显示为未知。
+    const tools = turn.terminal ? withoutDshContinuationMarkers(merged) : merged;
+    return { contextCompaction: turn.terminal || turn.observationLost ? null : turn.contextCompaction ?? null, status: turn.observationLost || turn.supplementUnknown ? 'unknown' : turn.terminal ? dshFinishedTurnStatus(tools, turn.terminal === 'stopped') : turn.pending.size ? 'waiting' : 'running', executionRef: this.executionReference(turn.id,turn.input.contextRef.id), tools: turn.observationLost ? tools.map(tool => ({ ...tool, status: tool.status === 'running' ? 'unknown' as const : tool.status })) : tools, requests: [...turn.pending.values()].map(value => value.request), ...(turn.stopRequested&&turn.diagnostic?{diagnostic:turn.diagnostic}:turn.observationLost ? { diagnostic: '无法确认 DSH 原执行状态，自动恢复未成功。' + (turn.observationDiagnostic ? ' 原因：' + turn.observationDiagnostic : '') } : turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
   }
   async observe({ contextRef, executionRef,knownItems=[] }: { contextRef: ContextRef; executionRef?: ExecutionRef;knownItems?:readonly ExecutorItem[] }): Promise<ExecutorObservation> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id);

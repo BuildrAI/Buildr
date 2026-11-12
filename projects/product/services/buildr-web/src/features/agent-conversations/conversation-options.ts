@@ -6,12 +6,18 @@ import type {ConnectionView, ConversationRun, SendDraft, CatalogModel} from './t
 export function qoderSourceNotice(provider:string|undefined):string|undefined{
   if(provider!=='qoder'&&provider!=='qoder-cn')return;
   const label=provider==='qoder-cn'?'Qoder CN Agent':'Qoder Agent';
-  return `${label} 暂不支持其他供应商的模型，相关来源已标记但不可选；请改用 ${label} 原生模型或切换智能体。`;
+  return `${label} 暂不支持其他供应商的模型，相关供应商已标记但不可选；请改用 ${label} 原生模型或切换智能体。`;
 }
 export function qoderSourceUnsupported(provider:string|undefined,sourceProvider:string):boolean{
   if(provider!=='qoder'&&provider!=='qoder-cn')return false;
   const native=provider==='qoder-cn'?['qoder-cn','native-qoder-cn']:['qoder','native-qoder'];
   return !native.includes(sourceProvider);
+}
+/** Disabled choices keep their actual model name; compatibility is not a name suffix. */
+export function catalogConversationOption(provider:string|undefined,item:CatalogModel) {
+  return {value:'shared:'+item.accountId+'::'+item.modelId,
+    label:item.creditFactor!==undefined?`${item.label} · ${item.creditFactor.toFixed(2)}x`:item.label,
+    disabled:!item.available||qoderSourceUnsupported(provider,item.provider)};
 }
 export type ConversationChoice = Pick<SendDraft,'connectionId'|'model'|'reasoningEffort'|'serviceTier'|'modelAccountId'|'modelAccountRevision'|'modelAccountIdentity'>;
 export type PermissionMode=NonNullable<SendDraft['permissionMode']>;
@@ -63,6 +69,7 @@ export function choiceReasoningOptions(choice:ConversationChoice,connection:Conn
 
 /** 只修正下一次选择和发送，不修改历史运行记录。 */
 export function validConversationChoice(choice:ConversationChoice,connection:ConnectionView|undefined,catalog:CatalogModel[]):ConversationChoice {
+  if(choice.modelAccountId&&!catalog.some(item=>item.accountId===choice.modelAccountId&&item.modelId===choice.model&&item.available&&item.enabled!==false&&(!choice.modelAccountIdentity||item.accountIdentity===choice.modelAccountIdentity)))return {connectionId:choice.connectionId};
   const options=choiceReasoningOptions(choice,connection,catalog);
   return choice.reasoningEffort&&options&&!options.some(item=>item.id===choice.reasoningEffort)?{...choice,reasoningEffort:undefined}:choice;
 }
@@ -78,12 +85,12 @@ export function conversationReasoningSelection(connection:ConnectionView|undefin
 }
 
 /**
- * 执行目标是否变化只看智能体、来源账号、模型、档位与权限。
- * 思考深度是单轮参数：原原生会话可以用新强度接收下一条要求，不构成换人交接。
+ * 执行目标是否变化只看智能体、来源账号、模型与档位。
+ * 思考深度与权限都是单轮参数：原原生会话可以用新强度或新授权接收下一条要求，不构成换人交接。
  */
-export function executionSelectionChanged(run:Pick<ConversationRun,'model'|'modelAccountId'|'serviceTier'|'permissionMode'>|undefined,participantConnectionId:string|undefined,choice:Pick<ConversationChoice,'connectionId'|'model'|'modelAccountId'|'serviceTier'>,permissionMode:PermissionMode):boolean {
+export function executionSelectionChanged(run:Pick<ConversationRun,'model'|'modelAccountId'|'serviceTier'>|undefined,participantConnectionId:string|undefined,choice:Pick<ConversationChoice,'connectionId'|'model'|'modelAccountId'|'serviceTier'>):boolean {
   if(!run)return false;
-  return participantConnectionId!==choice.connectionId||run.model!==choice.model||run.modelAccountId!==choice.modelAccountId||run.serviceTier!==choice.serviceTier||(run.permissionMode??'default')!==permissionMode;
+  return participantConnectionId!==choice.connectionId||run.model!==choice.model||run.modelAccountId!==choice.modelAccountId||run.serviceTier!==choice.serviceTier;
 }
 
 /** 状态行表达执行身份（智能体与模型）；来源账号只保留在模型设置和发送预览。 */
@@ -110,7 +117,7 @@ export function officialConversationChoice(connection:ConnectionView|undefined,c
 
 /** 首条发送前把连接实际提供的原生账号绑定到选择；没有可证明的同名模型来源时保持原选择，不推断账号。 */
 export function nativeConversationChoice(choice:ConversationChoice,connection:ConnectionView|undefined,catalog:CatalogModel[]):ConversationChoice {
-  if(choice.modelAccountId)return choice;
+  if(choice.modelAccountId||!choice.model)return choice;
   const model=choice.model??selectedConversationModel(connection)?.id??connection?.models[0]?.id;
   const source=catalog.find(item=>item.accountId==='native-'+choice.connectionId&&item.modelId===model&&item.available&&item.enabled!==false);
   return source?{...choice,model:model??source.modelId,modelAccountId:source.accountId,modelAccountRevision:source.accountRevision,modelAccountIdentity:source.accountIdentity,serviceTier:choice.serviceTier??source.defaultServiceTier}:choice;

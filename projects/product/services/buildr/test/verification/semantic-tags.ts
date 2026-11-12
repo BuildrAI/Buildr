@@ -16,5 +16,10 @@ export function semanticTagsForStep(step: any): readonly string[] {
 export function semanticTagsForPaths(paths: readonly string[]): string[] {
   // Test-only changes keep direct owners; product tags describe implementation changes.
   // E2E is an explicit journey selector; touching one E2E file must not select every journey.
-  return SEMANTIC_TAG_RULES.filter(rule => rule.tag !== 'e2e' && paths.some(file => !isVerificationFrameworkInput(file) && !/(?:^|\/)(?:test|tests)\//.test(file) && rule.pattern.test(file))).map(rule => rule.tag);
+  return SEMANTIC_TAG_RULES.filter(rule => rule.tag !== 'e2e' && paths.some(file =>
+    !isVerificationFrameworkInput(file)
+    && /^(?:(?:services\/[^/]+\/)?(?:src|tools)\/|resources\/(?:runtime|workspace)\/skills\/)/u.test(file)
+    && !/\.(?:md|mdx|txt|rst|adoc)$/iu.test(file)
+    && !/(?:^|\/)(?:test|tests)\//.test(file)
+    && rule.pattern.test(file))).map(rule => rule.tag);
 }

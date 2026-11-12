@@ -26,6 +26,13 @@ export function safeDiagnostic(error: unknown): string {
   if (error instanceof NativeRequestError) return error.diagnostic;
   const code = error instanceof Error ? error.message.split(':')[0] : '';
   const messages: Record<string, string> = {
+    agent_model_source_authentication_failed:'所选模型来源认证失败，请在模型页核对账号或 API Key；本次请求不会自动重试或切换模型。',
+    agent_claude_version_unsupported:'Claude 执行程序版本不在兼容范围（>=2.1.322 <3），请检查独立程序。',
+    agent_claude_execution_failed:'Claude 执行未完成，请查看本轮模型与工具诊断；不会自动更换模型。',
+    agent_claude_observation_lost:'Claude 执行观察已中断，正在核对原执行；不会重发原指令。',
+    agent_claude_stop_outcome_unknown:'Claude 控制连接已关闭，部分输入或独立操作结果仍待核对；不会重发。',
+    agent_claude_request_failed:'Claude 原生接口未能完成本次请求，请核对程序版本与模型兼容性。',
+    agent_claude_input_unknown:'尚未确认 Claude 对本次输入的受理状态，已保留原输入；不会自动重发。',
     qoder_sdk_pair_mismatch: 'Qoder 程序与配套接入库版本不一致，已保留原接入。',
     qoder_sdk_pair_required: '当前 Qoder 程序缺少配套接入库，已保留原接入。',
     qoder_upgrade_conversation_failed: 'Qoder 新版未通过对话验证，已保留旧版接入。',
@@ -35,6 +42,11 @@ export function safeDiagnostic(error: unknown): string {
     qoder_platform_auth_unavailable: 'Qoder 账号检查未完成，请检查网络或程序连接后重试；当前不能确定登录是否失效。',
     qoder_gateway_model_unavailable: '当前 Qoder 接入未开放所选外部模型通道，本次模型调用未发出。请改选可用组合；原模型来源与输入已保留。',
     qoder_native_model_unavailable: '所选模型不在 Qoder 当前原生模型目录中，本次模型调用未发出。请刷新账号模型后核对选择；原输入已保留。',
+    qoder_cn_model_unavailable: '所选模型不在当前 Qoder CN 账号的可用模型中，本次模型调用未发出。请刷新账号模型后重新选择；原输入已保留。',
+    qoder_cn_reasoning_unavailable: '当前 Qoder CN 模型不支持所选推理强度，本次模型调用未发出。请改选已支持的档位；原输入已保留。',
+    qoder_cn_resume_unsupported: '原 Qoder CN 原生会话无法恢复，本次输入尚未送达；请重新发送以建立新的原生会话，此前对话记录已保留。',
+    qoder_cn_model_source_unsupported: '当前 Qoder CN 接入不能使用该模型来源，本次模型调用未发出。请改选 Qoder CN 原生模型；原输入已保留。',
+    agent_gateway_model_mismatch: '所选模型与当前模型网关租约不一致，本次模型调用未发出。请刷新模型选择后重试；原输入已保留。',
     qoder_native_account_changed: 'Qoder 登录账号已变化，未发送工作指令。请刷新账号后核对原模型来源；原输入已保留。',
     agent_program_missing: '未找到原生程序，请选择已安装程序的准确绝对路径。',
     codex_version_unsupported: '当前接入接受 Codex 0.x.x，包含有效预发布版本，仍需通过实际连接检查。',
@@ -78,8 +90,15 @@ export interface StoredParticipant {
   bindingIdentity: string;
   contextRef?: ContextRef;
   deliveredThrough: number;
+  /** Persisted native home base for gateway participants (dir containing codex-home/dsh-home); stable once chosen. */
+  nativeHomeRoot?: string;
 }
 export interface StoredConversation {
+  stops?: Array<{
+    id: string;
+    targets: Array<{runId:string;participantId:string;generation:string;requested?:boolean}>;
+    pendingSendId?: string;
+  }>;
   /** Buildr tool entry IDs whose execution body belongs to the native executor. */
   nativeTools?: Record<string, true | {parentToolId:string}>;
   participationTools?: Record<string,import('../participation-contracts.ts').ParticipationObservation & {entryRevision?:string}>;
@@ -95,11 +114,7 @@ export interface StoredConversation {
   hostScope?: import('../execution-contracts.ts').ExecutionScope;
   interruption?: { runId: string; awaitingUser: boolean; reason?: 'transport' | 'execution-fault'; attempted?: boolean; cancelled?: boolean };
   runOutcomes?: Record<string,Pick<RunView,'status'|'diagnostic'|'model'|'provider'|'contextUsage'|'updatedAt'> & {generation?:string}>;
-  titleOrigin?: 'default' | 'generated' | 'manual';
-  titleAttempted?: boolean;
-  earlyTitleAttempted?: boolean;
-  titleAttemptsByParticipant?: Record<string,{early?:boolean;completion?:boolean}>;
-  titleDiagnostics?: Array<{runId:string;phase:'early'|'completion'|'manual';code:string;reason:string;at:string}>;
+  titleOrigin?: 'default' | 'fallback' | 'generated' | 'manual';
   participants: StoredParticipant[];
   sources: Record<string, string>;
   attachments: Record<string, { name?: string; mimeType: string; size: number; createdAt?: string; nativeContent?: import('../native-content-contracts.ts').NativeAttachmentContent; video?: import('../contracts.ts').VideoAttachment }>;

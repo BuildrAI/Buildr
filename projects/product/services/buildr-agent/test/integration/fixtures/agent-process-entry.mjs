@@ -5,6 +5,22 @@ import { startAgentExecutionServer } from './index.js';
 
 const bootstrap=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
 const marker=JSON.parse(fs.readFileSync(new URL('./fixture-version.json',import.meta.url),'utf8'));
+if(marker.version==='wait-for-startup-storage-contention'){
+  fs.writeFileSync(path.join(bootstrap.dataRoot,'successor-starting'),String(process.pid));
+  const deadline=Date.now()+15000;
+  while(!fs.existsSync(path.join(bootstrap.dataRoot,'successor-may-start'))){
+    if(Date.now()>=deadline)throw new Error('fixture storage contention was not armed');
+    await new Promise(resolve=>setTimeout(resolve,20));
+  }
+}
+if (marker.version === 'goal') {
+  const { ConversationApplication } = await import('./application/conversation-application.js');
+  const recover = ConversationApplication.prototype.recoverInterrupted;
+  ConversationApplication.prototype.recoverInterrupted = function () {
+    fs.appendFileSync(path.join(bootstrap.dataRoot, 'recovery-scans'), 'scan\n');
+    return recover.call(this);
+  };
+}
 if(marker.version==='legacy-unbound-stop'){
   // Emulate the retained binary's bug so the new router, rather than an already
   // fixed old owner, must recover the stop result. This never runs in product.
@@ -82,3 +98,20 @@ function executor(id){return{descriptor:{id,label:id,capabilities},
 const provider={id:'fixture-model',label:'Fixture model',async open(){return{protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'fixture',label:'Fixture',images:false,tools:false}]}),beginLogin:async()=>{},cancelLogin:async()=>{},
   async infer({signal}){fs.appendFileSync(path.join(bootstrap.dataRoot,'model-started'),'start\n');return await new Promise((resolve,reject)=>{signal.addEventListener('abort',()=>{fs.appendFileSync(path.join(bootstrap.dataRoot,'model-aborted'),'abort\n');reject(signal.reason);},{once:true});});},close:async()=>{}};}};
 await startAgentExecutionServer({...bootstrap,serviceOptions:{executors:[executor('first'),executor('second')],modelProviders:[provider]}});
+
+
+if(marker.version==='registration-storage-contention'){
+  const {claim}=await import('./process/ownership.js');
+  let lock;
+  const timer=setInterval(()=>{
+    if(fs.existsSync(path.join(bootstrap.dataRoot,'release-registration-storage'))){
+      lock?.release();
+      clearInterval(timer);
+    }else if(!lock&&fs.existsSync(path.join(bootstrap.dataRoot,'hold-registration-storage'))){
+      try{lock=claim(bootstrap.dataRoot,'storage');}
+      catch(error){if(error.code!=='agent_process_owned')throw error;return;}
+      fs.writeFileSync(path.join(bootstrap.dataRoot,'registration-storage-held'),String(process.pid));
+    }
+  },20);
+  timer.unref();
+}

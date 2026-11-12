@@ -99,7 +99,7 @@ export class PreparationApplication {
     this.update(attempt, 'connecting', '正在核验程序与独立配置。');
     const connection = await this.connections.connect(id, { expectedRevision: attempt.input.expectedRevision, executable, programOnly:true });
     attempt.controller.signal.throwIfAborted();
-    this.update(attempt, 'ready', '程序已就绪。账号登录与模型检查在“模型”中管理。');
+    this.update(attempt, 'ready', '程序已就绪。供应商接入与模型检查在“模型”中管理。');
   }
   activity() { return [{kind:'program-preparation',count:[...this.attempts.values()].filter(attempt=>Boolean(attempt.work)||active.has(attempt.view.state)).length}].filter(value=>value.count>0); }
   beginClosing(): void { this.closing = true; for (const attempt of this.attempts.values()) attempt.controller.abort(); }

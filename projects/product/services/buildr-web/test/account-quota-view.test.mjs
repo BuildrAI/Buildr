@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {accountQuotaView,accountQuotaWarning,quotaOverviewAccounts} from '../src/features/agent-conversations/account-quota-view.ts';
+import {accountBillingUrl,accountQuotaView,accountQuotaWarning,accountSourceName,OPENAI_BILLING_URL,quotaOverviewAccounts} from '../src/features/agent-conversations/account-quota-view.ts';
 import {modelSourceViews} from '../src/features/agent-conversations/account-model-view.ts';
 const now=Date.parse('2026-10-30T00:00:00Z');
 const account={id:'a',identity:'i',provider:'deepseek',label:'DeepSeek',accountLabel:'已登录账号',revision:'r',enabled:false,status:'ready',models:[],observedAt:new Date(now).toISOString()};
@@ -33,12 +33,54 @@ test('详细余额保留两位小数，未知与空值不冒充零',()=>{
  const balances=[{currency:'CNY',total:'81.362111880000000',toppedUp:'81.362111880000000',granted:'0'},{currency:'USD',total:'12.999',toppedUp:'未知',granted:''}];
  assert.deepEqual(accountQuotaView({...account,quota:{available:true,balances}},now).lines.map(line=>line.text),['账户余额 CNY 81.36（充值 81.36 · 赠送 0.00）','账户余额 USD 13.00（充值 未知 · 赠送 ）']);
 });
-test('缓存额度直接展示，不额外提示非实时；只有账号待确认时说明',()=>{
+test('缓存额度直接展示，不额外提示非实时；只有供应商待确认时说明',()=>{
  const quota={available:true,observedAt:new Date(now-61000).toISOString(),windows:[{id:'week',label:'每周窗口',remainingPercent:84}]};
  const cached={...account,quota};
  assert.equal(accountQuotaView(cached,now).stale,true);
  assert.equal(accountQuotaView(cached,now).lines[0].text,'每周窗口 · 剩余 84%');
  assert.equal(accountQuotaWarning(cached),undefined);
- assert.equal(accountQuotaWarning({...cached,status:'failed'}),'账号待确认');
+ assert.equal(accountQuotaWarning({...cached,status:'failed'}),'供应商待确认');
  assert.equal(accountQuotaWarning({...cached,quota:{...quota,diagnostic:'本次额度读取未完成，以下保留上次观察。'}}),undefined);
+});
+test('自定义供应商显示用户填写的名称，不改用 ChatGPT API 名称',()=>{
+ const custom={...account,id:'custom',provider:'custom',label:'我的网关',accountLabel:'我的网关',authType:'api-key',modeLabel:'OpenAI 兼容',custom:{protocol:'chat-completions',baseUrl:'https://models.example.com/v1',useApiKey:true,models:[{id:'m',label:'M'}]}};
+ assert.equal(accountSourceName(custom),'我的网关');
+ assert.equal(accountSourceName({...account,provider:'qoder',authType:'api-key'}),'Qoder');
+ assert.equal(accountQuotaView(custom,now).lines[0].text,'额度暂不可读取');
+ const card=modelSourceViews([custom],[]).find(item=>item.id==='custom');
+ assert.equal(card.providerLabel,'我的网关');
+ assert.deepEqual(card.windows,[]);
+ assert.match(card.quotaNote,/自定义供应商没有额度接口/);
+});
+test('额度概览按来源显示名称稳定排序，同一来源按账号名排序',()=>{
+ const rows=[
+  {...account,id:'qoder-cn',provider:'qoder-cn',label:'Qoder CN',accountLabel:'Qoder CN'},
+  {...account,id:'deepseek',provider:'dsh',label:'DeepSeek',accountLabel:'DeepSeek'},
+  {...account,id:'qoder-b',provider:'qoder',label:'Qoder',accountLabel:'Qoder · B'},
+  {...account,id:'api',provider:'openai',label:'ChatGPT API',accountLabel:'ChatGPT API',authType:'api-key'},
+  {...account,id:'qoder-a',provider:'qoder',label:'Qoder',accountLabel:'Qoder · A'},
+  {...account,id:'codex',provider:'codex',label:'ChatGPT',accountLabel:'ChatGPT · proLite'},
+ ];
+ assert.deepEqual(quotaOverviewAccounts(rows).map(row=>row.id),['codex','api','deepseek','qoder-a','qoder-b','qoder-cn']);
+ assert.equal(accountSourceName(rows.at(-1)),'ChatGPT');
+ assert.equal(accountSourceName({...account,provider:'openai',label:'OpenAI',authType:'api-key'}),'ChatGPT API');
+});
+test('平台返回数量时额度窗口显示剩余 credits，缺任一侧不推算',()=>{
+ const source={...account,provider:'qoder',label:'Qoder',accountLabel:'Qoder',quota:{available:true,observedAt:new Date(now).toISOString(),windows:[
+  {id:'credits',label:'套餐内 Credits',remainingPercent:0,remainingCredits:0,totalCredits:1000},
+  {id:'add-on',label:'资源包',remainingPercent:59.2,remainingCredits:1599,totalCredits:2700},
+  {id:'partial',label:'数量不全',remainingPercent:50,remainingCredits:10},
+ ]}};
+ const view=accountQuotaView(source,now,true);
+ assert.deepEqual(view.lines.map(line=>line.text),['套餐内 Credits · 剩余 0%','资源包 · 剩余 59.2%','数量不全 · 剩余 50%']);
+ assert.deepEqual(view.lines.map(line=>line.credits),['0 / 1,000','1,599 / 2,700',undefined]);
+ assert.deepEqual(view.lines.map(line=>[line.label,line.percent]),[['套餐内 Credits',0],['资源包',59.2],['数量不全',50]]);
+ const card=modelSourceViews([source],[]).find(item=>item.id===source.id);
+ assert.deepEqual(card.windows.map(window=>window.balanceLabel),['0 / 1,000 credits','1,599 / 2,700 credits',undefined]);
+});
+test('ChatGPT API 概览只提供官方账单地址，不伪造余额，其他来源没有账单入口',()=>{
+ const api={...account,provider:'openai',authType:'api-key',label:'ChatGPT API'};
+ assert.equal(accountBillingUrl(api),OPENAI_BILLING_URL);
+ assert.equal(accountBillingUrl(account),undefined);
+ assert.deepEqual(accountQuotaView(api,now,true).lines.map(line=>[line.kind,line.text]),[['summary','额度暂不可读取']]);
 });

@@ -50,6 +50,8 @@ export interface ModelGatewayConfiguration {
   models: Array<AgentModel & { contextWindow?: number; maxOutputTokens?: number; vision?: boolean; tools?: boolean }>;
   /** Same-account Qoder execution uses its native model route, retaining the source lease binding. */
   nativeModel?: { provider: 'qoder' | 'qoder-cn'; id: string; accountIdentity: string };
+  /** Participant-persisted native home base (the dir containing codex-home/dsh-home). Shared per connection for new participants; the original lease root for pre-existing ones. */
+  nativeHomeRoot?: string;
 }
 /** Private lifecycle metadata; implementations must never pass request or credential content. */
 export type ExecutionDiagnosticSink = (event: {event:string;[key:string]:unknown})=>void;
@@ -82,6 +84,8 @@ export interface PresentedFile { path:string; description?:string }
 export interface ExecutorItem {
   /** The native executor owns this tool body. */
   nativeTool?: true;
+  /** The native executor matched this progress to an active background task. */
+  backgroundProgress?: true;
   participation?: ParticipationObservation;
   id: string;
   /** Native parent tool identity; absence does not imply an inferred child relationship. */
@@ -131,7 +135,7 @@ export interface ExecutorObservation {
   diagnostic?: string;
 }
 export type ExecutorEvent =
-  | { type: 'context-usage'; usedTokens:number; windowTokens?:number }
+  | { type: 'context-usage'; usedTokens?:number; usedRatio?:number; windowTokens?:number }
   | { type: 'models'; models: AgentModel[] }
   | { type: 'title'; title: string }
   | { type: 'accepted'; executionRef: ExecutionRef; inputItemId?: string }
@@ -151,6 +155,8 @@ export interface ExecutorForkInput {
   itemId: string;
   /** Exact admitted inputs, including supplements, belonging to the selected round. */
   inputItemIds?: readonly string[];
+  /** Private fork bridge: reseal model-owned reasoning without exposing plaintext. */
+  rebindReasoning?(value: string): Promise<string>;
   onCreated(contextRef: ContextRef): void;
 }
 export interface ConversationForkInput { expectedRevision: string; entryId: string; clientRequestId: string }
@@ -242,10 +248,20 @@ export interface AgentExecutor {
   /** Observe exact abandoned control resources without login, opening a channel, or proving operation success. */
   readReleasedControl?(input: {bindingIdentity:string;contextRef:ContextRef;executionRef:ExecutionRef;cwd:string}): Promise<boolean>;
 
+  /** Confirm one already-dispatched supplementary input from a durable native user record. */
+  readSupplementReceipt?(input: {
+    configRoot: string; nativeAccountConfigRoot?: string; executable: string; programSource?: string;
+    bindingIdentity: string; contextRef: ContextRef; executionRef: ExecutionRef; cwd: string;
+    clientRequestId: string; text: string; createdAt: string;
+  }): Promise<{inputItemId:string} | undefined>;
+
   /** Read exact durable terminal evidence without opening a native process or taking its controls. */
   readPersistedExecution?(input: {
     configRoot: string; nativeAccountConfigRoot?: string; executable: string; programSource?: string; gatewayIdentity?: string;
     bindingIdentity: string; contextRef: ContextRef; executionRef: ExecutionRef; cwd: string;
+    startedAt?: string;
+    /** Exact admitted inputs for this run, used only when the native format has no Buildr request id. */
+    nativeInputs?: ReadonlyArray<{clientRequestId:string;text:string;createdAt:string}>;
   }): Promise<{ items: ExecutorItem[]; observation: ExecutorObservation; endedAt?: string } | undefined>;
   /** Adapter-owned cache knowledge, applied by the shared service lifecycle. */
   storage?: {
@@ -378,6 +394,13 @@ export interface ConversationEntry {
   createdAt: string;
 }
 export interface RunView {
+  /** Read-only prompt provenance for a run admitted from an explicit continuation. */
+  continuedFrom?: {
+    runId: string;
+    userEntryId: string;
+    /** Omitted from list and summary projections to keep those responses bounded. */
+    prompt?: ConversationEntry;
+  };
   /** Questions are no longer actionable; native controls and tools may still be retained. */
   questionsEndedBy?: string;
   /** Replaced by a confirmed new execution; cleanup is system-owned. */
@@ -390,11 +413,13 @@ export interface RunView {
   executionState?: 'active' | 'ended' | 'unknown';
   /** This backend no longer holds the original control resources; independent command outcomes may remain unknown. */
   resourcesReleased?: boolean;
+  /** User-confirmed attention settlement; never claims completion, releases resources, or erases unknown evidence. */
+  attentionSettled?: boolean;
   fault?: ExecutionFault;
   /** Host interruption is unfinished work, distinct from a user stop. */
   interrupted?: boolean;
   contextCompaction?: ContextCompaction;
-  contextUsage?: {usedTokens:number;windowTokens?:number};
+  contextUsage?: {usedTokens?:number;usedRatio?:number;windowTokens?:number};
   modelAccountId?: string; modelAccountIdentity?: string; modelSourceLabel?: string;
   id: string;
   participantId: string;
@@ -420,7 +445,16 @@ export interface PendingRequestView extends ExecutorRequest {
   generation: string;
 }
 export interface ConversationTaskLink {workspaceId:string;taskId:string}
+export interface ConversationStopInput { expectedRevision: string; clientRequestId: string }
+export interface ConversationStopView {
+  id: string;
+  runIds: string[];
+  createdAt: string;
+  /** A cancelled, submitted input remains readable; it is never automatically resent. */
+  cancelledSend?: { id: string; draft: SendDraft };
+}
 export interface ConversationView {
+  stopRequest?: ConversationStopView;
   /** Immutable direct-parent provenance, independent of current titles and UI state. */
   forkedFrom?: ConversationForkOrigin;
   forkState?: { status: 'creating' | 'ready' | 'failed'; reason?: string };
@@ -433,7 +467,7 @@ export interface ConversationView {
   /** Independent observation version for append-only image admission. */
   attachmentRevision?: string;
   activity?: { version: number; seenThrough: number; updatedAt: string; finalReplyAt?: string; active: boolean; userInputAt?: string; pendingDecisionCount?: number; pendingSend?: {state:'waiting'|'failed';reason:string;updatedAt:string} };
-  titleState?: { status: 'pending' | 'generating' | 'generated' | 'manual' | 'failed' | 'unavailable' | 'unknown'; reason?: string };
+  titleState?: { status: 'pending' | 'generating' | 'generated' | 'fallback' | 'manual' | 'failed' | 'unavailable' | 'unknown'; reason?: string };
   id: string;
   workspaceId: string;
   cwd: string;
@@ -591,18 +625,45 @@ export interface AgentServiceOptions {
   resolveWorkspace?(workspaceId: string): Promise<{ rootPath: string }> | { rootPath: string };
   assertTask?(workspaceId: string, taskId: string): Promise<void> | void;
   now?: () => Date;
+  /** Injected pushback delivery transport; tests and candidates use a local fake receiver, never a real address. */
+  pushbackTransport?: typeof fetch;
+  pushbackNow?: () => number;
   /** Bounded host shutdown; chiefly useful for deterministic lifecycle tests. */
   shutdownTimeoutMs?: number;
 }
 
-export interface WebhookDeliveryResult { at: string; success: boolean; status?: number; kind: 'event' | 'test' }
-export interface WebhookSettingsView {
+export type PushbackEventType = 'decision.requested' | 'run.completed' | 'run.failed' | 'run.stopped' | 'run.stalled';
+export interface PushbackRequest { requestId: string; kind: 'approval' | 'question'; title: string; options?: Array<{ id: string; label: string; description?: string }> }
+export interface PushbackEvent {
+  eventId: string;
+  type: PushbackEventType | 'events_dropped';
+  occurredAt: string;
+  machine: { id: string; name: string };
+  workspaceId: string;
+  conversationId: string;
+  title: string;
+  runId?: string;
+  runStatus?: RunStatus;
+  request?: PushbackRequest;
+  summary: string;
+  detailUrl: string;
+  sequence: number;
+  mergedCount?: number;
+  droppedCount?: number;
+}
+export interface PushbackDeliveryResult { at: string; success: boolean; status?: number; kind: 'event' | 'test' }
+export interface PushbackSettingsView {
+  credentialId: string;
   revision: string;
-  source: 'private-file' | 'external-file' | 'environment';
-  writable: boolean;
   state: 'unconfigured' | 'invalid' | 'disabled' | 'enabled';
   url: string;
   hasSecret: boolean;
-  lastDelivery?: WebhookDeliveryResult;
+  rateLimitHour: number;
+  rateLimitMinute: number;
+  lastDelivery?: PushbackDeliveryResult;
+  recentDeliveries?: PushbackDeliveryResult[];
 }
-export interface WebhookSettingsInput { expectedRevision: string; enabled: boolean; url: string; secret?: string }
+export interface PushbackSettingsInput { expectedRevision: string; enabled: boolean; url: string; secret?: string; rateLimitHour?: number; rateLimitMinute?: number }
+export interface PushbackEventPage { events: PushbackEvent[]; nextCursor: string | null; hasMore: boolean }
+export interface ConversationSummaryView { id: string; title: string; runStatus: RunStatus | null; updatedAt: string; active: boolean; pendingDecisionCount: number }
+export interface ConversationActivityCounts { pendingSend?: number; active: number; running: number; waiting: number; unseen: number; unknown: number; attention: number }

@@ -1,11 +1,51 @@
 import type { ModelAccount } from './types';
 
 type Quota = NonNullable<ModelAccount['quota']>;
+type QuotaWindow = NonNullable<Quota['windows']>[number];
+export const OPENAI_BILLING_URL = 'https://platform.openai.com/settings/organization/billing/overview';
+export type AccountQuotaLine = {
+  kind: 'balance' | 'window' | 'summary';
+  text: string;
+  label?: string;
+  percent?: number;
+  credits?: string;
+  resetsAt?: string;
+};
+const sourceLabels: Record<string, string> = { codex: 'ChatGPT', openai: 'ChatGPT API', anthropic: 'Claude API', dsh: 'DeepSeek', deepseek: 'DeepSeek', qoder: 'Qoder', 'qoder-cn': 'Qoder CN', devin: 'Devin' };
+const sourceNameOrder = new Intl.Collator('zh-Hans-CN', { sensitivity: 'base', numeric: true });
 function formatBalance(value: string): string {
   const amount = Number(value);
   return value.trim() && Number.isFinite(amount)
     ? amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     : value;
+}
+function formatCredits(value: number): string {
+  return Number.isInteger(value)
+    ? value.toLocaleString('zh-CN')
+    : value.toLocaleString('zh-CN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+/** Display name shared with the model settings provider list; never derive it from the account plan. */
+export function accountSourceName(account: ModelAccount): string {
+  // Custom providers are named by the user; their protocol label is not a display name.
+  if (account.provider === 'custom') return account.group?.label || account.label || '自定义供应商';
+  if (account.authType === 'api-key') {
+    if (account.provider === 'anthropic') return 'Claude API';
+    if (account.provider === 'openai') return 'ChatGPT API';
+  }
+  const provider = account.connectionId || (account.provider.startsWith('native-') ? account.provider.slice('native-'.length) : account.provider);
+  return account.group?.label || sourceLabels[provider] || account.label;
+}
+/** The API exposes no balance; this is the only official page for credits and usage. */
+export function accountBillingUrl(account: Pick<ModelAccount, 'provider'>): string | undefined {
+  return account.provider === 'openai' ? OPENAI_BILLING_URL : undefined;
+}
+export function compareSourceNames(left: string, right: string): number {
+  return sourceNameOrder.compare(left, right);
+}
+/** Platform amounts stay optional so percentage-only windows never show inferred credits. */
+export function quotaWindowCredits(window: Pick<QuotaWindow, 'remainingCredits' | 'totalCredits'>, compact = false): string | undefined {
+  if (window.remainingCredits === undefined || window.totalCredits === undefined) return undefined;
+  return `${formatCredits(window.remainingCredits)} / ${formatCredits(window.totalCredits)}${compact ? '' : ' credits'}`;
 }
 export function balanceLines(balances: Quota['balances'], compact = false): string[] {
   return (balances ?? []).map(balance => {
@@ -18,14 +58,17 @@ export function balanceLines(balances: Quota['balances'], compact = false): stri
   });
 }
 export function accountQuotaView(account: ModelAccount, now = Date.now(), compact = false) {
-  const quota = account.quota, lines: Array<{ text: string; resetsAt?: string }> = [];
+  const quota = account.quota, lines: AccountQuotaLine[] = [];
   if (quota?.available) {
-    lines.push(...balanceLines(quota.balances, compact).map(text => ({ text })));
-    lines.push(...(quota.windows ?? []).map(window => ({ text: `${window.label} · 剩余 ${window.remainingPercent}%`, resetsAt: window.resetsAt })));
-    if (!lines.length && typeof quota.remainingPercent === 'number') lines.push({ text: `账号额度 · 剩余 ${quota.remainingPercent}%`, resetsAt: quota.resetsAt });
-    if (!lines.length && quota.summary) lines.push({ text: quota.summary });
+    lines.push(...balanceLines(quota.balances, compact).map(text => ({ kind: 'balance' as const, label: '账户余额', text })));
+    lines.push(...(quota.windows ?? []).map(window => {
+      const credits = quotaWindowCredits(window, compact);
+      return { kind: 'window' as const, label: window.label, percent: window.remainingPercent, ...(credits ? { credits } : {}), text: `${window.label} · 剩余 ${window.remainingPercent}%`, resetsAt: window.resetsAt };
+    }));
+    if (!lines.length && typeof quota.remainingPercent === 'number') lines.push({ kind: 'window', label: '供应商额度', percent: quota.remainingPercent, text: `供应商额度 · 剩余 ${quota.remainingPercent}%`, resetsAt: quota.resetsAt });
+    if (!lines.length && quota.summary) lines.push({ kind: 'summary', text: quota.summary });
   }
-  if (!lines.length) lines.push({ text: quota?.summary || '额度暂不可读取' });
+  if (!lines.length) lines.push({ kind: 'summary', text: quota?.summary || '额度暂不可读取' });
   const observed = Date.parse(quota?.observedAt ?? '');
   return {
     lines,
@@ -35,9 +78,13 @@ export function accountQuotaView(account: ModelAccount, now = Date.now(), compac
 }
 /** 缓存额度照常展示；只有账号本身待确认才额外说明，额度过期或诊断不另提示。 */
 export function accountQuotaWarning(account: ModelAccount): string|undefined {
-  return account.status === 'failed' ? '账号待确认' : undefined;
+  return account.status === 'failed' ? '供应商待确认' : undefined;
 }
 /** Failed observations with a previous authenticated snapshot remain explicitly unconfirmed. */
 export function quotaOverviewAccounts(accounts: ModelAccount[]): ModelAccount[] {
-  return accounts.filter(account => account.status === 'ready' || account.status === 'failed' && !!account.observedAt && (!!account.quota || account.models.length > 0));
+  return accounts
+    .filter(account => account.status === 'ready' || account.status === 'failed' && !!account.observedAt && (!!account.quota || account.models.length > 0))
+    .sort((left, right) => compareSourceNames(accountSourceName(left), accountSourceName(right))
+      || compareSourceNames(left.accountLabel || left.label, right.accountLabel || right.label)
+      || left.id.localeCompare(right.id));
 }

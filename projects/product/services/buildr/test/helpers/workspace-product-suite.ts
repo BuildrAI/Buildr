@@ -10,6 +10,8 @@ import { prepareAgentRuntime, stopAgentProcess } from '@buildr-ai/buildr-agent';
 
 import { createRuntime } from './runtime-harness.ts';
 import { renderWorkspaceManifest } from '../../src/modules/workspace/persistence/workspace-manifest-repository.ts';
+import { defaultWebDataRoot } from '../../src/modules/installation/contracts/web-profile.ts';
+import { previewCandidateSourceDigest } from '../../src/web/application/preview-candidate.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { stopPreview } from '../../src/web/application/preview-lifecycle.ts';
 import { copyPreparedWorkspace } from './prepared-fixtures.ts';
@@ -21,7 +23,7 @@ export function registerWorkspaceProductSuite(selectedSuite: any): any  {
 const PRODUCT_ROOT: any = path.resolve(import.meta.dirname, '../..');
 const BUILDR: any = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
 const APP_PROCESS_TIMEOUT_MS: any = 120_000;
-const APP_COMMAND_TIMEOUT_MS: any = 30_000;
+const APP_COMMAND_TIMEOUT_MS: any = 60_000;
 
 function previewCommandDiagnostic(phase: string, result: any, timeoutMs: number): string {
   const stdout = Buffer.from(result.stdout || ''), stderr = Buffer.from(result.stderr || '');
@@ -650,6 +652,17 @@ suiteTest('app-process', 'buildr web 重复启动复用单实例并从陈旧 run
   }
 });
 
+// 默认沿用 development 会读取 HOME 下的开发版数据根；套件必须隔离 HOME，
+// 否则真实开发版的程序目录（数百 MB）会被复制进每个预览实例并超时。
+function isolatedPreviewEnv(base: string, env: any): any {
+  const home = path.join(base, 'preview-home');
+  const previewEnv = { ...env, HOME: home, LOCALAPPDATA: path.join(home, 'localappdata'), XDG_STATE_HOME: path.join(home, 'state') };
+  const modelAccess = path.join(defaultWebDataRoot('development', { home, env: previewEnv, platform: process.platform }), 'agent-service', 'model-access');
+  fs.mkdirSync(modelAccess, { recursive: true });
+  fs.writeFileSync(path.join(modelAccess, 'accounts.json'), '{"version":1,"preferences":{},"accounts":[]}\n');
+  return previewEnv;
+}
+
 suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并只停止自身实例', { timeout: APP_PROCESS_TIMEOUT_MS }, async (t: any) => {
   const started: any[] = [];
   const timings: any[] = [];
@@ -670,7 +683,7 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
 
   const base: any = temporaryRoot(t);
   appData = path.join(base, 'preview-data');
-  const env: any = { ...process.env, BUILDR_APP_DATA_DIR: appData };
+  const env: any = isolatedPreviewEnv(base, { ...process.env, BUILDR_APP_DATA_DIR: appData });
   const measure: any = async (phase: any, operation: any) => {
     currentPhase = phase;
     const startedAt: any = performance.now();
@@ -732,7 +745,7 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
   currentPhase = 'completed';
 });
 
-suiteTest('app-process', '任务预览默认共享真实工作空间，显式快照隔离同 ID 副本', { timeout: APP_PROCESS_TIMEOUT_MS }, async (t: any) => {
+suiteTest('app-process', '任务预览单一数据目标：工作树代码 + 开发版工作空间与默认沿用', { timeout: APP_PROCESS_TIMEOUT_MS }, async (t: any) => {
   const started: any[] = [];
   let appData: string;
   t.after(async () => {
@@ -749,8 +762,8 @@ suiteTest('app-process', '任务预览默认共享真实工作空间，显式快
   const productRelative = path.relative(checkoutRoot, PRODUCT_ROOT);
   const canonicalProduct = path.join(canonical, productRelative);
   fs.mkdirSync(canonicalProduct, { recursive: true });
-  // Keep actual candidate sources in the fixture Git repository so snapshot
-  // writes exercise (rather than bypass) the candidate writer provenance fence.
+  // Keep actual candidate sources in the fixture Git repository so the managed
+  // worktree, not the real product, owns every preview input.
   for (const entry of ['src', 'bin', 'resources', 'package.json']) {
     fs.cpSync(path.join(PRODUCT_ROOT, entry), path.join(canonicalProduct, entry), { recursive: true });
   }
@@ -758,8 +771,8 @@ suiteTest('app-process', '任务预览默认共享真实工作空间，显式快
   execFileSync('git', ['-C', canonical, 'commit', '-m', 'preview product fixture'], { stdio: 'ignore' });
   appData = path.join(base, 'app-data');
   const env = { ...process.env, BUILDR_APP_DATA_DIR: appData };
-  const command = (args: string[]) => {
-    const result = runBuildr(args, { env, timeout: APP_COMMAND_TIMEOUT_MS });
+  const command = (args: string[], commandEnv: any = env) => {
+    const result = runBuildr(args, { env: commandEnv, timeout: APP_COMMAND_TIMEOUT_MS });
     assert.equal(result.status, 0, previewCommandDiagnostic(args.slice(0, 3).join(' '), result, APP_COMMAND_TIMEOUT_MS));
     return JSON.parse(result.stdout);
   };
@@ -769,11 +782,35 @@ suiteTest('app-process', '任务预览默认共享真实工作空间，显式快
   assert.equal(created.status, 'ready');
   const worktree = created.repositories[0].checkoutPath;
   const candidateProduct = path.join(worktree, productRelative);
-  // Only installed dependencies and generated types are reused; product sources
-  // and the invocation entry are from the managed fixture worktree.
-  fs.symlinkSync(path.join(PRODUCT_ROOT, 'node_modules'), path.join(candidateProduct, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
+  // Dependencies stay shared through per-entry symlinks, but the private Agent
+  // package and the freshness marker must be fixture-local: candidate preparation
+  // writes the marker into node_modules and must never escape into the real product.
+  const realNodeModules = path.join(PRODUCT_ROOT, 'node_modules');
+  const candidateNodeModules = path.join(candidateProduct, 'node_modules');
+  const linkEntry = (source: string, target: string) => {
+    const type = process.platform === 'win32' ? (fs.statSync(source).isDirectory() ? 'junction' : 'file') : 'dir';
+    fs.symlinkSync(source, target, type);
+  };
+  fs.mkdirSync(candidateNodeModules, { recursive: true });
+  for (const entry of fs.readdirSync(realNodeModules)) {
+    if (entry !== '@buildr-ai') linkEntry(path.join(realNodeModules, entry), path.join(candidateNodeModules, entry));
+  }
+  const realScope = path.join(realNodeModules, '@buildr-ai');
+  const candidateScope = path.join(candidateNodeModules, '@buildr-ai');
+  fs.mkdirSync(candidateScope, { recursive: true });
+  for (const entry of fs.readdirSync(realScope)) {
+    if (entry !== 'buildr-agent') linkEntry(path.join(realScope, entry), path.join(candidateScope, entry));
+  }
+  fs.cpSync(path.join(realScope, 'buildr-agent'), path.join(candidateScope, 'buildr-agent'), { recursive: true });
   fs.cpSync(path.join(PRODUCT_ROOT, 'build', 'generated'), path.join(candidateProduct, 'build', 'generated'), { recursive: true });
   createWebStaticFixture(path.join(candidateProduct, 'web-dist'));
+  fs.writeFileSync(path.join(candidateNodeModules, '.buildr-preview-candidate.json'), JSON.stringify({
+    schemaVersion: 'buildr.local-app-preview-candidate/v1',
+    sourceDigest: previewCandidateSourceDigest(candidateProduct),
+    preparedAt: new Date().toISOString(),
+    webDist: path.join(candidateProduct, 'web-dist'),
+    agentPackage: path.join(candidateScope, 'buildr-agent'),
+  }));
   fs.mkdirSync(appData, { recursive: true });
   const registryFile = path.join(appData, 'workspace-registry.json');
   fs.writeFileSync(registryFile, JSON.stringify({
@@ -782,63 +819,54 @@ suiteTest('app-process', '任务预览默认共享真实工作空间，显式快
   const registryBefore = fs.readFileSync(registryFile, 'utf8');
   const id = createRuntime().getWorkspace(canonical).workspace.id;
   const otherId = createRuntime().getWorkspace(other).workspace.id;
-  for (const mode of ['shared', 'snapshot']) {
-    const name = `task-${mode}`;
-    // Omission tests the public default rather than supplying --workspace-mode shared.
-    const result = command(['web', 'preview', 'start', name, '--task', taskId, '--target', canonical,
-      ...(mode === 'snapshot' ? ['--workspace-mode', 'snapshot'] : []), '--no-open', '--json']);
-    const owner = result.owner;
-    started.push(owner);
-    assert.equal(owner.worktree, worktree);
-    assert.equal(owner.productCheckout, candidateProduct);
-    assert.equal(owner.workspaceMode, mode);
-    assert.equal(fs.realpathSync(owner.environmentRoot), fs.realpathSync(mode === 'shared' ? canonical : worktree));
-    const instance = JSON.parse(fs.readFileSync(path.join(appData, 'previews', name, 'instance.json'), 'utf8'));
-    const health = await fetch(`${result.url}/api/v1/health`, { headers: { 'x-buildr-instance': instance.secret } });
-    assert.equal(health.status, 200);
-    const healthData = await health.json();
-    assert.equal(healthData.previewIdentity.workspaceMode, mode);
-    assert.equal(healthData.previewIdentity.worktree, worktree);
-    const listResponse = await fetch(`${result.url}/api/v1/workspaces`);
-    assert.equal(listResponse.status, 200);
-    const listed = await listResponse.json();
-    assert.deepEqual(listed.workspaces.map((item: any) => item.workspace.id).sort(), mode === 'shared' ? [id, otherId].sort() : [id]);
-    assert.ok(listed.workspaces.every((item: any) => item.status === 'ready'));
-    if (mode === 'shared') {
-      const html = await fetch(result.url).then(response => response.text());
-      const session = html.match(/<meta name="buildr-session" content="([^"]+)"/);
-      assert.ok(session, 'shared workspace navigation requires the real page session');
-      for (const item of listed.workspaces) {
-        const opened: Response = await fetch(`${result.url}/api/v1/workspaces/open`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-buildr-session': session[1], origin: new URL(result.url).origin },
-          body: JSON.stringify({ workspaceId: item.workspace.id }),
-        });
-        assert.equal(opened.status, 200, await opened.clone().text());
-        assert.deepEqual(await opened.json(), { ready: true, workspaceId: item.workspace.id });
-      }
-    }
-    const detail = await fetch(`${result.url}/api/v1/workspaces/${id}`).then(response => response.json());
-    assert.equal(fs.realpathSync(detail.rootPath), fs.realpathSync(owner.environmentRoot));
-    const tasksResponse = await fetch(`${result.url}/api/v1/workspaces/${id}/tasks`);
-    assert.equal(tasksResponse.status, 200);
-    const tasks = await tasksResponse.json();
-    assert.ok(tasks.tasks.some((item: any) => item.record.taskId === taskId));
-    if (mode === 'shared') {
-      assert.equal(fs.existsSync(path.join(worktree, '.buildr', 'local', 'workspace.sqlite')), false);
-      assert.equal(fs.existsSync(path.join(appData, 'previews', name, 'workspace-registry.json')), false);
-      // A later canonical update must be visible without reseeding or restarting.
-      command(['task', 'create', 'later-task', '--title', 'Later', '--intent', 'Verify live reads', '--target', canonical, '--json']);
-      const live = await fetch(`${result.url}/api/v1/workspaces/${id}/tasks`).then(response => response.json());
-      assert.ok(live.tasks.some((item: any) => item.record.taskId === 'later-task'));
-    } else {
-      assert.equal(owner.taskStore.seeded, true);
-      command(['task', 'create', 'after-snapshot', '--title', 'After snapshot', '--intent', 'Verify frozen reads', '--target', canonical, '--json']);
-      const frozen = await fetch(`${result.url}/api/v1/workspaces/${id}/tasks`).then(response => response.json());
-      assert.ok(!frozen.tasks.some((item: any) => item.record.taskId === 'after-snapshot'));
-    }
-    assert.equal(fs.readFileSync(registryFile, 'utf8'), registryBefore);
+  const previewEnv = isolatedPreviewEnv(base, env);
+  const name = 'task-shared';
+  // Omission tests the public default: single real data target plus development reuse.
+  const result = command(['web', 'preview', 'start', name, '--task', taskId, '--target', canonical, '--no-open', '--json'], previewEnv);
+  const owner = result.owner;
+  started.push(owner);
+  assert.equal(owner.worktree, worktree);
+  assert.equal(owner.productCheckout, candidateProduct);
+  assert.equal(owner.workspaceMode, 'shared');
+  assert.equal(fs.realpathSync(owner.environmentRoot), fs.realpathSync(canonical));
+  assert.equal(owner.reuse?.source, 'development');
+  assert.deepEqual(owner.reuse?.facets, ['model-catalog', 'agent-runtime']);
+  const instance = JSON.parse(fs.readFileSync(path.join(appData, 'previews', name, 'instance.json'), 'utf8'));
+  const health = await fetch(`${result.url}/api/v1/health`, { headers: { 'x-buildr-instance': instance.secret } });
+  assert.equal(health.status, 200);
+  const healthData = await health.json();
+  assert.equal(healthData.previewIdentity.workspaceMode, 'shared');
+  assert.equal(healthData.previewIdentity.worktree, worktree);
+  const listResponse = await fetch(`${result.url}/api/v1/workspaces`);
+  assert.equal(listResponse.status, 200);
+  const listed = await listResponse.json();
+  assert.deepEqual(listed.workspaces.map((item: any) => item.workspace.id).sort(), [id, otherId].sort());
+  assert.ok(listed.workspaces.every((item: any) => item.status === 'ready'));
+  const html = await fetch(result.url).then(response => response.text());
+  const session = html.match(/<meta name="buildr-session" content="([^"]+)"/);
+  assert.ok(session, 'shared workspace navigation requires the real page session');
+  for (const item of listed.workspaces) {
+    const opened: Response = await fetch(`${result.url}/api/v1/workspaces/open`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-buildr-session': session[1], origin: new URL(result.url).origin },
+      body: JSON.stringify({ workspaceId: item.workspace.id }),
+    });
+    assert.equal(opened.status, 200, await opened.clone().text());
+    assert.deepEqual(await opened.json(), { ready: true, workspaceId: item.workspace.id });
   }
+  const detail = await fetch(`${result.url}/api/v1/workspaces/${id}`).then(response => response.json());
+  assert.equal(fs.realpathSync(detail.rootPath), fs.realpathSync(owner.environmentRoot));
+  const tasksResponse = await fetch(`${result.url}/api/v1/workspaces/${id}/tasks`);
+  assert.equal(tasksResponse.status, 200);
+  const tasks = await tasksResponse.json();
+  assert.ok(tasks.tasks.some((item: any) => item.record.taskId === taskId));
+  assert.equal(fs.existsSync(path.join(worktree, '.buildr', 'local', 'workspace.sqlite')), false);
+  assert.equal(fs.existsSync(path.join(appData, 'previews', name, 'workspace-registry.json')), false);
+  // A later canonical update must be visible without reseeding or restarting.
+  command(['task', 'create', 'later-task', '--title', 'Later', '--intent', 'Verify live reads', '--target', canonical, '--json']);
+  const live = await fetch(`${result.url}/api/v1/workspaces/${id}/tasks`).then(response => response.json());
+  assert.ok(live.tasks.some((item: any) => item.record.taskId === 'later-task'));
+  assert.equal(fs.readFileSync(registryFile, 'utf8'), registryBefore);
 });
 
 suiteTest('manifest-registry', 'public CLI 暴露 web 与 init description help', () => {

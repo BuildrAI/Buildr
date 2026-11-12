@@ -13,6 +13,7 @@ import { createBoundedBuildrWebReadExecutor } from '../../src/web/http/read-exec
 import { copyPreparedWorkspace, copyPreparedProjectWorkspace } from '../helpers/prepared-fixtures.ts';
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { runtimeProvide } from '../../src/bootstrap/runtime.ts';
+import type { CodeSourceControlResponse } from '../../src/modules/code/application/source-control-model.ts';
 import { CODE_APPLICATION } from '../../src/modules/code/module.ts';
 import { createCodeHttpContribution } from '../../src/modules/code/interfaces/http/code-http.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
@@ -311,6 +312,32 @@ test('commit-context HTTP traverses the real bounded worker and resolves the reg
     assert.equal(syncResponse?.status, 200); assert.partialDeepStrictEqual(syncResponse, { body: { revision: syncContext.revision } }); assert.partialDeepStrictEqual(syncResponse, { body: { source: { worktreeId: tree.worktreeId } } }); assert.partialDeepStrictEqual(syncResponse, { body: { available: false } });
     assert.throws(() => executor.run('code-sync', { targetRoot: root, taskId: 'code-files', input: JSON.stringify(location) }), (error: { code: string }) => error.code === 'local_app_read_operation_forbidden');
     assert.throws(() => executor.run('code-commit-changes', { targetRoot: root, taskId: 'code-files', input: JSON.stringify(location) }), (error: { code: string }) => error.code === 'local_app_read_operation_forbidden');
+  } finally { await executor.close(); }
+});
+
+test('source-control worker returns the same status and identities across a full batch and its remainder', async t => {
+  const { root } = copyPreparedWorkspace(t, 'source-control-worker'), runtime = createRuntime();
+  const workspaceId = runtime.getWorkspace(root).workspace.id;
+  const repository = path.join(root, 'fixture-repository');
+  fs.mkdirSync(repository);
+  const git = (...args: string[]) => execFileSync('git', ['-C', repository, ...args], { stdio: 'ignore' });
+  git('init', '--initial-branch=main');
+  git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '--allow-empty', '-m', 'base');
+  for (let n = 1; n <= 3; n++) {
+    const worktree = path.join(root, 'fixture-worktree-' + n);
+    git('worktree', 'add', '-b', 'fixture-' + n, worktree);
+    fs.writeFileSync(path.join(worktree, 'new-' + n + '.txt'), 'untracked');
+  }
+  const repositoryId = crypto.randomUUID();
+  fs.writeFileSync(path.join(root, 'repositories', 'manifest.yml'), JSON.stringify({ schemaVersion: 'buildr.repositories/v1', repositories: { fixture: { id: repositoryId, workspaceId, code: 'fixture', name: 'Fixture', description: '', source: { type: 'git', path: 'fixture-repository' } } } }));
+  const code = runtimeProvide(runtime, CODE_APPLICATION);
+  const expected = code.sourceControl(root, { repositoryId });
+  const executor = createBoundedBuildrWebReadExecutor({ workerCount: 1 });
+  try {
+    const actual = await executor.run('code-source-control', { targetRoot: root, taskId: 'code-files', input: JSON.stringify({ repositoryId }) }) as CodeSourceControlResponse;
+    assert.equal(actual.worktreeCoverage.read, 4);
+    assert.equal(actual.observedRevision, expected.observedRevision);
+    assert.deepEqual(actual.repositories[0].worktrees.flatMap(tree => tree.changes.map(change => change.path)).sort(), ['new-1.txt', 'new-2.txt', 'new-3.txt']);
   } finally { await executor.close(); }
 });
 

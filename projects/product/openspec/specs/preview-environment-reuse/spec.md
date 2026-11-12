@@ -97,7 +97,7 @@
 
 ### Requirement: 停止与彻底清理
 
-`preview stop` MUST 默认只停止实例并保留数据。`preview stop --purge` MUST 在停止确认和 owner 身份匹配后删除该实例根，包括会话、附件、交接材料、沿用的账号与配置副本、程序副本、日志、登记与端口记录。owner 不匹配、实例停止未确认、目标路径不在预览根内或存在越界符号链接时，清理 MUST 拒绝并保留现场。
+`preview stop` MUST 默认只停止实例并保留数据。`preview stop --purge` MUST 在停止确认和 owner 身份匹配后删除该实例根，包括会话、附件、交接材料、沿用的账号与配置副本、程序副本、日志、登记与端口记录。实例根内的符号链接（包括指向实例外宿主缓存的声明链接与断链）MUST 按链接条目删除，MUST NOT 跟随链接或删除、修改链接目标。owner 不匹配、实例停止未确认、目标路径不在预览根内或目标不是真实目录时，清理 MUST 拒绝并保留现场。
 
 #### Scenario: 清理沿用过的预览
 - **WHEN** 预览 owner 请求 `preview stop --purge` 且实例已确认停止
@@ -111,6 +111,16 @@
 #### Scenario: 停止未确认不清理
 - **WHEN** 实例停止无法确认或目标路径越界
 - **THEN** 清理 MUST 保留现场并报告具体原因
+
+#### Scenario: 含宿主缓存链接的实例可清理
+- **WHEN** 实例根内存在指向实例外目录的符号链接（如 agent-service 的宿主缓存声明链接），owner 请求 `preview stop --purge` 且实例已确认停止
+- **THEN** 该实例根 MUST 被删除且链接条目不再存在
+- **AND** 链接目标目录及其内容 MUST 保持原样
+
+#### Scenario: 断链随实例根删除
+- **WHEN** 实例根内存在目标不存在的断链，owner 请求 `preview stop --purge` 且实例已确认停止
+- **THEN** 清理 MUST 成功并将断链随实例根删除
+- **AND** MUST NOT 因断链拒绝清理
 
 ### Requirement: 沿用事实可观察且不泄露凭证
 
@@ -137,3 +147,29 @@
 #### Scenario: 一个预览沿用失败
 - **WHEN** 一个预览实例的 facet 失败
 - **THEN** 其他预览实例与默认 Buildr Web 实例 MUST 不受影响
+
+### Requirement: 无主预览残留清理
+
+产品 MUST 提供 `preview prune` 扫描预览根并清理无主残留实例目录。prune MUST 仅删除同时满足以下条件的目录：不存在 owner 登记文件，且实例记录与后台进程记录均能确认无存活进程。owner 登记文件存在时（无论能否解析），prune MUST 跳过该目录并报告原因，其清理仍归托管 stop/purge。实例或后台记录存在但无法解析、无法确认进程已死时，prune MUST 跳过并报告原因。prune 的删除 MUST 复用 purge 的目标安全语义：目标位于预览根内且为真实目录，符号链接按链接条目删除，MUST NOT 跟随或改动链接目标。prune MUST 逐项报告 pruned 或 skipped 及原因；单个目录的失败 MUST 只影响该目录，MUST NOT 阻止其余目录的判定与清理。prune MUST NOT 改变 stop 默认保留数据与 owner 匹配等既有语义。
+
+#### Scenario: 孤儿目录被清理
+- **WHEN** 预览根内某实例目录无 owner 登记、无实例与后台存活进程，且含有指向宿主缓存的符号链接与断链
+- **THEN** prune MUST 删除该实例目录并报告 pruned
+- **AND** 链接目标 MUST 保持完好
+
+#### Scenario: 有 owner 的目录不被触碰
+- **WHEN** 实例目录存在 owner 登记文件（含文件存在但无法解析的情况）
+- **THEN** prune MUST 跳过该目录并报告原因
+- **AND** 目录内容 MUST 保持不变
+
+#### Scenario: 存活进程的目录不被触碰
+- **WHEN** 实例目录无 owner 但实例记录或后台进程记录指向存活进程
+- **THEN** prune MUST 跳过该目录并报告原因
+
+#### Scenario: 记录无法确认时失败关闭
+- **WHEN** 实例或后台记录存在但无法解析出可核对的进程身份
+- **THEN** prune MUST 跳过该目录并报告原因，MUST NOT 按无主删除
+
+#### Scenario: 单目录失败不扩大
+- **WHEN** 某个目录的判定或删除失败
+- **THEN** prune MUST 报告该目录的失败原因并继续处理其余目录

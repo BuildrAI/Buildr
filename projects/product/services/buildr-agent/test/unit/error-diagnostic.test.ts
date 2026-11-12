@@ -25,6 +25,18 @@ test('native RPC rejection preserves sanitized cause without claiming login fail
   assert.doesNotMatch(safeDiagnostic(new Error('opaque internal failure')), /登录|opaque internal/);
 });
 
+test('Qoder CN model and context failures produce explicit user-visible diagnostics', async () => {
+  const { safeDiagnostic } = await import('../../src/domain/agent-state.ts');
+  const { ExecutorInputRejected } = await import('../../src/contracts.ts');
+  const model = safeDiagnostic(new ExecutorInputRejected('qoder_cn_model_unavailable: 当前账号未授权模型 buildr-lease，可用：dfmodel'));
+  assert.match(model, /Qoder CN 账号/);
+  assert.match(model, /原输入已保留/);
+  assert.doesNotMatch(model, /buildr-lease/);
+  const resume = safeDiagnostic(new Error('qoder_cn_resume_unsupported'));
+  assert.match(resume, /Qoder CN 原生会话/);
+  assert.match(resume, /已保留/);
+});
+
 test('observation failures identify the affected executor and preserve only the safe cause',async()=>{
   const {NativeObservationError}=await import('../../src/domain/error-diagnostic.ts');
   const {safeDiagnostic}=await import('../../src/domain/agent-state.ts');

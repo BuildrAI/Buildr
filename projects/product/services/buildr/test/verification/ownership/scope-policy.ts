@@ -42,6 +42,9 @@ export const VERIFICATION_FULL_SCOPE_INPUTS: any = Object.freeze(VERIFICATION_FU
  * Explicit full/candidate requests retain the conservative full-scope policy. */
 export function isVerificationFrameworkInput(file: string): boolean {
   return file.startsWith('test/verification/ownership/')
-    || ['test/verification/semantic-tags.ts', 'test/verification/failed-groups.ts', 'test/verification/settle-diagnostics.mjs', 'test/verification/content-snapshot.ts'].includes(file)
+    || /^(?:services\/[^/]+\/)?tools\/testing\/verification-checks\.ts$/u.test(file)
+    || ['test/verification/semantic-tags.ts', 'test/verification/source-diff.ts',
+      'test/verification/browser-selector-dispatcher.ts', 'test/verification/browser-selector-catalog.ts',
+      'test/verification/failed-groups.ts', 'test/verification/settle-diagnostics.mjs', 'test/verification/content-snapshot.ts'].includes(file)
     || VERIFICATION_FULL_SCOPE_AUTHORITIES.some((item: any) => item.pattern === file && item.pattern.startsWith('test/verification/'));
 }

@@ -25,7 +25,7 @@ function scanPlatformNamespaceImports(sourceRoot: string): string[] {
 
 test('Product platform namespace 只允许 composition root 聚合', () => {
   // A positive control also proves the real production tree was scanned.
-  assert.deepEqual(scanPlatformNamespaceImports(path.join(productRoot, 'src')), ['bootstrap/runtime.ts']);
+  assert.deepEqual(scanPlatformNamespaceImports(path.join(productRoot, 'src')), ['bootstrap/runtime-infrastructure.ts']);
 });
 
 test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owner', () => {

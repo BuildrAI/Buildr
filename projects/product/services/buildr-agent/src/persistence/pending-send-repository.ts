@@ -84,6 +84,30 @@ export class PendingSendRepository {
       this.write(db, { ...row, state: 'cancelled', revision: randomUUID(), updatedAt: new Date().toISOString() });
     }, undefined);
   }
+  /** Serialize cancellation with final dispatch, retaining the exact cancelled draft. */
+  cancelForStop<T>(scope:string,id:string,persist:(row:PendingSendRecord|undefined)=>T):T {
+    return this.use(true,db=>{
+      const row=this.rows(db,scope,id).find(active);
+      if(row)this.write(db,{...row,state:'cancelled',owner:undefined,reason:'已随对话停止取消，内容保留，不会自动发送。',revision:randomUUID(),updatedAt:new Date().toISOString()});
+      return persist(row);
+    },undefined as T);
+  }
+  cancelStopped(scope:string,id:string,requestId:string):void {
+    this.use(true,db=>{
+      const row=this.rows(db,scope,id).find(value=>value.id===requestId&&active(value));
+      if(row)this.write(db,{...row,state:'cancelled',owner:undefined,reason:'已随对话停止取消，内容保留。',revision:randomUUID(),updatedAt:new Date().toISOString()});
+    },undefined);
+  }
+  /** No await between this version check and synchronous conversation admission. */
+  dispatch<T>(row:PendingSendRecord,send:()=>T):T|undefined {
+    return this.use(true,db=>{
+      const current=this.rows(db,row.scope,row.conversationId).find(value=>value.id===row.id);
+      if(!current||current.revision!==row.revision||current.owner!==row.owner||current.state!=='dispatching')return;
+      const result=send();
+      this.write(db,{...current,state:'delivered',owner:undefined,revision:randomUUID(),reason:'已登记执行。',updatedAt:new Date().toISOString()});
+      return result;
+    },undefined);
+  }
   claim(row: PendingSendRecord, generation: string, ownerAlive: (generation: string) => boolean): PendingSendRecord | undefined {
     return this.use(true, db => {
       const current = this.rows(db, row.scope, row.conversationId).find(value => value.id === row.id);

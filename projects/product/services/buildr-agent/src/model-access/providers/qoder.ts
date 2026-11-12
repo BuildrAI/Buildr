@@ -59,6 +59,11 @@ export async function inspectQoderLogin(config: string, productId:QoderProductId
 const quotaNumber=(value:unknown):number|undefined=>typeof value==='number'&&Number.isFinite(value)?value:undefined;
 const quotaFormat=(value:number):string=>Number.isInteger(value)?value.toLocaleString('zh-CN'):value.toFixed(1);
 const quotaPercent=(value:number):number=>value>0?Math.max(0.1,Math.round(Math.min(100,value)*10)/10):0;
+/** Keep upstream amounts only when both sides are known; never infer a total from a percentage. */
+const creditAmounts=(bucket:Record<string,unknown>,total:number|undefined):{remainingCredits?:number;totalCredits?:number}=>{
+  const remaining=quotaNumber(bucket.remaining);
+  return total!==undefined&&remaining!==undefined?{remainingCredits:remaining,totalCredits:total}:{};
+};
 /** Read the openapi credits usage. A failed read keeps the model catalog usable. */
 async function observeQoderQuota(request:(path:string,init?:RequestInit)=>Promise<Response>,productLabel='Qoder'):Promise<ModelProviderObservation['quota']>{
   const observedAt=new Date().toISOString();
@@ -72,14 +77,29 @@ async function observeQoderQuota(request:(path:string,init?:RequestInit)=>Promis
       if(total!==undefined&&remaining!==undefined)return quotaPercent(remaining/total*100);
       const used=quotaNumber(bucket.percentage);return used===undefined?undefined:quotaPercent((1-used)*100);
     };
-    const windows:Array<{id:string;label:string;remainingPercent:number;resetsAt?:string}>=[];
+    const windows:Array<{id:string;label:string;remainingPercent:number;resetsAt?:string;remainingCredits?:number;totalCredits?:number}>=[];
     const user=record(data.userQuota),userPercent=remainingPercent(user,'total');
     const buckets:Array<{total?:number;remaining?:number}>=[];
-    if(userPercent!==undefined){windows.push({id:'credits',label:'套餐内 Credits',remainingPercent:userPercent,...(resetsAt?{resetsAt}:{})});buckets.push({total:positive(user.total),remaining:quotaNumber(user.remaining)});}
+    if(userPercent!==undefined){windows.push({id:'credits',label:'套餐内 Credits',remainingPercent:userPercent,...creditAmounts(user,positive(user.total)),...(resetsAt?{resetsAt}:{})});buckets.push({total:positive(user.total),remaining:quotaNumber(user.remaining)});}
     const addOn=record(data.addOnQuota),addOnPercent=remainingPercent(addOn,'total');
-    if(addOnPercent!==undefined){windows.push({id:'add-on',label:'资源包',remainingPercent:addOnPercent,...(resetsAt?{resetsAt}:{})});buckets.push({total:positive(addOn.total),remaining:quotaNumber(addOn.remaining)});}
+    if(addOnPercent!==undefined){windows.push({id:'add-on',label:'资源包',remainingPercent:addOnPercent,...creditAmounts(addOn,positive(addOn.total)),...(resetsAt?{resetsAt}:{})});buckets.push({total:positive(addOn.total),remaining:quotaNumber(addOn.remaining)});}
     const org=record(data.orgResourcePackage),orgPercent=addOnPercent===undefined?(org.available===true?remainingPercent(org,'cap'):remainingPercent(org,'total')):undefined;
-    if(orgPercent!==undefined){windows.push({id:'org-package',label:'组织资源包',remainingPercent:orgPercent});buckets.push({total:positive(org.cap)??positive(org.total),remaining:quotaNumber(org.remaining)});}
+    if(orgPercent!==undefined){windows.push({id:'org-package',label:'组织资源包',remainingPercent:orgPercent,...creditAmounts(org,positive(org.cap)??positive(org.total))});buckets.push({total:positive(org.cap)??positive(org.total),remaining:quotaNumber(org.remaining)});}
+    // Dedicated packages only offset their own model series, so they are shown
+    // as separate windows and never folded into the account-level aggregate.
+    const dedicated=Array.isArray(data.dedicatedResourcePackages)?data.dedicatedResourcePackages:[];
+    dedicated.forEach((value,index)=>{
+      const bundle=record(value);if(bundle.available!==true)return;
+      const total=positive(bundle.total)??positive(bundle.cap),remaining=quotaNumber(bundle.remaining);
+      const used=quotaNumber(bundle.percentage);
+      const percent=total!==undefined&&remaining!==undefined?quotaPercent(remaining/total*100):used===undefined?undefined:quotaPercent((1-used)*100);
+      if(percent===undefined)return;
+      const labels=Array.isArray(bundle.displayLabels)?bundle.displayLabels.map(record):[];
+      const title=labels.find(label=>label.dimension==='title'),i18n=record(title?.valueI18n);
+      const label=string(i18n['zh-CN'])??(title?string(title.value):undefined)??'千问专属积分';
+      const packageID=string(bundle.id)??String(index),expiresAt=positive(bundle.expiresAt);
+      windows.push({id:`dedicated:${packageID}`,label,remainingPercent:percent,...(total!==undefined&&remaining!==undefined?{remainingCredits:remaining,totalCredits:total}:{}),...(expiresAt?{resetsAt:new Date(expiresAt).toISOString()}:{})});
+    });
     if(!windows.length)return{available:false,observedAt};
     const userType=string(data.userType),planLabel=userType==='teams'?'Teams':userType?userType.split('_').map(part=>part?part[0]!.toUpperCase()+part.slice(1):part).join(' '):undefined;
     const combined=buckets.length?(()=>{const total=buckets.reduce((sum,bucket)=>sum+(bucket.total??0),0),remaining=buckets.reduce((sum,bucket)=>sum+(bucket.remaining??0),0);return total>0?quotaPercent(remaining/total*100):undefined;})():undefined;
@@ -95,6 +115,25 @@ async function observeQoderQuota(request:(path:string,init?:RequestInit)=>Promis
     return{available:true,observedAt,...(planLabel?{planLabel}:{}),windows,remainingPercent:remaining,...(resetsAt?{resetsAt}:{}),...(summary?{summary}:{})};
   }catch{return{available:false,observedAt};}
 }
+export interface QoderCatalogEntry { id:string; config:ProtocolJson }
+/** Parse the official model catalog; app-only entries such as QoDuck are real models. */
+export function qoderCatalogEntries(data:ProtocolJson):QoderCatalogEntry[] {
+  const entries:QoderCatalogEntry[]=[];const seen=new Set<string>();
+  for(const value of [...(Array.isArray(data.chat)?data.chat:[]),...(Array.isArray(data.app)?data.app:[])]){
+    const config=record(value),id=string(config.key);
+    if(!id||config.enable===false||seen.has(id))continue;
+    seen.add(id);entries.push({id,config});
+  }
+  return entries;
+}
+/** Aggregate a Qoder SSE chat stream into one non-stream chat completion. */
+export async function qoderChatCompletion(stream:ReadableStream<Uint8Array>,modelId:string,fallbackId:string):Promise<ProtocolJson> {
+  const chunks:ProtocolJson[]=[];for await(const value of readSse(new Response(stream)))if(value!=='[DONE]')chunks.push(record(JSON.parse(value)));
+  const message:ProtocolJson={role:'assistant',content:''};const tools=new Map<number,ProtocolJson>();let finish='stop';let usage:unknown;
+  for(const chunk of chunks){const choice=record((chunk.choices as unknown[]|undefined)?.[0]),delta=record(choice.delta);if(typeof delta.content==='string')message.content=String(message.content)+delta.content;if(typeof delta.reasoning_content==='string')message.reasoning_content=String(message.reasoning_content??'')+delta.reasoning_content;
+    for(const raw of (Array.isArray(delta.tool_calls)?delta.tool_calls:[])){const t=record(raw),index=Number(t.index??0),prior=tools.get(index)??{id:t.id,type:'function',function:{name:'',arguments:''}},fn=record(prior.function),next=record(t.function);if(t.id)prior.id=t.id;if(next.name)fn.name=String(fn.name)+String(next.name);if(next.arguments)fn.arguments=String(fn.arguments)+String(next.arguments);prior.function=fn;tools.set(index,prior);}if(choice.finish_reason)finish=String(choice.finish_reason);if(chunk.usage)usage=chunk.usage;}
+  if(tools.size)message.tool_calls=[...tools.values()];return {id:chunks[0]?.id??fallbackId,object:'chat.completion',model:modelId,choices:[{index:0,message,finish_reason:finish}],...(usage?{usage}:{})};
+}
 export function createQoderModelProvider(owner:QoderModelOwner,productId:QoderProductId='qoder'):ModelProvider {
   const product=qoderProduct(productId);
   return {id:`native-${productId}`,label:product.label,connectionId:productId,async open(){
@@ -108,10 +147,9 @@ export function createQoderModelProvider(owner:QoderModelOwner,productId:QoderPr
         const [response,quota]=await Promise.all([owner.request('/models',{signal:AbortSignal.timeout(15000)}),observeQoderQuota((path,init)=>owner.request(path,init),product.label)]);
         if(!response.ok)throw await qoderResponseFailure(response);
         const data=record(await response.json());
-        const chat=Array.isArray(data.chat)?data.chat:[],app=Array.isArray(data.app)?data.app:[];
-        if(!chat.length&&!app.length)throw new Error('qoder_catalog_invalid');models.clear();
-        // Prefer the chat group; app-only entries such as QoDuck are still real models.
-        for(const value of [...chat,...app]){const config=record(value),id=string(config.key);if(!id||config.enable===false||models.has(id))continue;
+        const entries=qoderCatalogEntries(data);
+        if(!entries.length)throw new Error('qoder_catalog_invalid');models.clear();
+        for(const {id,config} of entries){
           const thinking=record(config.thinking_config),enabled=record(thinking.enabled),efforts=Object.keys(record(enabled.efforts));
           const contexts=Object.values(record(config.context_config)).map(record);const windows=contexts.flatMap(v=>positive(v.token_count)??[]);const contextWindow=positive(contexts.find(v=>v.is_default===true)?.token_count)??positive(config.max_input_tokens)??(windows.length?Math.min(...windows):undefined);
           const reportedContextWindow=windows.length?Math.max(...windows):positive(config.max_input_tokens);
@@ -149,11 +187,7 @@ export function createQoderModelProvider(owner:QoderModelOwner,productId:QoderPr
         }
         const stream=unwrapQoderStream(response,input.signal);
         if(source.stream===true)return new Response(stream,{headers:{'content-type':'text/event-stream'}});
-        const chunks:ProtocolJson[]=[];for await(const value of readSse(new Response(stream)))if(value!=='[DONE]')chunks.push(record(JSON.parse(value)));
-        const message:ProtocolJson={role:'assistant',content:''};const tools=new Map<number,ProtocolJson>();let finish='stop';let usage:unknown;
-        for(const chunk of chunks){const choice=record((chunk.choices as unknown[]|undefined)?.[0]),delta=record(choice.delta);if(typeof delta.content==='string')message.content=String(message.content)+delta.content;if(typeof delta.reasoning_content==='string')message.reasoning_content=String(message.reasoning_content??'')+delta.reasoning_content;
-          for(const raw of (Array.isArray(delta.tool_calls)?delta.tool_calls:[])){const t=record(raw),index=Number(t.index??0),prior=tools.get(index)??{id:t.id,type:'function',function:{name:'',arguments:''}},fn=record(prior.function),next=record(t.function);if(t.id)prior.id=t.id;if(next.name)fn.name=String(fn.name)+String(next.name);if(next.arguments)fn.arguments=String(fn.arguments)+String(next.arguments);prior.function=fn;tools.set(index,prior);}if(choice.finish_reason)finish=String(choice.finish_reason);if(chunk.usage)usage=chunk.usage;}
-        if(tools.size)message.tool_calls=[...tools.values()];return Response.json({id:chunks[0]?.id??id,object:'chat.completion',model:input.modelId,choices:[{index:0,message,finish_reason:finish}],...(usage?{usage}:{})});
+        return Response.json(await qoderChatCompletion(stream,input.modelId,id));
       }};
   }};
 }
@@ -161,7 +195,7 @@ export async function* readSse(response:Response):AsyncGenerator<string>{
   if(!response.body)throw new Error('qoder_stream_missing');const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
   try{while(true){const part=await reader.read();buffer+=decoder.decode(part.value,{stream:!part.done}).replace(/\r\n/g,'\n');let at;while((at=buffer.indexOf('\n\n'))>=0){const frame=buffer.slice(0,at);buffer=buffer.slice(at+2);const lines=frame.split('\n'),data=lines.filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trimStart()).join('\n');if(data)yield data;if(lines.includes('event:finish'))yield '[DONE]';}if(part.done)break;}if(buffer.trim())throw new Error('qoder_stream_truncated');}finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
 }
-async function qoderResponseFailure(response:Response):Promise<ModelAccessError>{
+export async function qoderResponseFailure(response:Response):Promise<ModelAccessError>{
   const reader=response.body?.getReader();let text='',bytes=0;
   try{if(reader){const decoder=new TextDecoder();for(;;){const part=await reader.read();if(part.done)break;bytes+=part.value.length;if(bytes>8192)break;text+=decoder.decode(part.value,{stream:true});}text+=decoder.decode();}}
   finally{await reader?.cancel().catch(()=>{});reader?.releaseLock();}

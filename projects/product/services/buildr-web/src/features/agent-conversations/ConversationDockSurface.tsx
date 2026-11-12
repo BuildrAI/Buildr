@@ -31,7 +31,7 @@ export function ConversationDockSurface({panel,activity,settingsEntry,open,initi
         onFocus={()=>enterCurrent('keyboard')} onBlur={()=>peek.exit('current','keyboard')}
         onClick={event=>{setActivityOpen(false);peek.close();onToggle();if(event.detail>0)requestAnimationFrame(()=>current.current?.blur());}}/>
       {cloneElement(activity,{open:activityOpen,onOpenChange:activityChange})}
-      {onSettings&&(settingsEntry?cloneElement(settingsEntry,{onClick:()=>{setActivityOpen(false);peek.close();onSettings();}}):<Button type="text" className="ac-conversation-icon ac-account-settings" icon={<SettingOutlined aria-hidden="true"/>} aria-label="账号与配置" title="账号与配置" onClick={()=>{setActivityOpen(false);peek.close();onSettings();}}/>)}
+      {onSettings&&(settingsEntry?cloneElement(settingsEntry,{onClick:()=>{setActivityOpen(false);peek.close();onSettings();}}):<Button type="text" className="ac-conversation-icon ac-account-settings" icon={<SettingOutlined aria-hidden="true"/>} aria-label="智能体与模型设置" title="智能体与模型设置" onClick={()=>{setActivityOpen(false);peek.close();onSettings();}}/>)}
     </aside>
   </>;
 }

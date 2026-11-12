@@ -16,6 +16,7 @@ import type { CatalogModel, ConnectionView, ConversationEvent, ConversationView,
 import { conversationProductActionSelection, recoverConversationProductAction, startConversationProductAction } from './conversation-product-action';
 import { firstConversationSubmissions } from './conversation-first-submission';
 import { readConversationModelPreference, readConversationModulePreference } from './conversation-preferences';
+import { startConversationRecoveryRead } from './conversation-observation-fallback';
 
 type Scope = {workspaceId: string; conversationId: string};
 export type DraftScope = {workspaceId: string; taskId?: string;taskLinks?:{workspaceId:string;taskId:string}[]};
@@ -126,6 +127,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   const attentionSignature=useRef('');
   const [selectionGeneration,setSelectionGeneration]=useState(0);
   const serial = useRef(0), eventCursor = useRef<number | undefined>(undefined), [observation, setObservation] = useState(0);
+  const streamLiveAt=useRef(0),streamHealthy=useRef(false);
   const getSelection=useCallback(()=>({generation:serial.current,scope:scopeRef.current}),[]);
   const isSelectionCurrent=useCallback((selection:ConversationSelection)=>sameConversationSelection(getSelection(),selection),[getSelection]);
   const participationNavigation=useRef<AbortController|null>(null);
@@ -174,9 +176,24 @@ export function AgentConversationsProvider({children, client = agentConversation
     return()=>{activityPoller.current=null;poller.dispose();activityRead.current=null;window.removeEventListener('focus',metadata);document.removeEventListener('visibilitychange',metadata);++activityGeneration.current;};
   },[refreshConnections,refreshPending,refreshModelCatalog]);
   const openConversation = useCallback(async (workspaceId: string, conversationId: string,options:VisibilityOptions={}) => {
-    const request = advanceSelection(); const nextScope = {workspaceId, conversationId}; scopeRef.current = nextScope; setScope(nextScope); setDraftScope(null); conversationRef.current=null; setConversation(null); setView('conversation'); if(!options.preserveVisibility)setVisibility(true); setLoading(true); setError(''); setStreamError(''); eventCursor.current = undefined; savePanel(visibility.current.open,nextScope);
+    const request = advanceSelection();
+    const nextScope = {workspaceId, conversationId};
+    const previous = conversationRef.current;
+    const sameConversation = previous?.workspaceId === workspaceId && previous.id === conversationId;
+    scopeRef.current = nextScope;
+    setScope(nextScope);
+    setDraftScope(null);
+    if (!sameConversation) {
+      conversationRef.current = null;
+      setConversation(null);
+      eventCursor.current = undefined;
+    }
+    setView('conversation');
+    if(!options.preserveVisibility)setVisibility(true);
+    setLoading(true); setError(''); setStreamError('');
+    savePanel(visibility.current.open,nextScope);
     const controller=new AbortController();selectionRead.current=controller;
-    try { const next = await client.read(workspaceId, conversationId,controller.signal); if (request === serial.current && scopeRef.current?.conversationId === conversationId && scopeRef.current.workspaceId === workspaceId) apply(next); } catch (failure) { if (request === serial.current&&!controller.signal.aborted) setError(failure instanceof Error ? failure.message : '无法读取对话。'); } finally { if(selectionRead.current===controller)selectionRead.current=null;if (request === serial.current) setLoading(false); }
+    try { const next = await client.read(workspaceId, conversationId,controller.signal); if (request === serial.current && scopeRef.current?.conversationId === conversationId && scopeRef.current.workspaceId === workspaceId) apply(next, sameConversation ? previous.revision : undefined); } catch (failure) { if (request === serial.current&&!controller.signal.aborted) setError(failure instanceof Error ? failure.message : '无法读取对话。'); } finally { if(selectionRead.current===controller)selectionRead.current=null;if (request === serial.current) setLoading(false); }
   }, [client,advanceSelection,setVisibility,apply]);
   const locateParticipation=useCallback(async(workspaceId:string,conversationId:string,runId:string)=>{
     participationNavigation.current?.abort();
@@ -221,6 +238,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   useEffect(() => {
     setStreamError('');setReconnecting(false);
     if(previousObservationKey.current!==observationKey)eventCursor.current=undefined;
+    if(previousObservationKey.current!==observationKey){streamLiveAt.current=0;streamHealthy.current=false;}
     previousObservationKey.current=observationKey;
     if (!scope || !observationKey || !pageVisible) return;
     const selection=getSelection();
@@ -243,6 +261,7 @@ export function AgentConversationsProvider({children, client = agentConversation
       const expectedGeneration = generation;
       const previousCursor = eventCursor.current;
       if(!isCurrentConversationEvent(event,scope,expectedGeneration,previousCursor))return;
+      streamLiveAt.current=Date.now();streamHealthy.current=true;
       if (event.type === 'snapshot') generation = event.generation;
       if(event.type==='connection'&&event.payload.connection)void refreshConnections().catch(()=>{});
       const next=event.payload.conversation;
@@ -266,6 +285,7 @@ export function AgentConversationsProvider({children, client = agentConversation
       try { await client.subscribe(scope.workspaceId, scope.conversationId, controller.signal, handle, eventCursor.current); }
       catch (failure) {
         if (!current()) return;
+        streamHealthy.current=false;
         if (failures<5) {const delay=Math.min(5000,500*2**failures++);setReconnecting(true);retryTimer=setTimeout(()=>{void connect(true);},delay);return;}
         if(!await reconcile())return;
         setReconnecting(false);
@@ -283,6 +303,20 @@ export function AgentConversationsProvider({children, client = agentConversation
     return () => { controller.abort(); if (retryTimer) clearTimeout(retryTimer);setReconnecting(false); };
     // Ordinary snapshot changes must not recreate the subscriber or lose its cursor.
   }, [client, scope?.workspaceId, scope?.conversationId, observationKey, pageVisible, observation, refreshPending, refreshConnections,apply,getSelection,isSelectionCurrent]);
+  const recoveryReadKey=conversationObservationKey(conversation);
+  useEffect(()=>{
+    if(!scope||!recoveryReadKey||!pageVisible)return;
+    const selection=getSelection();
+    const reader=startConversationRecoveryRead({
+      current:()=>conversationRef.current,
+      visible:()=>document.visibilityState!=='hidden',
+      live:()=>streamHealthy.current&&Date.now()-streamLiveAt.current<10_000,
+      read:()=>client.read(scope.workspaceId,scope.conversationId),
+      apply:(next,observedRevision)=>apply(next,observedRevision),
+      isCurrent:()=>isSelectionCurrent(selection),
+    });
+    return()=>reader.stop();
+  },[client,scope?.workspaceId,scope?.conversationId,recoveryReadKey,pageVisible,apply,getSelection,isSelectionCurrent]);
   useEffect(()=>{
     if(!scope||conversation?.run?.status!=='unknown')return;
     const selection=getSelection(),key=conversationObservationKey(conversation);

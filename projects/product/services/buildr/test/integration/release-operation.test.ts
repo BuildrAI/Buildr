@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { reconcilePublicationAfterPreparedContext, resolveRetainedController, runReleaseOperation, waitForReleaseMainPullRequest } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
-import { watchReleaseRun } from '../../../../../../skills/buildr-release/scripts/release-operation-wait.ts';
+import { waitForReleaseOperation, watchReleaseRun } from '../../../../../../skills/buildr-release/scripts/release-operation-wait.ts';
 import { packageDownloadTimeoutMs, readCandidateEvidence, runHostedReleaseTransaction } from '../../../../../../skills/buildr-release/scripts/release-transaction-runner.ts';
 import { inspectReleaseSelection } from '../../../../../../skills/buildr-release/scripts/release-selection.ts';
 import { createReleaseArtifactFixture, preparationRecordFixture } from '../helpers/release-artifact-fixture.ts';
@@ -91,6 +91,24 @@ test('native release watch exits on completion, timeout and cancellation without
   controller.abort();
   assert.equal((await watching).status, 'cancelled');
   assert.equal((await watchReleaseRun({ ...request, ghCommand: path.join(root, 'missing') })).status, 'failed');
+});
+
+test('publication waiting returns to the owner on the poll budget for environment approval', async () => {
+  const authority = new AbortController();
+  const watches: any[] = [];
+  const observed: any = await waitForReleaseOperation({
+    action: 'resume', wait: true, waitIntervalMs: 1000, waitTimeoutMs: 60_000, version: '1.0.0-rc.1',
+  }, {
+    now: () => 0,
+    signal: authority.signal,
+    runReleaseOperation: async () => ({ status: 'publication-running', package: 'buildr', run: { id: 42, status: 'waiting' },
+      effects: [], packagePublications: { buildr: { runId: 42 } } }),
+    watchRun: async (request: any) => { watches.push(request); authority.abort(); return { status: 'timed-out' }; },
+  });
+  assert.equal(watches.length, 1);
+  assert.equal(watches[0].runId, 42);
+  assert.equal(watches[0].timeoutMs, 1000);
+  assert.equal(observed.waiting.status, 'cancelled');
 });
 
 for (const bucket of ['fail', 'cancel']) test(`protected main reports required ${bucket} without waiting or touching unrelated checks`, async () => {

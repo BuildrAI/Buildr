@@ -47,20 +47,6 @@ test('linked task verification uses the authoritative summary without resolving 
   assert.equal(rejected.status,404);assert.equal(rejected.body.error.code,'agent_task_missing');
 });
 
-test('HTTP service fixtures ignore host webhook configuration', async t => {
-  const { base } = taskRecordFixture(t, 'agent-http-host-isolation');
-  const config = path.join(base, 'host-webhook.json');
-  fs.writeFileSync(config, JSON.stringify({ url: 'http://127.0.0.1:1/host-only', secret: 'fixture-only-secret' }), { mode: 0o600 });
-  const previous = process.env.BUILDR_AGENT_WEBHOOK_CONFIG;
-  process.env.BUILDR_AGENT_WEBHOOK_CONFIG = config;
-  t.after(() => { if (previous === undefined) delete process.env.BUILDR_AGENT_WEBHOOK_CONFIG; else process.env.BUILDR_AGENT_WEBHOOK_CONFIG = previous; });
-  const dataRoot = path.join(base, 'agent-profile');
-  const service = createAgentService({ dataRoot, executors: [], modelProviders: [] });
-  t.after(() => service.close());
-  assert.equal(service.webhooks.read().state, 'unconfigured');
-  assert.equal(fs.existsSync(dataRoot), false, 'host notification configuration must not initialize fixture storage');
-});
-
 test('program preparation is authenticated, schema checked and independently observable/cancellable', { timeout: 30_000 }, async t => {
   const { base, root } = taskRecordFixture(t, 'agent-program-http');
   const previous = process.env.BUILDR_APP_DATA_DIR;
@@ -418,7 +404,13 @@ test('model preferences enforce authentication, revision and context limits', {t
  for(const value of [0,1.5,258001])assert.equal((await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:checked.revision,models:[{id:'model',contextWindow:value}]})})).status,400);
  const response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:checked.revision,models:[{id:'model',enabled:true,contextWindow:128000}]})});assert.equal(response.status,200);const updated=await response.json();assert.equal(updated.models[0].contextWindow,128000);assert.equal(updated.models[0].contextWindowOverride,128000);assert.equal(updated.quota.windows[0].remainingPercent,93);assert.equal(JSON.stringify(updated).includes('apiKey'),false);
  assert.equal((await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:checked.revision,models:[{id:'model',enabled:false}]})})).status,409);
- const reset=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:updated.revision,models:[{id:'model',contextWindow:null}]})});assert.equal(reset.status,200);assert.equal((await reset.json()).models[0].contextWindow,258000);
+ const reset=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:updated.revision,models:[{id:'model',contextWindow:null}]})});assert.equal(reset.status,200);const resetAccount=await reset.json();assert.equal(resetAccount.models[0].contextWindow,258000);
+ const disabledResponse=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:resetAccount.revision,sourceEnabled:false})});assert.equal(disabledResponse.status,200);const disabled=await disabledResponse.json();assert.equal(disabled.enabled,true);assert.equal(disabled.sourceEnabled,false);assert.equal(disabled.status,'ready');
+ const listUrl=url+'/api/v1/app/agent-service/model-accounts';
+ const hidden=await (await fetch(listUrl,{headers})).json();assert.equal(hidden.accounts.some((a:any)=>a.id===added.id),false);
+ for(const query of ['includeDisabled=invalid','includeDisabled=true&includeDisabled=false'])assert.equal((await fetch(listUrl+'?'+query,{headers})).status,400);
+ const allResponse=await fetch(listUrl+'?includeDisabled=true',{headers});assert.equal(allResponse.status,200);const all=await allResponse.json();assert.equal(all.accounts.find((a:any)=>a.id===added.id).sourceEnabled,false);
+ const enabledResponse=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:disabled.revision,sourceEnabled:true})});assert.equal(enabledResponse.status,200);assert.equal((await enabledResponse.json()).identity,disabled.identity);
 });
 
 test('HTTP handoff exposes the exact bounded body, local sources and confirmed receipt without manual condensation', {timeout:15_000}, async t=>{
@@ -697,6 +689,9 @@ test('tool detail reads preserve full history, enforce content revisions and rem
   const history=endpoint+'/history-source?'+new URLSearchParams({sourceId,roundId:'http-round'});
   response=await fetch(history);assert.equal(response.status,403);
   response=await fetch(history,{headers});assert.equal(response.status,200);const sourcePage=await response.json();assert.equal(sourcePage.entries[0].text,'');assert.equal(sourcePage.entries[0].input,undefined);assert.equal(sourcePage.entries[0].detail.revision,page.entries[0].detail.revision);
+  response=await fetch(history+'&view=messages',{headers});assert.equal(response.status,200);assert.deepEqual((await response.json()).entries,[]);
+  response=await fetch(history+'&view=all',{headers});assert.equal(response.status,200);assert.deepEqual(await response.json(),sourcePage);
+  response=await fetch(history+'&view=invalid',{headers});assert.equal(response.status,400);
   response=await fetch(history+'&limit=101',{headers});assert.equal(response.status,400);
   response=await fetch(endpoint+'/history-source?sourceId=../../secret',{headers});assert.equal(response.status,400);
   response=await fetch(detail.replace(page.entries[0].detail.revision,'0'.repeat(64)),{headers});assert.equal(response.status,409);
@@ -796,6 +791,26 @@ test('联合活动摘要裁剪上下文并以内容版本返回未变化标记�
   assert.equal((await fetch(endpoint+'?revision=invalid',{headers})).status,400);
 });
 
+test('活动摘要在稳定 epoch 下短路全量聚合，变化后重新计算',async t=>{
+  const {base,root}=taskRecordFixture(t,'activity-summary-cache'),runtime=createRuntime();
+  const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'app-data');t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+  const row:any={id:'11111111-1111-4111-8111-111111111111',workspaceId:'22222222-2222-4222-8222-222222222222',cwd:root,title:'工作',revision:'r1',hidden:false,updatedAt:'now',participants:[],entries:[],requests:[],activity:{version:1,seenThrough:0,active:true,updatedAt:'now',pendingDecisionCount:0},run:{id:'r',participantId:'p',provider:'codex',generation:'g',status:'running',accepted:true,tools:[],startedAt:'now',updatedAt:'now'},retainedRuns:[]};
+  const page={conversations:[row],total:1},pending={conversations:[]};
+  let listCalls=0,epoch='epoch-1';
+  const service:any={conversations:{listAll:()=>{listCalls++;return page;},pendingSummary:()=>pending,activityEpoch:()=>epoch}};
+  const contributions=runtimeContributions(runtime,'http').filter((item:any)=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const instance=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});const {url,sessionToken}=await instance.ready;
+  t.after(()=>new Promise<void>(resolve=>instance.server.close(()=>resolve())));
+  const headers={'x-buildr-session':sessionToken},endpoint=url+'/api/v1/app/agent-service/activity-summary';
+  const first:any=await (await fetch(endpoint,{headers})).json();assert.equal(listCalls,1);
+  const unchanged:any=await (await fetch(endpoint+'?revision='+first.revision,{headers})).json();
+  assert.deepEqual(unchanged,{revision:first.revision,unchanged:true});assert.equal(listCalls,1,'stable epoch reuses the projection without recomputing');
+  const repeated:any=await (await fetch(endpoint,{headers})).json();assert.equal(repeated.revision,first.revision);assert.equal(listCalls,1);
+  epoch='epoch-2';row.title='更新标题';row.revision='r2';
+  const changed:any=await (await fetch(endpoint+'?revision='+first.revision,{headers})).json();
+  assert.equal(listCalls,2,'a changed epoch recomputes the overview');assert.notEqual(changed.revision,first.revision);assert.equal(changed.conversations[0].title,'更新标题');
+});
+
 /** Explicit raw fixture using the current database header version; production writing and migration are tested by the service. */
 function seedConversation(db: DatabaseSync, record: any): void {
   db.exec('BEGIN IMMEDIATE');
@@ -841,46 +856,6 @@ test('CLI target proof accepts only current authorized physical entry, not PATH 
  const observed=observeParticipationCli(identity,entry)!;assert.equal(observed.status,'confirmed');assert.equal(observed.observedVersion,undefined);assert.match(observed.offeredVersion!,/^sha256-/);
  assert.equal(observeParticipationCli({...identity,package:'untrusted'},entry),undefined);
 });
-
-test('webhook replay HTTP validates authentication, conversation scope and immutable event ID',async t=>{
- const {base,root}=taskRecordFixture(t,'webhook-replay-http'),runtime=createRuntime();
- const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'private');t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
- const id='11111111-1111-4111-8111-111111111111',eventId='a'.repeat(64),calls:any[]=[];
- const service:any={conversations:{replayWebhook:(scope:string,conversationId:string,input:any)=>{calls.push([scope,conversationId,input]);return{eventId:input.eventId,queued:true};}}};
- const contributions=runtimeContributions(runtime,'http').filter((item:any)=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
- const instance=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});const {url,sessionToken,initialWorkspaceId}=await instance.ready;
- t.after(async()=>{instance.server.closeAllConnections();await new Promise<void>(resolve=>instance.server.close(()=>resolve()));});
- const headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'},endpoint=`${url}/api/v1/workspaces/${initialWorkspaceId}/agent-conversations/${id}/webhook-replay`;
- assert.equal((await fetch(endpoint,{method:'POST',body:JSON.stringify({eventId})})).status,403);assert.equal(calls.length,0);
- for(const body of [{eventId:'bad'},{eventId,workspaceId:'other'},{eventId,payload:{text:'arbitrary'}}])assert.equal((await fetch(endpoint,{method:'POST',headers,body:JSON.stringify(body)})).status,400);
- const response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({eventId})});assert.equal(response.status,200);assert.deepEqual(await response.json(),{eventId,queued:true});assert.deepEqual(calls,[[initialWorkspaceId,id,{eventId}]]);
-});
-
-test('webhook settings require authentication, protect secret reads and reject stale saves', {timeout:30_000}, async t=>{
-  const {base,root}=taskRecordFixture(t,'webhook-settings-http');
-  const runtime=createRuntime();
-  const service=createAgentService({dataRoot:path.join(base,'agent-profile'),environment:{HOME:base},executors:[],modelProviders:[],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
-  const contribution=createAgentServiceHttpContribution(()=>service);
-  const contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(contribution);
-  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});
-  const {url,sessionToken}=await server.ready;
-  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
-  const endpoint=url+'/api/v1/app/agent-service/webhook-settings';
-  const headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'};
-  assert.equal((await fetch(endpoint)).status,403);
-  let response=await fetch(endpoint,{headers});assert.equal(response.status,200);
-  const initial=await response.json();assert.equal(initial.state,'unconfigured');assert.equal('secret' in initial,false);
-  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:initial.revision,url:'https://receiver.invalid/hook',secret:'http-secret-test',enabled:true,unexpected:true})});assert.equal(response.status,400);
-  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:initial.revision,url:'https://receiver.invalid/hook',secret:'http-secret-test',enabled:true})});assert.equal(response.status,200);
-  const saved=await response.json();assert.equal(saved.state,'enabled');assert.equal(JSON.stringify(saved).includes('http-secret-test'),false);
-  assert.equal((await fetch(endpoint+'/reveal',{method:'POST',headers:{...headers,origin:'https://foreign.invalid'},body:JSON.stringify({expectedRevision:saved.revision})})).status,403);
-  assert.equal((await fetch(endpoint+'/reveal',{headers})).status,404);
-  response=await fetch(endpoint+'/reveal',{method:'POST',headers,body:JSON.stringify({expectedRevision:saved.revision})});assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');assert.deepEqual(await response.json(),{secret:'http-secret-test'});
-  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:initial.revision,url:saved.url,enabled:false})});assert.equal(response.status,409);
-  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:saved.revision,url:saved.url,enabled:false})});assert.equal(response.status,200);const disabled=await response.json();assert.equal(disabled.state,'disabled');
-  response=await fetch(endpoint+'/test',{method:'POST',headers,body:JSON.stringify({expectedRevision:disabled.revision})});assert.equal(response.status,409);
-});
-
 
 test('runtime restart authorizes writes, validates the observed generation and returns ready identity', async () => {
   const status={instanceId:'new-instance',generation:'new-generation',pid:42,currentDigest:'digest',busy:false,accepting:true,reasons:[]};

@@ -3054,8 +3054,8 @@ sources:
     title: 预览资源生命周期
     kind: code
     path: services/buildr/src/web/application/preview-lifecycle.ts
-    summary: 保存预览实例、目录、代码身份和受管进程，创建及停止时核对具体所有者，失败保留可诊断现场。
-    observedDigest: 075ffc10f76b8233267faba44fb124625ffac8e2fb847f09cc9d79f3f58cbd4b
+    summary: 保存预览实例、目录、代码身份和受管进程，创建及停止时核对具体所有者，失败保留可诊断现场；任务预览以 canonical 为唯一数据目标、默认沿用 development，不播种任务库副本。
+    observedDigest: 6a3bc82b0de6d608aa97b74d7bdf2d6945bb669b7ba5da28f24734759565391c
   - id: task-source-task-review-application-089e42
     title: 审查结果应用
     kind: code

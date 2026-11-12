@@ -42,6 +42,8 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `project verification inspect/validate/update` | `buildr.project-verification-result/v1` |
 | `web preview start/list/stop` | `buildr.local-app-preview/v1` |
 
+预览 owner 在 `buildr.local-app-preview/v1` 内可选携带组件级来源：Agent 运行单元 digest、generation、accepting，前端产物来源，数据模式（shared，旧实例 snapshot）与默认 development 的 reuse 来源；instance-secret 认证的 `/api/v1/health` 另携带非阻塞 `agentRuntime` 快照供任务预览核对候选就绪，不含后台会话令牌。
+
 旧 `task finish run/inspect` 与父任务写入子命令 `record/bind-child/reconcile/accept` 已退役，不作为当前接口。收尾由技能（Skill）指导智能体（Agent）组合已有能力；任务（Task）状态与关系使用当前记录命令维护。
 
 `buildr.git-worktree-result/v1` 只表达 `operation`、`status`、Task ID、Git evidence path、逐仓 source/checkout/branch/HEAD/clean/registration/state、精确 Git effects、diagnostic 与 next actions。它不包含 Environment ready、Runtime、CLI、依赖、projection、资源、恢复或总 cleanup 结论。
