@@ -11,7 +11,7 @@ import { SOURCE_CONTROL_LIMITS, assertCodeRevision, assertSourceControlPath, cod
 import type { CodeReadMeta, CodeReadDiagnostic, CodeSourceControlInput, CodeSourceControlResponse, CodeSourceControlRepository, CodeSourceControlWorktree, CodeRepositoryCloneStatus, CodeRepositoryCloneResult, CodeHistoryCommit, CodeHistoryResponse, CodeAuthorsResponse, CodeCommitResponse, CodeDiffResponse, CodeSourceFileResponse } from './source-control-model.ts';
 
 type Catalog = { repositories: Array<{ id: string; code: string; name: string; location: string; available: boolean; gitId: string | null }>; selectedRepositoryIds: string[]; scopeReason: string; diagnostics: CodeReadDiagnostic[] };
-type Dependencies = { repositories(root: string, taskId?: string, repositoryId?: string): Catalog; inventory(root:string,taskId?:string):Catalog; source(root: string, input: CodeSourceControlInput): CodeSource;worktrees(root:string,repositoryId:string,registered:Catalog['repositories'][number]):{worktrees:CodeGitWorktree[];source(worktreeId:string):CodeSource;verify(source:CodeSource):void}; taskAssociations?(root:string,repositories:CodeSourceControlRepository[],taskId?:string,deadline?:number):ReturnType<typeof readSourceControlTaskAssociations>; readTask?(root: string, taskId: string): { taskId: string; title: string }; repositoryCloneStatus?(root: string, repositoryId: string): CodeRepositoryCloneStatus; repositoryCloneRequest?(root: string, repositoryId: string): CodeRepositoryCloneResult };
+type Dependencies = { repositories(root: string, taskId?: string, repositoryId?: string): Catalog; inventory(root:string,taskId?:string):Catalog; source(root: string, input: CodeSourceControlInput): CodeSource;worktrees(root:string,repositoryId:string,registered:Catalog['repositories'][number]):{worktrees:CodeGitWorktree[];source(worktreeId:string):CodeSource;prepareVerification(sources:CodeSource[]):(source:CodeSource)=>void}; taskAssociations?(root:string,repositories:CodeSourceControlRepository[],taskId?:string,deadline?:number):ReturnType<typeof readSourceControlTaskAssociations>; readTask?(root: string, taskId: string): { taskId: string; title: string }; repositoryCloneStatus?(root: string, repositoryId: string): CodeRepositoryCloneStatus; repositoryCloneRequest?(root: string, repositoryId: string): CodeRepositoryCloneResult };
 const diagnostic = (error: unknown, repositoryId: string | null,worktreeId?:string): CodeReadDiagnostic => ({ code: (error as { code?: string })?.code || 'code_source_unavailable', message: error instanceof Error ? error.message : '代码来源暂不可读取。', repositoryId,...(worktreeId?{worktreeId}:{}) });
 // The inventory pass and the live worktree read can report one unavailable repository
 // through two layers; the same reason on the same source is one fact and the earlier
@@ -60,12 +60,18 @@ export function createSourceControlApplication(dependencies: Dependencies) {
     fail(error: unknown): void;
   };
 
+  type StatusBatch = { reads: StatusRead[]; prepareVerification(sources: CodeSource[]): (source: CodeSource) => void };
+
   function sourceControl(root: string, input: CodeSourceControlInput = {}, observedWorktrees: CodeSourceControlWorktree[] = []): CodeSourceControlResponse {
     const scan = scanSourceControl(root, input, observedWorktrees, 1);
     for (let step = scan.next(); ; step = scan.next()) {
       if (step.done) return step.value;
-      for (const read of step.value) {
-        try { read.accept(observeSourceControl(read.source)); }
+      for (const read of step.value.reads) {
+        try {
+          const observed = observeSourceControl(read.source);
+          step.value.prepareVerification([read.source])(read.source);
+          read.accept(observed);
+        }
         catch (error) { read.fail(error); }
       }
     }
@@ -77,14 +83,26 @@ export function createSourceControlApplication(dependencies: Dependencies) {
     const scan = scanSourceControl(root, input, observedWorktrees, 3);
     for (let step = scan.next(); ; step = scan.next()) {
       if (step.done) return step.value;
-      await Promise.all(step.value.map(async read => {
-        try { read.accept(await observeSourceControlAsync(read.source)); }
-        catch (error) { read.fail(error); }
-      }));
+      const { reads, prepareVerification } = step.value;
+      const results = await Promise.allSettled(reads.map(read => observeSourceControlAsync(read.source)));
+      const successful = reads.filter((_, index) => results[index].status === 'fulfilled');
+      let verify: (source: CodeSource) => void = () => {};
+      if (successful.length) {
+        try { verify = prepareVerification(successful.map(read => read.source)); }
+        catch (error) { verify = () => { throw error; }; }
+      }
+      for (const [index, read] of reads.entries()) {
+        const result = results[index];
+        try {
+          if (result.status === 'rejected') throw result.reason;
+          verify(read.source);
+          read.accept(result.value);
+        } catch (error) { read.fail(error); }
+      }
     }
   }
 
-  function* scanSourceControl(root: string, input: CodeSourceControlInput, observedWorktrees: CodeSourceControlWorktree[], batchSize: number): Generator<StatusRead[], CodeSourceControlResponse, void> {
+  function* scanSourceControl(root: string, input: CodeSourceControlInput, observedWorktrees: CodeSourceControlWorktree[], batchSize: number): Generator<StatusBatch, CodeSourceControlResponse, void> {
     if(input.repositoryId!==undefined&&(typeof input.repositoryId!=='string'||!input.repositoryId))throw codeFailure('code_repository_required','必须选择已登记代码库。');
     const catalog = dependencies.repositories(root,undefined,input.repositoryId), repositories: CodeSourceControlRepository[] = [];
     const diagnostics = [...catalog.diagnostics]; let truncated = false,statusAttempts=0;const deadline=Date.now()+SOURCE_CONTROL_LIMITS.statusReadMs;
@@ -113,7 +131,7 @@ export function createSourceControlApplication(dependencies: Dependencies) {
               && value.source?.repositoryId === registered.id && value.status === 'complete' && value.available && !value.diagnostics.length
               && value.branch === worktree.branch && value.head === worktree.head && Date.now() >= Date.parse(value.readAt) && Date.now() - Date.parse(value.readAt) < 10_000);
             if (cached) {
-              reading.verify(source);
+              reading.prepareVerification([source])(source);
               Object.assign(checkout, {available:true, source:{...source,version:cached.source!.version}, status:cached.status, branch:cached.branch, head:cached.head,
                 upstream:cached.upstream,ahead:cached.ahead,behind:cached.behind,fileCount:cached.fileCount,changes:cached.changes,
                 observedRevision:cached.observedRevision,coverage:cached.coverage,readAt:cached.readAt});
@@ -123,7 +141,6 @@ export function createSourceControlApplication(dependencies: Dependencies) {
             batch.push({
               source,
               accept(observed) {
-                reading.verify(source);
                 const currentVersion = observed.branch || observed.head;
                 source.version = currentVersion ? currentVersion + ' · 当前文件' : '当前文件';
                 Object.assign(checkout, {available:true,source,status:observed.truncated?'partial':'complete',branch:observed.branch,head:observed.head,upstream:observed.upstream,ahead:observed.ahead,behind:observed.behind,fileCount:observed.fileCount,changes:observed.files,observedRevision:observed.observedRevision,coverage:{fileLimit:SOURCE_CONTROL_LIMITS.files,truncated:observed.truncated}});
@@ -136,12 +153,12 @@ export function createSourceControlApplication(dependencies: Dependencies) {
               fail(error) { checkout.diagnostics.push(diagnostic(error, registered.id, worktree.worktreeId)); },
             });
             if (batch.length === batchSize) {
-              yield batch;
+              yield { reads: batch, prepareVerification: reading.prepareVerification };
               batch = [];
             }
           }catch(error){checkout.diagnostics.push(diagnostic(error,registered.id,worktree.worktreeId));}
         }
-        if (batch.length) yield batch;
+        if (batch.length) yield { reads: batch, prepareVerification: reading.prepareVerification };
         for (const checkout of output.worktrees) output.diagnostics.push(...checkout.diagnostics);
         const primary=output.worktrees.find(worktree=>worktree.isRegistered);
         if(primary)Object.assign(output,{source:primary.source,branch:primary.branch,head:primary.head,upstream:primary.upstream,ahead:primary.ahead,behind:primary.behind,changes:primary.changes,observedRevision:primary.observedRevision});

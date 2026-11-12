@@ -183,20 +183,22 @@ export function createCodeApplication(dependencies:CodeDependencies) {
         const member = reading.resolve(worktreeId);
         return { repositoryId, taskId: null, commitHash: null, checkoutId: worktreeId, worktreeId, worktreeGroupId: member.isRegistered ? 'main' : 'worktree:' + worktreeId, location: member.location, version: '当前文件', kind: member.isMain ? 'default' : 'worktree' };
       },
-      verify(current: CodeSource) {
+      prepareVerification(sources: CodeSource[]) {
         const repository = registration?registration():dependencies.assetCatalog(root).repositories.find(item => item.id === repositoryId);
         if (!repository) throw codeFailure('code_repository_not_registered', '代码库不在当前工作空间的登记范围内。', 404);
         assertRepositoryPrepared(root, repository.id);
         let location = dependencies.resolveSourceRoot(root, repository.source);
         try { location = fs.realpathSync(location); } catch { throw codeFailure('code_repository_unavailable', '代码库本机目录当前不可读取。', 404); }
         if(registration&&sameFilesystemPath(location,registered.location)){
-          reading.verify(current.worktreeId!,location);
+          const verify = reading.prepareVerification(location, sources.map(source => source.worktreeId!));
+          return (source: CodeSource) => verify(source.worktreeId!);
         }else{
           // Legacy workspace sources may name a repository subdirectory; only
           // that compatibility case still needs Git to resolve the live root.
           const currentRepository = createGitCommitReader().repository(location);
           if (!sameFilesystemPath(currentRepository.root, registered.location) || !sameFilesystemPath(currentRepository.commonDir, reading.commonDirectory)) throw codeFailure('code_worktree_identity_changed', '读取期间工作树身份已变化，请刷新后继续。', 409);
-          reading.verify(current.worktreeId!, currentRepository.root);
+          const verify = reading.prepareVerification(currentRepository.root, sources.map(source => source.worktreeId!));
+          return (source: CodeSource) => verify(source.worktreeId!);
         }
       },
     };
@@ -214,7 +216,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
     const registered = createGitCommitReader().repository(registeredLocation);
     const reading = sourceControlWorktrees(root, repository.id, { location: registered.root, available: true });
     const current = reading.source(input.worktreeId);
-    return { source: current, verify: () => reading.verify(current) };
+    return { source: current, verify: () => reading.prepareVerification([current])(current) };
   } });
   return Object.freeze({
     // Editing already selects an exact live checkout. Task associations enrich
@@ -232,7 +234,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
       const registered=createGitCommitReader().repository(location);
       const reading=sourceControlWorktrees(root,repository.id,{location:registered.root,available:true});
       const current=reading.source(input.worktreeId);
-      return {source:current,worktrees:{worktrees:reading.worktrees},verify:()=>reading.verify(current)};
+      return {source:current,worktrees:{worktrees:reading.worktrees},verify:()=>reading.prepareVerification([current])(current)};
     } }),
     ...createCodeFetchApplication({registeredLocation:(root,repositoryId)=>{
       const repository=dependencies.assetCatalog(root).repositories.find(item=>item.id===repositoryId);
