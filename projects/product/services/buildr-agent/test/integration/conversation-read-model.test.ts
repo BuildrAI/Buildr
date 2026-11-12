@@ -203,6 +203,26 @@ test('seen updates from new and retained writers reach projected pages and obser
 });
 
 
+test('public snapshots omit native task IDs from current and retained tools', async t => {
+ const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-legacy-tools-'));
+ t.after(() => fs.rmSync(base, {recursive: true, force: true}));
+ const repo = new ConversationRepository(path.join(base, 'agent-service'));
+ const stored = record();
+ const tool = {id: 'tool', label: 'Background task', status: 'completed' as const, canStop: true};
+ const legacyTool = {...tool, taskId: 'native-task'};
+ stored.view.run = {...run('completed', [legacyTool]), provider: 'claude'};
+ stored.view.retainedRuns = [{...stored.view.run, id: 'retained'}];
+ repo.saveConversation(stored);
+ repo.stopReadModels();
+ const service = createAgentService({dataRoot: base, executors: [], modelProviders: [], resolveWorkspace: () => ({rootPath: '/workspace'}), assertTask() {}});
+ t.after(() => service.close());
+
+ const view = service.conversations.read('ws', stored.view.id, {compactTools: true});
+ assert.deepEqual(view.run?.tools, [tool]);
+ assert.deepEqual(view.retainedRuns?.[0]?.tools, [tool]);
+ assert.deepEqual(repo.readConversation(stored.view.id)?.view.run?.tools, [legacyTool]);
+});
+
 test('legacy present files survive compact paging without rewriting history or starting native work',async t=>{
  const base=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-presented-files-'));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));
  const repo=new ConversationRepository(path.join(base,'agent-service')),r=record('presented');

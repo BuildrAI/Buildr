@@ -556,6 +556,8 @@ export class ConversationApplication {
       label: participant.label, model: participant.modelId, modelAccountId:participant.modelAccountId, deliveredThrough: participant.deliveredThrough, contextId: participant.contextRef?.id ?? '',
     }));
     for (const run of conversationRuns(view)) {
+      // Older Claude workers persisted native task IDs in tool observations.
+      run.tools = run.tools.map(({id, label, status, canStop}) => ({id, label, status, canStop}));
       const continuation = record.continuations?.[run.id] ?? (record.attempts ? continuationPrompt(record as Pick<StoredConversation, 'view' | 'attempts'>, run.id) : undefined);
       if (continuation) run.continuedFrom = includeContinuationPrompt ? continuation : {runId: continuation.runId, userEntryId: continuation.userEntryId};
       if (run.generation !== this.options.generation && !this.options.generationAlive?.(run.generation) && BUSY_STATES.has(run.status)) {

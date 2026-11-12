@@ -69,7 +69,9 @@ function observation(session: Session): ExecutorObservation {
   const round = session.round;
   const backgroundWork = [...session.tasks.values()].some(task=>task.active);
   const questionTools=new Set([...(round?.pending.values()??[])].filter(p=>p.request.kind==='question').map(p=>p.toolId));
-  const tools = [...session.tools.values()].filter(tool=>!questionTools.has(tool.id)).map(tool=>({...tool,canStop:Boolean(tool.taskId)}));
+  const tools = [...session.tools.values()]
+    .filter(tool => !questionTools.has(tool.id))
+    .map(({id, label, status, taskId}) => ({id, label, status, canStop: Boolean(taskId)}));
   const active = tools.some(tool=>tool.status!=='completed') || backgroundWork;
   return {
     status: session.closed && !round?.terminal ? 'unknown' : round?.pending.size ? 'waiting'
