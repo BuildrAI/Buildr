@@ -18,6 +18,7 @@ await step('模型设置使用供应商侧栏、账号与额度/模型页签并�
   await accounts.getByRole('button',{name:'添加自定义供应商',exact:true}).click();
   const provider=page.getByRole('dialog',{name:/添加供应商/});
   await provider.waitFor();
+  await provider.getByLabel('显示名称').waitFor();
   await provider.locator('.ant-select').first().click();
   const dropdown=page.locator('.ant-select-dropdown:visible');
   await dropdown.waitFor();
@@ -27,7 +28,8 @@ await step('模型设置使用供应商侧栏、账号与额度/模型页签并�
   await dropdown.getByText('其他自定义供应商',{exact:true}).click();
   await provider.getByLabel('显示名称').waitFor();
   assert.equal(await provider.getByLabel('模型列表路径').inputValue(),'/models');
-  assert.equal(await provider.getByText('需要 API Key',{exact:true}).count(),1);
+  assert.equal(await provider.getByRole('switch').count(),0);
+  await provider.getByLabel('API Key',{exact:true}).waitFor();
   await provider.getByRole('button',{name:'关闭供应商配置',exact:true}).click();
   await provider.waitFor({state:'hidden'});
   assert.equal(await accounts.getByText('账号与额度',{exact:true}).count(),1);
@@ -148,13 +150,14 @@ await step('账号入口悬停与聚焦显示所有已登录账号的真实额�
   try{
     const button=page.getByRole('button',{name:'智能体与模型设置',exact:true}),overview=page.getByTestId('account-quota-overview');
     const leaveQuota=async()=>{await button.evaluate((node:HTMLElement)=>node.blur());await page.mouse.move(70,100);await overview.waitFor({state:'hidden'});};
+    const quotaRow=(label:string)=>overview.locator('.ac-account-quota-row').filter({has:page.getByText(label,{exact:true})});
     await button.hover();await overview.waitFor({state:'visible'});
-    await overview.getByText('周限额 · 剩余 82%',{exact:true}).waitFor();await overview.getByText('5小时限额 · 剩余 45%',{exact:false}).waitFor();
+    await quotaRow('周限额').getByText('剩余 82%',{exact:true}).waitFor();await quotaRow('5小时限额').getByText('剩余 45%',{exact:true}).waitFor();
     await overview.getByText('CNY 123.46',{exact:true}).waitFor();
-    await overview.getByText(/^套餐内 Credits · 剩余 0%/).waitFor();
-    await overview.getByText('0 / 1,000 credits',{exact:true}).waitFor();
-    await overview.getByText(/^资源包 · 剩余 59.2%/).waitFor();
-    await overview.getByText('1,599 / 2,700 credits',{exact:true}).waitFor();
+    await quotaRow('套餐内 Credits').getByText(/^剩余 0%/).waitFor();
+    await quotaRow('套餐内 Credits').getByText('· 0 / 1,000',{exact:true}).waitFor();
+    await quotaRow('资源包').getByText(/^剩余 59.2%/).waitFor();
+    await quotaRow('资源包').getByText('· 1,599 / 2,700',{exact:true}).waitFor();
     assert.deepEqual(await overview.locator('section').evaluateAll((nodes:any[])=>nodes.map(node=>node.getAttribute('data-account-id'))),['native-codex','native-dsh','native-qoder']);
     assert.equal(await overview.locator('section').count(),3);
     assert.doesNotMatch(await overview.innerText(),/观察时间|重置|充值|赠送/);
@@ -175,7 +178,7 @@ await step('账号入口悬停与聚焦显示所有已登录账号的真实额�
       assert.equal(await overview.innerText(),before);assert.equal(await overview.locator('.ant-spin').count(),0);
       assert.deepEqual(await overview.boundingBox(),boundsBefore);
       fixture.quotaOverrides.set('codex',{available:true,observedAt:new Date().toISOString(),windows:[{id:'week',label:'周限额',remainingPercent:81},{id:'hour',label:'5小时限额',remainingPercent:45}]});
-      release();await overview.getByText('周限额 · 剩余 81%',{exact:true}).waitFor();
+      release();await quotaRow('周限额').getByText('剩余 81%',{exact:true}).waitFor();
       assert.deepEqual(await overview.boundingBox(),boundsBefore);
     }finally{release();await page.unroute('**/api/v1/app/agent-service/model-accounts',holdAccounts);}
     await leaveQuota();

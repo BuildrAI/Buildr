@@ -16,6 +16,19 @@ import {guardToolArgumentStream} from './tool-stream-guard.ts';
 const object = (value: unknown): ProtocolJson => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ProtocolJson : {};
 const safeId = (value: string) => /^[a-zA-Z0-9_-]{1,100}$/.test(value);
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+// Preserve account bindings written before discovery paths became configurable.
+function observedAccountIdentity(row: ModelAccountView, identity?: string, config = row.custom): string {
+  if (!identity) return row.identity;
+  if (row.custom && config) {
+    const prefix = `custom:${config.protocol}:${config.baseUrl}:`;
+    const observedPrefix = prefix + (config.modelsPath ?? '/models') + ':';
+    if (identity.startsWith(observedPrefix)) {
+      const credential = identity.slice(observedPrefix.length);
+      if (row.identity === digest(prefix + credential)) return row.identity;
+    }
+  }
+  return digest(identity);
+}
 const byId = (left: { id: string }, right: { id: string }) => left.id.localeCompare(right.id);
 const selectionEfforts = (values: Array<{ id: string; label: string }> | undefined) => (values ?? []).map(({ id, label }) => ({ id, label })).sort(byId);
 const selectionTiers = (values: ModelOffering['serviceTiers']) => (values ?? []).map(tier => ({ id: tier.id, label: tier.label, contextWindow: tier.contextWindow, defaultReasoningEffort: tier.defaultReasoningEffort, reasoningEfforts: selectionEfforts(tier.reasoningEfforts) })).sort(byId);
@@ -224,6 +237,9 @@ export class ModelAccessApplication {
       return await this.createCustom(provider, input.custom);
     }
     if (input.custom) throw new ModelAccessError('model_custom_unsupported', '此模型来源不支持自定义端点配置。', 400);
+    if (['openai','devin','codex','deepseek'].includes(provider.id) && [...this.rows.values()].some(row=>row.provider===provider.id)) {
+      throw new ModelAccessError('model_provider_already_configured', '该供应商已有账号，请管理已有连接。', 409);
+    }
     const row: ModelAccountView = { id: randomUUID(), identity:randomUUID(), provider: provider.id, label: input.label?.trim().slice(0, 160) || provider.label, revision: randomUUID(), enabled: true, status: 'not-authenticated', credentialConfigured: false, models: [] };
     this.rows.set(row.id, row); await this.save(); this.options.changed?.(this.view(row)); return this.view(row);
   }
@@ -247,16 +263,19 @@ export class ModelAccessApplication {
       if (!provider?.custom) throw new ModelAccessError('model_custom_unsupported', '此模型来源不支持自定义模型发现。', 400);
       const runtime = await this.runtime(row.id);
       if (!runtime.discoverCustom) throw new ModelAccessError('model_custom_unsupported', '此模型来源尚未实现模型发现。', 503);
-      return await runtime.discoverCustom({ accountId: row.id, baseUrl, protocol, useApiKey: input.useApiKey, ...(apiKey ? { apiKey } : {}) });
+      return await runtime.discoverCustom({ accountId: row.id, baseUrl, protocol, modelsPath:input.modelsPath, useApiKey: input.useApiKey, ...(apiKey ? { apiKey } : {}) });
     }
     if (input.useApiKey && !apiKey) throw new ModelAccessError('model_custom_api_key_required', '请填写 API Key 后再获取模型列表。', 400);
     const provider = [...this.providers.values()].find(candidate => candidate.custom && candidate.discover);
     if (!provider?.discover) throw new ModelAccessError('model_custom_unsupported', '当前没有可用的自定义供应商发现入口。', 503);
-    return await provider.discover({ baseUrl, protocol, useApiKey: input.useApiKey, ...(apiKey ? { apiKey } : {}) });
+    return await provider.discover({ baseUrl, protocol, modelsPath:input.modelsPath, useApiKey: input.useApiKey, ...(apiKey ? { apiKey } : {}) });
   }
   private async createCustom(provider: ModelProvider, input: CustomProviderConfigureInput): Promise<ModelAccountView> {
     if (this.closed || this.metadataReadOnly) throw new ModelAccessError('model_access_closed', '模型供应商配置未能保存。', 503);
     const label = normalizeCustomLabel(input.label), config = normalizeCustomConfiguration({ baseUrl: input.baseUrl, protocol: input.protocol, ...(input.modelsPath !== undefined ? { modelsPath: input.modelsPath } : {}), useApiKey: input.useApiKey, models: input.models ?? [] });
+    if ([...this.rows.values()].some(row=>row.custom?.baseUrl===config.baseUrl&&row.custom.protocol===config.protocol)) {
+      throw new ModelAccessError('model_provider_already_configured', '该端点与协议已接入，请编辑已有供应商。', 409);
+    }
     const row: ModelAccountView = { id: randomUUID(), identity: randomUUID(), provider: provider.id, label, revision: randomUUID(), enabled: true, status: 'not-authenticated', credentialConfigured: false, custom: config, models: [] };
     this.rows.set(row.id, row);
     try {
@@ -282,7 +301,8 @@ export class ModelAccessApplication {
     } catch (error) { await candidate.close().catch(() => {}); throw error; }
     if (this.closed || this.metadataReadOnly) { await candidate.close().catch(() => {}); throw new ModelAccessError('model_access_closed', '模型供应商配置未能保存。', 503); }
     const before = this.selectionState(row), previousIdentity = row.identity;
-    const nextIdentity = observation.identity ? digest(observation.identity) : previousIdentity;
+    const nextIdentity = observedAccountIdentity(row, observation.identity, config);
+    const discoveryPathChanged = (row.custom?.modelsPath ?? '/models') !== (config.modelsPath ?? '/models');
     row.custom = config; row.label = label; row.enabled = true;
     row.status = observation.status; row.credentialConfigured = observation.credentialConfigured ?? config.useApiKey;
     row.diagnostic = observation.diagnostic; delete row.quota;
@@ -297,7 +317,7 @@ export class ModelAccessApplication {
     }
     if (observation.status === 'ready') row.observedAt = this.now;
     const cached = this.runtimes.get(row.id);
-    if (previousIdentity !== nextIdentity) {
+    if (previousIdentity !== nextIdentity || discoveryPathChanged) {
       this.runtimes.set(row.id, Promise.resolve(candidate));
       if (cached) await cached.then(runtime => runtime.close()).catch(() => {});
     } else if (cached) await candidate.close().catch(() => {});
@@ -355,10 +375,11 @@ export class ModelAccessApplication {
       const observation = await (await this.runtime(id)).inspect();
       if (this.closed || this.metadataReadOnly || this.operations.get(id) !== operation) return this.view(this.current(id));
       before=this.selectionState(row);
-      if(observation.identity && row.identity!==digest(observation.identity)){row.status='not-authenticated';row.identity=digest(observation.identity);row.models=[];delete row.quota;delete row.accountLabel;delete row.observedAt;for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id)this.release(lease.view.identity);}
+      const identity=observedAccountIdentity(row,observation.identity);
+      if(row.identity!==identity){row.status='not-authenticated';row.identity=identity;row.models=[];delete row.quota;delete row.accountLabel;delete row.observedAt;for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id)this.release(lease.view.identity);}
       // An incomplete observation is not evidence that a previously usable account expired.
       // Explicit authentication results and identity changes still invalidate it immediately.
-      row.enabled = true; row.status = observation.status === 'failed' && observation.incomplete === true && row.status === 'ready' && (!observation.identity || row.identity === digest(observation.identity)) ? 'ready' : observation.status; if(observation.credentialConfigured!==undefined)row.credentialConfigured=observation.credentialConfigured; if(observation.label) row.accountLabel = observation.label; row.diagnostic = observation.diagnostic;
+      row.enabled = true; row.status = observation.status === 'failed' && observation.incomplete === true && row.status === 'ready' ? 'ready' : observation.status; if(observation.credentialConfigured!==undefined)row.credentialConfigured=observation.credentialConfigured; if(observation.label) row.accountLabel = observation.label; row.diagnostic = observation.diagnostic;
       if(observation.status==='ready') {
         const prefs=this.preferences.get(id)??{};
         // A curated custom catalog stays authoritative; inspections only refresh availability.

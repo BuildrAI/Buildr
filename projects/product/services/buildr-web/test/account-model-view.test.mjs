@@ -11,7 +11,7 @@ test('账号视图保留真实额度窗口和上下文覆盖，基础模型与�
 
 test('未知额度不填零，旧空重复账号不占主要界面且保留 Devin 与独立 ChatGPT API 入口',()=>{
  const account={id:'a',provider:'codex',label:'Codex',revision:'r',enabled:true,status:'not-authenticated',models:[],quota:{available:false,observedAt:'2026-10-25T00:00:00Z'}};
- const views=modelSourceViews([account,{...account,id:'native-qoder',provider:'native-qoder',connectionId:'qoder',status:'ready'}],[{id:'qoder',enabled:true}]);assert.equal(views.length,3);assert.deepEqual(views.map(view=>view.providerLabel),['ChatGPT API','Devin','Qoder']);assert.deepEqual(views.find(view=>view.id==='native-qoder').windows,[]);assert.equal(views.find(view=>view.id==='new-devin').status,'not-authenticated');assert.equal(views.find(view=>view.id==='new-openai').providerLabel,'ChatGPT API');assert.equal(views.some(view=>view.provider==='anthropic'),false);
+ const views=modelSourceViews([account,{...account,id:'native-qoder',provider:'native-qoder',connectionId:'qoder',status:'ready'}],[{id:'qoder',enabled:true}]);assert.equal(views.length,2);assert.deepEqual(views.map(view=>view.providerLabel),['Devin','Qoder']);assert.deepEqual(views.find(view=>view.id==='native-qoder').windows,[]);assert.equal(views.find(view=>view.id==='new-devin').status,'not-authenticated');assert.equal(views.some(view=>view.id==='new-openai'),false);assert.equal(views.some(view=>view.provider==='anthropic'),false);
 });
 
 test('ChatGPT 订阅与 API Key 作为两个来源可同时启用并分别提供模型',()=>{
@@ -55,7 +55,7 @@ test('仅 ChatGPT API 来源提供 OpenAI 平台账单入口',()=>{
 test('DSH 接入的 DeepSeek 模型来源显示 DeepSeek，不显示执行智能体名称',()=>{
  const dsh={id:'native-dsh',identity:'deepseek',provider:'native-dsh',connectionId:'dsh',label:'DeepSeek',authType:'oauth',revision:'r3',enabled:true,status:'ready',accountLabel:'DeepSeek',models:[{id:'deepseek-v4',label:'DeepSeek-V4',images:false,tools:true,enabled:true}]};
  const view=modelSourceViews([dsh],[]).find(view=>view.id===dsh.id);
- assert.equal(view.providerLabel,'DeepSeek');
+ assert.equal(view.providerLabel,'DeepSeek Harness');
  assert.equal(view.models[0].label,'DeepSeek-V4');
 });
 

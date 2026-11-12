@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { createCustomModelProvider } from '../../src/model-access/providers/custom.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
@@ -584,4 +586,36 @@ test('gateway bounds actual output to provider capability without overwriting na
   }
   assert.deepEqual(seen.map(body=>body.max_tokens),[2048,512,undefined]);assert.equal(lease.offering.maxOutputTokens,2048);
  }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('legacy custom account keeps its identity and model preferences after reading the catalog', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-model-legacy-catalog-'));
+  const baseUrl = 'https://gateway.example.com/v1';
+  const legacyIdentity = createHash('sha256').update(`custom:chat-completions:${baseUrl}:anonymous`).digest('hex');
+  const requests:string[]=[];
+  const provider = createCustomModelProvider({fetch:async input => {requests.push(String(input));return Response.json({data:[{id:'manual-model'}]});}});
+  const accountId = 'existing-custom';
+  await writeFile(join(root,'accounts.json'),JSON.stringify({
+    version:1, accounts:[{id:accountId,provider:'custom',label:'现有网关',identity:legacyIdentity,revision:'old',enabled:true,status:'ready',
+      custom:{baseUrl,protocol:'chat-completions',useApiKey:false,models:[{id:'manual-model'}]},
+      models:[{id:'manual-model',label:'旧模型',images:false,tools:true}]}],
+    preferences:{[accountId]:{'manual-model':{enabled:true,contextWindow:16000}}},
+  }),{mode:0o600});
+  const access=createModelAccess({root,providers:[provider]});
+  try {
+    const refreshed=await access.accounts.check(accountId);
+    assert.equal(refreshed.identity,legacyIdentity);
+    assert.equal(refreshed.models[0]?.enabled,true);
+    assert.equal(refreshed.models[0]?.contextWindow,16000);
+    await assert.rejects(access.accounts.add({provider:'custom',custom:{label:'重复网关',baseUrl,protocol:'chat-completions',useApiKey:false}}),/已接入/);
+    await access.accounts.discoverCustom({accountId,baseUrl,protocol:'chat-completions',modelsPath:'/catalog',useApiKey:false});
+    assert.equal(requests.at(-1),baseUrl+'/catalog');
+    const configuration={label:'现有网关',baseUrl,protocol:'chat-completions' as const,useApiKey:false};
+    const removed=await access.accounts.configureCustom(accountId,{...configuration,expectedRevision:refreshed.revision,models:[]});
+    assert.equal(removed.identity,legacyIdentity);
+    assert.deepEqual(removed.models,[]);
+    const restored=await access.accounts.configureCustom(accountId,{...configuration,expectedRevision:removed.revision,models:[{id:'manual-model'}]});
+    assert.equal(restored.models[0]?.contextWindow,16000);
+    assert.equal(restored.models[0]?.enabled,true);
+  } finally {await access.close();await rm(root,{recursive:true,force:true});}
 });

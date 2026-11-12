@@ -1,5 +1,5 @@
 import {useState} from 'react';
-import {Button,Form,Input,Select,Space,Switch} from 'antd';
+import {Button,Form,Input,Select,Space} from 'antd';
 import {DrawerShell} from '../../components/DrawerShell';
 import {CUSTOM_PROVIDER_PROTOCOLS,customProviderEndpoint,customProviderModelsUrl,DEFAULT_CUSTOM_MODELS_PATH,type CustomProviderProtocol} from './custom-provider-model';
 
@@ -42,8 +42,8 @@ type Props={
 /** Provider onboarding shared by presets and user-declared endpoints; credentials never echo stored values. */
 export function ProviderConnectionDrawer({open,initial,configuredPresets=[],busy,onClose,onSave}:Props){
   const [form]=Form.useForm<ProviderConnectionInput>();
-  const kind=Form.useWatch('kind',form)??initial?.kind??'openai';
-  const useApiKey=Form.useWatch('useApiKey',form)??initial?.useApiKey??false;
+  const kind=Form.useWatch('kind',form)??initial?.kind??'custom';
+  const [clearKey,setClearKey]=useState(false);
   const baseUrl=Form.useWatch('baseUrl',form)??initial?.baseUrl??'';
   const protocol=Form.useWatch('protocol',form)??initial?.protocol??'chat-completions';
   const modelsPath=Form.useWatch('modelsPath',form)??initial?.modelsPath??DEFAULT_CUSTOM_MODELS_PATH;
@@ -59,8 +59,8 @@ export function ProviderConnectionDrawer({open,initial,configuredPresets=[],busy
     setSaving(true);setError('');
     try{
       const next:ProviderConnectionInput=values.kind==='custom'
-        ?{kind:'custom',...(values.accountId?{accountId:values.accountId}:{}),label:values.label.trim(),baseUrl:values.baseUrl?.trim(),protocol:values.protocol,modelsPath:values.modelsPath?.trim()||DEFAULT_CUSTOM_MODELS_PATH,useApiKey:Boolean(values.useApiKey),...(values.useApiKey&&values.apiKey?.trim()?{apiKey:values.apiKey.trim()}:{})}
-        :{kind:values.kind,label:presets.find(preset=>preset.value===values.kind)!.label,...(values.apiKey?.trim()?{apiKey:values.apiKey.trim()}:{})};
+        ?{kind:'custom',...(values.accountId?{accountId:values.accountId}:{}),label:values.label.trim(),baseUrl:values.baseUrl?.trim(),protocol:values.protocol,modelsPath:values.modelsPath?.trim()||DEFAULT_CUSTOM_MODELS_PATH,useApiKey:Boolean(values.apiKey?.trim()||(hasKey&&!clearKey)),...(values.apiKey?.trim()?{apiKey:values.apiKey.trim()}:{})}
+        :{...presetInitial(values.kind),label:presets.find(preset=>preset.value===values.kind)!.label,...(values.apiKey?.trim()?{apiKey:values.apiKey.trim()}:{})};
       await onSave(next);
     }catch(failure){setError(failure instanceof Error?failure.message:'供应商接入未完成。');}
     finally{setSaving(false);}
@@ -73,7 +73,8 @@ export function ProviderConnectionDrawer({open,initial,configuredPresets=[],busy
       <Form.Item label="接入方式" name="kind" rules={[{required:true,message:'请选择接入方式'}]}>
         <Select aria-label="接入方式" options={options} disabled={editing} onChange={value=>{
           const next=presetInitial(value);
-          form.setFieldsValue(next);
+          form.setFieldsValue({...next,apiKey:undefined});
+          setClearKey(false);
         }}/>
       </Form.Item>
       {!custom&&<p className="amm-provider-form-hint">{presets.find(preset=>preset.value===kind)?.description}</p>}
@@ -92,14 +93,12 @@ export function ProviderConnectionDrawer({open,initial,configuredPresets=[],busy
           <Input aria-label="模型列表路径" placeholder={DEFAULT_CUSTOM_MODELS_PATH} maxLength={2048}/>
         </Form.Item>
         <p className="amm-provider-form-hint">请求地址：<span className="mono">{customProviderEndpoint(protocol,baseUrl)}</span></p>
-        <Form.Item label="需要 API Key" name="useApiKey" valuePropName="checked">
-          <Switch aria-label="需要 API Key"/>
-        </Form.Item>
       </>}
-      {(custom?useApiKey:true)&&<Form.Item label="API Key" name="apiKey" rules={!hasKey?[{required:true,whitespace:true,message:'请输入 API Key'}]:undefined}
-        extra={hasKey?'已保存密钥，留空保留原密钥。':custom?'密钥只保存在本机账号目录。':'使用该供应商的官方 API。'}>
+      <Form.Item label="API Key" name="apiKey" rules={!custom&&!hasKey?[{required:true,whitespace:true,message:'请输入 API Key'}]:undefined}
+        extra={hasKey&&!clearKey?'已保存密钥，留空保留原密钥。':custom?'端点无需认证时留空。':'使用该供应商的官方 API。'}>
         <Input.Password aria-label="API Key" autoComplete="new-password" placeholder={hasKey?'已保存，留空保持不变':'sk-...'}/>
-      </Form.Item>}
+      </Form.Item>
+      {custom&&hasKey&&<Button size="small" onClick={()=>{form.setFieldValue('apiKey',undefined);setClearKey(value=>!value);}}>{clearKey?'保留原密钥':'清除已保存的密钥'}</Button>}
     </Form>
   </DrawerShell>;
 }

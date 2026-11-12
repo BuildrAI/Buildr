@@ -76,7 +76,13 @@ export function AgentConnectionSettings(){
     if(input.apiKey)account=await context.api.configureModelAccount(account,input.apiKey);
    }else{
     const custom={label:input.label,baseUrl:input.baseUrl!,protocol:input.protocol!,modelsPath:input.modelsPath??DEFAULT_CUSTOM_MODELS_PATH,useApiKey:Boolean(input.useApiKey),...(input.apiKey?{apiKey:input.apiKey}:{})};
-    const existing=input.accountId?accountsRef.current.find(item=>item.id===input.accountId):undefined;
+    const existing=input.accountId?await context.api.modelAccount(input.accountId):undefined;
+    const endpoint=(url:string)=>url.trim().replace(/\/+$/,'');
+    if((!existing||endpoint(existing.custom?.baseUrl??'')!==endpoint(custom.baseUrl)||existing.custom?.protocol!==custom.protocol)&&accountsRef.current.some(item=>item.id!==existing?.id&&item.custom&&
+      endpoint(item.custom.baseUrl)===endpoint(custom.baseUrl)&&item.custom.protocol===custom.protocol)){
+      throw new Error('该端点与协议已接入，请编辑已有供应商。');
+    }
+    if(existing&&!existing.custom)throw new Error('供应商已变化，请刷新后重试。');
     account=existing
       ?await context.api.configureCustomModelAccount(existing,{...custom,models:existing.custom?.models??[]})
       :await context.api.addCustomModelAccount({...custom,models:[]});

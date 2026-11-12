@@ -48,6 +48,8 @@ export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,o
   const [query,setQuery]=useState(''),[filter,setFilter]=useState('all'),[family,setFamily]=useState('all');
   const [keyInputs,setKeyInputs]=useState<Record<string,string>>({}),[keyEditing,setKeyEditing]=useState<Record<string,boolean>>({});
   const [manual,setManual]=useState<{sourceId:string;id:string;label:string;contextWindow?:number}|null>(null);
+  const [discovery,setDiscovery]=useState<{sourceId:string;models:CustomProviderModelInput[]}>();
+  const [removing,setRemoving]=useState<string>();
   const [readingModels,setReadingModels]=useState(''),[modelNotice,setModelNotice]=useState('');
   const entries=sources.filter(source=>showDisabled||source.sourceEnabled!==false);
   const disabledCount=sources.filter(source=>source.sourceEnabled===false).length;
@@ -70,19 +72,19 @@ export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,o
     void onConfigureKey(source.id,key).then(()=>{setKeyInputs(current=>({...current,[source.id]:''}));setKeyEditing(current=>({...current,[source.id]:false}));}).catch(()=>{});
   };
   const customEditable=selected?.provider==='custom'&&Boolean(selected.custom)&&Boolean(onCustomModels);
+  const candidates=selected&&discovery?.sourceId===selected.id?discovery.models.filter(candidate=>!selected.custom?.models.some(model=>model.id===candidate.id)):[];
   async function saveModels(source:ModelSourceView,models:CustomProviderModelInput[],message:string){
     if(!onCustomModels)return;
-    try{await onCustomModels(source.id,models);setModelNotice(message);}
-    catch(failure){setModelNotice(failure instanceof Error?failure.message:'模型列表未保存。');}
+    try{await onCustomModels(source.id,models);setModelNotice(message);return true;}
+    catch(failure){setModelNotice(failure instanceof Error?failure.message:'模型列表未保存。');return false;}
   }
   async function readModels(source:ModelSourceView){
     if(!onCustomDiscover||!source.custom||readingModels)return;
     setReadingModels(source.id);setModelNotice('');
     try{
       const result=await onCustomDiscover({accountId:source.id,baseUrl:source.custom.baseUrl,protocol:source.custom.protocol,modelsPath:source.custom.modelsPath??DEFAULT_CUSTOM_MODELS_PATH,useApiKey:source.custom.useApiKey});
-      const merged=result.models.reduce((list,model)=>upsertCustomModel(list,model),source.custom.models);
-      if(result.models.length)await saveModels(source,merged,`已读取 ${result.models.length} 个模型候选。`);
-      else setModelNotice(result.diagnostic||'端点没有返回可用的模型列表，请手动添加模型。');
+      setDiscovery({sourceId:source.id,models:result.models});
+      setModelNotice(result.diagnostic||(result.models.length?'':'端点没有返回可用的模型列表，请手动添加模型。'));
     }catch(failure){setModelNotice(failure instanceof Error?failure.message:'模型列表读取失败。');}
     finally{setReadingModels('');}
   }
@@ -90,8 +92,7 @@ export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,o
     if(!manual||!selected?.custom)return;
     const id=manual.id.trim();if(!id)return;
     const models=upsertCustomModel(selected.custom.models,{id,label:manual.label.trim()||undefined,...(manual.contextWindow!==undefined?{contextWindow:manual.contextWindow}:{})});
-    await saveModels(selected,models,`已加入 ${id}。`);
-    setManual(null);
+    if(await saveModels(selected,models,`已加入 ${id}。`))setManual(null);
   }
   function quota(source:ModelSourceView){
     const items:MenuProps['items']=[];
@@ -131,7 +132,12 @@ export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,o
         {customEditable&&selected&&<div className="amm-model-actions">
           <Button size="small" icon={<ReloadOutlined/>} loading={readingModels===selected.id} disabled={busy} onClick={()=>void readModels(selected)}>读取模型列表</Button>
           <Button size="small" icon={<PlusOutlined/>} disabled={busy} onClick={()=>setManual({sourceId:selected.id,id:'',label:''})}>手动添加模型</Button>
+          {!!selected.custom?.models.length&&<Button size="small" disabled={busy} onClick={()=>setRemoving('')}>移除模型</Button>}
         </div>}
+        {customEditable&&selected&&candidates.length>0&&<Space wrap className="amm-model-actions">
+          {candidates.map(model=><Button key={model.id} size="small" disabled={busy} onClick={()=>void saveModels(selected,upsertCustomModel(selected.custom!.models,model),'已加入模型。')}>加入 {model.label||model.id}</Button>)}
+          <Button size="small" disabled={busy} onClick={()=>void saveModels(selected,candidates.reduce(upsertCustomModel,selected.custom!.models),'已加入候选模型。')}>全部加入</Button>
+        </Space>}
         {modelNotice&&<Alert className="amm-model-notice" type="info" showIcon closable message={modelNotice} onClose={()=>setModelNotice('')}/>}
         <div className="amm-model-toolbar"><Input prefix={<SearchOutlined aria-hidden/>} aria-label="搜索模型" placeholder="搜索模型名称" value={query} allowClear onChange={e=>setQuery(e.target.value)}/><Select aria-label="启用状态" value={filter} onChange={value=>{setFilter(value);}} options={[{value:'all',label:'全部模型'},{value:'enabled',label:'已启用'},{value:'disabled',label:'未启用'}]}/><Select aria-label="模型系列" value={family} onChange={value=>{setFamily(value);}} options={[{value:'all',label:'全部系列'},...families.map(value=>({value,label:value}))]}/></div>
         <div className="amm-model-summary"><span><strong>已启用 {enabled}</strong> / {rows.length}<span className="amm-divider-dot">·</span>仅已启用的模型出现在对话中</span><Space size={4}><Button size="small" disabled={busy||!filtered.some(row=>row.available&&row.source.status==='ready')} onClick={()=>bulk(true)}>{query||filter!=='all'||family!=='all'?'启用筛选结果':'全部启用'}</Button><Button size="small" disabled={busy||!filtered.some(row=>row.available&&row.source.status==='ready')} onClick={()=>bulk(false)}>{query||filter!=='all'||family!=='all'?'停用筛选结果':'全部停用'}</Button></Space></div>
@@ -147,7 +153,14 @@ export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,o
       </div>
     </main>
   </div>
-  <Modal title="手动添加模型" open={Boolean(manual)} okText="添加" cancelText="取消" confirmLoading={busy} onCancel={()=>setManual(null)} onOk={()=>void addManualModel()}>
+  <Modal title="移除模型" open={removing!==undefined&&Boolean(customEditable)} okText="移除" cancelText="取消"
+    okButtonProps={{danger:true,disabled:!removing}} confirmLoading={busy} onCancel={()=>setRemoving(undefined)} onOk={async()=>{
+      if(selected?.custom&&removing&&await saveModels(selected,selected.custom.models.filter(model=>model.id!==removing),'已移除模型。'))setRemoving(undefined);
+    }}>
+    <Select aria-label="选择要移除的模型" placeholder="选择要移除的模型" value={removing||undefined} onChange={setRemoving}
+      options={selected?.custom?.models.map(model=>({value:model.id,label:model.label||model.id}))} style={{width:'100%'}}/>
+  </Modal>
+  <Modal title="手动添加模型"  open={Boolean(manual)} okText="添加" cancelText="取消" confirmLoading={busy} onCancel={()=>setManual(null)} onOk={()=>void addManualModel()}>
     <p className="amm-manual-hint">模型 ID 会原样发送给端点；新模型默认停用。</p>
     <Space direction="vertical" size={10} style={{width:'100%'}}>
       <Input aria-label="模型 ID" placeholder="模型 ID，例如 my-model-v2" value={manual?.id??''} disabled={busy} onChange={event=>setManual(current=>current?{...current,id:event.target.value}:current)}/>
