@@ -137,7 +137,7 @@ OpenSpec 的 `specs/` 保存当前承诺，`changes/` 保存一次变更的提�
 
 `buildr web preview start --reuse development[:facet,…]` 可显式沿用开发版应用数据：`model-catalog` 复制 `agent-service/model-access`，`agent-runtime` 另复制所选连接的登录配置（排除 `model-bindings`、`tmp` 及日志、会话等运行缓存）、引用到的 `agent-service/programs/` 程序，并在预览交互库中只重写 `connections` 表与原生绑定。开发版数据根始终只读；预览会话、附件、交接材料与模型运行缓存不复制，预览自身生成的同类数据也不会写回开发版。`reuse.json` 记录来源、facet、播种/刷新时间与逐 facet 结果，`preview.json` 同步保存可选 `reuse` 事实。
 
-已有副本默认复用；`--refresh-reuse` 以临时目录写入、校验后替换，失败保留旧副本。默认 `preview stop` 只停止并保留实例数据；`preview stop --purge` 仅在停止确认、owner 匹配、目标位于预览根内且不存在越界符号链接时删除整个实例目录，包括会话、凭证与配置副本、程序副本和日志。
+已有副本默认复用；`--refresh-reuse` 以临时目录写入、校验后替换，失败保留旧副本。默认 `preview stop` 只停止并保留实例数据；`preview stop --purge` 仅在停止确认、owner 匹配、目标位于预览根内且为真实目录时删除整个实例目录，包括会话、凭证与配置副本、程序副本和日志；实例内符号链接（含指向宿主缓存的声明链接与断链）按链接条目删除，不跟随或改动链接目标。
 
 实例文件包含密钥，本机副本和故障报告都应保护这些内容。源资产与用户配置、凭证、临时日志分开保存，不意味着后者可无条件删除。
 

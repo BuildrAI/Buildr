@@ -734,24 +734,7 @@ function assertPurgeTargetSafe(instance: string, dataRoot: string): string {
   const stat = fs.lstatSync(target, { throwIfNoEntry: false });
   if (!stat) throw codedError(`预览实例 ${instance} 的实例目录不存在。`, 'preview_purge_unsafe', { instance });
   if (stat.isSymbolicLink() || !stat.isDirectory()) throw codedError(`预览实例 ${instance} 的清理目标不是真实目录。`, 'preview_purge_unsafe', { instance });
-  const realRoot = fs.realpathSync(target);
-  const walk = (directory: string): void => {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const file = path.join(directory, entry.name);
-      const info = fs.lstatSync(file);
-      if (info.isSymbolicLink()) {
-        let resolved: string;
-        try { resolved = fs.realpathSync(file); }
-        catch { continue; } // A broken link is removed with its directory, never followed.
-        if (resolved !== realRoot && !resolved.startsWith(`${realRoot}${path.sep}`)) {
-          throw codedError(`预览实例 ${instance} 包含越界符号链接，拒绝清理。`, 'preview_purge_unsafe', { instance });
-        }
-        continue;
-      }
-      if (info.isDirectory()) walk(file);
-    }
-  };
-  walk(target);
+  // rmSync 递归只 unlink 符号链接条目（含宿主缓存声明与断链），从不跟随，故越界链接不构成清理风险。
   return target;
 }
 

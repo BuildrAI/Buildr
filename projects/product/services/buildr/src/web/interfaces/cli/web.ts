@@ -68,7 +68,7 @@ export function createWebCliContributions(application: WebCliRuntime | null = nu
       "",
       "Task preview 必须同时提供 canonical Workspace 与 Task ID，并与 Worktree evidence、preview owner 和进程 secret 完全匹配。独立 preview 保持实例级停止。",
       "默认只停止实例并保留数据。--purge 删除该实例根内的会话、附件、交接材料、账号与配置副本、程序副本、日志和登记。",
-      "停止未确认、owner 不匹配、目标不在预览根内或存在越界符号链接时拒绝清理并保留现场。",
+      "停止未确认、owner 不匹配、目标不在预览根内或不是真实目录时拒绝清理并保留现场；实例内符号链接按条目删除，不跟随链接目标。",
     ],
     match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'preview' && runtimeId === 'stop',
     run: (r, c) => (application || r).manageBuildrWebPreview('stop', c.argv.slice(5)),

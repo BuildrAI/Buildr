@@ -209,7 +209,7 @@ test('默认沿用 development，显式 none 不沿用，非法参数在写入�
   await stopPreview('demo', { dataRoot: data.dataRoot, purge: true });
 });
 
-test('purge 拒绝错误 owner、未确认停止、越界符号链接并保留现场', { timeout: 20_000 }, async (t) => {
+test('purge 拒绝错误 owner 与未确认停止，越界与断链按条目删除', { timeout: 20_000 }, async (t) => {
   const data = fixture(t);
   const started = await data.start(['--reuse', 'development:model-catalog']);
   const directory = previewDataRoot('demo', data.dataRoot);
@@ -238,10 +238,13 @@ test('purge 拒绝错误 owner、未确认停止、越界符号链接并保留�
 
   const outside = path.join(data.root, 'outside');
   fs.mkdirSync(outside, { recursive: true });
+  fs.writeFileSync(path.join(outside, 'keep.txt'), 'keep');
   fs.symlinkSync(outside, path.join(directory, 'escape'));
-  await assert.rejects(stopPreview('demo', { dataRoot: data.dataRoot, purge: true }), (error) => coded(error, 'preview_purge_unsafe'));
-  assert.equal(fs.existsSync(directory), true);
-  assert.equal(fs.existsSync(outside), true);
+  fs.symlinkSync(path.join(outside, 'missing'), path.join(directory, 'broken'));
+  const purged = await stopPreview('demo', { dataRoot: data.dataRoot, purge: true });
+  assert.equal(purged.status, 'purged');
+  assert.equal(fs.existsSync(directory), false);
+  assert.equal(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8'), 'keep');
 });
 
 test('单个 facet 失败不阻止预览启动并保留其他 facet 结果', { timeout: 20_000 }, async (t) => {
