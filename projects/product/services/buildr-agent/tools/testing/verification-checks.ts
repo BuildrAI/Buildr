@@ -33,7 +33,7 @@ export const agentIntegrationChecks = [
     testFiles: ['test/integration/process/handoff/activation.test.ts'], schedulingCostMs: 100000, timeoutMs: 180000,
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
   { id: 'agent-integration-recovery', name: 'Agent real observation, cancellation and resource release',
-    testFiles: processTests('recovery','protocol-budget.test.ts'), schedulingCostMs: 240000, timeoutMs: 420000,
+    testFiles: processTests('recovery','protocol-budget.test.ts'), schedulingCostMs: 240000, timeoutMs: 360000,
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
   { id: 'agent-integration-recovery-budget', name: 'Agent real recovery backoff budget',
     testFiles: ['test/integration/process/recovery/protocol-budget.test.ts'], schedulingCostMs: 35000, timeoutMs: 60000,

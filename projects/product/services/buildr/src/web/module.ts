@@ -71,8 +71,9 @@ export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: {
         closeResources: options.closeResources,
         createLocalWorkspaceServer: (webRuntime, serverOptions) => {
           let previewWarmup: NodeJS.Timeout | undefined;
-          return Reflect.apply(createLocalWorkspaceServer, undefined, [webRuntime, { ...serverOptions, agentRuntimeStatus: options.agentRuntimeStatus, beforeShutdown: () => {
+          return Reflect.apply(createLocalWorkspaceServer, undefined, [webRuntime, { ...serverOptions, agentRuntimeStatus: options.agentRuntimeStatus, beforeShutdown: async () => {
             if (previewWarmup) { clearTimeout(previewWarmup); previewWarmup = undefined; }
+            await serverOptions.beforeShutdown?.();
           }, onReady: async () => {
           if (!serverOptions.previewIdentity) {
             await options.onReady?.(); resumeUpdate();

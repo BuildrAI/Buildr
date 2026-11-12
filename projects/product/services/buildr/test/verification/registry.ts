@@ -690,7 +690,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/service-task-runtime-http.test.ts',
     'test/integration/web-dist-verification.test.ts',
     'test/integration/web-resource-shutdown.test.ts',
-  ], { schedulingCostMs: 75000, args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+  ], { schedulingCostMs: 75000, timeoutMs: 300_000, args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
 
   integrationSlice('integration-declarations', [
     'test/integration/core-diagnostics-and-package.test.ts',
@@ -872,7 +872,7 @@ const builtInVerificationSteps: any = Object.freeze([
   ], args: ['--test-concurrency=1', '--test-reporter=dot'], consumesArtifact: true }, profiles: ['candidate'], groups: ['release'], dependsOn: ['candidate-tarball'], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'npm-launcher-candidate', name: 'verified npm installation Launcher projection', executor: { type: 'node-test', files: [
     'test/integration/npm-launcher.test.ts',
-  ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], schedulingCostMs: 177000, concurrencyClass: 'workspace-heavy' }),
+  ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], schedulingCostMs: 177000, timeoutMs: 360_000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'host-node-cli-consumption', name: 'Host Node installed CLI consumption', executor: { type: 'node', file: 'test/verification/host-node/cli-consumption.ts', consumesArtifact: true }, profiles: ['host-node'],  dependsOn: ['candidate-tarball'], concurrencyClass: 'workspace-heavy' }),
   step({ id: 'open-source-candidate', name: 'open-source candidate', executor: { type: 'node', file: 'test/verification/release/open-source-candidate.ts', consumesArtifact: true }, profiles: ['candidate'], groups: ['public', 'release'],  dependsOn: ['candidate-tarball'] }),
   step({ id: 'spec-change-consistency', name: 'Active and archived specification changes match current source', executor: { type: 'node', file: 'test/verification/openspec/spec-change-consistency.ts' }, profiles: [], groups: ['openspec'], }),
