@@ -302,3 +302,11 @@ test('工具之后的单段答复仍独立成正式答复，进度说明留在�
  assert.deepEqual(items[1].entries.map(entry=>entry.id),['n','t']);
  assert.equal(items[2].entry.text,'收尾完成。');
 });
+test('过程区里被思考拆开的进度说明也合并为连贯一条，不出现脱落的开头',()=>{
+ const thinking=id=>({...message(id,'思考'),kind:'thinking',thinking:true});
+ const entries=[message('a','不高'),thinking('th'),message('b','，而且是一次性对账。'),tool('t')];
+ const items=groupConversationStream(entries,{id:'r1',status:'running'});
+ assert.equal(items.length,1);assert.equal(items[0].type,'process-block');
+ assert.equal(items[0].entries[0].text,'不高，而且是一次性对账。');
+ assert.deepEqual(items[0].entries.map(entry=>entry.id),['a','th','t']);
+});

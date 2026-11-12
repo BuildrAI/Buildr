@@ -269,7 +269,7 @@ export function groupConversationStream(entries:readonly ConversationEntry[],cur
     while(index<entries.length&&isProcess(entries[index])&&entries[index].runId===first.runId)run.push(entries[index++]);
     const active=conversationRunLive(first.runId?known.get(first.runId):undefined);
     const finalEntries=active?[]:run.filter(entry=>finals.has(entry.id));
-    const process=run.filter(entry=>!finals.has(entry.id));
+    const process=mergeSplitAssistantSegments(run.filter(entry=>!finals.has(entry.id)));
     if(process.length)items.push({type:'process-block',entries:process,active,finishedAt:finalEntries.at(-1)?.createdAt});
     if(finalEntries.length){
       // Fold trailing segments back into one coherent reply (they were a single
@@ -280,6 +280,27 @@ export function groupConversationStream(entries:readonly ConversationEntry[],cur
     }
   }
   return items;
+}
+/** Upstream gateways may split one streamed message into several assistant items
+ * separated only by thinking. Fold such segments back into a single coherent entry
+ * (keeping the first identity and the interleaved thinking) so neither the reply nor
+ * the process narration shows a detached leading fragment. Directly adjacent
+ * commentary (no thinking between) is left untouched. */
+function mergeSplitAssistantSegments(entries:readonly ConversationEntry[]):ConversationEntry[] {
+  const out:ConversationEntry[]=[];
+  for(const entry of entries){
+    if(entry.kind==='message'&&entry.role==='assistant'&&!entry.parentToolId){
+      let index=out.length-1,sawThinking=false;
+      while(index>=0&&(out[index].kind==='thinking'||out[index].thinking)){sawThinking=true;index--;}
+      const base=index>=0?out[index]:undefined;
+      if(sawThinking&&base&&base.kind==='message'&&base.role==='assistant'&&!base.parentToolId){
+        out[index]={...base,text:(base.text??'')+(entry.text??'')};
+        continue;
+      }
+    }
+    out.push(entry);
+  }
+  return out;
 }
 export type ConversationTurnItems={key:string;prompt?:ConversationEntry;items:ConversationStreamItem[]};
 /** Time the entire owned turn, including a final answer and an unsettled process block. */
