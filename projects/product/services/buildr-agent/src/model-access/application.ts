@@ -449,6 +449,13 @@ export class ModelAccessApplication {
   private json(res: ServerResponse, status: number, value: unknown) { res.writeHead(status, {'Content-Type':'application/json','Cache-Control':'no-store'}); res.end(JSON.stringify(value)); }
   private async handle(req: IncomingMessage,res: ServerResponse) {
     const controller = new AbortController(),upstreamController=new AbortController(); let lease: LeaseRecord | undefined;
+    let phase = 'request', requestId: string | undefined, upstreamHttpStatus: number | undefined;
+    let diagnostic: Record<string, unknown> | undefined;
+    const reportFailure = (error: unknown, failurePhase = phase) => {
+      if (!diagnostic || controller.signal.aborted) return;
+      this.options.diagnostics?.({event:'model-request-failed', ...diagnostic, requestId, phase:failurePhase, upstreamHttpStatus,
+        httpStatus:error instanceof ModelAccessError ? error.status : undefined, code:modelFailure(error).code});
+    };
     req.once('aborted',()=>controller.abort()); res.once('close',()=>{ if (!res.writableEnded) controller.abort(); });
     try {
       if (this.closed || !this.origin || req.headers.host !== new URL(this.origin).host || req.headers.origin) throw new ModelAccessError('model_gateway_forbidden','模型入口只接受已授权本机调用。',403);
@@ -468,12 +475,21 @@ export class ModelAccessApplication {
       const runtime = await this.runtime(account.id), opaque = this.opaque(await this.encryptionKey(),lease.view.identity);
       controller.signal.throwIfAborted();
       const quotaFailure = modelQuotaFailure(account, lease.view.offering, Date.parse(this.now)); if (quotaFailure) throw quotaFailure;
+      requestId = randomUUID();
+      diagnostic = {provider:account.provider,conversationId:binding.conversationId,runId:binding.runId};
+      phase = 'request-translation';
       const translated = translateRequest(body,protocol,runtime.protocol,opaque); translated.model = binding.modelId;
       // Capability ceiling only: leave native output defaults and context budgeting intact.
       const limit=lease.view.offering.maxOutputTokens;
       if(limit)for(const key of ['max_tokens','max_completion_tokens','max_output_tokens'])if(typeof translated[key]==='number'&&translated[key]>limit)translated[key]=limit;
       delete translated.service_tier;if(binding.serviceTier)translated.service_tier=binding.serviceTier;
-      const upstream = await runtime.infer({body:translated,modelId:binding.modelId,signal:AbortSignal.any([controller.signal,upstreamController.signal]),context:{accountId:account.id,agentId:binding.agentId,conversationId:binding.conversationId,runId:binding.runId,requestId:randomUUID()}});
+      if (runtime.protocol === 'chat-completions' && Array.isArray(translated.messages)) {
+        diagnostic.toolResultCount = translated.messages.filter(message => object(message).role === 'tool').length;
+      }
+      phase = 'provider-request';
+      const upstream = await runtime.infer({body:translated,modelId:binding.modelId,signal:AbortSignal.any([controller.signal,upstreamController.signal]),context:{accountId:account.id,agentId:binding.agentId,conversationId:binding.conversationId,runId:binding.runId,requestId}});
+      upstreamHttpStatus = upstream.status;
+      phase = 'provider-response';
       if (!upstream.ok) {
         // Read only a bounded JSON error, never expose an arbitrary upstream body.
         let size = 0, body = ''; const reader = upstream.body?.getReader(), decoder = new TextDecoder();
@@ -483,7 +499,8 @@ export class ModelAccessApplication {
         throw upstreamFailure(detail, upstream.status);
       }
       const guarded=guardToolArgumentStream(upstream,runtime.protocol,error=>{lease!.streamFailure={...modelFailure(error),runId:binding.runId};upstreamController.abort();});
-      const response = await translateResponse(guarded,runtime.protocol,protocol,{model:lease.view.model,stream:body.stream===true,request:body,opaque,signal:controller.signal});
+      phase = 'response-translation';
+      const response = await translateResponse(guarded,runtime.protocol,protocol,{model:lease.view.model,stream:body.stream===true,request:body,opaque,signal:controller.signal,onStreamError:error=>reportFailure(error,'response-stream')});
       if (!response.body) throw new ModelAccessError('model_response_empty','模型服务返回空响应。',502);
       res.writeHead(response.status,{'Content-Type':response.headers.get('content-type') || 'application/json','Cache-Control':'no-store'});
       const reader = response.body.getReader();
@@ -503,6 +520,7 @@ export class ModelAccessApplication {
       } }
       finally { clearInterval(heartbeat);if (controller.signal.aborted) await reader.cancel().catch(()=>{}); if (!res.destroyed && !res.writableEnded) res.end(); reader.releaseLock(); }
     } catch (error) {
+      reportFailure(error);
       if (!res.headersSent && !res.destroyed) { this.json(res,error instanceof ModelAccessError ? error.status : 502,{error:modelFailure(error)}); }
       else if (!res.destroyed) res.destroy();
     } finally { lease?.requests.delete(controller); }

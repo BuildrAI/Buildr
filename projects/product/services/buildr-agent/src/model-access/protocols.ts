@@ -160,7 +160,12 @@ function serializeRequest(parsed: Parsed, protocol: ModelProtocol, opaque: Opaqu
           if (p.value.signature) reasoning.reasoning_signature = p.value.signature;
         }
       }
-      if (content.length || calls.length || Object.keys(reasoning).length) result.unshift({ role: message.role, content: content.length === 1 && content[0].type === 'text' ? content[0].text : content.length ? content : null, ...(calls.length ? { tool_calls: calls } : {}), ...reasoning });
+      if (content.length || calls.length || Object.keys(reasoning).length) {
+        const entry = { role: message.role, content: content.length === 1 && content[0].type === 'text' ? content[0].text : content.length ? content : null, ...(calls.length ? { tool_calls: calls } : {}), ...reasoning };
+        // Chat Completions requires tool responses immediately after their assistant call.
+        if (message.role === 'user') result.push(entry);
+        else result.unshift(entry);
+      }
       return result;
     });
     if (parsed.tools.length) body.tools = parsed.tools.map(tool => ({ type: 'function', function: tool }));
@@ -477,7 +482,7 @@ class Output {
   }
   error(cause: unknown): string { const error = modelFailure(cause); return this.protocol === 'responses' ? this.event('response.failed', { response: { id: this.responseId, object: 'response', status: 'failed', error } }) : this.protocol === 'anthropic-messages' ? this.event('error', { error: { type: 'api_error', ...error } }) : `data: ${JSON.stringify({ error })}\n\n`; }
 }
-export async function translateResponse(response: Response, from: ModelProtocol, to: ModelProtocol, options: { model: string; stream: boolean; request: ProtocolJson; opaque: OpaqueReasoning; signal: AbortSignal }): Promise<Response> {
+export async function translateResponse(response: Response, from: ModelProtocol, to: ModelProtocol, options: { model: string; stream: boolean; request: ProtocolJson; opaque: OpaqueReasoning; signal: AbortSignal; onStreamError?: (error: unknown) => void }): Promise<Response> {
   if (from === to) return response;
   const bindings=to==='responses'?toolBindings(options.request):new Map<string,ToolBinding>();
   const customTools = new Set([...bindings].filter(([,binding])=>binding.custom).map(([wireName])=>wireName));
@@ -489,7 +494,7 @@ export async function translateResponse(response: Response, from: ModelProtocol,
       if (options.signal.aborted) { ended = true; await iterator.return?.(undefined); controller.error(new Error('model_request_cancelled')); return; }
       if (!started) { started = true; controller.enqueue(encoder.encode(output.start())); return; }
       try { while (!ended) { const next = await iterator.next(); if (next.done) { ended = true; controller.enqueue(encoder.encode(output.finish())); controller.close(); return; } const frame = output.accept(next.value); if (frame) { controller.enqueue(encoder.encode(frame)); return; } } }
-      catch (error) { ended = true; controller.enqueue(encoder.encode(output.error(error))); controller.close(); }
+      catch (error) { ended = true; options.onStreamError?.(error); controller.enqueue(encoder.encode(output.error(error))); controller.close(); }
     },
     async cancel() { ended = true; await iterator.return?.(undefined); },
   });

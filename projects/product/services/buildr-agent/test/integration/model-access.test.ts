@@ -85,7 +85,8 @@ function frames(values:unknown[]){return new Response(values.map(value=>'data: '
 
 test('gateway preserves a bounded HTTP failure before streaming without exposing credentials or HTML',async()=>{
   const root=await mkdtemp(join(tmpdir(),'buildr-model-error-'));let mode='json';
-  const access=createModelAccess({root,providers:[provider(async()=>mode==='json'?Response.json({error:{code:'model_devin_quota_or_rate_limit',message:'Devin · 请求响应：HTTP 429 Authorization: Bearer private-token'}},{status:429}):new Response('<html>private upstream body</html>',{status:503}))]});
+  const failures: ProtocolJson[] = [];
+  const access=createModelAccess({root,diagnostics:event=>failures.push(event),providers:[provider(async()=>mode==='json'?Response.json({error:{code:'model_devin_quota_or_rate_limit',message:'Devin · 请求响应：HTTP 429 Authorization: Bearer private-token'}},{status:429}):new Response('<html>private upstream body</html>',{status:503}))]});
   try{
     const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id);
     const lease=await access.leases.create({accountId:ready.id,modelId:model.id,agentId:'codex',conversationId:'one',runId:'one'});
@@ -93,7 +94,32 @@ test('gateway preserves a bounded HTTP failure before streaming without exposing
     const response=await request();assert.equal(response.status,429);const result=await response.json();
     assert.equal(result.error.code,'model_devin_quota_or_rate_limit');assert.match(result.error.message,/请求响应.*429/);assert.ok(!JSON.stringify(result).includes('private-token'));
     mode='html';const other=await request();assert.equal(other.status,503);assert.ok(!(await other.text()).includes('private upstream body'));
+    assert.deepEqual(failures.map(({phase,httpStatus,upstreamHttpStatus,conversationId,runId})=>({phase,httpStatus,upstreamHttpStatus,conversationId,runId})),[
+      {phase:'provider-response',httpStatus:429,upstreamHttpStatus:429,conversationId:'one',runId:'one'},
+      {phase:'provider-response',httpStatus:503,upstreamHttpStatus:503,conversationId:'one',runId:'one'},
+    ]);
+    assert.notEqual(failures[0]?.requestId,failures[1]?.requestId);
+    assert.doesNotMatch(JSON.stringify(failures),/private-token|private upstream body/);
   }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('Messages keeps parallel tool results adjacent to their call before follow-up text', () => {
+  const body = translateRequest({messages:[
+    {role:'user',content:'Read both files'},
+    {role:'assistant',content:[
+      {type:'tool_use',id:'first',name:'read',input:{}},
+      {type:'tool_use',id:'second',name:'read',input:{}},
+    ]},
+    {role:'user',content:[
+      {type:'tool_result',tool_use_id:'second',content:'second output'},
+      {type:'tool_result',tool_use_id:'first',content:'first output'},
+      {type:'text',text:'Follow-up context'},
+    ]},
+  ]},'anthropic-messages','chat-completions',noOpaque);
+  const messages = body.messages as ProtocolJson[];
+  assert.deepEqual(messages.map(message=>message.role),['user','assistant','tool','tool','user']);
+  assert.deepEqual(messages.slice(2,4).map(message=>message.tool_call_id),['second','first']);
+  assert.equal(messages[4]?.content,'Follow-up context');
 });
 
 test('account checks only rotate revisions for material changes in that account',async()=>{

@@ -149,6 +149,7 @@ export interface ModelAccessOptions {
   providers: ModelProvider[];
   environment?: Record<string, string>;
   changed?(account: ModelAccountView): void;
+  diagnostics?: import('../contracts.ts').ExecutionDiagnosticSink;
   now?(): Date;
 }
 export class ModelAccessError extends Error {
