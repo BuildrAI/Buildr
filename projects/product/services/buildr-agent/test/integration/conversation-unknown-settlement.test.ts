@@ -39,7 +39,7 @@ test('retained unknown activity is visible as pending confirmation and settles b
   seen(repo, 'pinned'); seen(repo, 'draft');
   const before = repo.querySummaries(['w1'], { limit: 10, draftConversationIds: ['draft'] });
   assert.equal(before.activityCounts.unknown, 1, 'residual active rows count as pending confirmation');
-  assert.equal(before.activityCounts.attention, 1);
+  assert.equal(before.activityCounts.attention, 0, 'historical unknown evidence is not current-run attention');
   assert.equal(repo.querySummaries(['w1'], { limit: 10, activityState: 'unknown' }).total, 1);
   assert.deepEqual(before.conversations.map(value => value.id), ['pinned', 'draft'], 'visible pending confirmation precedes drafts');
   assert.equal(before.conversations[0]!.activity!.active, true);
