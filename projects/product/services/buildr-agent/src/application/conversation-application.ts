@@ -735,8 +735,11 @@ export class ConversationApplication {
   }
   allowsReleasedContinuation(workspaceId: string, id: string, input: SendDraft): boolean {
     const record = this.load(workspaceId, id), run = record.view.run;
-    return Boolean(!this.closing && run?.generation === this.options.generation && releasedContinuation(record, input) &&
-      !this.workers.has(run.id) && !this.titleWork.has(id) && !this.earlyTitles.has(id) &&
+    return Boolean(!this.closing && run && releasedContinuation(record, input) &&
+      !record.view.requests.length &&
+      conversationRuns(record.view).every(candidate => !this.workers.has(candidate.id) &&
+        (candidate.id === run.id || candidate.resourcesReleased || !unfinishedRun(candidate))) &&
+      !this.titleWork.has(id) && !this.earlyTitles.has(id) &&
       !this.recoveries.has(`${workspaceId}/${id}`) && !this.observations.has(`${workspaceId}/${id}`) &&
       !this.supplements.size && !this.repliesInFlight.size);
   }
@@ -965,7 +968,7 @@ export class ConversationApplication {
     const preview=this.prepare(record,draft,answerMaterials).preview;
     return this.submit(record,{...draft,previewToken:preview.token,clientRequestId:requestId},false,false,answerMaterials);
   }
-  private submit(record: StoredConversation, raw: SendDraft & { previewToken?: string; clientRequestId: string }, systemRecovery = false, initial = false, answerMaterials: string[] = []): { run: RunView; conversation: ConversationView } {
+  private submit(record: StoredConversation, raw: SendDraft & { previewToken?: string; clientRequestId: string }, systemRecovery = false, initial = false, answerMaterials: string[] = [], hostVerified = false): { run: RunView; conversation: ConversationView } {
     const { workspaceId, id } = record.view;
     if(systemRecovery&&record.view.run&&this.conversationStopRequested(record,record.view.run.id))fail('agent_continue_cancelled','原执行已经请求停止，不会自动续行。',409);
     const clientRequestId = nonempty(raw.clientRequestId, '请求身份', 200);
@@ -1035,7 +1038,7 @@ export class ConversationApplication {
     record.view.run = run;
     record.view.hidden = false;
     this.save(record, initial);
-    const work = this.execute(workspaceId, id, run.id, prepared).finally(() => { this.workers.delete(run.id); this.cancelledRetries.delete(run.id); this.scheduleSourceRelease(workspaceId, id); });
+    const work = this.execute(workspaceId, id, run.id, prepared, undefined, hostVerified).finally(() => { this.workers.delete(run.id); this.cancelledRetries.delete(run.id); this.scheduleSourceRelease(workspaceId, id); });
     this.workers.set(run.id, work);
     return { run: structuredClone(run), conversation: this.read(workspaceId, id,{compactTools:true}) };
   }
@@ -1367,7 +1370,14 @@ export class ConversationApplication {
     this.scheduleQuestionWaitReleases(record);
   }
 
-  private async execute(workspaceId: string, id: string, runId: string, prepared: ReturnType<ConversationApplication['prepare']>, retryCount?: number): Promise<void> {
+  private async verifyExecutionHost(record: StoredConversation): Promise<void> {
+    const {workspaceId,taskId}=record.view;
+    const workspace=await this.options.host.resolve(workspaceId,record.hostScope?.revision);
+    if(record.hostScope && (record.hostScope.ref.sourceId!==workspace.ref.sourceId || record.hostScope.ref.id!==workspace.ref.id || record.hostScope.rootPath!==workspace.rootPath))fail('agent_scope_binding_changed','执行环境身份或位置已变化，请核对原工作。',409);
+    if(taskId)await this.options.host.verify(workspaceId,taskId);
+  }
+
+  private async execute(workspaceId: string, id: string, runId: string, prepared: ReturnType<ConversationApplication['prepare']>, retryCount?: number, hostVerified = false): Promise<void> {
     const attempt = this.currentRun(workspaceId, id, runId)?.attempts.find(value => value.runId === runId);
     const request = attempt?.clientRequestId ?? '';
     const lineage = /^automatic-retry:([^:]+):(\d+)$/.exec(request);
@@ -1378,11 +1388,10 @@ export class ConversationApplication {
     let creatingContext = false;
     try {
       let record = this.currentRun(workspaceId, id, runId); if (!record) return;
-      const workspace = await this.options.host.resolve(workspaceId, record.hostScope?.revision);
-      if (!workspace.rootPath) fail('agent_workspace_missing', '原工作空间不可用。', 409);
-      record = this.currentRun(workspaceId, id, runId); if (!record) return;
-      if(record.hostScope && (record.hostScope.ref.sourceId!==workspace.ref.sourceId || record.hostScope.ref.id!==workspace.ref.id || record.hostScope.rootPath!==workspace.rootPath))fail('agent_scope_binding_changed','执行环境身份或位置已变化，请核对原工作。',409);
-      if (record.view.taskId) await this.options.host.verify(workspaceId, record.view.taskId);
+      if (!hostVerified) {
+        await this.verifyExecutionHost(record);
+        record = this.currentRun(workspaceId, id, runId); if (!record) return;
+      }
       if (!fs.statSync(record.view.cwd, { throwIfNoEntry: false })?.isDirectory()) fail('agent_cwd_missing', '对话保存的工作目录已不可用。', 409);
       const startingParticipant = record.participants.find(value => value.id === record!.view.run!.participantId)!;
       const transition = attempt?.questionWaits?.find(wait => wait.reuse);
@@ -1909,7 +1918,7 @@ export class ConversationApplication {
       if(run.generation===this.options.generation&&run.status==='running'){
         delete record.interruption;run.interrupted=undefined;run.diagnostic=undefined;this.save(record);return;
       }
-    if(!this.options.autoContinueInterrupted){unavailable('系统中断后执行未完成。工作记录已保留，你可以发送“继续”接着处理。');return;}
+      if(!this.options.autoContinueInterrupted){unavailable('系统中断后执行未完成。工作记录已保留，你可以发送“继续”接着处理。');return;}
       if(marker.awaitingUser){unavailable('执行未完成：中断前有待确认的问题或授权，请查看原问题后继续。');return;}
       const stopped=run.status==='stopped'&&run.tools.every(tool=>tool.status==='completed');
       const released=run.resourcesReleased===true&&run.tools.every(tool=>tool.status!=='running');
@@ -1924,6 +1933,15 @@ export class ConversationApplication {
         record=this.load(workspaceId,id);run=record.view.run;
         if(this.closing||run?.id!==originalId||!record.interruption||record.interruption.cancelled)return;
       }
+      const revision=record.view.revision;
+      try { await this.verifyExecutionHost(record); }
+      catch (error) {
+        if (!(error instanceof AgentServiceError) || error.code !== 'agent_host_unavailable') throw error;
+        unavailable('执行已中断，等待原工作空间连接就绪后自动接续。');
+        return;
+      }
+      record=this.load(workspaceId,id);
+      if(this.closing||record.view.revision!==revision||!record.interruption||this.conversationStopRequested(record,originalId))return;
       const unknown=run.tools.filter(tool=>tool.status==='unknown').map(tool=>tool.id);
       const text='系统自动恢复：上次执行因 Buildr '+(marker.reason==='execution-fault'?'执行协议或运行通道异常':marker.reason==='transport'?'执行观察中断':'服务重启')+'而中断，'+(released?'准确原控制资源已释放，原执行及独立操作结果仍可能未知。':'现已确认原执行停止。')+'请先核对本地对话、当前工作成果与工具结果，继续完成用户尚未完成的目标。不要重新执行全部历史命令，不重发原指令；不确定已生效的操作先核对，不扩大原有授权或代答问题。未知工具引用：'+(unknown.join('、')||'见原轮记录')+'。若需要真实用户决定，请明确提出。';
       const draft:SendDraft={expectedRevision:record.view.revision,connectionId:participant.connectionId,modelAccountId:participant.modelAccountId,modelAccountIdentity:participant.modelAccountIdentity,model:run.model,serviceTier:run.serviceTier,reasoningEffort:run.reasoningEffort,permissionMode:run.permissionMode??'default',text,skipHandoffSummary:true};
@@ -1931,7 +1949,7 @@ export class ConversationApplication {
       if(!record.interruption.attempted)record.attempts.find(value=>value.runId===originalId)!.automaticRetry={rootRunId:lineage.rootRunId,count:lineage.count+1};
       record.interruption.attempted=true;this.save(record);
       draft.expectedRevision=record.view.revision;
-      this.send(workspaceId,id,{...draft,clientRequestId:requestId},true);
+      this.submit(record,{...draft,clientRequestId:requestId},true,false,[],true);
     }catch(error){unavailable('执行未完成，未能自动接续：'+safeDiagnostic(error));}
   }
 

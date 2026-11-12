@@ -69,7 +69,4 @@ export class PendingSends {
     } finally { this.running = false; }
   }
   get busy(): boolean { return this.running; }
-  waiting(reason: string): void {
-    for(const row of this.repository.list())if(row.state==='waiting')this.repository.finish(row,'waiting',reason);
-  }
 }

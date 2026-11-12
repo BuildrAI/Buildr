@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { executionScopeKey } from '../../../../src/index.ts';
+import { claim } from '../../../../src/process/ownership.ts';
 import type { AgentProcessConnection } from '../../../../src/index.ts';
 import { isLive, until, actor, prepareAgentRuntime, connectAgentProcess, copyPackage, prepared, cleanupProcessFixture } from '../../../support/process-fixture.ts';
 
@@ -57,3 +58,48 @@ for(const newInstruction of [true,false])test('retiring process preserves unknow
   assert.ok(isLive(old.pid));assert.equal((await observer.operations.conversations.read(scope,other.id)).run?.status,'running');
   fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');await until(()=>observer!.operations.conversations.read(scope,other.id),v=>v.run?.status==='completed');await until(async()=>isLive(old.pid),v=>!v);
  }});
+
+
+test('storage contention during successor startup and rollback preserves the running backend', {timeout:90000},async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-switch-contention-'));
+  const dataRoot=path.join(root,'profile'),workspace=path.join(root,'work'),packageRoot=path.join(root,'package');
+  fs.mkdirSync(workspace);copyPackage(prepared,packageRoot);
+  fs.copyFileSync(path.join(import.meta.dirname,'../../fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
+  const marker=path.join(packageRoot,'build/fixture-version.json');
+  fs.writeFileSync(marker,JSON.stringify({version:'old'}));
+  const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='switch-contention';
+  let main:Awaited<ReturnType<typeof actor>>|undefined,observer:AgentProcessConnection|undefined;
+  t.after(()=>cleanupProcessFixture({root,dataRoot,profileId,host:main,observer}));
+  main=await actor({dataRoot,profileId,runtime,workspace});
+  observer=await connectAgentProcess({dataRoot,profileId,runtime,sourceId:'minimal'});
+  const old=await observer.lifecycle.identity(),scope=main.info.scope;
+  const connection=await main.call('connections.read',['first']);
+  await main.call('connections.connect',['first',{expectedRevision:connection.revision}]);
+  const chat=await main.call('conversations.create',[scope,{}]);
+  const draft={expectedRevision:chat.revision,connectionId:'first',text:'hold:other'};
+  await main.call('conversations.send',[scope,chat.id,{...draft,clientRequestId:randomUUID()}]);
+  const original=await until(()=>observer!.operations.conversations.read(scope,chat.id),view=>view.run?.accepted===true);
+
+  fs.writeFileSync(marker,JSON.stringify({version:'wait-for-startup-storage-contention'}));
+  const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});
+  await observer.lifecycle.requestRuntime({expectedGeneration:old.generation,runtime:next});
+  const successorPid=await until(async()=>Number(fs.readFileSync(path.join(dataRoot,'successor-starting'),'utf8')),pid=>pid>0);
+  const diagnostic=path.join(dataRoot,'agent-service','diagnostics','lifecycle-'+old.pid+'-'+old.generation+'.jsonl');
+  const lock=claim(dataRoot,'storage');
+  try {
+    fs.writeFileSync(path.join(dataRoot,'successor-may-start'),'yes');
+    await until(async()=>isLive(successorPid),live=>!live);
+    await until(async()=>fs.readFileSync(diagnostic,'utf8'),log=>log.includes('"reason":"parallel-rollback"')||log.includes('"event":"service-uncaught-exception"'));
+    assert.ok(isLive(old.pid));
+    assert.doesNotMatch(fs.readFileSync(diagnostic,'utf8'),/service-uncaught-exception/);
+  } finally { lock.release(); }
+
+  const restored=await observer.lifecycle.status();
+  assert.equal(restored.identity.generation,old.generation);
+  assert.equal(restored.accepting,true);
+  assert.equal((await observer.operations.conversations.read(scope,chat.id)).run?.id,original.run!.id);
+  fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');
+  const completed=await until(()=>observer!.operations.conversations.read(scope,chat.id),view=>view.run?.status==='completed');
+  assert.equal(completed.run?.id,original.run!.id);
+  assert.equal(fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').length,1);
+});

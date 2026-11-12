@@ -20,6 +20,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { createAgentService } from '../../src/index.ts';
+import { AgentServiceError } from '../../src/domain/agent-state.ts';
 import type { AgentExecutor, AgentRuntime, AgentServiceOptions, ContextRef, ConversationEntry, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation } from '../../src/contracts.ts';
 import { NativeRequestError } from '../../src/domain/error-diagnostic.ts';
 import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
@@ -2202,6 +2203,94 @@ test('a failed automatic continuation has a persistent bounded transport retry c
     assert.equal(native.sends.length,4);
     assert.equal(f.service.conversations.read('workspace-one',chat.id).entries.filter(entry=>entry.role==='user').length,1);
   }finally{await f.close();}
+});
+
+test('an unavailable workspace host preserves the interrupted run until the same host is ready',async()=>{
+  const native=fake('local',{hold:true}),f=fixture([native.executor],{autoContinueInterrupted:true});
+  let cold:ReturnType<typeof createAgentService>|undefined,hostReady=false;
+  try {
+    await connected(f.service,'local');
+    const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','finish the original goal');
+    const original=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.accepted===true);
+    await f.service.close();
+    cold=createAgentService({...f.options,resolveWorkspace(id){
+      if(!hostReady)throw new AgentServiceError('agent_host_unavailable','no_registered_peer',503);
+      return f.options.resolveWorkspace(id);
+    }});
+    await cold.conversations.recoverInterrupted();
+    const waiting=cold.conversations.read('workspace-one',chat.id);
+    assert.equal(waiting.run?.id,original.run!.id);
+    assert.match(waiting.run?.diagnostic??'',/等待原工作空间连接/);
+    assert.equal(native.sends.length,1);
+    hostReady=true;
+    await Promise.all([cold.conversations.recoverInterrupted(),cold.conversations.recoverInterrupted()]);
+    await waitUntil(()=>native.sends.length,count=>count===2);
+    assert.equal(native.sends[1]!.clientRequestId,'host-recovery:'+original.run!.id);
+    assert.match(native.sends[1]!.text,/系统自动恢复/);
+  } finally {await cold?.close();await f.close();}
+});
+
+test('a released unknown run can be explicitly continued across backend generations',async()=>{
+  const native=fake('local',{disconnect:'unknown'}),f=fixture([native.executor]);
+  let cold:ReturnType<typeof createAgentService>|undefined;
+  try {
+    await connected(f.service,'local');
+    const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','preserve the original goal');
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='unknown');
+    await f.service.close();
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));
+    const record=repository.readConversation(chat.id)!,revision=record.view.revision;
+    const original=record.view.run!;
+    original.resourcesReleased=true;original.status='unknown';original.executionState='unknown';delete original.stopRequested;
+    delete record.interruption;
+    record.view.revision=randomUUID();
+    repository.saveConversation(record,revision);
+    cold=createAgentService(f.options);
+    assert.notEqual(original.generation,cold.generation);
+    const draft={expectedRevision:record.view.revision,connectionId:'local',model:original.model,continueRunId:original.id,text:''};
+    const preview=cold.conversations.prepareSend('workspace-one',chat.id,draft);
+    const next=cold.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+    await waitUntil(()=>native.sends.length,count=>count===2);
+    assert.notEqual(next.run.id,original.id);
+    assert.match(native.sends[1]!.text,/旧原生控制资源已核验释放/);
+    assert.equal(cold.conversations.read('workspace-one',chat.id).retainedRuns?.find(run=>run.id===original.id)?.status,'unknown');
+  } finally {await cold?.close();await f.close();}
+});
+
+test('explicit recovery of a pre-dispatch automatic failure continues the goal without replaying user input',async()=>{
+  const native=fake('local'),f=fixture([native.executor]);
+  let cold:ReturnType<typeof createAgentService>|undefined,hostReady=false;
+  try {
+    await connected(f.service,'local');
+    const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','original user instruction');
+    const original=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    await f.service.close();
+    cold=createAgentService({...f.options,resolveWorkspace(id){
+      if(!hostReady)throw new AgentServiceError('agent_host_unavailable','no_registered_peer',503);
+      return f.options.resolveWorkspace(id);
+    }});
+    send(cold,chat.id,'local','historical automatic recovery instruction');
+    const failed=await waitUntil(()=>cold!.conversations.read('workspace-one',chat.id),view=>view.run?.status==='failed');
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));
+    const record=repository.readConversation(chat.id)!,revision=record.view.revision;
+    const attempt=record.attempts.find(value=>value.runId===failed.run!.id)!;
+    attempt.clientRequestId='host-recovery:'+original.run!.id;
+    attempt.continuationOf=original.run!.id;
+    const notice=record.view.entries.find(entry=>entry.id===attempt.userEntryId)!;
+    notice.kind='notice';notice.role='system';
+    record.view.revision=randomUUID();
+    repository.saveConversation(record,revision);
+    hostReady=true;
+    const draft={expectedRevision:record.view.revision,connectionId:'local',continueRunId:failed.run!.id,text:''};
+    const next=cold.conversations.send('workspace-one',chat.id,{...draft,clientRequestId:randomUUID()});
+    await waitUntil(()=>cold!.conversations.read('workspace-one',chat.id),view=>view.run?.id===next.run.id&&view.run.status==='completed');
+    assert.equal(native.sends.length,2);
+    assert.match(native.sends[1]!.text,/继续上次未正常答复的执行/);
+    assert.notEqual(native.sends[1]!.text,native.sends[0]!.text);
+  } finally {await cold?.close();await f.close();}
 });
 
 test('a persisted recovery intent before submission resumes the same request once after restart',async()=>{

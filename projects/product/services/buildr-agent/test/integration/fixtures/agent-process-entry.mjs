@@ -5,6 +5,14 @@ import { startAgentExecutionServer } from './index.js';
 
 const bootstrap=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
 const marker=JSON.parse(fs.readFileSync(new URL('./fixture-version.json',import.meta.url),'utf8'));
+if(marker.version==='wait-for-startup-storage-contention'){
+  fs.writeFileSync(path.join(bootstrap.dataRoot,'successor-starting'),String(process.pid));
+  const deadline=Date.now()+15000;
+  while(!fs.existsSync(path.join(bootstrap.dataRoot,'successor-may-start'))){
+    if(Date.now()>=deadline)throw new Error('fixture storage contention was not armed');
+    await new Promise(resolve=>setTimeout(resolve,20));
+  }
+}
 if(marker.version==='legacy-unbound-stop'){
   // Emulate the retained binary's bug so the new router, rather than an already
   // fixed old owner, must recover the stop result. This never runs in product.

@@ -66,11 +66,26 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   const onExit=(exitCode:number)=>diagnostics({event:'service-exit',exitCode,expected:closing});
   process.on('uncaughtExceptionMonitor',fatal);process.on('exit',onExit);
   cleanupDiagnostics=()=>{process.removeListener('uncaughtExceptionMonitor',fatal);process.removeListener('exit',onExit);};
-  let accepting = true, closing = false, recovering = false, startedRecovery = false, inflight = 0;
+  let accepting = true, closing = false, recovering = false, recoveryRequested = false, inflight = 0;
   let retiring = false, adopting: Promise<void> | undefined;
   let pending = readPrivate<PendingRuntime>(pendingFile);
-  if (pending?.runtime.digest === options.runtime.digest) { pending = undefined; savePending({ runtime: options.runtime, state: 'adopted' }); }
+  if (pending?.runtime.digest === options.runtime.digest) {
+    try { savePending({ runtime: options.runtime, state: 'adopted' }); }
+    catch (error) { diagnostics({event:'service-adoption-record-failed',code:diagnosticCode(error),reason:'successor-start'}); throw error; }
+    pending = undefined;
+  }
   if (pending?.state === 'switching') pending = { ...pending, state: 'failed', diagnostic: '上次切换尚未确认，请核对实际运行版本。' };
+  function recoverAfterHostAttach(): void {
+    recoveryRequested = true;
+    if (retiring || closing || recovering) return;
+    recovering = true;
+    void (async () => {
+      while (recoveryRequested && !retiring && !closing) {
+        recoveryRequested = false;
+        await service.conversations.recoverInterrupted().catch(() => {});
+      }
+    })().finally(() => { recovering = false; });
+  }
   const generations = new Map<string, AbortController>();
   function status(): AgentProcessStatus {
     const activity = service.activity();
@@ -113,7 +128,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     try { return await request(record.origin, record.token, route, {...input,forwarded:[...visited,identity.instanceId]}); }
     catch (error) { if (error instanceof AgentServiceError) throw error; throw new AgentServiceError('agent_operation_result_unknown', '原后台操作结果尚待核对，不会自动重发。', 503); }
   }
-  const sends = new PendingSends({dataRoot:options.dataRoot,service,active:()=>!closing&&accepting&&!retiring&&(!pending||pending.runtime.digest===options.runtime.digest)&&readProcessRecord(options.dataRoot)?.identity.instanceId===instanceId,generationAlive:generation=>generationAlive(options.dataRoot,generation),conversationBusy});
+  const sends = new PendingSends({dataRoot:options.dataRoot,service,active:()=>!closing&&accepting&&!retiring&&(!pending||pending.state==='failed'||pending.runtime.digest===options.runtime.digest)&&readProcessRecord(options.dataRoot)?.identity.instanceId===instanceId,generationAlive:generation=>generationAlive(options.dataRoot,generation),conversationBusy});
   function scope(sourceId: string, key: unknown): void {
     if (typeof key !== 'string' || !key || executionScopeRef(key, options.legacySourceId).sourceId !== sourceId) throw new AgentServiceError('agent_host_source_mismatch', '执行范围不属于当前接入来源。', 409);
   }
@@ -135,9 +150,8 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if (closing) throw new AgentServiceError('agent_process_switching','执行后台正在退出，宿主尚未接入。',503);
       hosts.attach(input.peer);
       // A new owning host refreshes policy even when the old bootstrap launched this generation.
-      const enableRecovery=input.peer.sourceId===options.legacySourceId && input.autoContinueInterrupted===true && !options.autoContinueInterrupted;
       if (input.peer.sourceId===options.legacySourceId && typeof input.autoContinueInterrupted==='boolean') options.autoContinueInterrupted=input.autoContinueInterrupted;
-      if ((!startedRecovery || enableRecovery) && !retiring && !recovering) { startedRecovery = true; recovering = true; void service.conversations.recoverInterrupted().catch(() => {}).finally(() => { recovering = false; }); }
+      recoverAfterHostAttach();
       json(res, 200, { attached: true }); return;
     }
     if (req.url === '/host/detach') { hosts.detach(input.peerId); json(res, 200, { detached: true }); return; }
@@ -280,7 +294,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       }
       const startsWork = !name.startsWith('conversations.') || ['conversations.fork','conversations.startDraft','conversations.create','conversations.createChild','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.generateTitle'].includes(name);
       if (startsWork && !accepting) throw new AgentServiceError('agent_process_switching', '执行后台正在采用新版，本次新操作尚未受理。', 503);
-      if (['conversations.startDraft','conversations.send'].includes(name) && pending?.runtime.digest !== undefined && pending.runtime.digest !== options.runtime.digest) throw new AgentServiceError('agent_process_switching','新版尚未就绪，可以提交待发送内容。',503);
+      if (['conversations.startDraft','conversations.send'].includes(name) && pending?.state !== 'failed' && pending?.runtime.digest !== undefined && pending.runtime.digest !== options.runtime.digest) throw new AgentServiceError('agent_process_switching','新版尚未就绪，可以提交待发送内容。',503);
       if (name === 'conversations.send' && await conversationBusy(input.args[0],input.args[1]) && !service.allowsReleasedContinuation(input.args[0],input.args[1],input.args[2])) throw new AgentServiceError('agent_conversation_busy','上一轮仍未释放，可以提交待发送内容。',409);
       if (name === 'conversations.send' && new PendingSendRepository(path.join(options.dataRoot,'agent-service')).read(input.args[0],input.args[1])) throw new AgentServiceError('agent_pending_conflict','已有待发送内容，请等待、修改或取消。',409);
       let result: any = await dispatchOperation(service, input.operation, input.args);
@@ -320,9 +334,34 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   const signal = (name:string) => { diagnostics({event:'service-signal',signal:name});void close('signal-'+name).finally(() => { process.exitCode = 0; }); };
   const term=()=>signal('SIGTERM'),interrupt=()=>signal('SIGINT');
   process.once('SIGTERM', term); process.once('SIGINT', interrupt);
+  let parallelChild: number | undefined;
+  let successorReady = false;
+  function restoreParallelOwner(): boolean {
+    if (ownsMetadata || (parallelChild && live(parallelChild))) return ownsMetadata;
+    try { owner = claim(options.dataRoot, 'owner'); }
+    catch (error) {
+      diagnostics({event:'service-adoption-record-failed',code:diagnosticCode(error),reason:'restore-owner'});
+      return false;
+    }
+    const restored = {...processRecord(),retiring:false};
+    try {
+      writeProcessInstance(options.dataRoot, restored);
+      writePrivate(path.join(controlRoot(options.dataRoot),'instance.json'),restored);
+    } catch (error) {
+      owner.release();
+      throw error;
+    }
+    ownsMetadata = true;
+    retiring = false;
+    service.resumeMetadata();
+    accepting = true;
+    return true;
+  }
+
   async function adoptParallel(target: AgentRuntimeUnit): Promise<void> {
     let startup: ReturnType<typeof claim> | undefined;
-    let pid: number | undefined;
+    parallelChild = undefined;
+    successorReady = false;
     accepting = false;
     try {
       startup = claim(options.dataRoot, 'startup');
@@ -334,36 +373,23 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       writePrivate(path.join(controlRoot(options.dataRoot),'instance.json'),processRecord());
       owner.release(); ownsMetadata = false;
       pending = {runtime:target,state:'parallel-starting'}; savePending(pending);
-      pid = launchAgentProcess({...options,runtime:target,token:privateToken()});
+      parallelChild = launchAgentProcess({...options,runtime:target,token:privateToken()});
       for (let attempt=0;attempt<200;attempt++) {
         const current = readProcessRecord(options.dataRoot);
         if (current && current.identity.runtime.digest===target.digest && current.identity.instanceId!==instanceId) {
           const observed = await request(current.origin,current.token,'/identity',undefined,AbortSignal.timeout(1000)).catch(()=>undefined);
-          if (observed?.instanceId===current.identity.instanceId && observed.generation===current.identity.generation) { pending=undefined;return; }
+          if (observed?.instanceId===current.identity.instanceId && observed.generation===current.identity.generation) { successorReady=true;pending=undefined;return; }
         }
-        if (!live(pid)) break;
+        if (!live(parallelChild)) break;
         await new Promise(resolve=>setTimeout(resolve,100));
       }
       throw new AgentServiceError('agent_process_start_unconfirmed','新版尚未确认就绪，原工作和待发送内容已保留。',503);
     } catch (error) {
-      if (ownsMetadata) { accepting = true; pending = {runtime:target,state:'waiting'}; }
-      else {
-        const holder=readLock(options.dataRoot,'owner');
-        if ((!pid||!live(pid))&&(!holder||!live(holder.pid))) {
-          // Another offline observer may briefly own the metadata lock. Failure
-          // to reacquire it must not reject the adoption task and kill old runs.
-          let restored: ReturnType<typeof claim> | undefined;
-          try { restored=claim(options.dataRoot,'owner'); } catch { /* Keep the original execution owner and wait. */ }
-          if(restored){
-            owner=restored;ownsMetadata=true;retiring=false;
-            service.resumeMetadata();accepting=true;
-            writeProcessInstance(options.dataRoot,processRecord());writePrivate(path.join(controlRoot(options.dataRoot),'instance.json'),processRecord());
-          }
-        }
-        pending={runtime:target,state:'failed',diagnostic:'新版后台未确认就绪，原工作和待发送内容已保留。'};
-        sends.waiting('新版执行后台尚未就绪，指令已保存；恢复后将自动接续。');
-      }
-      savePending(pending);
+      diagnostics({event:'service-adoption-record-failed',code:diagnosticCode(error),reason:'parallel-adoption'});
+      if (ownsMetadata) { service.resumeMetadata(); accepting = !closing; }
+      else if (!closing) restoreParallelOwner();
+      pending = {runtime:target,state:'failed',diagnostic:'新版后台未确认就绪，原工作和待发送内容已保留。'};
+      if (ownsMetadata && !closing) savePending(pending);
     } finally { startup?.release(); }
   }
   const storageMaintenance = new StorageMaintenance(options.dataRoot, { enabled: () => accepting && !retiring && !closing, runtime:options.runtime });
@@ -383,6 +409,18 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       // and keeps the retired process hot. Retry slowly instead.
       if (now - retirementAttempt < RETIRED_RETRY_MS) return;
       retirementAttempt = now;
+      if (!successorReady) {
+        adopting = (async () => {
+          const current = readProcessRecord(options.dataRoot);
+          if (current && current.identity.instanceId !== instanceId && !current.retiring && live(current.identity.pid)) {
+            const observed = await request(current.origin,current.token,'/identity',undefined,AbortSignal.timeout(1000));
+            successorReady = observed?.instanceId === current.identity.instanceId && observed.generation === current.identity.generation;
+          } else if (restoreParallelOwner() && pending) savePending(pending);
+        })().catch(error => {
+          diagnostics({event:'service-adoption-record-failed',code:diagnosticCode(error),reason:'restore-pending'});
+        }).finally(() => { adopting=undefined; });
+        return;
+      }
       adopting = Promise.race([
         service.releaseIdleSources().catch(() => {}),
         // A native release proof may itself stall; the retired process still
@@ -405,7 +443,9 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (accepting) void sends.pump().catch(()=>{});
     if (pending?.state==='waiting' && canRunParallel(options.runtime,pending.runtime) && !inflight && !recovering && !sends.busy) {
       const target=pending.runtime;
-      adopting=adoptParallel(target).finally(()=>{adopting=undefined;});
+      adopting=adoptParallel(target).catch(error => {
+        diagnostics({event:'service-adoption-record-failed',code:diagnosticCode(error),reason:'parallel-rollback'});
+      }).finally(()=>{adopting=undefined;});
       return;
     }
     if (closing || pending?.state !== 'waiting' || !accepting || status().activity.busy) return;
