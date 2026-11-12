@@ -11,6 +11,39 @@ import { createWebStaticFixture } from '../helpers/web-static-fixture.ts';
 import { registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.ts';
 import { taskRecordFixture as fixture } from '../helpers/task-record-system-fixture.ts';
 
+test('Buildr Web only listens after startup initialization completes', async (t: any) => {
+  const { base, root }: any = fixture(t, 'buildr-web-startup');
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
+  t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
+  const initializationEntered = Promise.withResolvers<void>();
+  const finishInitialization = Promise.withResolvers<void>();
+  const runtime = createRuntime();
+  const instance = createLocalWorkspaceServer(runtime, {
+    targetRoot: root,
+    onReady: () => {
+      initializationEntered.resolve();
+      return finishInitialization.promise;
+    },
+  });
+  t.after(async () => {
+    finishInitialization.resolve();
+    await instance.ready;
+    await instance.shutdown();
+  });
+
+  await initializationEntered.promise;
+  assert.equal(instance.server.listening, false);
+  assert.equal(instance.server.address(), null);
+
+  finishInitialization.resolve();
+  const { url, instanceSecret } = await instance.ready;
+  const response = await fetch(`${url}/api/v1/health`, {
+    headers: { 'x-buildr-instance': instanceSecret },
+  });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).status, 'ready');
+});
+
 test('Buildr Web Runtime HTTP owner 只读读取不依赖 Git，并传播明确的 API 边界', async (t: any) => {
   const { base, root }: any = fixture(t, 'buildr-web-http-owner');
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');

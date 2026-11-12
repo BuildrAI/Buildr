@@ -102,8 +102,6 @@ export function createRuntime(options: { agentRuntime?: import('@buildr-ai/build
       return await Promise.race([Promise.resolve(status).catch(() => null), timeout]);
     } catch { return null; }
   }, onReady: async () => {
-    // start() resolves the service lazily; a synchronous throw here must not
-    // escape the listen callback and kill the process.
     // Publish readiness only after the backend retains the package bytes. An npm
     // update may replace this source installation immediately after the receipt.
     try { await registry.provide(AGENT_SERVICE_APPLICATION).start(); }
