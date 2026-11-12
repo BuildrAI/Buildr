@@ -28,7 +28,10 @@ function formatCredits(value: number): string {
 export function accountSourceName(account: ModelAccount): string {
   // Custom providers are named by the user; their protocol label is not a display name.
   if (account.provider === 'custom') return account.group?.label || account.label || '自定义供应商';
-  if (account.authType === 'api-key') return account.provider === 'anthropic' ? 'Claude API' : 'ChatGPT API';
+  if (account.authType === 'api-key') {
+    if (account.provider === 'anthropic') return 'Claude API';
+    if (account.provider === 'openai') return 'ChatGPT API';
+  }
   const provider = account.connectionId || (account.provider.startsWith('native-') ? account.provider.slice('native-'.length) : account.provider);
   return account.group?.label || sourceLabels[provider] || account.label;
 }

@@ -82,7 +82,7 @@ test('Gemini streams translate text, thoughts, parallel tool calls, usage and co
   const deltas = frames.flatMap(frame => frame.choices?.map((choice: ProtocolJson) => choice.delta) ?? []);
   assert.ok(deltas.some(delta => delta.reasoning_content === 'think'));
   assert.ok(deltas.some(delta => delta.content === 'hi'));
-  assert.deepEqual(deltas.flatMap(delta => delta.tool_calls ?? []).map((call: ProtocolJson) => call.function?.name).filter(Boolean), ['read_file', 'list_dir']);
+  assert.deepEqual(deltas.flatMap(delta => delta.tool_calls ?? []).map((call: ProtocolJson) => (call.function as { name?: string } | undefined)?.name).filter(Boolean), ['read_file', 'list_dir']);
   assert.ok(frames.some(frame => frame.usage?.prompt_tokens === 3));
   assert.ok(frames.some(frame => frame.choices?.[0]?.finish_reason === 'tool_calls'));
 });
