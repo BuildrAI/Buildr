@@ -51,9 +51,10 @@ import { ConversationStops } from './conversation-stops.ts';
 import type { ConversationStopInput } from '../contracts.ts';
 
 type PreparedSource = { runtime: AgentRuntime; model: string; leaseIdentity?: string };
-const TITLE_TIMEOUT_MS = 45_000;
+const TITLE_TIMEOUT_MS = 10_000;
+const STALE_TITLE_REASON = '标题生成在服务重启后未完成；当前名称已保留，可显式重新生成。';
 const NEUTRAL_TITLE = '新对话';
-const TITLE_FAILURE_REMINDER = '生成标题错误，请手动修改';
+const FALLBACK_TITLE_LIMIT = 60;
 const MAX_TEXT_BYTES = 64 * 1024;
 const MAX_ITEM_BYTES = 1024 * 1024;
 const PAGE_SIZE = 100;
@@ -86,7 +87,7 @@ export class ConversationApplication {
       {kind:'execution',count:this.workers.size},
       {kind:'stop',count:this.stops.active},
       {kind:'input',count:this.supplements.size},
-      {kind:'title',count:this.titleWork.size + this.earlyTitles.size},
+      {kind:'title',count:this.titleWork.size},
       {kind:'recovery',count:this.recoveries.size},
       {kind:'reply',count:this.repliesInFlight.size},
       {kind:'observation',count:this.observations.size + this.releaseChecks.size + this.supersededCleanups.size + this.questionReleases.size},
@@ -143,7 +144,6 @@ export class ConversationApplication {
   private readonly supersededCleanups = new Map<string,Promise<void>>();
   private readonly repliesInFlight = new Set<string>();
   private readonly titleWork = new Map<string, AbortController>();
-  private readonly earlyTitles = new Map<string, Promise<void>>();
   private readonly sourceConnections = new Map<string,string>();
   private readonly sourceRuntimes = new Map<string, Promise<{runtime: AgentRuntime; model: string; leaseIdentity?:string}>>();
   private readonly sourceReleasePending = new Map<AgentRuntime,()=>Promise<boolean>>();
@@ -339,15 +339,15 @@ export class ConversationApplication {
           if(!held||this.sourceRuntimes.get(member.id)!==member.source||member.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(member.leaseIdentity)){safe=false;break;}
           const key=`${held.workspaceId}/${held.id}`;
           const state=this.options.repository.readState(held.id);
-          if(!state||state.view.workspaceId!==held.workspaceId||conversationRuns(state.view).some(run=>this.workers.has(run.id))||this.recoveries.has(key)||this.observations.has(key)||this.earlyTitles.has(held.id)||this.titleWork.has(held.id)){safe=false;break;}
+          if(!state||state.view.workspaceId!==held.workspaceId||conversationRuns(state.view).some(run=>this.workers.has(run.id))||this.recoveries.has(key)||this.observations.has(key)||this.titleWork.has(held.id)){safe=false;break;}
           const record=this.load(held.workspaceId,held.id),{run,attempt,id:runId}=this.sourceExecution(record,member.id);
           // A finished fork has durable history but has never admitted a work
           // prompt. Its private reader/import process is idle, not an unknown run.
-          if(!run&&record.view.forkState?.status==='ready'&&!record.attempts.length&&!record.view.requests.length&&!this.forks.active&&!this.titleWork.has(held.id)&&!this.earlyTitles.has(held.id)){
+          if(!run&&record.view.forkState?.status==='ready'&&!record.attempts.length&&!record.view.requests.length&&!this.forks.active&&!this.titleWork.has(held.id)){
             candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId:''});
             continue;
           }
-          if(!runId||record.view.requests.some(request=>request.participantId===member.id)||this.workers.has(runId)||this.recoveries.has(runId)||this.observations.has(`${held.workspaceId}/${held.id}`)||this.earlyTitles.has(held.id)||this.titleWork.has(held.id)||this.supplements.size||this.repliesInFlight.size){safe=false;break;}
+          if(!runId||record.view.requests.some(request=>request.participantId===member.id)||this.workers.has(runId)||this.recoveries.has(runId)||this.observations.has(`${held.workspaceId}/${held.id}`)||this.titleWork.has(held.id)||this.supplements.size||this.repliesInFlight.size){safe=false;break;}
           const participant=record.participants.find(value=>value.id===member.id);
           // Older histories may no longer retain this participant's RunView.
           // Only its exact accepted native attempt can prove physical release.
@@ -373,7 +373,7 @@ export class ConversationApplication {
         }
         if(!safe || this.forks.active)continue;
         // Recheck after asynchronous native proof, then freeze reuse before close.
-        if(this.forks.active || candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)||this.sourceRuntimes.get(value.id)!==value.source||this.sourceExecution(this.load(value.workspaceId,value.conversationId),value.id).id!==value.runId||this.workers.has(value.runId)||this.observations.has(`${value.workspaceId}/${value.conversationId}`)||this.recoveries.has(`${value.workspaceId}/${value.conversationId}`)||this.earlyTitles.has(value.conversationId)||this.titleWork.has(value.conversationId)||this.load(value.workspaceId,value.conversationId).view.requests.some(request=>request.participantId===value.id))||this.supplements.size||this.repliesInFlight.size)continue;
+        if(this.forks.active || candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)||this.sourceRuntimes.get(value.id)!==value.source||this.sourceExecution(this.load(value.workspaceId,value.conversationId),value.id).id!==value.runId||this.workers.has(value.runId)||this.observations.has(`${value.workspaceId}/${value.conversationId}`)||this.recoveries.has(`${value.workspaceId}/${value.conversationId}`)||this.titleWork.has(value.conversationId)||this.load(value.workspaceId,value.conversationId).view.requests.some(request=>request.participantId===value.id))||this.supplements.size||this.repliesInFlight.size)continue;
         const finish=async()=>{
           if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)))return false;
           for(const value of candidates)if(value.prepare&&!await value.prepare())return false;
@@ -426,7 +426,7 @@ export class ConversationApplication {
    * exists. Live execution, input, recovery, title and reply work is never
    * touched, and no new effect is ever sent for an unknown run. */
   async releaseRetiredWork(): Promise<void> {
-    if(this.closing||this.workers.size||this.supplements.size||this.repliesInFlight.size||this.recoveries.size||this.forks.active||this.titleWork.size||this.earlyTitles.size)return;
+    if(this.closing||this.workers.size||this.supplements.size||this.repliesInFlight.size||this.recoveries.size||this.forks.active||this.titleWork.size)return;
     const runtimes=new Set<AgentRuntime>();
     for(const [id,source] of [...this.sourceRuntimes]){
       const value=await Promise.race([source.catch(()=>undefined),new Promise<undefined>(resolve=>setImmediate(()=>resolve(undefined)))]);
@@ -533,6 +533,9 @@ export class ConversationApplication {
     });
     view.requests = view.requests.filter(request => conversationRuns(view).some(run => !run.supersededBy && !(request.kind === 'question' && run.questionsEndedBy) && request.runId === run.id && request.participantId === run.participantId && request.generation === run.generation));
     view.attachmentRevision = attachmentRevision(record.attachments ?? {});
+    // A process that died mid-title leaves no live work. Show the failure
+    // instead of a permanent "generating" state; the stored record is untouched.
+    if(view.titleState?.status === 'generating' && !this.titleWork.has(view.id)) view.titleState = { status: 'failed', reason: STALE_TITLE_REASON };
     view.titleState??={status:'unknown'};
     view.participants = record.participants.map(participant => ({
       id: participant.id, provider: participant.provider, connectionId: participant.connectionId,
@@ -626,6 +629,7 @@ export class ConversationApplication {
     if(input.workspaceId&&!workspaceIds.includes(input.workspaceId))fail('agent_workspace_missing','工作空间未登记。',404);
     const result=this.options.repository.querySummaries(workspaceIds,{...input,draftConversationIds:[...new Set(input.draftConversationIds??[])].sort(),generation:this.options.generation,query:input.query?.trim().slice(0,200),limit:bounded(input.limit,30,100)},this.options.generationAlive);
     for(const view of result.conversations){
+      if(view.titleState?.status==='generating'&&!this.titleWork.has(view.id))view.titleState={status:'failed',reason:STALE_TITLE_REASON};
       if(view.run&&view.run.generation!==this.options.generation&&!this.options.generationAlive?.(view.run.generation)&&BUSY_STATES.has(view.run.status)){view.run.status='unknown';view.run.interrupted=true;}
     }
     return result;
@@ -689,7 +693,12 @@ export class ConversationApplication {
     return links;
   }
   async update(workspaceId: string, id: string, input: { expectedRevision: string; title?: string; hidden?: boolean; taskId?: string | null; taskIds?: string[]; taskLinks?:ConversationTaskLink[] }): Promise<ConversationView> {
-    const record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision);
+    const record = this.load(workspaceId, id);
+    // Streaming saves change the conversation revision continuously, so a rename
+    // typed during an active run would always look stale. A title is local
+    // metadata whose manual value takes precedence; other fields keep the check.
+    const titleOnly=input.title!==undefined&&input.hidden===undefined&&input.taskId===undefined&&input.taskIds===undefined&&input.taskLinks===undefined;
+    if(!titleOnly)expected(record.view.revision, input.expectedRevision);
     if (input.title !== undefined) { record.view.title = nonempty(input.title, '对话标题', 160); record.titleOrigin = 'manual'; record.view.titleState={status:'manual'}; }
     if([input.taskId,input.taskIds,input.taskLinks].filter(value=>value!==undefined).length>1)fail('agent_input_invalid','不能同时提交多种任务关联字段。');
     if(input.taskLinks!==undefined||input.taskIds!==undefined||input.taskId!==undefined){
@@ -709,12 +718,12 @@ export class ConversationApplication {
   inputBusy(_workspaceId: string, _id: string): boolean { return this.closing; }
   busy(workspaceId: string, id: string): boolean {
     const record = this.load(workspaceId, id);
-    return Boolean(conversationRuns(record.view).some(run => unfinishedRun(run) || this.workers.has(run.id)) || record.view.requests.length || this.titleWork.has(id) || this.earlyTitles.has(id) || this.recoveries.has(`${workspaceId}/${id}`) || this.observations.has(`${workspaceId}/${id}`));
+    return Boolean(conversationRuns(record.view).some(run => unfinishedRun(run) || this.workers.has(run.id)) || record.view.requests.length || this.titleWork.has(id) || this.recoveries.has(`${workspaceId}/${id}`) || this.observations.has(`${workspaceId}/${id}`));
   }
   allowsReleasedContinuation(workspaceId: string, id: string, input: SendDraft): boolean {
     const record = this.load(workspaceId, id), run = record.view.run;
     return Boolean(!this.closing && run?.generation === this.options.generation && releasedContinuation(record, input) &&
-      !this.workers.has(run.id) && !this.titleWork.has(id) && !this.earlyTitles.has(id) &&
+      !this.workers.has(run.id) && !this.titleWork.has(id) &&
       !this.recoveries.has(`${workspaceId}/${id}`) && !this.observations.has(`${workspaceId}/${id}`) &&
       !this.supplements.size && !this.repliesInFlight.size);
   }
@@ -1188,6 +1197,7 @@ export class ConversationApplication {
       run.status = this.conversationStopRequested(record,runId) || run.status === 'stopping' || record.interruption?.runId === runId && record.interruption.cancelled ? 'stopping' : 'running';
       participant.deliveredThrough = Math.max(participant.deliveredThrough, attempt.through);
       const entry = record.view.entries.find(value => value.id === attempt.userEntryId)!; entry.status = 'accepted';
+      this.applyFallbackTitle(record);
       if (event.inputItemId) record.sources[`${participant.id}:message:${event.inputItemId}`] = entry.id;
       this.endReplacedQuestions(record, runId);
     } else if (event.type === 'item') {
@@ -1477,19 +1487,8 @@ export class ConversationApplication {
       this.save(record);
       this.discoverParticipation(workspaceId,id,runId);
       dispatched = true;
-      let titleStarted = false;
-      const startTitle = () => {
-        if (titleStarted) return;
-        titleStarted = true;
-        const early = this.titleAtRunStart(workspaceId, id, runId, runtime, prepared.text).catch(() => {});
-        this.earlyTitles.set(id, early);
-        void early.finally(() => { if (this.earlyTitles.get(id) === early) this.earlyTitles.delete(id); this.scheduleSourceRelease(workspaceId, id); });
-      };
       await runtime.send({ contextRef: participant.contextRef!, cwd: record.view.cwd, text: prepared.text, images: prepared.images, model: prepared.draft.modelAccountId ? selectedRuntime.model : prepared.draft.model, reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, clientRequestId: record.attempts.find(value => value.runId === runId)!.clientRequestId, onEvent: event => {
         this.event(workspaceId, id, runId, event);
-        // A context can exist long before its input is admitted. Do not spend the
-        // independent title budget on native startup (especially Qoder).
-        if (event.type === 'accepted') startTitle();
       } });
       // An old stop may already be observing this conversation. Its snapshot
       // cannot stand in for the just-finished new execution.
@@ -1638,62 +1637,36 @@ export class ConversationApplication {
     } finally { if (this.retryWaits.get(runId) === controller) this.retryWaits.delete(runId); }
   }
 
+  /** Only a local fallback title that no newer fact has settled is eligible. */
   private titleEligible(record: StoredConversation): boolean {
-    return !this.closing && record.titleOrigin === 'default' && (record.view.title === NEUTRAL_TITLE || record.view.title === TITLE_FAILURE_REMINDER);
+    if (this.closing || record.titleOrigin === 'manual' || record.titleOrigin === 'generated') return false;
+    const status = record.view.titleState?.status;
+    if (status && !['pending', 'fallback', 'unknown'].includes(status)) return false;
+    return record.view.title === NEUTRAL_TITLE || record.titleOrigin === 'fallback' || status === 'fallback';
   }
-  private titleAttempts(record:StoredConversation, participantId:string): {early?:boolean;completion?:boolean} {
-    if (!record.titleAttemptsByParticipant) {
-      record.titleAttemptsByParticipant={};
-      // Older records consumed global flags. Keep that budget with the participant
-      // that actually attempted the phase, rather than blocking every new executor.
-      const owner=(phase:'early'|'completion')=>{
-        const diagnostic=record.titleDiagnostics?.findLast(value=>value.phase===phase || phase==='completion' && value.phase==='manual');
-        return record.attempts.find(value=>value.runId===diagnostic?.runId)?.participantId ?? record.attempts[0]?.participantId;
-      };
-      for (const [phase,attempted] of [['early',record.earlyTitleAttempted],['completion',record.titleAttempted]] as const) {
-        const id=attempted?owner(phase):undefined;
-        if(id)(record.titleAttemptsByParticipant[id]??={})[phase]=true;
-      }
-    }
-    return record.titleAttemptsByParticipant[participantId]??={};
+  /** A deterministic title from the first visible user message; never a model summary. */
+  private fallbackTitle(record: StoredConversation): string | undefined {
+    const first = record.view.entries.find(entry => entry.role === 'user' && entry.kind === 'message' && !entry.parentToolId && entry.sequence > (record.view.forkedFrom?.throughSequence ?? 0) && entry.text.trim());
+    if (!first) return;
+    const text = first.text.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    const characters = [...text];
+    return characters.length > FALLBACK_TITLE_LIMIT ? characters.slice(0, FALLBACK_TITLE_LIMIT).join('').trimEnd() + '…' : text;
   }
-  /** Backfill once native input is admitted; the completed-run path stays the fallback. */
-  private async titleAtRunStart(workspaceId: string, id: string, runId: string, runtime: AgentRuntime, userText?: string): Promise<void> {
-    const previous=this.earlyTitles.get(id);
-    if (this.titleWork.has(id) && previous) await previous.catch(()=>{});
-    const record = this.currentRun(workspaceId, id, runId);
-    if (!record || !this.titleEligible(record) || this.titleWork.has(id)) return;
-    const participant = record.participants.find(value => value.id === record.view.run!.participantId);
-    const description = this.titleDescription(record, false);
-    if (!participant?.contextRef || !description) return;
-    const attempts=this.titleAttempts(record,participant.id);
-    if(attempts.early || attempts.completion)return;
-    attempts.early=true;record.earlyTitleAttempted = true;
-    if (!runtime.generateTitle) { this.save(record); this.recordTitleFailure(workspaceId, id, runId, 'early', new Error('agent_title_unavailable')); return; }
-    record.view.titleState={status:'generating'}; this.save(record);
-    const controller = new AbortController(); this.titleWork.set(id, controller);
-    const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS + 2_000); timeout.unref();
-    try {
-      let title: string | undefined;
-      if (runtime.readTitle && !record.view.forkedFrom) title = await within(runtime.readTitle({contextRef:participant.contextRef,cwd:record.view.cwd}),2_000,'agent_title_timeout').catch(()=>undefined);
-      const observed=this.currentRun(workspaceId,id,runId);
-      if(!observed || !this.titleEligible(observed) || controller.signal.aborted)return;
-      if(this.acceptTitle(observed,title)){this.save(observed);return;}
-      title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, ...(userText ? { userText } : {}), model: record.view.run?.model, freshInstruction: Boolean(record.view.forkedFrom), signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
-      const current = this.currentRun(workspaceId, id, runId);
-      if (!current || controller.signal.aborted) return;
-      if (!this.titleEligible(current)) return;
-      if (!this.acceptTitle(current, title)) throw new Error(title ? 'agent_title_invalid' : 'agent_title_empty');
-      this.save(current);
-    } catch (error) {
-      controller.abort();
-      this.recordTitleFailure(workspaceId, id, runId, 'early', error);
-    }
-    finally { clearTimeout(timeout); if (this.titleWork.get(id) === controller) this.titleWork.delete(id); this.scheduleSourceRelease(workspaceId, id); }
+  /** Runs synchronously on input acceptance, so every accepted round has a truthful title. */
+  private applyFallbackTitle(record: StoredConversation): boolean {
+    if (record.titleOrigin !== undefined && record.titleOrigin !== 'default' || record.view.title !== NEUTRAL_TITLE) return false;
+    const title = this.fallbackTitle(record);
+    if (!title) return false;
+    record.view.title = title; record.titleOrigin = 'fallback'; record.view.titleState = { status: 'fallback' };
+    return true;
   }
-  private recordTitleFailure(workspaceId: string, id: string, runId: string, phase: 'early'|'completion'|'manual', error: unknown): void {
-    const current = this.currentRun(workspaceId, id, runId);
-    if (!current || this.closing) return;
+  private recordTitleFailure(workspaceId: string, id: string, runId: string, phase: 'automatic'|'manual', error: unknown): void {
+    if (this.closing) return;
+    const current = this.load(workspaceId, id);
+    // A rename during this request still wins; a title explicitly generated
+    // for a previously manual name must record its own failure.
+    if (current.view.run?.id !== runId || current.view.titleState?.status === 'manual') return;
     const raw = error instanceof Error ? ('code' in error ? String(error.code) : error.message) : '';
     const code = /^agent_(?:title|native|revision)_[a-z_]+$/.test(raw) ? raw : 'agent_title_failed';
     const explanations: Record<string,string> = {
@@ -1704,7 +1677,6 @@ export class ConversationApplication {
       agent_native_process_closed: '生成标题时原生进程退出',
       agent_native_request_failed: '原生程序拒绝了标题请求',
       agent_title_unavailable: '当前执行方未提供独立标题生成能力',
-      agent_title_not_ready: '原生会话尚未就绪，本次标题生成未开始',
       agent_title_isolation_unverified: '标题请求的隔离权限未能确认',
       agent_title_tools_forbidden: '标题请求尝试使用工具，已拒绝',
       agent_title_invalid: '返回的标题超出长度限制或不合格',
@@ -1712,17 +1684,15 @@ export class ConversationApplication {
       agent_title_output_invalid: '标题返回内容不是有效的结构化标题',
       agent_revision_conflict: '生成期间对话已变化，未覆盖当前名称',
     };
-    const reason = `[${code}] ${explanations[code] ?? '独立标题生成未完成'}；工作执行与回复不受影响。`;
-    current.titleDiagnostics = [...(current.titleDiagnostics ?? []), {runId, phase, code, reason, at:this.options.now()}].slice(-8);
-    if (current.titleOrigin === 'default') current.earlyTitleAttempted = true;
-    if (current.titleOrigin === 'default' || current.view.titleState?.status === 'generating') {
-      current.view.titleState = {status:code==='agent_title_unavailable'?'unavailable':'failed', reason};
-    }
-    if (phase === 'completion' && current.titleOrigin === 'default' && current.view.title === NEUTRAL_TITLE) current.view.title = TITLE_FAILURE_REMINDER;
+    const reason = `[${code}] ${explanations[code] ?? '独立标题生成未完成'}；当前标题已保留，工作执行与回复不受影响。`;
+    current.view.titleState = { status: code === 'agent_title_unavailable' ? 'unavailable' : 'failed', reason };
+    this.diagnostics({ event: 'conversation-title-failed', workspaceId, conversationId: id, runId, phase, code });
     this.save(current);
   }
   private acceptTitle(record: StoredConversation, raw: string | undefined, explicit = false): boolean {
-    if (!raw || this.closing || !explicit && !this.titleEligible(record)) return false;
+    // The in-flight request owns the title while it is marked generating; its
+    // run and revision identity are validated by the caller before this point.
+    if (!raw || this.closing || !explicit && record.view.titleState?.status !== 'generating' && !this.titleEligible(record)) return false;
     const title = raw.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, '').replace(/\s+/g, ' ').trim();
     if (!title || [...title].length > 64) return false;
     record.view.title = title; record.titleOrigin = 'generated'; record.view.titleState={status:'generated'}; return true;
@@ -1738,14 +1708,13 @@ export class ConversationApplication {
     });
     return JSON.stringify({ messages });
   }
+  /** Exactly one automatic attempt, only after the first round completed. */
   private async generateAutomaticTitle(workspaceId: string, id: string, runId: string, runtime: AgentRuntime): Promise<void> {
-    // Completion may race the independent early request. Wait for it to settle
-    // before deciding whether the one completion fallback is still necessary.
-    await this.earlyTitles.get(id);
     const record = this.currentRun(workspaceId, id, runId);
-    if (!record || !this.titleEligible(record) || record.view.run?.status !== 'completed') return;
-    if(this.titleAttempts(record,record.view.run.participantId).completion)return;
-    await this.summarizeTitle(workspaceId, id, record.view.revision, runtime, false).catch(() => {});
+    if (!record || this.closing || record.view.run?.status !== 'completed') return;
+    if (record.attempts.filter(attempt => !attempt.supplement && !attempt.automaticRetry).length !== 1) return;
+    if (!this.titleEligible(record) || this.titleWork.has(id)) return;
+    await this.summarizeTitle(workspaceId, id, undefined, runtime, false).catch(() => {});
   }
   async generateTitle(workspaceId: string, id: string, input: { expectedRevision: string }): Promise<ConversationView> {
     let record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision); this.assertAccepting(record);
@@ -1759,30 +1728,39 @@ export class ConversationApplication {
     await this.summarizeTitle(workspaceId, id, input.expectedRevision, runtime, true);
     return this.read(workspaceId, id,{compactTools:true});
   }
-  private async summarizeTitle(workspaceId: string, id: string, revision: string, runtime: AgentRuntime, explicit: boolean): Promise<void> {
-    if (this.titleWork.has(id)) fail('agent_title_busy', '正在生成本段对话的标题，请稍后查看。', 409);
-    let record = this.load(workspaceId, id); expected(record.view.revision, revision);
+  private async summarizeTitle(workspaceId: string, id: string, revision: string | undefined, runtime: AgentRuntime, explicit: boolean): Promise<void> {
+    if (this.titleWork.has(id)) { if (explicit) fail('agent_title_busy', '正在生成本段对话的标题，请稍后查看。', 409); return; }
+    let record = this.load(workspaceId, id);
+    if (revision !== undefined) expected(record.view.revision, revision);
     const participant = record.participants.find(value => value.id === record.view.run?.participantId);
     const description = this.titleDescription(record);
-    if (!participant?.contextRef || !description || record.view.run?.status !== 'completed' || !explicit && (!this.titleEligible(record) || this.titleAttempts(record,participant.id).completion)) return;
-    const runId = record.view.run.id; const controller = new AbortController(); this.titleWork.set(id, controller);
-    this.titleAttempts(record,participant.id).completion=true;
-    record.titleAttempted = true; record.view.titleState={status:'generating'}; this.save(record); revision = record.view.revision;
-    const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS + 2_000); timeout.unref();
+    if (!participant?.contextRef || !description || record.view.run?.status !== 'completed' || !explicit && !this.titleEligible(record)) return;
+    const runId = record.view.run.id;
+    if (!runtime.generateTitle) {
+      if (explicit) fail('agent_title_unavailable', '此执行方尚未提供可用的精短标题，原有标题已保留。', 409);
+      this.recordTitleFailure(workspaceId, id, runId, 'automatic', new Error('agent_title_unavailable'));
+      return;
+    }
+    const controller = new AbortController(); this.titleWork.set(id, controller);
+    record.view.titleState = { status: 'generating' }; this.save(record); revision = record.view.revision;
+    const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS); timeout.unref();
     try {
-      let title: string | undefined;
-      if (runtime.readTitle && !record.view.forkedFrom) title = await within(runtime.readTitle({ contextRef: participant.contextRef, cwd: record.view.cwd }), 2_000, 'agent_title_timeout').catch(() => undefined);
-      record = this.load(workspaceId, id); expected(record.view.revision, revision);
-      if (this.acceptTitle(record, title, explicit)) { this.save(record); return; }
-      if (!runtime.generateTitle) fail('agent_title_unavailable', '此执行方尚未提供可用的精短标题，原有标题已保留。', 409);
-      title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: record.view.run?.model, freshInstruction: Boolean(record.view.forkedFrom), signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
+      const title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: record.view.run?.model, freshInstruction: Boolean(record.view.forkedFrom), signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
       const current = this.load(workspaceId, id);
-      if (controller.signal.aborted || current.view.run?.id !== runId || current.view.revision !== revision) fail('agent_revision_conflict', '对话已变化，保留当前标题。', 409);
-      if (!this.acceptTitle(current, title, explicit)) fail('agent_title_failed', '未生成符合长度要求的精短标题，原有标题已保留。', 502);
+      if (current.view.run?.id !== runId) {
+        if (current.titleOrigin === 'fallback' && current.view.titleState?.status === 'generating') { current.view.titleState = { status: 'fallback' }; this.save(current); }
+        return;
+      }
+      if (current.view.revision !== revision) {
+        if (explicit) fail('agent_revision_conflict', '对话已变化，保留当前标题。', 409);
+        this.recordTitleFailure(workspaceId, id, runId, 'automatic', new Error('agent_revision_conflict'));
+        return;
+      }
+      if (!this.acceptTitle(current, title, explicit)) throw new Error(title ? 'agent_title_invalid' : 'agent_title_empty');
       this.save(current);
     } catch (error) {
       controller.abort();
-      this.recordTitleFailure(workspaceId, id, runId, explicit ? 'manual' : 'completion', error);
+      this.recordTitleFailure(workspaceId, id, runId, explicit ? 'manual' : 'automatic', error);
       if (explicit) { if (error && typeof error === 'object' && 'code' in error) throw error; fail('agent_title_failed', '标题生成未完成，原有标题与工作结果已保留。', 502); }
     } finally { clearTimeout(timeout); if (this.titleWork.get(id) === controller) this.titleWork.delete(id); this.scheduleSourceRelease(workspaceId, id); }
   }
@@ -1806,23 +1784,6 @@ export class ConversationApplication {
         for(const stop of record.stops??[])void this.stops.resume(record.view.workspaceId,record.view.id,stop.id).catch(()=>{});
         if(conversationRuns(record.view).some(run=>run.supersededBy))void this.cleanupSuperseded(record.view.workspaceId,record.view.id).catch(()=>{});
       } catch { /* A local conflict must not prevent recovery of unrelated work. */ }
-    }
-    for(const record of this.options.repository.listInterruptedTitles(this.options.generation)){
-      if(record.view.run && this.options.generationAlive?.(record.view.run.generation))continue;
-      if(record.titleOrigin!=='default')continue;
-      record.view.titleState={status:'failed',reason:'标题生成因服务重启中断，原有回复已保留，可显式重新生成。'};
-      try{this.save(record);}catch{/* A concurrent newer record wins; do not block unrelated executions. */}
-    }
-    for(const candidate of this.options.repository.listTitleFailureCandidates()){
-      try{
-        const {workspaceId,id}=candidate.view;
-        const record=this.load(workspaceId,id),participantId=record.view.run?.participantId;
-        if(record.titleOrigin!=='default'||record.view.title!==NEUTRAL_TITLE||!['failed','unavailable'].includes(record.view.titleState?.status??'')||!participantId)continue;
-        const attempts=this.titleAttempts(record,participantId);
-        if(!(attempts.early&&attempts.completion))continue;
-        record.view.title=TITLE_FAILURE_REMINDER;
-        this.save(record);
-      }catch{/* A local conflict must not prevent recovery of unrelated records. */}
     }
     const candidates=this.options.repository.listInterrupted();
     const work=async()=>{
