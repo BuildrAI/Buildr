@@ -9,6 +9,33 @@ export async function runSetupScenarios(fixture:AgentConversationFixture){
   await runPushbackSettingsJourney(fixture);
   await runProgrammaticCredentialEditJourney(fixture);
   const {assertFixed,assertModelSummary,assertNavigationHighlight,assertReminderGap,capture,chooseAgent,chooseModel,chooseOption,closeConversation,closeModelSettings,connections,expectedBrowserErrors,input,modelSettings,openDesktopConversation,openModelSettings,page,panel,preferenceBodies,preparedInputs,programAttempts,reset,run,sentInputs,setHighEffort,step,workspaceId}=fixture;
+await step('模型设置使用供应商侧栏、账号与额度/模型页签并只提供两个官方 API 预设',async()=>{
+  await reset();
+  const drawer=page.getByRole('dialog',{name:/^智能体与模型/});
+  await page.getByRole('button',{name:'智能体与模型设置',exact:true}).click();
+  await drawer.waitFor();
+  const accounts=drawer.locator('.ams-accounts');await accounts.waitFor();
+  await accounts.getByRole('button',{name:'添加自定义供应商',exact:true}).click();
+  const provider=page.getByRole('dialog',{name:/添加供应商/});
+  await provider.waitFor();
+  await provider.locator('.ant-select').first().click();
+  const dropdown=page.locator('.ant-select-dropdown:visible');
+  await dropdown.waitFor();
+  const presetTexts=await dropdown.locator('.ant-select-item-option').allInnerTexts();
+  assert.deepEqual(presetTexts,['ChatGPT API','DeepSeek API','其他自定义供应商']);
+  assert.equal(presetTexts.some(text=>text.includes('Claude')),false,'添加抽屉不再提供 Claude API');
+  await dropdown.getByText('其他自定义供应商',{exact:true}).click();
+  await provider.getByLabel('显示名称').waitFor();
+  assert.equal(await provider.getByLabel('模型列表路径').inputValue(),'/models');
+  assert.equal(await provider.getByText('需要 API Key',{exact:true}).count(),1);
+  await provider.getByRole('button',{name:'关闭供应商配置',exact:true}).click();
+  await provider.waitFor({state:'hidden'});
+  assert.equal(await accounts.getByText('账号与额度',{exact:true}).count(),1);
+  assert.equal(await accounts.getByText('供应商与额度',{exact:true}).count(),0);
+  await capture(page,'agent-provider-management-layout.png');
+  await drawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();
+  await drawer.waitFor({state:'hidden'});
+});
 await step('文档附件支持九份、拒绝第十份并刷新恢复文件名',async()=>{
   await reset();await openDesktopConversation();await input().waitFor();
   await input().fill('读取上传文档');

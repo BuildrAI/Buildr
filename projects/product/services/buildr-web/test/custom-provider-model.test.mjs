@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {CUSTOM_PROVIDER_PROTOCOLS,customProviderEndpoint,removeCustomModel,upsertCustomModel} from '../src/features/agent-conversations/custom-provider-model.ts';
+import {CUSTOM_PROVIDER_PROTOCOLS,customProviderEndpoint,customProviderModelsUrl,removeCustomModel,upsertCustomModel} from '../src/features/agent-conversations/custom-provider-model.ts';
 
 test('四类 API 协议提供稳定选项与按协议的请求地址提示',()=>{
   assert.deepEqual(CUSTOM_PROVIDER_PROTOCOLS.map(item=>item.value),['chat-completions','responses','anthropic-messages','gemini']);
@@ -9,6 +9,8 @@ test('四类 API 协议提供稳定选项与按协议的请求地址提示',()=>
   assert.equal(customProviderEndpoint('anthropic-messages',' https://api.anthropic.com/v1 '),'https://api.anthropic.com/v1/messages');
   assert.equal(customProviderEndpoint('gemini','https://generativelanguage.googleapis.com/v1beta'),'https://generativelanguage.googleapis.com/v1beta/models/<模型 ID>:generateContent');
   assert.equal(customProviderEndpoint('gemini','  '),'<Base URL>/models/<模型 ID>:generateContent');
+  assert.equal(customProviderModelsUrl('https://gw.example.com/v1/','/api/models'),'https://gw.example.com/v1/api/models');
+  assert.equal(customProviderModelsUrl('https://gw.example.com/v1/',''),'https://gw.example.com/v1/models');
 });
 
 test('手动添加与发现候选按模型 id 合并，不重复且保留既有显示名和上下文',()=>{

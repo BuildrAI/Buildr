@@ -55,6 +55,8 @@ export interface CustomProviderModel {
 export interface CustomProviderConfig {
   protocol: ModelProtocol;
   baseUrl: string;
+  /** Catalog path relative to Base URL; omitted keeps the legacy `/models` path. */
+  modelsPath?: string;
   useApiKey: boolean;
   models: CustomProviderModel[];
 }
@@ -66,6 +68,8 @@ export interface CustomProviderConfigureInput {
   useApiKey: boolean;
   /** Required when `useApiKey` is true; omitted means keep the stored key. */
   apiKey?: string;
+  /** Catalog path relative to Base URL; omitted keeps the stored or default path. */
+  modelsPath?: string;
   models?: CustomProviderModel[];
 }
 export interface CustomProviderDiscoveryInput {
@@ -75,6 +79,8 @@ export interface CustomProviderDiscoveryInput {
   protocol: string;
   useApiKey: boolean;
   apiKey?: string;
+  /** Catalog path relative to Base URL; omitted keeps the stored or default path. */
+  modelsPath?: string;
 }
 export interface CustomProviderDiscoveryResult {
   models: Array<{ id: string; label?: string }>;

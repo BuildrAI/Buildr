@@ -256,7 +256,7 @@ export class ModelAccessApplication {
   }
   private async createCustom(provider: ModelProvider, input: CustomProviderConfigureInput): Promise<ModelAccountView> {
     if (this.closed || this.metadataReadOnly) throw new ModelAccessError('model_access_closed', '模型供应商配置未能保存。', 503);
-    const label = normalizeCustomLabel(input.label), config = normalizeCustomConfiguration({ baseUrl: input.baseUrl, protocol: input.protocol, useApiKey: input.useApiKey, models: input.models ?? [] });
+    const label = normalizeCustomLabel(input.label), config = normalizeCustomConfiguration({ baseUrl: input.baseUrl, protocol: input.protocol, ...(input.modelsPath !== undefined ? { modelsPath: input.modelsPath } : {}), useApiKey: input.useApiKey, models: input.models ?? [] });
     const row: ModelAccountView = { id: randomUUID(), identity: randomUUID(), provider: provider.id, label, revision: randomUUID(), enabled: true, status: 'not-authenticated', credentialConfigured: false, custom: config, models: [] };
     this.rows.set(row.id, row);
     try {
@@ -273,7 +273,7 @@ export class ModelAccessApplication {
     const provider = this.providers.get(row.provider);
     if (!provider?.custom) throw new ModelAccessError('model_custom_unsupported', '此模型来源不支持自定义端点配置。', 400);
     const label = normalizeCustomLabel(input.label);
-    const config = normalizeCustomConfiguration({ baseUrl: input.baseUrl, protocol: input.protocol, useApiKey: input.useApiKey, models: input.models ?? row.custom?.models ?? [] });
+    const config = normalizeCustomConfiguration({ baseUrl: input.baseUrl, protocol: input.protocol, ...(input.modelsPath ?? row.custom?.modelsPath ? { modelsPath: input.modelsPath ?? row.custom?.modelsPath } : {}), useApiKey: input.useApiKey, models: input.models ?? row.custom?.models ?? [] });
     const candidate = await this.openRuntime(row, provider, config);
     let observation: ModelProviderObservation;
     try {

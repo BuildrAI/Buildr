@@ -280,6 +280,9 @@ test('custom discovery returns candidates only, omits authorization without a ke
   const keyed = await provider.discover!({ baseUrl: 'https://gateway.example.com/v1', protocol: 'chat-completions', useApiKey: true, apiKey: 'sk-discovery' });
   assert.deepEqual(keyed.models.map(model => model.id), ['alpha', 'beta']);
   assert.equal(calls.at(-1)?.authorization, 'Bearer sk-discovery');
+  const customPath = await provider.discover!({ baseUrl: 'https://gateway.example.com/v1', protocol: 'chat-completions', modelsPath: '/api/models', useApiKey: false });
+  assert.deepEqual(customPath.models.map(model => model.id), ['alpha', 'beta']);
+  assert.equal(calls.at(-1)?.url, 'https://gateway.example.com/v1/api/models');
   await assert.rejects(provider.discover!({ baseUrl: 'https://gateway.example.com/v1', protocol: 'chat-completions', useApiKey: true }), { code: 'model_custom_api_key_required' });
   mode = 'unauthorized';
   const rejected = await provider.discover!({ baseUrl: 'https://gateway.example.com/v1', protocol: 'chat-completions', useApiKey: true, apiKey: 'sk-discovery' });
@@ -290,7 +293,7 @@ test('custom discovery returns candidates only, omits authorization without a ke
   mode = 'network';
   const unreachable = await provider.discover!({ baseUrl: 'https://gateway.example.com/v1', protocol: 'chat-completions', useApiKey: false });
   assert.equal(unreachable.incomplete, true); assert.match(unreachable.diagnostic!, /无法连接/);
-  assert.ok(calls.every(call => call.url === 'https://gateway.example.com/v1/models'));
+  assert.ok(calls.every(call => ['https://gateway.example.com/v1/models', 'https://gateway.example.com/v1/api/models'].includes(call.url)));
 });
 
 test('custom runtime validates authentication before saving and infers through chat completions with bounded errors', {timeout:10000}, async t => {
@@ -504,8 +507,9 @@ test('custom discovery follows protocol-specific catalogs with bounded paginatio
 });
 
 test('custom provider operations validate closed configuration and discovery inputs', () => {
-  validateOperation('models.accounts.configureCustom', ['account', { label: 'Gateway', baseUrl: 'https://gateway.example.com/v1', protocol: 'chat-completions', useApiKey: true, apiKey: 'sk-x', models: [{ id: 'm' }] }]);
-  validateOperation('models.accounts.discoverCustom', [{ baseUrl: 'https://gateway.example.com/v1', protocol: 'chat-completions', useApiKey: false }]);
+  validateOperation('models.accounts.configureCustom', ['account', { label: 'Gateway', baseUrl: 'https://gateway.example.com/v1', protocol: 'chat-completions', modelsPath: '/api/models', useApiKey: true, apiKey: 'sk-x', models: [{ id: 'm' }] }]);
+  validateOperation('models.accounts.discoverCustom', [{ baseUrl: 'https://gateway.example.com/v1', protocol: 'chat-completions', modelsPath: '/api/models', useApiKey: false }]);
+  assert.throws(() => validateOperation('models.accounts.discoverCustom', [{ baseUrl: 'https://gateway.example.com/v1', protocol: 'chat-completions', modelsPath: 'models', useApiKey: false }]), { code: 'agent_process_input_invalid' });
   assert.throws(() => validateOperation('models.accounts.configureCustom', ['account', { label: 'Gateway', baseUrl: 'https://gateway.example.com/v1', protocol: 'openai-responses', useApiKey: false }]), { code: 'agent_process_input_invalid' });
   assert.throws(() => validateOperation('models.accounts.discoverCustom', [{ baseUrl: 'https://gateway.example.com/v1', protocol: 'chat-completions', useApiKey: false, unexpected: true }]), { code: 'agent_process_input_invalid' });
 });

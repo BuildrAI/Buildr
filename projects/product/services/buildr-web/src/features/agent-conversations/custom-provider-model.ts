@@ -1,8 +1,10 @@
 export type CustomProviderProtocol='chat-completions'|'responses'|'anthropic-messages'|'gemini';
 export interface CustomProviderModelInput {id:string;label?:string;contextWindow?:number;}
-export interface CustomProviderSaveInput {accountId?:string;label:string;baseUrl:string;protocol:CustomProviderProtocol;useApiKey:boolean;apiKey?:string;models:CustomProviderModelInput[];sourceEnabled:boolean;}
-export interface CustomProviderDiscoverInput {accountId?:string;baseUrl:string;protocol:CustomProviderProtocol;useApiKey:boolean;apiKey?:string;}
+export interface CustomProviderSaveInput {accountId?:string;label:string;baseUrl:string;protocol:CustomProviderProtocol;modelsPath?:string;useApiKey:boolean;apiKey?:string;models:CustomProviderModelInput[];sourceEnabled:boolean;}
+export interface CustomProviderDiscoverInput {accountId?:string;baseUrl:string;protocol:CustomProviderProtocol;modelsPath?:string;useApiKey:boolean;apiKey?:string;}
 export interface CustomProviderDiscoverResult {models:Array<{id:string;label?:string}>;diagnostic?:string;}
+
+export const DEFAULT_CUSTOM_MODELS_PATH='/models';
 
 export const CUSTOM_PROVIDER_PROTOCOLS:ReadonlyArray<{value:CustomProviderProtocol;label:string}>=[
   {value:'chat-completions',label:'OpenAI 兼容 Chat Completions'},
@@ -18,6 +20,11 @@ export function customProviderEndpoint(protocol:CustomProviderProtocol,baseUrl:s
   if(protocol==='responses')return `${base}/responses`;
   if(protocol==='anthropic-messages')return `${base}/messages`;
   return `${base}/models/<模型 ID>:generateContent`;
+}
+
+export function customProviderModelsUrl(baseUrl:string,modelsPath=DEFAULT_CUSTOM_MODELS_PATH):string{
+  const base=baseUrl.trim().replace(/\/+$/,'')||'<Base URL>';
+  return `${base}${modelsPath.trim()||DEFAULT_CUSTOM_MODELS_PATH}`;
 }
 
 /** Joining an existing id keeps its label, window and preferences while filling missing details. */

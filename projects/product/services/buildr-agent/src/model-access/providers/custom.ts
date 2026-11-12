@@ -5,6 +5,8 @@ import { PrivateApiKey } from './private-api-key.ts';
 import { record, string } from './private-account.ts';
 
 const MAX_URL = 2048;
+const MAX_MODELS_PATH = 2048;
+const DEFAULT_MODELS_PATH = '/models';
 const MAX_MODELS = 200;
 const MAX_DISCOVERY_MODELS = 1000;
 const MAX_DISCOVERY_PAGES = 10;
@@ -35,6 +37,14 @@ export function normalizeCustomProtocol(value: unknown): ModelProtocol {
   return value as ModelProtocol;
 }
 
+export function normalizeCustomModelsPath(value: unknown): string {
+  if (value === undefined) return DEFAULT_MODELS_PATH;
+  if (typeof value !== 'string' || !value.trim() || value.length > MAX_MODELS_PATH || !/^\/(?!\/)[^\s?#]*$/.test(value.trim())) {
+    throw new ModelAccessError('model_custom_models_path_invalid', '模型列表路径必须以 / 开头，且不能包含空白、查询参数或连续斜杠。', 400);
+  }
+  return value.trim();
+}
+
 export function customProtocolLabel(protocol: ModelProtocol): string { return CUSTOM_PROTOCOL_LABELS[protocol]; }
 
 export function normalizeCustomLabel(value: unknown): string {
@@ -59,13 +69,13 @@ export function normalizeCustomModels(value: unknown): CustomProviderModel[] {
   return models;
 }
 
-export function normalizeCustomConfiguration(input: { baseUrl: unknown; protocol: unknown; useApiKey: unknown; models?: unknown }): CustomProviderConfig {
+export function normalizeCustomConfiguration(input: { baseUrl: unknown; protocol: unknown; modelsPath?: unknown; useApiKey: unknown; models?: unknown }): CustomProviderConfig {
   if (typeof input.useApiKey !== 'boolean') throw new ModelAccessError('model_custom_config_invalid', '请选择是否使用 API Key。', 400);
-  return { protocol: normalizeCustomProtocol(input.protocol), baseUrl: normalizeCustomBaseUrl(input.baseUrl), useApiKey: input.useApiKey, models: normalizeCustomModels(input.models) };
+  return { protocol: normalizeCustomProtocol(input.protocol), baseUrl: normalizeCustomBaseUrl(input.baseUrl), ...(input.modelsPath !== undefined ? { modelsPath: normalizeCustomModelsPath(input.modelsPath) } : {}), useApiKey: input.useApiKey, models: normalizeCustomModels(input.models) };
 }
 
 export function customProviderIdentity(config: CustomProviderConfig, apiKey?: string): string {
-  return `custom:${config.protocol}:${config.baseUrl}:${apiKey ? 'key-' + createHash('sha256').update(apiKey).digest('hex') : 'anonymous'}`;
+  return `custom:${config.protocol}:${config.baseUrl}:${config.modelsPath ?? DEFAULT_MODELS_PATH}:${apiKey ? 'key-' + createHash('sha256').update(apiKey).digest('hex') : 'anonymous'}`;
 }
 
 export function createCustomModelProvider(options: CustomProviderOptions = {}): ModelProvider {
@@ -81,7 +91,7 @@ export function createCustomModelProvider(options: CustomProviderOptions = {}): 
       const baseUrl = normalizeCustomBaseUrl(input.baseUrl), protocol = normalizeCustomProtocol(input.protocol);
       const apiKey = input.useApiKey && input.apiKey !== undefined ? apiKeyValue(input.apiKey) : undefined;
       if (input.useApiKey && !apiKey) throw new ModelAccessError('model_custom_api_key_required', '请填写 API Key 后再获取模型列表。', 400);
-      const result = await probe(baseUrl, protocol, apiKey, input.useApiKey, createFetch(options), 20_000);
+      const result = await probe(baseUrl, protocol, normalizeCustomModelsPath(input.modelsPath), apiKey, input.useApiKey, createFetch(options), 20_000);
       if (result.kind === 'models') return { models: result.models, observedAt: new Date().toISOString(), ...(result.incomplete ? { incomplete: true } : {}), ...(result.diagnostic ? { diagnostic: result.diagnostic } : {}) };
       return { models: [], incomplete: true, diagnostic: result.kind === 'no-catalog' ? NO_CATALOG_DISCOVERY : result.diagnostic };
     },
@@ -114,7 +124,7 @@ class CustomRuntime implements ModelProviderRuntime {
     if (this.config.useApiKey && !apiKey) return { status: 'not-authenticated', credentialConfigured: false, models: [], curatedModels: true };
     const identity = customProviderIdentity(this.config, apiKey);
     let result: ProbeResult;
-    try { result = await probe(this.config.baseUrl, this.config.protocol, apiKey, this.config.useApiKey, this.fetch, this.timeoutMs, this.lifetime.signal); }
+    try { result = await probe(this.config.baseUrl, this.config.protocol, this.config.modelsPath ?? DEFAULT_MODELS_PATH, apiKey, this.config.useApiKey, this.fetch, this.timeoutMs, this.lifetime.signal); }
     catch (error) { return { status: 'failed', identity, credentialConfigured: Boolean(apiKey), models: [], curatedModels: true, diagnostic: error instanceof ModelAccessError ? error.message : '端点检查未完成，请稍后重试。' }; }
     if (result.kind === 'models' || result.kind === 'no-catalog') {
       const diagnostic = result.kind === 'no-catalog' ? NO_CATALOG_NOTICE : result.diagnostic;
@@ -124,13 +134,13 @@ class CustomRuntime implements ModelProviderRuntime {
   }
 
   async configureCustom(input: CustomProviderConfigureInput): Promise<ModelProviderObservation> {
-    const config = normalizeCustomConfiguration({ baseUrl: input.baseUrl, protocol: input.protocol, useApiKey: input.useApiKey, models: input.models });
+    const config = normalizeCustomConfiguration({ baseUrl: input.baseUrl, protocol: input.protocol, ...(input.modelsPath !== undefined ? { modelsPath: input.modelsPath } : {}), useApiKey: input.useApiKey, models: input.models });
     let apiKey: string | undefined;
     if (config.useApiKey) {
       apiKey = input.apiKey === undefined ? this.cachedKey ?? await this.store.read() : apiKeyValue(input.apiKey);
       if (!apiKey) throw new ModelAccessError('model_custom_api_key_required', '启用 API Key 时必须填写密钥。', 400);
     }
-    const result = await probe(config.baseUrl, config.protocol, apiKey, config.useApiKey, this.fetch, this.timeoutMs, this.lifetime.signal);
+    const result = await probe(config.baseUrl, config.protocol, config.modelsPath ?? DEFAULT_MODELS_PATH, apiKey, config.useApiKey, this.fetch, this.timeoutMs, this.lifetime.signal);
     if (result.kind === 'auth') throw new ModelAccessError('model_custom_authentication_failed', result.diagnostic, result.status);
     if (config.useApiKey) { await this.store.save(apiKey!); this.cachedKey = apiKey; }
     else { await this.store.delete(); this.cachedKey = undefined; }
@@ -145,13 +155,14 @@ class CustomRuntime implements ModelProviderRuntime {
 
   async discoverCustom(input: CustomProviderDiscoveryInput): Promise<CustomProviderDiscoveryResult> {
     const baseUrl = normalizeCustomBaseUrl(input.baseUrl), protocol = normalizeCustomProtocol(input.protocol);
+    const modelsPath = normalizeCustomModelsPath(input.modelsPath ?? this.config.modelsPath);
     const useApiKey = input.useApiKey === true;
     let apiKey: string | undefined;
     if (useApiKey) {
       apiKey = input.apiKey === undefined ? this.cachedKey ?? await this.store.read() : apiKeyValue(input.apiKey);
       if (!apiKey) throw new ModelAccessError('model_custom_api_key_required', '请填写 API Key 后再获取模型列表。', 400);
     }
-    const result = await probe(baseUrl, protocol, apiKey, useApiKey, this.fetch, 20_000, AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(20_000)]));
+    const result = await probe(baseUrl, protocol, modelsPath, apiKey, useApiKey, this.fetch, 20_000, AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(20_000)]));
     if (result.kind === 'models') return { models: result.models, observedAt: new Date().toISOString(), ...(result.incomplete ? { incomplete: true } : {}), ...(result.diagnostic ? { diagnostic: result.diagnostic } : {}) };
     if (result.kind === 'no-catalog') return { models: [], incomplete: true, diagnostic: NO_CATALOG_DISCOVERY };
     return { models: [], incomplete: true, diagnostic: result.diagnostic };
@@ -217,10 +228,10 @@ class CustomRuntime implements ModelProviderRuntime {
 
 type ProbeResult = { kind: 'models'; models: Array<{ id: string; label?: string }>; incomplete?: boolean; diagnostic?: string } | { kind: 'no-catalog' } | { kind: 'auth'; status: number; diagnostic: string } | { kind: 'unreachable'; diagnostic: string };
 
-async function probe(baseUrl: string, protocol: ModelProtocol, apiKey: string | undefined, useApiKey: boolean, doFetch: typeof fetch, timeoutMs: number, lifetime?: AbortSignal): Promise<ProbeResult> {
+async function probe(baseUrl: string, protocol: ModelProtocol, modelsPath: string, apiKey: string | undefined, useApiKey: boolean, doFetch: typeof fetch, timeoutMs: number, lifetime?: AbortSignal): Promise<ProbeResult> {
   const headers = { accept: 'application/json', ...catalogHeaders(protocol, useApiKey ? apiKey : undefined) };
   const models = new Map<string, { id: string; label?: string }>();
-  let url = catalogUrl(baseUrl, protocol);
+  let url = catalogUrl(baseUrl, protocol, modelsPath);
   for (let page = 0; page < MAX_DISCOVERY_PAGES; page++) {
     let response: Response;
     try {
@@ -246,7 +257,7 @@ async function probe(baseUrl: string, protocol: ModelProtocol, apiKey: string | 
       return models.size ? { kind: 'models', models: [...models.values()], incomplete: true, diagnostic: '后续模型列表不是有效 JSON，已保留本次读取到的候选。' } : { kind: 'no-catalog' };
     }
     for (const entry of catalogEntries(data, protocol)) { if (!models.has(entry.id)) models.set(entry.id, entry); if (models.size >= MAX_DISCOVERY_MODELS) break; }
-    const next = catalogNext(baseUrl, protocol, data);
+    const next = catalogNext(baseUrl, protocol, modelsPath, data);
     if (!next) break;
     if (models.size >= MAX_DISCOVERY_MODELS || page === MAX_DISCOVERY_PAGES - 1) return { kind: 'models', models: [...models.values()], incomplete: true, diagnostic: '模型列表超过单次读取上限，已保留部分候选。' };
     url = next;
@@ -254,10 +265,10 @@ async function probe(baseUrl: string, protocol: ModelProtocol, apiKey: string | 
   return models.size ? { kind: 'models', models: [...models.values()] } : { kind: 'no-catalog' };
 }
 
-function catalogUrl(baseUrl: string, protocol: ModelProtocol): string {
-  if (protocol === 'anthropic-messages') return `${baseUrl}/models?limit=1000`;
-  if (protocol === 'gemini') return `${baseUrl}/models?pageSize=1000`;
-  return `${baseUrl}/models`;
+function catalogUrl(baseUrl: string, protocol: ModelProtocol, modelsPath: string): string {
+  if (protocol === 'anthropic-messages') return `${baseUrl}${modelsPath}?limit=1000`;
+  if (protocol === 'gemini') return `${baseUrl}${modelsPath}?pageSize=1000`;
+  return `${baseUrl}${modelsPath}`;
 }
 
 function catalogHeaders(protocol: ModelProtocol, apiKey: string | undefined): Record<string, string> {
@@ -284,14 +295,14 @@ function catalogEntries(data: ProtocolJson, protocol: ModelProtocol): Array<{ id
   });
 }
 
-function catalogNext(baseUrl: string, protocol: ModelProtocol, data: ProtocolJson): string | undefined {
+function catalogNext(baseUrl: string, protocol: ModelProtocol, modelsPath: string, data: ProtocolJson): string | undefined {
   if (protocol === 'anthropic-messages') {
     const last = string(data.last_id);
-    return data.has_more === true && last ? `${baseUrl}/models?limit=1000&after_id=${encodeURIComponent(last)}` : undefined;
+    return data.has_more === true && last ? `${baseUrl}${modelsPath}?limit=1000&after_id=${encodeURIComponent(last)}` : undefined;
   }
   if (protocol === 'gemini') {
     const token = string(data.nextPageToken);
-    return token ? `${baseUrl}/models?pageSize=1000&pageToken=${encodeURIComponent(token)}` : undefined;
+    return token ? `${baseUrl}${modelsPath}?pageSize=1000&pageToken=${encodeURIComponent(token)}` : undefined;
   }
   return undefined;
 }
