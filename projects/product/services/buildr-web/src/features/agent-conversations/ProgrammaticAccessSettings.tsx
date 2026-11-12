@@ -3,7 +3,7 @@ import { ApiOutlined, BookOutlined, CodeOutlined, PlusOutlined, UnorderedListOut
 import { Alert, Button, Empty, Modal, Skeleton, Typography } from 'antd';
 import { programmaticAccessApi, type ProgrammaticAccessView, type AccessCredential, type AccessDocumentKind } from './api/programmatic-access-api';
 import { ProgrammaticAccessDocumentDrawer } from './ProgrammaticAccessDocumentDrawer';
-import { ProgrammaticAccessCreateModal, type ProgrammaticAccessInput } from './ProgrammaticAccessCreateModal';
+import { ProgrammaticAccessFormDrawer, type ProgrammaticAccessInput } from './ProgrammaticAccessFormDrawer';
 import { ProgrammaticCredentialCard } from './ProgrammaticCredentialCard';
 import './programmatic-access.css';
 
@@ -12,6 +12,7 @@ export function ProgrammaticAccessSettings() {
   const [view, setView] = useState<ProgrammaticAccessView>();
   const [error, setError] = useState(''), [savedPath, setSavedPath] = useState('');
   const [busy, setBusy] = useState(false), [createOpen, setCreateOpen] = useState(false);
+  const [editing, setEditing] = useState<AccessCredential | null>(null);
   const [document, setDocument] = useState<AccessDocumentKind | null>(null);
   const [expanded, setExpanded] = useState<string[]>([]);
   const [modal, modalContext] = Modal.useModal();
@@ -40,6 +41,16 @@ export function ProgrammaticAccessSettings() {
       if (live.current) setCreateOpen(false);
     });
   }
+  async function saveEdit(input: ProgrammaticAccessInput) {
+    const target = editing;
+    if (!target) return false;
+    return act(async () => {
+      const { credential } = await programmaticAccessApi.update(target, input);
+      if (!live.current) return;
+      setView(current => current ? { ...current, credentials: current.credentials.map(entry => entry.id === credential.id ? credential : entry) } : current);
+      setEditing(null);
+    });
+  }
   function confirmRegenerate(item: AccessCredential) {
     modal.confirm({ title: `重新生成「${item.name}」的凭据？`, content: '原令牌会立即失效，程序需要改用新保存的凭据文件。工作空间和权限保持不变。',
       okText: '确认重新生成', cancelText: '取消', onOk: () => act(async () => received((await programmaticAccessApi.regenerate(item)).credential)) });
@@ -63,9 +74,9 @@ export function ProgrammaticAccessSettings() {
   return <section className="pas-root" data-testid="programmatic-access-settings">
     <header className="pas-intro">
       <div><h3>把 Buildr 接入你的工具</h3><p>创建接入，复制连接信息，即可交给本机程序使用。</p></div>
-      <Button type="primary" icon={<PlusOutlined aria-hidden />} disabled={!view || busy} onClick={() => { setError(''); setCreateOpen(true); }}>新建接入</Button>
+      <Button type="primary" icon={<PlusOutlined aria-hidden />} disabled={!view || busy} onClick={() => { setError(''); setEditing(null); setCreateOpen(true); }}>新建接入</Button>
     </header>
-    {error && !createOpen && <Alert type="error" showIcon message={error} action={<Button onClick={() => void refresh()} disabled={busy}>刷新状态</Button>} />}
+    {error && !createOpen && !editing && <Alert type="error" showIcon message={error} action={<Button onClick={() => void refresh()} disabled={busy}>刷新状态</Button>} />}
     {savedPath && <Alert type="success" showIcon closable onClose={() => setSavedPath('')} message="凭据已安全保存，可复制下方接入信息交给程序。" />}
     {view ? <div className="pas-connection">
       <div className="pas-endpoint"><span className="pas-endpoint-label"><ApiOutlined aria-hidden />本机 API</span><Typography.Text code copyable className="pas-url">{view.apiUrl}</Typography.Text></div>
@@ -82,11 +93,13 @@ export function ProgrammaticAccessSettings() {
       {view?.credentials.length ? <div className="pas-credential-list">{view.credentials.map(item => <ProgrammaticCredentialCard key={item.id}
         item={item} view={view} busy={busy} expanded={expanded.includes(item.id)}
         onToggle={() => setExpanded(current => current.includes(item.id) ? current.filter(id => id !== item.id) : [...current, item.id])}
+        onEdit={() => { setError(''); setCreateOpen(false); setEditing(item); }}
         onRegenerate={() => confirmRegenerate(item)} onRevoke={() => confirmRevoke(item)} onToggleFullAccess={value => toggleFullAccess(item, value)} />)}</div>
         : view && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有接入程序，创建一个开始使用。" />}
     </section>
     <p className="pas-footnote">每个程序使用独立凭据，按工作空间授权。工作空间授权不等同于操作系统文件沙箱。</p>
-    <ProgrammaticAccessCreateModal open={createOpen} view={view} busy={busy} error={error} onClose={() => setCreateOpen(false)} onCreate={create} />
+    <ProgrammaticAccessFormDrawer open={createOpen || !!editing} view={view} busy={busy} error={error} editing={editing}
+      onClose={() => { setCreateOpen(false); setEditing(null); }} onSubmit={editing ? saveEdit : create} />
     <ProgrammaticAccessDocumentDrawer kind={document} onSelect={setDocument} onClose={() => setDocument(null)} />
     {modalContext}
   </section>;

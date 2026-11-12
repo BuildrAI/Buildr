@@ -286,3 +286,26 @@ test('full-access execution follows the credential toggle and discovery passes t
  assert.equal(messagesMode.default,undefined,'messages omission must not document a default');
  assert.match(messagesMode.description,/沿用该对话最近一轮/);
 });
+
+test('credential parameters can be edited with revision protection and unchanged token',async t=>{
+ const f=await fixture(t),{token,credential}=await f.create(['read']);
+ const update=(revision:string,params:Record<string,unknown>)=>fetch(f.manager+'/'+credential.id+'/update',{method:'POST',headers:f.webHeaders,body:JSON.stringify({expectedRevision:revision,...params})});
+ assert.equal((await update(credential.revision,{name:'',workspaceIds:[f.workspaceId],scopes:['read']})).status,400);
+ assert.equal((await update(credential.revision,{name:'x',workspaceIds:[randomUUID()],scopes:['read']})).status,400);
+ assert.equal((await update(credential.revision,{name:'x',workspaceIds:[f.workspaceId],scopes:['execute']})).status,400);
+ assert.equal((await update(credential.revision,{name:'x',workspaceIds:[f.workspaceId],scopes:['read'],unexpected:true})).status,400);
+ const ok=await update(credential.revision,{name:'Renamed',workspaceIds:[f.workspaceId],scopes:['read','answer'],allowFullAccess:false});
+ assert.equal(ok.status,200,await ok.clone().text());const edited=(await ok.json()).credential;
+ assert.equal(edited.id,credential.id);assert.equal(edited.tokenFilePath,credential.tokenFilePath);assert.notEqual(edited.revision,credential.revision);
+ assert.equal(edited.name,'Renamed');assert.deepEqual(edited.scopes,['read','answer']);assert.equal(edited.allowFullAccess,false);
+ const discovery=await(await f.call('',token)).json();
+ assert.equal(discovery.credential.name,'Renamed','original token still authenticates after edit');
+ assert.ok(discovery.capabilities.some((item:any)=>item.id==='reply'),'program capabilities follow edited scopes');
+ assert.equal((await update(credential.revision,{name:'Again',workspaceIds:[f.workspaceId],scopes:['read']})).status,409);
+ const keep=await update(edited.revision,{name:'Renamed',workspaceIds:[f.workspaceId],scopes:['read','answer']});
+ assert.equal(keep.status,200,await keep.clone().text());const kept=(await keep.json()).credential;
+ assert.equal(kept.allowFullAccess,false,'omitted allowFullAccess keeps current value');
+ const revoked=await(await fetch(f.manager+'/'+credential.id+'/revoke',{method:'POST',headers:f.webHeaders,body:JSON.stringify({expectedRevision:kept.revision})})).json();
+ assert.equal((await update(revoked.credential.revision,{name:'x',workspaceIds:[f.workspaceId],scopes:['read']})).status,409);
+ assert.equal((await f.call('',token)).status,401);
+});

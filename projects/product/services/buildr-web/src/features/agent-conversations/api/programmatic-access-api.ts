@@ -15,6 +15,7 @@ export function createProgrammaticAccessClient(client: ApiClient) { return {
   revoke:(credential:AccessCredential)=>client(`${base}/${credential.id}/revoke`,{method:'POST',body:JSON.stringify({expectedRevision:credential.revision})}),
   regenerate:(credential:AccessCredential)=>client(`${base}/${credential.id}/regenerate`,{method:'POST',body:JSON.stringify({expectedRevision:credential.revision})}) as Promise<{credential:AccessCredential}>,
   updateFullAccess:(credential:AccessCredential,allowFullAccess:boolean)=>client(`${base}/${credential.id}/full-access`,{method:'POST',body:JSON.stringify({expectedRevision:credential.revision,allowFullAccess})}) as Promise<{credential:AccessCredential}>,
+  update:(credential:AccessCredential,input:{name:string;workspaceIds:string[];scopes:AccessScope[];allowFullAccess?:boolean})=>client(`${base}/${credential.id}/update`,{method:'POST',body:JSON.stringify({expectedRevision:credential.revision,...input})}) as Promise<{credential:AccessCredential}>,
   document:(kind:AccessDocumentKind)=>client(`${base}/documents/${kind}`,{headers:{'x-buildr-session':''}}) as Promise<AccessDocument>,
   pushback:(credentialId:string,signal?:AbortSignal)=>client(`${base}/${credentialId}/pushback`,{headers:{'x-buildr-session':''},signal}) as Promise<PushbackSettingsView>,
   savePushback:(credentialId:string,input:PushbackSettingsInput)=>client(`${base}/${credentialId}/pushback`,{method:'POST',body:JSON.stringify(input)}) as Promise<PushbackSettingsView>,

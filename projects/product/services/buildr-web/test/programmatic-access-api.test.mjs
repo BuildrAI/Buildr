@@ -34,6 +34,12 @@ test('网页文档显式启用会话，重新生成携带当前修订',async()=>
  assert.deepEqual(calls[3],['/api/v1/app/programmatic-access/documents/operations',{headers:{'x-buildr-session':''}}]);
  assert.deepEqual(calls[4],['/api/v1/app/programmatic-access/documents/operations/start',{headers:{'x-buildr-session':''}}]);
 });
+test('编辑凭据提交已观察修订与完整参数',async()=>{
+ const calls=[],client=createProgrammaticAccessClient(async(...args)=>{calls.push(args);return {};});
+ await client.update({id:'credential',revision:'observed'},{name:'新名称',workspaceIds:['workspace'],scopes:['read','answer'],allowFullAccess:false});
+ assert.equal(calls[0][0],'/api/v1/app/programmatic-access/credential/update');assert.equal(calls[0][1].method,'POST');
+ assert.deepEqual(JSON.parse(calls[0][1].body),{expectedRevision:'observed',name:'新名称',workspaceIds:['workspace'],scopes:['read','answer'],allowFullAccess:false});
+});
 test('凭据回推读取启用网页会话，保存/查看/测试携带精确版本化输入且默认不带密钥',async()=>{
  const calls=[],client=createProgrammaticAccessClient(async(...args)=>{calls.push(args);return {};});
  const controller=new AbortController();

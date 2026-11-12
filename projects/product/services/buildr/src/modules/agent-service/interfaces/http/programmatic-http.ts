@@ -70,6 +70,12 @@ export function createProgrammaticHttpContribution(resolve: () => AgentService |
           if (!input || typeof input !== 'object' || Object.keys(input).some(key => !['expectedRevision', 'allowFullAccess'].includes(key)) || typeof input.expectedRevision !== 'string' || typeof input.allowFullAccess !== 'boolean') accessError('programmatic_input_invalid', '需要凭据的已观察修订与布尔 allowFullAccess。', 400);
           return { status: 200, body: { credential: store().updateFullAccess(fullAccess[1], input.expectedRevision, input.allowFullAccess) } };
         }
+        const update = pathname.match(/^\/api\/v1\/app\/programmatic-access\/([a-f0-9-]{36})\/update$/);
+        if (request.method === 'POST' && update) {
+          if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !['expectedRevision', 'name', 'workspaceIds', 'scopes', 'allowFullAccess'].includes(key)) || typeof input.expectedRevision !== 'string') accessError('programmatic_input_invalid', '需要凭据的已观察修订与合法参数。', 400);
+          const { expectedRevision, ...params } = input;
+          return { status: 200, body: { credential: store().update(update[1], expectedRevision, params, options.workspaces().map(item => item.id)) } };
+        }
         return { status: 404, body: { error: { code: 'programmatic_route_missing', message: '没有此凭据管理操作。' } } };
       }
       if (pathname !== base && !pathname.startsWith(base + '/')) return null;

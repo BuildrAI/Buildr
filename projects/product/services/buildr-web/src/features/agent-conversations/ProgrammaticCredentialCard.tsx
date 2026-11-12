@@ -1,4 +1,4 @@
-import { ApiOutlined, DownOutlined, MoreOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons';
+import { ApiOutlined, DownOutlined, EditOutlined, MoreOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons';
 import { Button, Dropdown, Switch, Tag, Typography } from 'antd';
 import { CopyButton } from '../../components/CopyButton';
 import { programmaticConnectionInfo } from './programmatic-connection-info';
@@ -6,9 +6,9 @@ import { ProgrammaticPushbackSettings } from './ProgrammaticPushbackSettings';
 import type { AccessCredential, ProgrammaticAccessView } from './api/programmatic-access-api';
 
 const labels = { read: '读取', execute: '执行', answer: '答复', approve: '审批' };
-export function ProgrammaticCredentialCard({ item, view, busy, expanded, onToggle, onRegenerate, onRevoke, onToggleFullAccess }: {
+export function ProgrammaticCredentialCard({ item, view, busy, expanded, onToggle, onEdit, onRegenerate, onRevoke, onToggleFullAccess }: {
   item: AccessCredential; view: ProgrammaticAccessView; busy: boolean; expanded: boolean;
-  onToggle(): void; onRegenerate(): void; onRevoke(): void; onToggleFullAccess(value: boolean): void;
+  onToggle(): void; onEdit(): void; onRegenerate(): void; onRevoke(): void; onToggleFullAccess(value: boolean): void;
 }) {
   const info = programmaticConnectionInfo(view, item);
   const workspaces = item.workspaceIds.map(id => view.workspaces.find(w => w.id === id)?.name ?? id).join('、');
@@ -25,6 +25,8 @@ export function ProgrammaticCredentialCard({ item, view, busy, expanded, onToggl
         <Button type="text" size="small" onClick={onToggle} aria-expanded={expanded} aria-controls={detailsId}
           aria-label={`${expanded ? '收起' : '查看'}${item.name}接入详情`}>详情<DownOutlined aria-hidden className={expanded ? 'pas-chevron is-open' : 'pas-chevron'} /></Button>
         {!item.revokedAt && <Dropdown trigger={['click']} menu={{ items: [
+          { key: 'edit', label: '编辑参数', icon: <EditOutlined aria-hidden />, onClick: onEdit },
+          { type: 'divider' },
           { key: 'regenerate', label: '重新生成并保存', icon: <ReloadOutlined aria-hidden />, onClick: onRegenerate },
           { type: 'divider' },
           { key: 'revoke', label: '撤销接入', icon: <StopOutlined aria-hidden />, danger: true, onClick: onRevoke },

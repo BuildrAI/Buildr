@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { Alert, Button, Checkbox, Form, Input, Modal, Select, Switch } from 'antd';
-import type { AccessScope, ProgrammaticAccessView } from './api/programmatic-access-api';
+import { useEffect, useState } from 'react';
+import { Alert, Button, Checkbox, Form, Input, Select, Switch } from 'antd';
+import { DrawerShell } from '../../components/DrawerShell';
+import type { AccessCredential, AccessScope, ProgrammaticAccessView } from './api/programmatic-access-api';
 
 export type ProgrammaticAccessInput = { name: string; workspaceIds: string[]; scopes: AccessScope[]; allowFullAccess: boolean };
 const permissions = [
@@ -8,24 +9,32 @@ const permissions = [
   { value: 'answer', label: '回答问题', description: '允许程序代答问题卡片' },
   { value: 'approve', label: '批准敏感操作', description: '允许程序处理审批卡片' },
 ];
+const FORM_ID = 'programmatic-access-form';
 
-export function ProgrammaticAccessCreateModal({ open, view, busy, error, onClose, onCreate }: {
-  open: boolean; view?: ProgrammaticAccessView; busy: boolean; error: string;
-  onClose(): void; onCreate(input: ProgrammaticAccessInput): Promise<boolean>;
+/** 新建与编辑共用同一参数表单，按项目约定以第二层抽屉承载；编辑预填当前凭据，令牌与凭据 ID 不变。 */
+export function ProgrammaticAccessFormDrawer({ open, view, busy, error, editing, onClose, onSubmit }: {
+  open: boolean; view?: ProgrammaticAccessView; busy: boolean; error: string; editing?: AccessCredential | null;
+  onClose(): void; onSubmit(input: ProgrammaticAccessInput): Promise<boolean>;
 }) {
   const [name, setName] = useState(''), [spaces, setSpaces] = useState<string[]>([]);
   const [scopes, setScopes] = useState<AccessScope[]>(['read', 'execute']);
   const [allowFullAccess, setAllowFullAccess] = useState(true);
-  async function create() {
-    if (await onCreate({ name, workspaceIds: spaces, scopes, allowFullAccess })) {
-      setName(''); setSpaces([]); setScopes(['read', 'execute']); setAllowFullAccess(true);
-    }
-  }
-  return <Modal title="新建接入程序" open={open} onCancel={onClose} footer={null}
-    width={520} closable={!busy} maskClosable={!busy} keyboard={!busy} className="pas-create-modal">
-    <p className="pas-modal-intro">为本机工具创建独立凭据，随后复制接入信息交给它。</p>
+  useEffect(() => {
+    if (!open) return;
+    setName(editing?.name ?? ''); setSpaces(editing?.workspaceIds ?? []);
+    setScopes(editing?.scopes ?? ['read', 'execute']); setAllowFullAccess(editing?.allowFullAccess ?? true);
+  }, [open, editing]);
+  return <DrawerShell open={open} width="min(520px, 100vw)"
+    eyebrow="程序接入" title={editing ? '编辑接入程序' : '新建接入程序'} sub={editing ? editing.name : undefined}
+    onClose={onClose} maskClosable={!busy} keyboard={!busy} closeDisabled={busy}
+    closeAriaLabel={editing ? '关闭编辑' : '关闭新建'} rootClassName="pas-form-drawer"
+    footer={<div className="metadata-edit-actions">
+      <Button autoInsertSpace={false} disabled={busy} onClick={onClose}>取消</Button>
+      <Button type="primary" htmlType="submit" form={FORM_ID} loading={busy} disabled={!view || !name.trim() || !spaces.length}>{editing ? '保存修改' : '创建并自动保存'}</Button>
+    </div>}>
+    <p className="pas-modal-intro">{editing ? '修改名称、工作空间与操作权限；凭据文件与令牌保持不变。' : '为本机工具创建独立凭据，随后复制接入信息交给它。'}</p>
     {error && <Alert type="error" showIcon message={error} />}
-    <Form layout="vertical" onFinish={() => void create()}>
+    <Form id={FORM_ID} layout="vertical" onFinish={() => void onSubmit({ name, workspaceIds: spaces, scopes, allowFullAccess })}>
       <Form.Item label="程序名称">
         <Input autoFocus aria-label="程序凭据名称" value={name} maxLength={100} onChange={e => setName(e.target.value)} placeholder="例如 千问办公" disabled={busy} />
       </Form.Item>
@@ -48,10 +57,6 @@ export function ProgrammaticAccessCreateModal({ open, view, busy, error, onClose
       </Form.Item>
       {(scopes.includes('answer') || scopes.includes('approve')) && <Alert type="warning" showIcon message="你正在允许程序代答或审批，请确认这是你希望的自动化范围。" />}
       <p className="pas-form-note">凭据自动保存到本机私有文件（600），不需要复制令牌。工作空间授权不是操作系统文件沙箱。</p>
-      <div className="pas-modal-actions">
-        <Button disabled={busy} onClick={onClose}>取消</Button>
-        <Button htmlType="submit" type="primary" loading={busy} disabled={!view || !name.trim() || !spaces.length}>创建并自动保存</Button>
-      </div>
     </Form>
-  </Modal>;
+  </DrawerShell>;
 }
