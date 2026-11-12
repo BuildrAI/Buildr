@@ -5,6 +5,7 @@ import { sharedCheckPreparation } from '../../../buildr/tools/testing/verificati
 
 const root = path.resolve(import.meta.dirname, '../..');
 const processTests = (group: string, omit: string) => fs.globSync(`test/integration/process/${group}/*.test.ts`, { cwd: root }).filter(file => path.basename(file) !== omit).sort();
+const handoffTests = (...names: string[]) => names.map(name => `test/integration/process/handoff/${name}`);
 const recoveryTests = (...names: string[]) => names.map(name => `test/integration/process/recovery/${name}`);
 const rootTests = fs.globSync('test/integration/*.test.ts', { cwd: root }).filter(file => path.basename(file) !== 'conversations.test.ts').sort();
 const runner = path.resolve(root, '../buildr/tools/testing/run-service-tests.ts');
@@ -26,9 +27,13 @@ export const agentIntegrationChecks = [
   { id: 'agent-integration-startup-ownership', name: 'Agent real host exits and retained ownership',
     testFiles: ['test/integration/process/startup/ownership.test.ts'], schedulingCostMs: 80000, timeoutMs: 120000,
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
-  { id: 'agent-integration-handoff', name: 'Agent real retained generations and question handoff',
-    // Activation owns the expensive upgrade chain separately; each file still has one primary owner.
-    testFiles: processTests('handoff', 'activation.test.ts'), schedulingCostMs: 120000, timeoutMs: 180000,
+  { id: 'agent-integration-handoff', name: 'Agent real queued input and question handoff',
+    // Activation and retained-generation adoption each own their expensive
+    // chain separately; every file still has one primary owner.
+    testFiles: handoffTests('completed-input.test.ts', 'questions.test.ts'), schedulingCostMs: 70000, timeoutMs: 120000,
+    resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
+  { id: 'agent-integration-handoff-generations', name: 'Agent real retained generations and task association',
+    testFiles: handoffTests('generations.test.ts', 'task-association.test.ts'), schedulingCostMs: 110000, timeoutMs: 180000,
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
   { id: 'agent-integration-handoff-activation', name: 'Agent retained runtime activation and failed successor recovery',
     testFiles: ['test/integration/process/handoff/activation.test.ts'], schedulingCostMs: 100000, timeoutMs: 180000,

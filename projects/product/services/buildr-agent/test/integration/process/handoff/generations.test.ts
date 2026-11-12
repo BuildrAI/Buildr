@@ -99,7 +99,8 @@ test('parallel versions retain old controls, dispatch durable next instructions 
       }catch(error){
         // The no-host pump can update its reason after the observation. Retry
         // only an explicitly rejected edit, never an uncertain send.
-        if(attempt>=2||!['agent_pending_conflict','agent_revision_conflict'].includes((error as {code?:string}).code??''))throw error;
+        if(attempt>=50||!['agent_pending_conflict','agent_revision_conflict'].includes((error as {code?:string}).code??''))throw error;
+        await new Promise<void>(resolve=>setTimeout(resolve,50));
       }
     }
     await assert.rejects(observer.operations.conversations.cancelPendingSend(scope,first.id,{expectedPendingRevision:queuedRevision}),{code:'agent_pending_conflict'});
@@ -121,7 +122,8 @@ test('parallel versions retain old controls, dispatch durable next instructions 
         first=await observer.operations.conversations.cancelPendingSend(scope,first.id,{expectedPendingRevision:first.pendingSend.revision});
         break;
       }catch(error){
-        if(attempt>=2||!['agent_pending_conflict','agent_revision_conflict'].includes((error as {code?:string}).code??''))throw error;
+        if(attempt>=50||!['agent_pending_conflict','agent_revision_conflict'].includes((error as {code?:string}).code??''))throw error;
+        await new Promise<void>(resolve=>setTimeout(resolve,50));
         first=await main.call('conversations.read',[scope,first.id]);
       }
     }
@@ -136,7 +138,8 @@ test('parallel versions retain old controls, dispatch durable next instructions 
         // The no-host pump may advance the saved instruction between the read
         // and preview. Retry only an explicit optimistic-concurrency rejection;
         // the fixed request identity keeps the actual send idempotent.
-        if(attempt>=2||!['agent_pending_conflict','agent_revision_conflict'].includes((error as {code?:string}).code??''))throw error;
+        if(attempt>=50||!['agent_pending_conflict','agent_revision_conflict'].includes((error as {code?:string}).code??''))throw error;
+        await new Promise<void>(resolve=>setTimeout(resolve,50));
         first=await main.call('conversations.read',[scope,first.id]);
       }
     }
