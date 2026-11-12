@@ -1388,19 +1388,25 @@ test('observed native model selection refreshes the private default and reaches 
   } finally { await f.close(); }
 });
 
-test('input acceptance writes a first-message fallback title and the first completed round adds one model summary', async () => {
+test('input acceptance writes a first-message fallback title and starts one model summary in parallel', async () => {
   const native = fake('local', { hold: true }); const open = native.executor.open; const titles: any[] = [];
-  native.executor.open = async input => ({ ...await open(input), async generateTitle(input) { titles.push(input); return '供应商入驻审核流程梳理'; } });
+  let release!: (title: string) => void; const pending = new Promise<string>(resolve => { release = resolve; });
+  native.executor.open = async input => ({ ...await open(input), async generateTitle(input) { titles.push(input); return await pending; } });
   const f = fixture([native.executor]);
   try {
     await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', '请梳理供应商入驻业务');
-    const fallback = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'running' && value.titleState?.status === 'fallback');
-    assert.equal(fallback.title, '请梳理供应商入驻业务'); assert.equal(titles.length, 0);
-    for (const context of native.contexts.values()) context.unblock?.();
-    const named = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.title === '供应商入驻审核流程梳理' && value.run?.status === 'completed');
+    const fallback = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'running' && ['fallback', 'generating'].includes(value.titleState?.status ?? ''));
+    assert.equal(fallback.title, '请梳理供应商入驻业务');
+    await waitUntil(() => titles.length, value => value === 1);
+    const generating = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.titleState?.status === 'generating');
+    assert.equal(generating.run?.status, 'running');
+    release('供应商入驻审核流程梳理');
+    const named = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.title === '供应商入驻审核流程梳理' && value.run?.status === 'running');
     assert.equal(named.titleState?.status,'generated'); assert.equal(titles.length, 1);
-    const description = JSON.parse(titles[0].description); assert.equal(description.messages[0].text, '请梳理供应商入驻业务'); assert.equal(description.messages.at(-1).role, 'assistant');
-    assert.equal(native.sends.length, 1); assert.equal(named.entries.filter(entry => entry.role === 'user').length, 1);
+    const description = JSON.parse(titles[0].description); assert.equal(description.messages[0].text, '请梳理供应商入驻业务'); assert.equal(description.messages.length, 1);
+    for (const context of native.contexts.values()) context.unblock?.();
+    const done = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed');
+    assert.equal(native.sends.length, 1); assert.equal(done.entries.filter(entry => entry.role === 'user').length, 1);
     send(f.service, view.id, 'local', '继续检查'); await waitUntil(()=>native.sends.length,n=>n===2); for (const context of native.contexts.values()) context.unblock?.();
     await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.entries.filter(entry=>entry.role==='user').length===2);
     assert.equal(titles.length, 1);
@@ -3002,7 +3008,7 @@ test('shared video draft keeps original and frames without creating a conversati
   }finally{await f.close();}
 });
 
-test('the accepted round shows a first-message fallback title and only the first completed round requests one model summary',async()=>{
+test('the accepted round shows a first-message fallback title and starts the single model summary in parallel',async()=>{
   let accept!:()=>void;const admitted=new Promise<void>(resolve=>{accept=resolve;});let calls=0;
   const native=fake('local',{hold:true,beforeAccepted:admitted}),open=native.executor.open;
   native.executor.open=async input=>({...await open(input),generateTitle:async()=>{calls++;return '对话面板分隔线优化';}});
@@ -3013,11 +3019,11 @@ test('the accepted round shows a first-message fallback title and only the first
     const initial=f.service.conversations.read('workspace-one',chat.id);
     assert.equal(initial.title,'新对话');assert.equal(initial.titleState?.status,'pending');assert.equal(calls,0,'nothing requests a model title before acceptance');
     accept();
-    const accepted=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.title==='优化对话面板分隔线');
-    assert.equal(accepted.titleState?.status,'fallback');assert.equal(accepted.run?.status,'running');assert.equal(calls,0,'the first round is not complete yet');
+    const accepted=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.title==='对话面板分隔线优化');
+    assert.equal(accepted.titleState?.status,'generated');assert.equal(accepted.run?.status,'running');assert.equal(calls,1,'the title request starts before the first round completes');
     native.contexts.get(native.sends[0].contextRef.id)!.unblock!();
-    const named=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.title==='对话面板分隔线优化');
-    assert.equal(named.titleState?.status,'generated');assert.equal(calls,1);assert.equal(native.sends.length,1);
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+    assert.equal(done.title,'对话面板分隔线优化');assert.equal(calls,1);assert.equal(native.sends.length,1);
     send(f.service,chat.id,'local','后续消息');await waitUntil(()=>native.sends.length,n=>n===2);
     native.contexts.get(native.sends[1].contextRef.id)!.unblock!();
     await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed'&&v.entries.filter(entry=>entry.role==='assistant'&&entry.kind==='message').length===2);

@@ -1561,6 +1561,7 @@ export class ConversationApplication {
       dispatched = true;
       await runtime.send({ contextRef: participant.contextRef!, cwd: record.view.cwd, text: prepared.text, images: prepared.images, model: prepared.draft.modelAccountId ? selectedRuntime.model : prepared.draft.model, reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, clientRequestId: record.attempts.find(value => value.runId === runId)!.clientRequestId, onEvent: event => {
         this.event(workspaceId, id, runId, event);
+        if (event.type === 'accepted') queueMicrotask(() => { void this.generateAutomaticTitle(workspaceId, id, runId, runtime).catch(() => {}); });
       } });
       // An old stop may already be observing this conversation. Its snapshot
       // cannot stand in for the just-finished new execution.
@@ -1780,13 +1781,13 @@ export class ConversationApplication {
     });
     return JSON.stringify({ messages });
   }
-  /** Exactly one automatic attempt, only after the first round completed. */
+  /** Exactly one automatic attempt, started in parallel with the accepted first round. */
   private async generateAutomaticTitle(workspaceId: string, id: string, runId: string, runtime: AgentRuntime): Promise<void> {
     const record = this.currentRun(workspaceId, id, runId);
-    if (!record || this.closing || record.view.run?.status !== 'completed') return;
+    if (!record || this.closing) return;
     if (record.attempts.filter(attempt => !attempt.supplement && !attempt.automaticRetry).length !== 1) return;
     if (!this.titleEligible(record) || this.titleWork.has(id)) return;
-    await this.summarizeTitle(workspaceId, id, undefined, runtime, false).catch(() => {});
+    await this.summarizeTitle(workspaceId, id, undefined, runtime, false, false).catch(() => {});
   }
   async generateTitle(workspaceId: string, id: string, input: { expectedRevision: string }): Promise<ConversationView> {
     let record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision); this.assertAccepting(record);
@@ -1800,14 +1801,16 @@ export class ConversationApplication {
     await this.summarizeTitle(workspaceId, id, input.expectedRevision, runtime, true);
     return this.read(workspaceId, id,{compactTools:true});
   }
-  private async summarizeTitle(workspaceId: string, id: string, revision: string | undefined, runtime: AgentRuntime, explicit: boolean): Promise<void> {
+  private async summarizeTitle(workspaceId: string, id: string, revision: string | undefined, runtime: AgentRuntime, explicit: boolean, requireAnswer = explicit): Promise<void> {
     if (this.titleWork.has(id)) { if (explicit) fail('agent_title_busy', '正在生成本段对话的标题，请稍后查看。', 409); return; }
     let record = this.load(workspaceId, id);
     if (revision !== undefined) expected(record.view.revision, revision);
-    const participant = record.participants.find(value => value.id === record.view.run?.participantId);
-    const description = this.titleDescription(record);
-    if (!participant?.contextRef || !description || record.view.run?.status !== 'completed' || !explicit && !this.titleEligible(record)) return;
-    const runId = record.view.run.id;
+    const run = record.view.run;
+    if (!run) return;
+    const participant = record.participants.find(value => value.id === run.participantId);
+    const description = this.titleDescription(record, requireAnswer);
+    if (!participant?.contextRef || !description || !explicit && !this.titleEligible(record)) return;
+    const runId = run.id;
     if (!runtime.generateTitle) {
       if (explicit) fail('agent_title_unavailable', '此执行方尚未提供可用的精短标题，原有标题已保留。', 409);
       this.recordTitleFailure(workspaceId, id, runId, 'automatic', new Error('agent_title_unavailable'));
@@ -1817,17 +1820,17 @@ export class ConversationApplication {
     record.view.titleState = { status: 'generating' }; this.save(record); revision = record.view.revision;
     const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS); timeout.unref();
     try {
-      const title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: record.view.run?.model, freshInstruction: Boolean(record.view.forkedFrom), signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
+      const title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: run.model, freshInstruction: Boolean(record.view.forkedFrom), signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
       const current = this.load(workspaceId, id);
       if (current.view.run?.id !== runId) {
         if (current.titleOrigin === 'fallback' && current.view.titleState?.status === 'generating') { current.view.titleState = { status: 'fallback' }; this.save(current); }
         return;
       }
-      if (current.view.revision !== revision) {
-        if (explicit) fail('agent_revision_conflict', '对话已变化，保留当前标题。', 409);
-        this.recordTitleFailure(workspaceId, id, runId, 'automatic', new Error('agent_revision_conflict'));
-        return;
-      }
+      // Automatic titles start while the first round streams, so the
+      // conversation revision keeps changing. The run identity and the
+      // in-flight "generating" state are the ownership checks; a manual rename
+      // or a newer run still wins through acceptTitle/recordTitleFailure.
+      if (explicit && current.view.revision !== revision) { fail('agent_revision_conflict', '对话已变化，保留当前标题。', 409); }
       if (!this.acceptTitle(current, title, explicit)) throw new Error(title ? 'agent_title_invalid' : 'agent_title_empty');
       this.save(current);
     } catch (error) {
