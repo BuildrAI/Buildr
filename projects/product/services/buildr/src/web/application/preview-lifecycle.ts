@@ -752,6 +752,23 @@ async function reclaimConfirmedAgent(pids: number[]): Promise<void> {
   }
 }
 
+async function terminatePreviewWeb(pid: number): Promise<void> {
+  const signal = (name: NodeJS.Signals) => {
+    try { process.kill(process.platform === 'win32' ? pid : -pid, name); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+  };
+  signal('SIGTERM');
+  for (let index = 0; index < 40 && processAlive(pid); index += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+  }
+  if (!processAlive(pid)) return;
+  signal('SIGKILL');
+  for (let index = 0; index < 40 && processAlive(pid); index += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  }
+  if (processAlive(pid)) throw codedError('预览实例进程停止未确认，保留现场。', 'preview_stop_unconfirmed', { pid });
+}
+
 async function assertPreviewStopped(instance: string, dataRoot: string): Promise<void> {
   const state = readPreviewInstance(instance, dataRoot);
   if (!state || !processAlive(state.pid)) return;
@@ -791,14 +808,20 @@ export async function stopPreview(name: string, options: PreviewStopOptions = {}
       await new Promise<void>((resolve) => setTimeout(resolve, 50));
     }
     if (await healthyInstance(readPreviewInstance(instance, dataRoot))) throw codedError(`预览实例 ${instance} 停止后仍保持健康。`, 'preview_stop_unconfirmed');
-    // Health turns non-ready before the web process exits. The detached Agent
-    // backend is owned by that process, so stop it only after the exact preview
-    // PID is gone; otherwise a late host shutdown can leave an orphan writer.
-    if (state && Number.isInteger(state.pid)) {
-      for (let index = 0; index < 100 && processAlive(state.pid); index += 1) {
-        await new Promise<void>((resolve) => setTimeout(resolve, 50));
-      }
-      if (processAlive(state.pid)) throw codedError(`预览实例 ${instance} 进程停止未确认，保留现场。`, 'preview_stop_unconfirmed', { instance, pid: state.pid });
+  }
+  // Health can turn non-ready before the web process exits, and an already
+  // non-ready receipt may still own a live process. The detached Agent backend
+  // is owned by that process, so never release preview data before its exact
+  // PID is gone; otherwise a late host shutdown can leave an orphan writer.
+  if (state && Number.isInteger(state.pid)) {
+    for (let index = 0; index < 100 && processAlive(state.pid); index += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+    if (processAlive(state.pid)) {
+      // A preview can lose health while its event loop is warming a runtime
+      // unit. It still owns the disposable preview root, so terminate only the
+      // exact process group recorded by this preview and verify its exit.
+      await terminatePreviewWeb(state.pid);
     }
   }
   const agentRoot = previewDataRoot(instance, dataRoot);
@@ -807,8 +830,11 @@ export async function stopPreview(name: string, options: PreviewStopOptions = {}
   for (let round = 0; round < 8; round += 1) {
     try {
       await stopAgentProcess({ dataRoot: agentRoot });
-      stopFailure = undefined;
-    } catch (error) { stopFailure = error; }
+    } catch (error) {
+      // Once a stop result is unconfirmed, a later disappearance of its record
+      // cannot prove release. Keep the first failure and fail closed.
+      stopFailure ??= error;
+    }
     for (const pid of previewAgentPids(agentRoot)) ownedAgentPids.add(pid);
     await reclaimConfirmedAgent([...ownedAgentPids]);
     if (![...ownedAgentPids].some(processAlive) && previewAgentPids(agentRoot).length === 0) {

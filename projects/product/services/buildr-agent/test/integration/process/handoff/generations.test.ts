@@ -122,7 +122,7 @@ test('parallel versions retain old controls, dispatch durable next instructions 
         break;
       }catch(error){
         if(attempt>=2||!['agent_pending_conflict','agent_revision_conflict'].includes((error as {code?:string}).code??''))throw error;
-        first=await observer.operations.conversations.read(scope,first.id);
+        first=await main.call('conversations.read',[scope,first.id]);
       }
     }
     const confirmedRequestId=randomUUID();
@@ -137,7 +137,7 @@ test('parallel versions retain old controls, dispatch durable next instructions 
         // and preview. Retry only an explicit optimistic-concurrency rejection;
         // the fixed request identity keeps the actual send idempotent.
         if(attempt>=2||!['agent_pending_conflict','agent_revision_conflict'].includes((error as {code?:string}).code??''))throw error;
-        first=await observer.operations.conversations.read(scope,first.id);
+        first=await main.call('conversations.read',[scope,first.id]);
       }
     }
     first=await until(()=>observer!.operations.conversations.read(scope,first.id),value=>value.run?.generation===adopted.identity.generation&&value.run?.status==='completed');

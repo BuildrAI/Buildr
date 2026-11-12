@@ -89,7 +89,7 @@ server.listen(0, '127.0.0.1', () => {
   };
 }
 
-test('preview stop includes its independent backend and refuses purge after uncertain native release', {timeout:30_000}, async t => {
+test('preview stop includes its independent backend and refuses purge after uncertain native release', {timeout:60_000}, async t => {
   t.after(async()=>{await connection?.disconnect();await stopAgentProcess({dataRoot:profileRoot}).catch(()=>{});});
   const data=fixture(t),profileRoot=previewDataRoot('demo',data.dataRoot);
   await data.start([]);
@@ -114,7 +114,8 @@ test('preview stop includes its independent backend and refuses purge after unce
     let settled=false;
     const rejected=assert.rejects(stopPreview('demo',{dataRoot:data.dataRoot,purge:true}),error=>coded(error,'agent_process_stop_unconfirmed'));
     void rejected.then(()=>{settled=true;},()=>{settled=true;});
-    for(let tick=0;tick<600&&!settled;tick++){await new Promise<void>(resolve=>setImmediate(resolve));t.mock.timers.tick(50);}
+    const deadline=Date.now()+30_000;
+    while(!settled&&Date.now()<deadline){await new Promise<void>(resolve=>setImmediate(resolve));t.mock.timers.tick(50);}
     assert.ok(settled,'uncertain generation release must reject within its controlled polling budget');
     await rejected;
   } finally {
