@@ -12,7 +12,7 @@ export type TaskDocumentProjectQuery = {
   projectDetail(root: string, code: string): { project: TaskDocumentProject };
   resolveSourceRoot(root: string, source: TaskDocumentProject['source']): string;
 };
-export type TaskDocumentWorktreeQuery = { readGitWorktreeEvidence?(root: string, taskId: string, options: { optional: boolean }): { evidence: { repositories: Array<{ selector: string; sourcePath?: string }> } } | null; inspectGitWorktrees(input: { workspaceRoot: string; taskId: string }): { status: string; repositories: Array<{ selector: string; entityType: string; sourcePath: string; checkoutPath: string; state: string }>; diagnostic?: { code: string; message: string } | null } };
+export type TaskDocumentWorktreeQuery = { readGitWorktreeEvidence?(root: string, taskId: string, options: { optional: boolean }): { evidence: { repositories: Array<{ selector: string; sourcePath?: string }> } } | null; inspectGitWorktrees(input: { workspaceRoot: string; taskId: string; includeClean?: boolean }): { status: string; repositories: Array<{ selector: string; entityType: string; sourcePath: string; checkoutPath: string; state: string }>; diagnostic?: { code: string; message: string } | null } };
 export type TaskDocumentQuery = { readTask(root: string, taskId: string): { record: { changes: Array<{ project: string; change: string }>; scope?: { projects: string[]; services: Array<{ project: string; service: string }> } } } };
 export const MAX_TASK_DOCUMENT_BYTES = 512 * 1024;
 export function documentError(code: string, message: string, status = 400) { return Object.assign(new Error(message), { code, status }); }
@@ -78,7 +78,7 @@ export function readBoundedText(root: string, relative: string, maxBytes = MAX_T
 export function createTaskProjectDocumentReader(taskQuery: TaskDocumentQuery, projectQuery: TaskDocumentProjectQuery, worktreeQuery?: TaskDocumentWorktreeQuery) {
   function taskScopedProjectRoot(targetRoot: string, taskId: string, projectCode: string, project: TaskDocumentProject, observation?: ReturnType<TaskDocumentWorktreeQuery['inspectGitWorktrees']>): string | null {
     if (!worktreeQuery) return null;
-    const inspected = observation ?? worktreeQuery.inspectGitWorktrees({ workspaceRoot: targetRoot, taskId });
+    const inspected = observation ?? worktreeQuery.inspectGitWorktrees({ workspaceRoot: targetRoot, taskId, includeClean: false });
     if (inspected.status !== 'ready' && !inspected.repositories.length) {
       if (!inspected.diagnostic || inspected.diagnostic.code === 'git_worktree_evidence_missing') return null;
       // A valid service-only group cannot turn unrelated, confirmed non-Git project materials into Git candidates.
@@ -120,7 +120,7 @@ export function createTaskProjectDocumentReader(taskQuery: TaskDocumentQuery, pr
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(projectCode)) throw documentError('task_document_scope_forbidden', '项目编码不合法。', 403);
     const { project } = projectQuery.projectDetail(targetRoot, projectCode);
     const projectRoot = projectQuery.resolveSourceRoot(targetRoot, project.source);
-    const observation = worktreeQuery?.inspectGitWorktrees({ workspaceRoot: targetRoot, taskId });
+    const observation = worktreeQuery?.inspectGitWorktrees({ workspaceRoot: targetRoot, taskId, includeClean: false });
     const candidateRoot = taskScopedProjectRoot(targetRoot, taskId, projectCode, project, observation);
     let sourceRoot = candidateRoot || projectRoot;
     // Also check ancestors inside the selected workspace, not merely the final project root.
