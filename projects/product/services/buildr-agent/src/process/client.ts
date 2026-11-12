@@ -40,6 +40,22 @@ export interface AgentProcessConnectionOptions {
   signal?: AbortSignal;
 }
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+async function reclaimAbortedLaunch(dataRoot: string, pid: number): Promise<void> {
+  // Cancellation can arrive after spawn but before the child publishes its
+  // ownership record. There is no record for a later owner to stop, so the
+  // launcher must reap the exact process group it just created.
+  if (!Number.isInteger(pid) || pid <= 1) return;
+  if (readProcessInstances(dataRoot).some(record => record.identity.pid === pid)) return;
+  try { process.kill(process.platform === 'win32' ? pid : -pid, 'SIGTERM'); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+  for (let attempt = 0; attempt < 20 && live(pid); attempt++) await pause(50);
+  if (live(pid)) {
+    try { process.kill(process.platform === 'win32' ? pid : -pid, 'SIGKILL'); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+    for (let attempt = 0; attempt < 20 && live(pid); attempt++) await pause(50);
+  }
+  if (live(pid)) throw new AgentServiceError('agent_process_stop_unconfirmed', '启动取消后的执行后台停止未确认。', 409);
+}
 function matches(identity: AgentProcessIdentity, options: Pick<AgentProcessConnectionOptions, 'dataRoot' | 'profileId'>): void {
   if (!identity || identity.dataRoot !== path.resolve(options.dataRoot) || identity.profileId !== options.profileId || Object.entries(AGENT_EXECUTION_CONTRACTS).some(([key, value]) => identity.contracts?.[key as keyof typeof AGENT_EXECUTION_CONTRACTS] !== value)) throw new AgentServiceError('agent_process_identity_mismatch', '执行后台来源或契约不匹配，未接管已有实例。', 409);
 }
@@ -87,13 +103,18 @@ async function ensure(options: AgentProcessConnectionOptions & {runtime:AgentRun
         if(retained.some(candidate=>!canRunParallel(candidate.identity.runtime,runtime)))runtime=record?.identity.runtime??retained[0]!.identity.runtime;
         validateAgentRuntime(options.dataRoot, runtime);
         options.signal?.throwIfAborted();
-        launchAgentProcess({ dataRoot: path.resolve(options.dataRoot), profileId: options.profileId, runtime, token: privateToken(), legacySourceId: options.legacySourceId, autoContinueInterrupted: options.autoContinueInterrupted });
+        const launchedPid = launchAgentProcess({ dataRoot: path.resolve(options.dataRoot), profileId: options.profileId, runtime, token: privateToken(), legacySourceId: options.legacySourceId, autoContinueInterrupted: options.autoContinueInterrupted });
         // Give the successor time to claim before another loop considers launching.
-        for (let attempt = 0; attempt < 200; attempt++) {
-          options.signal?.throwIfAborted();
-          const started = readProcessRecord(options.dataRoot);
-          if (started && await healthy(started, options)) return started;
-          await pause(100);
+        try {
+          for (let attempt = 0; attempt < 200; attempt++) {
+            options.signal?.throwIfAborted();
+            const started = readProcessRecord(options.dataRoot);
+            if (started && await healthy(started, options)) return started;
+            await pause(100);
+          }
+        } catch (error) {
+          if (options.signal?.aborted) await reclaimAbortedLaunch(options.dataRoot, launchedPid);
+          throw error;
         }
         break;
       }
