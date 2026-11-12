@@ -1,20 +1,13 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: conversation-title-error-reminder
-change: conversation-title-failure-reminder
+task: qwen-dedicated-credits
+change: qwen-dedicated-credits
 operation: reconcile
 impacts:
   - type: technical-architecture
     target: knowledge/docs/architecture/agent-integration.md
-    reason: 自动标题两个有界阶段都失败后回填失败提醒标题，历史记录启动补齐，手动名称优先；标题说明同步校准。
+    reason: Qoder `/usage` 的专属资源包作为独立额度窗口表达，名称按多语言标题回退，且不纳入账号级剩余比例与耗尽判断。
     status: updated
     sourceIdentities:
-      - services/buildr-agent/src/application/conversation-application.ts
-      - services/buildr-agent/src/persistence/conversation-repository.ts
-      - openspec/changes/conversation-title-failure-reminder/specs/agent-conversations/spec.md
-  - type: code-map
-    target: knowledge/code-map/technical-layers.md
-    reason: 对话应用的短标题职责补充最终失败提醒与历史补齐说明。
-    status: updated
-    sourceIdentities:
-      - services/buildr-agent/src/application/conversation-application.ts
+      - services/buildr-agent/src/model-access/providers/qoder.ts
+      - openspec/changes/qwen-dedicated-credits/specs/model-usage-controls/spec.md
 unresolvedItems: []

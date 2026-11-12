@@ -201,6 +201,43 @@ test('Qoder keeps org resource package compatibility and does not block models w
   assert.equal(failed.quota?.available,false);
 });
 
+test('Qoder exposes dedicated resource packages as separate windows without changing account exhaustion', {timeout:10000}, async t => {
+  const owner={
+    inspect:async()=>({status:'ready' as const}),
+    identity:async()=> 'qoder-cn',
+    async request(path:string){
+      if(path==='/models')return Response.json({chat:[{key:'auto',display_name:'Auto',enable:true}]});
+      if(path==='/usage')return Response.json({
+        userType:'personal_lite',isQuotaExceeded:false,expiresAt:1795276800000,
+        userQuota:{total:1000,remaining:1000,percentage:0,unit:'credits'},
+        dedicatedResourcePackages:[
+          {id:'pkg-qwen',available:true,status:'ACTIVE',total:2000,remaining:2000,expiresAt:1797000000000,displayLabels:[
+            {dimension:'title',valueI18n:{'zh-CN':'Qwen 专属积分','en-US':'Qwen credits'}},
+            {dimension:'description',valueI18n:{'zh-CN':'在模型选择器中选择 Qwen 系列模型时优先抵扣该积分。'}},
+          ]},
+          {id:'pkg-expired',available:false,status:'EXPIRED',total:1000,remaining:0},
+          {available:true,total:500,remaining:250},
+          {id:'pkg-used',available:true,percentage:0.25},
+        ],
+      });
+      throw new Error('unexpected_qoder_path');
+    },
+  };
+  const runtime = await createQoderModelProvider(owner,'qoder-cn').open({accountId:'qoder-cn',configRoot:'unused',environment:{}});
+  t.after(async()=>{await runtime.close();});
+  const result = await runtime.inspect();
+  assert.equal(result.status,'ready');
+  assert.deepEqual(result.quota?.windows?.map(window=>[window.id,window.label,window.remainingPercent,window.remainingCredits,window.totalCredits]),[
+    ['credits','套餐内 Credits',100,1000,1000],
+    ['dedicated:pkg-qwen','Qwen 专属积分',100,2000,2000],
+    ['dedicated:2','千问专属积分',50,250,500],
+    ['dedicated:pkg-used','千问专属积分',75,undefined,undefined],
+  ]);
+  assert.equal(result.quota?.windows?.find(window=>window.id==='dedicated:pkg-qwen')?.resetsAt,new Date(1797000000000).toISOString());
+  assert.equal(result.quota?.remainingPercent,100);
+  assert.doesNotMatch(result.quota?.summary??'',/专属/);
+});
+
 test('ChatGPT API does not apply the catalog timeout to an in-progress model response', async t => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-openai-api-long-response-'));
   const mock: typeof fetch = async (url, init = {}) => {

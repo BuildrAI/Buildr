@@ -85,6 +85,21 @@ async function observeQoderQuota(request:(path:string,init?:RequestInit)=>Promis
     if(addOnPercent!==undefined){windows.push({id:'add-on',label:'资源包',remainingPercent:addOnPercent,...creditAmounts(addOn,positive(addOn.total)),...(resetsAt?{resetsAt}:{})});buckets.push({total:positive(addOn.total),remaining:quotaNumber(addOn.remaining)});}
     const org=record(data.orgResourcePackage),orgPercent=addOnPercent===undefined?(org.available===true?remainingPercent(org,'cap'):remainingPercent(org,'total')):undefined;
     if(orgPercent!==undefined){windows.push({id:'org-package',label:'组织资源包',remainingPercent:orgPercent,...creditAmounts(org,positive(org.cap)??positive(org.total))});buckets.push({total:positive(org.cap)??positive(org.total),remaining:quotaNumber(org.remaining)});}
+    // Dedicated packages only offset their own model series, so they are shown
+    // as separate windows and never folded into the account-level aggregate.
+    const dedicated=Array.isArray(data.dedicatedResourcePackages)?data.dedicatedResourcePackages:[];
+    dedicated.forEach((value,index)=>{
+      const bundle=record(value);if(bundle.available!==true)return;
+      const total=positive(bundle.total)??positive(bundle.cap),remaining=quotaNumber(bundle.remaining);
+      const used=quotaNumber(bundle.percentage);
+      const percent=total!==undefined&&remaining!==undefined?quotaPercent(remaining/total*100):used===undefined?undefined:quotaPercent((1-used)*100);
+      if(percent===undefined)return;
+      const labels=Array.isArray(bundle.displayLabels)?bundle.displayLabels.map(record):[];
+      const title=labels.find(label=>label.dimension==='title'),i18n=record(title?.valueI18n);
+      const label=string(i18n['zh-CN'])??(title?string(title.value):undefined)??'千问专属积分';
+      const packageID=string(bundle.id)??String(index),expiresAt=positive(bundle.expiresAt);
+      windows.push({id:`dedicated:${packageID}`,label,remainingPercent:percent,...(total!==undefined&&remaining!==undefined?{remainingCredits:remaining,totalCredits:total}:{}),...(expiresAt?{resetsAt:new Date(expiresAt).toISOString()}:{})});
+    });
     if(!windows.length)return{available:false,observedAt};
     const userType=string(data.userType),planLabel=userType==='teams'?'Teams':userType?userType.split('_').map(part=>part?part[0]!.toUpperCase()+part.slice(1):part).join(' '):undefined;
     const combined=buckets.length?(()=>{const total=buckets.reduce((sum,bucket)=>sum+(bucket.total??0),0),remaining=buckets.reduce((sum,bucket)=>sum+(bucket.remaining??0),0);return total>0?quotaPercent(remaining/total*100):undefined;})():undefined;
