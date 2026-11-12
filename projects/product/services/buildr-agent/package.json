@@ -44,7 +44,7 @@
     "@deepseek-ai/dsh-user-questions": "0.2.1-rc.2",
     "@qoder-ai/qoder-agent-sdk": "1.0.55",
     "ajv": "8.18.0",
-    "cacache": "20.0.4",
+    "cacache": "21.0.2",
     "ws": "8.22.0"
   },
   "overrides": {
