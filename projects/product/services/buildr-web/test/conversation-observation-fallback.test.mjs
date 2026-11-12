@@ -72,6 +72,20 @@ test('recovery reads never overlap and hidden or idle views do not read',async()
 });
 
 test('selection changes and stop requests discard late recovery results',async()=>{
+  let reads=0,live=true;
+  const liveReader=startConversationRecoveryRead({
+    current:()=>running,visible:()=>true,live:()=>live,
+    read:async()=>{reads++;return completed;},apply:()=>{},isCurrent:()=>true,schedule:()=>1,cancel:()=>{},
+  });
+  await liveReader.run();
+  assert.equal(reads,0,'a live stream already applies every change; the reread is skipped');
+  live=false;
+  await liveReader.run();
+  assert.equal(reads,1,'a quiet or half-open stream still converges through the authoritative read');
+  liveReader.stop();
+});
+
+test('selection changes and stop requests discard late recovery results',async()=>{
   let release,current=true,applied=0;
   const selectionReader=startConversationRecoveryRead({
     current:()=>running,visible:()=>true,read:()=>new Promise(resolve=>{release=resolve;}),apply:()=>{applied++;},isCurrent:()=>current,schedule:()=>1,cancel:()=>{},

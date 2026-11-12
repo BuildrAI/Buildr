@@ -6,6 +6,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createAgentService } from '../../src/index.ts';
 import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
+import { DatabaseSync } from 'node:sqlite';
 import type { ConversationView, PendingRequestView, RunStatus, RunView } from '../../src/contracts.ts';
 
 const NOW = '2026-11-01T00:00:00.000Z';
@@ -144,6 +145,42 @@ test('completed unseen conversations are active but not attention, and counts ma
   const seen = f.service.conversations.list('workspace-one');
   assert.equal(seen.activityCounts.active, 1, 'viewing the completed result removes it from active');
   assert.equal(seen.activityCounts.attention, 2);
+});
+
+test('active and attention filters are applied before the page limit', async t => {
+  const f = fixture(); t.after(() => f.close());
+  const parent = await f.service.conversations.create('workspace-one', { title: 'parent' });
+  const child = await f.service.conversations.createChild('workspace-one', parent.id, { expectedRevision: parent.revision, clientRequestId: 'child-one' });
+  for (let index = 0; index < 5; index++) await f.service.conversations.create('workspace-one', { title: `other-${index}` });
+  await new Promise(resolve => setImmediate(resolve));
+
+  const listed = f.service.conversations.listChildren('workspace-one', parent.id);
+  assert.deepEqual(listed.conversations.map(item => item.id), [child.id]);
+  assert.deepEqual(listed.conversations[0].entries, []);
+
+  const db = new DatabaseSync(path.join(f.root, 'profile', 'agent-service', 'conversations.sqlite'), { readOnly: true });
+  try {
+    const plan = db.prepare(`EXPLAIN QUERY PLAN SELECT c.id FROM conversations c WHERE c.workspace_id=? AND json_valid(c.body) AND json_extract(c.body,'$.view.childOf.conversationId')=?`).all('workspace-one', parent.id) as Array<{ detail: string }>;
+    assert.ok(plan.some(row => row.detail.includes('conversations_child_lookup')), 'child lookup is served by the rebuildable index');
+  } finally { db.close(); }
+
+  const hidden = await f.service.conversations.update('workspace-one', child.id, { expectedRevision: child.revision, hidden: true });
+  assert.equal(hidden.hidden, true);
+  assert.deepEqual(f.service.conversations.listChildren('workspace-one', parent.id).conversations, [], 'hidden children stay excluded on the indexed path');
+
+  const epoch1 = f.service.conversations.activityEpoch(['workspace-one']);
+  assert.equal(typeof epoch1, 'string');
+  assert.equal(f.service.conversations.activityEpoch(['workspace-one']), epoch1, 'a stable store yields a stable epoch');
+  await f.service.conversations.update('workspace-one', parent.id, { expectedRevision: parent.revision, title: 'renamed' });
+  const epoch2 = f.service.conversations.activityEpoch(['workspace-one']);
+  assert.notEqual(epoch2, epoch1, 'title changes change the epoch');
+  const record = f.repository.readConversation(parent.id)!;
+  const prior = record.view.revision;
+  record.view.entries = [{ id: 'user-one', sequence: 1, kind: 'message', role: 'user', text: '你好', status: 'accepted', runId: 'run-parent' } as any];
+  record.view.revision = randomUUID();
+  f.repository.saveConversation(record, prior);
+  await f.service.conversations.markSeen('workspace-one', parent.id, { through: 1 });
+  assert.notEqual(f.service.conversations.activityEpoch(['workspace-one']), epoch2, 'seen acknowledgement changes the epoch');
 });
 
 test('active and attention filters are applied before the page limit', async t => {

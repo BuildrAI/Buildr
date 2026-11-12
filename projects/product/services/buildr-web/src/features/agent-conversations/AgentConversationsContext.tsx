@@ -127,6 +127,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   const attentionSignature=useRef('');
   const [selectionGeneration,setSelectionGeneration]=useState(0);
   const serial = useRef(0), eventCursor = useRef<number | undefined>(undefined), [observation, setObservation] = useState(0);
+  const streamLiveAt=useRef(0),streamHealthy=useRef(false);
   const getSelection=useCallback(()=>({generation:serial.current,scope:scopeRef.current}),[]);
   const isSelectionCurrent=useCallback((selection:ConversationSelection)=>sameConversationSelection(getSelection(),selection),[getSelection]);
   const participationNavigation=useRef<AbortController|null>(null);
@@ -222,6 +223,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   useEffect(() => {
     setStreamError('');setReconnecting(false);
     if(previousObservationKey.current!==observationKey)eventCursor.current=undefined;
+    if(previousObservationKey.current!==observationKey){streamLiveAt.current=0;streamHealthy.current=false;}
     previousObservationKey.current=observationKey;
     if (!scope || !observationKey || !pageVisible) return;
     const selection=getSelection();
@@ -244,6 +246,7 @@ export function AgentConversationsProvider({children, client = agentConversation
       const expectedGeneration = generation;
       const previousCursor = eventCursor.current;
       if(!isCurrentConversationEvent(event,scope,expectedGeneration,previousCursor))return;
+      streamLiveAt.current=Date.now();streamHealthy.current=true;
       if (event.type === 'snapshot') generation = event.generation;
       if(event.type==='connection'&&event.payload.connection)void refreshConnections().catch(()=>{});
       const next=event.payload.conversation;
@@ -267,6 +270,7 @@ export function AgentConversationsProvider({children, client = agentConversation
       try { await client.subscribe(scope.workspaceId, scope.conversationId, controller.signal, handle, eventCursor.current); }
       catch (failure) {
         if (!current()) return;
+        streamHealthy.current=false;
         if (failures<5) {const delay=Math.min(5000,500*2**failures++);setReconnecting(true);retryTimer=setTimeout(()=>{void connect(true);},delay);return;}
         if(!await reconcile())return;
         setReconnecting(false);
@@ -291,6 +295,7 @@ export function AgentConversationsProvider({children, client = agentConversation
     const reader=startConversationRecoveryRead({
       current:()=>conversationRef.current,
       visible:()=>document.visibilityState!=='hidden',
+      live:()=>streamHealthy.current&&Date.now()-streamLiveAt.current<10_000,
       read:()=>client.read(scope.workspaceId,scope.conversationId),
       apply:(next,observedRevision)=>apply(next,observedRevision),
       isCurrent:()=>isSelectionCurrent(selection),

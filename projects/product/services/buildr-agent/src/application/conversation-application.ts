@@ -628,6 +628,9 @@ export class ConversationApplication {
     if(this.options.repository.readState(id)?.view.workspaceId!==workspaceId)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
     return {activity:this.options.repository.markSeen(workspaceId,id,input.through)};
   }
+  activityEpoch(workspaceIds: string[]): string | undefined {
+    return this.options.repository.activityEpoch(workspaceIds, this.options.generationAlive);
+  }
 
   createChild(workspaceId: string,id: string,input: CreateChildInput): Promise<ConversationView> {
     return this.children.create(workspaceId,id,input);

@@ -28,7 +28,7 @@ const capabilities = { endQuestionWait: true, interaction: { policy: interaction
 // Work-thread overrides also apply on resume; auxiliary title/summary threads stay tool-free.
 const conversationInteraction = {
   config: { features: { default_mode_request_user_input: true } },
-  developerInstructions: interactionPolicy.instructions + '\n必要提问使用 request_user_input。收到新要求时按最新指示调整工作；上轮保留的辅助命令仍可接续，需要的继续使用，不再需要的安全关闭并核对结果。不因命令等待输入而要求用户另开对话；不强停结果未知的业务操作，不重放已生效或结果未知的操作。',
+  developerInstructions: interactionPolicy.instructions + '\n必要提问使用 request_user_input。收到新要求时按最新指示调整工作；上轮保留的辅助命令仍可接续，需要的继续使用，不再需要的安全关闭并核对结果。不因命令等待输入而要求用户另开对话；不强停结果未知的业务操作，不重放已生效或结果未知的操作。\n回复和文档默认使用中文；命令、标识符、路径、错误原文与产品专名保持准确。',
 };
 function codexEffort(value?: string): string | undefined {
   if (value === 'off') return 'none';
@@ -92,7 +92,7 @@ class CodexRuntime implements AgentRuntime {
     }
     const rpc = new NativeRpc(launch.command, [...launch.prefix, 'app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="file"', ...overrides], { cwd: options.configRoot, env, diagnostics:options.diagnostics?event=>options.diagnostics!({...event,provider:'codex'}):undefined });
     const runtime = new CodexRuntime(binding.identity, rpc, join(temporary, 'title-requests'));
-    runtime.interaction = { ...conversationInteraction, developerInstructions: (options.interaction ?? interactionPolicy).instructions + '\n必要提问使用 request_user_input。' };
+    runtime.interaction = { ...conversationInteraction, developerInstructions: (options.interaction ?? interactionPolicy).instructions + '\n必要提问使用 request_user_input。\n回复和文档默认使用中文；命令、标识符、路径、错误原文与产品专名保持准确。' };
     runtime.participationInstruction = instructionParticipation('interaction-policy',runtime.interaction.developerInstructions);
     runtime.bindingData = binding.data;
     runtime.gateway = gateway; runtime.modelConfig = config;

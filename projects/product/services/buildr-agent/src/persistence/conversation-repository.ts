@@ -167,6 +167,16 @@ export class ConversationRepository {
             // acceleration a prerequisite for saving an otherwise valid row.
             if (!(error instanceof Error) || error.message !== 'malformed JSON') throw error;
           }
+          // Rebuildable child lookup acceleration, same pattern as the list
+          // index: expression keys are maintained on write so polling children
+          // never parses every historical header.
+          try {
+            db.exec(`CREATE INDEX IF NOT EXISTS conversations_child_lookup
+              ON conversations(workspace_id, json_extract(body,'$.view.childOf.conversationId'))
+              WHERE json_valid(body)`);
+          } catch (error) {
+            if (!(error instanceof Error) || error.message !== 'malformed JSON') throw error;
+          }
           fs.chmodSync(this.filename, 0o600);
         }
         ConversationEntryStore.installSearch(db);
@@ -429,12 +439,17 @@ export class ConversationRepository {
       const header=ConversationReadModel.available(db)?"coalesce((SELECT state FROM conversation_read_states s WHERE s.id=c.id AND s.revision=c.revision),json_set(c.body,'$.view.entries',json('[]')))":"json_set(c.body,'$.view.entries',json('[]'))";
       // The partial index proves HAS_WORK without parsing every historical body.
       // Version-matched headers carry task links, child identity and live tools.
-      const source=`(SELECT c.*,${header} AS read_state FROM conversations c ${indexed?'INDEXED BY conversations_list_summary':''} WHERE ${HAS_WORK})`;
+      const childIndexed=!!db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='conversations_child_lookup'").get();
+      const childLookup=Boolean(options.parentConversationId)&&childIndexed;
+      const sourceValues: Array<string | number> = childLookup ? [workspaceId, options.parentConversationId!] : [];
+      const source=childLookup
+        ?`(SELECT c.*,${header} AS read_state FROM conversations c INDEXED BY conversations_child_lookup WHERE c.workspace_id=? AND json_valid(c.body) AND json_extract(c.body,'$.view.childOf.conversationId')=? AND ${HAS_WORK})`
+        :`(SELECT c.*,${header} AS read_state FROM conversations c ${indexed?'INDEXED BY conversations_list_summary':''} WHERE ${HAS_WORK})`;
       const where: string[] = options.taskId?[]:['workspace_id=?']; const values: Array<string | number> = options.taskId?[]:[workspaceId];
       if(options.taskId&&options.workspaceIds){if(!options.workspaceIds.length)return [];where.push(`workspace_id IN (${options.workspaceIds.map(()=>'?').join(',')})`);values.push(...options.workspaceIds);}
       if (!options.includeHidden) where.push('hidden=0');
       if (options.taskId) { where.push("(EXISTS(SELECT 1 FROM json_each(read_state,'$.view.taskLinks') WHERE json_extract(value,'$.workspaceId')=? AND json_extract(value,'$.taskId')=?) OR (json_type(read_state,'$.view.taskLinks') IS NULL AND workspace_id=? AND ((json_type(read_state,'$.view.taskIds') IS NULL AND task_id=?) OR EXISTS(SELECT 1 FROM json_each(read_state,'$.view.taskIds') WHERE value=?))))"); values.push(workspaceId,options.taskId,workspaceId,options.taskId,options.taskId); }
-      if (options.parentConversationId) { where.push("json_extract(read_state,'$.view.childOf.conversationId')=?"); values.push(options.parentConversationId); }
+      if (options.parentConversationId && !childLookup) { where.push("json_extract(read_state,'$.view.childOf.conversationId')=?"); values.push(options.parentConversationId); }
       const terms = searchTerms(options.query);
       if (terms.length) { where.push(searchClause(terms, "json_extract(read_state,'$.view.title')")); for (const term of terms) values.push(term, term, term); }
       // Apply programmatic list filters before the page bound. Filtering after
@@ -454,7 +469,7 @@ export class ConversationRepository {
       if (options.attention && modern) where.push("(coalesce(json_extract(summary,'$.activity.pendingDecisionCount'),0)>0 OR coalesce(json_extract(summary,'$.run.status'),json_extract(read_state,'$.view.run.status')) IN ('failed','unknown'))");
       if (options.before) { where.push('(updated_at || \'/\' || id) < ?'); values.push(options.before); }
       values.push(options.limit);
-      return (db.prepare(`SELECT read_state${modern?',summary':''} FROM ${source} WHERE ${where.length?where.join(' AND '):'1'} ORDER BY updated_at DESC,id DESC LIMIT ?`).all(...values) as {read_state:string;summary?:string}[]).map(row=>{
+      return (db.prepare(`SELECT read_state${modern?',summary':''} FROM ${source} WHERE ${where.length?where.join(' AND '):'1'} ORDER BY updated_at DESC,id DESC LIMIT ?`).all(...sourceValues,...values) as {read_state:string;summary?:string}[]).map(row=>{
         const record=JSON.parse(row.read_state) as ConversationReadState;
         if(row.summary)record.view.activity=JSON.parse(row.summary).activity;
         if(pendingIds.includes(record.view.id))record.view.activity={...(record.view.activity??{version:0,seenThrough:0,updatedAt:record.view.updatedAt}),active:true};
@@ -631,6 +646,30 @@ export class ConversationRepository {
       const chosen=rows.slice(0,input.limit),last=chosen.at(-1);
       return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;const snippetText=row.search_snippet?.replace(/\s+/g,' ').trim();return {...view,...(snippetText?{searchSnippet:snippetText}:{}),activity:view.activity?{...view.activity,userInputAt:row.user_at||undefined,updatedAt:row.activity_at,pendingDecisionCount:row.pending_decision_count,pendingSend:row.send_activity?JSON.parse(row.send_activity):undefined,active:Boolean(row.list_active)||row.pending_decision_count>0}:undefined,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,activityCounts:{...counts},stats,nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,priority:last.sort_priority,at:last.order_at,id:last.id})).toString('base64url'):undefined};
     }finally{db.close();}
+  }
+  /** Cheap change key for activity projections: epoch, row counts, unprojected
+   * headers, pending sends and parallel-generation liveness. A stable key proves
+   * the compact summary projection cannot differ; callers may reuse their last
+   * result instead of recomputing the full overview. */
+  activityEpoch(workspaceIds: string[], generationAlive?: (generation: string) => boolean): string | undefined {
+    const db = this.open(false); if (!db) return undefined;
+    try {
+      if ((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 2) return undefined;
+      const ids = [...new Set(workspaceIds)].sort(); if (!ids.length) return undefined;
+      const placeholders = ids.map(() => '?').join(',');
+      const unprojected = ConversationReadModel.available(db)
+        ? (db.prepare(`SELECT count(*) AS n FROM conversation_read_states s JOIN conversations c ON c.id=s.id WHERE s.revision<>c.revision OR s.message_revision IS NULL OR s.message_revision<>c.revision`).get() as { n: number }).n
+        : (db.prepare('SELECT count(*) AS n FROM conversations').get() as { n: number }).n;
+      const row = db.prepare(`SELECT (SELECT value FROM conversation_epoch WHERE id=1) AS epoch,
+        (SELECT count(*) FROM conversations WHERE workspace_id IN (${placeholders})) AS scoped,
+        (SELECT count(*) FROM conversations) AS total,
+        (SELECT max(updated_at) FROM conversations) AS latest`).get(...ids) as { epoch: number; scoped: number; total: number; latest: string | null };
+      const pending = new PendingSendRepository(this.directory).activitySummaries(ids);
+      const busy = (db.prepare(`SELECT DISTINCT json_extract(summary,'$.run.generation') AS generation FROM conversations WHERE is_active=1 AND json_extract(summary,'$.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown')`).all() as Array<{ generation: string | null }>)
+        .map(item => item.generation).filter((generation): generation is string => Boolean(generation));
+      const generations = generationAlive ? busy.map(generation => [generation, generationAlive(generation)]) : busy;
+      return JSON.stringify([row.epoch, row.scoped, row.total, row.latest, unprojected, pending, generations]);
+    } finally { db.close(); }
   }
   markSeen(workspaceId:string,id:string,through:number): NonNullable<ConversationView['activity']> {
     const db=this.open(true)!;

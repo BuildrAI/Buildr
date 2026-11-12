@@ -19,7 +19,7 @@ import { normalizeSendDraft } from '../domain/send-draft.ts';
 import { validateOperation } from './operations.ts';
 
 /** These projections read only the execution store; they never call a host capability. */
-const LOCAL_CONVERSATION_READS = new Set(['conversations.listAll', 'conversations.pending', 'conversations.pendingSummary']);
+const LOCAL_CONVERSATION_READS = new Set(['conversations.listAll', 'conversations.activityEpoch', 'conversations.pending', 'conversations.pendingSummary']);
 
 export interface AgentProcessConnectionOptions {
   dataRoot: string;

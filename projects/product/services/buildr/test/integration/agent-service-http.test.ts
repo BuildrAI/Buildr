@@ -791,6 +791,26 @@ test('联合活动摘要裁剪上下文并以内容版本返回未变化标记�
   assert.equal((await fetch(endpoint+'?revision=invalid',{headers})).status,400);
 });
 
+test('活动摘要在稳定 epoch 下短路全量聚合，变化后重新计算',async t=>{
+  const {base,root}=taskRecordFixture(t,'activity-summary-cache'),runtime=createRuntime();
+  const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'app-data');t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+  const row:any={id:'11111111-1111-4111-8111-111111111111',workspaceId:'22222222-2222-4222-8222-222222222222',cwd:root,title:'工作',revision:'r1',hidden:false,updatedAt:'now',participants:[],entries:[],requests:[],activity:{version:1,seenThrough:0,active:true,updatedAt:'now',pendingDecisionCount:0},run:{id:'r',participantId:'p',provider:'codex',generation:'g',status:'running',accepted:true,tools:[],startedAt:'now',updatedAt:'now'},retainedRuns:[]};
+  const page={conversations:[row],total:1},pending={conversations:[]};
+  let listCalls=0,epoch='epoch-1';
+  const service:any={conversations:{listAll:()=>{listCalls++;return page;},pendingSummary:()=>pending,activityEpoch:()=>epoch}};
+  const contributions=runtimeContributions(runtime,'http').filter((item:any)=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const instance=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});const {url,sessionToken}=await instance.ready;
+  t.after(()=>new Promise<void>(resolve=>instance.server.close(()=>resolve())));
+  const headers={'x-buildr-session':sessionToken},endpoint=url+'/api/v1/app/agent-service/activity-summary';
+  const first:any=await (await fetch(endpoint,{headers})).json();assert.equal(listCalls,1);
+  const unchanged:any=await (await fetch(endpoint+'?revision='+first.revision,{headers})).json();
+  assert.deepEqual(unchanged,{revision:first.revision,unchanged:true});assert.equal(listCalls,1,'stable epoch reuses the projection without recomputing');
+  const repeated:any=await (await fetch(endpoint,{headers})).json();assert.equal(repeated.revision,first.revision);assert.equal(listCalls,1);
+  epoch='epoch-2';row.title='更新标题';row.revision='r2';
+  const changed:any=await (await fetch(endpoint+'?revision='+first.revision,{headers})).json();
+  assert.equal(listCalls,2,'a changed epoch recomputes the overview');assert.notEqual(changed.revision,first.revision);assert.equal(changed.conversations[0].title,'更新标题');
+});
+
 /** Explicit raw fixture using the current database header version; production writing and migration are tested by the service. */
 function seedConversation(db: DatabaseSync, record: any): void {
   db.exec('BEGIN IMMEDIATE');

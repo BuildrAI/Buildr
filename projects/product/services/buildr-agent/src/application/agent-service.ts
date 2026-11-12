@@ -208,6 +208,7 @@ export function createAgentService(options: AgentServiceOptions) {
       lookupRequest: (workspaceId:string,id:string,clientRequestId:string) => conversations.lookupRequest(workspaceId,id,clientRequestId),
       recoverInterrupted: () => conversations.recoverInterrupted(),
       listAll: (workspaceIds: string[], input: Parameters<ConversationApplication['listAll']>[1] = {}) => conversations.listAll(workspaceIds, input),
+      activityEpoch: (workspaceIds: string[]) => conversations.activityEpoch(workspaceIds),
       markSeen: (workspaceId: string, id: string, input: Parameters<ConversationApplication['markSeen']>[2]) => conversations.markSeen(workspaceId, id, input),
       list: ((workspaceId: string, input?: Parameters<ConversationApplication['list']>[1]) => conversations.list(workspaceId, input)) as ConversationApplication['list'],
       fork: (workspaceId: string, id: string, input: Parameters<ConversationApplication['fork']>[2]) => conversations.fork(workspaceId, id, input),

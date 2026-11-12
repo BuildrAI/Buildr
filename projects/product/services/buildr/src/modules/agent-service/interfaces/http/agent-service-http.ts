@@ -18,6 +18,9 @@ function numberQuery(value: string | null): number | undefined { if (value === n
 
 export function createAgentServiceHttpContribution(resolve: () => AgentService | AgentOperations | Promise<AgentService | AgentOperations>, options: { defaultWorkspace?: () => { rootPath: string }; registeredWorkspaceIds?: () => string[]; runtimeStatus?: () => Promise<unknown>; restartRuntime?: (input: {expectedGeneration:string}) => Promise<unknown>; runtimeAligning?: () => Promise<boolean>; prepareDefaultWorkspace?: () => void } = {}) {
   const { defaultWorkspace, registeredWorkspaceIds = () => [] } = options;
+  // Stable-epoch reuse: when the compact change key is unchanged the overview
+  // projection cannot differ, so polling skips the full aggregate entirely.
+  let activitySummaryCache: { key: string; value: ReturnType<typeof agentActivitySummary> } | undefined;
   const contribution = {
     id: 'agent-service.http', schemas: SCHEMAS, operations: AGENT_SERVICE_HTTP_OPERATIONS,
     async handleTopLevel(context: any) {
@@ -42,11 +45,20 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         const revision = searchParams.get('revision') ?? undefined;
         if (revision !== undefined && !/^[a-f0-9]{64}$/.test(revision)) throw inputError();
         const service = await resolve();
-        const [page, pending] = await Promise.all([
-          service.conversations.listAll(registeredWorkspaceIds(), {activeOnly:true,limit:100}),
-          service.conversations.pendingSummary(),
-        ]);
-        return result('activitySummary', agentActivitySummary(page, pending.conversations, revision));
+        const workspaceIds = registeredWorkspaceIds();
+        const epoch = typeof service.conversations.activityEpoch === 'function' ? await service.conversations.activityEpoch(workspaceIds) : undefined;
+        const cacheKey = epoch === undefined ? undefined : JSON.stringify([workspaceIds, epoch]);
+        let summary: ReturnType<typeof agentActivitySummary>;
+        if (cacheKey !== undefined && activitySummaryCache?.key === cacheKey) summary = activitySummaryCache.value;
+        else {
+          const [page, pending] = await Promise.all([
+            service.conversations.listAll(workspaceIds, {activeOnly:true,limit:100}),
+            service.conversations.pendingSummary(),
+          ]);
+          summary = agentActivitySummary(page, pending.conversations);
+          if (cacheKey !== undefined) activitySummaryCache = { key: cacheKey, value: summary };
+        }
+        return result('activitySummary', revision === summary.revision ? { revision, unchanged: true as const } : summary);
       }
       // 任务按空间的默认工作空间列表沿用单空间入口；其余默认工作空间对话操作同样委派。
       if (pathname === `${prefix}/conversations` || pathname.startsWith(`${prefix}/conversations/`)) {

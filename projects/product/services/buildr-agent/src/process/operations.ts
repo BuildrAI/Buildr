@@ -18,7 +18,7 @@ export interface AgentOperations {
 const names = {
   pushback: ['read','save','reveal','test','markTakeover','recordStop','listEvents','migrateGlobal'],
   connections: ['upgradeProgram','programUpdates','checkProgramUpdates','list','read','prepare','preparation','currentPreparation','cancelPreparation','connect','check','login','loginAttempt','cancelLogin','disconnect'],
-  conversations: ['readHistory','participation','participationSummary','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','readEntry','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','releaseQuestionWait','settleRetainedRun','stop','stopAll','reply','addAttachment','readAttachment','pending','pendingSummary','lookupRequest'],
+  conversations: ['readHistory','participation','participationSummary','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','activityEpoch','readEntry','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','releaseQuestionWait','settleRetainedRun','stop','stopAll','reply','addAttachment','readAttachment','pending','pendingSummary','lookupRequest'],
   'models.accounts': ['list','read','preferences','add','configure','login','attempt','cancelLogin','check','disconnect'],
   'models.catalog': ['list'],
 } as const;

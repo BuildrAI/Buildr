@@ -7,10 +7,13 @@ type Timer = ReturnType<typeof setInterval>;
  * A visible, bounded authoritative reread for live/uncertain conversations.
  * SSE remains the fast path; this watcher converges a quiet or half-open stream
  * without replaying input or mutating business state.
+ * While the stream proves liveness, the reread is skipped: SSE already applies
+ * every change and a parallel full read only duplicates transfer and load.
  */
 export function startConversationRecoveryRead(options:{
   current():ConversationView|null;
   visible():boolean;
+  live?:()=>boolean;
   read():Promise<ConversationView>;
   apply(next:ConversationView,observedRevision?:string):void;
   isCurrent():boolean;
@@ -21,6 +24,7 @@ export function startConversationRecoveryRead(options:{
   let stopped=false,pending=false;
   const run=async()=>{
     if(stopped||pending||!options.visible())return;
+    if(options.live?.())return;
     const before=options.current();
     if(!before||!needsConversationObservation(before))return;
     pending=true;
