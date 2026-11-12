@@ -19,11 +19,11 @@ export async function activateAgentServiceRuntime(input: {dataRoot: string; prof
         stage='release-idle-preparation';
         try { await stopAgentProcess({dataRoot:input.dataRoot,profileId:input.profileId,mode:'if-idle'}); }
         catch (stopError) {
-          const busy = stopError instanceof AgentServiceError
+          const cannotConfirmIdle = stopError instanceof AgentServiceError
             ? stopError.code==='agent_process_busy'
-            : (stopError as {code?:unknown})?.code==='ABORT_ERR' || (stopError as {name?:unknown})?.name==='AbortError';
-          if (!busy) throw stopError;
-          // Busy or stalled owner: retain it and wait for the short storage lock
+            : ['ABORT_ERR','ECONNREFUSED'].includes(String((stopError as {code?:unknown})?.code)) || (stopError as {name?:unknown})?.name==='AbortError';
+          if (!cannotConfirmIdle) throw stopError;
+          // Busy, stalled or unreachable owner: retain it and wait for the short storage lock
           // to free so connect can hand the prepared target over through the
           // retained adoption (/runtime -> pendingRuntime -> adoptParallel).
           const deadline=Date.now()+30_000;

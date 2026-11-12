@@ -28,6 +28,7 @@ import { runtimeChange } from './runtime-change.ts';
 
 const RUNTIME_REGISTRATION_WAIT_MS = 30_000;
 const RUNTIME_REGISTRATION_RETRY_MS = 100;
+const PARALLEL_START_WAIT_MS = RUNTIME_REGISTRATION_WAIT_MS + 20_000;
 
 interface PendingRuntime { runtime: AgentRuntimeUnit; state: 'waiting' | 'switching' | 'parallel-starting' | 'failed'; coordinatorPid?: number; handoffFile?: string; diagnostic?: string }
 export async function startAgentExecutionServer(options: ProcessBootstrap & { serviceOptions?: Pick<AgentServiceOptions, 'executors' | 'modelProviders' | 'programManager'> }) {
@@ -62,6 +63,20 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     const storage = claimStorage(options.dataRoot);
     try { writePrivate(pendingFile, value); } finally { storage.release(); }
   }
+  async function savePendingAfterStorageWait(value: unknown): Promise<void> {
+    const deadline = performance.now() + RUNTIME_REGISTRATION_WAIT_MS;
+    for (;;) {
+      let storage: ReturnType<typeof claim>;
+      try { storage = claim(options.dataRoot, 'storage'); }
+      catch (error) {
+        if (!(error instanceof AgentServiceError) || error.code !== 'agent_process_owned' || performance.now() >= deadline) throw error;
+        await pause(RUNTIME_REGISTRATION_RETRY_MS);
+        continue;
+      }
+      try { writePrivate(pendingFile, value); } finally { storage.release(); }
+      return;
+    }
+  }
   const identity: AgentProcessIdentity = { contracts: AGENT_EXECUTION_CONTRACTS, instanceId, generation: service.generation, profileId: options.profileId, dataRoot: path.resolve(options.dataRoot), pid: process.pid, runtime: options.runtime, parallelCompatibility: options.runtime.parallelCompatibility };
   const diagnostics=executionLog(path.join(options.dataRoot,'agent-service'),service.generation);
   const previous=readProcessRecord(options.dataRoot);
@@ -74,7 +89,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   let retiring = false, adopting: Promise<void> | undefined;
   let pending = readPrivate<PendingRuntime>(pendingFile);
   if (pending?.runtime.digest === options.runtime.digest) {
-    try { savePending({ runtime: options.runtime, state: 'adopted' }); }
+    try { await savePendingAfterStorageWait({ runtime: options.runtime, state: 'adopted' }); }
     catch (error) { diagnostics({event:'service-adoption-record-failed',code:diagnosticCode(error),reason:'successor-start'}); throw error; }
     pending = undefined;
   }
@@ -427,13 +442,17 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       await service.freezeMetadata();
       if (inflight || recovering || closing) { service.resumeMetadata(); accepting = !closing; return; }
       await service.releaseIdleSources();
+      const starting: PendingRuntime = {runtime:target,state:'parallel-starting'};
+      await savePendingAfterStorageWait(starting);
+      pending = starting;
+      if (closing) return;
       retiring = true;
       writeProcessInstance(options.dataRoot, processRecord());
       writePrivate(path.join(controlRoot(options.dataRoot),'instance.json'),processRecord());
       owner.release(); ownsMetadata = false;
-      pending = {runtime:target,state:'parallel-starting'}; savePending(pending);
       parallelChild = launchAgentProcess({...options,runtime:target,token:privateToken()});
-      for (let attempt=0;attempt<200;attempt++) {
+      const deadline = performance.now() + PARALLEL_START_WAIT_MS;
+      while (performance.now() < deadline) {
         const current = readProcessRecord(options.dataRoot);
         if (current && current.identity.runtime.digest===target.digest && current.identity.instanceId!==instanceId) {
           const observed = await request(current.origin,current.token,'/identity',undefined,AbortSignal.timeout(1000)).catch(()=>undefined);
@@ -448,7 +467,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if (ownsMetadata) { service.resumeMetadata(); accepting = !closing; }
       else if (!closing) restoreParallelOwner();
       pending = {runtime:target,state:'failed',diagnostic:'新版后台未确认就绪，原工作和待发送内容已保留。'};
-      if (ownsMetadata && !closing) savePending(pending);
+      if (ownsMetadata && !closing) await savePendingAfterStorageWait(pending);
     } finally { startup?.release(); }
   }
   const storageMaintenance = new StorageMaintenance(options.dataRoot, { enabled: () => accepting && !retiring && !closing, runtime:options.runtime });
@@ -474,7 +493,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
           if (current && current.identity.instanceId !== instanceId && !current.retiring && live(current.identity.pid)) {
             const observed = await request(current.origin,current.token,'/identity',undefined,AbortSignal.timeout(1000));
             successorReady = observed?.instanceId === current.identity.instanceId && observed.generation === current.identity.generation;
-          } else if (restoreParallelOwner() && pending) savePending(pending);
+          } else if (restoreParallelOwner() && pending) await savePendingAfterStorageWait(pending);
         })().catch(error => {
           diagnostics({event:'service-adoption-record-failed',code:diagnosticCode(error),reason:'restore-pending'});
         }).finally(() => { adopting=undefined; });

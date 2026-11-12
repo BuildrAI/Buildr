@@ -61,7 +61,7 @@ for(const newInstruction of [true,false])test('retiring process preserves unknow
  }});
 
 
-test('storage contention during successor startup and rollback preserves the running backend', {timeout:90000},async t=>{
+test('successor waits for the storage lock without interrupting the running conversation', {timeout:90000},async t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-switch-contention-'));
   const dataRoot=path.join(root,'profile'),workspace=path.join(root,'work'),packageRoot=path.join(root,'package');
   fs.mkdirSync(workspace);copyPackage(prepared,packageRoot);
@@ -85,19 +85,18 @@ test('storage contention during successor startup and rollback preserves the run
   const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});
   await observer.lifecycle.requestRuntime({expectedGeneration:old.generation,runtime:next});
   const successorPid=await until(async()=>Number(fs.readFileSync(path.join(dataRoot,'successor-starting'),'utf8')),pid=>pid>0);
-  const diagnostic=path.join(dataRoot,'agent-service','diagnostics','lifecycle-'+old.pid+'-'+old.generation+'.jsonl');
   const lock=claim(dataRoot,'storage');
   try {
     fs.writeFileSync(path.join(dataRoot,'successor-may-start'),'yes');
-    await until(async()=>isLive(successorPid),live=>!live);
-    await until(async()=>fs.readFileSync(diagnostic,'utf8'),log=>log.includes('"reason":"parallel-rollback"')||log.includes('"event":"service-uncaught-exception"'));
+    // The former synchronous claim failed after five seconds.
+    await new Promise(resolve => setTimeout(resolve, 6_000));
+    assert.ok(isLive(successorPid));
     assert.ok(isLive(old.pid));
-    assert.doesNotMatch(fs.readFileSync(diagnostic,'utf8'),/service-uncaught-exception/);
+    assert.equal((await observer.operations.conversations.read(scope,chat.id)).run?.id,original.run!.id);
   } finally { lock.release(); }
 
-  const restored=await observer.lifecycle.status();
-  assert.equal(restored.identity.generation,old.generation);
-  assert.equal(restored.accepting,true);
+  const adopted=await until(()=>observer!.lifecycle.status(),status=>status.identity.runtime.digest===next.digest && status.accepting);
+  assert.equal(adopted.identity.pid,successorPid);
   assert.equal((await observer.operations.conversations.read(scope,chat.id)).run?.id,original.run!.id);
   fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');
   const completed=await until(()=>observer!.operations.conversations.read(scope,chat.id),view=>view.run?.status==='completed');
