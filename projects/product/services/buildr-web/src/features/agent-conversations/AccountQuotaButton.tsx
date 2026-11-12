@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Empty, Popover, Spin } from 'antd';
-import { SettingOutlined } from '@ant-design/icons';
+import { ExportOutlined, SettingOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext';
-import { accountQuotaView, accountQuotaWarning, quotaOverviewAccounts } from './account-quota-view';
+import { accountBillingUrl, accountQuotaView, accountQuotaWarning, accountSourceName, quotaOverviewAccounts } from './account-quota-view';
 import type { ModelAccount } from './types';
 import './account-quota-button.css';
 
@@ -39,13 +39,30 @@ export function AccountQuotaButton({ onClick }: Props) {
     {!loaded && !error ? <Spin size="small"/> : !visible.length && !error ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚无已登录账号，点击图标接入"/> : null}
     {visible.map(account => {
       const view = accountQuotaView(account, Date.now(), true), warning = accountQuotaWarning(account);
+      const billingUrl = accountBillingUrl(account), showBilling = Boolean(billingUrl && !account.quota?.available);
+      const grouped = view.lines.length > 1, name = accountSourceName(account);
       // 缓存额度直接展示；观察时间保留在悬停标题，不额外提示非实时。
-      return <section key={account.id} data-account-id={account.id} title={`额度最近更新：${view.observedLabel}`}>
-        <strong>{account.accountLabel || account.label}</strong>
-        <div>
-          {view.lines.map((line, index) => <p key={index}>{line.text}{line.credits && <small className="ac-account-quota-credits">{line.credits}</small>}</p>)}
+      return <section key={account.id} className={grouped ? 'is-grouped' : undefined} data-account-id={account.id} title={`额度最近更新：${view.observedLabel}`}>
+        {grouped ? <>
+          <header><strong>{name}</strong></header>
+          <div className="ac-account-quota-rows">
+            {view.lines.map((line, index) => <div className="ac-account-quota-row" key={index}>
+              <span className="ac-account-quota-label" title={line.label ?? line.text}>{line.label ?? line.text}</span>
+              <span className="ac-account-quota-value">
+                {line.percent === undefined ? line.text : `剩余 ${line.percent}%`}
+                {line.credits && <span className="ac-account-quota-credits">· {line.credits}</span>}
+              </span>
+            </div>)}
+          </div>
           {warning && <small className="ac-account-quota-warning" title={account.quota?.diagnostic}>{warning}</small>}
-        </div>
+        </> : <>
+          <strong>{name}</strong>
+          <div className="ac-account-quota-value">
+            {showBilling ? <Button type="default" size="small" href={billingUrl} target="_blank" rel="noopener noreferrer" icon={<ExportOutlined/>} title="在 OpenAI 平台查看余额与用量">查看账单</Button>
+              : view.lines.map((line, index) => <p key={index}>{line.text}{line.credits && <span className="ac-account-quota-credits">· {line.credits}</span>}</p>)}
+            {warning && <small className="ac-account-quota-warning" title={account.quota?.diagnostic}>{warning}</small>}
+          </div>
+        </>}
       </section>;
     })}
   </div>;

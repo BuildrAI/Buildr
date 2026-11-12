@@ -2,6 +2,15 @@ import type { ModelAccount } from './types';
 
 type Quota = NonNullable<ModelAccount['quota']>;
 type QuotaWindow = NonNullable<Quota['windows']>[number];
+export const OPENAI_BILLING_URL = 'https://platform.openai.com/settings/organization/billing/overview';
+export type AccountQuotaLine = {
+  kind: 'balance' | 'window' | 'summary';
+  text: string;
+  label?: string;
+  percent?: number;
+  credits?: string;
+  resetsAt?: string;
+};
 const sourceLabels: Record<string, string> = { codex: 'ChatGPT', openai: 'ChatGPT API', dsh: 'DeepSeek', deepseek: 'DeepSeek', qoder: 'Qoder', 'qoder-cn': 'Qoder CN', devin: 'Devin' };
 const sourceNameOrder = new Intl.Collator('zh-Hans-CN', { sensitivity: 'base', numeric: true });
 function formatBalance(value: string): string {
@@ -21,13 +30,17 @@ export function accountSourceName(account: ModelAccount): string {
   const provider = account.connectionId || (account.provider.startsWith('native-') ? account.provider.slice('native-'.length) : account.provider);
   return account.group?.label || sourceLabels[provider] || account.label;
 }
+/** The API exposes no balance; this is the only official page for credits and usage. */
+export function accountBillingUrl(account: Pick<ModelAccount, 'provider'>): string | undefined {
+  return account.provider === 'openai' ? OPENAI_BILLING_URL : undefined;
+}
 export function compareSourceNames(left: string, right: string): number {
   return sourceNameOrder.compare(left, right);
 }
 /** Platform amounts stay optional so percentage-only windows never show inferred credits. */
-export function quotaWindowCredits(window: Pick<QuotaWindow, 'remainingCredits' | 'totalCredits'>): string | undefined {
+export function quotaWindowCredits(window: Pick<QuotaWindow, 'remainingCredits' | 'totalCredits'>, compact = false): string | undefined {
   if (window.remainingCredits === undefined || window.totalCredits === undefined) return undefined;
-  return `${formatCredits(window.remainingCredits)} / ${formatCredits(window.totalCredits)} credits`;
+  return `${formatCredits(window.remainingCredits)} / ${formatCredits(window.totalCredits)}${compact ? '' : ' credits'}`;
 }
 export function balanceLines(balances: Quota['balances'], compact = false): string[] {
   return (balances ?? []).map(balance => {
@@ -40,17 +53,17 @@ export function balanceLines(balances: Quota['balances'], compact = false): stri
   });
 }
 export function accountQuotaView(account: ModelAccount, now = Date.now(), compact = false) {
-  const quota = account.quota, lines: Array<{ text: string; credits?: string; resetsAt?: string }> = [];
+  const quota = account.quota, lines: AccountQuotaLine[] = [];
   if (quota?.available) {
-    lines.push(...balanceLines(quota.balances, compact).map(text => ({ text })));
+    lines.push(...balanceLines(quota.balances, compact).map(text => ({ kind: 'balance' as const, label: '账户余额', text })));
     lines.push(...(quota.windows ?? []).map(window => {
-      const credits = quotaWindowCredits(window);
-      return { text: `${window.label} · 剩余 ${window.remainingPercent}%`, ...(credits ? { credits } : {}), resetsAt: window.resetsAt };
+      const credits = quotaWindowCredits(window, compact);
+      return { kind: 'window' as const, label: window.label, percent: window.remainingPercent, ...(credits ? { credits } : {}), text: `${window.label} · 剩余 ${window.remainingPercent}%`, resetsAt: window.resetsAt };
     }));
-    if (!lines.length && typeof quota.remainingPercent === 'number') lines.push({ text: `账号额度 · 剩余 ${quota.remainingPercent}%`, resetsAt: quota.resetsAt });
-    if (!lines.length && quota.summary) lines.push({ text: quota.summary });
+    if (!lines.length && typeof quota.remainingPercent === 'number') lines.push({ kind: 'window', label: '账号额度', percent: quota.remainingPercent, text: `账号额度 · 剩余 ${quota.remainingPercent}%`, resetsAt: quota.resetsAt });
+    if (!lines.length && quota.summary) lines.push({ kind: 'summary', text: quota.summary });
   }
-  if (!lines.length) lines.push({ text: quota?.summary || '额度暂不可读取' });
+  if (!lines.length) lines.push({ kind: 'summary', text: quota?.summary || '额度暂不可读取' });
   const observed = Date.parse(quota?.observedAt ?? '');
   return {
     lines,

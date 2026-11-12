@@ -1,9 +1,17 @@
-.ac-account-quota-overview{width:min(320px,calc(100vw - 48px));max-height:min(420px,70vh);overflow:auto;overflow-wrap:anywhere}
+.ac-account-quota-overview{width:min(360px,calc(100vw - 32px));max-height:min(420px,70vh);overflow:auto;overflow-wrap:anywhere}
 .ac-account-quota-overview section{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);gap:12px;padding:10px 0;border-bottom:1px solid var(--soft-line);font-size:var(--font-size-secondary);line-height:1.6}
 .ac-account-quota-overview section:first-of-type{padding-top:4px}
 .ac-account-quota-overview section:last-child{border-bottom:0;padding-bottom:0}
+.ac-account-quota-overview section>strong{font-weight:600;min-width:0;overflow-wrap:anywhere}
 .ac-account-quota-overview section>div{min-width:0;text-align:right;font-variant-numeric:tabular-nums}
+.ac-account-quota-overview section.is-grouped{display:block}
+.ac-account-quota-overview section.is-grouped>header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px}
+.ac-account-quota-overview section.is-grouped>header strong{font-size:var(--font-size-secondary);font-weight:600}
+.ac-account-quota-overview .ac-account-quota-rows{display:grid;gap:2px;text-align:left}
+.ac-account-quota-overview .ac-account-quota-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;min-width:0}
+.ac-account-quota-overview .ac-account-quota-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--soft-muted)}
+.ac-account-quota-overview .ac-account-quota-row .ac-account-quota-value{flex:none;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .ac-account-quota-overview p{margin:0}
-.ac-account-quota-overview .ac-account-quota-credits{display:block;color:var(--soft-muted);font-size:var(--font-size-meta);line-height:1.4}
-.ac-account-quota-overview .ac-account-quota-warning{display:block;color:var(--soft-muted);font-size:var(--font-size-meta)}
+.ac-account-quota-overview .ac-account-quota-credits{color:var(--soft-muted);font-size:var(--font-size-meta);margin-left:4px;white-space:nowrap}
+.ac-account-quota-overview .ac-account-quota-warning{display:block;color:var(--soft-muted);font-size:var(--font-size-meta);margin-top:4px}
 .ac-account-quota-overview .ant-spin{display:block;padding:16px}

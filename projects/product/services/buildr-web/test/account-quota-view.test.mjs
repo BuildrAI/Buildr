@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {accountQuotaView,accountQuotaWarning,accountSourceName,quotaOverviewAccounts} from '../src/features/agent-conversations/account-quota-view.ts';
+import {accountBillingUrl,accountQuotaView,accountQuotaWarning,accountSourceName,OPENAI_BILLING_URL,quotaOverviewAccounts} from '../src/features/agent-conversations/account-quota-view.ts';
 import {modelSourceViews} from '../src/features/agent-conversations/account-model-view.ts';
 const now=Date.parse('2026-10-30T00:00:00Z');
 const account={id:'a',identity:'i',provider:'deepseek',label:'DeepSeek',accountLabel:'已登录账号',revision:'r',enabled:false,status:'ready',models:[],observedAt:new Date(now).toISOString()};
@@ -63,7 +63,14 @@ test('平台返回数量时额度窗口显示剩余 credits，缺任一侧不推
  ]}};
  const view=accountQuotaView(source,now,true);
  assert.deepEqual(view.lines.map(line=>line.text),['套餐内 Credits · 剩余 0%','资源包 · 剩余 59.2%','数量不全 · 剩余 50%']);
- assert.deepEqual(view.lines.map(line=>line.credits),['0 / 1,000 credits','1,599 / 2,700 credits',undefined]);
+ assert.deepEqual(view.lines.map(line=>line.credits),['0 / 1,000','1,599 / 2,700',undefined]);
+ assert.deepEqual(view.lines.map(line=>[line.label,line.percent]),[['套餐内 Credits',0],['资源包',59.2],['数量不全',50]]);
  const card=modelSourceViews([source],[]).find(item=>item.id===source.id);
  assert.deepEqual(card.windows.map(window=>window.balanceLabel),['0 / 1,000 credits','1,599 / 2,700 credits',undefined]);
+});
+test('ChatGPT API 概览只提供官方账单地址，不伪造余额，其他来源没有账单入口',()=>{
+ const api={...account,provider:'openai',authType:'api-key',label:'ChatGPT API'};
+ assert.equal(accountBillingUrl(api),OPENAI_BILLING_URL);
+ assert.equal(accountBillingUrl(account),undefined);
+ assert.deepEqual(accountQuotaView(api,now,true).lines.map(line=>[line.kind,line.text]),[['summary','额度暂不可读取']]);
 });
