@@ -2259,6 +2259,91 @@ test('a released unknown run can be explicitly continued across backend generati
   } finally {await cold?.close();await f.close();}
 });
 
+for (const continued of [true,false]) test('released Qoder crash history can continue while recovery is observing it ('+continued+')',async()=>{
+  const native=fake('qoder',{disconnect:'tool',disconnectError:'qoder_execution_observation_lost'});
+  const f=fixture([native.executor]);
+  let cold:ReturnType<typeof createAgentService>|undefined,checking:Promise<void>|undefined,oldContextId:string|undefined;
+  let entered!:()=>void,release!:()=>void;
+  const observing=new Promise<void>(resolve=>{entered=resolve;});
+  const blocked=new Promise<void>(resolve=>{release=resolve;});
+  const open=native.executor.open;
+  native.executor.open=async input=>{
+    const runtime=await open(input);
+    return {...runtime,async readHistory(request){
+      if(request.contextRef.id!==oldContextId)return runtime.readHistory(request);
+      entered();await blocked;
+      return [{id:'unmapped-native-input',kind:'message',role:'user',text:'DO NOT SEND OLD NATIVE INPUT'}];
+    }};
+  };
+  try {
+    await connected(f.service,'qoder');
+    const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'qoder','original Qoder goal');
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='unknown');
+    await f.service.close();
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));
+    const record=repository.readConversation(chat.id)!,revision=record.view.revision,original=record.view.run!;
+    const attempt=record.attempts.find(a=>a.runId===original.id)!;
+    const participant=record.participants.find(p=>p.id===original.participantId)!;
+    original.tools=[{id:'current-unknown-command',label:'Bash',status:'unknown',canStop:false}];
+    const retained={...structuredClone(original),id:randomUUID(),participantId:randomUUID(),generation:randomUUID(),
+      status:'unknown' as const,executionState:'unknown' as const,resourcesReleased:true,stopRequested:true,tools:continued?original.tools.map(t=>({...t,id:'retained-unknown-command'})):[]};
+    // Two observed shapes: a continued run with a retained unknown command, or
+    // a regular current run with a retained stopped-but-unconfirmed round.
+    record.view.retainedRuns=[retained];
+    record.participants.unshift({...participant,id:retained.participantId,contextRef:undefined});
+    record.attempts.unshift({...attempt,runId:retained.id,participantId:retained.participantId,clientRequestId:randomUUID(),executionRef:{id:'retained-execution'}});
+    if(continued){
+      const user=record.view.entries.find(e=>e.id===attempt.userEntryId)!;
+      user.runId=retained.id;user.participantId=retained.participantId;
+      const notice:ConversationEntry={id:randomUUID(),sequence:record.view.entries.at(-1)!.sequence+1,kind:'notice',role:'system',
+        text:'已请求继续上次执行。',runId:original.id,participantId:participant.id,createdAt:original.startedAt};
+      record.view.entries.push(notice);
+      Object.assign(attempt,{continuationOf:retained.id,userEntryId:notice.id,through:notice.sequence});
+    }
+    const oldTool:ConversationEntry={id:randomUUID(),sequence:record.view.entries.at(-1)!.sequence+1,kind:'tool',role:'system',
+      text:'命令尚无结果',name:'Bash',status:'unknown',runId:original.id,participantId:participant.id,createdAt:original.startedAt};
+    record.view.entries.push(oldTool);
+    record.sources[participant.id+':tool:'+original.tools[0].id]=oldTool.id;
+    Object.assign(original,{resourcesReleased:true,status:'unknown',executionState:'unknown',interrupted:true});
+    delete original.stopRequested;
+    record.interruption={runId:original.id,awaitingUser:false};
+    record.view.revision=randomUUID();repository.saveConversation(record,revision);
+    oldContextId=participant.contextRef!.id;
+
+    cold=createAgentService({...f.options,autoContinueInterrupted:true});
+    checking=cold.conversations.recoverInterrupted();
+    await observing;
+    const view=cold.conversations.read('workspace-one',chat.id);
+    const draft={expectedRevision:view.revision,connectionId:'qoder',continueRunId:original.id,text:'',model:original.model,permissionMode:original.permissionMode};
+    const preview=await cold.conversations.prepareHandoff('workspace-one',chat.id,draft);
+    assert.equal(preview.fits,true);
+    assert.equal(native.sends.length,1,'observation cannot resend the original input');
+    const request={...draft,previewToken:preview.token,clientRequestId:randomUUID()};
+    const next=cold.conversations.send('workspace-one',chat.id,request);
+    assert.equal(cold.conversations.send('workspace-one',chat.id,request).run.id,next.run.id);
+    release();await checking;
+    const done=await waitUntil(()=>cold!.conversations.read('workspace-one',chat.id),v=>v.run?.id===next.run.id&&v.run.status==='completed');
+    assert.equal(native.sends.length,2);
+    assert.notEqual(native.sends[1]!.contextRef.id,oldContextId);
+    assert.match(native.sends[1]!.text,/核对.*未知工具/);
+    assert.match(native.sends[1]!.text,/不得重跑结果未知的旧命令/);
+    assert.doesNotMatch(native.sends[1]!.text,/DO NOT SEND OLD NATIVE INPUT/);
+    assert.equal(done.entries.filter(e=>e.role==='user').length,1);
+    assert.equal(done.run?.continuedFrom?.runId,continued?retained.id:original.id);
+    assert.equal(done.entries.find(e=>e.id===oldTool.id)?.status,'unknown');
+    assert.equal(done.entries.some(e=>e.nativeSession?.reason==='session-replacement'&&e.status==='accepted'),true);
+    assert.deepEqual(done.retainedRuns?.map(r=>[r.id,r.status,r.resourcesReleased,r.tools.map(t=>t.status)]),[
+      [retained.id,'unknown',true,retained.tools.map(t=>t.status)],
+      [original.id,'unknown',true,original.tools.map(t=>t.status)],
+    ]);
+    const stored=repository.readConversation(chat.id)!;
+    assert.deepEqual(stored.attempts.find(a=>a.runId===original.id)?.executionRef,attempt.executionRef);
+    assert.equal(stored.participants.find(p=>p.id===participant.id)?.contextRef?.id,oldContextId);
+    assert.equal(stored.attempts.at(-1)?.continuationOf,original.id);
+  } finally {release();await checking?.catch(()=>{});await cold?.close();await f.close();}
+});
+
 test('explicit recovery of a pre-dispatch automatic failure continues the goal without replaying user input',async()=>{
   const native=fake('local'),f=fixture([native.executor]);
   let cold:ReturnType<typeof createAgentService>|undefined,hostReady=false;

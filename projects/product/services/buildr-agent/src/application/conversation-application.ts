@@ -141,7 +141,7 @@ export class ConversationApplication {
   private readonly observations = new Map<string, Promise<ConversationView>>();
   private readonly questionReleases = new Map<string,Promise<void>>();
   private readonly supersededCleanups = new Map<string,Promise<void>>();
-  private readonly repliesInFlight = new Set<string>();
+  private readonly repliesInFlight = new Map<string, string>();
   private readonly titleWork = new Map<string, AbortController>();
   private readonly earlyTitles = new Map<string, Promise<void>>();
   private readonly sourceConnections = new Map<string,string>();
@@ -742,13 +742,14 @@ export class ConversationApplication {
   }
   allowsReleasedContinuation(workspaceId: string, id: string, input: SendDraft): boolean {
     const record = this.load(workspaceId, id), run = record.view.run;
+    // Observation and recovery preparation do not own the released execution.
+    // They must yield to a newly submitted round, which changes the saved revision.
     return Boolean(!this.closing && run && releasedContinuation(record, input) &&
-      !record.view.requests.length &&
+      !record.view.requests.length && !this.pendingSends.read(workspaceId,id) &&
       conversationRuns(record.view).every(candidate => !this.workers.has(candidate.id) &&
         (candidate.id === run.id || candidate.resourcesReleased || !unfinishedRun(candidate))) &&
       !this.titleWork.has(id) && !this.earlyTitles.has(id) &&
-      !this.recoveries.has(`${workspaceId}/${id}`) && !this.observations.has(`${workspaceId}/${id}`) &&
-      !this.supplements.size && !this.repliesInFlight.size);
+      !this.supplements.hasPending(workspaceId,id) && ![...this.repliesInFlight.values()].includes(id));
   }
   async verifyNext(workspaceId: string, id: string): Promise<void> {
     const record = this.load(workspaceId, id);
@@ -877,12 +878,18 @@ export class ConversationApplication {
       record.view.requests.some(request => request.runId === current.id && request.kind === 'question') &&
       !record.view.requests.some(request => request.runId === current.id && request.kind !== 'question') &&
       !conversationRuns(record.view).some(run => run.id !== current.id && run.participantId === latest.id && unfinishedRun(run)));
-    const held = latest && !replacingQuestion && (!releasedContinuation(record,input) || stoppedContinuation(record,input)) && conversationRuns(record.view).some(run => run.participantId === latest.id && (
+    const continuingReleased = releasedContinuation(record,input) && !stoppedContinuation(record,input);
+    const held = latest && !replacingQuestion && !continuingReleased && conversationRuns(record.view).some(run => run.participantId === latest.id && (
       record.view.requests.some(request => request.runId === run.id) ||
       run.id === record.view.run?.id && unfinishedRun(run) ||
       !run.resourcesReleased && (unfinishedRun(run) || run.generation !== this.options.generation && this.options.generationAlive?.(run.generation) === true)
     ));
-    const participant = held ? undefined : latest;
+    // Interrupted Qoder history can contain native inputs without an exact
+    // mapping. Keep that context and its tools intact, and use a new native
+    // context with the original selection and recorded handoff.
+    const isolatedContinuation = continuingReleased && current?.interrupted &&
+      current.executionState === 'unknown' && isQoderProvider(connection.provider);
+    const participant = held || isolatedContinuation ? undefined : latest;
     const through = record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0;
     const changes = handoffEntries([...(record.inheritedContext?.entries??[]),...record.view.entries],participant?.deliveredThrough??0).map(handoffEntry);
     const previous = record.participants.find(value=>value.id===record.view.run?.participantId) ?? record.participants.at(-1);
@@ -1477,7 +1484,9 @@ export class ConversationApplication {
       }
       const beforeDispatch = this.currentRun(workspaceId, id, runId); if (!beforeDispatch) return;
       record = beforeDispatch;
-      const previousAttempt = record.attempts.findLast(value=>value.runId!==runId);
+      const previousAttempt = prepared.draft.continueRunId
+        ? record.attempts.findLast(value=>value.runId===prepared.draft.continueRunId)
+        : record.attempts.findLast(value=>value.runId!==runId);
       const previousParticipant = record.participants.find(value=>value.id===previousAttempt?.participantId);
       const previousRun = conversationRuns(record.view).find(value=>value.id===previousAttempt?.runId);
       const previousGeneration = previousRun?.generation ?? (previousAttempt ? record.runOutcomes?.[previousAttempt.runId]?.generation : undefined);
@@ -1487,6 +1496,12 @@ export class ConversationApplication {
       // remains a separate receipt, so a failed dispatch is never called a handoff success.
       if (!internalRecovery && previousParticipant && (fromContext!==toContext || previousGeneration && previousGeneration!==this.options.generation)) {
         const reason = fromContext===toContext ? 'backend-adoption' as const : 'session-replacement' as const;
+        const description = reason==='backend-adoption' ? '原轮控制已释放，新后台复用原生会话'
+          : prepared.preview.switching ? '用户执行选择变化'
+          : previousRun?.resourcesReleased && prepared.draft.continueRunId===previousRun.id ? '原控制资源已释放，保留原轮结果并在独立会话接续'
+          : previousRun && unfinishedRun(previousRun) ? '原轮仍有在途工作，新要求使用独立会话'
+          : previousRun && !previousRun.resourcesReleased && previousGeneration!==this.options.generation ? '原会话控制资源尚未释放，新要求使用独立会话'
+          : '原上下文不可复用，使用新的原生会话';
         this.retryRecordUpdate(()=>{
           const current=this.currentRun(workspaceId,id,runId);if(!current)return;
           if(current.view.entries.some(entry=>entry.id==='native-session-'+runId))return;
@@ -1495,7 +1510,7 @@ export class ConversationApplication {
           createdAt:this.options.now(), kind:'handoff', role:'system', runId, participantId:participant.id,
           provider:participant.provider, status:'sending',
           text:reason==='backend-adoption'?'后台已接管原生会话，等待本轮受理。':'执行选择或可用上下文变化，已准备新的原生会话，等待本轮受理。',
-          nativeSession:{reason,...(this.options.backendChange?.fromGeneration===previousGeneration?{backendChange:this.options.backendChange}:{}),description:reason==='backend-adoption'?'原轮控制已释放，新后台复用原生会话':prepared.preview.switching?'用户执行选择变化':previousRun&&unfinishedRun(previousRun)?'原轮仍有在途工作，新要求使用独立会话':previousRun&&!previousRun.resourcesReleased&&previousGeneration!==this.options.generation?'原会话控制资源尚未释放，新要求使用独立会话':'原上下文不可复用，使用新的原生会话',from:{contextId:fromContext,generation:previousGeneration},to:{contextId:toContext,generation:this.options.generation}},
+          nativeSession:{reason,...(this.options.backendChange?.fromGeneration===previousGeneration?{backendChange:this.options.backendChange}:{}),description,from:{contextId:fromContext,generation:previousGeneration},to:{contextId:toContext,generation:this.options.generation}},
           });
           this.save(current);
         });
@@ -2082,6 +2097,7 @@ export class ConversationApplication {
   }
   private async reconcile(workspaceId: string, id: string): Promise<ConversationView> {
     let record = this.load(workspaceId, id);
+    const observedRunId = record.view.run?.id;
     if (record.view.run && this.retryWaits.has(record.view.run.id)) return this.view(record);
     for (const saved of record.participants) {
       if (!saved.contextRef) continue;
@@ -2092,10 +2108,12 @@ export class ConversationApplication {
         if (runtime.bindingIdentity !== saved.bindingIdentity) fail('agent_binding_changed', '参与者的程序或原配置身份已失配。', 409);
         await runtime.resumeContext({ contextRef: saved.contextRef, cwd: record.view.cwd });
         const items = await runtime.readHistory({ contextRef: saved.contextRef, cwd: record.view.cwd });
-        const run = conversationRuns(this.load(workspaceId, id).view).find(run => run.participantId === saved.id);
-        const attempt = run ? this.load(workspaceId, id).attempts.find(value => value.runId === run.id) : undefined;
+        const receiptRecord = this.load(workspaceId, id);
+        if (receiptRecord.view.run?.id !== observedRunId) break;
+        const run = conversationRuns(receiptRecord.view).find(run => run.participantId === saved.id);
+        const attempt = run ? receiptRecord.attempts.find(value => value.runId === run.id) : undefined;
         const needsObservation = run?.participantId === saved.id && (BUSY_STATES.has(run.status) || Boolean(run.interrupted));
-        const receiptRecord = this.load(workspaceId, id), prefix = `${saved.id}:tool:`, receiptEntries = new Map(receiptRecord.view.entries.map(entry => [entry.id, entry]));
+        const prefix = `${saved.id}:tool:`, receiptEntries = new Map(receiptRecord.view.entries.map(entry => [entry.id, entry]));
         const knownItems: ExecutorItem[] = !needsObservation ? [] : Object.entries(receiptRecord.sources).flatMap(([source, entryId]) => {
           const entry = source.startsWith(prefix) ? receiptEntries.get(entryId) : undefined;
           return entry && entry.runId === run?.id && attempt?.executionRef ? [{ id: source.slice(prefix.length), kind: 'tool', role: 'system', text: entry.text, status: entry.status === 'completed' || entry.status === 'failed' ? entry.status : undefined, executionId: attempt.executionRef.id }] : [];
@@ -2103,6 +2121,7 @@ export class ConversationApplication {
         const observedRequests = hash(receiptRecord.view.requests);
         const observation = needsObservation ? await runtime.observe({ contextRef: saved.contextRef, executionRef: attempt?.executionRef, knownItems }) : undefined;
         record = this.load(workspaceId, id);
+        if (record.view.run?.id !== observedRunId) break;
         const requestsUnchanged = hash(record.view.requests) === observedRequests;
         const participant = record.participants.find(value => value.id === saved.id)!;
         let changed = false;
@@ -2128,6 +2147,7 @@ export class ConversationApplication {
         if (changed) this.save(record);
       } catch (error) {
         record = this.load(workspaceId, id);
+        if (record.view.run?.id !== observedRunId) break;
         const target = conversationRuns(record.view).find(run => run.participantId === saved.id);
         if (target && unfinishedRun(target)) { target.status = 'unknown'; target.diagnostic = safeDiagnostic(error); this.save(record); }
       }
@@ -2460,7 +2480,7 @@ export class ConversationApplication {
     if (control.record.attempts.find(attempt => attempt.runId === input.runId)?.questionReleaseRequested) fail('agent_question_transition_in_flight', '原问题正在结束等待，回答已保留；请核对原问题状态。', 409);
     if (this.repliesInFlight.has(requestId)) fail('agent_reply_in_flight', '此请求正在回应，请等待原结果。', 409);
     if (this.pendingSends.read(workspaceId,id)?.draft.waitingHandoff) fail('agent_handoff_pending', '已保存交接，回答将交给新模型；如要回应原轮，请先取消待发送。', 409);
-    this.repliesInFlight.add(requestId);
+    this.repliesInFlight.set(requestId,id);
     try {
     const runtime = (await this.sourceRuntime(control.record, control.participant)).runtime;
     // Recheck after asynchronous connection setup before causing a native effect.

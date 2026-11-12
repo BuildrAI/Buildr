@@ -17,10 +17,13 @@ type Ports = {
 
 /** Owns only supplementary admission. The conversation remains the single record authority. */
 export class ConversationSupplements {
-  private readonly pending = new Map<string, { digest: string; work: Promise<SupplementResult> }>();
+  private readonly pending = new Map<string, { workspaceId: string; conversationId: string; digest: string; work: Promise<SupplementResult> }>();
   private readonly ports: Ports;
   constructor(ports: Ports) { this.ports = ports; }
   get size() { return this.pending.size; }
+  hasPending(workspaceId: string, id: string): boolean {
+    return [...this.pending.values()].some(item => item.workspaceId === workspaceId && item.conversationId === id);
+  }
   private current(record: StoredConversation, input: SupplementInput, allowEnded = false) {
     const run = record.view.run;
     if (this.ports.closing()) fail('agent_service_closing', '智能体服务正在退出，输入已保留。', 503);
@@ -47,7 +50,7 @@ export class ConversationSupplements {
       return pending.work;
     }
     const work = (previous ? this.reconcile(workspaceId, id, input.clientRequestId) : this.execute(workspaceId, id, input, digest)).finally(() => { if (this.pending.get(key)?.work === work) this.pending.delete(key); });
-    this.pending.set(key, { digest, work }); return work;
+    this.pending.set(key, { workspaceId, conversationId:id, digest, work }); return work;
   }
   private async reconcile(workspaceId: string, id: string, requestId: string): Promise<SupplementResult> {
     let record = this.ports.load(workspaceId, id);

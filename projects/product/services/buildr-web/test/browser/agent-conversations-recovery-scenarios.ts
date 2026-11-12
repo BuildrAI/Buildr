@@ -234,6 +234,51 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       assert.equal(await notice.getByRole('button',{name:'关闭对话',exact:true}).count(),0);assert.equal(await notice.getByRole('button',{name:'继续工作',exact:true}).count(),0);
     }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
   });
+  await step('Qoder 已释放历史可点击继续工作并保留未知结果',async()=>{
+    const saved=structuredClone(fixture.conversation);
+    const sendRoute='**/agent-conversations/'+saved.id+'/send';
+    for(const previousHasUnknownTool of [true,false]){
+      const at=new Date().toISOString();
+      const unknownTool={id:'old-command',label:'旧命令',status:'unknown',canStop:false};
+      const original=run('unknown','qoder',{id:'released-current',generation:'old-generation',
+        executionState:'unknown',resourcesReleased:true,interrupted:true,tools:[unknownTool]});
+      const retained=run('unknown','qoder',{id:'released-earlier',generation:'earlier-generation',
+        executionState:'unknown',resourcesReleased:true,stopRequested:true,
+        tools:previousHasUnknownTool?[{...unknownTool,id:'earlier-command'}]:[]});
+      const oldToolEntry={id:'old-command-entry',sequence:2,kind:'tool',role:'system',name:'Bash',
+        text:'结果待确认',status:'unknown',runId:original.id,participantId:original.participantId,provider:'qoder',createdAt:at};
+      let submissions=0;
+      const handler=async(route:any)=>{
+        const body=route.request().postDataJSON();
+        submissions++;
+        assert.equal(body.continueRunId,original.id);
+        assert.equal(body.text,'');
+        assert.equal(body.connectionId,'qoder');
+        assert.equal(body.expectedRevision,fixture.conversation.revision);
+        assert.ok(body.previewToken);
+        const resumed=run('running','qoder',{id:'resumed-run'});
+        update({run:resumed,retainedRuns:[retained,original]});
+        await route.fulfill({json:{run:resumed,conversation:fixture.conversation}});
+      };
+      try{
+        update({run:original,retainedRuns:[retained],requests:[],participants:[{
+          id:original.participantId,connectionId:'qoder',provider:'qoder',label:'Qoder',deliveredThrough:2,contextId:'old-native',
+        }],entries:[{id:'old-input',sequence:1,kind:'message',role:'user',text:'原用户要求',runId:previousHasUnknownTool?retained.id:original.id,
+          participantId:original.participantId,provider:'qoder',createdAt:at},oldToolEntry]});
+        await page.route(sendRoute,handler);
+        await page.reload();await input().waitFor();
+        await panel().locator('.ac-execution-uncertain').getByRole('button',{name:'继续工作',exact:true}).click();
+        await panel().locator('[data-run-status="running"]').waitFor();
+        assert.equal(submissions,1);
+        assert.deepEqual(fixture.conversation.retainedRuns,[retained,original]);
+        assert.equal(fixture.conversation.entries.find((entry:any)=>entry.id===oldToolEntry.id)?.status,'unknown');
+      }finally{
+        await page.unroute(sendRoute,handler);
+        fixture.conversation=structuredClone(saved);
+        await page.reload();await input().waitFor();
+      }
+    }
+  });
   await step('继续工作先读取准确终态，已经正常答复时不再发送恢复要求',async()=>{
     const saved=structuredClone(fixture.conversation),sends=fixture.sends;
     try{
