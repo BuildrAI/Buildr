@@ -23,7 +23,7 @@ export function registerWorkspaceProductSuite(selectedSuite: any): any  {
 const PRODUCT_ROOT: any = path.resolve(import.meta.dirname, '../..');
 const BUILDR: any = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
 const APP_PROCESS_TIMEOUT_MS: any = 120_000;
-const APP_COMMAND_TIMEOUT_MS: any = 30_000;
+const APP_COMMAND_TIMEOUT_MS: any = 60_000;
 
 function previewCommandDiagnostic(phase: string, result: any, timeoutMs: number): string {
   const stdout = Buffer.from(result.stdout || ''), stderr = Buffer.from(result.stderr || '');

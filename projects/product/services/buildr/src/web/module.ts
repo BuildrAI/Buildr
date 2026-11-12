@@ -69,8 +69,24 @@ export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: {
       registerWebInstanceLifecycle(composition, {
         httpContributions,
         closeResources: options.closeResources,
-        createLocalWorkspaceServer: (webRuntime, serverOptions) => Reflect.apply(createLocalWorkspaceServer, undefined, [webRuntime, { ...serverOptions, agentRuntimeStatus: options.agentRuntimeStatus, onReady: async () => { if (!serverOptions.previewIdentity) { await options.onReady?.(); resumeUpdate();
-          resumeDevelopmentWorkspaceRefresh(identity.readCurrentProductIdentity!(), serverOptions, workspace.refreshPreparedWorkspaces); } } }]),
+        createLocalWorkspaceServer: (webRuntime, serverOptions) => {
+          let previewWarmup: NodeJS.Timeout | undefined;
+          return Reflect.apply(createLocalWorkspaceServer, undefined, [webRuntime, { ...serverOptions, agentRuntimeStatus: options.agentRuntimeStatus, beforeShutdown: () => {
+            if (previewWarmup) { clearTimeout(previewWarmup); previewWarmup = undefined; }
+          }, onReady: async () => {
+          if (!serverOptions.previewIdentity) {
+            await options.onReady?.(); resumeUpdate();
+            resumeDevelopmentWorkspaceRefresh(identity.readCurrentProductIdentity!(), serverOptions, workspace.refreshPreparedWorkspaces);
+          } else {
+            // A preview must publish its authenticated health endpoint before
+            // the pinned runtime warms up. Runtime-unit preparation can be
+            // CPU-bound; doing it here would block the event loop and make a
+            // healthy child look unreachable during start.
+            previewWarmup = setTimeout(() => { previewWarmup = undefined; void Promise.resolve(options.onReady?.()).catch(error => console.warn('预览执行后台预热未完成，工作记录已保留。', error)); }, 250);
+            previewWarmup.unref?.();
+          }
+        } }]);
+        },
         ensureRegisteredTarget: workspace.ensureRegisteredTarget,
         resolveRegisteredWorkspace: workspace.resolveRegisteredWorkspace,
         readProductIdentity: identity.readCurrentProductIdentity,

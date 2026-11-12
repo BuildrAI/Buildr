@@ -714,6 +714,44 @@ function processAlive(pid: number): boolean {
   catch (error) { return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'EPERM'); }
 }
 
+/** Exact Agent backend PIDs owned by one disposable preview data root. */
+function previewAgentPids(dataRoot: string): number[] {
+  const control = path.join(dataRoot, 'agent-service/process');
+  const records: string[] = [path.join(control, 'instance.json')];
+  try {
+    for (const name of fs.readdirSync(path.join(control, 'instances'))) {
+      if (/^[a-f0-9-]{36}\.json$/.test(name)) records.push(path.join(control, 'instances', name));
+    }
+  } catch { /* No retained Agent backend is a valid preview state. */ }
+  const pids = new Set<number>();
+  for (const file of records) {
+    const item = record(readJson(file));
+    const pid = item?.identity && record(item.identity)?.pid;
+    if (Number.isInteger(pid) && Number(pid) > 1) pids.add(Number(pid));
+  }
+  return [...pids];
+}
+
+async function reclaimConfirmedAgent(pids: number[]): Promise<void> {
+  for (const pid of pids) {
+    // The backend writes stopped/confirmed before closing its HTTP channel.
+    // A close-race can leave the listening handle behind; only after the
+    // graceful stop succeeded is it safe to reclaim this disposable preview.
+    for (let index = 0; index < 20 && processAlive(pid); index += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+    if (!processAlive(pid)) continue;
+    try { process.kill(process.platform === 'win32' ? pid : -pid, 'SIGKILL'); }
+    catch (error) {
+      if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ESRCH') throw error;
+    }
+    for (let index = 0; index < 20 && processAlive(pid); index += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+    if (processAlive(pid)) throw codedError('预览执行后台停止未确认，保留现场。', 'preview_stop_unconfirmed', { pid });
+  }
+}
+
 async function assertPreviewStopped(instance: string, dataRoot: string): Promise<void> {
   const state = readPreviewInstance(instance, dataRoot);
   if (!state || !processAlive(state.pid)) return;
@@ -753,8 +791,32 @@ export async function stopPreview(name: string, options: PreviewStopOptions = {}
       await new Promise<void>((resolve) => setTimeout(resolve, 50));
     }
     if (await healthyInstance(readPreviewInstance(instance, dataRoot))) throw codedError(`预览实例 ${instance} 停止后仍保持健康。`, 'preview_stop_unconfirmed');
+    // Health turns non-ready before the web process exits. The detached Agent
+    // backend is owned by that process, so stop it only after the exact preview
+    // PID is gone; otherwise a late host shutdown can leave an orphan writer.
+    if (state && Number.isInteger(state.pid)) {
+      for (let index = 0; index < 100 && processAlive(state.pid); index += 1) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      }
+      if (processAlive(state.pid)) throw codedError(`预览实例 ${instance} 进程停止未确认，保留现场。`, 'preview_stop_unconfirmed', { instance, pid: state.pid });
+    }
   }
-  await stopAgentProcess({ dataRoot: previewDataRoot(instance, dataRoot) });
+  const agentRoot = previewDataRoot(instance, dataRoot);
+  const ownedAgentPids = new Set<number>(previewAgentPids(agentRoot));
+  let stopFailure: unknown;
+  for (let round = 0; round < 8; round += 1) {
+    try {
+      await stopAgentProcess({ dataRoot: agentRoot });
+      stopFailure = undefined;
+    } catch (error) { stopFailure = error; }
+    for (const pid of previewAgentPids(agentRoot)) ownedAgentPids.add(pid);
+    await reclaimConfirmedAgent([...ownedAgentPids]);
+    if (![...ownedAgentPids].some(processAlive) && previewAgentPids(agentRoot).length === 0) {
+      break;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 250));
+  }
+  if (stopFailure) throw stopFailure;
   if (options.purge) {
     await assertPreviewStopped(instance, dataRoot);
     const target = assertPurgeTargetSafe(instance, dataRoot);
