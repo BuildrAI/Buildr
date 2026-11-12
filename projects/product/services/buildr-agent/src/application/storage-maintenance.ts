@@ -17,7 +17,7 @@ import { observeStorageUse, removeStorageCandidate, removeDiagnosticFileBatch, r
 import { testArtifactCandidates, testArtifactUnreferenced } from '../storage/test-artifacts.ts';
 import type { HomeDiscoveryCursor } from '../storage/home-discovery.ts';
 import { diagnosticCandidates, diagnosticUnreferenced } from '../storage/diagnostics.ts';
-import { nativeSessionCandidates, nativeSessionRetainedReason } from '../storage/native-sessions.ts';
+import { nativeSessionCandidates, nativeSessionRetainedReason, nativeHomeCandidates, nativeHomeRetainedReason, nativeHomeSessionReferenced } from '../storage/native-sessions.ts';
 import { nativeSessionReferences, type NativeSessionReferences } from './native-session-references.ts';
 import { ConversationRepository } from '../persistence/conversation-repository.ts';
 
@@ -104,6 +104,7 @@ export function inspectAgentStorage(input: { dataRoot: string; homeCursor?:HomeD
       const references = nativeSessionReferences(root, repository);
       result.diagnostics.push(...references.diagnostics);
       result.items.push(...nativeSessionCandidates(root, use, cutoff, references));
+      result.items.push(...nativeHomeCandidates(root, use, cutoff, references));
     } catch { result.diagnostics.push('native_session_inventory_unknown'); }
   }
   try { result.items.push(...retainedRuntimeCandidates(dataRoot, use), ...runtimeSharingCandidates(dataRoot, use), ...runtimeObjectCandidates(root, use)); }
@@ -122,7 +123,7 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
   const root = path.join(plan.dataRoot, 'agent-service');
   if (!safeStoragePath(plan.dataRoot, root)) throw new Error('agent_storage_root_unsafe');
   const nativeConfirmed = options.confirmNativeSessions === true;
-  const nativePlanned = plan.items.filter(item => item.eligible && item.kind === 'native-session');
+  const nativePlanned = plan.items.filter(item => item.eligible && (item.kind === 'native-session' || item.kind === 'native-home'));
   const current = inspectAgentStorage({ dataRoot: plan.dataRoot,scanHomes:false,nativeSessions:nativeConfirmed && nativePlanned.length>0 });
   const candidates = new Map(current.items.map(item => [item.kind + ":" + item.path, item]));
   const executors = new Map(createNativeExecutors().map(executor => [executor.descriptor.id, executor]));
@@ -143,7 +144,7 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
   let attempted = 0;
   const native: Array<{ expected: StorageCandidate; item: StorageCandidate }> = [];
   for (const expected of nativePlanned) {
-    if (!nativeConfirmed) { results.push({ path: expected.path, status: 'retained', reason: 'native_session_confirmation_required', sizeBytes: expected.sizeBytes }); continue; }
+    if (!nativeConfirmed) { results.push({ path: expected.path, status: 'retained', reason: expected.kind === 'native-home' ? 'native_home_confirmation_required' : 'native_session_confirmation_required', sizeBytes: expected.sizeBytes }); continue; }
     const item = candidates.get(expected.kind + ':' + expected.path);
     if (attempted >= limit || native.length >= 256 || Date.now() > deadline) {
       results.push({ path: expected.path, status: 'retained', reason: 'storage_batch_deferred', sizeBytes: item?.sizeBytes ?? expected.sizeBytes });
@@ -157,16 +158,31 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
       lock = claim(plan.dataRoot, 'storage');
       const references = nativeSessionReferences(root, repository);
       proof = references; current.diagnostics.push(...references.diagnostics);
-      for (const file of removeNativeSessionBatch(root, native.map(value => value.item), item => !nativeSessionRetainedReason(item, references), observeStorageUse, deadline)) removed.add(file);
+      const sessions = native.filter(value => value.item.kind === 'native-session').map(value => value.item);
+      if (sessions.length) for (const file of removeNativeSessionBatch(root, sessions, item => !nativeSessionRetainedReason(item, references), observeStorageUse, deadline)) removed.add(file);
+      // Whole homes use the directory-safe rename/re-observe/delete primitive;
+      // the logical proof pins the original path while the session walk follows
+      // the actual (possibly renamed) directory.
+      for (const { item } of native.filter(value => value.item.kind === 'native-home')) {
+        if (Date.now() > deadline) break;
+        const provider = item.nativeHome!.provider;
+        const unreferenced = (directory: string) => !nativeHomeRetainedReason(item, references) && !nativeHomeSessionReferenced(directory, provider, references);
+        try { if (removeStorageCandidate(root, item, observeStorageUse, unreferenced)) removed.add(item.path); } catch { /* A changed or busy home is retained. */ }
+      }
     } catch { /* Lock or reference failure only defers this batch. */ }
     finally { lock?.release(); }
     for (const { item } of native) {
       const gone = removed.has(item.path);
-      results.push({ path: item.path, status: gone ? 'removed' : 'retained', reason: gone ? 'unused_native_session'
-        : proof ? nativeSessionRetainedReason(item, proof) ?? (Date.now() > deadline ? 'storage_batch_deferred' : 'storage_recheck_retained') : 'storage_recheck_retained', sizeBytes: item.sizeBytes });
+      const home = item.kind === 'native-home';
+      const retained = proof
+        ? home ? nativeHomeRetainedReason(item, proof) ?? (nativeHomeSessionReferenced(item.path, item.nativeHome!.provider, proof) ? 'native_home_session_referenced' : undefined)
+          : nativeSessionRetainedReason(item, proof)
+        : undefined;
+      results.push({ path: item.path, status: gone ? 'removed' : 'retained', reason: gone ? (home ? 'unused_native_home' : 'unused_native_session')
+        : retained ?? (Date.now() > deadline ? 'storage_batch_deferred' : 'storage_recheck_retained'), sizeBytes: item.sizeBytes });
     }
   }
-  const pending=plan.items.filter(item=>item.eligible&&item.kind!=='native-session').sort((a,b)=>b.sizeBytes-a.sizeBytes),handled=new Set<string>();
+  const pending=plan.items.filter(item=>item.eligible&&item.kind!=='native-session'&&item.kind!=='native-home').sort((a,b)=>b.sizeBytes-a.sizeBytes),handled=new Set<string>();
   for (const expected of pending) {
     if(handled.has(expected.path))continue;
     const item = candidates.get(expected.kind + ":" + expected.path);

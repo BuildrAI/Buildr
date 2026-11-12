@@ -31,7 +31,7 @@ function fail(message: string): never {
 
 function nativePlan(): AgentStoragePlan {
   const plan = inspectAgentStorage({ dataRoot: root, scanHomes: false, nativeSessions: true });
-  return { ...plan, items: plan.items.filter(item => item.kind === 'native-session') };
+  return { ...plan, items: plan.items.filter(item => item.kind === 'native-session' || item.kind === 'native-home') };
 }
 
 function write(result: unknown, persist = true): void {
@@ -53,7 +53,7 @@ function summarize(plan: AgentStoragePlan, extra: Record<string, unknown> = {}) 
     }, {}),
     diagnostics: plan.diagnostics,
     items: plan.items.map(item => ({
-      path: item.path, provider: item.nativeSession?.provider, contextId: item.nativeSession?.contextId,
+      path: item.path, kind: item.kind, provider: item.nativeSession?.provider ?? item.nativeHome?.provider, contextId: item.nativeSession?.contextId,
       binding: item.nativeSession?.binding, identity: item.identity, sizeBytes: item.sizeBytes,
       reason: item.reason, eligible: item.eligible,
     })),

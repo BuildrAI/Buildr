@@ -45,12 +45,13 @@ function codexSession(config: string, id: string) {
 function dshSession(config: string, id: string) {
   return path.join(config, 'dsh-home', 'sessions', '--workspace--', `session-${id}`);
 }
-function conversation(root: string, input: { provider: 'codex' | 'dsh'; contextId: string; modelAccountId?: string; attemptContext?: boolean }) {
+function conversation(root: string, input: { provider: 'codex' | 'dsh'; contextId: string; modelAccountId?: string; attemptContext?: boolean; nativeHomeRoot?: string }) {
   const repo = new ConversationRepository(root), cwd = '/workspace', participantId = randomUUID();
   const record: StoredConversation = {
     view: { id: randomUUID(), workspaceId: 'ws', revision: 'r1', cwd, title: 'native', updatedAt: 'now', hidden: false, requests: [], participants: [], entries: [] },
     participants: [{ id: participantId, connectionId: input.provider, provider: input.provider, label: input.provider,
       bindingIdentity: 'binding', deliveredThrough: 0, modelAccountId: input.modelAccountId,
+      ...(input.nativeHomeRoot ? { nativeHomeRoot: input.nativeHomeRoot } : {}),
       contextRef: { id: input.contextId, data: { native: opaqueReference(input.provider, input.contextId, cwd, 'binding') } } }],
     sources: {}, nativeTools: {}, attachments: {}, requests: {},
     attempts: [{ clientRequestId: randomUUID(), inputDigest: 'digest', runId: randomUUID(), participantId, through: 0, userEntryId: 'user', accepted: true,
@@ -60,6 +61,8 @@ function conversation(root: string, input: { provider: 'codex' | 'dsh'; contextI
 }
 function nativePlan(plan: AgentStoragePlan): AgentStoragePlan { return { ...plan, items: plan.items.filter(item => item.kind === 'native-session') }; }
 function inspect(dataRoot: string, nativeSessions = true) { return nativePlan(inspectAgentStorage({ dataRoot, scanHomes: false, nativeSessions })); }
+function homePlan(plan: AgentStoragePlan): AgentStoragePlan { return { ...plan, items: plan.items.filter(item => item.kind === 'native-home') }; }
+function inspectHomes(dataRoot: string) { return homePlan(inspectAgentStorage({ dataRoot, scanHomes: false, nativeSessions: true })); }
 
 test('native sessions require opt-in, complete references and explicit confirmation, and never touch accounts', async t => {
   const f = fixture(t), liveCodexId = randomUUID(), staleCodexId = randomUUID(), liveDshId = randomUUID(), staleDshId = randomUUID();
@@ -219,4 +222,101 @@ test('occupancy and identity drift after planning retain the exact session', asy
     assert.equal(result.results.find(item => item.path === session)?.status, 'retained');
     assert.equal(fs.existsSync(session), true);
   }
+});
+
+test('whole dead lease homes are reclaimed only after a complete no-reference proof and explicit confirmation', async t => {
+  const f = fixture(t);
+  const live = codexHome(f.root, binding('a')), dead = codexHome(f.root, binding('b'));
+  const liveSession = codexSession(live.config, randomUUID()), deadSession = codexSession(dead.config, randomUUID());
+  writeFile(liveSession, '{"live":true}\n'); writeFile(deadSession, '{"dead":true}\n');
+  writeFile(path.join(live.config, 'codex-home', 'auth.json'), 'credential');
+  writeFile(path.join(dead.config, 'codex-home', 'config.toml'), 'model = "x"\n');
+  age(live.config); age(dead.config);
+  // A persisted home root pins the live lease home; the dead one has no reference.
+  conversation(f.root, { provider: 'codex', contextId: randomUUID(), nativeHomeRoot: live.config });
+  // The shared account root holds sessions too but is never a whole-home candidate.
+  const sharedSession = path.join(f.root, 'connections', 'codex', 'codex-home', 'sessions', '2026', '11', '03', `rollout-2026-11-03T15-52-32-${randomUUID()}.jsonl`);
+  writeFile(sharedSession, '{"shared":true}\n'); age(path.join(f.root, 'connections', 'codex', 'codex-home'));
+
+  assert.equal(inspectAgentStorage({ dataRoot: f.dataRoot, scanHomes: false }).items.some(item => item.kind === 'native-home'), false, 'automatic inventory never lists whole homes');
+  const plan = inspectHomes(f.dataRoot);
+  assert.equal(plan.items.some(item => item.path === path.join(f.root, 'connections', 'codex')), false, 'the shared account root is never a home candidate');
+  assert.equal(plan.items.find(item => item.path === live.config)?.reason, 'native_home_referenced');
+  assert.equal(plan.items.find(item => item.path === dead.config)?.eligible, true);
+  assert.equal(plan.items.find(item => item.path === dead.config)?.reason, 'unused_native_home');
+
+  const unconfirmed = collectAgentStorage(plan);
+  assert.ok(unconfirmed.results.every(item => item.reason === 'native_home_confirmation_required'));
+  assert.equal(fs.existsSync(dead.config), true);
+
+  const confirmed = collectAgentStorage(plan, 128, { confirmNativeSessions: true });
+  assert.equal(confirmed.results.find(item => item.path === dead.config)?.status, 'removed');
+  assert.equal(confirmed.results.find(item => item.path === dead.config)?.reason, 'unused_native_home');
+  assert.equal(fs.existsSync(dead.config), false, 'the whole dead lease home directory is removed');
+  assert.equal(fs.existsSync(live.config), true);
+  assert.equal(fs.existsSync(liveSession), true);
+  assert.equal(fs.readFileSync(path.join(live.config, 'codex-home', 'auth.json'), 'utf8'), 'credential');
+  assert.equal(fs.existsSync(sharedSession), true, 'shared-home sessions are not touched by home-level reclamation');
+  assert.equal(fs.readdirSync(path.dirname(dead.config)).some(name => name.startsWith('.reclaim-')), false);
+});
+
+test('a referenced session inside a home retains the whole directory even when no reference names the home path', async t => {
+  const f = fixture(t), home = codexHome(f.root, binding('c')), heldId = randomUUID();
+  const held = codexSession(home.config, heldId), stale = codexSession(home.config, randomUUID());
+  writeFile(held, '{"held":true}\n'); writeFile(stale, '{"stale":true}\n'); age(home.config);
+  const repo = conversation(f.root, { provider: 'codex', contextId: randomUUID() });
+  // The durable row records only the account root plus an exact context identity;
+  // the home path itself is not referenced, but the session inside it is.
+  const reference: NativeToolContent = { version: 3, provider: 'codex', contextId: heldId, entry: toolEntry('held-tool'), session: { config: 'connections/codex', cwd: '/workspace' }, text: [] };
+  const encoded = ConversationEntryStore.encodeReference(reference), db = new DatabaseSync(repo.filename);
+  try { db.prepare('INSERT INTO conversation_entry_contents(conversation_id,content_revision,codec,body_bytes,body) VALUES(?,?,?,?,?)')
+    .run('held', randomUUID(), encoded.codec, Buffer.from(encoded.body as Uint8Array).length, encoded.body); } finally { db.close(); }
+  const plan = inspectHomes(f.dataRoot);
+  assert.equal(plan.items.find(item => item.path === home.config)?.reason, 'native_home_session_referenced');
+  assert.equal(plan.items.find(item => item.path === home.config)?.eligible, false);
+  const result = collectAgentStorage(plan, 128, { confirmNativeSessions: true });
+  assert.equal(result.results.some(item => item.path === home.config && item.status === 'removed'), false);
+  assert.equal(fs.existsSync(home.config), true);
+  assert.equal(fs.existsSync(held), true); assert.equal(fs.existsSync(stale), true);
+});
+
+test('provider-wide uncertainty and a fresh home retain whole homes', async t => {
+  const unresolved = fixture(t); {
+    const home = codexHome(unresolved.root, binding('d')), session = codexSession(home.config, randomUUID());
+    writeFile(session); age(home.config);
+    conversation(unresolved.root, { provider: 'codex', contextId: randomUUID(), modelAccountId: 'account-without-binding' });
+    assert.equal(inspectHomes(unresolved.dataRoot).items.find(item => item.path === home.config)?.reason, 'native_home_binding_unresolved');
+  }
+  const unknown = fixture(t); {
+    const home = codexHome(unknown.root, binding('e')), session = codexSession(home.config, randomUUID());
+    writeFile(session); age(home.config);
+    conversation(unknown.root, { provider: 'codex', contextId: randomUUID(), attemptContext: false });
+    assert.equal(inspectHomes(unknown.dataRoot).items.find(item => item.path === home.config)?.reason, 'native_home_context_unknown');
+  }
+  const recent = fixture(t); {
+    const home = codexHome(recent.root, binding('f')), session = codexSession(home.config, randomUUID());
+    writeFile(session); // not aged
+    assert.equal(inspectHomes(recent.dataRoot).items.find(item => item.path === home.config)?.reason, 'storage_recent');
+  }
+  const corrupt = fixture(t); {
+    const home = codexHome(corrupt.root, binding('1')), session = codexSession(home.config, randomUUID());
+    writeFile(session); age(home.config);
+    const directory = path.join(corrupt.root, 'handoff-materials', randomUUID()); fs.mkdirSync(directory, { recursive: true });
+    writeFile(path.join(directory, `index-${'0'.repeat(64)}.json`), '{}');
+    const plan = inspectHomes(corrupt.dataRoot);
+    assert.equal(plan.items.find(item => item.path === home.config)?.reason, 'native_home_reference_observation_failed');
+    assert.equal(collectAgentStorage(plan, 128, { confirmNativeSessions: true }).results.every(item => item.status === 'retained'), true);
+    assert.equal(fs.existsSync(home.config), true);
+  }
+});
+
+test('identity drift after planning retains the whole home', async t => {
+  const f = fixture(t), home = codexHome(f.root, binding('2')), session = codexSession(home.config, randomUUID());
+  writeFile(session, '{"v":1}\n'); age(home.config);
+  const plan = inspectHomes(f.dataRoot);
+  assert.equal(plan.items.find(item => item.path === home.config)?.eligible, true);
+  fs.appendFileSync(session, '{"v":2}\n');
+  const result = collectAgentStorage(plan, 128, { confirmNativeSessions: true });
+  assert.equal(result.results.find(item => item.path === home.config)?.reason, 'storage_changed');
+  assert.equal(fs.existsSync(home.config), true);
 });

@@ -90,6 +90,8 @@ export interface StoredParticipant {
   bindingIdentity: string;
   contextRef?: ContextRef;
   deliveredThrough: number;
+  /** Persisted native home base for gateway participants (dir containing codex-home/dsh-home); stable once chosen. */
+  nativeHomeRoot?: string;
 }
 export interface StoredConversation {
   stops?: Array<{

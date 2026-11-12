@@ -14,7 +14,7 @@ const modelBinding = /^connections\/(codex|dsh)\/model-bindings\/([a-f0-9]{64})(
  * header, every durable native tool content row and every handoff source
  * index. Any unreadable source keeps its whole scope. */
 export function nativeSessionReferences(root: string, repository: Pick<ConversationRepository, 'readNativeHeaders' | 'readNativeToolReferences'>): NativeSessionReferences {
-  const contexts = new Set<string>(), unknownContext = new Set<string>(), unresolved = new Set<string>(), diagnostics: string[] = [];
+  const contexts = new Set<string>(), unknownContext = new Set<string>(), unresolved = new Set<string>(), homes = new Set<string>(), diagnostics: string[] = [];
   const headers = repository.readNativeHeaders();
   if (!headers.complete) diagnostics.push('native_session_headers_unreadable');
   for (const header of headers.headers) {
@@ -23,11 +23,12 @@ export function nativeSessionReferences(root: string, repository: Pick<Conversat
       if (!providers.has(participant.provider)) continue;
       const context = participant.contextRef?.id;
       if (typeof context === 'string' && context) contexts.add(participant.provider + ':' + context);
-      if (participant.modelAccountId) {
-        let config: string | undefined;
-        try { config = configRoot(root, header, participant); } catch { config = undefined; }
-        if (!config) unresolved.add(participant.provider);
-      }
+      // The resolved home root (shared account root or legacy lease home) pins
+      // that whole directory against home-level reclamation.
+      let config: string | undefined;
+      try { config = configRoot(root, header, participant); } catch { config = undefined; }
+      if (config) homes.add(config);
+      if (participant.modelAccountId && !config) unresolved.add(participant.provider);
     }
     for (const attempt of header.attempts) {
       const provider = participants.get(attempt.participantId)?.provider;
@@ -40,14 +41,14 @@ export function nativeSessionReferences(root: string, repository: Pick<Conversat
   }
   const tools = repository.readNativeToolReferences();
   if (!tools.complete) diagnostics.push('native_session_tool_references_unreadable');
-  for (const reference of tools.references) collect(reference, contexts, unresolved);
+  for (const reference of tools.references) collect(reference, contexts, unresolved, homes, root);
   const handoff = handoffNativeReferences(root);
   if (!handoff.complete) diagnostics.push('native_session_handoff_unreadable');
-  for (const reference of handoff.references) collect(reference, contexts, unresolved);
-  return { complete: headers.complete && tools.complete && handoff.complete, contexts, unknownContext, unresolved, diagnostics };
+  for (const reference of handoff.references) collect(reference, contexts, unresolved, homes, root);
+  return { complete: headers.complete && tools.complete && handoff.complete, contexts, unknownContext, unresolved, homes, diagnostics };
 }
 
-function collect(reference: NativeToolContent, contexts: Set<string>, unresolved: Set<string>): void {
+function collect(reference: NativeToolContent, contexts: Set<string>, unresolved: Set<string>, homes: Set<string>, root: string): void {
   const provider = reference.provider;
   if (!providers.has(provider)) return;
   const contextId = reference.contextId;
@@ -63,11 +64,12 @@ function collect(reference: NativeToolContent, contexts: Set<string>, unresolved
     if (!match) return;
     if (match[1] !== provider) { unresolved.add(provider); unresolved.add(match[1]!); conflict = true; return; }
     bindings.add(match[2]!);
+    homes.add(path.join(root, 'connections', provider, 'model-bindings', match[2]!));
   };
   const config = typeof reference.session?.config === 'string' ? reference.session.config : undefined;
   if (config !== undefined) {
     bind(config);
-    if (new RegExp('(?:^|/)connections/' + provider + '$', 'u').test(config.split(path.sep).join('/'))) accountRoot = true;
+    if (new RegExp('(?:^|/)connections/' + provider + '$', 'u').test(config.split(path.sep).join('/'))) { accountRoot = true; homes.add(path.join(root, 'connections', provider)); }
   }
   for (const part of [...(Array.isArray(reference.text) ? reference.text : []), ...(Array.isArray(reference.input) ? reference.input : [])]) {
     if (!part || typeof part !== 'object' || !('source' in part)) continue;

@@ -50,7 +50,7 @@ import { ConversationChildren, type CreateChildInput } from './conversation-chil
 import { ConversationStops } from './conversation-stops.ts';
 import type { ConversationStopInput } from '../contracts.ts';
 
-type PreparedSource = { runtime: AgentRuntime; model: string; leaseIdentity?: string };
+type PreparedSource = { runtime: AgentRuntime; model: string; leaseIdentity?: string; nativeHomeRoot?: string };
 const TITLE_TIMEOUT_MS = 45_000;
 const NEUTRAL_TITLE = '新对话';
 const TITLE_FAILURE_REMINDER = '生成标题错误，请手动修改';
@@ -271,10 +271,20 @@ export class ConversationApplication {
   private async openSource(record:StoredConversation,participant:StoredParticipant,runId?:string):Promise<PreparedSource> {
     const access=this.options.modelAccess;if(!access)fail('agent_model_source_unavailable','模型套餐组件不可用。',409);
     const lease=await access.leases.create({ accountId: participant.modelAccountId!, expectedIdentity: participant.modelAccountIdentity, modelId: participant.modelId!,serviceTier:participant.serviceTier, conversationId: record.view.id, agentId: participant.connectionId, runId: runId ?? 'prepare' });
+    const nativeHomeRoot=this.participantHomeRoot(participant,lease.identity);
     try {const runtime=await this.options.connections.runtime(participant.connectionId, { identity: lease.identity, baseUrl: lease.baseUrl, apiKey: lease.apiKey,
+      ...(nativeHomeRoot?{nativeHomeRoot}:{}),
       ...(nativeLeaseProvider(lease.provider) && participant.connectionId === nativeLeaseProvider(lease.provider) ? { nativeModel: { provider: nativeLeaseProvider(lease.provider)!, id: participant.modelId!, accountIdentity: participant.modelAccountIdentity! } } : {}),
-      models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] });return {runtime,model:lease.model,leaseIdentity:lease.identity};}
+      models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] });return {runtime,model:lease.model,leaseIdentity:lease.identity,nativeHomeRoot};}
     catch(error){access.leases.release(lease.identity);throw error;}
+  }
+  /** New Codex/DSH participants share one home per connection; pre-existing ones keep their original lease home so the binding stays stable. The choice is persisted and never changes. */
+  private participantHomeRoot(participant:StoredParticipant,leaseIdentity:string):string|undefined{
+    if(participant.provider!=='codex'&&participant.provider!=='dsh')return undefined;
+    if(participant.nativeHomeRoot)return participant.nativeHomeRoot;
+    const base=path.join(this.options.root,'connections',participant.connectionId);
+    if(participant.bindingIdentity)return path.join(base,'model-bindings',createHash('sha256').update(leaseIdentity).digest('hex'));
+    return base;
   }
   /** A process keeps the gateway key it started with, so a rejected key is only replaced
    *  by releasing this participant's source. Returns false when release is unconfirmed. */
@@ -1427,6 +1437,7 @@ export class ConversationApplication {
       const participant = record.participants.find(value => value.id === record!.view.run!.participantId)!;
       if (participant.bindingIdentity && participant.bindingIdentity !== runtime.bindingIdentity) fail('agent_binding_changed', '此参与者的原连接身份不匹配，不能恢复到其他配置。', 409);
       participant.bindingIdentity = runtime.bindingIdentity;
+      if (selectedRuntime.nativeHomeRoot) participant.nativeHomeRoot = selectedRuntime.nativeHomeRoot;
       if (this.conversationStopRequested(record,runId) || record.view.run!.status === 'stopping') { record.view.run!.status = 'stopped'; this.save(record); return; }
       let replacedContext: ContextRef | undefined;
       if (participant.contextRef) {
@@ -1470,6 +1481,7 @@ export class ConversationApplication {
           const current=this.currentRun(workspaceId,id,runId);if(!current)return;
           const storedParticipant=current.participants.find(value=>value.id===participant.id)!;
           storedParticipant.contextRef=ref;storedParticipant.bindingIdentity=runtime.bindingIdentity;
+          if(selectedRuntime.nativeHomeRoot)storedParticipant.nativeHomeRoot=selectedRuntime.nativeHomeRoot;
           if(replacedContext&&!current.view.entries.some(entry=>entry.id==='native-session-'+runId))current.view.entries.push({
             id:'native-session-'+runId, sequence:(current.view.entries.at(-1)?.sequence??0)+1, createdAt:this.options.now(),
             kind:'handoff', role:'system', runId, participantId:participant.id, provider:participant.provider, status:'sending',

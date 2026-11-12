@@ -14,6 +14,8 @@ export function configRoot(root: string, record: {view: Pick<StoredConversation[
   try { if (participant.contextRef && parseReference(String(participant.contextRef.data?.native ?? ''),participant.provider,record.view.cwd,participant.bindingIdentity).nativeSessionId !== participant.contextRef.id) return; }
   catch { return; }
   const base = path.join(root,'connections',participant.provider);
+  // Persisted shared/lease home root wins; only legacy participants without it reverse-compute the lease dir.
+  if (participant.nativeHomeRoot) return participant.nativeHomeRoot;
   // Qoder CN execution and login share this account-owned root (agent-service.ts).
   // Gateway bindings remain under connections/, but they do not own transcripts.
   if(participant.provider==='qoder-cn')return path.join(root,'model-access','accounts','native-qoder-cn');

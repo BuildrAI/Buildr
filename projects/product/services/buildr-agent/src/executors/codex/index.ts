@@ -74,7 +74,7 @@ class CodexRuntime implements AgentRuntime {
     options.signal?.throwIfAborted();
     const gateway = checkedGateway(options.gateway);
     const { home, temporary } = nativeHome(options.configRoot);
-    const config = join(options.configRoot, 'codex-home');
+    const config = join(options.nativeAccountConfigRoot ?? options.configRoot, 'codex-home');
     const env = accountEnvironment(options.environment, home, temporary, { CODEX_HOME: config, ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
     await privateDirectories(options.configRoot, config, ...(env.HOME === home ? [home] : []), temporary);
     const executable = await findExecutable(options.executable, ['codex', 'codex.exe'], env);
@@ -85,7 +85,7 @@ class CodexRuntime implements AgentRuntime {
     const overrides: string[] = [];
     if (gateway) {
       const model = gatewayModel(gateway);
-      const catalog = join(config, 'buildr-model-catalog.json');
+      const catalog = join(options.configRoot, 'buildr-model-catalog.json');
       await writeFile(catalog, JSON.stringify(codexGatewayCatalog(gateway)), { mode: 0o600 });
       const values = { web_search: 'disabled', model_provider: 'buildr-models', model: model.id, review_model: model.id, model_catalog_json: catalog, 'model_providers.buildr-models.name': 'Buildr', 'model_providers.buildr-models.base_url': gateway.baseUrl.replace(/\/$/, ''), 'model_providers.buildr-models.env_key': 'BUILDR_MODEL_GATEWAY_KEY', 'model_providers.buildr-models.wire_api': 'responses', 'model_providers.buildr-models.requires_openai_auth': false, 'model_providers.buildr-models.supports_websockets': false, ...(model.contextWindow ? { model_context_window: model.contextWindow } : {}) };
       for (const [key, value] of Object.entries(values)) overrides.push('-c', `${key}=${JSON.stringify(value)}`);
@@ -184,7 +184,10 @@ class CodexRuntime implements AgentRuntime {
     // private store first; Codex, not Buildr, interprets and slices that history.
     // Never link or mutate the original; the imported snapshot is not used for work.
     let importPath: string | undefined;
-    if (source !== this) {
+    // A shared per-connection home already holds the rollout; only a foreign
+    // (legacy lease) home needs the opaque copy before Codex can slice it.
+    const sameHome = !!source.modelConfig && !!this.modelConfig && await realpath(source.modelConfig) === await realpath(this.modelConfig);
+    if (source !== this && !sameHome) {
       if (typeof observed.path !== 'string' || !source.modelConfig || !this.modelConfig) throw new Error('agent_fork_unavailable');
       const filename = await realpath(observed.path), root = await realpath(source.modelConfig);
       const local = relative(root, filename);

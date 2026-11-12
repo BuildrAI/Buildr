@@ -3,7 +3,7 @@ import { regenerableToolCaches, toolCacheReclaimable } from '../../storage/tool-
 import { dshContent } from './content.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import { withExecutionFault } from '../../domain/execution-fault.ts';
-import { readFile, writeFile, rm } from 'node:fs/promises';
+import { readFile, writeFile, rm, realpath } from 'node:fs/promises';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import {pausePreviousDshGoal} from './goals.ts';
 import { readDshPersistedExecution } from './durable-history.ts';
@@ -72,6 +72,7 @@ export class DshRuntime implements AgentRuntime {
   private gateway?: ExecutorGateway;
   private modelBridge?: {key:string;addressFile:string};
   private forkBridge?: {key:string;addressFile:string;patch:string};
+  private homeConfig?: string;
   private readonly diagnostics?:ExecutorOpenOptions['diagnostics'];
   private constructor(bindingIdentity: string, host: Awaited<ReturnType<typeof launchDshHost>>, client: DshClient,diagnostics?:ExecutorOpenOptions['diagnostics']) {
     this.bindingIdentity=bindingIdentity;this.host=host;this.client=client;this.diagnostics=diagnostics;
@@ -90,17 +91,19 @@ export class DshRuntime implements AgentRuntime {
   static async open(options: ExecutorOpenOptions, ownerPatch?: string): Promise<DshRuntime> {
     options.signal?.throwIfAborted();
     const gateway = checkedGateway(options.gateway);
-    const { home, temporary } = nativeHome(options.configRoot); const config = join(options.configRoot, 'dsh-home'); const agents = join(options.configRoot, 'dsh-agents-home');
-    const modelBridge = !gateway&&!ownerPatch?{key:randomUUID(),addressFile:join(config,'model-bridge-'+randomUUID()+'.json')}:undefined;
-    const forkBridge = {key:randomUUID(),addressFile:join(config,'fork-bridge-'+randomUUID()+'.json')};
+    const { home, temporary } = nativeHome(options.configRoot); const config = join(options.nativeAccountConfigRoot ?? options.configRoot, 'dsh-home'); const agents = join(options.nativeAccountConfigRoot ?? options.configRoot, 'dsh-agents-home');
+    // Buildr lease-local runtime files stay out of the shared native home.
+    const lease = options.configRoot;
+    const modelBridge = !gateway&&!ownerPatch?{key:randomUUID(),addressFile:join(lease,'model-bridge-'+randomUUID()+'.json')}:undefined;
+    const forkBridge = {key:randomUUID(),addressFile:join(lease,'fork-bridge-'+randomUUID()+'.json')};
     const env = accountEnvironment(options.environment, home, temporary, { DSH_HOME: config, DSH_AGENTS_HOME: agents, DSH_TOOLS_MODE: 'native', BUILDR_DSH_FORK_KEY:forkBridge.key, ...(modelBridge?{BUILDR_DSH_OWNER_KEY:modelBridge.key}:{}), ...(ownerPatch ? { BUILDR_DSH_OWNER_KEY: options.environment.BUILDR_DSH_OWNER_KEY } : {}), ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
     await privateDirectories(options.configRoot, config, agents, ...(env.HOME === home ? [home] : []), ...(env.TMPDIR === temporary ? [temporary] : []));
     const executable = await findExecutable(options.executable, ['dsh', 'dsh.exe'], env); const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('dsh', version)) throw new Error(`dsh_version_unsupported: requires ${nativeProgramPolicy('dsh').compatibility}`);
     const binding = await consumerBinding('dsh', executable, version, config, options);
-    let patch = gateway ? await writeGatewayPatch(config, gateway) : ownerPatch;
-    if(modelBridge){patch=join(config,'buildr-native-model-owner.json');await writeFile(patch,JSON.stringify([{insert:[{id:'buildr-deepseek-model-owner',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./model-source-plugin.ts':'./model-source-plugin.js',import.meta.url)),config:{addressFile:modelBridge.addressFile}}]}]),{mode:0o600});}
-    const forkPatch = join(config, 'buildr-fork-patch-'+randomUUID()+'.json');
+    let patch = gateway ? await writeGatewayPatch(lease, gateway) : ownerPatch;
+    if(modelBridge){patch=join(lease,'buildr-native-model-owner.json');await writeFile(patch,JSON.stringify([{insert:[{id:'buildr-deepseek-model-owner',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./model-source-plugin.ts':'./model-source-plugin.js',import.meta.url)),config:{addressFile:modelBridge.addressFile}}]}]),{mode:0o600});}
+    const forkPatch = join(lease, 'buildr-fork-patch-'+randomUUID()+'.json');
     const patches = patch ? JSON.parse(await readFile(patch, 'utf8')) : [];
     patches.push(...dshCommandDeadlinePatch());
     patches.push({insert:[{id:'buildr-command-deadline',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./command-deadline-plugin.ts':'./command-deadline-plugin.js',import.meta.url))}]});
@@ -121,6 +124,7 @@ export class DshRuntime implements AgentRuntime {
     runtime.bindingData = binding.data; runtime.metadata.version = version;
     runtime.gateway = gateway; runtime.modelBridge=modelBridge;
     runtime.forkBridge={...forkBridge,patch:forkPatch};
+    runtime.homeConfig=config;
     try {
       host.client.ctx.typert.contexts.registerClient('agent', {
         identity: (candidate: any) => candidate?.[runtime.scopeKey],
@@ -257,7 +261,10 @@ export class DshRuntime implements AgentRuntime {
     if (!forked.sessionId || forked.sessionId === input.contextRef.id) throw new Error('agent_fork_identity_invalid');
     const ref = this.context(forked.sessionId, input.cwd);
     input.onCreated(ref);
-    if (source !== this) {
+    // A shared per-connection home already holds the forked session; only a
+    // foreign (legacy lease) home needs the native export/import transfer.
+    const sameHome = !!source.homeConfig && !!this.homeConfig && await realpath(source.homeConfig) === await realpath(this.homeConfig);
+    if (source !== this && !sameHome) {
       // Use native persistence inside the two private Hosts, not a guessed file
       // layout or a model lease belonging to the original conversation.
       const snapshot = await source.transferFork('export', forked.sessionId);

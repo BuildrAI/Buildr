@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 
 export interface StorageUse { complete: boolean; paths: readonly string[]; diagnostic?: string }
 export interface StorageCandidate {
-  kind: 'cache' | 'runtime' | 'diagnostic' | 'test-artifact' | 'runtime-share' | 'runtime-object' | 'shared-cache' | 'program-package' | 'native-session'; path: string; ownerRoot: string;
+  kind: 'cache' | 'runtime' | 'diagnostic' | 'test-artifact' | 'runtime-share' | 'runtime-object' | 'shared-cache' | 'program-package' | 'native-session' | 'native-home'; path: string; ownerRoot: string;
   sizeBytes: number; identity?: string; eligible: boolean; reason: string;
   rootChanged?: number;
   /** Only regenerable cache data with a fresh execution/recovery proof may
@@ -19,6 +19,8 @@ export interface StorageCandidate {
   diagnostic?: { provider: string; producerPid?: number; contextId?: string; config?:string; database?:string };
   /** Exact native session identity read from the provider-owned layout. */
   nativeSession?: { provider: 'codex' | 'dsh'; contextId: string; binding: string };
+  /** Whole legacy lease home reclaimable only after a complete no-reference proof. */
+  nativeHome?: { provider: 'codex' | 'dsh' };
 }
 export interface StorageVersion { identity: string; sizeBytes: number; modified: number; rootChanged: number }
 export const storageUseRoot=(item:StorageCandidate)=>item.kind==='cache'&&item.useRoot===item.path?item.path:item.ownerRoot;
@@ -108,7 +110,7 @@ export function storageCandidate(root: string, kind: StorageCandidate['kind'], d
 
 /** The caller holds the service storage lock; recheck immediately around the narrow rename. */
 export function removeStorageCandidate(root: string, item: StorageCandidate, observe = observeStorageUse, unreferenced: (directory: string) => boolean = () => true): boolean {
-  const safe = () => item.kind === 'diagnostic' || item.kind === 'native-session' ? safeStorageResource(root, item.path) : safeStoragePath(root, item.path);
+  const safe = () => item.kind === 'diagnostic' || item.kind === 'native-session' || item.kind === 'native-home' ? safeStorageResource(root, item.path) : safeStoragePath(root, item.path);
   if (!item.eligible || !item.identity || !safe() || !unreferenced(item.path) || storageInUse(storageUseRoot(item), observe())) return false;
   if (storageVersion(item.path).identity !== item.identity) return false;
   const retired = path.join(path.dirname(item.path), '.reclaim-' + randomUUID());

@@ -18,7 +18,7 @@ import { ConversationRepository } from '../../src/persistence/conversation-repos
 import { ConversationEntryStore } from '../../src/persistence/conversation-entry-store.ts';
 import { NativeContentStore } from '../../src/persistence/native-content-store.ts';
 import { maintainNativeContent } from '../../src/application/native-content-maintenance.ts';
-import { NativeContentResolver } from '../../src/application/native-content-resolver.ts';
+import { NativeContentResolver, configRoot } from '../../src/application/native-content-resolver.ts';
 import { ConversationAttachments } from '../../src/application/conversation-attachments.ts';
 import { DatabaseSync } from 'node:sqlite';
 import { StorageMaintenance } from '../../src/process/storage-maintenance.ts';
@@ -698,4 +698,28 @@ test('Codex semantic tool lookup reads a long append-only session with bounded l
   const reference={version:3 as const,provider:'codex',contextId:f.contextId,nativeId:f.toolId,entry:{...f.entry,text:'',input:undefined},text:[],session:{config:'connections/codex',cwd:f.cwd,turnId:'native-turn'}};
   assert.ok(fs.statSync(f.file).size>64*1024*1024);
   assert.equal(readCodexTool(f.root,reference)?.text,'long session command\nlong session result');
+});
+
+test('dual-track home resolution: a persisted root wins, legacy leases reverse-compute, and identity drift retains', t => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-dual-track-home-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const cwd = '/workspace', contextId = randomUUID(), binding = 'binding-x';
+  const record = { view: { id: randomUUID(), cwd } };
+  const base = { id: randomUUID(), label: 'codex', deliveredThrough: 0, connectionId: 'codex', provider: 'codex', bindingIdentity: binding,
+    contextRef: { id: contextId, data: { native: opaqueReference('codex', contextId, cwd, binding) } } } as StoredConversation['participants'][number];
+  const account = path.join(root, 'connections', 'codex');
+  // A persisted shared root is authoritative, even with account fields present.
+  assert.equal(configRoot(root, record, { ...base, nativeHomeRoot: account, modelAccountId: 'acct' }), account);
+  // A persisted legacy lease root is equally authoritative (pre-existing participants keep their home).
+  const lease = path.join(account, 'model-bindings', 'f'.repeat(64));
+  assert.equal(configRoot(root, record, { ...base, nativeHomeRoot: lease }), lease);
+  // Without a persisted root, a legacy gateway participant reverse-computes its lease home.
+  const legacy = { ...base, modelAccountId: 'acct', modelAccountIdentity: 'identity', modelId: 'model-x', modelConfiguration: 'legacy-config' };
+  const identity = modelLeaseIdentity('acct', 'identity', 'model-x', record.view.id, 'codex', 'legacy-config');
+  assert.equal(configRoot(root, record, legacy), path.join(account, 'model-bindings', nativeContentHash(identity)));
+  // A lease configuration that no longer matches the persisted digest cannot be resolved (retain, never guess).
+  const drifted = { ...base, modelAccountId: 'acct', modelAccountIdentity: 'identity', modelId: 'model-x', modelConfiguration: 'config-a', modelLeaseConfiguration: 'config-b' };
+  assert.equal(configRoot(root, record, drifted), undefined);
+  // A participant without a model account (native login / shared home) resolves to the account root.
+  assert.equal(configRoot(root, record, { ...base }), account);
 });
