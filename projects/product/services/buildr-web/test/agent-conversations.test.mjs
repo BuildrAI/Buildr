@@ -679,8 +679,9 @@ test('只在每轮最终答复提供分叉，后续执行不遮蔽较早答复',
     {id:'final',runId:'old',role:'assistant',kind:'message'},
     {id:'running',runId:'new',role:'assistant',kind:'message'},
   ]};
-  assert.deepEqual([...forkableReplyIds(view)],['final']);
-  assert.deepEqual([...forkableReplyIds({...view,run:{id:'new',status:'completed'}})],['final','running']);
+  // 连续助手段（note+final）同属一条最终答复，均可分叉；未结束的当前轮不提升。
+  assert.deepEqual([...forkableReplyIds(view)],['note','final']);
+  assert.deepEqual([...forkableReplyIds({...view,run:{id:'new',status:'completed'}})],['note','final','running']);
   assert.equal(forkableReplyIds({...view,forkState:{status:'failed'}}).size,0);
 });
 

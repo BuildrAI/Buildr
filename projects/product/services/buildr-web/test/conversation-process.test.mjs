@@ -310,3 +310,16 @@ test('过程区里被思考拆开的进度说明也合并为连贯一条，不�
  assert.equal(items[0].entries[0].text,'不高，而且是一次性对账。');
  assert.deepEqual(items[0].entries.map(entry=>entry.id),['a','th','t']);
 });
+test('无思考间隔的相邻助手段也合并为一条正式答复',()=>{
+ const entries=[message('u','问','r1','user'),message('a','不高'),message('b','，而且是一次性对账。')];
+ const items=groupConversationStream(entries,{id:'r1',status:'completed',executionState:'ended',tools:[]});
+ assert.deepEqual(items.map(item=>item.type),['entry','entry']);
+ assert.equal(items[1].entry.text,'不高，而且是一次性对账。');
+});
+test('无思考间隔的相邻进度说明在过程区合并，工具仍独立',()=>{
+ const entries=[message('a','不高'),message('b','，而且是一次性对账。'),tool('t')];
+ const items=groupConversationStream(entries,{id:'r1',status:'running'});
+ assert.equal(items.length,1);assert.equal(items[0].type,'process-block');
+ assert.equal(items[0].entries[0].text,'不高，而且是一次性对账。');
+ assert.deepEqual(items[0].entries.map(entry=>entry.id),['a','t']);
+});

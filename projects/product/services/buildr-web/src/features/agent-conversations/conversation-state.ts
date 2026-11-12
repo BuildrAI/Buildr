@@ -240,16 +240,15 @@ export function finalConversationReplyIds(entries:readonly ConversationEntry[],r
     }
     if(last<0)continue;
     if(rows[last].status==='running')continue;
-    // Only fold an earlier segment in when reasoning separates it from the reply
-    // (upstream split one answer); directly adjacent commentary stays process.
-    let sawThinking=false;
+    // Fold the whole trailing run of assistant segments into the reply, whether they
+    // are separated by thinking or directly adjacent (upstream may split one answer
+    // either way). A tool/user/child entry bounds the reply.
     for(let index=last;index>=0;index--){
       const entry=rows[index];
-      if(entry.kind==='thinking'||entry.thinking){sawThinking=true;continue;}
+      if(entry.kind==='thinking'||entry.thinking)continue;
       if(entry.parentToolId)continue;
       if(entry.kind==='message'&&entry.role==='assistant'){
-        if(index===last||sawThinking){finals.add(entry.id);sawThinking=false;continue;}
-        break;
+        finals.add(entry.id);continue;
       }
       break;
     }
@@ -284,16 +283,16 @@ export function groupConversationStream(entries:readonly ConversationEntry[],cur
 /** Upstream gateways may split one streamed message into several assistant items
  * separated only by thinking. Fold such segments back into a single coherent entry
  * (keeping the first identity and the interleaved thinking) so neither the reply nor
- * the process narration shows a detached leading fragment. Directly adjacent
- * commentary (no thinking between) is left untouched. */
+ * the process narration shows a detached leading fragment. Segments may be separated
+ * by thinking or directly adjacent; a tool/user/child entry bounds a message. */
 function mergeSplitAssistantSegments(entries:readonly ConversationEntry[]):ConversationEntry[] {
   const out:ConversationEntry[]=[];
   for(const entry of entries){
     if(entry.kind==='message'&&entry.role==='assistant'&&!entry.parentToolId){
-      let index=out.length-1,sawThinking=false;
-      while(index>=0&&(out[index].kind==='thinking'||out[index].thinking)){sawThinking=true;index--;}
+      let index=out.length-1;
+      while(index>=0&&(out[index].kind==='thinking'||out[index].thinking))index--;
       const base=index>=0?out[index]:undefined;
-      if(sawThinking&&base&&base.kind==='message'&&base.role==='assistant'&&!base.parentToolId){
+      if(base&&base.kind==='message'&&base.role==='assistant'&&!base.parentToolId){
         out[index]={...base,text:(base.text??'')+(entry.text??'')};
         continue;
       }
