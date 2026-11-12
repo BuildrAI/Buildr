@@ -16,11 +16,12 @@ import { instructionParticipation } from '../../domain/participation.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { accountEnvironment, findExecutable, inspectVersion, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, bounded, closeOwnedProcess, releasedNativeControl } from '../native-process.ts';
 import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, type ExecutorGateway } from '../model-gateway.ts';
+import { generateModelTitle } from '../model-title.ts';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { AgentServiceError } from '../../domain/agent-state.ts';
 import { errorDiagnostic } from '../../domain/error-diagnostic.ts';
 import { ExecutorInputRejected } from '../../contracts.ts';
-import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, ExecutorEvent, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, ExecutorSupplementInput, ExecutorInputReceipt, LoginObservation, PermissionMode } from '../../contracts.ts';
+import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, ExecutorEvent, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, ExecutorSupplementInput, ExecutorInputReceipt, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 
 const product = qoderProduct('qoder-cn');
 // Qoder CN defaults AI responses to English when `language` is empty. Buildr's
@@ -488,6 +489,15 @@ class QoderCnRuntime implements AgentRuntime {
   }
 
   async models(): Promise<Array<{ id: string; label: string; images?: boolean; tools?: boolean }>> { return []; }
+  /** A bounded, tool-free request on the existing gateway lease; it never opens a native session. */
+  async generateTitle(input: ExecutorTitleInput): Promise<string | undefined> {
+    if (!this.gateway) throw new Error('agent_title_unavailable');
+    // The lease exposes exactly one route model; the caller's catalog id is not a gateway model.
+    const model = gatewayModel(this.gateway);
+    return generateModelTitle(input, model.id, 'chat-completions', init => fetch(this.gateway!.baseUrl.replace(/\/$/, '') + '/chat/completions', {
+      ...init, headers: { ...Object.fromEntries(new Headers(init.headers)), authorization: 'Bearer ' + this.gateway!.apiKey }, redirect: 'error',
+    }), Math.min(128, model.maxOutputTokens ?? 128));
+  }
   async modelIdentity(): Promise<string> { return `${product.id}:` + (await readQoderIdentity(this.config)).userID; }
   async requestModel(path: string, init: RequestInit = {}, expectedIdentity?: string): Promise<Response> {
     return requestQoderModel(this.config, path, init, fetch, expectedIdentity, product.id);

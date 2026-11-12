@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { chmod, cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -695,4 +696,63 @@ test('Qoder CN forced stop verifies that the owned native group and its child ha
   const observed=await runtime.stop({contextRef,executionRef:{id:'child-stop'}});assert.equal(observed.status,'stopped');
   await eventually(()=>!live());assert.equal(await runtime.canRelease!({contextRef,executionRef:{id:'child-stop'}}),true);await assert.rejects(sending);
  });
+});
+
+test('Qoder CN generates a bounded tool-free title on the gateway lease without opening a native session', {timeout:15000}, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-cn-title-')); const configRoot = join(root, 'config'), workspace = join(root, 'workspace');
+  await mkdir(workspace); const accountIdentity = await signIn(configRoot); const executable = await program(root);
+  const requests: Array<{url?: string; auth?: string; body: any}> = [];
+  const server = createServer(async (request, response) => {
+    let body = ''; for await (const chunk of request) body += chunk;
+    requests.push({ url: request.url, auth: request.headers.authorization, body: JSON.parse(body) });
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: '```json\n{"title":"发布流程检查"}\n```' } }] }));
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', () => resolve()));
+  const port = (server.address() as { port: number }).port;
+  let runtime: AgentRuntime | undefined;
+  try {
+    runtime = await createQoderCnExecutor().open({ connectionId: 'qoder-cn', configRoot, executable, environment: { PATH: process.env.PATH ?? '' }, gateway: { ...gateway(accountIdentity), baseUrl: `http://127.0.0.1:${port}/v1`, apiKey: 'fixture-key' } });
+    const title = await runtime.generateTitle!({ contextRef: { id: 'title-only' }, cwd: workspace, description: '{"messages":[{"role":"user","text":"检查发布流程"}]}', model: 'dfmodel', signal: new AbortController().signal });
+    assert.equal(title, '发布流程检查');
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0]!.url, '/v1/chat/completions');
+    assert.equal(requests[0]!.auth, 'Bearer fixture-key');
+    assert.equal(requests[0]!.body.model, lease, 'the auxiliary request must use the lease route, not the native model id');
+    assert.deepEqual(requests[0]!.body.tools, []);
+    assert.ok(requests[0]!.body.max_tokens <= 128);
+    assert.equal(existsSync(join(configRoot, 'qoder-cn-config', 'fixture-session-new.jsonl')), false, 'title generation must not create a native session');
+  } finally { await runtime?.close(); await new Promise<void>(resolve => server.close(() => resolve())); await rm(root, { recursive: true, force: true }); }
+});
+
+test('Qoder CN reports title generation unavailable without a gateway lease', {timeout:15000}, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-cn-title-none-')); let runtime: AgentRuntime | undefined;
+  try {
+    runtime = await createQoderCnExecutor().open({ connectionId: 'qoder-cn', configRoot: join(root, 'config'), executable: await program(root), environment: { PATH: process.env.PATH ?? '' } });
+    await assert.rejects(runtime.generateTitle!({ contextRef: { id: 'title-only' }, cwd: root, description: '{}', signal: new AbortController().signal }), /agent_title_unavailable/);
+  } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test('Qoder CN rejects title output that calls tools and stops promptly when cancelled', {timeout:15000}, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-cn-title-reject-')); const configRoot = join(root, 'config'), workspace = join(root, 'workspace');
+  await mkdir(workspace); const accountIdentity = await signIn(configRoot); const executable = await program(root);
+  let mode: 'tools' | 'slow' = 'tools';
+  const server = createServer(async (request, response) => {
+    for await (const _ of request) { /* drain */ }
+    response.setHeader('content-type', 'application/json');
+    if (mode === 'slow') { setTimeout(() => response.end(JSON.stringify({ choices: [] })), 5000); return; }
+    response.end(JSON.stringify({ choices: [{ index: 0, finish_reason: 'tool_calls', message: { role: 'assistant', content: null, tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'read_file', arguments: '{}' } }] } }] }));
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', () => resolve()));
+  const port = (server.address() as { port: number }).port;
+  let runtime: AgentRuntime | undefined;
+  try {
+    runtime = await createQoderCnExecutor().open({ connectionId: 'qoder-cn', configRoot, executable, environment: { PATH: process.env.PATH ?? '' }, gateway: { ...gateway(accountIdentity), baseUrl: `http://127.0.0.1:${port}/v1`, apiKey: 'fixture-key' } });
+    await assert.rejects(runtime.generateTitle!({ contextRef: { id: 'title-only' }, cwd: workspace, description: '{}', signal: new AbortController().signal }), /agent_title_tools_forbidden/);
+    mode = 'slow';
+    const controller = new AbortController();
+    const pending = runtime.generateTitle!({ contextRef: { id: 'title-only' }, cwd: workspace, description: '{}', signal: controller.signal });
+    setTimeout(() => controller.abort(), 50);
+    await assert.rejects(pending, error => (error as Error).name === 'AbortError');
+  } finally { await runtime?.close(); await new Promise<void>(resolve => server.close(() => resolve())); await rm(root, { recursive: true, force: true }); }
 });
