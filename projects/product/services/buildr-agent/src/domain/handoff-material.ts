@@ -72,13 +72,18 @@ export function organizeHandoff(entries:ConversationEntry[],outcomes:Record<stri
   const assistant=rows.filter(e=>e.role==='assistant'&&e.kind==='message');const tools=rows.filter(e=>e.kind==='tool');
   const outcome=outcomes[id];
   const unfinished=outcome&&['starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown'].includes(outcome.status);
+  // Thinking is stripped before handoff, so an upstream-split answer appears as several
+  // adjacent assistant messages after the last primary tool; join that trailing segment
+  // rather than promoting only the last fragment. A primary tool bounds the reply.
   const primaryOrUnsettled=tools.filter(tool=>!tool.parentToolId||tool.status!=='completed');
-  const candidate=assistant.at(-1);const final=!unfinished&&candidate&&candidate.sequence>(primaryOrUnsettled.at(-1)?.sequence??0)&&candidate.status!=='running'?candidate:undefined;
+  const lastPrimarySequence=primaryOrUnsettled.at(-1)?.sequence??0;
+  const trailing=assistant.filter(e=>!e.parentToolId&&e.sequence>lastPrimarySequence&&e.status!=='running');
+  const final=!unfinished&&trailing.length?trailing:undefined;
   return {id,title:`第 ${i+1} 轮`,...(outcome?{state:outcome.status,diagnostic:outcome.diagnostic,provider:outcome.provider,model:outcome.model}:{provider:rows.find(e=>e.provider)?.provider}),from:rows[0]!.sequence,through:rows.at(-1)!.sequence,
-   userInputs:rows.filter(e=>e.role==='user').map(e=>e.text),assistantNotes:assistant.filter(e=>e!==final).map(e=>e.text),
+   userInputs:rows.filter(e=>e.role==='user').map(e=>e.text),assistantNotes:assistant.filter(e=>!final?.includes(e)).map(e=>e.text),
    execution:executionOverview(tools),executionCount:tools.length,
    artifacts:tools.filter(e=>e.name==='file-change'&&e.status==='completed').flatMap(e=>locations(e).map(location=>({location,description:`记录 #${e.sequence} 报告文件变更已执行；当前内容与验证状态需核对。` }))),
-   ...(final?{finalReply:final.text,finalReplyId:final.id}:{}),
+   ...(final?{finalReply:final.map(e=>e.text).join(''),finalReplyId:final.at(-1)!.id}:{}),
   };
  });
 }

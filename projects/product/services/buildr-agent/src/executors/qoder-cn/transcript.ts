@@ -55,6 +55,19 @@ export interface QoderCnFinishedTurns {
   byReceiptId: Map<string, {id:string;stopReason:string;text?:string;timestamp?:string;index:number}>;
 }
 
+/** Decide how the projected terminal message should be reconciled against the
+ * authoritative native end_turn text. `overwrite` repairs a truncated prefix;
+ * `append` projects a wholly lost terminal message (or one after an intermediate
+ * message); `noop` keeps an already-complete or longer accumulated answer. */
+export function qoderCnTerminalReconciliation(lastText:string|undefined,nativeText:string,lastSuperseded:boolean):{action:'noop'|'overwrite'|'append'} {
+  if(lastText!==undefined){
+    if(nativeText===lastText)return{action:'noop'};
+    if(nativeText.startsWith(lastText)&&nativeText.length>lastText.length)return{action:'overwrite'};
+    if(!lastSuperseded)return{action:'noop'};
+  }
+  return{action:'append'};
+}
+
 export function qoderCnFinishedTurns(rows: any[], contextId: string, cwd: string): QoderCnFinishedTurns {
   const byUuid = new Map<string, any>();
   for (const row of rows) if (typeof row?.uuid === 'string' && row.uuid) byUuid.set(row.uuid, row);

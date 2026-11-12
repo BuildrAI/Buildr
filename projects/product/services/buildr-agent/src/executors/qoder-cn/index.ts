@@ -9,7 +9,7 @@ import { qoderProduct } from '../qoder/product.ts';
 import { qoderStorage } from '../qoder/storage.ts';
 import { qoderForm } from './forms.ts';
 import { readQoderCnUsage } from './usage.ts';
-import { qoderCnFinishedTurns, qoderCnPromptReceipt, readQoderCnPersistedExecution, readQoderCnTranscriptAppend, readQoderCnSupplementReceipt } from './transcript.ts';
+import { qoderCnFinishedTurns, qoderCnPromptReceipt, qoderCnTerminalReconciliation, readQoderCnPersistedExecution, readQoderCnTranscriptAppend, readQoderCnSupplementReceipt } from './transcript.ts';
 import { nativeContentFiles } from '../native-content.ts';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
@@ -73,6 +73,7 @@ interface TurnState {
   diagnostic?: string;
   textSegment?: { id: string; kind: string; nativeId?: string };
   segment: number;
+  lastMessage?: { id: string; superseded: boolean };
   pending: boolean;
   cancelRequested: boolean;
   settled: Promise<void>;
@@ -194,6 +195,11 @@ class QoderCnRuntime implements AgentRuntime {
       if (turn.textSegment && (turn.textSegment.kind !== kind || turn.textSegment.nativeId !== nativeId)) this.finishText(turn);
       const id = turn.textSegment?.id ?? `${kind === 'agent_thought_chunk' ? 'thinking' : 'message'}:${turn.executionId}:${++turn.segment}`;
       turn.textSegment = { id, kind, nativeId };
+      // Track the terminal message segment so close-out can reconcile it against
+      // the authoritative native text. Thinking or a tool after a message marks it
+      // intermediate; a later message starts a fresh terminal segment.
+      if (kind === 'agent_thought_chunk') { if (turn.lastMessage) turn.lastMessage.superseded = true; }
+      else turn.lastMessage = { id, superseded: false };
       const prior = turn.items.get(id);
       const item: ExecutorItem = {
         ...(prior ?? {}), id, role: 'assistant',
@@ -205,6 +211,7 @@ class QoderCnRuntime implements AgentRuntime {
     }
     if (kind === 'tool_call' || kind === 'tool_call_update') {
       this.finishText(turn);
+      if (turn.lastMessage) turn.lastMessage.superseded = true;
       const toolCall = update.toolCall && typeof update.toolCall === 'object' ? update.toolCall as Record<string, unknown> : update;
       const id = typeof toolCall.toolCallId === 'string' ? toolCall.toolCallId : typeof toolCall.tool_call_id === 'string' ? toolCall.tool_call_id : undefined;
       if (!id) return;
@@ -246,6 +253,50 @@ class QoderCnRuntime implements AgentRuntime {
     turn.textSegment = undefined;
     const prior = id ? turn.items.get(id) : undefined;
     if (prior) this.item(turn, { ...prior, status });
+  }
+
+  /** Qoder CN's ACP terminal frame can outrun the final text chunks (or the whole
+   * terminal message). The append-only transcript still records the authoritative
+   * end_turn text, so at close-out reconcile the projected terminal message against
+   * it once: overwrite a truncated prefix, or project a wholly lost terminal message.
+   * A bounded short wait covers the transcript flush lag; on timeout keep the current
+   * behavior without pretending completeness. Thinking items are never touched. */
+  private async reconcileFinalText(turn: TurnState, normal: boolean): Promise<void> {
+    if (!normal) return;
+    const scan = turn.nativeScan; if (!scan || scan.broken) return;
+    const cwd = this.contexts.get(turn.contextId); if (!cwd) return;
+    const prompt = [...turn.nativePrompts].reverse().find(value => value.receipt) ?? turn.nativePrompts[0];
+    if (!prompt) return;
+    const terminalText = (): string | undefined => {
+      if (prompt.completion?.text) return prompt.completion.text;
+      if (!prompt.receipt) return undefined;
+      const finished = qoderCnFinishedTurns(scan.rows, turn.contextId, cwd);
+      const completion = prompt.receipt.promptId
+        ? finished.byPromptId.get(prompt.receipt.promptId) ?? finished.byReceiptId.get(prompt.receipt.id)
+        : finished.byReceiptId.get(prompt.receipt.id);
+      return completion?.text;
+    };
+    let nativeText = terminalText();
+    if (!nativeText) {
+      const deadline = Date.now() + 2000;
+      while (!nativeText && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        this.scanNativeTurn(turn);
+        nativeText = terminalText();
+      }
+    }
+    if (!nativeText) return;
+    const last = turn.lastMessage ? turn.items.get(turn.lastMessage.id) : undefined;
+    const lastIsMessage = last && last.kind === 'message' && last.role === 'assistant';
+    const decision = qoderCnTerminalReconciliation(lastIsMessage ? last.text : undefined, nativeText, Boolean(turn.lastMessage?.superseded));
+    if (decision.action === 'noop') return;
+    if (decision.action === 'overwrite' && last) { this.item(turn, { ...last, text: nativeText, status: 'completed' }); return; }
+    // The terminal message was never projected (wholly lost) or the last message is
+    // an intermediate one; project the authoritative terminal text as the final reply.
+    this.item(turn, {
+      id: `message:${turn.executionId}:${++turn.segment}`, kind: 'message', role: 'assistant',
+      text: nativeText, executionId: turn.executionId, status: 'completed',
+    });
   }
 
   private observeUsage(turn: TurnState): void {
@@ -626,6 +677,7 @@ class QoderCnRuntime implements AgentRuntime {
       const normal = stopReason === 'end_turn';
       const stopped = turn.cancelRequested || stopReason === 'cancelled' || stopReason === 'refusal' || stopReason === 'max_tokens' || stopReason === 'max_turn_requests';
       this.finishText(turn, normal ? 'completed' : 'unknown');
+      await this.reconcileFinalText(turn, normal);
       turn.status = stopped ? 'stopped' : normal ? 'idle' : 'unknown';
       if(turn.supplementFailed) { if(!turn.stopConfirmed)turn.status='unknown';turn.diagnostic='Qoder CN 追加输入或排队执行结果未确认，不会自动重发。'; }
       if (stopReason === 'max_tokens' || stopReason === 'max_turn_requests') turn.diagnostic = 'Qoder CN 输出或工具轮次达到上限，本轮回复未完整完成。';

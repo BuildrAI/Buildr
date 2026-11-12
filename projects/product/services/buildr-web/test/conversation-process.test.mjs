@@ -286,3 +286,19 @@ test('工具等待原生详情就绪时保持现有订阅，切换后按执行�
  conversation.entries[0].detail={revision:'r'};
  assert.equal(needsConversationObservation(conversation),false);
 });
+test('上游拆分的多段助手消息合并为一条正式答复，思考留在过程',()=>{
+ const thinking=id=>({...message(id,'思考'),kind:'thinking',thinking:true});
+ const entries=[message('u','问','r1','user'),thinking('th1'),message('a','不高'),thinking('th2'),message('b','，而且是一次性对账。')];
+ const items=groupConversationStream(entries,{id:'r1',status:'completed',executionState:'ended',tools:[]});
+ assert.deepEqual(items.map(item=>item.type),['entry','process-block','entry']);
+ assert.equal(items[2].entry.text,'不高，而且是一次性对账。');
+ assert.equal(items[2].entry.id,'b');
+ assert.deepEqual(items[1].entries.map(entry=>entry.id),['th1','th2']);
+});
+test('工具之后的单段答复仍独立成正式答复，进度说明留在过程',()=>{
+ const entries=[message('u','问','r1','user'),message('n','正在核对。'),tool('t'),message('a','收尾完成。')];
+ const items=groupConversationStream(entries,{id:'r1',status:'completed',executionState:'ended',tools:[]});
+ assert.deepEqual(items.map(item=>item.type),['entry','process-block','entry']);
+ assert.deepEqual(items[1].entries.map(entry=>entry.id),['n','t']);
+ assert.equal(items[2].entry.text,'收尾完成。');
+});

@@ -75,3 +75,15 @@ test('bounded navigation provides executable full-source parameters and exact re
  const complete=formatHandoffNavigation(rounds.slice(-1),sourceId);
  assert.match(complete,/目录覆盖全部轮次/);
 });
+test('上游把一条答复拆成多段助手消息时交接合并为最终答复',()=>{
+ const records=[entry(1,{}),entry(2,{role:'assistant',text:'不高',status:'completed'}),entry(3,{kind:'thinking',role:'assistant',text:'思考',status:'completed'}),entry(4,{role:'assistant',text:'，而且是一次性对账。',status:'completed'})];
+ const round=organizeHandoff(records)[0]!;
+ assert.equal(round.finalReply,'不高，而且是一次性对账。');
+ assert.deepEqual(round.assistantNotes,[]);
+});
+test('工具前的进度说明仍是过程笔记，不并入最终答复',()=>{
+ const records=[entry(1,{}),entry(2,{role:'assistant',text:'正在核对。',status:'completed'}),entry(3,{kind:'tool',role:'system',name:'read',text:'ok',status:'completed'}),entry(4,{role:'assistant',text:'收尾完成。',status:'completed'})];
+ const round=organizeHandoff(records)[0]!;
+ assert.equal(round.finalReply,'收尾完成。');
+ assert.deepEqual(round.assistantNotes,['正在核对。']);
+});

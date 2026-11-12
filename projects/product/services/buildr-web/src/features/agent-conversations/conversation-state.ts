@@ -219,14 +219,42 @@ export function conversationRunLive(run?:ConversationRun):boolean {
 /** Legacy records have no message phase: the last assistant message of a settled
  * run is its visible reply, regardless of length. Never promote live narration. */
 export function finalConversationReplyIds(entries:readonly ConversationEntry[],runs:readonly ConversationRun[]=[]):Set<string> {
-  const known=new Map(runs.map(run=>[run.id,run])),finals=new Map<string,string>();let legacy=0;
+  const known=new Map(runs.map(run=>[run.id,run])),groups=new Map<string,ConversationEntry[]>();let legacy=0;
   for(const entry of entries){
     if(!entry.runId&&entry.kind==='message'&&entry.role==='user')legacy++;
-    if(entry.kind!=='message'||entry.role!=='assistant'||entry.parentToolId||entry.thinking)continue;
     const key=entry.runId||'legacy:'+legacy;
-    finals.set(key,entry.status==='running'||!conversationRunSettled(entry.runId?known.get(entry.runId):undefined)?'':entry.id);
+    const rows=groups.get(key)??[];rows.push(entry);groups.set(key,rows);
   }
-  return new Set([...finals.values()].filter(Boolean));
+  const finals=new Set<string>();
+  for(const rows of groups.values()){
+    const runId=rows.find(entry=>entry.runId)?.runId;
+    if(!conversationRunSettled(runId?known.get(runId):undefined))continue;
+    // A settled run's reply is its last primary assistant message, extended backwards
+    // over earlier assistant segments separated only by thinking. Upstream gateways can
+    // split one answer into several message items; a tool arriving after the reply does
+    // not demote it, and a tool between segments bounds the reply.
+    let last=-1;
+    for(let index=rows.length-1;index>=0;index--){
+      const entry=rows[index];
+      if(entry.kind==='message'&&entry.role==='assistant'&&!entry.parentToolId&&!entry.thinking){last=index;break;}
+    }
+    if(last<0)continue;
+    if(rows[last].status==='running')continue;
+    // Only fold an earlier segment in when reasoning separates it from the reply
+    // (upstream split one answer); directly adjacent commentary stays process.
+    let sawThinking=false;
+    for(let index=last;index>=0;index--){
+      const entry=rows[index];
+      if(entry.kind==='thinking'||entry.thinking){sawThinking=true;continue;}
+      if(entry.parentToolId)continue;
+      if(entry.kind==='message'&&entry.role==='assistant'){
+        if(index===last||sawThinking){finals.add(entry.id);sawThinking=false;continue;}
+        break;
+      }
+      break;
+    }
+  }
+  return finals;
 }
 export function groupConversationStream(entries:readonly ConversationEntry[],currentRun?:ConversationRun,retainedRuns:readonly ConversationRun[]=[]):ConversationStreamItem[] {
   const items:ConversationStreamItem[]=[];
@@ -240,10 +268,16 @@ export function groupConversationStream(entries:readonly ConversationEntry[],cur
     const run:ConversationEntry[]=[];
     while(index<entries.length&&isProcess(entries[index])&&entries[index].runId===first.runId)run.push(entries[index++]);
     const active=conversationRunLive(first.runId?known.get(first.runId):undefined);
-    const result=active?undefined:run.find(entry=>finals.has(entry.id));
-    const process=result?run.filter(entry=>entry!==result):run;
-    if(process.length)items.push({type:'process-block',entries:process,active,finishedAt:result?.createdAt});
-    if(result)items.push({type:'entry',entry:result});
+    const finalEntries=active?[]:run.filter(entry=>finals.has(entry.id));
+    const process=run.filter(entry=>!finals.has(entry.id));
+    if(process.length)items.push({type:'process-block',entries:process,active,finishedAt:finalEntries.at(-1)?.createdAt});
+    if(finalEntries.length){
+      // Fold trailing segments back into one coherent reply (they were a single
+      // streamed answer split by interleaved thinking), keeping the last identity.
+      const last=finalEntries[finalEntries.length-1]!;
+      const merged=finalEntries.length===1?last:{...last,text:finalEntries.map(entry=>entry.text).join('')};
+      items.push({type:'entry',entry:merged});
+    }
   }
   return items;
 }
