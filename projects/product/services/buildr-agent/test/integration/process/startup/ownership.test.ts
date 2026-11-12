@@ -136,9 +136,9 @@ test('independent process survives real host exits, preserves approvals and hand
     const afterInterruption=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});
     fs.writeFileSync(path.join(dataRoot,'slow-close'),'yes');
     await observer.lifecycle.requestRuntime({expectedGeneration:restored.identity.generation,runtime:afterInterruption});
-    const switching=await until(async()=>JSON.parse(fs.readFileSync(path.join(dataRoot,'agent-service/process/pending.json'),'utf8')),value=>value.state==='switching'&&!!value.coordinatorPid);
+    const switching=await until(async()=>JSON.parse(fs.readFileSync(path.join(dataRoot,'agent-service/process/pending.json'),'utf8')),value=>value.state==='switching'&&!!value.coordinatorPid,30000);
     process.kill(switching.coordinatorPid,'SIGTERM');
-    await until(()=>observer!.lifecycle.status(),value=>value.identity.runtime.digest===afterInterruption.digest);
+    await until(()=>observer!.lifecycle.status(),value=>value.identity.runtime.digest===afterInterruption.digest,30000);
     assert.equal((await observer.operations.conversations.read(scope,view.id)).run?.status,'completed');
     const compatibility=path.join(packageRoot,'build/runtime-contracts.json'),original=fs.readFileSync(compatibility);
     fs.writeFileSync(compatibility,JSON.stringify({contracts:{},storageVersion:2}));

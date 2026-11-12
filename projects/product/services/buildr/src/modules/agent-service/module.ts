@@ -77,11 +77,12 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
         if (pinnedRuntime.digest !== candidateDigest) throw new AgentServiceError('preview_candidate_digest_mismatch', '候选执行运行单元与预览期望不一致，未接管后台。', 409);
         return { runtime: pinnedRuntime, requireRuntime: true };
       };
+      let connected: Awaited<ReturnType<typeof connectAgentProcess>> | undefined;
       const connect = () => {
         if(closed)throw new AgentServiceError('agent_process_client_closed','本机主程序连接已释放。',503);
         if(!connection){
           const bound=profile();
-          connection=connectAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true,signal:initialization.signal,...runtimeOptions(bound.dataRoot)}).catch(error=>{connection=undefined;throw error;});
+          connection=connectAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true,signal:initialization.signal,...runtimeOptions(bound.dataRoot)}).then(value=>{connected=value;return value;}).catch(error=>{connection=undefined;connected=undefined;throw error;});
         }
         return connection;
       };
@@ -101,7 +102,11 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
         return !!status.pendingRuntime || status.identity.runtime.digest !== connection.runtime.digest;
       };
       const runtimeStatus = async () => {
-        const status = await (await connect()).lifecycle.status();
+        // Health must never trigger a new synchronous connection or pinned
+        // runtime preparation. Report null until the background is connected;
+        // callers retry without blocking the web event loop.
+        if (!connected) return null;
+        const status = await connected.lifecycle.status();
         return {instanceId:status.identity.instanceId,generation:status.identity.generation,pid:status.identity.pid,currentDigest:status.identity.runtime.digest,pendingDigest:status.pendingRuntime?.digest,busy:status.activity.busy,accepting:status.accepting,reasons:status.activity.reasons,diagnostic:status.diagnostic};
       };
       let restarting = false;
@@ -117,6 +122,7 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
           const pending = restartAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true,expectedGeneration:input.expectedGeneration,...runtimeOptions(bound.dataRoot)});
           // Busy/stale refusal leaves the existing host and its active work intact.
           connection = pending.catch(() => previous!);
+          connection.then(value => { connected = value; }, () => { connected = undefined; });
           await pending;
           await previous.disconnect();
           return await runtimeStatus();
@@ -125,7 +131,7 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
       const close = async () => {
         closed=true;
         initialization.abort(new AgentServiceError('agent_process_client_closed','本机主程序连接已释放。',503));
-        const active=connection;connection=undefined;
+        const active=connection;connection=undefined;connected=undefined;
         try { await active?.then(value=>value.disconnect()); }
         catch(error) { if(error!==initialization.signal.reason)throw error; }
       };

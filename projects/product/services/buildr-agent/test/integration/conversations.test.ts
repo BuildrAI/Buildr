@@ -1583,7 +1583,7 @@ test('a native title during the first round updates the unified stream but canno
   const native = fake('local', { hold: true }); const f = fixture([native.executor]);
   try {
     await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', 'first');
-    await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'running' && value.titleState?.status === 'fallback');
+    await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'running');
     const subscription = f.service.conversations.subscribe('workspace-one', view.id); const iterator = subscription.events[Symbol.asyncIterator](); await iterator.next();
     native.sends[0]!.onEvent({ type: 'title', title: '原生延迟生成的业务标题' });
     const event = (await iterator.next()).value!; assert.equal(event.type, 'conversation'); assert.equal(event.payload.conversation.title, '原生延迟生成的业务标题'); subscription.close();

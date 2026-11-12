@@ -1243,7 +1243,7 @@ export class ConversationApplication {
       const connection = this.options.connections.observeModels(participant.connectionId, participant.bindingIdentity, event.models);
       this.options.events.publish({ type: 'connection', workspaceId, conversationId: id, revision: connection.revision, payload: { connection } }); return;
     }
-    if (event.type === 'title') { if (record.view.run?.id === runId && !record.view.forkedFrom && this.acceptTitle(record, event.title)) this.save(record); return; }
+    if (event.type === 'title') { if (record.view.run?.id === runId && !record.view.forkedFrom && this.acceptTitle(record, event.title, false, true)) this.save(record); return; }
     if (run.resourcesReleased && ['accepted','request'].includes(event.type)) return;
     if (['completed', 'stopped', 'failed'].includes(run.status) && (event.type === 'accepted' || event.type === 'request')) return;
     if (event.type === 'accepted') {
@@ -1739,7 +1739,7 @@ export class ConversationApplication {
     const current = this.load(workspaceId, id);
     // A rename during this request still wins; a title explicitly generated
     // for a previously manual name must record its own failure.
-    if (current.view.run?.id !== runId || current.view.titleState?.status === 'manual') return;
+    if (current.view.run?.id !== runId || current.view.titleState?.status === 'manual' || current.view.titleState?.status === 'generated') return;
     const raw = error instanceof Error ? ('code' in error ? String(error.code) : error.message) : '';
     const code = /^agent_(?:title|native|revision)_[a-z_]+$/.test(raw) ? raw : 'agent_title_failed';
     const explanations: Record<string,string> = {
@@ -1762,10 +1762,16 @@ export class ConversationApplication {
     this.diagnostics({ event: 'conversation-title-failed', workspaceId, conversationId: id, runId, phase, code });
     this.save(current);
   }
-  private acceptTitle(record: StoredConversation, raw: string | undefined, explicit = false): boolean {
+  private acceptTitle(record: StoredConversation, raw: string | undefined, explicit = false, native = false): boolean {
     // The in-flight request owns the title while it is marked generating; its
     // run and revision identity are validated by the caller before this point.
-    if (!raw || this.closing || !explicit && record.view.titleState?.status !== 'generating' && !this.titleEligible(record)) return false;
+    const state = record.view.titleState?.status;
+    // Native executors may publish a model-generated title after the separate
+    // automatic request failed or returned unavailable. A real fallback title
+    // is still replaceable; manual names and already-generated titles are not.
+    const nativeReplacement = native && record.titleOrigin === 'fallback' && state !== 'manual' && state !== 'generated';
+    if (!raw || this.closing || !explicit && state !== 'generating' && !nativeReplacement && !this.titleEligible(record)) return false;
+    if (nativeReplacement) this.titleWork.get(record.view.id)?.abort();
     const title = raw.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, '').replace(/\s+/g, ' ').trim();
     if (!title || [...title].length > 64) return false;
     record.view.title = title; record.titleOrigin = 'generated'; record.view.titleState={status:'generated'}; return true;
