@@ -207,7 +207,7 @@
 .ac-pending-send[data-pending-send-state=failed] .ac-pending-send-status,.ac-pending-send-reason{color:var(--soft-warning,#8e7444)}
 .ac-pending-send>small{display:block;margin-top:6px;color:var(--soft-muted,#65766f);font-size:var(--font-size-meta)}
 .ac-active-tools{min-width:0;margin:0 0 8px;padding:0 4px}
-.ac-active-tools-title{color:var(--soft-warning,#8e7444)}
+.ac-active-tools[data-uncertain=true] .ac-active-tools-title{color:var(--soft-warning,#8e7444)}
 .ac-active-tools-list{max-height:min(32vh,240px);overflow:auto;overscroll-behavior:contain;margin-top:6px;padding:8px 10px;border:1px solid var(--soft-line,#e2e9e5);border-radius:6px;background:var(--soft-surface,#f7faf8)}
 .ac-active-tool+ .ac-active-tool{border-top:1px solid var(--soft-line,#e2e9e5);margin-top:8px;padding-top:8px}
 .ac-active-tool header{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;font-size:var(--font-size-secondary)}

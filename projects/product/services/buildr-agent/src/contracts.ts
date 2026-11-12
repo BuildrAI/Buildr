@@ -84,6 +84,8 @@ export interface PresentedFile { path:string; description?:string }
 export interface ExecutorItem {
   /** The native executor owns this tool body. */
   nativeTool?: true;
+  /** The native executor matched this progress to an active background task. */
+  backgroundProgress?: true;
   participation?: ParticipationObservation;
   id: string;
   /** Native parent tool identity; absence does not imply an inferred child relationship. */

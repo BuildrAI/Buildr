@@ -20,8 +20,9 @@ type Props = {
 /** Model output ending is not proof that its commands have exited. */
 export function ConversationActiveToolsNotice({tools,diagnostic,feedback,canContinue,resourcesReleased,stopRequested,observing,stopping,onObserve,onStop}: Props) {
   const active=tools.filter(tool=>tool.status!=='completed');
+  const uncertain = resourcesReleased || active.length === 0 || active.some(tool => tool.status === 'unknown');
   const [expanded,setExpanded]=useState(false),detailsId=useId();
-  return <section className="ac-active-tools" data-run-status="tools-active" aria-label="尚未结束的命令">
+  return <section className="ac-active-tools" data-run-status="tools-active" data-uncertain={Boolean(uncertain)} aria-label="尚未结束的命令">
     <div className="ac-active-tools-summary">
       <span className="ac-active-tools-title" role="status" title={[feedback,diagnostic,resourcesReleased?'后台连接已释放，尚未读到部分命令的结束记录，不会重做原操作。':stopRequested?'停止请求已提交，尚未取得本轮及剩余命令的结束确认；原记录与已有操作结果保留，不会重发。':undefined].filter(Boolean).join('\n')}><ClockCircleOutlined aria-hidden/>{resourcesReleased?`${feedback?'未读到':'尚缺'}${active.length?` ${active.length} 项命令的结束记录`:'结束记录'}`:stopRequested?'停止已请求，等待剩余命令结束':active.length?canContinue?`仍有 ${active.length} 项命令${active.some(tool=>tool.status==='unknown')?'待核对':'运行'}，可继续对话`:`仍有 ${active.length} 项命令未结束`:'命令结束状态待确认'}</span>
       <div className="ac-active-tools-actions">

@@ -15,6 +15,7 @@ import * as embeddedSdk from '@qoder-ai/qoder-agent-sdk';
 let { query, qodercliAuth, ProcessTransport, getSessionInfo, getSessionMessages, InMemorySessionStore, importSessionToStore, forkSession } = embeddedSdk;
 let shutdownDaemon = embeddedSdk.shutdownDaemon;
 import { qoderHistoryItems, qoderHistoryPage, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation, qoderParentTool, qoderTaskResult, qoderTaskNotificationIds } from './protocol.ts';
+import { qoderBackgroundOutput } from './background-output.ts';
 import { qoderModel } from '../model-options.ts';
 import { resolvePermissionMode } from '../../domain/permission-mode.ts';
 import { safeDiagnostic } from '../../domain/agent-state.ts';
@@ -43,6 +44,7 @@ class ConversationInput implements AsyncIterableIterator<any> {
   }
   close(): void { this.ended = true; this.values = []; this.waiter?.({ done: true, value: undefined }); this.waiter = undefined; }
 }
+type NativeTool = { id: string; label: string; status: 'running' | 'completed' | 'unknown'; taskId?: string; taskPending?: boolean };
 interface LiveQuery {
   contextCompaction?: import('../../contracts.ts').ContextCompaction;
   startedAt: number;
@@ -59,7 +61,7 @@ interface LiveQuery {
   reject(error: unknown): void;
   inputAcks: Map<string, { resolve(value: { executionRef: { id: string }; inputItemId: string }): void; reject(error: Error): void }>;
   id: string; contextId: string; permissionMode: PermissionMode; q: any; userText?: string; child?: ChildProcessWithoutNullStreams; accepted: boolean; stopping: boolean; closing?: boolean; nativeExited?: boolean; blockedOnExit?: boolean; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string;
-  tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; taskId?: string; taskPending?: boolean }>;
+  tools: Map<string, NativeTool>;
   pending: Map<string, { request: ExecutorRequest; input: any; child?: boolean; resolve: (value: any) => void }>; texts: Map<string, string>; toolDetails: Map<string, string>; completedMessages: Set<string>; streamMessages: Map<string, string>;
 }
 interface ConversationQuery {
@@ -372,6 +374,38 @@ async function endRound(owner: ConversationQuery, message: any): Promise<void> {
   emit(state, { type: 'observation', observation: observe(state) });
   state.resolve();
 }
+function emitTaskProgress(state: LiveQuery, tool: NativeTool, progress: string): void {
+  const receipt = state.toolDetails.get(tool.id);
+  const text = nativePreview([receipt && nativePreview(receipt, 4000), progress].filter(Boolean).join('\n\n'));
+  emit(state, { type: 'item', item: { id: tool.id, kind: 'tool', nativeTool: true, backgroundProgress: true, role: 'system', text, executionId: state.id, status: 'running' } });
+}
+
+const observedTaskOutputs = new WeakMap<NativeTool, {taskId: string; file: string}>();
+
+async function taskOutput(state: LiveQuery, tool: NativeTool): Promise<string | undefined> {
+  const source = observedTaskOutputs.get(tool);
+  if (!source || source.taskId !== tool.taskId) return;
+  return qoderBackgroundOutput(source.file, state.contextId, source.taskId).catch(() => undefined);
+}
+
+function observeTaskOutput(owner: ConversationQuery, state: LiveQuery, tool: NativeTool, taskId: string, file: string): void {
+  if (observedTaskOutputs.get(tool)?.taskId === taskId) return;
+  observedTaskOutputs.set(tool, {taskId, file});
+  let previous: string | undefined;
+  const active = () => !owner.closing && owner.state === state && !state.stopping && !state.ambiguous && tool.taskPending && tool.taskId === taskId;
+  const poll = async () => {
+    if (!active()) return;
+    const output = await taskOutput(state, tool);
+    if (!active()) return;
+    if (output && output !== previous) {
+      previous = output;
+      emitTaskProgress(state, tool, output);
+    }
+    setTimeout(() => void poll(), 500).unref();
+  };
+  setTimeout(() => void poll(), 500).unref();
+}
+
 async function readConversation(owner: ConversationQuery): Promise<void> {
   try {
     for await (const message of owner.q) {
@@ -402,6 +436,11 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
           (state.continuationIds ??= new Set()).add(message.uuid);
           owner.commandIds.add(message.uuid);
           tool.taskPending = false; tool.status = 'completed';
+          const output = await taskOutput(state, tool);
+          if (output) {
+            const text = nativePreview([state.toolDetails.get(tool.id), output].filter(Boolean).join('\n\n'));
+            emit(state, { type: 'item', item: { id: tool.id, kind: 'tool', nativeTool: true, role: 'system', text, executionId: state.id, status: status === 'failed' ? 'failed' : 'completed' } });
+          }
           emit(state, { type: 'observation', observation: observe(state) }); continue;
         }
         if (owned) {
@@ -422,6 +461,16 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
         emit(state, { type: 'observation', observation: observe(state) }); continue;
       }
       if (message.type === 'system' && message.subtype === 'task_notification' && state.unownedTasks.delete(message.task_id) && !state.unownedTasks.size && state.diagnostic === 'qoder_task_owner_unconfirmed') { state.ambiguous = false; state.diagnostic = undefined; }
+
+      if (message.type === 'system' && message.subtype === 'task_progress') {
+        const tool = [...state.tools.values()].find(candidate => candidate.taskPending &&
+          candidate.taskId === message.task_id && (!message.tool_use_id || candidate.id === message.tool_use_id));
+        const progress = typeof message.summary === 'string' && message.summary.trim() ? message.summary : message.description;
+        if (!owner.closing && !state.stopping && !state.ambiguous && tool && typeof progress === 'string' && progress.trim()) {
+          emitTaskProgress(state, tool, progress);
+        }
+        continue;
+      }
 
       if (state.terminal) {
         if (parent.parentToolId && state.tools.has(parent.parentToolId)) owner.reusable = false;
@@ -474,7 +523,10 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
           const tool = state.tools.get(part.tool_use_id); if (tool) tool.status = 'completed';
           const receipt = Array.isArray(message.tool_use_result) ? message.tool_use_result[index] : message.tool_use_result;
           const taskId = receipt?.kind === 'backgrounded' ? receipt.taskId : receipt?.backgroundTaskId;
-          if (tool && typeof taskId === 'string' && taskId) { tool.taskId = taskId; tool.taskPending = true; }
+          if (tool && typeof taskId === 'string' && taskId) {
+            tool.taskId = taskId; tool.taskPending = true;
+            if (typeof receipt.outputFile === 'string') observeTaskOutput(owner, state, tool, taskId, receipt.outputFile);
+          }
           const text = nativePreview(visibleText(part.content)); state.toolDetails.set(part.tool_use_id, text);
           emit(state, { type: 'item', item: { id: part.tool_use_id, participation: nativeParticipation(undefined,part.content===undefined?undefined:visibleText(part.content),part.is_error?'failed':'unknown'), ...parent, kind: 'tool', nativeTool: true, role: 'system', text, executionId: state.id, status: part.is_error ? 'failed' : 'completed' } });
         }
@@ -486,8 +538,13 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
         const tool = byTask ?? byTool;
         if (tool && (!message.tool_use_id || tool.id === message.tool_use_id) && (!tool.taskPending || !tool.taskId || tool.taskId === message.task_id)) {
           tool.taskPending = false; tool.status = 'completed';
-          const text = qoderTaskResult(state.toolDetails.get(tool.id), message);
-          if (text) { state.toolDetails.set(tool.id, text); emit(state, { type: 'item', item: { id: tool.id, kind: 'tool', nativeTool: true, role: 'system', text, executionId: state.id, status: message.status === 'failed' ? 'failed' : 'completed' } }); }
+          const receipt = state.toolDetails.get(tool.id);
+          const output = await taskOutput(state, tool);
+          const result = qoderTaskResult(receipt, message);
+          if (result || output) {
+            const text = nativePreview([result ?? receipt, output].filter(Boolean).join('\n\n'));
+            emit(state, { type: 'item', item: { id: tool.id, kind: 'tool', nativeTool: true, role: 'system', text, executionId: state.id, status: message.status === 'failed' ? 'failed' : 'completed' } });
+          }
         } else if (tool) { owner.reusable = false; state.ambiguous = true; state.diagnostic = 'qoder_task_owner_unconfirmed'; }
       }
       if (primary && message.type === 'result') await endRound(owner, message);

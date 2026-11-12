@@ -20,6 +20,7 @@ const render=props=>renderToStaticMarkup(React.createElement(ConversationActiveT
 test('正常答完后保留命令明确允许继续，不误报模型中断',()=>{
   const html=render({canContinue:true,tools:[{id:'browser',status:'running',label:'browser helper',canStop:true}]});
   assert.match(html,/仍有 1 项命令运行，可继续对话/);
+  assert.match(html,/data-uncertain="false"/);
   assert.doesNotMatch(html,/中断|等待上一轮|恢复执行/);
 });
 
@@ -34,6 +35,7 @@ test('命令默认只显示紧凑摘要，排除完成项，长原文不铺入�
 
 test('缺少可核对命令时保持未知，不把空列表当成已停止；诊断默认折叠',()=>{
   const html=render({tools:[],diagnostic:'原始退出结果尚未确认'});
+  assert.match(html,/data-uncertain="true"/);
   assert.match(html,/命令结束状态待确认/);assert.doesNotMatch(html,/查看命令|0 项|已停止/);
   assert.match(html,/title="原始退出结果尚未确认/);
   assert.doesNotMatch(html,/<details/);

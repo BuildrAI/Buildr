@@ -1170,10 +1170,15 @@ export class ConversationApplication {
       if (originChanged) entry.parentToolId = item.parentToolId;
       if(originChanged&&record.participationTools?.[entry.id])record.participationTools[entry.id]!.entryRevision=createHash('sha256').update(JSON.stringify(entry)).digest('hex');
       if (entry.role === 'user' || entry.role === 'system' && entry.kind === 'notice') return originChanged;
-      if (entry.kind === 'tool' && ['completed', 'failed'].includes(entry.status ?? '') && (!item.status || item.status === 'running' || entry.status==='completed'&&item.status==='unknown')) return originChanged;
+      const entryRunId = entry.runId;
+      const activeBackgroundTool = live && item.backgroundProgress && entry.status === 'completed' &&
+        conversationRuns(record.view).some(run => run.id === entryRunId && run.tools.some(tool => tool.id === item.id && tool.status === 'running'));
+      if (entry.kind === 'tool' && !activeBackgroundTool && ['completed', 'failed'].includes(entry.status ?? '') &&
+        (!item.status || item.status === 'running' || entry.status === 'completed' && item.status === 'unknown')) return originChanged;
       // v3 native tools persist identity and metadata only. Their body is read
       // on demand; comparing a hydrated body with the stored empty skeleton
       // would make identical history look new after every save/reload.
+      const status = activeBackgroundTool ? entry.status : item.status;
       const nativeBody = !live && item.nativeTool && Boolean(record.nativeTools?.[entry.id]);
       const priorParticipation=record.participationTools?.[entry.id]??entry.participation;
       const participation = entry.kind==='tool' ? mergeParticipation(item.input!==undefined&&item.input!==entry.input&&priorParticipation?{...priorParticipation,matches:[]}:priorParticipation,item.participation,item.name??entry.name,item.input??entry.input) : undefined;
@@ -1183,10 +1188,10 @@ export class ConversationApplication {
       const files=item.presentedFiles===undefined?undefined:normalizePresentedFiles(item.presentedFiles);
       const filesChanged=files!==undefined&&JSON.stringify(entry.presentedFiles)!==JSON.stringify(files);
       const thinkingChanged=Boolean(item.thinking)&&!entry.thinking;
-      if ((nativeBody || entry.text === item.text) && entry.status === item.status && !nameChanged && !inputChanged && !filesChanged && !thinkingChanged && !participationChanged) return originChanged;
+      if ((nativeBody || entry.text === item.text) && entry.status === status && !nameChanged && !inputChanged && !filesChanged && !thinkingChanged && !participationChanged) return originChanged;
       if(participationChanged&&participation)(record.participationTools??={})[entry.id]={...participation,entryRevision:record.participationTools?.[entry.id]?.entryRevision};
       if (!nativeBody) entry.text = item.text;
-      entry.status = item.status; if (item.thinking) entry.thinking = true; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; if(filesChanged)entry.presentedFiles=files; if(item.participation&&participation)(record.participationTools??={})[entry.id]={...participation,entryRevision:item.nativeTool?undefined:createHash('sha256').update(JSON.stringify(entry)).digest('hex')}; return true;
+      entry.status = status; if (item.thinking) entry.thinking = true; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; if(filesChanged)entry.presentedFiles=files; if(item.participation&&participation)(record.participationTools??={})[entry.id]={...participation,entryRevision:item.nativeTool?undefined:createHash('sha256').update(JSON.stringify(entry)).digest('hex')}; return true;
     }
     entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, ...(item.thinking?{thinking:true}:{}), ...(item.kind==='tool'?{participation:mergeParticipation(undefined,item.participation,item.name,item.input)}:{}), name: item.name, input: item.input, ...(item.presentedFiles?{presentedFiles:normalizePresentedFiles(item.presentedFiles)}:{}), parentToolId: item.parentToolId, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
     record.view.entries.push(entry); record.sources[source] = entry.id;

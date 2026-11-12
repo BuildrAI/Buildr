@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { createInterface } from 'node:readline';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -96,7 +97,8 @@ createInterface({ input: process.stdin }).on('line', line => {
     const assistant = record('assistant', randomUUID(), { role: 'assistant', id: randomUUID(), content: [{ type: 'tool_use', id: 'continued-tool', name: 'Bash', input: { run_in_background: true } }] }); persist([assistant]);
     emit({ ...assistant, session_id: sid, parent_tool_use_id: null });
     const receipt = record('user', randomUUID(), { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'continued-tool', content: 'background launched' }] });
-    receipt.toolUseResult = { kind: 'backgrounded', taskId: 'continued-task' }; persist([receipt]);
+    const outputFile = process.getuid && path.join(tmpdir(), `qoder-cli-${process.getuid()}`, 'buildr-test-' + sid, sid, 'tasks', 'continued-task.output');
+    receipt.toolUseResult = { kind: 'backgrounded', taskId: 'continued-task', outputFile }; persist([receipt]);
     emit({ ...receipt, session_id: sid, parent_tool_use_id: null, tool_use_result: text.includes('-array') ? [receipt.toolUseResult] : receipt.toolUseResult });
     emit({ type: 'result', subtype: 'error_during_execution', is_error: true, session_id: sid, uuid: randomUUID(), errors: ['fixture foreground error'] });
     emit({ type: 'command_lifecycle', session_id: sid, command_uuid: m.uuid, state: 'completed', uuid: randomUUID() });
@@ -162,6 +164,12 @@ const trigger = setInterval(() => {
     emit({ ...receipt, session_id: sid, parent_tool_use_id: null });
     const assistant = record('assistant', randomUUID(), { role: 'assistant', id: randomUUID(), content: [{ type: 'text', text: 'continued final answer' }] }); persist([assistant]);
     emit({ ...assistant, session_id: sid, parent_tool_use_id: null }); result();
+  }
+  const progress = path.join(config, 'report-background-progress');
+  if (fs.existsSync(progress)) {
+    fs.unlinkSync(progress);
+    emit({ type: 'system', subtype: 'task_progress', session_id: sid, uuid: randomUUID(), task_id: 'foreign-task', tool_use_id: 'continued-tool', summary: 'foreign background progress' });
+    emit({ type: 'system', subtype: 'task_progress', session_id: sid, uuid: randomUUID(), task_id: 'continued-task', tool_use_id: 'continued-tool', summary: 'integration checks are running' });
   }
   const question = path.join(config, 'inject-child-question'), finished = path.join(config, 'settle-background');
   if (fs.existsSync(question)) { fs.unlinkSync(question); emit({ type: 'control_request', request_id: 'child-question-request', session_id: sid, request: { subtype: 'can_use_tool', agent_id: 'background-task', tool_name: 'AskUserQuestion', tool_use_id: 'child-question', input: { questions: [{ question: 'choose', options: [{ label: 'yes' }] }] } } }); }
