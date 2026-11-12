@@ -19,6 +19,44 @@ const {createAgentConversationsClient}=await import('../src/features/agent-conve
 const session={writeHeaders:()=>({'x-buildr-session':'native-test-session','content-type':'application/json'})};
 const conversation={id:'chat/id',workspaceId:'saved/ws',revision:'r1',cwd:'/saved/root',title:'Work',hidden:false,updatedAt:'2026-10-23',participants:[],entries:[],requests:[{id:'approval/id',runId:'run/1',participantId:'original-codex',generation:'generation-1',kind:'approval',title:'Allow?'}],run:{id:'run/1',participantId:'original-codex',generation:'generation-1',provider:'codex',status:'running'}};
 
+test('账号列表合并并发读取，取消一个观察者不影响另一个', async()=>{
+  let count=0;
+  const started=Promise.withResolvers(),response=Promise.withResolvers();
+  const api=createAgentConversationsClient(async()=>{count++;started.resolve();return response.promise;},session);
+  const controller=new AbortController();
+  const first=api.modelAccounts(controller.signal,true);
+  const second=api.modelAccounts(undefined,true);
+  await started.promise;
+  controller.abort();
+  await assert.rejects(first,{name:'AbortError'});
+  response.resolve({accounts:[],providers:[]});
+  assert.deepEqual(await second,{accounts:[],providers:[]});
+  assert.equal(count,1);
+});
+
+test('对话读取遇到 503 会恢复，取消后不再重试', async()=>{
+  const attempts=[];
+  const api=createAgentConversationsClient(async(path,options)=>{
+    attempts.push(options?.method ?? 'GET');
+    if(attempts.length===1)throw Object.assign(new Error('后台暂不可用'),{status:503});
+    return conversation;
+  },session);
+  assert.equal(await api.read(conversation.workspaceId,conversation.id),conversation);
+  assert.deepEqual(attempts,['GET','GET']);
+
+  const controller=new AbortController(),first=Promise.withResolvers();
+  let count=0;
+  const cancelled=createAgentConversationsClient(async()=>{
+    count++;first.resolve();
+    throw Object.assign(new Error('后台暂不可用'),{status:503});
+  },session);
+  const pending=cancelled.read(conversation.workspaceId,conversation.id,controller.signal);
+  await first.promise;
+  controller.abort();
+  await assert.rejects(pending,{name:'AbortError'});
+  assert.equal(count,1);
+});
+
 test('整轮时间覆盖最后答复与未知过程，不截成首次说明的8秒',()=>{
   const startedAt='2026-11-02T05:11:24.000Z',first='2026-11-02T05:11:32.000Z',finishedAt='2026-11-02T05:17:21.000Z';
   const entries=[

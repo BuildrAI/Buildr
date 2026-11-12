@@ -17,6 +17,18 @@ export type ConversationPage={conversations:ConversationView[];nextCursor?:strin
 const appPath = '/api/v1/app/agent-service';
 const path = (workspaceId: string, conversationId?: string) => `${workspaceId === '@default' ? appPath + '/conversations' : '/api/v1/workspaces/' + encodeURIComponent(workspaceId) + '/agent-conversations'}${conversationId ? '/' + encodeURIComponent(conversationId) : ''}`;
 const post = (body: unknown): RequestInit => ({method: 'POST', body: JSON.stringify(body)});
+function waitForConversationRead(delay: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    signal.throwIfAborted();
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', abort);
+      resolve();
+    }, delay);
+    const abort = () => { clearTimeout(timer); reject(signal.reason); };
+    signal.addEventListener('abort', abort, { once: true });
+  });
+}
+
 export function createAgentConversationsClient(client: ApiClient, session: SessionAdapter, fetcher: typeof fetch = fetch) {
   let activityReadGeneration=0;
   let activitySnapshot:(ConversationPage & {revision:string;pending:PendingConversation[]})|undefined;
@@ -40,7 +52,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     participationSummary(workspaceId:string,input:AgentParticipationSummaryQueryParticipationSummaryQuery={},signal?:AbortSignal) { const query=new URLSearchParams(Object.entries(input).filter(([,v])=>v!==undefined&&v!=='').map(([k,v])=>[k,String(v)])); return read<AgentParticipationSummaryParticipationSummary>(path(workspaceId)+'/participation-summary?'+query,signal); },
     defaultWorkspace(signal?: AbortSignal) { return request<{rootPath: string}>(appPath+'/default-workspace', {signal}); },
     modelAccount(id:string) {return request<ModelAccount>(appPath+'/model-accounts/'+encodeURIComponent(id));},
-    modelAccounts(signal?:AbortSignal,includeDisabled=false) {return request<{accounts:ModelAccount[];providers:ModelProviderView[]}>(appPath+'/model-accounts'+(includeDisabled?'?includeDisabled=true':''),{signal});},
+    modelAccounts(signal?:AbortSignal,includeDisabled=false) {return read<{accounts:ModelAccount[];providers:ModelProviderView[]}>(appPath+'/model-accounts'+(includeDisabled?'?includeDisabled=true':''),signal);},
     modelCatalog(signal?:AbortSignal) {
       // Independently cancellable callers must not cancel a shared read.
       if(signal)return request<{models:CatalogModel[];diagnostic?:string;hasSnapshot?:boolean}>(appPath+'/model-catalog',{signal});
@@ -105,7 +117,19 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       return blob;
     },
     create(input: {workspaceId: string; cwd?: string; taskId?: string; taskLinks?:{workspaceId:string;taskId:string}[]}) { return request<ConversationView>(path(input.workspaceId), post({cwd: input.cwd, taskId: input.taskId,taskLinks:input.taskLinks})); },
-    read(workspaceId: string, id: string, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id), {signal}); },
+    async read(workspaceId: string, id: string, signal?: AbortSignal) {
+      const deadline = AbortSignal.timeout(15_000);
+      const observation = signal ? AbortSignal.any([signal, deadline]) : deadline;
+      for (const delay of [500, 1500, 3000, 0]) {
+        try {
+          return await read<ConversationView>(path(workspaceId, id), observation);
+        } catch (failure) {
+          if (observation.aborted || !delay || (failure as ApiError)?.status !== 503) throw failure;
+          await waitForConversationRead(delay, observation);
+        }
+      }
+      throw new Error('无法读取对话。');
+    },
     historySource(workspaceId:string,id:string,input:{sourceId:string;roundId?:string;cursor?:number;limit?:number},signal?:AbortSignal) {
       const query=new URLSearchParams(Object.entries(input).filter(([,v])=>v!==undefined).map(([k,v])=>[k,String(v)]));
       return read<AgentConversationHistoryPageHistoryPage>(path(workspaceId,id)+'/history-source?'+query,signal);

@@ -22,19 +22,39 @@ export function AgentConnectionSettings(){
  const [refreshingIds,setRefreshingIds]=useState<string[]>([]);
  const checking=useRef(new Set<string>());
  const gate=useRef(false),readGeneration=useRef(0);
+ const accountRead=useRef<AbortController|null>(null);
  const update=(account:ModelAccount)=>setAccounts(previous=>previous.some(value=>value.id===account.id)?previous.map(value=>value.id===account.id?account:value):[...previous,account]);
- const refresh=useCallback(async()=>{const generation=++readGeneration.current;const result=await context.api.modelAccounts(undefined,true);if(generation===readGeneration.current){setAccounts(result.accounts);setProviders(result.providers);}await context.refreshModelCatalog();},[context.api,context.refreshModelCatalog]);
+ const refresh=useCallback(async()=>{
+  const controller=accountRead.current;
+  if(!controller)return;
+  const generation=++readGeneration.current;
+  const result=await context.api.modelAccounts(controller.signal,true).catch(error=>{
+   if(!controller.signal.aborted)throw error;
+  });
+  if(!result)return;
+  if(controller.signal.aborted||generation!==readGeneration.current)return;
+  setAccounts(result.accounts);setProviders(result.providers);
+  void context.refreshModelCatalog().catch(()=>{});
+ },[context.api,context.refreshModelCatalog]);
  const act=async(operation:()=>Promise<void>):Promise<boolean>=>{if(gate.current)return false;gate.current=true;setBusy(true);setError('');try{await operation();await refresh();return true;}catch(failure){setError(failure instanceof Error?failure.message:'操作未完成。');await refresh().catch(()=>{});return false;}finally{gate.current=false;setBusy(false);}};
- useEffect(()=>{if(context.settings)void refresh().catch(failure=>setError(failure instanceof Error?failure.message:'账号读取失败。'));},[context.settings,refresh]);
- useEffect(()=>{if(!context.settings)return;const timer=setInterval(()=>void refresh().catch(()=>{}),3000);return()=>clearInterval(timer);},[context.settings,refresh]);
+ const revisions=context.connections.map(connection=>connection.id+':'+connection.revision).join(',');
+ useEffect(()=>{
+  if(!context.settings)return;
+  const controller=new AbortController();
+  accountRead.current=controller;
+  return()=>{accountRead.current=null;controller.abort();};
+ },[context.settings]);
+ useEffect(()=>{
+  if(!context.settings||mode!=='accounts')return;
+  const controller=accountRead.current;
+  void refresh().catch(failure=>{if(controller&&!controller.signal.aborted)setError(failure instanceof Error?failure.message:'账号读取失败。');});
+ },[context.settings,mode,revisions,refresh]);
  const active=[...context.connections.filter(connection=>waiting(connection.loginAttempt)).map(connection=>'native:'+connection.id+':'+connection.loginAttempt!.id),...accounts.filter(account=>!account.connectionId&&waiting(account.loginAttempt)).map(account=>account.id+':'+account.loginAttempt!.id)].join(',');
  useEffect(()=>{if(!context.settings||!active)return;const controller=new AbortController();let reading=false;const timer=setInterval(()=>{if(reading)return;reading=true;void (async()=>{await Promise.all(active.split(',').map(async key=>{const parts=key.split(':');if(parts[0]==='native')context.updateConnection(await context.api.loginAttempt(parts[1],parts[2],controller.signal));else update(await context.api.modelLoginAttempt(parts[0],parts[1],controller.signal));}));if(!controller.signal.aborted)await refresh();})().catch(failure=>{if(!controller.signal.aborted)setError(failure instanceof Error?failure.message:'登录观察失败。');}).finally(()=>{reading=false;});},750);return()=>{controller.abort();clearInterval(timer);};},[context.settings,active,context.api,context.updateConnection,refresh]);
  const loginPages=useRef<ModelLoginPages|null>(null);
  if(!loginPages.current)loginPages.current=new ModelLoginPages(()=>window.open('about:blank','_blank'));
  useEffect(()=>{loginPages.current!.observe(accounts);},[accounts]);
  useEffect(()=>()=>loginPages.current!.close(),[]);
- const revisions=context.connections.map(connection=>connection.id+':'+connection.revision).join(',');
- useEffect(()=>{if(context.settings)void refresh().catch(()=>{});},[revisions,context.settings,refresh]);
  const onPending=useCallback((id:string,value:boolean)=>setPreparing(previous=>previous[id]===value?previous:{...previous,[id]:value}),[]);
  const nativeLogin=async(connection:ConnectionView)=>{context.updateConnection(await context.api.login(connection));};
  useEffect(()=>{if(!pendingLogin||preparing[pendingLogin]||busy)return;const connection=context.connections.find(connection=>connection.id===pendingLogin);if(connection?.enabled){setPendingLogin(null);setProgram(null);void act(()=>nativeLogin(connection));}},[pendingLogin,preparing,revisions,busy]);

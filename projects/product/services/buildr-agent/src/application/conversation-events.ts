@@ -4,14 +4,16 @@ import type { ProgrammaticPushback } from './programmatic-pushback.ts';
 /** Bounded live observation; durable conversation records remain the recovery authority. */
 export class ConversationEvents {
   private cursor = 0;
-  private readonly observers = new Set<{ accept(event: ServiceEvent): void; close(): void }>();
+  private readonly observers = new Set<{ accept(event: ServiceEvent, sizeOf: () => number): void; close(): void }>();
   readonly generation: string;
   private readonly pushback?: Pick<ProgrammaticPushback, 'publish' | 'close'>;
   constructor(generation: string, pushback?: Pick<ProgrammaticPushback, 'publish' | 'close'>) { this.generation = generation; this.pushback = pushback; }
   publish(event: Omit<ServiceEvent, 'cursor' | 'generation'>): void {
     this.pushback?.publish(event);
     const value = { ...event, cursor: ++this.cursor, generation: this.generation };
-    for (const observer of this.observers) observer.accept(value);
+    let bytes: number | undefined;
+    const sizeOf = () => bytes ??= Buffer.byteLength(JSON.stringify(value));
+    for (const observer of this.observers) observer.accept(value, sizeOf);
   }
   subscribe(snapshot: Omit<ServiceEvent, 'cursor' | 'generation'>, predicate: (event: ServiceEvent) => boolean): { events: AsyncIterable<ServiceEvent>; close(): void } {
     let closed = false; let bytes = 0;
@@ -19,7 +21,7 @@ export class ConversationEvents {
     let notify: (() => void) | undefined;
     const close = () => { closed = true; this.observers.delete(observer); notify?.(); };
     const observer = {
-      accept: (event: ServiceEvent) => {
+      accept: (event: ServiceEvent, sizeOf: () => number) => {
         if (closed || !predicate(event)) return;
         // Each conversation event carries the complete current view, so a newer
         // state supersedes an undelivered one. A slow reader then observes the
@@ -31,7 +33,7 @@ export class ConversationEvents {
             if (pending.type === 'conversation' && pending.conversationId === event.conversationId) { bytes -= queue[index]!.size; queue.splice(index, 1); break; }
           }
         }
-        const size = Buffer.byteLength(JSON.stringify(event));
+        const size = sizeOf();
         // The initial snapshot is the mandatory first frame and cannot be superseded;
         // count only what accumulates behind it.
         const buffered = queue[0]?.event.type === 'snapshot' ? bytes - queue[0].size : bytes;
@@ -41,7 +43,8 @@ export class ConversationEvents {
     };
     // Registration and snapshot have no async gap. Its cursor describes all preceding commits.
     this.observers.add(observer);
-    observer.accept({ ...snapshot, cursor: this.cursor, generation: this.generation });
+    const initial = { ...snapshot, cursor: this.cursor, generation: this.generation };
+    observer.accept(initial, () => Buffer.byteLength(JSON.stringify(initial)));
     const events: AsyncIterable<ServiceEvent> = {
       async *[Symbol.asyncIterator]() {
         try {

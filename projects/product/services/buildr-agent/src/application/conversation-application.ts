@@ -478,7 +478,7 @@ export class ConversationApplication {
   private view(record: ConversationReadState, before?: number, limit?: number, readLegacyFiles = false, compactTools = true): ConversationView {
     setConversationTaskLinks(record.view,conversationTaskLinks(record.view));
     normalizeQuestionCapabilities(record);
-    const entries = record.view.entries.filter(entry => before === undefined || entry.sequence < before).map(entry => compactTools ? ConversationEntryStore.preview(entry) : entry);
+    const entries = before === undefined ? record.view.entries : record.view.entries.filter(entry => entry.sequence < before);
     const count = limit === undefined ? undefined : bounded(limit, PAGE_SIZE, 200);
     let inferredRound = {id:'legacy:0'};
     const entryRounds = count === undefined ? entries.map(entry => {
@@ -494,17 +494,19 @@ export class ConversationApplication {
       return inferredRound;
     }) : [];
     const rounds = new Set<string>();
+    const page: ConversationEntry[] = [];
     let pageBytes = 2, start = entries.length;
     while (start > 0) {
-      const entry = entries[start - 1]!;
       const round = entryRounds[start - 1]?.id ?? '';
       if (count !== undefined ? entries.length - start >= count : !rounds.has(round) && rounds.size >= PAGE_ROUNDS) break;
+      const source = entries[start - 1]!;
+      const entry = compactTools ? ConversationEntryStore.preview(source) : source;
       const size = Buffer.byteLength(JSON.stringify(entry)) + Number(start < entries.length);
       if (start < entries.length && pageBytes + size > MAX_PAGE_BYTES) break;
-      pageBytes += size; start--; rounds.add(round);
+      pageBytes += size; start--; rounds.add(round); page.push(entry);
     }
     // Historical tool output can be large; clone only the page that will be sent.
-    const view = structuredClone({ ...record.view, entries: entries.slice(start), nextEntryCursor: start > 0 ? entries[start]!.sequence : record.view.nextEntryCursor });
+    const view = structuredClone({ ...record.view, entries: page.reverse(), nextEntryCursor: start > 0 ? entries[start]!.sequence : record.view.nextEntryCursor });
     view.entries = view.entries.map(entry => {
       if(entry.input===undefined)delete entry.input;
       const live = this.liveTools.get(entry.id);
@@ -551,16 +553,31 @@ export class ConversationApplication {
     for(const observed of conversationRuns(record.view))if(['completed','failed','stopped','unknown','tools-active'].includes(observed.status)){record.runOutcomes??={};record.runOutcomes[observed.id]={status:observed.status,diagnostic:observed.diagnostic,model:observed.model,provider:observed.provider,contextUsage:observed.contextUsage,generation:observed.generation,updatedAt:observed.updatedAt};}
     const prior = record.view.revision;
     record.view.revision = randomUUID(); record.view.updatedAt = this.options.now();
-    this.options.repository.saveConversation(record, initial ? undefined : prior, {participationUnchanged:textOnly,textEntryId});
+    const persistence = this.options.repository.saveConversation(record, initial ? undefined : prior, {participationUnchanged:textOnly,textEntryId});
+    const persistedAt = performance.now();
     for(const run of conversationRuns(record.view)){
       const attempt=record.attempts.find(a=>a.runId===run.id),participant=record.participants.find(p=>p.id===run.participantId);
       const facts={event:'run-state',conversationId:record.view.id,workspaceId:record.view.workspaceId,runId:run.id,participantId:run.participantId,provider:run.provider,ownerGeneration:run.generation,status:run.status,accepted:run.accepted,stopRequested:run.stopRequested===true,resourcesReleased:run.resourcesReleased===true,executionId:attempt?.executionRef?.id,contextId:participant?.contextRef?.id,childPid:attempt?.executionRef?.data?.resourceGroup,runningTools:run.tools.filter(t=>t.status==='running').length,unknownTools:run.tools.filter(t=>t.status==='unknown').length};
       const signature=JSON.stringify(facts);
       if(this.diagnosticStates.get(run.id)!==signature){this.diagnostics(facts);this.diagnosticStates.delete(run.id);this.diagnosticStates.set(run.id,signature);if(this.diagnosticStates.size>512)this.diagnosticStates.delete(this.diagnosticStates.keys().next().value!);}
     }
-    this.options.events.publish({ type: 'conversation', workspaceId: record.view.workspaceId, conversationId: record.view.id, revision: record.view.revision, payload: { conversation: this.view(record) } });
-    const durationMs = Math.round(performance.now() - started);
-    if (durationMs >= 250) this.diagnostics({event:'conversation-save-slow',conversationId:record.view.id,workspaceId:record.view.workspaceId,durationMs});
+    const snapshotStartedAt = performance.now();
+    const conversation = this.view(record);
+    const snapshotAt = performance.now();
+    this.options.events.publish({ type: 'conversation', workspaceId: record.view.workspaceId, conversationId: record.view.id, revision: record.view.revision, payload: { conversation } });
+    const publishedAt = performance.now();
+    const durationMs = Math.round(publishedAt - started);
+    if (durationMs >= 250) this.diagnostics({
+      event: 'conversation-save-slow',
+      conversationId: record.view.id,
+      workspaceId: record.view.workspaceId,
+      durationMs,
+      persistenceMs: Math.round(persistedAt - started),
+      ...persistence,
+      snapshotMs: Math.round(snapshotAt - snapshotStartedAt),
+      publicationMs: Math.round(publishedAt - snapshotAt),
+      entryCount: record.view.entries.length,
+    });
   }
   read(workspaceId: string, id: string, options: { before?: number; limit?: number; compactTools?: boolean } = {}): ConversationView {
     const started = performance.now();

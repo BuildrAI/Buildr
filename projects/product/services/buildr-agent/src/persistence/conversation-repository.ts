@@ -692,7 +692,8 @@ export class ConversationRepository {
     }catch(error){try{db.exec('ROLLBACK');}catch{}throw error;}finally{db.close();}
   }
   /** textEntryId is only for a caller-proven single-entry mutation of the same saved record. */
-  saveConversation(record: StoredConversation, priorRevision?: string, options: {participationUnchanged?:boolean;textEntryId?:string} = {}): void {
+  saveConversation(record: StoredConversation, priorRevision?: string, options: {participationUnchanged?:boolean;textEntryId?:string} = {}) {
+    const startedAt = performance.now();
     // Preserve optional observations in the original private record, not strict legacy public DTOs.
     for(const entry of record.view.entries)if(entry.participation){const value=normalizeParticipation(entry.participation);delete entry.participation;if(value)(record.participationTools??={})[entry.id]={...value,entryRevision:record.nativeTools?.[entry.id]?undefined:createHash('sha256').update(JSON.stringify(entry)).digest('hex')};}
     const db = this.open(true)!;
@@ -702,7 +703,9 @@ export class ConversationRepository {
       this.savedRecords.delete(record);
       const prepared=textUpdate?undefined:ConversationEntryStore.prepare(db,record,this.nativeTool?entry=>this.nativeTool!(record,entry):undefined);
       for(const row of prepared??[]) if(record.nativeTools?.[row.entry.id] && record.participationTools?.[row.entry.id]) record.participationTools[row.entry.id]!.entryRevision=row.revision;
+      const preparedAt = performance.now();
       db.exec('BEGIN IMMEDIATE');
+      const lockedAt = performance.now();
       const prior = db.prepare('SELECT revision,summary,message_signature,activity_at,user_at,activity_version,seen_version FROM conversations WHERE id=?').get(record.view.id) as {revision:string;summary:string;message_signature:string;activity_at:string;user_at:string;activity_version:number;seen_version:number}|undefined;
       if ((prior?.revision ?? undefined) !== priorRevision) fail('agent_revision_conflict', '对话已变化，请重新读取。', 409);
       const physical=Object.keys(record.attachments).length?db.prepare("SELECT json_extract(body,'$.attachments') AS attachments FROM conversations WHERE id=?").get(record.view.id) as {attachments:string}|undefined:undefined;
@@ -741,8 +744,14 @@ export class ConversationRepository {
             THEN json_extract(body,'$.version')=1 AND json_extract(body,'$.parserVersion')=1 ELSE 0 END`)
           .run(record.view.revision,record.view.revision,record.view.id,priorRevision).changes === 1;
       db.exec('COMMIT');
+      const committedAt = performance.now();
       this.savedRecords.set(record,record.view.revision);
       if (!participationCurrent) this.queueReadRepair(record.view.id);
+      return {
+        prepareMs: Math.round(preparedAt - startedAt),
+        lockWaitMs: Math.round(lockedAt - preparedAt),
+        sqliteWriteMs: Math.round(committedAt - lockedAt),
+      };
     } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; }
     finally { db.close(); }
   }
