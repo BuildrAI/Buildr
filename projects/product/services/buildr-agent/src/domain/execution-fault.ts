@@ -4,7 +4,7 @@ import type { ExecutionFault, ExecutorEvent } from '../contracts.ts';
 export function executionFault(diagnostic?: string): ExecutionFault | undefined {
   if (!diagnostic) return undefined;
   if (/malformed tool call stream|orphan_tool_call_delta|tool_call_stream_(?:invalid|incomplete)/i.test(diagnostic)) return {kind:'protocol'};
-  if (/^(?:codex|dsh|qoder)_(?:execution|event)_observation_lost$/.test(diagnostic)) return {kind:'transport'};
+  if (/^(?:codex|dsh|qoder)_(?:execution|event)_observation_lost$/.test(diagnostic) || diagnostic==='agent_claude_observation_lost') return {kind:'transport'};
   if (/^agent_native_process_(?:closed|failed)$/.test(diagnostic)) return {kind:'process'};
   return undefined;
 }

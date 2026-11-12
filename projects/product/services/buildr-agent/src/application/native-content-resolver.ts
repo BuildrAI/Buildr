@@ -81,7 +81,7 @@ export class NativeContentResolver {
       const run=origin.view.run;
       const context=original.context??(original.reason==='historical_context_unproven'&&run&&run.id===entry.runId&&run.participantId===participant.id?participant.contextRef?.id:undefined);
       const config=configRoot(this.root,origin,participant);if(!context||!config)return;
-      if(record.nativeTools?.[entry.id] && ['codex','dsh','qoder','qoder-cn'].includes(participant.provider)) {
+      if(record.nativeTools?.[entry.id] && ['codex','dsh','qoder','qoder-cn','claude-code'].includes(participant.provider)) {
         const skeleton = {...entry, text: ''};
         delete skeleton.input;
         delete skeleton.detail;

@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {modelSourceViews} from '../src/features/agent-conversations/account-model-view.ts';
+import {modelSourceViews,newModelSourceProvider} from '../src/features/agent-conversations/account-model-view.ts';
 const group={id:'chatgpt',label:'ChatGPT'};
 const subscription={id:'native-codex',identity:'subscription',provider:'native-codex',connectionId:'codex',label:'Codex / ChatGPT',authType:'oauth',group,modeLabel:'订阅',revision:'r1',enabled:true,status:'ready',accountLabel:'订阅账号',models:[{id:'gpt-sub',label:'GPT 订阅',images:false,tools:true,enabled:true}]};
 const api={id:'api',identity:'api',provider:'openai',label:'ChatGPT',authType:'api-key',group,modeLabel:'API Key',revision:'r2',enabled:true,status:'ready',credentialConfigured:true,accountLabel:'ChatGPT API',models:[{id:'gpt-api',label:'GPT API',images:false,tools:true,enabled:true}]};
@@ -11,7 +11,7 @@ test('账号视图保留真实额度窗口和上下文覆盖，基础模型与�
 
 test('未知额度不填零，旧空重复账号不占主要界面且保留 Devin 与独立 ChatGPT API 入口',()=>{
  const account={id:'a',provider:'codex',label:'Codex',revision:'r',enabled:true,status:'not-authenticated',models:[],quota:{available:false,observedAt:'2026-10-25T00:00:00Z'}};
- const views=modelSourceViews([account,{...account,id:'native-qoder',provider:'native-qoder',connectionId:'qoder',status:'ready'}],[{id:'qoder',enabled:true}]);assert.equal(views.length,3);assert.deepEqual(views.map(view=>view.providerLabel),['ChatGPT API','Devin','Qoder']);assert.deepEqual(views.find(view=>view.id==='native-qoder').windows,[]);assert.equal(views.find(view=>view.id==='new-devin').status,'not-authenticated');assert.equal(views.find(view=>view.id==='new-openai').providerLabel,'ChatGPT API');
+ const views=modelSourceViews([account,{...account,id:'native-qoder',provider:'native-qoder',connectionId:'qoder',status:'ready'}],[{id:'qoder',enabled:true}]);assert.equal(views.length,4);assert.deepEqual(views.map(view=>view.providerLabel),['ChatGPT API','Claude API','Devin','Qoder']);assert.deepEqual(views.find(view=>view.id==='native-qoder').windows,[]);assert.equal(views.find(view=>view.id==='new-devin').status,'not-authenticated');assert.equal(views.find(view=>view.id==='new-openai').providerLabel,'ChatGPT API');
 });
 
 test('ChatGPT 订阅与 API Key 作为两个来源可同时启用并分别提供模型',()=>{
@@ -25,7 +25,7 @@ test('ChatGPT 订阅与 API Key 作为两个来源可同时启用并分别提供
 test('账号来源按显示名称稳定排序，同名账号保持确定顺序',()=>{
  const qoder={...subscription,id:'qoder',provider:'qoder',connectionId:undefined,label:'Qoder',accountLabel:'Qoder 账号',modeLabel:undefined,group:undefined};
  const views=modelSourceViews([qoder,api,subscription],[]);
- assert.deepEqual(views.map(view=>view.providerLabel),['ChatGPT','ChatGPT API','Devin','Qoder']);
+ assert.deepEqual(views.map(view=>view.providerLabel),['ChatGPT','ChatGPT API','Claude API','Devin','Qoder']);
  const sameName=modelSourceViews([{...api,id:'api-b',accountLabel:'B 账号'},{...api,id:'api-a',accountLabel:'A 账号'}],[]);
  assert.deepEqual(sameName.filter(view=>view.provider==='openai').map(view=>view.id),['api-a','api-b']);
 });
@@ -82,8 +82,20 @@ test('disabled sources stay hidden without synthesizing a logged-out replacement
  const account={id:'native-dsh',provider:'native-dsh',connectionId:'dsh',label:'DeepSeek',status:'ready',enabled:true,sourceEnabled:false,models:[]};
  assert.equal(modelSourceViews([account],[]).some(source=>source.id===account.id),false);
  assert.equal(modelSourceViews([account],[],true).find(source=>source.id===account.id).sourceEnabled,false);
- for(const provider of ['devin','openai']){
+ for(const provider of ['devin','openai','anthropic']){
   const off={...account,id:'account-'+provider,provider,connectionId:undefined};
   assert.equal(modelSourceViews([off],[]).some(source=>source.provider===provider),false);
  }
+});
+
+
+test('Claude API preserves its own failed-key account and never selects OpenAI for its placeholder',()=>{
+ const row={...api,id:'anthropic-account',provider:'anthropic',label:'Claude API',status:'not-authenticated',models:[]};
+ const views=modelSourceViews([row],[]);
+ const claude=views.filter(view=>view.provider==='anthropic');
+ assert.equal(claude[0].providerLabel,'Claude API');
+ assert.equal(claude.length,1);assert.equal(claude[0].id,'anthropic-account');
+ assert.match(claude[0].quotaNote,/Anthropic/);assert.ok(!claude[0].quotaNote.includes('OpenAI'));
+ assert.equal(newModelSourceProvider('new-anthropic'),'anthropic');
+ assert.equal(newModelSourceProvider('stale-unknown'),undefined);
 });

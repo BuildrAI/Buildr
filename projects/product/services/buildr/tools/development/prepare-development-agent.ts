@@ -67,6 +67,11 @@ function materializeDevelopmentAgent({ serviceRoot, agentRoot, build }: { servic
       const names = new Set([...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.optionalDependencies ?? {}), ...Object.keys(pkg.peerDependencies ?? {})]);
       const require = createRequire(path.join(source, 'package.json'));
       for (const name of names) {
+        // Claude's SDK is always given an explicitly managed CLI. Its optional
+        // fallback binaries are not a second program installation in every
+        // retained runtime unit; the SDK JS and its peers still ship normally.
+        if (pkg.name === '@anthropic-ai/claude-agent-sdk' && pkg.optionalDependencies?.[name] &&
+          /^@anthropic-ai\/claude-agent-sdk-(?:darwin|linux|win32)-/.test(name)) continue;
         let dependency: string;
         try {
           const lookup = require.resolve.paths(name) ?? [];

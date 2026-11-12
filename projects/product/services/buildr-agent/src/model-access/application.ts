@@ -430,6 +430,20 @@ export class ModelAccessApplication {
     return [...this.leasesByIdentity.values()].find(lease=>lease.input.conversationId===conversationId&&lease.streamFailure?.runId===runId)?.streamFailure?.message;
   }
   release(identity: string) { const lease = this.leasesByIdentity.get(identity); if (!lease) return; this.leasesByIdentity.delete(identity); this.leasesByToken.delete(lease.tokenHash); for (const request of lease.requests.keys()) request.abort(); }
+  /** Explicit native-fork bridge, never a gateway route or a credential export. */
+  async rebindReasoning(from: string, to: string, value: string): Promise<string> {
+    await this.ready;
+    const key = await this.encryptionKey();
+    const source = this.leasesByIdentity.get(from), target = this.leasesByIdentity.get(to);
+    if (!source || !target) throw new ModelAccessError('model_binding_missing', '分叉模型绑定已失效。');
+    const a = source.input, b = target.input, account = this.current(a.accountId);
+    if (a.accountId !== b.accountId || a.expectedIdentity !== b.expectedIdentity || account.identity !== a.expectedIdentity ||
+        !account.enabled || account.status !== 'ready' || account.sourceEnabled === false ||
+        a.modelId !== b.modelId || a.agentId !== b.agentId ||
+        modelConfiguration(source.view.offering,a.serviceTier) !== modelConfiguration(target.view.offering,b.serviceTier))
+      throw new ModelAccessError('model_reasoning_binding_mismatch', '分叉只能恢复相同账号、模型和执行器的推理信息。', 400);
+    return this.opaque(key, to).encode(this.opaque(key, from).decode(value));
+  }
   updateRun(identity:string,runId:string) { const lease=this.leasesByIdentity.get(identity); if(!lease||!runId) throw new ModelAccessError('model_binding_missing','本次模型绑定已失效。'); if(lease.input.runId!==runId){delete lease.cancelledRun;delete lease.streamFailure;}lease.input.runId=runId; }
   private async body(req: IncomingMessage): Promise<ProtocolJson> { const chunks: Buffer[] = []; let size = 0; for await (const chunk of req) { const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); size += value.length; if (size > 64 * 1024 * 1024) throw new ModelAccessError('model_request_too_large','模型输入超过本机限制。',413); chunks.push(value); } try { const value: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8')); if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('object'); return value as ProtocolJson; } catch { throw new ModelAccessError('model_request_invalid','模型请求不是有效 JSON 对象。',400); } }
   private json(res: ServerResponse, status: number, value: unknown) { res.writeHead(status, {'Content-Type':'application/json','Cache-Control':'no-store'}); res.end(JSON.stringify(value)); }
@@ -473,8 +487,21 @@ export class ModelAccessApplication {
       if (!response.body) throw new ModelAccessError('model_response_empty','模型服务返回空响应。',502);
       res.writeHead(response.status,{'Content-Type':response.headers.get('content-type') || 'application/json','Cache-Control':'no-store'});
       const reader = response.body.getReader();
-      try { while (!controller.signal.aborted) { const chunk = await reader.read(); if (chunk.done) break; if (!res.write(chunk.value)) await once(res,'drain',{signal:controller.signal}); } }
-      finally { if (controller.signal.aborted) await reader.cancel().catch(()=>{}); if (!res.destroyed && !res.writableEnded) res.end(); reader.releaseLock(); }
+      // A translated upstream may have no SSE pings during a long reasoning
+      // pause. Keep the Claude consumer alive without buffering model content.
+      let frameTail='',betweenFrames=true;
+      const heartbeat=protocol==='anthropic-messages'&&body.stream===true&&binding.agentId==='claude-code'&&response.headers.get('content-type')?.includes('text/event-stream')
+        ?setInterval(()=>{if(betweenFrames&&!controller.signal.aborted&&!res.destroyed&&!res.writableEnded&&!res.writableNeedDrain)res.write('event: ping\ndata: {"type":"ping"}\n\n');},10000):undefined;
+      heartbeat?.unref();
+      try { while (!controller.signal.aborted) {
+        const chunk = await reader.read(); if (chunk.done) break;
+        // HTTP chunks can end inside a JSON token. A ping is safe only after
+        // an SSE frame delimiter; keep only the bounded byte suffix.
+        frameTail=(frameTail+Buffer.from(chunk.value.subarray(-4)).toString('latin1')).slice(-4);
+        betweenFrames=frameTail.endsWith('\n\n')||frameTail.endsWith('\r\n\r\n');
+        if (!res.write(chunk.value)) await once(res,'drain',{signal:controller.signal});
+      } }
+      finally { clearInterval(heartbeat);if (controller.signal.aborted) await reader.cancel().catch(()=>{}); if (!res.destroyed && !res.writableEnded) res.end(); reader.releaseLock(); }
     } catch (error) {
       if (!res.headersSent && !res.destroyed) { this.json(res,error instanceof ModelAccessError ? error.status : 502,{error:modelFailure(error)}); }
       else if (!res.destroyed) res.destroy();
@@ -507,7 +534,7 @@ export function createModelAccess(options: ModelAccessOptions) {
     activity: () => application.activity(),
     freezeMetadata: (value = true) => application.freezeMetadata(value),
     generate: (input: ModelLeaseInput & {prompt:string;signal:AbortSignal;reasoningEffort?:string}) => application.generate(input),
-    leases: { stopRun:(conversationId:string,runId:string)=>application.stopRun(conversationId,runId), streamFailure:(conversationId:string,runId:string)=>application.streamFailure(conversationId,runId), hasActiveRequests:(identity:string)=>application.hasActiveRequests(identity), create: (input:ModelLeaseInput) => application.createLease(input), release: (identity:string) => application.release(identity), updateRun:(identity:string,runId:string)=>application.updateRun(identity,runId) },
+    leases: { rebindReasoning:(from:string,to:string,value:string)=>application.rebindReasoning(from,to,value), stopRun:(conversationId:string,runId:string)=>application.stopRun(conversationId,runId), streamFailure:(conversationId:string,runId:string)=>application.streamFailure(conversationId,runId), hasActiveRequests:(identity:string)=>application.hasActiveRequests(identity), create: (input:ModelLeaseInput) => application.createLease(input), release: (identity:string) => application.release(identity), updateRun:(identity:string,runId:string)=>application.updateRun(identity,runId) },
     close: () => application.close(),
   };
 }

@@ -26,6 +26,13 @@ export function safeDiagnostic(error: unknown): string {
   if (error instanceof NativeRequestError) return error.diagnostic;
   const code = error instanceof Error ? error.message.split(':')[0] : '';
   const messages: Record<string, string> = {
+    agent_model_source_authentication_failed:'所选模型来源认证失败，请在模型页核对账号或 API Key；本次请求不会自动重试或切换模型。',
+    agent_claude_version_unsupported:'Claude 执行程序版本不在兼容范围（>=2.1.322 <3），请检查独立程序。',
+    agent_claude_execution_failed:'Claude 执行未完成，请查看本轮模型与工具诊断；不会自动更换模型。',
+    agent_claude_observation_lost:'Claude 执行观察已中断，正在核对原执行；不会重发原指令。',
+    agent_claude_stop_outcome_unknown:'Claude 控制连接已关闭，部分输入或独立操作结果仍待核对；不会重发。',
+    agent_claude_request_failed:'Claude 原生接口未能完成本次请求，请核对程序版本与模型兼容性。',
+    agent_claude_input_unknown:'尚未确认 Claude 对本次输入的受理状态，已保留原输入；不会自动重发。',
     qoder_sdk_pair_mismatch: 'Qoder 程序与配套接入库版本不一致，已保留原接入。',
     qoder_sdk_pair_required: '当前 Qoder 程序缺少配套接入库，已保留原接入。',
     qoder_upgrade_conversation_failed: 'Qoder 新版未通过对话验证，已保留旧版接入。',

@@ -11,7 +11,7 @@ export type AccountQuotaLine = {
   credits?: string;
   resetsAt?: string;
 };
-const sourceLabels: Record<string, string> = { codex: 'ChatGPT', openai: 'ChatGPT API', dsh: 'DeepSeek', deepseek: 'DeepSeek', qoder: 'Qoder', 'qoder-cn': 'Qoder CN', devin: 'Devin' };
+const sourceLabels: Record<string, string> = { codex: 'ChatGPT', openai: 'ChatGPT API', anthropic: 'Claude API', dsh: 'DeepSeek', deepseek: 'DeepSeek', qoder: 'Qoder', 'qoder-cn': 'Qoder CN', devin: 'Devin' };
 const sourceNameOrder = new Intl.Collator('zh-Hans-CN', { sensitivity: 'base', numeric: true });
 function formatBalance(value: string): string {
   const amount = Number(value);
@@ -26,7 +26,7 @@ function formatCredits(value: number): string {
 }
 /** Display name shared with the model settings source list; never derive it from the account plan. */
 export function accountSourceName(account: ModelAccount): string {
-  if (account.authType === 'api-key') return 'ChatGPT API';
+  if (account.authType === 'api-key') return account.provider === 'anthropic' ? 'Claude API' : 'ChatGPT API';
   const provider = account.connectionId || (account.provider.startsWith('native-') ? account.provider.slice('native-'.length) : account.provider);
   return account.group?.label || sourceLabels[provider] || account.label;
 }

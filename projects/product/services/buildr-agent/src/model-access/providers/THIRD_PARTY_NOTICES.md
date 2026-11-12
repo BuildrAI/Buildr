@@ -1,5 +1,13 @@
 # 第三方来源
 
+## Claude Agent SDK
+
+Claude 执行器直接依赖 `@anthropic-ai/claude-agent-sdk`，不复制其执行循环。该依赖按其软件包自带的 `README.md`、`LICENSE.md` 及 Anthropic Commercial Terms 使用；运行包保留这些文件，不将 SDK 改称 MIT 软件。实际执行程序单独由官方平台包准备；SDK 的可选后备二进制不重复装入每个执行运行单元。SDK 接入不包含未经许可的 claude.ai 登录或订阅权益。
+
+https://github.com/anthropics/claude-agent-sdk-typescript
+
+## Devin 协议参考
+
 `devin-codec.ts` 的 Devin protobuf 字段与 Connect 帧映射参考并改编自 `dsh-plugin-oauth-subs`，固定提交 `7c6d13b4f1b7801c36e6ce8d154ce7b90ae923b4`：
 
 https://github.com/lingdong0128-sys/dsh-plugin-oauth-subs/blob/7c6d13b4f1b7801c36e6ce8d154ce7b90ae923b4/lib/oauth/devin/proto.js

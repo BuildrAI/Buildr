@@ -151,6 +151,8 @@ export interface ExecutorForkInput {
   itemId: string;
   /** Exact admitted inputs, including supplements, belonging to the selected round. */
   inputItemIds?: readonly string[];
+  /** Private fork bridge: reseal model-owned reasoning without exposing plaintext. */
+  rebindReasoning?(value: string): Promise<string>;
   onCreated(contextRef: ContextRef): void;
 }
 export interface ConversationForkInput { expectedRevision: string; entryId: string; clientRequestId: string }

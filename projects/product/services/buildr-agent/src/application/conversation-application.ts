@@ -197,6 +197,11 @@ export class ConversationApplication {
       repository: options.repository, media: this.media, now: options.now,
       load: (scope, id) => this.load(scope, id), candidate: (scope, input) => this.candidate(scope, input),
       runtime: async (record, participant) => (await this.sourceRuntime(record, participant)).runtime,
+      rebindReasoning: async (source, target, value) => {
+        const from = source.bindingData?.gatewayIdentity, to = target.bindingData?.gatewayIdentity;
+        if (!options.modelAccess || typeof from !== 'string' || typeof to !== 'string') throw new Error('model_binding_missing');
+        return await options.modelAccess.leases.rebindReasoning(from, to, value);
+      },
       save: (record, initial) => this.save(record, initial), view: record => this.view(record),
     });
     this.children = new ConversationChildren({repository:options.repository,media:this.media,now:options.now,
@@ -1090,7 +1095,7 @@ export class ConversationApplication {
   }
   private applyItem(record: StoredConversation, participant: StoredParticipant, item: ExecutorItem, runId?: string, live = false): boolean {
     const changed = this.mergeItem(record,participant,item,runId,live);
-    if(changed && ['codex','dsh','qoder','qoder-cn'].includes(participant.provider) && item.kind === 'tool' && item.nativeTool) {
+    if(changed && ['codex','dsh','qoder','qoder-cn','claude-code'].includes(participant.provider) && item.kind === 'tool' && item.nativeTool) {
       const id = record.sources[`${participant.id}:tool:${item.id}`];
       const owned=(record.nativeTools ??= {});
       owned[id] = item.parentToolId ? {parentToolId:item.parentToolId} : owned[id] ?? true;

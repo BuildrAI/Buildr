@@ -56,7 +56,7 @@ function ParticipationDetails({workspaceId,conversationId,runId}:Props) {
         <Typography.Text type="secondary">工作空间：{workspaceId}。字节数是可见内容体积，不是 Token 或费用；提供、请求与实际消费不是同一事实。</Typography.Text>
         {!single&&<Select aria-label="参与汇总时间范围" value={days} options={[{value:7,label:'最近 7 天'},{value:30,label:'最近 30 天'},{value:90,label:'最近 90 天'}]} onChange={value=>{setDays(value);setCut(new Date().toISOString());setCursor(undefined);}}/>}
         {!single&&<Space wrap>
-          <Select aria-label="参与执行器" allowClear placeholder="执行器" style={{width:130}} options={['codex','dsh','qoder'].map(value=>({value,label:value}))} onChange={value=>filter('provider',value??'')}/>
+          <Select aria-label="参与执行器" allowClear placeholder="执行器" style={{width:130}} options={['codex','dsh','qoder','claude-code'].map(value=>({value,label:value}))} onChange={value=>filter('provider',value??'')}/>
           <Select aria-label="参与对象种类" allowClear placeholder="种类" style={{width:130}} options={['instruction','rule','skill-catalog','skill','capability','cli','script'].map(value=>({value,label:value}))} onChange={value=>filter('kind',value??'')}/>
           <Input.Search aria-label="参与模型" placeholder="精确模型" onSearch={value=>filter('model',value)}/>
           <Input.Search aria-label="参与对象身份" placeholder="精确对象身份" onSearch={value=>filter('identity',value)}/>

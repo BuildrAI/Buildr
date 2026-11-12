@@ -21,5 +21,5 @@ export function conversationModelLabel(model:string|undefined,connections:Connec
 /** Brand comes from the bound catalog provider, never from account display text. */
 export function conversationModelSourceLabel(accountId:string,catalog:CatalogModel[]):string {
   const provider=catalog.find(item=>item.accountId===accountId)?.provider.replace(/^native-/, '');
-  return provider?({codex:'ChatGPT',openai:'ChatGPT API',devin:'Devin',dsh:'DeepSeek',qoder:'Qoder','qoder-cn':'Qoder CN',deepseek:'DeepSeek'} as Record<string,string>)[provider]??provider:'账号未记录';
+  return provider?({codex:'ChatGPT',openai:'ChatGPT API',anthropic:'Claude API',devin:'Devin',dsh:'DeepSeek',qoder:'Qoder','qoder-cn':'Qoder CN',deepseek:'DeepSeek'} as Record<string,string>)[provider]??provider:'账号未记录';
 }

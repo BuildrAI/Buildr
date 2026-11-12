@@ -15,6 +15,7 @@ import {createDevinModelProvider} from '../model-access/providers/devin.ts';
 import {createCodexModelProvider} from '../model-access/providers/codex.ts';
 import {createDeepSeekModelProvider} from '../model-access/providers/deepseek.ts';
 import {createOpenAIApiModelProvider} from '../model-access/providers/openai-api.ts';
+import {createAnthropicApiModelProvider} from '../model-access/providers/anthropic-api.ts';
 import {createDeepSeekAccountOwner} from '../executors/dsh/model-source-owner.ts';
 import path from 'node:path';
 import process from 'node:process';
@@ -58,7 +59,7 @@ export function createAgentService(options: AgentServiceOptions) {
   const nativeDsh:ModelProvider={...dshProvider,id:'native-dsh',label:'DeepSeek',connectionId:'dsh',async open(input){const runtime=await dshProvider.open(input);return{protocol:runtime.protocol,inspect:async()=>{const value=await runtime.inspect();return{...value,...(value.status==='ready'?{identity:await dsh.identity()}: {})};},beginLogin:u=>runtime.beginLogin(u),cancelLogin:()=>runtime.cancelLogin(),infer:i=>runtime.infer(i),close:()=>runtime.close()};}};
   const qoderProvider=(product:QoderProductId)=>createQoderModelProvider(owner(product),product);
   const linkedProviders=[createCodexModelProvider({owner:owner('codex')}),nativeDsh,qoderProvider('qoder'),createQoderCnModelProvider(programManager)].map(provider=>({...provider,async open(input:Parameters<ModelProvider['open']>[0]){const runtime=await provider.open(input);return{protocol:runtime.protocol,inspect:()=>runtime.inspect(),...(runtime.identity?{identity:()=>runtime.identity!()}:{}),beginLogin:(u:Parameters<typeof runtime.beginLogin>[0])=>runtime.beginLogin(u),cancelLogin:()=>runtime.cancelLogin(),close:()=>runtime.close(),infer:async(i:Parameters<typeof runtime.infer>[0])=>{const current=await runtime.identity?.();const identity=createHash('sha256').update(current??(provider.connectionId?await owner(provider.connectionId).identity():'')).digest('hex');if(!current&&!provider.connectionId)throw new ModelAccessError('model_identity_unavailable','该模型来源尚未提供账号身份。');if(models.accounts.read(provider.id).identity!==identity)throw new ModelAccessError('model_identity_conflict','账号身份已变化，请刷新模型。');return runtime.infer(i);}};}}));
-  const models = createModelAccess({root: path.join(root, 'model-access'), providers: options.modelProviders ?? [...linkedProviders,createCodexModelProvider(),createOpenAIApiModelProvider(), createDevinModelProvider(), createDeepSeekModelProvider({ownerFactory: async input => {
+  const models = createModelAccess({root: path.join(root, 'model-access'), providers: options.modelProviders ?? [...linkedProviders,createCodexModelProvider(),createOpenAIApiModelProvider(),createAnthropicApiModelProvider(), createDevinModelProvider(), createDeepSeekModelProvider({ownerFactory: async input => {
     const bound = connections.get('dsh').executable;
     const catalog = await programManager.discover({provider:'dsh',...(bound?{executable:bound,boundExecutable:bound}:{}),signal:new AbortController().signal});
     const candidates = catalog.candidates.filter(candidate=>candidate.compatible);
