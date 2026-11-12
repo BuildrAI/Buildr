@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { executionScopeKey } from '../../../../src/index.ts';
-import { claim } from '../../../../src/process/ownership.ts';
+import { claim, readProcessRecord } from '../../../../src/process/ownership.ts';
+import { request } from '../../../../src/process/transport.ts';
 import type { AgentProcessConnection } from '../../../../src/index.ts';
 import { isLive, until, actor, prepareAgentRuntime, connectAgentProcess, copyPackage, prepared, cleanupProcessFixture } from '../../../support/process-fixture.ts';
 
@@ -102,4 +103,68 @@ test('storage contention during successor startup and rollback preserves the run
   const completed=await until(()=>observer!.operations.conversations.read(scope,chat.id),view=>view.run?.status==='completed');
   assert.equal(completed.run?.id,original.run!.id);
   assert.equal(fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').length,1);
+});
+
+
+test('runtime registration waits for a same-PID storage lock while the old execution advances', {timeout:90000},async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-register-contention-'));
+  const dataRoot=path.join(root,'profile'),workspace=path.join(root,'work'),packageRoot=path.join(root,'package');
+  fs.mkdirSync(workspace);copyPackage(prepared,packageRoot);
+  fs.copyFileSync(path.join(import.meta.dirname,'../../fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
+  const marker=path.join(packageRoot,'build/fixture-version.json');
+  fs.writeFileSync(marker,JSON.stringify({version:'registration-storage-contention'}));
+  const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='registration-contention';
+  let main:Awaited<ReturnType<typeof actor>>|undefined,observer:AgentProcessConnection|undefined;
+  t.after(()=>cleanupProcessFixture({root,dataRoot,profileId,host:main,observer}));
+  main=await actor({dataRoot,profileId,runtime,workspace});
+  observer=await connectAgentProcess({dataRoot,profileId,runtime,sourceId:'minimal'});
+  const old=await observer.lifecycle.identity(),scope=main.info.scope;
+  const connection=await main.call('connections.read',['first']);
+  await main.call('connections.connect',['first',{expectedRevision:connection.revision}]);
+  const chat=await main.call('conversations.create',[scope,{}]);
+  await main.call('conversations.send',[scope,chat.id,{expectedRevision:chat.revision,connectionId:'first',text:'hold:other',clientRequestId:randomUUID()}]);
+  const original=await until(()=>observer!.operations.conversations.read(scope,chat.id),view=>view.run?.accepted===true);
+
+  fs.writeFileSync(marker,JSON.stringify({version:'registered-successor'}));
+  const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});
+  const diagnostic=path.join(dataRoot,'agent-service','diagnostics','lifecycle-'+old.pid+'-'+old.generation+'.jsonl');
+  const events=async()=>fs.readFileSync(diagnostic,'utf8').trim().split('\n').map(line=>JSON.parse(line));
+  const registration={expectedGeneration:old.generation,runtime:next};
+  let activating:Promise<unknown>|undefined;
+  try {
+    fs.writeFileSync(path.join(dataRoot,'hold-registration-storage'),'yes');
+    await until(async()=>Number(fs.readFileSync(path.join(dataRoot,'registration-storage-held'),'utf8')),pid=>pid===old.pid);
+    const owner=readProcessRecord(dataRoot)!;
+    const controller=new AbortController();
+    const cancelled=assert.rejects(request(owner.origin,owner.token,'/runtime',registration,controller.signal),{name:'AbortError'});
+    const waiting=(event:any)=>event.event==='service-runtime-registration-wait';
+    const first=await until(events,rows=>rows.some(waiting));
+    assert.deepEqual(first.filter(waiting).map(({phase,lockName,lockHolderPid,lockHolderThreadId}:any)=>({phase,lockName,lockHolderPid,lockHolderThreadId})),
+      [{phase:'storage-lock',lockName:'storage',lockHolderPid:old.pid,lockHolderThreadId:0}]);
+    controller.abort();
+    await cancelled;
+    const failures=await until(events,rows=>rows.some(row=>row.code==='agent_runtime_registration_cancelled'));
+    assert.ok(failures.some(row=>row.event==='service-runtime-registration-failed'&&row.phase==='storage-lock'&&row.lockHolderPid===old.pid));
+    assert.equal((await observer.lifecycle.status()).pendingRuntime,undefined);
+
+    let registered=false;
+    const registrationResult=observer.lifecycle.requestRuntime(registration).then(value=>{registered=true;return value;});
+    activating=registrationResult;void activating.catch(()=>{});
+    await until(events,rows=>rows.filter(waiting).length===2);
+    fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');
+    const completed=await until(()=>observer!.operations.conversations.read(scope,chat.id),view=>view.run?.status==='completed');
+    assert.equal(completed.run?.id,original.run!.id);
+    assert.equal(registered,false,'the old execution completes while registration is still waiting');
+    assert.equal((await observer.lifecycle.status()).accepting,true);
+    assert.ok(isLive(old.pid));
+    fs.writeFileSync(path.join(dataRoot,'release-registration-storage'),'yes');
+    assert.equal((await registrationResult).pendingRuntime?.digest,next.digest);
+    await until(()=>observer!.lifecycle.status(),value=>value.identity.runtime.digest===next.digest);
+    const after=await events();
+    assert.ok(after.some(row=>row.event==='service-runtime-registration-resumed'&&row.phase==='persist-pending'&&row.lockHolderPid===old.pid&&row.lockWaitMs>0));
+    assert.equal(fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').length,1);
+  } finally {
+    fs.writeFileSync(path.join(dataRoot,'release-registration-storage'),'yes');
+    await activating?.catch(()=>{});
+  }
 });

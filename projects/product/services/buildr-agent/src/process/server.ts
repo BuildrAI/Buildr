@@ -6,6 +6,7 @@ import { conversationControlInstruction } from './conversation-control.ts';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { setTimeout as pause } from 'node:timers/promises';
 import { createAgentService } from '../application/agent-service.ts';
 import type { AgentServiceOptions } from '../contracts.ts';
 import { AGENT_EXECUTION_CONTRACTS, executionScopeRef } from '../execution-contracts.ts';
@@ -24,6 +25,9 @@ import { PendingSends } from './pending-sends.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
 import { StorageMaintenance } from './storage-maintenance.ts';
 import { runtimeChange } from './runtime-change.ts';
+
+const RUNTIME_REGISTRATION_WAIT_MS = 30_000;
+const RUNTIME_REGISTRATION_RETRY_MS = 100;
 
 interface PendingRuntime { runtime: AgentRuntimeUnit; state: 'waiting' | 'switching' | 'parallel-starting' | 'failed'; coordinatorPid?: number; handoffFile?: string; diagnostic?: string }
 export async function startAgentExecutionServer(options: ProcessBootstrap & { serviceOptions?: Pick<AgentServiceOptions, 'executors' | 'modelProviders' | 'programManager'> }) {
@@ -176,9 +180,60 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if (input.expectedGeneration !== identity.generation) throw new AgentServiceError('agent_control_stale', '执行后台代次已变化。', 409);
       validateAgentRuntime(options.dataRoot, input.runtime);
       const nextPending = input.runtime.digest === options.runtime.digest ? undefined : { runtime: input.runtime, state: 'waiting' as const };
-      savePending(nextPending ?? { runtime: options.runtime, state: 'adopted' });
-      pending = nextPending;
-      json(res, 200, status()); return;
+      const observedPending = pending;
+      const started = performance.now();
+      let waited = false, lockHolderPid: unknown, lockHolderThreadId: unknown, phase = 'storage-lock';
+      const logRegistration = (event:string, code?:string) => diagnostics({
+        event, phase, reason:'runtime-registration', lockName:'storage', lockHolderPid, lockHolderThreadId,
+        runtimeDigest:input.runtime.digest, lockWaitMs:Math.round(performance.now()-started), code,
+      });
+      try {
+        for (;;) {
+          if (res.destroyed) {
+            logRegistration('service-runtime-registration-failed','agent_runtime_registration_cancelled');
+            return;
+          }
+          if (closing || !accepting || !ownsMetadata || readProcessRecord(options.dataRoot)?.identity.instanceId !== instanceId) {
+            phase = 'revalidate-owner';
+            throw new AgentServiceError('agent_process_switching','执行后台正在切换，尚未受理新更新。',503);
+          }
+          if (pending !== observedPending) {
+            phase = 'revalidate-target';
+            if (pending?.runtime.digest === input.runtime.digest) {
+              if (waited) logRegistration('service-runtime-registration-resumed');
+              json(res, 200, status()); return;
+            }
+            throw new AgentServiceError('agent_process_activation_superseded','启用目标已被另一版本更新，请核对当前目标。',409);
+          }
+          let storage: ReturnType<typeof claim>;
+          try { storage = claim(options.dataRoot,'storage'); }
+          catch (error) {
+            if (!(error instanceof AgentServiceError) || error.code !== 'agent_process_owned') throw error;
+            const holder = 'lockHolderPid' in error ? error.lockHolderPid : undefined;
+            const holderThread = 'lockHolderThreadId' in error ? error.lockHolderThreadId : undefined;
+            if (!waited || holder !== lockHolderPid || holderThread !== lockHolderThreadId) {
+              lockHolderPid = holder;
+              lockHolderThreadId = holderThread;
+              logRegistration('service-runtime-registration-wait',error.code);
+            }
+            waited = true;
+            if (performance.now()-started >= RUNTIME_REGISTRATION_WAIT_MS) {
+              throw new AgentServiceError('agent_runtime_registration_busy','等待新版登记的存储锁超时；旧后台和原执行已保留。',503);
+            }
+            await pause(RUNTIME_REGISTRATION_RETRY_MS);
+            continue;
+          }
+          phase = 'persist-pending';
+          try { writePrivate(pendingFile,nextPending ?? {runtime:options.runtime,state:'adopted'}); }
+          finally { storage.release(); }
+          pending = nextPending;
+          if (waited) logRegistration('service-runtime-registration-resumed');
+          json(res, 200, status()); return;
+        }
+      } catch (error) {
+        logRegistration('service-runtime-registration-failed',diagnosticCode(error));
+        throw error;
+      }
     }
     if (req.url === '/shutdown') {
       if (input.expectedGeneration !== identity.generation || !['if-idle','stop-owned'].includes(input.mode)) throw new AgentServiceError('agent_control_stale', '退出请求已变化。', 409);

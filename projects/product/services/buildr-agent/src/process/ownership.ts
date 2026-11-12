@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { threadId } from 'node:worker_threads';
 import type { AgentProcessIdentity, AgentRuntimeUnit } from '../execution-contracts.ts';
 import type { BackendRuntimeChange } from '../contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
@@ -44,7 +45,7 @@ export function claimStorage(dataRoot: string): { release(): void } {
     }
   }
 }
-interface LockIdentity { pid: number; nonce: string }
+interface LockIdentity { pid: number; nonce: string; threadId?: number }
 export function readLock(dataRoot: string, name: 'owner' | 'startup' | 'storage'): LockIdentity | undefined {
   const filename = path.join(controlRoot(dataRoot), name + '.lock');
   const info = fs.lstatSync(filename, {throwIfNoEntry:false});
@@ -58,7 +59,7 @@ export function readLock(dataRoot: string, name: 'owner' | 'startup' | 'storage'
 export function claim(dataRoot: string, name: 'owner' | 'startup' | 'storage'): { release(): void } {
   const directory = controlRoot(dataRoot); privateDirectory(directory);
   const filename = path.join(directory, name + '.lock');
-  const value = { pid: process.pid, nonce: randomUUID() };
+  const value = { pid: process.pid, nonce: randomUUID(), threadId };
   const stage = path.join(directory, '.' + name + '-' + value.nonce);
   privateDirectory(stage);
   writePrivate(path.join(stage, 'identity.json'), value);
@@ -77,13 +78,17 @@ export function claim(dataRoot: string, name: 'owner' | 'startup' | 'storage'): 
           continue;
         }
         const prior = readLock(dataRoot, name);
-        if (!prior || live(prior.pid)) throw new AgentServiceError('agent_process_owned', '执行后台正在启动或仍被准确实例持有。', 409);
+        if (!prior || live(prior.pid)) {
+          throw Object.assign(new AgentServiceError('agent_process_owned', '执行后台正在启动或仍被准确实例持有。', 409), { lockHolderPid: prior?.pid, lockHolderThreadId: prior?.threadId });
+        }
         const reclaim = filename + '.reclaim';
         try { fs.mkdirSync(reclaim, { mode: 0o700 }); }
         catch { throw new AgentServiceError('agent_process_owned', '持有记录正在核对，未接管已有实例。', 409); }
         try {
           const current = readLock(dataRoot, name);
-          if (!current || current.nonce !== prior.nonce || live(current.pid)) throw new AgentServiceError('agent_process_owned', '执行后台持有记录已变化。', 409);
+          if (!current || current.nonce !== prior.nonce || live(current.pid)) {
+            throw Object.assign(new AgentServiceError('agent_process_owned', '执行后台持有记录已变化。', 409), { lockHolderPid: current?.pid, lockHolderThreadId: current?.threadId });
+          }
           const retired = stage + '-retired';
           fs.renameSync(filename, retired);
           fs.rmSync(retired, {recursive:true});

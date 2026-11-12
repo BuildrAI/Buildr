@@ -90,3 +90,20 @@ function executor(id){return{descriptor:{id,label:id,capabilities},
 const provider={id:'fixture-model',label:'Fixture model',async open(){return{protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'fixture',label:'Fixture',images:false,tools:false}]}),beginLogin:async()=>{},cancelLogin:async()=>{},
   async infer({signal}){fs.appendFileSync(path.join(bootstrap.dataRoot,'model-started'),'start\n');return await new Promise((resolve,reject)=>{signal.addEventListener('abort',()=>{fs.appendFileSync(path.join(bootstrap.dataRoot,'model-aborted'),'abort\n');reject(signal.reason);},{once:true});});},close:async()=>{}};}};
 await startAgentExecutionServer({...bootstrap,serviceOptions:{executors:[executor('first'),executor('second')],modelProviders:[provider]}});
+
+
+if(marker.version==='registration-storage-contention'){
+  const {claim}=await import('./process/ownership.js');
+  let lock;
+  const timer=setInterval(()=>{
+    if(fs.existsSync(path.join(bootstrap.dataRoot,'release-registration-storage'))){
+      lock?.release();
+      clearInterval(timer);
+    }else if(!lock&&fs.existsSync(path.join(bootstrap.dataRoot,'hold-registration-storage'))){
+      try{lock=claim(bootstrap.dataRoot,'storage');}
+      catch(error){if(error.code!=='agent_process_owned')throw error;return;}
+      fs.writeFileSync(path.join(bootstrap.dataRoot,'registration-storage-held'),String(process.pid));
+    }
+  },20);
+  timer.unref();
+}
