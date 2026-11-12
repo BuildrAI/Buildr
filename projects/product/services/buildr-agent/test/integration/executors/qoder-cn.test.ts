@@ -376,6 +376,23 @@ test('Qoder CN native form questions pause full-access work and preserve typed a
   });
 });
 
+test('Qoder CN AskUserQuestion forms accept a native implicit Other answer', {timeout:15000}, async()=>{
+  await withRuntime(async({runtime,config,workspace,contextRef})=>{
+    await writeFile(join(config,'scenario'),'question-custom');
+    const events:ExecutorEvent[]=[];
+    const sending=runtime.send({contextRef,cwd:workspace,text:'询问自定义回答',images:[],permissionMode:'full-access',clientRequestId:'question-custom-owned',onEvent:event=>events.push(event)});
+    sending.catch(()=>{});
+    await eventually(()=>events.some(event=>event.type==='request'&&event.request.kind==='question'));
+    const request=events.find(event=>event.type==='request');
+    assert.equal(request?.type,'request');assert.equal(request.request.kind,'question');
+    assert.equal(request.request.questions?.[0]?.allowOther,true);
+    await runtime.reply({contextRef,executionRef:{id:'question-custom-owned'},requestId:request.request.id,answer:{choice:'台湾'}});
+    await sending;
+    const answer=(await records(join(config,'fixture-permission-responses.jsonl')))[0]?.result;
+    assert.deepEqual(answer,{action:'accept',content:{choice:'台湾'}});
+  });
+});
+
 test('Qoder CN stops a native question without supplying an answer', {timeout:15000}, async()=>{
   await withRuntime(async({runtime,config,workspace,contextRef})=>{
     await writeFile(join(config,'scenario'),'question');

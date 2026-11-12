@@ -141,6 +141,9 @@ function handle(message) {
     if(scenario()==='question'){
       send({jsonrpc:'2.0',id:901,method:'elicitation/create',params:{sessionId:params.sessionId,mode:'form',toolCallId:toolId,message:'确认实施方案',requestedSchema:{type:'object',additionalProperties:false,properties:{choice:{type:'string',title:'方案',oneOf:[{const:'A',title:'方案A'},{const:'B',title:'方案B'}]},features:{type:'array',title:'功能',items:{type:'string',anyOf:[{const:'问答'},{const:'追加'}]},minItems:1},note:{type:'string',minLength:1},count:{type:'integer',minimum:1},confirm:{type:'boolean'}},required:['choice','features','note','count','confirm']}}});return;
     }
+    if(scenario()==='question-custom'){
+      send({jsonrpc:'2.0',id:901,method:'elicitation/create',params:{sessionId:params.sessionId,mode:'form',toolCallId:toolId,message:'Answer Questions',_meta:{qoder:{toolName:'AskUserQuestion'}},requestedSchema:{type:'object',additionalProperties:false,properties:{choice:{type:'string',title:'节点',description:'要切到哪个节点？',oneOf:[{const:'香港',title:'香港'},{const:'新加坡',title:'新加坡'}]}},required:['choice']}}});return;
+    }
     if(scenario().startsWith('queue')&&toolSequence>1){setTimeout(()=>finishPrompt('end_turn'),scenario().startsWith('queue-durable')?6000:30);return;}
     if (autoAllow() || session?.mode === 'yolo') { setTimeout(() => finishPrompt('end_turn'), 5); return; }
     send({ jsonrpc: '2.0', id: 900, method: 'session/request_permission', params: { sessionId: params.sessionId, toolCall: { toolCallId: toolId, title: '读取文件', kind: 'read' }, options: [{ optionId: 'allow-always', name: '总是允许', kind: 'allow_always' }, { optionId: 'allow-once', name: '允许一次', kind: 'allow_once' }, { optionId: 'reject-once', name: '拒绝', kind: 'reject_once' }] } });
