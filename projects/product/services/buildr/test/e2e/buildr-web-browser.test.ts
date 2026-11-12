@@ -1069,7 +1069,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     assert.equal(await page.locator('#preview-identity').getAttribute('data-workspace-mode'), 'shared');
     assert.equal(await page.locator('#preview-identity').getAttribute('data-agent-digest'), 'a'.repeat(64));
     assert.match(await page.locator('#preview-identity').innerText(), /Agent：a{12} · generation gen-browser · 已就绪/);
-    assert.match(await page.locator('#preview-identity').innerText(), /数据：共享开发版工作空间 · 沿用 development/);
+    assert.match(await page.locator('#preview-identity').innerText(), /数据：开发版工作空间 · 沿用 development/);
     await page.locator('#more-actions').hover();
     await page.locator('#quit-buildr').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#restart-buildr').locator('xpath=ancestor::*[@role="menuitem"]').getAttribute('aria-disabled'), 'true', '托管预览在统一菜单中禁用重启');

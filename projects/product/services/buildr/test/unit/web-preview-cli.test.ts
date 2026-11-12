@@ -9,7 +9,7 @@ test('preview CLI 帮助声明沿用与清理边界', () => {
   const stop = contributions.find((entry) => entry.key === 'web preview stop');
   assert.ok(start && stop);
   const startHelp = start.help.join('\n');
-  for (const token of ['--workspace-mode shared|snapshot', '默认 shared', 'workspaceMode', 'environmentRoot', '原有写入保护']) assert.ok(startHelp.includes(token));
+  for (const token of ['--reuse <profile>[:facet,...]|none', '默认 development', '--reuse none', '旧 --workspace-mode 参数按未知选项失败', '原有写入保护']) assert.ok(startHelp.includes(token));
   for (const token of ['--reuse <profile>[:facet,...]', '--refresh-reuse', 'model-catalog', 'agent-runtime', '来源只读', '会话、附件、交接材料']) assert.match(startHelp, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   const stopHelp = stop.help.join('\n');
   for (const token of ['--purge', '默认只停止实例并保留数据', 'owner 不匹配', '越界符号链接']) assert.match(stopHelp, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));

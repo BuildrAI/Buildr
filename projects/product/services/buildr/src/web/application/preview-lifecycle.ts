@@ -4,7 +4,6 @@ import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
 import { performance } from 'node:perf_hooks';
-import { DatabaseSync } from 'node:sqlite';
 import { stopAgentProcess } from '@buildr-ai/buildr-agent';
 
 import { buildrWebDataRoot } from '../../modules/workspace/module.ts';
@@ -34,7 +33,6 @@ export type TaskPreviewWorktree = {
   evidencePath: string;
   planDigest: string;
   repositorySet: PreviewRepository[];
-  taskStore?: { source: 'canonical' | 'existing'; seeded: boolean } | null;
 };
 
 export type PreviewOwner = {
@@ -273,7 +271,7 @@ export function previewOwnerForWorktree(name: string, targetRoot: string, produc
     productCheckout: productCheckout ? path.resolve(productCheckout) : null,
     repositorySet: taskWorktree?.repositorySet || [{ selector: 'workspace', checkoutPath: worktree, branch, head }],
     identityMode: taskWorktree ? 'task-worktree-v1' : 'standalone-checkout',
-    taskStore: taskWorktree?.taskStore || null,
+    taskStore: null,
   };
 }
 
@@ -432,60 +430,6 @@ export function resolveTaskPreviewWorktree(runtime: PreviewRuntime, workspaceRoo
   };
 }
 
-// 预览以服务目标工作树为 workspace；其本地 structured store 是隔离本机现场。
-// 缺失时以 canonical 库播种一致副本，已存在时复用——canonical 保持唯一数据权威。
-function prepareTaskPreviewStore(taskWorktree: TaskPreviewWorktree): PreviewOwner['taskStore'] {
-  const targetLocation = workspaceStructuredStoreLocation(taskWorktree.worktree);
-  const sourceLocation = workspaceStructuredStoreLocation(taskWorktree.workspaceRoot);
-  const target = targetLocation.file;
-  const source = sourceLocation.file;
-  if (sameFilesystemPath(target, source)) return { source: 'existing', seeded: false };
-  if (targetLocation.assertSafe()) return { source: 'existing', seeded: false };
-  if (!sourceLocation.assertSafe()) {
-    throw codedError('Task preview 需要 canonical Workspace 的本地结构化存储作为数据源，但当前不可读取。', 'preview_task_store_unavailable', { source });
-  }
-  let staging: string | null = null;
-  let database: DatabaseSync | null = null;
-  let primaryError: unknown = null;
-  try {
-    sourceLocation.assertSafe(); targetLocation.assertSafe();
-    fs.mkdirSync(targetLocation.directory, { recursive: true, mode: 0o700 });
-    sourceLocation.assertSafe(); targetLocation.assertSafe();
-    staging = targetLocation.createTemporary();
-    sourceLocation.assertSafe(); targetLocation.assertTemporary(staging);
-    database = new DatabaseSync(source, { readOnly: true });
-    sourceLocation.assertSafe(); targetLocation.assertTemporary(staging);
-    database.exec(`VACUUM INTO '${staging.replaceAll("'", "''")}'`);
-    sourceLocation.assertSafe(); targetLocation.assertTemporary(staging);
-    // A second legitimate preview may publish its own store during the snapshot.
-    // Reuse that observed store instead of replacing it with our snapshot.
-    if (targetLocation.assertSafe()) return { source: 'existing', seeded: false };
-    sourceLocation.assertSafe(); targetLocation.assertTemporary(staging);
-    fs.renameSync(staging, target);
-    staging = null;
-    sourceLocation.assertSafe(); targetLocation.assertSafe();
-    return { source: 'canonical', seeded: true };
-  } catch (error) {
-    primaryError = error && typeof error === 'object' && 'structuredStoreBusiness' in error
-      ? error
-      : codedError(`Task preview 数据源快照失败：${errorMessage(error)}`, 'preview_task_store_unavailable', { source });
-    throw primaryError;
-  } finally {
-    try { database?.close(); } catch {}
-    if (staging) {
-      try {
-        targetLocation.assertTemporary(staging);
-        fs.rmSync(staging, { force: true });
-      } catch (cleanupError) {
-        if (!primaryError) throw cleanupError;
-        if (typeof primaryError === 'object') {
-          try { Object.defineProperty(primaryError, 'previewStoreCleanupError', { value: cleanupError, configurable: true }); } catch {}
-        }
-      }
-    }
-  }
-}
-
 function optionValues(args: string[], name: string): string[] {
   const values: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
@@ -544,18 +488,15 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   const dataRoot = options.dataRoot || buildrWebDataRoot();
   const startupTimeoutMs = options.startupTimeoutMs ?? 10_000;
   const instance = assertPreviewName(name);
-  runtime.assertNoUnknownOptions(args, new Set(['--target', '--task', '--port', '--workspace', '--workspace-mode', '--no-open', '--json', '--reuse', '--refresh-reuse']), new Set(['--no-open', '--json', '--refresh-reuse']));
-  const workspaceMode = runtime.optionValue(args, '--workspace-mode', 'shared');
-  if (workspaceMode !== 'shared' && workspaceMode !== 'snapshot') {
-    throw codedError('--workspace-mode 必须为 shared 或 snapshot。', 'preview_workspace_mode_invalid');
-  }
-  const rawReuse = runtime.optionValue(args, '--reuse', null);
+  runtime.assertNoUnknownOptions(args, new Set(['--target', '--task', '--port', '--workspace', '--no-open', '--json', '--reuse', '--refresh-reuse']), new Set(['--no-open', '--json', '--refresh-reuse']));
+  const rawReuse = runtime.optionValue(args, '--reuse', 'development') ?? 'development';
+  const reuseNone = rawReuse === 'none';
   const refreshReuse = args.includes('--refresh-reuse');
-  if (refreshReuse && !rawReuse) {
-    throw previewReuseError('--refresh-reuse 需要同时提供 --reuse。', 'preview_reuse_invalid', { argument: '--refresh-reuse', reason: 'selection_required' });
-  }
   const reuseRegistry = options.reuse?.registry;
-  const reuseSelection: PreviewReuseSelection | null = rawReuse ? parsePreviewReuseSelection(rawReuse, reuseRegistry) : null;
+  const reuseSelection: PreviewReuseSelection | null = reuseNone ? null : parsePreviewReuseSelection(rawReuse, reuseRegistry);
+  if (refreshReuse && !reuseSelection) {
+    throw previewReuseError('--refresh-reuse 不能与 --reuse none 同时使用。', 'preview_reuse_invalid', { argument: '--refresh-reuse', reason: 'selection_required' });
+  }
   const reuseSource = reuseSelection ? resolvePreviewReuseSource(reuseSelection.source, options.reuse) : null;
   const workspaceRoots = optionValues(args, '--workspace').map((value) => {
     const root = path.resolve(value);
@@ -571,6 +512,11 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   if (taskId) {
     const workspaceRoot = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(requestedRoot));
     taskWorktree = resolveTaskPreviewWorktree(runtime, workspaceRoot, taskId);
+    // 不再播种工作树副本，但 canonical 不可读仍须 fail closed，避免空库冒充任务数据。
+    const sourceLocation = workspaceStructuredStoreLocation(taskWorktree.workspaceRoot);
+    if (!sourceLocation.assertSafe()) {
+      throw codedError('Task preview 以 canonical Workspace 为唯一数据目标，但其本地结构化存储当前不可读取。', 'preview_task_store_unavailable', { source: sourceLocation.file });
+    }
     targetRoot = taskWorktree.worktree;
     // Product checkout 在目标工作树内的位置等于调用方 product 相对其自身 checkout 根的路径；
     // 调用方可以来自 canonical 或任一 linked worktree，不能直接以 canonical 根取相对值。
@@ -598,8 +544,8 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
       portNote = desiredPort === remembered ? `复用上次端口 ${remembered}。` : `上次端口 ${remembered} 被占用，改用随机端口。`;
     }
   }
-  const environmentRoot = workspaceMode === 'shared' && taskWorktree ? taskWorktree.workspaceRoot : targetRoot;
-  let owner: PreviewOwner = { ...previewOwnerForWorktree(instance, targetRoot, appInvocation.sourceRoot, taskWorktree), workspaceMode, environmentRoot };
+  const environmentRoot = taskWorktree ? taskWorktree.workspaceRoot : targetRoot;
+  let owner: PreviewOwner = { ...previewOwnerForWorktree(instance, targetRoot, appInvocation.sourceRoot, taskWorktree), workspaceMode: 'shared', environmentRoot };
   const existingOwner = readPreviewOwner(instance, dataRoot);
   const existingInstance = readPreviewInstance(instance, dataRoot);
   const healthy = await healthyInstance(existingInstance);
@@ -608,6 +554,11 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   }
   if (healthy && existingOwner) {
     let reusedOwner = existingOwner;
+    if (reuseNone && existingOwner.reuse) {
+      reusedOwner = { ...existingOwner, reuse: undefined };
+      writeOwner(runtime, reusedOwner, dataRoot);
+      runtime.removePath(previewReusePath(instance, dataRoot));
+    }
     if (reuseSelection && reuseSource) {
       const reuse = await applyPreviewReuse({
         selection: reuseSelection,
@@ -629,14 +580,9 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
     throw codedError(`预览实例 ${instance} 留有其他 worktree 的陈旧记录；请由原 owner 执行 preview stop 后再复用。`, 'preview_owner_stale_conflict', { instance, owner: existingOwner });
   }
   const retainedRegistry = record(readJson(path.join(previewDataRoot(instance, dataRoot), 'workspace-registry.json')));
-  if (workspaceMode === 'shared' && taskWorktree && Array.isArray(retainedRegistry?.roots)
+  if (taskWorktree && Array.isArray(retainedRegistry?.roots)
     && retainedRegistry.roots.some(root => typeof root === 'string' && sameFilesystemPath(root, taskWorktree.worktree))) {
     throw codedError(`预览实例 ${instance} 保留了工作树快照登记；请使用新实例名，或由原 owner 执行 preview stop --purge 后重建，不能混用真实工作空间。`, 'preview_workspace_mode_conflict');
-  }
-  // Only snapshot mode prepares a local store, and never before ownership has
-  // been checked: a rejected mode switch must not seed or overwrite data.
-  if (workspaceMode === 'snapshot' && taskWorktree) {
-    owner = { ...owner, taskStore: prepareTaskPreviewStore(taskWorktree) };
   }
   // Task previews run the worktree's own code: prepare its candidate artifacts and
   // pin the exact Agent runtime digest before the host launches. Every write stays
@@ -659,8 +605,9 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
       previous: previousReuse,
       registry: reuseRegistry,
     })
-    : previousReuse;
+    : reuseNone ? null : previousReuse;
   if (reuse) runtime.atomicWriteJson(previewReusePath(instance, dataRoot), reuse, { mode: 0o600 });
+  else if (reuseNone && previousReuse) runtime.removePath(previewReusePath(instance, dataRoot));
   const ownedOwner: PreviewOwner = reuse ? { ...owner, reuse } : owner;
   writeOwner(runtime, ownedOwner, dataRoot);
   const logFile = path.join(root, 'preview.log');

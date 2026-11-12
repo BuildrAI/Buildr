@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { connectAgentProcess, stopAgentProcess } from '@buildr-ai/buildr-agent';
 
 import { previewDataRoot, readPreviewOwner, startPreview, stopPreview, type PreviewRuntime } from '../../src/web/application/preview-lifecycle.ts';
@@ -75,6 +76,11 @@ function candidateFixture(t: test.TestContext, { candidateMode = 'ready' }: { ca
   execFileSync('git', ['init', '--quiet', canonical]);
   execFileSync('git', ['-C', canonical, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--quiet', '--allow-empty', '-m', 'fixture']);
   execFileSync('git', ['-C', canonical, 'worktree', 'add', '--quiet', '--detach', worktree, 'HEAD']);
+  const storeDir = path.join(canonical, '.buildr', 'local');
+  fs.mkdirSync(storeDir, { recursive: true });
+  const canonicalStore = new DatabaseSync(path.join(storeDir, 'workspace.sqlite'));
+  canonicalStore.exec('CREATE TABLE marker(id INTEGER PRIMARY KEY);');
+  canonicalStore.close();
   fs.mkdirSync(path.join(product, 'bin'), { recursive: true });
   fs.writeFileSync(path.join(product, 'bin', 'buildr.mjs'), '// fixture cli\n');
   seedPreparedCandidate(product);

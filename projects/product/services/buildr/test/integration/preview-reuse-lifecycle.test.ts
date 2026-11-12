@@ -179,19 +179,34 @@ test('预览沿用开发版模型目录并可复用、刷新与彻底清理', { 
   assert.equal(readPreviewOwner('demo', data.dataRoot), null);
 });
 
-test('无 --reuse 时保持既有隔离启动，非法参数在写入前失败', { timeout: 20_000 }, async (t) => {
+test('默认沿用 development，显式 none 不沿用，非法参数在写入前失败', { timeout: 20_000 }, async (t) => {
   const data = fixture(t);
   const plain = await data.start([]);
-  assert.equal(plain.owner.reuse, undefined);
+  assert.equal(plain.owner.reuse?.source, 'development');
+  await stopPreview('demo', { dataRoot: data.dataRoot, purge: true });
+
+  const none = await data.start(['--reuse', 'none']);
+  assert.equal(none.owner.reuse, undefined);
   assert.equal(fs.existsSync(path.join(previewDataRoot('demo', data.dataRoot), 'agent-service', 'model-access')), false);
   await stopPreview('demo', { dataRoot: data.dataRoot, purge: true });
 
-  for (const args of [['--reuse', 'released'], ['--reuse', 'development:unknown'], ['--refresh-reuse']]) {
+  for (const args of [['--reuse', 'released'], ['--reuse', 'development:unknown'], ['--reuse', 'none', '--refresh-reuse']]) {
     await assert.rejects(data.start(args), (error) => coded(error, 'preview_reuse_invalid'));
     assert.equal(fs.existsSync(path.join(previewDataRoot('demo', data.dataRoot), 'agent-service', 'model-access')), false);
   }
+  const refreshed = await data.start(['--refresh-reuse']);
+  assert.equal(refreshed.owner.reuse?.source, 'development');
+  await stopPreview('demo', { dataRoot: data.dataRoot, purge: true });
+
   fs.rmSync(data.developmentRoot, { recursive: true, force: true });
-  await assert.rejects(data.start(['--reuse', 'development']), (error) => coded(error, 'preview_reuse_source_unavailable'));
+  await assert.rejects(data.start([]), (error) => {
+    assert.equal(coded(error, 'preview_reuse_source_unavailable'), true);
+    assert.match((error as Error).message, /--reuse none/);
+    return true;
+  });
+  const escaped = await data.start(['--reuse', 'none']);
+  assert.equal(escaped.owner.reuse, undefined);
+  await stopPreview('demo', { dataRoot: data.dataRoot, purge: true });
 });
 
 test('purge 拒绝错误 owner、未确认停止、越界符号链接并保留现场', { timeout: 20_000 }, async (t) => {

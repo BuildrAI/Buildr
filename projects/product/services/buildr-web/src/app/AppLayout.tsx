@@ -511,7 +511,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
                 <>
                   <span className="preview-identity-label">开发预览</span>
                   <span>{preview.instance} · {preview.branch} · {preview.head.slice(0, 12)}{preview.dirty ? ' · 有未提交修改' : ''}</span>
-                  {preview.workspaceMode ? <span>数据：{preview.workspaceMode === 'shared' ? '共享开发版工作空间' : '工作树快照'}{preview.reuse ? ` · 沿用 ${preview.reuse.source}` : ''}</span> : null}
+                  {preview.workspaceMode ? <span>数据：{preview.workspaceMode === 'shared' ? '开发版工作空间' : '工作树快照（旧实例）'}{preview.reuse ? ` · 沿用 ${preview.reuse.source}` : ''}</span> : null}
                   {preview.agent ? <span>Agent：{preview.agent.digest.slice(0, 12)}{preview.agent.generation ? ` · generation ${preview.agent.generation}` : ''}{preview.agent.accepting ? ' · 已就绪' : ''}</span> : null}
                   {preview.frontendSource ? <span title={preview.frontendSource}>前端：工作树构建</span> : null}
                 </>
