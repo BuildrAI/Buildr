@@ -12,6 +12,7 @@ import { bounded } from '../../../src/executors/native-process.ts';
 import { createModelAccess } from '../../../src/model-access/application.ts';
 import { createAgentService } from '../../../src/index.ts';
 import type { ModelProtocol, ModelProvider } from '../../../src/model-access/contracts.ts';
+import { ExecutorInputRejected } from '../../../src/contracts.ts';
 import type { ExecutorEvent, ExecutorSendInput, LoginObservation } from '../../../src/contracts.ts';
 
 function binary():string {
@@ -252,6 +253,11 @@ test('Claude supplementary input is acknowledged once and all its native results
   assert.equal(receipt.executionRef.id,executionRef.id);
   assert.ok(f.bodies.some(body=>JSON.stringify(body.messages).includes('Additional fixture input.')));
   assert.equal(events.filter(event=>event.type==='completed').length,1);
+});
+test('Claude proves a supplement refused by the exact settled round instead of leaving it uncertain', {timeout:60000}, async t=>{
+  const f=await fixture(t),contextRef=await f.runtime.createContext({cwd:f.cwd});let executionRef:any;
+  await f.runtime.send({contextRef,cwd:f.cwd,text:'Read-only fixture input.',images:[],permissionMode:'full-access',clientRequestId:'settled',onEvent:event=>{if(event.type==='accepted')executionRef=event.executionRef;}});
+  await assert.rejects(f.runtime.supplement!({contextRef,executionRef,cwd:f.cwd,text:'Too late for the settled round.',images:[],clientRequestId:'late'}),ExecutorInputRejected);
 });
 test('Claude stop does not leave acknowledged supplementary input running behind the interrupted turn', {timeout:60000}, async t=>{
   const f=await fixture(t),contextRef=await f.runtime.createContext({cwd:f.cwd});

@@ -1,6 +1,28 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { ExecutorInputRejected, type AgentRuntime, type ConversationView, type ExecutorImage, type ExecutorObservation, type SupplementInput, type SupplementResult } from '../contracts.ts';
-import { fail, nonempty, type StoredConversation, type StoredParticipant } from '../domain/agent-state.ts';
+import { AgentServiceError, fail, nonempty, type StoredConversation, type StoredParticipant } from '../domain/agent-state.ts';
+
+/** A supplemental input is admitted on the exact run identity, not on a fresh
+ * native snapshot alone. A snapshot that cannot answer promptly is recorded and
+ * skipped: the executor's own exact-turn admission remains authoritative. */
+const ADMISSION_OBSERVATION_TIMEOUT_MS = 8_000;
+
+function bounded<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try { return Promise.race([work, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('agent_supplement_observation_timeout')), timeoutMs); })]); }
+  finally { clearTimeout(timer); }
+}
+function errorCode(error: unknown): string {
+  if (error instanceof AgentServiceError) return error.code;
+  return error instanceof Error && error.message ? error.message : 'agent_supplement_admission_failed';
+}
+/** Never claim "not sent" without a reason, and never blame the user's input
+ * for a transient bookkeeping or observation failure. */
+function admissionMessage(error: unknown): string {
+  if (error instanceof AgentServiceError) return error.message;
+  if (error instanceof ExecutorInputRejected) return '原执行已结束或暂不能接收追加消息；输入已保留，可继续对话。';
+  return '未能核对原执行状态，这条追加尚未发送；输入已保留，可重试。';
+}
 
 type Ports = {
   generation: string;
@@ -13,6 +35,8 @@ type Ports = {
   continue(record: StoredConversation, input: SupplementInput, requestId: string): ConversationView;
   runtime(record: StoredConversation, participant: StoredParticipant): Promise<AgentRuntime>;
   materials(record: StoredConversation, participant: StoredParticipant, ids: string[]): { images: ExecutorImage[]; description: string };
+  /** Private diagnostics only; never part of the public conversation view. */
+  diagnostic?(event: { workspaceId: string; conversationId: string; clientRequestId: string; stage: 'observe' | 'admission' | 'dispatch'; code: string }): void;
 };
 
 /** Owns only supplementary admission. The conversation remains the single record authority. */
@@ -76,6 +100,15 @@ export class ConversationSupplements {
     const current = record.attempts.find(item => item.clientRequestId === requestId)!;
     return { conversation: this.ports.view(record), delivery: current.accepted ? 'accepted' : 'unknown' };
   }
+  /** Persisting a native snapshot is bookkeeping; it never decides delivery. */
+  private recordObservation(workspaceId: string, id: string, input: SupplementInput, observation: ExecutorObservation): void {
+    try { this.ports.observe(this.ports.load(workspaceId, id), input.runId, observation); }
+    catch (error) { this.report(workspaceId, id, input, 'observe', error); }
+  }
+  private report(workspaceId: string, id: string, input: SupplementInput, stage: 'observe' | 'admission' | 'dispatch', error: unknown): void {
+    try { this.ports.diagnostic?.({ workspaceId, conversationId: id, clientRequestId: input.clientRequestId, stage, code: errorCode(error) }); }
+    catch { /* Diagnostics never affect admission. */ }
+  }
   private async execute(workspaceId: string, id: string, input: SupplementInput, digest: string): Promise<SupplementResult> {
     let record = this.ports.load(workspaceId, id);
     const initial = this.current(record, input, true);
@@ -96,34 +129,46 @@ export class ConversationSupplements {
       const observed = await runtime.observe({ contextRef: participant.contextRef!, executionRef: execution });
       const exact = observed.executionRef?.id === execution.id;
       if (exact && ['idle','stopped'].includes(observed.status) && !observed.backgroundWork && !observed.requests?.length && observed.tools.every(tool => tool.status === 'completed')) {
-        const current = this.ports.load(workspaceId, id);
-        this.ports.observe(current, input.runId, observed); ended = true;
+        ended = true; this.recordObservation(workspaceId, id, input, observed);
       } else if (observed.status === 'unknown' && (!observed.executionRef || exact)) {
-        this.ports.observe(this.ports.load(workspaceId, id), input.runId, observed);
+        this.recordObservation(workspaceId, id, input, observed);
       }
       return observed;
     };
     try {
-      const observed = await observe();
-      if (ended || observed.requests?.some(request => request.kind === 'question') || !['running','waiting'].includes(observed.status) || observed.executionRef?.id !== execution.id) {
-        refusal = ended ? '原轮已结束，这条追加尚未发送；输入已保留，不会自动另开会话。'
-          : observed.requests?.some(request => request.kind === 'question') ? '原轮仍有待回答问题，请在原卡片处理；追加内容已保留。'
-          : observed.executionRef?.id !== execution.id ? '尚未核对到准确的原生执行身份，追加内容未发送。'
-          : '已自动核对，但原生执行状态仍无法确认；追加内容未发送，不会另开会话。';
-        throw new ExecutorInputRejected('agent_supplement_unavailable');
+      let observed: ExecutorObservation | undefined;
+      try { observed = await bounded(observe(), ADMISSION_OBSERVATION_TIMEOUT_MS); }
+      catch (error) { this.report(workspaceId, id, input, 'observe', error); }
+      if (observed) {
+        if (ended || observed.requests?.some(request => request.kind === 'question') || !['running','waiting'].includes(observed.status) || observed.executionRef?.id !== execution.id) {
+          refusal = ended ? '原轮已结束，这条追加尚未发送；输入已保留，不会自动另开会话。'
+            : observed.requests?.some(request => request.kind === 'question') ? '原轮仍有待回答问题，请在原卡片处理；追加内容已保留。'
+            : observed.executionRef?.id !== execution.id ? '尚未核对到准确的原生执行身份，追加内容未发送。'
+            : '已自动核对，但原生执行状态仍无法确认；追加内容未发送，不会另开会话。';
+          throw new ExecutorInputRejected('agent_supplement_unavailable');
+        }
+        // The observation itself is asynchronous; never target a superseded input.
+        this.current(this.ports.load(workspaceId, id), input);
+        const verified = this.ports.load(workspaceId, id);
+        // A native running snapshot must not erase a concurrently pending approval.
+        if (!verified.view.requests.some(request => request.runId === input.runId))
+          this.recordObservation(workspaceId, id, input, { ...observed, requests: undefined });
+      } else {
+        // A slow or failed native snapshot is not a native refusal. Re-verify
+        // only the durable run identity and let the executor's exact-turn
+        // admission decide; a busy event stream must not cost the user's input.
+        this.current(this.ports.load(workspaceId, id), input);
       }
-      // The observation itself is asynchronous; never target a superseded input.
-      this.current(this.ports.load(workspaceId, id), input);
-      const verified = this.ports.load(workspaceId, id);
-      // A native running snapshot must not erase a concurrently pending approval.
-      if (!verified.view.requests.some(request => request.runId === input.runId))
-        this.ports.observe(verified, input.runId, { ...observed, requests: undefined });
       dispatched = true;
       const receipt = await runtime.supplement({ contextRef: participant.contextRef!, executionRef: execution, cwd: record.view.cwd, text, images, clientRequestId: input.clientRequestId });
       if (receipt.executionRef.id !== execution.id) throw new Error('agent_supplement_receipt_mismatch');
       nativeId = receipt.inputItemId;
     } catch (error) {
       delivery = error instanceof ExecutorInputRejected || !dispatched ? 'rejected' : 'unknown';
+      if (delivery === 'rejected') {
+        refusal ??= admissionMessage(error);
+        this.report(workspaceId, id, input, dispatched ? 'dispatch' : 'admission', error);
+      }
       if (dispatched && delivery === 'unknown') {
         // Absence from history proves nothing. Only this exact native user receipt confirms acceptance.
         try {

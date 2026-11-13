@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, ExecutorEvent, ExecutorForkInput, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorSupplementInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
+import { ExecutorInputRejected } from '../../contracts.ts';
 import { withExecutionFault } from '../../domain/execution-fault.ts';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
@@ -163,8 +164,19 @@ class ClaudeRuntime implements AgentRuntime {
     finally{submission.settled=true;}
   }
   async supplement(input:ExecutorSupplementInput){
-    this.reference(input.contextRef,input.cwd);
-    return await this.rpc.call('supplement',{...input,contextRef:undefined,executionRef:undefined,contextId:input.contextRef.id,executionId:input.executionRef.id},30000);
+    try { this.reference(input.contextRef,input.cwd); }
+    catch(error){ throw new ExecutorInputRejected(error instanceof Error?error.message:'agent_context_binding_mismatch'); }
+    try {
+      return await this.rpc.call('supplement',{...input,contextRef:undefined,executionRef:undefined,contextId:input.contextRef.id,executionId:input.executionRef.id},30000);
+    } catch(error){
+      // These answers are produced before this exact input can enter the native
+      // queue, so non-delivery is proven. Transport loss or a timeout proves
+      // nothing and must remain uncertain to the application.
+      const code=error instanceof Error?error.message:'';
+      if(['agent_supplement_unavailable','agent_exact_live_turn_unavailable','agent_supplement_cancelled','agent_native_process_closed','agent_context_binding_mismatch','agent_context_invalid'].includes(code))
+        throw new ExecutorInputRejected(code);
+      throw error;
+    }
   }
   async observe({contextRef,executionRef}:Parameters<AgentRuntime['observe']>[0]):Promise<ExecutorObservation>{
     this.reference(contextRef);

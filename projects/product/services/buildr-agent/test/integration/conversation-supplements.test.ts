@@ -10,10 +10,11 @@ import { createAgentService, ExecutorInputRejected, type AgentExecutor, type Age
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=', 'base64');
 function gate() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; }
 async function wait(read: () => boolean) { for (let i = 0; i < 400; i++) { if (read()) return; await new Promise(resolve => setTimeout(resolve, 2)); } assert.fail('state did not settle'); }
-async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: 'rejected' | 'unknown'; supported?: boolean; provider?: string; historyReceipt?: boolean; historyClientId?: string; beforeObserve?: Promise<void>; endOnReject?: boolean; persistedReceipt?: boolean } = {}) {
+async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: 'rejected' | 'unknown'; supported?: boolean; provider?: string; historyReceipt?: boolean; historyClientId?: string; beforeObserve?: Promise<void>; observeError?: string; endOnReject?: boolean; persistedReceipt?: boolean } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-supplement-')), ending = gate();
   const calls: ExecutorSupplementInput[] = [], items: ExecutorItem[] = []; let emit: (event: ExecutorEvent) => void = () => {};
   let observation: ExecutorObservation = { status: 'idle', tools: [] };
+  let observeErrors = options.observeError ? 1 : 0;
   const capabilities = { supplement: options.supported !== false, text: true, images: true, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 65536 };
   const runtime: AgentRuntime = {
     capabilities, bindingIdentity: 'fixture-binding', async inspectAccount() { return { status: 'ready' }; }, async models() { return [{ id: 'fixture-model', label: 'Fixture model' }]; }, async beginLogin() {}, async cancelLogin() {},
@@ -31,7 +32,7 @@ async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: '
       const item: ExecutorItem = { id: 'native-' + input.clientRequestId, clientRequestId: input.clientRequestId, kind: 'message', role: 'user', text: input.text, executionId: input.executionRef.id };
       items.push(item); if(options.historyReceipt){if(options.historyClientId)item.clientRequestId=options.historyClientId;throw new Error('receipt lost');} emit({ type: 'item', item }); return { executionRef: input.executionRef, inputItemId: item.id };
     },
-    async observe() { await options.beforeObserve; return structuredClone(observation); }, async reply() {}, async stop() { observation = { status: 'stopped', tools: [] }; ending.resolve(); return observation; }, async close() { ending.resolve(); },
+    async observe() { await options.beforeObserve; if (observeErrors > 0) { observeErrors--; throw new Error(options.observeError!); } return structuredClone(observation); }, async reply() {}, async stop() { observation = { status: 'stopped', tools: [] }; ending.resolve(); return observation; }, async close() { ending.resolve(); },
   };
   const executor: AgentExecutor = {
     readSupplementReceipt: options.persistedReceipt ? async input => ({inputItemId:'persisted-'+input.clientRequestId}) : undefined,
@@ -78,6 +79,7 @@ test('rejection and unknown supplementary delivery preserve the original executi
     const f = await fixture({ delivery }); try {
       const input = f.input(delivery); const result = await f.service.conversations.supplement('workspace', f.read().id, input);
       assert.equal(result.delivery, delivery); assert.equal(f.read().run!.status, 'running'); assert.equal(f.read().entries.at(-1)!.status, delivery === 'rejected' ? 'failed' : 'unknown');
+      if (delivery === 'rejected') assert.match(f.read().entries.at(-1)!.deliveryDiagnostic ?? '', /暂不能接收追加消息/);
       await f.service.conversations.observe('workspace', f.read().id); await f.service.conversations.supplement('workspace', f.read().id, input); assert.equal(f.calls.length, 1);
       if (delivery === 'unknown') {
         f.emit({ type: 'item', item: { id: 'observed-native-input', clientRequestId: input.clientRequestId, kind: 'message', role: 'user', text: input.text, executionId: 'native-run' } });
@@ -129,6 +131,18 @@ test('unknown or mismatched native execution is not dispatched or silently conti
       assert.equal((await f.service.conversations.supplement('workspace',f.read().id,input)).delivery,'rejected');
       assert.equal(f.calls.length,0);assert.equal(f.read().run!.id,run);
       if(observation.status==='unknown')assert.equal(f.read().run!.status,'unknown');
+    }finally{await f.close();}
+  }
+});
+
+test('a failed native snapshot does not turn an append into a rejection or lose the input',async()=>{
+  for(const observeError of ['agent_supplement_observation_timeout','agent_native_timeout','agent_native_process_closed']){
+    const f=await fixture({observeError});try{
+      const input=f.input('append while the native stream is busy');
+      const result=await f.service.conversations.supplement('workspace',f.read().id,input);
+      assert.equal(result.delivery,'accepted');
+      assert.equal(f.calls.length,1);
+      assert.equal(f.read().entries.find(entry=>entry.text===input.text)!.status,'accepted');
     }finally{await f.close();}
   }
 });
