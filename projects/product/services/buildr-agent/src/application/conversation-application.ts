@@ -1250,7 +1250,7 @@ export class ConversationApplication {
     }
   }
   private applyEvent(workspaceId: string, id: string, runId: string, event: ExecutorEvent): void {
-    const textOnly = event.type === 'item' && event.item.kind === 'message' && event.item.role === 'assistant';
+    const textOnly = event.type === 'item' && ['message', 'thinking'].includes(event.item.kind) && event.item.role === 'assistant';
     const cached = textOnly ? this.streamingRecords.get(id) : undefined;
     this.streamingRecords.delete(id);
     const record = cached && cached.view.workspaceId === workspaceId && cached.view.run?.id === runId &&
@@ -1261,7 +1261,7 @@ export class ConversationApplication {
     const attempt = record.attempts.find(value => value.runId === runId)!;
     // The native channel may still drain buffered text after interruption. Keep
     // tool/control observations, but do not append model output after user stop.
-    if(run.stopRequested&&event.type==='item'&&event.item.kind==='message')return;
+    if(run.stopRequested&&textOnly)return;
     // A late transport failure cannot negate an exact settled execution.
     if(this.hasPersistedEnd(record,run)&&
       ['observation','diagnostic','completed'].includes(event.type))return;

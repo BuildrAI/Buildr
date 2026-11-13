@@ -179,7 +179,7 @@ export class ConversationEntryStore {
   /** Only a previously saved, unchanged-size record may use the caller's exact text mutation. */
   static prepareText(db:DatabaseSync,record:StoredConversation,entryId:string):TextUpdate|undefined {
     const entry=record.view.entries.find(entry=>entry.id===entryId);
-    if(!entry||entry.kind!=='message'||entry.role!=='assistant'||!entry.runId||record.nativeTools?.[entry.id])return;
+    if(!entry||!['message','thinking'].includes(entry.kind)||entry.role!=='assistant'||!entry.runId||record.nativeTools?.[entry.id])return;
     const old=db.prepare(`SELECT e.content_revision,e.round_id,c.entry_count,c.inherited_count
       FROM conversation_read_entries e JOIN conversations c ON c.id=e.conversation_id
       WHERE e.conversation_id=? AND e.scope='main' AND e.sequence=? AND e.id=?`).get(record.view.id,entry.sequence,entry.id) as {content_revision:string;round_id:string;entry_count:number;inherited_count:number}|undefined;
@@ -193,7 +193,7 @@ export class ConversationEntryStore {
     const p=update.position;
     db.prepare('INSERT OR IGNORE INTO conversation_entry_contents(conversation_id,content_revision,codec,body_bytes,body) VALUES(?,?,?,?,?)').run(id,p.revision,'raw',p.bytes,p.content!.body);
     const changed=db.prepare(`UPDATE conversation_read_entries SET round_id=?,content_revision=?,compact=NULL,body_bytes=?,compact_bytes=?,visible=?
-      WHERE conversation_id=? AND scope='main' AND sequence=? AND id=? AND content_revision=?`).run(p.round,p.revision,p.bytes,p.compactBytes,Number(!p.entry.thinking),id,p.entry.sequence,p.entry.id,update.previousRevision).changes;
+      WHERE conversation_id=? AND scope='main' AND sequence=? AND id=? AND content_revision=?`).run(p.round,p.revision,p.bytes,p.compactBytes,Number(p.entry.kind==='message'&&!p.entry.thinking),id,p.entry.sequence,p.entry.id,update.previousRevision).changes;
     if(changed!==1)throw new AgentServiceError('agent_entry_corrupt','文本消息位置已变化；原记录已保留。',409);
     if(update.previousRevision!==p.revision)db.prepare(`DELETE FROM conversation_entry_contents WHERE conversation_id=? AND content_revision=?
       AND NOT EXISTS(SELECT 1 FROM conversation_read_entries WHERE conversation_id=? AND content_revision=?)`).run(id,update.previousRevision,id,update.previousRevision);

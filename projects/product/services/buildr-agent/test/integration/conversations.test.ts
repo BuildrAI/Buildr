@@ -23,6 +23,7 @@ import { createAgentService } from '../../src/index.ts';
 import { AgentServiceError } from '../../src/domain/agent-state.ts';
 import type { AgentExecutor, AgentRuntime, AgentServiceOptions, ContextRef, ConversationEntry, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation } from '../../src/contracts.ts';
 import { NativeRequestError } from '../../src/domain/error-diagnostic.ts';
+import { ConversationEntryStore } from '../../src/persistence/conversation-entry-store.ts';
 import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
 
 test('handoff references preserve ordered inputs and read details without duplicating or decoding old tools',async t=>{
@@ -272,7 +273,7 @@ test('resuming history preserves a concurrent metadata update without failing th
 });
 
 type Context = { items: ExecutorItem[]; observation: ExecutorObservation; unblock?: () => void };
-test('native text streams persist every fragment and reload after concurrent writes and stop', async t => {
+for (const kind of ['message', 'thinking'] as const) test(`native ${kind} streams persist every fragment and reload after concurrent writes and stop`, async t => {
   const native=fake('codex',{hold:true}),f=fixture([native.executor]);t.after(()=>f.close());
   await connected(f.service,'codex');const chat=await f.service.conversations.create('workspace-one',{});
   send(f.service,chat.id,'codex','stream');
@@ -282,13 +283,15 @@ test('native text streams persist every fragment and reload after concurrent wri
   repo.rebuildReadModel(chat.id);
   const original=ConversationRepository.prototype.readConversation;let loads=0;
   const spy=t.mock.method(ConversationRepository.prototype,'readConversation',function(this:ConversationRepository,...args:Parameters<typeof original>){loads++;return original.apply(this,args);});
-  const emit=(text:string)=>native.sends[0].onEvent({type:'item',item:{id:'stream-answer',kind:'message',role:'assistant',text,status:'running',executionId:'execution-1'}});
+  const textWrites=t.mock.method(ConversationEntryStore,'saveText');
+  const emit=(text:string)=>native.sends[0].onEvent({type:'item',item:{id:'stream-answer',kind,role:'assistant',text,status:'running',executionId:'execution-1'}});
   for(let i=1;i<=20;i++){
     emit('字'.repeat(i));
     const view=f.service.conversations.read('workspace-one',chat.id);
     assert.equal(view.entries.at(-1)?.text,'字'.repeat(i),'each fragment is visible without a merge window');
   }
   assert.ok(loads<=2,`consecutive text must not reload the complete history (${loads} loads)`);spy.mock.restore();
+  assert.equal(textWrites.mock.callCount(),19,'every subsequent fragment updates only its own persisted entry');textWrites.mock.restore();
   assert.equal(repo.readConversation(chat.id)!.view.entries.at(-1)?.text,'字'.repeat(20),'last fragment is durable');
   const seenThrough=f.service.conversations.read('workspace-one',chat.id).activity!.version;
   repo.markSeen('workspace-one',chat.id,seenThrough);emit('after seen');
