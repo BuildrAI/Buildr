@@ -5,7 +5,7 @@ import type { NativeContentInventory, NativeAttachmentContent } from '../native-
 import { createNativeExecutors } from '../executors/index.ts';
 import { nativeToolReference, nativeContentFiles, nativeCommandIndex, nativeCommandPrefix } from '../executors/native-content.ts';
 import { ConversationRepository } from '../persistence/conversation-repository.ts';
-import { ConversationEntryStore } from '../persistence/conversation-entry-store.ts';
+import { ConversationEntryStore, type Content } from '../persistence/conversation-entry-store.ts';
 import { NativeContentStore } from '../persistence/native-content-store.ts';
 import { claim } from '../process/ownership.ts';
 import { NativeContentReader, nativeContentHash } from '../storage/native-content.ts';
@@ -78,9 +78,12 @@ export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolea
     };
     const observed=options.dryRun?{entry:0,attachment:''}:store.cursor();
     const cursor={entry:options.after??observed.entry,attachment:options.afterAttachment??observed.attachment};
-    const rows=store.entries(cursor.entry,limit); let entryCursor=cursor.entry, attachmentCursor=cursor.attachment;
-    for (const row of rows) {
-      if (Date.now()>deadline) break;
+    let entryCursor=cursor.entry, attachmentCursor=cursor.attachment;
+    let entriesSeen=0, entriesPaused=false;
+    let lastHeader: string | undefined, lastRecord: StoredConversation | undefined;
+    for (const row of store.entries(cursor.entry,limit,!!options.dryRun)) {
+      if (Date.now()>deadline) { entriesPaused=true; break; }
+      entriesSeen++;
       const previousCursor=entryCursor;entryCursor=row.position; result.inspected++;
       let provider='unknown';
       const reason=(code:string)=>{
@@ -88,14 +91,21 @@ export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolea
         if(options.details)result.entryItems.push({conversationId:row.conversation_id,revision:row.content_revision,provider,reason:code,storedBytes:size,logicalBytes:row.body_bytes});
       };
       try {
+        if(row.codec==='native-tool') continue;
         const existing=ConversationEntryStore.reference(row);
-        if(existing?.version === 3) continue;
         if(existing){provider=existing.provider;reason('already_native');continue;}
-        const entry=ConversationEntryStore.decode(row), record=JSON.parse(row.header) as StoredConversation;
+        const entry=ConversationEntryStore.decode(row);
         provider=entry.provider??'none';
         if(entry.kind!=='tool'){reason('not_tool');continue;}
         if(!['completed','failed'].includes(entry.status??'')){reason('unsettled_tool');continue;}
         if(Buffer.byteLength(row.body)<=128){reason('insufficient_stored_bytes');continue;}
+        const header=row.header();
+        if (header===undefined) {reason('source_identity_unavailable');continue;}
+        if (lastHeader!==header || !lastRecord) {
+          lastRecord=JSON.parse(header) as StoredConversation;
+          lastHeader=header;
+        }
+        const record=lastRecord;
         let origin=record,sources=Object.entries(origin.sources).filter(([,id])=>id===entry.id);
         const ancestors=new Set<string>([record.view.id]);
         while(sources.length!==1&&origin.view.childOf&&ancestors.size<8) {
@@ -115,11 +125,11 @@ export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolea
         const original=originalContext(origin,participant,entry.runId);
         const location=original.context||original.reason!=='historical_context_unproven'?original:locate(origin,participant,source.slice(split+6),executionId,entry.input);
         if(!location.context){
-          if(location.reason==='context_budget'||location.reason==='native_lookup_time_budget'){entryCursor=previousCursor;result.inspected--;break;}
+          if(location.reason==='context_budget'||location.reason==='native_lookup_time_budget'){entryCursor=previousCursor;entriesPaused=true;result.inspected--;break;}
           reason(location.reason!);continue;
         }
         const context=location.context,native=inventory(origin,participant,context);
-        if(!native){if(inventoryReason==='context_budget'){entryCursor=previousCursor;result.inspected--;break;}reason(inventoryReason);continue;}
+        if(!native){if(inventoryReason==='context_budget'){entryCursor=previousCursor;entriesPaused=true;result.inspected--;break;}reason(inventoryReason);continue;}
         let matchReason='native_content_unavailable';
         const reference=nativeToolReference(root,participant.provider,context,source.slice(split+6),entry,native,value=>{matchReason=value;},executionId);
         if(!reference){reason(matchReason);continue;}
@@ -130,29 +140,42 @@ export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolea
         const savings=Buffer.byteLength(row.body)-Buffer.byteLength(encoded.body)-(Buffer.byteLength(compact)*positions-(previousCompact??0));
         if (savings<=128){reason('insufficient_net_saving');continue;}
         const verify=()=>{ return !!reader.tool(reference,row.content_revision); };
-        if (options.dryRun || store.replaceTool(row,reference,verify)) {
+        if (options.dryRun || store.replaceTool({...row,header},reference,verify)) {
           result.tools++;result.contentBytesSaved+=savings;
           const residual=[...reference.input??[],...reference.text].reduce((sum,part)=>sum+('literal'in part&&part.residual?Buffer.byteLength(part.literal):0),0);
           result.localResidualBytes+=residual;reason(residual?'convertible_partial':'convertible_full');
         }else {result.deferred++;reason('concurrent_change');}
       } catch { result.deferred++;reason('content_read_or_validation_failed'); }
     }
-    if (rows.length<limit && entryCursor===(rows.at(-1)?.position??entryCursor)) entryCursor=0;
+    if (!entriesPaused && entriesSeen<limit) entryCursor=0;
     inventories.clear();
+    // Attachments get a separate slice so a long tool history cannot starve
+    // them. All mutations still require a fresh identity and ownership proof.
+    const attachmentDeadline=options.budgetMs===undefined ? deadline : Date.now()+Math.min(500,Math.max(100,options.budgetMs));
     const attachments=store.attachments(cursor.attachment,8);
     attachmentRows: for (const row of attachments) {
-      if (Date.now()>deadline) break;
+      if (Date.now()>attachmentDeadline) break;
       attachmentCursor=row.id;
       let header=row.body;
       const record=JSON.parse(header) as StoredConversation;
       // Only already-delivered, referenced image bytes have a native candidate. Video originals stay local.
-      const ids=new Set((store.db.prepare("SELECT c.body,c.codec,c.body_bytes,c.content_revision FROM conversation_read_entries e JOIN conversation_entry_contents c USING(conversation_id,content_revision) WHERE e.conversation_id=? AND e.scope='main' AND e.visible=1").all(row.id) as any[]).flatMap(content=>ConversationEntryStore.decode(content).attachments??[]));
+      const ids=new Set<string>();
+      const messages = store.db.prepare(`SELECT e.compact, c.codec, c.body_bytes, c.content_revision,
+        CASE WHEN e.compact IS NULL THEN c.body END AS body
+        FROM conversation_read_entries e JOIN conversation_entry_contents c USING(conversation_id,content_revision)
+        WHERE e.conversation_id=? AND e.scope='main' AND e.visible=1`);
+      for (const message of messages.iterate(row.id)) {
+        const entry = typeof message.compact==='string' ? JSON.parse(message.compact)
+          : ConversationEntryStore.reference(message as unknown as Content)?.entry
+            ?? ConversationEntryStore.decode(message as unknown as Content);
+        for (const id of entry.attachments??[]) ids.add(id);
+      }
       for (const id of [...ids]) for (const frame of record.attachments[id]?.video?.frames??[]) ids.add(frame.id);
       const resume=cursor.attachment.startsWith(row.id+'#')?cursor.attachment.slice(row.id.length+1).split('.').map(Number):[0,0];
       const items=Object.entries(record.attachments);
       for (let itemIndex=resume[0]??0;itemIndex<items.length;itemIndex++) {
         const [id,meta]=items[itemIndex]!;
-        if(Date.now()>deadline){attachmentCursor=row.id+'#'+itemIndex;break attachmentRows;}
+        if(itemIndex>(resume[0]??0)&&Date.now()>attachmentDeadline){attachmentCursor=row.id+'#'+itemIndex;break attachmentRows;}
         const filename=path.join(root,'attachments',record.view.id,id),local=fs.lstatSync(filename,{throwIfNoEntry:false});
         const note=(code:string)=>{const value=result.attachmentReasons[code]??={items:0,storedBytes:0};value.items++;value.storedBytes+=(local?.blocks??0)*512;};
         const protectedPath=!dependencies.complete||record.view.requests.length>0||record.participants.some(participant=>participant.contextRef&&blocked.has(participant.provider+':'+participant.contextRef.id));
@@ -182,7 +205,7 @@ export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolea
           });
           let images=0,available=0;inventories.clear();
           if (!reference) for (let targetIndex=itemIndex===resume[0]?(resume[1]??0):0;targetIndex<targets.length;targetIndex++) {
-            if(Date.now()>deadline){attachmentCursor=row.id+'#'+itemIndex+'.'+targetIndex;break attachmentRows;}
+            if(targetIndex>(itemIndex===resume[0]?(resume[1]??0):0)&&Date.now()>attachmentDeadline){attachmentCursor=row.id+'#'+itemIndex+'.'+targetIndex;break attachmentRows;}
             const {participant,context}=targets[targetIndex]!,native=inventory(record,participant,context);
             if (!native) {if(inventoryReason==='context_budget'){attachmentCursor=row.id+'#'+itemIndex+'.'+targetIndex;break attachmentRows;}continue;}
             available++;images+=native.images.length;
@@ -212,7 +235,7 @@ export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolea
     }
     if (attachments.length<8 && attachmentCursor===(attachments.at(-1)?.id??attachmentCursor)) attachmentCursor='';
     result.nextEntry=entryCursor;result.nextAttachment=attachmentCursor;
-    if (!options.dryRun) { store.advance(entryCursor,attachmentCursor); result.databaseBytesReclaimed=store.reclaim(); }
+    if (!options.dryRun) { store.advance(entryCursor,attachmentCursor); if(result.tools||result.attachmentReferences||(!entryCursor&&!attachmentCursor))result.databaseBytesReclaimed=store.reclaim(); }
   } catch { result.diagnostic='native_content_maintenance_deferred'; }
   finally { store?.close(); lock?.release(); }
   return result;

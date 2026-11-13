@@ -273,7 +273,9 @@ test('a stable tool can use native bytes in an unknown round while stale convers
   assert.equal(maintainNativeContent(f.dataRoot).tools,1);
   assert.equal(f.repo.readConversation(f.r.view.id)!.runOutcomes![f.entry.runId!]!.status,'unknown');
   f.r.runOutcomes![f.entry.runId!]!.status='completed';f.r.view.revision='r3';f.repo.saveConversation(f.r,'r2');
-  const store=new NativeContentStore(f.repo.filename,true);t.after(()=>store.close());const row=store.entries(0,10)[0]!;
+  const store=new NativeContentStore(f.repo.filename,true);t.after(()=>store.close());
+  const observed=[...store.entries(0,10,true)][0]!;
+  const row={...observed,header:observed.header()!};
   const reference=nativeToolReference(f.root,'qoder',f.contextId,f.toolId,f.entry,f.read()!)!;
   let changed=false; assert.equal(store.replaceTool(row,reference,()=>false),false);
   f.r.view.entries.push({id:'new-input',sequence:3,kind:'message',role:'user',text:'new input retained',createdAt:'later'});f.r.view.revision='r4';f.repo.saveConversation(f.r,'r3');

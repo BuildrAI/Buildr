@@ -1,4 +1,5 @@
 import type { ExecutionDiagnosticSink } from '../../contracts.ts';
+import { diagnosticCode } from '../../storage/execution-log.ts';
 import { type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { OwnedControlResource, bounded, closeOwnedProcess, nativeCommand, type NativeEnvironment } from '../native-process.ts';
 
@@ -22,15 +23,33 @@ export async function launchDshHost(executable: string, env: NativeEnvironment, 
     child.once('exit', () => reject(new Error('dsh_host_closed')));
   });
   let client: DshClient | undefined; let abortedClose: Promise<void> | undefined;
-  const abort = () => { abortedClose ??= closeOwnedProcess(child, 1000); void client?.close(); };
+  const abort = () => {
+    abortedClose ??= closeOwnedProcess(child, 1000);
+    void abortedClose.catch(() => {});
+    void client?.close().catch(() => {});
+  };
+  const close = async () => {
+    try {
+      if (client) await bounded(client.close(), 1000, 'dsh_client_close_timeout');
+    } catch (error) {
+      diagnostics?.({ event: 'native-client-close-deferred', code: diagnosticCode(error) });
+    } finally {
+      // A stuck SDK socket must never keep the owned DSH web process alive.
+      await (abortedClose ?? closeOwnedProcess(child, 1000));
+    }
+  };
   signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) abort();
   try {
     const privateUrl = await bounded(ready, 45000, 'dsh_host_startup_timeout');
     client = await connectDshClient(privateUrl, signal);
     child.once('exit',()=>{void client?.close().catch(()=>{});});
     signal?.throwIfAborted();
-    return { control, child, client, async close() { await client?.close(); await closeOwnedProcess(child); } };
-  } catch (error) { settled = true; await client?.close(); await (abortedClose ?? closeOwnedProcess(child)); throw error; }
+    return { control, child, client, close };
+  } catch (error) {
+    settled = true;
+    await close();
+    throw error;
+  }
   finally { signal?.removeEventListener('abort', abort); }
 }
 /** API operators are socket-owned: a closed carrier invalidates its cookie. */

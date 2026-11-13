@@ -21,3 +21,16 @@ for (const exits of [true, false]) test(`cleanup confirms detached descendants a
   assert.deepEqual(result.remaining, exits ? [] : [101]);
   assert.equal(waits, exits ? 2 : 4, 'the same bounded confirmation budget covers the group and all owned descendants');
 });
+
+test('cleanup does not signal a detached PID reused by a different process', async () => {
+  const result = await terminateOwnedProcess({
+    pid: 100, processes: [{ pid: 101, startedAt: 'original' }], platform: 'darwin',
+    observe: () => [{ pid: 101, startedAt: 'replacement' }],
+    kill(pid: number, signal: number | string) {
+      assert.equal(pid, -100);
+      assert.equal(signal, 0);
+      throw Object.assign(new Error('already exited'), { code: 'ESRCH' });
+    },
+  });
+  assert.equal(result.status, 'clean');
+});

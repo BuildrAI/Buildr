@@ -128,14 +128,26 @@ test('periodic maintenance retires idle bytecode and preserves reusable download
   const warm=spawn(process.execPath,['-e','require("fs").openSync(process.argv[1],"r");console.log("ready");setInterval(()=>{},1000)',accountReader],{stdio:['ignore','pipe','pipe']});
   const holder=spawn(process.execPath,['-e','const fs=require("fs");for(const file of process.argv.slice(1))fs.openSync(file,"r");console.log("ready");setInterval(()=>{},1000)',item.file,...oldCaches.map(cache=>path.join(cache,'proof-entry'))],{stdio:['ignore','pipe','pipe']});
   t.after(async()=>{maintenance?.close();for(const child of [holder,warm])if(child.exitCode===null&&child.signalCode===null){child.kill('SIGTERM');await once(child,'exit');}const worker=(maintenance as any)?.worker;if(worker)await once(worker,'exit');fs.rmSync(dataRoot,{recursive:true,force:true});});
-  await Promise.all([once(holder.stdout!,'data'),once(warm.stdout!,'data')]);maintenance=new StorageMaintenance(dataRoot,{initialMs:1,intervalMs:10});
+  await Promise.all([once(holder.stdout!,'data'),once(warm.stdout!,'data')]);
+  async function runInventory() {
+    // Run a production inventory after each occupancy transition. The
+    // scheduler's retry interval and cost-based backoff have separate coverage.
+    await new Promise<void>(resolve => {
+      maintenance = new StorageMaintenance(dataRoot, { initialMs: 1, diagnostics: () => {
+        maintenance!.close();
+        resolve();
+      } });
+    });
+  }
+  await runInventory();
   const snapshot=()=>{try{return JSON.parse(fs.readFileSync(path.join(root,'process/storage-observation.json'),'utf8'));}catch{return undefined;}};
   const wait=async(predicate:(value:any)=>boolean)=>{const deadline=Date.now()+20000;while(Date.now()<deadline){const value=snapshot();if(value&&predicate(value))return value;await new Promise(resolve=>setTimeout(resolve,20));}assert.fail('automatic component maintenance did not settle');};
   const busy=await wait(value=>value.legacyCachePolicy==='retire-rebuildable-classes');
   assert.ok(busy.homeStorage.installationLocks.includes(item.lock));
   for(const cache of oldCaches)assert.ok(fs.existsSync(cache),'a running owner retains its old caches');
   holder.kill('SIGTERM');await once(holder,'exit');
-  await wait(()=>!fs.existsSync(oldCaches[1]!));
+  await runInventory();
+  assert.equal(fs.existsSync(oldCaches[1]!),false,'a later inventory retires the now-idle bytecode');
   assert.ok(fs.existsSync(oldCaches[0]!),'unique download content survives holder exit');
   assert.equal(fs.readFileSync(item.file,'utf8'),'original body '.repeat(10000),'unclassified installation is untouched');
   assert.equal(fs.existsSync(path.join(root,'toolchains/component-views')),false,'no per-package sharing is scheduled');

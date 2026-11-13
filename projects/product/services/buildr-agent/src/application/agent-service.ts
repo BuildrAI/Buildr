@@ -135,6 +135,10 @@ export function createAgentService(options: AgentServiceOptions) {
       listEvents: (credentialId: string, workspaceId: string, input: {after?:string;limit?:number}) => pushback.listEvents(credentialId, workspaceId, input),
       migrateGlobal: (credentialId: string, input: {url:string;secret:string}) => pushback.migrateGlobal(credentialId, input),
     },
+    canMaintainStorage() {
+      return !discovery && !conversations.activity().some(reason => reason.kind !== 'source-resource') &&
+        !preparations.activity().length && !models.activity().length && !upgrades.activity().length;
+    },
     activity() {
       const reasons = [...conversations.activity(), ...preparations.activity(), ...connections.activity(), ...models.activity(), ...upgrades.activity()];
       if(discovery)reasons.push({kind:'model-discovery',count:1});

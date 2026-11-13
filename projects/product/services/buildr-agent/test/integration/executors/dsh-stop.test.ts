@@ -40,3 +40,25 @@ for(const mode of ['owned','shared','protected'] as const)test('unresponsive nat
   }
  }finally{await runtime?.close();await closeOwnedProcess(control.child,10);await rm(root,{recursive:true,force:true});}
 });
+
+test('DSH closes its own control process even when stream cleanup stalls', { timeout: 8000 }, async () => {
+ const root = await mkdtemp(join(tmpdir(), 'dsh-close-stalled-stream-'));
+ const control = new OwnedControlResource(process.execPath, ['-e', "process.stdout.write('ready');setInterval(()=>{},1000)"], { cwd: root, env: process.env });
+ try {
+  await once(control.child.stdout, 'data');
+  const client = { remote: {} };
+  const diagnostics: Array<{ event: string; code?: string }> = [];
+  const runtime = Reflect.construct(DshRuntime, ['binding', { child: control.child, close: () => closeOwnedProcess(control.child, 30) }, client,
+   (event: { event: string; code?: string }) => diagnostics.push(event),
+  ]);
+  runtime.turns.set('completed-context', {
+   terminal: true, pending: new Map(), stream: { dispose: () => new Promise(() => {}) },
+  });
+  await runtime.close();
+  assert.ok(diagnostics.some(event => event.code === 'dsh_stream_close_timeout'));
+  assert.ok(control.child.exitCode !== null || control.child.signalCode !== null);
+ } finally {
+  await closeOwnedProcess(control.child, 30);
+  await rm(root, { recursive: true, force: true });
+ }
+});

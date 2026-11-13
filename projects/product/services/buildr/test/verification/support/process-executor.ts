@@ -42,12 +42,15 @@ export function executeVerificationCommand(step: any, options: any = {}): Promis
     let exitResult: any = null;
     let timeout: any = null;
     let closeTimeout: any = null;
+    let cancel: (() => void) | undefined;
 
     const finish = (status: any, exitCode: any, signal: any = null, failureCode: any = null, processCleanup: any = null) => {
       if (settled) return;
       settled = true;
       if (timeout) clearTimeout(timeout);
       if (closeTimeout) clearTimeout(closeTimeout);
+      if (cancel) options.signal.removeEventListener('abort', cancel);
+      tracker?.dispose();
       stdout = appendBounded(stdout, stdoutDecoder.end(), outputLimit);
       stderr = appendBounded(stderr, stderrDecoder.end());
       resolve({
@@ -81,8 +84,11 @@ export function executeVerificationCommand(step: any, options: any = {}): Promis
       if (settled || terminating) return;
       terminating = true;
       stderr = appendBounded(stderr, `${message}\n`);
-      const processCleanup = await cleanup();
-      finish(status, status === 'timed-out' ? 124 : 130, null, failureCode, processCleanup);
+      const processCleanup = await cleanup().catch(error => ({ status: 'failed', ownership: 'runner-owned', error: error.message }));
+      finish(status, status === 'timed-out' ? 124 : status === 'cancelled' ? 130 : 1, null, failureCode, processCleanup);
+      child?.stdout?.destroy();
+      child?.stderr?.destroy();
+      child?.unref();
     };
 
     try {
@@ -103,12 +109,17 @@ export function executeVerificationCommand(step: any, options: any = {}): Promis
     child.on('error', (error: any) => finish('failed', 1, null, 'spawn-failed', { status: 'failed', ownership: 'runner-owned', error: error.message }));
     child.on('exit', (code: any, signal: any) => {
       exitResult = { code, signal };
-      closeTimeout = setTimeout(() => finish('failed', 1, signal, 'process-close-timeout', { status: 'failed', ownership: 'runner-owned', reason: 'stdio-close-timeout' }), EXIT_CLOSE_GRACE_MS);
+      closeTimeout = setTimeout(() => {
+        void terminate('failed', 'process-close-timeout', 'Verification command exited with inherited stdio still open.');
+      }, options.exitCloseGraceMs ?? EXIT_CLOSE_GRACE_MS);
       closeTimeout.unref?.();
     });
     child.on('close', async (code: any, signal: any) => {
       if (terminating || settled) return;
-      const processCleanup = await cleanup();
+      terminating = true;
+      if (timeout) clearTimeout(timeout);
+      if (closeTimeout) clearTimeout(closeTimeout);
+      const processCleanup = await cleanup().catch(error => ({ status: 'failed', ownership: 'runner-owned', error: error.message }));
       const finalCode = Number.isInteger(code) ? code : exitResult?.code ?? 1;
       const finalSignal = signal ?? exitResult?.signal ?? null;
       const status = finalCode === 0 && !finalSignal && processCleanup.status === 'clean' ? 'passed' : 'failed';
@@ -119,7 +130,7 @@ export function executeVerificationCommand(step: any, options: any = {}): Promis
     }, timeoutMs);
     timeout.unref?.();
     if (options.signal) {
-      const cancel = () => { void terminate('cancelled', 'capability-cancelled', `capability-cancelled: ${step.name || command} was cancelled.`); };
+      cancel = () => { void terminate('cancelled', 'capability-cancelled', `capability-cancelled: ${step.name || command} was cancelled.`); };
       if (options.signal.aborted) cancel();
       else options.signal.addEventListener('abort', cancel, { once: true });
     }

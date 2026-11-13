@@ -35,10 +35,29 @@ export class NativeContentStore {
     return this.db.prepare('SELECT entry,attachment FROM conversation_storage_cursor WHERE id=1').get() as unknown as {entry:number;attachment:string};
   }
   advance(entry: number, attachment: string): void { this.db.prepare('UPDATE conversation_storage_cursor SET entry=?,attachment=? WHERE id=1').run(entry, attachment); }
-  entries(after: number, limit: number) {
-    return this.db.prepare(`SELECT c.rowid AS position,c.*,v.body AS header,v.revision AS conversation_revision
-      FROM conversation_entry_contents c JOIN conversations v ON v.id=c.conversation_id
-      WHERE c.rowid>? ORDER BY c.rowid LIMIT ?`).all(after, limit) as unknown as Array<Content & {position:number;conversation_id:string;header:string;conversation_revision:string}>;
+  *entries(after: number, limit: number, includeNative: boolean) {
+    // Fetch positions first. Do not hold a read iterator open across the
+    // compare-and-swap writes, or materialize a copy of each conversation
+    // header for every entry in the batch.
+    const positions = this.db.prepare(
+      `SELECT rowid AS position FROM conversation_entry_contents
+        WHERE rowid>? ${includeNative ? '' : "AND codec<>'native-tool'"} ORDER BY rowid LIMIT ?`,
+    ).all(after, limit);
+    const entry = this.db.prepare('SELECT * FROM conversation_entry_contents WHERE rowid=?');
+    const header = this.db.prepare('SELECT body FROM conversations WHERE id=?');
+    let cachedId: string | undefined;
+    let cachedHeader: string | undefined;
+    for (const { position } of positions) {
+      const row = entry.get(position!) as (Content & { conversation_id: string }) | undefined;
+      if (!row) continue;
+      yield { ...row, position: Number(position), header: () => {
+        if (cachedId !== row.conversation_id) {
+          cachedId = row.conversation_id;
+          cachedHeader = header.get(cachedId)?.body as string | undefined;
+        }
+        return cachedHeader;
+      } };
+    }
   }
   attachments(after: string, limit: number) {
     const split=after.indexOf('#'),id=split<0?after:after.slice(0,split);

@@ -779,18 +779,28 @@ export class DshRuntime implements AgentRuntime {
     for (const turn of this.turns.values()) { try { this.flushAssistant(turn); } catch { /* Preserve unknown delivery. */ } }
     this.disposed = true;
     for (const turn of this.turns.values()) if (turn.retryTimer) { clearTimeout(turn.retryTimer); turn.retryTimer = undefined; }
-    await this.cancelLogin();
-    await Promise.allSettled([...this.turns.values()].map(async turn => {
-      if (!turn.terminal) turn.reject?.(new Error('agent_native_process_closed'));
-      if (!turn.terminal&&!controlExited) await bounded(this.client.remote.session.cancel({ sessionId: turn.input.contextRef.id }), 1500).catch(() => {});
-      for (const pending of turn.pending.values()) { pending.resolve?.('cancelled'); pending.reject?.(new Error('dsh_question_expired')); await pending.wait?.dispose(); }
-      await turn.stream?.dispose(); await turn.pump;
-    }));
-    await this.host.close();
-    if(this.modelBridge)await rm(this.modelBridge.addressFile,{force:true});
-    if (this.forkBridge) {
-      await rm(this.forkBridge.addressFile,{force:true});
-      await rm(this.forkBridge.patch,{force:true});
+    try {
+      await this.cancelLogin();
+      await bounded(Promise.allSettled([...this.turns.values()].map(async turn => {
+        if (!turn.terminal) turn.reject?.(new Error('agent_native_process_closed'));
+        if (!turn.terminal && !controlExited) await bounded(this.client.remote.session.cancel({ sessionId: turn.input.contextRef.id }), 1500).catch(() => {});
+        for (const pending of turn.pending.values()) { pending.resolve?.('cancelled'); pending.reject?.(new Error('dsh_question_expired')); await pending.wait?.dispose(); }
+        await turn.stream?.dispose(); await turn.pump;
+      })), 2500, 'dsh_stream_close_timeout');
+    } catch (error) {
+      this.diagnostics?.({ event: 'native-stream-close-deferred', provider: 'dsh', code: diagnosticCode(error) });
+    } finally {
+      try { await this.host.close(); }
+      finally {
+        const child = this.host.child;
+        if (!child || child.exitCode !== null || child.signalCode !== null) {
+          if (this.modelBridge) await rm(this.modelBridge.addressFile, { force: true });
+          if (this.forkBridge) {
+            await rm(this.forkBridge.addressFile, { force: true });
+            await rm(this.forkBridge.patch, { force: true });
+          }
+        }
+      }
     }
   }
 }

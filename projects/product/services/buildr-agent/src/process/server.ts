@@ -470,7 +470,10 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if (ownsMetadata && !closing) await savePendingAfterStorageWait(pending);
     } finally { startup?.release(); }
   }
-  const storageMaintenance = new StorageMaintenance(options.dataRoot, { enabled: () => accepting && !retiring && !closing, runtime:options.runtime });
+  const storageMaintenance = new StorageMaintenance(options.dataRoot, {
+    enabled: () => accepting && !retiring && !closing && !inflight && !recovering && !sends.busy && service.canMaintainStorage(),
+    runtime: options.runtime, diagnostics,
+  });
   let retiringSince: number | undefined, retirementAttempt = 0;
   const RETIRED_GRACE_MS = 60_000, RETIRED_RETRY_MS = 5_000;
   let previousTick = performance.now();

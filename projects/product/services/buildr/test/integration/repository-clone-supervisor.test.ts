@@ -6,6 +6,7 @@ import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import test from 'node:test';
 import { createRepositoryCloneSupervisor } from '../../src/modules/workspace/infrastructure/repository-clone-supervisor.ts';
+import { stopOwnedChildProcess } from '../verification/support/owned-process.ts';
 import { createCodeApplication } from '../../src/modules/code/application/code-application.ts';
 
 async function until(check: () => boolean, message: string) {
@@ -17,12 +18,21 @@ function fixture(t: test.TestContext) {
   const location = path.join(root, 'repositories', 'code');
   const repository = { id: crypto.randomUUID(), source: { type: 'git', path: 'repositories/code', git: { url: 'unused:test', integrationBranch: 'main' } } };
   const supervisors: ReturnType<typeof createRepositoryCloneSupervisor>[] = [];
-  t.after(async () => { await Promise.all(supervisors.map(supervisor => supervisor.close())); fs.rmSync(root, { recursive: true, force: true }); });
+  const children: ReturnType<typeof spawn>[] = [];
+  t.after(async () => {
+    const closed = await Promise.allSettled(supervisors.map(supervisor => supervisor.close()));
+    await Promise.all(children.map(child => stopOwnedChildProcess(child)));
+    fs.rmSync(root, { recursive: true, force: true });
+    const failures = closed.filter(result => result.status === 'rejected');
+    if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'Clone supervisor cleanup failed');
+  });
   const calls: string[][] = [];
   function supervisor(script?: string, timeoutMs?: number) {
     const spawnGit: typeof spawn = ((command: string, args: string[], options: any) => {
       assert.equal(command, 'git'); calls.push(args);
-      return spawn(process.execPath, ['-e', script!, '--', ...args], options);
+      const child = spawn(process.execPath, ['-e', script!, '--', ...args], options);
+      children.push(child);
+      return child;
     }) as typeof spawn;
     const result = createRepositoryCloneSupervisor({ ...(script ? { spawnGit } : {}), ...(timeoutMs ? { timeoutMs } : {}) });
     supervisors.push(result); return result;
@@ -36,7 +46,10 @@ function slowClone(root: string, exitCode = 0, ignoreTerm = false) {
     const location=process.argv.at(-1); fs.mkdirSync(path.join(location,'.git'),{recursive:true});
     fs.writeFileSync(path.join(location,'partial.txt'),'partial'); fs.writeFileSync(${JSON.stringify(path.join(root, 'started'))},'started');
     ${ignoreTerm ? "process.on('SIGTERM',()=>{});" : ''}
-    const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(path.join(root, 'release'))})){clearInterval(timer);process.exit(${exitCode});}},10);`;
+    const timer=setInterval(()=>{
+      if(!fs.existsSync(location)){clearInterval(timer);process.exit(1);}
+      if(fs.existsSync(${JSON.stringify(path.join(root, 'release'))})){clearInterval(timer);process.exit(${exitCode});}
+    },10);`;
 }
 
 test('real Git clones directly into the final directory and completion survives a new supervisor', async t => {
