@@ -19,7 +19,7 @@ function binary():string {
   const root=path.dirname(createRequire(import.meta.url).resolve(name+'/package.json'));
   return path.join(root,process.platform==='win32'?'claude.exe':'claude');
 }
-async function fixture(t:test.TestContext,scenario:'text'|'tool'|'question'|'child'|'background'|'skill'|'compact'|'error'='text'){
+async function fixture(t:test.TestContext,scenario:'text'|'tool'|'question'|'child'|'background'|'skill'|'compact'|'error'='text',usageIn:'start'|'delta'='start'){
   const root=await realpath(await mkdtemp(path.join(tmpdir(),'buildr-claude-'))),cwd=path.join(root,'workspace');
   await mkdir(cwd);
   await writeFile(path.join(cwd,'AGENTS.md'),'BUILDR_CLAUDE_RULE_FIXTURE：只执行已授权动作。\n');
@@ -53,13 +53,13 @@ async function fixture(t:test.TestContext,scenario:'text'|'tool'|'question'|'chi
     if(!body.stream){res.setHeader('content-type','application/json');res.end(JSON.stringify(message));return;}
     res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-store'});
     const event=(type:string,data:unknown)=>res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
-    event('message_start',{type:'message_start',message:{...message,content:[],stop_reason:null,usage:{input_tokens:inputTokens,output_tokens:0}}});
+    event('message_start',{type:'message_start',message:{...message,content:[],stop_reason:null,usage:{input_tokens:usageIn==='delta'?0:inputTokens,output_tokens:0}}});
     content.forEach((block:any,index:number)=>{
       event('content_block_start',{type:'content_block_start',index,content_block:block.type==='text'?{type:'text',text:''}:{...block,input:{}}});
       event('content_block_delta',{type:'content_block_delta',index,delta:block.type==='text'?{type:'text_delta',text:block.text}:{type:'input_json_delta',partial_json:JSON.stringify(block.input)}});
       event('content_block_stop',{type:'content_block_stop',index});
     });
-    event('message_delta',{type:'message_delta',delta:{stop_reason:stop,stop_sequence:null},usage:{output_tokens:8}});
+    event('message_delta',{type:'message_delta',delta:{stop_reason:stop,stop_sequence:null},usage:{...(usageIn==='delta'?{input_tokens:inputTokens}:{}),output_tokens:8}});
     event('message_stop',{type:'message_stop'});res.end();
   });
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -89,6 +89,15 @@ test('Claude real SDK and native CLI use only the selected local model and prese
   const executionRef=events.find(event=>event.type==='accepted')!.executionRef;
   const observed=await f.runtime.observe({contextRef,executionRef});
   assert.equal(observed.status,'idle');assert.equal(observed.backgroundWork,false);
+});
+test('Claude context usage reports the provider request total from the final stream frame', {timeout:60000}, async t=>{
+  const f=await fixture(t,'text','delta'),contextRef=await f.runtime.createContext({cwd:f.cwd}),events:ExecutorEvent[]=[];
+  await f.runtime.send({contextRef,cwd:f.cwd,text:'Read-only fixture input.',images:[],model:'fixture-model',permissionMode:'full-access',clientRequestId:'context-usage',onEvent:event=>events.push(event)});
+  const reports=events.filter(event=>event.type==='context-usage');
+  assert.equal(reports.length,1,'one report per completed model request');
+  assert.equal(reports[0]!.type==='context-usage'?reports[0]!.usedTokens:undefined,10);
+  assert.equal(reports[0]!.type==='context-usage'?reports[0]!.windowTokens:undefined,32768);
+  assert.equal(reports[0]!.type==='context-usage'?reports[0]!.usedRatio:undefined,10/32768);
 });
 for(const protocol of ['responses','chat-completions'] as ModelProtocol[])test(`Claude real CLI executes a tool through the shared ${protocol} model gateway`,{timeout:60000},async t=>{
   const f=await fixture(t),requests:any[]=[];

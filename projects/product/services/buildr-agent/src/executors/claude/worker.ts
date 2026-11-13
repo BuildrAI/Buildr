@@ -58,10 +58,13 @@ interface Session {
   items: Map<string, ExecutorItem>;
   projector:ClaudeItemProjector;
   receipts:ClaudeReceiptCursor;
-  streams: Map<string, {messageId:string; blocks:Map<number, {type:string;text:string;id?:string;name?:string;arguments?:string}>}>;
+  streams: Map<string, {messageId:string; blocks:Map<number, {type:string;text:string;id?:string;name?:string;arguments?:string}>; used?:number}>;
 }
 const sessions = new Map<string, Session>();
 const historyProjectors=new Map<string,ClaudeItemProjector>();
+/** The prompt size of one model request: uncached plus cache reads and writes. */
+const usageTokens = (usage:any) => ['input_tokens','cache_read_input_tokens','cache_creation_input_tokens']
+  .reduce((sum,key)=>sum+(typeof usage?.[key]==='number'?usage[key]:0),0);
 const emit = (session: Session, event: ExecutorEvent) => {
   if (session.round) write({method:'event',params:{contextId:session.id,executionId:session.round.id,event:withExecutionFault(event)}});
 };
@@ -148,16 +151,21 @@ async function event(session: Session, message: any) {
     for (const entry of session.projector.items(message,round.id)) item(session,entry);
   } else if (message.type==='assistant') {
     for (const entry of session.projector.items(message,round.id)) item(session,entry);
-    const usage = message.message?.usage;
-    if (!message.parent_tool_use_id && usage) {
-      const used = ['input_tokens','cache_read_input_tokens','cache_creation_input_tokens'].reduce((sum,key)=>sum+(typeof usage[key]==='number'?usage[key]:0),0);
-      const window = gateway?.models[0]?.contextWindow;
-      emit(session,{type:'context-usage',usedTokens:used,...(window?{windowTokens:window,usedRatio:used/window}:{})});
-    }
   } else if (message.type==='stream_event') {
     const source = message.parent_tool_use_id??'main', e = message.event;
-    if (e?.type==='message_start') session.streams.set(source,{messageId:e.message.id,blocks:new Map()});
+    if (e?.type==='message_start') session.streams.set(source,{messageId:e.message.id,blocks:new Map(),used:usageTokens(e.message?.usage)});
     const stream=session.streams.get(source); if (!stream) return;
+    if (!message.parent_tool_use_id && ['message_delta','message_stop'].includes(e.type)) {
+      // Streamed assistant frames carry non-final usage. The provider's last
+      // request total arrives in message_delta; retain message_start's value
+      // when a protocol reports the prompt size only there.
+      const used=usageTokens(e.usage);
+      if(used>0)stream.used=used;
+      if(e.type==='message_stop'&&stream.used){
+        const window=gateway?.models[0]?.contextWindow;
+        emit(session,{type:'context-usage',usedTokens:stream.used,...(window?{windowTokens:window,usedRatio:stream.used/window}:{})});
+      }
+    }
     if (e.type==='content_block_start') {
       const block=e.content_block;
       stream.blocks.set(e.index,{type:block.type,text:block.text??block.thinking??'',id:block.id,name:block.name,arguments:''});

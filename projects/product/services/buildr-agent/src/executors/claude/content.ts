@@ -14,8 +14,11 @@ function primary(input:NativeContentContext):string|undefined {
   const files=nativeContentFiles(input,path.join(input.configRoot,'claude-config','projects'),file=>path.basename(file)===input.contextId+'.jsonl',3);
   return files.length===1?files[0]:undefined;
 }
+// A native session keeps one identity while its shell cwd may change (`cd`),
+// including between a tool call and its result. The file and the session id
+// already bind the record; the initial cwd locates the session, never filters it.
 function owns(input:NativeContentContext,row:any):boolean {
-  return row.sessionId===input.contextId&&row.cwd===input.cwd;
+  return row.sessionId===input.contextId;
 }
 /** A seek cursor observes only new durable native input receipts. It neither
  * creates a transcript nor treats a successful stdin write as admission. */

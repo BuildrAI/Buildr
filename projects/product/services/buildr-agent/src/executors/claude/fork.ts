@@ -25,7 +25,9 @@ export async function importClaudeFork(source: string, target: string, sessionId
   const output: string[] = [];
   for (const line of lines) {
     const row = JSON.parse(line);
-    if (['user','assistant'].includes(row.type) && (row.sessionId !== sessionId || row.cwd !== cwd)) throw new Error('agent_fork_source_binding_mismatch');
+    // Session identity, not the shell cwd, owns every record: a conversation
+    // that entered a worktree still forks its complete native history.
+    if (['user','assistant'].includes(row.type) && row.sessionId !== sessionId) throw new Error('agent_fork_source_binding_mismatch');
     let changed = false;
     for (const part of Array.isArray(row.message?.content) ? row.message.content : []) {
       if (part.type === 'redacted_thinking' && typeof part.data === 'string' && part.data.startsWith('buildr-v1.')) {
