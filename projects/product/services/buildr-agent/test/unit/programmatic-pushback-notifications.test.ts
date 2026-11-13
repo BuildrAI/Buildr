@@ -161,8 +161,57 @@ test('run.stalled fires after twenty minutes without a record, resets on recover
   const recoveredEntries = [{ id: 'm1', sequence: 1, kind: 'message', role: 'assistant', text: 'recovered', createdAt: '2026-11-01T00:21:00.000Z', runId: 'run-one', status: 'completed' }];
   const recovered = diff(view({ updatedAt: '2026-11-01T00:22:00.000Z', run: run('run-one', 'running'), entries: recoveredEntries as any }), again.snapshot, context(NOW + 22 * MINUTE));
   assert.deepEqual(recovered.events.map(event => event.type), ['run.progress']);
+  assert.equal(recovered.snapshot.runs['run-one']!.lastActivityAt, NOW + 21 * MINUTE, 'recovery anchors the new window to the record time, not the observation time');
   const secondStall = diff(view({ updatedAt: '2026-11-01T00:22:00.000Z', run: run('run-one', 'running'), entries: recoveredEntries as any }), recovered.snapshot, context(NOW + 42 * MINUTE));
   assert.deepEqual(secondStall.events.map(event => event.type), ['run.stalled'], 'a full new twenty-minute idle period is required');
+});
+
+test('a tool body re-projection to an empty native skeleton does not restart the idle window', () => {
+  const tool = { id: 'long-command', label: 'Command', status: 'running' as const, canStop: true };
+  const recordAt = Date.parse('2026-11-01T00:09:21.899Z'), startedAt = '2026-11-01T00:09:11.702Z';
+  const entry = { id: 'tool-entry', sequence: 9, kind: 'tool', role: 'system', text: "/bin/zsh -lc 'sleep 1500'", createdAt: '2026-11-01T00:09:21.899Z', runId: 'run-one', status: 'running' };
+  const first = diff(view({ updatedAt: entry.createdAt, run: run('run-one', 'tools-active', { tools: [tool], startedAt, updatedAt: entry.createdAt }), entries: [entry] as any }));
+  assert.deepEqual(first.events, []);
+  assert.equal(first.snapshot.runs['run-one']!.lastActivityAt, recordAt, 'the idle window starts at the real tool record');
+
+  // 20.5 minutes later an on-demand native body read replaces the tool text
+  // with an empty skeleton and run.updatedAt moves; neither is a new record.
+  const observedAt = Date.parse('2026-11-01T00:29:50.000Z');
+  const skeleton = [{ ...entry, text: '', detail: { revision: 'sha256-second' } }];
+  const reprojected = diff(view({
+    updatedAt: '2026-11-01T00:29:50.000Z',
+    run: run('run-one', 'tools-active', { tools: [tool], startedAt, updatedAt: '2026-11-01T00:30:05.207Z' }),
+    entries: skeleton as any,
+  }), first.snapshot, context(observedAt));
+  assert.deepEqual(reprojected.events.map(event => event.type), ['run.stalled'], 'the skeleton re-projection is not activity');
+  assert.deepEqual(reprojected.events[0]!.stalled, { idleMs: observedAt - recordAt, lastActivityAt: '2026-11-01T00:09:21.899Z' });
+
+  const later = diff(view({
+    updatedAt: '2026-11-01T00:34:26.271Z',
+    run: run('run-one', 'tools-active', { tools: [tool], startedAt, updatedAt: '2026-11-01T00:34:26.271Z' }),
+    entries: skeleton as any,
+  }), reprojected.snapshot, context(Date.parse('2026-11-01T00:34:26.271Z')));
+  assert.deepEqual(later.events, [], 'one idle period produces exactly one run.stalled');
+});
+
+test('a tool status change without a new entry still restarts the window at the observation time', () => {
+  const running = { id: 'long-command', label: 'Command', status: 'running' as const, canStop: true };
+  const entry = { id: 'tool-entry', sequence: 1, kind: 'tool', role: 'system', text: 'command', createdAt: '2026-11-01T00:00:00.000Z', runId: 'run-one', status: 'running' };
+  const first = diff(view({ run: run('run-one', 'tools-active', { tools: [running] }), entries: [entry] as any }));
+  assert.deepEqual(first.events, []);
+  const settled = diff(view({
+    updatedAt: '2026-11-01T00:19:00.000Z',
+    run: run('run-one', 'tools-active', { tools: [{ ...running, status: 'completed', canStop: false }] }),
+    entries: [{ ...entry, status: 'completed' }] as any,
+  }), first.snapshot, context(NOW + 19 * MINUTE));
+  assert.deepEqual(settled.events, []);
+  assert.equal(settled.snapshot.runs['run-one']!.lastActivityAt, NOW + 19 * MINUTE, 'a status-only change uses the observation time');
+  const notYet = diff(view({
+    updatedAt: '2026-11-01T00:19:00.000Z',
+    run: run('run-one', 'tools-active', { tools: [{ ...running, status: 'completed', canStop: false }] }),
+    entries: [{ ...entry, status: 'completed' }] as any,
+  }), settled.snapshot, context(NOW + 21 * MINUTE));
+  assert.deepEqual(notYet.events, [], 'only two minutes of the new window have elapsed');
 });
 
 test('run.stalled is limited to live statuses with a complete payload and survives a restart', () => {

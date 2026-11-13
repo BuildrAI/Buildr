@@ -68,9 +68,32 @@ function activitySignature(view: ConversationView, run: RunView): string {
     status: run.status,
     tools: run.tools.map(tool => [tool.id, tool.status]),
     entries: runEntries(view, run).map(entry => [
-      entry.id, entry.sequence, entry.kind, entry.role, entry.text, entry.parentToolId, entry.status, entry.createdAt,
+      entry.id, entry.sequence, entry.kind, entry.role, entry.parentToolId, entry.status, entry.createdAt,
+      // A tool body is projection detail, not record activity: handoff adoption
+      // and on-demand native body reads replace it with an empty skeleton while
+      // the tool keeps running. Assistant text growth is real work and stays in
+      // the signature.
+      entry.kind === 'tool' ? '' : entry.text,
     ]),
   });
+}
+/** Newest real record time for the run: its start or any entry creation. */
+function newestRecordAt(view: ConversationView, run: RunView): number | undefined {
+  const times = [run.startedAt, ...runEntries(view, run).map(entry => entry.createdAt)]
+    .map(value => Date.parse(value))
+    .filter(value => Number.isFinite(value));
+  return times.length ? Math.max(...times) : undefined;
+}
+/**
+ * Anchor activity to the record that caused the change. A status-only change
+ * has no timestamp of its own, so the observation time is the closest boundary
+ * left. Projection noise never reaches this function because it no longer
+ * changes the signature.
+ */
+function activityAt(previous: PushbackRunState | undefined, newest: number | undefined, now: number): number {
+  const observed = previous?.lastActivityAt;
+  if (newest !== undefined && (!Number.isFinite(observed) || newest > observed!)) return newest;
+  return now;
 }
 function progressEntry(view: ConversationView, run: RunView) {
   return runEntries(view, run)
@@ -235,6 +258,7 @@ export function pushbackNotifications(view: ConversationView, prior: PushbackSna
   for (const run of runs) {
     const previous = previousRuns?.[run.id];
     const signature = activitySignature(view, run);
+    const newest = newestRecordAt(view, run);
     const latest = progressEntry(view, run);
     const completedToolCount = run.tools.filter(tool => tool.status === 'completed').length;
     const state: PushbackRunState = previous ? {
@@ -243,10 +267,10 @@ export function pushbackNotifications(view: ConversationView, prior: PushbackSna
       startedAt: run.startedAt,
       activitySignature: signature,
       completedToolCount,
-      ...(signature !== previous.activitySignature ? { lastActivityAt: context.now, stalled: false } : {}),
+      ...(signature !== previous.activitySignature ? { lastActivityAt: activityAt(previous, newest, context.now), stalled: false } : {}),
     } : {
       status: run.status,
-      lastActivityAt: context.now,
+      lastActivityAt: newest ?? context.now,
       activitySignature: signature,
       completedToolCount,
       startedAt: run.startedAt,

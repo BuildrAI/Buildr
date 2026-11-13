@@ -9,6 +9,7 @@ import { readTestPushbackTiming } from '../../src/application/agent-service.ts';
 import type { ConversationView, RunView } from '../../src/contracts.ts';
 
 const NOW = Date.parse('2026-11-01T00:00:00.000Z');
+const NOW_ISO = '2026-11-01T00:00:00.000Z';
 const SECRET = 'super-secret-token';
 const URL = 'https://receiver.test/hook';
 
@@ -375,6 +376,45 @@ test('run.stalled carries complete fields and one idle period is announced once 
   } finally { restarted?.close(); s.close(); }
 });
 
+test('a single long tool stalls once at the default threshold even when its native body is re-projected near the boundary', async () => {
+  const s = setup();
+  try {
+    s.configure();
+    s.pb.markTakeover('workspace-one', 'conversation-one', 'cred-one');
+    const tool = { id: 'long-command', label: 'Command', status: 'running' as const, canStop: true };
+    const entry = { id: 'tool-entry', sequence: 1, kind: 'tool', role: 'system', text: "/bin/zsh -lc 'sleep 1500'", createdAt: NOW_ISO, runId: 'run-one', status: 'running' };
+    s.pb.publish(conversationEvent(view({ updatedAt: NOW_ISO, run: run('run-one', 'tools-active', { tools: [tool], updatedAt: NOW_ISO }), entries: [entry] as any })));
+    s.setLive([run('run-one', 'tools-active', { tools: [tool] })]);
+    await s.flush();
+    assert.equal(s.fake.calls.length, 0, 'a running tool is not yet stalled');
+
+    // Just before the threshold the native body is replaced by an empty
+    // skeleton and run.updatedAt advances; neither is a new record, so the
+    // idle window must stay anchored to the original tool record.
+    s.advance(19 * 60000 + 30000);
+    const observedAt = new Date(s.now()).toISOString();
+    s.pb.publish(conversationEvent(view({
+      updatedAt: observedAt,
+      run: run('run-one', 'tools-active', { tools: [tool], updatedAt: observedAt }),
+      entries: [{ ...entry, text: '', detail: { revision: 'sha256-second' } }] as any,
+    })));
+    await s.flush();
+    assert.equal(s.fake.calls.length, 0, 'the re-projection does not advance the idle window either');
+
+    s.advance(30000);
+    s.pb.tick();
+    await s.flush();
+    const stalled = s.fake.calls.filter(call => call.body.type === 'run.stalled');
+    assert.equal(stalled.length, 1, 'exactly one run.stalled for the idle period');
+    assert.deepEqual(stalled[0]!.body.stalled, { idleMs: 20 * 60000, lastActivityAt: NOW_ISO });
+
+    s.advance(60000);
+    s.pb.tick();
+    await s.flush();
+    assert.equal(s.fake.calls.filter(call => call.body.type === 'run.stalled').length, 1, 'the same idle period is not re-announced');
+  } finally { s.close(); }
+});
+
 test('stale projections for finished or missing runs never produce run.stalled and are pruned', async () => {
   const s = setup();
   let restarted: ProgrammaticPushback | undefined;
@@ -401,7 +441,6 @@ test('stale projections for finished or missing runs never produce run.stalled a
     assert.equal(projection.runs['run-retired'], undefined, 'stale projection entries are pruned');
 
     // A live run with no usable lastActivityAt must not be interpreted as 1970.
-    s.pb.publish(conversationEvent(view({ run: run('run-live', 'running'), revision: 'r2' })));
     s.exec("UPDATE projections SET snapshot=? WHERE credentialId='cred-one' AND conversationId='conversation-one'", JSON.stringify({
       title: 'work', workspaceId: 'workspace-one', conversationId: 'conversation-one',
       runs: { 'run-live': { status: 'running', activitySignature: 'legacy', completedToolCount: 0, startedAt: '2026-11-01T00:00:00.000Z' } },

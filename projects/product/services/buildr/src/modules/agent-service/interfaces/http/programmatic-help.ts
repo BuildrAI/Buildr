@@ -59,7 +59,7 @@ run.progress 在新 assistant 中间消息**写完**后产生。payload 的 prog
 ~~~json
 {"type":"run.progress","runId":"...","runStatus":"running","progress":{"text":"已完成日志定位，正在复现问题……","elapsedMs":420000,"completedToolCount":3}}
 ~~~
-run.stalled 仅在当前对话仍包含该 run、其状态为 starting/running/tools-active，且连续 20 分钟没有新消息、工具调用或状态变化时推送一次；单个工具长时间运行、期间没有新记录也属于空闲。unknown、waiting-question、waiting-approval、终态以及已不在当前对话或 retainedRuns 中的轮次都不产生该事件。观察心跳只刷新执行快照，不算新记录，也不会重置空闲窗口。缺少可用的 lastActivityAt 时不触发，不按 1970-01-01 计算。payload 的 stalled 含 idleMs 与 lastActivityAt（最后一次真实记录的观测时间），并与其他事件一样含 scopes 与 allowFullAccess。同一段空闲期只推送一次，去重记录持久化，服务重启不会重报；恢复产生新记录后重置计时，再连续空闲 20 分钟才会再次推送。示例：
+run.stalled 仅在当前对话仍包含该 run、其状态为 starting/running/tools-active，且连续 20 分钟没有新消息、工具调用或状态变化时推送一次；单个工具长时间运行、期间没有新记录也属于空闲。unknown、waiting-question、waiting-approval、终态以及已不在当前对话或 retainedRuns 中的轮次都不产生该事件。观察心跳只刷新执行快照，不算新记录；工具正文的重新投射（handoff 后的 native 骨架、按需读取正文）同样不算新记录，都不会重置空闲窗口。计时以最后真实记录时间（运行开始或条目创建时间）为锚点。缺少可用的 lastActivityAt 时不触发，不按 1970-01-01 计算。payload 的 stalled 含 idleMs 与 lastActivityAt（最后一次真实记录的观测时间），并与其他事件一样含 scopes 与 allowFullAccess。同一段空闲期只推送一次，去重记录持久化，服务重启不会重报；恢复产生新记录后重置计时，再连续空闲 20 分钟才会再次推送。示例：
 ~~~json
 {"type":"run.stalled","runId":"...","runStatus":"running","stalled":{"idleMs":1200000,"lastActivityAt":"2026-11-13T02:40:00.000Z"},"summary":"执行已连续 20 分钟没有新记录"}
 ~~~
