@@ -75,6 +75,15 @@ export function collectReleasedExecutorStorage(dataRoot: string, provider: strin
 /** Read-only, local profile maintenance. Native sessions only appear when the
  * caller explicitly opts in; they are never part of the automatic worker. */
 export function inspectAgentStorage(input: { dataRoot: string; homeCursor?:HomeDiscoveryCursor;scanHomes?:boolean;nativeSessions?:boolean }): AgentStoragePlan {
+  return inventoryAgentStorage(input);
+}
+
+function inventoryAgentStorage(
+  input: Parameters<typeof inspectAgentStorage>[0],
+  targets?: StorageCandidate[],
+): AgentStoragePlan {
+  const kinds = targets && new Set(targets.map(item => item.kind));
+  const needs = (kind: StorageCandidate['kind']) => !kinds || kinds.has(kind);
   const dataRoot = path.resolve(input.dataRoot), root = path.join(dataRoot, 'agent-service');
   const use = observeStorageUse();
   const result: AgentStoragePlan = { schemaVersion: 1, dataRoot, generatedAt: new Date().toISOString(), observationComplete: use.complete, items: [], diagnostics: use.diagnostic ? [use.diagnostic] : [] };
@@ -83,20 +92,42 @@ export function inspectAgentStorage(input: { dataRoot: string; homeCursor?:HomeD
   const repository = new ConversationRepository(root);
   const references = legacyCacheReferences(root, repository);
   const dependencies = references.dependencies;
+  const accountKinds = new Set<StorageCandidate['kind']>(['cache', 'test-artifact', 'runtime', 'runtime-share', 'diagnostic']);
+  const configTargets = new Map<string, Set<StorageCandidate['kind']>>();
+  for (const item of targets ?? []) {
+    if (!accountKinds.has(item.kind)) continue;
+    const match = /^(connections\/[^/]+(?:\/model-bindings\/[a-f0-9]{64}(?=\/|$))?)(?:\/|$)/.exec(path.relative(root, item.path).split(path.sep).join('/'));
+    if (!match) continue;
+    const config = path.join(root, match[1]!);
+    const configKinds = configTargets.get(config) ?? new Set<StorageCandidate['kind']>();
+    configKinds.add(item.kind);
+    configTargets.set(config, configKinds);
+  }
   for (const executor of createNativeExecutors()) {
     const account = path.join(root, 'connections', executor.descriptor.id);
     if (!safeStoragePath(root, account)) continue;
     const configs = [account], bindings = path.join(account, 'model-bindings');
-    if (safeStoragePath(root, bindings)) for (const id of fs.readdirSync(bindings)) {
-      const config = path.join(bindings, id);
-      if (/^[a-f0-9]{64}$/.test(id) && safeStoragePath(root, config)) configs.push(config);
+    if (targets) {
+      for (const config of configTargets.keys()) {
+        if (path.dirname(config) === bindings && safeStoragePath(root, config)) configs.push(config);
+      }
+    } else if (safeStoragePath(root, bindings)) {
+      for (const id of fs.readdirSync(bindings)) {
+        const config = path.join(bindings, id);
+        if (/^[a-f0-9]{64}$/.test(id) && safeStoragePath(root, config)) configs.push(config);
+      }
     }
     for (const config of configs) {
-      result.items.push(...executorCacheCandidates(root, executor, config, use, cutoff,false,references(config)));
-      result.items.push(...testArtifactCandidates(root, config, use, cutoff));
-      result.items.push(...nestedStoppedRuntimeCandidates(root, config, use));
-      try { result.items.push(...diagnosticCandidates(root, executor, config, use, dependencies, Date.now(),references(config))); }
-      catch { result.diagnostics.push('diagnostic_inventory_unknown:' + executor.descriptor.id); }
+      const configKinds = configTargets.get(config);
+      const needsConfig = (kind: StorageCandidate['kind']) => !targets || configKinds?.has(kind);
+      if (needsConfig('cache')) result.items.push(...executorCacheCandidates(root, executor, config, use, cutoff,false,references(config)));
+      if (needsConfig('test-artifact')) result.items.push(...testArtifactCandidates(root, config, use, cutoff));
+      if (needsConfig('runtime') || needsConfig('runtime-share')) result.items.push(...nestedStoppedRuntimeCandidates(root, config, use));
+      // Include the entire diagnostic family, even if a member was absent from the old plan.
+      if (needsConfig('diagnostic')) {
+        try { result.items.push(...diagnosticCandidates(root, executor, config, use, dependencies, Date.now(),references(config))); }
+        catch { result.diagnostics.push('diagnostic_inventory_unknown:' + executor.descriptor.id); }
+      }
     }
   }
   if (input.nativeSessions) {
@@ -107,10 +138,14 @@ export function inspectAgentStorage(input: { dataRoot: string; homeCursor?:HomeD
       result.items.push(...nativeHomeCandidates(root, use, cutoff, references));
     } catch { result.diagnostics.push('native_session_inventory_unknown'); }
   }
-  try { result.items.push(...retainedRuntimeCandidates(dataRoot, use), ...runtimeSharingCandidates(dataRoot, use), ...runtimeObjectCandidates(root, use)); }
+  try {
+    if (needs('runtime')) result.items.push(...retainedRuntimeCandidates(dataRoot, use));
+    if (needs('runtime-share')) result.items.push(...runtimeSharingCandidates(dataRoot, use));
+    if (needs('runtime-object')) result.items.push(...runtimeObjectCandidates(root, use));
+  }
   catch { result.diagnostics.push('runtime_inventory_unknown'); }
-  result.items.push(...sharedCacheCandidates(root,use,cacheStorageDependencies(root,repository,references)));
-  result.items.push(...programPackageCandidates(root, use, cutoff));
+  if (needs('shared-cache')) result.items.push(...sharedCacheCandidates(root,use,cacheStorageDependencies(root,repository,references)));
+  if (needs('program-package')) result.items.push(...programPackageCandidates(root, use, cutoff));
   result.sharedCachePolicy=sharedCachePolicy;
   if(input.scanHomes!==false)result.homeStorage=discoverHomeStorage(root,{cursor:input.homeCursor});
   return result;
@@ -124,7 +159,11 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
   if (!safeStoragePath(plan.dataRoot, root)) throw new Error('agent_storage_root_unsafe');
   const nativeConfirmed = options.confirmNativeSessions === true;
   const nativePlanned = plan.items.filter(item => item.eligible && (item.kind === 'native-session' || item.kind === 'native-home'));
-  const current = inspectAgentStorage({ dataRoot: plan.dataRoot,scanHomes:false,nativeSessions:nativeConfirmed && nativePlanned.length>0 });
+  const targets = plan.items.filter(item => item.eligible && (nativeConfirmed || item.kind !== 'native-session' && item.kind !== 'native-home'));
+  const current = inventoryAgentStorage(
+    { dataRoot: plan.dataRoot, scanHomes: false, nativeSessions: nativeConfirmed && nativePlanned.length > 0 },
+    targets,
+  );
   const candidates = new Map(current.items.map(item => [item.kind + ":" + item.path, item]));
   const executors = new Map(createNativeExecutors().map(executor => [executor.descriptor.id, executor]));
   const storage = new ExecutorStorage(root);
