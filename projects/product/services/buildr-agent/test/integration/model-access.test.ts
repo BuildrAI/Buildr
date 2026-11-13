@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createCustomModelProvider } from '../../src/model-access/providers/custom.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createModelAccess } from '../../src/model-access/application.ts';
@@ -618,4 +618,96 @@ test('legacy custom account keeps its identity and model preferences after readi
     assert.equal(restored.models[0]?.contextWindow,16000);
     assert.equal(restored.models[0]?.enabled,true);
   } finally {await access.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('legacy duplicate accounts of a singleton source are retired with their private roots',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-model-singleton-'));
+  const singleton:ModelProvider={id:'singleton-fixture',label:'Singleton',singleton:true,async open(){return{protocol:'chat-completions',inspect:async()=>({status:'ready',models:[model]}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>chat({content:'ok'}),close:async()=>{}};}};
+  const account=(id:string,status:'ready'|'failed',models:ModelOffering[])=>({id,identity:'identity-'+id,provider:'singleton-fixture',label:'Singleton',revision:'revision-'+id,enabled:true,status,models});
+  try{
+    await mkdir(root,{recursive:true,mode:0o700});
+    for(const id of ['legacy-ready','legacy-invalid'])await mkdir(join(root,'accounts',id),{recursive:true,mode:0o700});
+    await writeFile(join(root,'accounts.json'),JSON.stringify({version:1,accounts:[account('legacy-invalid','failed',[]),account('legacy-ready','ready',[model])],preferences:{'legacy-invalid':{'stale-model':{enabled:true}},'legacy-ready':{}}})+'\n',{mode:0o600});
+    const access=createModelAccess({root,providers:[singleton]});
+    try{
+      assert.deepEqual(access.accounts.list({includeDisabled:true}).accounts.map(item=>item.id),['legacy-ready']);
+      await assert.rejects(stat(join(root,'accounts','legacy-invalid')),{code:'ENOENT'});
+      assert.ok((await stat(join(root,'accounts','legacy-ready'))).isDirectory());
+      const stored=JSON.parse(await readFile(join(root,'accounts.json'),'utf8')) as {accounts:Array<{id:string}>;preferences:Record<string,unknown>};
+      assert.deepEqual(stored.accounts.map(item=>item.id),['legacy-ready']);
+      assert.equal(stored.preferences['legacy-invalid'],undefined);
+    }finally{await access.close();}
+  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('deleting an independent source removes its private credentials and keeps other accounts',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-model-delete-'));
+  const access=createModelAccess({root,providers:[provider(async()=>chat({content:'ok'}))]});
+  try{
+    const target=await access.accounts.add({provider:'fixture'}),other=await access.accounts.add({provider:'fixture'});
+    const targetRoot=join(root,'accounts',target.id),otherRoot=join(root,'accounts',other.id);
+    await mkdir(targetRoot,{recursive:true,mode:0o700});await mkdir(otherRoot,{recursive:true,mode:0o700});
+    await writeFile(join(targetRoot,'model-api-key.json'),'{"apiKey":"private-target"}\n',{mode:0o600});
+    await writeFile(join(otherRoot,'model-api-key.json'),'{"apiKey":"private-other"}\n',{mode:0o600});
+    await assert.rejects(access.accounts.remove(target.id,{expectedRevision:'stale'}),{code:'model_revision_conflict'});
+    const remaining=await access.accounts.remove(target.id,{expectedRevision:target.revision});
+    assert.ok(!remaining.accounts.some(account=>account.id===target.id));
+    assert.ok(remaining.accounts.some(account=>account.id===other.id));
+    await assert.rejects(stat(targetRoot),{code:'ENOENT'});
+    assert.equal(JSON.parse(await readFile(join(otherRoot,'model-api-key.json'),'utf8')).apiKey,'private-other');
+    assert.throws(()=>access.accounts.read(target.id),{code:'model_account_missing'});
+  }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('deleting a source with an active model request is rejected until the run stops',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-model-delete-active-'));let release:(()=>void)|undefined;
+  const access=createModelAccess({root,providers:[provider(async input=>{await new Promise<void>(resolve=>{release=resolve;input.signal.addEventListener('abort',()=>resolve(),{once:true});});return chat({content:'ok'});})]});
+  try{
+    const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id);
+    const lease=await access.leases.create({accountId:ready.id,modelId:model.id,agentId:'codex',conversationId:'active',runId:'run'});
+    const response=fetch(lease.baseUrl+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+lease.apiKey,'Content-Type':'application/json'},body:JSON.stringify({model:lease.model,messages:[]})});
+    for(let i=0;i<100&&!release;i++)await new Promise(resolve=>setTimeout(resolve,5));
+    assert.ok(release);
+    await assert.rejects(access.accounts.remove(ready.id,{expectedRevision:ready.revision}),{code:'model_account_in_use'});
+    assert.equal(access.accounts.read(ready.id).id,ready.id);
+    release();await response;
+    const remaining=await access.accounts.remove(ready.id,{expectedRevision:ready.revision});
+    assert.equal(remaining.accounts.length,0);
+  }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('agent-managed accounts cannot be deleted from the model source list',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-model-delete-managed-'));
+  const managed:ModelProvider={id:'managed-fixture',label:'Managed',connectionId:'fixture',async open(){return{protocol:'chat-completions',inspect:async()=>({status:'ready',models:[model]}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>chat({content:'ok'}),close:async()=>{}};}};
+  const access=createModelAccess({root,providers:[managed]});
+  try{
+    await access.ensureLinked();
+    const account=access.accounts.read('managed-fixture');
+    await assert.rejects(access.accounts.remove(account.id,{expectedRevision:account.revision}),{code:'model_managed_account'});
+    assert.equal(access.accounts.read(account.id).id,account.id);
+    const providers=access.accounts.list().providers;
+    assert.deepEqual(providers.map(item=>[item.id,item.connectionId,item.linked]),[['managed-fixture','fixture',undefined]]);
+  }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('deleted linked sources stay suppressed until an explicit re-add clears the marker',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-model-delete-linked-'));
+  const linked:ModelProvider={id:'linked-fixture',label:'Linked',linked:true,async open(){return{protocol:'chat-completions',inspect:async()=>({status:'ready',models:[model]}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>chat({content:'ok'}),close:async()=>{}};}};
+  const access=createModelAccess({root,providers:[linked]});
+  try{
+    await access.ensureLinked();
+    const account=access.accounts.read('linked-fixture');
+    const accountRoot=join(root,'accounts','linked-fixture');
+    await mkdir(accountRoot,{recursive:true,mode:0o700});await writeFile(join(accountRoot,'model-credential.json'),'{}\n',{mode:0o600});
+    await access.accounts.remove(account.id,{expectedRevision:account.revision});
+    assert.ok(!access.accounts.list({includeDisabled:true}).accounts.some(item=>item.id==='linked-fixture'));
+    await access.ensureLinked();
+    assert.throws(()=>access.accounts.read('linked-fixture'),{code:'model_account_missing'});
+    const providers=access.accounts.list().providers;
+    assert.deepEqual(providers.map(item=>[item.id,item.connectionId,item.linked]),[['linked-fixture',undefined,true]]);
+    const readded=await access.accounts.add({provider:'linked-fixture'});
+    assert.equal(readded.id,'linked-fixture');
+    assert.equal(readded.status,'not-authenticated');
+    assert.ok(access.accounts.list({includeDisabled:true}).accounts.some(item=>item.id==='linked-fixture'));
+  }finally{await access.close();await rm(root,{recursive:true,force:true});}
 });

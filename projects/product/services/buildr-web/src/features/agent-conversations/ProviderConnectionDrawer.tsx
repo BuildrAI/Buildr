@@ -3,9 +3,18 @@ import {Button,Form,Input,Select,Space} from 'antd';
 import {DrawerShell} from '../../components/DrawerShell';
 import {CUSTOM_PROVIDER_PROTOCOLS,customProviderEndpoint,customProviderModelsUrl,DEFAULT_CUSTOM_MODELS_PATH,type CustomProviderProtocol} from './custom-provider-model';
 
-export type ProviderConnectionKind='openai'|'deepseek-api'|'custom';
+export interface ProviderConnectionOption {
+  id:string;
+  label:string;
+  authentication?:{type:'oauth'|'api-key';label:string;placeholder?:string;description?:string};
+  group?:{id:string;label:string};
+  modeLabel?:string;
+  custom?:boolean;
+  connectionId?:string;
+  linked?:boolean;
+}
 export interface ProviderConnectionInput {
-  kind:ProviderConnectionKind;
+  kind:string;
   accountId?:string;
   label:string;
   baseUrl?:string;
@@ -18,66 +27,84 @@ export interface ProviderConnectionInitial extends ProviderConnectionInput {
   credentialConfigured?:boolean;
 }
 
-const presets=[
-  {value:'openai' as const,label:'ChatGPT API',description:'使用 OpenAI 官方 API Key，只需填写密钥。'},
-  {value:'deepseek-api' as const,label:'DeepSeek API',description:'使用 DeepSeek 官方 API Key，通过 OpenAI 兼容协议读取模型。'},
-  {value:'custom' as const,label:'其他自定义供应商',description:'配置显示名称、协议、Base URL 和模型列表路径。'},
-];
+const connectionLabels:Record<string,string>={codex:'Codex',dsh:'DSH',qoder:'Qoder'};
 
-function presetInitial(kind:ProviderConnectionKind):ProviderConnectionInitial {
-  if(kind==='openai')return {kind,label:'ChatGPT API',useApiKey:true};
-  if(kind==='deepseek-api')return {kind,label:'DeepSeek API',baseUrl:'https://api.deepseek.com',protocol:'chat-completions',modelsPath:DEFAULT_CUSTOM_MODELS_PATH,useApiKey:true};
-  return {kind:'custom',label:'',baseUrl:'',protocol:'chat-completions',modelsPath:DEFAULT_CUSTOM_MODELS_PATH,useApiKey:false};
+function providerInitial(provider:ProviderConnectionOption|undefined):ProviderConnectionInitial {
+  if(!provider)return {kind:'custom',label:'',baseUrl:'',protocol:'chat-completions',modelsPath:DEFAULT_CUSTOM_MODELS_PATH,useApiKey:false};
+  if(provider.custom)return {kind:provider.id,label:'',baseUrl:'',protocol:'chat-completions',modelsPath:DEFAULT_CUSTOM_MODELS_PATH,useApiKey:false};
+  return {kind:provider.id,label:provider.label};
+}
+
+function providerLabel(provider:ProviderConnectionOption,configured:boolean):string {
+  if(provider.connectionId)return `${provider.label}（由${connectionLabels[provider.connectionId]??provider.connectionId}智能体接入）`;
+  if(configured&&!provider.custom)return `${provider.label}（已接入）`;
+  return provider.label;
 }
 
 type Props={
   open:boolean;
   initial?:ProviderConnectionInitial;
-  configuredPresets?:ProviderConnectionKind[];
+  providers:ProviderConnectionOption[];
+  configuredProviders?:string[];
   busy?:boolean;
   onClose():void;
   onSave(input:ProviderConnectionInput):Promise<void>;
 };
 
-/** Provider onboarding shared by presets and user-declared endpoints; credentials never echo stored values. */
-export function ProviderConnectionDrawer({open,initial,configuredPresets=[],busy,onClose,onSave}:Props){
+/** Provider onboarding shared by built-in declarations and user-declared endpoints; credentials never echo stored values. */
+export function ProviderConnectionDrawer({open,initial,providers,configuredProviders=[],busy,onClose,onSave}:Props){
   const [form]=Form.useForm<ProviderConnectionInput>();
-  const kind=Form.useWatch('kind',form)??initial?.kind??'custom';
+  const fallback=providers.find(provider=>provider.custom)??providers[0];
+  const kind=Form.useWatch('kind',form)??initial?.kind??fallback?.id??'custom';
   const [clearKey,setClearKey]=useState(false);
   const baseUrl=Form.useWatch('baseUrl',form)??initial?.baseUrl??'';
   const protocol=Form.useWatch('protocol',form)??initial?.protocol??'chat-completions';
   const modelsPath=Form.useWatch('modelsPath',form)??initial?.modelsPath??DEFAULT_CUSTOM_MODELS_PATH;
   const editing=Boolean(initial?.accountId);
-  const custom=kind==='custom';
+  const provider=providers.find(item=>item.id===kind);
+  const custom=Boolean(provider?.custom);
+  const apiKey=provider?.authentication?.type==='api-key';
   const hasKey=Boolean(initial?.credentialConfigured&&initial.kind===kind);
   const [saving,setSaving]=useState(false),[error,setError]=useState('');
   const locked=Boolean(busy)||saving;
-  const options=presets.map(preset=>({value:preset.value,label:preset.label,disabled:!editing&&configuredPresets.includes(preset.value)&&preset.value!==initial?.kind}));
+  const configured=(id:string)=>id!=='custom'&&configuredProviders.includes(id);
+  const options=[
+    {label:'订阅账号',options:providers.filter(item=>!item.custom&&item.authentication?.type!=='api-key').map(item=>({value:item.id,label:providerLabel(item,configured(item.id)),disabled:!editing&&(Boolean(item.connectionId)||configured(item.id))}))},
+    {label:'API Key',options:providers.filter(item=>!item.custom&&item.authentication?.type==='api-key').map(item=>({value:item.id,label:providerLabel(item,configured(item.id)),disabled:!editing&&configured(item.id)}))},
+    {label:'其他',options:providers.filter(item=>item.custom).map(item=>({value:item.id,label:providerLabel(item,false),disabled:false}))},
+  ].filter(group=>group.options.length);
+  const hint=custom
+    ?'配置显示名称、协议、Base URL 与模型列表路径。'
+    :provider?.authentication?.description
+      ??(provider?.connectionId?`由${connectionLabels[provider.connectionId]??provider.connectionId}智能体接入管理；请在“智能体”页完成登录。`
+        :provider?.authentication?.type==='oauth'?'保存后使用官方账号登录，并自动发现可用的模型与额度。'
+          :'保存后开始官方登录，并自动发现可用的模型与额度。');
+  const connect=!custom&&!apiKey&&!provider?.connectionId;
 
   async function save(values:ProviderConnectionInput){
     if(locked)return;
     setSaving(true);setError('');
     try{
-      const next:ProviderConnectionInput=values.kind==='custom'
-        ?{kind:'custom',...(values.accountId?{accountId:values.accountId}:{}),label:values.label.trim(),baseUrl:values.baseUrl?.trim(),protocol:values.protocol,modelsPath:values.modelsPath?.trim()||DEFAULT_CUSTOM_MODELS_PATH,useApiKey:Boolean(values.apiKey?.trim()||(hasKey&&!clearKey)),...(values.apiKey?.trim()?{apiKey:values.apiKey.trim()}:{})}
-        :{...presetInitial(values.kind),label:presets.find(preset=>preset.value===values.kind)!.label,...(values.apiKey?.trim()?{apiKey:values.apiKey.trim()}:{})};
+      const next:ProviderConnectionInput=custom
+        ?{kind:values.kind,label:values.label.trim(),baseUrl:values.baseUrl?.trim(),protocol:values.protocol,modelsPath:values.modelsPath?.trim()||DEFAULT_CUSTOM_MODELS_PATH,useApiKey:Boolean(values.apiKey?.trim()||(hasKey&&!clearKey)),...(values.apiKey?.trim()?{apiKey:values.apiKey.trim()}:{})}
+        :{kind:values.kind,label:provider?.label??values.label,...(values.apiKey?.trim()?{apiKey:values.apiKey.trim()}:{})};
       await onSave(next);
     }catch(failure){setError(failure instanceof Error?failure.message:'供应商接入未完成。');}
     finally{setSaving(false);}
   }
 
   return <DrawerShell open={open} title={editing?'编辑自定义供应商':'添加供应商'} onClose={onClose} closeAriaLabel="关闭供应商配置"
-    width="min(460px,100vw)" footer={<Space><Button disabled={saving} onClick={onClose}>取消</Button><Button type="primary" loading={saving} disabled={Boolean(busy)} onClick={()=>form.submit()}>保存供应商</Button></Space>}>
-    <Form form={form} layout="vertical" requiredMark={false} initialValues={initial??presetInitial(kind)} onFinish={save} onValuesChange={()=>setError('')}>
+    width="min(460px,100vw)" footer={<Space><Button disabled={saving} onClick={onClose}>取消</Button><Button type="primary" loading={saving} disabled={Boolean(busy)} onClick={()=>form.submit()}>{connect?'保存并登录':'保存供应商'}</Button></Space>}>
+    <Form form={form} layout="vertical" requiredMark={false} initialValues={initial??providerInitial(fallback)} onFinish={save} onValuesChange={()=>setError('')}>
       {error&&<p className="amm-provider-form-error" role="alert">{error}</p>}
       <Form.Item label="接入方式" name="kind" rules={[{required:true,message:'请选择接入方式'}]}>
-        <Select aria-label="接入方式" options={options} disabled={editing} onChange={value=>{
-          const next=presetInitial(value);
+        <Select aria-label="接入方式" options={options} virtual={false} disabled={editing} onChange={value=>{
+          const next=providerInitial(providers.find(item=>item.id===value));
           form.setFieldsValue({...next,apiKey:undefined});
           setClearKey(false);
         }}/>
       </Form.Item>
-      {!custom&&<p className="amm-provider-form-hint">{presets.find(preset=>preset.value===kind)?.description}</p>}
+      <p className="amm-provider-form-hint">{hint}</p>
       {custom&&<>
         <Form.Item label="显示名称" name="label" rules={[{required:true,whitespace:true,message:'请输入显示名称'}]}>
           <Input aria-label="显示名称" placeholder="例如：公司模型网关" maxLength={160}/>
@@ -94,10 +121,10 @@ export function ProviderConnectionDrawer({open,initial,configuredPresets=[],busy
         </Form.Item>
         <p className="amm-provider-form-hint">请求地址：<span className="mono">{customProviderEndpoint(protocol,baseUrl)}</span></p>
       </>}
-      <Form.Item label="API Key" name="apiKey" rules={!custom&&!hasKey?[{required:true,whitespace:true,message:'请输入 API Key'}]:undefined}
-        extra={hasKey&&!clearKey?'已保存密钥，留空保留原密钥。':custom?'端点无需认证时留空。':'使用该供应商的官方 API。'}>
-        <Input.Password aria-label="API Key" autoComplete="new-password" placeholder={hasKey?'已保存，留空保持不变':'sk-...'}/>
-      </Form.Item>
+      {(custom||apiKey)&&<Form.Item label="API Key" name="apiKey" rules={apiKey&&!hasKey?[{required:true,whitespace:true,message:'请输入 API Key'}]:undefined}
+        extra={hasKey&&!clearKey?'已保存密钥，留空保留原密钥。':custom?'端点无需认证时留空。':provider?.authentication?.description??'使用该供应商的官方 API。'}>
+        <Input.Password aria-label="API Key" autoComplete="new-password" placeholder={hasKey?'已保存，留空保持不变':provider?.authentication?.placeholder??'sk-...'}/>
+      </Form.Item>}
       {custom&&hasKey&&<Button size="small" onClick={()=>{form.setFieldValue('apiKey',undefined);setClearKey(value=>!value);}}>{clearKey?'保留原密钥':'清除已保存的密钥'}</Button>}
     </Form>
   </DrawerShell>;

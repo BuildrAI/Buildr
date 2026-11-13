@@ -353,6 +353,11 @@ test('model account HTTP preserves authentication, revisions, source identity an
   for(let i=0;i<20&&!login.loginAttempt?.url;i++){response=await fetch(endpoint+'/'+created.id+'/login-attempts/'+login.loginAttempt.id,{headers});login=await response.json();await new Promise(resolve=>setTimeout(resolve,2));}
   assert.equal(login.loginAttempt.url,'https://login.example.test/authorize');
   response=await fetch(endpoint+'/'+created.id+'/login-attempts/'+login.loginAttempt.id+'/cancel',{method:'POST',headers,body:JSON.stringify({expectedRevision:login.revision})});assert.equal(response.status,200);const cancelled=await response.json();assert.equal(cancelled.loginAttempt.state,'cancelled');
+  response=await fetch(endpoint+'/'+created.id+'/usage',{headers});assert.equal(response.status,200);assert.deepEqual(await response.json(),{references:0});
+  assert.equal((await fetch(endpoint+'/'+created.id,{method:'DELETE',headers,body:JSON.stringify({expectedRevision:'old'})})).status,409);
+  response=await fetch(endpoint+'/'+created.id,{method:'DELETE',headers,body:JSON.stringify({expectedRevision:cancelled.revision})});assert.equal(response.status,200);
+  const remaining=await response.json();assert.equal(remaining.accounts.some((account:{id:string})=>account.id===created.id),false);assert.equal(remaining.providers[0].id,'fixture');
+  assert.equal((await fetch(endpoint+'/'+created.id,{headers})).status,404);
 });
 
 test('model account HTTP configures API-key sources without echoing the secret', {timeout:30000}, async t=>{

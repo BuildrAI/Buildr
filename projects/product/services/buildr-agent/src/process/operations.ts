@@ -18,8 +18,8 @@ export interface AgentOperations {
 const names = {
   pushback: ['read','save','reveal','test','markTakeover','setCredentialAccess','recordStop','listEvents','migrateGlobal'],
   connections: ['upgradeProgram','programUpdates','checkProgramUpdates','list','read','prepare','preparation','currentPreparation','cancelPreparation','connect','check','login','loginAttempt','cancelLogin','disconnect'],
-  conversations: ['readHistory','participation','participationSummary','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','activityEpoch','readEntry','readRunFinalReply','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','releaseQuestionWait','settleRetainedRun','stop','stopAll','reply','addAttachment','readAttachment','pending','pendingSummary','lookupRequest'],
-  'models.accounts': ['list','read','preferences','add','configure','configureCustom','discoverCustom','login','attempt','cancelLogin','check','disconnect'],
+  conversations: ['readHistory','participation','participationSummary','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','activityEpoch','modelAccountReferences','readEntry','readRunFinalReply','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','releaseQuestionWait','settleRetainedRun','stop','stopAll','reply','addAttachment','readAttachment','pending','pendingSummary','lookupRequest'],
+  'models.accounts': ['list','read','preferences','add','configure','configureCustom','discoverCustom','login','attempt','cancelLogin','check','disconnect','remove'],
   'models.catalog': ['list'],
 } as const;
 export const OPERATION_NAMES: readonly string[] = Object.entries(names).flatMap(([group, methods]) => methods.map(method => group + '.' + method));

@@ -78,11 +78,16 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       }
       if (pathname === `${prefix}/model-custom/discovery` && request.method === 'POST') return result('modelCustomDiscoveryResult', await service.models.accounts.discoverCustom(validate('modelCustomDiscovery', await readJsonBody())));
       if (pathname === `${prefix}/model-catalog` && request.method === 'GET') return result('modelCatalog', await service.models.catalog.list({refresh:false}));
-      const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-zA-Z0-9_-]{1,100})(?:\/(check|disconnect|login-attempts|preferences|api-key|custom)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
+      const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-zA-Z0-9_-]{1,100})(?:\/(check|disconnect|login-attempts|preferences|api-key|custom|usage)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
       if (accountRoute) {
         const [, accountId, action, attemptId, cancel] = accountRoute;
         if (request.method === 'GET' && !action) return result('modelAccount', await service.models.accounts.read(accountId));
+        if (request.method === 'GET' && action === 'usage' && !attemptId) {
+          const references = await service.conversations.modelAccountReferences([accountId]);
+          return result('modelAccountUsage', { references: references[accountId] ?? 0 });
+        }
         if (request.method === 'GET' && action === 'login-attempts' && attemptId && !cancel) return result('modelAccount', await service.models.accounts.attempt(accountId, attemptId));
+        if (request.method === 'DELETE' && !action) return result('modelAccounts', await service.models.accounts.remove(accountId, validate('revision', await readJsonBody())));
         if (request.method !== 'POST') return null;
         if(action==='preferences'&&!attemptId&&!cancel)return result('modelAccount',await service.models.accounts.preferences(accountId,validate('modelPreferences',await readJsonBody())));
         if(action==='api-key'&&!attemptId&&!cancel)return result('modelAccount',await service.models.accounts.configure(accountId,validate('modelApiKey',await readJsonBody())));

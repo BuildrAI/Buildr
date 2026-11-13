@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {Fragment,useRef,useState} from 'react';
 import {Alert,Button,Checkbox,Dropdown,Empty,Input,InputNumber,Modal,Progress,Select,Space,Switch,Table,Tag,Tabs,Tooltip,type MenuProps} from 'antd';
 import {EllipsisOutlined,EyeOutlined,LoginOutlined,PlusOutlined,ReloadOutlined,RobotOutlined,SearchOutlined,ToolOutlined} from '@ant-design/icons';
 import {reasoningEffortLabel,sortReasoningEfforts} from './conversation-options';
@@ -15,7 +15,7 @@ export interface QuotaWindowView {id:string;label:string;remainingPercent:number
 export interface ModelSourceView {
   id:string;sourceEnabled?:boolean;provider:string;providerLabel:string;accountLabel:string;planLabel:string;status:'ready'|'not-authenticated'|'expired'|'failed';
   models:ManagedModel[];combinations?:ManagedModel[];windows:QuotaWindowView[];balanceLabels?:string[];quotaNote?:string;billingUrl?:string;observedLabel:string;diagnostic?:string;loginPending?:boolean;loginChecking?:boolean;loginUrl?:string;loginMessage?:string;program?:'ready'|'missing';
-  groupLabel?:string;modeLabel?:string;authType?:'oauth'|'api-key';credentialConfigured?:boolean;
+  groupLabel?:string;modeLabel?:string;authType?:'oauth'|'api-key';credentialConfigured?:boolean;managed?:boolean;
   custom?:{baseUrl:string;protocol:CustomProviderProtocol;modelsPath?:string;useApiKey:boolean;models:CustomProviderModelInput[]};
 }
 export type AccountSettingsTab='quota'|'models';
@@ -25,7 +25,8 @@ interface Props {
   sources:ModelSourceView[];selection:AccountSelection;busy:boolean;
   onSelect(selection:AccountSelection):void;onRefresh(id:string):void;onLogin(id:string):void;onDisconnect(id:string):void;onPrepare(id:string):void;
   additionalProviders?:Array<{id:string;label:string}>;onAdd?(provider:string):void;
-  onAddProvider?():void;onEditProvider?(sourceId:string):void;
+  onAddProvider?():void;onEditProvider?(sourceId:string):void;onDeleteProvider?(sourceId:string):Promise<void>;onDeleteUsage?(sourceId:string):Promise<number>;
+  onLogoutManaged?(sourceId:string):Promise<void>;
   onContext(sourceId:string,modelId:string,value:number|null):void;onCancelLogin?(id:string):void;
   onConfigureKey?(id:string,key:string):Promise<void>;
   onCustomSave?(input:CustomProviderSaveInput):Promise<void>;
@@ -44,8 +45,13 @@ const sourceStatusLabel=(source:Pick<ModelSourceView,'status'|'authType'|'provid
 const count=(source:ModelSourceView)=>source.models.filter(model=>model.enabled).length;
 
 /** Shared candidate view. Sources, selection and every operation are supplied by its host. */
-export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,onLogin,onDisconnect,onPrepare,onEnable,onContext,onCancelLogin,onConfigureKey,onCustomDiscover,onCustomModels,onAddProvider,onEditProvider,refreshingIds=[],showDisabled=false,onShowDisabled,onSourceEnabled}:Props){
+export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,onLogin,onDisconnect,onPrepare,onEnable,onContext,onCancelLogin,onConfigureKey,onCustomDiscover,onCustomModels,onAddProvider,onEditProvider,onDeleteProvider,onDeleteUsage,onLogoutManaged,refreshingIds=[],showDisabled=false,onShowDisabled,onSourceEnabled}:Props){
   const [query,setQuery]=useState(''),[filter,setFilter]=useState('all'),[family,setFamily]=useState('all');
+  const [sourceQuery,setSourceQuery]=useState('');
+  const [deleting,setDeleting]=useState<ModelSourceView|null>(null),[deleteBusy,setDeleteBusy]=useState(false),[deleteError,setDeleteError]=useState('');
+  const [deleteUsage,setDeleteUsage]=useState<number|undefined>(undefined),[deleteUsageLoaded,setDeleteUsageLoaded]=useState(false),[deleteUsageLoading,setDeleteUsageLoading]=useState(false);
+  const deleteUsageToken=useRef(0);
+  const [loggingOut,setLoggingOut]=useState<ModelSourceView|null>(null),[logoutBusy,setLogoutBusy]=useState(false),[logoutError,setLogoutError]=useState('');
   const [keyInputs,setKeyInputs]=useState<Record<string,string>>({}),[keyEditing,setKeyEditing]=useState<Record<string,boolean>>({});
   const [manual,setManual]=useState<{sourceId:string;id:string;label:string;contextWindow?:number}|null>(null);
   const [discovery,setDiscovery]=useState<{sourceId:string;models:CustomProviderModelInput[]}>();
@@ -53,6 +59,24 @@ export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,o
   const [readingModels,setReadingModels]=useState(''),[modelNotice,setModelNotice]=useState('');
   const entries=sources.filter(source=>showDisabled||source.sourceEnabled!==false);
   const disabledCount=sources.filter(source=>source.sourceEnabled===false).length;
+  const sourceTerm=sourceQuery.trim().toLowerCase();
+  const matchedEntries=sourceTerm?entries.filter(source=>[source.providerLabel,source.accountLabel,source.modeLabel,source.groupLabel,source.custom?.baseUrl??''].some(value=>(value??'').toLowerCase().includes(sourceTerm))):entries;
+  const sourceGroups=[
+    {key:'subscription',label:'订阅账号',items:matchedEntries.filter(source=>!source.managed&&source.provider!=='custom'&&source.authType!=='api-key')},
+    {key:'api-key',label:'API Key',items:matchedEntries.filter(source=>!source.managed&&source.provider!=='custom'&&source.authType==='api-key')},
+    {key:'custom',label:'自定义供应商',items:matchedEntries.filter(source=>!source.managed&&source.provider==='custom')},
+    {key:'managed',label:'智能体接入',items:matchedEntries.filter(source=>source.managed)},
+  ].filter(group=>group.items.length);
+  function startDelete(source:ModelSourceView){
+    setDeleting(source);setDeleteError('');setDeleteUsage(undefined);setDeleteUsageLoaded(false);
+    const token=++deleteUsageToken.current;
+    if(!onDeleteUsage){setDeleteUsageLoading(false);return;}
+    setDeleteUsageLoading(true);
+    void onDeleteUsage(source.id).then(value=>{if(token===deleteUsageToken.current){setDeleteUsage(value);setDeleteUsageLoaded(true);}}).catch(()=>{if(token===deleteUsageToken.current)setDeleteUsageLoaded(false);}).finally(()=>{if(token===deleteUsageToken.current)setDeleteUsageLoading(false);});
+  }
+  function startLogout(source:ModelSourceView){
+    setLoggingOut(source);setLogoutError('');
+  }
   const selected=entries.find(source=>source.id===selection.sourceId);
   const visible=selected?[selected]:entries;
   const rows=visible.flatMap(source=>source.models.map(model=>({...model,key:source.id+':'+model.id,source})));
@@ -102,11 +126,12 @@ export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,o
     if(custom&&onEditProvider){if(items.length)items.push({type:'divider'});items.push({key:'custom-edit',label:'编辑供应商'});}
     if(source.status==='ready'&&!apiKey&&!custom)items.push({key:'login',label:'重新登录'});
     if(apiKey&&(source.credentialConfigured||source.status==='ready'))items.push({key:'api-key',label:'更换 API Key'});
-    if(source.status!=='not-authenticated')items.push({key:'disconnect',label:'断开供应商'});
+    if(source.status!=='not-authenticated')items.push({key:'disconnect',label:source.managed&&onLogoutManaged?'退出登录':'断开供应商'});
     if(source.program&&!apiKey){if(items.length)items.push({type:'divider'});items.push({key:'program',label:source.program==='ready'?'检查本机程序':'准备本机程序'});}
+    if(!source.managed&&!source.id.startsWith('new-')&&onDeleteProvider){if(items.length)items.push({type:'divider'});items.push({key:'delete-source',label:'删除供应商',danger:true});}
     const showKeyEditor=apiKey&&(keyEditing[source.id]||source.status==='not-authenticated'||source.status==='expired'||source.status==='failed'&&!source.credentialConfigured);
     return <article key={source.id} className="amm-quota-card" data-prototype-position="quota-card">
-    <header><div className="amm-account-heading"><span className={`amm-provider-mark is-${source.provider}`}>{source.providerLabel.slice(0,1)}</span><div><h3>{source.providerLabel}{source.sourceEnabled===false&&<Tag>已停用</Tag>}</h3><p>{custom?<span title={source.custom?.baseUrl}>{source.custom?.baseUrl||source.accountLabel}</span>:source.status==='ready'||source.status==='expired'?source.accountLabel:apiKey?'使用 API Key 连接官方接口':'登录后自动发现模型'} {(source.status==='ready'||source.modeLabel)&&<Tag>{source.modeLabel||source.planLabel}</Tag>} {source.status==='ready'&&source.modeLabel&&source.planLabel!==source.modeLabel&&<Tag>{source.planLabel}</Tag>}</p></div></div><Space size={6}><Tag color={source.status==='ready'?'success':'default'}>{sourceStatusLabel(source)}</Tag>{source.status==='ready'&&<Button aria-label={custom?`刷新${source.providerLabel}模型与连接`:`刷新${source.providerLabel}额度`} loading={refreshingIds.includes(source.id)} icon={<ReloadOutlined/>} disabled={busy} onClick={()=>onRefresh(source.id)}/>} {!!items.length&&<Dropdown trigger={['click']} menu={{items,onClick:({key})=>key==='source-enabled'?onSourceEnabled?.(source.id,source.sourceEnabled===false):key==='login'?onLogin(source.id):key==='api-key'?setKeyEditing(current=>({...current,[source.id]:true})):key==='custom-edit'?onEditProvider?.(source.id):key==='disconnect'?onDisconnect(source.id):onPrepare(source.id)}}><Button aria-label={`${source.providerLabel}更多操作`} icon={<EllipsisOutlined/>} disabled={busy}/></Dropdown>}</Space></header>
+    <header><div className="amm-account-heading"><span className={`amm-provider-mark is-${source.provider}`}>{source.providerLabel.slice(0,1)}</span><div><h3>{source.providerLabel}{source.sourceEnabled===false&&<Tag>已停用</Tag>}</h3><p>{custom?<span title={source.custom?.baseUrl}>{source.custom?.baseUrl||source.accountLabel}</span>:source.status==='ready'||source.status==='expired'?source.accountLabel:apiKey?'使用 API Key 连接官方接口':'登录后自动发现模型'} {(source.status==='ready'||source.modeLabel)&&<Tag>{source.modeLabel||source.planLabel}</Tag>} {source.status==='ready'&&source.modeLabel&&source.planLabel!==source.modeLabel&&<Tag>{source.planLabel}</Tag>}</p></div></div><Space size={6}><Tag color={source.status==='ready'?'success':'default'}>{sourceStatusLabel(source)}</Tag>{source.status==='ready'&&<Button aria-label={custom?`刷新${source.providerLabel}模型与连接`:`刷新${source.providerLabel}额度`} loading={refreshingIds.includes(source.id)} icon={<ReloadOutlined/>} disabled={busy} onClick={()=>onRefresh(source.id)}/>} {!!items.length&&<Dropdown trigger={['click']} menu={{items,onClick:({key})=>key==='source-enabled'?onSourceEnabled?.(source.id,source.sourceEnabled===false):key==='login'?onLogin(source.id):key==='api-key'?setKeyEditing(current=>({...current,[source.id]:true})):key==='custom-edit'?onEditProvider?.(source.id):key==='delete-source'?startDelete(source):key==='disconnect'?(source.managed&&onLogoutManaged?startLogout(source):onDisconnect(source.id)):onPrepare(source.id)}}><Button aria-label={`${source.providerLabel}更多操作`} icon={<EllipsisOutlined/>} disabled={busy}/></Dropdown>}</Space></header>
     {source.diagnostic&&<Alert type={source.status==='failed'?'warning':'info'} showIcon message={source.diagnostic}/>}
     {source.program==='missing'&&<Alert type="info" showIcon message={`${source.providerLabel} 需要先准备本机程序，登录与模型发现才会生效。`} action={<Button size="small" onClick={()=>onPrepare(source.id)}>准备本机程序</Button>}/>}
     {source.loginPending?<div className="amm-login-empty"><LoginOutlined/><div><strong>{source.loginChecking?'正在核对登录结果':'正在等待官方登录'}</strong><p>{source.loginMessage||'完成登录后自动发现模型与额度。'}</p></div>{source.loginUrl&&<Button href={source.loginUrl} target="_blank" rel="noopener noreferrer">打开登录页</Button>}{onCancelLogin&&<Button onClick={()=>onCancelLogin(source.id)}>取消登录</Button>}</div>:showKeyEditor?<div className="amm-api-key-editor"><strong>{source.credentialConfigured?'更换 API Key':'连接 '+source.providerLabel}</strong><p>只保存 API Key，固定使用 {source.provider==='anthropic'?'Anthropic':'OpenAI'} 官方 API，不需要填写 URL。</p><Space.Compact block><Input.Password aria-label={`${source.providerLabel} API Key`} placeholder="sk-..." autoComplete="new-password" value={keyInputs[source.id]??''} disabled={busy} onChange={event=>setKeyInputs(current=>({...current,[source.id]:event.target.value}))}/><Button type="primary" disabled={busy||!onConfigureKey||!(keyInputs[source.id]??'').trim()} onClick={()=>submitKey(source)}>{source.credentialConfigured?'更换并验证':'保存并验证'}</Button>{source.status==='ready'&&<Button disabled={busy} onClick={()=>setKeyEditing(current=>({...current,[source.id]:false}))}>取消</Button>}</Space.Compact>{source.status!=='ready'&&onRefresh&&<Button type="link" size="small" disabled={busy||!source.credentialConfigured} onClick={()=>onRefresh(source.id)}>重新读取已有密钥</Button>}</div>:custom&&source.status!=='ready'?<div className="amm-login-empty"><LoginOutlined/><div><strong>{source.status==='failed'?'端点检查未完成，可核对配置后重试':'填写端点信息后接入自定义模型'}</strong><p>使用 {source.modeLabel||'OpenAI 兼容'} 协议；模型可从端点获取或手动添加。</p></div><Space><Button type="primary" disabled={busy||!onEditProvider} onClick={()=>onEditProvider?.(source.id)}>编辑供应商</Button>{source.status==='failed'&&<Button disabled={busy} onClick={()=>onRefresh(source.id)}>重新检查</Button>}</Space></div>:source.status!=='ready'&&!(source.status==='failed'&&(source.windows.length||source.balanceLabels?.length))?<div className="amm-login-empty"><LoginOutlined/><div><strong>{source.status==='failed'?'本次读取未完成，可重新读取':source.status==='expired'?'登录已过期，重新登录后继续使用':'连接供应商，自动发现模型与额度'}</strong><p>{apiKey?'API Key 已保存，本次暂未读取到模型。':'一次登录，即可供不同智能体选择使用。'}</p></div><Button type="primary" onClick={()=>source.program==='missing'?onPrepare(source.id):source.status==='failed'||apiKey?onRefresh(source.id):onLogin(source.id)} disabled={busy}>{source.program==='missing'?'准备本机程序':source.status==='failed'||apiKey?'重新读取':source.status==='expired'?'重新登录':'登录 '+source.providerLabel}</Button></div>:<>
@@ -117,10 +142,12 @@ export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,o
   return <><div className="account-model-manager">
     <aside className="amm-source-list" aria-label="供应商" data-prototype-position="account-sources">
       <div className="amm-source-heading"><p className="amm-nav-caption">供应商</p></div>
-      {onAddProvider&&<div className="amm-add-provider"><Button block icon={<PlusOutlined aria-hidden="true"/>} disabled={busy} onClick={onAddProvider}>添加自定义供应商</Button></div>}
+      {onAddProvider&&<div className="amm-add-provider"><Button block icon={<PlusOutlined aria-hidden="true"/>} disabled={busy} onClick={onAddProvider}>添加供应商</Button></div>}
       {onShowDisabled&&<Checkbox className="amm-show-disabled" checked={showDisabled} onChange={event=>onShowDisabled(event.target.checked)}>显示已停用{disabledCount?` (${disabledCount})`:''}</Checkbox>}
+      <Input className="amm-source-search" size="small" prefix={<SearchOutlined aria-hidden/>} aria-label="搜索供应商" placeholder="搜索供应商" value={sourceQuery} allowClear onChange={event=>setSourceQuery(event.target.value)}/>
       <button className={!selected?'active':''} onClick={()=>choose('all')}><span className="amm-provider-mark all"><RobotOutlined aria-hidden/></span><span>全部供应商</span></button>
-      {entries.map(source=><button key={source.id} className={selection.sourceId===source.id?'active':''} onClick={()=>choose(source.id)}><span className={`amm-provider-mark is-${source.provider}`}>{source.providerLabel.slice(0,1)}</span><span>{source.providerLabel}<small title={source.provider==='custom'?source.custom?.baseUrl??source.accountLabel:source.accountLabel}>{sidebarDetail(source)}</small></span><i className={source.status==='ready'?'connected':'disconnected'} aria-label={sourceStatusLabel(source)}/></button>)}
+      {sourceGroups.map(group=><Fragment key={group.key}><p className="amm-source-group-label">{group.label}</p>{group.items.map(source=><button key={source.id} className={selection.sourceId===source.id?'active':''} onClick={()=>choose(source.id)}><span className={`amm-provider-mark is-${source.provider}`}>{source.providerLabel.slice(0,1)}</span><span>{source.providerLabel}<small title={source.provider==='custom'?source.custom?.baseUrl??source.accountLabel:source.accountLabel}>{sidebarDetail(source)}</small></span><i className={source.status==='ready'?'connected':'disconnected'} aria-label={sourceStatusLabel(source)}/></button>)}</Fragment>)}
+      {!sourceGroups.length&&<p className="amm-source-empty">没有匹配的供应商</p>}
       <div className="amm-nav-note">登录一次<br/>模型供不同智能体使用</div>
     </aside>
     <main className="amm-main">
@@ -167,5 +194,36 @@ export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,o
       <Input aria-label="模型显示名" placeholder="显示名（可选）" value={manual?.label??''} disabled={busy} onChange={event=>setManual(current=>current?{...current,label:event.target.value}:current)}/>
       <InputNumber aria-label="上下文窗口" placeholder="上下文窗口（可选）" min={1} max={10000000} style={{width:'100%'}} value={manual?.contextWindow??null} disabled={busy} onChange={value=>setManual(current=>current?{...current,contextWindow:typeof value==='number'?value:undefined}:current)}/>
     </Space>
+  </Modal>
+  <Modal title="删除供应商" open={Boolean(deleting)} okText="删除" cancelText="取消" okButtonProps={{danger:true}} confirmLoading={deleteBusy}
+    onCancel={()=>{if(!deleteBusy){setDeleting(null);setDeleteError('');}}}
+    onOk={async()=>{
+      if(!deleting||!onDeleteProvider)return;
+      setDeleteBusy(true);setDeleteError('');
+      try{await onDeleteProvider(deleting.id);setDeleting(null);}
+      catch(failure){setDeleteError(failure instanceof Error?failure.message:'供应商删除未完成。');}
+      finally{setDeleteBusy(false);}
+    }}>
+    {deleting&&<><p>确定删除「{deleting.providerLabel}」？删除后将同时清理：</p>
+      <ul className="amm-delete-summary">
+        <li>{deleting.authType==='api-key'?'本机保存的 API Key':deleting.provider==='custom'?'自定义端点配置与密钥（如有）':'本机保存的登录凭据'}</li>
+        <li>模型列表、启用状态与上下文偏好</li>
+      </ul>
+      {deleteUsageLoading?<p className="amm-delete-usage">正在统计仍在使用此供应商的对话…</p>:deleteUsageLoaded&&deleteUsage?<Alert className="amm-delete-impact" type="warning" showIcon message={`有 ${deleteUsage} 个对话正在使用此供应商`} description="对话内容会保留；下次发送时这些对话需要重新选择模型。"/>:deleteUsageLoaded?<p className="amm-delete-usage">当前没有对话使用此供应商。</p>:<p className="amm-delete-usage">仍在引用此供应商的对话会保留，下次发送时需要重新选择模型。</p>}
+      <p className="amm-delete-warning">此操作不可撤销，不会删除服务商账号、订阅或远端数据。</p></>}
+    {deleteError&&<Alert type="warning" showIcon message={deleteError}/>}
+  </Modal>
+  <Modal title="退出登录" open={Boolean(loggingOut)} okText="退出登录" cancelText="取消" okButtonProps={{danger:true}} confirmLoading={logoutBusy}
+    onCancel={()=>{if(!logoutBusy){setLoggingOut(null);setLogoutError('');}}}
+    onOk={async()=>{
+      if(!loggingOut||!onLogoutManaged)return;
+      setLogoutBusy(true);setLogoutError('');
+      try{await onLogoutManaged(loggingOut.id);setLoggingOut(null);}
+      catch(failure){setLogoutError(failure instanceof Error?failure.message:'退出登录未完成。');}
+      finally{setLogoutBusy(false);}
+    }}>
+    {loggingOut&&<><p>退出「{loggingOut.providerLabel}」的本机登录？</p>
+      <p className="amm-delete-usage">退出后该智能体程序会断开，使用此供应商的对话会保留，但下一次发送前需要重新登录或选择其他模型。</p></>}
+    {logoutError&&<Alert type="warning" showIcon message={logoutError}/>}
   </Modal></>;
 }

@@ -133,6 +133,8 @@ export interface ModelProvider {
   readonly connectionId?: string;
   /** Created automatically from a native account that no agent connection owns. */
   readonly linked?: boolean;
+  /** Built-in source that owns exactly one local account. */
+  readonly singleton?: boolean;
   readonly authentication?: ModelProviderAuthentication;
   readonly group?: ModelProviderGroup;
   readonly modeLabel?: string;

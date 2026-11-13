@@ -694,6 +694,8 @@ export class ConversationApplication {
     return attempt ? {found:true,runId:attempt.runId,accepted:attempt.accepted,conversation:this.view(record)} : {found:false};
   }
   pendingSummary() { return { conversations: this.options.repository.listPendingStates().map(record => pendingConversationSummary(this.summaryView(record))) }; }
+  /** Provider deletion impact: conversations keeping a selection on each model account. */
+  modelAccountReferences(accountIds: string[]) { return this.options.repository.modelAccountReferences(accountIds); }
   pending(): { conversations: ConversationView[] } { return { conversations: this.options.repository.listPendingStates().map(record => this.summaryView(record)) }; }
   listAll(workspaceIds:string[],input:{draftConversationIds?:string[];workspaceId?:string;activeOnly?:boolean;active?:boolean;attention?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;cursor?:string;limit?:number}={}) {
     if(input.workspaceId&&!workspaceIds.includes(input.workspaceId))fail('agent_workspace_missing','工作空间未登记。',404);

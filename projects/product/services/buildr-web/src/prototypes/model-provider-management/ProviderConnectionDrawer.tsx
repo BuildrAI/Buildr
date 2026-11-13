@@ -58,7 +58,7 @@ export function ProviderConnectionDrawer({initial, configuredPresets, existingCo
     });
   }
 
-  return <DrawerShell open title={initial ? '编辑自定义供应商' : '添加自定义供应商'} onClose={onClose}
+  return <DrawerShell open title={initial ? '编辑自定义供应商' : '添加供应商'} onClose={onClose}
     width="min(440px, 100vw)" closeAriaLabel="关闭供应商配置"
     footer={<Space><Button onClick={onClose}>取消</Button><Button type="primary" onClick={()=>form.submit()}>保存供应商</Button></Space>}>
     <Form name="provider-connection" form={form} layout="vertical" requiredMark={false} initialValues={initial ?? {kind:'custom',protocol:'chat-completions'}} onFinish={save}>

@@ -25,6 +25,8 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('discover-model-custom','POST',`${base}/model-custom/discovery`,'modelCustomDiscovery','modelCustomDiscoveryResult'),
   operation('check-model-account', 'POST', `${base}/model-accounts/:accountId/check`, 'revision', 'modelAccount'),
   operation('disconnect-model-account', 'POST', `${base}/model-accounts/:accountId/disconnect`, 'revision', 'modelAccount'),
+  operation('delete-model-account', 'DELETE', `${base}/model-accounts/:accountId`, 'revision', 'modelAccounts'),
+  operation('model-account-usage', 'GET', `${base}/model-accounts/:accountId/usage`, 'empty', 'modelAccountUsage'),
   operation('login-model-account', 'POST', `${base}/model-accounts/:accountId/login-attempts`, 'revision', 'modelAccount'),
   operation('model-login-attempt', 'GET', `${base}/model-accounts/:accountId/login-attempts/:attemptId`, 'empty', 'modelAccount'),
   operation('cancel-model-login', 'POST', `${base}/model-accounts/:accountId/login-attempts/:attemptId/cancel`, 'revision', 'modelAccount'),

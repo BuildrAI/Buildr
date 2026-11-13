@@ -44,7 +44,7 @@ export async function runPushbackSettingsJourney(fixture:AgentConversationFixtur
    delay=true;await card.getByRole('button',{name:'查看GrokBot回推密钥',exact:true}).click();await page.waitForFunction(()=>true);for(let i=0;i<100&&!release;i++)await new Promise(resolve=>setTimeout(resolve,5));assert.ok(release);
    await close();release!();release=undefined;delay=false;await open();assert.equal(await card.locator('#'+PREFIX+'-secret').inputValue(),'••••••••');assert.equal(reveals,2);
    await card.locator('#'+PREFIX+'-rate-hour').fill('300');await card.getByRole('button',{name:'保存配置',exact:true}).click();await card.getByText('回推配置已保存并生效。',{exact:true}).waitFor();assert.equal(view.rateLimitHour,300);
-   await card.getByRole('switch').click();await card.getByRole('button',{name:'保存配置',exact:true}).click();await card.getByText('回推配置已保存并生效。',{exact:true}).waitFor();assert.equal(view.state,'disabled');assert.equal(stored,'browser-private-key');
+   await card.locator('.ant-form-item').filter({hasText:'启用回推'}).getByRole('switch').click();await card.getByRole('button',{name:'保存配置',exact:true}).click();await card.getByText('回推配置已保存并生效。',{exact:true}).waitFor();assert.equal(view.state,'disabled');assert.equal(stored,'browser-private-key');
   }finally{release?.();if(await drawer.isVisible())await close();await page.unroute(matcher,route);}
  });
 }

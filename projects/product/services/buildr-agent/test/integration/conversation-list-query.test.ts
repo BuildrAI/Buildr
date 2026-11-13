@@ -101,6 +101,23 @@ test('list filters by active and attention, projects summary fields, always retu
   assert.deepEqual([...seen].sort(), allIds, 'paging covers every conversation exactly once');
 });
 
+test('model account references count conversations whose current execution keeps each source', async t => {
+  const f = fixture(); t.after(() => f.close());
+  const one = (await f.service.conversations.create('workspace-one', { title: 'one' })).id;
+  const two = (await f.service.conversations.create('workspace-one', { title: 'two' })).id;
+  const other = (await f.service.conversations.create('workspace-one', { title: 'other' })).id;
+  const seed = (id: string, accountId?: string) => {
+    const record = f.repository.readConversation(id)!;
+    const prior = record.view.revision;
+    record.view.run = accountId ? run('run-' + id, 'completed', { modelAccountId: accountId }) : undefined;
+    record.view.revision = randomUUID();
+    f.repository.saveConversation(record, prior);
+  };
+  seed(one, 'account-one'); seed(two, 'account-one'); seed(other, 'account-two');
+  assert.deepEqual(f.service.conversations.modelAccountReferences(['account-one', 'account-two', 'missing']), { 'account-one': 2, 'account-two': 1, missing: 0 });
+  assert.deepEqual(f.service.conversations.modelAccountReferences([]), {});
+});
+
 test('list activityCounts stays zero without creating storage for an empty workspace', async t => {
   const f = fixture(); t.after(() => f.close());
   const result = f.service.conversations.list('workspace-one');

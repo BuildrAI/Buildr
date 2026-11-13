@@ -62,7 +62,7 @@ export function ProviderWorkspace(props: Props) {
     <aside className="pmp-sidebar" aria-label="供应商" data-prototype-position="account-sources">
       <div className="pmp-side-actions" data-prototype-position="provider-actions">
         <div className="pmp-nav-title">供应商</div>
-        <Button block icon={<PlusOutlined aria-hidden="true"/>} onClick={() => preview.editConnection('new')}>添加自定义供应商</Button>
+        <Button block icon={<PlusOutlined aria-hidden="true"/>} onClick={() => preview.editConnection('new')}>添加供应商</Button>
         <Checkbox className="pmp-show-disabled" checked={showDisabled} onChange={event => onShowDisabled?.(event.target.checked)}>显示已停用{disabled.length ? ` (${disabled.length})` : ''}</Checkbox>
       </div>
       <div className="pmp-mobile-picker">

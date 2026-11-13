@@ -7,7 +7,7 @@ const BASE='https://api.anthropic.com/v1';
 const identity=(key:string)=>createHash('sha256').update('anthropic-api:'+key).digest('hex');
 export function createAnthropicApiModelProvider(options:{fetch?:typeof fetch}={}):ModelProvider {
   return {
-    id:'anthropic',label:'Claude API',group:{id:'anthropic',label:'Claude'},modeLabel:'API Key',
+    id:'anthropic',label:'Claude API',singleton:true,group:{id:'anthropic',label:'Claude'},modeLabel:'API Key',
     authentication:{type:'api-key',label:'API Key',placeholder:'sk-ant-...',description:'使用 Anthropic 官方 API，不使用 claude.ai 订阅登录或额度。'},
     async open(input){return new AnthropicApiRuntime(new PrivateApiKey(input.configRoot),options.fetch??fetch);},
   };

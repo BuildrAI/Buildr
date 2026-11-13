@@ -21,7 +21,7 @@ function serviceTiers(row:ProtocolJson,efforts:ModelOffering['reasoningEfforts']
 }
 export interface CodexProviderOptions { owner?: {request(path:string,init?:RequestInit):Promise<Response>;inspect():Promise<import("../../contracts.ts").AccountObservation>;identity():Promise<string>}; fetch?: typeof fetch; callbackPort?: number; loginTimeoutMs?: number; }
 /** Explicit model-account login. Never reads ~/.codex or the desktop credential store. */
-export function createCodexModelProvider(options: CodexProviderOptions = {}): ModelProvider { return { id: options.owner?'native-codex':'codex', ...(options.owner?{connectionId:'codex'}:{}), label: 'Codex / ChatGPT', authentication: { type: 'oauth', label: 'ChatGPT 账号' }, group: { id: 'chatgpt', label: 'ChatGPT' }, modeLabel: '订阅', async open(input) { return new CodexRuntime(new PrivateAccount(input.configRoot), options); } }; }
+export function createCodexModelProvider(options: CodexProviderOptions = {}): ModelProvider { return { id: options.owner?'native-codex':'codex', ...(options.owner?{connectionId:'codex'}:{singleton:true}), label: 'Codex / ChatGPT', authentication: { type: 'oauth', label: 'ChatGPT 账号' }, group: { id: 'chatgpt', label: 'ChatGPT' }, modeLabel: '订阅', async open(input) { return new CodexRuntime(new PrivateAccount(input.configRoot), options); } }; }
 class CodexRuntime implements ModelProviderRuntime {
   readonly protocol = 'responses' as const;
   private account: PrivateAccount; private options: CodexProviderOptions; private fetch: typeof fetch;

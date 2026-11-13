@@ -51,7 +51,7 @@ const offering = closed({kind:{enum:['model','combination']},family:text,enabled
 const quota = closed({balances:list(closed({currency:text,total:text,toppedUp:text,granted:text},['currency','total'])),stale:boolean,diagnostic:text,planLabel:text,windows:list(closed({id:text,label:text,remainingPercent:{type:'number',minimum:0,maximum:100},resetsAt:text,limitWindowSeconds:integer,remainingCredits:{type:'number',minimum:0},totalCredits:{type:'number',minimum:0}},['id','label','remainingPercent'])), observedAt: text, available: boolean, summary: text, remainingPercent: {type:'number',minimum:0,maximum:100}, resetsAt: text }, ['observedAt','available']);
 const providerGroup = closed({id:text,label:text},['id','label']);
 const providerAuthentication = closed({type:{enum:['oauth','api-key']},label:text,placeholder:text,description:text},['type','label']);
-const modelProvider = closed({id:text,label:text,authentication:providerAuthentication,group:providerGroup,modeLabel:text,custom:boolean},['id','label']);
+const modelProvider = closed({id:text,label:text,authentication:providerAuthentication,group:providerGroup,modeLabel:text,custom:boolean,connectionId:text,linked:boolean},['id','label']);
 const customModel = closed({id:text,label:text,contextWindow:{type:'integer',minimum:1,maximum:10000000}},['id']);
 const modelProtocol = {enum:['chat-completions','responses','anthropic-messages','gemini']};
 const customConfig = closed({protocol:modelProtocol,baseUrl:{type:'string',minLength:1,maxLength:2048},modelsPath:{type:'string',minLength:1,maxLength:2048,pattern:'^/(?!/)[^\\s?#]*$'},useApiKey:boolean,models:list(customModel)},['protocol','baseUrl','useApiKey','models']);
@@ -93,6 +93,7 @@ export const AGENT_OPERATION_SCHEMAS = {
   modelPreferences: named('AgentModelPreferences',closed({expectedRevision:text,sourceEnabled:boolean,models:{type:'array',minItems:1,maxItems:2000,items:closed({id:text,enabled:boolean,contextWindow:{anyOf:[{type:'integer',minimum:1,maximum:10000000},{type:'null'}]}},['id'])}},['expectedRevision'])),
   modelAccount: named('AgentModelAccount', modelAccount),
   modelAccounts: named('AgentModelAccounts', closed({accounts:list(modelAccount),providers:list(modelProvider)})),
+  modelAccountUsage: named('AgentModelAccountUsage', closed({references:integer},['references'])),
   modelApiKey: named('AgentModelApiKey', closed({expectedRevision:text,apiKey:{type:'string',minLength:1,maxLength:4096}},['expectedRevision','apiKey'])),
   modelCustomConfigure: named('AgentModelCustomConfigure', customConfigure),
   modelCustomDiscovery: named('AgentModelCustomDiscovery', customDiscovery),

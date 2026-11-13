@@ -1,9 +1,9 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { mkdir, chmod, lstat, readFile, rename, writeFile, unlink } from 'node:fs/promises';
+import { mkdir, chmod, lstat, readFile, rename, rm, writeFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { once } from 'node:events';
-import { lstatSync, readFileSync, writeFileSync } from 'node:fs';
+import { lstatSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { ModelAccessError, type CatalogModel, type CustomProviderConfig, type CustomProviderConfigureInput, type CustomProviderDiscoveryInput, type CustomProviderDiscoveryResult, type ModelAccessOptions, type ModelAccountView, type ModelGatewayLease, type ModelLeaseInput, type ModelOffering, type ModelProvider, type ModelProviderObservation, type ModelProviderRuntime, type ModelProtocol, type ProtocolJson } from './contracts.ts';
 import { effectiveModel, selectedOffering, modelConfiguration, modelLeaseIdentity } from './model-preferences.ts';
 import type {ModelPreference,ModelPreferenceUpdate} from './contracts.ts';
@@ -41,7 +41,7 @@ const selectionModels = (models: ModelOffering[]) => models.map(model => ({
   serviceTiers: selectionTiers(model.serviceTiers),
 })).sort(byId);
 function conflict(actual: string, expected: string | undefined) { if (expected !== undefined && expected !== actual) throw new ModelAccessError('model_revision_conflict', '模型供应商已变化，请刷新后重试。'); }
-interface Stored { version: 1; accounts: ModelAccountView[]; preferences?:Record<string,Record<string,ModelPreference>> }
+interface Stored { version: 1; accounts: ModelAccountView[]; preferences?:Record<string,Record<string,ModelPreference>>; removedProviders?:string[] }
 interface LeaseRecord { view: ModelGatewayLease; input: ModelLeaseInput; tokenHash: string; requests: Map<AbortController,string>; cancelledRun?:string; streamFailure?:{code:string;message:string;runId:string} }
 
 /** Owns metadata and local routes. Upstream credentials stay inside provider runtimes. */
@@ -49,6 +49,7 @@ export class ModelAccessApplication {
   private readonly providers: Map<string, ModelAccessOptions['providers'][number]>;
   private readonly rows = new Map<string, ModelAccountView>();
   private readonly preferences = new Map<string,Record<string,ModelPreference>>();
+  private readonly removedProviders = new Set<string>();
   private readonly runtimes = new Map<string, Promise<ModelProviderRuntime>>();
   private readonly checks = new Map<string, { operation: number; promise: Promise<ModelAccountView> }>();
   private readonly urls = new Map<string, { attemptId: string; url: string }>();
@@ -84,6 +85,10 @@ export class ModelAccessApplication {
       const data: unknown = JSON.parse(content);
       const stored = object(data);
       if (stored.version !== 1 || !Array.isArray(stored.accounts)) throw new Error('invalid');
+      const removed = stored.removedProviders;
+      if (removed !== undefined && (!Array.isArray(removed) || removed.some(id => typeof id !== 'string' || !safeId(id)))) throw new Error('invalid-removed-providers');
+      this.removedProviders.clear();
+      for (const id of removed ?? []) this.removedProviders.add(id as string);
       let migrated = false;
       for (const raw of stored.accounts) {
         const row = object(raw);
@@ -108,17 +113,57 @@ export class ModelAccessApplication {
         for(const value of Object.values(prefs))if(!value||typeof value.enabled!=='boolean'||value.contextWindow!==undefined&&(!Number.isSafeInteger(value.contextWindow)||value.contextWindow<1||value.contextWindow>10000000))throw new Error('invalid-preference');
         this.preferences.set(view.id,prefs);this.rows.set(view.id, view);
       }
+      // Legacy stores could hold several accounts for a source that now owns
+      // exactly one credential domain. Keep the most usable one and retire the
+      // rest with their private roots; readiness is the stable preference.
+      if (!this.metadataReadOnly && this.pruneDuplicateSingletonAccounts()) migrated = true;
       if (migrated) this.persistMigrated();
     } catch (error) { if (object(error).code !== 'ENOENT') throw new ModelAccessError('model_storage_unavailable', '模型供应商存储不可读取，原数据已保留。'); }
   }
   /** One bounded write for a schema-level ownership correction; failures keep the loaded state. */
   private persistMigrated() {
     try {
-      const body: Stored = { version: 1, preferences:structuredClone(Object.fromEntries(this.preferences)), accounts: [...this.rows.values()].map(row => { const copy = structuredClone(row); if (copy.loginAttempt) delete copy.loginAttempt.url; return copy; }) };
+      const body: Stored = { version: 1, preferences:structuredClone(Object.fromEntries(this.preferences)), ...(this.removedProviders.size ? { removedProviders: [...this.removedProviders].sort() } : {}), accounts: [...this.rows.values()].map(row => { const copy = structuredClone(row); if (copy.loginAttempt) delete copy.loginAttempt.url; return copy; }) };
       const content = JSON.stringify(body) + '\n';
       writeFileSync(join(this.options.root, 'accounts.json'), content, { mode: 0o600 });
       this.storedDigest = digest(content);
     } catch { /* The in-memory correction still applies; the next save writes it. */ }
+  }
+  /** Retires accounts that a current singleton source declaration no longer permits. */
+  private pruneDuplicateSingletonAccounts(): boolean {
+    const groups = new Map<string, ModelAccountView[]>();
+    for (const row of this.rows.values()) {
+      if (!this.providers.get(row.provider)?.singleton) continue;
+      groups.set(row.provider, [...(groups.get(row.provider) ?? []), row]);
+    }
+    let changed = false;
+    for (const rows of groups.values()) {
+      if (rows.length < 2) continue;
+      const preferred = [...rows].sort((left, right) => {
+        if ((left.status === 'ready') !== (right.status === 'ready')) return left.status === 'ready' ? -1 : 1;
+        if (left.models.length !== right.models.length) return right.models.length - left.models.length;
+        if (Boolean(left.credentialConfigured) !== Boolean(right.credentialConfigured)) return left.credentialConfigured ? -1 : 1;
+        if (Boolean(left.accountLabel) !== Boolean(right.accountLabel)) return left.accountLabel ? -1 : 1;
+        return left.id.localeCompare(right.id);
+      })[0]!;
+      for (const row of rows) {
+        if (row.id === preferred.id) continue;
+        this.rows.delete(row.id);
+        this.preferences.delete(row.id);
+        this.removeAccountRootSync(row.id);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+  /** Local credential cleanup during startup migration; never follows links. */
+  private removeAccountRootSync(id: string) {
+    const root = join(this.options.root, 'accounts', id);
+    try {
+      const info = lstatSync(root);
+      if (info.isSymbolicLink() || !info.isDirectory()) unlinkSync(root);
+      else rmSync(root, { recursive: true, force: true });
+    } catch { /* An absent or busy root keeps the retired row protocol intact. */ }
   }
   private async privateRoot() {
     await mkdir(this.options.root, { recursive: true, mode: 0o700 });
@@ -129,7 +174,7 @@ export class ModelAccessApplication {
   private async save() {
     if (this.metadataReadOnly) throw new ModelAccessError('model_owner_transferred', '账号配置已交由新版维护，请使用当前入口。', 409);
     if (this.storageError) throw this.storageError;
-    const body: Stored = { version: 1, preferences:structuredClone(Object.fromEntries(this.preferences)), accounts: [...this.rows.values()].map(row => { const copy = structuredClone(row); if (copy.loginAttempt) delete copy.loginAttempt.url; return copy; }) };
+    const body: Stored = { version: 1, preferences:structuredClone(Object.fromEntries(this.preferences)), ...(this.removedProviders.size ? { removedProviders: [...this.removedProviders].sort() } : {}), accounts: [...this.rows.values()].map(row => { const copy = structuredClone(row); if (copy.loginAttempt) delete copy.loginAttempt.url; return copy; }) };
     this.pendingWrites++;
     const work = this.writeChain.then(async () => {
       await this.privateRoot();
@@ -201,7 +246,7 @@ export class ModelAccessApplication {
   async ensureLinked() {
     await this.ready;
     for (const provider of this.providers.values()) {
-      if ((!provider.connectionId && !provider.linked) || this.rows.has(provider.id)) continue;
+      if ((!provider.connectionId && !provider.linked) || this.rows.has(provider.id) || this.removedProviders.has(provider.id)) continue;
       this.rows.set(provider.id, { id:provider.id, identity:randomUUID(), provider:provider.id, ...(provider.connectionId?{connectionId:provider.connectionId}:{}), label:provider.label, revision:randomUUID(),enabled:true,status:'not-authenticated',models:[] });
       await this.save();
     }
@@ -217,13 +262,15 @@ export class ModelAccessApplication {
     if (this.storageError) throw this.storageError;
     return {
       accounts: [...this.rows.values()].filter(row=>input.includeDisabled||row.sourceEnabled!==false).map(row => this.view(row)),
-      providers: [...this.providers.values()].filter(provider => !provider.connectionId).map(provider => ({
+      providers: [...this.providers.values()].map(provider => ({
         id: provider.id,
         label: provider.label,
         ...(provider.authentication ? { authentication: structuredClone(provider.authentication) } : {}),
         ...(provider.group ? { group: structuredClone(provider.group) } : {}),
         ...(provider.modeLabel ? { modeLabel: provider.modeLabel } : {}),
         ...(provider.custom ? { custom: true } : {}),
+        ...(provider.connectionId ? { connectionId: provider.connectionId } : {}),
+        ...(provider.linked ? { linked: true } : {}),
       })),
     };
   }
@@ -237,8 +284,16 @@ export class ModelAccessApplication {
       return await this.createCustom(provider, input.custom);
     }
     if (input.custom) throw new ModelAccessError('model_custom_unsupported', '此模型来源不支持自定义端点配置。', 400);
-    if (['openai','devin','codex','deepseek'].includes(provider.id) && [...this.rows.values()].some(row=>row.provider===provider.id)) {
-      throw new ModelAccessError('model_provider_already_configured', '该供应商已有账号，请管理已有连接。', 409);
+    if (provider.linked) {
+      await this.ensureLinked();
+      const existing = this.rows.get(provider.id);
+      if (existing) return this.view(existing);
+      this.removedProviders.delete(provider.id);
+      const row: ModelAccountView = { id: provider.id, identity:randomUUID(), provider: provider.id, label: input.label?.trim().slice(0, 160) || provider.label, revision: randomUUID(), enabled: true, status: 'not-authenticated', credentialConfigured: false, models: [] };
+      this.rows.set(row.id, row); await this.save(); this.options.changed?.(this.view(row)); return this.view(row);
+    }
+    if (provider.singleton && [...this.rows.values()].some(row=>row.provider===provider.id)) {
+      throw new ModelAccessError('model_provider_already_configured', '该供应商已有账号，请在供应商列表中管理已有连接。', 409);
     }
     const row: ModelAccountView = { id: randomUUID(), identity:randomUUID(), provider: provider.id, label: input.label?.trim().slice(0, 160) || provider.label, revision: randomUUID(), enabled: true, status: 'not-authenticated', credentialConfigured: false, models: [] };
     this.rows.set(row.id, row); await this.save(); this.options.changed?.(this.view(row)); return this.view(row);
@@ -438,6 +493,55 @@ export class ModelAccessApplication {
     if (row.loginAttempt && ['initializing','waiting-browser','checking'].includes(row.loginAttempt.state)) row.loginAttempt.state = 'cancelled';
     for (const lease of [...this.leasesByIdentity.values()]) if (lease.input.accountId === id) this.release(lease.view.identity);
     const pending = this.runtimes.get(id); this.runtimes.delete(id); await pending?.then(runtime => runtime.close()).catch(() => {}); return await this.changed(row);
+  }
+  /** Removes a source-owned account and its private credentials; agent-managed logins stay with their connection. */
+  async remove(id: string, input: { expectedRevision: string }) {
+    await this.ready;
+    if (this.closed || this.metadataReadOnly) throw new ModelAccessError('model_access_closed', '模型供应商配置未能保存。', 503);
+    const row = this.current(id);
+    if (row.connectionId) throw new ModelAccessError('model_managed_account', '此供应商由智能体接入维护，请在智能体设置中管理登录。', 409);
+    conflict(row.revision, input.expectedRevision);
+    if ([...this.leasesByIdentity.values()].some(lease => lease.input.accountId === id && lease.requests.size > 0)) {
+      throw new ModelAccessError('model_account_in_use', '该供应商正在被对话使用，请先停止相关执行后再删除。', 409);
+    }
+    this.operations.set(id, (this.operations.get(id) ?? 0) + 1);
+    if (row.loginAttempt && ['initializing', 'waiting-browser', 'checking'].includes(row.loginAttempt.state)) {
+      row.loginAttempt = { ...row.loginAttempt, state: 'cancelled', updatedAt: this.now };
+      await this.runtimes.get(id)?.then(runtime => runtime.cancelLogin()).catch(() => {});
+    }
+    const pendingCheck = this.checks.get(id)?.promise;
+    if (pendingCheck) await pendingCheck.catch(() => {});
+    for (const lease of [...this.leasesByIdentity.values()]) if (lease.input.accountId === id) this.release(lease.view.identity);
+    const pending = this.runtimes.get(id); this.runtimes.delete(id);
+    await pending?.then(runtime => runtime.close()).catch(() => {});
+    this.checks.delete(id); this.urls.delete(id); this.operations.delete(id);
+    // Block new leases while credentials are being removed; restore the row if cleanup fails.
+    const previous = { enabled: row.enabled, status: row.status, models: row.models }, previousPreferences = this.preferences.get(id);
+    row.enabled = false; row.status = 'disconnected';
+    try { await this.removeAccountRoot(id); }
+    catch (error) { Object.assign(row, previous); throw error; }
+    this.rows.delete(id); this.preferences.delete(id);
+    const linked = Boolean(this.providers.get(row.provider)?.linked);
+    if (linked) this.removedProviders.add(row.provider);
+    try { await this.save(); }
+    catch (error) {
+      Object.assign(row, previous); this.rows.set(id, row);
+      if (previousPreferences) this.preferences.set(id, previousPreferences);
+      if (linked) this.removedProviders.delete(row.provider);
+      throw error;
+    }
+    return this.list({ includeDisabled: true });
+  }
+  private async removeAccountRoot(id: string) {
+    const root = join(this.options.root, 'accounts', id);
+    try {
+      const info = await lstat(root);
+      if (!info.isDirectory() || info.isSymbolicLink()) throw new ModelAccessError('model_storage_unsafe', '供应商凭据目录来源不安全，未执行删除。', 409);
+      await rm(root, { recursive: true, force: true });
+    } catch (error) {
+      if (object(error).code === 'ENOENT') return;
+      throw error;
+    }
   }
   async updatePreferences(id:string,input:ModelPreferenceUpdate) {
     await this.ready;const row=this.current(id);conflict(row.revision,input.expectedRevision);
@@ -664,7 +768,7 @@ export function createModelAccess(options: ModelAccessOptions) {
   const application = new ModelAccessApplication(options);
   return {
     ensureLinked: () => application.ensureLinked(), invalidate: (id:string,input?:{abortActive?:boolean}) => application.invalidate(id,input),
-    accounts: { list: (input?:{includeDisabled?:boolean}) => application.list(input), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string;custom?:CustomProviderConfigureInput}) => application.add(input), configure: (id:string,input:{expectedRevision:string;apiKey:string}) => application.configure(id,input), configureCustom: (id:string,input:CustomProviderConfigureInput) => application.configureCustom(id,input), discoverCustom: (input:CustomProviderDiscoveryInput) => application.discoverCustom(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input) },
+    accounts: { list: (input?:{includeDisabled?:boolean}) => application.list(input), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string;custom?:CustomProviderConfigureInput}) => application.add(input), configure: (id:string,input:{expectedRevision:string;apiKey:string}) => application.configure(id,input), configureCustom: (id:string,input:CustomProviderConfigureInput) => application.configureCustom(id,input), discoverCustom: (input:CustomProviderDiscoveryInput) => application.discoverCustom(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input), remove: (id:string,input:{expectedRevision:string}) => application.remove(id,input) },
     catalog: { list: () => application.catalog() },
     activity: () => application.activity(),
     freezeMetadata: (value = true) => application.freezeMetadata(value),

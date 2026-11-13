@@ -430,6 +430,24 @@ export class ConversationRepository {
   private isPending(record:ConversationReadState,includeActive:boolean):boolean {
     return Boolean(record.view.requests.length || record.view.retainedRuns?.some(unfinishedRun) || record.view.run?.tools.some(tool=>tool.status!=='completed') || (includeActive ? ['starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active'] : ['unknown','tools-active']).includes(record.view.run?.status ?? ''));
   }
+  /** Counts conversations whose current execution selection still binds each model source. */
+  modelAccountReferences(accountIds: string[]): Record<string, number> {
+    const ids = [...new Set(accountIds)].filter(id => /^[a-zA-Z0-9_-]{1,100}$/.test(id));
+    const counts: Record<string, number> = Object.fromEntries(ids.map(id => [id, 0]));
+    if (!ids.length) return counts;
+    const db = this.open(false); if (!db) return counts;
+    try {
+      const modern = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version >= 2;
+      const selection = modern
+        ? "coalesce(json_extract(summary,'$.run.modelAccountId'),json_extract(body,'$.view.run.modelAccountId'))"
+        : "json_extract(body,'$.view.run.modelAccountId')";
+      // Aggregate from the compact summary when available; the body remains the
+      // pre-v2 fallback. No conversation content is loaded into the agent.
+      const rows = db.prepare(`SELECT account_id,count(*) AS n FROM (SELECT ${selection} AS account_id FROM conversations) WHERE account_id IN (${ids.map(() => '?').join(',')}) GROUP BY account_id`).all(...ids) as Array<{ account_id: string; n: number }>;
+      for (const row of rows) counts[row.account_id] = row.n;
+      return counts;
+    } finally { db.close(); }
+  }
   listConversations(workspaceId: string, options: { parentConversationId?: string; taskId?: string; workspaceIds?:string[]; before?: string; limit: number; includeHidden?: boolean; query?: string; active?: boolean; attention?: boolean }): ConversationReadState[] {
     const db = this.open(false); if (!db) return [];
     try {

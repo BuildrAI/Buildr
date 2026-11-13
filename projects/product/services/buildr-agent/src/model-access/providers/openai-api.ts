@@ -22,6 +22,7 @@ export function createOpenAIApiModelProvider(options: OpenAIApiProviderOptions =
   return {
     id: 'openai',
     label: 'ChatGPT API',
+    singleton: true,
     authentication: { type: 'api-key', label: 'API Key', placeholder: 'sk-...', description: '只保存 API Key，使用 OpenAI 官方 API。' },
     group: { id: 'chatgpt', label: 'ChatGPT' },
     modeLabel: 'API Key',

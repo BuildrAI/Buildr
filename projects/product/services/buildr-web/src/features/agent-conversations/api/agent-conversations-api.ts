@@ -57,6 +57,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     defaultWorkspace(signal?: AbortSignal) { return request<{rootPath: string}>(appPath+'/default-workspace', {signal}); },
     modelAccount(id:string) {return request<ModelAccount>(appPath+'/model-accounts/'+encodeURIComponent(id));},
     modelAccounts(signal?:AbortSignal,includeDisabled=false) {return read<{accounts:ModelAccount[];providers:ModelProviderView[]}>(appPath+'/model-accounts'+(includeDisabled?'?includeDisabled=true':''),signal);},
+    modelAccountUsage(id:string) {return request<{references:number}>(appPath+'/model-accounts/'+encodeURIComponent(id)+'/usage');},
     modelCatalog(signal?:AbortSignal) {
       // Independently cancellable callers must not cancel a shared read.
       if(signal)return request<{models:CatalogModel[];diagnostic?:string;hasSnapshot?:boolean}>(appPath+'/model-catalog',{signal});
@@ -71,6 +72,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     modelPreferences(account:ModelAccount,models:Array<{id:string;enabled?:boolean;contextWindow?:number|null}>) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/preferences',post({expectedRevision:account.revision,models}));},
     configureModelAccount(account:ModelAccount,apiKey:string) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/api-key',post({expectedRevision:account.revision,apiKey}));},
     modelAccountAction(account:ModelAccount,action:'check'|'disconnect'|'login-attempts') {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/'+action,post({expectedRevision:account.revision}));},
+    deleteModelAccount(account:ModelAccount) {return changeModels<{accounts:ModelAccount[];providers:ModelProviderView[]}>(appPath+'/model-accounts/'+encodeURIComponent(account.id),{method:'DELETE',body:JSON.stringify({expectedRevision:account.revision})});},
     modelLoginAttempt(accountId:string,attemptId:string,signal?:AbortSignal) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+accountId+'/login-attempts/'+attemptId,{signal});},
     cancelModelLogin(account:ModelAccount) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/login-attempts/'+account.loginAttempt!.id+'/cancel',post({expectedRevision:account.revision}));},
     upgradeProgram(id: string, input: {expectedRevision: string; expectedVersion: string}) { return request<ProgramUpgradeView>(`${appPath}/connections/${encodeURIComponent(id)}/program-upgrades`, post(input)); },

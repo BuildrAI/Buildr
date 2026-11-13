@@ -22,6 +22,22 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   const preferenceOverrides=new Map<string,Map<string,{enabled?:boolean;contextWindow?:number|null}>>();
   const quotaOverrides=new Map<string,any>();
   const nativeAccounts=()=>connections.map(connection=>({id:'native-'+connection.id,identity:'identity-'+connection.id,connectionId:connection.id,provider:connection.provider,label:connection.label,accountLabel:'fixture account',revision:'model-account-'+connection.id,enabled:connection.enabled,status:disconnectedAccounts.has(connection.id)?'not-authenticated':connection.status,models:connection.models.map(model=>{const patch=preferenceOverrides.get('native-'+connection.id)?.get(model.id);const override=patch?.contextWindow===undefined?undefined:patch.contextWindow===null?undefined:patch.contextWindow;return {...model,enabled:patch?.enabled??true,contextWindow:override??32000,contextWindowOverride:override,images:connection.capabilities.images,tools:true};}),quota:quotaOverrides.get(connection.id)??{available:false,planLabel:'Fixture套餐',observedAt:'2026-10-25T00:00:00Z'}}));
+  const modelProviders=[
+    {id:'native-codex',label:'Codex / ChatGPT',authentication:{type:'oauth',label:'ChatGPT 账号'},group:{id:'chatgpt',label:'ChatGPT'},modeLabel:'订阅',connectionId:'codex'},
+    {id:'native-dsh',label:'DeepSeek',connectionId:'dsh'},
+    {id:'native-qoder',label:'Qoder',connectionId:'qoder'},
+    {id:'native-qoder-cn',label:'Qoder CN',linked:true},
+    {id:'codex',label:'Codex / ChatGPT',authentication:{type:'oauth',label:'ChatGPT 账号'},group:{id:'chatgpt',label:'ChatGPT'},modeLabel:'订阅'},
+    {id:'openai',label:'ChatGPT API',authentication:{type:'api-key',label:'API Key',placeholder:'sk-...',description:'只保存 API Key，使用 OpenAI 官方 API。'},group:{id:'chatgpt',label:'ChatGPT'},modeLabel:'API Key'},
+    {id:'anthropic',label:'Claude API',authentication:{type:'api-key',label:'API Key',placeholder:'sk-ant-...',description:'使用 Anthropic 官方 API。'},group:{id:'anthropic',label:'Claude'},modeLabel:'API Key'},
+    {id:'custom',label:'自定义供应商',custom:true},
+    {id:'devin',label:'Devin'},
+    {id:'deepseek',label:'DeepSeek'},
+  ];
+  let extraAccounts:any[]=[];
+  const modelAccounts=()=>[...nativeAccounts(),...extraAccounts];
+  const deletedAccounts:string[]=[];
+  const usageByAccount=new Map<string,number>();
   let catalogDiagnostic:string|undefined;
   // The picker consumes the shared catalog, not connection.models. Keep the
   // default HTTP observation consistent with the account observation; explicit
@@ -78,13 +94,19 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     const request=route.request(),url=new URL(request.url()),method=request.method();
     if(url.pathname.startsWith('/api/v1/app/agent-service/program-updates'))return route.fulfill({json:{programs:connections.map(connection=>({connectionId:connection.id,provider:connection.provider,label:connection.label,revision:connection.revision,executable:connection.enabled?'/isolated/'+connection.id:undefined,status:connection.enabled?'unchecked':'not-connected',managed:true,versionKind:'program',packageName:connection.id,updateUrl:'https://fixture.invalid'}))}});
     if(url.pathname==='/api/v1/app/agent-service/model-catalog'){return route.fulfill({json:{models:modelCatalog(),hasSnapshot:true,...(catalogDiagnostic?{diagnostic:catalogDiagnostic}:{})}});}
-    if(url.pathname==='/api/v1/app/agent-service/model-accounts')return route.fulfill({json:{accounts:nativeAccounts(),providers:[]}});
+    if(url.pathname==='/api/v1/app/agent-service/model-accounts')return route.fulfill({json:{accounts:modelAccounts(),providers:modelProviders}});
     if(url.pathname.startsWith('/api/v1/app/agent-service/model-accounts/')){
-      const parts=url.pathname.split('/'),account=nativeAccounts().find(item=>item.id===parts[6]);assert.ok(account,'model action targets an observed native account');
+      const parts=url.pathname.split('/'),account=modelAccounts().find(item=>item.id===parts[6]);assert.ok(account,'model action targets an observed account');
+      if(method==='GET'&&parts[7]==='usage')return route.fulfill({json:{references:usageByAccount.get(account.id)??0}});
+      if(method==='DELETE'){
+        const body=request.postDataJSON();assert.equal(body.expectedRevision,account.revision);
+        const index=extraAccounts.findIndex(item=>item.id===account.id);assert.ok(index>=0,'only independent fixture accounts support deletion');extraAccounts.splice(index,1);deletedAccounts.push(account.id);
+        return route.fulfill({json:{accounts:modelAccounts(),providers:modelProviders}});
+      }
       if(method==='POST'){const body=request.postDataJSON();assert.equal(body.expectedRevision,account.revision);
         if(parts[7]==='preferences'){preferencePosts++;preferenceBodies.push(body);const store=preferenceOverrides.get(account.id)??new Map();preferenceOverrides.set(account.id,store);for(const row of body.models??[])store.set(row.id,{enabled:row.enabled,contextWindow:row.contextWindow});if(holdPreferences){holdPreferences=false;await new Promise<void>(resolve=>{releasePreferences=resolve;preferencesStarted?.();});}}
         if(parts[7]==='disconnect'){const connection=connections.find(item=>item.id===account.connectionId)!;disconnectedAccounts.add(connection.id);}}
-      return route.fulfill({json:nativeAccounts().find(item=>item.id===account.id)});
+      return route.fulfill({json:modelAccounts().find(item=>item.id===account.id)});
     }
     if(url.pathname==='/api/v1/app/agent-service/connections'){connectionReads++;const observed=JSON.parse(JSON.stringify(connections));if(holdConnections){holdConnections=false;await new Promise<void>(resolve=>{releaseConnections=resolve;connectionsStarted?.();});}return route.fulfill({json:{connections:observed}});}
     if(['/api/v1/app/agent-service/pending-requests','/api/v1/app/agent-service/pending-summary'].includes(url.pathname)){
@@ -329,7 +351,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     const label=modelTrigger().locator('.ac-model-label');await label.filter({hasText:expected}).waitFor();assert.equal(await label.innerText(),expected);
     const depth=modelTrigger().locator('.ac-model-effort');if(effort){await depth.filter({hasText:effort}).waitFor();assert.equal(await depth.innerText(),effort);}else assert.equal(await depth.count(),0);
   };
-  const reset=async()=>{await page.goto(workspaceUrl+'/overview');await page.evaluate(()=>sessionStorage.clear());await page.reload();await page.locator('#workbench-overview').waitFor();};
+  const reset=async()=>{extraAccounts=[];deletedAccounts.length=0;usageByAccount.clear();await page.goto(workspaceUrl+'/overview');await page.evaluate(()=>sessionStorage.clear());await page.reload();await page.locator('#workbench-overview').waitFor();};
   // 固定/专注下标题栏不再重复列表与返回入口，统一走导轨（手机为顶栏）；暂看仍用标题栏以保持不固定布局。
   const isPeeking=()=>panel().evaluate((node:HTMLElement)=>node.classList.contains('is-peeking'));
   const openHistoryList=async()=>{if(await isPeeking()){await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();return;}const rail=page.locator('.ac-collapsed-rail');if(await rail.isVisible())await rail.locator('.ac-all-conversations').click();else await page.locator('.global-conversations-control .ac-all-conversations').click();};
@@ -448,6 +470,9 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     get releaseTaskList(){return releaseTaskList;}, set releaseTaskList(value){releaseTaskList=value;},
     get releaseTitle(){return releaseTitle;}, set releaseTitle(value){releaseTitle=value;},
     get releaseUpload(){return releaseUpload;}, set releaseUpload(value){releaseUpload=value;},
+    get deletedAccounts(){return deletedAccounts;},
+    setExtraAccounts(accounts:any[]){extraAccounts=[...accounts];},
+    setModelAccountUsage(id:string,count:number){usageByAccount.set(id,count);},
     get reminderReads(){return reminderReads;},
     get reminderPaging(){return reminderPaging;}, set reminderPaging(value){reminderPaging=value;},
     get reminderReadFailure(){return reminderReadFailure;}, set reminderReadFailure(value){reminderReadFailure=value;},

@@ -9,23 +9,38 @@ export async function runSetupScenarios(fixture:AgentConversationFixture){
   await runPushbackSettingsJourney(fixture);
   await runProgrammaticCredentialEditJourney(fixture);
   const {assertFixed,assertModelSummary,assertNavigationHighlight,assertReminderGap,capture,chooseAgent,chooseModel,chooseOption,closeConversation,closeModelSettings,connections,expectedBrowserErrors,input,modelSettings,openDesktopConversation,openModelSettings,page,panel,preferenceBodies,preparedInputs,programAttempts,reset,run,sentInputs,setHighEffort,step,workspaceId}=fixture;
-await step('模型设置使用供应商侧栏、账号与额度/模型页签并只提供两个官方 API 预设',async()=>{
+await step('模型设置使用供应商侧栏并从全部内置声明生成添加供应商列表',async()=>{
   await reset();
   const drawer=page.getByRole('dialog',{name:/^智能体与模型/});
   await page.getByRole('button',{name:'智能体与模型设置',exact:true}).click();
   await drawer.waitFor();
   const accounts=drawer.locator('.ams-accounts');await accounts.waitFor();
-  await accounts.getByRole('button',{name:'添加自定义供应商',exact:true}).click();
+  const sourceList=accounts.locator('.amm-source-list');
+  await sourceList.locator('.amm-source-group-label').getByText('订阅账号',{exact:true}).waitFor();
+  await sourceList.locator('.amm-source-group-label').getByText('智能体接入',{exact:true}).waitFor();
+  const sourceSearch=sourceList.getByLabel('搜索供应商',{exact:true});
+  const chatgptSource=sourceList.getByRole('button').filter({hasText:'ChatGPT'});
+  await sourceSearch.fill('Devin');
+  assert.equal(await chatgptSource.count(),0,'搜索只保留匹配的供应商');
+  await sourceSearch.fill('');
+  await chatgptSource.first().waitFor();
+  await accounts.getByRole('button',{name:'添加供应商',exact:true}).click();
   const provider=page.getByRole('dialog',{name:/添加供应商/});
   await provider.waitFor();
   await provider.getByLabel('显示名称').waitFor();
   await provider.locator('.ant-select').first().click();
   const dropdown=page.locator('.ant-select-dropdown:visible');
   await dropdown.waitFor();
-  const presetTexts=await dropdown.locator('.ant-select-item-option').allInnerTexts();
-  assert.deepEqual(presetTexts,['ChatGPT API','DeepSeek API','其他自定义供应商']);
-  assert.equal(presetTexts.some(text=>text.includes('Claude')),false,'添加抽屉不再提供 Claude API');
-  await dropdown.getByText('其他自定义供应商',{exact:true}).click();
+  // The add list is a small declaration-driven set; keep every grouped option
+  // rendered so the complete list is observable without virtual-window timing.
+  await dropdown.locator('.ant-select-item-option').first().waitFor();
+  const optionTexts=await dropdown.locator('.ant-select-item-option').allInnerTexts();
+  for(const label of ['ChatGPT API','Claude API','Codex / ChatGPT','Devin','DeepSeek','Qoder CN','自定义供应商']){
+    assert.ok(optionTexts.some((text:string)=>text.includes(label)),'添加列表包含 '+label+'：'+JSON.stringify(optionTexts));
+  }
+  assert.ok(optionTexts.some((text:string)=>text.includes('由Codex智能体接入')),'托管来源标明 Codex 归属：'+JSON.stringify(optionTexts));
+  assert.ok(optionTexts.some((text:string)=>text.includes('由DSH智能体接入')),'托管来源标明 DSH 归属：'+JSON.stringify(optionTexts));
+  await dropdown.getByText('自定义供应商',{exact:true}).click();
   await provider.getByLabel('显示名称').waitFor();
   assert.equal(await provider.getByLabel('模型列表路径').inputValue(),'/models');
   assert.equal(await provider.getByRole('switch').count(),0);
@@ -37,6 +52,31 @@ await step('模型设置使用供应商侧栏、账号与额度/模型页签并�
   await capture(page,'agent-provider-management-layout.png');
   await drawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();
   await drawer.waitFor({state:'hidden'});
+});
+await step('删除独立供应商前确认清理范围，成功后从供应商列表移除',async()=>{
+  await reset();
+  fixture.setExtraAccounts([{id:'custom-fixture',identity:'custom-identity',provider:'custom',label:'演示网关',accountLabel:'演示网关',revision:'custom-r1',enabled:true,status:'ready',authType:'api-key',credentialConfigured:true,
+    custom:{baseUrl:'https://gateway.example.com/v1',protocol:'chat-completions',useApiKey:true,models:[{id:'custom-model',label:'Custom model'}]},
+    models:[{id:'custom-model',label:'Custom model',images:false,tools:true,enabled:true}],observedAt:'2026-10-25T00:00:00Z'}]);
+  fixture.setModelAccountUsage('custom-fixture',3);
+  const drawer=page.getByRole('dialog',{name:/^智能体与模型/});
+  await page.getByRole('button',{name:'智能体与模型设置',exact:true}).click();await drawer.waitFor();
+  const accounts=drawer.locator('.ams-accounts');await accounts.waitFor();
+  await accounts.locator('.amm-source-list').getByRole('button').filter({hasText:'演示网关'}).click();
+  const card=drawer.locator('.amm-quota-card');await card.getByText('演示网关',{exact:true}).waitFor();
+  await card.getByRole('button',{name:'演示网关更多操作',exact:true}).click();
+  await page.getByRole('menuitem',{name:'删除供应商',exact:true}).click();
+  const removal=page.getByRole('dialog',{name:'删除供应商'});await removal.waitFor();
+  await removal.getByText(/确定删除「演示网关」/).waitFor();
+  await removal.getByText('本机保存的 API Key',{exact:true}).waitFor();
+  await removal.getByText('有 3 个对话正在使用此供应商',{exact:true}).waitFor();
+  await removal.getByText(/下次发送时这些对话需要重新选择模型/).waitFor();
+  await removal.getByText(/不会删除服务商账号/).waitFor();
+  await capture(page,'agent-provider-delete-confirm.png');
+  await removal.getByRole('button',{name:/^删\s*除$/}).click();
+  await accounts.locator('.amm-source-list').getByText('演示网关').waitFor({state:'hidden'});
+  assert.deepEqual(fixture.deletedAccounts,['custom-fixture']);
+  await drawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();await drawer.waitFor({state:'hidden'});
 });
 await step('文档附件支持九份、拒绝第十份并刷新恢复文件名',async()=>{
   await reset();await openDesktopConversation();await input().waitFor();
@@ -286,8 +326,8 @@ await step('统一账号来源按真实登录观察更新，登录链接和迟�
       (connections[0] as any).loginAttempt.state='checking';connections[0].revision='connection-'+(++fixture.revision);await card.getByText('正在核对登录结果',{exact:true}).waitFor();assert.equal(await card.getByText('正在等待官方登录',{exact:true}).count(),0,'官方已返回时不再要求等待浏览器登录');
       connections[0].status='ready';(connections[0] as any).loginAttempt.state='completed';connections[0].revision='connection-'+(++fixture.revision);await card.getByText('已登录',{exact:true}).waitFor();await card.getByRole('button',{name:'刷新ChatGPT额度',exact:true}).click();await capture(page,'agent-conversation-account.png');
       await drawer.locator('.amm-tabs').getByRole('tab',{name:/^模型/}).click();const fixtureSwitch=drawer.getByRole('switch',{name:'停用 Fixture model',exact:true});await fixtureSwitch.waitFor();fixture.holdPreferences=true;const saving=new Promise<void>(resolve=>{fixture.preferencesStarted=resolve;});const preferenceSaved=page.waitForResponse((response:any)=>response.url().endsWith('/preferences'));await fixtureSwitch.click();await saving;assert.equal(await drawer.getByRole('switch',{name:'启用 Fixture model',exact:true}).count(),1,'启停用先生效，不等保存回执');assert.equal(await drawer.getByRole('switch',{name:'停用 Fast model',exact:true}).isDisabled(),false,'保存期间不锁定其他控件');assert.equal(await page.getByText('模型设置已保存',{exact:true}).count(),0,'保存不再弹成功提示');fixture.releasePreferences!();await preferenceSaved;await drawer.locator('.amm-model-summary').getByText(/已启用 1/).waitFor();assert.equal(fixture.preferencePosts,1);assert.equal(preferenceBodies.at(-1).expectedRevision,'model-account-codex','偏好写入携带已观察版本');assert.deepEqual(preferenceBodies.at(-1).models,[{id:'fixture-model',enabled:false}],'只写入本次改动的字段');assert.equal(await page.getByText('模型设置已保存',{exact:true}).count(),0,'保存完成后也不补成功提示');
-      await drawer.locator('.amm-tabs').getByRole('tab',{name:'供应商与额度',exact:true}).click();await card.getByText('已登录',{exact:true}).waitFor();
-      fixture.holdConnections=true;const oldRead=new Promise<void>(resolve=>{fixture.connectionsStarted=resolve;});await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await oldRead;await card.getByRole('button',{name:'ChatGPT更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'断开供应商',exact:true}).click();await card.getByText('未登录',{exact:true}).waitFor();const oldReadResponse=page.waitForResponse((response:any)=>response.url().endsWith('/agent-service/connections'));fixture.releaseConnections!();await oldReadResponse;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));assert.equal(await card.getByText('未登录',{exact:true}).isVisible(),true,'迟到接入列表不覆盖已确认的模型账号断开状态');assert.equal(connections[0].enabled,true,'断开模型账号保留已准备程序');assert.equal(connections[0].status,'ready');
+      await drawer.locator('.amm-tabs').getByRole('tab',{name:'账号与额度',exact:true}).click();await card.getByText('已登录',{exact:true}).waitFor();
+      fixture.holdConnections=true;const oldRead=new Promise<void>(resolve=>{fixture.connectionsStarted=resolve;});await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await oldRead;await card.getByRole('button',{name:'ChatGPT更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'退出登录',exact:true}).click();const logout=page.getByRole('dialog',{name:'退出登录'});await logout.waitFor();await logout.getByRole('button',{name:'退出登录',exact:true}).click();await card.getByText('未登录',{exact:true}).waitFor();const oldReadResponse=page.waitForResponse((response:any)=>response.url().endsWith('/agent-service/connections'));fixture.releaseConnections!();await oldReadResponse;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));assert.equal(await card.getByText('未登录',{exact:true}).isVisible(),true,'迟到接入列表不覆盖已确认的托管登录退出状态');assert.equal(connections[0].enabled,false,'退出托管登录断开对应智能体连接');assert.equal(connections[0].status,'disconnected');
       await drawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();await closeConversation();await panel().waitFor({state:'hidden'});assert.equal(fixture.sends,0);
     });
 
