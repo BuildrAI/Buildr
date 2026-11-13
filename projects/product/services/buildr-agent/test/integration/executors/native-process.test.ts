@@ -253,10 +253,22 @@ test('owned host gets its full SIGTERM disposal window before escalation', { ski
   });
   try {
     await once(control.child.stdout, 'data');
-    await closeOwnedProcess(control.child, 20, { termGraceMs: 1000 });
+    await closeOwnedProcess(control.child, 20, { stdinGraceMs: 0, termGraceMs: 1000 });
     assert.equal(control.child.exitCode, 0);
     assert.deepEqual(events.filter(event => event.event === 'native-signal').map(event => event.signal), ['SIGTERM']);
   } finally {
     await closeOwnedProcess(control.child, 20);
   }
+});
+
+test('native RPC allows a longer EOF drain without sending a signal', { timeout: 8000 }, async () => {
+  const events: Array<{ event: string }> = [];
+  const program = "process.stdin.resume(); process.stdin.on('end', () => setTimeout(() => process.exit(0), 1150)); console.log(JSON.stringify({ method: 'ready' }));";
+  const rpc = new NativeRpc(process.execPath, ['-e', program], {
+    cwd: process.cwd(), env: process.env, stdinGraceMs: 5000, diagnostics: event => events.push(event),
+  });
+  await once(rpc.child.stdout, 'data');
+  await rpc.close();
+  assert.equal(rpc.child.exitCode, 0);
+  assert.equal(events.some(event => event.event === 'native-signal'), false);
 });

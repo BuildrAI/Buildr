@@ -25,7 +25,7 @@ export async function launchDshHost(executable: string, env: NativeEnvironment, 
   let client: DshClient | undefined;
   let closingHost: Promise<void> | undefined;
   // The Web Host starts disposal on SIGTERM and has its own five-second deadline.
-  const closeHost = () => closingHost ??= closeOwnedProcess(child, 1000, { termGraceMs: 6000 });
+  const closeHost = () => closingHost ??= closeOwnedProcess(child, 1000, { stdinGraceMs: 0, termGraceMs: 6000 });
   const abort = () => {
     void closeHost().catch(() => {});
     void client?.close().catch(() => {});

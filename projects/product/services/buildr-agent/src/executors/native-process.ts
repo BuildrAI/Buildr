@@ -50,15 +50,16 @@ export async function bounded<T>(promise: Promise<T>, timeoutMs: number, code = 
   finally { clearTimeout(timer); }
 }
 const childDiagnostics=new WeakMap<ChildProcessWithoutNullStreams,ExecutionDiagnosticSink>();
-export async function closeOwnedProcess(child: ChildProcessWithoutNullStreams, timeoutMs = 2500, shutdown?: { termGraceMs: number }): Promise<void> {
+export async function closeOwnedProcess(child: ChildProcessWithoutNullStreams, timeoutMs = 2500, shutdown?: { stdinGraceMs?: number; termGraceMs?: number }): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return;
   const log=childDiagnostics.get(child);log?.({event:'native-close-request',reason:'owner-dispose'});
   const exited = new Promise<void>(resolve => child.once('exit', () => resolve()));
   child.stdin.end();
-  if (!shutdown) {
-    try { await bounded(exited, timeoutMs); return; } catch { /* Own exact live ChildProcess, never a recovered PID. */ }
+  const stdinGraceMs = shutdown?.stdinGraceMs ?? timeoutMs;
+  if (stdinGraceMs > 0) {
+    try { await bounded(exited, stdinGraceMs); return; } catch { /* Own exact live ChildProcess, never a recovered PID. */ }
   }
-  log?.({event:'native-signal',signal:'SIGTERM',reason:shutdown ? 'owner-dispose' : 'close-timeout'});child.kill('SIGTERM');
+  log?.({event:'native-signal',signal:'SIGTERM',reason:stdinGraceMs === 0 ? 'owner-dispose' : 'close-timeout'});child.kill('SIGTERM');
   try { await bounded(exited, shutdown?.termGraceMs ?? timeoutMs); return; } catch { log?.({event:'native-signal',signal:'SIGKILL',reason:'close-timeout'});child.kill('SIGKILL'); }
   await bounded(exited, timeoutMs);
 }
@@ -156,9 +157,11 @@ export class NativeRpc {
   readonly child: ChildProcessWithoutNullStreams;
   private disposed = false;
   private failed = false;
+  private readonly stdinGraceMs?: number;
   private readonly diagnosticSecrets: string[];
   get closed(): boolean { return this.disposed || this.failed || this.child.exitCode !== null || this.child.signalCode !== null || this.child.stdin.destroyed; }
-  constructor(command: string, args: string[], options: { cwd: string; env: NativeEnvironment;diagnostics?:ExecutionDiagnosticSink }) {
+  constructor(command: string, args: string[], options: { cwd: string; env: NativeEnvironment;diagnostics?:ExecutionDiagnosticSink; stdinGraceMs?: number }) {
+    this.stdinGraceMs = options.stdinGraceMs;
     this.diagnosticSecrets = Object.entries(options.env).filter(([key, value]) => /(?:TOKEN|KEY|PASSWORD|SECRET)$/i.test(key) && value).map(([, value]) => value!);
     this.control=new OwnedControlResource(command,args,options);
     this.child=this.control.child;
@@ -228,7 +231,7 @@ export class NativeRpc {
     try { this.write({ id, method, params }); return await bounded(result, timeoutMs); }
     finally { this.pending.delete(id); }
   }
-  async close(): Promise<void> { if (this.disposed) return; this.disposed = true; if(this.drainTask)clearImmediate(this.drainTask);this.drainTask=undefined;this.buffer='';this.fail('agent_native_process_closed'); await closeOwnedProcess(this.child, 1000); this.listeners.clear(); }
+  async close(): Promise<void> { if (this.disposed) return; this.disposed = true; if(this.drainTask)clearImmediate(this.drainTask);this.drainTask=undefined;this.buffer='';this.fail('agent_native_process_closed'); await closeOwnedProcess(this.child, 1000, { stdinGraceMs: this.stdinGraceMs }); this.listeners.clear(); }
 }
 export function opaqueReference(provider: string, nativeSessionId: string, cwd: string, bindingIdentity: string): string {
   return JSON.stringify({ version: 1, provider, nativeSessionId, cwd, bindingIdentity });
