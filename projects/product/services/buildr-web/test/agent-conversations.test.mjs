@@ -536,6 +536,32 @@ test('模型写入使旧目录读取失效，旧完成不能解除新读取的�
   reads[1]({models:[{id:'fresh'}]});assert.equal((await fresh).models[0].id,'fresh');assert.equal((await shared).models[0].id,'fresh');
 });
 
+test('modelCatalog 携带已知 revision 并在未变化时复用本地快照，变更后自动失效重拉',async()=>{
+  const requests=[];
+  const rev1='a'.repeat(64),rev2='b'.repeat(64);
+  let phase=0;
+  const api=createAgentConversationsClient(async(url,init)=>{
+    requests.push({url,method:init?.method??'GET'});
+    if(init?.method==='POST'){phase=2;return {id:'account'};}
+    if(phase===0){phase=1;return {revision:rev1,models:[{id:'m1'}],hasSnapshot:true};}
+    if(phase===1)return {revision:rev1,unchanged:true};
+    return {revision:rev2,models:[{id:'m2'}],hasSnapshot:true};
+  },session);
+
+  const first=await api.modelCatalog();
+  assert.equal(requests[0].url,'/api/v1/app/agent-service/model-catalog');
+  assert.equal(first.models[0].id,'m1');
+
+  const second=await api.modelCatalog();
+  assert.equal(requests[1].url,`/api/v1/app/agent-service/model-catalog?revision=${rev1}`);
+  assert.equal(second.models[0].id,'m1');
+
+  await api.addModelAccount('devin');
+  const third=await api.modelCatalog();
+  assert.equal(requests[3].url,'/api/v1/app/agent-service/model-catalog');
+  assert.equal(third.models[0].id,'m2');
+});
+
 test('补充发送绑定原执行且与停止和授权回复独立，认证重试保留同一编号',async()=>{
  let release,first=true,token='old';const calls=[];
  const api=createAgentConversationsClient(async(url,init)=>{

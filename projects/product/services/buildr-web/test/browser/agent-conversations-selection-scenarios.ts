@@ -26,7 +26,7 @@ await step('新对话跨工作空间恢复软件级选择，无关账号变化�
         const beforeFailure=fixture.creations;await input().fill('冲突原因不应被统一状态文案覆盖');fixture.prepareError={code:'agent_conversation_busy',message:'请先处理当前执行或未知状态；新内容仍可保留为草稿。'};const conflictResponse=page.waitForResponse((response:any)=>response.url().includes('/drafts/')&&response.url().endsWith('/send'));await panel().getByRole('button',{name:'发送对话',exact:true}).click();await conflictResponse;await panel().getByText('请先处理当前执行或未知状态；新内容仍可保留为草稿。',{exact:true}).waitFor();assert.equal(fixture.creations,beforeFailure);assert.equal(await panel().getAttribute('data-conversation-id'),null);assert.equal(await input().inputValue(),'冲突原因不应被统一状态文案覆盖');assert.equal(await panel().locator('[data-pending-send-state]').count(),0,'a rejected first input remains the shared draft, not a queued empty conversation');
         await input().fill('无关账号变化后继续发送');unrelatedSource.accountRevision='devin-r2';unrelatedSource.accountLabel='Devin 套餐 · 已刷新';// Focus metadata refresh coalesces events within one second. Poll the read-only
         // signal until the actual response, rather than racing the previous focus.
-        const catalogRefresh=page.waitForResponse((response:any)=>response.url().endsWith('/model-catalog'));
+        const catalogRefresh=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/model-catalog'));
         const focusTimer=await page.evaluate(()=>window.setInterval(()=>window.dispatchEvent(new Event('focus')),100));
         try{await catalogRefresh;}finally{await page.evaluate((timer:number)=>clearInterval(timer),focusTimer);}await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
         assert.equal(await panel().locator('.ac-provider-select .ant-select-selection-item').innerText(),'Qoder');await assertModelSummary('Qoder / Qoder 共享模型','高');assert.equal(await panel().getByText('对话或套餐状态已变化，已重新读取；套餐登录来源变化时请重新选择模型。草稿保留。',{exact:true}).count(),0);
@@ -51,7 +51,7 @@ await step('不同来源的模型强度独立恢复，能力失效后首次发�
         fixture.sharedModels=[{...first,reasoningEfforts:undefined,defaultReasoningEffort:undefined},second];
         // Focus metadata refresh coalesces events within one second. Poll the read-only
         // signal until the actual response, rather than racing the previous focus.
-        const catalogRefresh=page.waitForResponse((response:any)=>response.url().endsWith('/model-catalog'));
+        const catalogRefresh=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/model-catalog'));
         const focusTimer=await page.evaluate(()=>window.setInterval(()=>window.dispatchEvent(new Event('focus')),100));
         try{await catalogRefresh;}finally{await page.evaluate((timer:number)=>clearInterval(timer),focusTimer);}
         await modelSettings().waitFor({state:'hidden'});await fixture.openModelSettings();await modelSettings().getByText('此模型未提供可调节的推理强度',{exact:true}).waitFor();await closeModelSettings();

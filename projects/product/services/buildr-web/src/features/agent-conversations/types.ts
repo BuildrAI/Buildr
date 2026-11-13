@@ -4,7 +4,7 @@ import type { AgentProgramUpdatesProgramUpdates } from '../../../build/generated
 export type ProgramUpdatesView = AgentProgramUpdatesProgramUpdates;
 import type { AgentModelAccountModelAccount, AgentModelAccountsModelAccounts, AgentModelCatalogModelCatalog } from '../../../build/generated/agent-service-http-dto';
 export type ModelAccount = AgentModelAccountModelAccount;
-export type CatalogModel = AgentModelCatalogModelCatalog['models'][number];
+export type CatalogModel = Extract<AgentModelCatalogModelCatalog, { models: unknown }>['models'][number];
 export type ModelProviderView = AgentModelAccountsModelAccounts['providers'][number];
 import type { AgentServiceConnectionConnection, AgentConversationConversation, AgentConversationDraftRequestDraft, AgentConversationSendPreviewPreview, AgentConversationEventEvent, AgentConversationAttachmentResultAttachmentResult } from '../../../build/generated/agent-service-http-dto';
 import type { AgentServicePreparationPreparation } from '../../../build/generated/agent-service-http-dto';

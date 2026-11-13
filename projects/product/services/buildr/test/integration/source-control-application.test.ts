@@ -596,3 +596,55 @@ test('Explorer catalog reuses only this request common-directory proofs and stil
     assert.equal(selected.worktrees.find(member=>member.path===fs.realpathSync(linked))?.kind,'main');
   } finally {captureExec.mock.restore();captureSpawn.mock.restore();syncBuiltinESMExports();}
 });
+
+test('worker sourceControl batches multi-worktree verification and only re-reads invalidated worktrees', async t => {
+  const f = fixture(t); f.write('a.ts', 'base\n'); f.commit('base');
+  const linkedA = path.join(f.base, 'linked-a'), linkedB = path.join(f.base, 'linked-b');
+  f.git('worktree', 'add', '-b', 'topic-a', linkedA);
+  f.git('worktree', 'add', '-b', 'topic-b', linkedB);
+  fs.writeFileSync(path.join(linkedA, 'a.ts'), 'dirty-a\n');
+  const syncBaseline = f.app.sourceControl(f.root);
+  const originalExecFile = childProcess.execFile, originalExecFileSync = childProcess.execFileSync;
+  const gitCalls: string[][] = [];
+  const captureExecFile = t.mock.method(childProcess, 'execFile', (...args: Parameters<typeof childProcess.execFile>) => {
+    if (args[0] === 'git' && Array.isArray(args[1])) gitCalls.push(args[1]);
+    return (originalExecFile as (...inner: Parameters<typeof childProcess.execFile>) => ReturnType<typeof childProcess.execFile>)(...args);
+  });
+  const captureExecFileSync = t.mock.method(childProcess, 'execFileSync', (...args: Parameters<typeof childProcess.execFileSync>) => {
+    if (args[0] === 'git' && Array.isArray(args[1])) gitCalls.push(args[1]);
+    return originalExecFileSync(...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    const cold = await f.app.sourceControlInWorker(f.root, {}, []);
+    assert.equal(CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.sourceControl.$id, cold).valid, true);
+    const summarize = (result: typeof cold) => result.repositories[0].worktrees.map(member => ({
+      id: member.worktreeId, branch: member.branch, status: member.status, paths: member.changes.map(file => file.path)
+    }));
+    assert.deepEqual(summarize(cold), summarize(syncBaseline));
+    assert.equal(gitCalls.filter(args => args.includes('worktree') && args.includes('list')).length, 2);
+    assert.equal(gitCalls.filter(args => args.includes('status')).length, 3);
+
+    gitCalls.length = 0;
+    fs.writeFileSync(path.join(linkedA, 'extra.ts'), 'new-a\n');
+    const cached = cold.repositories[0].worktrees.filter(member => member.location !== fs.realpathSync(linkedA));
+    assert.equal(cached.length, 2);
+    const warm = await f.app.sourceControlInWorker(f.root, {}, cached);
+    assert.equal(CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.sourceControl.$id, warm).valid, true);
+    assert.equal(gitCalls.filter(args => args.includes('status')).length, 1);
+    assert.equal(gitCalls.filter(args => args.includes('worktree') && args.includes('list')).length, 2);
+    const warmA = warm.repositories[0].worktrees.find(member => member.location === fs.realpathSync(linkedA));
+    assert.ok(warmA?.changes.some(file => file.path === 'extra.ts'));
+
+    fs.rmSync(linkedB, { recursive: true, force: true });
+    fs.mkdirSync(linkedB, { recursive: true });
+    checkoutGit(linkedB, 'init');
+    const displaced = await f.app.sourceControlInWorker(f.root, {}, warm.repositories[0].worktrees);
+    const failedB = displaced.repositories[0].worktrees.find(member => member.location === fs.realpathSync(linkedB));
+    assert.equal(failedB?.status, 'unavailable');
+  } finally {
+    captureExecFile.mock.restore();
+    captureExecFileSync.mock.restore();
+    syncBuiltinESMExports();
+  }
+});

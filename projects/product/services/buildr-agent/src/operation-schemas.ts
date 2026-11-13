@@ -103,7 +103,10 @@ export const AGENT_OPERATION_SCHEMAS = {
   modelCustomConfigure: named('AgentModelCustomConfigure', customConfigure),
   modelCustomDiscovery: named('AgentModelCustomDiscovery', customDiscovery),
   modelCustomDiscoveryResult: named('AgentModelCustomDiscoveryResult', customDiscoveryResult),
-  modelCatalog: named('AgentModelCatalog', closed({models:list(catalogModel),diagnostic:text,hasSnapshot:boolean},['models'])),
+  modelCatalog: named('AgentModelCatalog', {anyOf:[
+    closed({revision:text,unchanged:{const:true}}),
+    closed({revision:text,models:list(catalogModel),diagnostic:text,hasSnapshot:boolean},['models']),
+  ]}),
   addModelAccount: named('AgentModelAccountAdd', closed({provider:text,label:text,custom:customConfigure},['provider'])),
   empty: named('AgentServiceEmptyRequest', closed({})),
   connection: named('AgentServiceConnection', connection),

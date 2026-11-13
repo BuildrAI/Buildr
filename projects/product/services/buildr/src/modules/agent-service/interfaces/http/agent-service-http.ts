@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { agentActivitySummary } from './agent-activity-summary.ts';
 import type { AgentService, AgentOperations } from '@buildr-ai/buildr-agent';
 import { conversationEventEncoder, AgentServiceError } from '@buildr-ai/buildr-agent';
@@ -85,8 +86,10 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       }
       if (request.method === 'GET') authorizeRead(); else authorizeWrite();
       const modelAccountsRead = pathname === `${prefix}/model-accounts` && request.method === 'GET';
-      query(searchParams, modelAccountsRead ? ['includeDisabled'] : []);
+      const modelCatalogRead = pathname === `${prefix}/model-catalog` && request.method === 'GET';
+      query(searchParams, modelAccountsRead ? ['includeDisabled'] : modelCatalogRead ? ['revision'] : []);
       if (modelAccountsRead && searchParams.has('includeDisabled') && !['true','false'].includes(searchParams.get('includeDisabled')!)) throw inputError();
+      if (modelCatalogRead && searchParams.has('revision') && !/^[a-f0-9]{64}$/.test(searchParams.get('revision')!)) throw inputError();
       if (pathname === `${prefix}/default-workspace` && request.method === 'GET' && defaultWorkspace) return result('defaultWorkspace', defaultWorkspace());
       if (pathname === `${prefix}/runtime` && request.method === 'GET' && options.runtimeStatus) return result('runtimeStatus', await options.runtimeStatus());
       if (pathname === `${prefix}/runtime/restart` && request.method === 'POST' && options.restartRuntime) return result('runtimeStatus', await options.restartRuntime(validate('runtimeRestart', await readJsonBody())));
@@ -96,7 +99,12 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         if (request.method === 'POST') return result('modelAccount', await service.models.accounts.add(validate('addModelAccount', await readJsonBody())), 201);
       }
       if (pathname === `${prefix}/model-custom/discovery` && request.method === 'POST') return result('modelCustomDiscoveryResult', await service.models.accounts.discoverCustom(validate('modelCustomDiscovery', await readJsonBody())));
-      if (pathname === `${prefix}/model-catalog` && request.method === 'GET') return result('modelCatalog', await service.models.catalog.list({refresh:false}));
+      if (modelCatalogRead) {
+        const expectedRevision = searchParams.get('revision') ?? undefined;
+        const catalog = toWireValue(await service.models.catalog.list({ refresh: false })) as Record<string, unknown>;
+        const revision = createHash('sha256').update(JSON.stringify(catalog)).digest('hex');
+        return result('modelCatalog', expectedRevision === revision ? { revision, unchanged: true as const } : { ...catalog, revision });
+      }
       const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-zA-Z0-9_-]{1,100})(?:\/(check|disconnect|login-attempts|preferences|api-key|custom|usage)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
       if (accountRoute) {
         const [, accountId, action, attemptId, cancel] = accountRoute;

@@ -13,7 +13,7 @@ type Diagnostic = { code: string; message: string; repositoryId: string | null }
 type Repository = { id: string; name: string; location: string; available: boolean };
 export type WorktreeCatalogDependencies = {
   /** Only the current request may supply a previously verified registration observation. */
-  observedCommonDirectory?(repository: Repository): string | undefined;
+  observedCommonDirectory?(repository: Pick<Repository, 'id' | 'location'>): string | undefined;
   gitWorktreeEvidencePath?(root: string, taskId: string): string;
   gitWorktreeEvidenceDirectories?(root: string, options?: { requireComplete?: boolean }): string[];
   createGitWorktreeEvidenceReader?(root: string, options?: { requireComplete?: boolean }): { directories: readonly string[]; read(taskId: string, options: { optional: boolean }): ReturnType<WorktreeCatalogDependencies['readGitWorktreeEvidence']> };
@@ -67,7 +67,7 @@ export function readSourceControlTaskAssociations(root: string, repositories: Ar
   };
   const commons = new Map<string, string>();
   for (const { repository } of members) if (!commons.has(repository.id)) {
-    try { commons.set(repository.id, readCommonDirectory(repository.location)); } catch { incomplete = true; }
+    try { commons.set(repository.id, dependencies.observedCommonDirectory?.(repository) || readCommonDirectory(repository.location)); } catch { incomplete = true; }
   }
   const matches = new Map<string, Map<string, { task: { taskId: string; title: string } | null; diagnostic: string | null }>>();
   for (const id of [...ids].sort()) {

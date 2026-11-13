@@ -13,7 +13,7 @@ import { createCodeBranchApplication } from './code-branch-application.ts';
 import { createCodeCommitApplication } from './code-commit-application.ts';
 import { createCodeFetchApplication } from './code-fetch-application.ts';
 import { createCodeSyncApplication } from './code-sync-application.ts';
-import { createCodeWorktreeReadSession, resolveCodeWorktree } from '../infrastructure/code-worktree-reader.ts';
+import { createCodeWorktreeReadSession, createCodeWorktreeReadSessionAsync, resolveCodeWorktree } from '../infrastructure/code-worktree-reader.ts';
 import { createFileEditingApplication } from './file-editing-application.ts';
 import type { MarkdownImageContext } from '../../../infrastructure/filesystem/markdown-images.ts';
 type Repository = { id:string; code:string; name:string; source: {type:string;path:string;root?:string}; location?:string };
@@ -176,7 +176,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
   function sourceControlWorktrees(root: string, repositoryId: string, registered: { location: string; available: boolean }) {
     if(!registered.available)throw codeFailure('code_repository_unavailable','代码库本机目录或 Git 身份当前不可读取。',404);
     const registration=repositoryRegistrations.get(registered);
-    const reading = createCodeWorktreeReadSession(registered.location, repositoryId, {reuseInitialIdentity:Boolean(registration)});
+    const reading = createCodeWorktreeReadSession(registered.location, repositoryId, {reuseInitialIdentity:Boolean(registration), observedCommonDirectory:repositoryCommonDirectories.get(registered)});
     return {
       worktrees: reading.worktrees,
       source(worktreeId: string): CodeSource {
@@ -203,7 +203,35 @@ export function createCodeApplication(dependencies:CodeDependencies) {
       },
     };
   }
-  const sourceControlApplication=createSourceControlApplication({repositories:repositoryScope,inventory:(root,taskId)=>repositoryScope(root,taskId,undefined,false),source:(root,input)=>source(root,input as CodeInput),worktrees:sourceControlWorktrees,taskAssociations:(root,repositories,taskId,deadline)=>readSourceControlTaskAssociations(root,repositories,dependencies,taskId,deadline),readTask:dependencies.readTask,repositoryCloneStatus:dependencies.repositoryCloneStatus,repositoryCloneRequest:dependencies.repositoryCloneRequest});
+  async function sourceControlWorktreesAsync(root: string, repositoryId: string, registered: { location: string; available: boolean }) {
+    if (!registered.available) throw codeFailure('code_repository_unavailable', '代码库本机目录或 Git 身份当前不可读取。', 404);
+    const registration = repositoryRegistrations.get(registered);
+    const reading = await createCodeWorktreeReadSessionAsync(registered.location, repositoryId, { reuseInitialIdentity: Boolean(registration), observedCommonDirectory: repositoryCommonDirectories.get(registered) });
+    return {
+      worktrees: reading.worktrees,
+      source(worktreeId: string): CodeSource {
+        const member = reading.resolve(worktreeId);
+        return { repositoryId, taskId: null, commitHash: null, checkoutId: worktreeId, worktreeId, worktreeGroupId: member.isRegistered ? 'main' : 'worktree:' + worktreeId, location: member.location, version: '当前文件', kind: member.isMain ? 'default' : 'worktree' };
+      },
+      async prepareVerificationAsync(sources: CodeSource[]) {
+        const repository = registration ? registration() : dependencies.assetCatalog(root).repositories.find(item => item.id === repositoryId);
+        if (!repository) throw codeFailure('code_repository_not_registered', '代码库不在当前工作空间的登记范围内。', 404);
+        assertRepositoryPrepared(root, repository.id);
+        let location = dependencies.resolveSourceRoot(root, repository.source);
+        try { location = await fs.promises.realpath(location); } catch { throw codeFailure('code_repository_unavailable', '代码库本机目录当前不可读取。', 404); }
+        if (registration && sameFilesystemPath(location, registered.location)) {
+          const verify = await reading.prepareVerificationAsync(location, sources.map(source => source.worktreeId!));
+          return (source: CodeSource) => verify(source.worktreeId!);
+        } else {
+          const currentRepository = createGitCommitReader().repository(location);
+          if (!sameFilesystemPath(currentRepository.root, registered.location) || !sameFilesystemPath(currentRepository.commonDir, reading.commonDirectory)) throw codeFailure('code_worktree_identity_changed', '读取期间工作树身份已变化，请刷新后继续。', 409);
+          const verify = await reading.prepareVerificationAsync(currentRepository.root, sources.map(source => source.worktreeId!));
+          return (source: CodeSource) => verify(source.worktreeId!);
+        }
+      },
+    };
+  }
+  const sourceControlApplication=createSourceControlApplication({repositories:repositoryScope,inventory:(root,taskId)=>repositoryScope(root,taskId,undefined,false),source:(root,input)=>source(root,input as CodeInput),worktrees:sourceControlWorktrees,worktreesAsync:sourceControlWorktreesAsync,taskAssociations:(root,repositories,taskId,deadline)=>readSourceControlTaskAssociations(root,repositories,dependencies,taskId,deadline),readTask:dependencies.readTask,repositoryCloneStatus:dependencies.repositoryCloneStatus,repositoryCloneRequest:dependencies.repositoryCloneRequest});
   const syncApplication = createCodeSyncApplication({ source: (root, input) => source(root, input as CodeInput), observation: (root, input) => {
     const location = input as CodeInput;
     if (location.taskId || location.commitHash || location.checkoutId !== undefined) return undefined;

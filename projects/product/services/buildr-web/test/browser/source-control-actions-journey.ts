@@ -53,7 +53,7 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
     const offline={...selected,modelId:'offline-model',label:'Offline Model',available:false};
     const run=(id:string,status:string)=>({id,modelAccountId:'account',modelId:'model',accountRevision:'v1',label:'Fixture / Browser Model',status,output:status==='succeeded'?{commitMessage:'feat: 浏览器生成提交说明\n\n验证生成结果可继续编辑。'}:null,error:null});
     const add = async (pattern: string, handler: (route: any) => Promise<void>) => {await page.route(pattern, handler);};
-    await add('**/api/v1/app/agent-service/model-catalog',async route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({models:available?[selected,disabled,offline]:[]})}));
+    await add('**/api/v1/app/agent-service/model-catalog*',async route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({models:available?[selected,disabled,offline]:[]})}));
     await add('**/code/commit-message', async route => {starts.push(route.request().postDataJSON()); await route.fulfill({status: 202, contentType: 'application/json', body: JSON.stringify(run('browser-run-' + ++counter, 'running'))});});
     await add('**/code/commit-message-runs?*', async route => {const id = new URL(route.request().url()).searchParams.get('runId')!, status = cancelled.has(id) ? 'cancelled' : 'succeeded'; await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(run(id, status))});});
     await add('**/code/commit-message-cancel', async route => {const id = route.request().postDataJSON().runId; cancelled.add(id); await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(run(id, 'cancelled'))});});

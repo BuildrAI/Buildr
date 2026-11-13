@@ -473,7 +473,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     <AppShellContext.Provider value={shellValue}>
       {/* 交接的完成观察固定在壳层，离开服务页后仍按原对话与运行定义对齐结果。 */}
       <RuntimeConfigurationOutcome workspaceId={workspaceId} />
-      <WorkspaceSourceControlProvider workspaceId={workspaceId}>
+      <WorkspaceSourceControlProvider workspaceId={workspaceId} active={!isGlobal && area === 'code' && !(conversations.open && conversations.full)}>
       <WorkspaceReadCacheProvider scopeKey={workspaceId || 'global'}>
       <WorkbenchPreferencesProvider workspaceId={workspaceId}>
       <div className={"app-shell has-primary-navigation area-" + area + (conversations.open && conversations.full ? " has-full-conversation" : "")}>

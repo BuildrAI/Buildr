@@ -396,6 +396,39 @@ test('model selection HTTP returns the local snapshot without waiting for extern
   release();
 });
 
+test('model-catalog supports ?revision short-circuiting, validates revision input, and invalidates on account change', {timeout:30000}, async t => {
+  const {base,root}=taskRecordFixture(t,'model-catalog-revision-http');
+  const service=createAgentService({dataRoot:path.join(base,'profile'),executors:[],modelProviders:[{id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[{id:'model',label:'Model',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){return assert.fail('catalog must not infer');},async close(){}};}}],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+  const added=await service.models.accounts.add({provider:'fixture'});await service.models.accounts.check(added.id);
+  const runtime=createRuntime(),contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions}),{url,sessionToken}=await server.ready,headers={'x-buildr-session':sessionToken};
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+
+  const firstResponse=await fetch(url+'/api/v1/app/agent-service/model-catalog',{headers});
+  assert.equal(firstResponse.status,200);
+  const first=await firstResponse.json();
+  assert.match(first.revision,/^[a-f0-9]{64}$/);
+  assert.equal(first.unchanged,undefined);
+  assert.equal(first.models.length,1);
+
+  const unchangedResponse=await fetch(`${url}/api/v1/app/agent-service/model-catalog?revision=${first.revision}`,{headers});
+  assert.equal(unchangedResponse.status,200);
+  const unchanged=await unchangedResponse.json();
+  assert.deepEqual(unchanged,{revision:first.revision,unchanged:true});
+
+  const badResponse=await fetch(`${url}/api/v1/app/agent-service/model-catalog?revision=invalid`,{headers});
+  assert.equal(badResponse.status,400);
+
+  const second=await service.models.accounts.add({provider:'fixture'});await service.models.accounts.check(second.id);
+  const updatedResponse=await fetch(`${url}/api/v1/app/agent-service/model-catalog?revision=${first.revision}`,{headers});
+  assert.equal(updatedResponse.status,200);
+  const updated=await updatedResponse.json();
+  assert.match(updated.revision,/^[a-f0-9]{64}$/);
+  assert.notEqual(updated.revision,first.revision);
+  assert.equal(updated.unchanged,undefined);
+  assert.equal(updated.models.length,2);
+});
+
 test('model preferences enforce authentication, revision and context limits', {timeout:30000},async t=>{
  const {base,root}=taskRecordFixture(t,'model-preferences-http');
  const service=createAgentService({dataRoot:path.join(base,'agent-profile'),executors:[],modelProviders:[{id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'model',label:'Model',images:false,tools:true,contextWindow:258000}],quota:{available:true,observedAt:'2026-10-25T00:00:00Z',windows:[{id:'weekly',label:'每周窗口',remainingPercent:93}]}}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>assert.fail('metadata must not infer'),close:async()=>{}};}}],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});

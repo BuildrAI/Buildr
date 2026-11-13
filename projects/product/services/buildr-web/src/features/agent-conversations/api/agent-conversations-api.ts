@@ -46,10 +46,26 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     } finally { if (mutation) {read.invalidate();activitySnapshot=undefined;activityReadGeneration++;} }
   };
   const read = sharedConversationRead(<T,>(url:string,signal:AbortSignal) => request<T>(url,{signal}));
-  let catalogRead:Promise<{models:CatalogModel[];diagnostic?:string;hasSnapshot?:boolean}>|undefined;
+  type ModelCatalogResult = {models:CatalogModel[];diagnostic?:string;hasSnapshot?:boolean;revision?:string};
+  let catalogGeneration=0;
+  let catalogSnapshot:(ModelCatalogResult & {revision:string})|undefined;
+  let catalogRead:Promise<ModelCatalogResult>|undefined;
   const changeModels=async<T,>(url:string,init:RequestInit={}):Promise<T>=>{
-    catalogRead=undefined;
-    try{return await request<T>(url,init);}finally{catalogRead=undefined;}
+    catalogRead=undefined;catalogSnapshot=undefined;catalogGeneration++;
+    try{return await request<T>(url,init);}finally{catalogRead=undefined;catalogSnapshot=undefined;catalogGeneration++;}
+  };
+  const fetchModelCatalog=async(signal?:AbortSignal):Promise<ModelCatalogResult>=>{
+    const generation=catalogGeneration,previous=catalogSnapshot;
+    const result=await request<ModelCatalogResult|{revision:string;unchanged:true}>(appPath+'/model-catalog'+(previous?'?revision='+previous.revision:''),signal?{signal}:{});
+    if('unchanged' in result&&result.unchanged===true){
+      if(previous&&previous.revision===result.revision)return previous;
+      const fresh=await request<ModelCatalogResult>(appPath+'/model-catalog',signal?{signal}:{});
+      if(generation===catalogGeneration&&fresh.revision)catalogSnapshot={...fresh,revision:fresh.revision};
+      return fresh;
+    }
+    const full=result as ModelCatalogResult;
+    if(generation===catalogGeneration&&full.revision)catalogSnapshot={...full,revision:full.revision};
+    return full;
   };
   return {
     participation(workspaceId:string,conversationId:string,runId:string,signal?:AbortSignal) { return read<AgentParticipationParticipation>(path(workspaceId,conversationId)+'/participation?runId='+encodeURIComponent(runId),signal); },
@@ -60,8 +76,8 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     modelAccountUsage(id:string) {return request<{references:number}>(appPath+'/model-accounts/'+encodeURIComponent(id)+'/usage');},
     modelCatalog(signal?:AbortSignal) {
       // Independently cancellable callers must not cancel a shared read.
-      if(signal)return request<{models:CatalogModel[];diagnostic?:string;hasSnapshot?:boolean}>(appPath+'/model-catalog',{signal});
-      if(!catalogRead){const pending=request<{models:CatalogModel[];diagnostic?:string;hasSnapshot?:boolean}>(appPath+'/model-catalog').finally(()=>{if(catalogRead===pending)catalogRead=undefined;});catalogRead=pending;}
+      if(signal)return fetchModelCatalog(signal);
+      if(!catalogRead){const pending=fetchModelCatalog().finally(()=>{if(catalogRead===pending)catalogRead=undefined;});catalogRead=pending;}
       return catalogRead;
     },
     addModelAccount(provider:string) {return changeModels<ModelAccount>(appPath+'/model-accounts',post({provider}));},
