@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { ProgrammaticPushback } from '../../src/application/programmatic-pushback.ts';
+import { readTestPushbackTiming } from '../../src/application/agent-service.ts';
 import type { ConversationView, RunView } from '../../src/contracts.ts';
 
 const NOW = Date.parse('2026-11-01T00:00:00.000Z');
@@ -487,4 +488,16 @@ test('run.stopped is suppressed for the credential that recorded the stop', asyn
     assert.deepEqual(s.pb.listEvents('cred-one', 'workspace-one', {}).events.map(event => event.type), []);
     assert.deepEqual(s.pb.listEvents('cred-two', 'workspace-one', {}).events.map(event => event.type), ['run.stopped']);
   } finally { s.close(); }
+});
+
+test('test-only pushback timing overrides stay bounded and absent by default', () => {
+  assert.deepEqual(readTestPushbackTiming({}), { stalledThresholdMs: undefined, checkIntervalMs: undefined });
+  assert.deepEqual(readTestPushbackTiming({
+    BUILDR_AGENT_PUSHBACK_TEST_STALLED_THRESHOLD_MS: '60000',
+    BUILDR_AGENT_PUSHBACK_TEST_CHECK_INTERVAL_MS: '5000',
+  }), { stalledThresholdMs: 60_000, checkIntervalMs: 5_000 });
+  assert.deepEqual(readTestPushbackTiming({
+    BUILDR_AGENT_PUSHBACK_TEST_STALLED_THRESHOLD_MS: '999',
+    BUILDR_AGENT_PUSHBACK_TEST_CHECK_INTERVAL_MS: 'not-a-number',
+  }), { stalledThresholdMs: undefined, checkIntervalMs: undefined }, 'out-of-range or malformed values keep product defaults');
 });

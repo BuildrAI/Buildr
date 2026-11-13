@@ -226,7 +226,7 @@ test('decision.requested carries the complete question card and answer identity'
    {id:'risk',label:'风险偏好',multiple:false,allowOther:false,options:[{id:'low',label:'低'},{id:'high',label:'高',description:'允许高风险操作'}]},
  ]}});
  await f.flush();
- f.emit({type:'item',item:{id:'after-card-progress',kind:'message',role:'assistant',text:'正在整理范围',executionId:'native-run'}});
+ f.emit({type:'item',item:{id:'after-card-progress',kind:'message',role:'assistant',text:'正在整理范围',executionId:'native-run',status:'completed'}});
  await f.flush();
  const call=receiver.calls.find(value=>value.body.type==='decision.requested');
  assert.ok(call,'the decision event was delivered');

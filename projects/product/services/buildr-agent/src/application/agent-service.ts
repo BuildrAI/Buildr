@@ -35,6 +35,30 @@ import { NativeProgramManager } from '../executors/program-manager.ts';
 import { PreparationApplication } from '../application/preparation-application.ts';
 import { HostContext } from '../application/host-context.ts';
 
+const TEST_STALLED_THRESHOLD_ENV = 'BUILDR_AGENT_PUSHBACK_TEST_STALLED_THRESHOLD_MS';
+const TEST_CHECK_INTERVAL_ENV = 'BUILDR_AGENT_PUSHBACK_TEST_CHECK_INTERVAL_MS';
+const TEST_STALLED_MIN_MS = 1_000, TEST_STALLED_MAX_MS = 24 * 60 * 60 * 1000;
+const TEST_CHECK_MIN_MS = 250, TEST_CHECK_MAX_MS = 60_000;
+
+function boundedTestMilliseconds(name: string, raw: string | undefined, minimum: number, maximum: number): number | undefined {
+  if (raw === undefined || raw === '') return undefined;
+  if (!/^\d+$/.test(raw)) { console.warn(`[agent_pushback_test_timing_ignored] ${name} 必须是整数毫秒。`); return undefined; }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    console.warn(`[agent_pushback_test_timing_ignored] ${name} 必须在 ${minimum}..${maximum} 毫秒之间。`);
+    return undefined;
+  }
+  return value;
+}
+
+/** Test-only idle-timing knobs; absent or invalid values keep the product defaults. */
+export function readTestPushbackTiming(environment: Record<string, string | undefined>) {
+  return {
+    stalledThresholdMs: boundedTestMilliseconds(TEST_STALLED_THRESHOLD_ENV, environment[TEST_STALLED_THRESHOLD_ENV], TEST_STALLED_MIN_MS, TEST_STALLED_MAX_MS),
+    checkIntervalMs: boundedTestMilliseconds(TEST_CHECK_INTERVAL_ENV, environment[TEST_CHECK_INTERVAL_ENV], TEST_CHECK_MIN_MS, TEST_CHECK_MAX_MS),
+  };
+}
+
 /** Core composition. Process integrations enter through connectAgentProcess. */
 export function createAgentService(options: AgentServiceOptions) {
   const generation = randomUUID();
@@ -43,7 +67,17 @@ export function createAgentService(options: AgentServiceOptions) {
   const repository:ConversationRepository = new ConversationRepository(root,(record,entry)=>resolver.tool(record,entry),reference=>readNativeTool(root,reference));
   repository.startReadModels();
   let pushbackRunLiveness: ((workspaceId: string, conversationId: string) => { runs: RunView[] } | undefined) | undefined;
-  const pushback = new ProgrammaticPushback({ root: path.join(root, 'programmatic-pushback'), ...(options.pushbackTransport ? { transport: options.pushbackTransport } : {}), ...(options.pushbackNow ? { now: options.pushbackNow } : {}), readRunLiveness: (workspaceId, conversationId) => pushbackRunLiveness?.(workspaceId, conversationId) });
+  const envTiming = readTestPushbackTiming(process.env);
+  const stalledThresholdMs = options.testPushbackStalledThresholdMs ?? envTiming.stalledThresholdMs;
+  const checkIntervalMs = options.testPushbackCheckIntervalMs ?? envTiming.checkIntervalMs;
+  const pushback = new ProgrammaticPushback({
+    root: path.join(root, 'programmatic-pushback'),
+    ...(options.pushbackTransport ? { transport: options.pushbackTransport } : {}),
+    ...(options.pushbackNow ? { now: options.pushbackNow } : {}),
+    ...(stalledThresholdMs === undefined ? {} : { stalledThresholdMs }),
+    ...(checkIntervalMs === undefined ? {} : { checkIntervalMs }),
+    readRunLiveness: (workspaceId, conversationId) => pushbackRunLiveness?.(workspaceId, conversationId),
+  });
   const events = new ConversationEvents(generation, pushback);
   const now = () => (options.now?.() ?? new Date()).toISOString();
   let linkedChanged: ((connection:ConnectionView)=>void)|undefined;

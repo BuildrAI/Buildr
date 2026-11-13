@@ -4,11 +4,11 @@ import type { AgentOperations, AgentService } from '@buildr-ai/buildr-agent';
 import { AgentServiceError } from '@buildr-ai/buildr-agent';
 import { ProgrammaticCredentials, accessError, PROGRAMMATIC_SCOPES, type ProgrammaticCredential, type ProgrammaticScope } from '../../persistence/programmatic-credentials.ts';
 import { PROGRAMMATIC_BASE as base, PROGRAMMATIC_OPERATIONS, matchPublicOperation } from './programmatic-operations.ts';
-import { programmaticOpenApi, programmaticGuide, programmaticExample } from './programmatic-help.ts';
+import { programmaticOpenApi, programmaticGuideFor, programmaticExample } from './programmatic-help.ts';
 import { programmaticContractVersion, programmaticOperationIndex, programmaticOperationDocument } from './programmatic-openapi.ts';
 
 type Workspaces = () => Array<{ id: string; name: string }>;
-type Options = { dataRoot(): string; workspaces: Workspaces; version(): string };
+type Options = { dataRoot(): string; workspaces: Workspaces; version(): string; buildId(): string | null };
 /** Authentication adapter only: conversation effects remain owned by the existing application. */
 export function createProgrammaticHttpContribution(resolve: () => AgentService | AgentOperations | Promise<AgentService | AgentOperations>, agentHttp: { handle(context: any): Promise<any> }, options: Options) {
   const store = () => new ProgrammaticCredentials(options.dataRoot());
@@ -37,12 +37,13 @@ export function createProgrammaticHttpContribution(resolve: () => AgentService |
         if (request.method === 'GET' && pathname.startsWith(manager + '/documents/')) {
           context.authorizeRead();
           const document = pathname.slice((manager + '/documents/').length);
-          const detail = document.startsWith('operations/') ? programmaticOperationDocument(options.version(), document.slice('operations/'.length)) : undefined;
+          const buildId = options.buildId();
+          const detail = document.startsWith('operations/') ? programmaticOperationDocument(options.version(), document.slice('operations/'.length), buildId) : undefined;
           if (!['help', 'openapi.json', 'operations'].includes(document) && !detail) return { status: 404, body: { error: { code: 'programmatic_route_missing', message: '没有此程序文档。' } } };
           return { status: 200, body: {
             fileName: document === 'help' ? 'buildr-api-help.md' : document === 'openapi.json' ? 'buildr-openapi.json' : document === 'operations' ? 'buildr-operations.json' : `buildr-operation-${detail!['x-buildr-operation-id']}.json`,
             mediaType: document === 'help' ? 'text/markdown' : 'application/json',
-            content: document === 'help' ? programmaticGuide : JSON.stringify(document === 'operations' ? programmaticOperationIndex(options.version()) : detail ?? programmaticOpenApi(options.version()), null, 2),
+            content: document === 'help' ? programmaticGuideFor(buildId) : JSON.stringify(document === 'operations' ? programmaticOperationIndex(options.version(), buildId) : detail ?? programmaticOpenApi(options.version()), null, 2),
           } };
         }
         const pushbackRoute = pathname.match(/^\/api\/v1\/app\/programmatic-access\/([a-f0-9-]{36})\/pushback(\/reveal|\/test)?$/);
@@ -102,25 +103,27 @@ export function createProgrammaticHttpContribution(resolve: () => AgentService |
       if (pathname === base && request.method === 'GET') {
         if (searchParams.size) accessError('programmatic_input_invalid', '发现入口不接受查询参数。', 400);
         const service = await resolve();
+        const buildId = options.buildId();
         const connections = (await service.connections.list()).connections.map(({ id, label, provider, enabled, status, models, capabilities }) => ({ id, label, provider, enabled, status, models, capabilities }));
         const catalog = await service.models.catalog.list({ refresh: false });
         const current = authenticate();
-        return { status: 200, body: { schemaVersion: 'buildr.programmatic-discovery/v1', apiVersion: '1', version: options.version(), contractVersion: programmaticContractVersion(programmaticOpenApi(options.version())), status: 'ready', serviceId: createHash('sha256').update(options.dataRoot()).digest('hex'), ...locations(context), credential: current, capabilities: [
+        return { status: 200, body: { schemaVersion: 'buildr.programmatic-discovery/v1', apiVersion: '1', version: options.version(), buildId, contractVersion: programmaticContractVersion(programmaticOpenApi(options.version())), status: 'ready', serviceId: createHash('sha256').update(options.dataRoot()).digest('hex'), ...locations(context), credential: current, capabilities: [
           ...PROGRAMMATIC_OPERATIONS.filter(item => current.scopes.includes(item.scope) || item.id === 'reply' && current.scopes.includes('approve')).map(({ id, method, path, scope, summary }) => ({ id, method, path: `${base}/workspaces/:workspaceId/conversations${path}`, scope, summary, documentationUrl: `${base}/operations/${id}` })),
           ...(current.scopes.includes('read') ? [{ id: 'events', method: 'GET', path: `${base}/workspaces/:workspaceId/events`, scope: 'read', summary: '按序号补查本凭据可见事件（含未送达）', documentationUrl: `${base}/operations/events` }] : []),
         ], workspaces: options.workspaces().filter(item => current.workspaceIds.includes(item.id)), connections, models: catalog.models } };
       }
       if (request.method === 'GET' && (pathname === base + '/operations' || pathname.startsWith(base + '/operations/'))) {
         if (searchParams.size) accessError('programmatic_input_invalid', '操作文档入口不接受查询参数。', 400);
+        const buildId = options.buildId();
         const document = pathname === base + '/operations'
-          ? programmaticOperationIndex(options.version())
-          : programmaticOperationDocument(options.version(), pathname.slice((base + '/operations/').length));
+          ? programmaticOperationIndex(options.version(), buildId)
+          : programmaticOperationDocument(options.version(), pathname.slice((base + '/operations/').length), buildId);
         if (!document) accessError('programmatic_route_missing', '没有此程序操作文档。', 404);
         return { status: 200, body: document };
       }
       if (request.method === 'GET' && [base + '/help', base + '/openapi.json', base + '/example.py'].includes(pathname)) {
         if (pathname.endsWith('/openapi.json')) return { status: 200, body: programmaticOpenApi(options.version()) };
-        context.respond.binary(Buffer.from(pathname.endsWith('/example.py') ? programmaticExample : programmaticGuide), pathname.endsWith('/example.py') ? 'text/x-python; charset=utf-8' : 'text/markdown; charset=utf-8');
+        context.respond.binary(Buffer.from(pathname.endsWith('/example.py') ? programmaticExample : programmaticGuideFor(options.buildId())), pathname.endsWith('/example.py') ? 'text/x-python; charset=utf-8' : 'text/markdown; charset=utf-8');
         return true;
       }
       const eventsRoute = pathname.match(/^\/api\/v1\/programmatic\/workspaces\/([a-f0-9-]{36})\/events$/);

@@ -28,7 +28,7 @@ test('Bearer authentication is separate, revocable, persistent and workspace sco
  assert.equal((await f.call('')).status,401);
  assert.equal((await f.call('', 'brp_'+'x'.repeat(43))).status,401);
  let response=await f.call('',token);assert.equal(response.status,200);const discovery=await response.json();
- assert.equal(discovery.version,'test-version');assert.deepEqual(discovery.workspaces,[{id:f.workspaceId,name:'Allowed'}]);assert.equal(discovery.connections[0].id,'fixture');assert.ok(!JSON.stringify(discovery).includes('configPath'));assert.ok(!JSON.stringify(discovery).includes(token));
+ assert.equal(discovery.version,'test-version');assert.equal(discovery.buildId,'test-build');assert.deepEqual(discovery.workspaces,[{id:f.workspaceId,name:'Allowed'}]);assert.equal(discovery.connections[0].id,'fixture');assert.ok(!JSON.stringify(discovery).includes('configPath'));assert.ok(!JSON.stringify(discovery).includes(token));
  assert.equal(new ProgrammaticCredentials(f.appData).authenticate('Bearer '+token).id,credential.id,'new store instance accepts persisted token');
  assert.equal(fs.statSync(path.join(f.appData,'programmatic-access/credentials.sqlite')).mode&0o777,0o600);
  assert.equal(fs.readFileSync(path.join(f.appData,'programmatic-access/credentials.sqlite')).includes(Buffer.from(token)),false);
@@ -113,6 +113,8 @@ test('HTTP help and OpenAPI use the dispatch allowlist and include executable re
  for(const op of PROGRAMMATIC_OPERATIONS){const route=('/api/v1/programmatic/workspaces/:workspaceId/conversations'+op.path).replace(/:([A-Za-z]+)/g,'{$1}');assert.equal(doc.paths[route][op.method.toLowerCase()].operationId,op.id);}
  const help=await f.call('/help',token);assert.equal(help.status,200);assert.match(help.headers.get('content-type')!,/text\/markdown/);
  const guide=await help.text();assert.match(guide,/previewToken = prepareResponse\.token/);
+ assert.match(guide,/构建标识（buildId）：test-build/);
+ assert.match(guide,/只有 status=completed 的中间消息才推送/);
  const route='/api/v1/programmatic/workspaces/{workspaceId}/conversations/{conversationId}';
  const expanded=expandRefs(doc,doc),prepare=expanded.paths[route+'/prepare-send'].post,send=expanded.paths[route+'/send'].post;
  assert.match(guide,/requests\[\]每项都含description/);
@@ -177,12 +179,14 @@ test('light operation index and self-contained per-operation contracts support s
  assert.equal((await f.call('/operations/start')).status,401);
  const index=await(await f.call('/operations',token)).json(),full=await(await f.call('/openapi.json',token)).json();
  assert.equal(index.contractVersion,programmaticContractVersion(full));assert.ok(Buffer.byteLength(JSON.stringify(index))<8_000);
+ assert.equal(index.buildId,'test-build');
  assert.equal(index.operations.length,PROGRAMMATIC_OPERATIONS.length+2);
  assert.deepEqual(new Set(index.operations.map((item:any)=>item.id)),new Set(['discover','events',...PROGRAMMATIC_OPERATIONS.map(item=>item.id)]));
  assert.ok(index.operations.some((item:any)=>item.id==='run-final-reply'&&item.scope==='read'));
  for(const item of index.operations){
   const response=await f.call('/operations/'+item.id,token);assert.equal(response.status,200);
   const document=await response.json();assert.equal(document['x-buildr-contract-version'],index.contractVersion);
+  assert.equal(document['x-buildr-build-id'],'test-build');
   assert.equal(document['x-buildr-operation-id'],item.id);
   assert.deepEqual(Object.keys(document.paths),[item.path]);
   assert.deepEqual(Object.keys(document.paths[item.path]),[item.method.toLowerCase()]);
@@ -194,6 +198,7 @@ test('light operation index and self-contained per-operation contracts support s
  assert.equal((await f.call('/operations?unexpected=1',token)).status,400);
  assert.equal((await fetch(f.manager+'/documents/operations/not-an-operation',{headers:f.webHeaders})).status,404);
  assert.equal(programmaticOperationIndex('test-version').contractVersion,index.contractVersion,'content version stable across reads');
+ assert.equal(programmaticOperationIndex('test-version','another-build').contractVersion,index.contractVersion,'buildId does not change the API contract version');
  const changed=programmaticOpenApi('test-version');changed.info.description+=' contract change';
  assert.notEqual(programmaticContractVersion(changed),index.contractVersion,'content version changes without a release version bump');
  assert.deepEqual(f.counts(),{sends:0,stops:0,replies:0});

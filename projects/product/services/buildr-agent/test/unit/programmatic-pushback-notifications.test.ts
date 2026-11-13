@@ -133,6 +133,20 @@ test('an empty intermediate message is neither pushed nor counted against the fi
   assert.equal(sent.snapshot.runs['run-one']!.lastProgressAt, NOW + 6 * MINUTE);
 });
 
+test('a message that is still being written is not pushed as progress', () => {
+  const first = diff(view({ run: run('run-one', 'running') }));
+  const partial = [{ id: 'm1', sequence: 1, kind: 'message', role: 'assistant', text: '`s', createdAt: '2026-11-01T00:01:00.000Z', runId: 'run-one', status: 'running' }];
+  const writing = diff(view({ updatedAt: '2026-11-01T00:01:00.000Z', run: run('run-one', 'running'), entries: partial as any }), first.snapshot, context(NOW + MINUTE));
+  assert.deepEqual(writing.events, [], 'a streaming fragment is not a finished intermediate message');
+  assert.equal(writing.snapshot.runs['run-one']!.lastProgressAt, undefined, 'the fragment does not open the progress window');
+  assert.equal(writing.snapshot.runs['run-one']!.pendingProgress, undefined);
+
+  const settled = [{ ...partial[0], text: '`sleep 1500` 已执行完毕，退出码 0，无输出。', status: 'completed' }];
+  const complete = diff(view({ updatedAt: '2026-11-01T00:02:00.000Z', run: run('run-one', 'running'), entries: settled as any }), writing.snapshot, context(NOW + 2 * MINUTE));
+  assert.deepEqual(complete.events.map(event => event.type), ['run.progress']);
+  assert.equal(complete.events[0]!.progress!.text, '`sleep 1500` 已执行完毕，退出码 0，无输出。');
+});
+
 test('run.stalled fires after twenty minutes without a record, resets on recovery, then fires again', () => {
   const first = diff(view({ run: run('run-one', 'running') }));
   assert.deepEqual(first.events, []);
@@ -145,9 +159,9 @@ test('run.stalled fires after twenty minutes without a record, resets on recover
   assert.deepEqual(again.events, [], 'a stalled run is not re-announced without recovery');
 
   const recoveredEntries = [{ id: 'm1', sequence: 1, kind: 'message', role: 'assistant', text: 'recovered', createdAt: '2026-11-01T00:21:00.000Z', runId: 'run-one', status: 'completed' }];
-  const recovered = diff(view({ run: run('run-one', 'running'), entries: recoveredEntries as any }), again.snapshot, context(NOW + 22 * MINUTE));
+  const recovered = diff(view({ updatedAt: '2026-11-01T00:22:00.000Z', run: run('run-one', 'running'), entries: recoveredEntries as any }), again.snapshot, context(NOW + 22 * MINUTE));
   assert.deepEqual(recovered.events.map(event => event.type), ['run.progress']);
-  const secondStall = diff(view({ run: run('run-one', 'running'), entries: recoveredEntries as any }), recovered.snapshot, context(NOW + 42 * MINUTE));
+  const secondStall = diff(view({ updatedAt: '2026-11-01T00:22:00.000Z', run: run('run-one', 'running'), entries: recoveredEntries as any }), recovered.snapshot, context(NOW + 42 * MINUTE));
   assert.deepEqual(secondStall.events.map(event => event.type), ['run.stalled'], 'a full new twenty-minute idle period is required');
 });
 
@@ -206,9 +220,9 @@ test('progress and stall switches suppress only their own new event types', () =
 test('tool and title changes do not create progress; a new assistant message does', () => {
   const first = diff(view({ run: run('run-one', 'starting') }));
   assert.deepEqual(first.events, []);
-  const running = diff(view({ title: 'renamed', run: run('run-one', 'running'), entries: [{ id: 'm', sequence: 1, kind: 'message', role: 'assistant', text: 'partial', createdAt: '2026-11-01T00:00:01.000Z', runId: 'run-one' }] as any }), first.snapshot);
+  const running = diff(view({ title: 'renamed', run: run('run-one', 'running'), entries: [{ id: 'm', sequence: 1, kind: 'message', role: 'assistant', text: 'partial', createdAt: '2026-11-01T00:00:01.000Z', runId: 'run-one', status: 'completed' }] as any }), first.snapshot);
   assert.deepEqual(running.events.map(event => event.type), ['run.progress']);
-  const tools = diff(view({ run: run('run-one', 'tools-active', { tools: [{ id: 'tool', label: 'Command', status: 'running' }] }), entries: [{ id: 'm', sequence: 1, kind: 'message', role: 'assistant', text: 'partial', createdAt: '2026-11-01T00:00:01.000Z', runId: 'run-one' }] as any }), running.snapshot);
+  const tools = diff(view({ run: run('run-one', 'tools-active', { tools: [{ id: 'tool', label: 'Command', status: 'running' }] }), entries: [{ id: 'm', sequence: 1, kind: 'message', role: 'assistant', text: 'partial', createdAt: '2026-11-01T00:00:01.000Z', runId: 'run-one', status: 'completed' }] as any }), running.snapshot);
   assert.deepEqual(tools.events, [], 'tool-only changes do not push intermediate chat text');
 });
 
@@ -266,15 +280,20 @@ test('periodic checks drop retired runs and adopt the current status instead of 
   assert.equal(next.snapshot.runs['run-done']!.status, 'completed', 'the projection adopts the current terminal status');
 });
 
-test('a newer real activity record resets the idle window before the periodic check', () => {
+test('an observation heartbeat that repeats the same records does not reset the idle window', () => {
   const snapshot = {
     title: 'work', workspaceId: 'workspace-one', conversationId: 'conversation-one',
-    runs: { 'run-one': { status: 'running', lastActivityAt: NOW, activitySignature: 'legacy', completedToolCount: 0, startedAt: '2026-11-01T00:00:00.000Z' } },
+    runs: { 'run-one': { status: 'running', lastActivityAt: NOW, activitySignature: 'same-tool', completedToolCount: 0, startedAt: '2026-11-01T00:00:00.000Z' } },
     requests: {},
   } as unknown as PushbackSnapshot;
-  const next = timedPushbackNotifications(snapshot, context(NOW + 30 * MINUTE), [run('run-one', 'running', { updatedAt: '2026-11-01T00:25:00.000Z' })]);
-  assert.deepEqual(next.events, [], 'the newer record restarts the twenty-minute window');
-  assert.equal(next.snapshot.runs['run-one']!.lastActivityAt, NOW + 25 * MINUTE);
+  const tool = { id: 'long-command', label: 'Command', status: 'running' as const, canStop: true };
+  const next = timedPushbackNotifications(snapshot, context(NOW + 20 * MINUTE), [run('run-one', 'running', {
+    updatedAt: '2026-11-01T00:19:59.000Z',
+    tools: [tool],
+  })]);
+  assert.deepEqual(next.events.map(event => event.type), ['run.stalled'], 'the heartbeat-only update does not postpone the stall');
+  assert.deepEqual(next.events[0]!.stalled, { idleMs: 20 * MINUTE, lastActivityAt: '2026-11-01T00:00:00.000Z' });
+  assert.equal(next.snapshot.runs['run-one']!.lastActivityAt, NOW, 'run.updatedAt is not treated as record activity');
 });
 
 test('a conversation publication prunes runs that no longer exist', () => {

@@ -141,6 +141,18 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
       const programmaticHttp = createProgrammaticHttpContribution(resolve, agentHttp, {
         dataRoot: () => profile().dataRoot,
         version: () => String((options.readProductIdentity() as {version?:string})?.version ?? 'unknown'),
+        buildId: () => {
+          try {
+            const instance = options.readLocalInstance?.() as { launcherIdentity?: { buildId?: unknown }; productIdentity?: { buildId?: unknown } } | undefined;
+            const local = instance?.launcherIdentity?.buildId ?? instance?.productIdentity?.buildId;
+            if (typeof local === 'string' && local) return local;
+            const identity = options.readProductIdentity() as { buildId?: unknown; sourceCommit?: unknown; applicationPayloadDigest?: unknown };
+            if (typeof identity?.buildId === 'string' && identity.buildId) return identity.buildId;
+            if (typeof identity?.sourceCommit === 'string' && identity.sourceCommit) return identity.sourceCommit.slice(0, 12);
+            if (typeof identity?.applicationPayloadDigest === 'string' && identity.applicationPayloadDigest) return identity.applicationPayloadDigest.replace(/^sha256-/, '').slice(0, 12);
+          } catch { /* A missing local instance keeps discovery usable; buildId stays unknown rather than blocking reads. */ }
+          return 'unknown';
+        },
         workspaces: () => requires[WORKSPACE_APPLICATION].listRegisteredWorkspaces().workspaces
           .filter((entry: any) => entry.workspace?.id && entry.status !== 'identity_conflict')
           .map((entry: any) => ({ id: entry.workspace.id, name: entry.workspace.name ?? entry.workspace.id })),

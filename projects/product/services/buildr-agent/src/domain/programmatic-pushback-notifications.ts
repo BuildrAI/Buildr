@@ -74,9 +74,10 @@ function activitySignature(view: ConversationView, run: RunView): string {
 }
 function progressEntry(view: ConversationView, run: RunView) {
   return runEntries(view, run)
-    // A native entry can appear before its text arrives. Empty text is not
-    // progress and must not consume the throttle window.
-    .filter(entry => entry.kind === 'message' && entry.role === 'assistant' && !entry.thinking && !entry.parentToolId && entry.status !== 'failed' && entry.text.trim() !== '')
+    // Only a settled assistant message is progress. Native entries appear
+    // before their text arrives and grow while streaming; pushing one of those
+    // snapshots leaks a fragment of the final answer.
+    .filter(entry => entry.kind === 'message' && entry.role === 'assistant' && !entry.thinking && !entry.parentToolId && entry.status === 'completed' && entry.text.trim() !== '')
     .sort((left, right) => left.sequence - right.sequence)
     .at(-1);
 }
@@ -202,13 +203,10 @@ function reconcileTimedRuns(snapshot: PushbackSnapshot, runs: RunView[]): void {
     state.status = run.status;
     state.startedAt = run.startedAt;
     state.completedToolCount = run.tools.filter(tool => tool.status === 'completed').length;
-    const observed = Date.parse(run.updatedAt);
-    // Only advance a real timestamp. A missing value stays missing so an
-    // incomplete snapshot can never be turned into an epoch-based stall.
-    if (Number.isFinite(observed) && Number.isFinite(state.lastActivityAt) && observed > state.lastActivityAt!) {
-      state.lastActivityAt = observed;
-      state.stalled = false;
-    }
+    // run.updatedAt is also advanced by observation heartbeats that repeat the
+    // same tools and entries. Treating it as record activity would postpone an
+    // idle window forever while one long tool is running. Only a changed
+    // conversation activity signature resets lastActivityAt.
     if (!RUNNING.has(run.status)) {
       delete state.pendingProgress;
       state.stalled = false;

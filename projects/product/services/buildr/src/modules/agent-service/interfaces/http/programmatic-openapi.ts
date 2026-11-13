@@ -12,7 +12,7 @@ export function programmaticOpenApi(version: string) {
     [accepted ? '202' : '200', { description: accepted ? '已受理；使用返回标识观察，不等于工作完成' : '当前结果', content: { 'application/json': { schema } } }],
     ...['400', '401', '403', '404', '409', '413', '415', '503'].map(code => [code, { description: ({ '400': '参数非法', '401': '无有效凭据或已撤销', '403': '越权或来源不允许', '404': '对象或接口不存在', '409': '修订、身份或请求内容冲突', '413': '请求过大', '415': '需要application/json', '503': '服务未就绪或结果待核对；不盲目重发' } as Record<string, string>)[code], content: { 'application/json': { schema: error } } }]),
   ]);
-  const discovery = { type: 'object', required: ['schemaVersion', 'apiVersion', 'version', 'status', 'serviceId', 'contractVersion', 'apiUrl', 'capabilities', 'workspaces', 'connections', 'models'], properties: { schemaVersion: { const: 'buildr.programmatic-discovery/v1' }, apiVersion: { const: '1' }, version: { type: 'string' }, status: { const: 'ready' }, serviceId: { type: 'string' }, contractVersion: { type: 'string', description: '实际API契约内容摘要，可用于文档缓存失效判断；不是对话修订' }, operationsUrl: { type: 'string' }, apiUrl: { type: 'string' }, discoveryUrl: { type: 'string' }, documentationUrl: { type: 'string' }, openapiUrl: { type: 'string' }, exampleUrl: { type: 'string' }, credential: { type: 'object' }, capabilities: { type: 'array', items: { type: 'object' } }, workspaces: { type: 'array', items: { type: 'object', required: ['id', 'name'], properties: { id: { type: 'string' }, name: { type: 'string' } } } }, connections: { type: 'array', items: { type: 'object' } }, models: { type: 'array', items: { type: 'object' } } } };
+  const discovery = { type: 'object', required: ['schemaVersion', 'apiVersion', 'version', 'buildId', 'status', 'serviceId', 'contractVersion', 'apiUrl', 'capabilities', 'workspaces', 'connections', 'models'], properties: { schemaVersion: { const: 'buildr.programmatic-discovery/v1' }, apiVersion: { const: '1' }, version: { type: 'string' }, buildId: { type: 'string', description: '当前运行的构建标识；开发版取启动器buildId，其他安装取产品构建身份' }, status: { const: 'ready' }, serviceId: { type: 'string' }, contractVersion: { type: 'string', description: '实际API契约内容摘要，可用于文档缓存失效判断；不是对话修订，也不包含buildId' }, operationsUrl: { type: 'string' }, apiUrl: { type: 'string' }, discoveryUrl: { type: 'string' }, documentationUrl: { type: 'string' }, openapiUrl: { type: 'string' }, exampleUrl: { type: 'string' }, credential: { type: 'object' }, capabilities: { type: 'array', items: { type: 'object' } }, workspaces: { type: 'array', items: { type: 'object', required: ['id', 'name'], properties: { id: { type: 'string' }, name: { type: 'string' } } } }, connections: { type: 'array', items: { type: 'object' } }, models: { type: 'array', items: { type: 'object' } } } };
   paths[base] = { get: { operationId: 'discover', summary: '当前实例与凭据可访问能力；不返回账号秘密', responses: responses(discovery) } };
   for (const operation of PROGRAMMATIC_OPERATIONS) {
     const route = `${base}/workspaces/:workspaceId/conversations${operation.path}`.replace(/:([A-Za-z]+)/g, '{$1}');
@@ -31,7 +31,7 @@ export function programmaticOpenApi(version: string) {
     (paths[route] ??= {})[operation.method.toLowerCase()] = { operationId: operation.id, summary: operation.summary, description: `需要${operation.scope}权限及路径工作空间授权。${operation.id === 'run-final-reply' ? '只返回指定 run 的最终 assistant 回复全文，不返回完整对话；run 不存在时返回404 agent_run_missing。' : ''}${['prepare-send', 'send'].includes(operation.id) ? previewTokenMapping : ''}${input.properties?.permissionMode ? (operation.id === 'messages' ? 'permissionMode 省略时沿用该对话最近一轮执行的模式；显式 full-access 需凭据开启允许全部授权执行，否则403。' : 'permissionMode 省略默认 default；full-access 需凭据开启允许全部授权执行，否则403。') : ''}${operation.id === 'reply' ? 'approval卡片改需approve权限；问题需answer。' : ''}超时先查询原提交或观察原执行，禁止另造标识盲目重发。`, 'x-buildr-scope': operation.scope, parameters, ...(operation.method === 'POST' ? { requestBody: { required: true, content: { 'application/json': { schema: input } } } } : {}), responses: responses(output, ['start', 'send', 'supplement', 'messages'].includes(operation.id)) };
   }
   for (const [suffix, type, description] of [['help', 'text/markdown', '中文API帮助'], ['openapi.json', 'application/json', 'OpenAPI 3.1'], ['example.py', 'text/x-python', '可运行发任务/轮询/读结果脚本']]) paths[`${base}/${suffix}`] = { get: { operationId: suffix, summary: description, responses: { '200': { description, content: { [type]: { schema: { type: 'string' } } } }, '401': { description: '需要有效Bearer凭据' } } } };
-  paths[`${base}/workspaces/{workspaceId}/events`] = { get: { operationId: 'events', summary: '分页补读本凭据接管对话的回推事件，含未投递；始终返回可续读游标', description: '需要read权限及路径工作空间授权。after传上一页nextCursor（非负整数序号），非法游标返回400；limit默认50、最大200；事件按sequence升序返回，包含undelivered。事件类型包括decision.requested、run.progress、run.completed、run.failed、run.stopped、run.stalled和events_dropped。每条业务事件含当前凭据的scopes与allowFullAccess；终态事件含完整finalReply与finalReplyUrl；decision.requested含完整问题/审批卡及回答身份，description始终为字符串，无说明时为空字符串；run.progress含最新中间消息、运行时长和已完成工具数，正文为空的中间消息不产生该事件也不占用5分钟窗口；run.stalled仅覆盖当前对话仍存在的starting/running/tools-active，缺少最后活动时间不触发，含连续空闲时长、最后活动时间和权限快照，同一空闲期只推一次且跨重启去重。nextCursor始终为本页最后一条事件的sequence；空页返回请求中的after；未传after且没有事件时为null。hasMore表示以after=nextCursor再次读取时是否还有更多事件。轮询方应保存nextCursor并用after=nextCursor继续补查。回推总开关停用只停止对外投递，已开启事件仍写入持久流并可补查；中间进度或停滞提醒单独关闭时对应事件不生成。投递与补读共用同一持久事件流；已记录或已送达的历史事件正文保持首次记录原样，不因升级、激活或重启补写字段。', 'x-buildr-scope': 'read', parameters: [{ name: 'workspaceId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }, { name: 'after', in: 'query', schema: { type: 'string', pattern: '^\\d+$' } }, { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200 } }], responses: responses(structuredClone(schemas.pushbackEvents)) } };
+  paths[`${base}/workspaces/{workspaceId}/events`] = { get: { operationId: 'events', summary: '分页补读本凭据接管对话的回推事件，含未投递；始终返回可续读游标', description: '需要read权限及路径工作空间授权。after传上一页nextCursor（非负整数序号），非法游标返回400；limit默认50、最大200；事件按sequence升序返回，包含undelivered。事件类型包括decision.requested、run.progress、run.completed、run.failed、run.stopped、run.stalled和events_dropped。每条业务事件含当前凭据的scopes与allowFullAccess；终态事件含完整finalReply与finalReplyUrl；decision.requested含完整问题/审批卡及回答身份，description始终为字符串，无说明时为空字符串；run.progress只含已写完（status=completed）的最新中间消息、运行时长和已完成工具数，正文为空或仍在写入的消息不产生该事件也不占用5分钟窗口；run.stalled仅覆盖当前对话仍存在的starting/running/tools-active，单个长工具运行且没有新记录同样计入空闲，观察心跳不算新记录，缺少最后活动时间不触发，含连续空闲时长、最后活动时间和权限快照，同一空闲期只推一次且跨重启去重。发现入口、操作目录、单操作文档与help返回当前buildId；contractVersion仍只摘要API契约内容。nextCursor始终为本页最后一条事件的sequence；空页返回请求中的after；未传after且没有事件时为null。hasMore表示以after=nextCursor再次读取时是否还有更多事件。轮询方应保存nextCursor并用after=nextCursor继续补查。回推总开关停用只停止对外投递，已开启事件仍写入持久流并可补查；中间进度或停滞提醒单独关闭时对应事件不生成。投递与补读共用同一持久事件流；已记录或已送达的历史事件正文保持首次记录原样，不因升级、激活或重启补写字段。', 'x-buildr-scope': 'read', parameters: [{ name: 'workspaceId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }, { name: 'after', in: 'query', schema: { type: 'string', pattern: '^\\d+$' } }, { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200 } }], responses: responses(structuredClone(schemas.pushbackEvents)) } };
   paths[base + '/operations'] = { get: { operationId: 'operation-index', summary: '轻量操作目录，不含模型和完整Schema', responses: responses({ type: 'object' }) } };
   paths[base + '/operations/{operationId}'] = { get: { operationId: 'operation-document', summary: '单操作自包含OpenAPI，仅含选中操作与依赖模型', parameters: [{ name: 'operationId', in: 'path', required: true, schema: { type: 'string', enum: DOCUMENTED_OPERATION_IDS } }], responses: responses({ type: 'object' }) } };
   return shareSchemas({ openapi: '3.1.0', info: { title: 'Buildr 本机程序接入 API', version, description: '只监听本机，复用现有Agent Service；轮询基线。访问令牌不是操作系统沙箱，也不自动授予审批、提交或推送权限。' }, servers: [{ url: '/' }], security: [{ programmaticBearer: [] }], components: { securitySchemes: { programmaticBearer: { type: 'http', scheme: 'bearer', bearerFormat: 'Buildr programmatic access token' } } }, paths });
@@ -91,10 +91,11 @@ function describedOperations(document: any) {
     })));
 }
 
-export function programmaticOperationIndex(version: string) {
+export function programmaticOperationIndex(version: string, buildId?: string | null) {
   const document = programmaticOpenApi(version);
   return {
     schemaVersion: 'buildr.programmatic-operation-index/v1', apiVersion: '1', version,
+    ...(buildId ? { buildId } : {}),
     contractVersion: programmaticContractVersion(document),
     documentationUrl: base + '/help', openapiUrl: base + '/openapi.json',
     operations: describedOperations(document),
@@ -102,7 +103,7 @@ export function programmaticOperationIndex(version: string) {
 }
 
 /** Self-contained OpenAPI fragment: all transitive local refs are included. */
-export function programmaticOperationDocument(version: string, id: string) {
+export function programmaticOperationDocument(version: string, id: string, buildId?: string | null) {
   const document = programmaticOpenApi(version);
   const entry = describedOperations(document).find(item => item.id === id);
   if (!entry) return undefined;
@@ -120,6 +121,7 @@ export function programmaticOperationDocument(version: string, id: string) {
   include(operation);
   return {
     ...document, 'x-buildr-contract-version': programmaticContractVersion(document),
+    ...(buildId ? { 'x-buildr-build-id': buildId } : {}),
     'x-buildr-operation-id': id,
     paths: { [entry.path]: { [entry.method.toLowerCase()]: operation } },
     components: { ...document.components, schemas },

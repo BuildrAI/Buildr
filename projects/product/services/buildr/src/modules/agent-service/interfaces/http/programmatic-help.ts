@@ -20,7 +20,7 @@ export const programmaticGuide = `# Buildr 本机程序 API（第二期）
 示例首次发送前以600保存draftId、clientRequestId、原始输入与serviceId。可使用--model明确模型；不传则使用连接默认模型。再次执行同一命令会读取原提交，再轮询，不新建请求。更换目标请使用新的state文件。不要把包含目标正文的state文件提交到Git。
 
 ## 发现与权限
-发现返回版本、apiVersion、就绪状态、稳定serviceId、当前凭据、授权工作空间、Agent连接、模型目录、可用操作与文档地址。请选择enabled且status=ready的连接；原生模型来自connections[].models，跨来源模型选择用models目录及其accountId/modelId。Qoder CN的模型来自独立账号native-qoder-cn；发现入口按该账号的登录与已启用模型返回连接状态和模型，发送该连接时可省略modelAccountId。模型实际可用性仍由发送时的Application校验。
+发现返回版本、buildId、apiVersion、就绪状态、稳定serviceId、当前凭据、授权工作空间、Agent连接、模型目录、可用操作与文档地址。buildId标识当前运行的构建（开发版为启动器构建标识，其他安装取产品构建身份），用于确认程序请求和文档对应的实际构建；它不是对话修订，也不替代版本、contractVersion或执行身份。请选择enabled且status=ready的连接；原生模型来自connections[].models，跨来源模型选择用models目录及其accountId/modelId。Qoder CN的模型来自独立账号native-qoder-cn；发现入口按该账号的登录与已启用模型返回连接状态和模型，发送该连接时可省略modelAccountId。模型实际可用性仍由发送时的Application校验。
 - read：发现、查询、读消息及observe（虽为POST，但不发送消息）。
 - execute：首发、prepare-send/send、supplement和停止。
 - answer：仅回答question卡片；approve：仅处理approval卡片。两者互不替代。
@@ -55,11 +55,11 @@ decision.requested 的 request 含 requestId、kind、title、description、runI
 ~~~json
 {"type":"decision.requested","request":{"requestId":"...","kind":"question","title":"确认范围","description":"本轮需要确认两个问题。","runId":"...","participantId":"...","generation":"...","conversationRevision":"...","questions":[{"questionId":"scope","question":"处理范围","allowOther":true,"multiple":true,"options":[{"optionId":"all","label":"全部","description":"覆盖所有文件"},{"optionId":"changed","label":"仅变更"}]}]}}
 ~~~
-run.progress 在新 assistant 中间消息出现时产生。payload 的 progress 含 text（最新一条中间消息全文）、elapsedMs（run 到本次推送已运行时长）和 completedToolCount（已完成工具数）。同一 run 相邻两次推送至少间隔 5 分钟；间隔内只保留最新一条，窗口结束推送最新内容。首次新中间消息在满足间隔时立即推送。正文为空的中间消息（例如刚创建、正文尚未写入）不推送，也不占用 5 分钟窗口；等该消息取到非空正文后再按上述窗口规则推送。示例：
+run.progress 在新 assistant 中间消息**写完**后产生。payload 的 progress 含 text（最新一条中间消息全文）、elapsedMs（run 到本次推送已运行时长）和 completedToolCount（已完成工具数）。同一 run 相邻两次推送至少间隔 5 分钟；间隔内只保留最新一条，窗口结束推送最新内容。首次新中间消息在满足间隔时立即推送。只有 status=completed 的中间消息才推送；正文为空（例如刚创建、正文尚未写入）或仍在写入（status=running）的消息不推送、也不占用 5 分钟窗口；等该消息写完并取到非空正文后再按上述窗口规则推送。示例：
 ~~~json
 {"type":"run.progress","runId":"...","runStatus":"running","progress":{"text":"已完成日志定位，正在复现问题……","elapsedMs":420000,"completedToolCount":3}}
 ~~~
-run.stalled 仅在当前对话仍包含该 run、其状态为 starting/running/tools-active，且连续 20 分钟没有新消息、工具调用或状态变化时推送一次；unknown、waiting-question、waiting-approval、终态以及已不在当前对话或 retainedRuns 中的轮次都不产生该事件。缺少可用的 lastActivityAt 时不触发，不按 1970-01-01 计算。payload 的 stalled 含 idleMs 与 lastActivityAt，并与其他事件一样含 scopes 与 allowFullAccess。同一段空闲期只推送一次，去重记录持久化，服务重启不会重报；恢复产生新记录后重置计时，再连续空闲 20 分钟才会再次推送。示例：
+run.stalled 仅在当前对话仍包含该 run、其状态为 starting/running/tools-active，且连续 20 分钟没有新消息、工具调用或状态变化时推送一次；单个工具长时间运行、期间没有新记录也属于空闲。unknown、waiting-question、waiting-approval、终态以及已不在当前对话或 retainedRuns 中的轮次都不产生该事件。观察心跳只刷新执行快照，不算新记录，也不会重置空闲窗口。缺少可用的 lastActivityAt 时不触发，不按 1970-01-01 计算。payload 的 stalled 含 idleMs 与 lastActivityAt（最后一次真实记录的观测时间），并与其他事件一样含 scopes 与 allowFullAccess。同一段空闲期只推送一次，去重记录持久化，服务重启不会重报；恢复产生新记录后重置计时，再连续空闲 20 分钟才会再次推送。示例：
 ~~~json
 {"type":"run.stalled","runId":"...","runStatus":"running","stalled":{"idleMs":1200000,"lastActivityAt":"2026-11-13T02:40:00.000Z"},"summary":"执行已连续 20 分钟没有新记录"}
 ~~~
@@ -68,15 +68,24 @@ run.stalled 仅在当前对话仍包含该 run、其状态为 starting/running/t
 事件持久保留7天、sequence跨重启连续。补读 GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n}（read，limit 默认 50、最大 200），按 sequence 升序返回含 undelivered 的事件；after 必须是上一页 nextCursor 返回的非负整数序号，不是合法游标时返回 400 programmatic_input_invalid。nextCursor 始终返回本页最后一条事件的 sequence（字符串）；本页为空时返回请求中的 after；未传 after 且没有任何事件时为 null。hasMore 表示以 after=nextCursor 再次读取时是否还有更多事件。轮询方应保存 nextCursor，下次用 after=nextCursor 补查，而不是把 null 当作继续游标。超出保留期被丢弃时发出 events_dropped。测试环境、候选实例与自动化测试一律不得向真实接收地址推送，只用本地假接收端。
 最小闭环：配置回推→收到decision.requested→按detailUrl读对话取得准确卡片身份→由人回答或审批；执行结束后用单步续聊POST /messages发起下一轮。
 
+### 测试专用时序
+仅为了不必等待完整 20 分钟复测，Agent 后台识别两个环境变量：BUILDR_AGENT_PUSHBACK_TEST_STALLED_THRESHOLD_MS（1000..86400000）和 BUILDR_AGENT_PUSHBACK_TEST_CHECK_INTERVAL_MS（250..60000）。它们只在启动 Agent 后台的进程环境中生效，正常运行不设置即使用 20 分钟阈值与 30 秒检查。开启示例：启动 Buildr 前设置 BUILDR_AGENT_PUSHBACK_TEST_STALLED_THRESHOLD_MS=60000、BUILDR_AGENT_PUSHBACK_TEST_CHECK_INTERVAL_MS=5000；从 Finder 启动开发版时变量不会自动继承，可先执行 launchctl setenv 写入同名变量再启动，macOS 下卸载后按需 launchctl unsetenv 删除；关闭时删除变量并重启对应 Buildr 实例。非法值或越界值会被忽略并保留产品默认值。该变量不改变事件字段、去重或投递语义，生产联调不得据此放宽阈值。
+
 ## 错误与副作用
 400参数/字段非法；401无有效凭据或已撤销；403工作空间/操作越权或跨站；404对象/路由不存在；409修订漂移、执行身份变化或同标识不同内容；413正文过大；415非JSON；503未就绪或结果未知。响应为{error:{code,message}}，保留code用于诊断。
 POST observe只更新观察；首发、send、supplement可启动本机工具；reply可放行原操作；stop影响指定执行。API接入不授予Git提交/推送、发布或其他目标之外的副作用。
 
 ## 文档
 先阅读本指南，再读取轻量操作目录 GET /api/v1/programmatic/operations；需要哪个操作，再按目录中的documentationUrl读取 GET /api/v1/programmatic/operations/{operationId}。单操作描述是自包含的OpenAPI，只包含该操作与全部传递依赖模型，无需下载其他文档来解析引用。例如start是首发，observe是重新观察；具体字段以对应描述为准。
-目录与发现返回contractVersion，单操作描述包含x-buildr-contract-version。调用方可缓存文档；内容摘要未变不必重读，变化后再更新所需操作。它不是实时工作状态的缓存版本，不能代替重新观察修订与执行身份。
+目录与发现返回contractVersion与buildId，单操作描述包含x-buildr-contract-version与x-buildr-build-id。调用方可缓存文档；contractVersion只反映API契约内容摘要，未变不必重读，变化后再更新所需操作。buildId用于确认当前运行的构建，可随重建变化但不参与contractVersion摘要，也不写入完整OpenAPI正文。它们都不是实时工作状态的缓存版本，不能代替重新观察修订与执行身份。
 完整OpenAPI：/api/v1/programmatic/openapi.json，使用components.schemas和$ref共享模型，供完整导入或生成客户端，不要求每次调用前读取。可运行示例：/api/v1/programmatic/example.py。所有程序文档均需要Bearer。已登录的人可在「智能体与模型 → 程序接入」直接查看指南、操作目录/单操作和完整OpenAPI并下载，无需输入Bearer；网页文档入口使用现有网页会话，不向程序开放凭据管理权限。API主版本在路径和发现中明确；第二期仅对显式列出的程序操作承诺，不代表所有网页API已对外开放。
 `;
+
+/** The guide is static; the current build identity is prepended so /help can identify the running build. */
+export function programmaticGuideFor(buildId?: string | null): string {
+  const marker = '# Buildr 本机程序 API（第二期）\n';
+  return programmaticGuide.replace(marker, `${marker}\n构建标识（buildId）：${buildId || '当前实例未提供'}\n`);
+}
 
 export const programmaticExample = `#!/usr/bin/env python3
 """Buildr: persist first, submit idempotently, poll; never print the bearer."""

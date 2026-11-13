@@ -630,6 +630,9 @@ export interface AgentServiceOptions {
   /** Injected pushback delivery transport; tests and candidates use a local fake receiver, never a real address. */
   pushbackTransport?: typeof fetch;
   pushbackNow?: () => number;
+  /** Test-only bounded pushback timing overrides. Normal runs use 20 minutes and a 30-second check. */
+  testPushbackStalledThresholdMs?: number;
+  testPushbackCheckIntervalMs?: number;
   /** Bounded host shutdown; chiefly useful for deterministic lifecycle tests. */
   shutdownTimeoutMs?: number;
 }
