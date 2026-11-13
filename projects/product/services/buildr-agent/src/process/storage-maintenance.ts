@@ -27,7 +27,7 @@ if (!isMainThread && workerData?.kind === 'agent-storage-program') {
 }
 
 async function runMaintenance(): Promise<void> {
-  const { dataRoot, runtime, nativeOnly } = workerData;
+  const { dataRoot, runtime, nativeOnly, inventoryOnly } = workerData;
   const started = performance.now(), cpuStarted = process.threadCpuUsage();
   const stages: Record<string, number> = {};
   let stageStarted = started;
@@ -44,7 +44,7 @@ async function runMaintenance(): Promise<void> {
   try {
     if (runtime) try { cleanupStoppedProcesses(dataRoot, runtime); } catch { /* Retain unknown resources. */ }
     stage('runtimes');
-    content = maintainNativeContent(dataRoot, { maximumItems: 512, budgetMs: 1000 });
+    if (!inventoryOnly) content = maintainNativeContent(dataRoot, { maximumItems: 512, budgetMs: 1000 });
     stage('nativeContent');
     if (nativeOnly) {
       parentPort?.postMessage({ nativeContent: content, ...timing() });
@@ -95,19 +95,21 @@ export class StorageMaintenance {
   private worker?: Worker;
   private timer?: ReturnType<typeof setTimeout>;
   private closed = false;
-  private lastInventory = -Infinity;
+  private nativeDue: number;
+  private inventoryDue: number;
   private readonly diagnostics?: ExecutionDiagnosticSink;
   private readonly dataRoot: string;
   private readonly intervalMs: number;
   private readonly enabled: () => boolean;
   private readonly runtime?: AgentRuntimeUnit;
-  private lastRuntimeCollection = -Infinity;
   constructor(dataRoot: string, options: { initialMs?: number; intervalMs?: number; enabled?: () => boolean; runtime?: AgentRuntimeUnit; diagnostics?: ExecutionDiagnosticSink } = {}) {
     this.dataRoot = dataRoot; this.intervalMs = options.intervalMs ?? 60_000;
     this.enabled = options.enabled ?? (() => true);
     this.runtime = options.runtime;
     this.diagnostics = options.diagnostics;
-    this.schedule(options.initialMs ?? 5000);
+    const initial = options.initialMs ?? 5000;
+    this.nativeDue = this.inventoryDue = Date.now() + initial;
+    this.schedule(initial);
   }
   private schedule(delay: number): void {
     if (!this.closed) { this.timer = setTimeout(() => this.start(), delay); this.timer.unref(); }
@@ -115,20 +117,23 @@ export class StorageMaintenance {
   private start(): void {
     if (this.closed || this.worker) return;
     if (!this.enabled()) { this.schedule(this.intervalMs); return; }
+    const now = Date.now();
+    const nativeOnly = this.nativeDue <= this.inventoryDue;
+    const due = nativeOnly ? this.nativeDue : this.inventoryDue;
+    if (due > now) { this.schedule(Math.ceil(due - now)); return; }
+    const interval = nativeOnly ? this.intervalMs : 5 * this.intervalMs;
+    let delay = interval;
+    const next = () => {
+      if (nativeOnly) this.nativeDue = Date.now() + delay;
+      else this.inventoryDue = Date.now() + delay;
+      this.schedule(Math.max(0, Math.ceil(Math.min(this.nativeDue, this.inventoryDue) - Date.now())));
+    };
     try {
-      const started = Date.now();
-      const collectRuntime = this.runtime && started - this.lastRuntimeCollection >= 60_000;
-      const nativeOnly = started - this.lastInventory < 5 * this.intervalMs;
       const worker = new Worker(new URL(import.meta.url), {
-        workerData: { kind: 'agent-storage-maintenance', dataRoot: this.dataRoot, nativeOnly, ...(collectRuntime ? { runtime: this.runtime } : {}) },
+        workerData: { kind: 'agent-storage-maintenance', dataRoot: this.dataRoot, nativeOnly,
+          inventoryOnly: !nativeOnly, runtime: nativeOnly ? undefined : this.runtime },
       });
-      if (collectRuntime) this.lastRuntimeCollection = started;
-      if (!nativeOnly) this.lastInventory = started;
-      let delay = this.intervalMs;
       worker.on('message', message => {
-        // Cap the average work of repeated batches without interrupting a
-        // rename or SQLite write. The wall clock also covers child probes and
-        // GC outside the maintenance thread.
         const cpuDelay = Number.isFinite(message.cpuMs) ? 50 * message.cpuMs : 0;
         const ioDelay = Number.isFinite(message.durationMs) ? 10 * message.durationMs : 0;
         delay = Math.max(delay, cpuDelay, ioDelay);
@@ -141,12 +146,10 @@ export class StorageMaintenance {
       this.worker = worker;
       worker.unref();
       worker.on('error', () => this.diagnostics?.({ event: 'storage-maintenance-failed' }));
-      worker.once('exit', () => {
-        if (this.worker === worker) this.worker = undefined;
-        this.schedule(delay);
-      });
-    } catch { this.schedule(this.intervalMs); }
+      worker.once('exit', () => { this.worker = undefined; next(); });
+    } catch { next(); }
   }
+
   /** Do not abort an in-flight narrow rename/delete; the worker is unreferenced and drains naturally. */
   close(): void { this.closed = true; clearTimeout(this.timer); }
 }

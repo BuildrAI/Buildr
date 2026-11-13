@@ -15,6 +15,27 @@ export class ConnectionApplication {
   freezeMetadata(value = true): void { this.metadataReadOnly = value; }
   private readonly executors: Map<string, AgentExecutor>;
   private readonly gatewayRuntimes = new Map<string, Promise<AgentRuntime>>();
+  private readonly probeRuntimes = new Set<string>();
+  private readonly probeReleases = new Map<string, Promise<void>>();
+  hasAccountRuntime(id: string): boolean { return this.runtimes.has(id); }
+  async releaseAccountProbes(): Promise<void> {
+    await Promise.allSettled([...this.probeRuntimes].map(async id => {
+      const pending = this.runtimes.get(id);
+      if (!pending || this.opening.has(id) || this.programUses.get(id) || this.programChanges.has(id) || this.checking.has(id) || this.closing) return;
+      const runtime = await pending;
+      if (!this.probeRuntimes.has(id) || this.runtimes.get(id) !== pending || this.programUses.get(id) || this.programChanges.has(id) || this.checking.has(id) || this.closing || this.probeReleases.has(id)) return;
+      const release = Promise.resolve().then(() => runtime.close()).then(() => {
+        if (this.runtimes.get(id) === pending) this.runtimes.delete(id);
+      }).catch(() => {
+        this.programRecovery.set(id, [runtime]);
+      }).finally(() => {
+        this.probeRuntimes.delete(id);
+        this.probeReleases.delete(id);
+      });
+      this.probeReleases.set(id, release);
+      await release;
+    }));
+  }
   private readonly runtimes = new Map<string, Promise<AgentRuntime>>();
   private readonly loginUrls = new Map<string, { attemptId: string; url: string }>();
   private readonly loginTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -50,7 +71,7 @@ export class ConnectionApplication {
   acquireProgramChange(id: string): (() => void) | null {
     if (this.closing || this.metadataReadOnly) fail('agent_service_closing', '智能体后台正在切换，请稍后重试。', 503);
     if (this.programRecovery.has(id)) this.assertProgramAvailable(id);
-    if (this.programChanges.has(id) || this.programUses.get(id) || this.checking.has(id) || [...this.opening.keys()].some(key => key === id || key.startsWith(id + ':')) || ['initializing','waiting-browser','checking'].includes(this.get(id).loginAttempt?.state ?? '')) return null;
+    if (this.programChanges.has(id) || this.programUses.get(id) || this.probeReleases.has(id) || this.checking.has(id) || [...this.opening.keys()].some(key => key === id || key.startsWith(id + ':')) || ['initializing','waiting-browser','checking'].includes(this.get(id).loginAttempt?.state ?? '')) return null;
     this.programChanges.add(id);
     return () => this.programChanges.delete(id);
   }
@@ -213,9 +234,13 @@ export class ConnectionApplication {
     if(input.programOnly){await this.runtime(id);return this.get(id);}
     return this.check(id);
   }
-  async runtime(id: string, gateway?: ModelGatewayConfiguration): Promise<AgentRuntime> {
+  async runtime(id: string, gateway?: ModelGatewayConfiguration, accountProbe = false): Promise<AgentRuntime> {
     this.assertProgramAvailable(id);
     if (gateway) return this.gatewayRuntime(id, gateway);
+    const releasing = this.probeReleases.get(id);
+    if (releasing) await releasing;
+    this.assertProgramAvailable(id);
+    if (!accountProbe) this.probeRuntimes.delete(id);
     const record = this.stored(id);
     const existing = this.runtimes.get(id);
     if (existing) {
@@ -247,8 +272,15 @@ export class ConnectionApplication {
         current.view.capabilities = runtime.capabilities;
         this.save(current);
         return runtime;
-      }).catch(error => { if (this.runtimes.get(id) === promise) this.runtimes.delete(id); throw error; }).finally(() => { if (this.opening.get(id) === opening) this.opening.delete(id); });
+      }).catch(error => {
+        if (this.runtimes.get(id) === promise) {
+          this.runtimes.delete(id);
+          this.probeRuntimes.delete(id);
+        }
+        throw error;
+      }).finally(() => { if (this.opening.get(id) === opening) this.opening.delete(id); });
       this.runtimes.set(id, promise);
+      if (accountProbe) this.probeRuntimes.add(id);
     }
     return promise;
   }
@@ -411,6 +443,8 @@ export class ConnectionApplication {
     record.view.enabled = false; record.view.status = 'disconnected';
     this.save(record);
     clearTimeout(this.loginTimers.get(id)); this.loginTimers.delete(id); this.loginUrls.delete(id);
+    await this.probeReleases.get(id);
+    this.probeRuntimes.delete(id);
     const runtime = this.runtimes.get(id); this.runtimes.delete(id);
     if (runtime) await runtime.then(item => item.close());
     const shared = [...this.gatewayRuntimes].filter(([key]) => key.startsWith(`${id}:`));
@@ -423,9 +457,10 @@ export class ConnectionApplication {
     for (const controller of this.opening.values()) controller.abort();
     for (const timer of this.loginTimers.values()) clearTimeout(timer);
     this.loginTimers.clear(); this.loginUrls.clear();
+    await Promise.allSettled(this.probeReleases.values());
     const runtimes = [...this.runtimes.values(), ...this.gatewayRuntimes.values(), ...[...this.programRecovery.values()].flat().map(runtime => Promise.resolve(runtime))]; this.runtimes.clear(); this.gatewayRuntimes.clear();
     await Promise.allSettled(runtimes.map(async runtime => (await runtime).close()));
   }
-  activity() { return [{kind:'connection-operation',count:this.opening.size+this.checking.size+this.programChanges.size},{kind:'runtime-release',count:this.gatewayReleases.size},{kind:'native-login',count:this.list().filter(value=>['initializing','waiting-browser','checking'].includes(value.loginAttempt?.state??'')).length}].filter(value=>value.count>0); }
+  activity() { return [{kind:'connection-operation',count:this.opening.size+this.checking.size+this.programChanges.size},{kind:'runtime-release',count:this.gatewayReleases.size+this.probeReleases.size},{kind:'native-login',count:this.list().filter(value=>['initializing','waiting-browser','checking'].includes(value.loginAttempt?.state??'')).length}].filter(value=>value.count>0); }
   beginClosing(): void { this.closing = true; }
 }

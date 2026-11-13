@@ -52,12 +52,12 @@ export function createAgentService(options: AgentServiceOptions) {
   const programUpdates = new ProgramUpdates(() => connections.list(), programManager, now, options.programRelease);
   const preparations = new PreparationApplication(connections, programManager, generation, now);
   const owner=(id:string)=>({
-    async inspect(){return connections.useProgram(id,async()=>{if(!connections.get(id).enabled)return{status:'not-authenticated' as const};return(await connections.runtime(id)).inspectAccount();});},
-    async identity(){return connections.useProgram(id,async()=>{const runtime=await connections.runtime(id);if(!runtime.modelIdentity)throw new Error('native_model_identity_unavailable');return runtime.modelIdentity();});},
+    async inspect(){return connections.useProgram(id,async()=>{if(!connections.get(id).enabled)return{status:'not-authenticated' as const};return(await connections.runtime(id, undefined, true)).inspectAccount();});},
+    async identity(){return connections.useProgram(id,async()=>{const runtime=await connections.runtime(id, undefined, true);if(!runtime.modelIdentity)throw new Error('native_model_identity_unavailable');return runtime.modelIdentity();});},
     async request(path:string,init?:RequestInit){return connections.useProgram(id,async()=>{if(!connections.get(id).enabled)return new Response(null,{status:401});const runtime=await connections.runtime(id);if(!runtime.requestModel)throw new Error('native_model_bridge_unavailable');return runtime.requestModel(path,init,['/chat','/codex/responses','/anthropic/v1/messages'].includes(path)?models.accounts.read('native-'+id).identity:undefined);});}
   });
   const dsh=owner('dsh');
-  const dshProvider=createDeepSeekModelProvider({ownerFactory:()=>({...dsh,quota:async()=>connections.useProgram('dsh',async()=>{const runtime=await connections.runtime('dsh');return await runtime.modelQuota?.()??{available:false,observedAt:now()};}),beginLogin:async()=>{throw new Error('请在DSH账号中登录。');},cancelLogin:async()=>{},close:async()=>{},request:(url,init)=>dsh.request(new URL(url).pathname,init)})});
+  const dshProvider=createDeepSeekModelProvider({ownerFactory:()=>({...dsh,quota:async()=>connections.useProgram('dsh',async()=>{const runtime=await connections.runtime('dsh', undefined, true);return await runtime.modelQuota?.()??{available:false,observedAt:now()};}),beginLogin:async()=>{throw new Error('请在DSH账号中登录。');},cancelLogin:async()=>{},close:async()=>{},request:(url,init)=>dsh.request(new URL(url).pathname,init)})});
   const nativeDsh:ModelProvider={...dshProvider,id:'native-dsh',label:'DeepSeek',connectionId:'dsh',async open(input){const runtime=await dshProvider.open(input);return{protocol:runtime.protocol,inspect:async()=>{const value=await runtime.inspect();return{...value,...(value.status==='ready'?{identity:await dsh.identity()}: {})};},beginLogin:u=>runtime.beginLogin(u),cancelLogin:()=>runtime.cancelLogin(),infer:i=>runtime.infer(i),close:()=>runtime.close()};}};
   const qoderProvider=(product:QoderProductId)=>createQoderModelProvider(owner(product),product);
   const linkedProviders=[createCodexModelProvider({owner:owner('codex')}),nativeDsh,qoderProvider('qoder'),createQoderCnModelProvider(programManager)].map(provider=>({...provider,async open(input:Parameters<ModelProvider['open']>[0]){const runtime=await provider.open(input);return{protocol:runtime.protocol,inspect:()=>runtime.inspect(),...(runtime.identity?{identity:()=>runtime.identity!()}:{}),beginLogin:(u:Parameters<typeof runtime.beginLogin>[0])=>runtime.beginLogin(u),cancelLogin:()=>runtime.cancelLogin(),close:()=>runtime.close(),infer:async(i:Parameters<typeof runtime.infer>[0])=>{const current=await runtime.identity?.();const identity=createHash('sha256').update(current??(provider.connectionId?await owner(provider.connectionId).identity():'')).digest('hex');if(!current&&!provider.connectionId)throw new ModelAccessError('model_identity_unavailable','该模型来源尚未提供账号身份。');if(models.accounts.read(provider.id).identity!==identity)throw new ModelAccessError('model_identity_conflict','账号身份已变化，请刷新模型。');return runtime.infer(i);}};}}));
@@ -76,26 +76,33 @@ export function createAgentService(options: AgentServiceOptions) {
   let closed = false;
   let discovery:Promise<void>|undefined, discoveryDiagnostic:string|undefined;
   let discoveryTimer:ReturnType<typeof setInterval>|undefined;
-  const discover=():Promise<void>=>{
+  let discoverySkippedCold = false;
+  const discover=(warmOnly = false):Promise<void>=>{
     if(closed)return Promise.resolve();
-    if(discovery)return discovery;
+    if (discovery) return warmOnly ? discovery : discovery.then(() => discoverySkippedCold ? discover() : undefined);
+    discoverySkippedCold = false;
     discovery=(async()=>{
       try {
         await models.ensureLinked();
         if(closed)return;
-        const results=await Promise.allSettled(models.accounts.list().accounts.filter(account=>account.enabled&&(account.connectionId||['ready','failed'].includes(account.status))&&!account.loginAttempt?.state?.match(/^(initializing|waiting-browser|checking)$/)).map(account=>models.accounts.check(account.id)));
+        const accounts = models.accounts.list().accounts.filter(account =>
+          account.enabled && (account.connectionId || ['ready', 'failed'].includes(account.status)) &&
+          !account.loginAttempt?.state?.match(/^(initializing|waiting-browser|checking)$/));
+        const selected = accounts.filter(account => !warmOnly || !account.connectionId || connections.hasAccountRuntime(account.connectionId));
+        discoverySkippedCold = selected.length !== accounts.length;
+        const results = await Promise.allSettled(selected.map(account => models.accounts.check(account.id)));
         discoveryDiagnostic=results.some(result=>result.status==='rejected'||!!result.value.diagnostic)?'部分供应商核对失败，已保留已有模型列表。':undefined;
       } catch(error) {
         discoveryDiagnostic='供应商核对未完成，已保留已有模型列表。';
         throw error;
-      }
+      } finally { await connections.releaseAccountProbes(); }
     })().finally(()=>{discovery=undefined;});
     return discovery;
   };
-  const refreshInBackground=()=>{void discover().catch(()=>{});};
+  const refreshInBackground=()=>{void discover(true).catch(()=>{});};
   const startRefreshing=()=>{
     if(closed||discoveryTimer)return;
-    refreshInBackground();
+    void discover().catch(()=>{});
     discoveryTimer=setInterval(refreshInBackground,60_000);discoveryTimer.unref();
   };
   linkedChanged=connection=>{

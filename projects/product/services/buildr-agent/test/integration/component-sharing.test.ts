@@ -133,7 +133,8 @@ test('periodic maintenance retires idle bytecode and preserves reusable download
     // Run a production inventory after each occupancy transition. The
     // scheduler's retry interval and cost-based backoff have separate coverage.
     await new Promise<void>(resolve => {
-      maintenance = new StorageMaintenance(dataRoot, { initialMs: 1, diagnostics: () => {
+      maintenance = new StorageMaintenance(dataRoot, { initialMs: 1, diagnostics: event => {
+        if (event.phase !== 'inventory') return;
         maintenance!.close();
         resolve();
       } });
