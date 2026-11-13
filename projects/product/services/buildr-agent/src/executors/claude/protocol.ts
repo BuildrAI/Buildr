@@ -69,6 +69,9 @@ export function claudeEffort(gateway: ExecutorGateway, selected?: string, effort
 export function claudeItems(row: any, executionId?: string, blockOffset=0): ExecutorItem[] {
   const role = row.type === 'assistant' ? 'assistant' : row.type === 'user' ? 'user' : undefined;
   if (!role) return [];
+  // Claude exposes session-task notifications as user rows in SDK history.
+  // Their structured origin survives projection even for queued deliveries.
+  if (role === 'user' && row.origin?.kind === 'task-notification' && row.origin.producer === 'session-task') return [];
   const message = row.message ?? {};
   const parts = Array.isArray(message.content) ? message.content : typeof message.content === 'string' ? [{type:'text',text:message.content}] : [];
   const parentToolId = typeof row.parent_tool_use_id === 'string' ? row.parent_tool_use_id : undefined;
@@ -90,7 +93,7 @@ export function claudeItems(row: any, executionId?: string, blockOffset=0): Exec
     if (part.type === 'thinking' && typeof part.thinking === 'string') return [{
       ...common, id: `message:${messageId}:${index+blockOffset}`, kind: 'thinking', thinking: true, text: part.thinking, status: 'completed',
     }];
-    if (part.type === 'text' && typeof part.text === 'string' && part.text) return [{
+    if (part.type === 'text' && (role !== 'user' || row.isMeta !== true) && typeof part.text === 'string' && part.text) return [{
       ...common, id: role === 'user' && !parentToolId ? row.uuid ?? messageId : `message:${messageId}:${index+blockOffset}`,
       kind: 'message', text: part.text, status: 'completed',
     }];

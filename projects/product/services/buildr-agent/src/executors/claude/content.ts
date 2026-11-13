@@ -142,10 +142,12 @@ export const readClaudePersistedExecution:NonNullable<AgentExecutor['readPersist
     const independent=new Set<string>();
     for(const row of nativeToolRows(source,'claude-code',file)){
       if(!owns(source,row)||row.isSidechain===true)continue;
-      if(row.type==='user'&&ids.has(row.uuid)){found=true;finished=false;ids.delete(row.uuid);}
+      const ownedInput=row.type==='user'&&ids.has(row.uuid);
+      if(ownedInput){found=true;finished=false;ids.delete(row.uuid);}
       if(!found)continue;
-      if(row.type==='user'&&!ids.has(row.uuid)&&Array.isArray(row.message?.content)&&row.message.content.some((p:any)=>p.type==='text')&&items.size&&finished)break;
-      for(const item of projector.items(row,input.executionRef.id)){
+      const projected=projector.items(row,input.executionRef.id);
+      if(!ownedInput&&items.size&&finished&&projected.some(item=>item.kind==='message'&&item.role==='user'&&!item.parentToolId))break;
+      for(const item of projected){
         items.set(item.id,{...items.get(item.id),...item});
         if(item.kind==='tool')tools.set(item.id,{id:item.id,label:item.name??tools.get(item.id)?.label??'工具',status:item.status==='running'?'running':'completed'});
       }

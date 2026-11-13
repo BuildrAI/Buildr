@@ -62,3 +62,10 @@ test('Claude atomic queue cancellation only extends the documented interrupt env
 test('Claude Code uses the requested product name without changing its provider identity',()=>{
   const executor=createClaudeExecutor();assert.equal(executor.descriptor.id,'claude-code');assert.equal(executor.descriptor.label,'Claude Code');
 });
+
+test('Claude session-task notifications in SDK history do not become user submissions',()=>{
+  const row={type:'user',uuid:'notification',message:{content:'<task-notification>finished</task-notification>'}};
+  assert.deepEqual(claudeItems({...row,origin:{kind:'task-notification',producer:'session-task',runId:'native-task'}}),[]);
+  assert.equal(claudeItems(row)[0]?.id,'notification','text alone does not establish native provenance');
+  assert.equal(claudeItems({...row,origin:{kind:'task-notification',subkind:'scheduled-trigger'}})[0]?.id,'notification');
+});

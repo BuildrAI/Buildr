@@ -40,8 +40,13 @@ test('Claude cold terminal observation never treats a background launch as compl
   f.append({type:'assistant',uuid:'call',message:{id:'model-call',content:[{type:'tool_use',id:'job',name:'Bash',input:{command:'server',run_in_background:true}}]}});
   f.append({type:'user',uuid:'result',message:{content:[{type:'tool_result',tool_use_id:'job',content:'started'}]},toolUseResult:{backgroundTaskId:'native-job'}});
   f.append({type:'assistant',uuid:'final',message:{id:'model-final',stop_reason:'end_turn',content:[{type:'text',text:'started'}]}});
+  f.append({type:'user',uuid:'internal',isMeta:true,message:{content:[{type:'text',text:'skill metadata'}]}});
+  f.append({type:'user',uuid:'notification',origin:{kind:'task-notification',producer:'session-task'},message:{content:'<task-notification>finished</task-notification>'}});
+  f.append({type:'assistant',uuid:'after-notification',message:{id:'model-after',stop_reason:'end_turn',content:[{type:'text',text:'follow-up after notification'}]}});
   const result=await readClaudePersistedExecution({configRoot:f.configRoot,executable:'/program',cwd:f.cwd,bindingIdentity:'binding',contextRef:{id:f.contextId,data:{native:opaqueReference('claude-code',f.contextId,f.cwd,'binding')}},executionRef:{id:'execution'},nativeInputs:[{clientRequestId:'base',text:'work',createdAt:new Date().toISOString()}]});
   assert.equal(result?.observation.status,'unknown');assert.equal(result?.observation.tools[0]?.status,'unknown');
+  assert.deepEqual(result?.items.filter(item=>item.role==='user').map(item=>item.id),[id]);
+  assert.ok(result?.items.some(item=>item.text==='follow-up after notification'));
   assert.equal(result?.observation.backgroundWork,undefined);
 });
 test('Claude tool detail follows one session across shell cwd changes',t=>{
