@@ -1,5 +1,19 @@
 import { executionFault } from './execution-fault.ts';
-import type { ExecutionFault } from '../contracts.ts';
+import { ExecutorObservationLost, type ExecutionFault } from '../contracts.ts';
+
+const LEGACY_OBSERVATION_LOST_CODES = new Set([
+  'codex_execution_observation_lost',
+  'codex_event_observation_lost',
+  'dsh_execution_observation_lost',
+  'dsh_event_observation_lost',
+  'qoder_execution_observation_lost',
+  'qoder_event_observation_lost',
+]);
+
+export function isObservationLostError(error: unknown): boolean {
+  if (error instanceof ExecutorObservationLost) return true;
+  return error instanceof Error && LEGACY_OBSERVATION_LOST_CODES.has(error.message);
+}
 /** An explicit RPC rejection, distinct from a transport failure with unknown delivery. */
 export class NativeRequestError extends Error {
   readonly diagnostic: string;

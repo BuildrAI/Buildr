@@ -1,8 +1,6 @@
 import type { ConnectionView } from '../contracts.ts';
 import type { ModelAccountView } from '../model-access/contracts.ts';
 
-const QODER_CN = 'qoder-cn';
-
 function withStatus(view: ConnectionView, status: ConnectionView['status'], models: ConnectionView['models'], diagnostic?: string): ConnectionView {
   const next: ConnectionView = { ...view, status, models };
   if (diagnostic) next.diagnostic = diagnostic;
@@ -12,19 +10,18 @@ function withStatus(view: ConnectionView, status: ConnectionView['status'], mode
 
 function withAccount(view: ConnectionView, account: ModelAccountView, status: ConnectionView['status'], models: ConnectionView['models'], diagnostic?: string): ConnectionView {
   const next = withStatus(view, status, models, diagnostic);
-  next.account = { label: account.accountLabel || account.label, loginMethod: 'Qoder CN 账号' };
+  next.account = { label: account.accountLabel || account.label, loginMethod: `${view.label} 账号` };
   return next;
 }
 
 /**
- * Qoder CN's independent model account owns the native login used by model-bound
- * execution. The program connection keeps its own config and observation, so that
- * observation alone cannot decide whether the connection is usable.
+ * When an executor's default native model account owns the execution login,
+ * present connection status and available models from that live model account.
  */
 export function presentConnection(view: ConnectionView, account?: ModelAccountView): ConnectionView {
-  if (view.id !== QODER_CN || !view.enabled || !view.configPath || !account) return view;
-  if (account.sourceEnabled === false) return withAccount(view, account, 'not-authenticated', [], 'Qoder CN 模型来源已停用，请在“模型”中重新启用。');
-  if (!account.enabled) return withAccount(view, account, 'not-authenticated', [], 'Qoder CN 模型供应商已停用。');
+  if (!view.modelPolicy?.native?.defaultSourceAccountId || !view.enabled || !view.configPath || !account) return view;
+  if (account.sourceEnabled === false) return withAccount(view, account, 'not-authenticated', [], `${view.label} 模型来源已停用，请在“模型”中重新启用。`);
+  if (!account.enabled) return withAccount(view, account, 'not-authenticated', [], `${view.label} 模型供应商已停用。`);
   if (account.status !== 'ready') {
     return withAccount(view, account, account.status === 'disconnected' ? 'not-authenticated' : account.status, [], account.diagnostic);
   }
@@ -37,6 +34,6 @@ export function presentConnection(view: ConnectionView, account?: ModelAccountVi
       ...(model.reasoningEfforts ? { reasoningEfforts: model.reasoningEfforts } : {}),
       ...(model.defaultReasoningEffort ? { defaultReasoningEffort: model.defaultReasoningEffort } : {}),
     }));
-  if (!models.length) return withAccount(view, account, 'failed', [], 'Qoder CN 账号已登录，但没有启用任何模型。');
+  if (!models.length) return withAccount(view, account, 'failed', [], `${view.label} 账号已登录，但没有启用任何模型。`);
   return withAccount(view, account, 'ready', models);
 }

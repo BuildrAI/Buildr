@@ -10,7 +10,7 @@ import { createApiClient, LocalSessionAdapter } from '../../../api';
 import type { ApiClient, ApiError, SessionAdapter } from '../../../api';
 import { parseEventFrame } from '../conversation-state';
 import type { AgentModelCustomConfigureModelCustomConfigure, AgentModelCustomDiscoveryModelCustomDiscovery, AgentModelCustomDiscoveryResultModelCustomDiscoveryResult } from '../../../../build/generated/agent-service-http-dto';
-import type { ModelAccount, ModelProviderView, CatalogModel, AttachmentView, ConnectionView, ConversationEvent, ConversationSummary, ConversationEntry, ConversationView, PendingConversation, PreparationView, ProviderId, SendInput, SendPreview, SupplementInput, SupplementResult } from '../types';
+import type { ModelAccount, ModelProviderView, CatalogModel, AttachmentView, ConnectionAccountImpact, ConnectionView, ConversationEvent, ConversationSummary, ConversationEntry, ConversationView, PendingConversation, PreparationView, ProviderId, SendInput, SendPreview, SupplementInput, SupplementResult } from '../types';
 
 export type CustomProviderConfigInput=Omit<AgentModelCustomConfigureModelCustomConfigure,'expectedRevision'>;
 export type CustomDiscoveryInput=AgentModelCustomDiscoveryModelCustomDiscovery;
@@ -102,6 +102,8 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     connect(provider: ProviderId, expectedRevision?: string) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(provider)}/connect`, post({expectedRevision})); },
     check(connection: ConnectionView) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/check`, post({expectedRevision: connection.revision})); },
     disconnect(connection: ConnectionView) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/disconnect`, post({expectedRevision: connection.revision})); },
+    connectionAccountImpact(id: string, signal?: AbortSignal) { return request<ConnectionAccountImpact>(`${appPath}/connections/${encodeURIComponent(id)}/account-impact`, {signal}); },
+    logoutConnection(connection: ConnectionView, switchAccount = false) { return changeModels<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/logout`, post({expectedRevision: connection.revision, ...(switchAccount ? {switchAccount: true} : {})})); },
     login(connection: ConnectionView) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/login-attempts`, post({expectedRevision: connection.revision})); },
     loginAttempt(connectionId: string, id: string, signal?: AbortSignal) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connectionId)}/login-attempts/${encodeURIComponent(id)}`, {signal}); },
     cancelLogin(connection: ConnectionView, id: string) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/login-attempts/${encodeURIComponent(id)}/cancel`, post({expectedRevision:connection.revision})); },

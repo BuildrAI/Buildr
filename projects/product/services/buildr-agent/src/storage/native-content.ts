@@ -3,19 +3,13 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { zstdDecompressSync } from 'node:zlib';
 import type { ConversationEntry } from '../contracts.ts';
-import type { NativeAttachmentContent, NativeContentSource, NativeContentValue, NativeTextPart, NativeToolContent } from '../native-content-contracts.ts';
+import type { ExecutorNativeContentSpec, NativeAttachmentContent, NativeContentSource, NativeContentValue, NativeTextPart, NativeToolContent } from '../native-content-contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
+import { nativeContentSpec } from '../executors/index.ts';
 
 export const nativeContentHash = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 export const maxNativeSourceBytes = 32 * 1024 * 1024;
 const maxDecoded = 128 * 1024 * 1024, cacheBudget = 32 * 1024 * 1024;
-const roots: Record<string, RegExp> = {
-  'claude-code': /^claude-config\/projects\/.+\.jsonl$/,
-  codex: /^codex-home\/sessions\/.+\.jsonl$/,
-  qoder: /^qoder-config\/projects\/.+\.jsonl$/,
-  'qoder-cn': /^qoder-cn-config\/projects\/.+\.jsonl$/,
-  dsh: /^dsh-home\/(?:sessions\/.+\/(?:session\.v4\.jsonl(?:\.zstd)?|attachments\/.+)|attachments\/v1\/objects\/[a-f0-9]{2}\/[a-f0-9]{64})$/,
-};
 const unavailable = () => new AgentServiceError('agent_native_content_unavailable', '原生正文缺失、变化或不可安全读取；已保留来源引用，不会重发操作。', 409);
 
 /** Pure display transforms, never interpreted as executable shell input. */
@@ -32,13 +26,13 @@ export function nativeValueText(value: unknown, format?: NativeContentValue['for
 }
 
 /** A stored address grants access only to a declared native content namespace. */
-export function nativeContentPath(root: string, provider: string, relative: string): string {
-  if (!roots[provider] || typeof relative !== 'string' || relative.includes('\\') || path.isAbsolute(relative)) throw unavailable();
-  const accountPrefix='model-access/accounts/native-qoder-cn/';
-  const prefix = provider==='qoder-cn'&&relative.startsWith(accountPrefix)?accountPrefix:`connections/${provider}/`;
+export function nativeContentPath(root: string, provider: string, relative: string, spec = nativeContentSpec(provider)): string {
+  if (!spec || typeof relative !== 'string' || relative.includes('\\') || path.isAbsolute(relative)) throw unavailable();
+  const accountPrefix = spec.accountConfigPrefix;
+  const prefix = accountPrefix && relative.startsWith(accountPrefix) ? accountPrefix : `connections/${provider}/`;
   if (!relative.startsWith(prefix)) throw unavailable();
   const local = relative.slice(prefix.length).replace(/^model-bindings\/[a-f0-9]{64}\//, '');
-  if (!roots[provider]!.test(local) || relative.split('/').some(part => !part || part === '.' || part === '..')) throw unavailable();
+  if (!spec.allowedPath.test(local) || relative.split('/').some(part => !part || part === '.' || part === '..')) throw unavailable();
   let current = root;
   for (const part of ['', ...relative.split('/')]) {
     if (part) current = path.join(current, part);
@@ -55,11 +49,20 @@ export class NativeContentReader {
   private readonly cache = new Map<string, { identity: string; value: unknown; bytes: number }>();
   private cacheBytes = 0;
   private readonly readTool?: (reference: NativeToolContent) => ConversationEntry | undefined;
-  constructor(root: string, readTool?: (reference: NativeToolContent) => ConversationEntry | undefined) { this.root = path.resolve(root); this.readTool = readTool; }
+  private readonly resolveSpec?: (provider: string) => ExecutorNativeContentSpec | undefined;
+  constructor(
+    root: string,
+    readTool?: (reference: NativeToolContent) => ConversationEntry | undefined,
+    resolveSpec?: (provider: string) => ExecutorNativeContentSpec | undefined,
+  ) {
+    this.root = path.resolve(root);
+    this.readTool = readTool;
+    this.resolveSpec = resolveSpec;
+  }
   private source(provider: string, source: NativeContentSource): unknown {
     if (!source || !Number.isSafeInteger(source.offset) || source.offset < 0 || !Number.isSafeInteger(source.length) || source.length < 1 ||
       source.length > maxNativeSourceBytes || !/^[a-f0-9]{64}$/.test(source.sha256)) throw unavailable();
-    const file = nativeContentPath(this.root, provider, source.path), before = fs.lstatSync(file);
+    const file = nativeContentPath(this.root, provider, source.path, this.resolveSpec ? this.resolveSpec(provider) : undefined), before = fs.lstatSync(file);
     if (source.offset + source.length > before.size) throw unavailable();
     const identity = JSON.stringify([before.dev, before.ino, before.size, before.mtimeMs, before.ctimeMs]);
     const key = JSON.stringify([provider, source]);

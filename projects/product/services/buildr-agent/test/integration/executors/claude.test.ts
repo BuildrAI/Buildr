@@ -358,7 +358,7 @@ test('Claude native auto-compaction keeps its summary and next turn on the selec
 
 test('Claude program readiness performs a tool-free handshake without model or subscription login', {timeout:60000}, async t=>{
  const f=await fixture(t),bare=await createClaudeExecutor().open({...f.options,gateway:undefined});
- try{assert.equal((await bare.inspectAccount()).status,'ready');assert.deepEqual(await bare.models(),[]);const login:LoginObservation[]=[];await bare.beginLogin(value=>login.push(value));assert.equal(login.at(-1)?.state,'failed');assert.equal(f.bodies.length,0);}finally{await bare.close();if(process.platform!=='win32')assert.equal(await bare.canReclaimStorage!(),true);}
+ try{const account=await bare.inspectAccount();assert.equal(account.status,'not-authenticated');assert.equal(account.label,undefined);assert.deepEqual(await bare.models(),[]);const login:LoginObservation[]=[];await bare.beginLogin(value=>login.push(value));assert.equal(login.at(-1)?.state,'failed');assert.equal(f.bodies.length,0);}finally{await bare.close();if(process.platform!=='win32')assert.equal(await bare.canReclaimStorage!(),true);}
 });
 
 test('Claude source authentication errors terminate the round without replay or model fallback', {timeout:60000}, async t=>{

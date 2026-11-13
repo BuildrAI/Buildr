@@ -1,6 +1,7 @@
 import {useState} from 'react';
 import {Button,Form,Input,Select,Space} from 'antd';
 import {DrawerShell} from '../../components/DrawerShell';
+import {executionAgentName} from '../../lib/model-picker.ts';
 import {CUSTOM_PROVIDER_PROTOCOLS,customProviderEndpoint,customProviderModelsUrl,DEFAULT_CUSTOM_MODELS_PATH,type CustomProviderProtocol} from './custom-provider-model';
 
 export interface ProviderConnectionOption {
@@ -27,16 +28,18 @@ export interface ProviderConnectionInitial extends ProviderConnectionInput {
   credentialConfigured?:boolean;
 }
 
-const connectionLabels:Record<string,string>={codex:'Codex',dsh:'DSH',qoder:'Qoder'};
-
 function providerInitial(provider:ProviderConnectionOption|undefined):ProviderConnectionInitial {
   if(!provider)return {kind:'custom',label:'',baseUrl:'',protocol:'chat-completions',modelsPath:DEFAULT_CUSTOM_MODELS_PATH,useApiKey:false};
   if(provider.custom)return {kind:provider.id,label:'',baseUrl:'',protocol:'chat-completions',modelsPath:DEFAULT_CUSTOM_MODELS_PATH,useApiKey:false};
   return {kind:provider.id,label:provider.label};
 }
 
-function providerLabel(provider:ProviderConnectionOption,configured:boolean):string {
-  if(provider.connectionId)return `${provider.label}（由${connectionLabels[provider.connectionId]??provider.connectionId}智能体接入）`;
+function connectionName(connectionId:string,connections?:ReadonlyArray<{id:string;label:string}>):string {
+  return connections?.find(item=>item.id===connectionId)?.label||executionAgentName(connectionId);
+}
+
+function providerLabel(provider:ProviderConnectionOption,configured:boolean,connections?:ReadonlyArray<{id:string;label:string}>):string {
+  if(provider.connectionId)return `${provider.label}（由${connectionName(provider.connectionId,connections)}智能体接入）`;
   if(configured&&!provider.custom)return `${provider.label}（已接入）`;
   return provider.label;
 }
@@ -45,6 +48,7 @@ type Props={
   open:boolean;
   initial?:ProviderConnectionInitial;
   providers:ProviderConnectionOption[];
+  connections?:ReadonlyArray<{id:string;label:string}>;
   configuredProviders?:string[];
   busy?:boolean;
   onClose():void;
@@ -52,7 +56,7 @@ type Props={
 };
 
 /** Provider onboarding shared by built-in declarations and user-declared endpoints; credentials never echo stored values. */
-export function ProviderConnectionDrawer({open,initial,providers,configuredProviders=[],busy,onClose,onSave}:Props){
+export function ProviderConnectionDrawer({open,initial,providers,connections,configuredProviders=[],busy,onClose,onSave}:Props){
   const [form]=Form.useForm<ProviderConnectionInput>();
   const fallback=providers.find(provider=>provider.custom)??providers[0];
   const kind=Form.useWatch('kind',form)??initial?.kind??fallback?.id??'custom';
@@ -69,14 +73,14 @@ export function ProviderConnectionDrawer({open,initial,providers,configuredProvi
   const locked=Boolean(busy)||saving;
   const configured=(id:string)=>id!=='custom'&&configuredProviders.includes(id);
   const options=[
-    {label:'订阅账号',options:providers.filter(item=>!item.custom&&item.authentication?.type!=='api-key').map(item=>({value:item.id,label:providerLabel(item,configured(item.id)),disabled:!editing&&(Boolean(item.connectionId)||configured(item.id))}))},
-    {label:'API Key',options:providers.filter(item=>!item.custom&&item.authentication?.type==='api-key').map(item=>({value:item.id,label:providerLabel(item,configured(item.id)),disabled:!editing&&configured(item.id)}))},
-    {label:'其他',options:providers.filter(item=>item.custom).map(item=>({value:item.id,label:providerLabel(item,false),disabled:false}))},
+    {label:'订阅账号',options:providers.filter(item=>!item.custom&&item.authentication?.type!=='api-key').map(item=>({value:item.id,label:providerLabel(item,configured(item.id),connections),disabled:!editing&&(Boolean(item.connectionId)||configured(item.id))}))},
+    {label:'API Key',options:providers.filter(item=>!item.custom&&item.authentication?.type==='api-key').map(item=>({value:item.id,label:providerLabel(item,configured(item.id),connections),disabled:!editing&&configured(item.id)}))},
+    {label:'其他',options:providers.filter(item=>item.custom).map(item=>({value:item.id,label:providerLabel(item,false,connections),disabled:false}))},
   ].filter(group=>group.options.length);
   const hint=custom
     ?'配置显示名称、协议、Base URL 与模型列表路径。'
     :provider?.authentication?.description
-      ??(provider?.connectionId?`由${connectionLabels[provider.connectionId]??provider.connectionId}智能体接入管理；请在“智能体”页完成登录。`
+      ??(provider?.connectionId?`由${connectionName(provider.connectionId,connections)}智能体接入管理；请在“智能体”页完成登录。`
         :provider?.authentication?.type==='oauth'?'保存后使用官方账号登录，并自动发现可用的模型与额度。'
           :'保存后开始官方登录，并自动发现可用的模型与额度。');
   const connect=!custom&&!apiKey&&!provider?.connectionId;

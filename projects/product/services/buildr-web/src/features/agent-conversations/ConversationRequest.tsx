@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, Checkbox, Radio } from 'antd';
 import { ConversationAnswerInput, answerHasContent, type AnswerValue, type AnswerMaterialUpload } from './ConversationAnswerInput';
-import { providerNames, type ConversationRequest as RequestView } from './types';
-import type { ConversationRun } from './types';
+import type { ConversationRequest as RequestView, ConversationRun } from './types';
+import { executionAgentName } from './conversation-options';
 import { questionStatus } from './conversation-interaction';
 type Props={request:RequestView;run?:ConversationRun;provider:string;busy:boolean;handoffTarget?:string;onReply:(answer:unknown)=>void;onUpload?:AnswerMaterialUpload;onRevealAnswer?:(element:HTMLElement)=>void};
 export function ConversationRequest({request,run,provider,busy,handoffTarget,onReply,onUpload,onRevealAnswer}:Props){
@@ -16,7 +16,7 @@ export function ConversationRequest({request,run,provider,busy,handoffTarget,onR
         <small className={handoffTarget?'ac-question-handoff-target':undefined}>{handoffTarget?<>交给 {handoffTarget}，结束原轮等待；其他草稿保留。</>:'仅提交此卡片的回答'}</small>
         <Button type="primary" aria-label={handoffTarget?'回答并交接':run?.status==='running'?'提交回答':'回答并继续'} autoInsertSpace={false} disabled={!valid||busy} loading={busy} onClick={()=>onReply(questions.length?answers:answer)}>{handoffTarget?'回答并交接':run?.status==='running'?'提交回答':'回答并继续'}</Button>
       </div>;
-  return <section className="ac-request" data-agent-request={request.id}><small>{providerNames[provider as keyof typeof providerNames]||provider} · {questionStatus(request,run)}</small>{!genericTitle&&<h3>{request.title}</h3>}{request.description&&<p>{request.description}</p>}
+  return <section className="ac-request" data-agent-request={request.id}><small>{(provider?executionAgentName(provider):'智能体')} · {questionStatus(request,run)}</small>{!genericTitle&&<h3>{request.title}</h3>}{request.description&&<p>{request.description}</p>}
     {request.kind==='approval'?<div className="ac-request-actions">{(request.options?.length?request.options:[{id:'deny',label:'拒绝'},{id:'allow-once',label:'允许本次'}]).map(option=><Button key={option.id} loading={busy} disabled={busy} type={/allow|accept|approve/i.test(option.id)?'primary':'default'} onClick={()=>onReply(option.id)}>{option.label}</Button>)}</div>:<>
       {questions.map((question,index)=><QuestionInput key={question.id} question={question} value={answers[question.id]} actions={index===questions.length-1?submitAction:undefined} busy={busy} onUpload={onUpload} onExpand={()=>setExpansion(value=>value+1)} onChange={value=>setAnswers(previous=>({...previous,[question.id]:value}))}/>)}
       {!questions.length&&<>{request.options?.length?<Radio.Group options={request.options.map(option=>({value:option.id,label:option.label}))} value={typeof answer==='string'?answer:undefined} onChange={event=>setAnswer(event.target.value as string)}/>:null}<ConversationAnswerInput actions={submitAction} label="补充回答" busy={busy} value={typeof answer==='string'?answer:!Array.isArray(answer)?answer.text:''} onUpload={onUpload} onChange={(text,images)=>setAnswer(images.length?{text,attachmentIds:images.map(image=>image.id)}:text)}/></>}

@@ -36,7 +36,60 @@ export interface AccountObservation {
   loginMethod?: string;
   diagnostic?: string;
 }
-export interface ExecutorDescriptor { id: ProviderId; label: string; capabilities: AgentCapabilities }
+export interface ExecutorPlatformLoginPolicy {
+  mode: 'required-for-sources';
+  expiredCode?: string;
+  expiredMessage?: string;
+  requiredCode?: string;
+  requiredMessage?: string;
+}
+export interface ExecutorNativeModelPolicy {
+  sourceProviders: readonly string[];
+  exclusive?: boolean;
+  exclusiveReason?: string;
+  binding: 'gateway-lease' | 'account-identity';
+  defaultSourceAccountId?: string;
+  accountConfigScope?: 'model-account';
+  readySourceSupersedesConnection?: boolean;
+  platformLogin?: 'required-for-sources' | ExecutorPlatformLoginPolicy;
+  /** Optional linked model account whose local check owns connection account observation. */
+  observeViaModelAccount?: string;
+}
+export interface ExecutorModelPolicy {
+  account: 'native' | 'source-required';
+  gateway?: {
+    protocol: 'responses' | 'chat-completions' | 'anthropic-messages';
+    sseKeepalive?: boolean;
+  };
+  native?: ExecutorNativeModelPolicy;
+}
+export interface ConnectionModelPolicyView {
+  account: 'native' | 'source-required';
+  gateway?: { protocol: 'responses' | 'chat-completions' | 'anthropic-messages' };
+  native?: {
+    sourceProviders: string[];
+    exclusive?: boolean;
+    binding: 'gateway-lease' | 'account-identity';
+    defaultSourceAccountId?: string;
+    platformLogin?: 'required-for-sources';
+  };
+}
+export interface ExecutorRuntimeTraits {
+  sharedNativeHome?: boolean;
+  upgradeVerification?: 'runtime' | 'account-probe';
+  transientAccountProbe?: boolean;
+  configurationIncludesPermission?: readonly string[];
+  isolateInterruptedContinuation?: boolean;
+  /** Native CLI stores login in OS user keyring shared with host CLI invocations; logout/switch coordinates active runs, send gate, and native logout. */
+  hostKeyringAuth?: boolean;
+}
+export interface ExecutorDescriptor {
+  id: ProviderId;
+  label: string;
+  capabilities: AgentCapabilities;
+  modelPolicy?: ExecutorModelPolicy;
+  runtimeTraits?: ExecutorRuntimeTraits;
+}
 export interface ExecutorBinding {
   identity: string;
   /** Opaque executor-owned provenance, persisted without vendor credentials. */
@@ -48,20 +101,25 @@ export interface ExecutorBinding {
 export interface ModelGatewayConfiguration {
   identity: string; baseUrl: string; apiKey: string;
   models: Array<AgentModel & { contextWindow?: number; maxOutputTokens?: number; vision?: boolean; tools?: boolean }>;
-  /** Same-account Qoder execution uses its native model route, retaining the source lease binding. */
-  nativeModel?: { provider: 'qoder' | 'qoder-cn'; id: string; accountIdentity: string };
+  /** Same-account native execution that retains the source lease binding (gateway-lease). */
+  nativeModel?: { provider: ProviderId; id: string; accountIdentity: string };
   /** Participant-persisted native home base (the dir containing codex-home/dsh-home). Shared per connection for new participants; the original lease root for pre-existing ones. */
   nativeHomeRoot?: string;
 }
+export interface ExecutorNativeSource {
+  accountId: string;
+  accountIdentity: string;
+  modelId: string;
+  model: AgentModel & { contextWindow?: number; maxOutputTokens?: number; vision?: boolean; tools?: boolean };
+}
 /** Private lifecycle metadata; implementations must never pass request or credential content. */
 export type ExecutionDiagnosticSink = (event: {event:string;[key:string]:unknown})=>void;
-export interface ExecutorOpenOptions {
+interface ExecutorOpenBaseOptions {
   diagnostics?: ExecutionDiagnosticSink;
   /** Profile-wide tool caches, supplied by default to every provider; never a native session/config HOME. */
   cacheRoot?: string;
   /** Service-owned instructions supplied to every executor, including future providers. */
   interaction?: { version: 'buildr-interaction/v1'; instructions: string };
-  gateway?: ModelGatewayConfiguration;
   nativeAccountConfigRoot?: string;
   /** Trusted original source identity, set only by an explicit verified program upgrade. */
   programSource?: string;
@@ -72,6 +130,10 @@ export interface ExecutorOpenOptions {
   signal?: AbortSignal;
   binding?: ExecutorBinding;
 }
+export type ExecutorOpenOptions = ExecutorOpenBaseOptions & (
+  | { gateway?: ModelGatewayConfiguration; nativeSource?: undefined }
+  | { gateway?: undefined; nativeSource?: ExecutorNativeSource }
+);
 export interface LoginObservation {
   state: 'initializing' | 'waiting-browser' | 'checking' | 'completed' | 'cancelled' | 'expired' | 'failed';
   url?: string;
@@ -192,6 +254,15 @@ export interface ExecutorSupplementInput {
 export interface ExecutorInputReceipt { executionRef: ExecutionRef; inputItemId?: string }
 /** Only a proven pre-admission rejection may leave input safe to send again. */
 export class ExecutorInputRejected extends Error {}
+/** Typed native transport/observation interruption; triggers the shared transport recovery path. */
+export class ExecutorObservationLost extends Error {
+  readonly scope: 'execution' | 'event';
+  constructor(scope: 'execution' | 'event', message = `executor_${scope}_observation_lost`) {
+    super(message);
+    this.name = 'ExecutorObservationLost';
+    this.scope = scope;
+  }
+}
 export interface AgentRuntime {
   /** Exact adapter configuration metadata; absent means not observed, never inferred. */
   readonly participationInstruction?: import('./participation-contracts.ts').ParticipationMatch;
@@ -211,6 +282,8 @@ export interface AgentRuntime {
   requestModel?(path: string, init?: RequestInit, expectedIdentity?: string): Promise<Response>;
   modelIdentity?(): Promise<string>;
   modelQuota?(): Promise<import('./model-access/contracts.ts').ModelQuotaObservation>;
+  inspectModelSource?(options?: { forceFresh?: boolean }): Promise<ExecutorModelSourceObservation>;
+  logoutAccount?(): Promise<void>;
   beginLogin(onUpdate: (observation: LoginObservation) => void): Promise<void>;
   cancelLogin(): Promise<void>;
   createContext(input: { cwd: string; permissionMode?: PermissionMode }): Promise<ContextRef>;
@@ -243,8 +316,8 @@ export interface AgentRuntime {
   close(): Promise<void>;
 }
 export interface AgentExecutor {
-  /** Locate durable native content without opening a runtime or making a model request. */
-  nativeContent?(input: import('./native-content-contracts.ts').NativeContentContext): import('./native-content-contracts.ts').NativeContentInventory | undefined;
+  /** Registered native content roots, safe path boundaries, and on-demand tool detail reader. */
+  nativeContent?: import('./native-content-contracts.ts').ExecutorNativeContent;
   /** Observe exact abandoned control resources without login, opening a channel, or proving operation success. */
   readReleasedControl?(input: {bindingIdentity:string;contextRef:ContextRef;executionRef:ExecutionRef;cwd:string}): Promise<boolean>;
 
@@ -281,7 +354,34 @@ export interface AgentExecutor {
   open(options: ExecutorOpenOptions): Promise<AgentRuntime>;
 }
 
+export interface ExecutorModelSourceObservation {
+  status: 'not-authenticated' | 'ready' | 'expired' | 'failed';
+  accountIdentity?: string;
+  explicitAccountIdentity?: boolean;
+  identityUnconfirmed?: boolean;
+  accountLabel?: string;
+  models: import('./model-access/contracts.ts').ModelOffering[];
+  quota?: import('./model-access/contracts.ts').ModelQuotaObservation;
+  diagnostic?: string;
+}
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'not-authenticated' | 'ready' | 'expired' | 'failed';
+export interface ConnectionSendGate {
+  state: 'open' | 'paused';
+  reason?: 'account-change' | 'account-unconfirmed';
+  diagnostic?: string;
+}
+export interface ConnectionAccountImpact {
+  connectionId: string;
+  hostKeyringAuth: boolean;
+  activeConversations: Array<{
+    conversationId: string;
+    workspaceId: string;
+    title: string;
+    runId: string;
+    status: RunStatus;
+  }>;
+  references: number;
+}
 export interface LoginAttemptView extends LoginObservation { id: string; generation: string; updatedAt: string }
 export interface ConnectionView {
   id: string;
@@ -296,6 +396,9 @@ export interface ConnectionView {
   diagnostic?: string;
   models: AgentModel[];
   capabilities: AgentCapabilities;
+  modelPolicy?: ConnectionModelPolicyView;
+  hostKeyringAuth?: boolean;
+  sendGate?: ConnectionSendGate;
   loginAttempt?: LoginAttemptView;
 }
 export interface ProgramUpgradeInput { expectedRevision: string; expectedVersion: string }
@@ -336,11 +439,11 @@ export interface ProgramCandidate {
 }
 export interface ProgramCatalog {
   candidates: ProgramCandidate[];
-  installation: { label: string; version: string; url: string; canInstall: boolean; diagnostic?: string };
+  installation: { label: string; version: string; url: string; canInstall: boolean; guidance?: string; diagnostic?: string };
 }
 export interface AgentProgramManager {
   discover(input: { provider: string; executable?: string; boundExecutable?: string; signal: AbortSignal }): Promise<ProgramCatalog>;
-  install(input: { provider: string; version?: string; signal: AbortSignal; progress(message: string): void }): Promise<string>;
+  install(input: { provider: string; version?: string; attemptId?: string; signal: AbortSignal; progress(message: string): void }): Promise<string>;
   isManaged?(provider: string, executable: string): boolean;
 }
 export type PreparationState = 'discovering' | 'selection-required' | 'installation-required' | 'installing' | 'connecting' | 'waiting-login' | 'ready' | 'failed' | 'cancelled';
@@ -361,6 +464,8 @@ export interface ConversationEntry {
   participation?: ParticipationObservation;
   /** Bounded tool preview; fetch the exact content revision when expanded. */
   detail?: {revision: string; live?: boolean};
+  /** True when the entry's executor registered on-demand native tool detail support. */
+  nativeDetail?: boolean;
   id: string;
   /** Native child output stays attached to its parent tool, retaining its original role. */
   parentToolId?: string;

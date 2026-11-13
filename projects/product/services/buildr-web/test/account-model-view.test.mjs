@@ -129,3 +129,63 @@ test('Claude API preserves an existing account without synthesizing a new placeh
  assert.equal(newModelSourceProvider('new-anthropic'),undefined);
  assert.equal(newModelSourceProvider('stale-unknown'),undefined);
 });
+
+test('新模型来源直接消费服务端 presentation 与独占原因，无需硬编码品牌映射',()=>{
+ const antigravity={
+  id:'native-antigravity',
+  identity:'user@example.com',
+  provider:'native-antigravity',
+  connectionId:'antigravity',
+  label:'Google 账号',
+  accountLabel:'user@example.com',
+  authType:'oauth',
+  modeLabel:'订阅',
+  revision:'r10',
+  enabled:true,
+  status:'ready',
+  sharing:{kind:'executor-exclusive',executors:['antigravity'],reason:'仅支持 Antigravity CLI 原生使用'},
+  presentation:{
+   vendorLabel:'Google',
+   sourceLabel:'Google 账号',
+   quotaLabel:'Google',
+   quotaUnavailableNote:'Google 暂未在 CLI 公开剩余百分比，请在 Google AI 订阅页核对。',
+   billing:{label:'Google One / AI 订阅',url:'https://one.google.com/about/google-ai-plans/'},
+  },
+  quota:{available:false,planLabel:'Google AI Pro'},
+  models:[{id:'gemini-2.5-pro',label:'Gemini 2.5 Pro',images:true,tools:true,enabled:true}],
+ };
+ const view=modelSourceViews([antigravity],[{id:'antigravity',label:'Antigravity',enabled:true,configPath:'/managed/antigravity'}]).find(item=>item.id==='native-antigravity');
+ assert.ok(view);
+ assert.equal(view.providerLabel,'Google 账号');
+ assert.equal(view.vendorLabel,'Google');
+ assert.equal(view.planLabel,'Google AI Pro');
+ assert.equal(view.exclusiveReason,'仅支持 Antigravity CLI 原生使用');
+ assert.equal(view.billingLabel,'Google One / AI 订阅');
+ assert.equal(view.billingUrl,'https://one.google.com/about/google-ai-plans/');
+ assert.match(view.quotaNote,/Google 暂未在 CLI 公开剩余百分比/);
+ assert.equal(view.program,'ready');
+});
+
+test('Google 个人账号覆盖免费、Pro、Ultra、档位不可读、身份不可确认及系统密钥环发送闸门',()=>{
+ const baseConn={id:'antigravity',label:'Antigravity',hostKeyringAuth:true,enabled:true,executable:'/managed/antigravity',configPath:'/managed/home'};
+ const baseAcc={
+  id:'native-antigravity',identity:'agy-epoch:1',provider:'native-antigravity',connectionId:'antigravity',
+  label:'Google',accountLabel:'Google 个人账号（本机已登录）',authType:'oauth',modeLabel:'个人账号',revision:'r1',enabled:true,status:'ready',
+  sharing:{kind:'executor-exclusive',executors:['antigravity'],reason:'受 Google 官方授权限制，Google 个人账号仅可在 Antigravity 中使用。'},
+  presentation:{vendorLabel:'Google',sourceLabel:'Google 个人账号',quotaLabel:'Google AI',quotaUnavailableNote:'Antigravity CLI 当前未公开订阅剩余额度与登录邮箱。',billing:{label:'查看 Google AI 订阅',url:'https://one.google.com/about/ai-plans'}},
+  models:[{id:'gemini-2.5-pro',label:'Gemini 2.5 Pro',images:true,tools:true,enabled:true}],
+ };
+ for(const plan of ['免费账号','Google AI Pro','Google AI Ultra','档位不可读']){
+  const view=modelSourceViews([{...baseAcc,quota:{available:false,planLabel:plan}}],[baseConn]).find(item=>item.id==='native-antigravity');
+  assert.equal(view.planLabel,plan);
+  assert.equal(view.hostKeyringAuth,true);
+  assert.equal(view.agentLabel,'Antigravity');
+ }
+ const unconfirmed=modelSourceViews([{...baseAcc,status:'failed',accountLabel:'身份不可确认',quota:{available:false,planLabel:'身份不可确认'},models:[],diagnostic:'无法确认当前 Google 个人账号身份'}],[{...baseConn,sendGate:{state:'paused',reason:'account-unconfirmed',diagnostic:'退出未能确认完成'}}]).find(item=>item.id==='native-antigravity');
+ assert.equal(unconfirmed.status,'failed');
+ assert.equal(unconfirmed.accountLabel,'身份不可确认');
+ assert.equal(unconfirmed.sendGate?.state,'paused');
+ assert.equal(unconfirmed.sendGate?.reason,'account-unconfirmed');
+ const loggedOutPrepared=modelSourceViews([{...baseAcc,status:'not-authenticated',models:[]}],[{...baseConn,enabled:false,status:'disconnected'}]).find(item=>item.id==='native-antigravity');
+ assert.equal(loggedOutPrepared.program,'ready');
+});

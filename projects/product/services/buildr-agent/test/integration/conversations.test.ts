@@ -20,6 +20,9 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { createAgentService } from '../../src/index.ts';
+import { createNativeExecutors } from '../../src/executors/index.ts';
+
+const builtinDescriptors = new Map(createNativeExecutors().map(executor => [executor.descriptor.id, executor.descriptor]));
 import { AgentServiceError } from '../../src/domain/agent-state.ts';
 import type { AgentExecutor, AgentRuntime, AgentServiceOptions, ContextRef, ConversationEntry, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation } from '../../src/contracts.ts';
 import { NativeRequestError } from '../../src/domain/error-diagnostic.ts';
@@ -322,7 +325,8 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
   let loginUpdate: ((value: LoginObservation) => void) | undefined;
   const capabilities = { text: true, images: Boolean(options.images), approval: true, questions: true, stop: true, resume: true, maxInputBytes: 128 * 1024 };
   const get = (ref: ContextRef) => { const context = contexts.get(ref.id); assert.ok(context, 'exact context must be restored'); return context; };
-  const executor: AgentExecutor = { descriptor: { id, label: id, capabilities }, async open(input) {
+  const builtin = builtinDescriptors.get(id);
+  const executor: AgentExecutor = { descriptor: { id, label: id, capabilities, ...(builtin?.modelPolicy ? { modelPolicy: builtin.modelPolicy } : {}), ...(builtin?.runtimeTraits ? { runtimeTraits: builtin.runtimeTraits } : {}) }, async open(input) {
     opens.push(input);
     let didSend = false; let closed = false;
     const runtime: AgentRuntime = {

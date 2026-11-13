@@ -82,7 +82,7 @@ export class PreparationApplication {
     if (candidates.length) executable = original.executable ?? candidates[0]!.executable;
     else if (input.install && !input.executable && !original.executable && attempt.view.catalog.installation.canInstall) {
       this.update(attempt, 'installing', '正在准备独立程序，不改动全局安装。');
-      executable = await this.programs.install({ provider: original.provider, version: attempt.view.catalog.installation.version, signal, progress: message => { if (!signal.aborted) this.update(attempt, 'installing', message); } });
+      executable = await this.programs.install({ provider: original.provider, version: attempt.view.catalog.installation.version, attemptId: attempt.view.id, signal, progress: message => { if (!signal.aborted) this.update(attempt, 'installing', message); } });
       signal.throwIfAborted();
       const installed = await this.programs.discover({ provider: original.provider, executable, signal });
       if (!installed.candidates.some(candidate => candidate.compatible)) fail('agent_install_verification_failed', '安装后程序验证未通过，未启用此接入。');

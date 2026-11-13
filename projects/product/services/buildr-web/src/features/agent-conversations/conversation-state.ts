@@ -193,13 +193,13 @@ export function participantAgentIds(participants:ConversationView['participants'
 }
 
 /** Actual participant bindings only; a draft or another participant's current model is not evidence. */
-export function participantExecutionPairs(conversation:ConversationView|null):Array<{key:string;provider:string;model?:string;connectionId?:string;modelAccountId?:string}> {
-  const pairs=new Map<string,{key:string;provider:string;model?:string;connectionId?:string;modelAccountId?:string}>();
+export function participantExecutionPairs(conversation:ConversationView|null):Array<{key:string;provider:string;label?:string;model?:string;connectionId?:string;modelAccountId?:string}> {
+  const pairs=new Map<string,{key:string;provider:string;label?:string;model?:string;connectionId?:string;modelAccountId?:string}>();
   for(const participant of conversation?.participants??[]){
     const current=conversation?.run?.participantId===participant.id?conversation.run:undefined;
     const model=participant.model||current?.model;
     const key=JSON.stringify([participant.provider,model??null]);
-    if(!pairs.has(key))pairs.set(key,{key,provider:participant.provider,model,connectionId:participant.connectionId,modelAccountId:participant.modelAccountId??current?.modelAccountId});
+    if(!pairs.has(key))pairs.set(key,{key,provider:participant.provider,...(participant.label?{label:participant.label}:{}),model,connectionId:participant.connectionId,modelAccountId:participant.modelAccountId??current?.modelAccountId});
   }
   return [...pairs.values()];
 }

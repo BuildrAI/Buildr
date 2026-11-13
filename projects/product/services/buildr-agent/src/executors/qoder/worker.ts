@@ -19,7 +19,8 @@ import { qoderBackgroundOutput } from './background-output.ts';
 import { qoderModel } from '../model-options.ts';
 import { resolvePermissionMode } from '../../domain/permission-mode.ts';
 import { safeDiagnostic } from '../../domain/agent-state.ts';
-import { checkedGateway, qoderGatewayModelId, qoderGatewayPolicy, qoderGatewaySettings, type ExecutorGateway } from '../model-gateway.ts';
+import { checkedGateway, type ExecutorGateway } from '../model-gateway.ts';
+import { qoderGatewayModelId, qoderGatewayPolicy, qoderGatewaySettings } from './gateway.ts';
 
 console.log = console.info = console.warn = console.error = console.debug = () => {};
 const send = (message: unknown) => { process.stdout.write(JSON.stringify(message) + '\n'); };
@@ -570,7 +571,7 @@ async function dispatch(method: string, params: any): Promise<any> {
       ({query,qodercliAuth,ProcessTransport,getSessionInfo,getSessionMessages,InMemorySessionStore,importSessionToStore,forkSession}=sdk);
       shutdownDaemon=sdk.shutdownDaemon;
     }
-    executable = params.executable; workInstructions = params.interaction?.instructions ?? interactionPolicy.instructions; gateway = checkedGateway(params.gateway); return {};
+    executable = params.executable; workInstructions = params.interaction?.instructions ?? interactionPolicy.instructions; gateway = checkedGateway(params.gateway, { executorId: 'qoder', nativeBinding: 'gateway-lease' }); return {};
   }
   if (!executable) throw new Error('qoder_worker_not_initialized');
   if (method === 'account') return await accountQuery(params.cwd, 'account');

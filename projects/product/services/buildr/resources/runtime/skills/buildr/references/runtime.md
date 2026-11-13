@@ -1,7 +1,7 @@
 # 智能体运行时（Agent Runtime）投射
 
 - 运行时身份 `runtimeId` 表示真实宿主；适配器（Adapter）身份 `adapterId` 表示文件约定。可靠知道品牌时传真实 `<agent>`，不知道时允许省略，不冒用 Codex 或其他品牌。
-- 默认文件约定为 `agents-standard`：原生 `AGENTS.md` 与一级 `.agents/skills/<skill-id>/SKILL.md`。`codex`、`dsh` 及未登记但语法有效的品牌使用标准；Claude Code、Cursor、Qoder、TRAE、TRAE Work、WorkBuddy 的专用例外继续保留。
+- 默认文件约定为 `agents-standard`：原生 `AGENTS.md` 与一级 `.agents/skills/<skill-id>/SKILL.md`。`codex`、`dsh`、`antigravity` 及未登记但语法有效的品牌使用标准；Claude Code、Cursor、Qoder、TRAE、TRAE Work、WorkBuddy 的专用例外继续保留。
 - 未指定时保留明确选择或唯一既有受管方式，没有既有方式才默认标准；多个不等价方式时，写入前要求明确选择。`--adapter <adapter-id>` 显式选择文件约定，未知值必须报错；选择后的冲突或执行失败不能改用另一实现，也不退回仅源资产操作。
 - `buildr runtime list --json` 输出标准默认值、静态适配器（Adapter）、已知品牌映射、目标目录、发现范围、生效方式与检查能力。它不是品牌白名单，也不证明当前宿主已经安装或加载。
 - `buildr init` 默认完成源资产、产品入口技能（Skill）、工作空间（Workspace）投射和最终诊断（Doctor）；只需源资产时显式使用 `buildr init --source-only`。`sync`、`render`、`skill install`、`skills render` 和 `runtime check` 可省略品牌。已知身份优先明确传入，详见当前命令帮助。

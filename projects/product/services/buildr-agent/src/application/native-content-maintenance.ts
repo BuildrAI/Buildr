@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { StoredConversation, StoredParticipant } from '../domain/agent-state.ts';
 import type { NativeContentInventory, NativeAttachmentContent } from '../native-content-contracts.ts';
-import { createNativeExecutors } from '../executors/index.ts';
+import { defaultNativeExecutors, nativeContentSpec } from '../executors/index.ts';
 import { nativeToolReference, nativeContentFiles, nativeCommandIndex, nativeCommandPrefix } from '../executors/native-content.ts';
 import { ConversationRepository } from '../persistence/conversation-repository.ts';
 import { ConversationEntryStore, type Content } from '../persistence/conversation-entry-store.ts';
@@ -13,7 +13,7 @@ import { observeStorageUse, safeStoragePath, safeStorageResource, storageInUse }
 
 import { configRoot, originalContext } from './native-content-resolver.ts';
 
-const executors = createNativeExecutors();
+const executors = defaultNativeExecutors();
 export interface NativeContentMaintenanceResult {
   inspected: number; tools: number; attachments: number; contentBytesSaved: number; attachmentBytesRemoved: number;
   deferred: number; databaseBytesReclaimed: number; diagnostic?: string;
@@ -48,19 +48,23 @@ export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolea
       const key=JSON.stringify([config,record.view.cwd,prefix]);let index=indexes.get(key);
       if(!index) {
         if(indexes.size>=8)return {reason:'context_budget'};
-        const provider=participant.provider,suffix=provider==='codex'?'codex-home/sessions':provider==='qoder'?'qoder-config/projects':provider==='qoder-cn'?'qoder-cn-config/projects':'dsh-home/sessions';
+        const spec=nativeContentSpec(participant.provider,executors);
+        if(!spec?.sessionRoots?.length||!spec.inventory)return {reason:'native_inventory_unavailable'};
         const input={root,configRoot:config,cwd:record.view.cwd,contextId:''};
-        const files=nativeContentFiles(input,path.join(config,suffix),file=>provider==='dsh'?/^session\.v4\.jsonl(?:\.zstd)?$/.test(path.basename(file)):file.endsWith('.jsonl'),6);
+        const files=spec.sessionRoots.flatMap(sessionRoot=>
+          nativeContentFiles(input,path.join(config,sessionRoot.relative),sessionRoot.matchAnySessionFile,sessionRoot.maintenanceDepth??6)
+            .map(file=>({file,extractContextId:sessionRoot.extractContextId})),
+        );
         if(files.length>128)return {reason:'native_lookup_scope_budget'};
         index=new Map();
-        for(const file of files) {
+        for(const {file,extractContextId} of files) {
           if(Date.now()>deadline)return {reason:'native_lookup_time_budget'};
-          const context=provider==='dsh'?path.basename(path.dirname(file)):path.basename(file).match(/([a-f0-9-]{36})\.jsonl$/)?.[1];if(!context)continue;
+          const context=extractContextId(file);if(!context)continue;
           let content:NativeContentInventory|undefined;
-          try{content=executors.find(executor=>executor.descriptor.id===provider)?.nativeContent?.({...input,contextId:context});}catch{continue;}
+          try{content=spec.inventory({...input,contextId:context});}catch{continue;}
           if(!content)continue;
           for(const item of content.records)for(const id of [...item.toolIds,...(item.executionId?['execution:'+item.executionId]:[])]){const values=index.get(id)??[];if(!values.includes(context))values.push(context);index.set(id,values);}
-          if(provider==='codex')for(const hash of nativeCommandIndex(content,prefix).keys()) {const id='input:'+hash,values=index.get(id)??[];if(!values.includes(context))values.push(context);index.set(id,values);}
+          if(spec.indexCommands)for(const hash of nativeCommandIndex(content,prefix).keys()) {const id='input:'+hash,values=index.get(id)??[];if(!values.includes(context))values.push(context);index.set(id,values);}
         }
         indexes.set(key,index);
       }
@@ -68,12 +72,12 @@ export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolea
       return values.length===1?{context:values[0]}:{reason:values.length?'native_context_ambiguous':'native_tool_not_found'};
     };
     const inventory=(record:StoredConversation,participant:StoredParticipant,context=participant.contextRef?.id) => {
-      inventoryReason='';const config=configRoot(root,record,participant);
+      inventoryReason='';const config=configRoot(root,record,participant,executors);
       if(!context){inventoryReason='native_context_missing';return;}
       if(!config){inventoryReason='configuration_unproven';return;}
       const key=JSON.stringify([config,context,record.view.cwd]);
       if (!inventories.has(key) && inventories.size>=8) {inventoryReason='context_budget';return;}
-      if (!inventories.has(key)) inventories.set(key,executors.find(executor=>executor.descriptor.id===participant.provider)?.nativeContent?.({root,configRoot:config,contextId:context,cwd:record.view.cwd}));
+      if (!inventories.has(key)) inventories.set(key,nativeContentSpec(participant.provider,executors)?.inventory?.({root,configRoot:config,contextId:context,cwd:record.view.cwd}));
       const value=inventories.get(key);if(!value)inventoryReason='native_inventory_unavailable';return value;
     };
     const observed=options.dryRun?{entry:0,attachment:''}:store.cursor();

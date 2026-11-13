@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import type { AgentExecutor } from '../../contracts.ts';
-import type { NativeContentContext, NativeContentInventory, NativeToolContent } from '../../native-content-contracts.ts';
+import { defineNativeContent, type NativeContentContext, type NativeContentInventory, type NativeToolContent } from '../../native-content-contracts.ts';
 import { nativeContentFiles, nativeContentImages, nativeContentRows } from '../native-content.ts';
 import { nativeToolContext, nativeToolRows } from '../native-tool-source.ts';
 import { parseReference, visibleText } from '../native-process.ts';
@@ -169,3 +169,16 @@ export const readClaudePersistedExecution:NonNullable<AgentExecutor['readPersist
     return {items:[...items.values()],observation:{status:ended?'idle':'unknown',executionRef:input.executionRef,tools:[...tools.values()],...(ended?{backgroundWork:false}:{}),...(!ended?{diagnostic:'agent_claude_terminal_unproven'}:{})},...(ended&&endedAt?{endedAt}:{})};
   }catch{return;}
 };
+
+export const claudeNativeContent = defineNativeContent({
+  allowedPath: /^claude-config\/projects\/.+\.jsonl$/,
+  sessionRoots: [{
+    relative: 'claude-config/projects',
+    matchSessionFile: (file, contextId) => path.basename(file) === contextId + '.jsonl',
+    matchAnySessionFile: file => file.endsWith('.jsonl'),
+    extractContextId: file => path.basename(file).match(/([a-f0-9-]{36})\.jsonl$/)?.[1],
+    depth: 3,
+  }],
+  inventory: claudeContent,
+  readTool: readClaudeTool,
+});

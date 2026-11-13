@@ -179,3 +179,14 @@ for(const provider of ['codex','dsh','qoder'])test(`${provider}折叠只显示�
  const opened=renderEntries([live],{groupsOpen:{'tool-group:native':true},toolsOpen:{'tool:native':true}});
  assert.match(opened,/private-live-output/);assert.doesNotMatch(opened,/正在读取完整工具记录/);
 });
+
+test('任意执行器通过 nativeDetail 声明控制折叠摘要脱敏与按需详情加载，不依赖品牌白名单',()=>{
+ const nativeSettled={...tool('settled'),provider:'antigravity',nativeDetail:true,input:'{"cmd":"echo secret-arg"}',text:'secret-output',detail:{revision:'b'.repeat(64)}};
+ const groupOpenedOnly=renderEntries([nativeSettled],{groupsOpen:{'tool-group:settled':true},toolsOpen:{'tool:settled':false}});
+ assert.doesNotMatch(groupOpenedOnly,/secret-arg|secret-output|正在读取完整工具记录/);
+ const stepOpened=renderEntries([nativeSettled],{groupsOpen:{'tool-group:settled':true},toolsOpen:{'tool:settled':true}});
+ assert.match(stepOpened,/正在读取完整工具记录/);
+ const nonNativeLive={...tool('plain'),provider:'custom-agent',nativeDetail:false,status:'running',text:'echo visible-command'};
+ const liveHtml=renderEntries([nonNativeLive],{active:true});
+ assert.match(liveHtml,/visible-command/);
+});

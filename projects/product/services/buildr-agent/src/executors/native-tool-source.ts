@@ -4,12 +4,20 @@ import {zstdDecompressSync} from 'node:zlib';
 import type {NativeContentContext,NativeToolContent} from '../native-content-contracts.ts';
 import {maxNativeSourceBytes,nativeContentPath} from '../storage/native-content.ts';
 
-export function nativeToolContext(root:string,reference:NativeToolContent,provider:'dsh'|'qoder'|'qoder-cn'|'claude-code'):NativeContentContext|undefined {
+export function nativeToolContext(
+  root:string,
+  reference:NativeToolContent,
+  provider:string,
+  options:{accountConfigPrefix?:string;contextIdPattern?:RegExp}={},
+):NativeContentContext|undefined {
   const session=reference.session;
+  const escaped=provider.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const configPattern=new RegExp('^connections/'+escaped+'(?:/model-bindings/[a-f0-9]{64})?$');
+  const accountConfig=options.accountConfigPrefix?.replace(/\/$/,'');
+  const contextPattern=options.contextIdPattern??/^[a-f0-9-]{36}$/;
   if(reference.version!==3||reference.provider!==provider||!session||!reference.nativeId||
-    !(new RegExp('^connections/'+provider+'(?:/model-bindings/[a-f0-9]{64})?$').test(session.config)||
-      provider==='qoder-cn'&&session.config==='model-access/accounts/native-qoder-cn')||
-    !(provider==='dsh'?/^session-[a-f0-9-]{36}$/:/^[a-f0-9-]{36}$/).test(reference.contextId))return;
+    !(configPattern.test(session.config)||(accountConfig!==undefined&&session.config===accountConfig))||
+    !contextPattern.test(reference.contextId))return;
   return {root,configRoot:path.join(root,session.config),contextId:reference.contextId,cwd:session.cwd};
 }
 

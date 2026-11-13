@@ -12,7 +12,7 @@ Agent 是 Buildr 功能的默认操作入口。在用户目标和已有授权内
 
 1. 确认目标工作空间（Workspace）；未指定时从当前目录定位组织根，`--target` 不指向服务（Service）代码仓。
    支持按归属选版的 npm 默认 `buildr` 会在业务命令解析前，按 `--target` 或当前目录所属工作空间（Workspace）的既有网页管理登记，自动选择发布版或开发版；不要求网页运行。普通工作继续使用 `buildr`，不保存另一份版本偏好，不手改管理记录或默认链接。子目录和工作树（Worktree）仅用于定位归属，具体命令的目标参数仍遵循自身帮助。`version --json` 报告所选实际版本；`update`、`installation status`、`web launcher` 等安装自身动作保持当前 npm 安装，显式开发入口和图形启动器（Launcher）保持绑定来源。旧 npm 入口需先升级才具备选择能力；所选来源不可用或归属冲突时按明确诊断恢复，不切换另一版绕过。
-2. `<agent>` 使用当前宿主的明确身份；用户指定其他运行时（Runtime）时遵从其选择。不得从技能路径、生成标记或 Doctor 检测结果推断宿主。身份未知可省略；`codex`、`dsh` 及未登记的有效品牌采用 `agents-standard`，已知专用例外保留。按需用 `buildr runtime list --json` 核对文件约定，而非等待品牌登记。显式 `--adapter` 必须存在；执行失败不借用其他适配器（Adapter）。
+2. `<agent>` 使用当前宿主的明确身份；用户指定其他运行时（Runtime）时遵从其选择。不得从技能路径、生成标记或 Doctor 检测结果推断宿主。身份未知可省略；`codex`、`dsh`、`antigravity` 及未登记的有效品牌采用 `agents-standard`，已知专用例外保留。按需用 `buildr runtime list --json` 核对文件约定，而非等待品牌登记。显式 `--adapter` 必须存在；执行失败不借用其他适配器（Adapter）。
 3. 已初始化且本次维护规则、技能等受管工作资产需要现状时，运行一次 `buildr doctor --agent <agent> --target <dir> --json`；已有同一现场的诊断直接复用。首次初始化按下表办理，不先制造缺失诊断。连接管理与数据库查询直接使用下表对应入口，不以 Doctor 为前置条件。
 4. 选择下表对应动作；采用内部流程、调整工作方式、修改或替换 Skill 行为时，先加载 `capability-adaptation` 判断是否触达或产生跨 Skill 稳定依赖边界。
 5. 受管工作资产写入后消费最新 Doctor 结果：完整 `init`、`sync`、组件（Component）安装或卸载已包含最终诊断；其他此类资产写入后再运行 Doctor。连接配置按对应入口核对保存与实际连接，不额外运行 Doctor。只有诊断指向专项问题或用户要求细查时追加 `commands check` 或 `runtime check`。文件准备成功不证明宿主安装、发现或当前会话激活已经验证。
@@ -20,7 +20,7 @@ Agent 是 Buildr 功能的默认操作入口。在用户目标和已有授权内
 | 当前目标 | 读取与动作 |
 |---|---|
 | 安装、检查或更新 Buildr | [安装与更新](references/asset-maintenance.md#安装与更新)；不猜目标工作空间（Workspace） |
-| 在 Buildr 内使用 Codex、DSH、Qoder、Qoder CN 或 Claude Code 对话，或配置内部对话账号 | [内部对话接入](references/agent-operations.md#内部对话与持续执行)；使用全局“对话”的独立账号与配置，先核对当前状态和真实程序，不复制桌面凭据 |
+| 在 Buildr 内使用 Codex、DSH、Qoder、Qoder CN、Claude Code 或 Antigravity 对话，或配置内部对话账号 | [内部对话接入](references/agent-operations.md#内部对话与持续执行)；使用全局“对话”的独立账号与配置，先核对当前状态和真实程序，不复制桌面凭据 |
 | 初始化工作空间（Workspace） | `buildr init --agent <agent> --target <dir> --name <name> --profile <personal\|team\|company>`；普通初始化默认登记到当前产品的本机 Buildr Web，随后完整准备标准或唯一既有方式并使用内置最终 Doctor；身份未知可省略 `--agent`。仅源资产使用 `init --source-only`，该模式不登记本机列表。登记不等于网页已打开；首次使用交接见 [资产维护](references/asset-maintenance.md#workspace--organization-root) |
 | 更新或同步工作空间（Workspace），或处理检出内容变化 | [工作空间更新与检出变化](references/asset-maintenance.md#工作空间更新与检出变化) |
 | 项目（Project）、服务（Service）、代码库实例（Repository Instance）、规则（Rule）、技能（Skill）、命令（Command）、组件（Component）或内置能力（Builtin）维护 | 按对象读取 [资产维护](references/asset-maintenance.md) 中对应小节；涉及组件（Component）成员时先核对整体所有权 |

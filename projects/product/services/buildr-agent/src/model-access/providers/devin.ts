@@ -12,7 +12,7 @@ const API = 'https://api.devin.ai', APP = 'https://app.devin.ai', SERVER = 'http
 const MODELS = '/exa.api_server_pb.ApiServerService/GetCliModelConfigs', STATUS = '/exa.seat_management_pb.SeatManagementService/GetUserStatus', CHAT = '/exa.api_server_pb.ApiServerService/GetChatMessage';
 export interface DevinProviderOptions { fetch?: typeof fetch; callbackPort?: number; loginTimeoutMs?: number; }
 export function createDevinModelProvider(options: DevinProviderOptions = {}): ModelProvider {
-  return { id: 'devin', label: 'Devin', singleton: true, async open(input) { return new DevinRuntime(new PrivateAccount(input.configRoot), options); } };
+  return { id: 'devin', label: 'Devin', singleton: true, sharing: { kind: 'gateway' }, inference: 'gateway', presentation: { vendorLabel: 'Devin', sourceLabel: 'Devin', quotaLabel: 'Devin' }, async open(input) { return new DevinRuntime(new PrivateAccount(input.configRoot), options); } };
 }
 class DevinRuntime implements ModelProviderRuntime {
   readonly protocol = 'chat-completions' as const;

@@ -26,6 +26,16 @@ export function createOpenAIApiModelProvider(options: OpenAIApiProviderOptions =
     authentication: { type: 'api-key', label: 'API Key', placeholder: 'sk-...', description: '只保存 API Key，使用 OpenAI 官方 API。' },
     group: { id: 'chatgpt', label: 'ChatGPT' },
     modeLabel: 'API Key',
+    sharing: { kind: 'gateway' },
+    inference: 'gateway',
+    presentation: {
+      vendorLabel: 'OpenAI',
+      sourceLabel: 'ChatGPT API',
+      quotaLabel: 'ChatGPT API',
+      apiKeyHint: 'sk-...',
+      quotaUnavailableNote: 'OpenAI API 不提供剩余余额读取；请在 OpenAI 平台查看用量与账单。',
+      billing: { url: 'https://platform.openai.com/settings/organization/billing/overview', label: '打开 OpenAI 账单' },
+    },
     async open(input) {
       return new OpenAIApiRuntime(new PrivateApiKey(input.configRoot), options);
     },

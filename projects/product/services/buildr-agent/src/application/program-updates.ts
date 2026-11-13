@@ -19,10 +19,14 @@ export class ProgramUpdates {
   private empty(connection: ConnectionView): ProgramUpdateView {
     let policy: ReturnType<typeof nativeProgramPolicy> | undefined;
     try { policy = nativeProgramPolicy(connection.provider); } catch { /* Custom executors need their own release adapter. */ }
+    const versionKind = policy?.versionDisplay ?? 'program';
+    const packageName = policy
+      ? (policy.distribution.kind === 'npm' ? policy.distribution.package.replace(/@[^@]+$/, '') : policy.package)
+      : connection.provider;
     return { connectionId: connection.id, revision: connection.revision, label: connection.label,
       provider: connection.provider, executable: connection.executable, managed: Boolean(connection.executable && this.programs.isManaged?.(connection.provider, connection.executable)), status: connection.executable ? 'unchecked' : 'not-connected',
-      versionKind: ['qoder','qoder-cn'].includes(connection.provider) ? 'package' : 'program',
-      packageName: policy?.package.replace(/@[^@]+$/, '') ?? connection.provider,
+      versionKind,
+      packageName,
       updateUrl: policy?.url ?? '',
       ...(!policy ? {status:'unknown' as const,diagnostic:'该程序尚未提供官方版本检查方式。'} : {}) };
   }
@@ -65,9 +69,9 @@ export class ProgramUpdates {
       view.compatible = isCompatibleProgram(connection.provider, candidate.version);
       const release = await this.release(connection.provider, connection.executable, controller.signal);
       view.latestVersion = release.latestVersion;
-      view.currentReleaseVersion = ['qoder','qoder-cn'].includes(connection.provider) ? release.currentReleaseVersion : candidate.version;
+      view.currentReleaseVersion = view.versionKind === 'package' ? release.currentReleaseVersion : candidate.version;
       view.releaseSource = release.source;
-      if (['qoder','qoder-cn'].includes(connection.provider) && !release.currentReleaseVersion) {
+      if (view.versionKind === 'package' && !release.currentReleaseVersion) {
         view.status = 'unknown'; view.diagnostic = '无法核实当前配套软件包版本，不能将程序版本与软件包版本直接比较。';
       } else {
         const comparison = compareVersions(view.currentReleaseVersion!, release.latestVersion);

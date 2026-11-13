@@ -97,7 +97,7 @@ export class ConversationEntryStore {
         }
         if(record.nativeTools?.[entry.id]) {
           const skeleton = {...entry,text: ''};
-          delete skeleton.input;delete skeleton.detail;
+          delete skeleton.input;delete skeleton.detail;delete skeleton.nativeDetail;
           const signature = JSON.stringify(skeleton), cached = nativePositions.get(entry);
           if (cached?.signature === signature && existing.has(cached.position.revision)) {
             entry.detail = {revision:cached.position.revision};
@@ -108,7 +108,7 @@ export class ConversationEntryStore {
           const reference = previous ? {...previous,entry:skeleton} : nativeTool?.(entry);
           if(reference?.version === 3) {
             const body = JSON.stringify(reference), revision = digest(body);
-            const compact = JSON.stringify({...reference.entry, detail: {revision}});
+            const compact = JSON.stringify({...reference.entry, detail: {revision}, nativeDetail: true});
             entry.detail = {revision};
             const position:Position={scope, entry, round: rounds[index]!.id, revision, compact: null, bytes: Buffer.byteLength(body), compactBytes: Buffer.byteLength(compact)};
             nativePositions.set(entry,{signature,position});
@@ -119,7 +119,7 @@ export class ConversationEntryStore {
           // 只用已捕获的本地内容保存这一条，并保留原生标记：之后可证明时仍升级为引用。
           // 若因此拒绝整次保存，这条记录会让该对话之后的每轮写入都失败。
           nativeIdentityUnproven = true;
-          delete entry.detail;
+          delete entry.detail;delete entry.nativeDetail;
         }
         const body = JSON.stringify(entry), revision = digest(body), bytes = Buffer.byteLength(body);
         let preview = JSON.stringify(this.compact(entry, revision,!!lazy?.untouched()));
@@ -222,7 +222,7 @@ export class ConversationEntryStore {
       catch { throw new AgentServiceError('agent_native_content_unavailable', '原生正文引用不可读；已保留记录，不会重发操作。', 409); }
       if(ref.version === 3 && digest(JSON.stringify(ref)) !== row.content_revision) throw new AgentServiceError('agent_entry_corrupt','原生工具引用的内容版本不一致。',409);
       if(ref.version === 3 && lazy) {
-        const entry = {...ref.entry, detail: {revision: row.content_revision}};
+        const entry = {...ref.entry, detail: {revision: row.content_revision}, nativeDetail: true};
         registerEntryRevision(entry, () => row.content_revision);
         return entry;
       }

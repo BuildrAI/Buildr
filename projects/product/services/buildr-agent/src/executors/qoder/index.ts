@@ -1,4 +1,4 @@
-import { qoderContent } from './content.ts';
+import { createQoderNativeContent } from './content.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import { generateQoderNativeTitle } from './model-title.ts';
 import { generateModelTitle } from '../model-title.ts';
@@ -15,14 +15,48 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 import { NativeRpc, releasedNativeControl, nativeBinding, bounded, closeOwnedProcess, findExecutable, inspectVersion, accountEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
 import {readQoderIdentity,requestQoderModel,inspectQoderLogin} from '../../model-access/providers/qoder.ts';
-import {qoderProduct,type QoderProductId} from './product.ts';
+import {qoderLoginExpiredMessage} from '../../model-access/providers/qoder-auth.ts';
+import {qoderCnModelAccountId,qoderProduct,type QoderProductId} from './product.ts';
 import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInputReceipt } from '../../contracts.ts';
-import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, type ExecutorGateway } from '../model-gateway.ts';
+import { checkedGateway, consumerBinding, gatewayModel, type ExecutorGateway } from '../model-gateway.ts';
+import { qoderGatewayPolicy } from './gateway.ts';
 import type { ExecutorForkInput } from '../../contracts.ts';
 const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+export function qoderExecutorDescriptor(productId: QoderProductId) {
+  const product = qoderProduct(productId);
+  const isCn = productId === 'qoder-cn';
+  return {
+    id: productId,
+    label: product.label,
+    capabilities,
+    modelPolicy: {
+      account: 'native' as const,
+      gateway: { protocol: 'chat-completions' as const },
+      native: {
+        sourceProviders: isCn ? ['qoder-cn', qoderCnModelAccountId] : ['qoder', 'native-qoder'],
+        exclusive: true,
+        binding: 'gateway-lease' as const,
+        ...(isCn
+          ? { defaultSourceAccountId: qoderCnModelAccountId, accountConfigScope: 'model-account' as const, readySourceSupersedesConnection: true }
+          : { observeViaModelAccount: 'native-qoder' }),
+        platformLogin: {
+          mode: 'required-for-sources' as const,
+          expiredCode: 'qoder_platform_login_expired',
+          expiredMessage: isCn ? `${product.label} 登录授权已失效，请重新登录。所选模型来源保持不变。` : qoderLoginExpiredMessage,
+          requiredCode: 'qoder_platform_login_required',
+          requiredMessage: `${product.label} 程序需要先完成基础平台登录；所选套餐不变，不要求使用 Qoder 自有模型。`,
+        },
+      },
+    },
+    runtimeTraits: {
+      upgradeVerification: (isCn ? 'account-probe' : 'runtime') as 'account-probe' | 'runtime',
+      ...(!isCn ? { transientAccountProbe: true } : {}),
+      isolateInterruptedContinuation: true,
+    },
+  };
+}
 export function createQoderExecutor(productId:QoderProductId='qoder'): AgentExecutor {
-  const product=qoderProduct(productId);
-  return { nativeContent: input => qoderContent(input,productId), readReleasedControl: input => releasedNativeControl(productId,input), storage: qoderStorage(), descriptor: { id: productId, label: product.label, capabilities }, open: options => QoderRuntime.open(options,productId) };
+  return { nativeContent: createQoderNativeContent(productId), readReleasedControl: input => releasedNativeControl(productId,input), storage: qoderStorage(), descriptor: qoderExecutorDescriptor(productId), open: options => QoderRuntime.open(options,productId) };
 }
 class QoderRuntime implements AgentRuntime {
   participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;
@@ -121,7 +155,7 @@ class QoderRuntime implements AgentRuntime {
   static async open(options: ExecutorOpenOptions, productId:QoderProductId='qoder'): Promise<QoderRuntime> {
     options.signal?.throwIfAborted();
     const product=qoderProduct(productId);
-    const gateway = checkedGateway(options.gateway);
+    const gateway = checkedGateway(options.gateway, { executorId: productId, nativeBinding: 'gateway-lease' });
     if(gateway && productId!=='qoder') throw new Error('qoder_cn_model_source_unsupported');
     const { home, temporary } = nativeHome(options.configRoot);
     // The native CLI owns this one Buildr login; model leases isolate execution, not credentials.

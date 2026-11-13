@@ -26,6 +26,7 @@ const nativeSessionCauses: Record<string, string> = {
   '原会话控制资源尚未释放，新要求使用独立会话': '原后台尚未释放原会话',
   '原上下文不可复用，使用新的原生会话': '原会话无法继续',
   '原轮控制已释放，新后台复用原生会话': '原后台已释放，新后台接回原会话',
+  '交互政策已更新，使用新的原生会话': '交互政策已更新',
 };
 
 /** 主对话只说明发生了什么、本轮在哪里继续；会话编号、后台代次与变化依据留在接续诊断。 */
@@ -115,8 +116,23 @@ export function conversationFailureReason(diagnostic?: string, fault?: Pick<Conv
   return { summary: '本轮执行因未识别的原因中断。', action: '请展开技术详情核对准确诊断；如持续出现，请保留该信息。' };
 }
 
-export function conversationModelWarning(ready: boolean, accountId: string | undefined, model: {available: boolean; enabled?: boolean} | undefined): string | undefined {
-  if (!ready || !accountId || model?.available) return;
+export function conversationModelWarning(
+  ready: boolean,
+  accountId: string | undefined,
+  model: {available: boolean; enabled?: boolean} | undefined,
+  priorChoice?: {accountId?: string; accountIdentity?: string; cleared?: boolean},
+  catalog?: ReadonlyArray<{accountId: string; accountIdentity?: string; available: boolean; enabled?: boolean}>,
+): string | undefined {
+  if (!ready) return;
+  if (priorChoice?.cleared && priorChoice.accountId && catalog) {
+    if (priorChoice.accountIdentity && catalog.some(item => item.accountId === priorChoice.accountId && item.accountIdentity && item.accountIdentity !== priorChoice.accountIdentity)) {
+      return '当前登录账号已变化，原会话不会在新账号下自动继续；请重新选择模型后再发送。';
+    }
+    if (!catalog.some(item => item.accountId === priorChoice.accountId && item.available && item.enabled !== false)) {
+      return '所选模型供应商当前不可用，请检查供应商状态或重新选择模型。';
+    }
+  }
+  if (!accountId || model?.available) return;
   return model?.enabled === false ? '所选模型已停用，请重新选择。' : '所选模型供应商当前不可用，请检查供应商状态。';
 }
 

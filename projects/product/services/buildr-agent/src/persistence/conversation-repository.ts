@@ -46,7 +46,17 @@ export class ConversationRepository {
   private readonly savedRecords = new WeakMap<StoredConversation,string>();
   private readonly nativeReader: NativeContentReader;
   private readonly nativeTool?: (record:StoredConversation,entry:ConversationEntry)=>NativeToolContent|undefined;
-  constructor(directory: string,nativeTool?:(record:StoredConversation,entry:ConversationEntry)=>NativeToolContent|undefined, readTool?:(reference:NativeToolContent)=>ConversationEntry|undefined) { this.nativeTool=nativeTool;this.nativeReader = new NativeContentReader(directory,readTool); this.directory = directory; this.filename = path.join(directory, 'conversations.sqlite'); }
+  constructor(
+    directory: string,
+    nativeTool?: (record: StoredConversation, entry: ConversationEntry) => NativeToolContent | undefined,
+    readTool?: (reference: NativeToolContent) => ConversationEntry | undefined,
+    resolveSpec?: (provider: string) => import('../native-content-contracts.ts').ExecutorNativeContentSpec | undefined,
+  ) {
+    this.nativeTool = nativeTool;
+    this.nativeReader = new NativeContentReader(directory, readTool, resolveSpec);
+    this.directory = directory;
+    this.filename = path.join(directory, 'conversations.sqlite');
+  }
 
   private open(write: boolean): DatabaseSync | undefined {
     if (!fs.existsSync(this.filename) && !write) return undefined;

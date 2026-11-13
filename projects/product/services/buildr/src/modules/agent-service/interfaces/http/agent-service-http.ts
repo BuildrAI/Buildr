@@ -131,10 +131,11 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (pathname === `${prefix}/connections` && request.method === 'GET') return result('connections', await service.connections.list());
       if (pathname === `${prefix}/pending-summary` && request.method === 'GET') return result('pendingSummary', await service.conversations.pendingSummary());
       if (pathname === `${prefix}/pending-requests` && request.method === 'GET') return result('conversations', await service.conversations.pending());
-      const match = pathname.slice(prefix.length).match(/^\/connections\/([a-z][a-z0-9-]*)(?:\/(connect|check|disconnect|login-attempts|preparation-attempts|program-upgrades)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
+      const match = pathname.slice(prefix.length).match(/^\/connections\/([a-z][a-z0-9-]*)(?:\/(connect|check|disconnect|account-impact|logout|login-attempts|preparation-attempts|program-upgrades)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
       if (!match) return null;
       const [, id, action, attemptId, cancel] = match;
       if (request.method === 'GET' && !action) return result('connection', await service.connections.read(id));
+      if (request.method === 'GET' && action === 'account-impact' && !attemptId) return result('connectionAccountImpact', await service.connections.accountImpact(id));
       if (request.method === 'GET' && action === 'preparation-attempts' && !attemptId) return result('currentPreparation', await service.connections.currentPreparation(id));
       if (request.method === 'GET' && action === 'preparation-attempts' && attemptId && !cancel) return result('preparation', await service.connections.preparation(id, attemptId));
       if (request.method === 'GET' && action === 'login-attempts' && attemptId && !cancel) return result('connection', await service.connections.loginAttempt(id, attemptId));
@@ -145,6 +146,10 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (action === 'preparation-attempts' && attemptId && cancel) { validate('empty', body); return result('preparation', await service.connections.cancelPreparation(id, attemptId)); }
       if (action === 'connect' && !attemptId) return result('connection', await service.connections.connect(id, validate('connect', body)));
       if (action === 'check' && !attemptId) return result('connection', await service.connections.check(id, validate('check', body)));
+      if (action === 'logout' && !attemptId) {
+        const parsed = validate('connectionLogout', body);
+        return result('connection', await service.connections.logout(id, parsed), parsed.switchAccount ? 202 : 200);
+      }
       if (action === 'disconnect' && !attemptId) return result('connection', await service.connections.disconnect(id, validate('revision', body)));
       if (action === 'login-attempts' && !attemptId) return result('connection', await service.connections.login(id, validate('revision', body)), 202);
       if (action === 'login-attempts' && attemptId && cancel) return result('connection', await service.connections.cancelLogin(id, attemptId, validate('revision', body)));

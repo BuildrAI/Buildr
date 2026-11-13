@@ -1,3 +1,4 @@
+import { modelSourceName } from '../../lib/model-picker.ts';
 import type { CatalogModel, ConnectionView } from './types';
 
 /** Use the same catalog labels as the selector; identifiers remain query keys, never guessed names. */
@@ -24,5 +25,5 @@ export function conversationModelSourceLabel(accountId:string,catalog:CatalogMod
   const provider=source?.provider.replace(/^native-/, '');
   if(!provider)return '供应商未记录';
   if(provider==='custom')return source?.accountLabel||'自定义供应商';
-  return ({codex:'ChatGPT',openai:'ChatGPT API',anthropic:'Claude API',devin:'Devin',dsh:'DeepSeek',qoder:'Qoder','qoder-cn':'Qoder CN',deepseek:'DeepSeek'} as Record<string,string>)[provider]??provider;
+  return source?.presentation?.quotaLabel||source?.presentation?.sourceLabel||modelSourceName(provider);
 }

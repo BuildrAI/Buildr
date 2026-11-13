@@ -4,11 +4,11 @@ import { useEffect } from 'react';
 import {ModelPicker} from '../../components/ModelPicker';
 import { Button, Popover, Select, Progress } from 'antd';
 import { RobotOutlined } from '@ant-design/icons';
-import { providerNames, type ConnectionView, type CatalogModel } from './types';
+import { type ConnectionView, type CatalogModel } from './types';
 import { contextReportWindow, contextUsedPercent, conversationUsageReport } from './conversation-state';
 import { ContextUsageSummary } from './ContextUsageSummary';
 import {rememberReasoningEffort,restoreReasoningChoice} from './conversation-preferences';
-import {modelSourceName,nextServiceTier,conversationTierChoice,conversationReasoningSelection,selectedConversationModel,catalogConversationOption,type ConversationChoice} from './conversation-options';
+import {executionAgentName,executorCompatibilityNotice,modelSourceName,nextServiceTier,conversationTierChoice,conversationReasoningSelection,selectedConversationModel,catalogConversationOption,type ConversationChoice} from './conversation-options';
 import {preparedAgentConnections} from '../../lib/model-picker.ts';
 
 type Props = {
@@ -20,9 +20,9 @@ type Props = {
   onChange(value:ConversationChoice,remember?:boolean):void;
 };
 
-/** Custom suppliers show the user-given name; built-in sources keep their fixed brand. */
+/** Custom suppliers show the user-given name; built-in sources prefer server presentation. */
 function catalogSourceName(source:CatalogModel):string {
-  return source.provider==='custom'?(source.accountLabel||'自定义供应商'):modelSourceName(source.provider);
+  return source.provider==='custom'?(source.accountLabel||'自定义供应商'):(source.presentation?.quotaLabel||source.presentation?.sourceLabel||modelSourceName(source.provider));
 }
 
 export function ConversationOptions({connections,modelCatalog,value,disabled,onChange,showAgent=true}:Props) {
@@ -53,9 +53,9 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
   return <div className="ac-execution-options">
     {showAgent&&<ConversationAgentSelect connections={preparedAgentConnections(connections)} value={value} modelCatalog={shared} disabled={disabled} onChange={onChange}/>}
     <Popover trigger={['hover','click']} placement="top" content={<ContextUsageSummary configuredWindow={configuredWindow} report={usageReport} reportWindow={reportWindow} reportLabel={reportLabel}/>}><Button type="text" size="small" className="ac-context-trigger" aria-label="上下文窗口与用量"><Progress type="circle" size={14} strokeWidth={15} percent={usedPercent??0} showInfo={false}/></Button></Popover>
-    <ModelPicker selectedKey={value.modelAccountId?'shared:'+value.modelAccountId+'::'+value.model:value.model||''} modelLabel={modelLabel} defaultLabel={value.model?defaultModel?.label:'请选择模型'} reasoning={reasoning} disabled={disabled} unavailable={unavailable} resetKey={value.connectionId}
+    <ModelPicker selectedKey={value.modelAccountId?'shared:'+value.modelAccountId+'::'+value.model:value.model||''} modelLabel={modelLabel} defaultLabel={value.model?defaultModel?.label:'请选择模型'} reasoning={reasoning} disabled={disabled} unavailable={unavailable} resetKey={value.connectionId} notice={executorCompatibilityNotice(original,candidates)}
       tierSwitchable={!!selectedShared?.serviceTiers&&selectedShared.serviceTiers.length>1} tierDisabled={disabled||selectedShared?.enabled===false||!selectedShared?.available} tierLabel={tier?.label} accelerated={accelerated}
-      groups={[...(original?.models.length&&nativeFallback?[{id:'native',label:'原生账号',options:[{value:'',label:'原生默认模型'},...original.models.map(item=>({value:item.id,label:item.label}))]}]:[]),...groups.map(group=>({...group,options:candidates.filter(item=>item.accountId===group.id).map(item=>catalogConversationOption(original?.provider,item))}))]}
+      groups={[...(original?.models.length&&nativeFallback?[{id:'native',label:'原生账号',options:[{value:'',label:'原生默认模型'},...original.models.map(item=>({value:item.id,label:item.label}))]}]:[]),...groups.map(group=>({...group,options:candidates.filter(item=>item.accountId===group.id).map(item=>catalogConversationOption(original,item))}))]}
       onCycleTier={()=>{if(selectedShared){const next=nextServiceTier(selectedShared.serviceTiers,value.serviceTier,selectedShared.defaultServiceTier);onChange(conversationTierChoice(value,selectedShared,next),true);}}}
       onSelectModel={model=>{const source=shared.find(item=>'shared:'+item.accountId+'::'+item.modelId===model);const next={...value,model:source?.modelId||model||undefined,modelAccountId:source?.accountId,modelAccountRevision:source?.accountRevision,modelAccountIdentity:source?.accountIdentity,serviceTier:source?.defaultServiceTier,reasoningEffort:undefined};onChange(restoreReasoningChoice(next,original,shared),true);}}
       onSelectEffort={effort=>{rememberReasoningEffort({...value,model:nativeModelId,...(selectedShared?{modelAccountId:selectedShared.accountId,modelAccountIdentity:selectedShared.accountIdentity}:{})},effort);onChange({...value,reasoningEffort:effort},true);}}/>
@@ -68,6 +68,6 @@ export function ConversationAgentSelect({connections,value,disabled,onChange,mod
   return (<Select className="ac-choice ac-provider-select" aria-label="下一位智能体" title="智能体" variant="borderless" size="small" suffixIcon={null}
       labelRender={({label})=><span className="ac-agent-label"><RobotOutlined aria-hidden="true"/>{label}</span>} value={value.connectionId||undefined} placeholder="选择智能体" disabled={disabled} popupMatchSelectWidth={false} placement="topLeft"
       classNames={{popup:{root:'ac-panel-popup ac-choice-popup'}}}
-      options={preparedAgentConnections(connections).map(item=>({value:item.id,label:providerNames[item.provider]||item.label}))}
+      options={preparedAgentConnections(connections).map(item=>({value:item.id,label:item.label||executionAgentName(item.provider)}))}
       onChange={connectionId=>{const connection=connections.find(item=>item.id===connectionId),catalog=modelCatalog??context?.modelCatalog??[];onChange(preferredConversationChoice({version:1,agent:{connectionId}},readConversationModelPreference(),connection?[connection]:[],catalog)??{connectionId},true);}}/>);
 }

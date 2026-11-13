@@ -24,6 +24,14 @@ test('目录未就绪不误报模型停用，真实停用与供应商不可用�
   assert.match(conversationModelWarning(true,'account',{available:false,enabled:false}),/已停用/);
   assert.match(conversationModelWarning(true,'account',{available:false,enabled:true}),/供应商.*状态/);
   assert.match(conversationModelWarning(true,'account',undefined),/供应商/);
+  assert.match(
+    conversationModelWarning(true,undefined,undefined,{accountId:'native-antigravity',accountIdentity:'agy-epoch:old',cleared:true},[{accountId:'native-antigravity',accountIdentity:'agy-epoch:new',available:true,enabled:true}]),
+    /登录账号已变化.*原会话不会在新账号下自动继续/,
+  );
+  assert.match(
+    conversationModelWarning(true,undefined,undefined,{accountId:'native-antigravity',accountIdentity:'agy-epoch:old',cleared:true},[]),
+    /供应商当前不可用/,
+  );
 });
 test('重试后的模型警告只取当前状态，恢复后去除旧错误，其他失败仍可见',()=>{
   const warning=conversationModelWarning(true,'account',{available:false});
@@ -103,6 +111,8 @@ test('原生会话交接与后台接管在主对话说明情况，身份与受�
  const replacement={...nativeSession,reason:'session-replacement',description:'用户执行选择变化',to:{contextId:'next-session',generation:'new'}};
  assert.equal(conversationNativeSessionSummary({...entry,nativeSession:replacement}),'执行选择已变化，本轮改在新的原生会话中继续。原执行与历史记录保留。');
  assert.equal(conversationNativeSessionDiagnostic({...entry,nativeSession:replacement}).find(item=>item.label==='原生会话')?.value,'same-session → next-session');
+ const policyReplacement={...nativeSession,reason:'session-replacement',description:'交互政策已更新，使用新的原生会话',to:{contextId:'policy-session',generation:'new'}};
+ assert.equal(conversationNativeSessionSummary({...entry,nativeSession:policyReplacement}),'交互政策已更新，本轮改在新的原生会话中继续。原执行与历史记录保留。');
 });
 
 test('后台变化按内容证据展示，不猜提交或操作者，历史诚实降级',()=>{

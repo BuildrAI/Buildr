@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {ToolStep} from './ConversationProcessBlock';
 import type {ConversationEntry} from './types';
 import type {AgentConversationHistoryPageHistoryPage as HistoryPage} from '../../../build/generated/agent-service-http-dto';
-import {Button,Drawer} from 'antd';
+import {Alert,Button,Drawer} from 'antd';
 import {CloseOutlined} from '@ant-design/icons';
 import type {SendPreview} from './types';
 import './conversation-handoff.css';
@@ -11,12 +11,13 @@ type Material=NonNullable<SendPreview['handoff']>;
 
 type LoadHistory=(input:{sourceId:string;roundId?:string;cursor?:number;limit?:number},signal?:AbortSignal)=>Promise<HistoryPage>;
 type LoadEntry=(entry:ConversationEntry,signal?:AbortSignal)=>Promise<ConversationEntry>;
-type Props={loadHistory?:LoadHistory;loadEntry?:LoadEntry;onOpenFile?:(path:string)=>void;open:boolean;side:'left'|'right';material:Material|null;received:boolean;delivery?:'unknown'|'failed';issue?:string;onChooseModel?():void;onContinue?():void;continueLabel?:string;continuing?:boolean;continueDisabled?:boolean;onClose():void};
-export function ConversationHandoffDrawer({loadHistory,loadEntry,onOpenFile,open,side,material,received,delivery,issue,onChooseModel,onContinue,continueLabel='确认交接并发送',continuing,continueDisabled,onClose}:Props){
+type Props={loadHistory?:LoadHistory;loadEntry?:LoadEntry;onOpenFile?:(path:string)=>void;open:boolean;side:'left'|'right';material:Material|null;received:boolean;delivery?:'unknown'|'failed';notice?:string;issue?:string;onChooseModel?():void;onContinue?():void;continueLabel?:string;continuing?:boolean;continueDisabled?:boolean;onClose():void};
+export function ConversationHandoffContent({loadHistory,loadEntry,onOpenFile,open,material,received,delivery,notice,issue,onChooseModel}:Pick<Props,'loadHistory'|'loadEntry'|'onOpenFile'|'open'|'material'|'received'|'delivery'|'notice'|'issue'|'onChooseModel'>){
  if(!material)return null;
  const {agent,model,changes,rounds,body:text,sourceThrough:through}=material;
- return <Drawer open={open} title="交接内容" placement={side} width="min(460px,100%)" getContainer={false} rootStyle={{position:'absolute'}} rootClassName="drawer-shell ac-handoff-drawer" closable={false} extra={<Button type="text" aria-label="关闭交接内容" icon={<CloseOutlined/>} onClick={onClose}/>} onClose={onClose} footer={!received&&!delivery&&onContinue?<Button type="primary" autoInsertSpace={false} loading={continuing} disabled={continueDisabled} onClick={onContinue}>{continueLabel}</Button>:null} destroyOnClose>
+ return <>
   <p className="ac-hd-material-intro">{agent} · {model}<span>{received?'已接收':delivery==='unknown'?'接收待确认':delivery==='failed'?'未接收':'待发送'}</span></p>
+  {notice&&<Alert className="ac-hd-policy-notice" type="info" showIcon message={notice}/>}
   {changes.length>0&&<dl className="ac-hd-execution-changes">{changes.map(change=><div key={change.kind}><dt>{change.label}</dt><dd>{change.before}<span>→</span><strong>{change.after}</strong></dd></div>)}</dl>}
   <p className="ac-hd-handoff-explanation">{delivery==='unknown'?'这是本次提交的资料，是否接收还未确认，请先核对。':delivery==='failed'?'本次资料尚未交付，原记录和草稿保留。':received?'已有对话、工作记录和成果已一并交接。你可以继续提出要求。':rounds.length?'本次交接可能建立新的原生会话（Session），已有对话、工作记录和成果会一并交接。确认后才会发送，也可以返回保留原会话。':'本次要求将发送给所选执行方。你可以返回补充后发送。'}</p>
   {issue&&<div className="ac-hd-user-action has-issue">{issue}{onChooseModel&&<Button type="link" size="small" onClick={onChooseModel}>选择模型</Button>}</div>}
@@ -32,6 +33,13 @@ export function ConversationHandoffDrawer({loadHistory,loadEntry,onOpenFile,open
   <details key={`${open}-${received}-${through}-${agent}-${model}`} className="ac-hd-material-more"><summary><span>{material.sourceOnly?'查看来源信息':'查看完整交接内容'}</span><small>{material.sourceOnly?'消息按轮读取，工具详情按需从原生会话读取。':'这是发送给新执行方的完整内容，无需逐项确认。'}</small></summary>
    <div className="ac-hd-send-body"><div className="ac-hd-send-body-label">{material.sourceOnly?'来源索引':received?'已发送原文':delivery?'本次提交原文':'待发送原文'}</div><pre>{text}</pre></div>
   </details>
+ </>;
+}
+
+export function ConversationHandoffDrawer({loadHistory,loadEntry,onOpenFile,open,side,material,received,delivery,notice,issue,onChooseModel,onContinue,continueLabel='确认交接并发送',continuing,continueDisabled,onClose}:Props){
+ if(!material)return null;
+ return <Drawer open={open} title="交接内容" placement={side} width="min(460px,100%)" getContainer={false} rootStyle={{position:'absolute'}} rootClassName="drawer-shell ac-handoff-drawer" closable={false} extra={<Button type="text" aria-label="关闭交接内容" icon={<CloseOutlined/>} onClick={onClose}/>} onClose={onClose} footer={!received&&!delivery&&onContinue?<Button type="primary" autoInsertSpace={false} loading={continuing} disabled={continueDisabled} onClick={onContinue}>{continueLabel}</Button>:null} destroyOnClose>
+  <ConversationHandoffContent loadHistory={loadHistory} loadEntry={loadEntry} onOpenFile={onOpenFile} open={open} material={material} received={received} delivery={delivery} notice={notice} issue={issue} onChooseModel={onChooseModel}/>
  </Drawer>;
 }
 

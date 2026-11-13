@@ -87,3 +87,108 @@ test('Task Feature复用Workspace Client与公共API类型', () => {
   assert.match(combined, /taskApi\.projectDocument/);
   assert.doesNotMatch(combined, /type ApiFailure|type WorkspacePayload|type ProjectDocument/);
 });
+
+function extractStringLiterals(content: string): Array<{ value: string; line: number }> {
+  const literals: Array<{ value: string; line: number }> = [];
+  let index = 0;
+  let line = 1;
+  while (index < content.length) {
+    const ch = content[index]!;
+    const next = content[index + 1];
+    if (ch === '\n') { line++; index++; continue; }
+    if (ch === '/' && next === '/') {
+      index += 2;
+      while (index < content.length && content[index] !== '\n') index++;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      index += 2;
+      while (index < content.length && !(content[index] === '*' && content[index + 1] === '/')) {
+        if (content[index] === '\n') line++;
+        index++;
+      }
+      index += 2;
+      continue;
+    }
+    if (ch === '\'' || ch === '"' || ch === '`') {
+      const quote = ch;
+      const startLine = line;
+      index++;
+      let value = '';
+      let hasInterpolation = false;
+      while (index < content.length && content[index] !== quote) {
+        if (content[index] === '\\') {
+          if (content[index + 1] === '\n') line++;
+          value += content[index + 1] ?? '';
+          index += 2;
+          continue;
+        }
+        if (quote === '`' && content[index] === '$' && content[index + 1] === '{') {
+          hasInterpolation = true;
+          index += 2;
+          let depth = 1;
+          while (index < content.length && depth > 0) {
+            if (content[index] === '\n') line++;
+            else if (content[index] === '{') depth++;
+            else if (content[index] === '}') depth--;
+            index++;
+          }
+          continue;
+        }
+        if (content[index] === '\n') line++;
+        value += content[index]!;
+        index++;
+      }
+      index++;
+      if (!hasInterpolation) literals.push({ value, line: startLine });
+      continue;
+    }
+    index++;
+  }
+  return literals;
+}
+
+test('Buildr Web 对话与公共模型库不出现执行方品牌字面量分支（历史名称兜底表除外）', () => {
+  const forbidden = new Set([
+    'codex',
+    'dsh',
+    'qoder',
+    'qoder-cn',
+    'claude-code',
+    'antigravity',
+    'native-codex',
+    'native-dsh',
+    'native-qoder',
+    'native-qoder-cn',
+    'native-claude-code',
+    'native-antigravity',
+  ]);
+  const allowedHistoricalFallbackFiles = new Set(['lib/model-picker.ts']);
+  const roots = ['features/agent-conversations', 'lib'];
+  const scanned: string[] = [];
+  const violations: string[] = [];
+  const visit = (directory: string) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const fullPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(fullPath);
+      else if (/\.tsx?$/.test(entry.name)) {
+        const relative = path.relative(webSource, fullPath).split(path.sep).join('/');
+        scanned.push(relative);
+        if (allowedHistoricalFallbackFiles.has(relative)) continue;
+        const content = fs.readFileSync(fullPath, 'utf8');
+        for (const literal of extractStringLiterals(content)) {
+          if (forbidden.has(literal.value)) {
+            violations.push(`${relative}:${literal.line} -> '${literal.value}'`);
+          }
+        }
+      }
+    }
+  };
+  for (const dir of roots) visit(path.join(webSource, dir));
+  assert.ok(scanned.length >= 25, 'expected agent-conversations and lib TypeScript files to be scanned');
+  assert.deepEqual(
+    violations,
+    [],
+    'buildr-web agent-conversations and lib must rely on server-declared presentation, compatibility, and nativeDetail metadata',
+  );
+});

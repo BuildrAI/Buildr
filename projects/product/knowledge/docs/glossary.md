@@ -90,7 +90,7 @@
 ## 智能体运行时（Agent Runtime）
 
 - 定义：承载智能体（Agent）工作，并按自身机制发现规则（Rule）、技能（Skill）和工具的宿主环境。
-- 适用范围：Buildr 已支持适配的 Codex、Claude Code、Cursor 等宿主。
+- 适用范围：Buildr 已支持适配的 Codex、DSH、Claude Code、Antigravity、Cursor 等宿主。
 - 避免混用：不是 Buildr 自身的 Node.js 进程；目录与投射标记不能证明当前宿主身份。
 - 来源：[技能体系](architecture/buildr-skill-system.md)。
 
@@ -133,7 +133,7 @@
 
 - 定义：带身份与上下文的智能体（Agent）工作单元，可以持续保存或临时使用；界面简称“会话”。
 - 适用范围：各家原生上下文与内部对话的参与者恢复。
-- 避免混用：Buildr 统一对话可以有多个参与者和原生会话；会话不是执行进程或本机 HTTP 请求会话。Codex `thread`、DSH 原生会话及 Qoder 原生会话保持各自身份和生命周期。
+- 避免混用：Buildr 统一对话可以有多个参与者和原生会话；会话不是执行进程或本机 HTTP 请求会话。Codex `thread`、DSH 原生会话、Qoder 原生会话、Claude Code 会话及 Antigravity ACP 会话保持各自身份和生命周期。
 - 来源：[智能体接入](architecture/agent-integration.md)、[内部对话规范](../../openspec/specs/agent-conversations/spec.md)。
 
 ## 统一对话（Conversation）
@@ -146,7 +146,7 @@
 ## 对话参与者（Conversation Participant）
 
 - 定义：某个独立接入在一段统一对话中的参与身份，绑定自己的原生上下文和已收到的可见历史位置。
-- 适用范围：Codex、DSH、Qoder 在同一对话中依次参与及换回恢复。
+- 适用范围：Codex、DSH、Qoder、Claude Code、Antigravity 在同一对话中依次参与及换回恢复。
 - 避免混用：共享可见历史不等于迁移隐藏推理、工具状态或原生权限；参与者不是独立任务（Task）。
 - 来源：[对话应用](../../services/buildr-agent/src/application/conversation-application.ts)。
 

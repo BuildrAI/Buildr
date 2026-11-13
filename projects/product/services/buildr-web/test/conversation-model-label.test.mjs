@@ -30,17 +30,35 @@ test('供应商名称来自已绑定账号的供应商；自定义供应商显�
  assert.equal(executionAgentName('dsh'),'DSH','DSH 作为执行智能体名称保留');
 });
 
-test('Qoder 与 Qoder CN 各自只接受本产品原生模型，并给出对应提示',async()=>{
-  const {qoderSourceNotice,qoderSourceUnsupported}=await import('../src/features/agent-conversations/conversation-options.ts');
-  assert.equal(qoderSourceUnsupported('qoder','native-qoder'),false);
-  assert.equal(qoderSourceUnsupported('qoder','native-qoder-cn'),true);
-  assert.equal(qoderSourceUnsupported('qoder-cn','native-qoder-cn'),false);
-  assert.equal(qoderSourceUnsupported('qoder-cn','native-qoder'),true);
-  assert.equal(qoderSourceUnsupported('qoder-cn','native-codex'),true);
-  assert.equal(qoderSourceUnsupported('codex','native-qoder-cn'),false);
-  assert.match(qoderSourceNotice('qoder-cn')??'',/^Qoder CN Agent 暂不支持其他供应商的模型/);
-  assert.match(qoderSourceNotice('qoder')??'',/^Qoder Agent 暂不支持其他供应商的模型/);
-  assert.equal(qoderSourceNotice('dsh'),undefined);
+test('执行器与模型来源兼容性优先采用服务端声明，缺失时回退策略或交由发送端校验',async()=>{
+  const {catalogConversationOption,catalogModelCompatibility,executorCompatibilityNotice}=await import('../src/features/agent-conversations/conversation-options.ts');
+  const qoder={id:'qoder',label:'Qoder',modelPolicy:{native:{sourceProviders:['native-qoder'],delivery:'runtime-selected',exclusive:true}}};
+  const qoderCn={id:'qoder-cn',label:'Qoder CN',modelPolicy:{native:{sourceProviders:['native-qoder-cn'],delivery:'runtime-selected',exclusive:true}}};
+  const codex={id:'codex',label:'Codex',modelPolicy:{native:{sourceProviders:['native-codex'],delivery:'runtime-selected',exclusive:false},gateway:{wireProtocols:['openai-responses','openai-chat-completions','anthropic-messages']}}};
+  const exclusiveSource={accountId:'native-antigravity',provider:'native-antigravity',modelId:'gemini-2.5-pro',label:'Gemini 2.5 Pro',available:true,inference:'none',sharing:{kind:'executor-exclusive',executors:['antigravity'],reason:'Google 个人账号凭据仅限 Antigravity CLI 原生使用。'},executorCompatibility:[
+    {connectionId:'antigravity',compatible:true},
+    {connectionId:'codex',compatible:false,reasonCode:'agent_model_source_unsupported',reason:'Google 个人账号凭据仅限 Antigravity CLI 原生使用。'},
+    {connectionId:'qoder',compatible:false,reasonCode:'agent_model_source_unsupported',reason:'Google 个人账号凭据仅限 Antigravity CLI 原生使用。'},
+  ]};
+  const qoderNative={accountId:'native-qoder',provider:'native-qoder',modelId:'q1',label:'Q1',available:true};
+  const qoderCnNative={accountId:'native-qoder-cn',provider:'native-qoder-cn',modelId:'qcn1',label:'QCN1',available:true};
+  const codexNative={accountId:'native-codex',provider:'native-codex',modelId:'gpt-5',label:'GPT-5',available:true,inference:'gateway'};
+  assert.equal(catalogModelCompatibility(qoder,qoderNative).compatible,true);
+  assert.equal(catalogModelCompatibility(qoder,qoderCnNative).compatible,false);
+  assert.equal(catalogModelCompatibility(qoderCn,qoderCnNative).compatible,true);
+  assert.equal(catalogModelCompatibility(qoderCn,qoderNative).compatible,false);
+  assert.equal(catalogModelCompatibility(qoderCn,codexNative).compatible,false);
+  assert.equal(catalogModelCompatibility(codex,qoderCnNative).compatible,true);
+  assert.equal(catalogModelCompatibility(codex,exclusiveSource).compatible,false);
+  assert.equal(catalogModelCompatibility('antigravity',exclusiveSource).compatible,true);
+  assert.equal(catalogModelCompatibility({id:'legacy-agent'},codexNative).compatible,true,'缺少兼容性字段时不提前误拒');
+  assert.match(executorCompatibilityNotice(qoder,[exclusiveSource,codexNative])??'',/^Qoder Agent 暂不支持选择其他供应商的模型/);
+  assert.match(executorCompatibilityNotice(qoderCn,[codexNative])??'',/^Qoder CN Agent 暂不支持选择其他供应商的模型/);
+  assert.equal(executorCompatibilityNotice(codex,[codexNative]),undefined);
+  const disabledOption=catalogConversationOption(codex,exclusiveSource);
+  assert.equal(disabledOption.label,'Gemini 2.5 Pro');
+  assert.equal(disabledOption.disabled,true);
+  assert.equal(disabledOption.title,'Google 个人账号凭据仅限 Antigravity CLI 原生使用。');
 });
 
 test('执行方下拉只包含本机已准备的智能体',async()=>{
@@ -66,10 +84,13 @@ test('自持源账号在未登录时仍显示，且按产品名标注',async()=>
   assert.equal(sources.some(source=>source.id.startsWith('2bb3d2b7')),false,'无归属的旧行仍隐藏');
 });
 
-test('Claude Code display names agree across execution selection and participant history',async()=>{
- const {providerNames}=await import('../src/features/agent-conversations/types.ts');
+test('服务端展示元数据优先于历史兜底名称，离线历史仍保持稳定显示',async()=>{
+ const {conversationRunIdentity}=await import('../src/features/agent-conversations/conversation-options.ts');
  assert.equal(executionAgentName('claude-code'),'Claude Code');
  assert.equal(executionAgentName('native-claude-code'),'Claude Code');
- assert.equal(providerNames['claude-code'],'Claude Code');
  assert.equal(modelSourceName('anthropic'),'Claude API');
+ const customCatalog=[{accountId:'native-antigravity',provider:'native-antigravity',modelId:'gemini-2.5-pro',label:'Gemini 2.5 Pro',presentation:{vendorLabel:'Google',sourceLabel:'Google 账号',quotaLabel:'Google'}}];
+ assert.equal(conversationModelSourceLabel('native-antigravity',customCatalog),'Google');
+ assert.equal(conversationRunIdentity({provider:'antigravity',model:'gemini-2.5-pro',modelAccountId:'native-antigravity'},{id:'antigravity',provider:'antigravity',label:'Antigravity',models:[]},customCatalog),'Antigravity · Google / Gemini 2.5 Pro');
+ assert.equal(conversationRunIdentity({provider:'claude-code',model:'claude-sonnet-4-6'},undefined,[]),'Claude Code · claude-sonnet-4-6');
 });

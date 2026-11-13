@@ -1,5 +1,5 @@
 import type {CatalogModel,ConnectionView} from './types.ts';
-import {choiceReasoningOptions,qoderSourceUnsupported,selectedConversationModel,type ConversationChoice,type PermissionMode} from './conversation-options.ts';
+import {catalogModelCompatibility,choiceReasoningOptions,selectedConversationModel,type ConversationChoice,type PermissionMode} from './conversation-options.ts';
 
 type PreferenceStorage=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
 export type ConversationModulePreference={version:1;agent?:{connectionId:string};permission?:{mode?:PermissionMode;workspaceId?:string;workspaces?:Record<string,PermissionMode>}};
@@ -101,7 +101,7 @@ export function rememberedConversationPermission(preference:ConversationModulePr
 function selectableModel(connection:ConnectionView,catalog:CatalogModel[],preference:ConversationModelPreference):{choice:ConversationChoice}|undefined{
  if(preference.model&&preference.modelAccountId){
   const source=catalog.find(model=>model.accountId===preference.modelAccountId&&model.modelId===preference.model&&model.available&&model.enabled!==false);
-  if(!source||qoderSourceUnsupported(connection.provider,source.provider)||preference.modelAccountIdentity&&preference.modelAccountIdentity!==source.accountIdentity)return;
+  if(!source||!catalogModelCompatibility(connection,source).compatible||preference.modelAccountIdentity&&preference.modelAccountIdentity!==source.accountIdentity)return;
   const tier=source.serviceTiers?.find(item=>item.id===preference.serviceTier)?preference.serviceTier:source.defaultServiceTier;
   const efforts=source.serviceTiers?.find(item=>item.id===tier)?.reasoningEfforts??source.reasoningEfforts;
   return {choice:{connectionId:connection.id,model:source.modelId,modelAccountId:source.accountId,modelAccountRevision:source.accountRevision,modelAccountIdentity:source.accountIdentity,serviceTier:tier,reasoningEffort:preference.modelAccountIdentity&&preference.modelAccountIdentity===source.accountIdentity&&preference.reasoningEffort&&efforts?.some(item=>item.id===preference.reasoningEffort)?preference.reasoningEffort:undefined} satisfies ConversationChoice};

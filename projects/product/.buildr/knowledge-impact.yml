@@ -1,22 +1,49 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: model-provider-byok
-change: model-provider-byok
+task: antigravity-subscription
+change: antigravity-cli-integration
 operation: assess
 impacts:
   - type: technical-architecture
     target: knowledge/docs/architecture/agent-integration.md
-    reason: 新增 BYOK 自定义供应商（用户声明 Base URL、四种 API 协议、可选 API Key、发现或手工模型列表），并把模型接入界面术语统一为“供应商”；文档需说明 Chat Completions、OpenAI Responses、Anthropic Messages 与 Gemini 的端点、认证、发现差异及 Gemini 转换边界，并按实现事实校准用词。
+    reason: 新增声明式执行方与模型来源兼容策略、官方发布清单归档准备、Antigravity CLI（agy acp）执行方与按对话进程隔离、Google 个人账号（oauth-personal）凭据边界及连接级发送闸门（sendGate）协调。
     status: updated
     sourceIdentities:
-      - openspec/changes/model-provider-byok/specs/custom-model-providers/spec.md
-      - openspec/changes/model-provider-byok/specs/model-provider-api-access/spec.md
-      - openspec/changes/model-provider-byok/design.md
-      - services/buildr-agent/src/model-access/application.ts
-      - services/buildr-agent/src/model-access/contracts.ts
-      - services/buildr-agent/src/model-access/providers/custom.ts
-      - services/buildr-agent/src/model-access/providers/private-api-key.ts
-      - services/buildr-agent/src/model-access/providers/openai-api.ts
-      - services/buildr-agent/src/model-access/protocols.ts
-      - services/buildr-agent/src/model-access/tool-stream-guard.ts
-      - services/buildr-web/src/features/agent-conversations/CustomProviderForm.tsx
+      - openspec/changes/agent-executor-capability-policy/design.md
+      - openspec/changes/antigravity-cli-integration/design.md
+      - openspec/changes/antigravity-cli-integration/specs/antigravity-cli-execution/spec.md
+      - services/buildr-agent/src/domain/model-policy.ts
+      - services/buildr-agent/src/executors/program-release.ts
+      - services/buildr-agent/src/executors/program-archive.ts
+      - services/buildr-agent/src/executors/antigravity/index.ts
+      - services/buildr-agent/src/model-access/providers/antigravity.ts
+      - services/buildr-web/src/features/agent-conversations/AccountModelManager.tsx
+  - type: product-overview
+    target: knowledge/docs/overview.md
+    reason: 全局内部对话已接入的执行方列表补充 Claude Code 与 Antigravity。
+    status: updated
+    sourceIdentities:
+      - services/buildr-agent/src/executors/index.ts
+  - type: terminology
+    target: knowledge/docs/glossary.md
+    reason: 智能体运行时、智能体会话与对话参与者的适用示例补充 DSH、Claude Code 与 Antigravity ACP 会话。
+    status: updated
+    sourceIdentities:
+      - services/buildr-agent/src/executors/antigravity/index.ts
+      - services/buildr/docs/agent-runtime-adapters.md
+  - type: code-map
+    target: knowledge/code-map/system-services-assets.md
+    reason: 智能体服务工程边界与声明式策略、官方清单安装及原生执行器目录说明同步 Antigravity。
+    status: updated
+    sourceIdentities:
+      - services/buildr-agent/src/executors/antigravity/index.ts
+      - services/buildr-agent/src/executors/program-release.ts
+      - services/buildr-agent/src/executors/program-archive.ts
+  - type: code-map
+    target: knowledge/code-map/technical-layers.md
+    reason: 内部对话技术层补充 Antigravity 按对话进程隔离权限与连接级协调者发送闸门定位，并在知识索引登记对应代码来源。
+    status: updated
+    sourceIdentities:
+      - services/buildr-agent/src/executors/antigravity/index.ts
+      - services/buildr-agent/src/model-access/providers/antigravity.ts
+      - knowledge/index.yml
 unresolvedItems: []

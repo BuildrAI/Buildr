@@ -27,7 +27,8 @@ export function ToolStep({entry,active,onOpenFile,open,onToggle,loadEntry}:{entr
   const detailKey=entry.id+':'+(entry.detail?.revision??'');
   const expanded=Boolean(open||visited);
   const remoteDetail=Boolean(entry.detail&&!entry.detail.live);
-  const fetchDetail=(['codex','dsh','qoder','claude-code'].includes(entry.provider??'')?Boolean(open):expanded)&&remoteDetail;
+  const hasNativeDetail=Boolean(entry.nativeDetail??entry.detail?.live);
+  const fetchDetail=(hasNativeDetail?Boolean(open):expanded)&&remoteDetail;
   useEffect(()=>{
     if(!fetchDetail||!entry.detail||!loadEntry)return;
     const controller=new AbortController();setDetail({key:detailKey});
@@ -38,7 +39,7 @@ export function ToolStep({entry,active,onOpenFile,open,onToggle,loadEntry}:{entr
   const visibleEntry=remoteDetail?full?.entry??entry:entry;
   const status=processEntryStatus(entry,active);
   const tool=processTool(visibleEntry);
-  const summary=['codex','dsh','qoder','claude-code'].includes(entry.provider??'')?processTool({...entry,text:'',input:undefined}):tool;
+  const summary=hasNativeDetail?processTool({...entry,text:'',input:undefined}):tool;
   const fileLink=(path:string)=><button key={path} type="button" className="ac-tool-file-link" title={path} aria-label={'查看文件 '+path} onClick={event=>{event.preventDefault();event.stopPropagation();onOpenFile(path);}}>{path.split(/[\\/]/).at(-1)}</button>;
   return <details className={'ac-step ac-step-tool'+(status==='failed'?' is-failed':'')+(status==='running'?' is-running':'')} data-entry-id={entry.id} open={open} onToggle={event=>{if(event.target!==event.currentTarget)return;if(event.currentTarget.open)setVisited(true);if(event.currentTarget.open!==open)onToggle?.(event.currentTarget.open);}}>
     <summary>
@@ -61,7 +62,7 @@ export function ToolStep({entry,active,onOpenFile,open,onToggle,loadEntry}:{entr
 function ToolGroup({entries,active,onOpenFile,open,onToggle,toolsOpen,onToolToggle,liveForce=false,loadEntry}:{entries:ConversationEntry[];active:boolean;onOpenFile:FileOpener;open:boolean;onToggle:(open:boolean)=>void;toolsOpen?:Record<string,boolean>;onToolToggle?:(id:string,open:boolean)=>void;liveForce?:boolean;loadEntry?:EntryLoader}){
   const [visited,setVisited]=useState(open);
   useEffect(()=>{if(open)setVisited(true);},[open]);
-  const tools=entries.map(entry=>processTool(['codex','dsh','qoder','claude-code'].includes(entry.provider??'')?{...entry,text:'',input:undefined}:entry));
+  const tools=entries.map(entry=>processTool((entry.nativeDetail??entry.detail?.live)?{...entry,text:'',input:undefined}:entry));
   const kinds=new Set(tools.map(tool=>tool.kind));
   const counts=new Map<string,number>();
   for(const tool of tools)counts.set(tool.action,(counts.get(tool.action)||0)+1);

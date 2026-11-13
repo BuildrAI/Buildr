@@ -2,7 +2,7 @@ import { regenerableToolCaches, toolCacheReclaimable } from '../../storage/tool-
 import { codexItem } from './items.ts';
 export { codexItem } from './items.ts';
 import { codexFindTurn, codexLatestTurn, codexThreadMetadata, codexTurnItems, codexTurns } from './pagination.ts';
-import { codexContent } from './content.ts';
+import { codexNativeContent } from './content.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import { nativeParticipation, participationRequests } from '../../domain/participation.ts';
 import { withExecutionFault } from '../../domain/execution-fault.ts';
@@ -52,7 +52,25 @@ function codexGatewayCatalog(gateway: ExecutorGateway) {
 }
 interface ActiveTurn { contextCompaction?: import('../../contracts.ts').ContextCompaction; commandStreams?: Map<string,{command:string;output:string}>; contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string; executionId: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
 export function createCodexExecutor(): AgentExecutor {
-  return { nativeContent: codexContent, storage: { transientDirectories: [...regenerableToolCaches, 'codex-home/.tmp/plugins'], diagnostics:codexDiagnosticLogs, canReclaim: (root, relative) => toolCacheReclaimable(root, relative) && codexCacheReclaimable(root, relative), snapshots: [{ relative: 'codex-home/.tmp/plugins', key: 'curated-plugins', identity: codexCuratedIdentity }] }, descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
+  return {
+    nativeContent: codexNativeContent,
+    storage: { transientDirectories: [...regenerableToolCaches, 'codex-home/.tmp/plugins'], diagnostics:codexDiagnosticLogs, canReclaim: (root, relative) => toolCacheReclaimable(root, relative) && codexCacheReclaimable(root, relative), snapshots: [{ relative: 'codex-home/.tmp/plugins', key: 'curated-plugins', identity: codexCuratedIdentity }] },
+    descriptor: {
+      id: 'codex',
+      label: 'Codex',
+      capabilities,
+      modelPolicy: {
+        account: 'native',
+        gateway: { protocol: 'responses' },
+      },
+      runtimeTraits: {
+        sharedNativeHome: true,
+        transientAccountProbe: true,
+        configurationIncludesPermission: ['devin'],
+      },
+    },
+    async open(options) { return await CodexRuntime.open(options); },
+  };
 }
 class CodexRuntime implements AgentRuntime {
   participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;
@@ -72,7 +90,7 @@ class CodexRuntime implements AgentRuntime {
   private constructor(bindingIdentity: string, rpc: NativeRpc, titleDirectory: string) { this.bindingIdentity = bindingIdentity; this.rpc = rpc; this.titleDirectory = titleDirectory; rpc.onMessage(message => this.message(message)); }
   static async open(options: ExecutorOpenOptions): Promise<CodexRuntime> {
     options.signal?.throwIfAborted();
-    const gateway = checkedGateway(options.gateway);
+    const gateway = checkedGateway(options.gateway, { executorId: 'codex' });
     const { home, temporary } = nativeHome(options.configRoot);
     const config = join(options.nativeAccountConfigRoot ?? options.configRoot, 'codex-home');
     const env = accountEnvironment(options.environment, home, temporary, { CODEX_HOME: config, ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);

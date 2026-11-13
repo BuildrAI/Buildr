@@ -83,6 +83,9 @@ export function createCustomModelProvider(options: CustomProviderOptions = {}): 
     id: 'custom',
     label: '自定义供应商',
     custom: true,
+    sharing: { kind: 'gateway' },
+    inference: 'gateway',
+    presentation: { vendorLabel: '自定义供应商' },
     async open(input) {
       if (!input.custom) throw new ModelAccessError('model_custom_config_missing', '自定义供应商缺少端点配置。', 409);
       return new CustomRuntime(input.custom, new PrivateApiKey(input.configRoot), options);

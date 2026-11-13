@@ -12,6 +12,7 @@ import { translateRequest, translateResponse, type OpaqueReasoning } from './pro
 import { modelFailure, upstreamFailure } from './errors.ts';
 import { modelQuotaFailure } from './quota.ts';
 import {guardToolArgumentStream} from './tool-stream-guard.ts';
+import { executorCompatibilityForSource, sourceCompatibility } from '../domain/model-policy.ts';
 
 const object = (value: unknown): ProtocolJson => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ProtocolJson : {};
 const safeId = (value: string) => /^[a-zA-Z0-9_-]{1,100}$/.test(value);
@@ -204,15 +205,35 @@ export class ModelAccessApplication {
     if (!row) throw new ModelAccessError('model_account_missing', '模型供应商不存在。', 404);
     return row;
   }
+  private executorDescriptors() {
+    const configured = this.options.executors;
+    return typeof configured === 'function' ? configured() : (configured ?? []);
+  }
   private view(row: ModelAccountView): ModelAccountView {
     const result = {...structuredClone(row),sourceEnabled:row.sourceEnabled!==false}, url = this.urls.get(row.id);
     const provider = this.providers.get(row.provider);
     if (provider?.authentication) result.authType = provider.authentication.type;
+    if (provider?.singleton) result.singleton = true;
     if (provider?.group) result.group = structuredClone(provider.group);
     if (provider?.custom && row.custom) result.modeLabel = customProtocolLabel(row.custom.protocol);
     else if (provider?.modeLabel) result.modeLabel = provider.modeLabel;
+    if (provider?.sharing) {
+      result.sharing = provider.sharing.kind === 'executor-exclusive'
+        ? { kind: 'executor-exclusive', executors: [...provider.sharing.executors], reason: provider.sharing.reason }
+        : { kind: 'gateway' };
+    }
+    if (provider?.inference) result.inference = provider.inference;
+    if (provider?.presentation) result.presentation = structuredClone(provider.presentation);
+    const executors = this.executorDescriptors();
+    if (executors.length) {
+      result.executorCompatibility = executorCompatibilityForSource(executors, {
+        provider: row.provider,
+        sharing: provider?.sharing,
+        inference: provider?.inference,
+      });
+    }
     result.models=result.models.map(model=>effectiveModel(model,this.preferences.get(row.id)?.[model.id]));
-    if (result.loginAttempt && url?.attemptId === result.loginAttempt.id) result.loginAttempt.url = url.url;
+    if (result.loginAttempt && result.loginAttempt.state === 'waiting-browser' && url?.attemptId === result.loginAttempt.id) result.loginAttempt.url = url.url;
     return result;
   }
   private selectionState(row: ModelAccountView): string {
@@ -258,6 +279,28 @@ export class ModelAccessApplication {
     row.status='not-authenticated';row.models=[];delete row.quota;delete row.accountLabel;delete row.observedAt;
     for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id&&!(input.abortActive===false&&lease.requests.size>0))this.release(lease.view.identity);
   }
+  /** Persist an explicit native logout while keeping the source row enabled for subsequent re-login. */
+  async clearAuthentication(id: string): Promise<ModelAccountView | undefined> {
+    await this.ready;
+    const row = this.rows.get(id);
+    if (!row) return undefined;
+    this.operations.set(id, (this.operations.get(id) ?? 0) + 1);
+    this.urls.delete(id);
+    if (row.loginAttempt && ['initializing', 'waiting-browser', 'checking'].includes(row.loginAttempt.state)) {
+      row.loginAttempt = { ...row.loginAttempt, state: 'cancelled', updatedAt: this.now };
+    }
+    row.identity = randomUUID();
+    row.status = 'not-authenticated';
+    row.models = [];
+    delete row.quota;
+    delete row.accountLabel;
+    delete row.observedAt;
+    delete row.diagnostic;
+    for (const lease of [...this.leasesByIdentity.values()]) {
+      if (lease.input.accountId === id) this.release(lease.view.identity);
+    }
+    return await this.changed(row);
+  }
   list(input:{includeDisabled?:boolean}={}) {
     if (this.storageError) throw this.storageError;
     return {
@@ -266,8 +309,16 @@ export class ModelAccessApplication {
         id: provider.id,
         label: provider.label,
         ...(provider.authentication ? { authentication: structuredClone(provider.authentication) } : {}),
+        ...(provider.singleton ? { singleton: true } : {}),
         ...(provider.group ? { group: structuredClone(provider.group) } : {}),
         ...(provider.modeLabel ? { modeLabel: provider.modeLabel } : {}),
+        ...(provider.sharing ? {
+          sharing: provider.sharing.kind === 'executor-exclusive'
+            ? { kind: 'executor-exclusive' as const, executors: [...provider.sharing.executors], reason: provider.sharing.reason }
+            : { kind: 'gateway' as const },
+        } : {}),
+        ...(provider.inference ? { inference: provider.inference } : {}),
+        ...(provider.presentation ? { presentation: structuredClone(provider.presentation) } : {}),
         ...(provider.custom ? { custom: true } : {}),
         ...(provider.connectionId ? { connectionId: provider.connectionId } : {}),
         ...(provider.linked ? { linked: true } : {}),
@@ -437,11 +488,12 @@ export class ModelAccessApplication {
       row.enabled = true; row.status = observation.status === 'failed' && observation.incomplete === true && row.status === 'ready' ? 'ready' : observation.status; if(observation.credentialConfigured!==undefined)row.credentialConfigured=observation.credentialConfigured; if(observation.label) row.accountLabel = observation.label; row.diagnostic = observation.diagnostic;
       if(observation.status==='ready') {
         const prefs=this.preferences.get(id)??{};
+        const enableByDefault=Boolean(this.providers.get(row.provider)?.enableDiscoveredModelsByDefault);
         // A curated custom catalog stays authoritative; inspections only refresh availability.
-        if(!observation.curatedModels){for(const model of observation.models)if(!Object.hasOwn(prefs,model.id))Object.defineProperty(prefs,model.id,{value:{enabled:false},enumerable:true,writable:true,configurable:true});row.models = structuredClone(observation.models);}
+        if(!observation.curatedModels){for(const model of observation.models)if(!Object.hasOwn(prefs,model.id))Object.defineProperty(prefs,model.id,{value:{enabled:enableByDefault&&model.kind!=='combination'&&!/^fusion(?:-|$)/i.test(model.id)},enumerable:true,writable:true,configurable:true});row.models = structuredClone(observation.models);}
         this.preferences.set(id,prefs); row.observedAt = this.now;
       }
-      if (id === 'native-qoder' && (observation.status === 'expired' || observation.status === 'not-authenticated')) {
+      if (this.providers.get(row.provider)?.clearCatalogOnUnauthenticated && (observation.status === 'expired' || observation.status === 'not-authenticated')) {
         row.models = [];
         delete row.quota;
         delete row.observedAt;
@@ -471,9 +523,9 @@ export class ModelAccessApplication {
         latest.loginAttempt={id:attemptId,updatedAt:this.now,state:checked.status==='ready'&&checked.models.length?'completed':'failed',...(checked.status==='ready'&&checked.models.length?{}:{diagnostic:checked.diagnostic??'登录后未取得可用模型，请重新检查。'})};
         await this.changed(latest);return;
       }
-      if (value.url) { try { const url = new URL(value.url); if (url.protocol === 'https:') this.urls.set(id, { attemptId, url: url.href }); } catch {} }
+      if (value.state === 'waiting-browser' && value.url) { try { const url = new URL(value.url); if (url.protocol === 'https:') this.urls.set(id, { attemptId, url: url.href }); } catch {} }
+      else this.urls.delete(id);
       current.loginAttempt = { id: attemptId, updatedAt: this.now, state: value.state, ...(value.diagnostic ? { diagnostic: value.diagnostic } : {}) };
-      if (['completed', 'failed', 'expired', 'cancelled'].includes(value.state)) this.urls.delete(id);
       await this.changed(current);
     };
     void this.runtime(id).then(runtime => runtime.beginLogin(value => { void update(value).catch(() => {}); })).catch(() => update({ state: 'failed', diagnostic: '登录未完成，请重新发起。' }).catch(() => {}));
@@ -567,7 +619,28 @@ export class ModelAccessApplication {
   catalog() {
     if (this.storageError) throw this.storageError;
     const models: CatalogModel[] = [];
-    for (const stored of this.rows.values()) { if(stored.sourceEnabled===false)continue; const row=this.view(stored); for (const model of row.models) models.push({ ...structuredClone(model), id: `${row.id}::${model.id}`, accountId: row.id, accountIdentity:row.identity, provider: row.provider, accountLabel: row.accountLabel || row.label, modelId: model.id, accountRevision: row.revision, available: row.enabled && row.status === 'ready' && model.enabled!==false, observedAt: row.observedAt }); }
+    for (const stored of this.rows.values()) {
+      if (stored.sourceEnabled === false) continue;
+      const row = this.view(stored);
+      for (const model of row.models) {
+        models.push({
+          ...structuredClone(model),
+          id: `${row.id}::${model.id}`,
+          accountId: row.id,
+          accountIdentity: row.identity,
+          provider: row.provider,
+          accountLabel: row.accountLabel || row.label,
+          modelId: model.id,
+          accountRevision: row.revision,
+          available: row.enabled && row.status === 'ready' && model.enabled !== false,
+          observedAt: row.observedAt,
+          ...(row.sharing ? { sharing: structuredClone(row.sharing) } : {}),
+          ...(row.inference ? { inference: row.inference } : {}),
+          ...(row.presentation ? { presentation: structuredClone(row.presentation) } : {}),
+          ...(row.executorCompatibility ? { executorCompatibility: structuredClone(row.executorCompatibility) } : {}),
+        });
+      }
+    }
     return { models };
   }
   private async encryptionKey() {
@@ -596,11 +669,25 @@ export class ModelAccessApplication {
     conflict(account.revision,input.expectedRevision);
     if(input.expectedIdentity!==undefined&&input.expectedIdentity!==account.identity) throw new ModelAccessError('model_account_identity_changed','套餐登录来源已变化，请建立新的执行上下文。');
     if (!account.enabled || account.status !== 'ready') throw new ModelAccessError('model_account_unavailable', '所选模型套餐当前不可用。');
+    const provider = this.providers.get(account.provider);
+    if (provider?.inference === 'none') {
+      throw new ModelAccessError('model_source_inference_unavailable', '此模型来源仅支持原生直通执行器，不提供网关推理。');
+    }
+    if (!input.agentId || !input.conversationId || !input.runId) throw new ModelAccessError('model_binding_invalid','模型绑定缺少准确执行身份。',400);
+    if (provider?.sharing?.kind === 'executor-exclusive' && !provider.sharing.executors.includes(input.agentId)) {
+      throw new ModelAccessError('model_source_executor_incompatible', provider.sharing.reason);
+    }
+    const executor = this.executorDescriptors().find(item => item.id === input.agentId);
+    if (executor) {
+      const compatibility = sourceCompatibility(executor, { provider: account.provider, sharing: provider?.sharing, inference: provider?.inference });
+      if (!compatibility.compatible) {
+        throw new ModelAccessError(compatibility.reasonCode ?? 'model_source_executor_incompatible', compatibility.reason ?? '当前执行器不支持所选模型来源。');
+      }
+    }
     const model = this.view(account).models.find(model => model.id === input.modelId);
     if(model?.enabled===false)throw new ModelAccessError('model_disabled','所选模型已停用，请重新选择。');
     const offering=model?selectedOffering(model,input.serviceTier):undefined; if (!offering) throw new ModelAccessError('model_unavailable', '所选模型不在账号当前目录中。');
     const quotaFailure = modelQuotaFailure(account, offering, Date.parse(this.now)); if (quotaFailure) throw quotaFailure;
-    if (!input.agentId || !input.conversationId || !input.runId) throw new ModelAccessError('model_binding_invalid','模型绑定缺少准确执行身份。',400);
     const identity = modelLeaseIdentity(account.id,account.identity,input.modelId,input.conversationId,input.agentId,modelConfiguration(offering,input.serviceTier));
     const existing = this.leasesByIdentity.get(identity); if (existing) { this.updateRun(identity,input.runId); return structuredClone(existing.view); }
     const baseUrl = await this.start(), token = randomBytes(32).toString('base64url'); await this.encryptionKey();
@@ -726,9 +813,9 @@ export class ModelAccessApplication {
       res.writeHead(response.status,{'Content-Type':response.headers.get('content-type') || 'application/json','Cache-Control':'no-store'});
       const reader = response.body.getReader();
       // A translated upstream may have no SSE pings during a long reasoning
-      // pause. Keep the Claude consumer alive without buffering model content.
+      // pause. Keep Anthropic Messages SSE consumers alive without buffering model content.
       let frameTail='',betweenFrames=true;
-      const heartbeat=protocol==='anthropic-messages'&&body.stream===true&&binding.agentId==='claude-code'&&response.headers.get('content-type')?.includes('text/event-stream')
+      const heartbeat=protocol==='anthropic-messages'&&body.stream===true&&binding.sseKeepalive!==false&&response.headers.get('content-type')?.includes('text/event-stream')
         ?setInterval(()=>{if(betweenFrames&&!controller.signal.aborted&&!res.destroyed&&!res.writableEnded&&!res.writableNeedDrain)res.write('event: ping\ndata: {"type":"ping"}\n\n');},10000):undefined;
       heartbeat?.unref();
       try { while (!controller.signal.aborted) {
@@ -767,7 +854,7 @@ export class ModelAccessApplication {
 export function createModelAccess(options: ModelAccessOptions) {
   const application = new ModelAccessApplication(options);
   return {
-    ensureLinked: () => application.ensureLinked(), invalidate: (id:string,input?:{abortActive?:boolean}) => application.invalidate(id,input),
+    ensureLinked: () => application.ensureLinked(), invalidate: (id:string,input?:{abortActive?:boolean}) => application.invalidate(id,input), clearAuthentication: (id: string) => application.clearAuthentication(id),
     accounts: { list: (input?:{includeDisabled?:boolean}) => application.list(input), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string;custom?:CustomProviderConfigureInput}) => application.add(input), configure: (id:string,input:{expectedRevision:string;apiKey:string}) => application.configure(id,input), configureCustom: (id:string,input:CustomProviderConfigureInput) => application.configureCustom(id,input), discoverCustom: (input:CustomProviderDiscoveryInput) => application.discoverCustom(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input), remove: (id:string,input:{expectedRevision:string}) => application.remove(id,input) },
     catalog: { list: () => application.catalog() },
     activity: () => application.activity(),

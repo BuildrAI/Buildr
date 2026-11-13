@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { readQoderIdentity, requestQoderModel, inspectQoderLogin } from '../../model-access/providers/qoder.ts';
 import { AcpClient, type AcpServerRequest } from '../qoder/acp.ts';
-import { qoderContent } from '../qoder/content.ts';
+import { createQoderNativeContent } from '../qoder/content.ts';
+import { qoderExecutorDescriptor } from '../qoder/index.ts';
 import { qoderProduct } from '../qoder/product.ts';
 import { qoderStorage } from '../qoder/storage.ts';
 import { qoderForm } from './forms.ts';
@@ -15,7 +16,8 @@ import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { accountEnvironment, findExecutable, inspectVersion, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, bounded, closeOwnedProcess, releasedNativeControl } from '../native-process.ts';
-import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, type ExecutorGateway } from '../model-gateway.ts';
+import { checkedGateway, consumerBinding, gatewayModel, type ExecutorGateway } from '../model-gateway.ts';
+import { qoderGatewayPolicy } from '../qoder/gateway.ts';
 import { generateModelTitle } from '../model-title.ts';
 import { generateQoderNativeTitle } from '../qoder/model-title.ts';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -124,7 +126,7 @@ class QoderCnRuntime implements AgentRuntime {
 
   static async open(options: ExecutorOpenOptions): Promise<QoderCnRuntime> {
     options.signal?.throwIfAborted();
-    const gateway = checkedGateway(options.gateway);
+    const gateway = checkedGateway(options.gateway, { executorId: 'qoder-cn', nativeBinding: 'gateway-lease' });
     // The CN CLI selects native account models; a lease without a CN native model has no route here.
     if (gateway && gateway.nativeModel?.provider !== 'qoder-cn') throw new Error('qoder_cn_model_source_unsupported');
     const { home, temporary } = nativeHome(options.configRoot);
@@ -930,12 +932,12 @@ function quotaMessage(message: string): string {
 
 export function createQoderCnExecutor(): AgentExecutor {
   return {
-    nativeContent: input => qoderContent(input, 'qoder-cn'),
+    nativeContent: createQoderNativeContent('qoder-cn'),
     readReleasedControl: input => releasedNativeControl('qoder-cn',input),
     readPersistedExecution: input => readQoderCnPersistedExecution(input),
     readSupplementReceipt: input => readQoderCnSupplementReceipt(input),
     storage: qoderStorage(),
-    descriptor: { id: 'qoder-cn', label: product.label, capabilities },
+    descriptor: qoderExecutorDescriptor('qoder-cn'),
     open: options => QoderCnRuntime.open(options),
   };
 }

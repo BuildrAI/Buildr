@@ -70,10 +70,10 @@ export class ProgramUpgrades {
     const checked=(await this.options.checks.check({connectionId:id})).programs.find(item=>item.connectionId===id)!;
     signal.throwIfAborted();this.stillBound(attempt);
     if (checked.latestVersion!==view.expectedVersion || !checked.currentVersion) fail('agent_program_update_target_changed','官方发布版本或当前程序已变化，请重新检查。',409);
-    const previous=['qoder','qoder-cn'].includes(observed.provider)?checked.currentReleaseVersion:checked.currentVersion;
+    const previous=checked.versionKind==='package'?checked.currentReleaseVersion:checked.currentVersion;
     const order=previous?compareVersions(previous,view.expectedVersion):null;
     if (order!==null && order>0 || order===0 && checked.managed) fail('agent_program_update_not_newer','目标版本不高于当前版本，无需更新。',409);
-    const executable=await this.options.programs.install({provider:observed.provider,version:view.expectedVersion,signal,progress:message=>this.update(attempt,'downloading',message)});
+    const executable=await this.options.programs.install({provider:observed.provider,version:view.expectedVersion,attemptId:view.id,signal,progress:message=>this.update(attempt,'downloading',message)});
     signal.throwIfAborted();this.stillBound(attempt);
     const catalog=await this.options.programs.discover({provider:observed.provider,boundExecutable:executable,signal});
     const candidate=catalog.candidates.find(item=>item.compatible&&item.version);

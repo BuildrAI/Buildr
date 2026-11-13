@@ -27,6 +27,11 @@ export function safeDiagnostic(error: unknown): string {
   const code = error instanceof Error ? error.message.split(':')[0] : '';
   const messages: Record<string, string> = {
     agent_model_source_authentication_failed:'所选模型来源认证失败，请在模型页核对账号或 API Key；本次请求不会自动重试或切换模型。',
+    agent_model_source_changed:'当前登录账号已变化或身份无法确认，旧对话不会在其他账号下继续执行；请重新选择模型。原输入已保留。',
+    antigravity_model_unavailable:'所选模型不在当前 Antigravity 账号的可用模型中，本次模型调用未发出。请刷新账号模型后重新选择；原输入已保留。',
+    antigravity_reasoning_unavailable:'当前 Antigravity 模型不支持所选思考深度，本次模型调用未发出。请改选已支持的档位；原输入已保留。',
+    antigravity_permission_unavailable:'当前 Antigravity 接入未能应用所选权限模式，本次模型调用未发出；原输入已保留。',
+    antigravity_version_unsupported:'当前接入接受 Antigravity CLI 1.x.x，仍需通过实际连接握手检查。',
     agent_claude_version_unsupported:'Claude 执行程序版本不在兼容范围（>=2.1.322 <3），请检查独立程序。',
     agent_claude_execution_failed:'Claude 执行未完成，请查看本轮模型与工具诊断；不会自动更换模型。',
     agent_claude_observation_lost:'Claude 执行观察已中断，正在核对原执行；不会重发原指令。',

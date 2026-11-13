@@ -1,6 +1,6 @@
 import { diagnosticCode } from '../../storage/execution-log.ts';
 import { regenerableToolCaches, toolCacheReclaimable } from '../../storage/tool-cache.ts';
-import { dshContent } from './content.ts';
+import { dshNativeContent } from './content.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import { withExecutionFault } from '../../domain/execution-fault.ts';
 import { readFile, writeFile, rm, realpath } from 'node:fs/promises';
@@ -40,7 +40,7 @@ export function dshGatewayEffort(gateway: ExecutorGateway, modelId?: string, eff
 }
 /** An additive overlay owns only the Buildr route; the native profile stays intact. */
 export async function writeGatewayPatch(directory: string, gateway: ExecutorGateway): Promise<string> {
-  checkedGateway(gateway);
+  checkedGateway(gateway, { executorId: 'dsh' });
   const filename = join(directory, 'buildr-model-gateway.json');
   const models = dshGatewayModels(gateway);
   await writeFile(filename, JSON.stringify([{ id: 'llm-pi-ai', name: '@deepseek-ai/dsh-llm-pi-ai', config: { providers: { 'buildr-models': { displayName: 'Buildr', api: 'openai-responses', baseURL: gateway.baseUrl.replace(/\/$/, ''), apiKeyEnv: 'BUILDR_MODEL_GATEWAY_KEY', models } } } }]), { mode: 0o600 });
@@ -52,7 +52,28 @@ export function dshCommandDeadlinePatch() {
     {id:'tool-pwsh',name:'@deepseek-ai/dsh-tool-pwsh',config:{promoteOnTimeout:false}}];
 }
 interface ActiveTurn { contextCompaction?: import('../../contracts.ts').ContextCompaction; lineage: DshExecutionLineage; accepted?: boolean; lastSeq?: number; inputIds?: Set<string>; restoring?: Promise<void>; reconnects?: number; retryTimer?: ReturnType<typeof setTimeout>; reject?: (error: Error) => void; observationDiagnostic?: string; observationLost?: boolean; stopRequested?: boolean; stopConfirmed?:boolean; stopping?:Promise<ExecutorObservation>; cancellation?: Promise<void>; supplementInputs?: Set<string>; supplementAdmissions?: number; supplementUnknown?: boolean; pendingEnd?: any; finish?: () => void; id: string; input: ExecutorSendInput; nativeTurn?: number; contextWindow?: number; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamTimer?: ReturnType<typeof setTimeout>; streamDirty?: boolean; streamEmittedAt?: number; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
-export function createDshExecutor(): AgentExecutor { return { nativeContent: dshContent, readReleasedControl: input => releasedNativeControl('dsh',input,{allowUnknownBackgroundWork:true}), readPersistedExecution: readDshPersistedExecution, storage: { transientDirectories: regenerableToolCaches, canReclaim: toolCacheReclaimable }, descriptor: { id: 'dsh', label: 'DSH', capabilities }, open: options => DshRuntime.open(options) }; }
+export function createDshExecutor(): AgentExecutor {
+  return {
+    nativeContent: dshNativeContent,
+    readReleasedControl: input => releasedNativeControl('dsh',input,{allowUnknownBackgroundWork:true}),
+    readPersistedExecution: readDshPersistedExecution,
+    storage: { transientDirectories: regenerableToolCaches, canReclaim: toolCacheReclaimable },
+    descriptor: {
+      id: 'dsh',
+      label: 'DSH',
+      capabilities,
+      modelPolicy: {
+        account: 'native',
+        gateway: { protocol: 'responses' },
+      },
+      runtimeTraits: {
+        sharedNativeHome: true,
+        transientAccountProbe: true,
+      },
+    },
+    open: options => DshRuntime.open(options),
+  };
+}
 export class DshRuntime implements AgentRuntime {
   participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;
   readonly capabilities = { ...capabilities, permissionModes: ['default'] as PermissionMode[] };
@@ -90,7 +111,7 @@ export class DshRuntime implements AgentRuntime {
   }
   static async open(options: ExecutorOpenOptions, ownerPatch?: string): Promise<DshRuntime> {
     options.signal?.throwIfAborted();
-    const gateway = checkedGateway(options.gateway);
+    const gateway = checkedGateway(options.gateway, { executorId: 'dsh' });
     const { home, temporary } = nativeHome(options.configRoot); const config = join(options.nativeAccountConfigRoot ?? options.configRoot, 'dsh-home'); const agents = join(options.nativeAccountConfigRoot ?? options.configRoot, 'dsh-agents-home');
     // Buildr lease-local runtime files stay out of the shared native home.
     const lease = options.configRoot;

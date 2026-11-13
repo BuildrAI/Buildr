@@ -17,7 +17,7 @@ export interface AgentOperations {
 
 const names = {
   pushback: ['read','save','reveal','test','markTakeover','setCredentialAccess','recordStop','listEvents','migrateGlobal'],
-  connections: ['upgradeProgram','programUpdates','checkProgramUpdates','list','read','prepare','preparation','currentPreparation','cancelPreparation','connect','check','login','loginAttempt','cancelLogin','disconnect'],
+  connections: ['upgradeProgram','programUpdates','checkProgramUpdates','list','read','prepare','preparation','currentPreparation','cancelPreparation','connect','check','login','loginAttempt','cancelLogin','accountImpact','logout','disconnect'],
   conversations: ['readHistory','participation','participationSummary','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','activityEpoch','modelAccountReferences','readEntry','readRunFinalReply','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','releaseQuestionWait','settleRetainedRun','stop','stopAll','reply','addAttachment','readAttachment','pending','pendingSummary','lookupRequest'],
   'models.accounts': ['list','read','preferences','add','configure','configureCustom','discoverCustom','login','attempt','cancelLogin','check','disconnect','remove'],
   'models.catalog': ['list'],
@@ -34,7 +34,7 @@ const inputs: Record<string, [number, string]> = {
   'conversations.queueSend': [2, 'queueSend'], 'conversations.cancelPendingSend': [2, 'cancelPendingSend'],
   'connections.upgradeProgram':[1,'programUpgradeInput'],
   'connections.checkProgramUpdates':[0,'programUpdateCheck'],
-  'connections.prepare':[1,'prepare'], 'connections.connect':[1,'connect'], 'connections.check':[1,'check'], 'connections.login':[1,'revision'], 'connections.disconnect':[1,'revision'], 'connections.cancelLogin':[2,'revision'],
+  'connections.prepare':[1,'prepare'], 'connections.connect':[1,'connect'], 'connections.check':[1,'check'], 'connections.login':[1,'revision'], 'connections.logout':[1,'connectionLogout'], 'connections.disconnect':[1,'revision'], 'connections.cancelLogin':[2,'revision'],
   'conversations.createChild':[2,'createChild'],
   'conversations.readHistory':[2,'historyQuery'], 'conversations.fork':[2,'fork'], 'conversations.create':[1,'create'], 'conversations.update':[2,'update'], 'conversations.markSeen':[2,'seen'], 'conversations.generateTitle':[2,'revision'], 'conversations.prepareHandoff':[2,'draft'], 'conversations.prepareSend':[2,'draft'], 'conversations.send':[2,'send'], 'conversations.supplement':[2,'supplement'], 'conversations.observeRun':[2,'control'], 'conversations.releaseQuestionWait':[2,'control'], 'conversations.settleRetainedRun':[2,'control'], 'conversations.stopAll':[2,'stopAll'], 'conversations.stop':[2,'stop'], 'conversations.reply':[3,'reply'],
   'models.accounts.preferences':[1,'modelPreferences'], 'models.accounts.add':[0,'addModelAccount'], 'models.accounts.configure':[1,'modelApiKey'], 'models.accounts.configureCustom':[1,'modelCustomConfigure'], 'models.accounts.discoverCustom':[0,'modelCustomDiscovery'], 'models.accounts.login':[1,'revision'], 'models.accounts.cancelLogin':[2,'revision'], 'models.accounts.check':[1,'check'], 'models.accounts.disconnect':[1,'revision'],

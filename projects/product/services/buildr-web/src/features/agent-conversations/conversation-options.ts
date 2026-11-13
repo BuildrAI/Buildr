@@ -2,22 +2,54 @@ import {reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts,modelSourc
 export {reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts,modelSourceName,executionAgentName,nextServiceTier,tierReasoningEffort} from '../../lib/model-picker.ts';
 import type {ConnectionView, ConversationRun, SendDraft, CatalogModel} from './types';
 
-/** Qoder and Qoder CN agents consume only their own product's models. */
-export function qoderSourceNotice(provider:string|undefined):string|undefined{
-  if(provider!=='qoder'&&provider!=='qoder-cn')return;
-  const label=provider==='qoder-cn'?'Qoder CN Agent':'Qoder Agent';
-  return `${label} 暂不支持其他供应商的模型，相关供应商已标记但不可选；请改用 ${label} 原生模型或切换智能体。`;
+type CompatibilityTarget = Pick<ConnectionView,'id'|'label'|'modelPolicy'>|string|undefined;
+type CompatibilityModel = Pick<CatalogModel,'provider'|'sharing'|'inference'|'executorCompatibility'>;
+
+/**
+ * Evaluate static compatibility between an executor connection and a catalog model.
+ * Server `executorCompatibility` is authoritative; when absent on older snapshots,
+ * fall back to `connection.modelPolicy` if present, otherwise treat as compatible
+ * and defer enforcement to server-side send validation.
+ */
+export function catalogModelCompatibility(connection:CompatibilityTarget,item:CompatibilityModel):{compatible:boolean;reasonCode?:string;reason?:string} {
+  const connectionId=typeof connection==='string'?connection:connection?.id;
+  if(!connectionId)return {compatible:true};
+  const declared=item.executorCompatibility?.find(entry=>entry.connectionId===connectionId);
+  if(declared)return declared;
+  if(typeof connection==='object'&&connection?.modelPolicy){
+    const native=connection.modelPolicy.native;
+    const isNative=Boolean(native?.sourceProviders.includes(item.provider));
+    if(item.sharing?.kind==='executor-exclusive'&&!item.sharing.executors.includes(connectionId)){
+      return {compatible:false,reasonCode:'agent_model_source_unsupported',reason:item.sharing.reason};
+    }
+    if(!isNative&&native?.exclusive){
+      const label=connection.label||connectionId;
+      return {compatible:false,reasonCode:'agent_model_source_unsupported',reason:`${label} Agent 暂不支持选择其他供应商的模型，请改用 ${label} 原生模型。`};
+    }
+    if(!isNative&&(item.inference==='none'||!connection.modelPolicy.gateway)){
+      return {compatible:false,reasonCode:'agent_model_source_unsupported',reason:`${connection.label||connectionId} 不支持通过模型网关接入此来源。`};
+    }
+  }
+  return {compatible:true};
 }
-export function qoderSourceUnsupported(provider:string|undefined,sourceProvider:string):boolean{
-  if(provider!=='qoder'&&provider!=='qoder-cn')return false;
-  const native=provider==='qoder-cn'?['qoder-cn','native-qoder-cn']:['qoder','native-qoder'];
-  return !native.includes(sourceProvider);
+
+export function executorCompatibilityNotice(connection:CompatibilityTarget,catalog:readonly CompatibilityModel[]):string|undefined {
+  const incompatible=catalog.map(item=>({item,result:catalogModelCompatibility(connection,item)})).filter(entry=>!entry.result.compatible&&entry.result.reason);
+  if(!incompatible.length)return undefined;
+  if(typeof connection==='object'&&connection?.modelPolicy?.native?.exclusive){
+    const own=incompatible.find(entry=>entry.item.sharing?.kind!=='executor-exclusive');
+    return own?.result.reason??incompatible[0]!.result.reason;
+  }
+  return incompatible[0]!.result.reason;
 }
+
 /** Disabled choices keep their actual model name; compatibility is not a name suffix. */
-export function catalogConversationOption(provider:string|undefined,item:CatalogModel) {
+export function catalogConversationOption(connection:CompatibilityTarget,item:CatalogModel) {
+  const compatibility=catalogModelCompatibility(connection,item);
   return {value:'shared:'+item.accountId+'::'+item.modelId,
     label:item.creditFactor!==undefined?`${item.label} · ${item.creditFactor.toFixed(2)}x`:item.label,
-    disabled:!item.available||qoderSourceUnsupported(provider,item.provider)};
+    disabled:!item.available||!compatibility.compatible,
+    ...(!compatibility.compatible&&compatibility.reason?{title:compatibility.reason}:{})};
 }
 export type ConversationChoice = Pick<SendDraft,'connectionId'|'model'|'reasoningEffort'|'serviceTier'|'modelAccountId'|'modelAccountRevision'|'modelAccountIdentity'>;
 export type PermissionMode=NonNullable<SendDraft['permissionMode']>;
@@ -96,8 +128,10 @@ export function executionSelectionChanged(run:Pick<ConversationRun,'model'|'mode
 /** 状态行表达执行身份（智能体与模型）；来源账号只保留在模型设置和发送预览。 */
 export function conversationRunIdentity(run:ConversationRun,connection:ConnectionView|undefined,catalog:CatalogModel[]):string {
   const shared=catalog.find(model=>model.accountId===run.modelAccountId&&model.modelId===run.model);
-  const model=shared?modelSourceName(shared.provider)+' / '+shared.label:selectedConversationModel(connection,run.model)?.label||run.model;
-  return [executionAgentName(run.provider),model].filter(Boolean).join(' · ');
+  const sharedName=shared?(shared.provider==='custom'?(shared.accountLabel||'自定义供应商'):(shared.presentation?.quotaLabel||shared.presentation?.sourceLabel||modelSourceName(shared.provider))):undefined;
+  const model=shared?sharedName+' / '+shared.label:selectedConversationModel(connection,run.model)?.label||run.model;
+  const agent=connection?.provider===run.provider&&connection.label?connection.label:executionAgentName(run.provider);
+  return [agent,model].filter(Boolean).join(' · ');
 }
 
 /** A legacy native choice must bind its own catalog source before selecting a tier. */

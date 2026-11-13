@@ -36,13 +36,19 @@ test('conversation list uses shared product names, including Qoder CN',()=>{
   }
 });
 test('Qoder models from other products are disabled without renaming or explanatory suffixes',()=>{
+  const compatibilityFor=(provider)=>[
+    {connectionId:'qoder',compatible:provider==='native-qoder',...(provider==='native-qoder'?{}:{reasonCode:'agent_model_source_unsupported',reason:'Qoder Agent 暂不支持选择其他供应商的模型，请改用 Qoder 原生模型。'})},
+    {connectionId:'qoder-cn',compatible:provider==='native-qoder-cn',...(provider==='native-qoder-cn'?{}:{reasonCode:'agent_model_source_unsupported',reason:'Qoder CN Agent 暂不支持选择其他供应商的模型，请改用 Qoder CN 原生模型。'})},
+    {connectionId:'codex',compatible:true},
+  ];
   for(const agent of ['qoder','qoder-cn'])for(const provider of ['native-qoder','native-qoder-cn','native-codex','devin']){
-    const item={accountId:provider,provider,modelId:'model',label:'Model',available:true};
+    const item={accountId:provider,provider,modelId:'model',label:'Model',available:true,executorCompatibility:compatibilityFor(provider)};
     const option=catalogConversationOption(agent,item);
     assert.equal(option.disabled,provider!=='native-'+agent);
     assert.equal(option.label,'Model');
     assert.equal(option.value,`shared:${provider}::model`);
   }
-  assert.equal(catalogConversationOption('codex',{accountId:'qoder',provider:'native-qoder',modelId:'model',label:'Model',available:true}).disabled,false);
-  assert.deepEqual(catalogConversationOption('qoder-cn',{accountId:'cn',provider:'native-qoder-cn',modelId:'model',label:'Model',available:false,creditFactor:1}),{value:'shared:cn::model',label:'Model · 1.00x',disabled:true});
+  assert.equal(catalogConversationOption('codex',{accountId:'qoder',provider:'native-qoder',modelId:'model',label:'Model',available:true,executorCompatibility:compatibilityFor('native-qoder')}).disabled,false);
+  assert.equal(catalogConversationOption('qoder',{accountId:'devin',provider:'devin',modelId:'model',label:'Model',available:true}).disabled,false,'missing executorCompatibility defers to server validation');
+  assert.deepEqual(catalogConversationOption('qoder-cn',{accountId:'cn',provider:'native-qoder-cn',modelId:'model',label:'Model',available:false,creditFactor:1,executorCompatibility:compatibilityFor('native-qoder-cn')}),{value:'shared:cn::model',label:'Model · 1.00x',disabled:true});
 });

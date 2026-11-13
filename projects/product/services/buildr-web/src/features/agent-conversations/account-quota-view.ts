@@ -1,8 +1,14 @@
+import {
+  DEFAULT_OPENAI_BILLING_URL,
+  fallbackApiKeySourceName,
+  fallbackBillingLink,
+  fallbackKnownSourceName,
+} from '../../lib/model-picker.ts';
 import type { ModelAccount } from './types';
 
 type Quota = NonNullable<ModelAccount['quota']>;
 type QuotaWindow = NonNullable<Quota['windows']>[number];
-export const OPENAI_BILLING_URL = 'https://platform.openai.com/settings/organization/billing/overview';
+export const OPENAI_BILLING_URL = DEFAULT_OPENAI_BILLING_URL;
 export type AccountQuotaLine = {
   kind: 'balance' | 'window' | 'summary';
   text: string;
@@ -11,7 +17,6 @@ export type AccountQuotaLine = {
   credits?: string;
   resetsAt?: string;
 };
-const sourceLabels: Record<string, string> = { codex: 'ChatGPT', openai: 'ChatGPT API', anthropic: 'Claude API', dsh: 'DeepSeek', deepseek: 'DeepSeek', qoder: 'Qoder', 'qoder-cn': 'Qoder CN', devin: 'Devin' };
 const sourceNameOrder = new Intl.Collator('zh-Hans-CN', { sensitivity: 'base', numeric: true });
 function formatBalance(value: string): string {
   const amount = Number(value);
@@ -28,16 +33,22 @@ function formatCredits(value: number): string {
 export function accountSourceName(account: ModelAccount): string {
   // Custom providers are named by the user; their protocol label is not a display name.
   if (account.provider === 'custom') return account.group?.label || account.label || '自定义供应商';
+  if (account.presentation?.quotaLabel || account.presentation?.sourceLabel) {
+    return (account.presentation.quotaLabel || account.presentation.sourceLabel)!;
+  }
   if (account.authType === 'api-key') {
-    if (account.provider === 'anthropic') return 'Claude API';
-    if (account.provider === 'openai') return 'ChatGPT API';
+    const apiKeyName = fallbackApiKeySourceName(account.provider);
+    if (apiKeyName) return apiKeyName;
   }
   const provider = account.connectionId || (account.provider.startsWith('native-') ? account.provider.slice('native-'.length) : account.provider);
-  return account.group?.label || sourceLabels[provider] || account.label;
+  return account.group?.label || fallbackKnownSourceName(provider) || account.label;
 }
-/** The API exposes no balance; this is the only official page for credits and usage. */
-export function accountBillingUrl(account: Pick<ModelAccount, 'provider'>): string | undefined {
-  return account.provider === 'openai' ? OPENAI_BILLING_URL : undefined;
+/** Official billing or plan page declared by the model source. */
+export function accountBillingLink(account: Pick<ModelAccount, 'provider' | 'presentation'>): { url: string; label: string } | undefined {
+  return account.presentation?.billing ?? fallbackBillingLink(account.provider);
+}
+export function accountBillingUrl(account: Pick<ModelAccount, 'provider' | 'presentation'>): string | undefined {
+  return accountBillingLink(account)?.url;
 }
 export function compareSourceNames(left: string, right: string): number {
   return sourceNameOrder.compare(left, right);

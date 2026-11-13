@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createAgentService } from '../../src/index.ts';
+import { qoderExecutorDescriptor } from '../../src/executors/qoder/index.ts';
 import type { AgentExecutor, ExecutorOpenOptions } from '../../src/contracts.ts';
 import type { ModelProvider } from '../../src/model-access/contracts.ts';
 
@@ -14,7 +15,7 @@ for (const programStatus of ['not-authenticated', 'expired'] as const) test(`Qod
   const opens: ExecutorOpenOptions[] = [];
   const capabilities = { text: true, images: false, approval: false, questions: false, stop: true, resume: false, maxInputBytes: 65536 };
   let accountReady = true, accepted = 0;
-  const executor: AgentExecutor = { descriptor: { id: 'qoder-cn', label: 'Qoder CN', capabilities }, async open(options) {
+  const executor: AgentExecutor = { descriptor: { id: 'qoder-cn', label: 'Qoder CN', capabilities, modelPolicy: qoderExecutorDescriptor('qoder-cn').modelPolicy }, async open(options) {
     opens.push(options);
     let execution = '';
     return {
@@ -120,7 +121,7 @@ test('only Qoder consuming its own linked account gets a native model route, wit
   const root = await mkdtemp(join(tmpdir(),'buildr-native-qoder-conversation-'));
   const opens: ExecutorOpenOptions[] = [], sent: Array<{context:string;model?:string;mode?:string}> = [], contexts = new Map<string,string>();
   const capabilities = {text:true,images:false,approval:false,questions:false,stop:true,resume:true,maxInputBytes:65536,permissionModes:['default','full-access'] as const};
-  const executors: AgentExecutor[] = ['qoder','codex'].map(id=>({descriptor:{id,label:id,capabilities:{...capabilities,permissionModes:[...capabilities.permissionModes]}},async open(options) {
+  const executors: AgentExecutor[] = ['qoder','codex'].map(id=>({descriptor:{id,label:id,capabilities:{...capabilities,permissionModes:[...capabilities.permissionModes]},...(id==='qoder'?{modelPolicy:qoderExecutorDescriptor('qoder').modelPolicy}:{})},async open(options) {
     opens.push(options);let execution='';
     return {bindingIdentity:options.gateway?.identity??id,capabilities:{...capabilities,permissionModes:[...capabilities.permissionModes]},
       inspectAccount:async()=>({status:'ready'}),models:async()=>[{id:'qmodel_38max',label:'Qwen3.8-Max'}],beginLogin:async()=>{},cancelLogin:async()=>{},

@@ -9,6 +9,15 @@ export function createAnthropicApiModelProvider(options:{fetch?:typeof fetch}={}
   return {
     id:'anthropic',label:'Claude API',singleton:true,group:{id:'anthropic',label:'Claude'},modeLabel:'API Key',
     authentication:{type:'api-key',label:'API Key',placeholder:'sk-ant-...',description:'使用 Anthropic 官方 API，不使用 claude.ai 订阅登录或额度。'},
+    sharing:{kind:'gateway'},
+    inference:'gateway',
+    presentation:{
+      vendorLabel:'Anthropic',
+      sourceLabel:'Claude API',
+      quotaLabel:'Claude API',
+      apiKeyHint:'sk-ant-...',
+      quotaUnavailableNote:'Anthropic API 未提供剩余额度观察；请在 Anthropic 平台查看用量与账单。',
+    },
     async open(input){return new AnthropicApiRuntime(new PrivateApiKey(input.configRoot),options.fetch??fetch);},
   };
 }

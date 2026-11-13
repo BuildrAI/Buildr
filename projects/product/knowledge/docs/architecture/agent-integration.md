@@ -8,15 +8,31 @@ Codex、DSH与Qoder新工具采用v9兼容边界下的原生调用引用。适�
 
 `services/buildr-agent/` 是独立的智能体服务（Agent Service）代码单元，维护账号接入、统一对话、执行控制、原生上下文恢复和私有交互库。它通过私有包 `@buildr-ai/buildr-agent` 提供独立执行进程（Agent Process）和公共客户端（Client），与主包统一发行，用户不需要另外安装服务。本文描述当前候选实现，尚未激活到保留环境。
 
-Buildr 宿主负责页面认证、网页 HTTP 与事件映射，以及已登记工作空间（Workspace）和任务（Task）身份；执行后台（Execution Backend）持有原生连接、统一对话、交接、待回应、模型转接、辅助生成和私有数据写入。前端负责对话、草稿、历史、发送预览和授权答复。三家执行器（Executor）负责各自进程、官方登录、规则（Rule）与技能（Skill）发现、工具执行及原生历史。这里的服务（Service）边界也不等于未来自研的 Buildr 智能体（Agent）：未来自研执行者可以沿同一执行器（Executor）契约与 Codex 等并列接入，当前没有该实现。
+Buildr 宿主负责页面认证、网页 HTTP 与事件映射，以及已登记工作空间（Workspace）和任务（Task）身份；执行后台（Execution Backend）持有原生连接、统一对话、交接、待回应、模型转接、辅助生成和私有数据写入。前端负责对话、草稿、历史、发送预览和授权答复。各执行器（Executor）负责各自进程、官方登录、规则（Rule）与技能（Skill）发现、工具执行及原生历史。这里的服务（Service）边界也不等于未来自研的 Buildr 智能体（Agent）：未来自研执行者可以沿同一执行器（Executor）契约与 Codex 等并列接入，当前没有该实现。
 
 | 执行方 | 当前接入形态 | 配置与运行边界 |
 | --- | --- | --- |
 | Codex | `codex app-server --listen stdio://` | 每套独立配置一个应用服务（App Server），承载多个原生上下文；与桌面共享代码能力不等于复制桌面全部功能 |
 | DSH | `dsh web --no-open --port 0` 与官方客户端（Client） | 启动完整本机网页宿主（Web Host），使用其会话、工具与账号能力；不依赖既有 DSH 桌面插件 |
-| Qoder | 官方软件开发工具包（SDK）与独立 `qodercli` | 私有工作进程（Worker）隔离 SDK 环境；相同配置的正常轮次可在历史和未结工作证明完整时复用原生连接，否则按准确原编号冷恢复 |
+| Qoder / Qoder CN | 官方软件开发工具包（SDK）与独立 `qodercli` / `qodercn` | 私有工作进程（Worker）隔离 SDK 环境；相同配置的正常轮次可在历史和未结工作证明完整时复用原生连接，否则按准确原编号冷恢复 |
+| Claude Code | 官方 `@anthropic-ai/claude-agent-sdk` 与独立 `claude` CLI | 不维护原生账号登录（`account: 'source-required'`），只经本机模型网关消费 Anthropic Messages 兼容来源 |
+| Antigravity | 官方发布清单受管 `agy acp`（ACP 协议） | 连接级协调者配合按对话（会话、权限、账号身份与受管程序摘要）隔离的 `agy acp` 子进程组；私有 `HOME` 下设置 `autoUpdate: false`，不接管外部 `agy` 或注入 shell |
 
-原生程序由“准备并连接”发现并核验真实路径、实际版本及来源。软件开发工具包（SDK）和 DSH 客户端随主包携带；缺少原生程序时提供官方安装引导或显式的独立准备动作，不修改全局安装或自动升级。兼容版本由[统一程序策略](../../../services/buildr-agent/src/executors/program-policy.ts)维护，执行适配和准备使用同一策略，缺少一家不阻止其他已就绪接入。
+原生程序由“准备并连接”发现并核验真实路径、实际版本及来源。软件开发工具包（SDK）和 DSH 客户端随主包携带；缺少原生程序时提供官方安装引导或显式的独立准备动作，不修改全局安装或自动升级。兼容版本与分发策略由各执行方模块在[统一程序策略](../../../services/buildr-agent/src/executors/program-policy.ts)注册，执行适配和准备使用同一策略，缺少一家不阻止其他已就绪接入。
+
+### 执行方声明、模型路径绑定与兼容边界
+
+公共编排层（`application/`、`model-access/application.ts`、`executors/` 公共模块与前端 `agent-conversations`）不以执行方品牌字面量作条件分支，而是统一消费执行方声明（`modelPolicy`、`runtimeTraits`、`nativeContent`、`distribution`）与模型来源声明（`sharing`、`inference`、`presentation`），实现见[模型策略与兼容判定](../../../services/buildr-agent/src/domain/model-policy.ts)：
+
+1. **执行方模型策略（`modelPolicy`）与运行特性（`runtimeTraits`）**：每个执行方声明基础账号要求（`connection-ready` 或 `source-required`，可选 `readySourceSupersedesConnection`）、原生来源集合与传递/绑定方式（`delivery`、`exclusive`、`binding`），以及支持的网关线协议（`openai-responses`、`openai-chat-completions`、`anthropic-messages`）；`runtimeTraits` 声明网关配置下的共享原生主目录策略、升级验证方式（`runtime-verify` 或 `account-probe`）、临时账号探针支持以及传输中断识别委托（`ExecutorObservationLost`）。
+2. **两条模型路径的绑定契约**：打开运行时与发送前先由 `resolveExecutionModelPath()` 确定唯一路径：
+   - **网关路径**：来源声明 `inference: 'gateway'` 且非当前执行方的原生直通来源时，签发绑定账号、模型、对话与执行方的短期本机网关租约（Lease），原生进程只接触回环端点与临时令牌。
+   - **原生直通（`gateway-lease`）**：Qoder 与 Qoder CN 选择自身原生来源时保留既有租约与 `nativeModel{ executor, modelId, accountIdentity }` 校验，由 `checkedGateway()` 核对执行方标识与绑定方式一致。
+   - **原生直通（`account-identity`）**：面向不提供网关推理的原生来源（如 Antigravity 的 Google 个人账号 `native-antigravity`），准备与发送均**不签发网关租约**，而是在打开前校验来源就绪、账号身份一致、模型在当前来源目录且启用，向执行方传入互斥的 `nativeSource{ accountId, accountIdentity, modelId, model }`，并由执行方在工作输入副作用前再次核对当前原生账号身份与模型。
+3. **来源共享范围（`sharing`）、推理方式（`inference`）与展示声明（`presentation`）**：模型来源默认 `sharing: { kind: 'gateway' }`、`inference: 'gateway'`；声明 `executor-exclusive` 的来源只允许指定执行方原生使用并向其他执行方公开明确原因，拒绝跨执行方签发租约；声明 `inference: 'none'` 的来源不提供网关推理，禁止签发任何网关租约，并从单次生成（`models.generate`）、提交说明与直接执行模型选择器中排除。账号与目录视图通过 `presentation` 公开厂商名称、卡片名称、额度标签、API Key 提示、额度不可读说明及官方账单链接，前端不再硬编码厂商账单或品牌映射（仅保留离线历史展示兜底表）。
+4. **静态兼容与发送时可用性分离**：服务端以唯一纯函数 `sourceCompatibility()` 根据双方声明计算静态兼容，并在账号与目录视图投射 `executorCompatibility{ connectionId, compatible, reasonCode, reason }`；前端只依据该结论禁用不兼容模型并保留原模型名与悬停原因（字段缺失时前端按兼容放行，交由发送端裁决）。发送时可用性由服务端在工作输入前按固定顺序实时校验：连接已准备 → 连接基础账号就绪（若声明 `readySourceSupersedesConnection` 且所选原生来源已就绪，则不被陈旧连接观察先行拒绝）→ 所选来源存在且启用 → 来源状态 `ready` → 静态兼容 → 账号身份未变 → 模型存在且启用 → 图片、服务档位与推理强度支持。因此静态兼容但已过期或停用的模型明确返回过期或停用原因，不误报为来源不兼容。
+5. **原生工具详情注册（`nativeContent`）**：各执行方通过 `defineNativeContent()` 注册自身的会话根目录、符号链接与路径越界保护及按需详情读取器（见[原生内容边界](../../../services/buildr-agent/src/storage/native-content.ts)）；公共层只对已注册 `nativeContent` 的执行方登记 `nativeTools` 并在对话条目投射 `nativeDetail: true`，前端据此脱敏折叠摘要并按需拉取详情；未注册执行方保留已保存摘要，详情读取明确返回不提供原生详情。
+6. **程序分发策略（`npm` 与官方清单 `manifest`）与失败边界**：程序策略除 npm 包安装外，支持官方发布清单（[清单解析](../../../services/buildr-agent/src/executors/program-release.ts)与[归档安装](../../../services/buildr-agent/src/executors/program-archive.ts)）。清单读取手动处理重定向，逐跳校验 `https:` 与主机白名单（最多 5 跳、响应上限 64 KiB），校验 `sha512` 格式、严格 SemVer（禁止路径分隔符与越界字符）及主版本准入，读取失败直接报错而不静默降级到固定旧版本。归档安装使用独立临时目录 `.prepare-<attemptId>`，流式下载限制 512 MiB 并完整核验 SHA-512，进程内解析 `tar.gz` 单一目标成员（拒绝符号链接、硬链接、设备节点与路径越界，限制最多 16 个成员、解压上限 1 GiB）或落盘独立二进制，设置可执行权限、清理 macOS 隔离扩展属性并通过 `--version` 核对版本后，才原子重命名到 `programs/<provider>/<version>/` 并经同目录临时文件原子切换 `prepared.json`。同一提供者的并发准备互斥归并；任何阶段取消或失败均清理本次临时目录，既有程序、`prepared.json` 与连接绑定保持可用。
 
 统一执行条目通过可选 `parentToolId` 保留原生父工具来源。主助手、子任务报告和工具结果沿同一公共契约保存，但子任务内部输入不成为用户要求，子报告不重复充当主助手最终答复、标题材料或交接说明；结果仍可从原工具详情核对。缺少可靠来源的旧记录不按文本相似度猜测归属。三家适配保留各自原生执行方式，Buildr 不另建替代推理循环。
 
@@ -30,7 +46,7 @@ Qoder 使用外部模型时，在实际工作连接初始化之后、首条输�
 
 ## 隔离工具怎样读取共享资源
 
-已验证完整目录覆盖的原生执行器默认使用明确宿主 `HOME` 和标准 `TMPDIR`。Codex/DSH 网关模式的原生 home（`CODEX_HOME`、`DSH_HOME`/`DSH_AGENTS_HOME`）按连接共享一个、全对话复用，账号/模型/对话/轮次隔离由网关令牌强制而非目录，home 级状态库（目标、记忆、线程历史）按原生语义跨对话共享，租约专属模型配置外移到租约临时目录；参与方持久化准确 home 根，旧参与方保留原租约 home 并双轨解析。Qoder 内容按账号共享（`QODER_CONFIG_DIR`）；原生登录模式仍每连接一个 home。无覆盖保证时保留私有HOME兼容模式。Buildr自身的标题请求等仍保存在准确私有目录。工具和依赖优先使用本机来源，Buildr共享目录仅作缺失时后备。Qoder新原生组件复用供应商自身按版本和用户组织的宿主临时缓存，不另建组件目录。工具环境中的 `BUILDR_HOST_HOME` 仅用于定位宿主共享能力与用户级 Git 配置；显式 `BUILDR_PRODUCT_DATA_DIR` 优先，并由环境白名单保留，不转发其他账号凭据。共享资源根按“显式产品目录、合法绝对宿主主目录、当前主目录”定位。
+已验证完整目录覆盖的原生执行器默认使用明确宿主 `HOME` 和标准 `TMPDIR`。Codex/DSH 网关模式的原生 home（`CODEX_HOME`、`DSH_HOME`/`DSH_AGENTS_HOME`）按连接共享一个、全对话复用，账号/模型/对话/轮次隔离由网关令牌强制而非目录，home 级状态库（目标、记忆、线程历史）按原生语义跨对话共享，租约专属模型配置外移到租约临时目录；参与方持久化准确 home 根，旧参与方保留原租约 home 并双轨解析。Qoder 内容按账号共享（`QODER_CONFIG_DIR`）；原生登录模式仍每连接一个 home。无覆盖保证时保留私有HOME兼容模式；声明 `credentialScope: 'host-keyring'` 的执行器（如 Antigravity）在使用连接私有 `HOME`（`.gemini/antigravity-cli/`）的同时，在 Linux 上保留系统密钥环所需的会话环境变量（`DBUS_SESSION_BUS_ADDRESS`、`XDG_RUNTIME_DIR`），其他执行方环境不变。Buildr自身的标题请求等仍保存在准确私有目录。工具和依赖优先使用本机来源，Buildr共享目录仅作缺失时后备。Qoder新原生组件复用供应商自身按版本和用户组织的宿主临时缓存，不另建组件目录。工具环境中的 `BUILDR_HOST_HOME` 仅用于定位宿主共享能力与用户级 Git 配置；显式 `BUILDR_PRODUCT_DATA_DIR` 优先，并由环境白名单保留，不转发其他账号凭据。共享资源根按“显式产品目录、合法绝对宿主主目录、当前主目录”定位。
 
 本机采用回执描述工作空间生成入口的准备结果，不是读取共享源的许可。任务工作树即使没有该回执，也能只读使用已声明且摘要、路径和权限均有效的共享文件；不复制资源或回执、不隐式同步，损坏仍按准确来源拒绝。
 
@@ -73,7 +89,7 @@ Qoder 使用外部模型时，在实际工作连接初始化之后、首条输�
 
 连接只在被工作时建立，不提前准备，也不为尚未采用的连接保留等待窗口；一旦被工作采用，执行、标题及观察等相关持有者结束后便按准确证明及时回收。正常结束和历史核对都会安排所属资源释放，迟到的原生结束证明或模型请求采用退避重查；物理关闭后再次确认无在途请求，撤销对应临时凭据。持久原生历史继续保留，下一轮按原上下文恢复。回收与新输入交错时，新输入等待同一资源释放后重新获取，不关闭正在使用的资源，也不重复投递。
 
-Codex、Qoder 和 DSH 共用 `OwnedControlResource` 保存准确控制归属及核对进程组空闲，各自适配器（Adapter）只提供原生执行、待决定和辅助工作事实。DSH 通过官方后台任务（Job）订阅核对首个完整列表，观察后立即退订；仍运行、停止中或观察失败均不能释放该控制资源。共用应用层还保护该准确模型连接上的在途请求，不因其他对话的模型调用阻止无关资源释放。DSH 恢复时补写的 `TOOL_OUTCOME_UNKNOWN` 表示工具结果未知，不是完成回执；已准确收到的同次工具完成事实继续保留。控制进程退出后关闭失效通信载体，避免连接重试自身继续占用旧后台。
+Codex、Qoder、DSH 与 Antigravity 共用 `OwnedControlResource` 保存准确控制归属及核对进程组空闲，各自适配器（Adapter）只提供原生执行、待决定和辅助工作事实。Antigravity 按对话（会话引用、权限模式、账号身份与受管二进制摘要）启动独立的 `agy acp` 进程组，停止时先发 `session/cancel` 有界等待，超时仅终止本对话进程组并核验为空，不影响并发的其他对话。DSH 通过官方后台任务（Job）订阅核对首个完整列表，观察后立即退订；仍运行、停止中或观察失败均不能释放该控制资源。共用应用层还保护该准确模型连接上的在途请求，不因其他对话的模型调用阻止无关资源释放。DSH 恢复时补写的 `TOOL_OUTCOME_UNKNOWN` 表示工具结果未知，不是完成回执；已准确收到的同次工具完成事实继续保留。控制进程退出后关闭失效通信载体，避免连接重试自身继续占用旧后台。
 
 通过既有认证入口 `GET /api/v1/app/agent-service/runtime` 可观察准确实例、代次、当前/待采用内容摘要及忙闲原因。任务预览（Task Preview）不持有后台会话令牌，改由 instance-secret 认证的 `/api/v1/health` 携带非阻塞 `agentRuntime` 快照观察候选就绪，仅当当前 digest 等于钉住候选、接收新工作且无待切换单元时才宣告启动成功。普通主程序退出不会停止后台；预览停止才按其准确所有权停止后台，退出或工具释放未确认时不清理资料。模型目录沿用、连接重定位等离线维护与后台启动共用持有锁，不能旁路覆盖活动配置。首次从同进程版本升级必须等旧执行和待回应结束并关闭旧版，再启用独立后台。旧版缺少原子暂停接收契约（Contract），自动交接发现既有智能体（Agent）资料仍由旧主程序持有时保留旧实例并提示先退出，不用磁盘空闲快照冒充原子迁移。
 
@@ -113,7 +129,7 @@ DSH 的目标自动续行按目标创建或显式修改时的请求归属，不�
 
 “准备并连接”依次发现本机程序、选择准确来源、核对兼容性、准备独立配置，程序准备完成后不自动发起模型账号登录；用户在“模型”页按需登录并启用模型。多个可用来源需要选择；指定程序或原绑定程序缺失不静默回退。Codex 优先引导安装含 Codex 的官方 ChatGPT App，核验应用标识、官方签名和内附程序版本，也允许独立安装 CLI。DSH 准备固定官方 CLI；Qoder 优先解析 SDK 配套程序，缺少时准备固定配套版本，用户无需手动安装 SDK 或单独下载 App Server。
 
-准备进度、来源、失败与取消在“智能体”页显示；切换厂家、关闭面板或刷新可继续查询准确尝试。服务重启后重新观察安装和账号，不把旧尝试当作仍在运行。安装只作用于本应用配置域 `agent-service/programs/`；失败及取消清理本次暂存和进程，保留既有程序、登录和会话。版本准入按主版本：Codex、DSH 接受 `0.x.x`，Qoder CLI 接受 `1.x.x`，包含有效预发布版本与构建标记；符合版本范围仅允许继续连接验证，不代表协议必然兼容。下载版本仍固定，实际协议、账号、模型及所需能力检查决定是否可用。版本准入与固定会话绑定命名空间分开；同一程序来源及独立配置内的兼容更新保留账号、连接和原生会话，不因本次范围放宽改变既有指纹；来源或配置身份改变、范围外版本及实际协议失败提供局部诊断，不能改用另一程序冒充恢复。浏览器操作工具继续由智能体（Agent）按技能（Skill）检查和准备，不属于 Buildr 原生程序安装器。
+准备进度、来源、失败与取消在“智能体”页显示；切换厂家、关闭面板或刷新可继续查询准确尝试。服务重启后重新观察安装和账号，不把旧尝试当作仍在运行。安装只作用于本应用配置域 `agent-service/programs/`；失败及取消清理本次暂存和进程，保留既有程序、登录和会话。版本准入按主版本：Codex、DSH 接受 `0.x.x`，Qoder CLI 与 Antigravity CLI 接受 `1.x.x`（其中 Antigravity 声明 `managedOnly: true`，仅接受从 Google 官方发布清单下载并经 SHA-512 校验的受管独立二进制，拒绝外部非受管 `agy` 与原位二进制篡改），包含有效预发布版本与构建标记；符合版本范围仅允许继续连接验证，不代表协议必然兼容。下载版本仍固定，实际协议、账号、模型及所需能力检查决定是否可用。版本准入与固定会话绑定命名空间分开；同一程序来源及独立配置内的兼容更新保留账号、连接和原生会话，不因本次范围放宽改变既有指纹；来源或配置身份改变、范围外版本及实际协议失败提供局部诊断，不能改用另一程序冒充恢复。浏览器操作工具继续由智能体（Agent）按技能（Skill）检查和准备，不属于 Buildr 原生程序安装器。
 
 首版每家一套 Buildr 独立配置，可服务多个工作空间（Workspace）。启用接入后检查程序与账号，用户通过官方登录页完成登录，再读取该账号的可用模型；连接成功、登录流程结束和模型实际执行成功是不同事实。没有从桌面复制令牌（Token）或默认配置，也不自动继承桌面插件、用户级技能（Skill）、工具连接或模型设置。
 
@@ -140,6 +156,8 @@ Codex、DSH 与 Qoder 都可使用 Devin 供应商的任一已启用模型：Cod
 | Codex | Buildr 明确使用 `on-request` 与 `workspace-write` | 原生 `never` 与 `danger-full-access` |
 | DSH | 原生权限预设目录给出的默认值 | 原生 `/permission danger-full-access`，读取会话权限快照确认 |
 | Qoder | 软件开发工具包（SDK）的 `default` | 原生 `bypassPermissions` 与 `allowDangerouslySkipPermissions` |
+| Claude Code | Agent SDK 默认审批，逐次回调用户确认 | 原生 `bypassPermissions`（`allowDangerouslySkipPermissions`） |
+| Antigravity | 原生 `default` 模式，经 ACP `session/request_permission` 单次确认（不提供持久授权选项） | 对话进程启动参数 `--dangerously-skip-permissions`（不写入持久会话；切回默认重建进程，业务提问仍走 `elicitation/create` 等待回答） |
 
 这些名称不代表三家的操作系统隔离能力相同，也不改变外部桌面配置、旧一次生成策略或辅助标题的受限执行。单个活动工具只有具备准确原生停止身份时才提供单独停止；不支持时保留活动事实和观察入口，不能把局部停止失败标成整轮已经停止。
 
@@ -177,7 +195,7 @@ DSH 和 Qoder 的普通问题支持“其他”自定义回复，多选可同时
 
 图片可通过文件选择、粘贴截图或拖放加入输入区，发送前提供缩略图、放大预览与移除。沿用 PNG、JPEG、WebP、GIF、每次最多4张及单张8 MiB边界，校验失败保留文字和已添加材料；发送后的图片通过当前对话的认证读取接口按需加载，刷新后仍可查看，不把本机路径或认证令牌放进图片网址。
 
-Codex 使用原生本地图片输入；Qoder 在软件开发工具包（SDK）的用户消息中发送带媒体类型的 Base64 图片块；DSH 使用原生提示内容（Prompt Content）的图片分支。图片字节随明确发送动作交付，具体模型的视觉能力仍以厂家实际响应为准；执行端支持图片不等于所有模型均已通过识图验证。
+Codex 使用原生本地图片输入；Qoder 在软件开发工具包（SDK）的用户消息中发送带媒体类型的 Base64 图片块；DSH 使用原生提示内容（Prompt Content）的图片分支；Antigravity 在 ACP `session/prompt` 中发送内联 Base64 图片块。图片字节随明确发送动作交付，具体模型的视觉能力仍以厂家实际响应为准；执行端支持图片不等于所有模型均已通过识图验证。
 
 模型与推理强度共用紧凑入口，智能体（Agent）保持独立选择。浮层只提供当前供应商和服务档位支持的实际强度；切换模型恢复该模型上次明确选择且仍可用的强度，否则使用默认值，不发送失效强度；不把普通闪电图标当作加速模式能力。桌面对话默认宽度620像素，与账号配置抽屉一致，拖动下限560像素，底部权限和执行选择保持同一行；旧的窄宽度偏好在读取时修正，移动端沿用全屏适配。
 
@@ -232,6 +250,14 @@ ChatGPT 订阅与 `ChatGPT API` 是两个独立供应商，可同时启用：Cod
 ### 复用原生账号
 
 Buildr自动将已连接的Codex、DSH、Qoder账号发现为共享模型供应商。登录与续期仍由对应原生运行实例负责；Codex通过app-server取得有效凭据，DSH同一宿主装配固定上游桥，Qoder只读该Buildr私有配置的账号，使用签名模型协议传递工具定义及结果。账号身份变化或断开撤销旧供应商；旧独立套餐和会话保留为额外账号。Qoder套餐模型可由Codex、DSH消费，工具仍由所选执行方执行。
+
+### Google 个人账号与 Antigravity 协调
+
+[Google 个人账号来源](../../../services/buildr-agent/src/model-access/providers/antigravity.ts)（`native-antigravity`）由 [Antigravity 执行器](../../../services/buildr-agent/src/executors/antigravity/index.ts)托管登录（`oauth-personal`），支持免费账号、Google AI Pro 与 Google AI Ultra。当受管 `agy` 确认 `oauth-personal` 已登录、绑定身份可建立且模型目录非空时，来源状态为 `ready`；原生 `_meta.antigravity.tier` 可识别时展示对应档位，不可识别时展示“档位不可读”但仍可使用；模型目录为空或认证归属不可确认时进入 `failed`（“身份不可确认”或无可用模型）并在发送前拒绝。官方 ACP 未公开额度窗口时如实显示不可读并指向 Google 官方订阅管理入口，不按档位或模型名称推算剩余配额。
+
+OAuth 令牌仅保存在系统密钥环 `jetski-standalone-oauth-token`（与本机终端 `agy` 共享，与桌面 IDE 分离），Buildr 不直接读取、写入或删除系统密钥环条目；来源声明 `sharing: executor-exclusive(['antigravity'])` 与 `inference: 'none'`，其他执行方显示不可选原因并拒绝签发网关租约，单次生成与提交说明自动排除该来源。发起登录时，短命登录子进程经专用 `PATH` 打开器替身捕获官方 PKCE 授权地址，地址仅在 `waiting-browser` 期间经 `LoginAttemptView.url` 返回，完成、取消、过期或被替代后清除，日志脱敏且不进入对话事件。
+
+每轮输入前，执行方通过协调者被动探针（设置 `SSH_CONNECTION=1` 阻止未登录时拉起浏览器）核对当前认证与绑定身份：当 `agy` 返回显式账号字段时采用不可逆摘要 `agy-account:<sha256>` 比对；因 `agy` `1.5.8` 未在 ACP 公开邮箱或用户标识，无显式账号字段时由协调者在连接私有目录维护登录世代 `agy-epoch:<uuid>`，在退出、切换或观察到未登录/过期时轮换并拒绝旧对话在新账号下继续执行。模型页提供“停用供应商”“切换账号”与“退出登录”：停用只更新 `sourceEnabled: false`，保留密钥环登录；退出与切换先列出运行中对话并说明本机终端 `agy` 影响，再将连接级发送闸门（`sendGate`）置为暂停（暂停期间新发送直接拒绝并保留草稿，不进入待发送队列），统一停止运行中轮次（任一轮次缺少已停止证据则中止操作并恢复闸门），关闭全部对话进程后执行原生 `logout`。若 `logout` 超时或结果未知，系统重新被动观察认证状态：已未登录则清除世代并断开；仍已登录但无法证明仍为原账号时保持闸门暂停并提供重试或重新核对。新建与恢复会话通过 `_meta.antigravity.systemPrompt.append` 注入当前交互政策；当版本未声明恢复更新能力且政策摘要变化时，发送前明确提示“本轮将开启新的 Antigravity 会话”并保留既有对话历史。
 
 ### 模型额度与使用偏好
 

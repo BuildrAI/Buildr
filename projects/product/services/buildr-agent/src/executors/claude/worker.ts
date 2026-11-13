@@ -388,7 +388,7 @@ function exact(params:any):Session {
   return session;
 }
 async function dispatch(method:string,params:any):Promise<unknown> {
-  if(method==='initialize'){executable=params.executable;instructions=params.instructions;gateway=checkedGateway(params.gateway);return{};}
+  if(method==='initialize'){executable=params.executable;instructions=params.instructions;gateway=checkedGateway(params.gateway,{executorId:'claude-code'});return{};}
   if(method==='title'){return (await getSessionInfo(params.contextId,{dir:params.cwd}))?.customTitle;}
   if(method==='probe'){
     const inputs=new Inputs();

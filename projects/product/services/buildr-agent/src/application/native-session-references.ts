@@ -4,17 +4,18 @@ import type { ConversationRepository } from '../persistence/conversation-reposit
 import type { NativeSessionReferenceProof } from '../storage/native-sessions.ts';
 import { configRoot } from './native-content-resolver.ts';
 import { handoffNativeReferences } from './handoff-sources.ts';
+import { sharedNativeHomeProviders } from '../executors/index.ts';
 
 export interface NativeSessionReferences extends NativeSessionReferenceProof { diagnostics: string[] }
 
-const providers = new Set(['codex', 'dsh']);
-const modelBinding = /^connections\/(codex|dsh)\/model-bindings\/([a-f0-9]{64})(?:\/|$)/u;
+const modelBinding = /^connections\/([a-z][a-z0-9-]*)\/model-bindings\/([a-f0-9]{64})(?:\/|$)/u;
 
 /** Complete reference proof for native sessions: every canonical conversation
  * header, every durable native tool content row and every handoff source
  * index. Any unreadable source keeps its whole scope. */
 export function nativeSessionReferences(root: string, repository: Pick<ConversationRepository, 'readNativeHeaders' | 'readNativeToolReferences'>): NativeSessionReferences {
   const contexts = new Set<string>(), unknownContext = new Set<string>(), unresolved = new Set<string>(), homes = new Set<string>(), diagnostics: string[] = [];
+  const providers = sharedNativeHomeProviders();
   const headers = repository.readNativeHeaders();
   if (!headers.complete) diagnostics.push('native_session_headers_unreadable');
   for (const header of headers.headers) {
@@ -49,6 +50,7 @@ export function nativeSessionReferences(root: string, repository: Pick<Conversat
 }
 
 function collect(reference: NativeToolContent, contexts: Set<string>, unresolved: Set<string>, homes: Set<string>, root: string): void {
+  const providers = sharedNativeHomeProviders();
   const provider = reference.provider;
   if (!providers.has(provider)) return;
   const contextId = reference.contextId;
@@ -61,7 +63,7 @@ function collect(reference: NativeToolContent, contexts: Set<string>, unresolved
   const bind = (value: string) => {
     const file = value.split(path.sep).join('/');
     const match = file.match(modelBinding);
-    if (!match) return;
+    if (!match || !providers.has(match[1]!)) return;
     if (match[1] !== provider) { unresolved.add(provider); unresolved.add(match[1]!); conflict = true; return; }
     bindings.add(match[2]!);
     homes.add(path.join(root, 'connections', provider, 'model-bindings', match[2]!));

@@ -3,16 +3,16 @@ import { releaseQuestionWait } from './question-wait-release.ts';
 import { mergeParticipation, instructionParticipation, applyParticipationSources, participationSource, validParticipationSource, normalizeParticipation, participationGaps, PARTICIPATION_LIMITS } from '../domain/participation.ts';
 import { singleParticipation, summarizeParticipation } from '../domain/participation-record.ts';
 import type { ParticipationInput, ParticipationSummaryInput, ParticipationMatch } from '../participation-contracts.ts';
-import { NativeObservationError } from '../domain/error-diagnostic.ts';
+import { NativeObservationError, isObservationLostError } from '../domain/error-diagnostic.ts';
 import { pendingConversationSummary } from '../domain/pending-summary.ts';
 import {conversationTaskLinks,setConversationTaskLinks,sameTaskLink,sameTaskLinks} from '../domain/conversation-task-links.ts';
 import type {ConversationTaskLink} from '../contracts.ts';
-import { presentedFilesForEntry, normalizePresentedFiles } from '../domain/presented-files.ts';
+import { presentedFilesForEntry, needsLegacyPresentedFilesRead, normalizePresentedFiles } from '../domain/presented-files.ts';
 import { modelLeaseIdentity } from '../model-access/model-preferences.ts';
 import { answerAttachmentIds, resolveQuestionAnswer, questionAnswerDisplay, normalizeQuestionCapabilities } from '../domain/question-answer.ts';
 import { normalizeSendDraft } from '../domain/send-draft.ts';
 import { reconcileLegacySupersededRuns } from '../domain/superseded-runs.ts';
-import { blocksExecution } from '../domain/interaction-policy.ts';
+import { blocksExecution, interactionPolicy } from '../domain/interaction-policy.ts';
 import { ConversationAttachments, attachmentRevision, MAX_IMAGE_BYTES, MAX_VISUAL_INPUTS } from './conversation-attachments.ts';
 import type { AttachmentInput } from '../contracts.ts';
 import { continuationDraft, continuationPrompt, releasedContinuation, stoppedContinuation } from '../domain/conversation-continuation.ts';
@@ -25,13 +25,12 @@ import {selectedOffering,modelConfiguration} from '../model-access/model-prefere
 import type {ModelAccountView, ModelOffering} from '../model-access/contracts.ts';
 import type { ModelAccess } from '../model-access/application.ts';
 import { modelQuotaFailure } from '../model-access/quota.ts';
-import { isQoderProvider, qoderCnModelAccountId, qoderProduct } from '../executors/qoder/product.ts';
-import { qoderLoginExpiredMessage } from '../model-access/providers/qoder-auth.ts';
+import { resolveExecutionModelPath, sourceCompatibility } from '../domain/model-policy.ts';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ExecutorInputRejected } from '../contracts.ts';
-import type { AgentRuntime, AgentServiceOptions, ContextRef, ConversationActivityCounts, ConversationEntry, ConversationSummaryView, ConversationView, ExecutorEvent, ExecutorImage, ExecutorItem, ExecutorObservation, RunView, SendDraft, SendPreview } from '../contracts.ts';
+import type { AgentRuntime, AgentServiceOptions, ContextRef, ConversationActivityCounts, ConversationEntry, ConversationSummaryView, ConversationView, ExecutorEvent, ExecutorImage, ExecutorItem, ExecutorNativeSource, ExecutorObservation, RunStatus, RunView, SendDraft, SendPreview } from '../contracts.ts';
 import { AgentServiceError, BUSY_STATES, conversationRuns, unfinishedRun, expected, fail, nonempty, safeDiagnostic } from '../domain/agent-state.ts';
 import type { StoredConversation, StoredParticipant } from '../domain/agent-state.ts';
 import type { ConversationRepository } from '../persistence/conversation-repository.ts';
@@ -276,22 +275,89 @@ export class ConversationApplication {
     const work = this.openSource(record,participant,sourceRun?.id).catch(error => { if(this.sourceRuntimes.get(participant.id)===work){this.sourceRuntimes.delete(participant.id);this.sourceOwners.delete(participant.id);this.sourceConnections.delete(participant.id);} throw error; });
     this.sourceConnections.set(participant.id, participant.connectionId); this.sourceRuntimes.set(participant.id, work); return work;
   }
+  private async validateOrBindParticipantSource(
+    record: StoredConversation,
+    participant: StoredParticipant,
+    runId?: string,
+  ): Promise<
+    | { kind: 'account-identity'; nativeSource: ExecutorNativeSource }
+    | { kind: 'gateway' | 'gateway-lease'; lease: import('../model-access/contracts.ts').ModelGatewayLease }
+  > {
+    const access = this.options.modelAccess;
+    if (!access) fail('agent_model_source_unavailable', '模型套餐组件不可用。', 409);
+    const descriptor = this.options.connections.descriptor(participant.connectionId);
+    const account = access.accounts.snapshot(participant.modelAccountId!);
+    const pathKind = resolveExecutionModelPath(descriptor, account);
+    if (pathKind === 'account-identity') {
+      if (account.sourceEnabled === false) fail('agent_model_source_unavailable', '所选模型来源已停用，请重新启用或选择其他来源。', 409);
+      if (participant.modelAccountIdentity !== undefined && participant.modelAccountIdentity !== account.identity) {
+        fail('agent_model_source_changed', '套餐登录来源已变化，请重新选择套餐模型。', 409);
+      }
+      if (!account.identity) fail('agent_model_source_unavailable', '所选套餐尚未确认账号身份，请检查账号。', 409);
+      if (!account.enabled || account.status !== 'ready') fail('agent_model_source_unavailable', '所选套餐尚未连接，请检查账号。', 409);
+      if (descriptor) {
+        const compat = sourceCompatibility(descriptor, account);
+        if (!compat.compatible) fail(compat.reasonCode ?? 'agent_model_source_unsupported', compat.reason ?? '当前执行器不支持所选模型来源。', 409);
+      }
+      const model = account.models.find(item => item.id === participant.modelId);
+      if (model?.enabled === false) fail('agent_model_disabled', '所选模型已停用，请重新选择。', 409);
+      const offering = model ? selectedOffering(model, participant.serviceTier) : undefined;
+      if (!offering) fail('agent_model_unavailable', '该模型不在当前接入的可用目录中。', 409);
+      const quotaFailure = modelQuotaFailure(account, offering, Date.parse(this.options.now()));
+      if (quotaFailure) throw quotaFailure;
+      return {
+        kind: 'account-identity',
+        nativeSource: {
+          accountId: account.id,
+          accountIdentity: account.identity,
+          modelId: participant.modelId!,
+          model: {
+            id: participant.modelId!,
+            label: offering.label,
+            isDefault: true,
+            reasoningEfforts: offering.reasoningEfforts,
+            defaultReasoningEffort: offering.defaultReasoningEffort,
+            contextWindow: offering.contextWindow,
+            maxOutputTokens: offering.maxOutputTokens,
+            vision: offering.images,
+            tools: offering.tools,
+          },
+        },
+      };
+    }
+    const lease = await access.leases.create({
+      accountId: participant.modelAccountId!,
+      expectedIdentity: participant.modelAccountIdentity,
+      modelId: participant.modelId!,
+      serviceTier: participant.serviceTier,
+      conversationId: record.view.id,
+      agentId: participant.connectionId,
+      runId: runId ?? 'prepare',
+      sseKeepalive: descriptor?.modelPolicy?.gateway?.sseKeepalive,
+    });
+    return { kind: pathKind === 'gateway-lease' ? 'gateway-lease' : 'gateway', lease };
+  }
   private async openSource(record:StoredConversation,participant:StoredParticipant,runId?:string):Promise<PreparedSource> {
-    const access=this.options.modelAccess;if(!access)fail('agent_model_source_unavailable','模型套餐组件不可用。',409);
-    const lease=await access.leases.create({ accountId: participant.modelAccountId!, expectedIdentity: participant.modelAccountIdentity, modelId: participant.modelId!,serviceTier:participant.serviceTier, conversationId: record.view.id, agentId: participant.connectionId, runId: runId ?? 'prepare' });
+    const bound = await this.validateOrBindParticipantSource(record, participant, runId);
+    if (bound.kind === 'account-identity') {
+      const nativeHomeRoot = this.participantHomeRoot(participant);
+      const runtime = await this.options.connections.nativeSourceRuntime(participant.connectionId, bound.nativeSource, record.view.id);
+      return { runtime, model: bound.nativeSource.modelId, nativeHomeRoot };
+    }
+    const lease = bound.lease;
     const nativeHomeRoot=this.participantHomeRoot(participant,lease.identity);
     try {const runtime=await this.options.connections.runtime(participant.connectionId, { identity: lease.identity, baseUrl: lease.baseUrl, apiKey: lease.apiKey,
       ...(nativeHomeRoot?{nativeHomeRoot}:{}),
-      ...(nativeLeaseProvider(lease.provider) && participant.connectionId === nativeLeaseProvider(lease.provider) ? { nativeModel: { provider: nativeLeaseProvider(lease.provider)!, id: participant.modelId!, accountIdentity: participant.modelAccountIdentity! } } : {}),
+      ...(bound.kind === 'gateway-lease' ? { nativeModel: { provider: participant.connectionId, id: participant.modelId!, accountIdentity: participant.modelAccountIdentity! } } : {}),
       models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] });return {runtime,model:lease.model,leaseIdentity:lease.identity,nativeHomeRoot};}
-    catch(error){access.leases.release(lease.identity);throw error;}
+    catch(error){this.options.modelAccess!.leases.release(lease.identity);throw error;}
   }
-  /** New Codex/DSH participants share one home per connection; pre-existing ones keep their original lease home so the binding stays stable. The choice is persisted and never changes. */
-  private participantHomeRoot(participant:StoredParticipant,leaseIdentity:string):string|undefined{
-    if(participant.provider!=='codex'&&participant.provider!=='dsh')return undefined;
+  /** Executors declaring sharedNativeHome share one home per connection; pre-existing ones keep their original lease home so the binding stays stable. */
+  private participantHomeRoot(participant:StoredParticipant,leaseIdentity?:string):string|undefined{
+    if(!this.options.connections.descriptor(participant.connectionId)?.runtimeTraits?.sharedNativeHome)return undefined;
     if(participant.nativeHomeRoot)return participant.nativeHomeRoot;
     const base=path.join(this.options.root,'connections',participant.connectionId);
-    if(participant.bindingIdentity)return path.join(base,'model-bindings',createHash('sha256').update(leaseIdentity).digest('hex'));
+    if(participant.bindingIdentity&&leaseIdentity)return path.join(base,'model-bindings',createHash('sha256').update(leaseIdentity).digest('hex'));
     return base;
   }
   /** A process keeps the gateway key it started with, so a rejected key is only replaced
@@ -545,8 +611,8 @@ export class ConversationApplication {
       // Legacy compact projections may omit a large present invocation. Read only
       // this exact tool revision; never replay the native tool or rewrite history.
       let source=entry;
-      if(entry.kind==='tool'&&entry.provider==='dsh'&&entry.name==='present'&&entry.status==='completed'&&entry.detail&&!entry.input&&!entry.presentedFiles){
-        const key=JSON.stringify([view.id,entry.id,entry.detail.revision]);
+      if(needsLegacyPresentedFilesRead(entry)){
+        const key=JSON.stringify([view.id,entry.id,entry.detail!.revision]);
         let files=this.legacyPresentedFiles.get(key);
         if(files===undefined&&readLegacyFiles){
           try{files=presentedFilesForEntry(this.options.repository.readEntry(view.id,entry.id,entry.detail.revision)??entry);}catch{files=[];}
@@ -556,8 +622,9 @@ export class ConversationApplication {
         if(files)source={...entry,presentedFiles:files};
       }
       const presentedFiles=presentedFilesForEntry(source);
-      const result={...entry};delete result.presentedFiles;
-      return presentedFiles.length?{...result,presentedFiles}:result;
+      const nativeDetail=entry.kind==='tool'&&Boolean(entry.nativeDetail||this.liveTools.has(entry.id)||(entry.detail&&((record as Partial<StoredConversation>).nativeTools?.[entry.id]||(entry.provider&&this.options.connections.hasNativeContent(entry.provider)))));
+      const result={...entry};delete result.presentedFiles;delete result.nativeDetail;
+      return {...result,...(nativeDetail?{nativeDetail:true}:{}),...(presentedFiles.length?{presentedFiles}:{})};
     });
     view.requests = view.requests
       .filter(request => conversationRuns(view).some(run => !run.supersededBy && !(request.kind === 'question' && run.questionsEndedBy) && request.runId === run.id && request.participantId === run.participantId && request.generation === run.generation))
@@ -832,6 +899,14 @@ export class ConversationApplication {
     if (input.continueRunId && !input.waitingHandoff) fail('agent_continue_unavailable', '恢复动作不能排队到其他执行之后，请核对当前状态再继续。', 409);
     const record = this.load(workspaceId, id);
     const draft = this.draft(input);
+    const connection = this.options.connections.list().find(value => value.id === draft.connectionId);
+    if (connection?.sendGate?.state === 'paused') {
+      fail(
+        'agent_connection_send_paused',
+        connection.sendGate.diagnostic ?? `${connection.label} 正在执行账号退出或切换，已暂停发送；草稿已保留。`,
+        409,
+      );
+    }
     for (const attachment of draft.attachmentIds ?? []) this.media.get(record, attachment);
     const account = draft.modelAccountId ? this.options.modelAccess?.accounts.read(draft.modelAccountId) : undefined;
     if (draft.modelAccountId && !account) fail('agent_model_source_unavailable', '所选模型供应商不可用。', 409);
@@ -885,10 +960,20 @@ export class ConversationApplication {
     if (stoppedContinuation(record, input) && this.pendingSends.read(record.view.workspaceId, record.view.id)) fail('agent_continue_unavailable', '已有待发送要求，请先处理后再继续。', 409);
     input = continuationDraft(record, input);
     const connection = this.options.connections.get(input.connectionId);
-    // Qoder CN's independent model account is the execution login; selecting the
-    // connection's native models does not require repeating that account identity.
-    if (!input.modelAccountId && connection.provider === 'qoder-cn') input.modelAccountId = qoderCnModelAccountId;
-    // A stale or unknown model account must not mask a Qoder program-level
+    if (connection.sendGate?.state === 'paused') {
+      fail(
+        'agent_connection_send_paused',
+        connection.sendGate.diagnostic ?? `${connection.label} 正在执行账号退出或切换，已暂停发送；草稿已保留。`,
+        409,
+      );
+    }
+    const descriptor = this.options.connections.descriptor(input.connectionId);
+    const modelPolicy = descriptor?.modelPolicy;
+    const runtimeTraits = descriptor?.runtimeTraits;
+    if (!input.modelAccountId && modelPolicy?.native?.defaultSourceAccountId) {
+      input.modelAccountId = modelPolicy.native.defaultSourceAccountId;
+    }
+    // A stale or unknown model account must not mask a program-level platform
     // login failure: the saved draft still needs the account-switch action.
     // Defer any source lookup failure until the connection checks below.
     let source: ModelAccountView | undefined;
@@ -897,21 +982,54 @@ export class ConversationApplication {
       try { source = this.options.modelAccess?.accounts.snapshot(input.modelAccountId); }
       catch (error) { sourceError = error; }
     }
-    // CN's independent account is the same native login used by its executor.
-    // A stale program observation cannot veto a current, ready account; ACP
-    // still validates the actual login before accepting any work.
-    const readyCnAccount = connection.provider === 'qoder-cn' && source?.id === qoderCnModelAccountId && source.provider === qoderCnModelAccountId && source.enabled && source.status === 'ready';
-    if (!readyCnAccount && connection.enabled && isQoderProvider(connection.provider) && connection.status === 'expired') fail('qoder_platform_login_expired', qoderProduct(connection.provider).label === 'Qoder' ? qoderLoginExpiredMessage : `${qoderProduct(connection.provider).label} 登录授权已失效，请重新登录。所选模型来源保持不变。`, 409);
-    if (!connection.enabled || (!input.modelAccountId && connection.status !== 'ready')) fail('agent_account_unavailable', '请先准备智能体程序，并连接所选模型供应商。', 409);
-    if (!readyCnAccount && input.modelAccountId && isQoderProvider(connection.provider) && connection.status === 'not-authenticated') fail('qoder_platform_login_required', `${qoderProduct(connection.provider).label} 程序需要先完成基础平台登录；所选套餐不变，不要求使用 Qoder 自有模型。`, 409);
+    const readyNativeSupersedes = Boolean(
+      modelPolicy?.native?.readySourceSupersedesConnection &&
+      source &&
+      modelPolicy.native.sourceProviders.includes(source.provider) &&
+      (!modelPolicy.native.defaultSourceAccountId || source.id === modelPolicy.native.defaultSourceAccountId) &&
+      source.enabled &&
+      source.sourceEnabled !== false &&
+      source.status === 'ready',
+    );
+    const platformLogin = typeof modelPolicy?.native?.platformLogin === 'object'
+      ? modelPolicy.native.platformLogin
+      : modelPolicy?.native?.platformLogin === 'required-for-sources'
+        ? {
+            mode: 'required-for-sources' as const,
+            expiredCode: 'agent_platform_login_expired',
+            expiredMessage: `${connection.label} 登录授权已失效，请重新登录。所选模型来源保持不变。`,
+            requiredCode: 'agent_platform_login_required',
+            requiredMessage: `${connection.label} 程序需要先完成基础平台登录；所选套餐不变。`,
+          }
+        : undefined;
+    if (!readyNativeSupersedes && connection.enabled && platformLogin && connection.status === 'expired') {
+      fail(
+        platformLogin.expiredCode ?? 'agent_platform_login_expired',
+        platformLogin.expiredMessage ?? `${connection.label} 登录授权已失效，请重新登录。所选模型来源保持不变。`,
+        409,
+      );
+    }
+    if (!connection.enabled || (!input.modelAccountId && (modelPolicy?.account === 'source-required' || connection.status !== 'ready'))) {
+      fail('agent_account_unavailable', '请先准备智能体程序，并连接所选模型供应商。', 409);
+    }
+    if (!readyNativeSupersedes && input.modelAccountId && platformLogin && connection.status === 'not-authenticated') {
+      fail(
+        platformLogin.requiredCode ?? 'agent_platform_login_required',
+        platformLogin.requiredMessage ?? `${connection.label} 程序需要先完成基础平台登录；所选套餐不变。`,
+        409,
+      );
+    }
     if (!(connection.capabilities.permissionModes ?? ['default']).includes(input.permissionMode!)) fail('agent_permission_unavailable', '此接入尚不支持所选权限模式，请明确改选后重试。', 409);
     if (sourceError) throw sourceError;
+    if (input.modelAccountId && source?.sourceEnabled === false) fail('agent_model_source_unavailable', '所选模型来源已停用，请重新启用或选择其他来源。', 409);
     if (input.modelAccountId && (!source || !source.enabled || source.status !== 'ready')) fail('agent_model_source_unavailable', '所选套餐尚未连接，请检查账号。', 409);
     if (source && input.modelAccountIdentity && source.identity !== input.modelAccountIdentity) fail('agent_model_source_changed', '套餐登录来源已变化，请重新选择套餐模型。', 409);
-    // Qoder resolves third-party models only through its interactive BYOK wizard,
-    // which the SDK control channel used for execution does not expose. Selecting
-    // another vendor here always failed after dispatch, so refuse it up front.
-    if (source && isQoderProvider(connection.provider) && source.provider !== connection.provider && source.provider !== 'native-' + connection.provider) fail('agent_model_source_unsupported', `${qoderProduct(connection.provider).label} Agent 暂不支持选择其他供应商的模型，请改用 ${qoderProduct(connection.provider).label} 原生模型。`, 409);
+    if (source && descriptor) {
+      const compatibility = sourceCompatibility(descriptor, source);
+      if (!compatibility.compatible) {
+        fail(compatibility.reasonCode ?? 'agent_model_source_unsupported', compatibility.reason ?? `${connection.label} 暂不支持所选模型来源。`, 409);
+      }
+    }
     // The revision is an observation hint, not a selection identity. Current source,
     // identity, model availability and capability are revalidated below.
     const availableModels = source?.models ?? connection.models;
@@ -925,12 +1043,7 @@ export class ConversationApplication {
     if(input.serviceTier&&!source)fail('agent_model_tier_unavailable','原生默认模型不支持此共享服务档位。',409);
     input.serviceTier=source?(boundModel as ModelOffering|undefined)?.defaultServiceTier:undefined;
     const modelConfig=source&&selectedModel?modelConfiguration(selectedModel as ModelOffering,input.serviceTier):undefined;
-    // Native Codex keeps earlier permission instructions in its thread. Devin
-    // rejects the default-mode block even after a later full-access turn, so its
-    // participant binds the permission into the configuration hash: a mode change
-    // opens a fresh context transparently, never removing native instructions or
-    // silently raising the selected mode. Permission itself is not a handoff.
-    const configuration=source?.provider==='devin'&&connection.provider==='codex'?hash({model:modelConfig,permission:input.permissionMode}):modelConfig;
+    const configuration=Boolean(source&&runtimeTraits?.configurationIncludesPermission?.includes(source.provider))?hash({model:modelConfig,permission:input.permissionMode}):modelConfig;
     input.reasoningEffort ??= boundModel?.defaultReasoningEffort;
     if (input.reasoningEffort && !boundModel?.reasoningEfforts?.some(effort => effort.id === input.reasoningEffort)) fail('agent_reasoning_unavailable', '该思考深度不在所选模型的可用目录中。', 409);
     if (!connection.capabilities.text) fail('agent_capability_unavailable', '此接入尚不支持文本输入。', 409);
@@ -959,9 +1072,15 @@ export class ConversationApplication {
     // Interrupted Qoder history can contain native inputs without an exact
     // mapping. Keep that context and its tools intact, and use a new native
     // context with the original selection and recorded handoff.
-    const isolatedContinuation = continuingReleased && current?.interrupted &&
-      current.executionState === 'unknown' && isQoderProvider(connection.provider);
-    const participant = held || isolatedContinuation ? undefined : latest;
+    const isolatedContinuation = Boolean(continuingReleased && current?.interrupted &&
+      current.executionState === 'unknown' && runtimeTraits?.isolateInterruptedContinuation);
+    const currentPolicyDigest = `sha256-${createHash('sha256').update(interactionPolicy.instructions).digest('hex')}`;
+    const policyChangedContinuation = Boolean(
+      latest?.contextRef?.data?.supportsResumePolicyUpdate === false
+      && typeof latest.contextRef.data.policyDigest === 'string'
+      && latest.contextRef.data.policyDigest !== currentPolicyDigest,
+    );
+    const participant = held || isolatedContinuation || policyChangedContinuation ? undefined : latest;
     const through = record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0;
     const changes = handoffEntries([...(record.inheritedContext?.entries??[]),...record.view.entries],participant?.deliveredThrough??0).map(handoffEntry);
     const previous = record.participants.find(value=>value.id===record.view.run?.participantId) ?? record.participants.at(-1);
@@ -1004,7 +1123,12 @@ export class ConversationApplication {
     const imageBytes = images.reduce((total, image) => total + record.attachments[image.id]!.size, 0);
     const fits = inputBytes <= maxInputBytes && images.length <= MAX_VISUAL_INPUTS && imageBytes <= 32 * 1024 * 1024 && images.every(image => record.attachments[image.id]!.size <= (connection.capabilities.maxImageBytes ?? MAX_IMAGE_BYTES)) && (!images.length || (connection.capabilities.images && (!source || Boolean(selectedModel && 'images' in selectedModel && selectedModel.images))));
     const token = createHmac('sha256', this.previewSecret).update(JSON.stringify({ id: record.view.id, input, sourceRevision: source?.revision, through, text, ids })).digest('hex');
-    return { preview: { handoff, token, conversationId: record.view.id, revision: record.view.revision, connectionId: input.connectionId, modelAccountId: input.modelAccountId, modelAccountIdentity: source?.identity, modelAccountRevision: source?.revision, modelSourceLabel: source?.accountLabel ?? source?.label, model: input.model, serviceTier:input.serviceTier,reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode!, participantId: participant?.id, cwd: record.view.cwd, taskId: record.view.taskId, text: input.text, history, sourceThrough: through, inputBytes, maxInputBytes, fits, switching, diagnostic: fits ? undefined : images.length && !canAttachHistory ? '所选执行方或模型无法接收这些图片，请选择支持图片的执行组合；草稿已保留。' : '必要交接资料仍超出接收容量，请选择容量更大的模型；草稿与本地资料保留。' }, text, images, draft: input,configuration,modelLeaseConfiguration:modelConfig,needsCompression,fullText,participationSegments:[...(controlInstruction?[instructionParticipation('conversation-control',controlInstruction)]:[]),...(changes.length||switching||waitingQuestions?[instructionParticipation('handoff-instructions',handoffPrompt)]:[])] };
+    const previewDiagnostic = fits
+      ? (policyChangedContinuation ? `本轮将开启新的 ${connection.label} 会话` : undefined)
+      : images.length && !canAttachHistory
+        ? '所选执行方或模型无法接收这些图片，请选择支持图片的执行组合；草稿已保留。'
+        : '必要交接资料仍超出接收容量，请选择容量更大的模型；草稿与本地资料保留。';
+    return { preview: { handoff, token, conversationId: record.view.id, revision: record.view.revision, connectionId: input.connectionId, modelAccountId: input.modelAccountId, modelAccountIdentity: source?.identity, modelAccountRevision: source?.revision, modelSourceLabel: source?.accountLabel ?? source?.label, model: input.model, serviceTier:input.serviceTier,reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode!, participantId: participant?.id, cwd: record.view.cwd, taskId: record.view.taskId, text: input.text, history, sourceThrough: through, inputBytes, maxInputBytes, fits, switching, diagnostic: previewDiagnostic }, text, images, draft: input,configuration,modelLeaseConfiguration:modelConfig,needsCompression,fullText,participationSegments:[...(controlInstruction?[instructionParticipation('conversation-control',controlInstruction)]:[]),...(changes.length||switching||waitingQuestions?[instructionParticipation('handoff-instructions',handoffPrompt)]:[])] };
   }
   prepareSend(workspaceId: string, id: string, input: SendDraft): SendPreview { return this.prepare(this.load(workspaceId, id), input).preview; }
 
@@ -1086,8 +1210,14 @@ export class ConversationApplication {
         && (current.generation === this.options.generation || Boolean(this.options.generationAlive?.(current.generation)));
       if (unfinishedRun(current) && supplementAvailable && !prepared.preview.switching && raw.previewToken === undefined)
         fail('agent_native_supplement_required', '原轮仍在执行，请通过原生追加发送；不会另开会话。', 409);
-      if (!prepared.preview.participantId && prepared.preview.switching && raw.previewToken === undefined)
-        fail('agent_session_confirmation_required', '需要新的原生会话，请先查看交接内容并明确确认；输入已保留。', 409);
+      if (!prepared.preview.participantId && (prepared.preview.switching || Boolean(prepared.preview.diagnostic)) && raw.previewToken === undefined)
+        fail(
+          'agent_session_confirmation_required',
+          prepared.preview.diagnostic
+            ? `${prepared.preview.diagnostic}，请确认交接内容后发送；输入已保留。`
+            : '需要新的原生会话，请先查看交接内容并明确确认；输入已保留。',
+          409,
+        );
     }
 
     let participant = record.participants.find(value=>value.id===prepared.preview.participantId);
@@ -1184,7 +1314,7 @@ export class ConversationApplication {
   }
   private applyItem(record: StoredConversation, participant: StoredParticipant, item: ExecutorItem, runId?: string, live = false): boolean {
     const changed = this.mergeItem(record,participant,item,runId,live);
-    if(changed && ['codex','dsh','qoder','qoder-cn','claude-code'].includes(participant.provider) && item.kind === 'tool' && item.nativeTool) {
+    if(changed && (this.options.connections.hasNativeContent(participant.connectionId) || this.options.connections.hasNativeContent(participant.provider)) && item.kind === 'tool' && item.nativeTool) {
       const id = record.sources[`${participant.id}:tool:${item.id}`];
       const owned=(record.nativeTools ??= {});
       owned[id] = item.parentToolId ? {parentToolId:item.parentToolId} : owned[id] ?? true;
@@ -1511,7 +1641,7 @@ export class ConversationApplication {
         const oldWork = this.workers.get(transition.runId);
         if (oldWork) await within(oldWork, 5000, 'agent_question_transition_unconfirmed');
       }
-      if (startingParticipant.modelAccountId) await this.options.modelAccess!.leases.create({accountId:startingParticipant.modelAccountId, expectedIdentity:startingParticipant.modelAccountIdentity, modelId:startingParticipant.modelId!,serviceTier:startingParticipant.serviceTier,conversationId:record.view.id,agentId:startingParticipant.connectionId,runId});
+      if (startingParticipant.modelAccountId) await this.validateOrBindParticipantSource(record, startingParticipant, runId);
       const selectedRuntime = await this.sourceRuntime(record, startingParticipant);
       const runtime = selectedRuntime.runtime;
       record = this.currentRun(workspaceId, id, runId); if (!record) return;
@@ -1521,14 +1651,21 @@ export class ConversationApplication {
       if (selectedRuntime.nativeHomeRoot) participant.nativeHomeRoot = selectedRuntime.nativeHomeRoot;
       if (this.conversationStopRequested(record,runId) || record.view.run!.status === 'stopping') { record.view.run!.status = 'stopped'; this.save(record); return; }
       let replacedContext: ContextRef | undefined;
+      let replacedContextReason: 'unavailable' | 'policy' | undefined;
       if (participant.contextRef) {
         try {
           await runtime.resumeContext({ contextRef: participant.contextRef, cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
         } catch (error) {
-          if (!(error instanceof AgentServiceError) || error.code !== 'agent_context_unavailable') throw error;
-          // The native session is gone. Keep the stored transcript and continue
-          // this input in a new session instead of failing every later message.
+          if (
+            !(error instanceof AgentServiceError)
+            || !['agent_context_unavailable', 'agent_context_policy_changed'].includes(error.code)
+          ) {
+            throw error;
+          }
+          // The native session is gone or cannot apply the updated interaction policy on resume.
+          // Keep the stored transcript and continue this input in a new session.
           replacedContext = participant.contextRef;
+          replacedContextReason = error.code === 'agent_context_policy_changed' ? 'policy' : 'unavailable';
         }
       }
       if (participant.contextRef && !replacedContext) {
@@ -1566,8 +1703,17 @@ export class ConversationApplication {
           if(replacedContext&&!current.view.entries.some(entry=>entry.id==='native-session-'+runId))current.view.entries.push({
             id:'native-session-'+runId, sequence:(current.view.entries.at(-1)?.sequence??0)+1, createdAt:this.options.now(),
             kind:'handoff', role:'system', runId, participantId:participant.id, provider:participant.provider, status:'sending',
-            text:`${participant.label} 的原生会话已无法恢复，已建立新的原生会话继续本轮；此前对话记录与输入已保留。`,
-            nativeSession:{reason:'session-replacement',description:'原原生会话不可恢复，使用新的原生会话',from:{contextId:replacedContext.id},to:{contextId:ref.id,generation:this.options.generation}},
+            text:replacedContextReason==='policy'
+              ? `本轮将开启新的 ${participant.label} 会话；此前对话记录已保留。`
+              : `${participant.label} 的原生会话已无法恢复，已建立新的原生会话继续本轮；此前对话记录与输入已保留。`,
+            nativeSession:{
+              reason:'session-replacement',
+              description:replacedContextReason==='policy'
+                ? '交互政策已更新，使用新的原生会话'
+                : '原原生会话不可恢复，使用新的原生会话',
+              from:{contextId:replacedContext.id},
+              to:{contextId:ref.id,generation:this.options.generation},
+            },
           });
           this.save(current);
         });
@@ -1585,11 +1731,18 @@ export class ConversationApplication {
       const previousGeneration = previousRun?.generation ?? (previousAttempt ? record.runOutcomes?.[previousAttempt.runId]?.generation : undefined);
       const fromContext = previousParticipant?.contextRef?.id;
       const toContext = participant.contextRef!.id;
+      const activePolicyDigest = `sha256-${createHash('sha256').update(interactionPolicy.instructions).digest('hex')}`;
+      const policySessionReplacement = Boolean(
+        previousParticipant?.contextRef?.data?.supportsResumePolicyUpdate === false
+        && typeof previousParticipant.contextRef.data.policyDigest === 'string'
+        && previousParticipant.contextRef.data.policyDigest !== activePolicyDigest,
+      );
       // Persist identity only after native resume/create succeeded. Acceptance
       // remains a separate receipt, so a failed dispatch is never called a handoff success.
       if (!internalRecovery && previousParticipant && (fromContext!==toContext || previousGeneration && previousGeneration!==this.options.generation)) {
         const reason = fromContext===toContext ? 'backend-adoption' as const : 'session-replacement' as const;
         const description = reason==='backend-adoption' ? '原轮控制已释放，新后台复用原生会话'
+          : policySessionReplacement ? '交互政策已更新，使用新的原生会话'
           : prepared.preview.switching ? '用户执行选择变化'
           : previousRun?.resourcesReleased && prepared.draft.continueRunId===previousRun.id ? '原控制资源已释放，保留原轮结果并在独立会话接续'
           : previousRun && unfinishedRun(previousRun) ? '原轮仍有在途工作，新要求使用独立会话'
@@ -1602,7 +1755,11 @@ export class ConversationApplication {
           id:'native-session-'+runId, sequence:(current.view.entries.at(-1)?.sequence??0)+1,
           createdAt:this.options.now(), kind:'handoff', role:'system', runId, participantId:participant.id,
           provider:participant.provider, status:'sending',
-          text:reason==='backend-adoption'?'后台已接管原生会话，等待本轮受理。':'执行选择或可用上下文变化，已准备新的原生会话，等待本轮受理。',
+          text:reason==='backend-adoption'
+            ? '后台已接管原生会话，等待本轮受理。'
+            : policySessionReplacement
+              ? `本轮将开启新的 ${participant.label} 会话；此前对话记录已保留。`
+              : '执行选择或可用上下文变化，已准备新的原生会话，等待本轮受理。',
           nativeSession:{reason,...(this.options.backendChange?.fromGeneration===previousGeneration?{backendChange:this.options.backendChange}:{}),description,from:{contextId:fromContext,generation:previousGeneration},to:{contextId:toContext,generation:this.options.generation}},
           });
           this.save(current);
@@ -1611,7 +1768,15 @@ export class ConversationApplication {
         record=latest;
       }
       if (beforeDispatch.view.run!.status === 'stopping') { beforeDispatch.view.run!.status = 'stopped'; this.save(beforeDispatch); return; }
-      if (!this.options.connections.get(prepared.draft.connectionId).enabled) fail('agent_connection_disabled', '接入已断开，本次输入尚未交付。', 409);
+      const liveConnection = this.options.connections.get(prepared.draft.connectionId);
+      if (!liveConnection.enabled) fail('agent_connection_disabled', '接入已断开，本次输入尚未交付。', 409);
+      if (liveConnection.sendGate?.state === 'paused') {
+        fail(
+          'agent_connection_send_paused',
+          liveConnection.sendGate.diagnostic ?? `${liveConnection.label} 正在执行账号退出或切换，已暂停发送；草稿已保留。`,
+          409,
+        );
+      }
       const inputAttempt=record.attempts.find(value=>value.runId===runId)!;
       const storedParticipant=record.participants.find(value=>value.id===participant.id)??participant;
       const priorContext=storedParticipant.participationContext;
@@ -1647,13 +1812,13 @@ export class ConversationApplication {
       }
       const run = record.view.run!;
       if(run.status==='completed'&&run.executionState==='ended'&&run.tools.every(tool=>tool.status==='completed')&&!(error instanceof NativeRequestError&&error.fault))return;
-      const rejectedBeforeInput = !run.accepted && (error instanceof ExecutorInputRejected || error instanceof AgentServiceError && ['agent_permission_invalid', 'agent_permission_unavailable', 'agent_permission_unverified', 'agent_reasoning_unavailable'].includes(error.code));
+      const rejectedBeforeInput = !run.accepted && (error instanceof ExecutorInputRejected || error instanceof AgentServiceError && ['agent_permission_invalid', 'agent_permission_unavailable', 'agent_permission_unverified', 'agent_reasoning_unavailable', 'agent_model_source_changed'].includes(error.code));
       const userStopping = run.status === 'stopping';
       const possiblyDelivered = dispatched && !rejectedBeforeInput;
       if (run.status !== 'stopped' && (run.status !== 'completed' || error instanceof NativeRequestError && error.fault)) run.status = possiblyDelivered ? 'unknown' : 'failed';
       run.diagnostic = this.options.modelAccess?.leases.streamFailure(id,runId)??safeDiagnostic(error); run.updatedAt = this.options.now();
       if (error instanceof NativeRequestError || error instanceof NativeObservationError) run.fault = error.fault;
-      const transportLost = error instanceof Error && ['codex_execution_observation_lost', 'codex_event_observation_lost', 'dsh_execution_observation_lost', 'dsh_event_observation_lost', 'qoder_execution_observation_lost', 'qoder_event_observation_lost'].includes(error.message);
+      const transportLost = isObservationLostError(error);
       if (!this.closing && !userStopping && transportLost && run.accepted && run.status === 'unknown' && !record.interruption?.cancelled) {
         record.interruption = { runId, reason: 'transport', awaitingUser: record.view.requests.some(request=>request.runId===runId) };
         run.interrupted = true;
@@ -2094,9 +2259,11 @@ export class ConversationApplication {
       const attempt=record.attempts.find(value=>value.runId===run.id);
       if(!participant?.contextRef||!participant.bindingIdentity||!attempt?.executionRef)continue;
       const revision=record.view.revision;
-      const gatewayIdentity=participant.modelAccountId&&participant.modelAccountIdentity&&participant.modelId&&participant.modelConfiguration!==undefined
+      const descriptor=this.options.connections.descriptor(participant.connectionId);
+      const usesAccountIdentity=Boolean(participant.modelAccountId&&descriptor?.modelPolicy?.native?.binding==='account-identity');
+      const gatewayIdentity=!usesAccountIdentity&&participant.modelAccountId&&participant.modelAccountIdentity&&participant.modelId&&participant.modelConfiguration!==undefined
         ?modelLeaseIdentity(participant.modelAccountId,participant.modelAccountIdentity,participant.modelId,id,participant.connectionId,participant.modelLeaseConfiguration??participant.modelConfiguration):undefined;
-      if(participant.modelAccountId&&!gatewayIdentity)continue;
+      if(participant.modelAccountId&&!usesAccountIdentity&&!gatewayIdentity)continue;
       const nativeInputs=record.attempts.filter(value=>value.runId===run.id&&value.executionRef).flatMap(value=>{
         const entry=record.view.entries.find(item=>item.id===value.userEntryId);
         return entry?.text.trim()&&(!entry.status||!['failed'].includes(entry.status))?[{clientRequestId:value.clientRequestId,text:entry.text,createdAt:entry.createdAt}]:[];
@@ -2627,6 +2794,167 @@ export class ConversationApplication {
     });
   }
 
+  activeConversationsForConnection(connectionId: string): Array<{
+    conversationId: string;
+    workspaceId: string;
+    title: string;
+    runId: string;
+    participantId: string;
+    generation: string;
+    status: RunStatus;
+  }> {
+    const active: Array<{
+      conversationId: string;
+      workspaceId: string;
+      title: string;
+      runId: string;
+      participantId: string;
+      generation: string;
+      status: RunStatus;
+    }> = [];
+    for (const saved of this.options.repository.listPendingStates(true)) {
+      let record: StoredConversation;
+      try {
+        record = this.load(saved.view.workspaceId, saved.view.id);
+      } catch {
+        continue;
+      }
+      for (const run of conversationRuns(record.view)) {
+        const participant = record.participants.find(item => item.id === run.participantId);
+        if (participant?.connectionId !== connectionId) continue;
+        const alive = run.generation === this.options.generation || this.options.generationAlive?.(run.generation) === true;
+        if (!alive || run.resourcesReleased) continue;
+        const hasOpenRequest = record.view.requests.some(request => request.runId === run.id);
+        const isActivelyRunning =
+          ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active'].includes(run.status)
+          || run.executionState === 'active'
+          || run.tools.some(tool => tool.status === 'running')
+          || this.workers.has(run.id)
+          || this.retryWaits.has(run.id)
+          || hasOpenRequest;
+        if (!isActivelyRunning) continue;
+        active.push({
+          conversationId: record.view.id,
+          workspaceId: record.view.workspaceId,
+          title: record.view.title,
+          runId: run.id,
+          participantId: run.participantId,
+          generation: run.generation,
+          status: run.status,
+        });
+      }
+    }
+    return active;
+  }
+
+  async stopActiveForAccountChange(connectionId: string): Promise<{
+    stoppedAll: boolean;
+    unstopped: Array<{ conversationId: string; workspaceId: string; title: string; runId: string; status: RunStatus }>;
+  }> {
+    const targets = this.activeConversationsForConnection(connectionId);
+    const unstopped: Array<{ conversationId: string; workspaceId: string; title: string; runId: string; status: RunStatus }> = [];
+
+    for (const target of targets) {
+      const stopOnce = async () => {
+        const current = this.load(target.workspaceId, target.conversationId);
+        const control = {
+          expectedRevision: current.view.revision,
+          runId: target.runId,
+          participantId: target.participantId,
+          generation: target.generation,
+        };
+        if (target.generation !== this.options.generation && this.options.controlSupersededRun) {
+          await this.options.controlSupersededRun(target.workspaceId, target.conversationId, control, 'stop');
+        } else {
+          await this.stop(target.workspaceId, target.conversationId, control);
+        }
+      };
+
+      try {
+        await stopOnce();
+      } catch (error) {
+        if (error instanceof AgentServiceError && error.code === 'agent_revision_conflict') {
+          await stopOnce().catch(() => {});
+        }
+      }
+
+      const worker = this.workers.get(target.runId);
+      if (worker) {
+        await within(worker, 3_000, 'account-change-worker-settle').catch(() => {});
+      }
+
+      let after: StoredConversation | undefined;
+      try {
+        after = this.load(target.workspaceId, target.conversationId);
+      } catch {
+        after = undefined;
+      }
+      if (!after) {
+        unstopped.push({
+          conversationId: target.conversationId,
+          workspaceId: target.workspaceId,
+          title: target.title,
+          runId: target.runId,
+          status: target.status,
+        });
+        continue;
+      }
+
+      const settledRun = conversationRuns(after.view).find(r => r.id === target.runId);
+      if (!settledRun) continue;
+
+      const stillBusy =
+        this.workers.has(target.runId)
+        || this.retryWaits.has(target.runId)
+        || ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active'].includes(settledRun.status)
+        || settledRun.executionState === 'active'
+        || settledRun.tools.some(tool => tool.status === 'running')
+        || after.view.requests.some(request => request.runId === target.runId);
+
+      let provenStopped = false;
+      if (!stillBusy) {
+        if (['stopped', 'completed', 'failed'].includes(settledRun.status) || settledRun.resourcesReleased === true) {
+          provenStopped = true;
+        } else if (settledRun.status === 'unknown') {
+          const attempt = after.attempts.find(a => a.runId === target.runId);
+          const participant = after.participants.find(p => p.id === target.participantId);
+          if (attempt?.executionRef && participant?.contextRef && participant.bindingIdentity) {
+            provenStopped = await this.options.connections.readReleasedControl(connectionId, {
+              bindingIdentity: participant.bindingIdentity,
+              contextRef: participant.contextRef,
+              executionRef: attempt.executionRef,
+              cwd: after.view.cwd,
+            });
+          }
+        }
+      }
+
+      if (!provenStopped) {
+        unstopped.push({
+          conversationId: after.view.id,
+          workspaceId: after.view.workspaceId,
+          title: after.view.title,
+          runId: settledRun.id,
+          status: settledRun.status,
+        });
+      }
+    }
+
+    return { stoppedAll: unstopped.length === 0, unstopped };
+  }
+
+  async releaseConnectionSources(connectionId: string): Promise<void> {
+    const owned = [...this.sourceConnections.entries()].filter(([, connId]) => connId === connectionId);
+    await Promise.allSettled(
+      owned.map(async ([participantId]) => {
+        await this.retireSource(participantId).catch(() => {});
+        this.sourceRuntimes.delete(participantId);
+        this.sourceOwners.delete(participantId);
+        this.sourceConnections.delete(participantId);
+      }),
+    );
+  }
+
   async closeConnection(connectionId: string): Promise<void> {
     for (const saved of this.options.repository.listPendingStates(true)) {
       for (const prior of conversationRuns(saved.view)) {
@@ -2671,11 +2999,4 @@ export class ConversationApplication {
     await Promise.allSettled([...ids].map(id => this.closeConnection(id)));
     for(const item of interrupted){const record=this.load(item.workspaceId,item.id);if(record.view.run?.id===item.runId&&record.view.run&&['stopped','unknown','tools-active','stopping'].includes(record.view.run.status)){record.view.run.diagnostic=record.view.run.status==='stopped'?'宿主退出导致执行停止；这不是用户主动停止。':'宿主退出后原执行仍待核对，不能重复发送。';this.save(record);}}
   }
-}
-
-/** A native Qoder lease is only meaningful for the product that produced it. */
-function nativeLeaseProvider(provider:string):'qoder'|'qoder-cn'|undefined {
-  if(provider==='native-qoder')return 'qoder';
-  if(provider==='native-qoder-cn')return 'qoder-cn';
-  return undefined;
 }

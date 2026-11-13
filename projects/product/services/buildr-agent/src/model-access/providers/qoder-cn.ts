@@ -12,6 +12,9 @@ export function createQoderCnModelProvider(programs?: AgentProgramManager): Mode
     id: qoderCnModelAccountId,
     label: product.label,
     linked: true,
+    sharing: { kind: 'gateway' },
+    inference: 'gateway',
+    presentation: { vendorLabel: product.label, sourceLabel: product.label, quotaLabel: product.label },
     async open(input): Promise<ModelProviderRuntime> {
       const config = qoderCnConfigRoot(input.configRoot);
       const environment = input.environment;

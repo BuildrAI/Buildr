@@ -5,7 +5,7 @@ import {validConversationChoice} from '../src/features/agent-conversations/conve
 
 function storage(initial={}){const values=new Map(Object.entries(initial));return{getItem:key=>values.get(key)??null,setItem:(key,value)=>{values.set(key,value);},removeItem:key=>{values.delete(key);},dump:()=>Object.fromEntries(values)};}
 const connections=[
- {id:'qoder',provider:'qoder',label:'Qoder',enabled:true,status:'ready',models:[{id:'native-model',label:'Native',isDefault:true}]},
+ {id:'qoder',provider:'qoder',label:'Qoder',enabled:true,status:'ready',modelPolicy:{native:{sourceProviders:['native-qoder','qoder'],delivery:'runtime-selected',exclusive:true}},models:[{id:'native-model',label:'Native',isDefault:true}]},
  {id:'dsh',provider:'dsh',label:'DSH',enabled:true,status:'ready',models:[{id:'dsh-model',label:'DSH default',isDefault:true}]},
 ];
 const catalog=[
@@ -160,4 +160,12 @@ test('readable but read-only browser storage uses current-page model memory inst
  assert.equal(readConversationModelPreference(denied,'read-only-models').model,'swe-2');
  writeConversationModelPreference({version:1,connectionId:'qoder',model:'native-model',modelAccountId:'native-qoder'},denied,'read-only-models');
  assert.equal(preferredConversationChoice({version:1,agent:{connectionId:'dsh'}},readConversationModelPreference(denied,'read-only-models'),connections,catalog).model,'swe-2');
+});
+
+test('兼容性字段缺失时前端保留模型记忆交由服务端校验，声明不兼容时拒绝恢复',()=>{
+ const legacyConnections=[{id:'qoder',provider:'qoder',label:'Qoder',enabled:true,status:'ready',models:[]}];
+ const memory={version:1,connectionId:'qoder',model:'swe-2',modelAccountId:'devin',modelAccountIdentity:'devin-identity'};
+ assert.equal(preferredConversationChoice({version:1,agent:{connectionId:'qoder'}},memory,legacyConnections,catalog).model,'swe-2');
+ const declaredIncompatible=catalog.map(item=>item.accountId==='devin'?{...item,executorCompatibility:[{connectionId:'qoder',compatible:false,reasonCode:'agent_model_source_unsupported',reason:'仅支持原生模型'}]}:item);
+ assert.equal(preferredConversationChoice({version:1,agent:{connectionId:'qoder'}},memory,legacyConnections,declaredIncompatible).model,undefined);
 });

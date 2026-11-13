@@ -20,7 +20,7 @@ const handoff=closed({agent:string,model:string,changes:list(closed({kind:{enum:
 const presentedFiles={type:'array',maxItems:20,items:closed({path:{type:'string',minLength:1,maxLength:8192},description:{type:'string',maxLength:2000}},['path'])};
 const backendChange=closed({reason:{enum:['runtime-content-changed','process-restarted']},detectedAt:text,fromGeneration:text,fromDigest:text,toDigest:text});
 const nativeSession=closed({backendChange,reason:{enum:['backend-adoption','session-replacement']},description:text,from:closed({contextId:text,generation:text},[]),to:closed({contextId:text,generation:text})},['reason','description','from','to']);
-const entry = closed({ participation:participationObservationSchema, nativeSession, presentedFiles, parentToolId: text, thinking: boolean, detail: closed({revision:text,live:boolean},['revision']), deliveryDiagnostic: string, handoff, id: text, sequence: integer, kind: { enum: ['message', 'tool', 'notice', 'handoff', 'thinking'] }, role: { enum: ['user', 'assistant', 'system'] }, text: string, name: text, input: string, participantId: text, provider: text, runId: text, status: { enum: ['sending', 'accepted', 'unknown', 'running', 'completed', 'failed'] }, attachments: list(text), createdAt: text }, ['id', 'sequence', 'kind', 'role', 'text', 'createdAt']);
+const entry = closed({ participation:participationObservationSchema, nativeSession, presentedFiles, parentToolId: text, thinking: boolean, detail: closed({revision:text,live:boolean},['revision']), nativeDetail: boolean, deliveryDiagnostic: string, handoff, id: text, sequence: integer, kind: { enum: ['message', 'tool', 'notice', 'handoff', 'thinking'] }, role: { enum: ['user', 'assistant', 'system'] }, text: string, name: text, input: string, participantId: text, provider: text, runId: text, status: { enum: ['sending', 'accepted', 'unknown', 'running', 'completed', 'failed'] }, attachments: list(text), createdAt: text }, ['id', 'sequence', 'kind', 'role', 'text', 'createdAt']);
 const tool = closed({ id: text, label: text, status: { enum: ['running', 'completed', 'unknown'] }, canStop: boolean }, ['id', 'label', 'status']);
 const run = closed({ continuedFrom:closed({runId:text,userEntryId:text,prompt:entry},['runId','userEntryId']), contextCompaction:closed({id:text,startedAt:text},['id','startedAt']), questionsEndedBy:text, fault:closed({kind:{enum:['protocol','transport','process']}},['kind']), supersededBy:text, stopRequested:boolean, canContinue:boolean, executionState:{enum:['active','ended','unknown']},resourcesReleased:boolean, attentionSettled:boolean, interrupted: boolean, contextUsage:closed({usedTokens:integer,usedRatio:{type:'number',minimum:0,maximum:1},windowTokens:integer},[]), id: text, participantId: text, provider: text, generation: text, status: { enum: ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'stopped', 'tools-active', 'unknown', 'completed', 'failed'] }, accepted: boolean, tools: list(tool), model: text, modelAccountId: text, modelAccountIdentity: text, modelAccountRevision: text, modelSourceLabel: text, reasoningEffort: text, serviceTier: text, permissionMode, diagnostic: string, startedAt: text, updatedAt: text }, ['id', 'participantId', 'provider', 'generation', 'status', 'accepted', 'tools', 'startedAt', 'updatedAt']);
 const participant = closed({ modelAccountId: text, model: text, id: text, provider: text, connectionId: text, label: text, deliveredThrough: integer, contextId: string }, ['id','provider','connectionId','label','deliveredThrough','contextId']);
@@ -40,10 +40,26 @@ const patchEntry=Object.fromEntries(Object.entries(entry.properties).filter(([ke
 const optionalKeys=(schema:typeof entry|typeof conversation|typeof run)=>({type:'array',uniqueItems:true,items:{enum:Object.keys(schema.properties).filter(key=>!schema.required.includes(key))}});
 const patchRun=Object.fromEntries(Object.entries(run.properties).filter(([key])=>key!=='id'));
 const conversationPatch=closed({runs:list(closed({id:text,changes:closed(patchRun,[]),unset:optionalKeys(run)},['id','changes'])),baseCursor:integer,baseRevision:text,changes:closed(patchHeader,[]),unset:optionalKeys(conversation),entryIds:{...list(text),uniqueItems:true},entries:list(entry),texts:list(closed({id:text,offset:integer,append:string,changes:closed(patchEntry,[]),unset:optionalKeys(entry)},['id','offset','append','changes']))},['baseCursor','baseRevision','changes','entries','texts','runs']);
-const connection = closed({ id: text, provider: text, label: text, revision: text, status: { enum: ['disconnected', 'connecting', 'not-authenticated', 'ready', 'expired', 'failed'] }, enabled: boolean, executable: text, configPath: text, account: closed({ label: string, loginMethod: string }, []), diagnostic: string, models: list(model), capabilities, loginAttempt: closed({ id: text, generation: text, state: { enum: ['initializing', 'waiting-browser', 'checking', 'completed', 'cancelled', 'expired', 'failed'] }, updatedAt: text, url: string, diagnostic: string }, ['id', 'generation', 'state', 'updatedAt']) }, ['id', 'provider', 'label', 'revision', 'status', 'enabled', 'models', 'capabilities']);
+const connectionModelPolicy = closed({
+  account: { enum: ['native', 'source-required'] },
+  gateway: closed({ protocol: { enum: ['responses', 'chat-completions', 'anthropic-messages'] } }, ['protocol']),
+  native: closed({
+    sourceProviders: list(text),
+    exclusive: boolean,
+    binding: { enum: ['gateway-lease', 'account-identity'] },
+    defaultSourceAccountId: text,
+    platformLogin: { enum: ['required-for-sources'] },
+  }, ['sourceProviders', 'binding']),
+}, ['account']);
+const sendGate = closed({
+  state: { enum: ['open', 'paused'] },
+  reason: { enum: ['account-change', 'account-unconfirmed'] },
+  diagnostic: string,
+}, ['state']);
+const connection = closed({ id: text, provider: text, label: text, revision: text, status: { enum: ['disconnected', 'connecting', 'not-authenticated', 'ready', 'expired', 'failed'] }, enabled: boolean, executable: text, configPath: text, account: closed({ label: string, loginMethod: string }, []), diagnostic: string, models: list(model), capabilities, modelPolicy: connectionModelPolicy, hostKeyringAuth: boolean, sendGate, loginAttempt: closed({ id: text, generation: text, state: { enum: ['initializing', 'waiting-browser', 'checking', 'completed', 'cancelled', 'expired', 'failed'] }, updatedAt: text, url: string, diagnostic: string }, ['id', 'generation', 'state', 'updatedAt']) }, ['id', 'provider', 'label', 'revision', 'status', 'enabled', 'models', 'capabilities']);
 const controlFields = { expectedRevision: text, runId: text, participantId: text, generation: text };
 const programCandidate = closed({ executable: text, source: { enum: ['configured', 'selected', 'path', 'managed', 'application', 'sdk'] }, label: text, version: text, compatible: boolean, diagnostic: string }, ['executable', 'source', 'label', 'compatible']);
-const programCatalog = closed({ candidates: list(programCandidate), installation: closed({ label: text, version: text, url: text, canInstall: boolean, diagnostic: string }, ['label', 'version', 'url', 'canInstall']) });
+const programCatalog = closed({ candidates: list(programCandidate), installation: closed({ label: text, version: text, url: text, canInstall: boolean, guidance: text, diagnostic: string }, ['label', 'version', 'url', 'canInstall']) });
 const preparation = closed({ id: text, connectionId: text, generation: text, state: { enum: ['discovering', 'selection-required', 'installation-required', 'installing', 'connecting', 'waiting-login', 'ready', 'failed', 'cancelled'] }, message: text, updatedAt: text, catalog: programCatalog, connection }, ['id', 'connectionId', 'generation', 'state', 'message', 'updatedAt', 'connection']);
 
 const serviceTier=closed({id:text,label:text,contextWindow:integer,reasoningEfforts:list(closed({id:text,label:text})),defaultReasoningEffort:text},['id','label']);
@@ -51,15 +67,36 @@ const offering = closed({kind:{enum:['model','combination']},family:text,enabled
 const quota = closed({balances:list(closed({currency:text,total:text,toppedUp:text,granted:text},['currency','total'])),stale:boolean,diagnostic:text,planLabel:text,windows:list(closed({id:text,label:text,remainingPercent:{type:'number',minimum:0,maximum:100},resetsAt:text,limitWindowSeconds:integer,remainingCredits:{type:'number',minimum:0},totalCredits:{type:'number',minimum:0}},['id','label','remainingPercent'])), observedAt: text, available: boolean, summary: text, remainingPercent: {type:'number',minimum:0,maximum:100}, resetsAt: text }, ['observedAt','available']);
 const providerGroup = closed({id:text,label:text},['id','label']);
 const providerAuthentication = closed({type:{enum:['oauth','api-key']},label:text,placeholder:text,description:text},['type','label']);
-const modelProvider = closed({id:text,label:text,authentication:providerAuthentication,group:providerGroup,modeLabel:text,custom:boolean,connectionId:text,linked:boolean},['id','label']);
+const providerSharing = {
+  anyOf: [
+    closed({ kind: { const: 'gateway' } }, ['kind']),
+    closed({ kind: { const: 'executor-exclusive' }, executors: list(text), reason: text }, ['kind', 'executors', 'reason']),
+  ],
+};
+const providerInference = { enum: ['gateway', 'none'] };
+const providerPresentation = closed({
+  vendorLabel: text,
+  sourceLabel: text,
+  quotaLabel: text,
+  apiKeyHint: text,
+  quotaUnavailableNote: text,
+  billing: closed({ url: text, label: text }, ['url', 'label']),
+}, ['vendorLabel']);
+const executorCompatibilityItem = closed({
+  connectionId: text,
+  compatible: boolean,
+  reasonCode: text,
+  reason: text,
+}, ['connectionId', 'compatible']);
+const modelProvider = closed({id:text,label:text,singleton:boolean,authentication:providerAuthentication,group:providerGroup,modeLabel:text,sharing:providerSharing,inference:providerInference,presentation:providerPresentation,custom:boolean,connectionId:text,linked:boolean},['id','label']);
 const customModel = closed({id:text,label:text,contextWindow:{type:'integer',minimum:1,maximum:10000000}},['id']);
 const modelProtocol = {enum:['chat-completions','responses','anthropic-messages','gemini']};
 const customConfig = closed({protocol:modelProtocol,baseUrl:{type:'string',minLength:1,maxLength:2048},modelsPath:{type:'string',minLength:1,maxLength:2048,pattern:'^/(?!/)[^\\s?#]*$'},useApiKey:boolean,models:list(customModel)},['protocol','baseUrl','useApiKey','models']);
 const customConfigure = closed({expectedRevision:text,label:text,baseUrl:{type:'string',minLength:1,maxLength:2048},protocol:modelProtocol,modelsPath:{type:'string',minLength:1,maxLength:2048,pattern:'^/(?!/)[^\\s?#]*$'},useApiKey:boolean,apiKey:{type:'string',minLength:1,maxLength:4096},models:list(customModel)},['label','baseUrl','protocol','useApiKey']);
 const customDiscovery = closed({accountId:text,baseUrl:{type:'string',minLength:1,maxLength:2048},protocol:modelProtocol,modelsPath:{type:'string',minLength:1,maxLength:2048,pattern:'^/(?!/)[^\\s?#]*$'},useApiKey:boolean,apiKey:{type:'string',minLength:1,maxLength:4096}},['baseUrl','protocol','useApiKey']);
 const customDiscoveryResult = closed({models:list(closed({id:text,label:text},['id'])),observedAt:text,incomplete:boolean,diagnostic:text},['models']);
-const modelAccount = closed({connectionId:text,id: text, identity: text, provider: text, label: text, revision: text, enabled: boolean, sourceEnabled:boolean, status: {enum:['not-authenticated','ready','expired','failed','disconnected']},authType:{enum:['oauth','api-key']},group:providerGroup,modeLabel:text,credentialConfigured:boolean,accountLabel: text, custom:customConfig, models: list(offering), observedAt: text, quota, diagnostic: text, loginAttempt: closed({id: text, state: {enum:['initializing','waiting-browser','checking','completed','cancelled','expired','failed']},updatedAt:text,url:string,diagnostic:string},['id','state','updatedAt'])},['id','provider','label','revision','enabled','status','models']);
-const catalogModel = {...offering, properties: {...offering.properties, accountId:text,accountIdentity:text,provider:text,accountLabel:text,modelId:text,accountRevision:text,available:boolean,observedAt:text}, required:[...offering.required,'accountId','accountIdentity','provider','accountLabel','modelId','accountRevision','available']};
+const modelAccount = closed({connectionId:text,id: text, identity: text, provider: text, label: text, revision: text, enabled: boolean, sourceEnabled:boolean, status: {enum:['not-authenticated','ready','expired','failed','disconnected']},authType:{enum:['oauth','api-key']},singleton:boolean,group:providerGroup,modeLabel:text,sharing:providerSharing,inference:providerInference,presentation:providerPresentation,executorCompatibility:list(executorCompatibilityItem),credentialConfigured:boolean,accountLabel: text, custom:customConfig, models: list(offering), observedAt: text, quota, diagnostic: text, loginAttempt: closed({id: text, state: {enum:['initializing','waiting-browser','checking','completed','cancelled','expired','failed']},updatedAt:text,url:string,diagnostic:string},['id','state','updatedAt'])},['id','provider','label','revision','enabled','status','models']);
+const catalogModel = {...offering, properties: {...offering.properties, accountId:text,accountIdentity:text,provider:text,accountLabel:text,modelId:text,accountRevision:text,available:boolean,observedAt:text,sharing:providerSharing,inference:providerInference,presentation:providerPresentation,executorCompatibility:list(executorCompatibilityItem)}, required:[...offering.required,'accountId','accountIdentity','provider','accountLabel','modelId','accountRevision','available']};
 const programUpgrade = closed({id:text,connectionId:text,expectedVersion:text,executable:string,state:{enum:['downloading','waiting','restarting','completed','failed','interrupted']},message:string,updatedAt:text,installedExecutable:text,currentVersion:text},['id','connectionId','expectedVersion','executable','state','message','updatedAt']);
 const pushbackDelivery = closed({at:text,success:boolean,status:{type:'integer',minimum:100,maximum:599},kind:{enum:['event','test']}},['at','success','kind']);
 const pushbackOption = closed({optionId:{type:'string',description:'回答时使用的稳定选项标识'},label:{type:'string',description:'展示标签'},description:{type:'string',description:'选项说明'}},['optionId','label']);
@@ -110,6 +147,22 @@ export const AGENT_OPERATION_SCHEMAS = {
   addModelAccount: named('AgentModelAccountAdd', closed({provider:text,label:text,custom:customConfigure},['provider'])),
   empty: named('AgentServiceEmptyRequest', closed({})),
   connection: named('AgentServiceConnection', connection),
+  connectionAccountImpact: named('AgentServiceConnectionAccountImpact', closed({
+    connectionId: text,
+    hostKeyringAuth: boolean,
+    activeConversations: list(closed({
+      conversationId: text,
+      workspaceId: text,
+      title: string,
+      runId: text,
+      status: run.properties.status,
+    }, ['conversationId', 'workspaceId', 'title', 'runId', 'status'])),
+    references: integer,
+  }, ['connectionId', 'hostKeyringAuth', 'activeConversations', 'references'])),
+  connectionLogout: named('AgentServiceConnectionLogoutRequest', closed({
+    expectedRevision: text,
+    switchAccount: boolean,
+  }, ['expectedRevision'])),
   connections: named('AgentServiceConnections', closed({ connections: list(connection) })),
   prepare: named('AgentServicePrepareRequest', closed({ expectedRevision: text, executable: { type: 'string', minLength: 1, maxLength: 4096 }, install: boolean }, ['expectedRevision'])),
   preparation: named('AgentServicePreparation', preparation),

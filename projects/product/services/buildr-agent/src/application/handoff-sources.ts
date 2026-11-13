@@ -6,6 +6,7 @@ import type {NativeToolContent} from '../native-content-contracts.ts';
 import {entryContentRevision} from '../domain/entry-revision.ts';
 import {fail} from '../domain/agent-state.ts';
 import {safeStoragePath} from '../storage/files.ts';
+import {sharedNativeHomeProviders} from '../executors/index.ts';
 
 /** Strip tool bodies before organizing, hashing or serializing handoff material. */
 export function handoffEntry(entry:ConversationEntry):ConversationEntry {
@@ -72,7 +73,7 @@ function storedNativeReferences(value:unknown):NativeToolContent[] {
   if(Array.isArray(node)){for(const item of node)walk(item);return;}
   const record=node as Partial<NativeToolContent>&{session?:{config?:unknown}};
   const provider=record.provider;
-  if((provider==='codex'||provider==='dsh')&&(typeof record.contextId==='string'||typeof record.session?.config==='string'))
+  if(typeof provider==='string'&&sharedNativeHomeProviders().has(provider)&&(typeof record.contextId==='string'||typeof record.session?.config==='string'))
    references.push(record as NativeToolContent);
   for(const child of Object.values(record))walk(child);
  };
@@ -131,7 +132,7 @@ export function readHandoffSource(root:string,id:string,query:HandoffHistoryQuer
  const append=(entry:ConversationEntry)=>{const size=Buffer.byteLength(JSON.stringify(entry));if(size>1024*1024)fail('agent_handoff_source_budget','该条元数据超过读取预算，请按准确条目读取。',413);if(bytes+size>1024*1024)return false;bytes+=size;page.entries.push(entry);return true;};
  for(const ref of records.slice(cursor,cursor+limit)){
   position++;
-  if(ref.tool){if(!append(ref.tool)){position--;break;}continue;}
+  if(ref.tool){const projected=ref.native?{...ref.tool,nativeDetail:true}:ref.tool;if(!append(projected)){position--;break;}continue;}
   try{
    const entry=read(ref);if(!entry)throw Error('条目或原修订不可用');
    if(entry.kind==='handoff'||entry.kind==='thinking'||entry.thinking)throw Error('来源不是可见消息');

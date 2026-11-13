@@ -12,7 +12,7 @@ import { findExecutable, inspectVersion, isolatedEnvironment, nativeHome, Native
 import { isCompatibleProgram } from '../program-policy.ts';
 import { generateModelTitle } from '../model-title.ts';
 import { claudeEffort, claudeGatewayEnvironment } from './protocol.ts';
-import { claudeContent, readClaudePersistedExecution, readClaudeSupplementReceipt } from './content.ts';
+import { claudeNativeContent, readClaudePersistedExecution, readClaudeSupplementReceipt } from './content.ts';
 import { importClaudeFork } from './fork.ts';
 
 const provider = 'claude-code';
@@ -23,7 +23,19 @@ const capabilities = {
 };
 export function createClaudeExecutor(): AgentExecutor {
   return {
-    descriptor:{id:provider,label:'Claude Code',capabilities},nativeContent:claudeContent,
+    descriptor:{
+      id:provider,
+      label:'Claude Code',
+      capabilities,
+      modelPolicy:{
+        account:'source-required',
+        gateway:{protocol:'anthropic-messages',sseKeepalive:true},
+      },
+      runtimeTraits:{
+        upgradeVerification:'runtime',
+      },
+    },
+    nativeContent:claudeNativeContent,
     readReleasedControl:input=>releasedNativeControl(provider,input),
     readPersistedExecution:readClaudePersistedExecution,readSupplementReceipt:readClaudeSupplementReceipt,
     storage:{transientDirectories:[]},
@@ -75,7 +87,7 @@ class ClaudeRuntime implements AgentRuntime {
   }
   static async open(options:ExecutorOpenOptions):Promise<ClaudeRuntime> {
     options.signal?.throwIfAborted();
-    const gateway=checkedGateway(options.gateway),{home,temporary}=nativeHome(options.configRoot);
+    const gateway=checkedGateway(options.gateway,{executorId:provider}),{home,temporary}=nativeHome(options.configRoot);
     const config=join(options.configRoot,'claude-config');
     // Claude's complete host-HOME override has not been established. Preserve the
     // private HOME fallback rather than leaking host settings/keychain discovery.
@@ -107,7 +119,7 @@ class ClaudeRuntime implements AgentRuntime {
     this.contexts.set(context.id,saved);return saved;
   }
   async inspectAccount():Promise<AccountObservation> {
-    return {status:'ready',label:'使用所选模型账号',loginMethod:'shared-model-gateway'};
+    return {status:'not-authenticated',diagnostic:'需在“模型”中选择可用模型来源。'};
   }
   async models(){return structuredClone(this.gateway?.models??[]);}
   async beginLogin(update:(value:LoginObservation)=>void):Promise<void>{

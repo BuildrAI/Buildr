@@ -12,6 +12,24 @@ export interface ModelProviderGroup {
   id: string;
   label: string;
 }
+export type ModelProviderSharing =
+  | { kind: 'gateway' }
+  | { kind: 'executor-exclusive'; executors: readonly string[]; reason: string };
+export type ModelProviderInference = 'gateway' | 'none';
+export interface ModelProviderPresentation {
+  vendorLabel: string;
+  sourceLabel?: string;
+  quotaLabel?: string;
+  apiKeyHint?: string;
+  quotaUnavailableNote?: string;
+  billing?: { url: string; label: string };
+}
+export interface ModelExecutorCompatibility {
+  connectionId: string;
+  compatible: boolean;
+  reasonCode?: string;
+  reason?: string;
+}
 export interface ModelOffering {
   id: string;
   label: string;
@@ -138,6 +156,15 @@ export interface ModelProvider {
   readonly authentication?: ModelProviderAuthentication;
   readonly group?: ModelProviderGroup;
   readonly modeLabel?: string;
+  readonly sharing?: ModelProviderSharing;
+  readonly inference?: ModelProviderInference;
+  readonly presentation?: ModelProviderPresentation;
+  /** Clear persisted catalog/quota snapshot when inspection proves unauthenticated or expired. */
+  readonly clearCatalogOnUnauthenticated?: boolean;
+  /** Newly discovered non-combination models default to enabled when first observed. */
+  readonly enableDiscoveredModelsByDefault?: boolean;
+  /** Connection account inspection delegates to this model provider without starting the executor runtime. */
+  readonly observesConnection?: boolean;
   /** Accounts of this provider carry user-declared endpoint configuration. */
   readonly custom?: boolean;
   open(input: { accountId: string; configRoot: string; environment: Readonly<Record<string, string>>; custom?: CustomProviderConfig }): Promise<ModelProviderRuntime>;
@@ -158,8 +185,13 @@ export interface ModelAccountView {
   status: 'not-authenticated' | 'ready' | 'expired' | 'failed' | 'disconnected';
   /** Provider-declared credential mechanism; never the credential itself. */
   authType?: 'oauth' | 'api-key';
+  singleton?: boolean;
   group?: ModelProviderGroup;
   modeLabel?: string;
+  sharing?: { kind: 'gateway' } | { kind: 'executor-exclusive'; executors: string[]; reason: string };
+  inference?: ModelProviderInference;
+  presentation?: ModelProviderPresentation;
+  executorCompatibility?: ModelExecutorCompatibility[];
   credentialConfigured?: boolean;
   accountLabel?: string;
   /** Public custom endpoint configuration; never contains the API key. */
@@ -179,6 +211,10 @@ export interface CatalogModel extends ModelOffering {
   accountRevision: string;
   available: boolean;
   observedAt?: string;
+  sharing?: { kind: 'gateway' } | { kind: 'executor-exclusive'; executors: string[]; reason: string };
+  inference?: ModelProviderInference;
+  presentation?: ModelProviderPresentation;
+  executorCompatibility?: ModelExecutorCompatibility[];
 }
 export interface ModelLeaseInput {
   accountId: string;
@@ -189,6 +225,7 @@ export interface ModelLeaseInput {
   expectedRevision?: string;
   expectedIdentity?: string;
   serviceTier?: string;
+  sseKeepalive?: boolean;
 }
 export interface ModelGatewayLease {
   identity: string;
@@ -204,6 +241,7 @@ export interface ModelGatewayLease {
 export interface ModelAccessOptions {
   root: string;
   providers: ModelProvider[];
+  executors?: ReadonlyArray<import('../contracts.ts').ExecutorDescriptor> | (() => ReadonlyArray<import('../contracts.ts').ExecutorDescriptor>);
   environment?: Record<string, string>;
   changed?(account: ModelAccountView): void;
   diagnostics?: import('../contracts.ts').ExecutionDiagnosticSink;

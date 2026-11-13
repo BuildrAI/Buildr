@@ -372,7 +372,11 @@ artifacts:
       - agent-service-connections-source
       - agent-service-preparation-source
       - agent-service-programs-source
+      - agent-service-program-release-source
+      - agent-service-program-archive-source
       - agent-service-program-packages-source
+      - agent-service-model-policy-source
+      - agent-service-native-content-source
       - agent-service-conversations-source
       - agent-service-question-wait-source
       - agent-service-handoff-source
@@ -382,6 +386,8 @@ artifacts:
       - agent-service-codex-source
       - agent-service-dsh-source
       - agent-service-qoder-source
+      - agent-service-antigravity-source
+      - antigravity-model-source
       - openai-api-model-source
       - private-api-key-source
       - agent-service-model-account-http-source
@@ -539,6 +545,10 @@ artifacts:
     sources:
       - agent-service-public-source
       - agent-service-connections-source
+      - agent-service-model-policy-source
+      - agent-service-native-content-source
+      - agent-service-program-release-source
+      - agent-service-program-archive-source
       - agent-service-conversations-source
       - agent-service-host-source
       - agent-service-ui-source
@@ -562,6 +572,11 @@ artifacts:
     sources:
       - agent-service-public-source
       - agent-service-storage-source
+      - agent-service-model-policy-source
+      - agent-service-native-content-source
+      - agent-service-program-release-source
+      - agent-service-program-archive-source
+      - agent-service-antigravity-source
       - agent-service-conversations-source
       - agent-service-handoff-source
       - agent-service-handoff-storage-source
@@ -2028,7 +2043,27 @@ sources:
     title: 原生程序发现与安装
     kind: code
     path: services/buildr-agent/src/executors/program-manager.ts
-    summary: 核对本机路径、应用身份和固定版本，在独立目录准备官方程序并清理本次安装进程。
+    summary: 核对本机路径、应用身份和版本策略，协调提供者级互斥准备并在独立目录原子切换官方程序。
+  - id: agent-service-program-release-source
+    title: 官方发布清单解析与校验
+    kind: code
+    path: services/buildr-agent/src/executors/program-release.ts
+    summary: 手动逐跳核验 HTTPS 与白名单主机重定向，按大小上限、SHA-512 格式与严格 SemVer 解析官方程序清单。
+  - id: agent-service-program-archive-source
+    title: 官方程序归档安全安装
+    kind: code
+    path: services/buildr-agent/src/executors/program-archive.ts
+    summary: 流式下载校验 SHA-512，进程内有界解压 tar.gz 单一目标成员或落盘独立二进制，拒绝链接与路径越界。
+  - id: agent-service-model-policy-source
+    title: 执行方与模型来源兼容及路径策略
+    kind: code
+    path: services/buildr-agent/src/domain/model-policy.ts
+    summary: 根据双方声明判定静态兼容与模型执行路径（网关、gateway-lease、account-identity），投射公开兼容结论。
+  - id: agent-service-native-content-source
+    title: 原生工具详情边界与注册构造
+    kind: code
+    path: services/buildr-agent/src/storage/native-content.ts
+    summary: 统一封装会话根目录真实路径校验与越界拒绝，供各执行器声明按需原生工具详情读取。
   - id: agent-service-program-packages-source
     title: 受管程序包引用与回收候选
     kind: code
@@ -2064,6 +2099,16 @@ sources:
     kind: code
     path: services/buildr-agent/src/executors/qoder/index.ts
     summary: 隔离工作进程（Worker）使用官方软件开发工具包（SDK）与qodercli，恢复准确原生上下文。
+  - id: agent-service-antigravity-source
+    title: Antigravity内部对话执行器
+    kind: code
+    path: services/buildr-agent/src/executors/antigravity/index.ts
+    summary: 连接级协调者配合按对话隔离的受管 agy acp 进程组，维护会话、权限隔离、审批提问、停止与发送闸门。
+  - id: antigravity-model-source
+    title: Google 个人账号模型来源
+    kind: code
+    path: services/buildr-agent/src/model-access/providers/antigravity.ts
+    summary: 声明仅供 Antigravity 原生使用的托管 Google 个人账号来源，映射登录、档位、模型目录与退出切换操作。
   - id: openai-api-model-source
     title: ChatGPT 官方 API Key 来源
     kind: code

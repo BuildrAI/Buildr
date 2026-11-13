@@ -19,6 +19,12 @@ export function dshPresentedFiles(name:unknown,input:unknown):PresentedFile[]|un
   try{return normalizePresentedFiles(JSON.parse(input)?.files);}catch{return;}
 }
 
+export function needsLegacyPresentedFilesRead<T extends Pick<ConversationEntry,'kind'|'provider'|'name'|'status'|'detail'|'input'|'presentedFiles'>>(
+  entry:T,
+):entry is T&{detail:NonNullable<ConversationEntry['detail']>} {
+  return Boolean(entry.kind==='tool'&&entry.provider==='dsh'&&entry.name==='present'&&entry.status==='completed'&&entry.detail&&!entry.input&&!entry.presentedFiles);
+}
+
 export function presentedFilesForEntry(entry:Pick<ConversationEntry,'kind'|'role'|'provider'|'status'|'name'|'input'|'parentToolId'|'runId'|'participantId'|'presentedFiles'>):PresentedFile[] {
   if(entry.status!=='completed'||entry.parentToolId||!entry.runId||!entry.participantId)return [];
   if(entry.presentedFiles!==undefined)return normalizePresentedFiles(entry.presentedFiles);

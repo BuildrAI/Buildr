@@ -8,7 +8,8 @@ import { join } from 'node:path';
 
 import { createModelAccess } from '../../src/model-access/application.ts';
 import { createCustomModelProvider } from '../../src/model-access/providers/custom.ts';
-import { qoderGatewayPolicy, qoderGatewaySettings, type ExecutorGateway } from '../../src/executors/model-gateway.ts';
+import { type ExecutorGateway } from '../../src/executors/model-gateway.ts';
+import { qoderGatewayPolicy, qoderGatewaySettings } from '../../src/executors/qoder/gateway.ts';
 import { dshGatewayEffort, dshGatewayModels, dshCommandDeadlinePatch } from '../../src/executors/dsh/index.ts';
 
 import type { ProtocolJson } from '../../src/model-access/contracts.ts';

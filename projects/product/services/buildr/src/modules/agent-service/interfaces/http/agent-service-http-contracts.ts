@@ -39,6 +39,8 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('connect', 'POST', `${base}/connections/:connectionId/connect`, 'connect', 'connection'),
   operation('check', 'POST', `${base}/connections/:connectionId/check`, 'check', 'connection'),
   operation('disconnect', 'POST', `${base}/connections/:connectionId/disconnect`, 'revision', 'connection'),
+  operation('connection-account-impact', 'GET', `${base}/connections/:connectionId/account-impact`, 'empty', 'connectionAccountImpact'),
+  operation('connection-logout', 'POST', `${base}/connections/:connectionId/logout`, 'connectionLogout', 'connection'),
   operation('login', 'POST', `${base}/connections/:connectionId/login-attempts`, 'revision', 'connection'),
   operation('login-attempt', 'GET', `${base}/connections/:connectionId/login-attempts/:attemptId`, 'empty', 'connection'),
   operation('cancel-login', 'POST', `${base}/connections/:connectionId/login-attempts/:attemptId/cancel`, 'revision', 'connection'),

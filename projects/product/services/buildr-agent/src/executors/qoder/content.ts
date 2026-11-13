@@ -1,12 +1,14 @@
 import path from 'node:path';
 import { existsSync } from 'node:fs';
-import type { NativeContentContext, NativeContentInventory, NativeToolContent } from '../../native-content-contracts.ts';
+import { defineNativeContent, type NativeContentContext, type NativeContentInventory, type NativeToolContent } from '../../native-content-contracts.ts';
 import { nativeContentFiles, nativeContentImages, nativeContentRows } from '../native-content.ts';
 import {nativeToolContext,nativeToolRows} from '../native-tool-source.ts';
 import {visibleText} from '../native-process.ts';
 
+const qoderCnAccountConfigPrefix = 'model-access/accounts/native-qoder-cn/';
+
 export function readQoderTool(root:string,reference:NativeToolContent,product:'qoder'|'qoder-cn'='qoder') {
-  let input=nativeToolContext(root,reference,product);if(!input)return;
+  let input=nativeToolContext(root,reference,product,product==='qoder-cn'?{accountConfigPrefix:qoderCnAccountConfigPrefix}:undefined);if(!input)return;
   const configDirectory=product==='qoder'?'qoder-config':'qoder-cn-config';
   try{
     let primary=nativeContentFiles(input,path.join(input.configRoot,configDirectory,'projects'),file=>path.basename(file)===input!.contextId+'.jsonl',3);
@@ -89,4 +91,21 @@ export function qoderContent(input: NativeContentContext, product: 'qoder'|'qode
     return toolIds.length ? [{ ...row, toolIds }] : [];
   }), images: rows.filter(row => row.value.type === 'user')
     .flatMap(row => nativeContentImages(row, ['message', 'content'], row.value.message?.content)) };
+}
+
+export function createQoderNativeContent(product: 'qoder' | 'qoder-cn' = 'qoder') {
+  const configDirectory = product === 'qoder' ? 'qoder-config' : 'qoder-cn-config';
+  return defineNativeContent({
+    allowedPath: new RegExp(`^${configDirectory}\\/projects\\/.+\\.jsonl$`),
+    ...(product === 'qoder-cn' ? { accountConfigPrefix: qoderCnAccountConfigPrefix } : {}),
+    omitExecutionTurnId: true,
+    sessionRoots: [{
+      relative: `${configDirectory}/projects`,
+      matchSessionFile: (file, contextId) => path.basename(file) === contextId + '.jsonl',
+      matchAnySessionFile: file => file.endsWith('.jsonl'),
+      extractContextId: file => path.basename(file).match(/([a-f0-9-]{36})\.jsonl$/)?.[1],
+    }],
+    inventory: input => qoderContent(input, product),
+    readTool: (root, reference) => readQoderTool(root, reference, product),
+  });
 }

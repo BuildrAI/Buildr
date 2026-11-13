@@ -4,10 +4,27 @@ import { interactionPolicy } from '../domain/interaction-policy.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AgentExecutor, AgentRuntime, ConnectionView, LoginObservation, ModelGatewayConfiguration } from '../contracts.ts';
+import type { AgentExecutor, AgentRuntime, ConnectionModelPolicyView, ConnectionSendGate, ConnectionView, ExecutorDescriptor, ExecutorNativeSource, LoginObservation, ModelGatewayConfiguration } from '../contracts.ts';
 import { expected, fail, nonempty, safeDiagnostic } from '../domain/agent-state.ts';
 import type { StoredConnection } from '../domain/agent-state.ts';
 import type { ConversationRepository } from '../persistence/conversation-repository.ts';
+
+function projectModelPolicy(policy?: ExecutorDescriptor['modelPolicy']): ConnectionModelPolicyView | undefined {
+  if (!policy) return undefined;
+  return {
+    account: policy.account,
+    ...(policy.gateway ? { gateway: { protocol: policy.gateway.protocol } } : {}),
+    ...(policy.native ? {
+      native: {
+        sourceProviders: [...policy.native.sourceProviders],
+        ...(policy.native.exclusive !== undefined ? { exclusive: policy.native.exclusive } : {}),
+        binding: policy.native.binding,
+        ...(policy.native.defaultSourceAccountId ? { defaultSourceAccountId: policy.native.defaultSourceAccountId } : {}),
+        ...(policy.native.platformLogin ? { platformLogin: typeof policy.native.platformLogin === 'string' ? policy.native.platformLogin : policy.native.platformLogin.mode } : {}),
+      },
+    } : {}),
+  };
+}
 
 export class ConnectionApplication {
   private readonly storage: ExecutorStorage;
@@ -46,6 +63,7 @@ export class ConnectionApplication {
   private readonly modelEpochs = new Map<string, number>();
   private closing = false;
   private readonly programChanges = new Set<string>();
+  private readonly accountChangesInFlight = new Set<string>();
   private readonly gatewayReleases = new Map<AgentRuntime,Promise<void>>();
   private readonly programRecovery = new Map<string, AgentRuntime[]>();
   private readonly programUses = new Map<string, number>();
@@ -107,9 +125,10 @@ export class ConnectionApplication {
       this.runtimes.delete(id);
       for (const [key] of owned) this.gatewayRuntimes.delete(key);
       candidate = await open(original, executable, source);
-      if(['qoder','qoder-cn','claude-code'].includes(original.view.provider)) {
+      const verification = executor.descriptor.runtimeTraits?.upgradeVerification;
+      if (verification) {
         if(!candidate.verifyUpgrade)fail('agent_program_update_verification_failed',`${original.view.label} 缺少配套验证，保留原接入。`,409);
-        if (original.view.provider === 'qoder-cn' && this.nativeAccountRoot(id, original) !== configRoot) {
+        if (verification === 'account-probe' && this.nativeAccountRoot(id, original) !== configRoot) {
           // The execution binding belongs to the connection. The authenticated
           // smoke check belongs to the separate model account.
           const accountProbe = await this.openExecutor(executor, {
@@ -159,6 +178,7 @@ export class ConnectionApplication {
     nativeAccountConfigRoots?: Record<string, string>;
     /** Compose externally visible facts whose login is owned by another source. */
     present?(view: ConnectionView): ConnectionView;
+    hasObservedAccount?(id: string): boolean;
     observeAccount?(id: string): Promise<Pick<ConnectionView, 'status' | 'models' | 'diagnostic' | 'account'>> | undefined;
     generation: string;
     now(): string;
@@ -203,16 +223,44 @@ export class ConnectionApplication {
   private nativeAccountRoot(id: string, record: StoredConnection): string {
     return this.options.nativeAccountConfigRoots?.[id] ?? record.view.configPath ?? path.join(this.options.root, 'connections', id);
   }
+  descriptor(id: string): ExecutorDescriptor | undefined {
+    return this.executors.get(id)?.descriptor;
+  }
+  descriptors(): ExecutorDescriptor[] {
+    return [...this.executors.values()].map(executor => executor.descriptor);
+  }
+  hasNativeContent(id: string): boolean {
+    return Boolean(this.executors.get(id)?.nativeContent);
+  }
   get(id: string, includeLoginUrl = false): ConnectionView {
     const view = structuredClone(this.stored(id).view);
+    const descriptor = this.executors.get(id)?.descriptor;
     // Product names follow the current descriptor, not cached configuration labels.
-    view.label = this.executors.get(id)?.descriptor.label ?? view.label;
+    view.label = descriptor?.label ?? view.label;
+    const projectedPolicy = projectModelPolicy(descriptor?.modelPolicy);
+    if (projectedPolicy) view.modelPolicy = projectedPolicy;
+    else delete view.modelPolicy;
+    if (descriptor?.runtimeTraits?.hostKeyringAuth) view.hostKeyringAuth = true;
+    else delete view.hostKeyringAuth;
     view.capabilities.maxInputBytes = Math.min(view.capabilities.maxInputBytes, 64 * 1024);
     if (view.capabilities.images) view.capabilities.maxImageBytes = Math.min(view.capabilities.maxImageBytes ?? 8 * 1024 * 1024, 8 * 1024 * 1024);
     if (view.loginAttempt && view.loginAttempt.generation !== this.options.generation && ['initializing', 'waiting-browser', 'checking'].includes(view.loginAttempt.state)) {
       view.loginAttempt.state = 'expired'; view.loginAttempt.diagnostic = '服务已重启，请重新发起官方登录。';
     }
-    if (includeLoginUrl && view.loginAttempt) {
+    const loginActive = Boolean(
+      view.loginAttempt
+      && view.loginAttempt.generation === this.options.generation
+      && ['initializing', 'waiting-browser', 'checking'].includes(view.loginAttempt.state),
+    );
+    if (view.sendGate?.state === 'open') delete view.sendGate;
+    else if (view.sendGate?.state === 'paused' && view.sendGate.reason === 'account-change' && !this.accountChangesInFlight.has(id) && !loginActive) {
+      view.sendGate = {
+        state: 'paused',
+        reason: 'account-unconfirmed',
+        diagnostic: '上次账号退出或切换未确认完成，已保持暂停发送；请重试退出或切换账号。',
+      };
+    }
+    if (includeLoginUrl && view.loginAttempt && view.loginAttempt.state === 'waiting-browser') {
       const navigation = this.loginUrls.get(id);
       if (navigation?.attemptId === view.loginAttempt.id) view.loginAttempt.url = navigation.url;
     }
@@ -322,6 +370,44 @@ export class ConnectionApplication {
     }).catch(error => { if (this.gatewayRuntimes.get(key) === promise) this.gatewayRuntimes.delete(key); throw error; }).finally(() => { this.opening.delete(key); });
     this.gatewayRuntimes.set(key, promise); return promise;
   }
+  async nativeSourceRuntime(id: string, nativeSource: ExecutorNativeSource, conversationId: string): Promise<AgentRuntime> {
+    this.assertProgramAvailable(id);
+    const sourceHash = createHash('sha256').update(JSON.stringify([conversationId, nativeSource.accountId, nativeSource.accountIdentity])).digest('hex');
+    const key = `${id}:native-source:${sourceHash}`;
+    const existing = this.gatewayRuntimes.get(key);
+    if (existing) {
+      const runtime = await existing;
+      const releasing = this.gatewayReleases.get(runtime); if (releasing) await releasing;
+      if (!runtime.closed) return runtime;
+      if (this.gatewayRuntimes.get(key) === existing) this.gatewayRuntimes.delete(key);
+      const replacement = this.gatewayRuntimes.get(key); if (replacement) return replacement;
+    }
+    const record = this.stored(id);
+    if (!record.view.enabled || this.closing) fail('agent_connection_disabled', '请先准备此智能体程序。', 409);
+    const configRoot = path.join(this.options.root, 'connections', id);
+    fs.mkdirSync(configRoot, { recursive: true, mode: 0o700 });
+    if (fs.lstatSync(configRoot).isSymbolicLink()) fail('agent_configuration_unsafe', '独立配置不能指向符号链接。', 409);
+    const lifecycle = this.lifecycles.get(id);
+    const opening = new AbortController(); this.opening.set(key, opening);
+    const promise = this.openExecutor(this.executors.get(id)!, {
+      interaction: interactionPolicy,
+      connectionId: id,
+      configRoot,
+      executable: record.view.executable,
+      programSource: record.programSource,
+      environment: this.options.environment,
+      signal: opening.signal,
+      nativeSource,
+      nativeAccountConfigRoot: this.nativeAccountRoot(id, record),
+      ...(record.bindingIdentity
+        ? { binding: { identity: record.bindingIdentity, data: record.bindingData, executable: record.view.executable, configRoot: record.view.configPath } }
+        : {}),
+    }).then(async runtime => {
+      if (this.closing || opening.signal.aborted || this.lifecycles.get(id) !== lifecycle) { await runtime.close(); fail('agent_connection_disabled', '接入已断开。', 409); }
+      return runtime;
+    }).catch(error => { if (this.gatewayRuntimes.get(key) === promise) this.gatewayRuntimes.delete(key); throw error; }).finally(() => { this.opening.delete(key); });
+    this.gatewayRuntimes.set(key, promise); return promise;
+  }
   binding(id: string): string | undefined { return this.stored(id).bindingIdentity; }
   async readReleasedControl(id:string,input:Parameters<NonNullable<AgentExecutor['readReleasedControl']>>[0]):Promise<boolean>{
     return await this.executors.get(id)?.readReleasedControl?.(input)??false;
@@ -411,12 +497,24 @@ export class ConnectionApplication {
   }
 
   private usesTransientAccountRuntime(id: string): boolean {
-    return id === 'codex' || id === 'dsh' || (id === 'qoder' && !!this.options.observeAccount);
+    const descriptor = this.executors.get(id)?.descriptor;
+    if (!descriptor?.runtimeTraits?.transientAccountProbe) return false;
+    if (descriptor.modelPolicy?.native?.observeViaModelAccount) {
+      return Boolean(this.options.hasObservedAccount ? this.options.hasObservedAccount(id) : this.options.observeAccount);
+    }
+    return true;
   }
 
   private async inspectNativeAccount(id: string): Promise<Pick<ConnectionView, 'status' | 'models' | 'diagnostic' | 'account'>> {
     const runtime = await this.runtime(id, undefined, this.usesTransientAccountRuntime(id));
     const account = await runtime.inspectAccount();
+    if (this.executors.get(id)?.descriptor.modelPolicy?.account === 'source-required') {
+      return {
+        status: 'not-authenticated',
+        models: [],
+        diagnostic: account.diagnostic ?? '需在“模型”中选择可用模型来源。',
+      };
+    }
     let models: ConnectionView['models'] = [];
     let diagnostic = account.diagnostic;
     if (account.status === 'ready') {
@@ -426,28 +524,80 @@ export class ConnectionApplication {
     return {status: account.status, models, diagnostic, account: {label: account.label, loginMethod: account.loginMethod}};
   }
 
-  beginLogin(id: string, expectedRevision: string): ConnectionView {
+  setSendGate(id: string, gate: ConnectionSendGate | undefined, inFlight = false): ConnectionView {
+    if (inFlight) this.accountChangesInFlight.add(id);
+    else this.accountChangesInFlight.delete(id);
+    const record = this.stored(id);
+    if (!gate || gate.state === 'open') delete record.view.sendGate;
+    else {
+      record.view.sendGate = {
+        state: 'paused',
+        ...(gate.reason ? { reason: gate.reason } : {}),
+        ...(gate.diagnostic ? { diagnostic: gate.diagnostic } : {}),
+      };
+    }
+    return this.save(record);
+  }
+
+  prepareSwitchLogin(id: string): ConnectionView {
+    this.accountChangesInFlight.delete(id);
+    const record = this.stored(id);
+    record.view.enabled = true;
+    record.view.status = 'not-authenticated';
+    delete record.view.account;
+    record.view.models = [];
+    record.view.sendGate = {
+      state: 'paused',
+      reason: 'account-change',
+      diagnostic: '已完成原账号退出，请完成新账号官方登录；核对完成前暂停新发送。',
+    };
+    const saved = this.save(record);
+    return this.beginLogin(id, saved.revision, { reopenGateOnSettled: true });
+  }
+
+  async releaseConversationRuntimes(id: string): Promise<void> {
+    for (const [key, opening] of this.opening) {
+      if (key.startsWith(`${id}:`)) opening.abort();
+    }
+    const shared = [...this.gatewayRuntimes].filter(([key]) => key.startsWith(`${id}:`));
+    for (const [key] of shared) this.gatewayRuntimes.delete(key);
+    await Promise.allSettled(shared.map(async ([, item]) => (await item).close()));
+  }
+
+  beginLogin(id: string, expectedRevision: string, options?: { reopenGateOnSettled?: boolean }): ConnectionView {
     this.assertProgramAvailable(id);
     if (this.closing) fail('agent_service_closing', '智能体服务正在退出。', 503);
     const record = this.stored(id); expected(record.view.revision, expectedRevision);
     if (!record.view.enabled) fail('agent_connection_disabled', '请先连接此独立接入。', 409);
     if (record.view.loginAttempt && ['initializing', 'waiting-browser', 'checking'].includes(record.view.loginAttempt.state) && record.view.loginAttempt.generation === this.options.generation) return this.get(id, true);
+    clearTimeout(this.loginTimers.get(id)); this.loginTimers.delete(id); this.loginUrls.delete(id);
     const attemptId = randomUUID();
     record.view.loginAttempt = { id: attemptId, generation: this.options.generation, state: 'initializing', updatedAt: this.options.now() };
     this.save(record);
+    const maybeReopenGate = () => {
+      if (!options?.reopenGateOnSettled) return;
+      void this.check(id).then(checked => {
+        if (checked.status === 'ready' || checked.status === 'not-authenticated') {
+          this.setSendGate(id, { state: 'open' }, false);
+        }
+      }).catch(() => {});
+    };
     const update = (observation: LoginObservation) => {
       const current = this.stored(id);
-      if (current.view.loginAttempt?.id !== attemptId || current.view.loginAttempt.generation !== this.options.generation || ['cancelled', 'expired', 'failed'].includes(current.view.loginAttempt.state)) return;
-      if (observation.url) {
+      if (current.view.loginAttempt?.id !== attemptId || current.view.loginAttempt.generation !== this.options.generation || ['completed', 'cancelled', 'expired', 'failed'].includes(current.view.loginAttempt.state)) return;
+      if (observation.state === 'waiting-browser' && observation.url) {
         try { const url = new URL(observation.url); if (url.protocol === 'https:') this.loginUrls.set(id, { attemptId, url: url.href }); }
         catch { /* Invalid navigation is not exposed. */ }
+      } else {
+        this.loginUrls.delete(id);
       }
       current.view.loginAttempt = { id: attemptId, generation: this.options.generation, state: observation.state, diagnostic: observation.diagnostic, updatedAt: this.options.now() };
       this.save(current);
       if (['completed', 'cancelled', 'expired', 'failed'].includes(observation.state)) {
         clearTimeout(this.loginTimers.get(id)); this.loginTimers.delete(id); this.loginUrls.delete(id);
+        if (options?.reopenGateOnSettled) maybeReopenGate();
+        else if (observation.state === 'completed') void this.check(id).catch(() => {});
       }
-      if (observation.state === 'completed') void this.check(id).catch(() => {});
     };
     const timer = setTimeout(() => {
       void this.useProgram(id, async () => {
@@ -467,7 +617,9 @@ export class ConnectionApplication {
   async cancelLogin(id: string, attemptId: string, revision: string): Promise<ConnectionView> {
     const record = this.stored(id); expected(record.view.revision, revision);
     if (record.view.loginAttempt?.id !== attemptId) fail('agent_login_attempt_missing', '登录尝试已变化。', 404);
+    const wasAccountSwitch = record.view.sendGate?.state === 'paused' && record.view.sendGate.reason === 'account-change' && !this.accountChangesInFlight.has(id);
     record.view.loginAttempt.state = 'cancelled'; record.view.loginAttempt.updatedAt = this.options.now();
+    if (wasAccountSwitch && record.view.status === 'not-authenticated') delete record.view.sendGate;
     this.loginUrls.delete(id); clearTimeout(this.loginTimers.get(id)); this.loginTimers.delete(id);
     this.save(record);
     await this.useProgram(id, async () => this.runtimes.get(id)?.then(runtime => runtime.cancelLogin()));
@@ -476,8 +628,9 @@ export class ConnectionApplication {
   }
   async disconnect(id: string, revision: string): Promise<ConnectionView> {
     this.assertProgramAvailable(id);
+    this.accountChangesInFlight.delete(id);
     const record = this.stored(id); expected(record.view.revision, revision);
-    record.view.enabled = false; record.view.status = 'disconnected';
+    record.view.enabled = false; record.view.status = 'disconnected'; delete record.view.sendGate;
     this.save(record);
     clearTimeout(this.loginTimers.get(id)); this.loginTimers.delete(id); this.loginUrls.delete(id);
     await this.probeReleases.get(id);
@@ -491,6 +644,7 @@ export class ConnectionApplication {
   }
   async close(): Promise<void> {
     this.closing = true;
+    this.accountChangesInFlight.clear();
     for (const controller of this.opening.values()) controller.abort();
     for (const timer of this.loginTimers.values()) clearTimeout(timer);
     this.loginTimers.clear(); this.loginUrls.clear();
@@ -498,6 +652,6 @@ export class ConnectionApplication {
     const runtimes = [...this.runtimes.values(), ...this.gatewayRuntimes.values(), ...[...this.programRecovery.values()].flat().map(runtime => Promise.resolve(runtime))]; this.runtimes.clear(); this.gatewayRuntimes.clear();
     await Promise.allSettled(runtimes.map(async runtime => (await runtime).close()));
   }
-  activity() { return [{kind:'connection-operation',count:this.opening.size+this.checking.size+this.programChanges.size},{kind:'runtime-release',count:this.gatewayReleases.size+this.probeReleases.size},{kind:'native-login',count:this.list().filter(value=>['initializing','waiting-browser','checking'].includes(value.loginAttempt?.state??'')).length}].filter(value=>value.count>0); }
+  activity() { return [{kind:'connection-operation',count:this.opening.size+this.checking.size+this.programChanges.size+this.accountChangesInFlight.size},{kind:'runtime-release',count:this.gatewayReleases.size+this.probeReleases.size},{kind:'native-login',count:this.list().filter(value=>['initializing','waiting-browser','checking'].includes(value.loginAttempt?.state??'')).length}].filter(value=>value.count>0); }
   beginClosing(): void { this.closing = true; }
 }

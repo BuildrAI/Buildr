@@ -6,13 +6,14 @@ import type { AgentModelAccountModelAccount, AgentModelAccountsModelAccounts, Ag
 export type ModelAccount = AgentModelAccountModelAccount;
 export type CatalogModel = Extract<AgentModelCatalogModelCatalog, { models: unknown }>['models'][number];
 export type ModelProviderView = AgentModelAccountsModelAccounts['providers'][number];
-import type { AgentServiceConnectionConnection, AgentConversationConversation, AgentConversationDraftRequestDraft, AgentConversationSendPreviewPreview, AgentConversationEventEvent, AgentConversationAttachmentResultAttachmentResult } from '../../../build/generated/agent-service-http-dto';
+import type { AgentServiceConnectionConnection, AgentServiceConnectionAccountImpactConnectionAccountImpact, AgentConversationConversation, AgentConversationDraftRequestDraft, AgentConversationSendPreviewPreview, AgentConversationEventEvent, AgentConversationAttachmentResultAttachmentResult } from '../../../build/generated/agent-service-http-dto';
 import type { AgentServicePreparationPreparation } from '../../../build/generated/agent-service-http-dto';
 
-// Display choices are the three validated executors; HTTP views come from the host schema.
-export type ProviderId = 'codex' | 'dsh' | 'qoder' | 'qoder-cn' | 'claude-code';
-export const providerNames: Record<string,string> = {codex:'Codex',dsh:'DSH',qoder:'Qoder','qoder-cn':'Qoder CN','claude-code':'Claude Code'};
+// Executor identifiers and display labels come from server connection views.
+export type ProviderId = string;
 export type ConnectionView = AgentServiceConnectionConnection;
+export type ConnectionAccountImpact = AgentServiceConnectionAccountImpactConnectionAccountImpact;
+export type ConnectionSendGate = NonNullable<ConnectionView['sendGate']>;
 export type PreparationView = AgentServicePreparationPreparation;
 export type ConversationView = AgentConversationConversation;
 export type ConversationTaskLink = {workspaceId:string;taskId:string};

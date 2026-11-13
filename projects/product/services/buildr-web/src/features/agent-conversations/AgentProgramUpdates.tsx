@@ -2,17 +2,17 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Alert, App, Button, Tag } from 'antd';
 import { RobotOutlined, SyncOutlined } from '@ant-design/icons';
 import { agentConversationsApi } from './api/agent-conversations-api';
-import type { ConnectionView, ProgramUpdatesView } from './types';
+import type { ConnectionView, ModelAccount, ProgramUpdatesView } from './types';
 import {agentProgramView,programUpgradeRunning} from './agent-program-view';
 import './agent-program-updates.css';
 
 type Program = ProgramUpdatesView['programs'][number];
 type Props = {
-  active: boolean; checkRequest?: number; scope?: 'global' | 'settings'; connections?: ConnectionView[];
-  preparationId?: string | null; onPrepare?(id: string): void; onDetails?(id: string, open: boolean): void; renderPreparation?(id: string): ReactNode;
+  active: boolean; checkRequest?: number; scope?: 'global' | 'settings'; connections?: ConnectionView[]; accounts?: ModelAccount[];
+  preparationId?: string | null; onPrepare?(id: string): void; onManageAccount?(accountId: string, startLogin?: boolean): void; onDetails?(id: string, open: boolean): void; renderPreparation?(id: string): ReactNode;
 };
 /** Shared current facts and explicit upgrade actions; preparation stays with its owner. */
-export function AgentProgramUpdates({ active, checkRequest = 0, scope = 'settings', connections, preparationId, onPrepare, onDetails, renderPreparation }: Props) {
+export function AgentProgramUpdates({ active, checkRequest = 0, scope = 'settings', connections, accounts, preparationId, onPrepare, onManageAccount, onDetails, renderPreparation }: Props) {
   const {modal} = App.useApp();
   const [snapshot, setSnapshot] = useState<ProgramUpdatesView>();
   const [busy, setBusy] = useState<string | null>(null), [error, setError] = useState('');
@@ -59,10 +59,13 @@ export function AgentProgramUpdates({ active, checkRequest = 0, scope = 'setting
     {error && <Alert type="warning" showIcon message={error} />}
     {!snapshot && !error && <p role="status">正在读取程序信息…</p>}
     {snapshot?.programs.map(program => {
-      const job=program.upgrade,{pending,completed,version,canUpdate,failure,prepared,updateLabel}=agentProgramView(program,connections?.find(connection=>connection.id===program.connectionId));
+      const connection=connections?.find(item=>item.id===program.connectionId);
+      const linkedAccount=scope==='settings'?accounts?.find(item=>item.connectionId===program.connectionId):undefined;
+      const job=program.upgrade,{pending,completed,version,canUpdate,failure,prepared,updateLabel}=agentProgramView(program,connection);
+      const programReady=prepared||Boolean(connection?.executable&&connection?.configPath);
       return <article className="ac-program-update" key={program.connectionId} data-program={program.connectionId} data-update-status={program.status} data-upgrade-state={job?.state}>
-        <div className="ac-program-update-row"><div className="ac-program-update-summary"><span className="ac-program-update-icon" aria-hidden="true"><RobotOutlined/></span><div className="ac-program-update-identity"><div className="ac-program-update-title"><strong>{program.label}</strong><span className="ac-program-update-version">{version??(program.executable?'版本待检查':'')}</span><Tag color={prepared?'success':'default'}>{prepared?'已就绪':'未接入'}</Tag></div><div className="ac-program-update-state" data-warning={failure||['unknown','stale'].includes(program.status)} role="status">{busy==='*'||busy===program.connectionId?'正在检查更新…':updateLabel}{program.status==='available'&&program.versionKind!=='package'&&version&&!completed&&<span> · {program.latestVersion}</span>}</div></div></div>
-          <div className="ac-program-update-actions">{pending?<Button size="small" loading disabled>更新中</Button>:canUpdate?<Button size="small" type="primary" loading={busy===program.connectionId} disabled={busy!==null} aria-label={`更新 ${program.label}`} onClick={()=>update(program)}>{failure?'重试更新':program.status==='latest'&&!program.managed?'改用独立程序':'更新'}</Button>:!prepared&&onPrepare?<Button size="small" type="primary" disabled={busy!==null} onClick={()=>onPrepare(program.connectionId)}>接入</Button>:null}<Button type="text" size="small" icon={<SyncOutlined/>} disabled={!program.executable||pending||busy!==null} aria-label={`检查 ${program.label} 更新`} onClick={()=>void check(program.connectionId)}/></div>
+        <div className="ac-program-update-row"><div className="ac-program-update-summary"><span className="ac-program-update-icon" aria-hidden="true"><RobotOutlined/></span><div className="ac-program-update-identity"><div className="ac-program-update-title"><strong>{program.label}</strong><span className="ac-program-update-version">{version??(program.executable?'版本待检查':'')}</span><Tag color={prepared?'success':'default'}>{prepared?'已就绪':programReady?'程序已准备':'未接入'}</Tag>{linkedAccount&&programReady&&<Tag color={linkedAccount.status==='ready'?'processing':linkedAccount.status==='expired'||linkedAccount.status==='failed'?'warning':'default'}>{linkedAccount.status==='ready'?(linkedAccount.quota?.planLabel||'账号已登录'):linkedAccount.status==='expired'?'登录已过期':linkedAccount.accountLabel==='身份不可确认'?'身份不可确认':'待登录账号'}</Tag>}</div><div className="ac-program-update-state" data-warning={failure||['unknown','stale'].includes(program.status)} role="status">{busy==='*'||busy===program.connectionId?'正在检查更新…':updateLabel}{program.status==='available'&&program.versionKind!=='package'&&version&&!completed&&<span> · {program.latestVersion}</span>}</div></div></div>
+          <div className="ac-program-update-actions">{pending?<Button size="small" loading disabled>更新中</Button>:canUpdate?<Button size="small" type="primary" loading={busy===program.connectionId} disabled={busy!==null} aria-label={`更新 ${program.label}`} onClick={()=>update(program)}>{failure?'重试更新':program.status==='latest'&&!program.managed?'改用独立程序':'更新'}</Button>:!programReady&&onPrepare?<Button size="small" type="primary" disabled={busy!==null} onClick={()=>onPrepare(program.connectionId)}>接入</Button>:null}{linkedAccount&&programReady&&!pending&&onManageAccount&&(linkedAccount.status==='ready'?<Button size="small" type="link" disabled={busy!==null} onClick={()=>onManageAccount(linkedAccount.id,false)}>账号与模型</Button>:<Button size="small" type={canUpdate?'default':'primary'} disabled={busy!==null} onClick={()=>onManageAccount(linkedAccount.id,linkedAccount.status!=='failed')}>{linkedAccount.status==='expired'?'重新登录':linkedAccount.status==='failed'?'核对账号':'登录账号'}</Button>)}<Button type="text" size="small" icon={<SyncOutlined/>} disabled={!program.executable||pending||busy!==null} aria-label={`检查 ${program.label} 更新`} onClick={()=>void check(program.connectionId)}/></div>
         </div>
         <details className="ac-program-update-details" open={onDetails?preparationId===program.connectionId:undefined}><summary onClick={onDetails?event=>{event.preventDefault();onDetails(program.connectionId,preparationId!==program.connectionId);}:undefined}>程序详情</summary>
           <div className="ac-program-update-detail-body">

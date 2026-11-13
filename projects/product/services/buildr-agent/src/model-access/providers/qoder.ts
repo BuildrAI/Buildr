@@ -136,7 +136,7 @@ export async function qoderChatCompletion(stream:ReadableStream<Uint8Array>,mode
 }
 export function createQoderModelProvider(owner:QoderModelOwner,productId:QoderProductId='qoder'):ModelProvider {
   const product=qoderProduct(productId);
-  return {id:`native-${productId}`,label:product.label,connectionId:productId,async open(){
+  return {id:`native-${productId}`,label:product.label,connectionId:productId,sharing:{kind:'gateway'},inference:'gateway',clearCatalogOnUnauthenticated:productId==='qoder',observesConnection:productId==='qoder',presentation:{vendorLabel:product.label,sourceLabel:product.label,quotaLabel:product.label},async open(){
     const models=new Map<string,{offering:ModelOffering;config:ProtocolJson}>();
     const inspect=async():Promise<ModelProviderObservation>=>{
       let identity: string | undefined;

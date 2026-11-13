@@ -1,9 +1,8 @@
 import fs from 'node:fs';
 import { nativeContentPath, maxNativeSourceBytes, nativeValueText } from '../../storage/native-content.ts';
 import { codexItem } from './items.ts';
-import type { NativeToolContent } from '../../native-content-contracts.ts';
+import { defineNativeContent, type NativeToolContent, type NativeContentContext, type NativeContentInventory } from '../../native-content-contracts.ts';
 import path from 'node:path';
-import type { NativeContentContext, NativeContentInventory } from '../../native-content-contracts.ts';
 import { nativeContentFiles, nativeContentImages, nativeContentRows } from '../native-content.ts';
 
 export function codexContent(input: NativeContentContext): NativeContentInventory | undefined {
@@ -44,6 +43,19 @@ export function readCodexTool(root: string, reference: NativeToolContent) {
   if(!detail) return;
   return {...reference.entry, text: detail.text, input: detail.input, presentedFiles: detail.presentedFiles ?? reference.entry.presentedFiles};
 }
+
+export const codexNativeContent = defineNativeContent({
+  allowedPath: /^codex-home\/sessions\/.+\.jsonl$/,
+  indexCommands: true,
+  sessionRoots: [{
+    relative: 'codex-home/sessions',
+    matchSessionFile: (file, contextId) => path.basename(file).endsWith(contextId + '.jsonl'),
+    matchAnySessionFile: file => file.endsWith('.jsonl'),
+    extractContextId: file => path.basename(file).match(/([a-f0-9-]{36})\.jsonl$/)?.[1],
+  }],
+  inventory: codexContent,
+  readTool: readCodexTool,
+});
 
 /** Scan a bounded line at a time, so a long session does not require a second body cache. */
 function completedTool(input: NativeContentContext, id: string, turnId?: string): Record<string, any> | undefined {

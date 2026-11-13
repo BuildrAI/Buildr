@@ -1,12 +1,14 @@
 import path from 'node:path';
-import type { NativeContentContext, NativeContentInventory, NativeToolContent } from '../../native-content-contracts.ts';
+import { defineNativeContent, type NativeContentContext, type NativeContentInventory, type NativeToolContent } from '../../native-content-contracts.ts';
 import { nativeContentFiles, nativeContentImages, nativeContentRows } from '../native-content.ts';
 import { NativeContentReader } from '../../storage/native-content.ts';
 import {nativeToolContext,nativeToolRows} from '../native-tool-source.ts';
 import {DshExecutionLineage,dshItem} from './protocol.ts';
 
+const dshContextIdPattern = /^session-[a-f0-9-]{36}$/;
+
 export function readDshTool(root:string,reference:NativeToolContent) {
-  const input=nativeToolContext(root,reference,'dsh');if(!input)return;
+  const input=nativeToolContext(root,reference,'dsh',{contextIdPattern:dshContextIdPattern});if(!input)return;
   try{
     const files=nativeContentFiles(input,path.join(input.configRoot,'dsh-home/sessions'),file=>path.basename(path.dirname(file))===input.contextId&&/^session\.v4\.jsonl(?:\.zstd)?$/.test(path.basename(file)),4);
     if(files.length!==1)return;
@@ -58,3 +60,17 @@ export function dshContent(input: NativeContentContext): NativeContentInventory 
     return typeof id === 'string' ? [{ ...row, toolIds: [id] }] : [];
   }), images };
 }
+
+export const dshNativeContent = defineNativeContent({
+  allowedPath: /^dsh-home\/(?:sessions\/.+\/(?:session\.v4\.jsonl(?:\.zstd)?|attachments\/.+)|attachments\/v1\/objects\/[a-f0-9]{2}\/[a-f0-9]{64})$/,
+  contextIdPattern: dshContextIdPattern,
+  sessionRoots: [{
+    relative: 'dsh-home/sessions',
+    matchSessionFile: (file, contextId) => path.basename(path.dirname(file)) === contextId && /^session\.v4\.jsonl(?:\.zstd)?$/.test(path.basename(file)),
+    matchAnySessionFile: file => /^session\.v4\.jsonl(?:\.zstd)?$/.test(path.basename(file)),
+    extractContextId: file => path.basename(path.dirname(file)),
+    depth: 5,
+  }],
+  inventory: dshContent,
+  readTool: readDshTool,
+});
