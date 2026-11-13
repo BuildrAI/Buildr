@@ -45,6 +45,7 @@ import { AntigravityAcpClient, type AntigravityAcpServerRequest } from './acp.ts
 import {
   antigravityNativeContent,
   antigravityNativeTranscriptPath,
+  readAntigravityCommandExits,
   antigravitySessionRecordPath,
   appendAntigravitySessionRow,
   isValidAntigravityContextId,
@@ -148,6 +149,9 @@ interface TurnState {
   fault?: ExecutionFault;
   diagnostic?: string;
   backgroundWork: boolean;
+  startedAt: number;
+  commandInputs: Map<string, string>;
+  backgroundTimer?: ReturnType<typeof setInterval>;
   textSegment?: { id: string; kind: 'message' | 'thinking'; nativeId?: string };
   segmentCounter: number;
   lastMessage?: { id: string; superseded: boolean };
@@ -849,6 +853,8 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       requests: new Map(),
       status: 'running',
       backgroundWork: false,
+      startedAt: Math.floor(Date.now() / 1000) * 1000,
+      commandInputs: new Map(),
       segmentCounter: 0,
       pending: true,
       cancelRequested: false,
@@ -899,12 +905,20 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
 
     handle.setHandlers({
       onNotification: (method, params) => {
-        if (method !== 'session/update' || params.sessionId !== contextId || !turn.pending) return;
-        this.handleTurnUpdate(turn, handle, params.update as Record<string, unknown> | undefined);
+        if (method !== 'session/update' || params.sessionId !== contextId) return;
+        const update = params.update as Record<string, unknown> | undefined;
+        if (!turn.pending && !(turn.backgroundWork && update?.sessionUpdate === 'tool_call_update'
+          && typeof update.toolCallId === 'string' && turn.tools.get(update.toolCallId)?.status === 'running')) return;
+        this.handleTurnUpdate(turn, handle, update);
+        if (turn.backgroundWork && !turn.pending && turn.stopReason === 'end_turn'
+          && [...turn.tools.values()].every(tool => tool.status === 'completed')) {
+          this.finishBackgroundTurn(turn, handle);
+        }
       },
       onServerRequest: request => this.handleServerRequest(turn, request),
       onExit: () => {
-        if (!turn.pending) return;
+        if (!turn.pending && !turn.backgroundWork) return;
+        this.clearBackgroundTracking(turn);
         if (turn.cancelRequested || turn.stopConfirmed) {
           turn.pending = false;
           turn.markSettled();
@@ -934,7 +948,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
         turn.stream.flush();
         turn.stream.push({ type: 'observation', observation: this.buildObservation(turn) });
         turn.markSettled();
-        fallbackCompletion.reject(new ExecutorObservationLost('execution'));
+        if (!turn.stopReason) fallbackCompletion.reject(new ExecutorObservationLost('execution'));
       },
     });
 
@@ -994,7 +1008,8 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
         : 'finalText' in outcome && typeof outcome.finalText === 'string'
           ? outcome.finalText
           : undefined;
-      const backgroundActive = completedRow?.backgroundActive === true
+      const pendingCommand = stopReason === 'end_turn' && [...turn.tools.values()].some(tool => tool.status === 'running' && tool.label === 'command');
+      const backgroundActive = pendingCommand || completedRow?.backgroundActive === true
         || ('backgroundActive' in outcome && outcome.backgroundActive === true);
 
       turn.stopReason = stopReason;
@@ -1023,6 +1038,10 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
         turn.executionRef = handle.client.executionRef(executionId, contextId, this.bindingIdentity, true);
         turn.stream.flush();
         turn.stream.push({ type: 'observation', observation: this.buildObservation(turn) });
+        if (pendingCommand) {
+          turn.backgroundTimer = setInterval(() => this.observeBackgroundCommands(turn, handle), 1000);
+          turn.backgroundTimer.unref();
+        }
         return;
       }
 
@@ -1101,6 +1120,41 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       turn.pending = false;
       turn.markSettled();
     }
+  }
+
+  private clearBackgroundTracking(turn: TurnState): void {
+    clearInterval(turn.backgroundTimer);
+    turn.backgroundTimer = undefined;
+    turn.backgroundWork = false;
+  }
+
+  private observeBackgroundCommands(turn: TurnState, handle: ConversationProcessHandle): void {
+    if (!turn.backgroundWork || turn.cancelRequested || this.closedFlag) return;
+    for (const exit of readAntigravityCommandExits(this.configRoot, turn.contextId, turn.startedAt)) {
+      const matches = [...turn.commandInputs].filter(([, command]) => command === exit.command);
+      if (matches.length !== 1) continue;
+      const [id] = matches[0]!;
+      if (turn.tools.get(id)?.status !== 'running') continue;
+      this.handleTurnUpdate(turn, handle, {
+        sessionUpdate: 'tool_call_update', toolCallId: id, status: exit.code === 0 ? 'completed' : 'failed',
+        content: [{ type: 'content', content: { type: 'text', text: exit.result } }],
+      });
+    }
+    if (turn.stopReason === 'end_turn' && [...turn.tools.values()].every(tool => tool.status === 'completed')) {
+      this.finishBackgroundTurn(turn, handle);
+    }
+  }
+
+  private finishBackgroundTurn(turn: TurnState, handle: ConversationProcessHandle): void {
+    this.clearBackgroundTracking(turn);
+    turn.status = 'idle';
+    turn.executionRef = handle.client.executionRef(turn.executionId, turn.contextId, this.bindingIdentity, false);
+    const finalText = [...turn.items.values()].findLast(item => item.kind === 'message' && item.role === 'assistant')?.text;
+    appendAntigravitySessionRow(this.configRoot, turn.contextId, {
+      type: 'turn_complete', cwd: turn.cwd, stopReason: 'end_turn', finalText, backgroundActive: false,
+    });
+    turn.stream.push({ type: 'completed', status: 'completed' });
+    turn.stream.push({ type: 'observation', observation: this.buildObservation(turn) });
   }
 
   private handleTurnUpdate(
@@ -1190,6 +1244,9 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       const output = extractAntigravityToolOutput(update.content);
       const name = mapAntigravityToolName(update.kind, update.title, output.hasDiff, priorItem?.name);
       const mergedInput = mergeAntigravityToolInput(update.rawInput, update.locations, priorItem?.input);
+
+      const commandLine = mergedInput.objectInput?.CommandLine;
+      if (name === 'command' && typeof commandLine === 'string') turn.commandInputs.set(toolId, commandLine);
 
       const rawStatus = typeof update.status === 'string' ? update.status.toLowerCase() : '';
       let itemStatus: NonNullable<ExecutorItem['status']>;
@@ -1458,13 +1515,9 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     if (turn.backgroundWork) {
       const rows = readImmutableJsonlFile(antigravityNativeTranscriptPath(this.configRoot, input.contextRef.id)) ?? [];
       const latestComplete = rows.findLast(row => row?.sessionId === input.contextRef.id && row?.type === 'turn_complete');
-      if (latestComplete && latestComplete.backgroundActive === false) {
-        turn.backgroundWork = false;
-        turn.status = 'idle';
+      if (latestComplete?.backgroundActive === false && [...turn.tools.values()].every(tool => tool.status === 'completed')) {
         const handle = this.coordinator.getConversationProcess(input.contextRef.id);
-        if (handle) {
-          turn.executionRef = handle.client.executionRef(turn.executionId, input.contextRef.id, this.bindingIdentity, false);
-        }
+        if (handle) this.finishBackgroundTurn(turn, handle);
       }
     }
     return this.buildObservation(turn);
@@ -1541,7 +1594,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
         await bounded(turn.settled, 1_000).catch(() => {});
         if (killedAndIdle) {
           turn.stopConfirmed = true;
-          turn.backgroundWork = false;
+          this.clearBackgroundTracking(turn);
           turn.status = 'stopped';
           this.closeTextSegment(turn, 'unknown');
           for (const [id, tool] of turn.tools) {
@@ -1568,7 +1621,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       cwd: turn.cwd,
     }, { allowUnknownBackgroundWork: true })) {
       turn.stopConfirmed = true;
-      turn.backgroundWork = false;
+      this.clearBackgroundTracking(turn);
       turn.status = 'stopped';
       this.releaseProofs.add(this.releaseKey(turn.contextId, turn.executionRef));
     } else {
@@ -1818,6 +1871,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
   async close(): Promise<void> {
     if (this.closedFlag) return;
     this.closedFlag = true;
+    for (const turn of this.turns.values()) clearInterval(turn.backgroundTimer);
     await this.coordinator.closeProcessesOwnedBy(this);
   }
 }

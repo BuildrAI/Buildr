@@ -531,7 +531,7 @@ test('3.4 & 3.6: segmented process narrations around tools, thinking, plan, diff
     assert.ok(comp.diagnostic);
   }
 
-  // Unsettled tool at end_turn -> observation status 'unknown', never reported as complete success
+  // An unsettled command at end_turn keeps the original execution active.
   await h.setControl({ scenario: 'unsettled-tool', autoAllow: true });
   const unsettledEvents: ExecutorEvent[] = [];
   await rt.send({
@@ -546,7 +546,8 @@ test('3.4 & 3.6: segmented process narrations around tools, thinking, plan, diff
   const lastUnsettledObs = unsettledEvents.findLast(
     (ev): ev is Extract<ExecutorEvent, { type: 'observation' }> => ev.type === 'observation',
   );
-  assert.equal(lastUnsettledObs?.observation.status, 'unknown');
+  assert.equal(lastUnsettledObs?.observation.status, 'running');
+  assert.equal(lastUnsettledObs?.observation.backgroundWork, true);
 
   // Background continuation (`background-active`) -> stays running (`backgroundWork: true`), no premature completed!
   await h.setControl({ scenario: 'background-active', autoAllow: true });
@@ -564,6 +565,55 @@ test('3.4 & 3.6: segmented process narrations around tools, thinking, plan, diff
   const bgObs = bgEvents.findLast((ev): ev is Extract<ExecutorEvent, { type: 'observation' }> => ev.type === 'observation');
   assert.equal(bgObs?.observation.status, 'running');
   assert.equal(bgObs?.observation.backgroundWork, true);
+});
+
+test('Antigravity keeps the original background command until its late exit result', { timeout: 10_000 }, async t => {
+  const h = await createHarness(t, { scenario: 'late-command-result', autoAllow: true });
+  const rt = await h.openRuntime();
+  const contextRef = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+  const events: ExecutorEvent[] = [];
+  const finished = Promise.withResolvers<void>();
+  await rt.send({
+    contextRef, cwd: h.cwd, text: '后台退出回执', images: [], clientRequestId: 'late-command',
+    onEvent: event => {
+      events.push(event);
+      if (event.type === 'completed') finished.resolve();
+    },
+  });
+  const accepted = events.find(event => event.type === 'accepted');
+  assert.ok(accepted);
+  const input = { contextRef, executionRef: accepted.executionRef };
+  const active = await rt.observe(input);
+  assert.equal(active.backgroundWork, true);
+  const original = active.tools.find(tool => tool.status === 'running');
+  assert.ok(original);
+  assert.equal(events.some(event => event.type === 'completed'), false);
+  await finished.promise;
+  const ended = await rt.observe(input);
+  assert.equal(ended.status, 'idle');
+  assert.equal(ended.backgroundWork, false);
+  assert.equal(ended.tools.find(tool => tool.id === original.id)?.status, 'completed');
+  assert.ok(events.some(event => event.type === 'item' && event.item.id === original.id
+    && event.item.status === 'completed' && event.item.text === 'original command exited with code 0'));
+  assert.equal(events.filter(event => event.type === 'completed').length, 1);
+});
+
+test('Antigravity correlates a system exit receipt with the original command and retains failure', { timeout: 10_000 }, async t => {
+  const h = await createHarness(t, { scenario: 'background-transcript-exit', autoAllow: true });
+  const rt = await h.openRuntime();
+  const contextRef = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+  const events: ExecutorEvent[] = [];
+  const finished = Promise.withResolvers<void>();
+  await rt.send({ contextRef, cwd: h.cwd, text: '退出回执', images: [], clientRequestId: 'system-exit',
+    onEvent: event => { events.push(event); if (event.type === 'completed') finished.resolve(); },
+  });
+  const active = await rt.observe({ contextRef });
+  const original = active.tools.find(tool => tool.status === 'running');
+  assert.ok(active.backgroundWork && original);
+  await finished.promise;
+  assert.ok(events.some(event => event.type === 'item' && event.item.id === original.id
+    && event.item.status === 'failed' && event.item.text.includes('exited with code 7')));
+  assert.equal((await rt.observe({ contextRef })).status, 'idle');
 });
 
 test('3.5: approval excludes persistent grants, preserves request on invalid answer, and full-access still waits on business questions', async t => {

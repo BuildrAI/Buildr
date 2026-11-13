@@ -502,13 +502,13 @@ async function runPrompt(id, params) {
       toolCallId: tool2Id,
       title: isDiff ? 'Edit src/index.ts' : 'Run unit check',
       kind: isDiff ? 'edit' : 'execute',
-      rawInput: isDiff ? { path: 'src/index.ts' } : { command: 'npm test' },
+      rawInput: isDiff ? { path: 'src/index.ts' } : { CommandLine: 'npm test' },
       locations: [{ path: isDiff ? 'src/index.ts' : 'package.json' }],
       status: 'in_progress',
     },
   });
   const tool2Text = isDiff ? '--- a/src/index.ts\n+++ b/src/index.ts\n@@ -1 +1 @@\n-old\n+new' : 'PASS all checks (12 tests)';
-  if (activeScenario !== 'unsettled-tool' && !text.includes('[UNSETTLED_TOOL]')) {
+  if (!['unsettled-tool', 'late-command-result', 'background-transcript-exit'].includes(activeScenario) && !text.includes('[UNSETTLED_TOOL]')) {
     notify('session/update', {
       sessionId,
       update: {
@@ -590,6 +590,23 @@ async function runPrompt(id, params) {
     backgroundActive,
   });
 
+  if (activeScenario === 'background-transcript-exit') {
+    const file = join(cliRoot, 'brain', sessionId, '.system_generated', 'logs', 'transcript_full.jsonl');
+    mkdirSync(dirname(file), { recursive: true });
+    const task = sessionId + '/task-42';
+    const writeRow = row => writeFileSync(file, JSON.stringify({ created_at: new Date().toISOString(), ...row }) + '\n', { flag: 'a' });
+    writeRow({ source: 'MODEL', type: 'GENERIC', content: `Created At: test\nTool is running as a background task with task id: ${task}\nTask Description: npm test\nTask logs are available at: file:///fixture/task-42.log` });
+    writeRow({ source: 'MODEL', type: 'PLANNER_RESPONSE', content: `[Message] timestamp=test sender=${task} priority=HIGH content=Task id "${task}" finished with result:\nCommand exited with code 0.` });
+    setTimeout(() => writeRow({ source: 'SYSTEM', type: 'SYSTEM_MESSAGE',
+      content: `[Message] timestamp=test sender=${task} priority=HIGH content=Task id "${task}" finished with result:\nCommand exited with code 7.\nCommand output: fixture failure` }), 250);
+  }
+  if (activeScenario === 'late-command-result') {
+    setTimeout(() => notify('session/update', {
+      sessionId,
+      update: { sessionUpdate: 'tool_call_update', toolCallId: tool2Id, status: 'completed',
+        content: [{ type: 'content', content: { type: 'text', text: 'original command exited with code 0' } }] },
+    }), 250);
+  }
   activePrompt = undefined;
   if (activeScenario === 'missing-terminal-response') {
     return;

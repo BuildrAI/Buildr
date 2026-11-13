@@ -29,6 +29,29 @@ export function antigravityNativeTranscriptPath(configRoot: string, contextId: s
   return path.join(configRoot, 'home', '.gemini', 'antigravity', 'transcripts', `${contextId}.jsonl`);
 }
 
+export function readAntigravityCommandExits(configRoot: string, contextId: string, startedAt: number) {
+  if (!isValidAntigravityContextId(contextId)) return [];
+  const file = path.join(configRoot, 'home', '.gemini', 'antigravity-cli', 'brain', contextId,
+    '.system_generated', 'logs', 'transcript_full.jsonl');
+  const rows = (readImmutableJsonlFile(file) ?? []).filter(row => Date.parse(row?.created_at) >= startedAt);
+  const tasks = new Map<string, string>();
+  for (const row of rows) {
+    if (row.source !== 'MODEL' || row.type !== 'GENERIC' || typeof row.content !== 'string') continue;
+    const task = /^Tool is running as a background task with task id: (.+)\r?$/m.exec(row.content)?.[1];
+    const description = /^Task Description: ([\s\S]+?)\r?\nTask logs are available at:/m.exec(row.content)?.[1];
+    if (task?.startsWith(contextId + '/') && /^task-\d+$/.test(task.slice(contextId.length + 1)) && description) tasks.set(task, description);
+  }
+  const exits = new Map<string, { command: string; code: number; result: string }>();
+  for (const row of rows) {
+    if (row.source !== 'SYSTEM' || row.type !== 'SYSTEM_MESSAGE' || typeof row.content !== 'string') continue;
+    const message = /^\[Message\] timestamp=\S+ sender=(\S+) priority=\S+ content=Task id "([^"]+)" finished with result:\r?\nCommand exited with code (-?\d+)\./m.exec(row.content);
+    if (!message || message[1] !== message[2]) continue;
+    const command = tasks.get(message[1]!);
+    if (command) exits.set(message[1]!, { command, code: Number(message[3]), result: row.content.slice(message.index + message[0].lastIndexOf('Command exited')).split('\n</SYSTEM_MESSAGE>')[0]!.trim() });
+  }
+  return [...exits.values()].filter(exit => [...tasks.values()].filter(command => command === exit.command).length === 1);
+}
+
 export function appendAntigravitySessionRow(
   configRoot: string,
   contextId: string,
