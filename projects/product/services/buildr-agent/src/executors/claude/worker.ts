@@ -51,6 +51,8 @@ interface Round {
 interface Session {
   id: string; cwd: string; q: Query; inputs: Inputs; round?: Round; closed: boolean; initialized: boolean;
   mode: string; effort?: string;
+  nativeContinuation?: boolean;
+  taskDrainTimer?: ReturnType<typeof setTimeout>;
   child?:ChildProcessWithoutNullStreams;
   cancelQueued?:boolean;
   cancelQueuedSupported?:boolean;
@@ -61,6 +63,7 @@ interface Session {
   receipts:ClaudeReceiptCursor;
   streams: Map<string, {messageId:string; blocks:Map<number, {type:string;text:string;id?:string;name?:string;arguments?:string}>; used?:number}>;
 }
+const TASK_FOLLOWUP_GRACE_MS = 500;
 const sessions = new Map<string, Session>();
 const historyProjectors=new Map<string,ClaudeItemProjector>();
 /** The prompt size of one model request: uncached plus cache reads and writes. */
@@ -80,22 +83,43 @@ const emit = (session: Session, event: ExecutorEvent) => {
   }
   stream.push(event);
 };
+function hasActiveTasks(session: Session): boolean {
+  return [...session.tasks.values()].some(task => task.active);
+}
 function observation(session: Session): ExecutorObservation {
   const round = session.round;
-  const backgroundWork = [...session.tasks.values()].some(task=>task.active);
+  const backgroundWork = hasActiveTasks(session);
   const questionTools=new Set([...(round?.pending.values()??[])].filter(p=>p.request.kind==='question').map(p=>p.toolId));
   const tools = [...session.tools.values()]
     .filter(tool => !questionTools.has(tool.id))
     .map(({id, label, status, taskId}) => ({id, label, status, canStop: Boolean(taskId)}));
   const active = tools.some(tool=>tool.status!=='completed') || backgroundWork;
+  // An SDK result can end one prompt while a native task notification starts
+  // another model pass on the same Buildr execution. Use native session activity.
+  const modelRunning = session.nativeContinuation === true;
   return {
-    status: session.closed && !round?.terminal ? 'unknown' : round?.pending.size ? 'waiting'
+    status: session.closed && (!round?.terminal || modelRunning || session.taskDrainTimer || active) ? 'unknown' : round?.pending.size ? 'waiting'
+      : modelRunning || session.taskDrainTimer ? 'running'
       : round?.terminal ? active ? 'tools-active' : round.terminal==='stopped' ? 'stopped' : 'idle' : round ? 'running' : 'idle',
     ...(round ? {executionRef:{id:round.id}} : {}), tools, backgroundWork,
     requests: [...(round?.pending.values()??[])].map(p=>p.request),
     ...(round?.diagnostic ? {diagnostic:round.diagnostic} : {}),
-    canContinue: round?.terminal==='completed',
+    canContinue: round?.terminal==='completed' && !modelRunning && !session.taskDrainTimer,
   };
+}
+function publishTaskObservation(session: Session, wasBackgroundActive: boolean) {
+  const current = observation(session);
+  // The CLI can remove its last task before announcing the model pass that
+  // receives the result. Keep the execution open across that handoff. Some
+  // tasks end without waking the model, so the idle deferral must be bounded.
+  if (wasBackgroundActive && !current.backgroundWork && current.status === 'idle' && session.round?.terminal === 'completed' && !session.round.stopping) {
+    session.taskDrainTimer = setTimeout(() => {
+      session.taskDrainTimer = undefined;
+      emit(session,{type:'observation',observation:observation(session)});
+    },TASK_FOLLOWUP_GRACE_MS);
+    session.taskDrainTimer.unref();
+  }
+  emit(session,{type:'observation',observation:observation(session)});
 }
 function item(session: Session, value: ExecutorItem) {
   const previous = session.items.get(value.id);
@@ -126,7 +150,7 @@ function admit(session: Session, uuid: string) {
 function watchReceipts(session:Session){
   const round=session.round;if(!round||round.receiptTimer)return;
   const read=()=>{
-    if(session.closed||round!==session.round||round.terminal){clearInterval(round.receiptTimer);round.receiptTimer=undefined;return;}
+    if(session.closed||round!==session.round){clearInterval(round.receiptTimer);round.receiptTimer=undefined;return;}
     try{
       const expected=new Set([...(round.accepted?[]:[round.inputId]),...round.acks.keys()]);
       for(const uuid of session.receipts.read(expected))admit(session,uuid);
@@ -146,6 +170,7 @@ function result(session: Session, message: any) {
   }
   if(message.is_error&&round.outstanding.size===1&&round.outstanding.has(round.inputId)&&!round.acks.size)round.outstanding.delete(round.inputId);
   if (round.acks.size||round.outstanding.size) return; // Supplements can be acknowledged before their own result.
+  session.nativeContinuation = false;
   round.terminal = round.stopping ? 'stopped' : message.is_error || message.subtype!=='success' ? 'failed' : 'completed';
   clearInterval(round.receiptTimer);round.receiptTimer=undefined;
   if (message.is_error) round.diagnostic = 'agent_claude_execution_failed';
@@ -157,6 +182,18 @@ async function event(session: Session, message: any) {
   const round = session.round;
   if (message.type==='system' && message.subtype==='init') { session.initialized=true;session.cancelQueuedSupported=message.capabilities?.includes('interrupt_cancel_queued_v1')===true;return; }
   if (!round) return;
+  if (message.type==='system' && message.subtype==='session_state_changed') {
+    const continuing = round.terminal === 'completed' && ['running','requires_action'].includes(message.state);
+    if (continuing) {
+      clearTimeout(session.taskDrainTimer);
+      session.taskDrainTimer = undefined;
+    }
+    if (session.nativeContinuation !== continuing) {
+      session.nativeContinuation = continuing;
+      if (round.terminal) emit(session,{type:'observation',observation:observation(session)});
+    }
+    return;
+  }
   if(!message.parent_tool_use_id)for(const uuid of message.user_message_uuids??[message.user_message_uuid])if(typeof uuid==='string')admit(session,uuid);
   if (message.type==='user') {
     if (!message.parent_tool_use_id && typeof message.uuid==='string') admit(session,message.uuid);
@@ -196,6 +233,7 @@ async function event(session: Session, message: any) {
   } else if (message.type==='system' && message.subtype==='api_retry' && [401,403].includes(message.error_status)) {
     // Invalid credentials are not transient. Stop the owned query before the
     // CLI's automatic API retry can replay a request with the same bad key.
+    session.nativeContinuation=false;
     round.terminal='failed';round.diagnostic='agent_model_source_authentication_failed';
     clearInterval(round.receiptTimer);round.receiptTimer=undefined;
     session.closed=true;session.inputs.close();session.q.close();
@@ -209,6 +247,7 @@ async function event(session: Session, message: any) {
   } else if (message.type==='system' && message.subtype==='compact_boundary') {
     emit(session,{type:'observation',observation:{...observation(session),contextCompaction:null}});
   } else if (message.type==='system' && ['task_started','task_updated','task_notification'].includes(message.subtype)) {
+    const wasBackgroundActive = hasActiveTasks(session);
     const task=session.tasks.get(message.task_id)??{active:true};
     if(task.runId&&message.run_id&&message.run_id<task.runId)return;
     if(message.run_id)task.runId=message.run_id;
@@ -236,8 +275,9 @@ async function event(session: Session, message: any) {
       const tool=session.tools.get(task.toolId);
       if (tool) { tool.taskId=message.task_id; tool.status=task.active?'running':'completed'; }
     }
-    emit(session,{type:'observation',observation:observation(session)});
+    publishTaskObservation(session,wasBackgroundActive);
   } else if(message.type==='system'&&message.subtype==='background_tasks_changed'){
+    const wasBackgroundActive = hasActiveTasks(session);
     const active=new Set<string>((message.tasks??[]).map((task:any)=>task.task_id));
     for(const [id,task] of session.tasks)if(task.background&&!active.has(id)){
       task.active=false;if(task.toolId){const tool=session.tools.get(task.toolId);if(tool)tool.status='completed';}
@@ -246,7 +286,7 @@ async function event(session: Session, message: any) {
       const task=session.tasks.get(native.task_id)??{active:true};
       task.active=true;task.background=true;session.tasks.set(native.task_id,task);
     }
-    emit(session,{type:'observation',observation:observation(session)});
+    publishTaskObservation(session,wasBackgroundActive);
   } else if (message.type==='system' && ['session_writes_lost','mirror_error'].includes(message.subtype)) {
     round.diagnostic='agent_claude_history_unavailable';
     emit(session,{type:'diagnostic',message:round.diagnostic});
@@ -308,7 +348,7 @@ async function open(params: any): Promise<Session> {
     cwd:params.cwd,pathToClaudeCodeExecutable:executable,
     ...(persisted?{resume:params.contextId}:{sessionId:params.contextId}),
     model:model.id, permissionMode:mode,allowDangerouslySkipPermissions:true,
-    env:{...process.env},settingSources:['project','local'],
+    env:{...process.env,CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS:'1'},settingSources:['project','local'],
     skills:'all',
     systemPrompt:{type:'preset',preset:'claude_code',append:instructions},
     settings:{env:{...claudeGatewayEnvironment(gateway),CLAUDE_CONFIG_DIR:process.env.CLAUDE_CONFIG_DIR!,CLAUDE_CODE_TMPDIR:process.env.CLAUDE_CODE_TMPDIR!},model:model.id,attribution:{commit:'',pr:''},
@@ -325,6 +365,7 @@ async function open(params: any): Promise<Session> {
     catch { if(session.round&&!session.closed){session.round.diagnostic='agent_claude_observation_lost';emit(session,{type:'observation',observation:{...observation(session),status:'unknown'}});session.round.reject(new Error('agent_claude_observation_lost'));} }
     finally {
       session.closed=true;inputs.close();
+      clearTimeout(session.taskDrainTimer);session.taskDrainTimer=undefined;
       clearInterval(session.round?.receiptTimer);
       for(const ack of session.round?.acks.values()??[])ack.reject(new Error('agent_claude_input_unknown'));
       if(session.round&&!session.round.terminal)session.round.reject(new Error('agent_claude_observation_lost'));
@@ -376,7 +417,7 @@ async function dispatch(method:string,params:any):Promise<unknown> {
   if(method==='send'){
     const input=await user(params),session=await open(params);
     const previous=observation(session);
-    if(session.round&&(!session.round.terminal||previous.backgroundWork||previous.tools.some(tool=>tool.status!=='completed')||session.round.pending.size||session.round.acks.size))throw new Error('agent_execution_busy');
+    if(session.round&&(!session.round.terminal||previous.status==='running'||previous.backgroundWork||previous.tools.some(tool=>tool.status!=='completed')||session.round.pending.size||session.round.acks.size))throw new Error('agent_execution_busy');
     await session.q.setPermissionMode(params.permissionMode==='full-access'?'bypassPermissions':'default');
     await session.q.applyFlagSettings({effortLevel:claudeEffort(gateway!,params.model,params.reasoningEffort)??null});
     const round:Round={id:params.executionId,inputId:input.uuid!,requestId:params.clientRequestId,accepted:false,stopping:false,pending:new Map(),outstanding:new Set([input.uuid!]),acks:new Map(),resolve:()=>{},reject:()=>{},settled:undefined!};
@@ -389,11 +430,11 @@ async function dispatch(method:string,params:any):Promise<unknown> {
   }
   if(method==='supplement'){
     const session=exact(params),round=session.round!;
-    if(session.closed||round.terminal||round.stopping)throw new Error('agent_supplement_unavailable');
+    if(session.closed||(round.terminal&&!session.nativeContinuation)||round.stopping)throw new Error('agent_supplement_unavailable');
     const input=await user(params),id=input.uuid!;
     // stop() can linearize while image bytes are being read. Never enqueue
     // an input after the native interrupt has already cancelled its queue.
-    if(session.closed||session.round!==round||round.terminal||round.stopping)throw new Error('agent_supplement_unavailable');
+    if(session.closed||session.round!==round||(round.terminal&&!session.nativeContinuation)||round.stopping)throw new Error('agent_supplement_unavailable');
     if(round.acks.has(id))throw new Error('agent_input_already_dispatched');
     const receipt=new Promise((resolve,reject)=>round.acks.set(id,{requestId:params.clientRequestId,resolve,reject}));
     round.outstanding.add(id);session.inputs.push(input);watchReceipts(session);return await receipt;
@@ -451,7 +492,7 @@ async function dispatch(method:string,params:any):Promise<unknown> {
   }
   if(method==='can-release'){
     const session=exact(params),value=observation(session);
-    return Boolean(session.round?.terminal)&&!value.backgroundWork&&!session.round?.pending.size&&!session.round?.acks.size&&value.tools.every(tool=>tool.status==='completed');
+    return Boolean(session.round?.terminal)&&['idle','stopped'].includes(value.status)&&!value.backgroundWork&&!session.round?.pending.size&&!session.round?.acks.size&&value.tools.every(tool=>tool.status==='completed');
   }
   if(method==='release-unaccepted'){
     const session=exact(params),round=session.round;

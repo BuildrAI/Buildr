@@ -20,7 +20,7 @@ function binary():string {
   const root=path.dirname(createRequire(import.meta.url).resolve(name+'/package.json'));
   return path.join(root,process.platform==='win32'?'claude.exe':'claude');
 }
-async function fixture(t:test.TestContext,scenario:'text'|'tool'|'question'|'child'|'background'|'skill'|'compact'|'error'='text',usageIn:'start'|'delta'='start'){
+async function fixture(t:test.TestContext,scenario:'text'|'tool'|'question'|'child'|'background'|'background-followup'|'skill'|'compact'|'error'='text',usageIn:'start'|'delta'='start'){
   const root=await realpath(await mkdtemp(path.join(tmpdir(),'buildr-claude-'))),cwd=path.join(root,'workspace');
   await mkdir(cwd);
   await writeFile(path.join(cwd,'AGENTS.md'),'BUILDR_CLAUDE_RULE_FIXTURE：只执行已授权动作。\n');
@@ -33,20 +33,22 @@ async function fixture(t:test.TestContext,scenario:'text'|'tool'|'question'|'chi
     if(new URL(req.url!,'http://local').pathname!=='/v1/messages'){res.writeHead(404).end();return;}
     let raw='';for await(const chunk of req)raw+=chunk;
     const body=JSON.parse(raw);bodies.push(body);classes.push(String(req.headers['x-claude-code-request-class']??''));
-    if(JSON.stringify(body.messages).includes('HOLD_FIXTURE')&&bodies.length===1){
+    const messages=JSON.stringify(body.messages);
+    const taskFollowup=scenario==='background-followup'&&body.stream&&messages.includes('<task-notification>');
+    if((messages.includes('HOLD_FIXTURE')&&bodies.length===1)||taskFollowup){
       received.resolve();await release.promise;
       if(res.destroyed)return;
     }
     if(scenario==='error'){res.writeHead(401,{'content-type':'application/json'}).end(JSON.stringify({type:'error',error:{type:'authentication_error',message:'Fixture key rejected'}}));return;}
     const hasResult=body.messages.some((m:any)=>Array.isArray(m.content)&&m.content.some((p:any)=>p.type==='tool_result'));
     const child=Boolean(req.headers['x-claude-code-agent-id']);
-    const tool=scenario==='skill'?'Skill':scenario==='child'?child?'Bash':'Agent':scenario==='background'||scenario==='tool'?'Bash':'AskUserQuestion';
+    const tool=scenario==='skill'?'Skill':scenario==='child'?child?'Bash':'Agent':scenario.startsWith('background')||scenario==='tool'?'Bash':'AskUserQuestion';
     const input=tool==='Skill'?{skill:'buildr-fixture-skill'}:tool==='Agent'?{subagent_type:'general-purpose',description:'Read-only child fixture',prompt:'Run the read-only fixture command, then finish.',model:'haiku'}
-      :tool==='Bash'?scenario==='background'?{command:'sleep 10',description:'Bounded background fixture',run_in_background:true}:{command:'printf buildr-claude-ok',description:'Read-only fixture command'}
+      :tool==='Bash'?scenario.startsWith('background')?{command:scenario==='background-followup'?'sleep 2':'sleep 10',description:'Bounded background fixture',run_in_background:true}:{command:'printf buildr-claude-ok',description:'Read-only fixture command'}
       :{questions:[{question:'选择验收方式？',header:'验收',multiSelect:false,options:[{label:'自动测试',description:'使用测试'},{label:'手工',description:'人工检查'}]}]};
     const title=JSON.stringify(body.messages).includes('只为以下引用资料生成');
     const summary=String(body.system).includes('你只负责整理交接材料');
-    const text=title?JSON.stringify({title:'夹具标题'}):summary?'fixture summary':'fixture complete';
+    const text=title?JSON.stringify({title:'夹具标题'}):summary?'fixture summary':taskFollowup?'fixture background complete':'fixture complete';
     const content=summary?[{type:'redacted_thinking',data:'fixture-private-reasoning'},{type:'text',text}]:!['text','compact'].includes(scenario)&&!hasResult?[{type:'tool_use',id:child?'call-child':'call-fixture',name:tool,input}]:[{type:'text',text}];
     const stop=content[0].type==='tool_use'?'tool_use':'end_turn';
     const inputTokens=scenario==='compact'&&bodies.length===1?31000:10;
@@ -278,6 +280,34 @@ test('Claude native background Bash remains controllable after its main answer',
   assert.equal(await f.runtime.prepareRelease!({contextRef,executionRef}),false);
   const tool=observed.tools.find(tool=>tool.canStop);assert.ok(tool);
   await f.runtime.stop({contextRef,executionRef,toolId:tool.id});
+});
+test('Claude keeps the execution active while handling a background task result', {timeout:60000}, async t=>{
+  const f=await fixture(t,'background-followup'),contextRef=await f.runtime.createContext({cwd:f.cwd});
+  const execution=Promise.withResolvers<Extract<ExecutorEvent,{type:'accepted'}>['executionRef']>();
+  const finished=Promise.withResolvers<void>(), statuses:string[]=[], assistantItems=new Map<string,string>();
+  let firstResult=false;
+  await f.runtime.send({
+    contextRef,cwd:f.cwd,text:'Run the bounded background fixture.',images:[],clientRequestId:'background-followup',permissionMode:'full-access',
+    onEvent:event=>{
+      if(event.type==='accepted')execution.resolve(event.executionRef);
+      if(event.type==='item'&&event.item.kind==='message'&&event.item.role==='assistant')assistantItems.set(event.item.id,event.item.text);
+      if(event.type==='completed')firstResult=true;
+      if(event.type==='observation'&&firstResult){
+        statuses.push(event.observation.status);
+        if(event.observation.status==='idle')finished.resolve();
+      }
+    },
+  });
+  const executionRef=await execution.promise;
+  await bounded(f.received,15000);
+  assert.equal((await f.runtime.observe({contextRef,executionRef})).status,'running');
+  assert.equal(await f.runtime.prepareRelease!({contextRef,executionRef}),false);
+  assert.ok(!statuses.includes('idle'),statuses.join(', '));
+  f.release();
+  await bounded(finished.promise,15000);
+  assert.ok([...assistantItems.values()].includes('fixture complete'));
+  assert.ok([...assistantItems.values()].includes('fixture background complete'));
+  assert.equal(await f.runtime.prepareRelease!({contextRef,executionRef}),true);
 });
 test('Claude real Bash uses approval control and native tool detail', {timeout:60000}, async t=>{
   const f=await fixture(t,'tool'),contextRef=await f.runtime.createContext({cwd:f.cwd}),events:ExecutorEvent[]=[];
