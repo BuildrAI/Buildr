@@ -12,6 +12,7 @@ import { claudeAnswers, claudeEffort, claudeGatewayEnvironment, claudeInputId, C
 import { ClaudeReceiptCursor } from './content.ts';
 import { withExecutionFault } from '../../domain/execution-fault.ts';
 import { ClaudeControlInput } from './control.ts';
+import { ExecutorEventStream } from '../event-stream.ts';
 
 console.log = console.info = console.warn = console.error = console.debug = () => {};
 const write = (message: unknown) => process.stdout.write(JSON.stringify(message) + '\n');
@@ -65,8 +66,19 @@ const historyProjectors=new Map<string,ClaudeItemProjector>();
 /** The prompt size of one model request: uncached plus cache reads and writes. */
 const usageTokens = (usage:any) => ['input_tokens','cache_read_input_tokens','cache_creation_input_tokens']
   .reduce((sum,key)=>sum+(typeof usage?.[key]==='number'?usage[key]:0),0);
+const streams = new WeakMap<Round, ExecutorEventStream>();
 const emit = (session: Session, event: ExecutorEvent) => {
-  if (session.round) write({method:'event',params:{contextId:session.id,executionId:session.round.id,event:withExecutionFault(event)}});
+  const round = session.round;
+  if (!round) return;
+  let stream = streams.get(round);
+  if (!stream) {
+    stream = new ExecutorEventStream(value => write({
+      method: 'event',
+      params: { contextId: session.id, executionId: round.id, event: withExecutionFault(value) },
+    }));
+    streams.set(round, stream);
+  }
+  stream.push(event);
 };
 function observation(session: Session): ExecutorObservation {
   const round = session.round;

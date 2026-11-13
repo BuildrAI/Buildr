@@ -42,3 +42,14 @@ test('native tool bursts retain their latest output and flush before completion 
  stream.push(item('first','first output'));stream.push(item('second','second output'));
  assert.equal(delivered.length,3);flush();assert.equal(delivered.length,4);
 });
+
+test('thinking fragments flush before completion and stay within their execution', () => {
+  const delivered: ExecutorEvent[] = [];
+  const stream = new ExecutorEventStream(event => delivered.push(event), () => () => {});
+  for (let i = 1; i <= 100; i++) stream.push({type:'item',item:{id:'thought',kind:'thinking',role:'assistant',text:'x'.repeat(i),status:'running',executionId:'first'}});
+  assert.equal(delivered.length, 0);
+  stream.push({type:'completed',status:'completed'});
+  assert.equal(delivered.length, 2);
+  assert.equal(delivered[0].type === 'item' && delivered[0].item.text.length, 100);
+  assert.equal(delivered[1].type, 'completed');
+});

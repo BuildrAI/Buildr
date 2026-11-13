@@ -12,7 +12,7 @@ export class ExecutorEventStream {
       const timer = setTimeout(flush, 40); timer.unref(); return () => clearTimeout(timer);
     }) { this.deliver = deliver; this.schedule = schedule; }
   push(event: ExecutorEvent): void {
-    if (event.type === 'item' && event.item.status === 'running' && (event.item.kind === 'message' && event.item.role === 'assistant' || event.item.kind === 'tool' && event.item.nativeTool)) {
+    if (event.type === 'item' && event.item.status === 'running' && ((event.item.kind === 'message' || event.item.kind === 'thinking') && event.item.role === 'assistant' || event.item.kind === 'tool' && event.item.nativeTool)) {
       const previous = this.pending;
       if (previous?.type === 'item' && (previous.item.kind !== event.item.kind || previous.item.id !== event.item.id || previous.item.executionId !== event.item.executionId || previous.item.parentToolId !== event.item.parentToolId)) this.flush();
       this.pending = event;
