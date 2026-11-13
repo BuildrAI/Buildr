@@ -9,7 +9,7 @@ import type { ExecutorEvent, ExecutorItem, ExecutorObservation, ExecutorRequest 
 import { checkedGateway, gatewayModel, type ExecutorGateway } from '../model-gateway.ts';
 import { bounded, nativePreview } from '../native-process.ts';
 import { claudeAnswers, claudeEffort, claudeGatewayEnvironment, claudeInputId, ClaudeItemProjector, claudeQuestion } from './protocol.ts';
-import { ClaudeReceiptCursor } from './content.ts';
+import { ClaudeReceiptCursor, claudeStorageRoot } from './content.ts';
 import { withExecutionFault } from '../../domain/execution-fault.ts';
 import { ClaudeControlInput } from './control.ts';
 import { ExecutorEventStream } from '../event-stream.ts';
@@ -341,7 +341,7 @@ async function open(params: any): Promise<Session> {
   const model=gatewayModel(gateway,params.model),effort=claudeEffort(gateway,params.model,params.reasoningEffort);
   const persisted=await getSessionInfo(params.contextId,{dir:params.cwd});
   const configRoot=path.dirname(process.env.CLAUDE_CONFIG_DIR!);
-  const root=path.resolve(configRoot,configRoot.includes(`${path.sep}model-bindings${path.sep}`)?'../../../..':'../..');
+  const root=claudeStorageRoot(configRoot);
   const receipts=new ClaudeReceiptCursor({root,configRoot,contextId:params.contextId,cwd:params.cwd});
   const session:Session={id:params.contextId,cwd:params.cwd,q:undefined!,inputs,closed:false,initialized:false,mode,effort,tools:new Map(),tasks:new Map(),items:new Map(),projector:new ClaudeItemProjector(),receipts,streams:new Map()};
   session.q=query({prompt:inputs,options:{

@@ -656,6 +656,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   });
   const runTest=t.test.bind(t);
   t.test=(...args:any[])=>{
+    if (SELECTORS.size === 1 && SELECTORS.has('service') && !taskFocused(args[0])) return Promise.resolve();
     const action=args.at(-1);
     if(typeof action==='function')args[args.length-1]=async(context:any)=>{
       const started = costClock();
@@ -2787,7 +2788,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   if (selected('task')) await runTaskListJourney({antdSelectDisplay, antdSelectOptionTexts, applyTaskFilters, assert, browserErrors, capture, closeTaskReading, confirmAntModal, crypto, expectedBrowserErrors, fs, openAntdSelect, openTaskActionModal, openTaskFilterPanel, openTaskSearch, otherWorkspaceId, page, path, prepareEvidenceFixture, process, recordVerificationResultFromEvidence, runBuildr, runtime, selectAntdOption, selected, showPrimaryNavigation, t: taskFocusedT(t), taskFocusedT, url, workspaceRoot, workspaceUrl, writeChange});
   if (selected('task')) await runTaskCommitsJourney({ t: taskFocusedT(t), page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture });
 
-  if (selected('task-materials')) await runTaskMaterialsJourney({ t, page, runtime, materials: runtimeProvide(webRuntime, TASK_MATERIALS_APPLICATION), workspaceRoot, workspaceUrl, runBuildr, runGit, capture, expectedBrowserErrors });
+  if (selected('task-materials')) await runTaskMaterialsJourney({ t: taskFocusedT(t), page, runtime, materials: runtimeProvide(webRuntime, TASK_MATERIALS_APPLICATION), workspaceRoot, workspaceUrl, runBuildr, runGit, capture, expectedBrowserErrors });
 
   if (selected('workbench')) await runWorkbenchJourney({ t, page, runtime, workspaceRoot, otherWorkspaceRoot: otherRoot, workspaceUrl, otherWorkspaceUrl: `${url}/workspaces/${otherWorkspaceId}`, expectedBrowserErrors, selectAntdOption, capture });
 

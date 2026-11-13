@@ -118,7 +118,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const refresh = useCallback(async (includePrototype = selected === 'design') => {
     setRefreshing(true);
     try {
-      const results = await Promise.allSettled([detail.refresh().then(next => artifacts.refreshChanges(next)), workContext.refresh(), evidence.refreshLoaded(), artifacts.refreshMaterials(), ...(!detail.data?.record.isParent ? [changedCount.refresh()] : []), ...(changedFiles.data || selected === 'changes' || parentCommits ? [changedFiles.refresh()] : []), ...(includePrototype ? [artifacts.refreshPrototype()] : [])]);
+      const results = await Promise.allSettled([detail.refresh().then(next => artifacts.refreshChanges(next)), workContext.refresh(), evidence.refreshLoaded(), artifacts.refreshMaterials(), ...(!detail.data?.record.isParent ? [changedCount.refresh()] : []), ...(changedFiles.data || selected === 'changes' || parentCommits ? [changedFiles.refresh()] : []), ...(includePrototype ? [artifacts.refreshPrototype(true)] : [])]);
       resetTaskList();
       const taskRead = results[0];
       if (currentTask.current === taskId && taskRead.status === 'rejected' && !isTaskReadCancelled(taskRead.reason)) setAlert({ message: '任务信息刷新失败，当前仍显示上次读取的内容。请重试。', error: true });

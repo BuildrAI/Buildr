@@ -87,8 +87,11 @@ test('ordinary source replacement still cannot assume the old native identity',a
 });
 
 test('unconfirmed old process close never opens a second writer or claims recovery',async t=>{
-  const f=await fixture(t),before=f.opened;f.setCloseFailure(f.original);
+  const f=await fixture(t);
+  await f.connections.runtime('codex');
+  const before=f.opened, closedBefore=f.closed.length;f.setCloseFailure(f.original);
   f.begin();const result=await settled(f,'failed');assert.match(result.message,/退出未确认/);
+  assert.deepEqual(f.closed.slice(closedBefore),[f.original]);
   assert.equal(f.opened,before);assert.equal(f.connections.get('codex').executable,f.original);
   await assert.rejects(f.connections.runtime('codex'),{code:'agent_program_recovery_unconfirmed'});
 });

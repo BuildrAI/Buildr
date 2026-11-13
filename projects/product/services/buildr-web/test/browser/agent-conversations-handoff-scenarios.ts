@@ -128,11 +128,15 @@ await step('同一会话选下一位不发送，可查看实际原文并直接�
 
 await step('异常结束直接继续或重试，草稿保留，换模型与执行者也可恢复',async()=>{
       const saved=structuredClone(fixture.conversation),savedSends=fixture.sends,savedPrepares=fixture.prepares,savedStops=fixture.stops,savedSentLength=sentInputs.length;
+      const waitForRecoveryStep=(subscribe:(resolve:()=>void)=>void,label:string)=>new Promise<void>((resolve,reject)=>{
+        const timer=setTimeout(()=>reject(new Error('未观察到恢复请求：'+label)),10_000);
+        subscribe(()=>{clearTimeout(timer);resolve();});
+      });
       try{
         for(const mode of ['same','model','executor','undelivered']){
-          update({run:run('failed','codex',{model:'fixture-model',accepted:mode!=='undelivered',diagnostic:'本轮异常中断'}),requests:[]});await page.reload();await panel().locator('[data-run-status="failed"]').waitFor();
+          update({run:run('failed','codex',{model:'fixture-model',modelAccountId:'native-codex',modelAccountIdentity:'identity-codex',modelAccountRevision:'model-account-codex',accepted:mode!=='undelivered',diagnostic:'本轮异常中断'}),entries:saved.entries,requests:[]});await page.reload();await panel().locator('[data-run-status="failed"]').waitFor();
           if(mode==='model'){await chooseModel('Fast model');await closeModelSettings();}
-          if(mode==='executor')await chooseAgent('DSH');
+          if(mode==='executor'){await chooseAgent('DSH');await chooseModel('Fixture model');await closeModelSettings();}
           await input().fill('保留正在编辑的新要求');
           const action=panel().locator('.ac-recovery-action'),before=fixture.sends,users=fixture.conversation.entries.filter((entry:any)=>entry.role==='user').length;
           const label=mode==='undelivered'?'重试':'继续';await action.getByRole('button',{name:label,exact:true}).waitFor();
@@ -141,7 +145,7 @@ await step('异常结束直接继续或重试，草稿保留，换模型与执�
           const actionBox=await action.boundingBox(),buttonBox=await action.getByRole('button',{name:label,exact:true}).boundingBox();
           assert.ok(actionBox&&buttonBox&&buttonBox.x-actionBox.x<10,'恢复动作紧邻左侧异常，不漂到输入区右端');
           assert.equal(await action.getByRole('button',{name:label,exact:true}).innerText(),label,'两个字不插入额外间距');
-          fixture.holdSend=true;const started=new Promise<void>(resolve=>{fixture.sendStarted=resolve;});if(mode==='same'){fixture.holdPrepare=true;const preparing=new Promise<void>(resolve=>{fixture.prepareStarted=resolve;});await action.getByRole('button',{name:label,exact:true}).click();await preparing;assert.equal(await panel().getByRole('button',{name:'跳过资料精简',exact:true}).count(),0);fixture.releasePrepare!();await started;}else{await action.getByRole('button',{name:label,exact:true}).click();await started;}
+          fixture.holdSend=true;const started=waitForRecoveryStep(resolve=>{fixture.sendStarted=resolve;},'发送 '+mode);void started.catch(()=>{});if(mode==='same'){fixture.holdPrepare=true;const preparing=waitForRecoveryStep(resolve=>{fixture.prepareStarted=resolve;},'准备 '+mode);void preparing.catch(()=>{});await action.getByRole('button',{name:label,exact:true}).click();await preparing;assert.equal(await panel().getByRole('button',{name:'跳过资料精简',exact:true}).count(),0);fixture.releasePrepare!();await started;}else{await action.getByRole('button',{name:label,exact:true}).click();await started;}
           assert.equal(fixture.sends,before+1);assert.equal(sentInputs.at(-1).continueRunId,'run-fixture');assert.equal(sentInputs.at(-1).text,'');assert.deepEqual(sentInputs.at(-1).attachmentIds,[]);
           assert.equal(fixture.conversation.entries.filter((entry:any)=>entry.role==='user').length,users);
           if(mode==='model')assert.equal(sentInputs.at(-1).model,'fixture-fast');if(mode==='executor')assert.equal(sentInputs.at(-1).connectionId,'dsh');

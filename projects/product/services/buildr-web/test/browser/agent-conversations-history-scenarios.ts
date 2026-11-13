@@ -90,7 +90,11 @@ const historyRuns = {
     let reads=0,release:(()=>void)|undefined,started:(()=>void)|undefined;
     let fail=false;
     const detail=async(route:any)=>{
-      reads++;started?.();await new Promise<void>(resolve=>{release=resolve;});
+      reads++;
+      if (started) {
+        const notify=started;started=undefined;
+        await new Promise<void>(resolve=>{release=resolve;notify();});
+      }
       if(fail)return route.fulfill({status:503,json:{error:{code:'switch_unavailable',message:'切换读取失败'}}}).catch(()=>{});
       return route.fulfill({json:target}).catch(()=>{}); // A superseded request can already be aborted.
     };
@@ -334,7 +338,8 @@ const historyRuns = {
     update({entries:[entry('fold-user',1,'user','最初要求'),entry('fold-before',2,'assistant','补充前的处理'),entry('fold-extra',3,'user','补充说明'),entry('fold-after',4,'assistant','补充后的处理'),entry('fold-extra-two',5,'user','第二条补充'),entry('fold-answer',6,'assistant','最终答复')],run:run('completed'),requests:[]});
     await page.reload();await input().waitFor();
     const turn=panel().locator('[data-turn-id="fold-user"]'),extra=turn.locator('[data-entry-id="fold-extra"]');
-    assert.equal(await panel().locator('.ac-turn').count(),1);await turn.locator('[data-entry-id="fold-answer"]').waitFor();assert.equal(await extra.count(),0);
+    await turn.locator('[data-entry-id="fold-answer"]').waitFor();
+    assert.equal(await panel().locator('.ac-turn').count(),1);assert.equal(await extra.count(),0);
     await turn.getByRole('button',{name:'展开处理过程',exact:true}).click();await extra.waitFor();
     assert.deepEqual(await turn.locator('[data-entry-id]').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>node.dataset.entryId)),['fold-user','fold-before','fold-extra','fold-after','fold-extra-two','fold-answer']);
     await capture(page,'conversation-supplement-expanded.png');
@@ -974,8 +979,13 @@ const historyRuns = {
     // 旧轮结果待核对时同样收起，并用一行说明保留待核对事实。
     update({entries,requests:[],retainedRuns:[run('unknown','qoder',{id:'run-fixture',startedAt,updatedAt,resourcesReleased:true,executionState:'unknown'})],run:run('completed','qoder',{id:'later-run',startedAt,updatedAt,resourcesReleased:true,executionState:'ended'})});
     await page.reload();await input().waitFor();
-    await panel().getByText('本轮结果待核对',{exact:false}).waitFor();
-    assert.equal(await panel().locator('.ac-turn-identity-toggle').first().getAttribute('aria-expanded'),'false','旧轮待核对不重新展开过程');
+    const oldTurn=panel().locator('[data-turn-id="timed-input"]');
+    const expand=oldTurn.getByRole('button',{name:'展开处理过程',exact:true});
+    await expand.waitFor();
+    assert.equal(await expand.getAttribute('aria-expanded'),'false','旧轮待核对不重新展开过程');
+    assert.equal(await oldTurn.getByText(/历史执行结果未确认/).count(),0);
+    await expand.click();
+    await oldTurn.getByText(/历史执行结果未确认/).waitFor();
   }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
   },
   'history/tool-folding': async (fixture: AgentConversationFixture) => {

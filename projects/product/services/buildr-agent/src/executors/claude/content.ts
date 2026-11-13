@@ -115,10 +115,16 @@ export function readClaudeTool(root:string,reference:NativeToolContent){
     return {...reference.entry,input:JSON.stringify(call.input??{}),text};
   }catch{return;}
 }
+export function claudeStorageRoot(configRoot: string): string {
+  const parent = path.dirname(configRoot);
+  const bound = /^[a-f0-9]{64}$/.test(path.basename(configRoot)) && path.basename(parent) === 'model-bindings' &&
+    path.basename(path.dirname(parent)) === 'claude-code' && path.basename(path.dirname(path.dirname(parent))) === 'connections';
+  return path.resolve(configRoot, bound ? '../../../..' : '../..');
+}
 function context(input:{configRoot:string;contextRef:{id:string;data?:Record<string,unknown>};cwd:string;bindingIdentity:string}):NativeContentContext|undefined {
   try{
     if(parseReference(String(input.contextRef.data?.native??''),'claude-code',input.cwd,input.bindingIdentity).nativeSessionId!==input.contextRef.id)return;
-    const root=path.resolve(input.configRoot,input.configRoot.includes(`${path.sep}model-bindings${path.sep}`)?'../../../..':'../..');
+    const root=claudeStorageRoot(input.configRoot);
     return {root,configRoot:input.configRoot,contextId:input.contextRef.id,cwd:input.cwd};
   }catch{return;}
 }

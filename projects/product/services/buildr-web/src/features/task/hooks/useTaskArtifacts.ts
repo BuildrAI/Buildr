@@ -141,15 +141,15 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
   const refreshChanges = useCallback((next = data) => next?.record.taskId === taskId
     ? loadChanges(next.record.changes, true) : Promise.resolve(), [data, taskId, loadChanges]);
 
-  const refreshPrototype = useCallback(async () => {
+  const refreshPrototype = useCallback(async (replacePending = false) => {
     const requestId = ++prototypeRequestRef.current;
     const currentTaskId = taskId;
     setPrototypeLoading(true);
     setPrototypeError(null);
     try {
       const next = await lifecycle.run(currentTaskId, `ui-prototypes:${key}`, (signal) => (
-        taskApi.prototypes(currentTaskId, { signal })
-      )) as UiPrototypeData;
+        taskApi.prototypes(currentTaskId, { signal }, workspaceId ?? undefined)
+      ), { replacePending }) as UiPrototypeData;
       if (prototypeRequestRef.current === requestId && taskIdRef.current === currentTaskId && materialKeyRef.current === key) setPrototypeData(next);
     } catch (cause) {
       if (!isTaskReadCancelled(cause) && prototypeRequestRef.current === requestId && taskIdRef.current === currentTaskId && materialKeyRef.current === key) {
@@ -159,7 +159,7 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
     } finally {
       if (prototypeRequestRef.current === requestId) setPrototypeLoading(false);
     }
-  }, [taskId, key, lifecycle]);
+  }, [taskId, key, lifecycle, workspaceId]);
 
   const openIntentDocument = useCallback(async (linkHref: string) => {
     if (!data) return;

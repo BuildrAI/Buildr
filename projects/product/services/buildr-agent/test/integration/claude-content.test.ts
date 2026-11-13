@@ -9,14 +9,16 @@ import { importClaudeFork } from '../../src/executors/claude/fork.ts';
 import { claudeInputId } from '../../src/executors/claude/protocol.ts';
 import { opaqueReference } from '../../src/executors/native-process.ts';
 
-function fixture(t:test.TestContext){
+function fixture(t:test.TestContext, layout: 'ordinary' | 'bound' | 'ancestor' = 'ordinary'){
   const root=fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(),'buildr-claude-records-')));
   t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
-  const configRoot=path.join(root,'connections/claude-code'),contextId=randomUUID(),cwd=path.join(root,'work');
+  const storage=layout==='ancestor'?path.join(root,'model-bindings','nested'):root;
+  const configRoot=layout==='bound'?path.join(storage,'connections/claude-code/model-bindings','a'.repeat(64)):path.join(storage,'connections/claude-code');
+  const contextId=randomUUID(),cwd=path.join(storage,'work');
   const file=path.join(configRoot,'claude-config/projects/project',contextId+'.jsonl');
   fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,'');
   const append=(value:any)=>fs.appendFileSync(file,JSON.stringify({sessionId:contextId,cwd,isSidechain:false,...value})+'\n');
-  return {root,configRoot,contextId,cwd,file,append};
+  return {root:storage,configRoot,contextId,cwd,file,append};
 }
 test('Claude receipt cursor observes only new exact owned UUIDs and refuses replacement',t=>{
   const f=fixture(t),old=claudeInputId('old'),current=claudeInputId('current');
@@ -34,8 +36,8 @@ test('Claude receipt cursor observes only new exact owned UUIDs and refuses repl
   fs.renameSync(f.file,f.file+'.old');fs.writeFileSync(f.file,'');
   assert.throws(()=>cursor.read(expected),/changed/);
 });
-test('Claude cold terminal observation never treats a background launch as completed work',async t=>{
-  const f=fixture(t),id=claudeInputId('base');
+for (const layout of ['ordinary','bound','ancestor'] as const) test('Claude cold terminal observation never treats a background launch as completed work ('+layout+')',async t=>{
+  const f=fixture(t,layout),id=claudeInputId('base');
   f.append({type:'user',uuid:id,message:{content:'work'}});
   f.append({type:'assistant',uuid:'call',message:{id:'model-call',content:[{type:'tool_use',id:'job',name:'Bash',input:{command:'server',run_in_background:true}}]}});
   f.append({type:'user',uuid:'result',message:{content:[{type:'tool_result',tool_use_id:'job',content:'started'}]},toolUseResult:{backgroundTaskId:'native-job'}});

@@ -36,7 +36,6 @@ import { createWebModule, WEB_INSTANCE_LIFECYCLE, readLocalBuildrWebInstance } f
 import { createWorkspaceModule, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_APPLICATION, WORKSPACE_QUERY } from '../modules/workspace/module.ts';
 import { createSystemInstallationModule, readCurrentProductIdentity, SYSTEM_INSTALLATION_APPLICATION, SYSTEM_INSTALLATION_WEB_BINDER } from '../modules/installation/module.ts';
 import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../modules/diagnostics/module.ts';
-import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.ts';
 import { createPublicationModule } from '../modules/publication/module.ts';
 import { createOpenSpecModule } from '../modules/openspec/module.ts';
 import { createArtifactLifecycleModule } from '../modules/artifact-lifecycle/module.ts';
@@ -65,7 +64,6 @@ export function createRuntime(options: { agentRuntime?: import('@buildr-ai/build
   }));
   registry.install(createAgentAssetsModule(runtime));
   registry.provide(WORKSPACE_AGENT_ASSETS_BINDER).bindAgentAssets(registry.provide(AGENT_ASSETS_INTERNAL));
-  registerProjectGitObserver(runtime);
   registry.install(createKnowledgeModule());
   registry.install(createOpenSpecModule(runtime));
   registry.install(TASK_MODULE);

@@ -32,12 +32,12 @@ async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: '
       const item: ExecutorItem = { id: 'native-' + input.clientRequestId, clientRequestId: input.clientRequestId, kind: 'message', role: 'user', text: input.text, executionId: input.executionRef.id };
       items.push(item); if(options.historyReceipt){if(options.historyClientId)item.clientRequestId=options.historyClientId;throw new Error('receipt lost');} emit({ type: 'item', item }); return { executionRef: input.executionRef, inputItemId: item.id };
     },
-    async observe() { await options.beforeObserve; if (observeErrors > 0) { observeErrors--; throw new Error(options.observeError!); } return structuredClone(observation); }, async reply() {}, async stop() { observation = { status: 'stopped', tools: [] }; ending.resolve(); return observation; }, async close() { ending.resolve(); },
+    async observe() { await options.beforeObserve; if (observeErrors > 0) { observeErrors--; throw new Error(options.observeError!); } return structuredClone(observation); }, async reply() {}, async stop() { observation = { status: 'stopped', tools: [] }; ending.resolve(); return observation; }, async close() {},
   };
   const executor: AgentExecutor = {
     readSupplementReceipt: options.persistedReceipt ? async input => ({inputItemId:'persisted-'+input.clientRequestId}) : undefined,
     descriptor: { id: options.provider ?? 'fixture', label: 'Fixture', capabilities },
-    async open() { return runtime; },
+    async open() { return { ...runtime }; },
   };
   const service = createAgentService({ dataRoot: path.join(root, 'private'), executors: [executor], modelProviders: [], resolveWorkspace() { return { rootPath: root }; } });
   await service.connections.connect(options.provider ?? 'fixture', { expectedRevision: service.connections.read(options.provider ?? 'fixture').revision });
@@ -45,7 +45,8 @@ async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: '
   const draft = { expectedRevision: view.revision, connectionId: options.provider ?? 'fixture', text: 'initial' };
   const preview = service.conversations.prepareSend('workspace', view.id, draft);
   service.conversations.send('workspace', view.id, { ...draft, previewToken: preview.token, clientRequestId: randomUUID() });
-  await wait(() => service.conversations.read('workspace', view.id).run?.status === 'running');
+  try { await wait(() => service.conversations.read('workspace', view.id).run?.status === 'running'); }
+  catch (error) { ending.resolve(); await service.close(); fs.rmSync(root, {recursive:true,force:true}); throw error; }
   const read = () => service.conversations.read('workspace', view.id);
   const input = (text: string, clientRequestId = randomUUID()) => { const run = read().run!; return { runId: run.id, participantId: run.participantId, generation: run.generation, text, clientRequestId }; };
   return { historyReceipt:(item:ExecutorItem)=>items.push(item), setObservation:(value:ExecutorObservation)=>{observation=value;}, service, read, input, calls, emit: (event: ExecutorEvent) => emit(event), async close() { ending.resolve(); await service.close(); fs.rmSync(root, { recursive: true, force: true }); } };

@@ -256,16 +256,20 @@ async function runVerification(args: string[], signal: AbortSignal) {
     reusedCount: execution.results.filter((result: any) => result.reusedFrom).length,
     unavailableCount: plan.steps.filter((step: any) => step.availability !== 'ready').length + runtimeGaps.length,
   };
-  const failedCount = execution.results.filter((result: any) => !['passed', 'blocked', 'cancelled'].includes(result.status)).length;
+  const failedResults = execution.results.filter((result: any) => !['passed', 'blocked', 'cancelled'].includes(result.status));
+  const evidenceInvalidatedCount = failedResults.filter((result: any) =>
+    result.childOutcome === 'passed' && String(result.failureCode ?? '').startsWith('verification-reuse-')).length;
+  const failedCount = failedResults.length;
   const notRunCount = coverage.selected.filter((item: any) => item.status === 'not-run').length;
   const conclusion = failedCount ? 'not-passed' : gaps.length || notRunCount || !execution.passed ? 'incomplete' : 'passed';
-  Object.assign(coverage, { conclusion, failedCount, notRunCount });
+  Object.assign(coverage, { conclusion, failedCount, evidenceInvalidatedCount, notRunCount });
   const passed = conclusion === 'passed';
   writeVerificationTimingEvidence({ ...evidence, kind: request.mode, source, coverage,
     status: passed ? 'passed' : 'failed', results: execution.results, timings: { ...execution.timings, selectionMs: startedAt - invocationStartedAt, totalMs: Date.now() - invocationStartedAt }, contextLifecycle: execution.contextLifecycle,
     startedAt: invocationStartedAt, finishedAt: Date.now(), diagnosticsDirectory: evidence.diagnosticsOutput, prefix: 'verify',
     stream: process.stdout, errorStream: process.stderr, executionProfile });
   process.stdout.write(`Verification ${conclusion}${plan.selectionBudget ? ' (targeted, not full coverage)' : ''}: selected=${coverage.selectedCount} executed=${coverage.executedCount} reused=${coverage.reusedCount} failed=${failedCount} unavailable=${coverage.unavailableCount} not-run=${notRunCount} gaps=${gaps.length}.\n`);
+  if (evidenceInvalidatedCount) process.stdout.write(`[verify] ${evidenceInvalidatedCount} successful child checks lost current evidence; see source drift and cleanup diagnostics.\n`);
   return passed ? 0 : 1;
 
 }

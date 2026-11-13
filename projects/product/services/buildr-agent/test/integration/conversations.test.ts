@@ -384,7 +384,7 @@ function fixture(executors: AgentExecutor[], settings: { taskIds?: string[]; mod
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-core-'));
   const workspace = path.join(root, 'workspace'); fs.mkdirSync(workspace);
   const cnProviders:AgentServiceOptions['modelProviders']=[{id:'native-qoder-cn',label:'Fixture CN',linked:true,async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[{id:'test-model',label:'Test',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){throw Error('unused');},async close(){}};}}];
-  const options = { ...settings, ...(executors.some(executor=>executor.descriptor.id==='qoder-cn')&&!settings.modelProviders?{modelProviders:cnProviders}:{}), dataRoot: path.join(root, 'profile'), executors, resolveWorkspace(id: string) { assert.equal(id, 'workspace-one'); return { rootPath: workspace }; }, assertTask(_id: string, taskId: string) { assert.ok((settings.taskIds ?? ['task-one']).includes(taskId), '任务不存在'); } };
+  const options = { ...settings, modelProviders: settings.modelProviders ?? (executors.some(executor=>executor.descriptor.id==='qoder-cn') ? cnProviders : []), dataRoot: path.join(root, 'profile'), executors, resolveWorkspace(id: string) { assert.equal(id, 'workspace-one'); return { rootPath: workspace }; }, assertTask(_id: string, taskId: string) { assert.ok((settings.taskIds ?? ['task-one']).includes(taskId), '任务不存在'); } };
   const service = createAgentService(options);
   return { root, workspace, options, service, async close() { await service.close(); fs.rmSync(root, { recursive: true, force: true }); } };
 }

@@ -20,6 +20,7 @@ export interface VerificationReuseStep { id: string; executor: Record<string, an
 export interface VerificationReuseEnvironment { platform: string; arch: string; nodeVersion: string; tools: Record<string, string>; variablesIdentity: ReuseDigest }
 export interface VerificationReuseSnapshot {
   productRoot: string; repositoryRoot: string; contentIdentities: Record<VerificationReuseScope, ReuseDigest>;
+  fileIdentities?: Record<string, ReuseDigest>;
   gitIdentity: ReuseDigest; sourceCommit: string; environment: VerificationReuseEnvironment;
   gitInputs?: { head: string; refsIdentity: ReuseDigest; historyIdentity: ReuseDigest };
   gitComparison?: { head: string; baseRef: string; base: string; mergeBase: string } | null;
@@ -546,6 +547,17 @@ export function createVerificationPlanReuse(plan: any, options: any): any {
     },
     finish(results: any[], cleanupClean: boolean): VerificationReuseBundle {
       const after = collectVerificationReuseSnapshot(snapshotOptions);
+      const beforeFiles = snapshot.fileIdentities ?? {};
+      const afterFiles = after.fileIdentities ?? {};
+      const changedFiles = [...new Set([...Object.keys(beforeFiles), ...Object.keys(afterFiles)])]
+        .filter(file => beforeFiles[file] !== afterFiles[file]).sort();
+      const sourceDrift = {
+        beforeCommit: snapshot.sourceCommit, afterCommit: after.sourceCommit,
+        changedFileCount: changedFiles.length, changedFiles: changedFiles.slice(0, 30),
+      };
+      if (changedFiles.length || snapshot.sourceCommit !== after.sourceCommit) {
+        options.stream?.write(`[verification-reuse] source drift ${JSON.stringify(sourceDrift)}\n`);
+      }
       for (const result of results) {
         const step = steps.find((item: VerificationReuseStep) => item.id === result.id);
         if (!step || result.disposition === 'reused') continue;
@@ -588,6 +600,7 @@ export function createVerificationPlanReuse(plan: any, options: any): any {
             .filter(field => identity[field] !== current?.[field])
             .map(field => ({ field, before: identity[field] ?? null, after: current?.[field] ?? null }));
           const details = { changes, cleanupClean,
+            ...(changes.some(change => ['contentIdentity','recipeIdentity'].includes(change.field)) ? { sourceDrift } : {}),
             ...(changes.some(change => change.field === 'gitIdentity') ? { git: {
               before: step.reuse.git === 'comparison' ? snapshot.gitComparison : snapshot.gitInputs,
               after: step.reuse.git === 'comparison' ? after.gitComparison : after.gitInputs,

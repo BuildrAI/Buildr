@@ -97,7 +97,7 @@ class CodexRuntime implements AgentRuntime {
     runtime.participationInstruction = instructionParticipation('interaction-policy',runtime.interaction.developerInstructions);
     runtime.bindingData = binding.data;
     runtime.gateway = gateway; runtime.modelConfig = config;
-    let abortedClose: Promise<void> | undefined; const abort = () => { abortedClose ??= rpc.close(); };
+    let abortedClose: Promise<void> | undefined; const abort = () => { abortedClose ??= rpc.close({skipStdinGrace:true}); };
     options.signal?.addEventListener('abort', abort, { once: true }); if (options.signal?.aborted) abort();
     try {
       await rpc.call('initialize', { clientInfo: { name: 'buildr', title: 'Buildr', version: '1.0.0' }, capabilities: { experimentalApi: true } });

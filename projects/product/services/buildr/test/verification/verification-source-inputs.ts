@@ -146,6 +146,7 @@ export function createVerificationSourceInputReader(repositoryRoot: string, prod
   };
   return {
     inputs,
+    fileIdentities: Object.fromEntries(source.entries.map(([file, ...identity]) => [file!, digest(identity)])),
     contentIdentities: Object.fromEntries(Object.entries(selected).map(([scope, entries]) => [scope, digest(entries)])) as Record<VerificationReuseScope, ReuseDigest>,
     unavailableScopes: Object.entries(selected).filter(([, entries]) => entries.some(([file]) => source.unavailable.has(file!))).map(([scope]) => scope as VerificationReuseScope),
   };
@@ -154,7 +155,7 @@ export function createVerificationSourceInputReader(repositoryRoot: string, prod
 export function collectVerificationSourceInputs(repositoryRoot: string, productRoot: string, steps: VerificationReuseStep[], commit?: string, legacyDeclarations = false) {
   const reader = createVerificationSourceInputReader(repositoryRoot, productRoot, commit, undefined, { legacyDeclarations });
   return {
-    contentIdentities: reader.contentIdentities, unavailableScopes: reader.unavailableScopes,
+    contentIdentities: reader.contentIdentities, unavailableScopes: reader.unavailableScopes, fileIdentities: reader.fileIdentities,
     stepInputs: Object.fromEntries(steps.filter(step => step.reuse && step.reuse.inputMode === 'runtime-check').map(step => [step.id, reader.inputs(step, false)])),
     proofInputs: Object.fromEntries(steps.filter(step => step.reuse).map(step => [step.id, { ...reader.inputs(step, true),
       selectionIdentity: digest({ executor: portableVerificationExecutor(step.executor, { repositoryRoot }), scope: step.reuse && step.reuse.scope }) }])),

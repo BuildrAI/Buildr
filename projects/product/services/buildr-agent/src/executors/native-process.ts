@@ -156,6 +156,7 @@ export class NativeRpc {
   readonly control: OwnedControlResource;
   readonly child: ChildProcessWithoutNullStreams;
   private disposed = false;
+  private closing?: Promise<void>;
   private failed = false;
   private readonly stdinGraceMs?: number;
   private readonly diagnosticSecrets: string[];
@@ -231,7 +232,17 @@ export class NativeRpc {
     try { this.write({ id, method, params }); return await bounded(result, timeoutMs); }
     finally { this.pending.delete(id); }
   }
-  async close(): Promise<void> { if (this.disposed) return; this.disposed = true; if(this.drainTask)clearImmediate(this.drainTask);this.drainTask=undefined;this.buffer='';this.fail('agent_native_process_closed'); await closeOwnedProcess(this.child, 1000, { stdinGraceMs: this.stdinGraceMs }); this.listeners.clear(); }
+  close({ skipStdinGrace = false }: {skipStdinGrace?: boolean} = {}): Promise<void> {
+    if (this.closing) return this.closing;
+    this.disposed = true;
+    if (this.drainTask) clearImmediate(this.drainTask);
+    this.drainTask = undefined;
+    this.buffer = '';
+    this.fail('agent_native_process_closed');
+    this.closing = closeOwnedProcess(this.child, 1000, { stdinGraceMs: skipStdinGrace ? 0 : this.stdinGraceMs })
+      .finally(() => this.listeners.clear());
+    return this.closing;
+  }
 }
 export function opaqueReference(provider: string, nativeSessionId: string, cwd: string, bindingIdentity: string): string {
   return JSON.stringify({ version: 1, provider, nativeSessionId, cwd, bindingIdentity });

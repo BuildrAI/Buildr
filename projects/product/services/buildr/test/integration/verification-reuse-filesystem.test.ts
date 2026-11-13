@@ -441,6 +441,15 @@ for (const change of ['input-drift', 'revoked']) test(`unclean disposal still re
   assert.equal(reuse.finish([selected], false).records.length, 0);
   assert.equal(selected.status, 'failed');
   assert.equal(selected.failureCode, change === 'input-drift' ? 'verification-reuse-input-drift' : 'verification-reuse-superseded');
+  if (change === 'input-drift') {
+    const drift = (selected as any).failureFacts.find((fact: any) => fact.code === 'verification-reuse-input-drift');
+    assert.deepEqual(drift.sourceDrift, {
+      beforeCommit: f.observe().sourceCommit,
+      afterCommit: f.observe().sourceCommit,
+      changedFileCount: 1,
+      changedFiles: ['projects/product/services/buildr/src/check.ts'],
+    });
+  }
 });
 
 test('only the fresh staged record survives unavailable cache and an observed invalidation still revokes it', t => {

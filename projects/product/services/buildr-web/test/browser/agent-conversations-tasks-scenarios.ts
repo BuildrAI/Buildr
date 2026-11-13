@@ -156,7 +156,11 @@ await step('已提交未受理和失败只显示两个状态并保留在活动�
 await step('原生暂忙时保存待发送内容，刷新保留、仅可取消，并在新版开始后更新展示',async()=>{
       update({run:run('stopping','dsh'),requests:[],pendingSend:undefined});await reopen();
       const before=fixture.sends,previewsBefore=fixture.prepares;
+      await panel().getByRole('button',{name:'添加图片、视频或文档',exact:true}).waitFor();
+      await page.waitForFunction(()=>{const input=document.querySelector('#agent-conversation-input');return input instanceof HTMLTextAreaElement&&!input.disabled;});
+      const uploaded=page.waitForResponse((response:any)=>response.request().method()==='POST'&&new URL(response.url()).pathname.endsWith('/attachments'));
       await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'cancel.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64')});
+      assert.ok((await uploaded).ok(),'待发送附件应先成功上传');
       await panel().locator('.ac-image-thumbnail[title="cancel.png"]').hover();await panel().getByRole('button',{name:'移除图片 cancel.png',exact:true}).waitFor();
       fixture.prepareError={code:'agent_process_switching',message:'原生服务正在切换。'};
       await input().fill('上一轮结束后继续修复');await input().press('Enter');

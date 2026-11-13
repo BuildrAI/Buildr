@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { TaskReadingTab, TaskReadTarget } from '../components/taskWorkContent';
 import { createTaskReadingHistory, type TaskReadingSnapshot } from '../task-reading-history';
 
@@ -23,18 +23,23 @@ export function useTaskReadingState(taskId: string, workspaceId: string | null =
   const readingKey = `${selected}:${choices[selected] || ''}:${choices[`${selected}:review`] || ''}:${choices['composite:tab'] || 'overview'}:${choices['composite:plan'] || 'record:brief'}`;
   const remember = () => {
     const host = rootRef.current?.querySelector('.task-node-reading, .composite-task-reader');
-    if (host) positions.current[readingKey] = host.scrollTop;
+    if (host && appliedKey.current === readingKey) positions.current[readingKey] = host.scrollTop;
   };
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = rootRef.current, host = root?.querySelector('.task-node-reading, .composite-task-reader');
     if (!root || !host) return;
-    const trackPosition = () => { positions.current[readingKey] = host.scrollTop; };
+    const trackPosition = () => {
+      if (appliedKey.current === readingKey) positions.current[readingKey] = host.scrollTop;
+    };
     host.addEventListener('scroll', trackPosition);
     if (appliedKey.current === readingKey) return () => host.removeEventListener('scroll', trackPosition);
     // Markdown fills its DOM in a passive effect; restore only after content is ready.
     const restore = () => {
       if (root.querySelector('.task-node-content .task-content-loading, .task-node-content .task-document-preview-loading, .task-node-content .ant-spin-spinning')) return;
-      host.scrollTop = positions.current[readingKey] || 0;
+      const top = positions.current[readingKey] || 0;
+      // A mounted MarkdownHost can still be empty until its passive render.
+      if (top > 0 && host.scrollHeight - host.clientHeight < top && !host.querySelector('.markdown-body, .task-node-empty, .ant-alert-error')) return;
+      host.scrollTop = top;
       appliedKey.current = readingKey;
       observer.disconnect();
     };
@@ -67,8 +72,8 @@ export function useTaskReadingState(taskId: string, workspaceId: string | null =
       if (value.entry) history.remember(value.workspaceId, value.taskId, value, value.entry);
     };
   }, [identity, navigation?.key]);
-  const selectNode = (tab: TaskReadingTab) => { remember(); setSelected(tab); setTrail([]); };
-  const choose = (key: string, value: string) => { remember(); setChoices(current => ({ ...current, [key]: value })); };
+  const selectNode = (tab: TaskReadingTab) => { remember(); if (tab !== selected) appliedKey.current = null; setSelected(tab); setTrail([]); };
+  const choose = (key: string, value: string) => { remember(); if (choices[key] !== value) appliedKey.current = null; setChoices(current => ({ ...current, [key]: value })); };
   const openExtra = (target: TaskReadTarget) => { setTrail(current => [...current, target]); };
   const closeExtra = () => { setTrail(current => current.slice(0, -1)); };
   return { selected, choices, extraContent, rootRef, selectNode, choose, openExtra, closeExtra, clearExtra: () => setTrail([]), replaceExtra: (target: TaskReadTarget) => setTrail(current => [...current.slice(0,-1), target]) };

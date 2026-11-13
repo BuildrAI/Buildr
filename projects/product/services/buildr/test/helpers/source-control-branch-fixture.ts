@@ -17,10 +17,11 @@ export async function withSourceControlBranchFixture(
     return result.stdout.trim();
   };
   const root = fs.realpathSync(input.repository), peer = fs.realpathSync(input.peerRepository);
-  const location = path.join(input.base, 'repo-a-worktrees', 'branch-actions');
-  const remote = 'browser-origin', remoteDirectory = path.join(input.base, 'scm-branch-origin.git');
-  const branch = 'fixture/team/current-review', alternate = 'fixture/team/alternate-review';
-  const remoteName = 'feature/browser-review', remoteRef = 'refs/remotes/' + remote + '/' + remoteName;
+  const suffix = crypto.randomUUID().slice(0, 8);
+  const location = path.join(input.base, 'repo-a-worktrees', 'branch-actions-' + suffix);
+  const remote = 'browser-origin-' + suffix, remoteDirectory = path.join(input.base, 'scm-branch-origin-' + suffix + '.git');
+  const branch = 'fixture/team/current-review-' + suffix, alternate = 'fixture/team/alternate-review-' + suffix;
+  const remoteName = 'feature/browser-review-' + suffix, remoteRef = 'refs/remotes/' + remote + '/' + remoteName;
   const historyPath = 'scm-browser-branches/history.ts', keepPath = 'scm-browser-branches/keep.txt';
   const authorName = '同名作者', authorEmail = 'first.author@example.com', otherEmail = 'second.author@example.com';
   const originalBranch = git(root, ['symbolic-ref', '--short', 'HEAD']);
