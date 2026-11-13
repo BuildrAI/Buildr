@@ -4,9 +4,28 @@ import { conversationEventEncoder, AgentServiceError } from '@buildr-ai/buildr-a
 import { AGENT_SERVICE_HTTP_OPERATIONS, AGENT_SERVICE_HTTP_SCHEMAS as SCHEMAS, AGENT_SERVICE_HTTP_VALIDATORS } from './agent-service-http-contracts.ts';
 
 const inputError = () => new AgentServiceError('agent_http_input_invalid', '智能体服务请求字段无效。');
+function toWireValue(input: unknown): unknown {
+  if (input === null || typeof input === 'string' || typeof input === 'boolean') return input;
+  if (typeof input === 'number') return Number.isFinite(input) ? input : null;
+  if (Array.isArray(input)) {
+    return input.map((item) => (item === undefined || typeof item === 'function' || typeof item === 'symbol' ? null : toWireValue(item)));
+  }
+  if (typeof input === 'object') {
+    const withToJson = input as { toJSON?: unknown };
+    if (typeof withToJson.toJSON === 'function') return toWireValue((withToJson as { toJSON(): unknown }).toJSON());
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(input)) {
+      const value = (input as Record<string, unknown>)[key];
+      if (value === undefined || typeof value === 'function' || typeof value === 'symbol') continue;
+      out[key] = toWireValue(value);
+    }
+    return out;
+  }
+  return JSON.parse(JSON.stringify(input));
+}
 function validate(name: keyof typeof SCHEMAS, input: unknown, response = false): any {
   // The wire representation excludes optional undefined fields before validation.
-  const value = JSON.parse(JSON.stringify(input));
+  const value = toWireValue(input);
   if (!AGENT_SERVICE_HTTP_VALIDATORS.validate(SCHEMAS[name].$id, value).valid) throw response ? new AgentServiceError('agent_http_response_invalid', '智能体服务返回结果不符合契约。', 500) : inputError();
   return value;
 }
@@ -188,7 +207,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       }
       const detailMatch=suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})\/entry-detail\/([^/]+)$/);
       if(detailMatch&&request.method==='GET'){query(searchParams,['revision','sourceId']);const revision=searchParams.get('revision');if(!revision||!(/^[a-f0-9]{64}$/).test(revision))throw inputError();let entryId:string;try{entryId=decodeURIComponent(detailMatch[2]);}catch{throw inputError();}if(!entryId||entryId.length>1024)throw inputError();return result('entry',await service.conversations.readEntry(workspaceId,detailMatch[1],entryId,revision,searchParams.get('sourceId')??undefined));}
-      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(fork|prepare-send|send|messages|supplement|pending-send|cancel-pending-send|generate-title|children|seen|observe|observe-run|stop|stop-all|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
+      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(fork|prepare-send|send|messages|supplement|pending-send|cancel-pending-send|generate-title|children|seen|observe|observe-run|settle-retained-run|stop|stop-all|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
       if (!match) return null;
       const [, id, action, childId, reply] = match;
       if (request.method === 'GET') {

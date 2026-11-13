@@ -107,3 +107,28 @@ test('selection changes and stop requests discard late recovery results',async()
   await stoppedPending;
   assert.equal(stoppedApplied,0);
 });
+
+test('lightweight probe skips full read when revision matches and reads full view when revision advances',async()=>{
+  let probed=0,reads=0,applied=0,serverRevision='r1';
+  const reader=startConversationRecoveryRead({
+    current:()=>running,
+    visible:()=>true,
+    probe:async()=>{probed++;return {revision:serverRevision};},
+    read:async()=>{reads++;return {...completed,revision:serverRevision};},
+    apply:()=>{applied++;},
+    isCurrent:()=>true,
+    schedule:()=>1,
+    cancel:()=>{},
+  });
+  await reader.run();
+  assert.equal(probed,1);
+  assert.equal(reads,0);
+  assert.equal(applied,0);
+
+  serverRevision='r2';
+  await reader.run();
+  assert.equal(probed,2);
+  assert.equal(reads,1);
+  assert.equal(applied,1);
+  reader.stop();
+});

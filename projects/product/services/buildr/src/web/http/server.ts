@@ -117,7 +117,14 @@ export function createLocalWorkspaceServer(runtime: any, {
     previewIdentity,
     agentRuntimeStatus,
     httpContributions,
-    origin: () => origin,
+    origin: () => {
+      if (origin) return origin;
+      const address = server.address();
+      if (address && typeof address !== 'string') {
+        origin = `http://127.0.0.1:${address.port}`;
+      }
+      return origin;
+    },
     isClosing: () => closing,
     shutdown: () => {
       closing = true;

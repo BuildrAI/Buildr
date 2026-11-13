@@ -14,6 +14,7 @@ export function startConversationRecoveryRead(options:{
   current():ConversationView|null;
   visible():boolean;
   live?:()=>boolean;
+  probe?:()=>Promise<Pick<ConversationView,'revision'>>;
   read():Promise<ConversationView>;
   apply(next:ConversationView,observedRevision?:string):void;
   isCurrent():boolean;
@@ -29,6 +30,11 @@ export function startConversationRecoveryRead(options:{
     if(!before||!needsConversationObservation(before))return;
     pending=true;
     try{
+      if(options.probe){
+        const probed=await options.probe();
+        if(stopped||!options.isCurrent())return;
+        if(probed.revision===before.revision)return;
+      }
       const next=await options.read();
       if(!stopped&&options.isCurrent())options.apply(next,before.revision);
     }catch{

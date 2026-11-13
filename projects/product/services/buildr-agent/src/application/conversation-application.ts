@@ -1253,7 +1253,7 @@ export class ConversationApplication {
   /** Reapply only a local deterministic mutation after an explicit rejected write. */
   private retryRecordUpdate<T>(apply:()=>T):T {
     for(let attempt=0;;attempt++){
-      try{return apply();}catch(error){if(attempt>=2||!(error instanceof AgentServiceError)||error.code!=='agent_revision_conflict')throw error;}
+      try{return apply();}catch(error){if(attempt>=6||!(error instanceof AgentServiceError)||error.code!=='agent_revision_conflict')throw error;}
     }
   }
   private applyEvent(workspaceId: string, id: string, runId: string, event: ExecutorEvent): void {
@@ -2194,8 +2194,13 @@ export class ConversationApplication {
     }
     return this.read(workspaceId, id,{compactTools:true});
   }
-  private control(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string }): { record: StoredConversation; participant: StoredParticipant; run: RunView; executionRef?: ReturnType<ConversationApplication['load']>['attempts'][number]['executionRef'] } {
-    const record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision);
+  private hasRecordedStopTarget(record: StoredConversation, input: { runId: string; participantId: string; generation: string }): boolean {
+    return Boolean(record.stops?.some(stop => stop.targets.some(target =>
+      target.runId === input.runId && target.participantId === input.participantId && target.generation === input.generation)));
+  }
+  private control(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string }, allowRecordedStop = false): { record: StoredConversation; participant: StoredParticipant; run: RunView; executionRef?: ReturnType<ConversationApplication['load']>['attempts'][number]['executionRef'] } {
+    const record = this.load(workspaceId, id);
+    if (!allowRecordedStop || !this.hasRecordedStopTarget(record, input)) expected(record.view.revision, input.expectedRevision);
     const run = conversationRuns(record.view).find(run => run.id === input.runId);
     if (!run || run.id !== input.runId || run.participantId !== input.participantId || run.generation !== input.generation || input.generation !== this.options.generation) fail('agent_control_stale', '本轮执行或服务代次已变化，请重新观察。', 409);
     const participant = record.participants.find(value => value.id === input.participantId)!;
@@ -2310,38 +2315,71 @@ export class ConversationApplication {
       if(!run||run.id!==input.runId||run.participantId!==input.participantId||run.generation!==input.generation)fail('agent_control_stale','执行已变化，请重新核对。',409);
       pending.interruption.cancelled=true;run.diagnostic='已取消自动接续；原执行状态仍待核对。';this.save(pending);return this.view(pending);
     }
-    const control = this.control(workspaceId, id, input);
-    if(!input.toolId){control.run.stopRequested=true;this.save(control.record);this.options.modelAccess?.leases.stopRun(id,input.runId);}
-    if (!input.toolId) this.cancelledRetries.add(input.runId);
-    const retry = this.retryWaits.get(input.runId);
-    if (retry && !input.toolId) {
-      control.run.status = 'stopped'; control.run.diagnostic = '已停止自动重试，工作记录已保留。';
-      this.save(control.record); retry.abort(); this.retryWaits.delete(input.runId); return this.view(control.record);
-    }
-    if(!this.closing && !input.toolId && control.record.view.run?.id===input.runId){
-      // The user's stop survives a missing acceptance receipt and process restarts.
-      control.record.interruption={...(control.record.interruption?.runId===input.runId?control.record.interruption:{}),runId:input.runId,awaitingUser:false,cancelled:true};
-      this.save(control.record);
+    this.streamingRecords.delete(id);
+    let abortRetry: AbortController | undefined;
+    let earlyRetryView: ConversationView | undefined;
+    const control = this.retryRecordUpdate(() => {
+      abortRetry = undefined;
+      earlyRetryView = undefined;
+      const next = this.control(workspaceId, id, input, !input.toolId);
+      if (!input.toolId) {
+        next.run.stopRequested = true;
+        this.options.modelAccess?.leases.stopRun(id, input.runId);
+        this.cancelledRetries.add(input.runId);
+        const retry = this.retryWaits.get(input.runId);
+        if (retry) {
+          next.run.status = 'stopped'; next.run.diagnostic = '已停止自动重试，工作记录已保留。';
+          this.save(next.record);
+          abortRetry = retry;
+          earlyRetryView = this.view(next.record);
+          return next;
+        }
+        if (!this.closing && next.record.view.run?.id === input.runId) {
+          // The user's stop survives a missing acceptance receipt and process restarts.
+          next.record.interruption = { ...(next.record.interruption?.runId === input.runId ? next.record.interruption : {}), runId: input.runId, awaitingUser: false, cancelled: true };
+        }
+        if (!next.run.resourcesReleased && unfinishedRun(next.run)) next.run.status = 'stopping';
+        this.save(next.record);
+      } else if (!next.run.resourcesReleased && unfinishedRun(next.run) && next.run.tools.find(tool => tool.id === input.toolId)?.canStop !== true) {
+        fail('agent_tool_stop_unavailable', '此命令尚不支持单独停止，可停止本轮剩余执行。', 409);
+      }
+      return next;
+    });
+    if (abortRetry) {
+      abortRetry.abort();
+      this.retryWaits.delete(input.runId);
+      return earlyRetryView!;
     }
     if (control.run.resourcesReleased || !unfinishedRun(control.run)) return this.view(control.record);
-    if (input.toolId) {
-      if (control.run.tools.find(tool => tool.id === input.toolId)?.canStop !== true) fail('agent_tool_stop_unavailable', '此命令尚不支持单独停止，可停止本轮剩余执行。', 409);
-    } else { control.run.status = 'stopping'; this.save(control.record); }
     if (!control.executionRef || !control.participant.contextRef) {
       // An in-flight send can still return its exact identity, where accepted
       // schedules the original stop. A settled lost receipt cannot do so.
       if (!input.toolId && !this.workers.has(input.runId)) {
-        const endedWithoutIdentity=control.run.accepted===false;
-        control.run.status=endedWithoutIdentity?'stopped':'unknown';control.run.executionState='unknown';control.run.canContinue=false;
-        control.run.diagnostic=endedWithoutIdentity
-          ?'已结束本轮等待；原输入是否送达仍未知，已有操作结果保留，不会重发。'
-          :'停止已请求，但未取得原生执行身份；原工作记录已保留，不会重发。';
-        control.run.tools=control.run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
-        control.run.updatedAt=this.options.now();this.save(control.record);
-        await this.releaseIdleSources({workspaceId,id});
-        this.scheduleSourceRelease(workspaceId,id);
+        let shouldRelease = false;
+        this.retryRecordUpdate(() => {
+          shouldRelease = false;
+          const latest = this.ownedRun(workspaceId, id, input.runId);
+          if (!latest) return;
+          const hasExecution = Boolean(latest.record.attempts.find(attempt => attempt.runId === input.runId)?.executionRef);
+          if (hasExecution || !unfinishedRun(latest.run)) return;
+          const endedWithoutIdentity = latest.run.accepted === false;
+          latest.run.status = endedWithoutIdentity ? 'stopped' : 'unknown';
+          latest.run.executionState = 'unknown';
+          latest.run.canContinue = false;
+          latest.run.diagnostic = endedWithoutIdentity
+            ? '已结束本轮等待；原输入是否送达仍未知，已有操作结果保留，不会重发。'
+            : '停止已请求，但未取得原生执行身份；原工作记录已保留，不会重发。';
+          latest.run.tools = latest.run.tools.map(tool => tool.status === 'running' ? { ...tool, status: 'unknown', canStop: false } : tool);
+          latest.run.updatedAt = this.options.now();
+          this.save(latest.record);
+          shouldRelease = true;
+        });
+        if (shouldRelease) {
+          await this.releaseIdleSources({ workspaceId, id });
+          this.scheduleSourceRelease(workspaceId, id);
+        }
       }
-      return this.read(workspaceId, id,{compactTools:true});
+      return this.read(workspaceId, id, { compactTools: true });
     }
     let observation: ExecutorObservation;
     try {

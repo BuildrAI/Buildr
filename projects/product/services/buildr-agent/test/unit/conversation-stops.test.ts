@@ -81,3 +81,64 @@ test('durable admission returns while slow native cleanup remains tracked',async
  assert.equal((await response).stopRequest?.id,'stop');assert.equal(f.stops.active,1);
  release();await f.stops.resume('ws','chat','stop');assert.equal(f.stops.active,0);
 });
+
+test('observedScope admits stop-all across streaming revision bumps and save retries',async()=>{
+ let revision=0;
+ const baseView={id:'chat',workspaceId:'ws',revision:'r0',run:{...run('latest'),status:'running'},retainedRuns:[run('old','old-generation')],requests:[],entries:[]};
+ let record={view:structuredClone(baseView),stops:[]} as unknown as StoredConversation;
+ let pending:any=undefined;
+ const calls:Array<{runId:string;generation:string;action:string;expectedRevision:string}>=[];
+ let bumpedDuringSave=false;
+ let bumpedDuringInvoke=false;
+ const stops=new ConversationStops({
+  load(scope,id){if(scope!=='ws'||id!=='chat')throw new AgentServiceError('agent_conversation_missing','missing',404);return structuredClone(record);},
+  save(value){
+   if(!bumpedDuringSave){
+    bumpedDuringSave=true;
+    record.view.entries.push({id:'e1'} as any);
+    record.view.revision='r'+(++revision);
+   }
+   if(value.view.revision!==record.view.revision)throw new AgentServiceError('agent_revision_conflict','conflict',409);
+   record=structuredClone(value);record.view.revision='r'+(++revision);
+  },
+  read(){return structuredClone(record.view);},
+  pending:{cancelForStop(_scope:string,_id:string,persist:any){return persist(pending);},cancelStopped(){}} as unknown as PendingSendRepository,
+  now:()=>'now',
+  async invoke(_scope,_id,input,action){
+   if(!bumpedDuringInvoke){
+    bumpedDuringInvoke=true;
+    record.view.entries.push({id:'e2'} as any);
+    record.view.revision='r'+(++revision);
+   }
+   if(input.expectedRevision!==record.view.revision)throw new AgentServiceError('agent_revision_conflict','conflict',409);
+   calls.push({runId:input.runId,generation:input.generation,action,expectedRevision:input.expectedRevision});
+  },
+ });
+ // Client observed r0, while server revision already moved to r1 before stop-all arrived.
+ record.view.revision='r'+(++revision);
+ const stopped=await stops.stop('ws','chat',{
+  expectedRevision:'r0',
+  clientRequestId:'stop-stream',
+  observedScope:{currentRunId:'latest',targets:[{runId:'latest',participantId:'p-latest',generation:'g'},{runId:'old',participantId:'p-old',generation:'old-generation'}],pendingSendId:null},
+ });
+ assert.equal(stopped.stopRequest?.id,'stop-stream');
+ assert.equal(calls.length,2);
+ assert.deepEqual(calls.map(c=>`${c.runId}:${c.action}`).sort(),['latest:stop','old:stop']);
+});
+
+test('observedScope rejects when a new run starts or a new pending send appears',async()=>{
+ const f=fixture();
+ f.record.view.run={...run('new-turn'),status:'running'};
+ await assert.rejects(()=>f.stops.stop('ws','chat',{
+  expectedRevision:'stale',
+  clientRequestId:'stop-new-run',
+  observedScope:{currentRunId:'latest',targets:[{runId:'latest',participantId:'p-latest',generation:'g'},{runId:'old',participantId:'p-old',generation:'old-generation'},{runId:'other',participantId:'p-other',generation:'g'}],pendingSendId:'queued'},
+ }),(err:AgentServiceError)=>err.code==='agent_revision_conflict'&&err.message.includes('未将停止扩展到新工作'));
+
+ const f2=fixture();
+ await assert.rejects(()=>f2.stops.stop('ws','chat',{
+  expectedRevision:'stale',
+  clientRequestId:'stop-new-pending',
+  observedScope:{currentRunId:'latest',targets:[{runId:'latest',participantId:'p-latest',generation:'g'},{runId:'old',participantId:'p-old',generation:'old-generation'},{runId:'other',participantId:'p-other',generation:'g'}],pendingSendId:null},
+ }),(err:AgentServiceError)=>err.code==='agent_revision_conflict'&&err.message.includes('未将停止扩展到新工作'));
+});

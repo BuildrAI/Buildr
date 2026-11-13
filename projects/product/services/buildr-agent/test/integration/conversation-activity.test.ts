@@ -793,3 +793,19 @@ test('draft priority applies before pagination without changing activity, filter
  assert.deepEqual(repo.querySummaries(['w1'],{...options,activeOnly:true,limit:20}).conversations.map(row=>row.id),['waiting','running']);
  assert.deepEqual(repo.querySummaries(['w1'],{limit:20}).conversations.map(row=>row.id),normal.conversations.map(row=>row.id),'clearing drafts restores ordering with no write');
 });
+
+test('markSeen short-circuits read-only when already seen through requested version',t=>{
+ const repo=fixture(t),r=record('ro-seen');
+ repo.saveConversation(r);
+ save(repo,r,row=>message(row,'m1','hello'));
+ const observed=r.view.activity!.version;
+ assert.equal(repo.markSeen('w1',r.view.id,observed).seenThrough,observed);
+
+ const probe=new DatabaseSync(repo.filename,{readOnly:true});
+ t.after(()=>probe.close());
+ const versionBefore=(probe.prepare('PRAGMA data_version').get() as {data_version:number}).data_version;
+ assert.equal(repo.markSeen('w1',r.view.id,observed).seenThrough,observed);
+ assert.equal(repo.markSeen('w1',r.view.id,0).seenThrough,observed);
+ const versionAfter=(probe.prepare('PRAGMA data_version').get() as {data_version:number}).data_version;
+ assert.equal(versionAfter,versionBefore,'already-seen markSeen must not commit any SQLite write transaction');
+});

@@ -1,4 +1,4 @@
-import type { ConversationStopInput, ConversationView } from '../contracts.ts';
+import type { ConversationStopInput, ConversationView, RunView } from '../contracts.ts';
 import { AgentServiceError, conversationRuns, expected, nonempty, unfinishedRun } from '../domain/agent-state.ts';
 import type { StoredConversation } from '../domain/agent-state.ts';
 import type { PendingSendRepository } from '../persistence/pending-send-repository.ts';
@@ -22,22 +22,62 @@ export class ConversationStops {
   private readonly options: Options;
   get active():number { return this.work.size; }
 
+  private controllableTargets(record:StoredConversation): RunView[] {
+    return conversationRuns(record.view).filter(run=>unfinishedRun(run)||run.executionState==='active'||this.options.activeRun?.(run.id)||record.view.requests.some(request=>request.runId===run.id));
+  }
+
+  private assertStopAdmission(record:StoredConversation,input:ConversationStopInput,targets:RunView[],pendingId?:string): void {
+    if(record.view.revision===input.expectedRevision)return;
+    const observed=input.observedScope;
+    if(!observed){expected(record.view.revision,input.expectedRevision);return;}
+    // When every observed item has already settled before admission, fall back
+    // to revision conflict so the caller rereads the terminal state instead of
+    // writing an empty stop request.
+    if(!targets.length&&!pendingId){expected(record.view.revision,input.expectedRevision);return;}
+    const scopeKeys=new Set(observed.targets.map(target=>`${target.runId}\0${target.participantId}\0${target.generation}`));
+    const sameTargets=targets.every(run=>scopeKeys.has(`${run.id}\0${run.participantId}\0${run.generation}`));
+    const sameCurrent=(record.view.run?.id??null)===observed.currentRunId;
+    const samePending=!pendingId||pendingId===observed.pendingSendId;
+    if(!sameTargets||!sameCurrent||!samePending){
+      throw new AgentServiceError('agent_revision_conflict','对话执行或待发送内容已变化，未将停止扩展到新工作。',409);
+    }
+  }
+
+  private saveRecord(scope:string,id:string,mutate:(record:StoredConversation)=>boolean): void {
+    for(let attempt=0;attempt<8;attempt++){
+      const record=this.options.load(scope,id);
+      if(!mutate(record))return;
+      try{this.options.save(record);return;}
+      catch(error){
+        if(attempt<7&&error instanceof AgentServiceError&&error.code==='agent_revision_conflict')continue;
+        throw error;
+      }
+    }
+  }
+
   async stop(scope:string,id:string,input:ConversationStopInput):Promise<ConversationView> {
     const requestId=nonempty(input.clientRequestId,'停止请求身份',200);
     let record=this.options.load(scope,id);
     if(!record.stops?.some(stop=>stop.id===requestId)){
-      expected(record.view.revision,input.expectedRevision);
+      if(!input.observedScope)expected(record.view.revision,input.expectedRevision);
       this.options.pending.cancelForStop(scope,id,pending=>{
-        // The queue lock is also held during final dispatch; recheck the conversation.
-        record=this.options.load(scope,id);
-        expected(record.view.revision,input.expectedRevision);
-        const targets=conversationRuns(record.view).filter(run=>unfinishedRun(run)||run.executionState==='active'||this.options.activeRun?.(run.id)||record.view.requests.some(request=>request.runId===run.id));
-        record.stops??=[];
-        record.stops.push({id:requestId,targets:targets.map(run=>({runId:run.id,participantId:run.participantId,generation:run.generation})),pendingSendId:pending?.id});
-        record.view.stopRequest={id:requestId,runIds:targets.map(run=>run.id),createdAt:this.options.now(),...(pending?{cancelledSend:{id:pending.id,draft:pending.draft}}:{})};
-        for(const run of targets){run.stopRequested=true;run.canContinue=false;if(!run.resourcesReleased)run.status='stopping';}
-        if(targets.some(run=>run.id===record.view.run?.id))record.interruption={runId:record.view.run!.id,awaitingUser:false,cancelled:true};
-        this.options.save(record);
+        for(let attempt=0;attempt<8;attempt++){
+          // The queue lock is also held during final dispatch; recheck the conversation.
+          record=this.options.load(scope,id);
+          if(record.stops?.some(stop=>stop.id===requestId))return;
+          const targets=this.controllableTargets(record);
+          this.assertStopAdmission(record,input,targets,pending?.id);
+          record.stops??=[];
+          record.stops.push({id:requestId,targets:targets.map(run=>({runId:run.id,participantId:run.participantId,generation:run.generation})),pendingSendId:pending?.id});
+          record.view.stopRequest={id:requestId,runIds:targets.map(run=>run.id),createdAt:this.options.now(),...(pending?{cancelledSend:{id:pending.id,draft:pending.draft}}:{})};
+          for(const run of targets){run.stopRequested=true;run.canContinue=false;if(!run.resourcesReleased)run.status='stopping';}
+          if(targets.some(run=>run.id===record.view.run?.id))record.interruption={runId:record.view.run!.id,awaitingUser:false,cancelled:true};
+          try{this.options.save(record);return;}
+          catch(error){
+            if(attempt<7&&error instanceof AgentServiceError&&error.code==='agent_revision_conflict')continue;
+            throw error;
+          }
+        }
       });
     }
     // Admission is durable. Native cleanup remains owned by this application
@@ -56,17 +96,17 @@ export class ConversationStops {
       if(!stop)return;
       if(stop.pendingSendId)this.options.pending.cancelStopped(scope,id,stop.pendingSendId);
       await Promise.allSettled(stop.targets.map(async target=>{
-        for(let attempt=0;attempt<3;attempt++){
-          const record=this.options.load(scope,id);
-          const saved=record.stops?.find(value=>value.id===requestId)?.targets.find(value=>value.runId===target.runId);
-          const run=conversationRuns(record.view).find(run=>run.id===target.runId&&run.participantId===target.participantId&&run.generation===target.generation);
-          if(!saved||!run||!unfinishedRun(run)&&!record.view.requests.some(request=>request.runId===run.id))return;
-          let action:'observe'|'stop'=saved.requested?'observe':'stop';
-          if(action==='stop'){
-            saved.requested=true;
-            try{this.options.save(record);}
-            catch(error){if(error instanceof AgentServiceError&&error.code==='agent_revision_conflict')continue;throw error;}
-          }
+        for(let attempt=0;attempt<10;attempt++){
+          let action:'observe'|'stop'|undefined;
+          this.saveRecord(scope,id,record=>{
+            const saved=record.stops?.find(value=>value.id===requestId)?.targets.find(value=>value.runId===target.runId);
+            const run=conversationRuns(record.view).find(run=>run.id===target.runId&&run.participantId===target.participantId&&run.generation===target.generation);
+            if(!saved||!run||!unfinishedRun(run)&&!record.view.requests.some(request=>request.runId===run.id))return false;
+            action=saved.requested?'observe':'stop';
+            if(action==='stop'){saved.requested=true;return true;}
+            return false;
+          });
+          if(!action)return;
           const current=this.options.load(scope,id);
           try {
             await this.options.invoke(scope,id,{runId:target.runId,participantId:target.participantId,generation:target.generation,expectedRevision:current.view.revision},action);
@@ -83,16 +123,21 @@ export class ConversationStops {
           } catch(error) {
             // A version rejection has no native effect. Never retry an unknown delivery.
             if(action==='stop'&&error instanceof AgentServiceError&&error.code==='agent_revision_conflict'){
-              const latest=this.options.load(scope,id),item=latest.stops?.find(value=>value.id===requestId)?.targets.find(value=>value.runId===target.runId);
-              if(item){delete item.requested;this.options.save(latest);}
-              continue;
+              this.saveRecord(scope,id,latest=>{
+                const item=latest.stops?.find(value=>value.id===requestId)?.targets.find(value=>value.runId===target.runId);
+                if(!item||!item.requested)return false;
+                delete item.requested;
+                return true;
+              });
+              if(attempt<9)continue;
             }
-            const latest=this.options.load(scope,id),remaining=conversationRuns(latest.view).find(run=>run.id===target.runId&&run.participantId===target.participantId&&run.generation===target.generation);
-            if(remaining&&unfinishedRun(remaining)){
+            this.saveRecord(scope,id,latest=>{
+              const remaining=conversationRuns(latest.view).find(run=>run.id===target.runId&&run.participantId===target.participantId&&run.generation===target.generation);
+              if(!remaining||!unfinishedRun(remaining))return false;
               remaining.status='unknown';remaining.executionState='unknown';
               remaining.diagnostic='停止已请求，但尚未确认原执行及所属工作的退出；不会重发原输入或终止其他对话。';
-              this.options.save(latest);
-            }
+              return true;
+            });
             throw error;
           }
         }

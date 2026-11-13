@@ -63,6 +63,10 @@ export function createLocalWorkspaceRequestRouter({
       return writeHead.apply(this, args);
     };
     const trustedOrigin = origin();
+    if (!trustedOrigin) {
+      jsonResponse(response, 503, { error: { code: 'app_starting', message: 'Buildr Web 正在启动，请稍后重试。' } });
+      return;
+    }
     assertRequestHost(request, trustedOrigin);
     const requestUrl = new URL(request.url || '/', trustedOrigin);
     const pathname = requestUrl.pathname;

@@ -1,5 +1,5 @@
 import { timeAttachmentStage } from './attachment-timing.ts';
-import { stopConversationWithRecovery,stopAllWithRecovery } from '../conversation-stop';
+import { conversationStopAllObservedScope, stopConversationWithRecovery, stopAllWithRecovery } from '../conversation-stop';
 import type { AgentConversationHistoryPageHistoryPage, AgentParticipationParticipation, AgentParticipationSummaryParticipationSummary, AgentParticipationSummaryQueryParticipationSummaryQuery } from '../../../../build/generated/agent-service-http-dto';
 import { sharedConversationRead } from './shared-conversation-read.ts';
 import { conversationTransferDecoder } from './conversation-transfer.ts';
@@ -139,6 +139,9 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       }
       throw new Error('无法读取对话。');
     },
+    probeRevision(workspaceId: string, id: string, signal?: AbortSignal) {
+      return request<Pick<ConversationView, 'revision'>>(path(workspaceId, id) + '?limit=1', {signal});
+    },
     historySource(workspaceId:string,id:string,input:{sourceId:string;roundId?:string;cursor?:number;limit?:number},signal?:AbortSignal) {
       const query=new URLSearchParams(Object.entries(input).filter(([,v])=>v!==undefined).map(([k,v])=>[k,String(v)]));
       return read<AgentConversationHistoryPageHistoryPage>(path(workspaceId,id)+'/history-source?'+query,signal);
@@ -160,8 +163,8 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       if(!run)return Promise.reject(new Error('原执行已结束，请核对后再发送；输入已保留。'));
       return request<SupplementResult>(path(conversation.workspaceId,conversation.id)+'/supplement',post({...input,runId:run.id,participantId:run.participantId,generation:run.generation}));
     },
-    stop(conversation: ConversationView, toolId?: string) { return stopConversationWithRecovery(conversation,current=>{const run=current.run!;return request<ConversationView>(path(current.workspaceId,current.id)+'/stop',post({expectedRevision:current.revision,runId:run.id,participantId:run.participantId,generation:run.generation,toolId}));},()=>request<ConversationView>(path(conversation.workspaceId,conversation.id))); },
-    stopAll(conversation:ConversationView,clientRequestId=crypto.randomUUID()) { return stopAllWithRecovery(conversation,clientRequestId,current=>request<ConversationView>(path(current.workspaceId,current.id)+'/stop-all',post({expectedRevision:current.revision,clientRequestId})),()=>request<ConversationView>(path(conversation.workspaceId,conversation.id))); },
+    stop(conversation: ConversationView, toolId?: string) { return stopConversationWithRecovery(conversation,current=>{const run=current.run!;return request<ConversationView>(path(current.workspaceId,current.id)+'/stop',post({expectedRevision:current.revision,runId:run.id,participantId:run.participantId,generation:run.generation,toolId}));},()=>request<ConversationView>(path(conversation.workspaceId,conversation.id)+'?limit=1')); },
+    stopAll(conversation:ConversationView,clientRequestId=crypto.randomUUID()) { return stopAllWithRecovery(conversation,clientRequestId,current=>request<ConversationView>(path(current.workspaceId,current.id)+'/stop-all',post({expectedRevision:current.revision,clientRequestId,observedScope:conversationStopAllObservedScope(current)})),()=>request<ConversationView>(path(conversation.workspaceId,conversation.id)+'?limit=1')); },
     observeRun(conversation:ConversationView) { const run=conversation.run;if(!run)return Promise.reject(new Error('没有可以核对的执行。'));return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/observe-run',post({expectedRevision:conversation.revision,runId:run.id,participantId:run.participantId,generation:run.generation})); },
     settleRetainedRun(conversation:ConversationView,run:NonNullable<ConversationView['run']>) { return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/settle-retained-run',post({expectedRevision:conversation.revision,runId:run.id,participantId:run.participantId,generation:run.generation})); },
     observe(conversation: ConversationView) { return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/observe', post({})); },
@@ -218,4 +221,4 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
 const session = new LocalSessionAdapter();
 export const agentConversationsApi = createAgentConversationsClient(createApiClient({sessionAdapter: {writeHeaders: () => session.writeHeaders()}, getWorkspaceId: () => null}), session);
 type Client = ReturnType<typeof createAgentConversationsClient>;
-export type AgentConversationsClient = Omit<Client,'activitySummary'> & Partial<Pick<Client,'activitySummary'>>;
+export type AgentConversationsClient = Omit<Client,'activitySummary'|'probeRevision'> & Partial<Pick<Client,'activitySummary'|'probeRevision'>>;

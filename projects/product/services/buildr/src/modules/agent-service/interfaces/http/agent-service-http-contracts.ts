@@ -73,6 +73,7 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('generate-title', 'POST', `${workspace}/:conversationId/generate-title`, 'revision', 'conversation'),
   operation('observe', 'POST', `${workspace}/:conversationId/observe`, 'empty', 'conversation'),
   operation('observe-run','POST',`${workspace}/:conversationId/observe-run`,'control','conversation'),
+  operation('settle-retained-run','POST',`${workspace}/:conversationId/settle-retained-run`,'control','conversation'),
   operation('stop-all','POST',`${workspace}/:conversationId/stop-all`,'stopAll','conversation'),
   operation('stop', 'POST', `${workspace}/:conversationId/stop`, 'stop', 'conversation'),
   operation('reply', 'POST', `${workspace}/:conversationId/requests/:requestId/reply`, 'reply', 'conversation'),

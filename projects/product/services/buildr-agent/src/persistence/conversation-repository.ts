@@ -681,25 +681,40 @@ export class ConversationRepository {
       return JSON.stringify([row.epoch, row.scoped, row.total, row.latest, unprojected, pending, generations]);
     } finally { db.close(); }
   }
+  private computeSeenState(db: DatabaseSync, workspaceId: string, id: string, through: number) {
+    const row = db.prepare('SELECT activity_version,seen_version,summary FROM conversations WHERE id=? AND workspace_id=?').get(id, workspaceId) as { activity_version: number; seen_version: number; summary: string } | undefined;
+    if (!row) fail('agent_conversation_missing', '该工作空间中没有此对话。', 404);
+    if (!Number.isSafeInteger(through) || through < 0 || through > row.activity_version) fail('agent_seen_invalid', '查看位置不属于已观察的消息。', 409);
+    const view = JSON.parse(row.summary) as ConversationView;
+    const header = db.prepare('SELECT state FROM conversation_read_states WHERE id=? AND revision=(SELECT revision FROM conversations WHERE id=?)').get(id, id) as { state: string } | undefined;
+    const fullView = header ? JSON.parse(header.state).view : JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(id) as { body: string }).body).view;
+    const seen = Math.max(row.seen_version, through);
+    const activity = { ...view.activity!, version: row.activity_version, seenThrough: seen, active: conversationActive(fullView, row.activity_version, seen) };
+    const needsWrite = seen !== row.seen_version || activity.active !== view.activity?.active;
+    return { view, activity, seen, needsWrite };
+  }
   markSeen(workspaceId:string,id:string,through:number): NonNullable<ConversationView['activity']> {
-    const db=this.open(true)!;
-    try{
+    const readDb = this.open(false);
+    if (!readDb) fail('agent_conversation_missing', '该工作空间中没有此对话。', 404);
+    let schemaVersion = 0;
+    try {
+      schemaVersion = (readDb.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+      if (schemaVersion >= 2) {
+        const current = this.computeSeenState(readDb, workspaceId, id, through);
+        if (!current.needsWrite) return current.activity;
+      }
+    } finally { readDb.close(); }
+    const db = this.open(true)!;
+    try {
       db.exec('BEGIN IMMEDIATE');
-      const row=db.prepare('SELECT activity_version,seen_version,summary FROM conversations WHERE id=? AND workspace_id=?').get(id,workspaceId) as {activity_version:number;seen_version:number;summary:string}|undefined;
-      if(!row)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
-      if(!Number.isSafeInteger(through)||through<0||through>row.activity_version)fail('agent_seen_invalid','查看位置不属于已观察的消息。',409);
-      const view=JSON.parse(row.summary) as ConversationView;
-      const header=db.prepare("SELECT state FROM conversation_read_states WHERE id=? AND revision=(SELECT revision FROM conversations WHERE id=?)").get(id,id) as {state:string}|undefined;
-      const fullView=header?JSON.parse(header.state).view:JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(id) as {body:string}).body).view;
-      const seen=Math.max(row.seen_version,through);
-      const activity={...view.activity!,version:row.activity_version,seenThrough:seen,active:conversationActive(fullView,row.activity_version,seen)};
-      if(seen!==row.seen_version || activity.active!==view.activity?.active){
-        view.activity=activity;
-        db.prepare('UPDATE conversations SET seen_version=?,is_active=?,summary=? WHERE id=?').run(seen,Number(activity.active),JSON.stringify(view),id);
+      const next = this.computeSeenState(db, workspaceId, id, through);
+      if (next.needsWrite) {
+        next.view.activity = next.activity;
+        db.prepare('UPDATE conversations SET seen_version=?,is_active=?,summary=? WHERE id=?').run(next.seen, Number(next.activity.active), JSON.stringify(next.view), id);
         db.exec('UPDATE conversation_epoch SET value=value+1 WHERE id=1');
       }
-      db.exec('COMMIT');return activity;
-    }catch(error){try{db.exec('ROLLBACK');}catch{}throw error;}finally{db.close();}
+      db.exec('COMMIT'); return next.activity;
+    } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; } finally { db.close(); }
   }
   /** textEntryId is only for a caller-proven single-entry mutation of the same saved record. */
   saveConversation(record: StoredConversation, priorRevision?: string, options: {participationUnchanged?:boolean;textEntryId?:string} = {}) {

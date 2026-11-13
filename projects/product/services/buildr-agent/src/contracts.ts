@@ -447,7 +447,12 @@ export interface PendingRequestView extends ExecutorRequest {
   generation: string;
 }
 export interface ConversationTaskLink {workspaceId:string;taskId:string}
-export interface ConversationStopInput { expectedRevision: string; clientRequestId: string }
+export interface ConversationStopObservedScope {
+  currentRunId: string | null;
+  targets: Array<{ runId: string; participantId: string; generation: string }>;
+  pendingSendId: string | null;
+}
+export interface ConversationStopInput { expectedRevision: string; clientRequestId: string; observedScope?: ConversationStopObservedScope }
 export interface ConversationStopView {
   id: string;
   runIds: string[];

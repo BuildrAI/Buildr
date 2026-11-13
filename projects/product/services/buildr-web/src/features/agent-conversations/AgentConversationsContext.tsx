@@ -1,4 +1,4 @@
-import { refreshSeenActivity } from './seen-activity-refresh';
+import { createStreamingSeenScheduler, refreshSeenActivity } from './seen-activity-refresh';
 import { createVisiblePoller } from '../../lib/visible-poller';
 import { activityPollMs } from './activity-polling';
 import { usePageVisibility } from './usePageVisibility';
@@ -311,6 +311,7 @@ export function AgentConversationsProvider({children, client = agentConversation
       current:()=>conversationRef.current,
       visible:()=>document.visibilityState!=='hidden',
       live:()=>streamHealthy.current&&Date.now()-streamLiveAt.current<10_000,
+      probe:client.probeRevision?()=>client.probeRevision!(scope.workspaceId,scope.conversationId):undefined,
       read:()=>client.read(scope.workspaceId,scope.conversationId),
       apply:(next,observedRevision)=>apply(next,observedRevision),
       isCurrent:()=>isSelectionCurrent(selection),
@@ -380,7 +381,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   const openGlobal=useCallback(()=>openHistory(null),[openHistory]);
   const seenInFlight=useRef(new Set<string>());
   const displayedActivity=useRef(activityRows);displayedActivity.current=activityRows;
-  const markSeen=useCallback(async(value:ConversationView)=>{
+  const sendSeen=useCallback(async(value:ConversationView)=>{
     const version=value.activity?.version;if(version===undefined||version<=(value.activity?.seenThrough??0)||!client.seen)return;
     const key=value.workspaceId+':'+value.id+':'+version;if(seenInFlight.current.has(key))return;seenInFlight.current.add(key);
     try{
@@ -394,6 +395,23 @@ export function AgentConversationsProvider({children, client = agentConversation
       },refreshActivity);
     }catch(error){setActivityError(error instanceof Error?error.message:'查看状态尚未保存。');}finally{seenInFlight.current.delete(key);}
   },[client,refreshActivity]);
+  const sendSeenRef=useRef(sendSeen);sendSeenRef.current=sendSeen;
+  const seenSchedulerRef=useRef<ReturnType<typeof createStreamingSeenScheduler>|null>(null);
+  if(!seenSchedulerRef.current){
+    seenSchedulerRef.current=createStreamingSeenScheduler({send:value=>sendSeenRef.current(value)});
+  }
+  useEffect(()=>{
+    const scheduler=seenSchedulerRef.current!;
+    const onVisibilityChange=()=>{if(document.visibilityState==='hidden')void scheduler.flush();};
+    document.addEventListener('visibilitychange',onVisibilityChange);
+    return()=>{
+      document.removeEventListener('visibilitychange',onVisibilityChange);
+      void scheduler.flush();
+      scheduler.dispose();
+    };
+  },[]);
+  useEffect(()=>()=>{void seenSchedulerRef.current?.flush();},[scope?.workspaceId,scope?.conversationId]);
+  const markSeen=useCallback((value:ConversationView)=>seenSchedulerRef.current!.notify(value),[]);
   const toggleView=useCallback((target:'conversation'|'history')=>{const next=nextConversationPanel(open,view,target);if(target==='history'&&next.open)setHistoryWorkspaceId(null);setView(next.view);setOpen(next.open);},[open,view,setOpen]);
   const toggle=useCallback(()=>setOpen(!open),[open,setOpen]);
   const shell=useMemo(()=>({open,view,full,pending,openGlobal,toggle,toggleView,setSettings,newConversation}),[open,view,full,pending,openGlobal,toggle,toggleView,newConversation]);

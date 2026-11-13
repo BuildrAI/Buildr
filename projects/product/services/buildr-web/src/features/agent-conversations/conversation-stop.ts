@@ -55,6 +55,17 @@ export function stoppedConversationEntries(conversation:ConversationView, stoppe
     .sort((a,b)=>a.sequence-b.sequence);
 }
 
+export function conversationStopAllObservedScope(conversation:ConversationView) {
+  const seen=new Set<string>();
+  const targets=[...(conversation.run?[conversation.run]:[]),...conversation.retainedRuns??[]].filter(run=>{
+    const key=`${run.id}\0${run.participantId}\0${run.generation}`;
+    if(seen.has(key))return false;
+    seen.add(key);
+    return true;
+  }).map(run=>({runId:run.id,participantId:run.participantId,generation:run.generation}));
+  return {currentRunId:conversation.run?.id??null,targets,pendingSendId:conversation.pendingSend?.id??null};
+}
+
 /** Only a known admission rejection can be retried; never widen a click to a newer turn. */
 export async function stopAllWithRecovery(conversation:ConversationView,clientRequestId:string,stop:(current:ConversationView)=>Promise<ConversationView>,read:()=>Promise<ConversationView>):Promise<ConversationView> {
   let current=conversation;

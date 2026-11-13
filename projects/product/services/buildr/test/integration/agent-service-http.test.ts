@@ -871,3 +871,31 @@ test('runtime restart authorizes writes, validates the observed generation and r
   const invalid=await contribution.handleTopLevel({...context,readJsonBody:async()=>({})});
   assert.equal(invalid.status,400);assert.equal(restarted,1);
 });
+
+test('settle-retained-run route is exposed and stop-all forwards observedScope', async t => {
+  const {base,root}=taskRecordFixture(t,'settle-and-stop-all-http'),runtime=createRuntime();
+  const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'app-data');t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+  const id='11111111-1111-4111-8111-111111111111',calls:any[]=[];
+  const view:any={id,workspaceId:'@default',cwd:root,title:'工作',revision:'r2',hidden:false,updatedAt:'now',participants:[],entries:[],requests:[],retainedRuns:[]};
+  const service:any={conversations:{
+    settleRetainedRun:(workspaceId:string,conversationId:string,input:any)=>{calls.push(['settle',workspaceId,conversationId,input]);return {...view,workspaceId};},
+    stopAll:(workspaceId:string,conversationId:string,input:any)=>{calls.push(['stopAll',workspaceId,conversationId,input]);return {...view,workspaceId};},
+  }};
+  const contributions=runtimeContributions(runtime,'http').filter((item:any)=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const instance=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});const {url,sessionToken,initialWorkspaceId}=await instance.ready;
+  t.after(async()=>{instance.server.closeAllConnections();await new Promise<void>(resolve=>instance.server.close(()=>resolve()));});
+  const headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'};
+
+  const settleRes=await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/agent-conversations/${id}/settle-retained-run`,{
+    method:'POST',headers,body:JSON.stringify({expectedRevision:'r1',runId:'run-1',participantId:'lead',generation:'g1'}),
+  });
+  assert.equal(settleRes.status,200);
+  assert.deepEqual(calls[0],['settle',initialWorkspaceId,id,{expectedRevision:'r1',runId:'run-1',participantId:'lead',generation:'g1'}]);
+
+  const observedScope={currentRunId:'run-2',targets:[{runId:'run-2',participantId:'lead',generation:'g2'}],pendingSendId:null};
+  const stopAllRes=await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/agent-conversations/${id}/stop-all`,{
+    method:'POST',headers,body:JSON.stringify({expectedRevision:'r1',clientRequestId:'stop-1',observedScope}),
+  });
+  assert.equal(stopAllRes.status,200);
+  assert.deepEqual(calls[1],['stopAll',initialWorkspaceId,id,{expectedRevision:'r1',clientRequestId:'stop-1',observedScope}]);
+});

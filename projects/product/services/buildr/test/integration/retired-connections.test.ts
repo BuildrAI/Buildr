@@ -85,3 +85,14 @@ test('retired command reports replacement help and old HTTP operations return 41
   }
   assert.equal(resolved, 0); assert.equal(handled, 0);
 });
+
+test('router returns 503 app_starting when origin is not yet bound without throwing ERR_INVALID_URL', async () => {
+  let resolved = 0, handled = 0, body = '', status = 0;
+  const route = createLocalWorkspaceRequestRouter({ resolveRegisteredWorkspace() { resolved++; throw new Error('must not resolve'); }, taskIdPattern: '[a-z-]+', sessionToken: 'test', origin: () => null, isClosing: () => false, httpContributions: [{ handle() { handled++; } }] });
+  const response = { writeHead(code: number) { status = code; }, end(value: string) { body = value; }, setHeader() {} };
+  await route({ method: 'GET', headers: { host: '127.0.0.1:12345' }, url: '/api/v1/workspaces' }, response);
+  assert.equal(status, 503);
+  assert.equal(JSON.parse(body).error.code, 'app_starting');
+  assert.equal(resolved, 0);
+  assert.equal(handled, 0);
+});

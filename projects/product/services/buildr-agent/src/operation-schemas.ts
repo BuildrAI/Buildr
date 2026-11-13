@@ -69,6 +69,11 @@ const pushbackProgress = closed({text:{type:'string',description:'最新 assista
 const pushbackStall = closed({idleMs:{type:'integer',minimum:0,description:'连续无新记录的毫秒数'},lastActivityAt:{type:'string',description:'最后一次观察到消息、工具或状态变化的时间'}},['idleMs','lastActivityAt']);
 const pushbackEvent = closed({eventId:text,type:{enum:['decision.requested','run.completed','run.failed','run.stopped','run.progress','run.stalled','events_dropped']},occurredAt:text,machine:closed({id:text,name:text},['id','name']),workspaceId:text,conversationId:text,title:text,runId:text,runStatus:run.properties.status,request:pushbackRequest,finalReply:{type:'string',description:'run 最终 assistant 回复全文，不截断；仅终态事件携带'},finalReplyUrl:{type:'string',description:'只返回该 run 最终回复的轻量读取地址；仅终态事件携带'},progress:pushbackProgress,stalled:pushbackStall,scopes:{type:'array',items:{type:'string'},description:'事件生成时当前凭据的权限数组'},allowFullAccess:{type:'boolean',description:'事件生成时当前凭据是否允许全部授权执行'},summary:{type:'string',maxLength:500},detailUrl:text,sequence:integer,mergedCount:integer,droppedCount:integer},['eventId','type','occurredAt','machine','workspaceId','conversationId','title','scopes','allowFullAccess','summary','detailUrl','sequence']);
 const conversationSummary = closed({id:text,title:text,runStatus:{anyOf:[run.properties.status,{type:'null'}]},updatedAt:text,active:boolean,pendingDecisionCount:integer},['id','title','runStatus','updatedAt','active','pendingDecisionCount']);
+const stopObservedScope = closed({
+  currentRunId: { anyOf: [text, { type: 'null' }] },
+  targets: list(closed({ runId: text, participantId: text, generation: text })),
+  pendingSendId: { anyOf: [text, { type: 'null' }] },
+});
 export const AGENT_OPERATION_SCHEMAS = {
   pushbackSettings: named('AgentPushbackSettings',closed({credentialId:text,revision:text,state:{enum:['unconfigured','invalid','disabled','enabled']},url:string,hasSecret:boolean,rateLimitHour:integer,rateLimitMinute:integer,progressEnabled:boolean,stalledEnabled:boolean,lastDelivery:pushbackDelivery,recentDeliveries:list(pushbackDelivery)},['credentialId','revision','state','url','hasSecret','rateLimitHour','rateLimitMinute','progressEnabled','stalledEnabled'])),
   pushbackSettingsInput: named('AgentPushbackSettingsInput',closed({expectedRevision:text,enabled:boolean,url:{type:'string',maxLength:8192},secret:{type:'string',maxLength:4096},rateLimitHour:{type:'integer',minimum:1,maximum:100000},rateLimitMinute:{type:'integer',minimum:1,maximum:10000},progressEnabled:boolean,stalledEnabled:boolean},['expectedRevision','enabled','url'])),
@@ -128,7 +133,7 @@ export const AGENT_OPERATION_SCHEMAS = {
   sent: named('AgentConversationSendResult', closed({ run, conversation })),
   supplement: named('AgentConversationSupplementRequest', closed({ sameRunOnly: boolean, runId: text, participantId: text, generation: text, clientRequestId: text, text: {type:'string',maxLength:65536}, attachmentIds: {type:'array',maxItems:9,items:text} }, ['runId','participantId','generation','clientRequestId','text'])),
   supplemented: named('AgentConversationSupplementResult', closed({ conversation, delivery: {enum:['accepted','unknown','rejected','continued']} })),
-  stopAll: named('AgentConversationStopAllRequest',closed({expectedRevision:text,clientRequestId:text})),
+  stopAll: named('AgentConversationStopAllRequest',closed({expectedRevision:text,clientRequestId:text,observedScope:stopObservedScope},['expectedRevision','clientRequestId'])),
   stop: named('AgentConversationStopRequest', closed({ ...controlFields, toolId: text }, Object.keys(controlFields))),
   historyPage: named('AgentConversationHistoryPage',closed({entries:list(entry),nextCursor:integer,truncatedIds:list(text),unavailable:list(closed({id:text,revision:text,reason:text}))},['entries','truncatedIds','unavailable'])),
   historyQuery: named('AgentConversationHistoryQuery',closed({sourceId:{type:'string',pattern:'^index-[a-f0-9]{64}\\.json$'},roundId:text,cursor:integer,limit:{type:'integer',minimum:1,maximum:100},view:{enum:['all','messages']}},['sourceId'])),

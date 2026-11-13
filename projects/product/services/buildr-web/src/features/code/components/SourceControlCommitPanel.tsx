@@ -3,6 +3,8 @@ import type { TextAreaRef } from 'antd/es/input/TextArea';
 import { Alert, Button, Dropdown, Input, Space, Spin, Tooltip } from 'antd';
 import { CheckOutlined, DownOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { agentConversationsApi } from '../../agent-conversations/api/agent-conversations-api';
+import { useOptionalAgentConversations } from '../../agent-conversations/AgentConversationsContext';
+import { modelCatalogRefreshMs } from '../../agent-conversations/page-visibility';
 import type { ExecutionModelSource } from '../../../lib/execution-model';
 import { AgentActionControl } from '../../../components/AgentActionControl';
 import { useExecutionModelChoice } from '../../../components/ExecutionModelSelect';
@@ -20,9 +22,16 @@ const messageSelections = new WeakMap<SourceControlActions, Map<string, MessageS
 
 type Props = {active?: boolean; workspaceId: string; repository: SourceControlRepository; worktree: SourceControlWorktree; actions: SourceControlActions; version: string};
 export function SourceControlCommitPanel({active = true, workspaceId, repository, worktree, actions, version}: Props) {
-  const [modelCatalog, setModelCatalog] = useState<ExecutionModelSource[]>([]);
-  const [modelsLoading, setModelsLoading] = useState(true);
-  const [modelError, setModelError] = useState('');
+  const conversations = useOptionalAgentConversations();
+  const [standaloneModelCatalog, setStandaloneModelCatalog] = useState<ExecutionModelSource[]>([]);
+  const [standaloneModelsLoading, setStandaloneModelsLoading] = useState(!conversations);
+  const [standaloneModelError, setStandaloneModelError] = useState('');
+  const modelCatalog = conversations ? conversations.modelCatalog : standaloneModelCatalog;
+  const modelsLoading = conversations ? (!conversations.modelCatalogReady && !conversations.modelCatalog.length && !conversations.modelCatalogError) : standaloneModelsLoading;
+  const modelError = conversations ? conversations.modelCatalogError : standaloneModelError;
+  const hasConversations = Boolean(conversations);
+  const conversationCatalogReady = conversations?.modelCatalogReady ?? false;
+  const refreshConversationCatalog = conversations?.refreshModelCatalog;
   const source: CodeActionSource = {workspaceId, repositoryId: repository.id, worktreeId: worktree.worktreeId, branch: worktree.branch};
   const key = actionSourceKey(source), state = actions.state(source);
   const textarea=useRef<TextAreaRef>(null);
@@ -43,23 +52,26 @@ export function SourceControlCommitPanel({active = true, workspaceId, repository
   const [feedback, setFeedback] = useState(''), [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => {
     if (!active) return;
+    if (hasConversations) {
+      if (!conversationCatalogReady) void refreshConversationCatalog?.().catch(() => {});
+      return;
+    }
     let disposed = false, generation = 0;
-    const abort = new AbortController();
     const refresh = async () => {
       const current = ++generation;
       try {
-        const catalog = await agentConversationsApi.modelCatalog(abort.signal);
-        if (!disposed && current === generation) {setModelCatalog(catalog.models); setModelError(catalog.diagnostic || '');}
+        const catalog = await agentConversationsApi.modelCatalog();
+        if (!disposed && current === generation) {setStandaloneModelCatalog(catalog.models); setStandaloneModelError(catalog.diagnostic || '');}
       } catch (error) {
-        if (!disposed && current === generation) setModelError(error instanceof Error ? error.message : '无法读取模型目录');
-      } finally {if (!disposed && current === generation) setModelsLoading(false);}
+        if (!disposed && current === generation) setStandaloneModelError(error instanceof Error ? error.message : '无法读取模型目录');
+      } finally {if (!disposed && current === generation) setStandaloneModelsLoading(false);}
     };
     void refresh();
     const focused = () => {void refresh();};
-    const timer = window.setInterval(() => {if (document.visibilityState === 'visible') void refresh();}, 5000);
+    const timer = window.setInterval(() => {if (document.visibilityState === 'visible') void refresh();}, modelCatalogRefreshMs(false));
     window.addEventListener('focus', focused);
-    return () => {disposed = true; abort.abort(); window.clearInterval(timer); window.removeEventListener('focus', focused);};
-  }, [active]);
+    return () => {disposed = true; window.clearInterval(timer); window.removeEventListener('focus', focused);};
+  }, [active, hasConversations, conversationCatalogReady, refreshConversationCatalog]);
   const context = state.context, generating = Boolean(state.generation), writing = Boolean(state.gitPending);
   useEffect(() => { if (active && !repository.cached) { void actions.observe(source); setFeedback(''); } }, [active, actions, key, version, repository.cached]);
   const options = useMemo(() => executionModelOptions(modelCatalog), [modelCatalog]);

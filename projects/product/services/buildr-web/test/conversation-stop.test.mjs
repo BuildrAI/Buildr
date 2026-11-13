@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {stoppedConversationEntries,stopConversationWithRecovery,conversationStopControlState,conversationStopRunIds} from '../src/features/agent-conversations/conversation-stop.ts';
+import {conversationStopAllObservedScope,stopAllWithRecovery,stoppedConversationEntries,stopConversationWithRecovery,conversationStopControlState,conversationStopRunIds} from '../src/features/agent-conversations/conversation-stop.ts';
 import {conversationRecoveryAction,executionLocked} from '../src/features/agent-conversations/conversation-state.ts';
 const chat={id:'chat',workspaceId:'ws',revision:'r1',entries:[{id:'a',runId:'run',text:'点击时的文字',kind:'message'}],run:{id:'run',participantId:'p',generation:'g',status:'running',tools:[]}};
 const conflict=()=>Object.assign(new Error('内容已变化，请刷新后重试。'),{status:409,code:'agent_revision_conflict'});
@@ -105,4 +105,29 @@ test('an unresolved execution with owned resources keeps one real stop attempt',
  assert.deepEqual(conversationStopRunIds(unresolved),['run']);
  assert.equal(conversationStopControlState({...unresolved,run:{...unresolved.run,stopRequested:true}}),'hidden');
  assert.equal(conversationStopControlState({...unresolved,run:{...unresolved.run,resourcesReleased:true}}),'hidden');
+});
+
+test('conversationStopAllObservedScope deduplicates targets and stopAllWithRecovery guards new work',async()=>{
+ const view={
+  ...chat,
+  retainedRuns:[{...chat.run},{id:'old',participantId:'p2',generation:'g2'}],
+  pendingSend:{id:'pending-1'},
+ };
+ assert.deepEqual(conversationStopAllObservedScope(view),{
+  currentRunId:'run',
+  targets:[
+   {runId:'run',participantId:'p',generation:'g'},
+   {runId:'old',participantId:'p2',generation:'g2'},
+  ],
+  pendingSendId:'pending-1',
+ });
+
+ const requested={...view,revision:'r2',stopRequest:{id:'req-1'}};
+ const res1=await stopAllWithRecovery(view,'req-1',async()=>{throw conflict();},async()=>requested);
+ assert.equal(res1.stopRequest.id,'req-1');
+
+ await assert.rejects(
+  ()=>stopAllWithRecovery(view,'req-2',async()=>{throw conflict();},async()=>({...view,revision:'r2',pendingSend:{id:'pending-2'}})),
+  /未将停止扩展到新工作/,
+ );
 });
