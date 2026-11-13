@@ -14,6 +14,16 @@ test('未知额度不填零，旧空重复账号不占主要界面且保留 Devi
  const views=modelSourceViews([account,{...account,id:'native-qoder',provider:'native-qoder',connectionId:'qoder',status:'ready'}],[{id:'qoder',enabled:true}]);assert.equal(views.length,2);assert.deepEqual(views.map(view=>view.providerLabel),['Devin','Qoder']);assert.deepEqual(views.find(view=>view.id==='native-qoder').windows,[]);assert.equal(views.find(view=>view.id==='new-devin').status,'not-authenticated');assert.equal(views.some(view=>view.id==='new-openai'),false);assert.equal(views.some(view=>view.provider==='anthropic'),false);
 });
 
+test('Devin 已接入时只隐藏无账号资料的重复空项',()=>{
+ const empty={id:'empty',provider:'devin',label:'Devin',status:'not-authenticated',enabled:true,models:[]};
+ const connected={...empty,id:'connected',status:'ready',accountLabel:'已登录账号'};
+ const pending={...empty,id:'pending',loginAttempt:{state:'waiting-browser'}};
+ const listed=(accounts,includeDisabled)=>modelSourceViews(accounts,[],includeDisabled).filter(source=>source.provider==='devin').map(source=>source.id);
+ assert.deepEqual(listed([connected,empty,pending],true).sort(),['connected','pending']);
+ assert.deepEqual(listed([empty]),['empty']);
+ assert.deepEqual(listed([{...connected,sourceEnabled:false},empty]),['empty']);
+});
+
 test('ChatGPT 订阅与 API Key 作为两个来源可同时启用并分别提供模型',()=>{
  const views=modelSourceViews([subscription,api],[]);
  const chatgpt=views.filter(view=>view.provider==='codex'||view.provider==='openai');

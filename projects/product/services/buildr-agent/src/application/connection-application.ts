@@ -109,7 +109,16 @@ export class ConnectionApplication {
       candidate = await open(original, executable, source);
       if(['qoder','qoder-cn','claude-code'].includes(original.view.provider)) {
         if(!candidate.verifyUpgrade)fail('agent_program_update_verification_failed',`${original.view.label} 缺少配套验证，保留原接入。`,409);
-        await candidate.verifyUpgrade();
+        if (original.view.provider === 'qoder-cn' && this.nativeAccountRoot(id, original) !== configRoot) {
+          // The execution binding belongs to the connection. The authenticated
+          // smoke check belongs to the separate model account.
+          const accountProbe = await this.openExecutor(executor, {
+            interaction: interactionPolicy, connectionId: id, configRoot, executable,
+            environment: this.options.environment, nativeAccountConfigRoot: this.nativeAccountRoot(id, original),
+          });
+          try { await accountProbe.verifyUpgrade!(); }
+          finally { await accountProbe.close(); }
+        } else await candidate.verifyUpgrade();
       }
       if (original.bindingIdentity && candidate.bindingIdentity !== original.bindingIdentity) fail('agent_binding_changed', '新版未能延续原上下文身份，已保留旧程序。', 409);
       const current = this.stored(id);

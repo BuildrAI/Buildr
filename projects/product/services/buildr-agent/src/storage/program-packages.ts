@@ -6,7 +6,7 @@ import { safeStoragePath, storageCandidate, type StorageCandidate, type StorageU
 
 /** Managed program packages are reclaimable only without any binding, upgrade
  * rollback/target or default-destination reference. Unknown references retain. */
-export interface ProgramPackageReferences { complete: boolean; directories: Set<string> }
+export interface ProgramPackageReferences { complete: boolean; directories: Set<string>; replaced: Set<string> }
 
 const providers = Object.keys(nativeProgramPolicies);
 
@@ -21,6 +21,8 @@ function packageDirectory(root: string, executable: string): string | undefined 
 
 export function programPackageReferences(root: string): ProgramPackageReferences {
   const directories = new Set<string>();
+  const replaced = new Set<string>();
+  let bound = new Map<string,string>();
   let complete = true;
   const add = (value: unknown) => {
     if (typeof value !== 'string') return;
@@ -30,6 +32,7 @@ export function programPackageReferences(root: string): ProgramPackageReferences
   try {
     const references = listConnectionProgramReferences(path.join(root, 'conversations.sqlite'));
     complete = references.complete;
+    bound = references.bound;
     for (const value of references.paths) add(value);
   } catch { complete = false; }
   const upgrades = path.join(root, 'program-upgrades');
@@ -47,6 +50,12 @@ export function programPackageReferences(root: string): ProgramPackageReferences
       // A completed upgrade already committed the binding; its historical
       // pre-upgrade executable must not pin the old package forever.
       if (view.state !== 'completed') { add(view.executable); add(view.installedExecutable); }
+      else if (view.connectionId === name.slice(0, -'.json'.length) && typeof view.installedExecutable === 'string' && bound.get(view.connectionId) === view.installedExecutable) {
+        const previous = packageDirectory(root, view.executable);
+        const current = packageDirectory(root, view.installedExecutable);
+        if (previous && current && previous !== current && path.dirname(previous) === path.dirname(current)
+          && path.basename(path.dirname(previous)) === view.connectionId && path.basename(previous).startsWith('package-')) replaced.add(previous);
+      }
     } catch {
       // An unreadable record may hide a rollback source; retain that provider's packages.
       const provider = name.slice(0, -'.json'.length);
@@ -73,7 +82,7 @@ export function programPackageReferences(root: string): ProgramPackageReferences
   }
   // Keep the legacy default destination reusable as well.
   for (const provider of providers) directories.add(path.join(root, 'programs', provider, `${nativeProgramPolicies[provider as keyof typeof nativeProgramPolicies].version}-${process.platform}-${process.arch}`));
-  return { complete, directories };
+  return { complete, directories, replaced };
 }
 
 /** Version packages and crashed `.prepare-*` staging directories of known
@@ -89,7 +98,7 @@ export function programPackageCandidates(root: string, use: StorageUse, cutoff: 
     for (const name of names) {
       if (!name.startsWith('package-') && !name.startsWith('.prepare-')) continue;
       const target = path.join(base, name);
-      const item = storageCandidate(root, 'program-package', target, target, use, cutoff);
+      const item = storageCandidate(root, 'program-package', target, target, use, references.replaced.has(target) ? Infinity : cutoff);
       if (item.eligible && (!references.complete || references.directories.has(target))) {
         item.eligible = false;
         item.reason = references.complete ? 'program_package_referenced' : 'program_references_unknown';

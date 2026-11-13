@@ -165,19 +165,33 @@ export function listConnectionExecutables(input: { sourceRoot: string; database?
 
 /** Read-only program reference observation for storage maintenance. Any read
  * or parse failure is incomplete so callers retain the affected packages. */
-export function listConnectionProgramReferences(database: string): { complete: boolean; paths: string[] } {
+export function listConnectionProgramReferences(database: string): { complete: boolean; paths: string[]; bound: Map<string,string> } {
   const paths = new Set<string>();
+  const bound = new Map<string,string>();
   let rows: ReturnType<typeof readRows>;
-  try { rows = readRows(database); } catch { return { complete: false, paths: [] }; }
+  try { rows = readRows(database); } catch { return { complete: false, paths: [], bound }; }
   let complete = true;
   for (const row of rows) {
     let record: Record<string, any>;
     try { record = JSON.parse(row.body); } catch { complete = false; continue; }
-    for (const value of [record?.view?.executable, record?.bindingData?.executable, record?.programSource]) {
-      if (typeof value === 'string') paths.add(value);
+    const executable = record?.view?.executable;
+    if (typeof executable === 'string') { paths.add(executable); bound.set(row.id, executable); }
+    const source = record?.programSource;
+    const binding = record?.bindingData;
+    // A validated v2 upgrade keeps the original path as a string in the
+    // identity hash. The runtime and relocation open the bound executable.
+    const identityOnly = typeof executable === 'string' && path.isAbsolute(executable)
+      && typeof source === 'string' && path.isAbsolute(source)
+      && typeof record.bindingIdentity === 'string' && record.bindingIdentity.length > 0
+      && binding?.format === BINDING_FORMAT && binding.provider === record.view.provider
+      && binding.executable === source;
+    if (!identityOnly) {
+      for (const value of [binding?.executable, source]) {
+        if (typeof value === 'string') paths.add(value);
+      }
     }
   }
-  return { complete, paths: [...paths] };
+  return { complete, paths: [...paths], bound };
 }
 
 /**

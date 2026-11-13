@@ -418,6 +418,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     input,
     modelSettings,
     modelTrigger,
+    setNativeAccountDisconnected(connectionId:string){disconnectedAccounts.add(connectionId);},
     get nativeLoginPosts(){return nativeLoginPosts;}, set nativeLoginPosts(value){nativeLoginPosts=value;},
     get observes(){return observes;}, set observes(value){observes=value;},
     openDesktopConversation,

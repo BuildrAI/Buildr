@@ -137,6 +137,7 @@ class QoderCnRuntime implements AgentRuntime {
     const binding = await consumerBinding('qoder-cn', executable, version, config, options);
     const runtime = new QoderCnRuntime(binding.identity, config, env, gateway);
     runtime.executable = executable;
+    runtime.bindingData = binding.data;
     if (gateway) await runtime.assertNativeAccount();
     return runtime;
   }

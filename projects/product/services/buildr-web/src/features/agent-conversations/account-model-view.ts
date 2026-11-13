@@ -8,7 +8,10 @@ export function modelSourceViews(accounts:ModelAccount[],connections:ConnectionV
  // A source that owns its credentials has exactly one row whose id is the provider id
  // (see ModelAccess.ensureLinked); it must stay visible while logged out.
  const linkedSource=(account:ModelAccount)=>account.id===account.provider;
- const visible=accounts.filter(account=>(includeDisabled||account.sourceEnabled!==false)&&(account.connectionId||linkedSource(account)||account.authType==='api-key'||account.provider==='devin'||account.provider==='openai'||account.provider==='custom'||account.status==='ready'||account.models.length||waiting(account.loginAttempt)));
+ const hasConnectedDevin=accounts.some(account=>account.provider==='devin'&&account.status==='ready'&&account.sourceEnabled!==false);
+ const isEmptyDevin=(account:ModelAccount)=>hasConnectedDevin&&account.provider==='devin'&&account.status==='not-authenticated'
+  && !account.accountLabel&&!account.credentialConfigured&&!account.models.length&&!waiting(account.loginAttempt);
+ const visible=accounts.filter(account=>!isEmptyDevin(account)&&(includeDisabled||account.sourceEnabled!==false)&&(account.connectionId||linkedSource(account)||account.authType==='api-key'||account.provider==='devin'||account.provider==='openai'||account.provider==='custom'||account.status==='ready'||account.models.length||waiting(account.loginAttempt)));
  const sources:ModelSourceView[]=visible.map(account=>{
   const provider=account.connectionId||(account.provider.startsWith('native-')?account.provider.slice('native-'.length):account.provider),connection=connections.find(connection=>connection.id===account.connectionId);
   const login=account.connectionId?connection?.loginAttempt:account.loginAttempt;

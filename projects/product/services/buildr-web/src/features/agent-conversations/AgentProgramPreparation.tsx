@@ -52,10 +52,9 @@ export function AgentProgramPreparation({connection,onPending,autoStart=false}:{
     finally{if(mounted.current)setBusy(false);}
   };
   const needsAction=attempt&&['selection-required','installation-required','failed','cancelled'].includes(attempt.state);
-  if(connection.enabled&&connection.configPath&&!pending&&!busy&&!needsAction)return <div className="ac-program-preparation ac-program-ready" data-testid="agent-program-preparation">
-    <p role="status" data-state="ready">程序已就绪。供应商接入与模型检查在“模型”中管理。</p>
-    {error&&<Alert type="warning" showIcon message={error}/>}
-  </div>;
+  if(connection.enabled&&connection.configPath&&!pending&&!busy&&!needsAction)return error
+    ? <div className="ac-program-preparation" data-testid="agent-program-preparation"><Alert type="warning" showIcon message={error}/></div>
+    : null;
   return <div className="ac-program-preparation" data-testid="agent-program-preparation">
     <div className="ac-prepare-steps" aria-label="接入准备流程"><span>检查程序</span><span>准备连接</span><span>程序就绪</span></div>
     {error&&<Alert type="warning" showIcon message={error}/>}

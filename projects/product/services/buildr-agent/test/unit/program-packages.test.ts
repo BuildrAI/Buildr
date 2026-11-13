@@ -31,7 +31,7 @@ function connections(root: string, records: Array<Record<string, unknown>>): voi
   try {
     db.exec('CREATE TABLE IF NOT EXISTS connections(id TEXT PRIMARY KEY, provider TEXT NOT NULL UNIQUE, revision TEXT NOT NULL, body TEXT NOT NULL)');
     db.exec('DELETE FROM connections');
-    records.forEach((record, index) => db.prepare('INSERT OR REPLACE INTO connections(id,provider,revision,body) VALUES(?,?,?,?)').run('c' + index, 'p' + index, 'r1', JSON.stringify(record)));
+    records.forEach((record, index) => db.prepare('INSERT OR REPLACE INTO connections(id,provider,revision,body) VALUES(?,?,?,?)').run((record.view as {id?:string}|undefined)?.id ?? 'c' + index, 'p' + index, 'r1', JSON.stringify(record)));
   } finally { db.close(); }
 }
 function upgrade(root: string, id: string, view: Record<string, unknown> | string): void {
@@ -53,6 +53,46 @@ test('connection bindings, binding data and program sources retain their exact p
   assert.ok(!references.directories.has(free));
   assert.equal(programPackageUnreferenced(root, free), true);
   assert.equal(programPackageUnreferenced(root, bound), false);
+});
+
+test('a validated replacement keeps identity provenance without pinning the old package and its dependencies', t => {
+  const root = fixture(t);
+  const old = packageFixture(root, 'claude-code', 'package-2.1.322-darwin-arm64');
+  const current = packageFixture(root, 'claude-code', 'package-2.1.323-darwin-arm64');
+  const record = { view: { provider: 'claude-code', executable: executable(current) }, bindingIdentity: 'stable',
+    bindingData: { format: 'buildr-native-binding/v2', provider: 'claude-code', executable: executable(old) }, programSource: executable(old) };
+  connections(root, [record]);
+  const cutoff = Date.now() - day;
+  const item = programPackageCandidates(root, unused, cutoff).find(value => value.path === old)!;
+  assert.equal(item.eligible, true);
+  assert.equal(programPackageUnreferenced(root, current), false);
+  connections(root, [{ ...record, bindingIdentity: undefined }]);
+  assert.equal(programPackageUnreferenced(root, old), false, 'partial provenance still retains the package');
+  connections(root, [record]);
+  assert.equal(removeStorageCandidate(root, item, () => unused, () => programPackageUnreferenced(root, old)), true);
+  assert.equal(fs.existsSync(executable(old)), false);
+  assert.equal(fs.existsSync(executable(current)), true);
+});
+
+test('only a confirmed replacement bypasses the package stability window', t => {
+  const root = fixture(t);
+  const old = packageFixture(root, 'claude-code', 'package-2.1.322-darwin-arm64', Date.now());
+  const current = packageFixture(root, 'claude-code', 'package-2.1.323-darwin-arm64', Date.now());
+  const staging = packageFixture(root, 'claude-code', '.prepare-recent', Date.now());
+  const cutoff = Date.now() - day;
+  const job = { connectionId: 'claude-code', executable: executable(old), installedExecutable: executable(current) };
+  const eligible = (directory: string, use = unused) => programPackageCandidates(root, use, cutoff).find(item => item.path === directory)?.eligible;
+  upgrade(root, 'claude-code', { ...job, state: 'completed' });
+  assert.equal(eligible(old), false);
+  connections(root, [{ view: { id: 'claude-code', executable: executable(current) } }]);
+  assert.equal(eligible(old), true);
+  assert.equal(eligible(old, { complete: true, paths: [executable(old)] }), false);
+  assert.equal(eligible(current), false);
+  assert.equal(eligible(staging), false);
+  for (const state of ['failed', 'interrupted', 'waiting', 'restarting']) {
+    upgrade(root, 'claude-code', { ...job, state });
+    assert.equal(eligible(old), false, state);
+  }
 });
 
 test('unfinished upgrades retain rollback and target while completed history does not pin old packages', t => {
@@ -160,7 +200,7 @@ test('content changes after the preview retain the package', t => {
 
 test('reference observation reports missing databases as complete and unreadable ones as incomplete', t => {
   const root = fixture(t);
-  assert.deepEqual(listConnectionProgramReferences(path.join(root, 'conversations.sqlite')), { complete: true, paths: [] });
+  assert.deepEqual(listConnectionProgramReferences(path.join(root, 'conversations.sqlite')), { complete: true, paths: [], bound: new Map() });
   fs.mkdirSync(root, { recursive: true });
   fs.writeFileSync(path.join(root, 'conversations.sqlite'), 'not a database');
   assert.equal(listConnectionProgramReferences(path.join(root, 'conversations.sqlite')).complete, false);
