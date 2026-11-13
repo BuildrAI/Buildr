@@ -9,16 +9,61 @@ import type{AgentExecutor}from'../../src/contracts.ts';
 const offering={id:'model',label:'Model',images:false,tools:true};
 const signal=()=>AbortSignal.timeout(3000);
 function sse(frames:unknown[],done=true){return new Response(frames.map(frame=>'data: '+(typeof frame==='string'?frame:JSON.stringify(frame))+'\n\n').join('')+(done?'data: [DONE]\n\n':''));}
-test('linked sources are discovered once without adding accounts, native login, or extra credential files',async()=>{
- const root=await mkdtemp(join(tmpdir(),'buildr-linked-'));let account='a',requests=0;
- const executors=['codex','dsh','qoder'].map(id=>({descriptor:{id,label:id,capabilities:{text:true,images:false,stop:true,resume:true,approval:false,questions:false,maxInputBytes:1000}},async open(){return{bindingIdentity:id,capabilities:this.descriptor.capabilities,inspectAccount:async()=>({status:'ready' as const}),models:async()=>[{id:'model',label:'Model'}],modelIdentity:async()=>id+':'+account,requestModel:async(path:string)=>{requests++;return Response.json(path.includes('models?')?{models:[{slug:'model'}]}:path==='/models'?id==='dsh'?{data:[{id:'model',api_capabilities:{anthropic_messages:{}}}]}:{chat:[{key:'model',enable:true}]}:{});},beginLogin:async()=>{throw Error('duplicate_login');},cancelLogin:async()=>{},createContext:async()=>({id:'context'}),resumeContext:async()=>{},readHistory:async()=>[],send:async()=>{},observe:async()=>({status:'idle' as const,tools:[]}),reply:async()=>{},stop:async()=>({status:'stopped' as const,tools:[]}),close:async()=>{}};}})) satisfies AgentExecutor[];
+test('linked sources reuse native credentials and query Qoder without starting its executor',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-linked-'));let account='a',requests=0,closed=0;
+ const executors=['codex','dsh','qoder'].map(id=>({descriptor:{id,label:id,capabilities:{text:true,images:false,stop:true,resume:true,approval:false,questions:false,maxInputBytes:1000}},async open(){return{bindingIdentity:id,capabilities:this.descriptor.capabilities,inspectAccount:async()=>({status:'ready' as const}),models:async()=>[{id:'model',label:'Model'}],modelIdentity:async()=>id+':'+account,requestModel:async(path:string)=>{requests++;return Response.json(path.includes('models?')?{models:[{slug:'model'}]}:path==='/models'?id==='dsh'?{data:[{id:'model',api_capabilities:{anthropic_messages:{}}}]}:{chat:[{key:'model',enable:true}]}:{});},beginLogin:async()=>{throw Error('duplicate_login');},cancelLogin:async()=>{},createContext:async()=>({id:'context'}),resumeContext:async()=>{},readHistory:async()=>[],send:async()=>{},observe:async()=>({status:'idle' as const,tools:[]}),reply:async()=>{},stop:async()=>({status:'stopped' as const,tools:[]}),close:async()=>{closed++;}};}})) satisfies AgentExecutor[];
+ let expired=false,qoderRequests=0,qoderOpens=0;
+ const qoderAuth=join(root,'agent-service','connections','qoder','qoder-config','.auth');
+ const machine='1234567890123456-machine';
+ await mkdir(qoderAuth,{recursive:true});
+ await writeFile(join(qoderAuth,'machine_id'),machine);
+ async function login(uid:string) {
+   const key=Buffer.from(machine.slice(0,16));
+   const cipher=createCipheriv('aes-128-cbc',key,key);
+   await writeFile(join(qoderAuth,'user'),Buffer.concat([cipher.update(JSON.stringify({uid,security_oauth_token:'token-'+uid})),cipher.final()]).toString('base64'));
+ }
+ await login('first');
+ t.mock.method(globalThis,'fetch',async (url:string)=>{
+   qoderRequests++;
+   if (expired) return Response.json({}, {status:401});
+   if (String(url).startsWith('https://center.qoder.sh/')) return Response.json({userType:'teams',userQuota:{total:10,remaining:9}});
+   assert.match(String(url),/^https:\/\/api3\.qoder\.sh\//);
+   return Response.json({chat:[{key:'model',enable:true}]});
+ });
+ executors[2]!.open=async()=>{qoderOpens++;throw new Error('Qoder executor must not start for a query');};
  const service=createAgentService({dataRoot:root,executors,resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
  try{
   for(const id of ['codex','dsh','qoder'])await service.connections.connect(id,{expectedRevision:'unconfigured'});
   const catalog=await service.models.catalog.list({refresh:true});assert.equal(catalog.models.length,3);assert.ok(catalog.models.every(m=>m.enabled===false&&!m.available));
-  const first=(await service.models.accounts.list()).accounts;assert.deepEqual(first.filter(a=>a.connectionId).map(a=>a.connectionId),['codex','dsh','qoder']);assert.equal(requests,5);
+  const first=(await service.models.accounts.list()).accounts;assert.deepEqual(first.filter(a=>a.connectionId).map(a=>a.connectionId),['codex','dsh','qoder']);assert.equal(requests,3);
   const cn=first.find(a=>a.id==='native-qoder-cn');assert.ok(cn);assert.equal(cn.connectionId,undefined);assert.equal(cn.status,'not-authenticated');assert.deepEqual(cn.models,[]);
-  await service.models.catalog.list();assert.equal(requests,5);
+  await service.models.catalog.list();assert.equal(requests,3);
+  assert.equal(closed,4,'Codex and DSH release both connection and supplier probes');
+  assert.ok(qoderRequests>=2);
+  const qoderAccount=service.models.accounts.read('native-qoder');
+  assert.equal(qoderAccount.status,'ready');
+  assert.equal(qoderAccount.quota?.available,true);
+  expired=true;
+  const expiredAccount=await service.models.accounts.check('native-qoder');
+  assert.equal(expiredAccount.status,'expired');
+  assert.equal(expiredAccount.quota,undefined);
+  expired=false;
+  await login('second');
+  const switched=await service.models.accounts.check('native-qoder');
+  assert.equal(switched.status,'ready');
+  assert.notEqual(switched.identity,qoderAccount.identity);
+  assert.equal(switched.quota?.available,true);
+  assert.equal((await service.connections.check('qoder')).status,'ready');
+  assert.equal(qoderOpens,0);
+  const nativeRequests = requests;
+  service.models.startRefreshing();
+  // Cached reads remain passive while startup skips cold native accounts.
+  const joined = await service.models.accounts.list();
+  assert.equal(joined.accounts.find(account=>account.id==='native-qoder')?.status,'ready');
+  assert.equal(requests,nativeRequests,'reading cached accounts never starts the native check');
+  await service.models.accounts.check('native-codex');
+  assert.equal(requests,nativeRequests+2,'explicit refresh checks the Codex model and quota');
+  assert.equal(closed,5,'the explicit account check closes its probe');
   const qoder=service.connections.read('qoder');await service.connections.disconnect('qoder',{expectedRevision:qoder.revision});
   const disabled=await service.models.catalog.list();assert.equal(disabled.models.some(m=>m.accountId==='native-qoder'&&m.available),false);assert.equal(disabled.diagnostic,undefined,'intentional disconnect is not a background failure');
   const previous=first.find(a=>a.connectionId==='codex')!.identity;account='b';await service.connections.check('codex',{expectedRevision:service.connections.read('codex').revision});await service.models.catalog.list({refresh:true});assert.notEqual((await service.models.accounts.list()).accounts.find(a=>a.connectionId==='codex')!.identity,previous);

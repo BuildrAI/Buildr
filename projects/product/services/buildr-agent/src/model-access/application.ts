@@ -386,6 +386,11 @@ export class ModelAccessApplication {
         if(!observation.curatedModels){for(const model of observation.models)if(!Object.hasOwn(prefs,model.id))Object.defineProperty(prefs,model.id,{value:{enabled:false},enumerable:true,writable:true,configurable:true});row.models = structuredClone(observation.models);}
         this.preferences.set(id,prefs); row.observedAt = this.now;
       }
+      if (id === 'native-qoder' && (observation.status === 'expired' || observation.status === 'not-authenticated')) {
+        row.models = [];
+        delete row.quota;
+        delete row.observedAt;
+      }
       if(observation.quota)row.quota=!observation.quota.available&&row.quota?.available?{...row.quota,stale:true,diagnostic:'本次额度读取未完成，以下保留上次观察。'}:observation.quota;
     } catch { if (this.closed || this.metadataReadOnly || this.operations.get(id) !== operation) return this.view(this.current(id)); before??=this.selectionState(row); if (row.status !== 'ready') row.status = 'failed'; row.diagnostic = '模型供应商检查未完成，已保留上次目录。'; }
     return await this.observed(row, before!);

@@ -21,6 +21,7 @@ export class ConnectionApplication {
   async releaseAccountProbes(): Promise<void> {
     await Promise.allSettled([...this.probeRuntimes].map(async id => {
       const pending = this.runtimes.get(id);
+      if (['initializing', 'waiting-browser', 'checking'].includes(this.stored(id).view.loginAttempt?.state ?? '')) return;
       if (!pending || this.opening.has(id) || this.programUses.get(id) || this.programChanges.has(id) || this.checking.has(id) || this.closing) return;
       const runtime = await pending;
       if (!this.probeRuntimes.has(id) || this.runtimes.get(id) !== pending || this.programUses.get(id) || this.programChanges.has(id) || this.checking.has(id) || this.closing || this.probeReleases.has(id)) return;
@@ -149,6 +150,7 @@ export class ConnectionApplication {
     nativeAccountConfigRoots?: Record<string, string>;
     /** Compose externally visible facts whose login is owned by another source. */
     present?(view: ConnectionView): ConnectionView;
+    observeAccount?(id: string): Promise<Pick<ConnectionView, 'status' | 'models' | 'diagnostic' | 'account'>> | undefined;
     generation: string;
     now(): string;
     changed(connection: ConnectionView): void;
@@ -231,7 +233,12 @@ export class ConnectionApplication {
     const previousStatus=record.view.status;
     record.view.enabled = true; record.view.status = input.programOnly?(['disconnected','connecting'].includes(previousStatus)?'not-authenticated':previousStatus):'connecting'; delete record.view.diagnostic;
     this.save(record);
-    if(input.programOnly){await this.runtime(id);return this.get(id);}
+    if (input.programOnly) {
+      const transient = this.usesTransientAccountRuntime(id);
+      try { await this.runtime(id, undefined, transient); }
+      finally { if (transient) await this.releaseAccountProbes(); }
+      return this.get(id);
+    }
     return this.check(id);
   }
   async runtime(id: string, gateway?: ModelGatewayConfiguration, accountProbe = false): Promise<AgentRuntime> {
@@ -362,27 +369,23 @@ export class ConnectionApplication {
     const lifecycle = this.lifecycles.get(id);
     const work = (async () => {
       try {
-        const runtime = await this.runtime(id);
-        const account = await runtime.inspectAccount();
-        let models: ConnectionView['models'] = [];
-        let diagnostic = account.diagnostic;
         const modelEpoch = this.modelEpochs.get(id) ?? 0;
-        if (account.status === 'ready') {
-          try { models = await runtime.models(); }
-          catch { diagnostic = '账号可用，但模型目录尚不可读，请重新检查。'; }
-        }
+        const observed = this.options.observeAccount?.(id);
+        const result = observed ? await observed : await this.inspectNativeAccount(id);
         // Login and disconnect can finish while the model directory is being read.
         const record = this.stored(id);
         if (!record.view.enabled || this.closing || this.lifecycles.get(id) !== lifecycle) return this.get(id);
-        record.view.status = account.status;
-        record.view.account = { label: account.label, loginMethod: account.loginMethod };
+        record.view.status = result.status;
+        record.view.account = result.account;
         // A native selection can publish a newer catalog while this older check is waiting.
         // Account observations remain useful; stale catalog results (including failures) do not.
         const currentModels = (this.modelEpochs.get(id) ?? 0) === modelEpoch;
-        record.view.diagnostic = currentModels ? diagnostic : account.diagnostic;
-        if (currentModels) record.view.models = models;
+        if (currentModels) {
+          record.view.diagnostic = result.diagnostic;
+          record.view.models = result.models;
+        }
         if (record.view.status === 'ready' && !record.view.models.length) {
-          record.view.status = 'failed'; record.view.diagnostic = diagnostic ?? '账号可用，但没有读取到可用模型，请重新检查。';
+          record.view.status = 'failed'; record.view.diagnostic = result.diagnostic ?? '账号可用，但没有读取到可用模型，请重新检查。';
         }
         return this.save(record);
       } catch (error) {
@@ -391,8 +394,27 @@ export class ConnectionApplication {
         record.view.status = 'failed'; record.view.diagnostic = safeDiagnostic(error);
         return this.save(record);
       }
-    })().finally(() => { if (this.checking.get(id) === work) this.checking.delete(id); });
+    })().finally(async () => {
+      if (this.checking.get(id) === work) this.checking.delete(id);
+      await this.releaseAccountProbes();
+    });
     this.checking.set(id, work); return work;
+  }
+
+  private usesTransientAccountRuntime(id: string): boolean {
+    return id === 'codex' || id === 'dsh' || (id === 'qoder' && !!this.options.observeAccount);
+  }
+
+  private async inspectNativeAccount(id: string): Promise<Pick<ConnectionView, 'status' | 'models' | 'diagnostic' | 'account'>> {
+    const runtime = await this.runtime(id, undefined, this.usesTransientAccountRuntime(id));
+    const account = await runtime.inspectAccount();
+    let models: ConnectionView['models'] = [];
+    let diagnostic = account.diagnostic;
+    if (account.status === 'ready') {
+      try { models = await runtime.models(); }
+      catch { diagnostic = '账号可用，但模型目录尚不可读，请重新检查。'; }
+    }
+    return {status: account.status, models, diagnostic, account: {label: account.label, loginMethod: account.loginMethod}};
   }
 
   beginLogin(id: string, expectedRevision: string): ConnectionView {
@@ -416,13 +438,18 @@ export class ConnectionApplication {
       if (['completed', 'cancelled', 'expired', 'failed'].includes(observation.state)) {
         clearTimeout(this.loginTimers.get(id)); this.loginTimers.delete(id); this.loginUrls.delete(id);
       }
-      if (observation.state === 'completed') void this.check(id);
+      if (observation.state === 'completed') void this.check(id).catch(() => {});
     };
     const timer = setTimeout(() => {
-      update({ state: 'expired', diagnostic: '登录等待已超时，请重新发起。' });
-      void this.runtimes.get(id)?.then(runtime => runtime.cancelLogin()).catch(() => {});
+      void this.useProgram(id, async () => {
+        update({ state: 'expired', diagnostic: '登录等待已超时，请重新发起。' });
+        await this.runtimes.get(id)?.then(runtime => runtime.cancelLogin());
+      }).catch(() => {}).finally(() => this.releaseAccountProbes());
     }, 15 * 60_000); timer.unref(); this.loginTimers.set(id, timer);
-    void this.runtime(id).then(runtime => runtime.beginLogin(update)).catch(error => update({ state: 'failed', diagnostic: safeDiagnostic(error) }));
+    const transient = this.usesTransientAccountRuntime(id);
+    void this.useProgram(id, async () => (await this.runtime(id, undefined, transient)).beginLogin(update))
+      .catch(error => update({ state: 'failed', diagnostic: safeDiagnostic(error) }))
+      .finally(() => this.releaseAccountProbes());
     return this.get(id, true);
   }
   loginAttempt(id: string, attemptId: string): ConnectionView {
@@ -434,7 +461,8 @@ export class ConnectionApplication {
     record.view.loginAttempt.state = 'cancelled'; record.view.loginAttempt.updatedAt = this.options.now();
     this.loginUrls.delete(id); clearTimeout(this.loginTimers.get(id)); this.loginTimers.delete(id);
     this.save(record);
-    await this.runtimes.get(id)?.then(runtime => runtime.cancelLogin());
+    await this.useProgram(id, async () => this.runtimes.get(id)?.then(runtime => runtime.cancelLogin()));
+    await this.releaseAccountProbes();
     return this.get(id);
   }
   async disconnect(id: string, revision: string): Promise<ConnectionView> {

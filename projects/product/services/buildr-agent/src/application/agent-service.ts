@@ -3,9 +3,9 @@ import { conversationRuns, unfinishedRun } from '../domain/agent-state.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { ProgramUpgrades } from './program-upgrades.ts';
 import { ProgramUpdates } from './program-updates.ts';
-import {createQoderModelProvider} from '../model-access/providers/qoder.ts';
+import {createQoderModelProvider, readQoderIdentity, requestQoderModel} from '../model-access/providers/qoder.ts';
 import {createQoderCnModelProvider} from '../model-access/providers/qoder-cn.ts';
-import {qoderCnModelAccountId, type QoderProductId} from '../executors/qoder/product.ts';
+import {qoderCnModelAccountId, qoderProduct} from '../executors/qoder/product.ts';
 import { presentConnection } from './connection-presentation.ts';
 import type {ModelProvider} from '../model-access/contracts.ts';
 import {createHash} from 'node:crypto';
@@ -47,20 +47,35 @@ export function createAgentService(options: AgentServiceOptions) {
   const now = () => (options.now?.() ?? new Date()).toISOString();
   let linkedChanged: ((connection:ConnectionView)=>void)|undefined;
   let presentConnectionView: ((view: ConnectionView) => ConnectionView) | undefined;
-  const connections = new ConnectionApplication({ repository, root, executors: options.executors ?? createNativeExecutors(), environment: executorEnvironment(options.environment ?? process.env), nativeAccountConfigRoots: { 'qoder-cn': path.join(root, 'model-access', 'accounts', qoderCnModelAccountId) }, present: view => presentConnectionView?.(view) ?? view, generation, now, changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
+  const connections = new ConnectionApplication({ repository, root, executors: options.executors ?? createNativeExecutors(), environment: executorEnvironment(options.environment ?? process.env), nativeAccountConfigRoots: { 'qoder-cn': path.join(root, 'model-access', 'accounts', qoderCnModelAccountId) }, present: view => presentConnectionView?.(view) ?? view, generation, now, ...(!options.modelProviders ? {observeAccount: (id: string) => id === 'qoder' ? observeQoderConnection() : undefined} : {}), changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
   const programManager = options.programManager ?? new NativeProgramManager(root, executorEnvironment(options.environment ?? process.env));
   const programUpdates = new ProgramUpdates(() => connections.list(), programManager, now, options.programRelease);
   const preparations = new PreparationApplication(connections, programManager, generation, now);
   const owner=(id:string)=>({
     async inspect(){return connections.useProgram(id,async()=>{if(!connections.get(id).enabled)return{status:'not-authenticated' as const};return(await connections.runtime(id, undefined, true)).inspectAccount();});},
     async identity(){return connections.useProgram(id,async()=>{const runtime=await connections.runtime(id, undefined, true);if(!runtime.modelIdentity)throw new Error('native_model_identity_unavailable');return runtime.modelIdentity();});},
-    async request(path:string,init?:RequestInit){return connections.useProgram(id,async()=>{if(!connections.get(id).enabled)return new Response(null,{status:401});const runtime=await connections.runtime(id);if(!runtime.requestModel)throw new Error('native_model_bridge_unavailable');return runtime.requestModel(path,init,['/chat','/codex/responses','/anthropic/v1/messages'].includes(path)?models.accounts.read('native-'+id).identity:undefined);});}
+    async request(path:string,init?:RequestInit){return connections.useProgram(id,async()=>{if(!connections.get(id).enabled)return new Response(null,{status:401});const inference = ['/codex/responses','/anthropic/v1/messages'].includes(path);const runtime=await connections.runtime(id, undefined, !inference);if(!runtime.requestModel)throw new Error('native_model_bridge_unavailable');return runtime.requestModel(path,init,inference?models.accounts.read('native-'+id).identity:undefined);});}
   });
   const dsh=owner('dsh');
   const dshProvider=createDeepSeekModelProvider({ownerFactory:()=>({...dsh,quota:async()=>connections.useProgram('dsh',async()=>{const runtime=await connections.runtime('dsh', undefined, true);return await runtime.modelQuota?.()??{available:false,observedAt:now()};}),beginLogin:async()=>{throw new Error('请在DSH账号中登录。');},cancelLogin:async()=>{},close:async()=>{},request:(url,init)=>dsh.request(new URL(url).pathname,init)})});
   const nativeDsh:ModelProvider={...dshProvider,id:'native-dsh',label:'DeepSeek',connectionId:'dsh',async open(input){const runtime=await dshProvider.open(input);return{protocol:runtime.protocol,inspect:async()=>{const value=await runtime.inspect();return{...value,...(value.status==='ready'?{identity:await dsh.identity()}: {})};},beginLogin:u=>runtime.beginLogin(u),cancelLogin:()=>runtime.cancelLogin(),infer:i=>runtime.infer(i),close:()=>runtime.close()};}};
-  const qoderProvider=(product:QoderProductId)=>createQoderModelProvider(owner(product),product);
-  const linkedProviders=[createCodexModelProvider({owner:owner('codex')}),nativeDsh,qoderProvider('qoder'),createQoderCnModelProvider(programManager)].map(provider=>({...provider,async open(input:Parameters<ModelProvider['open']>[0]){const runtime=await provider.open(input);return{protocol:runtime.protocol,inspect:()=>runtime.inspect(),...(runtime.identity?{identity:()=>runtime.identity!()}:{}),beginLogin:(u:Parameters<typeof runtime.beginLogin>[0])=>runtime.beginLogin(u),cancelLogin:()=>runtime.cancelLogin(),close:()=>runtime.close(),infer:async(i:Parameters<typeof runtime.infer>[0])=>{const current=await runtime.identity?.();const identity=createHash('sha256').update(current??(provider.connectionId?await owner(provider.connectionId).identity():'')).digest('hex');if(!current&&!provider.connectionId)throw new ModelAccessError('model_identity_unavailable','该模型来源尚未提供账号身份。');if(models.accounts.read(provider.id).identity!==identity)throw new ModelAccessError('model_identity_conflict','账号身份已变化，请刷新模型。');return runtime.infer(i);}};}}));
+  const qoderConfig = path.join(root, 'connections', 'qoder', qoderProduct('qoder').configDirectory);
+  const qoder = createQoderModelProvider({
+    async identity() {
+      if (!connections.get('qoder').enabled) throw new Error('qoder_login_required');
+      return 'qoder:' + (await readQoderIdentity(qoderConfig)).userID;
+    },
+    async inspect() {
+      if (!connections.get('qoder').enabled) return { status: 'not-authenticated' };
+      await readQoderIdentity(qoderConfig);
+      return { status: 'ready' };
+    },
+    request(url, init, expectedIdentity) {
+      if (!connections.get('qoder').enabled) return Promise.resolve(new Response(null, {status:401}));
+      return requestQoderModel(qoderConfig, url, init, fetch, url === '/chat' ? models.accounts.read('native-qoder').identity : expectedIdentity);
+    },
+  });
+  const linkedProviders=[createCodexModelProvider({owner:owner('codex')}),nativeDsh,qoder,createQoderCnModelProvider(programManager)].map(provider=>({...provider,async open(input:Parameters<ModelProvider['open']>[0]){const runtime=await provider.open(input);return{protocol:runtime.protocol,inspect:()=>provider.connectionId === 'codex' || provider.connectionId === 'dsh' ? connections.useProgram(provider.connectionId, () => runtime.inspect()) : runtime.inspect(),...(runtime.identity?{identity:()=>runtime.identity!()}:{}),beginLogin:(u:Parameters<typeof runtime.beginLogin>[0])=>runtime.beginLogin(u),cancelLogin:()=>runtime.cancelLogin(),close:()=>runtime.close(),infer:async(i:Parameters<typeof runtime.infer>[0])=>{const current=await runtime.identity?.();const identity=createHash('sha256').update(current??(provider.connectionId?await owner(provider.connectionId).identity():'')).digest('hex');if(!current&&!provider.connectionId)throw new ModelAccessError('model_identity_unavailable','该模型来源尚未提供账号身份。');if(models.accounts.read(provider.id).identity!==identity)throw new ModelAccessError('model_identity_conflict','账号身份已变化，请刷新模型。');return runtime.infer(i);}};}}));
   const models = createModelAccess({root: path.join(root, 'model-access'), diagnostics: executionLog(root,generation), providers: options.modelProviders ?? [...linkedProviders,createCodexModelProvider(),createOpenAIApiModelProvider(),createAnthropicApiModelProvider(),createCustomModelProvider(), createDevinModelProvider(), createDeepSeekModelProvider({ownerFactory: async input => {
     const bound = connections.get('dsh').executable;
     const catalog = await programManager.discover({provider:'dsh',...(bound?{executable:bound,boundExecutable:bound}:{}),signal:new AbortController().signal});
@@ -77,6 +92,24 @@ export function createAgentService(options: AgentServiceOptions) {
   let discovery:Promise<void>|undefined, discoveryDiagnostic:string|undefined;
   let discoveryTimer:ReturnType<typeof setInterval>|undefined;
   let discoverySkippedCold = false;
+  const checkModelAccount = async (id: string, input?: {expectedRevision?: string}) => {
+    try { return await models.accounts.check(id, input); }
+    finally { await connections.releaseAccountProbes(); }
+  };
+  const observeQoderConnection = async (): Promise<Pick<ConnectionView, 'status' | 'models' | 'diagnostic' | 'account'>> => {
+    await models.ensureLinked();
+    const account = await checkModelAccount('native-qoder');
+    return {
+      status: account.status,
+      diagnostic: account.diagnostic,
+      account: {label: account.accountLabel, loginMethod: 'Qoder 账号'},
+      models: account.status === 'ready' ? account.models.map((model, index) => ({
+        id: model.id, label: model.label, isDefault: index === 0, reasoningEfforts: model.reasoningEfforts,
+        defaultReasoningEffort: model.defaultReasoningEffort, contextWindow: model.contextWindow,
+        maxOutputTokens: model.maxOutputTokens, images: model.images, tools: model.tools,
+      })) : [],
+    };
+  };
   const discover=(warmOnly = false):Promise<void>=>{
     if(closed)return Promise.resolve();
     if (discovery) return warmOnly ? discovery : discovery.then(() => discoverySkippedCold ? discover() : undefined);
@@ -88,7 +121,7 @@ export function createAgentService(options: AgentServiceOptions) {
         const accounts = models.accounts.list().accounts.filter(account =>
           account.enabled && (account.connectionId || ['ready', 'failed'].includes(account.status)) &&
           !account.loginAttempt?.state?.match(/^(initializing|waiting-browser|checking)$/));
-        const selected = accounts.filter(account => !warmOnly || !account.connectionId || connections.hasAccountRuntime(account.connectionId));
+        const selected = accounts.filter(account => !warmOnly || !account.connectionId || account.connectionId === 'qoder' || connections.hasAccountRuntime(account.connectionId));
         discoverySkippedCold = selected.length !== accounts.length;
         const results = await Promise.allSettled(selected.map(account => models.accounts.check(account.id)));
         discoveryDiagnostic=results.some(result=>result.status==='rejected'||!!result.value.diagnostic)?'部分供应商核对失败，已保留已有模型列表。':undefined;
@@ -102,7 +135,7 @@ export function createAgentService(options: AgentServiceOptions) {
   const refreshInBackground=()=>{void discover(true).catch(()=>{});};
   const startRefreshing=()=>{
     if(closed||discoveryTimer)return;
-    void discover().catch(()=>{});
+    void discover(true).catch(()=>{});
     discoveryTimer=setInterval(refreshInBackground,60_000);discoveryTimer.unref();
   };
   linkedChanged=connection=>{
@@ -110,9 +143,12 @@ export function createAgentService(options: AgentServiceOptions) {
     // owns its login independently and remains usable by other executors.
     const account = models.accounts.list().accounts.find(account => account.id === 'native-' + connection.id);
     if (account?.connectionId !== connection.id) return;
-    if(!connection.enabled||['not-authenticated','expired'].includes(connection.status)||connection.loginAttempt&&['initializing','waiting-browser'].includes(connection.loginAttempt.state))models.invalidate('native-'+connection.id,{abortActive:false});
+    const directQoder = connection.id === 'qoder' && !options.modelProviders;
+    const loginInProgress = ['initializing', 'waiting-browser'].includes(connection.loginAttempt?.state ?? '');
+    if (!connection.enabled || loginInProgress || (!directQoder && ['not-authenticated', 'expired'].includes(connection.status))) models.invalidate('native-'+connection.id,{abortActive:false});
     // Login completion must not wait for an unrelated source's discovery.
-    if(discoveryTimer&&connection.enabled&&!connection.loginAttempt?.state.match(/^(initializing|waiting-browser|checking)$/))void models.accounts.check('native-'+connection.id).catch(()=>{});
+    if (discoveryTimer && connection.enabled && !directQoder && connection.status === 'ready' &&
+        !connection.loginAttempt?.state.match(/^(initializing|waiting-browser|checking)$/))void checkModelAccount('native-'+connection.id).catch(()=>{});
   };
   const cachedCatalog=()=>{
     const result=models.catalog.list();
@@ -127,7 +163,7 @@ export function createAgentService(options: AgentServiceOptions) {
     const diagnostic=discoveryDiagnostic||(failed?'部分供应商核对失败或登录已失效，请在智能体与模型中查看。':undefined);
     return {...result,hasSnapshot,...(diagnostic?{diagnostic}:{})};
   };
-  const conversations = new ConversationApplication({ backendChange:options.backendChange, conversationControl:options.conversationControl, controlSupersededRun:options.controlSupersededRun, repository, connections, modelAccess: models, events, root, generation, now, host: new HostContext(options), get autoContinueInterrupted() { return options.autoContinueInterrupted; }, generationAlive: options.generationAlive, generationReleased:options.generationReleased });
+  const conversations = new ConversationApplication({ backendChange:options.backendChange, conversationControl:options.conversationControl, controlSupersededRun:options.controlSupersededRun, repository, connections, modelAccess: {...models, accounts: {...models.accounts, check: checkModelAccount}}, events, root, generation, now, host: new HostContext(options), get autoContinueInterrupted() { return options.autoContinueInterrupted; }, generationAlive: options.generationAlive, generationReleased:options.generationReleased });
   const upgrades = new ProgramUpgrades({root,connections,programs:programManager,checks:programUpdates,release:id=>conversations.releaseForProgramUpgrade(id),now});
   const withUpgrades=(snapshot:ReturnType<typeof programUpdates.list>)=>({programs:snapshot.programs.map(program=>({...program,upgrade:(()=>{const job=upgrades.read(program.connectionId);return job&&(job.executable===program.executable||job.installedExecutable===program.executable)?job:undefined;})()}))});
   return {
@@ -181,7 +217,7 @@ export function createAgentService(options: AgentServiceOptions) {
     preserveWaitingQuestions: (scope:string,id:string,requestId:string) => conversations.preserveWaitingQuestions(scope,id,requestId),
     dispatchWaitingHandoff: (scope:string,id:string,requestId:string) => conversations.dispatchWaitingHandoff(scope,id,requestId),
     revokeModel: (id: string) => models.invalidate(id),
-    models: { startRefreshing, generate: models.generate, accounts: {...models.accounts,list:async(input:{refresh?:boolean;includeDisabled?:boolean}={})=>{if(input.refresh===true)await discover();return models.accounts.list(input);}}, catalog: {list:async(input:{refresh?:boolean}={})=>{if(input.refresh===true)await discover();return cachedCatalog();}} },
+    models: { startRefreshing, generate: models.generate, accounts: {...models.accounts,check:checkModelAccount,list:async(input:{refresh?:boolean;includeDisabled?:boolean}={})=>{if(input.refresh===true)await discover();return models.accounts.list(input);}}, catalog: {list:async(input:{refresh?:boolean}={})=>{if(input.refresh===true)await discover();return cachedCatalog();}} },
     connections: {
       list: () => ({ connections: connections.list() }),
       programUpdates: () => withUpgrades(programUpdates.list()),

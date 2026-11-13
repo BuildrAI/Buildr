@@ -40,7 +40,7 @@ export async function requestQoderModel(config: string, path: string, init: Requ
 export interface QoderModelOwner {
   inspect(): Promise<AccountObservation>;
   identity(): Promise<string>;
-  request(path:string,init?:RequestInit):Promise<Response>;
+  request(path:string,init?:RequestInit,expectedIdentity?:string):Promise<Response>;
 }
 /** Verify official login without starting another SDK query or invoking a model. */
 export async function inspectQoderLogin(config: string, productId:QoderProductId='qoder'): Promise<AccountObservation> {
@@ -144,7 +144,8 @@ export function createQoderModelProvider(owner:QoderModelOwner,productId:QoderPr
         identity=await owner.identity();
         // Authenticated endpoints establish current login. Avoid launching an
         // additional CLI just to reread the same local account.
-        const [response,quota]=await Promise.all([owner.request('/models',{signal:AbortSignal.timeout(15000)}),observeQoderQuota((path,init)=>owner.request(path,init),product.label)]);
+        const expectedIdentity = createHash('sha256').update(identity).digest('hex');
+        const [response,quota]=await Promise.all([owner.request('/models',{signal:AbortSignal.timeout(15000)},expectedIdentity),observeQoderQuota((path,init)=>owner.request(path,init,expectedIdentity),product.label)]);
         if(!response.ok)throw await qoderResponseFailure(response);
         const data=record(await response.json());
         const entries=qoderCatalogEntries(data);
@@ -161,6 +162,15 @@ export function createQoderModelProvider(owner:QoderModelOwner,productId:QoderPr
         const exhaustedTeam=quota?.available&&quota.planLabel==='Teams'&&quota.remainingPercent===0;const teamQuotaDiagnostic=`${product.label} 团队账号额度已用尽，无法继续使用，请更换有额度的账号后重新登录。`;
         return{status:models.size?'ready':'failed',label:product.label,identity,models:[...models.values()].map(v=>v.offering),quota,...(exhaustedTeam?{diagnostic:teamQuotaDiagnostic}:{})};
       } catch(error) {
+        if (identity) {
+          const currentIdentity = await owner.identity().catch(() => undefined);
+          if (currentIdentity !== identity) {
+            models.clear();
+            return currentIdentity
+              ? {status:'failed',incomplete:true,identity:currentIdentity,models:[],diagnostic:`${product.label} 账号已变化，请重新刷新。`}
+              : {status:'not-authenticated',models:[],diagnostic:`请先登录 ${product.label} 账号。`};
+          }
+        }
         const failure=error instanceof ModelAccessError&&error.code==='qoder_platform_login_expired'?{status:'expired' as const,diagnostic:error.message}:error instanceof ModelAccessError&&error.code==='model_quota_exhausted'?{status:'failed' as const,diagnostic:`${product.label} 当前账号额度不足；团队账号额度用尽后无法继续使用，请更换有额度的账号后重新登录。`}:qoderAccountFailure(error,false,product.label);
         return{...failure,incomplete:failure.status==='failed',identity,models:[]};
       }
