@@ -12,3 +12,6 @@ export function setConversationTaskLinks(view: ConversationView, links: Conversa
 export function sameTaskLink(left:ConversationTaskLink,right:ConversationTaskLink):boolean {
   return left.workspaceId===right.workspaceId&&left.taskId===right.taskId;
 }
+export function sameTaskLinks(left:ConversationTaskLink[],right:ConversationTaskLink[]):boolean {
+  return left.length===right.length&&left.every((link,index)=>sameTaskLink(link,right[index]!));
+}

@@ -87,7 +87,7 @@ test('agent task adoption appends through the packaged bound control command wit
   const chat=await service.conversations.create('scope',{taskId:'task-first'});
   const identity={instanceId:randomUUID(),generation:randomUUID(),pid:process.pid,profileId:'task-link',dataRoot:root};
   const binding={dataRoot:root,profileId:identity.profileId,sourceId:'local',scope:'scope',conversationId:chat.id};
-  const calls:string[]=[];let race=false;
+  const calls:string[]=[];let race=false,conflicts=0;
   const channel=await listen(async(req,res)=>{
     authorize(req,token);
     if(req.url==='/identity'){json(res,200,identity);return;}
@@ -96,6 +96,7 @@ test('agent task adoption appends through the packaged bound control command wit
     if(input.operation==='conversations.read'){json(res,200,service.conversations.read(binding.scope,chat.id));return;}
     assert.equal(input.operation,'conversations.update','association never submits, stops or observes an execution');
     if(race){race=false;await service.conversations.update(binding.scope,chat.id,{expectedRevision:input.args[2].expectedRevision,title:'concurrent rename'});}
+    if(conflicts>0){conflicts--;await service.conversations.update(binding.scope,chat.id,{expectedRevision:input.args[2].expectedRevision,title:'streaming progress'});}
     json(res,200,await service.conversations.update(binding.scope,chat.id,input.args[2]));
   });
   try {
@@ -127,6 +128,11 @@ test('agent task adoption appends through the packaged bound control command wit
     assert.deepEqual(current.taskLinks.at(-1),{workspaceId:'remote-scope',taskId:'task-first'});
     const remoteRevision=current.revision;
     await invoke('link-task',{taskId:'task-first',workspaceId:'remote-scope'});assert.equal((await read()).revision,remoteRevision);
+    tasks.add('task-fourth');conflicts=1;
+    current=JSON.parse((await invoke('link-task',{taskId:'task-fourth'})).stdout);
+    assert.deepEqual(current.taskIds,['task-first','task-second','task-third','task-fourth']);
+    assert.deepEqual(current.taskLinks.at(-1),{workspaceId:'scope',taskId:'task-fourth'});
+    assert.equal(service.conversations.read(binding.scope,chat.id).title,'streaming progress','the first attempt lost the revision race and the retry succeeded');
     const before=calls.length;
     for(const input of [{workspaceId:'',taskId:'task-first'},{},{expectedRevision:current.revision,taskIds:[]},{expectedRevision:current.revision,taskId:'task-second',title:'not allowed'}])await assert.rejects(invoke('link-task',input));
     assert.equal(calls.length,before,'invalid association input never reaches the application');

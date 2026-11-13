@@ -5,7 +5,7 @@ import { singleParticipation, summarizeParticipation } from '../domain/participa
 import type { ParticipationInput, ParticipationSummaryInput, ParticipationMatch } from '../participation-contracts.ts';
 import { NativeObservationError } from '../domain/error-diagnostic.ts';
 import { pendingConversationSummary } from '../domain/pending-summary.ts';
-import {conversationTaskLinks,setConversationTaskLinks,sameTaskLink} from '../domain/conversation-task-links.ts';
+import {conversationTaskLinks,setConversationTaskLinks,sameTaskLink,sameTaskLinks} from '../domain/conversation-task-links.ts';
 import type {ConversationTaskLink} from '../contracts.ts';
 import { presentedFilesForEntry, normalizePresentedFiles } from '../domain/presented-files.ts';
 import { modelLeaseIdentity } from '../model-access/model-preferences.ts';
@@ -778,17 +778,30 @@ export class ConversationApplication {
     // metadata whose manual value takes precedence; other fields keep the check.
     const titleOnly=input.title!==undefined&&input.hidden===undefined&&input.taskId===undefined&&input.taskIds===undefined&&input.taskLinks===undefined;
     if(!titleOnly)expected(record.view.revision, input.expectedRevision);
-    if (input.title !== undefined) { record.view.title = nonempty(input.title, '对话标题', 160); record.titleOrigin = 'manual'; record.view.titleState={status:'manual'}; }
     if([input.taskId,input.taskIds,input.taskLinks].filter(value=>value!==undefined).length>1)fail('agent_input_invalid','不能同时提交多种任务关联字段。');
+    const title=input.title===undefined?undefined:nonempty(input.title, '对话标题', 160);
+    if(input.hidden!==undefined&&typeof input.hidden!=='boolean')fail('agent_input_invalid','隐藏状态无效。');
+    let previous:ConversationTaskLink[]|undefined,links:ConversationTaskLink[]|undefined;
     if(input.taskLinks!==undefined||input.taskIds!==undefined||input.taskId!==undefined){
-      const previous=conversationTaskLinks(record.view);
+      previous=conversationTaskLinks(record.view);
       const local=input.taskIds??(input.taskId===null?[]:[input.taskId!]);
       if(input.taskLinks===undefined&&(!Array.isArray(local)||local.length>100))fail('agent_input_invalid','任务关联必须为不超过100项的数组。');
       const values=input.taskLinks??[...previous.filter(link=>link.workspaceId!==workspaceId),...local.map(taskId=>({workspaceId,taskId}))];
-      setConversationTaskLinks(record.view,await this.verifyTaskLinks(workspaceId,values,previous));
+      // Host verification awaits, and streaming saves keep changing the revision
+      // meanwhile. Apply the verified links to a freshly read record without
+      // yielding, so this local metadata write is not rejected by the progress of
+      // its own execution; a concurrent link change is still a real conflict.
+      links=await this.verifyTaskLinks(workspaceId,values,previous);
     }
-    if (input.hidden !== undefined) { if (typeof input.hidden !== 'boolean') fail('agent_input_invalid', '隐藏状态无效。'); record.view.hidden = input.hidden; }
-    this.save(record); return this.view(record);
+    for(let attempt=0;;attempt++){
+      const current=this.load(workspaceId,id);
+      if(links&&!sameTaskLinks(conversationTaskLinks(current.view),previous!))fail('agent_revision_conflict','对话已变化，请重新读取后判断关联。',409);
+      if(title!==undefined){current.view.title=title;current.titleOrigin='manual';current.view.titleState={status:'manual'};}
+      if(links)setConversationTaskLinks(current.view,links);
+      if(input.hidden!==undefined)current.view.hidden=input.hidden;
+      try{this.save(current);return this.view(current);}
+      catch(error){if(attempt>=6||!(error instanceof AgentServiceError)||error.code!=='agent_revision_conflict')throw error;}
+    }
   }
   private assertAccepting(record: StoredConversation): void {
     if (this.closing) fail('agent_service_closing', '智能体服务正在退出。', 503);

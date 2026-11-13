@@ -3571,6 +3571,36 @@ test('many-to-many task associations persist, filter both directions and reject 
   } finally {await f.close();}
 });
 
+test('task link writes survive a save that lands during host verification',async()=>{
+  const native=fake(),f=fixture([native.executor],{taskIds:['task-one','task-two']});
+  try{
+    await connected(f.service,'local');
+    const created=await f.service.conversations.create('workspace-one',{taskId:'task-one'});
+    const before=await f.service.conversations.read('workspace-one',created.id);
+    const assertTask=f.options.assertTask!;let saved=false;
+    // Streaming execution keeps saving the conversation while the task host
+    // verifies the new link; the local link write must not be rejected by it.
+    f.options.assertTask=async(id,taskId)=>{if(!saved){saved=true;await f.service.conversations.update('workspace-one',created.id,{expectedRevision:before.revision,title:'streaming progress'});}await assertTask(id,taskId);};
+    const linked=await f.service.conversations.update('workspace-one',created.id,{expectedRevision:before.revision,taskIds:['task-one','task-two']});
+    assert.deepEqual(linked.taskIds,['task-one','task-two']);
+    const savedView=f.service.conversations.read('workspace-one',created.id);
+    assert.deepEqual(savedView.taskIds,['task-one','task-two']);assert.equal(savedView.title,'streaming progress');
+  }finally{await f.close();}
+});
+
+test('a concurrent task link change during verification still conflicts',async()=>{
+  const native=fake(),f=fixture([native.executor],{taskIds:['task-one','task-two']});
+  try{
+    await connected(f.service,'local');
+    const created=await f.service.conversations.create('workspace-one',{taskId:'task-one'});
+    let injected=false;
+    f.options.assertTask=async()=>{if(injected)return;injected=true;await f.service.conversations.update('workspace-one',created.id,{expectedRevision:created.revision,taskIds:['task-two']});};
+    const current=await f.service.conversations.read('workspace-one',created.id);
+    await assert.rejects(f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskIds:['task-one','task-two']}),{code:'agent_revision_conflict'});
+    assert.deepEqual(f.service.conversations.read('workspace-one',created.id).taskIds,['task-two']);
+  }finally{await f.close();}
+});
+
 test('cross-workspace task links keep composite identity, legacy writes and scoped reverse pagination',async()=>{
   const native=fake(),f=fixture([native.executor],{taskIds:['task-one','task-two']});
   try{

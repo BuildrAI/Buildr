@@ -8,6 +8,7 @@ import { request } from './transport.ts';
 import {validateOperation} from './operations.ts';
 
 interface Binding { dataRoot:string; profileId:string; sourceId:string; scope:string; conversationId:string }
+const LINK_TASK_ATTEMPTS = 12;
 const quote = (value:string) => "'" + value.replaceAll("'", "'\\''") + "'";
 
 /** No credentials or implicit shutdown/restart capability crosses into a prompt. */
@@ -49,10 +50,22 @@ export async function controlConversation(binding:Binding,action:string,input?:u
   }
   let result: any;
   if (association) {
-    const current=await invoke('conversations.read');
-    if (association.expectedRevision!==undefined && current.revision!==association.expectedRevision) throw new AgentServiceError('agent_revision_conflict','对话已变化，请重新读取后判断关联。',409);
-    const links=conversationTaskLinks(current),link={workspaceId:association.workspaceId??binding.scope,taskId:association.taskId};
-    result=links.some(value=>sameTaskLink(value,link))?current:await invoke('conversations.update',{expectedRevision:current.revision,taskLinks:[...links,link]});
+    const link={workspaceId:association.workspaceId??binding.scope,taskId:association.taskId};
+    const append=async(current:any)=>conversationTaskLinks(current).some(value=>sameTaskLink(value,link))?current:await invoke('conversations.update',{expectedRevision:current.revision,taskLinks:[...conversationTaskLinks(current),link]});
+    if(association.expectedRevision!==undefined){
+      // An explicitly pinned observation keeps its strict meaning.
+      const current=await invoke('conversations.read');
+      if(current.revision!==association.expectedRevision)throw new AgentServiceError('agent_revision_conflict','对话已变化，请重新读取后判断关联。',409);
+      result=await append(current);
+    }else{
+      // Streaming progress keeps changing the revision between this read and the
+      // update; re-read and append again within a bounded budget instead of
+      // reporting a conflict the caller cannot resolve.
+      for(let attempt=0;;attempt++){
+        try{result=await append(await invoke('conversations.read'));break;}
+        catch(error){if(attempt>=LINK_TASK_ATTEMPTS-1||!(error instanceof AgentServiceError)||error.code!=='agent_revision_conflict')throw error;await new Promise(resolve=>setTimeout(resolve,Math.min(5*(attempt+1),40)));}
+      }
+    }
   } else {
     const operation=action==='stop-all'?'conversations.stopAll':action==='stop'?'conversations.stop':action==='observe'?(input?'conversations.observeRun':'conversations.observe'):'conversations.read';
     if(action==='stop-all')validateOperation(operation,[binding.scope,binding.conversationId,input]);
