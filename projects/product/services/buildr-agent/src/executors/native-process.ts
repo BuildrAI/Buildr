@@ -50,14 +50,16 @@ export async function bounded<T>(promise: Promise<T>, timeoutMs: number, code = 
   finally { clearTimeout(timer); }
 }
 const childDiagnostics=new WeakMap<ChildProcessWithoutNullStreams,ExecutionDiagnosticSink>();
-export async function closeOwnedProcess(child: ChildProcessWithoutNullStreams, timeoutMs = 2500): Promise<void> {
+export async function closeOwnedProcess(child: ChildProcessWithoutNullStreams, timeoutMs = 2500, shutdown?: { termGraceMs: number }): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return;
   const log=childDiagnostics.get(child);log?.({event:'native-close-request',reason:'owner-dispose'});
   const exited = new Promise<void>(resolve => child.once('exit', () => resolve()));
   child.stdin.end();
-  try { await bounded(exited, timeoutMs); return; } catch { /* Own exact live ChildProcess, never a recovered PID. */ }
-  log?.({event:'native-signal',signal:'SIGTERM',reason:'close-timeout'});child.kill('SIGTERM');
-  try { await bounded(exited, timeoutMs); return; } catch { log?.({event:'native-signal',signal:'SIGKILL',reason:'close-timeout'});child.kill('SIGKILL'); }
+  if (!shutdown) {
+    try { await bounded(exited, timeoutMs); return; } catch { /* Own exact live ChildProcess, never a recovered PID. */ }
+  }
+  log?.({event:'native-signal',signal:'SIGTERM',reason:shutdown ? 'owner-dispose' : 'close-timeout'});child.kill('SIGTERM');
+  try { await bounded(exited, shutdown?.termGraceMs ?? timeoutMs); return; } catch { log?.({event:'native-signal',signal:'SIGKILL',reason:'close-timeout'});child.kill('SIGKILL'); }
   await bounded(exited, timeoutMs);
 }
 export interface RpcMessage { id?: string | number; method?: string; params?: any; result?: any; error?: { code?: number; message?: string }; }

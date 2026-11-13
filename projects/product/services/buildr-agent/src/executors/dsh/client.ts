@@ -22,10 +22,12 @@ export async function launchDshHost(executable: string, env: NativeEnvironment, 
     child.once('error', () => reject(new Error('dsh_host_unavailable')));
     child.once('exit', () => reject(new Error('dsh_host_closed')));
   });
-  let client: DshClient | undefined; let abortedClose: Promise<void> | undefined;
+  let client: DshClient | undefined;
+  let closingHost: Promise<void> | undefined;
+  // The Web Host starts disposal on SIGTERM and has its own five-second deadline.
+  const closeHost = () => closingHost ??= closeOwnedProcess(child, 1000, { termGraceMs: 6000 });
   const abort = () => {
-    abortedClose ??= closeOwnedProcess(child, 1000);
-    void abortedClose.catch(() => {});
+    void closeHost().catch(() => {});
     void client?.close().catch(() => {});
   };
   const close = async () => {
@@ -35,7 +37,7 @@ export async function launchDshHost(executable: string, env: NativeEnvironment, 
       diagnostics?.({ event: 'native-client-close-deferred', code: diagnosticCode(error) });
     } finally {
       // A stuck SDK socket must never keep the owned DSH web process alive.
-      await (abortedClose ?? closeOwnedProcess(child, 1000));
+      await closeHost();
     }
   };
   signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) abort();

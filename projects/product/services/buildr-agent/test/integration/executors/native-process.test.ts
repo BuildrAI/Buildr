@@ -1,10 +1,11 @@
+import { once } from 'node:events';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm, rename, realpath, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { OwnedControlResource, NativeRpc, bindingFingerprint, nativeBinding, isolatedEnvironment, opaqueReference, parseReference } from '../../../build/executors/native-process.js';
+import { OwnedControlResource, NativeRpc, closeOwnedProcess, bindingFingerprint, nativeBinding, isolatedEnvironment, opaqueReference, parseReference } from '../../../build/executors/native-process.js';
 import { executorEnvironment as executorEnvForTest } from '../../../build/application/executor-environment.js';
 import { toolEnvironment } from '../../../build/executors/tool-environment.js';
 
@@ -242,4 +243,20 @@ test('native lifecycle retains exit signal, controlled stop and exact execution 
   assert.ok(!text.includes('private-secret')&&!text.includes('private-binding')&&!text.includes('setInterval'));
   assert.ok(rows.every(row=>row.time&&row.generation==='test-generation'&&row.childPid===control.child.pid));
  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('owned host gets its full SIGTERM disposal window before escalation', { skip: process.platform === 'win32', timeout: 5000 }, async () => {
+  const events: Array<{ event: string; signal?: string | null }> = [];
+  const childProgram = "process.on('SIGTERM', () => setTimeout(() => process.exit(0), 100)); setInterval(() => {}, 1000); console.log('ready');";
+  const control = new OwnedControlResource(process.execPath, ['-e', childProgram], {
+    cwd: process.cwd(), env: process.env, diagnostics: event => events.push(event),
+  });
+  try {
+    await once(control.child.stdout, 'data');
+    await closeOwnedProcess(control.child, 20, { termGraceMs: 1000 });
+    assert.equal(control.child.exitCode, 0);
+    assert.deepEqual(events.filter(event => event.event === 'native-signal').map(event => event.signal), ['SIGTERM']);
+  } finally {
+    await closeOwnedProcess(control.child, 20);
+  }
 });
