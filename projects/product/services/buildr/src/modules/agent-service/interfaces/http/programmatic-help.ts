@@ -40,7 +40,7 @@ GET /conversations/{conversationId}或POST /observe（正文{}）轮询。Web和
 GET对话与/entries支持before、limit分页；较早消息通过nextBefore续读。entries包含正文、工具状态和presentedFiles等实际提供的成果引用；最终总结不等于测试、Git交付等外部事实已成立。taskLinks/taskIds指向同一工作空间中的任务记录；不复制为另一套任务事实。
 列表GET /workspaces/{workspaceId}/conversations支持taskId、cursor、limit、hidden、query、active、attention、fields。active=true只返回活动中的对话：有待决请求、仍有执行中或未释放的工作，或产生了尚未查看的新结果；已完成但未查看的对话属于active，不属于attention。attention=true只返回待处理对话：存在待决问题/审批，或当前执行状态为failed/unknown；单是已完成未查看不算attention。关闭已释放的unknown等用户确认善后后，不再因历史未知继续active。fields=summary仅返回id、title、runStatus、updatedAt、active、pendingDecisionCount；activityCounts始终返回，limit只限制返回页，activityCounts.active与active=true的总数一致、activityCounts.attention与attention=true的总数一致。
 停止整个对话使用POST /stop-all，传expectedRevision和稳定clientRequestId，覆盖受理时全部在途轮次、追加队列与待发送输入；超时先读stopRequest核对原请求，不以新身份重发。精确停止某轮或工具使用POST /stop，传expectedRevision、runId、participantId、generation（可选toolId），全部来自刚观察的准确原执行。不要按最新对话猜测要停哪个run。
-问题回复用POST /requests/{requestId}/reply，正文同样含expectedRevision、runId、participantId、generation和answer；结构化问题使用原question/option标识，不猜位置。服务继续校验原卡片与执行代次，旧卡片返回冲突。
+问题回复用POST /requests/{requestId}/reply，正文同样含expectedRevision、runId、participantId、generation和answer；结构化问题使用原question/option标识，不猜位置。服务继续校验原卡片与执行代次，旧卡片返回冲突。GET对话与POST /observe返回的requests[]每项都含description，说明始终存在，卡片没有说明时为空字符串；问题卡另含全部questions与options，审批卡另含全部options。
 本期不提供程序实时事件流；除回推外仍按轮询观察，通常2秒即可，按响应节流。回推与事件补读见下节，不改变恢复原标识的原则。
 
 ## 事件回推
@@ -59,12 +59,12 @@ run.progress 在新 assistant 中间消息出现时产生。payload 的 progress
 ~~~json
 {"type":"run.progress","runId":"...","runStatus":"running","progress":{"text":"已完成日志定位，正在复现问题……","elapsedMs":420000,"completedToolCount":3}}
 ~~~
-run.stalled 仅在 starting/running/tools-active 状态且连续 20 分钟没有新消息、工具调用或状态变化时推送一次；unknown、waiting-question、waiting-approval 和终态不产生该事件。payload 的 stalled 含 idleMs 与 lastActivityAt，并与其他事件一样含 scopes 与 allowFullAccess。同一段空闲期只推送一次，去重记录持久化，服务重启不会重报；恢复产生新记录后重置计时，再连续空闲 20 分钟才会再次推送。示例：
+run.stalled 仅在当前对话仍包含该 run、其状态为 starting/running/tools-active，且连续 20 分钟没有新消息、工具调用或状态变化时推送一次；unknown、waiting-question、waiting-approval、终态以及已不在当前对话或 retainedRuns 中的轮次都不产生该事件。缺少可用的 lastActivityAt 时不触发，不按 1970-01-01 计算。payload 的 stalled 含 idleMs 与 lastActivityAt，并与其他事件一样含 scopes 与 allowFullAccess。同一段空闲期只推送一次，去重记录持久化，服务重启不会重报；恢复产生新记录后重置计时，再连续空闲 20 分钟才会再次推送。示例：
 ~~~json
 {"type":"run.stalled","runId":"...","runStatus":"running","stalled":{"idleMs":1200000,"lastActivityAt":"2026-11-13T02:40:00.000Z"},"summary":"执行已连续 20 分钟没有新记录"}
 ~~~
 速率按凭据计，默认 180/小时、20/分钟，可在界面调整；run.progress 与 run.stalled 同样计入。限额内立即推送；超限按同对话同类型合并（保留最新状态与 mergedCount），配额恢复后补发；decision.requested 优先且永不合并。投递为 HTTP POST JSON、每请求一条事件、不跟随重定向、仅 2xx 成功；失败按 10/30/90/270/810 秒退避，最多 5 次后置为 undelivered。响应丢失可能重复到达同一 eventId。
-回推总开关停用（state=disabled）只停止对外投递，不停止事件记录：已开启的上述事件仍写入同一持久事件流，可用 events 补查；停用期间已记录的事件不会在重新启用后重放。中间进度或停滞提醒单独关闭时，不生成对应事件。未配置回推的凭据不产生事件。
+回推总开关停用（state=disabled）只停止对外投递，不停止事件记录：已开启的上述事件仍写入同一持久事件流，可用 events 补查；停用期间已记录的事件不会在重新启用后重放。中间进度或停滞提醒单独关闭时，不生成对应事件。未配置回推的凭据不产生事件。events 补读与实时投递共用同一持久事件正文；已记录或已送达的历史事件不会因升级、激活或重启被补写 finalReply、stalled、scopes 等字段，回读始终是首次记录时的原正文。
 事件持久保留7天、sequence跨重启连续。补读 GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n}（read，limit 默认 50、最大 200），按 sequence 升序返回含 undelivered 的事件；after 必须是上一页 nextCursor 返回的非负整数序号，不是合法游标时返回 400 programmatic_input_invalid。nextCursor 始终返回本页最后一条事件的 sequence（字符串）；本页为空时返回请求中的 after；未传 after 且没有任何事件时为 null。hasMore 表示以 after=nextCursor 再次读取时是否还有更多事件。轮询方应保存 nextCursor，下次用 after=nextCursor 补查，而不是把 null 当作继续游标。超出保留期被丢弃时发出 events_dropped。测试环境、候选实例与自动化测试一律不得向真实接收地址推送，只用本地假接收端。
 最小闭环：配置回推→收到decision.requested→按detailUrl读对话取得准确卡片身份→由人回答或审批；执行结束后用单步续聊POST /messages发起下一轮。
 

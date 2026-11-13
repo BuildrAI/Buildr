@@ -13,7 +13,7 @@ const NOW = '2026-11-01T00:00:00.000Z';
 const run = (id: string, status: RunStatus, extra: Partial<RunView> = {}): RunView =>
   ({ id, participantId: 'p', provider: 'codex', generation: 'g', status, accepted: true, tools: [], startedAt: NOW, updatedAt: NOW, ...extra });
 const approval = (conversationId: string, runId: string): PendingRequestView =>
-  ({ id: 'permit-one', kind: 'approval', title: 'Write a file?', options: [{ id: 'allow-once', label: 'Allow once' }, { id: 'deny', label: 'Deny' }], conversationId, workspaceId: 'workspace-one', participantId: 'p', runId, generation: 'g' });
+  ({ id: 'permit-one', kind: 'approval', title: 'Write a file?', description: '', options: [{ id: 'allow-once', label: 'Allow once' }, { id: 'deny', label: 'Deny' }], conversationId, workspaceId: 'workspace-one', participantId: 'p', runId, generation: 'g' });
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-list-'));

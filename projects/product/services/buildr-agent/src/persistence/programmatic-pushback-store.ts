@@ -209,13 +209,10 @@ export class ProgrammaticPushbackStore {
   markUndelivered(credentialId: string): void {
     this.db.prepare("UPDATE events SET deliveryState='undelivered',owner=NULL,claim=NULL,lease=0 WHERE credentialId=? AND deliveryState='pending'").run(credentialId);
   }
-  /** Pending and given-up events that a newer build may still repair before any future delivery. */
-  listRepairableEvents(): Array<{ sequence: number; credentialId: string; workspaceId: string; conversationId: string; type: string; body: string; deliveryState: 'pending' | 'undelivered' }> {
+  /** Only events still queued for delivery may be validated; stored bodies are never rewritten. */
+  listPendingEvents(): Array<{ sequence: number; credentialId: string; workspaceId: string; conversationId: string; type: string; body: string }> {
     const db = this.existing(); if (!db) return [];
-    return db.prepare("SELECT sequence,credentialId,workspaceId,conversationId,type,body,deliveryState FROM events WHERE deliveryState IN ('pending','undelivered') ORDER BY sequence").all() as Array<{ sequence: number; credentialId: string; workspaceId: string; conversationId: string; type: string; body: string; deliveryState: 'pending' | 'undelivered' }>;
-  }
-  replaceEventBody(sequence: number, body: string): void {
-    this.db.prepare('UPDATE events SET body=? WHERE sequence=?').run(body, sequence);
+    return db.prepare("SELECT sequence,credentialId,workspaceId,conversationId,type,body FROM events WHERE deliveryState='pending' ORDER BY sequence").all() as Array<{ sequence: number; credentialId: string; workspaceId: string; conversationId: string; type: string; body: string }>;
   }
   /** Retire one event without delivering it again, including a held event. */
   retireEvent(sequence: number): void {

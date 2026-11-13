@@ -22,7 +22,7 @@ import {createDeepSeekAccountOwner} from '../executors/dsh/model-source-owner.ts
 import path from 'node:path';
 import process from 'node:process';
 import { randomUUID } from 'node:crypto';
-import type { AgentServiceOptions, ConnectionView, PreparationInput, ProgramUpgradeInput, SendDraft } from '../contracts.ts';
+import type { AgentServiceOptions, ConnectionView, PreparationInput, ProgramUpgradeInput, RunView, SendDraft } from '../contracts.ts';
 import { ConversationRepository } from '../persistence/conversation-repository.ts';
 import { NativeContentResolver } from './native-content-resolver.ts';
 import { ConnectionApplication } from '../application/connection-application.ts';
@@ -42,7 +42,8 @@ export function createAgentService(options: AgentServiceOptions) {
   const resolver=new NativeContentResolver(root,id=>repository.readConversation(id));
   const repository:ConversationRepository = new ConversationRepository(root,(record,entry)=>resolver.tool(record,entry),reference=>readNativeTool(root,reference));
   repository.startReadModels();
-  const pushback = new ProgrammaticPushback({ root: path.join(root, 'programmatic-pushback'), ...(options.pushbackTransport ? { transport: options.pushbackTransport } : {}), ...(options.pushbackNow ? { now: options.pushbackNow } : {}), readConversation: (_workspaceId, conversationId) => repository.readConversation(conversationId)?.view });
+  let pushbackRunLiveness: ((workspaceId: string, conversationId: string) => { runs: RunView[] } | undefined) | undefined;
+  const pushback = new ProgrammaticPushback({ root: path.join(root, 'programmatic-pushback'), ...(options.pushbackTransport ? { transport: options.pushbackTransport } : {}), ...(options.pushbackNow ? { now: options.pushbackNow } : {}), readRunLiveness: (workspaceId, conversationId) => pushbackRunLiveness?.(workspaceId, conversationId) });
   const events = new ConversationEvents(generation, pushback);
   const now = () => (options.now?.() ?? new Date()).toISOString();
   let linkedChanged: ((connection:ConnectionView)=>void)|undefined;
@@ -164,6 +165,7 @@ export function createAgentService(options: AgentServiceOptions) {
     return {...result,hasSnapshot,...(diagnostic?{diagnostic}:{})};
   };
   const conversations = new ConversationApplication({ backendChange:options.backendChange, conversationControl:options.conversationControl, controlSupersededRun:options.controlSupersededRun, repository, connections, modelAccess: {...models, accounts: {...models.accounts, check: checkModelAccount}}, events, root, generation, now, host: new HostContext(options), get autoContinueInterrupted() { return options.autoContinueInterrupted; }, generationAlive: options.generationAlive, generationReleased:options.generationReleased });
+  pushbackRunLiveness = (workspaceId, conversationId) => conversations.readRunLiveness(workspaceId, conversationId);
   const upgrades = new ProgramUpgrades({root,connections,programs:programManager,checks:programUpdates,release:id=>conversations.releaseForProgramUpgrade(id),now});
   const withUpgrades=(snapshot:ReturnType<typeof programUpdates.list>)=>({programs:snapshot.programs.map(program=>({...program,upgrade:(()=>{const job=upgrades.read(program.connectionId);return job&&(job.executable===program.executable||job.installedExecutable===program.executable)?job:undefined;})()}))});
   return {

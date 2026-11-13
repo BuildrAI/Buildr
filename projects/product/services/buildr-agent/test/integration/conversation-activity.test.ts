@@ -29,7 +29,7 @@ test('nonblocking pending decisions survive summary compatibility and count alon
  const repo=fixture(t),pending=record('pending'),other=record('other');
  message(pending,'user','question context');message(other,'user','newer conversation');
  pending.view.run={id:'r',participantId:'p',provider:'codex',generation:'g',status:'running',accepted:true,tools:[],model:'m',modelAccountId:'account',startedAt:pending.view.updatedAt,updatedAt:pending.view.updatedAt};
- pending.view.requests=[{id:'q',kind:'question',blocking:false,title:'private question',questions:[],conversationId:pending.view.id,workspaceId:'w1',runId:'r',participantId:'p',generation:'g'}];
+ pending.view.requests=[{id:'q',kind:'question',blocking:false,title:'private question',description:'',questions:[],conversationId:pending.view.id,workspaceId:'w1',runId:'r',participantId:'p',generation:'g'}];
  repo.saveConversation(pending);repo.saveConversation(other);repo.markSeen('w1',pending.view.id,0);
  const check=()=>{
   const page=repo.querySummaries(['w1'],{limit:1});
@@ -154,7 +154,7 @@ test('a requested historical stop without in-flight work no longer keeps a compl
   assert.equal(conversationActive(view,1,1),true);
   view.retainedRuns[0].executionState='unknown';
   assert.equal(conversationActive(view,2,1),true);
-  view.requests=[{id:'q',kind:'question',blocking:false,title:'question',questions:[],conversationId:view.id,workspaceId:view.workspaceId,runId:'old',participantId:'p',generation:'g0'}];
+  view.requests=[{id:'q',kind:'question',blocking:false,title:'question',description:'',questions:[],conversationId:view.id,workspaceId:view.workspaceId,runId:'old',participantId:'p',generation:'g0'}];
   assert.equal(conversationActive(view,1,1),true);
 });
 
@@ -377,7 +377,7 @@ test('activity counts are exclusive, full-scope and filter before pagination wit
       message(r,'input','work '+i);
       r.view.hidden=true;
       r.view.run={id:'run-'+i,participantId:'p',provider:'codex',generation:'g',status,accepted:true,tools:[],model:'m',startedAt:r.view.updatedAt,updatedAt:r.view.updatedAt};
-      if(status==='waiting-approval'||status==='waiting-question')r.view.requests=[{id:'permit-'+i,kind:'approval',title:'Approve',options:[{id:'allow',label:'Allow'}],conversationId:r.view.id,workspaceId:r.view.workspaceId,participantId:'p',runId:'run-'+i,generation:'g'}];
+      if(status==='waiting-approval'||status==='waiting-question')r.view.requests=[{id:'permit-'+i,kind:'approval',title:'Approve',description:'',options:[{id:'allow',label:'Allow'}],conversationId:r.view.id,workspaceId:r.view.workspaceId,participantId:'p',runId:'run-'+i,generation:'g'}];
     });
   }
   const counts={active:8,running:2,waiting:2,unseen:3,unknown:1,attention:4};
@@ -760,7 +760,7 @@ test('pending send display participates in scoped pagination and activity withou
 test('a submitted next instruction preserves a real old model execution and decision counts',t=>{
  const repo=fixture(t),r=record('old');
  r.view.run={id:'run',participantId:'p',provider:'codex',generation:'g',status:'running',accepted:true,tools:[],model:'m',modelAccountId:'account',startedAt:r.view.updatedAt,updatedAt:r.view.updatedAt};
- r.view.requests=[{id:'q',kind:'question',title:'Choose',conversationId:'old',workspaceId:'w1',runId:'run',participantId:'p',generation:'g'}];
+ r.view.requests=[{id:'q',kind:'question',title:'Choose',description:'',conversationId:'old',workspaceId:'w1',runId:'run',participantId:'p',generation:'g'}];
  repo.saveConversation(r);
  new PendingSendRepository(path.dirname(repo.filename)).submit('w1','old',{expectedRevision:'r0',connectionId:'codex',text:'next'},'request');
  const page=repo.querySummaries(['w1'],{activeOnly:true,limit:10});

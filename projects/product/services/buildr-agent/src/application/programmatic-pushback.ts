@@ -1,12 +1,11 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { hostname } from 'node:os';
-import type { ServiceEvent, ConversationView, PushbackCredentialAccess, PushbackEvent, PushbackEventPage, PushbackDeliveryResult, PushbackSettingsInput, PushbackSettingsView } from '../contracts.ts';
+import type { ServiceEvent, ConversationView, RunView, PushbackCredentialAccess, PushbackEvent, PushbackEventPage, PushbackDeliveryResult, PushbackSettingsInput, PushbackSettingsView } from '../contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { ProgrammaticPushbackStore, type PushbackConfig, type PushbackClaim } from '../persistence/programmatic-pushback-store.ts';
 import { pushbackNotifications, timedPushbackNotifications, isLiveRunStatus, type PushbackSnapshot, type PushbackNotification } from '../domain/programmatic-pushback-notifications.ts';
-import { finalReplyForRun } from '../domain/conversation-activity.ts';
 
-export type PushbackOptions = { root: string; transport?: typeof fetch; now?: () => number; backoffMs?: number[]; checkIntervalMs?: number; concurrency?: number; stalledThresholdMs?: number; progressIntervalMs?: number; retentionMs?: number; readConversation?: (workspaceId: string, conversationId: string) => ConversationView | undefined };
+export type PushbackOptions = { root: string; transport?: typeof fetch; now?: () => number; backoffMs?: number[]; checkIntervalMs?: number; concurrency?: number; stalledThresholdMs?: number; progressIntervalMs?: number; retentionMs?: number; readRunLiveness?: (workspaceId: string, conversationId: string) => { runs: RunView[] } | undefined };
 const DEFAULT_BACKOFF = [10000, 30000, 90000, 270000, 810000];
 const GLOBAL_MIGRATION_KEY = 'global-webhook';
 const HOUR = 3600000, MINUTE = 60000;
@@ -40,7 +39,7 @@ export class ProgrammaticPushback {
   private readonly stalledThresholdMs: number;
   private readonly progressIntervalMs: number;
   private readonly retentionMs: number;
-  private readonly readConversation?: (workspaceId: string, conversationId: string) => ConversationView | undefined;
+  private readonly readRunLiveness?: (workspaceId: string, conversationId: string) => { runs: RunView[] } | undefined;
   private readonly owner = randomUUID();
   private readonly active = new Set<AbortController>();
   private readonly tests = new Set<AbortController>();
@@ -59,7 +58,7 @@ export class ProgrammaticPushback {
     this.stalledThresholdMs = options.stalledThresholdMs ?? 20 * MINUTE;
     this.progressIntervalMs = options.progressIntervalMs ?? 5 * MINUTE;
     this.retentionMs = options.retentionMs ?? 7 * 24 * HOUR;
-    this.readConversation = options.readConversation;
+    this.readRunLiveness = options.readRunLiveness;
     this.interval = setInterval(() => this.tick(), options.checkIntervalMs ?? 30000); this.interval.unref();
   }
   private machine(): { id: string; name: string } { return { id: this.store.instanceId, name: hostname() }; }
@@ -239,73 +238,30 @@ export class ProgrammaticPushback {
     catch { this.storageFailure(); }
   }
   /**
-   * Events enqueued by a build that predates the current contract must still be
-   * emitted in the current format after an activation or restart. Delivered
-   * events are immutable history; pending and undelivered rows are repaired
-   * against the stored projection and the conversation itself. Retired shapes
-   * (empty progress, unknown-status stalls) are retired instead of delivered.
+   * Stored event bodies are immutable history: readers may already have seen
+   * them through /events, so a newer build must never backfill fields or
+   * rewrite payloads. Only queued events whose shape was retired (empty
+   * progress, unknown-status stalls) are withheld from delivery. Retiring
+   * changes delivery state only; the body stays exactly as stored.
    */
-  private repairLegacyEvents(): void {
-    const accessCache = new Map<string, PushbackCredentialAccess>();
-    const views = new Map<string, ConversationView | undefined>();
-    for (const row of this.store.listRepairableEvents()) {
+  private validateQueuedEvents(): void {
+    for (const row of this.store.listPendingEvents()) {
       let body: PushbackEvent;
       try { body = JSON.parse(row.body) as PushbackEvent; } catch { continue; }
       if (!body || typeof body !== 'object') continue;
-      let changed = false;
-      const access = accessCache.get(row.credentialId) ?? this.store.getCredentialAccess(row.credentialId) ?? emptyAccess;
-      accessCache.set(row.credentialId, access);
-      if (!Array.isArray(body.scopes) || body.scopes.some(scope => typeof scope !== 'string')) { body.scopes = [...access.scopes]; changed = true; }
-      if (typeof body.allowFullAccess !== 'boolean') { body.allowFullAccess = access.allowFullAccess; changed = true; }
-      const projection = this.projectedRun(row.credentialId, row.workspaceId, row.conversationId, body.runId);
       if (body.type === 'run.stalled') {
-        if (!body.stalled && projection && Number.isFinite(projection.lastActivityAt)) {
-          const occurredAt = Date.parse(body.occurredAt);
-          const observedAt = Number.isFinite(occurredAt) ? occurredAt : this.clock();
-          body.stalled = { idleMs: Math.max(0, observedAt - projection.lastActivityAt), lastActivityAt: new Date(projection.lastActivityAt).toISOString() };
-          changed = true;
-        }
-        // The retired unknown-status five-minute path, an empty payload or a
+        // The retired unknown-status five-minute path, a missing payload or a
         // terminal/non-live status must never be delivered.
-        if (row.deliveryState === 'pending' && (!body.stalled || !isLiveRunStatus(body.runStatus))) { this.store.retireEvent(row.sequence); continue; }
+        if (!body.stalled || !Number.isFinite(body.stalled.idleMs) || typeof body.stalled.lastActivityAt !== 'string' || !isLiveRunStatus(body.runStatus)) {
+          this.store.retireEvent(row.sequence);
+        }
+        continue;
       }
-      if (body.type === 'run.progress' && row.deliveryState === 'pending' &&
+      if (body.type === 'run.progress' &&
         (!body.progress || typeof body.progress.text !== 'string' || body.progress.text.trim() === '')) {
-        this.store.retireEvent(row.sequence); continue;
+        this.store.retireEvent(row.sequence);
       }
-      if (body.type === 'decision.requested' && body.request && typeof body.request === 'object' &&
-        typeof (body.request as { description?: unknown }).description !== 'string') {
-        (body.request as { description: string }).description = ''; changed = true;
-      }
-      if (body.type === 'run.completed' || body.type === 'run.failed' || body.type === 'run.stopped') {
-        if (typeof body.finalReply !== 'string') {
-          const view = this.conversationView(views, row.workspaceId, row.conversationId);
-          if (view) {
-            const target = [view.run, ...(view.retainedRuns ?? [])].find(item => item?.id === body.runId);
-            body.finalReply = finalReplyForRun(view, body.runId ?? '', target?.startedAt);
-            changed = true;
-          }
-        }
-        if (typeof body.finalReplyUrl !== 'string' && body.runId) {
-          body.finalReplyUrl = finalReplyUrl(row.workspaceId, row.conversationId, body.runId); changed = true;
-        }
-      }
-      if (typeof body.summary === 'string' && body.summary.length > 500) { body.summary = body.summary.slice(0, 500); changed = true; }
-      if (changed) this.store.replaceEventBody(row.sequence, JSON.stringify(body));
     }
-  }
-  private projectedRun(credentialId: string, workspaceId: string, conversationId: string, runId: string | undefined) {
-    if (!runId) return undefined;
-    try { return this.store.getProjection<PushbackSnapshot>(credentialId, workspaceId, conversationId)?.runs?.[runId]; } catch { return undefined; }
-  }
-  private conversationView(cache: Map<string, ConversationView | undefined>, workspaceId: string, conversationId: string): ConversationView | undefined {
-    const key = `${workspaceId}/${conversationId}`;
-    if (!cache.has(key)) {
-      let view: ConversationView | undefined;
-      try { view = this.readConversation?.(workspaceId, conversationId); } catch { view = undefined; }
-      cache.set(key, view);
-    }
-    return cache.get(key);
   }
   private checkTimedEvents(): void {
     const now = this.clock();
@@ -314,6 +270,12 @@ export class ProgrammaticPushback {
       if (!config) continue;
       const secret = config.enabled ? this.store.readSecret(config.secretFilePath) : undefined;
       if (config.enabled && !secret) continue;
+      // Periodic events are only trustworthy when the current conversation
+      // still contains the run and confirms a live status. Without that fact
+      // (unreadable conversation, retired run, terminal run) never emit.
+      let liveness: { runs: RunView[] } | undefined;
+      try { liveness = this.readRunLiveness?.(projection.workspaceId, projection.conversationId); } catch { liveness = undefined; }
+      if (!liveness) continue;
       const snapshot = JSON.parse(projection.snapshot) as PushbackSnapshot;
       const next = timedPushbackNotifications(snapshot, {
         now,
@@ -321,8 +283,7 @@ export class ProgrammaticPushback {
         progressIntervalMs: this.progressIntervalMs,
         progressEnabled: config.progressEnabled !== false,
         stalledEnabled: config.stalledEnabled !== false,
-      });
-      if (!next.events.length) continue;
+      }, liveness.runs);
       for (const notification of next.events) {
         const build = (sequence: number, eventId: string) => ({
           eventId, type: notification.type, occurredAt: notification.occurredAt, machine: this.machine(),
@@ -338,7 +299,8 @@ export class ProgrammaticPushback {
         if (config.enabled && secret) this.enqueue(projection.credentialId, config, projection.workspaceId, projection.conversationId, notification.type, notification.dedupKey, secret, config.url, build);
         else this.persist(projection.credentialId, config, projection.workspaceId, projection.conversationId, notification.type, notification.dedupKey, build);
       }
-      this.store.putProjection(projection.credentialId, projection.workspaceId, projection.conversationId, next.snapshot);
+      const reconciled = JSON.stringify(next.snapshot);
+      if (reconciled !== projection.snapshot) this.store.putProjection(projection.credentialId, projection.workspaceId, projection.conversationId, next.snapshot);
     }
   }
   private cleanup(): void {
@@ -372,9 +334,9 @@ export class ProgrammaticPushback {
   drain(): void {
     if (this.closed) return;
     try {
-      // Repair before the first claim so an event persisted by an older build
-      // can never be delivered in its retired shape after an activation.
-      if (!this.repaired) { this.repairLegacyEvents(); this.repaired = true; }
+      // Withhold retired event shapes before the first claim without ever
+      // rewriting the stored bodies that /events may already have returned.
+      if (!this.repaired) { this.validateQueuedEvents(); this.repaired = true; }
       this.releaseHeld();
       const now = this.clock();
       const room = this.concurrency - this.active.size;

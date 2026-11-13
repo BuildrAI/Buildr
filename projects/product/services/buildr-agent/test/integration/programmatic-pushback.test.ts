@@ -29,12 +29,13 @@ function receiver() {
   };
   return { calls, transport, fail: () => { status = 500; }, ok: () => { status = 200; } };
 }
-function setup(options: { backoffMs?: number[]; rateLimitMinute?: number; rateLimitHour?: number; stalledThresholdMs?: number; retentionMs?: number; readConversation?: (workspaceId: string, conversationId: string) => ConversationView | undefined } = {}) {
+function setup(options: { backoffMs?: number[]; rateLimitMinute?: number; rateLimitHour?: number; stalledThresholdMs?: number; retentionMs?: number; readRunLiveness?: (workspaceId: string, conversationId: string) => { runs: RunView[] } | undefined } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-pushback-'));
   const dir = path.join(root, 'pushback');
   const fake = receiver();
   let current = NOW;
-  const pb = new ProgrammaticPushback({ root: dir, transport: fake.transport, now: () => current, checkIntervalMs: 3600000, ...(options.backoffMs ? { backoffMs: options.backoffMs } : {}), ...(options.stalledThresholdMs === undefined ? {} : { stalledThresholdMs: options.stalledThresholdMs }), ...(options.retentionMs === undefined ? {} : { retentionMs: options.retentionMs }), ...(options.readConversation ? { readConversation: options.readConversation } : {}) });
+  let liveRuns: RunView[] = [];
+  const pb = new ProgrammaticPushback({ root: dir, transport: fake.transport, now: () => current, checkIntervalMs: 3600000, ...(options.backoffMs ? { backoffMs: options.backoffMs } : {}), ...(options.stalledThresholdMs === undefined ? {} : { stalledThresholdMs: options.stalledThresholdMs }), ...(options.retentionMs === undefined ? {} : { retentionMs: options.retentionMs }), readRunLiveness: options.readRunLiveness ?? (() => ({ runs: liveRuns })) });
   const flush = async () => { for (let i = 0; i < 25; i++) await new Promise(resolve => setTimeout(resolve, 0)); };
   const rows = (sql: string, ...values: any[]) => { const db = new DatabaseSync(path.join(dir, 'pushback.sqlite')); try { return db.prepare(sql).all(...values) as any[]; } finally { db.close(); } };
   const exec = (sql: string, ...values: any[]) => { const db = new DatabaseSync(path.join(dir, 'pushback.sqlite')); try { return db.prepare(sql).run(...values); } finally { db.close(); } };
@@ -43,7 +44,7 @@ function setup(options: { backoffMs?: number[]; rateLimitMinute?: number; rateLi
     return pb.save(credentialId, { expectedRevision: revision, enabled: input.enabled ?? true, url: input.url ?? URL, secret: input.secret ?? SECRET, ...(input.rateLimitHour === undefined ? {} : { rateLimitHour: input.rateLimitHour }), ...(input.rateLimitMinute === undefined ? {} : { rateLimitMinute: input.rateLimitMinute }) });
   };
   const close = () => { pb.close(); fs.rmSync(root, { recursive: true, force: true }); };
-  return { root, dir, pb, fake, flush, rows, exec, configure, advance: (ms: number) => { current += ms; }, now: () => current, close };
+  return { root, dir, pb, fake, flush, rows, exec, configure, setLive: (runs: RunView[]) => { liveRuns = runs; }, advance: (ms: number) => { current += ms; }, now: () => current, close };
 }
 
 test('configuration reads never expose the secret; reveal is revision-checked and enable requires a secret', () => {
@@ -126,6 +127,7 @@ test('disabled pushback records takeover events for backfill without delivering 
     assert.equal(s.pb.listEvents('cred-one', 'workspace-one', {}).events.length, 1, 'the same transition is recorded once');
 
     s.pb.publish(conversationEvent(view({ run: run('run-two', 'running'), revision: 'r3' })));
+    s.setLive([run('run-two', 'running')]);
     s.advance(1200000);
     s.pb.tick();
     await s.flush();
@@ -318,6 +320,7 @@ test('the periodic check raises run.stalled after continuous inactivity and clea
     s.configure();
     s.pb.markTakeover('workspace-one', 'conversation-one', 'cred-one');
     s.pb.publish(conversationEvent(view({ run: run('run-one', 'running') })));
+    s.setLive([run('run-one', 'running')]);
     await s.flush();
     assert.equal(s.fake.calls.length, 0, 'a running execution is not yet stalled');
     s.advance(300000);
@@ -345,9 +348,11 @@ test('run.stalled carries complete fields and one idle period is announced once 
     s.pb.setCredentialAccess('cred-one', { scopes: ['read', 'execute'], allowFullAccess: false });
     s.pb.markTakeover('workspace-one', 'conversation-one', 'cred-one');
     s.pb.publish(conversationEvent(view({ run: run('run-one', 'running') })));
+    s.setLive([run('run-one', 'running')]);
     await s.flush();
     // A second runtime sharing the same durable store must not duplicate the event.
-    restarted = new ProgrammaticPushback({ root: s.dir, transport: s.fake.transport, now: s.now, checkIntervalMs: 3600000 });
+    const live = () => ({ runs: [run('run-one', 'running')] });
+    restarted = new ProgrammaticPushback({ root: s.dir, transport: s.fake.transport, now: s.now, checkIntervalMs: 3600000, readRunLiveness: live });
     s.advance(1200000);
     s.pb.tick();
     restarted.tick();
@@ -359,7 +364,7 @@ test('run.stalled carries complete fields and one idle period is announced once 
     assert.deepEqual(payload.scopes, ['read', 'execute']);
     assert.equal(payload.allowFullAccess, false);
     restarted.close(); restarted = undefined;
-    const again = new ProgrammaticPushback({ root: s.dir, transport: s.fake.transport, now: s.now, checkIntervalMs: 3600000 });
+    const again = new ProgrammaticPushback({ root: s.dir, transport: s.fake.transport, now: s.now, checkIntervalMs: 3600000, readRunLiveness: live });
     try {
       s.advance(600000);
       again.tick();
@@ -369,16 +374,64 @@ test('run.stalled carries complete fields and one idle period is announced once 
   } finally { restarted?.close(); s.close(); }
 });
 
-test('legacy unknown-status stalls never deliver and pending old-format events are repaired before delivery', async () => {
-  const conversation = view({
-    run: run('run-legacy', 'completed'),
-    entries: [{ id: 'm1', sequence: 1, kind: 'message', role: 'assistant', text: '旧轮次的完整最终回复', createdAt: '2026-11-01T00:00:01.000Z', runId: 'run-legacy', status: 'completed' }] as any,
-  });
-  const s = setup({ readConversation: () => conversation });
+test('stale projections for finished or missing runs never produce run.stalled and are pruned', async () => {
+  const s = setup();
   let restarted: ProgrammaticPushback | undefined;
   try {
     s.configure();
-    s.pb.setCredentialAccess('cred-one', { scopes: ['read', 'execute', 'answer'], allowFullAccess: true });
+    s.pb.markTakeover('workspace-one', 'conversation-one', 'cred-one');
+    s.pb.publish(conversationEvent(view({ run: run('run-live', 'running') })));
+    await s.flush();
+    assert.equal(s.pb.listEvents('cred-one', 'workspace-one', {}).events.length, 0);
+    // A projection written by the retired build: the run is gone from the
+    // conversation and its timestamp was never recorded.
+    s.exec("UPDATE projections SET snapshot=? WHERE credentialId='cred-one' AND conversationId='conversation-one'", JSON.stringify({
+      title: 'work', workspaceId: 'workspace-one', conversationId: 'conversation-one',
+      runs: { 'run-retired': { status: 'running', stalled: false, lastActivityAt: 0, activitySignature: 'legacy', completedToolCount: 0 } },
+      requests: {},
+    }));
+    restarted = new ProgrammaticPushback({ root: s.dir, transport: s.fake.transport, now: s.now, checkIntervalMs: 3600000, readRunLiveness: () => ({ runs: [] }) });
+    s.advance(1200000);
+    restarted.tick();
+    await s.flush();
+    assert.equal(s.fake.calls.length, 0, 'a run absent from the conversation never stalls');
+    assert.equal(s.pb.listEvents('cred-one', 'workspace-one', {}).events.length, 0);
+    const projection = JSON.parse(s.rows("SELECT snapshot FROM projections WHERE credentialId='cred-one'")[0].snapshot);
+    assert.equal(projection.runs['run-retired'], undefined, 'stale projection entries are pruned');
+
+    // A live run with no usable lastActivityAt must not be interpreted as 1970.
+    s.pb.publish(conversationEvent(view({ run: run('run-live', 'running'), revision: 'r2' })));
+    s.exec("UPDATE projections SET snapshot=? WHERE credentialId='cred-one' AND conversationId='conversation-one'", JSON.stringify({
+      title: 'work', workspaceId: 'workspace-one', conversationId: 'conversation-one',
+      runs: { 'run-live': { status: 'running', activitySignature: 'legacy', completedToolCount: 0, startedAt: '2026-11-01T00:00:00.000Z' } },
+      requests: {},
+    }));
+    const missing = new ProgrammaticPushback({ root: s.dir, transport: s.fake.transport, now: s.now, checkIntervalMs: 3600000, readRunLiveness: () => ({ runs: [run('run-live', 'running')] }) });
+    try {
+      s.advance(1200000);
+      missing.tick();
+      await s.flush();
+      assert.equal(s.fake.calls.length, 0, 'a missing lastActivityAt never produces a stall');
+    } finally { missing.close(); }
+
+    // A terminal run in the conversation cannot be reported as running.
+    const terminal = new ProgrammaticPushback({ root: s.dir, transport: s.fake.transport, now: s.now, checkIntervalMs: 3600000, readRunLiveness: () => ({ runs: [run('run-live', 'completed')] }) });
+    try {
+      s.advance(1200000);
+      terminal.tick();
+      await s.flush();
+      assert.equal(s.fake.calls.length, 0, 'finished runs never stall');
+      const settled = JSON.parse(s.rows("SELECT snapshot FROM projections WHERE credentialId='cred-one'")[0].snapshot);
+      assert.equal(settled.runs['run-live'].status, 'completed', 'the projection adopts the current terminal status');
+    } finally { terminal.close(); }
+  } finally { restarted?.close(); s.close(); }
+});
+
+test('stored event bodies are never rewritten and retired queued shapes are only withheld', async () => {
+  const s = setup();
+  let restarted: ProgrammaticPushback | undefined;
+  try {
+    s.configure();
     s.pb.markTakeover('workspace-one', 'conversation-one', 'cred-one');
     s.pb.publish(conversationEvent(view({ run: run('run-legacy', 'running') })));
     await s.flush();
@@ -388,35 +441,31 @@ test('legacy unknown-status stalls never deliver and pending old-format events a
       machine: { id: 'm', name: 'n' }, workspaceId: 'workspace-one', conversationId: 'conversation-one',
       title: 'work', ...(runId ? { runId } : {}), summary: 'legacy', detailUrl: '/legacy', sequence: 0, ...extra,
     });
-    const insert = (eventId: string, type: string, body: string) =>
-      s.exec("INSERT INTO events(eventId,credentialId,workspaceId,conversationId,type,dedupKey,body,deliveryState,attempts,nextAttemptAt,mergedCount,held,mergeKey,createdAt) VALUES(?,?,?,?,?,?,?,'pending',0,0,1,0,NULL,?)", eventId, 'cred-one', 'workspace-one', 'conversation-one', type, eventId, body, s.now());
+    const insert = (eventId: string, type: string, body: string, deliveryState = 'pending') =>
+      s.exec("INSERT INTO events(eventId,credentialId,workspaceId,conversationId,type,dedupKey,body,deliveryState,attempts,nextAttemptAt,mergedCount,held,mergeKey,createdAt) VALUES(?,?,?,?,?,?,?,?,0,0,1,0,NULL,?)", eventId, 'cred-one', 'workspace-one', 'conversation-one', type, eventId, body, deliveryState, s.now());
     insert('legacy-run.completed', 'run.completed', legacy('run.completed', 'run-legacy', { runStatus: 'completed' }));
     insert('legacy-run.stalled', 'run.stalled', legacy('run.stalled', 'run-legacy', { runStatus: 'unknown', summary: '执行状态未知已超过 5 分钟' }));
     insert('legacy-run.progress', 'run.progress', legacy('run.progress', 'run-legacy', { runStatus: 'running', progress: { text: '', elapsedMs: 1000, completedToolCount: 0 } }));
-    // A projection written by the retired build still carries its old marker.
-    s.exec("UPDATE projections SET snapshot=? WHERE credentialId='cred-one' AND conversationId='conversation-one'", JSON.stringify({
-      title: 'work', workspaceId: 'workspace-one', conversationId: 'conversation-one',
-      runs: { 'run-legacy': { status: 'unknown', stalled: true, unknownSince: s.now() - 600000, lastActivityAt: s.now() - 1800000, activitySignature: 'legacy', completedToolCount: 0, startedAt: '2026-11-01T00:00:00.000Z' } },
-      requests: {},
-    }));
-    restarted = new ProgrammaticPushback({ root: s.dir, transport: s.fake.transport, now: s.now, checkIntervalMs: 3600000, readConversation: () => conversation });
+    insert('history-delivered', 'run.completed', legacy('run.completed', 'run-legacy', { runStatus: 'completed', summary: '已送达原正文' }), 'delivered');
+    insert('history-undelivered', 'run.stalled', legacy('run.stalled', 'run-legacy', { runStatus: 'unknown', summary: '执行状态未知已超过 5 分钟' }), 'undelivered');
+    const before = new Map(s.rows('SELECT eventId,body FROM events').map(row => [row.eventId, row.body]));
+    restarted = new ProgrammaticPushback({ root: s.dir, transport: s.fake.transport, now: s.now, checkIntervalMs: 3600000, readRunLiveness: () => ({ runs: [] }) });
     restarted.tick();
     await s.flush();
-    const delivered = s.fake.calls.filter(call => {
-      try { return call.body.eventId === 'legacy-run.completed'; } catch { return false; }
-    });
-    assert.equal(delivered.length, 1, 'the pending completion is delivered');
-    assert.equal(delivered[0]!.body.finalReply, '旧轮次的完整最终回复');
-    assert.equal(delivered[0]!.body.finalReplyUrl, '/api/v1/programmatic/workspaces/workspace-one/conversations/conversation-one/runs/run-legacy/final-reply');
-    assert.deepEqual(delivered[0]!.body.scopes, ['read', 'execute', 'answer']);
-    assert.equal(delivered[0]!.body.allowFullAccess, true);
+    const delivered = s.fake.calls.filter(call => call.body.eventId === 'legacy-run.completed');
+    assert.equal(delivered.length, 1, 'a queued completion is still delivered');
+    assert.deepEqual(delivered[0]!.body, JSON.parse(before.get('legacy-run.completed')!), 'delivery sends the stored body unchanged');
     assert.ok(!s.fake.calls.some(call => call.body.eventId === 'legacy-run.stalled'), 'the retired unknown-status stall is not delivered');
     assert.ok(!s.fake.calls.some(call => call.body.eventId === 'legacy-run.progress'), 'an empty progress event is not delivered');
-    const retired = s.rows("SELECT eventId,deliveryState FROM events WHERE eventId IN ('legacy-run.stalled','legacy-run.progress')");
-    assert.ok(retired.every(row => row.deliveryState === 'undelivered'));
+    for (const row of s.rows('SELECT eventId,body,deliveryState FROM events')) {
+      assert.equal(row.body, before.get(row.eventId), `${row.eventId} body is unchanged`);
+      if (row.eventId === 'legacy-run.stalled' || row.eventId === 'legacy-run.progress') assert.equal(row.deliveryState, 'undelivered');
+    }
+    const readback = restarted.listEvents('cred-one', 'workspace-one', {}).events;
+    assert.equal(readback.length, before.size, 'readback keeps every historical event');
     restarted.tick();
     await s.flush();
-    assert.equal(s.fake.calls.filter(call => call.body.eventId === 'legacy-run.completed').length, 1, 'repaired events are not replayed');
+    assert.equal(s.fake.calls.filter(call => call.body.eventId === 'legacy-run.completed').length, 1, 'validated events are not replayed');
   } finally { restarted?.close(); s.close(); }
 });
 

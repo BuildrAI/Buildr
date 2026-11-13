@@ -488,6 +488,9 @@ export class ConversationApplication {
     record.attachments ??= {};
     setConversationTaskLinks(record.view,conversationTaskLinks(record.view));
     normalizeQuestionCapabilities(record);
+    // Older records may predate the public contract; expose an empty string
+    // rather than an absent field so every request reader sees the same shape.
+    for (const request of record.view.requests) if (typeof request.description !== 'string') request.description = '';
     return record;
   }
   private readonly legacyPresentedFiles = new Map<string, ReturnType<typeof presentedFilesForEntry>>();
@@ -549,7 +552,9 @@ export class ConversationApplication {
       const result={...entry};delete result.presentedFiles;
       return presentedFiles.length?{...result,presentedFiles}:result;
     });
-    view.requests = view.requests.filter(request => conversationRuns(view).some(run => !run.supersededBy && !(request.kind === 'question' && run.questionsEndedBy) && request.runId === run.id && request.participantId === run.participantId && request.generation === run.generation));
+    view.requests = view.requests
+      .filter(request => conversationRuns(view).some(run => !run.supersededBy && !(request.kind === 'question' && run.questionsEndedBy) && request.runId === run.id && request.participantId === run.participantId && request.generation === run.generation))
+      .map(request => typeof request.description === 'string' ? request : { ...request, description: '' });
     view.attachmentRevision = attachmentRevision(record.attachments ?? {});
     // A process that died mid-title leaves no live work. Show the failure
     // instead of a permanent "generating" state; the stored record is untouched.
@@ -617,6 +622,21 @@ export class ConversationApplication {
     const durationMs = Math.round(performance.now() - started);
     if (durationMs >= 250) this.diagnostics({event:'conversation-read-slow',conversationId:id,workspaceId,durationMs});
     return result;
+  }
+  /** Lightweight run facts for durable pushback timers, with the same stale-generation normalization as reads. */
+  readRunLiveness(workspaceId: string, id: string): { runs: RunView[] } | undefined {
+    const record = this.options.repository.readConversation(id);
+    if (!record || record.view.workspaceId !== workspaceId) return undefined;
+    const runs = [record.view.run, ...(record.view.retainedRuns ?? [])]
+      .filter((run): run is RunView => Boolean(run))
+      .map(run => ({ ...run, tools: (run.tools ?? []).map(({ id, label, status, canStop }) => ({ id, label, status, canStop })) }));
+    for (const run of runs) {
+      if (run.generation !== this.options.generation && !this.options.generationAlive?.(run.generation) && BUSY_STATES.has(run.status)) {
+        run.status = 'unknown';
+        run.interrupted = true;
+      }
+    }
+    return { runs };
   }
   /** Exact historical final assistant reply; avoids returning the full conversation for pushback URLs. */
   readRunFinalReply(workspaceId: string, id: string, runId: string): { runId: string; finalReply: string } {
@@ -1279,7 +1299,7 @@ export class ConversationApplication {
       if (!existing) {
         const requestId = randomUUID();
         record.requests[requestId] = { nativeId: event.request.id, executionRef: attempt.executionRef };
-        record.view.requests.push({ ...event.request, id: requestId, conversationId: id, workspaceId, participantId: participant.id, runId, generation: this.options.generation });
+        record.view.requests.push({ ...event.request, description: event.request.description ?? '', id: requestId, conversationId: id, workspaceId, participantId: participant.id, runId, generation: this.options.generation });
       }
       if (blocksExecution(event.request) && run.status !== 'stopping') run.status = this.waitingStatus(record, run.id) ?? run.status;
     } else if (event.type === 'request-resolved') {
@@ -1384,12 +1404,12 @@ export class ConversationApplication {
           if (request.kind === 'question' && run.questionsEndedBy) continue;
           const existing = record.view.requests.find(value => value.runId === run.id && record.requests[value.id]?.nativeId === request.id);
           if (existing) {
-            Object.assign(existing, request, { id: existing.id, conversationId: record.view.id, workspaceId: record.view.workspaceId, participantId: run.participantId, runId: run.id, generation: run.generation });
+            Object.assign(existing, request, { description: request.description ?? '', id: existing.id, conversationId: record.view.id, workspaceId: record.view.workspaceId, participantId: run.participantId, runId: run.id, generation: run.generation });
             continue;
           }
           const id = randomUUID();
           record.requests[id] = { nativeId: request.id, executionRef: attempt.executionRef };
-          record.view.requests.push({ ...request, id, conversationId: record.view.id, workspaceId: record.view.workspaceId, participantId: run.participantId, runId: run.id, generation: run.generation });
+          record.view.requests.push({ ...request, description: request.description ?? '', id, conversationId: record.view.id, workspaceId: record.view.workspaceId, participantId: run.participantId, runId: run.id, generation: run.generation });
         }
       }
     }

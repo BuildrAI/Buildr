@@ -239,3 +239,59 @@ test('terminal events keep the complete reply on the persisted projection for re
   const reloaded = JSON.parse(JSON.stringify(done.snapshot)) as PushbackSnapshot;
   assert.equal(reloaded.runs['run-one']!.finalReply, long);
 });
+
+test('a snapshot without a usable lastActivityAt never becomes a 1970 stall', () => {
+  const snapshot = {
+    title: 'work', workspaceId: 'workspace-one', conversationId: 'conversation-one',
+    runs: { 'run-one': { status: 'running', activitySignature: 'legacy', completedToolCount: 0, startedAt: '2026-11-01T00:00:00.000Z' } },
+    requests: {},
+  } as unknown as PushbackSnapshot;
+  const next = timedPushbackNotifications(snapshot, context(NOW + 30 * MINUTE), [run('run-one', 'running')]);
+  assert.deepEqual(next.events, [], 'a missing timestamp cannot fire a stall');
+  assert.equal(next.snapshot.runs['run-one']!.lastActivityAt, undefined, 'the timestamp is not invented');
+});
+
+test('periodic checks drop retired runs and adopt the current status instead of a stale running status', () => {
+  const snapshot = {
+    title: 'work', workspaceId: 'workspace-one', conversationId: 'conversation-one',
+    runs: {
+      'run-retired': { status: 'running', lastActivityAt: 0, activitySignature: 'legacy', completedToolCount: 0, startedAt: '2026-11-01T00:00:00.000Z' },
+      'run-done': { status: 'running', lastActivityAt: NOW - 30 * MINUTE, activitySignature: 'legacy', completedToolCount: 0, startedAt: '2026-11-01T00:00:00.000Z' },
+    },
+    requests: {},
+  } as unknown as PushbackSnapshot;
+  const next = timedPushbackNotifications(snapshot, context(NOW + 30 * MINUTE), [run('run-done', 'completed', { updatedAt: '2026-11-01T00:10:00.000Z' })]);
+  assert.deepEqual(next.events, [], 'neither a retired nor a finished run stalls');
+  assert.equal(next.snapshot.runs['run-retired'], undefined, 'a run absent from the conversation is pruned');
+  assert.equal(next.snapshot.runs['run-done']!.status, 'completed', 'the projection adopts the current terminal status');
+});
+
+test('a newer real activity record resets the idle window before the periodic check', () => {
+  const snapshot = {
+    title: 'work', workspaceId: 'workspace-one', conversationId: 'conversation-one',
+    runs: { 'run-one': { status: 'running', lastActivityAt: NOW, activitySignature: 'legacy', completedToolCount: 0, startedAt: '2026-11-01T00:00:00.000Z' } },
+    requests: {},
+  } as unknown as PushbackSnapshot;
+  const next = timedPushbackNotifications(snapshot, context(NOW + 30 * MINUTE), [run('run-one', 'running', { updatedAt: '2026-11-01T00:25:00.000Z' })]);
+  assert.deepEqual(next.events, [], 'the newer record restarts the twenty-minute window');
+  assert.equal(next.snapshot.runs['run-one']!.lastActivityAt, NOW + 25 * MINUTE);
+});
+
+test('a conversation publication prunes runs that no longer exist', () => {
+  const first = diff(view({ run: run('run-old', 'running') }));
+  const next = diff(view({ run: run('run-new', 'running') }), first.snapshot);
+  assert.equal(next.snapshot.runs['run-old'], undefined);
+  assert.ok(next.snapshot.runs['run-new']);
+  assert.deepEqual(next.events, []);
+});
+
+test('a legacy projection holding an empty pending message never pushes it', () => {
+  const snapshot = {
+    title: 'work', workspaceId: 'workspace-one', conversationId: 'conversation-one',
+    runs: { 'run-one': { status: 'running', lastActivityAt: NOW, activitySignature: 'legacy', completedToolCount: 0, startedAt: '2026-11-01T00:00:00.000Z', pendingProgress: { text: '  \n', messageSignature: 'empty' } } },
+    requests: {},
+  } as unknown as PushbackSnapshot;
+  const next = timedPushbackNotifications(snapshot, context(NOW + MINUTE), [run('run-one', 'running')]);
+  assert.deepEqual(next.events, []);
+  assert.equal(next.snapshot.runs['run-one']!.pendingProgress, undefined);
+});

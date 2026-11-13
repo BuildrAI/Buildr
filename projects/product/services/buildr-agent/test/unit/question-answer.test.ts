@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { resolveQuestionAnswer, isMaterialAnswer, normalizeQuestionCapabilities } from '../../src/domain/question-answer.ts';
 import { waitingQuestionText } from '../../src/domain/waiting-question-handoff.ts';
 import type { PendingRequestView } from '../../src/contracts.ts';
-const request:PendingRequestView={id:'request',conversationId:'chat',workspaceId:'workspace',participantId:'agent',runId:'run',generation:'gen',kind:'question',title:'范围',questions:[{id:'scope',label:'处理范围',allowOther:true,options:[{id:'yes',label:'确认'}]}]};
+const request:PendingRequestView={id:'request',conversationId:'chat',workspaceId:'workspace',participantId:'agent',runId:'run',generation:'gen',kind:'question',title:'范围',description:'',questions:[{id:'scope',label:'处理范围',allowOther:true,options:[{id:'yes',label:'确认'}]}]};
 const image=(id:string)=>({id,path:'/private/attachments/'+id,mimeType:'image/png'});
 const expand=(ids:string[])=>({images:ids.map(image),description:''});
 test('自由回答图片转换为已校验本机来源，旧选项与多选不变',()=>{

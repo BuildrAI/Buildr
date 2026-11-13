@@ -5,7 +5,12 @@ import { finalReplyForRun } from './conversation-activity.ts';
 export type PushbackRunState = {
   status: RunStatus;
   stalled?: boolean;
-  lastActivityAt: number;
+  /**
+   * Epoch milliseconds of the last observed record. A snapshot written by an
+   * older build may have no usable value; timing events must then stay off
+   * instead of interpreting the absence as 1970-01-01.
+   */
+  lastActivityAt?: number;
   activitySignature: string;
   completedToolCount: number;
   startedAt: string;
@@ -118,23 +123,20 @@ function progressPayload(state: PushbackRunState, now: number): PushbackProgress
     completedToolCount: state.completedToolCount,
   };
 }
-function stalledPayload(state: PushbackRunState, now: number): PushbackStall {
-  return { idleMs: Math.max(0, now - state.lastActivityAt), lastActivityAt: new Date(state.lastActivityAt).toISOString() };
+function stalledPayload(lastActivityAt: number, now: number): PushbackStall {
+  return { idleMs: Math.max(0, now - lastActivityAt), lastActivityAt: new Date(lastActivityAt).toISOString() };
 }
 /**
  * Snapshots written by older builds can carry retired fields (for example the
- * removed five-minute unknown-status stall marker). Keep only the current shape
- * and make sure a stall payload can always be derived from a real timestamp.
+ * removed five-minute unknown-status stall marker). Keep only the current shape.
+ * A missing or non-finite lastActivityAt stays missing so a stall can never be
+ * derived from an invented epoch timestamp.
  */
 function normalizeRunState(state: PushbackRunState): PushbackRunState {
   const { unknownSince: _retiredUnknownSince, ...rest } = state as PushbackRunState & { unknownSince?: unknown };
-  const startedAt = Date.parse(rest.startedAt);
-  const lastActivityAt = Number.isFinite(rest.lastActivityAt)
-    ? rest.lastActivityAt
-    : Number.isFinite(startedAt) ? startedAt : 0;
   return {
     ...rest,
-    lastActivityAt,
+    ...(Number.isFinite(rest.lastActivityAt) ? { lastActivityAt: rest.lastActivityAt } : { lastActivityAt: undefined }),
     // Stalls only exist for live executions. A retired unknown-status marker
     // must never suppress a later, real idle period.
     ...(RUNNING.has(rest.status) ? {} : { stalled: false }),
@@ -154,6 +156,9 @@ function timedNotifications(
   const events: PushbackNotification[] = [];
   const occurredAt = new Date(context.now).toISOString();
   for (const [runId, state] of Object.entries(snapshot.runs)) {
+    // A snapshot written before the empty-text guard can still hold an empty
+    // pending message; it must never be pushed nor consume the throttle.
+    if (state.pendingProgress && state.pendingProgress.text.trim() === '') state.pendingProgress = undefined;
     if (context.progressEnabled && RUNNING.has(state.status) && state.pendingProgress &&
       (state.lastProgressAt === undefined || context.now - state.lastProgressAt >= context.progressIntervalMs)) {
       const progress = progressPayload(state, context.now);
@@ -169,18 +174,46 @@ function timedNotifications(
         state.pendingProgress = undefined;
       }
     }
-    if (context.stalledEnabled && RUNNING.has(state.status) && !state.stalled &&
-      context.now - state.lastActivityAt >= context.stalledThresholdMs) {
-      const stalled = stalledPayload(state, context.now);
+    if (context.stalledEnabled && RUNNING.has(state.status) && !state.stalled && Number.isFinite(state.lastActivityAt) &&
+      context.now - state.lastActivityAt! >= context.stalledThresholdMs) {
+      const stalled = stalledPayload(state.lastActivityAt!, context.now);
       events.push({
         type: 'run.stalled', runId, runStatus: state.status, stalled, occurredAt,
-        dedupKey: digest([runId, 'stalled', state.lastActivityAt]),
+        dedupKey: digest([runId, 'stalled', state.lastActivityAt!]),
         summary: `执行已连续 ${Math.floor(stalled.idleMs / 60000)} 分钟没有新记录`,
       });
       state.stalled = true;
     }
   }
   return { snapshot, events };
+}
+
+/**
+ * Reconcile persisted timers with the current conversation facts before any
+ * periodic event. Runs that no longer exist in the conversation are removed
+ * instead of being reported with their stale status, and live runs adopt the
+ * current status and newest real activity time.
+ */
+function reconcileTimedRuns(snapshot: PushbackSnapshot, runs: RunView[]): void {
+  const present = new Map(runs.map(run => [run.id, run]));
+  for (const [runId, state] of Object.entries(snapshot.runs)) {
+    const run = present.get(runId);
+    if (!run) { delete snapshot.runs[runId]; continue; }
+    state.status = run.status;
+    state.startedAt = run.startedAt;
+    state.completedToolCount = run.tools.filter(tool => tool.status === 'completed').length;
+    const observed = Date.parse(run.updatedAt);
+    // Only advance a real timestamp. A missing value stays missing so an
+    // incomplete snapshot can never be turned into an epoch-based stall.
+    if (Number.isFinite(observed) && Number.isFinite(state.lastActivityAt) && observed > state.lastActivityAt!) {
+      state.lastActivityAt = observed;
+      state.stalled = false;
+    }
+    if (!RUNNING.has(run.status)) {
+      delete state.pendingProgress;
+      state.stalled = false;
+    }
+  }
 }
 
 /** Pure view diff for durable pushback events. Intermediate assistant messages are throttled per run. */
@@ -193,10 +226,14 @@ export function pushbackNotifications(view: ConversationView, prior: PushbackSna
     runs: { ...previousRuns },
     requests: { ...prior?.requests },
   };
+  const runs = [view.run, ...(view.retainedRuns ?? [])].filter((run): run is RunView => Boolean(run));
+  // Runs absent from the current conversation can never become active again;
+  // keeping them in the projection is what let retired executions be timed.
+  const present = new Set(runs.map(run => run.id));
+  for (const runId of Object.keys(snapshot.runs)) if (!present.has(runId)) delete snapshot.runs[runId];
   const events: PushbackNotification[] = [];
   const emit = (type: PushbackEventType, dedupKey: string, fields: Omit<PushbackNotification, 'type' | 'dedupKey' | 'occurredAt'>) =>
     events.push({ type, dedupKey, occurredAt: view.updatedAt, ...fields });
-  const runs = [view.run, ...(view.retainedRuns ?? [])].filter((run): run is RunView => Boolean(run));
   for (const run of runs) {
     const previous = previousRuns?.[run.id];
     const signature = activitySignature(view, run);
@@ -283,7 +320,17 @@ export function pushbackNotifications(view: ConversationView, prior: PushbackSna
   return { snapshot: timed.snapshot, events: [...events, ...timed.events] };
 }
 
-/** Advance timers without a new conversation view: coalesced progress and inactivity stalls. */
-export function timedPushbackNotifications(snapshot: PushbackSnapshot, context: Pick<PushbackContext, 'now' | 'stalledThresholdMs' | 'progressIntervalMs' | 'progressEnabled' | 'stalledEnabled'>) {
-  return timedNotifications(structuredClone(snapshot), context);
+/**
+ * Advance timers without a new conversation publication. When the current runs
+ * are supplied, stale projection entries are dropped and live states are
+ * refreshed from the conversation fact before progress/stall decisions.
+ */
+export function timedPushbackNotifications(
+  snapshot: PushbackSnapshot,
+  context: Pick<PushbackContext, 'now' | 'stalledThresholdMs' | 'progressIntervalMs' | 'progressEnabled' | 'stalledEnabled'>,
+  runs?: RunView[],
+) {
+  const copy = structuredClone(snapshot);
+  if (runs) reconcileTimedRuns(copy, runs);
+  return timedNotifications(copy, context);
 }

@@ -438,6 +438,8 @@ export interface RunView {
 }
 export interface PendingRequestView extends ExecutorRequest {
   id: string;
+  /** Always present in public reads; cards without explanatory text use ''. */
+  description: string;
   conversationId: string;
   workspaceId: string;
   participantId: string;
@@ -639,7 +641,7 @@ export interface PushbackRequest {
   requestId: string;
   kind: 'approval' | 'question';
   title: string;
-  description?: string;
+  description: string;
   runId: string;
   participantId: string;
   generation: string;
