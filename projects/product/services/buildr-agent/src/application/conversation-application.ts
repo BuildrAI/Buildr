@@ -1447,8 +1447,16 @@ export class ConversationApplication {
 
   private async verifyExecutionHost(record: StoredConversation): Promise<void> {
     const {workspaceId,taskId}=record.view;
-    const workspace=await this.options.host.resolve(workspaceId,record.hostScope?.revision);
+    // Identity and location decide whether this conversation still belongs to the scope it was
+    // created in. The observation version also covers environment facts that legitimately change
+    // while the directory stays the same (for example a restart), so a drifted version is
+    // re-observed and persisted instead of failing every later send.
+    const workspace=await this.options.host.resolve(workspaceId);
     if(record.hostScope && (record.hostScope.ref.sourceId!==workspace.ref.sourceId || record.hostScope.ref.id!==workspace.ref.id || record.hostScope.rootPath!==workspace.rootPath))fail('agent_scope_binding_changed','执行环境身份或位置已变化，请核对原工作。',409);
+    if(record.hostScope && record.hostScope.revision!==workspace.revision){
+      record.hostScope=workspace;
+      try { this.save(record); } catch { /* The newer observation stays in effect even when persisting races another writer. */ }
+    }
     if(taskId)await this.options.host.verify(workspaceId,taskId);
   }
 

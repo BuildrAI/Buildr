@@ -24,9 +24,9 @@ async function settled(read:()=>boolean) { for(let n=0;n<200;n++){if(read())retu
 
 test('a host with no Buildr business modules supports separate sources, handoff and unavailable authority',async()=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-host-contract-')),a=path.join(root,'a'),b=path.join(root,'b');fs.mkdirSync(a);fs.mkdirSync(b);
-  let available=true,wrong=false,revision='one';
+  let available=true,wrong=false,moved=false,revision='one';
   const host:AgentHostCapabilities={
-    async resolveExecutionScope({ref}) {if(!available)throw new AgentServiceError('agent_host_unavailable','authority unavailable',503);return{ref:wrong?{...ref,id:'other'}:ref,revision,rootPath:ref.sourceId==='alpha'?a:b};},
+    async resolveExecutionScope({ref}) {if(!available)throw new AgentServiceError('agent_host_unavailable','authority unavailable',503);return{ref:wrong?{...ref,id:'other'}:ref,revision,rootPath:moved?b:ref.sourceId==='alpha'?a:b};},
     async verifyWorkObject({ref}) {return{ref,revision:'one'};},
     async listExecutionScopes({sourceId}) {return{refs:[{sourceId,id:'same-id'}],revision:'one'};},
   };
@@ -45,11 +45,18 @@ test('a host with no Buildr business modules supports separate sources, handoff 
       try { await settled(()=>service.conversations.read(alpha,view.id).run?.status==='completed'); } catch { assert.fail(JSON.stringify(service.conversations.read(alpha,view.id))); }
     }
     assert.equal(sends.length,2);assert.match(sends[1]!.text,/continue my goal/);
+    // The observation version also carries environment facts that legitimately change across a
+    // restart. The same scope continues and records the newer version instead of refusing work.
     revision='two';view=service.conversations.read(alpha,created.id);
-    const staleDraft={expectedRevision:view.revision,connectionId:'second',text:'must revalidate'},stalePreview=service.conversations.prepareSend(alpha,view.id,staleDraft);
-    service.conversations.send(alpha,view.id,{...staleDraft,previewToken:stalePreview.token,clientRequestId:randomUUID()});
-    await settled(()=>service.conversations.read(alpha,view.id).run?.status==='failed');assert.equal(sends.length,2);revision='one';
-    available=false;assert.equal(service.conversations.read(alpha,created.id).run?.status,'failed');
+    const driftDraft={expectedRevision:view.revision,connectionId:'second',text:'continue after restart'},driftPreview=service.conversations.prepareSend(alpha,view.id,driftDraft);
+    service.conversations.send(alpha,view.id,{...driftDraft,previewToken:driftPreview.token,clientRequestId:randomUUID()});
+    await settled(()=>service.conversations.read(alpha,view.id).run?.status==='completed');assert.equal(sends.length,3);
+    // A different location for the same scope stays fatal: stored history is not silently re-bound.
+    moved=true;view=service.conversations.read(alpha,created.id);
+    const movedDraft={expectedRevision:view.revision,connectionId:'second',text:'must not run after move'},movedPreview=service.conversations.prepareSend(alpha,view.id,movedDraft);
+    service.conversations.send(alpha,view.id,{...movedDraft,previewToken:movedPreview.token,clientRequestId:randomUUID()});
+    await settled(()=>service.conversations.read(alpha,view.id).run?.status==='failed');assert.equal(sends.length,3);
+    moved=false;revision='one';available=false;
     await assert.rejects(service.conversations.create(alpha,{}),{code:'agent_host_unavailable'});
     available=true;wrong=true;await assert.rejects(service.conversations.create(alpha,{}),{code:'agent_scope_binding_changed'});
   }finally{await service.close();fs.rmSync(root,{recursive:true,force:true});}

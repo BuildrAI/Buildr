@@ -45,7 +45,9 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
           assertSource(ref.sourceId);
           const workspace = ref.id === '@default' ? defaultWorkspace() : requires[WORKSPACE_APPLICATION].resolveRegisteredWorkspace(ref.id);
           const rootPath = fs.realpathSync(workspace.rootPath), info = fs.statSync(rootPath);
-          const revision = digest([ref,rootPath,info.dev,info.ino]);
+          // The observation version identifies the directory, not the mount it sits on:
+          // device numbers change across restarts and must not invalidate stored conversations.
+          const revision = digest([ref,rootPath,info.ino,info.birthtimeMs]);
           if(expectedRevision && revision !== expectedRevision)throw new AgentServiceError('agent_scope_binding_changed','执行环境已变化。',409);
           return { ref, rootPath, revision };
         },
