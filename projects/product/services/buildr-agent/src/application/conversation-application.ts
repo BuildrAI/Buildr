@@ -1184,10 +1184,15 @@ export class ConversationApplication {
         conversationRuns(record.view).some(run => run.id === entryRunId && run.tools.some(tool => tool.id === item.id && tool.status === 'running'));
       if (entry.kind === 'tool' && !activeBackgroundTool && ['completed', 'failed'].includes(entry.status ?? '') &&
         (!item.status || item.status === 'running' || entry.status === 'completed' && item.status === 'unknown')) return originChanged;
+      // A late native projection can repeat a streaming item after its final
+      // state was already recorded. Keep the settled assistant state while
+      // still accepting real text that arrives with the late observation.
+      const settledAssistant = entry.kind === 'message' && entry.role === 'assistant' && entry.status === 'completed' &&
+        (!item.status || item.status === 'running' || item.status === 'unknown');
       // v3 native tools persist identity and metadata only. Their body is read
       // on demand; comparing a hydrated body with the stored empty skeleton
       // would make identical history look new after every save/reload.
-      const status = activeBackgroundTool ? entry.status : item.status;
+      const status = activeBackgroundTool || settledAssistant ? entry.status : item.status;
       const nativeBody = !live && item.nativeTool && Boolean(record.nativeTools?.[entry.id]);
       const priorParticipation=record.participationTools?.[entry.id]??entry.participation;
       const participation = entry.kind==='tool' ? mergeParticipation(item.input!==undefined&&item.input!==entry.input&&priorParticipation?{...priorParticipation,matches:[]}:priorParticipation,item.participation,item.name??entry.name,item.input??entry.input) : undefined;

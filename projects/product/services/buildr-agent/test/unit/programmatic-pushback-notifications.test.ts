@@ -113,6 +113,26 @@ test('run.progress sends the first intermediate message immediately and coalesce
   assert.equal(due.events[0]!.progress!.elapsedMs, 6 * MINUTE);
 });
 
+test('an empty intermediate message is neither pushed nor counted against the five-minute window', () => {
+  const first = diff(view({ run: run('run-one', 'running') }));
+  assert.deepEqual(first.events, []);
+  // Native entries can exist before their text arrives; the body is written later.
+  const empty = [{ id: 'm1', sequence: 1, kind: 'message', role: 'assistant', text: '', createdAt: '2026-11-01T00:01:00.000Z', runId: 'run-one', status: 'running' }];
+  const created = diff(view({ updatedAt: '2026-11-01T00:01:00.000Z', run: run('run-one', 'running'), entries: empty as any }), first.snapshot, context(NOW + MINUTE));
+  assert.deepEqual(created.events, [], 'empty text is not progress');
+  assert.equal(created.snapshot.runs['run-one']!.lastProgressAt, undefined, 'the empty message does not open the window');
+  assert.equal(created.snapshot.runs['run-one']!.pendingProgress, undefined);
+
+  const whitespace = diff(view({ run: run('run-one', 'running'), entries: [{ ...empty[0], text: '   \n' }] as any }), created.snapshot, context(NOW + 2 * MINUTE));
+  assert.deepEqual(whitespace.events, [], 'whitespace-only text is also empty');
+
+  const filled = [{ ...empty[0], text: '联调测试：第一条中间消息', status: 'completed' }];
+  const sent = diff(view({ run: run('run-one', 'running'), entries: filled as any }), whitespace.snapshot, context(NOW + 6 * MINUTE));
+  assert.deepEqual(sent.events.map(event => event.type), ['run.progress'], 'the first non-empty body is pushed immediately');
+  assert.equal(sent.events[0]!.progress!.text, '联调测试：第一条中间消息');
+  assert.equal(sent.snapshot.runs['run-one']!.lastProgressAt, NOW + 6 * MINUTE);
+});
+
 test('run.stalled fires after twenty minutes without a record, resets on recovery, then fires again', () => {
   const first = diff(view({ run: run('run-one', 'running') }));
   assert.deepEqual(first.events, []);
@@ -129,6 +149,41 @@ test('run.stalled fires after twenty minutes without a record, resets on recover
   assert.deepEqual(recovered.events.map(event => event.type), ['run.progress']);
   const secondStall = diff(view({ run: run('run-one', 'running'), entries: recoveredEntries as any }), recovered.snapshot, context(NOW + 42 * MINUTE));
   assert.deepEqual(secondStall.events.map(event => event.type), ['run.stalled'], 'a full new twenty-minute idle period is required');
+});
+
+test('run.stalled is limited to live statuses with a complete payload and survives a restart', () => {
+  const first = diff(view({ run: run('run-one', 'running') }));
+  const stalled = diff(view({ run: run('run-one', 'running') }), first.snapshot, context(NOW + 20 * MINUTE));
+  assert.deepEqual(stalled.events.map(event => event.type), ['run.stalled']);
+  assert.deepEqual(stalled.events[0]!.stalled, { idleMs: 20 * MINUTE, lastActivityAt: '2026-11-01T00:00:00.000Z' });
+  // Restart: the projection is reloaded from its persisted JSON form.
+  const reloaded = JSON.parse(JSON.stringify(stalled.snapshot)) as PushbackSnapshot;
+  const afterRestart = timedPushbackNotifications(reloaded, context(NOW + 60 * MINUTE));
+  assert.deepEqual(afterRestart.events, [], 'the same idle period is not announced again after a restart');
+
+  for (const status of ['unknown', 'waiting-question', 'waiting-approval', 'stopped', 'failed', 'completed'] as const) {
+    const state = diff(view({ run: run('status-run', status) }));
+    const idle = timedPushbackNotifications(state.snapshot, context(NOW + 60 * MINUTE));
+    assert.deepEqual(idle.events.filter(event => event.type === 'run.stalled'), [], `${status} never produces run.stalled`);
+  }
+});
+
+test('a retired unknown-status projection marker is discarded instead of replayed', () => {
+  const legacy = {
+    title: 'work', workspaceId: 'workspace-one', conversationId: 'conversation-one',
+    runs: {
+      'run-one': {
+        status: 'unknown', stalled: true, unknownSince: NOW - 10 * MINUTE,
+        lastActivityAt: NOW - 30 * MINUTE, activitySignature: 'legacy', completedToolCount: 0,
+        startedAt: '2026-11-01T00:00:00.000Z',
+      },
+    },
+    requests: {},
+  } as unknown as PushbackSnapshot;
+  const next = timedPushbackNotifications(legacy, context(NOW + 60 * MINUTE));
+  assert.deepEqual(next.events, [], 'the removed five-minute unknown-status path cannot fire');
+  assert.equal(next.snapshot.runs['run-one']!.stalled, false);
+  assert.equal((next.snapshot.runs['run-one'] as unknown as { unknownSince?: number }).unknownSince, undefined, 'the retired field is not carried forward');
 });
 
 test('a fault alone does not claim a running execution is stalled', () => {
@@ -163,4 +218,24 @@ test('retained runs are diffed alongside the current run', () => {
   assert.deepEqual(done.events.map(event => event.type), ['run.completed']);
   assert.equal(done.events[0]!.runId, 'run-one');
   assert.ok(done.events[0]!.finalReplyUrl);
+});
+
+test('a question card without a description still carries an empty description string', () => {
+  const request = {
+    id: 'question-two', kind: 'question' as const, title: '确认范围',
+    runId: 'run-one', participantId: 'p', generation: 'g',
+    questions: [{ id: 'scope', label: '范围', multiple: false, allowOther: false, options: [{ id: 'yes', label: '确认' }] }],
+  };
+  const first = diff(view({ revision: 'rev-empty-description', run: run('run-one', 'waiting-question'), requests: [request as any] }));
+  assert.equal(first.events[0]!.request!.description, '');
+});
+
+test('terminal events keep the complete reply on the persisted projection for restart repair', () => {
+  const long = 'y'.repeat(1200);
+  const entries = [{ id: 'm1', sequence: 1, kind: 'message', role: 'assistant', text: long, createdAt: '2026-11-01T00:00:01.000Z', runId: 'run-one', status: 'completed' }];
+  const first = diff(view({ run: run('run-one', 'running') }));
+  const done = diff(view({ run: run('run-one', 'completed'), entries: entries as any }), first.snapshot);
+  assert.equal(done.snapshot.runs['run-one']!.finalReply, long, 'the full reply is retained beyond the 500-character summary');
+  const reloaded = JSON.parse(JSON.stringify(done.snapshot)) as PushbackSnapshot;
+  assert.equal(reloaded.runs['run-one']!.finalReply, long);
 });

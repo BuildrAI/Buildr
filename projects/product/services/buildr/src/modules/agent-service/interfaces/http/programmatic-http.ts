@@ -107,7 +107,7 @@ export function createProgrammaticHttpContribution(resolve: () => AgentService |
         const current = authenticate();
         return { status: 200, body: { schemaVersion: 'buildr.programmatic-discovery/v1', apiVersion: '1', version: options.version(), contractVersion: programmaticContractVersion(programmaticOpenApi(options.version())), status: 'ready', serviceId: createHash('sha256').update(options.dataRoot()).digest('hex'), ...locations(context), credential: current, capabilities: [
           ...PROGRAMMATIC_OPERATIONS.filter(item => current.scopes.includes(item.scope) || item.id === 'reply' && current.scopes.includes('approve')).map(({ id, method, path, scope, summary }) => ({ id, method, path: `${base}/workspaces/:workspaceId/conversations${path}`, scope, summary, documentationUrl: `${base}/operations/${id}` })),
-          ...(current.scopes.includes('read') ? [{ id: 'events', method: 'GET', path: `${base}/workspaces/:workspaceId/events`, scope: 'read', summary: '按序号补查本凭据可见事件（含未送达）', documentationUrl: `${base}/help` }] : []),
+          ...(current.scopes.includes('read') ? [{ id: 'events', method: 'GET', path: `${base}/workspaces/:workspaceId/events`, scope: 'read', summary: '按序号补查本凭据可见事件（含未送达）', documentationUrl: `${base}/operations/events` }] : []),
         ], workspaces: options.workspaces().filter(item => current.workspaceIds.includes(item.id)), connections, models: catalog.models } };
       }
       if (request.method === 'GET' && (pathname === base + '/operations' || pathname.startsWith(base + '/operations/'))) {

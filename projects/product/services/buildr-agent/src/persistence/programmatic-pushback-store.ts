@@ -30,7 +30,7 @@ export class ProgrammaticPushbackStore {
       CREATE TABLE IF NOT EXISTS configs(credentialId TEXT PRIMARY KEY, url TEXT NOT NULL, enabled INTEGER NOT NULL, rateLimitHour INTEGER NOT NULL, rateLimitMinute INTEGER NOT NULL, progressEnabled INTEGER NOT NULL DEFAULT 1, stalledEnabled INTEGER NOT NULL DEFAULT 1, revision TEXT NOT NULL, secretFilePath TEXT NOT NULL, updatedAt TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS takeovers(workspaceId TEXT NOT NULL, conversationId TEXT NOT NULL, credentialId TEXT NOT NULL, firstAt TEXT NOT NULL, PRIMARY KEY(workspaceId,conversationId,credentialId));
       CREATE TABLE IF NOT EXISTS stop_initiators(workspaceId TEXT NOT NULL, conversationId TEXT NOT NULL, runId TEXT NOT NULL, credentialId TEXT NOT NULL, PRIMARY KEY(workspaceId,conversationId,runId,credentialId));
-      CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT, eventId TEXT UNIQUE NOT NULL, credentialId TEXT NOT NULL, workspaceId TEXT NOT NULL, conversationId TEXT NOT NULL, type TEXT NOT NULL, body TEXT NOT NULL, deliveryState TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, nextAttemptAt INTEGER NOT NULL DEFAULT 0, mergedCount INTEGER NOT NULL DEFAULT 1, held INTEGER NOT NULL DEFAULT 0, mergeKey TEXT, owner TEXT, claim TEXT, lease INTEGER NOT NULL DEFAULT 0, createdAt INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT, eventId TEXT UNIQUE NOT NULL, credentialId TEXT NOT NULL, workspaceId TEXT NOT NULL, conversationId TEXT NOT NULL, type TEXT NOT NULL, dedupKey TEXT NOT NULL DEFAULT '', body TEXT NOT NULL, deliveryState TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, nextAttemptAt INTEGER NOT NULL DEFAULT 0, mergedCount INTEGER NOT NULL DEFAULT 1, held INTEGER NOT NULL DEFAULT 0, mergeKey TEXT, owner TEXT, claim TEXT, lease INTEGER NOT NULL DEFAULT 0, createdAt INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS pushback_pending ON events(deliveryState,held,nextAttemptAt,lease,sequence);
       CREATE INDEX IF NOT EXISTS pushback_scope ON events(credentialId,workspaceId,sequence);
       CREATE INDEX IF NOT EXISTS pushback_merge ON events(credentialId,conversationId,type,held,deliveryState);
@@ -42,6 +42,13 @@ export class ProgrammaticPushbackStore {
     const configColumns = new Set((db.prepare('PRAGMA table_info(configs)').all() as Array<{name:string}>).map(column => column.name));
     if (!configColumns.has('progressEnabled')) db.exec('ALTER TABLE configs ADD COLUMN progressEnabled INTEGER NOT NULL DEFAULT 1');
     if (!configColumns.has('stalledEnabled')) db.exec('ALTER TABLE configs ADD COLUMN stalledEnabled INTEGER NOT NULL DEFAULT 1');
+    const eventColumns = new Set((db.prepare('PRAGMA table_info(events)').all() as Array<{name:string}>).map(column => column.name));
+    if (!eventColumns.has('dedupKey')) db.exec("ALTER TABLE events ADD COLUMN dedupKey TEXT NOT NULL DEFAULT ''");
+    // Existing rows predate durable dedup; their eventId is already unique and
+    // therefore a safe per-row key. The unique index then makes duplicate
+    // logical notifications impossible across processes and restarts.
+    db.exec("UPDATE events SET dedupKey=eventId WHERE dedupKey=''");
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS pushback_dedup ON events(credentialId,conversationId,type,dedupKey)');
     db.prepare('INSERT OR IGNORE INTO identity(id,value) VALUES(1,?)').run(randomUUID());
     const instanceId = (db.prepare('SELECT value FROM identity WHERE id=1').get() as { value: string }).value;
     return this.opened = { db, instanceId };
@@ -158,13 +165,16 @@ export class ProgrammaticPushbackStore {
     const db = this.existing(); if (!db) return undefined;
     return db.prepare("SELECT sequence,eventId,mergedCount FROM events WHERE credentialId=? AND conversationId=? AND type=? AND held=1 AND deliveryState='pending' ORDER BY sequence DESC LIMIT 1").get(credentialId, conversationId, type) as { sequence: number; eventId: string; mergedCount: number } | undefined;
   }
-  appendEvent(input: { credentialId: string; workspaceId: string; conversationId: string; type: string; dedupKey: string; held: boolean; mergeKey: string | null; now: number; deliveryState?: 'pending' | 'undelivered'; build: (sequence: number, eventId: string) => PushbackEvent }): { sequence: number; eventId: string } {
+  appendEvent(input: { credentialId: string; workspaceId: string; conversationId: string; type: string; dedupKey: string; held: boolean; mergeKey: string | null; now: number; deliveryState?: 'pending' | 'undelivered'; build: (sequence: number, eventId: string) => PushbackEvent }): { sequence: number; eventId: string } | undefined {
     return this.transaction(() => {
       const db = this.db;
       const temporary = randomUUID();
       const deliveryState = input.deliveryState ?? 'pending';
-      const info = db.prepare("INSERT INTO events(eventId,credentialId,workspaceId,conversationId,type,body,deliveryState,attempts,nextAttemptAt,mergedCount,held,mergeKey,createdAt) VALUES(?,?,?,?,?,'',?,0,?,1,?,?,?)")
-        .run(temporary, input.credentialId, input.workspaceId, input.conversationId, input.type, deliveryState, input.now, Number(input.held), input.mergeKey, input.now);
+      const info = db.prepare("INSERT OR IGNORE INTO events(eventId,credentialId,workspaceId,conversationId,type,dedupKey,body,deliveryState,attempts,nextAttemptAt,mergedCount,held,mergeKey,createdAt) VALUES(?,?,?,?,?,?,'',?,0,?,1,?,?,?)")
+        .run(temporary, input.credentialId, input.workspaceId, input.conversationId, input.type, input.dedupKey, deliveryState, input.now, Number(input.held), input.mergeKey, input.now);
+      // A duplicate logical notification (same credential, conversation, type
+      // and dedup key) is already recorded; callers must not deliver it again.
+      if (Number(info.changes) === 0) return undefined;
       const sequence = Number(info.lastInsertRowid);
       const eventId = digest([this.instanceId, sequence, input.credentialId, input.dedupKey]);
       const body = JSON.stringify(input.build(sequence, eventId));
@@ -198,6 +208,18 @@ export class ProgrammaticPushbackStore {
   }
   markUndelivered(credentialId: string): void {
     this.db.prepare("UPDATE events SET deliveryState='undelivered',owner=NULL,claim=NULL,lease=0 WHERE credentialId=? AND deliveryState='pending'").run(credentialId);
+  }
+  /** Pending and given-up events that a newer build may still repair before any future delivery. */
+  listRepairableEvents(): Array<{ sequence: number; credentialId: string; workspaceId: string; conversationId: string; type: string; body: string; deliveryState: 'pending' | 'undelivered' }> {
+    const db = this.existing(); if (!db) return [];
+    return db.prepare("SELECT sequence,credentialId,workspaceId,conversationId,type,body,deliveryState FROM events WHERE deliveryState IN ('pending','undelivered') ORDER BY sequence").all() as Array<{ sequence: number; credentialId: string; workspaceId: string; conversationId: string; type: string; body: string; deliveryState: 'pending' | 'undelivered' }>;
+  }
+  replaceEventBody(sequence: number, body: string): void {
+    this.db.prepare('UPDATE events SET body=? WHERE sequence=?').run(body, sequence);
+  }
+  /** Retire one event without delivering it again, including a held event. */
+  retireEvent(sequence: number): void {
+    this.db.prepare("UPDATE events SET deliveryState='undelivered',held=0,owner=NULL,claim=NULL,lease=0 WHERE sequence=?").run(sequence);
   }
   nextDeliveryTime(now: number): number | undefined {
     const db = this.existing(); if (!db) return undefined;

@@ -29,20 +29,21 @@ function receiver() {
   };
   return { calls, transport, fail: () => { status = 500; }, ok: () => { status = 200; } };
 }
-function setup(options: { backoffMs?: number[]; rateLimitMinute?: number; rateLimitHour?: number; stalledThresholdMs?: number; retentionMs?: number } = {}) {
+function setup(options: { backoffMs?: number[]; rateLimitMinute?: number; rateLimitHour?: number; stalledThresholdMs?: number; retentionMs?: number; readConversation?: (workspaceId: string, conversationId: string) => ConversationView | undefined } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-pushback-'));
   const dir = path.join(root, 'pushback');
   const fake = receiver();
   let current = NOW;
-  const pb = new ProgrammaticPushback({ root: dir, transport: fake.transport, now: () => current, checkIntervalMs: 3600000, ...(options.backoffMs ? { backoffMs: options.backoffMs } : {}), ...(options.stalledThresholdMs === undefined ? {} : { stalledThresholdMs: options.stalledThresholdMs }), ...(options.retentionMs === undefined ? {} : { retentionMs: options.retentionMs }) });
+  const pb = new ProgrammaticPushback({ root: dir, transport: fake.transport, now: () => current, checkIntervalMs: 3600000, ...(options.backoffMs ? { backoffMs: options.backoffMs } : {}), ...(options.stalledThresholdMs === undefined ? {} : { stalledThresholdMs: options.stalledThresholdMs }), ...(options.retentionMs === undefined ? {} : { retentionMs: options.retentionMs }), ...(options.readConversation ? { readConversation: options.readConversation } : {}) });
   const flush = async () => { for (let i = 0; i < 25; i++) await new Promise(resolve => setTimeout(resolve, 0)); };
   const rows = (sql: string, ...values: any[]) => { const db = new DatabaseSync(path.join(dir, 'pushback.sqlite')); try { return db.prepare(sql).all(...values) as any[]; } finally { db.close(); } };
+  const exec = (sql: string, ...values: any[]) => { const db = new DatabaseSync(path.join(dir, 'pushback.sqlite')); try { return db.prepare(sql).run(...values); } finally { db.close(); } };
   const configure = (credentialId = 'cred-one', input: Partial<{ enabled: boolean; url: string; secret: string; rateLimitHour: number; rateLimitMinute: number }> = {}) => {
     const revision = pb.read(credentialId).revision;
     return pb.save(credentialId, { expectedRevision: revision, enabled: input.enabled ?? true, url: input.url ?? URL, secret: input.secret ?? SECRET, ...(input.rateLimitHour === undefined ? {} : { rateLimitHour: input.rateLimitHour }), ...(input.rateLimitMinute === undefined ? {} : { rateLimitMinute: input.rateLimitMinute }) });
   };
   const close = () => { pb.close(); fs.rmSync(root, { recursive: true, force: true }); };
-  return { root, dir, pb, fake, flush, rows, configure, advance: (ms: number) => { current += ms; }, now: () => current, close };
+  return { root, dir, pb, fake, flush, rows, exec, configure, advance: (ms: number) => { current += ms; }, now: () => current, close };
 }
 
 test('configuration reads never expose the secret; reveal is revision-checked and enable requires a secret', () => {
@@ -334,6 +335,89 @@ test('the periodic check raises run.stalled after continuous inactivity and clea
     assert.ok(dropped.droppedCount >= 1);
     assert.equal(dropped.conversationId, '');
   } finally { s.close(); }
+});
+
+test('run.stalled carries complete fields and one idle period is announced once across concurrent processes and restarts', async () => {
+  const s = setup();
+  let restarted: ProgrammaticPushback | undefined;
+  try {
+    s.configure();
+    s.pb.setCredentialAccess('cred-one', { scopes: ['read', 'execute'], allowFullAccess: false });
+    s.pb.markTakeover('workspace-one', 'conversation-one', 'cred-one');
+    s.pb.publish(conversationEvent(view({ run: run('run-one', 'running') })));
+    await s.flush();
+    // A second runtime sharing the same durable store must not duplicate the event.
+    restarted = new ProgrammaticPushback({ root: s.dir, transport: s.fake.transport, now: s.now, checkIntervalMs: 3600000 });
+    s.advance(1200000);
+    s.pb.tick();
+    restarted.tick();
+    await s.flush();
+    const stalledCalls = s.fake.calls.filter(call => call.body.type === 'run.stalled');
+    assert.equal(stalledCalls.length, 1, 'concurrent processes deduplicate the same idle period');
+    const payload = stalledCalls[0]!.body;
+    assert.deepEqual(payload.stalled, { idleMs: 1200000, lastActivityAt: '2026-11-01T00:00:00.000Z' });
+    assert.deepEqual(payload.scopes, ['read', 'execute']);
+    assert.equal(payload.allowFullAccess, false);
+    restarted.close(); restarted = undefined;
+    const again = new ProgrammaticPushback({ root: s.dir, transport: s.fake.transport, now: s.now, checkIntervalMs: 3600000 });
+    try {
+      s.advance(600000);
+      again.tick();
+      await s.flush();
+      assert.equal(s.fake.calls.filter(call => call.body.type === 'run.stalled').length, 1, 'a restart does not re-announce the same idle period');
+    } finally { again.close(); }
+  } finally { restarted?.close(); s.close(); }
+});
+
+test('legacy unknown-status stalls never deliver and pending old-format events are repaired before delivery', async () => {
+  const conversation = view({
+    run: run('run-legacy', 'completed'),
+    entries: [{ id: 'm1', sequence: 1, kind: 'message', role: 'assistant', text: '旧轮次的完整最终回复', createdAt: '2026-11-01T00:00:01.000Z', runId: 'run-legacy', status: 'completed' }] as any,
+  });
+  const s = setup({ readConversation: () => conversation });
+  let restarted: ProgrammaticPushback | undefined;
+  try {
+    s.configure();
+    s.pb.setCredentialAccess('cred-one', { scopes: ['read', 'execute', 'answer'], allowFullAccess: true });
+    s.pb.markTakeover('workspace-one', 'conversation-one', 'cred-one');
+    s.pb.publish(conversationEvent(view({ run: run('run-legacy', 'running') })));
+    await s.flush();
+    s.fake.calls.length = 0;
+    const legacy = (type: string, runId: string | undefined, extra: Record<string, unknown>) => JSON.stringify({
+      eventId: 'legacy-' + type, type, occurredAt: '2026-11-02T00:00:00.000Z',
+      machine: { id: 'm', name: 'n' }, workspaceId: 'workspace-one', conversationId: 'conversation-one',
+      title: 'work', ...(runId ? { runId } : {}), summary: 'legacy', detailUrl: '/legacy', sequence: 0, ...extra,
+    });
+    const insert = (eventId: string, type: string, body: string) =>
+      s.exec("INSERT INTO events(eventId,credentialId,workspaceId,conversationId,type,dedupKey,body,deliveryState,attempts,nextAttemptAt,mergedCount,held,mergeKey,createdAt) VALUES(?,?,?,?,?,?,?,'pending',0,0,1,0,NULL,?)", eventId, 'cred-one', 'workspace-one', 'conversation-one', type, eventId, body, s.now());
+    insert('legacy-run.completed', 'run.completed', legacy('run.completed', 'run-legacy', { runStatus: 'completed' }));
+    insert('legacy-run.stalled', 'run.stalled', legacy('run.stalled', 'run-legacy', { runStatus: 'unknown', summary: '执行状态未知已超过 5 分钟' }));
+    insert('legacy-run.progress', 'run.progress', legacy('run.progress', 'run-legacy', { runStatus: 'running', progress: { text: '', elapsedMs: 1000, completedToolCount: 0 } }));
+    // A projection written by the retired build still carries its old marker.
+    s.exec("UPDATE projections SET snapshot=? WHERE credentialId='cred-one' AND conversationId='conversation-one'", JSON.stringify({
+      title: 'work', workspaceId: 'workspace-one', conversationId: 'conversation-one',
+      runs: { 'run-legacy': { status: 'unknown', stalled: true, unknownSince: s.now() - 600000, lastActivityAt: s.now() - 1800000, activitySignature: 'legacy', completedToolCount: 0, startedAt: '2026-11-01T00:00:00.000Z' } },
+      requests: {},
+    }));
+    restarted = new ProgrammaticPushback({ root: s.dir, transport: s.fake.transport, now: s.now, checkIntervalMs: 3600000, readConversation: () => conversation });
+    restarted.tick();
+    await s.flush();
+    const delivered = s.fake.calls.filter(call => {
+      try { return call.body.eventId === 'legacy-run.completed'; } catch { return false; }
+    });
+    assert.equal(delivered.length, 1, 'the pending completion is delivered');
+    assert.equal(delivered[0]!.body.finalReply, '旧轮次的完整最终回复');
+    assert.equal(delivered[0]!.body.finalReplyUrl, '/api/v1/programmatic/workspaces/workspace-one/conversations/conversation-one/runs/run-legacy/final-reply');
+    assert.deepEqual(delivered[0]!.body.scopes, ['read', 'execute', 'answer']);
+    assert.equal(delivered[0]!.body.allowFullAccess, true);
+    assert.ok(!s.fake.calls.some(call => call.body.eventId === 'legacy-run.stalled'), 'the retired unknown-status stall is not delivered');
+    assert.ok(!s.fake.calls.some(call => call.body.eventId === 'legacy-run.progress'), 'an empty progress event is not delivered');
+    const retired = s.rows("SELECT eventId,deliveryState FROM events WHERE eventId IN ('legacy-run.stalled','legacy-run.progress')");
+    assert.ok(retired.every(row => row.deliveryState === 'undelivered'));
+    restarted.tick();
+    await s.flush();
+    assert.equal(s.fake.calls.filter(call => call.body.eventId === 'legacy-run.completed').length, 1, 'repaired events are not replayed');
+  } finally { restarted?.close(); s.close(); }
 });
 
 test('run.stopped is suppressed for the credential that recorded the stop', async () => {

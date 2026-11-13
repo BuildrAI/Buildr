@@ -51,15 +51,15 @@ run.completed、run.failed 和 run.stopped 另含 finalReply（该 run 最终 as
 ~~~json
 {"eventId":"...","type":"run.completed","occurredAt":"2026-11-13T03:00:00.000Z","machine":{"id":"machine-id","name":"buildr-host"},"workspaceId":"...","conversationId":"...","title":"发布候选版","runId":"...","runStatus":"completed","finalReply":"完整最终回复……","finalReplyUrl":"/api/v1/programmatic/workspaces/{workspaceId}/conversations/{conversationId}/runs/{runId}/final-reply","scopes":["read","execute","answer","approve"],"allowFullAccess":true,"summary":"完整最终回复……","detailUrl":"/api/v1/programmatic/workspaces/{workspaceId}/conversations/{conversationId}","sequence":42}
 ~~~
-decision.requested 的 request 含 requestId、kind、title、description、runId、participantId、generation、conversationRevision，以及卡片的全部内容：审批卡 options 每项含 optionId、label、description；问题卡 questions 每项含 questionId、question、allowOther、multiple、options。回答时使用这些准确标识，不要按最新对话猜测。示例：
+decision.requested 的 request 含 requestId、kind、title、description、runId、participantId、generation、conversationRevision，以及卡片的全部内容：审批卡 options 每项含 optionId、label、description；问题卡 questions 每项含 questionId、question、allowOther、multiple、options。description 始终存在；卡片没有说明时为空字符串。回答时使用这些准确标识，不要按最新对话猜测。示例：
 ~~~json
 {"type":"decision.requested","request":{"requestId":"...","kind":"question","title":"确认范围","description":"本轮需要确认两个问题。","runId":"...","participantId":"...","generation":"...","conversationRevision":"...","questions":[{"questionId":"scope","question":"处理范围","allowOther":true,"multiple":true,"options":[{"optionId":"all","label":"全部","description":"覆盖所有文件"},{"optionId":"changed","label":"仅变更"}]}]}}
 ~~~
-run.progress 在新 assistant 中间消息出现时产生。payload 的 progress 含 text（最新一条中间消息全文）、elapsedMs（run 到本次推送已运行时长）和 completedToolCount（已完成工具数）。同一 run 相邻两次推送至少间隔 5 分钟；间隔内只保留最新一条，窗口结束推送最新内容。首次新中间消息在满足间隔时立即推送。示例：
+run.progress 在新 assistant 中间消息出现时产生。payload 的 progress 含 text（最新一条中间消息全文）、elapsedMs（run 到本次推送已运行时长）和 completedToolCount（已完成工具数）。同一 run 相邻两次推送至少间隔 5 分钟；间隔内只保留最新一条，窗口结束推送最新内容。首次新中间消息在满足间隔时立即推送。正文为空的中间消息（例如刚创建、正文尚未写入）不推送，也不占用 5 分钟窗口；等该消息取到非空正文后再按上述窗口规则推送。示例：
 ~~~json
 {"type":"run.progress","runId":"...","runStatus":"running","progress":{"text":"已完成日志定位，正在复现问题……","elapsedMs":420000,"completedToolCount":3}}
 ~~~
-run.stalled 仅在 starting/running/tools-active 状态且连续 20 分钟没有新消息、工具调用或状态变化时推送一次；payload 的 stalled 含 idleMs 与 lastActivityAt。恢复产生新记录后重置计时，再连续空闲 20 分钟才会再次推送。示例：
+run.stalled 仅在 starting/running/tools-active 状态且连续 20 分钟没有新消息、工具调用或状态变化时推送一次；unknown、waiting-question、waiting-approval 和终态不产生该事件。payload 的 stalled 含 idleMs 与 lastActivityAt，并与其他事件一样含 scopes 与 allowFullAccess。同一段空闲期只推送一次，去重记录持久化，服务重启不会重报；恢复产生新记录后重置计时，再连续空闲 20 分钟才会再次推送。示例：
 ~~~json
 {"type":"run.stalled","runId":"...","runStatus":"running","stalled":{"idleMs":1200000,"lastActivityAt":"2026-11-13T02:40:00.000Z"},"summary":"执行已连续 20 分钟没有新记录"}
 ~~~

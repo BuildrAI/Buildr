@@ -12,6 +12,8 @@ export type PushbackRunState = {
   progressSignature?: string;
   lastProgressAt?: number;
   pendingProgress?: { text: string; messageSignature: string };
+  /** Last terminal reply kept for delivery-time repair of an event enqueued by an older build. */
+  finalReply?: string;
 };
 export type PushbackSnapshot = {
   title: string;
@@ -46,6 +48,9 @@ const SUMMARY_LIMIT = 500;
 const RUNNING = new Set<RunStatus>(['starting', 'running', 'tools-active']);
 const TERMINAL = new Set<RunStatus>(['completed', 'failed', 'stopped']);
 
+/** Stalls are reserved for executions that can still produce records. */
+export const isLiveRunStatus = (status: RunStatus | undefined): boolean => status !== undefined && RUNNING.has(status);
+
 const detailUrl = (workspaceId: string, conversationId: string) => `/api/v1/programmatic/workspaces/${workspaceId}/conversations/${conversationId}`;
 const finalReplyUrl = (workspaceId: string, conversationId: string, runId: string) =>
   `${detailUrl(workspaceId, conversationId)}/runs/${runId}/final-reply`;
@@ -64,7 +69,9 @@ function activitySignature(view: ConversationView, run: RunView): string {
 }
 function progressEntry(view: ConversationView, run: RunView) {
   return runEntries(view, run)
-    .filter(entry => entry.kind === 'message' && entry.role === 'assistant' && !entry.thinking && !entry.parentToolId && entry.status !== 'failed')
+    // A native entry can appear before its text arrives. Empty text is not
+    // progress and must not consume the throttle window.
+    .filter(entry => entry.kind === 'message' && entry.role === 'assistant' && !entry.thinking && !entry.parentToolId && entry.status !== 'failed' && entry.text.trim() !== '')
     .sort((left, right) => left.sequence - right.sequence)
     .at(-1);
 }
@@ -93,7 +100,8 @@ function requestPayload(request: ConversationView['requests'][number], conversat
     requestId: request.id,
     kind: request.kind,
     title: request.title,
-    ...(request.description === undefined ? {} : { description: request.description }),
+    // Always present so receivers need no optional handling; absent card text is the empty string.
+    description: request.description ?? '',
     runId: request.runId,
     participantId: request.participantId,
     generation: request.generation,
@@ -113,10 +121,36 @@ function progressPayload(state: PushbackRunState, now: number): PushbackProgress
 function stalledPayload(state: PushbackRunState, now: number): PushbackStall {
   return { idleMs: Math.max(0, now - state.lastActivityAt), lastActivityAt: new Date(state.lastActivityAt).toISOString() };
 }
+/**
+ * Snapshots written by older builds can carry retired fields (for example the
+ * removed five-minute unknown-status stall marker). Keep only the current shape
+ * and make sure a stall payload can always be derived from a real timestamp.
+ */
+function normalizeRunState(state: PushbackRunState): PushbackRunState {
+  const { unknownSince: _retiredUnknownSince, ...rest } = state as PushbackRunState & { unknownSince?: unknown };
+  const startedAt = Date.parse(rest.startedAt);
+  const lastActivityAt = Number.isFinite(rest.lastActivityAt)
+    ? rest.lastActivityAt
+    : Number.isFinite(startedAt) ? startedAt : 0;
+  return {
+    ...rest,
+    lastActivityAt,
+    // Stalls only exist for live executions. A retired unknown-status marker
+    // must never suppress a later, real idle period.
+    ...(RUNNING.has(rest.status) ? {} : { stalled: false }),
+  };
+}
+function normalizeSnapshot(snapshot: PushbackSnapshot): PushbackSnapshot {
+  return {
+    ...snapshot,
+    runs: Object.fromEntries(Object.entries(snapshot.runs ?? {}).map(([runId, state]) => [runId, normalizeRunState(state)])),
+  };
+}
 function timedNotifications(
   snapshot: PushbackSnapshot,
   context: Pick<PushbackContext, 'now' | 'stalledThresholdMs' | 'progressIntervalMs' | 'progressEnabled' | 'stalledEnabled'>,
 ): { snapshot: PushbackSnapshot; events: PushbackNotification[] } {
+  snapshot = normalizeSnapshot(snapshot);
   const events: PushbackNotification[] = [];
   const occurredAt = new Date(context.now).toISOString();
   for (const [runId, state] of Object.entries(snapshot.runs)) {
@@ -126,7 +160,9 @@ function timedNotifications(
       if (progress) {
         events.push({
           type: 'run.progress', runId, runStatus: state.status, progress, occurredAt,
-          dedupKey: digest([runId, 'progress', state.pendingProgress.messageSignature, context.now]),
+          // Stable per message so two processes sharing the store cannot push
+          // the same intermediate message twice.
+          dedupKey: digest([runId, 'progress', state.pendingProgress.messageSignature]),
           summary: progress.text.slice(0, SUMMARY_LIMIT) || '执行仍在进行',
         });
         state.lastProgressAt = context.now;
@@ -149,11 +185,12 @@ function timedNotifications(
 
 /** Pure view diff for durable pushback events. Intermediate assistant messages are throttled per run. */
 export function pushbackNotifications(view: ConversationView, prior: PushbackSnapshot | undefined, context: PushbackContext): { snapshot: PushbackSnapshot; events: PushbackNotification[] } {
+  const previousRuns = prior ? normalizeSnapshot(prior).runs : undefined;
   const snapshot: PushbackSnapshot = {
     title: view.title,
     workspaceId: view.workspaceId,
     conversationId: view.id,
-    runs: { ...prior?.runs },
+    runs: { ...previousRuns },
     requests: { ...prior?.requests },
   };
   const events: PushbackNotification[] = [];
@@ -161,7 +198,7 @@ export function pushbackNotifications(view: ConversationView, prior: PushbackSna
     events.push({ type, dedupKey, occurredAt: view.updatedAt, ...fields });
   const runs = [view.run, ...(view.retainedRuns ?? [])].filter((run): run is RunView => Boolean(run));
   for (const run of runs) {
-    const previous = prior?.runs[run.id];
+    const previous = previousRuns?.[run.id];
     const signature = activitySignature(view, run);
     const latest = progressEntry(view, run);
     const completedToolCount = run.tools.filter(tool => tool.status === 'completed').length;
@@ -184,18 +221,21 @@ export function pushbackNotifications(view: ConversationView, prior: PushbackSna
     if (run.status !== previous?.status) {
       if (run.status === 'completed') {
         const finalReply = finalReplyForRun(view, run.id, run.startedAt);
+        state.finalReply = finalReply;
         emit('run.completed', digest([run.id, 'completed']), {
           runId: run.id, runStatus: run.status, summary: (finalReply || '对话执行已完成').slice(0, SUMMARY_LIMIT),
           finalReply, finalReplyUrl: finalReplyUrl(view.workspaceId, view.id, run.id),
         });
       } else if (run.status === 'failed') {
         const finalReply = finalReplyForRun(view, run.id, run.startedAt);
+        state.finalReply = finalReply;
         emit('run.failed', digest([run.id, 'failed']), {
           runId: run.id, runStatus: run.status, summary: (run.diagnostic ?? '对话执行出错').slice(0, SUMMARY_LIMIT),
           finalReply, finalReplyUrl: finalReplyUrl(view.workspaceId, view.id, run.id),
         });
       } else if (run.status === 'stopped' && !context.stoppedByCredential.has(run.id)) {
         const finalReply = finalReplyForRun(view, run.id, run.startedAt);
+        state.finalReply = finalReply;
         emit('run.stopped', digest([run.id, 'stopped']), {
           runId: run.id, runStatus: run.status, summary: '对话执行已停止',
           finalReply, finalReplyUrl: finalReplyUrl(view.workspaceId, view.id, run.id),
@@ -213,7 +253,7 @@ export function pushbackNotifications(view: ConversationView, prior: PushbackSna
         state.pendingProgress = { text: latest.text, messageSignature };
         if (state.lastProgressAt === undefined || context.now - state.lastProgressAt >= context.progressIntervalMs) {
           const progress = progressPayload(state, context.now)!;
-          emit('run.progress', digest([run.id, 'progress', messageSignature, context.now]), {
+          emit('run.progress', digest([run.id, 'progress', messageSignature]), {
             runId: run.id, runStatus: run.status, progress,
             summary: progress.text.slice(0, SUMMARY_LIMIT) || '执行仍在进行',
           });

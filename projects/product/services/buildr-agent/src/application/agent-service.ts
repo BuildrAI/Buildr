@@ -42,7 +42,7 @@ export function createAgentService(options: AgentServiceOptions) {
   const resolver=new NativeContentResolver(root,id=>repository.readConversation(id));
   const repository:ConversationRepository = new ConversationRepository(root,(record,entry)=>resolver.tool(record,entry),reference=>readNativeTool(root,reference));
   repository.startReadModels();
-  const pushback = new ProgrammaticPushback({ root: path.join(root, 'programmatic-pushback'), ...(options.pushbackTransport ? { transport: options.pushbackTransport } : {}), ...(options.pushbackNow ? { now: options.pushbackNow } : {}) });
+  const pushback = new ProgrammaticPushback({ root: path.join(root, 'programmatic-pushback'), ...(options.pushbackTransport ? { transport: options.pushbackTransport } : {}), ...(options.pushbackNow ? { now: options.pushbackNow } : {}), readConversation: (_workspaceId, conversationId) => repository.readConversation(conversationId)?.view });
   const events = new ConversationEvents(generation, pushback);
   const now = () => (options.now?.() ?? new Date()).toISOString();
   let linkedChanged: ((connection:ConnectionView)=>void)|undefined;

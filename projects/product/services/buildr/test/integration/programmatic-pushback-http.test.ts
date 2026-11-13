@@ -246,6 +246,47 @@ test('decision.requested carries the complete question card and answer identity'
  assert.equal(request.generation,view.run.generation);
 });
 
+test('decision.requested always carries a description string, empty when the card has none',async t=>{
+ const receiver=fakePushbackReceiver();
+ const f=await programmaticHttpFixture(t,{pushbackTransport:receiver.transport});
+ const {token,credential}=await f.create();
+ await configurePushback(f,credential.id);
+ await startConversation(f,token);
+ await f.flush();
+ f.emit({type:'request',request:{id:'native-no-description',kind:'approval',title:'请确认写入',options:[{id:'allow',label:'允许'}]}});
+ await f.flush();
+ const call=receiver.calls.find(value=>value.body.type==='decision.requested');
+ assert.ok(call,'the decision event was delivered');
+ assert.equal(call!.body.request.description,'','an absent card description is the empty string');
+});
+
+test('discovery points the events capability at the canonical operations document',async t=>{
+ const f=await programmaticHttpFixture(t);
+ const {token}=await f.create();
+ const discovery=await(await f.call('',token)).json();
+ const events=discovery.capabilities.find((item:any)=>item.id==='events');
+ assert.ok(events,'a read credential discovers the events operation');
+ assert.equal(events.documentationUrl,'/api/v1/programmatic/operations/events');
+ const document=await f.call('/operations/events',token);
+ assert.equal(document.status,200,'the linked single-operation document exists');
+});
+
+test('a completed assistant message keeps its state when a late running observation arrives',async t=>{
+ const f=await programmaticHttpFixture(t);
+ const {token}=await f.create();
+ const {endpoint,conversationId}=await startConversation(f,token);
+ await f.flush();
+ f.emit({type:'item',item:{id:'late-message',kind:'message',role:'assistant',text:'中间结果',executionId:'native-run',status:'completed'}});
+ await f.flush();
+ f.emit({type:'item',item:{id:'late-message',kind:'message',role:'assistant',text:'中间结果，补充说明',executionId:'native-run',status:'running'}});
+ await f.flush();
+ const view=await(await f.call(endpoint+'/'+conversationId,token)).json();
+ const entry=view.entries.find((item:any)=>item.role==='assistant'&&item.text.startsWith('中间结果'));
+ assert.ok(entry,'the late observation was applied');
+ assert.equal(entry.status,'completed','a settled assistant message is not downgraded to running');
+ assert.equal(entry.text,'中间结果，补充说明','real late text is still retained');
+});
+
 test('list query parameters pass through the HTTP allowlist with activityCounts',async t=>{
  const f=await programmaticHttpFixture(t,{holdSend:false}),{token}=await f.create();
  await startConversation(f,token,'first');
