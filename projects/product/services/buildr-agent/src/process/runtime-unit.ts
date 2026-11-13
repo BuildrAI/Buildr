@@ -7,7 +7,7 @@ import type { AgentRuntimeUnit } from '../execution-contracts.ts';
 import { materializeRuntimeObject } from '../storage/runtime-objects.ts';
 import { AGENT_EXECUTION_CONTRACTS } from '../execution-contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
-import { claimStorage, controlRoot, privateDirectory, readPrivate, writePrivate } from './ownership.ts';
+import { claimStorage, controlRoot, privateDirectory, readPackageRecord, readPrivate, writePrivate } from './ownership.ts';
 
 
 function files(root: string): string[] {
@@ -66,7 +66,9 @@ export function prepareAgentRuntime(input: { dataRoot: string; packageRoot?: str
   const names = runtimeFileNames(packageRoot);
   const digest = computeAgentRuntimeDigest({ packageRoot, entry, node });
   checkCancelled();
-  const compatibility = readPrivate<{ parallelCompatibility?: 1 | 2 | 3 }>(path.join(packageRoot, 'build/runtime-contracts.json'));
+  // The source package may legitimately be hard-linked by copy workflows; the digest below
+  // already covers this descriptor, so exclusive ownership is not required here.
+  const compatibility = readPackageRecord<{ parallelCompatibility?: 1 | 2 | 3 }>(path.join(packageRoot, 'build/runtime-contracts.json'));
   const lock = claimStorage(input.dataRoot);
   try {
   const units = path.join(controlRoot(input.dataRoot), 'runtimes'); privateDirectory(units);

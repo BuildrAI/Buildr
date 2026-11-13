@@ -18,9 +18,18 @@ export function privateDirectory(directory: string): void {
 export function readPrivate<T>(filename: string): T | undefined {
   let info: fs.Stats;
   try { info = fs.lstatSync(filename); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
-  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.size > 1024 * 1024) throw new AgentServiceError('agent_process_storage_unsafe', '执行后台记录来源不安全。', 409);
+  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.size > 1024 * 1024) throw new AgentServiceError('agent_process_storage_unsafe', `执行后台记录来源不安全：${path.basename(filename)}。`, 409);
   try { return JSON.parse(fs.readFileSync(filename, 'utf8')) as T; }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw new AgentServiceError('agent_process_record_invalid', '执行后台记录损坏，原内容已保留。', 409); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw new AgentServiceError('agent_process_record_invalid', `执行后台记录损坏：${path.basename(filename)}。`, 409); }
+}
+/** Package inputs are covered by the runtime digest, so a shared hard link is not a reason to
+ * refuse them. Exclusive ownership stays a requirement of private control records only. */
+export function readPackageRecord<T>(filename: string): T | undefined {
+  let info: fs.Stats;
+  try { info = fs.lstatSync(filename); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
+  if (!info.isFile() || info.isSymbolicLink() || info.size > 1024 * 1024) throw new AgentServiceError('agent_process_storage_unsafe', `执行运行单元记录来源不安全：${path.basename(filename)}。`, 409);
+  try { return JSON.parse(fs.readFileSync(filename, 'utf8')) as T; }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw new AgentServiceError('agent_process_record_invalid', `执行运行单元记录损坏：${path.basename(filename)}。`, 409); }
 }
 export function writePrivate(filename: string, value: unknown): void {
   privateDirectory(path.dirname(filename));
