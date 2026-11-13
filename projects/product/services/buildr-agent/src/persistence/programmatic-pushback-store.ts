@@ -3,9 +3,9 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { AgentServiceError } from '../domain/agent-state.ts';
-import type { PushbackEvent } from '../contracts.ts';
+import type { PushbackCredentialAccess, PushbackEvent } from '../contracts.ts';
 
-export type PushbackConfig = { credentialId: string; url: string; enabled: boolean; rateLimitHour: number; rateLimitMinute: number; revision: string; secretFilePath: string; updatedAt: string };
+export type PushbackConfig = { credentialId: string; url: string; enabled: boolean; rateLimitHour: number; rateLimitMinute: number; progressEnabled?: boolean; stalledEnabled?: boolean; revision: string; secretFilePath: string; updatedAt: string };
 export type PushbackTakeover = { workspaceId: string; conversationId: string; credentialId: string; firstAt: string };
 export type PushbackClaim = { sequence: number; eventId: string; credentialId: string; workspaceId: string; conversationId: string; type: string; body: string; attempts: number; claim: string };
 const unsafe = (message: string) => new AgentServiceError('agent_pushback_storage_unsafe', message, 409);
@@ -27,7 +27,7 @@ export class ProgrammaticPushbackStore {
     fs.chmodSync(filename, 0o600);
     db.exec(`PRAGMA busy_timeout=2000;
       CREATE TABLE IF NOT EXISTS identity(id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS configs(credentialId TEXT PRIMARY KEY, url TEXT NOT NULL, enabled INTEGER NOT NULL, rateLimitHour INTEGER NOT NULL, rateLimitMinute INTEGER NOT NULL, revision TEXT NOT NULL, secretFilePath TEXT NOT NULL, updatedAt TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS configs(credentialId TEXT PRIMARY KEY, url TEXT NOT NULL, enabled INTEGER NOT NULL, rateLimitHour INTEGER NOT NULL, rateLimitMinute INTEGER NOT NULL, progressEnabled INTEGER NOT NULL DEFAULT 1, stalledEnabled INTEGER NOT NULL DEFAULT 1, revision TEXT NOT NULL, secretFilePath TEXT NOT NULL, updatedAt TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS takeovers(workspaceId TEXT NOT NULL, conversationId TEXT NOT NULL, credentialId TEXT NOT NULL, firstAt TEXT NOT NULL, PRIMARY KEY(workspaceId,conversationId,credentialId));
       CREATE TABLE IF NOT EXISTS stop_initiators(workspaceId TEXT NOT NULL, conversationId TEXT NOT NULL, runId TEXT NOT NULL, credentialId TEXT NOT NULL, PRIMARY KEY(workspaceId,conversationId,runId,credentialId));
       CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT, eventId TEXT UNIQUE NOT NULL, credentialId TEXT NOT NULL, workspaceId TEXT NOT NULL, conversationId TEXT NOT NULL, type TEXT NOT NULL, body TEXT NOT NULL, deliveryState TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, nextAttemptAt INTEGER NOT NULL DEFAULT 0, mergedCount INTEGER NOT NULL DEFAULT 1, held INTEGER NOT NULL DEFAULT 0, mergeKey TEXT, owner TEXT, claim TEXT, lease INTEGER NOT NULL DEFAULT 0, createdAt INTEGER NOT NULL);
@@ -37,7 +37,11 @@ export class ProgrammaticPushbackStore {
       CREATE TABLE IF NOT EXISTS projections(credentialId TEXT NOT NULL, workspaceId TEXT NOT NULL, conversationId TEXT NOT NULL, snapshot TEXT NOT NULL, PRIMARY KEY(credentialId,workspaceId,conversationId));
       CREATE TABLE IF NOT EXISTS rate_log(credentialId TEXT NOT NULL, at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS pushback_rate ON rate_log(credentialId,at);
-      CREATE TABLE IF NOT EXISTS migrations(key TEXT PRIMARY KEY, value TEXT NOT NULL, at TEXT NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS migrations(key TEXT PRIMARY KEY, value TEXT NOT NULL, at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS credential_access(credentialId TEXT PRIMARY KEY, scopes TEXT NOT NULL, allowFullAccess INTEGER NOT NULL);`);
+    const configColumns = new Set((db.prepare('PRAGMA table_info(configs)').all() as Array<{name:string}>).map(column => column.name));
+    if (!configColumns.has('progressEnabled')) db.exec('ALTER TABLE configs ADD COLUMN progressEnabled INTEGER NOT NULL DEFAULT 1');
+    if (!configColumns.has('stalledEnabled')) db.exec('ALTER TABLE configs ADD COLUMN stalledEnabled INTEGER NOT NULL DEFAULT 1');
     db.prepare('INSERT OR IGNORE INTO identity(id,value) VALUES(1,?)').run(randomUUID());
     const instanceId = (db.prepare('SELECT value FROM identity WHERE id=1').get() as { value: string }).value;
     return this.opened = { db, instanceId };
@@ -90,16 +94,30 @@ export class ProgrammaticPushbackStore {
   }
   getConfig(credentialId: string): PushbackConfig | undefined {
     const db = this.existing(); if (!db) return undefined;
-    const row = db.prepare('SELECT * FROM configs WHERE credentialId=?').get(credentialId) as PushbackConfig | undefined;
-    return row ? { ...row, enabled: Boolean(row.enabled) } : undefined;
+    const row = db.prepare('SELECT * FROM configs WHERE credentialId=?').get(credentialId) as (Omit<PushbackConfig, 'enabled' | 'progressEnabled' | 'stalledEnabled'> & { enabled: number; progressEnabled: number; stalledEnabled: number }) | undefined;
+    return row ? { ...row, enabled: Boolean(row.enabled), progressEnabled: row.progressEnabled !== 0, stalledEnabled: row.stalledEnabled !== 0 } : undefined;
   }
   listConfigs(): PushbackConfig[] {
     const db = this.existing(); if (!db) return [];
-    return (db.prepare('SELECT * FROM configs').all() as unknown as PushbackConfig[]).map(row => ({ ...row, enabled: Boolean(row.enabled) }));
+    return (db.prepare('SELECT * FROM configs').all() as Array<Omit<PushbackConfig, 'enabled' | 'progressEnabled' | 'stalledEnabled'> & { enabled: number; progressEnabled: number; stalledEnabled: number }>)
+      .map(row => ({ ...row, enabled: Boolean(row.enabled), progressEnabled: row.progressEnabled !== 0, stalledEnabled: row.stalledEnabled !== 0 }));
   }
   putConfig(config: PushbackConfig): void {
-    this.db.prepare('INSERT INTO configs(credentialId,url,enabled,rateLimitHour,rateLimitMinute,revision,secretFilePath,updatedAt) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(credentialId) DO UPDATE SET url=excluded.url,enabled=excluded.enabled,rateLimitHour=excluded.rateLimitHour,rateLimitMinute=excluded.rateLimitMinute,revision=excluded.revision,secretFilePath=excluded.secretFilePath,updatedAt=excluded.updatedAt')
-      .run(config.credentialId, config.url, Number(config.enabled), config.rateLimitHour, config.rateLimitMinute, config.revision, config.secretFilePath, config.updatedAt);
+    this.db.prepare('INSERT INTO configs(credentialId,url,enabled,rateLimitHour,rateLimitMinute,progressEnabled,stalledEnabled,revision,secretFilePath,updatedAt) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(credentialId) DO UPDATE SET url=excluded.url,enabled=excluded.enabled,rateLimitHour=excluded.rateLimitHour,rateLimitMinute=excluded.rateLimitMinute,progressEnabled=excluded.progressEnabled,stalledEnabled=excluded.stalledEnabled,revision=excluded.revision,secretFilePath=excluded.secretFilePath,updatedAt=excluded.updatedAt')
+      .run(config.credentialId, config.url, Number(config.enabled), config.rateLimitHour, config.rateLimitMinute, Number(config.progressEnabled !== false), Number(config.stalledEnabled !== false), config.revision, config.secretFilePath, config.updatedAt);
+  }
+  putCredentialAccess(credentialId: string, access: PushbackCredentialAccess): void {
+    this.db.prepare('INSERT INTO credential_access(credentialId,scopes,allowFullAccess) VALUES(?,?,?) ON CONFLICT(credentialId) DO UPDATE SET scopes=excluded.scopes,allowFullAccess=excluded.allowFullAccess')
+      .run(credentialId, JSON.stringify(access.scopes), Number(access.allowFullAccess));
+  }
+  getCredentialAccess(credentialId: string): PushbackCredentialAccess | undefined {
+    const db = this.existing(); if (!db) return undefined;
+    const row = db.prepare('SELECT scopes,allowFullAccess FROM credential_access WHERE credentialId=?').get(credentialId) as { scopes: string; allowFullAccess: number } | undefined;
+    if (!row) return undefined;
+    try {
+      const scopes = JSON.parse(row.scopes) as unknown;
+      return { scopes: Array.isArray(scopes) ? scopes.filter((scope): scope is string => typeof scope === 'string') : [], allowFullAccess: row.allowFullAccess !== 0 };
+    } catch { return { scopes: [], allowFullAccess: row.allowFullAccess !== 0 }; }
   }
   markTakeover(workspaceId: string, conversationId: string, credentialId: string, firstAt: string): void {
     this.db.prepare('INSERT OR IGNORE INTO takeovers(workspaceId,conversationId,credentialId,firstAt) VALUES(?,?,?,?)').run(workspaceId, conversationId, credentialId, firstAt);

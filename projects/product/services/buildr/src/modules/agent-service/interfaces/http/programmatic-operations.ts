@@ -11,6 +11,7 @@ export const PROGRAMMATIC_OPERATIONS: PublicOperation[] = [
   { id: 'read', method: 'GET', path: '/:conversationId', scope: 'read', input: 'empty', output: 'conversation', summary: '读状态、消息、问题和成果引用', query: ['before', 'limit'] },
   { id: 'lookup-send', method: 'GET', path: '/:conversationId/submissions/:clientRequestId', scope: 'read', input: 'empty', output: 'draftLookup', summary: '后续发送超时后找回原请求及执行' },
   { id: 'entries', method: 'GET', path: '/:conversationId/entries', scope: 'read', input: 'empty', output: 'conversation', summary: '分页读取消息', query: ['before', 'limit'] },
+  { id: 'run-final-reply', method: 'GET', path: '/:conversationId/runs/:runId/final-reply', scope: 'read', input: 'empty', output: 'runFinalReply', summary: '只返回指定执行轮次的最终 assistant 回复全文' },
   { id: 'observe', method: 'POST', path: '/:conversationId/observe', scope: 'read', input: 'empty', output: 'conversation', summary: '重新观察执行；不重发工作' },
   { id: 'prepare-send', method: 'POST', path: '/:conversationId/prepare-send', scope: 'execute', input: 'draft', output: 'preview', summary: '按已观察修订准备发送' },
   { id: 'send', method: 'POST', path: '/:conversationId/send', scope: 'execute', input: 'send', output: 'sent', summary: '发送后续消息；clientRequestId必须跨重试保留' },

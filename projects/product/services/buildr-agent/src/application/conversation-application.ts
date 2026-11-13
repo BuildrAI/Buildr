@@ -49,6 +49,7 @@ import type { ConversationForkInput } from '../contracts.ts';
 import { ConversationChildren, type CreateChildInput } from './conversation-children.ts';
 import { ConversationStops } from './conversation-stops.ts';
 import type { ConversationStopInput } from '../contracts.ts';
+import { finalReplyForRun } from '../domain/conversation-activity.ts';
 
 type PreparedSource = { runtime: AgentRuntime; model: string; leaseIdentity?: string; nativeHomeRoot?: string };
 const TITLE_TIMEOUT_MS = 10_000;
@@ -616,6 +617,14 @@ export class ConversationApplication {
     const durationMs = Math.round(performance.now() - started);
     if (durationMs >= 250) this.diagnostics({event:'conversation-read-slow',conversationId:id,workspaceId,durationMs});
     return result;
+  }
+  /** Exact historical final assistant reply; avoids returning the full conversation for pushback URLs. */
+  readRunFinalReply(workspaceId: string, id: string, runId: string): { runId: string; finalReply: string } {
+    const record = this.load(workspaceId, id);
+    const run = conversationRuns(record.view).find(value => value.id === runId);
+    const hasRunEntries = record.view.entries.some(entry => entry.runId === runId);
+    if (!run && !hasRunEntries) fail('agent_run_missing', '该对话中没有此执行轮次。', 404);
+    return { runId, finalReply: finalReplyForRun(record.view, runId, run?.startedAt) };
   }
   readHistory(workspaceId:string,id:string,query:HandoffHistoryQuery) {
     const state=this.options.repository.readState(id)??this.load(workspaceId,id);

@@ -2,6 +2,23 @@ import { createHash } from 'node:crypto';
 import type { ConversationView } from '../contracts.ts';
 import { BUSY_STATES, conversationRuns, type StoredConversation } from './agent-state.ts';
 
+/** Exact latest visible assistant message for one run; never a thinking fragment or failed draft. */
+export function finalReplyEntry(view: Pick<ConversationView,'entries'>, runId: string, startedAt?: string): ConversationView['entries'][number] | undefined {
+  let latest: ConversationView['entries'][number] | undefined;
+  for (const entry of view.entries ?? []) {
+    if (entry.kind !== 'message' || entry.role !== 'assistant' || entry.parentToolId || entry.thinking || entry.status === 'failed') continue;
+    if (entry.runId ? entry.runId !== runId : Boolean(startedAt && entry.createdAt < startedAt)) continue;
+    // Assistant segments can share sequence values in persisted/legacy fixtures.
+    // Creation time defines the latest visible reply; sequence only breaks ties.
+    if (!latest || entry.createdAt > latest.createdAt
+      || entry.createdAt === latest.createdAt && entry.sequence > latest.sequence) latest = entry;
+  }
+  return latest;
+}
+export function finalReplyForRun(view: Pick<ConversationView,'entries'>, runId: string, startedAt?: string): string {
+  return finalReplyEntry(view, runId, startedAt)?.text ?? '';
+}
+
 /** Only meaningful visible message changes advance activity, including streamed additions. */
 export function messageSignature(record: StoredConversation): string {
   const messages = record.view.entries.filter(entry => !entry.parentToolId && !entry.thinking && (entry.kind === 'message' && ['user','assistant'].includes(entry.role) || entry.role === 'user' && entry.kind === 'notice' && entry.id.startsWith('reply-')) && entry.status !== 'failed')
@@ -18,16 +35,7 @@ export function messageActivityAt(record: StoredConversation): string | undefine
 export function finalReplyActivityAt(record: StoredConversation): string | undefined {
   const run = record.view.run;
   if (!run || run.status !== 'completed' || run.supersededBy) return undefined;
-  let latest: string | undefined;
-  for (const entry of record.view.entries ?? []) {
-    if (entry.kind !== 'message' || entry.role !== 'assistant') continue;
-    if (entry.parentToolId || entry.thinking || entry.status === 'failed') continue;
-    // Current entries carry the run identity; legacy entries fall back to the
-    // run's start time rather than any later retained-round output.
-    if (entry.runId ? entry.runId !== run.id : entry.createdAt < run.startedAt) continue;
-    if (!latest || entry.createdAt > latest) latest = entry.createdAt;
-  }
-  return latest;
+  return finalReplyEntry(record.view, run.id, run.startedAt)?.createdAt;
 }
 /** 保留独立的用户输入时间：用户消息与对问题的答复。 */
 export function userActivityAt(record: StoredConversation): string | undefined {

@@ -16,9 +16,9 @@ export interface AgentOperations {
 }
 
 const names = {
-  pushback: ['read','save','reveal','test','markTakeover','recordStop','listEvents','migrateGlobal'],
+  pushback: ['read','save','reveal','test','markTakeover','setCredentialAccess','recordStop','listEvents','migrateGlobal'],
   connections: ['upgradeProgram','programUpdates','checkProgramUpdates','list','read','prepare','preparation','currentPreparation','cancelPreparation','connect','check','login','loginAttempt','cancelLogin','disconnect'],
-  conversations: ['readHistory','participation','participationSummary','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','activityEpoch','readEntry','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','releaseQuestionWait','settleRetainedRun','stop','stopAll','reply','addAttachment','readAttachment','pending','pendingSummary','lookupRequest'],
+  conversations: ['readHistory','participation','participationSummary','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','activityEpoch','readEntry','readRunFinalReply','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','releaseQuestionWait','settleRetainedRun','stop','stopAll','reply','addAttachment','readAttachment','pending','pendingSummary','lookupRequest'],
   'models.accounts': ['list','read','preferences','add','configure','configureCustom','discoverCustom','login','attempt','cancelLogin','check','disconnect'],
   'models.catalog': ['list'],
 } as const;
@@ -28,7 +28,7 @@ const Constructor: any = Ajv2020;
 const ajv = new Constructor({ strict: true, allErrors: true, allowUnionTypes: true });
 const validators = new Map(Object.entries(AGENT_OPERATION_SCHEMAS).map(([name, schema]) => [name, ajv.compile(schema)]));
 const inputs: Record<string, [number, string]> = {
-  'pushback.save':[1,'pushbackSettingsInput'], 'pushback.reveal':[1,'revision'], 'pushback.test':[1,'revision'], 'pushback.listEvents':[2,'pushbackEventsQuery'], 'pushback.migrateGlobal':[1,'pushbackMigrate'],
+  'pushback.save':[1,'pushbackSettingsInput'], 'pushback.reveal':[1,'revision'], 'pushback.test':[1,'revision'], 'pushback.setCredentialAccess':[1,'pushbackCredentialAccess'], 'pushback.listEvents':[2,'pushbackEventsQuery'], 'pushback.migrateGlobal':[1,'pushbackMigrate'],
   'conversations.participation':[2,'participationQuery'], 'conversations.participationSummary':[1,'participationSummaryQuery'],
   'conversations.startDraft':[2,'startDraft'], 'conversations.removeDraftImage':[2,'removeDraftImage'],
   'conversations.queueSend': [2, 'queueSend'], 'conversations.cancelPendingSend': [2, 'cancelPendingSend'],

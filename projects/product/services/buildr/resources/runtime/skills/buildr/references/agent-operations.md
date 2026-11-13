@@ -110,11 +110,13 @@ Buildr 隔离 DSH 的前台 shell 命令超时会真正终止，不会自动转�
 
 对话关键事件按程序接入凭据回推，不再是全局单一目标。人在「智能体与模型 → 程序接入」展开凭据详情配置接收地址、密钥、启停与速率上限，并可发送独立测试通知；管理入口仅网页会话可用，不向 Bearer 或 CLI 开放。原全局「事件通知 / Webhook」已退役，既有 `~/.buildr-webhook.json` / `BUILDR_AGENT_WEBHOOK_CONFIG` 的地址与密钥启动时迁移到 GrokBot 凭据并保持停用，幂等；不保留两份活动配置。不要在命令参数、聊天、日志或源资产中填写真实秘密，不打印响应正文。
 
-只有被该凭据接管（首次经 API 创建/发送/续聊/补充即标记）的对话才回推，且只推五类：decision.requested（问题或审批）、run.completed、run.failed、run.stopped（非该凭据发起的停止）、run.stalled（故障或状态未知持续 5 分钟）。不推工具调用、流式输出、思考、中间消息、starting/running 转换或标题生成。事件含 eventId、type、occurredAt、machine{id,name}、workspaceId、conversationId、title、runId、runStatus、summary（≤500 字符）、detailUrl；decision.requested 另含 request{requestId,kind,title,options}。machine.id 为本机稳定标识、name 为主机名，不用模型或执行器身份替代。不含任何密钥和完整对话内容；问题卡片给准确问题/选项 ID，审批命令、内部思考、原始工具正文不外发，关闭卡片不表示回答或同意。
+只有被该凭据接管（首次经 API 创建/发送/续聊/补充即标记）的对话才回推。业务事件为 decision.requested（问题或审批）、run.progress（新的 assistant 中间消息）、run.completed、run.failed、run.stopped（非该凭据发起的停止）和 run.stalled（starting/running/tools-active 连续 20 分钟没有新记录）。不推工具调用明细、流式 token、思考、starting/running 状态转换或标题生成。每条事件含 eventId、type、occurredAt、machine{id,name}、workspaceId、conversationId、title、runId、runStatus、summary（≤500 字符）、detailUrl、scopes 与 allowFullAccess；scopes/allowFullAccess 为事件生成时的当前凭据权限快照。run.completed、run.failed、run.stopped 另含 finalReply（完整最终 assistant 回复，不截断）与 finalReplyUrl；GET finalReplyUrl 只需 read 权限，返回 {runId,finalReply}。decision.requested 的 request 含 requestId、kind、title、description、runId、participantId、generation、conversationRevision，以及全部 questions/options；审批卡 options 和问题卡 questions 内选项均使用 optionId、label、description，问题项使用 questionId、question、allowOther、multiple。machine.id 为本机稳定标识、name 为主机名，不用模型或执行器身份替代。不含密钥或接收地址；内部思考、原始工具正文不外发，关闭卡片不表示回答或同意。
+
+run.progress 的 progress 含 text（最新中间消息全文）、elapsedMs 与 completedToolCount。同一 run 相邻推送至少间隔 5 分钟，间隔内只保留最新一条；首次新中间消息在其间隔满足时立即推送。run.stalled 的 stalled 含 idleMs 与 lastActivityAt，同一空闲期只推一次；新记录恢复后重新计时，再连续 20 分钟空闲才再推。中间进度与停滞提醒计入现有速率限制，默认开启，可在凭据回推设置中分别关闭；关闭时对应事件不生成。
 
 密钥只保存在本机私有文件（600），界面默认遮罩、主动查看、再次隐藏或关闭后清除明文，日志不输出明文；投递以 Authorization: Bearer 携带密钥，POST JSON、每请求一条事件、不跟随重定向、仅 2xx 确认。速率按凭据计，默认 180/小时、20/分钟，可在界面调整；限额内立即推送，超限按同对话同类型合并（保留最新状态与 mergedCount），配额恢复后补发，decision.requested 优先且永不合并。失败按 10/30/90/270/810 秒退避，最多 5 次后置为 undelivered。响应丢失可能重复到达同一 eventId，不宣称恰好一次；2xx 仅证明接收端确认，不证明后续转发成功。
 
-事件持久保留 7 天、sequence 跨重启连续。程序用 read 权限 GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n} 升序补查（含 undelivered，limit 默认 50、最大 200）；超出保留期被丢弃时发出 events_dropped。CLI 无事件重放命令；完整正文仍用 `buildr agent read <conversation-id> --target <workspace>` 按需拉取，回推只给位置与摘要。测试环境、候选实例与自动化测试一律不得向真实接收地址推送，只用本地假接收端；候选测试不证明共享服务已采用，不得为采用候选自行重启共享服务。
+事件持久保留 7 天、sequence 跨重启连续。程序用 read 权限 GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n} 升序补查（含 undelivered，limit 默认 50、最大 200）；超出保留期被丢弃时发出 events_dropped。CLI 无事件重放命令；终态事件已带完整最终回复，需要完整上下文时再用 `buildr agent read <conversation-id> --target <workspace>` 按需拉取。测试环境、候选实例与自动化测试一律不得向真实接收地址推送，只用本地假接收端；候选测试不证明共享服务已采用，不得为采用候选自行重启共享服务。
 
 ## CLI 卡片回答与同对话新轮次
 

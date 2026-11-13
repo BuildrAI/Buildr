@@ -1,6 +1,7 @@
 export * from './contracts.ts';
 export { conversationEventEncoder, conversationEventDecoder } from './domain/conversation-transfer.ts';
 export type { ConversationDelta, ConversationPatch, TransferEvent } from './domain/conversation-transfer.ts';
+export { finalReplyEntry, finalReplyForRun } from './domain/conversation-activity.ts';
 export * from './execution-contracts.ts';
 export { AGENT_OPERATION_SCHEMAS } from './operation-schemas.ts';
 export { connectAgentProcess, stopAgentProcess, restartAgentProcess } from './process/client.ts';

@@ -12,10 +12,11 @@ export function ProgrammaticPushbackSettings({ credentialId, credentialName }: {
   const [view, setView] = useState<PushbackSettingsView>();
   const [url, setUrl] = useState(''), [enabled, setEnabled] = useState(true), [secret, setSecret] = useState(''), [revealed, setRevealed] = useState<string | null>(null);
   const [rateHour, setRateHour] = useState(180), [rateMinute, setRateMinute] = useState(20);
+  const [progressEnabled, setProgressEnabled] = useState(true), [stalledEnabled, setStalledEnabled] = useState(true);
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const epoch = useRef(0), gate = useRef(false);
   const prefix = `programmatic-pushback-${credentialId}`;
-  const apply = (next: PushbackSettingsView) => { setView(next); setUrl(next.url); setEnabled(next.state === 'enabled' || next.state === 'unconfigured'); setSecret(''); setRevealed(null); setRateHour(next.rateLimitHour); setRateMinute(next.rateLimitMinute); };
+  const apply = (next: PushbackSettingsView) => { setView(next); setUrl(next.url); setEnabled(next.state === 'enabled' || next.state === 'unconfigured'); setSecret(''); setRevealed(null); setRateHour(next.rateLimitHour); setRateMinute(next.rateLimitMinute); setProgressEnabled(next.progressEnabled); setStalledEnabled(next.stalledEnabled); };
   useEffect(() => {
     const controller = new AbortController(); const generation = ++epoch.current;
     void programmaticAccessApi.pushback(credentialId, controller.signal)
@@ -30,21 +31,25 @@ export function ProgrammaticPushbackSettings({ credentialId, credentialName }: {
     catch (failure) { if (epoch.current === generation) { setRevealed(null); setError(failure instanceof Error ? failure.message : '操作未完成。'); } }
     finally { gate.current = false; if (epoch.current === generation) setBusy(false); }
   };
-  const dirty = !!view && (url !== view.url || secret !== '' || enabled !== (view.state === 'enabled' || view.state === 'unconfigured') || rateHour !== view.rateLimitHour || rateMinute !== view.rateLimitMinute);
+  const dirty = !!view && (url !== view.url || secret !== '' || enabled !== (view.state === 'enabled' || view.state === 'unconfigured') || rateHour !== view.rateLimitHour || rateMinute !== view.rateLimitMinute || progressEnabled !== view.progressEnabled || stalledEnabled !== view.stalledEnabled);
   return <section className="pas-pushback" id={prefix} aria-label={`${credentialName}事件回推`}>
     <div className="pas-detail-heading">
       <strong>事件回推</strong>
       <Space size={8}>{view && <Tag color={view.state === 'enabled' ? 'success' : view.state === 'invalid' ? 'error' : 'default'}>{labels[view.state]}</Tag>}
         <Button type="text" size="small" aria-label={`重新读取${credentialName}回推配置`} icon={<ReloadOutlined aria-hidden />} disabled={busy} onClick={() => void run(async current => { const next = await programmaticAccessApi.pushback(credentialId); if (current()) apply(next); })} /></Space>
     </div>
-    <Typography.Paragraph type="secondary">仅向该凭据接管的对话推送决策请求与执行结果等关键事件，不含密钥和完整对话内容。密钥保存在本机私有文件，默认隐藏。</Typography.Paragraph>
+    <Typography.Paragraph type="secondary">仅向该凭据接管的对话推送决策请求、执行进度与结果事件，不含密钥和接收地址。中间进度与停滞提醒默认开启，并计入下方速率上限。密钥保存在本机私有文件，默认隐藏。</Typography.Paragraph>
     {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} />}
     {notice && <Alert type="success" showIcon message={notice} style={{ marginBottom: 12 }} />}
     {view && <Form layout="vertical" onFinish={() => void run(async current => {
-      const next = await programmaticAccessApi.savePushback(credentialId, { expectedRevision: view.revision, url, enabled, rateLimitHour: rateHour, rateLimitMinute: rateMinute, ...(secret ? { secret } : {}) });
+      const next = await programmaticAccessApi.savePushback(credentialId, { expectedRevision: view.revision, url, enabled, rateLimitHour: rateHour, rateLimitMinute: rateMinute, progressEnabled, stalledEnabled, ...(secret ? { secret } : {}) });
       if (current()) { apply(next); setNotice('回推配置已保存并生效。'); }
     })}>
       <Form.Item label="启用回推"><Switch checked={enabled} disabled={busy} onChange={setEnabled} /></Form.Item>
+      <Space size={24} wrap>
+        <Form.Item label="中间进度（run.progress）" style={{ marginBottom: 0 }}><Switch checked={progressEnabled} disabled={busy} onChange={setProgressEnabled} /></Form.Item>
+        <Form.Item label="停滞提醒（run.stalled）" style={{ marginBottom: 0 }}><Switch checked={stalledEnabled} disabled={busy} onChange={setStalledEnabled} /></Form.Item>
+      </Space>
       <Form.Item label="接收地址"><Input id={`${prefix}-url`} value={url} maxLength={8192} placeholder="https://example.com/pushback" disabled={busy} onChange={event => setUrl(event.target.value)} /></Form.Item>
       <Form.Item label="当前密钥" extra="默认隐藏；仅点击查看时读取，隐藏或收起详情后清除明文。">
         <Space.Compact block>

@@ -292,11 +292,11 @@ Buildr 隔离 DSH 的前台 shell 超时由原生执行器终止，默认层覆�
 当前“Buildr 参与”和“Buildr 参与汇总”两个界面入口暂时隐藏；自动采集、存储、只读查询及内部查看实现保留。隐藏状态不挂载面板、不自动请求参与数据。
 
 
-## 对话过程通知（候选实现）
+## 对话事件回推（按凭据）
 
-统一视图的提交出口 `ConversationEvents` 将状态变化交给 `ConversationWebhooks`，不修改执行器或任务记录。`conversationNotifications` 将所有执行器投影为七类公共事件：task_started、status_changed、reply、pending_question、pending_approval、completed、error。每条包含规范发送方 agent.name/id 与并列的 machine。`task_started` 表示对话执行开始，不创建或修改正式任务记录。运行、工具与卡片关闭发送轻量状态；问题卡片携带准确 ID 和选项，审批命令不外发。reply 只携带 entryId 等回复位置，正文通过 read 按需读取，纯版本与流式片段不触发推送。关闭卡片不推断答复或同意。
+统一视图的提交出口 `ConversationEvents` 将状态变化交给私有包 `@buildr-ai/buildr-agent` 的按凭据回推投影，不修改执行器或任务记录。只有被程序接入凭据接管的对话才生成事件：`decision.requested`、`run.progress`、`run.completed`、`run.failed`、`run.stopped`、`run.stalled`。事件含 machine、对话与 run 身份、当前凭据 `scopes`/`allowFullAccess`；终态事件含完整 `finalReply` 和只读取该 run 最终回复的 `finalReplyUrl`；决策卡含全部问题、选项及回答身份。中间 assistant 消息按 run 至少五分钟一次合并推送；运行中连续二十分钟无消息、工具或状态记录才产生一次停滞事件，恢复后重新计时。
 
-服务组合通过 `webhookConfiguration` 加载宿主私有 `~/.buildr-webhook.json`（`url`、`secret`），或显式 `BUILDR_AGENT_WEBHOOK_CONFIG`。仅默认文件不存在才兼容旧环境变量；无效私有文件不回退。配置不进入执行器环境或诊断。外发使用七类统一轻量事件，携带实例持久 agent.id、agent.name 和 machine 主机名；reply 不外发全文，由接收端 read 按需读取。发送端在 webhook-events.sqlite 事务保存投影与事件，用租约领取、仅2xx确认、指数退避及重启补推；成功事件按 eventId 可显式原样重放。并发到达可能乱序，响应丢失允许相同 eventId 重复到达。接收端只接收与转发，不承担业务判断或投递调度。详细配置、内容边界与验收口径见产品 Buildr Skill 的 `references/agent-operations.md`。候选验证、共享服务采用和接收端处理是不同事实，不相互替代。
+凭据回推配置由 Buildr Web 宿主管理，密钥保存在本机私有文件；管理入口仅网页会话可用。事件投影在 `programmatic-pushback.sqlite` 事务保存并进入持久事件流，按凭据限流合并、租约领取、仅 2xx 确认、指数退避及重启补推；总开关停用只停止投递，仍可经 `events` 补查，单事件开关关闭则不生成对应进度或停滞事件。接收端只接收与转发，不承担业务判断与投递调度。详细配置、payload 字段、轻量回复接口与联调口径见产品 Buildr Skill 的 `references/agent-operations.md`。候选验证、共享服务采用和接收端处理是不同事实，不相互替代。
 问题接续的服务策略位于[对话应用](../../../services/buildr-agent/src/application/conversation-application.ts)，安全释放与通用兜底位于[问题等待释放](../../../services/buildr-agent/src/application/question-wait-release.ts)。[执行器契约](../../../services/buildr-agent/src/contracts.ts)的可选 `endQuestionWait` 只允许释放准确纯问题等待；[Codex适配器](../../../services/buildr-agent/src/executors/codex/index.ts)使用原生轮次中断并等待真实终态，不调用后台终端清理。未提供该能力的执行器由服务在原生观察证明“仅问题等待、无工具与后台工作”后调用通用控制。释放意图保存在原尝试记录，防止重启或响应丢失后重复操作；原问题回答与释放互斥，工具审批不因新轮自动批准或撤销。
 
 

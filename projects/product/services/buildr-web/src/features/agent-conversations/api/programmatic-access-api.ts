@@ -6,8 +6,8 @@ export type AccessDocumentKind = 'help' | 'openapi.json' | 'operations' | `opera
 export interface AccessDocument { fileName: string; mediaType: string; content: string }
 export type PushbackState = 'unconfigured' | 'invalid' | 'disabled' | 'enabled';
 export interface PushbackDeliveryResult { at: string; success: boolean; status?: number; kind: 'event' | 'test' }
-export interface PushbackSettingsView { credentialId: string; revision: string; state: PushbackState; url: string; hasSecret: boolean; rateLimitHour: number; rateLimitMinute: number; lastDelivery?: PushbackDeliveryResult; recentDeliveries?: PushbackDeliveryResult[] }
-export interface PushbackSettingsInput { expectedRevision: string; enabled: boolean; url: string; secret?: string; rateLimitHour?: number; rateLimitMinute?: number }
+export interface PushbackSettingsView { credentialId: string; revision: string; state: PushbackState; url: string; hasSecret: boolean; rateLimitHour: number; rateLimitMinute: number; progressEnabled: boolean; stalledEnabled: boolean; lastDelivery?: PushbackDeliveryResult; recentDeliveries?: PushbackDeliveryResult[] }
+export interface PushbackSettingsInput { expectedRevision: string; enabled: boolean; url: string; secret?: string; rateLimitHour?: number; rateLimitMinute?: number; progressEnabled?: boolean; stalledEnabled?: boolean }
 const base='/api/v1/app/programmatic-access';
 export function createProgrammaticAccessClient(client: ApiClient) { return {
   read:()=>client(base,{headers:{'x-buildr-session':''}}) as Promise<ProgrammaticAccessView>,

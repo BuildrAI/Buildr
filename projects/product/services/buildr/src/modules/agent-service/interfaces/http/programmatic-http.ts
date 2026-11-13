@@ -12,6 +12,11 @@ type Options = { dataRoot(): string; workspaces: Workspaces; version(): string }
 /** Authentication adapter only: conversation effects remain owned by the existing application. */
 export function createProgrammaticHttpContribution(resolve: () => AgentService | AgentOperations | Promise<AgentService | AgentOperations>, agentHttp: { handle(context: any): Promise<any> }, options: Options) {
   const store = () => new ProgrammaticCredentials(options.dataRoot());
+  const rememberCredentialAccess = async (credential: ProgrammaticCredential) => {
+    try {
+      await (await resolve()).pushback.setCredentialAccess(credential.id, { scopes: credential.scopes, allowFullAccess: credential.allowFullAccess });
+    } catch { console.warn('[programmatic_pushback_wiring] 凭据权限快照更新未完成，主操作结果保留。'); }
+  };
   const permitted = (credential: ProgrammaticCredential, scope: ProgrammaticScope, workspaceId?: string) => {
     if (!credential.scopes.includes(scope) || workspaceId && !credential.workspaceIds.includes(workspaceId)) accessError('programmatic_forbidden', '此凭据未获该工作空间或操作的授权。');
   };
@@ -55,26 +60,37 @@ export function createProgrammaticHttpContribution(resolve: () => AgentService |
             return { status: 200, body: await pushback.save(credentialId, input) };
           }
           if (!validators.validate(schemas.revision.$id, input).valid) accessError('programmatic_input_invalid', '需要回推配置的已观察修订。', 400);
+          await rememberCredentialAccess(store().list().find(item => item.id === credentialId)!);
           return { status: 200, body: await (action === '/reveal' ? pushback.reveal(credentialId, input) : pushback.test(credentialId, input)) };
         }
         context.authorizeWrite();
         const input = await context.readJsonBody();
-        if (request.method === 'POST' && pathname === manager) return { status: 201, body: store().create(input, options.workspaces().map(item => item.id)) };
+        if (request.method === 'POST' && pathname === manager) {
+          const created = store().create(input, options.workspaces().map(item => item.id));
+          await rememberCredentialAccess(created.credential);
+          return { status: 201, body: created };
+        }
         const match = pathname.match(/^\/api\/v1\/app\/programmatic-access\/([a-f0-9-]{36})\/(revoke|regenerate)$/);
         if (request.method === 'POST' && match) {
           if (!input || typeof input !== 'object' || Object.keys(input).some(key => key !== 'expectedRevision') || typeof input.expectedRevision !== 'string') accessError('programmatic_input_invalid', '需要凭据的已观察修订。', 400);
-          return { status: 200, body: match[2] === 'regenerate' ? store().regenerate(match[1], input.expectedRevision) : { credential: store().revoke(match[1], input.expectedRevision) } };
+          const result = match[2] === 'regenerate' ? store().regenerate(match[1], input.expectedRevision) : { credential: store().revoke(match[1], input.expectedRevision) };
+          await rememberCredentialAccess(result.credential);
+          return { status: 200, body: result };
         }
         const fullAccess = pathname.match(/^\/api\/v1\/app\/programmatic-access\/([a-f0-9-]{36})\/full-access$/);
         if (request.method === 'POST' && fullAccess) {
           if (!input || typeof input !== 'object' || Object.keys(input).some(key => !['expectedRevision', 'allowFullAccess'].includes(key)) || typeof input.expectedRevision !== 'string' || typeof input.allowFullAccess !== 'boolean') accessError('programmatic_input_invalid', '需要凭据的已观察修订与布尔 allowFullAccess。', 400);
-          return { status: 200, body: { credential: store().updateFullAccess(fullAccess[1], input.expectedRevision, input.allowFullAccess) } };
+          const result = { credential: store().updateFullAccess(fullAccess[1], input.expectedRevision, input.allowFullAccess) };
+          await rememberCredentialAccess(result.credential);
+          return { status: 200, body: result };
         }
         const update = pathname.match(/^\/api\/v1\/app\/programmatic-access\/([a-f0-9-]{36})\/update$/);
         if (request.method === 'POST' && update) {
           if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !['expectedRevision', 'name', 'workspaceIds', 'scopes', 'allowFullAccess'].includes(key)) || typeof input.expectedRevision !== 'string') accessError('programmatic_input_invalid', '需要凭据的已观察修订与合法参数。', 400);
           const { expectedRevision, ...params } = input;
-          return { status: 200, body: { credential: store().update(update[1], expectedRevision, params, options.workspaces().map(item => item.id)) } };
+          const result = { credential: store().update(update[1], expectedRevision, params, options.workspaces().map(item => item.id)) };
+          await rememberCredentialAccess(result.credential);
+          return { status: 200, body: result };
         }
         return { status: 404, body: { error: { code: 'programmatic_route_missing', message: '没有此凭据管理操作。' } } };
       }
@@ -142,6 +158,9 @@ export function createProgrammaticHttpContribution(resolve: () => AgentService |
         permitted(current, operation.id === 'reply' ? 'read' : operation.scope, workspaceId);
         if (request.method !== 'GET' && !String(request.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) accessError('content_type_unsupported', '需要application/json。', 415);
       };
+      const refreshPushbackAccess = () => ['start', 'send', 'supplement', 'messages', 'stop', 'stop-all', 'reply', 'observe'].includes(operation.id)
+        ? rememberCredentialAccess(authenticate())
+        : Promise.resolve();
       const readJsonBody = async (maxBytes?: number) => {
         const input = await context.readJsonBody(maxBytes);
         authorize();
@@ -177,6 +196,14 @@ export function createProgrammaticHttpContribution(resolve: () => AgentService |
         authorize();
         return { status: 200, body: found.found ? { found: true, conversation: found.conversation } : { found: false } };
       }
+      if (operation.id === 'run-final-reply') {
+        authorize();
+        if (searchParams.size) accessError('programmatic_input_invalid', '最终回复读取不接受查询参数。', 400);
+        const result = await (await resolve()).conversations.readRunFinalReply(workspaceId, params.conversationId, params.runId);
+        authorize();
+        return { status: 200, body: result };
+      }
+      await refreshPushbackAccess();
       // Only the allowlisted context receives program authentication. Web routes remain session-only.
       const response = await agentHttp.handle({ ...context, workspaceId, suffix: '/agent-conversations' + suffix, registeredWorkspaceIds: () => credential.workspaceIds, authorizeRead: authorize, authorizeWrite: authorize, readJsonBody });
       if (response && typeof response === 'object' && 'status' in response) {

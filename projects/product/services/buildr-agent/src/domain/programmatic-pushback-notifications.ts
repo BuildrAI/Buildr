@@ -1,53 +1,249 @@
 import { createHash } from 'node:crypto';
-import type { ConversationView, PushbackEventType, PushbackRequest, RunStatus, RunView } from '../contracts.ts';
+import type { ConversationView, PushbackEventType, PushbackProgress, PushbackRequest, PushbackStall, RunStatus, RunView } from '../contracts.ts';
+import { finalReplyForRun } from './conversation-activity.ts';
 
-export type PushbackRunState = { status: RunStatus; unknownSince?: number; stalled?: boolean };
-export type PushbackSnapshot = { title: string; runs: Record<string, PushbackRunState>; requests: Record<string, string> };
-export type PushbackNotification = { type: PushbackEventType; runId?: string; runStatus?: RunStatus; request?: PushbackRequest; summary: string; occurredAt: string; dedupKey: string };
-export type PushbackContext = { now: number; stoppedByCredential: Set<string>; stalledThresholdMs: number };
+export type PushbackRunState = {
+  status: RunStatus;
+  stalled?: boolean;
+  lastActivityAt: number;
+  activitySignature: string;
+  completedToolCount: number;
+  startedAt: string;
+  progressSignature?: string;
+  lastProgressAt?: number;
+  pendingProgress?: { text: string; messageSignature: string };
+};
+export type PushbackSnapshot = {
+  title: string;
+  workspaceId?: string;
+  conversationId?: string;
+  runs: Record<string, PushbackRunState>;
+  requests: Record<string, string>;
+};
+export type PushbackNotification = {
+  type: PushbackEventType;
+  runId?: string;
+  runStatus?: RunStatus;
+  request?: PushbackRequest;
+  finalReply?: string;
+  finalReplyUrl?: string;
+  progress?: PushbackProgress;
+  stalled?: PushbackStall;
+  summary: string;
+  occurredAt: string;
+  dedupKey: string;
+};
+export type PushbackContext = {
+  now: number;
+  stoppedByCredential: Set<string>;
+  stalledThresholdMs: number;
+  progressIntervalMs: number;
+  progressEnabled: boolean;
+  stalledEnabled: boolean;
+};
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const SUMMARY_LIMIT = 500;
+const RUNNING = new Set<RunStatus>(['starting', 'running', 'tools-active']);
+const TERMINAL = new Set<RunStatus>(['completed', 'failed', 'stopped']);
 
-function finalReply(view: ConversationView, runId: string): string {
-  const replies = view.entries.filter(entry => entry.kind === 'message' && entry.role === 'assistant' && !entry.thinking && !entry.parentToolId && entry.status !== 'failed' && (entry.runId ? entry.runId === runId : true));
-  const text = replies.at(-1)?.text?.trim();
-  return text ? text.slice(0, SUMMARY_LIMIT) : '对话执行已完成';
-}
-function requestOptions(request: ConversationView['requests'][number]): PushbackRequest['options'] {
-  const options = request.options ?? request.questions?.[0]?.options;
-  return options?.map(option => ({ id: option.id, label: option.label, ...(option.description === undefined ? {} : { description: option.description }) }));
-}
+const detailUrl = (workspaceId: string, conversationId: string) => `/api/v1/programmatic/workspaces/${workspaceId}/conversations/${conversationId}`;
+const finalReplyUrl = (workspaceId: string, conversationId: string, runId: string) =>
+  `${detailUrl(workspaceId, conversationId)}/runs/${runId}/final-reply`;
 
-/** Pure view diff: only the five pushback events, never process fragments, streaming or title generation. */
-export function pushbackNotifications(view: ConversationView, prior: PushbackSnapshot | undefined, context: PushbackContext): { snapshot: PushbackSnapshot; events: PushbackNotification[] } {
-  const snapshot: PushbackSnapshot = { title: view.title, runs: { ...prior?.runs }, requests: { ...prior?.requests } };
+function runEntries(view: ConversationView, run: RunView) {
+  return view.entries.filter(entry => entry.runId ? entry.runId === run.id : entry.createdAt >= run.startedAt);
+}
+function activitySignature(view: ConversationView, run: RunView): string {
+  return digest({
+    status: run.status,
+    tools: run.tools.map(tool => [tool.id, tool.status]),
+    entries: runEntries(view, run).map(entry => [
+      entry.id, entry.sequence, entry.kind, entry.role, entry.text, entry.parentToolId, entry.status, entry.createdAt,
+    ]),
+  });
+}
+function progressEntry(view: ConversationView, run: RunView) {
+  return runEntries(view, run)
+    .filter(entry => entry.kind === 'message' && entry.role === 'assistant' && !entry.thinking && !entry.parentToolId && entry.status !== 'failed')
+    .sort((left, right) => left.sequence - right.sequence)
+    .at(-1);
+}
+function elapsedMs(run: RunView | undefined, startedAt: string, now: number): number {
+  const started = Date.parse(run?.startedAt ?? startedAt);
+  return Number.isFinite(started) ? Math.max(0, now - started) : 0;
+}
+function requestPayload(request: ConversationView['requests'][number], conversationRevision: string): PushbackRequest {
+  const options = request.options?.map(option => ({
+    optionId: option.id,
+    label: option.label,
+    ...(option.description === undefined ? {} : { description: option.description }),
+  }));
+  const questions = request.questions?.map(question => ({
+    questionId: question.id,
+    question: question.label,
+    allowOther: question.allowOther === true,
+    multiple: question.multiple === true,
+    options: (question.options ?? []).map(option => ({
+      optionId: option.id,
+      label: option.label,
+      ...(option.description === undefined ? {} : { description: option.description }),
+    })),
+  }));
+  return {
+    requestId: request.id,
+    kind: request.kind,
+    title: request.title,
+    ...(request.description === undefined ? {} : { description: request.description }),
+    runId: request.runId,
+    participantId: request.participantId,
+    generation: request.generation,
+    conversationRevision,
+    ...(options ? { options } : {}),
+    ...(questions ? { questions } : {}),
+  };
+}
+function progressPayload(state: PushbackRunState, now: number): PushbackProgress | undefined {
+  if (!state.pendingProgress) return undefined;
+  return {
+    text: state.pendingProgress.text,
+    elapsedMs: elapsedMs(undefined, state.startedAt, now),
+    completedToolCount: state.completedToolCount,
+  };
+}
+function stalledPayload(state: PushbackRunState, now: number): PushbackStall {
+  return { idleMs: Math.max(0, now - state.lastActivityAt), lastActivityAt: new Date(state.lastActivityAt).toISOString() };
+}
+function timedNotifications(
+  snapshot: PushbackSnapshot,
+  context: Pick<PushbackContext, 'now' | 'stalledThresholdMs' | 'progressIntervalMs' | 'progressEnabled' | 'stalledEnabled'>,
+): { snapshot: PushbackSnapshot; events: PushbackNotification[] } {
   const events: PushbackNotification[] = [];
-  const occurredAt = view.updatedAt;
-  const emit = (type: PushbackEventType, dedupKey: string, fields: Omit<PushbackNotification, 'type' | 'dedupKey' | 'occurredAt'>) => events.push({ type, dedupKey, occurredAt, ...fields });
+  const occurredAt = new Date(context.now).toISOString();
+  for (const [runId, state] of Object.entries(snapshot.runs)) {
+    if (context.progressEnabled && RUNNING.has(state.status) && state.pendingProgress &&
+      (state.lastProgressAt === undefined || context.now - state.lastProgressAt >= context.progressIntervalMs)) {
+      const progress = progressPayload(state, context.now);
+      if (progress) {
+        events.push({
+          type: 'run.progress', runId, runStatus: state.status, progress, occurredAt,
+          dedupKey: digest([runId, 'progress', state.pendingProgress.messageSignature, context.now]),
+          summary: progress.text.slice(0, SUMMARY_LIMIT) || '执行仍在进行',
+        });
+        state.lastProgressAt = context.now;
+        state.pendingProgress = undefined;
+      }
+    }
+    if (context.stalledEnabled && RUNNING.has(state.status) && !state.stalled &&
+      context.now - state.lastActivityAt >= context.stalledThresholdMs) {
+      const stalled = stalledPayload(state, context.now);
+      events.push({
+        type: 'run.stalled', runId, runStatus: state.status, stalled, occurredAt,
+        dedupKey: digest([runId, 'stalled', state.lastActivityAt]),
+        summary: `执行已连续 ${Math.floor(stalled.idleMs / 60000)} 分钟没有新记录`,
+      });
+      state.stalled = true;
+    }
+  }
+  return { snapshot, events };
+}
+
+/** Pure view diff for durable pushback events. Intermediate assistant messages are throttled per run. */
+export function pushbackNotifications(view: ConversationView, prior: PushbackSnapshot | undefined, context: PushbackContext): { snapshot: PushbackSnapshot; events: PushbackNotification[] } {
+  const snapshot: PushbackSnapshot = {
+    title: view.title,
+    workspaceId: view.workspaceId,
+    conversationId: view.id,
+    runs: { ...prior?.runs },
+    requests: { ...prior?.requests },
+  };
+  const events: PushbackNotification[] = [];
+  const emit = (type: PushbackEventType, dedupKey: string, fields: Omit<PushbackNotification, 'type' | 'dedupKey' | 'occurredAt'>) =>
+    events.push({ type, dedupKey, occurredAt: view.updatedAt, ...fields });
   const runs = [view.run, ...(view.retainedRuns ?? [])].filter((run): run is RunView => Boolean(run));
   for (const run of runs) {
     const previous = prior?.runs[run.id];
-    const state: PushbackRunState = { status: run.status, ...(previous?.stalled ? { stalled: true } : {}) };
+    const signature = activitySignature(view, run);
+    const latest = progressEntry(view, run);
+    const completedToolCount = run.tools.filter(tool => tool.status === 'completed').length;
+    const state: PushbackRunState = previous ? {
+      ...previous,
+      status: run.status,
+      startedAt: run.startedAt,
+      activitySignature: signature,
+      completedToolCount,
+      ...(signature !== previous.activitySignature ? { lastActivityAt: context.now, stalled: false } : {}),
+    } : {
+      status: run.status,
+      lastActivityAt: context.now,
+      activitySignature: signature,
+      completedToolCount,
+      startedAt: run.startedAt,
+      ...(latest ? { progressSignature: digest([latest.id, latest.text]) } : {}),
+    };
+
     if (run.status !== previous?.status) {
-      if (run.status === 'completed') emit('run.completed', digest([run.id, 'completed']), { runId: run.id, runStatus: run.status, summary: finalReply(view, run.id) });
-      else if (run.status === 'failed') emit('run.failed', digest([run.id, 'failed']), { runId: run.id, runStatus: run.status, summary: (run.diagnostic ?? '对话执行出错').slice(0, SUMMARY_LIMIT) });
-      else if (run.status === 'stopped' && !context.stoppedByCredential.has(run.id)) emit('run.stopped', digest([run.id, 'stopped']), { runId: run.id, runStatus: run.status, summary: '对话执行已停止' });
+      if (run.status === 'completed') {
+        const finalReply = finalReplyForRun(view, run.id, run.startedAt);
+        emit('run.completed', digest([run.id, 'completed']), {
+          runId: run.id, runStatus: run.status, summary: (finalReply || '对话执行已完成').slice(0, SUMMARY_LIMIT),
+          finalReply, finalReplyUrl: finalReplyUrl(view.workspaceId, view.id, run.id),
+        });
+      } else if (run.status === 'failed') {
+        const finalReply = finalReplyForRun(view, run.id, run.startedAt);
+        emit('run.failed', digest([run.id, 'failed']), {
+          runId: run.id, runStatus: run.status, summary: (run.diagnostic ?? '对话执行出错').slice(0, SUMMARY_LIMIT),
+          finalReply, finalReplyUrl: finalReplyUrl(view.workspaceId, view.id, run.id),
+        });
+      } else if (run.status === 'stopped' && !context.stoppedByCredential.has(run.id)) {
+        const finalReply = finalReplyForRun(view, run.id, run.startedAt);
+        emit('run.stopped', digest([run.id, 'stopped']), {
+          runId: run.id, runStatus: run.status, summary: '对话执行已停止',
+          finalReply, finalReplyUrl: finalReplyUrl(view.workspaceId, view.id, run.id),
+        });
+      }
     }
-    if (run.fault && !state.stalled) { state.stalled = true; emit('run.stalled', digest([run.id, 'fault']), { runId: run.id, runStatus: run.status, summary: '执行出现障碍，状态待核对' }); }
-    if (run.status === 'unknown') {
-      state.unknownSince = previous?.unknownSince ?? context.now;
-      if (!state.stalled && context.now - state.unknownSince >= context.stalledThresholdMs) { state.stalled = true; emit('run.stalled', digest([run.id, 'unknown']), { runId: run.id, runStatus: run.status, summary: '执行状态未知已超过 5 分钟' }); }
+
+    if (TERMINAL.has(run.status)) {
+      state.pendingProgress = undefined;
+      if (latest) state.progressSignature = digest([latest.id, latest.text]);
+    } else if (latest && context.progressEnabled && previous) {
+      const messageSignature = digest([latest.id, latest.text]);
+      state.progressSignature = messageSignature;
+      if (messageSignature !== previous.progressSignature) {
+        state.pendingProgress = { text: latest.text, messageSignature };
+        if (state.lastProgressAt === undefined || context.now - state.lastProgressAt >= context.progressIntervalMs) {
+          const progress = progressPayload(state, context.now)!;
+          emit('run.progress', digest([run.id, 'progress', messageSignature, context.now]), {
+            runId: run.id, runStatus: run.status, progress,
+            summary: progress.text.slice(0, SUMMARY_LIMIT) || '执行仍在进行',
+          });
+          state.lastProgressAt = context.now;
+          state.pendingProgress = undefined;
+        }
+      }
+    } else if (latest) {
+      state.progressSignature = digest([latest.id, latest.text]);
     }
     snapshot.runs[run.id] = state;
   }
   for (const request of view.requests) {
     const key = JSON.stringify([request.runId, request.id]);
-    const signature = digest({ id: request.id, kind: request.kind, title: request.title, options: request.options, questions: request.questions });
+    const signature = digest(request);
     if (prior?.requests[key] !== signature) {
-      const options = requestOptions(request);
-      emit('decision.requested', digest([key, signature]), { runId: request.runId, runStatus: runs.find(run => run.id === request.runId)?.status, request: { requestId: request.id, kind: request.kind, title: request.title, ...(options ? { options } : {}) }, summary: request.title.slice(0, SUMMARY_LIMIT) || '对话等待决策' });
+      emit('decision.requested', digest([key, signature]), {
+        runId: request.runId,
+        runStatus: runs.find(run => run.id === request.runId)?.status,
+        request: requestPayload(request, view.revision),
+        summary: request.title.slice(0, SUMMARY_LIMIT) || '对话等待决策',
+      });
     }
     snapshot.requests[key] = signature;
   }
-  return { snapshot, events };
+  const timed = timedNotifications(snapshot, context);
+  return { snapshot: timed.snapshot, events: [...events, ...timed.events] };
+}
+
+/** Advance timers without a new conversation view: coalesced progress and inactivity stalls. */
+export function timedPushbackNotifications(snapshot: PushbackSnapshot, context: Pick<PushbackContext, 'now' | 'stalledThresholdMs' | 'progressIntervalMs' | 'progressEnabled' | 'stalledEnabled'>) {
+  return timedNotifications(structuredClone(snapshot), context);
 }

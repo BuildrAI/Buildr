@@ -91,6 +91,7 @@ test('pushback management is session-only, redacts the secret and records delive
  assert.equal((await fetch(route)).status,403);
  const initial=await(await fetch(route,{headers:f.webHeaders})).json();
  assert.equal(initial.state,'unconfigured');assert.equal(initial.hasSecret,false);
+ assert.equal(initial.progressEnabled,true);assert.equal(initial.stalledEnabled,true);
  const saved=await configurePushback(f,credential.id);
  assert.equal(saved.state,'enabled');assert.equal(saved.hasSecret,true);
  assert.ok(!JSON.stringify(saved).includes(SECRET),'the public view never carries the secret');
@@ -116,13 +117,34 @@ test('events backfill is read-scoped and only the takeover credential receives e
  await f.flush();
  f.complete();
  await f.flush();
+ const updatedCredential=await fetch(f.manager+'/'+credA.id+'/update',{method:'POST',headers:f.webHeaders,body:JSON.stringify({expectedRevision:credA.revision,name:'GrokBot fixture',workspaceIds:[f.workspaceId],scopes:['read','execute','answer'],allowFullAccess:false})});
+ assert.equal(updatedCredential.status,200,await updatedCredential.clone().text());
  const continued=await f.call(endpoint+'/'+conversationId+'/messages',tokenA,{text:'second event',clientRequestId:randomUUID()});
  assert.equal(continued.status,202,await continued.clone().text());
  await f.flush();
  f.complete();
  await f.flush();
  assert.ok(receiver.calls.filter(call=>call.url==='https://receiver.test/a').some(call=>call.body.type==='run.completed'));
+ const progressCall=receiver.calls.find(call=>call.url==='https://receiver.test/a'&&call.body.type==='run.progress');
+ assert.ok(progressCall,'intermediate assistant text is delivered as run.progress');
+ assert.equal(progressCall!.body.progress.text,'fixture result');
+ assert.equal(typeof progressCall!.body.progress.elapsedMs,'number');
+ assert.equal(progressCall!.body.progress.completedToolCount,0);
+ assert.deepEqual(progressCall!.body.scopes,['read','execute']);
+ assert.equal(progressCall!.body.allowFullAccess,true);
+ const completedCall=receiver.calls.find(call=>call.url==='https://receiver.test/a'&&call.body.type==='run.completed'&&call.body.finalReply==='fixture result');
+ assert.ok(completedCall,'completed event carries the full assistant reply');
+ assert.deepEqual(completedCall!.body.scopes,['read','execute']);
+ assert.equal(completedCall!.body.allowFullAccess,true);
+ assert.equal(completedCall!.body.finalReplyUrl,'/api/v1/programmatic/workspaces/'+f.workspaceId+'/conversations/'+conversationId+'/runs/'+completedCall!.body.runId+'/final-reply');
+ const latestCompleted=receiver.calls.filter(call=>call.url==='https://receiver.test/a'&&call.body.type==='run.completed').at(-1)!;
+ assert.deepEqual(latestCompleted.body.scopes,['read','execute','answer'],'events use the updated credential scope snapshot');
+ assert.equal(latestCompleted.body.allowFullAccess,false);
  assert.equal(receiver.calls.filter(call=>call.url==='https://receiver.test/b').length,0,'a credential without takeover receives nothing');
+ const finalReply=await f.call(endpoint+'/'+conversationId+'/runs/'+completedCall!.body.runId+'/final-reply',tokenA);
+ assert.equal(finalReply.status,200,await finalReply.clone().text());
+ assert.deepEqual(await finalReply.json(),{runId:completedCall!.body.runId,finalReply:'fixture result'});
+ assert.equal((await f.call(endpoint+'/'+conversationId+'/runs/'+randomUUID()+'/final-reply',tokenA)).status,404);
  const eventsRoute='/workspaces/'+f.workspaceId+'/events';
  const pageA=await(await f.call(eventsRoute,tokenA)).json();
  assert.ok(pageA.events.some((event:any)=>event.type==='run.completed'&&event.conversationId===conversationId));
@@ -151,10 +173,13 @@ test('events backfill is read-scoped and only the takeover credential receives e
  assert.equal(pageTwo.events.length,1);
  assert.ok(pageTwo.events[0].sequence>pageOne.events[0].sequence);
  assert.equal(pageTwo.nextCursor,String(pageTwo.events[0].sequence));
- assert.equal(pageTwo.hasMore,false);
- const end=await(await f.call(eventsRoute+'?after='+pageTwo.nextCursor,tokenA)).json();
+ assert.equal(pageTwo.hasMore,true);
+ const pageThree=await(await f.call(eventsRoute+'?after='+pageTwo.nextCursor+'&limit=1',tokenA)).json();
+ assert.equal(pageThree.events.length,1);
+ assert.equal(pageThree.hasMore,false);
+ const end=await(await f.call(eventsRoute+'?after='+pageThree.nextCursor,tokenA)).json();
  assert.deepEqual(end.events,[]);
- assert.equal(end.nextCursor,pageTwo.nextCursor,'empty page echoes the requested after');
+ assert.equal(end.nextCursor,pageThree.nextCursor,'empty page echoes the requested after');
  assert.equal(end.hasMore,false);
 });
 
@@ -187,6 +212,38 @@ test('stop attribution suppresses the initiator credential run.stopped',async t=
  const page=await(await f.call('/workspaces/'+f.workspaceId+'/events',token)).json();
  assert.ok(!page.events.some((event:any)=>event.type==='run.stopped'),'the initiator does not receive its own stop');
  assert.ok(!receiver.calls.some(call=>call.body.type==='run.stopped'));
+});
+
+test('decision.requested carries the complete question card and answer identity',async t=>{
+ const receiver=fakePushbackReceiver();
+ const f=await programmaticHttpFixture(t,{pushbackTransport:receiver.transport});
+ const {token,credential}=await f.create();
+ await configurePushback(f,credential.id);
+ const {endpoint,conversationId}=await startConversation(f,token);
+ await f.flush();
+ f.emit({type:'request',request:{id:'native-question',kind:'question',title:'请选择范围',description:'本轮需要确认两个问题。',questions:[
+   {id:'scope',label:'处理范围',multiple:true,allowOther:true,options:[{id:'all',label:'全部',description:'覆盖所有文件'},{id:'changed',label:'仅变更'}]},
+   {id:'risk',label:'风险偏好',multiple:false,allowOther:false,options:[{id:'low',label:'低'},{id:'high',label:'高',description:'允许高风险操作'}]},
+ ]}});
+ await f.flush();
+ f.emit({type:'item',item:{id:'after-card-progress',kind:'message',role:'assistant',text:'正在整理范围',executionId:'native-run'}});
+ await f.flush();
+ const call=receiver.calls.find(value=>value.body.type==='decision.requested');
+ assert.ok(call,'the decision event was delivered');
+ const request=call!.body.request;
+ assert.equal(request.kind,'question');
+ assert.equal(request.title,'请选择范围');
+ assert.equal(request.description,'本轮需要确认两个问题。');
+ assert.equal(typeof request.requestId,'string');
+ assert.equal(typeof request.conversationRevision,'string');
+ assert.equal(call!.body.runId,request.runId);
+ assert.deepEqual(request.questions,[
+  {questionId:'scope',question:'处理范围',allowOther:true,multiple:true,options:[{optionId:'all',label:'全部',description:'覆盖所有文件'},{optionId:'changed',label:'仅变更'}]},
+  {questionId:'risk',question:'风险偏好',allowOther:false,multiple:false,options:[{optionId:'low',label:'低'},{optionId:'high',label:'高',description:'允许高风险操作'}]},
+ ]);
+ const view=await(await f.call(endpoint+'/'+conversationId+'/observe',token,{})).json();
+ assert.equal(request.participantId,view.run.participantId);
+ assert.equal(request.generation,view.run.generation);
 });
 
 test('list query parameters pass through the HTTP allowlist with activityCounts',async t=>{

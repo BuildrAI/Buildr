@@ -25,7 +25,7 @@ export const programmaticGuide = `# Buildr 本机程序 API（第二期）
 - execute：首发、prepare-send/send、supplement和停止。
 - answer：仅回答question卡片；approve：仅处理approval卡片。两者互不替代。
 - 全部授权：凭据携带“允许全部授权执行”开关（allowFullAccess，默认开启），在「程序接入」创建时选择或在凭据卡片切换。开启时start/send/续聊可传permissionMode=full-access，与网页选择全部授权一致；关闭时请求full-access返回403。发现入口connections[].capabilities.permissionModes透传连接真实支持的模式，支持全部授权的连接列出["default","full-access"]。
-GrokBot默认只授read/execute；问题和审批转人，从同一Buildr Web对话回答。若人明确使用专用自动化凭据回复，必须另授对应权限并提供原卡片的准确身份。
+当前凭据的实际权限以发现入口 GET /api/v1/programmatic 返回的 credential.scopes 和各 capability.scope 为准，不以产品名、示例、旧配置或历史对话推断。问题和审批可转人从同一 Buildr Web 对话回答；若使用专用自动化凭据回复，必须为该凭据授予 answer 或 approve，并使用原卡片的准确身份。
 工作空间授权不是操作系统文件沙箱。Agent使用本机工具、规则与已有执行权限。程序入口仍不接受任意cwd；start/send等显式发送请求省略permissionMode时默认default，单步续聊/messages省略时沿用该对话最近一轮执行的permissionMode；显式full-access按上述凭据开关门禁。账号、密钥、升级、全局私有会话及其他管理接口不开放给Bearer。
 
 ## 首发与恢复
@@ -44,12 +44,28 @@ GET对话与/entries支持before、limit分页；较早消息通过nextBefore续
 本期不提供程序实时事件流；除回推外仍按轮询观察，通常2秒即可，按响应节流。回推与事件补读见下节，不改变恢复原标识的原则。
 
 ## 事件回推
-回推按凭据配置：在「智能体与模型 → 程序接入」展开凭据详情，设置接收地址、密钥、启停与速率上限，并可发送测试通知。原全局“事件通知”已退役，既有配置自动迁移到GrokBot凭据并保持停用。密钥只保存在本机私有文件（600），界面默认隐藏、日志不输出明文；投递以Authorization: Bearer携带密钥。管理入口仅网页会话可用，不向Bearer开放。
-只有被该凭据接管（首次API创建/发送/续聊/补充即标记）的对话才会回推，且只推五类关键事件：decision.requested（问题或审批）、run.completed、run.failed、run.stopped（非该凭据发起的停止）、run.stalled（故障或状态未知持续5分钟）。不推工具调用、流式输出、思考、中间消息、starting/running转换或标题生成。
-事件正文含eventId（全局唯一）、type、occurredAt、machine{id,name}、workspaceId、conversationId、title、runId、runStatus、summary（≤500字符）、detailUrl（程序读取地址）；decision.requested另含request{requestId,kind,title,options}。不含任何密钥和完整对话内容。
-速率按凭据计，默认180/小时、20/分钟，可在界面调整。限额内立即推送；超限按同对话同类型合并（保留最新状态与mergedCount），配额恢复后补发；decision.requested优先且永不合并。投递为HTTP POST JSON、每请求一条事件，2xx为成功；失败按10/30/90/270/810秒退避，最多5次后置为undelivered。
-回推停用（state=disabled）只停止对外投递，不停止事件记录：被该凭据接管对话的五类事件仍按上述判定写入同一持久事件流，可用events补查；停用期间已记录的事件不会在重新启用后重放。未配置回推的凭据不产生事件。
-事件持久保留7天、sequence跨重启连续。补读GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n}（read，limit默认50、最大200），按sequence升序返回含undelivered的事件；after必须是上一页nextCursor返回的非负整数序号，不是合法游标时返回400 programmatic_input_invalid。nextCursor始终返回本页最后一条事件的sequence（字符串）；本页为空时返回请求中的after；未传after且没有任何事件时为null。hasMore表示以after=nextCursor再次读取时是否还有更多事件。轮询方应保存nextCursor，下次用after=nextCursor补查，而不是把null当作继续游标。超出保留期被丢弃时发出events_dropped。测试环境、候选实例与自动化测试一律不得向真实接收地址推送，只用本地假接收端。
+回推按凭据配置：在「智能体与模型 → 程序接入」展开凭据详情，设置接收地址、密钥、启停、速率上限、中间进度与停滞提醒开关，并可发送测试通知。中间进度和停滞提醒默认开启。原全局“事件通知”已退役，既有配置自动迁移到历史兼容凭据并保持停用。密钥只保存在本机私有文件（600），界面默认隐藏、日志不输出明文；投递以 Authorization: Bearer 携带密钥。管理入口仅网页会话可用，不向 Bearer 开放。
+只有被该凭据接管（首次 API 创建/发送/续聊/补充即标记）的对话才会回推。业务事件为 decision.requested（问题或审批）、run.progress（新的 assistant 中间消息）、run.completed、run.failed、run.stopped（非该凭据发起的停止）和 run.stalled（运行中连续 20 分钟没有新记录）。不推工具调用明细、流式 token、思考、starting/running 状态转换或标题生成。
+每条事件正文都含 eventId（全局唯一）、type、occurredAt、machine{id,name}、workspaceId、conversationId、title、runId、runStatus、summary（≤500 字符）、detailUrl（完整对话读取地址）、scopes（当前凭据权限数组）和 allowFullAccess（当前凭据“允许全部授权执行”开关）。scopes 与 allowFullAccess 在每次程序调用或回推配置操作时更新，是事件生成时的凭据权限快照；接收方仍应以发现入口的当前值为准。不含任何密钥或接收地址。
+run.completed、run.failed 和 run.stopped 另含 finalReply（该 run 最终 assistant 回复的完整文本，不截断）和 finalReplyUrl。finalReplyUrl 是相对本机 API 根路径的轻量读取地址，GET 该地址只需 read 权限，返回 {runId,finalReply}，不返回整个对话。示例：
+~~~json
+{"eventId":"...","type":"run.completed","occurredAt":"2026-11-13T03:00:00.000Z","machine":{"id":"machine-id","name":"buildr-host"},"workspaceId":"...","conversationId":"...","title":"发布候选版","runId":"...","runStatus":"completed","finalReply":"完整最终回复……","finalReplyUrl":"/api/v1/programmatic/workspaces/{workspaceId}/conversations/{conversationId}/runs/{runId}/final-reply","scopes":["read","execute","answer","approve"],"allowFullAccess":true,"summary":"完整最终回复……","detailUrl":"/api/v1/programmatic/workspaces/{workspaceId}/conversations/{conversationId}","sequence":42}
+~~~
+decision.requested 的 request 含 requestId、kind、title、description、runId、participantId、generation、conversationRevision，以及卡片的全部内容：审批卡 options 每项含 optionId、label、description；问题卡 questions 每项含 questionId、question、allowOther、multiple、options。回答时使用这些准确标识，不要按最新对话猜测。示例：
+~~~json
+{"type":"decision.requested","request":{"requestId":"...","kind":"question","title":"确认范围","description":"本轮需要确认两个问题。","runId":"...","participantId":"...","generation":"...","conversationRevision":"...","questions":[{"questionId":"scope","question":"处理范围","allowOther":true,"multiple":true,"options":[{"optionId":"all","label":"全部","description":"覆盖所有文件"},{"optionId":"changed","label":"仅变更"}]}]}}
+~~~
+run.progress 在新 assistant 中间消息出现时产生。payload 的 progress 含 text（最新一条中间消息全文）、elapsedMs（run 到本次推送已运行时长）和 completedToolCount（已完成工具数）。同一 run 相邻两次推送至少间隔 5 分钟；间隔内只保留最新一条，窗口结束推送最新内容。首次新中间消息在满足间隔时立即推送。示例：
+~~~json
+{"type":"run.progress","runId":"...","runStatus":"running","progress":{"text":"已完成日志定位，正在复现问题……","elapsedMs":420000,"completedToolCount":3}}
+~~~
+run.stalled 仅在 starting/running/tools-active 状态且连续 20 分钟没有新消息、工具调用或状态变化时推送一次；payload 的 stalled 含 idleMs 与 lastActivityAt。恢复产生新记录后重置计时，再连续空闲 20 分钟才会再次推送。示例：
+~~~json
+{"type":"run.stalled","runId":"...","runStatus":"running","stalled":{"idleMs":1200000,"lastActivityAt":"2026-11-13T02:40:00.000Z"},"summary":"执行已连续 20 分钟没有新记录"}
+~~~
+速率按凭据计，默认 180/小时、20/分钟，可在界面调整；run.progress 与 run.stalled 同样计入。限额内立即推送；超限按同对话同类型合并（保留最新状态与 mergedCount），配额恢复后补发；decision.requested 优先且永不合并。投递为 HTTP POST JSON、每请求一条事件、不跟随重定向、仅 2xx 成功；失败按 10/30/90/270/810 秒退避，最多 5 次后置为 undelivered。响应丢失可能重复到达同一 eventId。
+回推总开关停用（state=disabled）只停止对外投递，不停止事件记录：已开启的上述事件仍写入同一持久事件流，可用 events 补查；停用期间已记录的事件不会在重新启用后重放。中间进度或停滞提醒单独关闭时，不生成对应事件。未配置回推的凭据不产生事件。
+事件持久保留7天、sequence跨重启连续。补读 GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n}（read，limit 默认 50、最大 200），按 sequence 升序返回含 undelivered 的事件；after 必须是上一页 nextCursor 返回的非负整数序号，不是合法游标时返回 400 programmatic_input_invalid。nextCursor 始终返回本页最后一条事件的 sequence（字符串）；本页为空时返回请求中的 after；未传 after 且没有任何事件时为 null。hasMore 表示以 after=nextCursor 再次读取时是否还有更多事件。轮询方应保存 nextCursor，下次用 after=nextCursor 补查，而不是把 null 当作继续游标。超出保留期被丢弃时发出 events_dropped。测试环境、候选实例与自动化测试一律不得向真实接收地址推送，只用本地假接收端。
 最小闭环：配置回推→收到decision.requested→按detailUrl读对话取得准确卡片身份→由人回答或审批；执行结束后用单步续聊POST /messages发起下一轮。
 
 ## 错误与副作用

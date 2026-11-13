@@ -1,11 +1,11 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { hostname } from 'node:os';
-import type { ServiceEvent, ConversationView, PushbackEvent, PushbackEventPage, PushbackDeliveryResult, PushbackSettingsInput, PushbackSettingsView } from '../contracts.ts';
+import type { ServiceEvent, ConversationView, PushbackCredentialAccess, PushbackEvent, PushbackEventPage, PushbackDeliveryResult, PushbackSettingsInput, PushbackSettingsView } from '../contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { ProgrammaticPushbackStore, type PushbackConfig, type PushbackClaim } from '../persistence/programmatic-pushback-store.ts';
-import { pushbackNotifications, type PushbackSnapshot, type PushbackNotification } from '../domain/programmatic-pushback-notifications.ts';
+import { pushbackNotifications, timedPushbackNotifications, type PushbackSnapshot, type PushbackNotification } from '../domain/programmatic-pushback-notifications.ts';
 
-export type PushbackOptions = { root: string; transport?: typeof fetch; now?: () => number; backoffMs?: number[]; checkIntervalMs?: number; concurrency?: number; stalledThresholdMs?: number; retentionMs?: number };
+export type PushbackOptions = { root: string; transport?: typeof fetch; now?: () => number; backoffMs?: number[]; checkIntervalMs?: number; concurrency?: number; stalledThresholdMs?: number; progressIntervalMs?: number; retentionMs?: number };
 const DEFAULT_BACKOFF = [10000, 30000, 90000, 270000, 810000];
 const GLOBAL_MIGRATION_KEY = 'global-webhook';
 const HOUR = 3600000, MINUTE = 60000;
@@ -26,6 +26,7 @@ function redact<T>(value: T, secret: string, url: string): T {
 }
 const detailUrl = (workspaceId: string, conversationId: string) => `/api/v1/programmatic/workspaces/${workspaceId}/conversations/${conversationId}`;
 const eventsUrl = (workspaceId: string) => `/api/v1/programmatic/workspaces/${workspaceId}/events`;
+const emptyAccess: PushbackCredentialAccess = { scopes: [], allowFullAccess: false };
 
 /** Per-credential durable pushback: view diff, sliding-window rate limit with merge, bounded backoff delivery. */
 export class ProgrammaticPushback {
@@ -35,6 +36,7 @@ export class ProgrammaticPushback {
   private readonly backoffMs: number[];
   private readonly concurrency: number;
   private readonly stalledThresholdMs: number;
+  private readonly progressIntervalMs: number;
   private readonly retentionMs: number;
   private readonly owner = randomUUID();
   private readonly active = new Set<AbortController>();
@@ -50,7 +52,8 @@ export class ProgrammaticPushback {
     this.clock = options.now ?? Date.now;
     this.backoffMs = options.backoffMs ?? DEFAULT_BACKOFF;
     this.concurrency = options.concurrency ?? 16;
-    this.stalledThresholdMs = options.stalledThresholdMs ?? 300000;
+    this.stalledThresholdMs = options.stalledThresholdMs ?? 20 * MINUTE;
+    this.progressIntervalMs = options.progressIntervalMs ?? 5 * MINUTE;
     this.retentionMs = options.retentionMs ?? 7 * 24 * HOUR;
     this.interval = setInterval(() => this.tick(), options.checkIntervalMs ?? 30000); this.interval.unref();
   }
@@ -73,6 +76,7 @@ export class ProgrammaticPushback {
     return {
       credentialId, revision: current.revision, state: current.state, url: current.config?.url ?? '', hasSecret: !!current.secret,
       rateLimitHour: current.config?.rateLimitHour ?? 180, rateLimitMinute: current.config?.rateLimitMinute ?? 20,
+      progressEnabled: current.config?.progressEnabled !== false, stalledEnabled: current.config?.stalledEnabled !== false,
       ...(recent.length ? { lastDelivery: recent.at(-1)!, recentDeliveries: [...recent] } : {}),
     };
   }
@@ -86,10 +90,13 @@ export class ProgrammaticPushback {
     if (input.enabled && !validPushbackTarget(url, secret)) throw failure('agent_pushback_invalid', '启用回推需要有效地址与非空密钥。', 400);
     const rateLimitHour = input.rateLimitHour ?? current.config?.rateLimitHour ?? 180;
     const rateLimitMinute = input.rateLimitMinute ?? current.config?.rateLimitMinute ?? 20;
+    const progressEnabled = input.progressEnabled ?? current.config?.progressEnabled ?? true;
+    const stalledEnabled = input.stalledEnabled ?? current.config?.stalledEnabled ?? true;
     if (!Number.isInteger(rateLimitHour) || rateLimitHour < 1 || rateLimitHour > 100000 || !Number.isInteger(rateLimitMinute) || rateLimitMinute < 1 || rateLimitMinute > 10000) throw failure('agent_pushback_invalid', '速率限制必须为正整数。', 400);
+    if (typeof progressEnabled !== 'boolean' || typeof stalledEnabled !== 'boolean') throw failure('agent_pushback_invalid', '回推事件开关必须为布尔值。', 400);
     const revision = randomUUID();
     const secretFilePath = input.secret ? this.store.writeSecret(credentialId, secret) : current.config?.secretFilePath ?? this.store.writeSecret(credentialId, secret);
-    this.store.putConfig({ credentialId, url, enabled: input.enabled, rateLimitHour, rateLimitMinute, revision, secretFilePath, updatedAt: new Date(this.clock()).toISOString() });
+    this.store.putConfig({ credentialId, url, enabled: input.enabled, rateLimitHour, rateLimitMinute, progressEnabled, stalledEnabled, revision, secretFilePath, updatedAt: new Date(this.clock()).toISOString() });
     return this.read(credentialId);
   }
   reveal(credentialId: string, input: { expectedRevision: string }): { secret: string } {
@@ -107,7 +114,8 @@ export class ProgrammaticPushback {
     const timer = setTimeout(() => controller.abort(), 5000); timer.unref();
     let success = false, status: number | undefined;
     try {
-      const response = await this.transport(current.config.url, { method: 'POST', redirect: 'error', signal: controller.signal, headers: { 'content-type': 'application/json', authorization: `Bearer ${current.secret}` }, body: JSON.stringify({ eventId: randomUUID(), type: 'test', occurredAt: new Date(this.clock()).toISOString(), machine: this.machine(), summary: 'Buildr 回推测试通知' }) });
+      const access = this.store.getCredentialAccess(credentialId) ?? emptyAccess;
+      const response = await this.transport(current.config.url, { method: 'POST', redirect: 'error', signal: controller.signal, headers: { 'content-type': 'application/json', authorization: `Bearer ${current.secret}` }, body: JSON.stringify({ eventId: randomUUID(), type: 'test', occurredAt: new Date(this.clock()).toISOString(), machine: this.machine(), scopes: access.scopes, allowFullAccess: access.allowFullAccess, summary: 'Buildr 回推测试通知' }) });
       success = response.ok; status = response.status; await response.body?.cancel();
     } catch { /* A failed or uncertain test is never retried; network details stay private. */ }
     finally { clearTimeout(timer); this.tests.delete(controller); }
@@ -117,6 +125,13 @@ export class ProgrammaticPushback {
   }
   markTakeover(workspaceId: string, conversationId: string, credentialId: string): void {
     this.store.markTakeover(workspaceId, conversationId, credentialId, new Date(this.clock()).toISOString());
+  }
+  setCredentialAccess(credentialId: string, access: PushbackCredentialAccess): void {
+    if (typeof credentialId !== 'string' || !credentialId || !access || !Array.isArray(access.scopes) ||
+      access.scopes.some(scope => typeof scope !== 'string') || typeof access.allowFullAccess !== 'boolean') {
+      throw failure('agent_pushback_invalid', '凭据权限快照无效。', 400);
+    }
+    this.store.putCredentialAccess(credentialId, { scopes: [...new Set(access.scopes)], allowFullAccess: access.allowFullAccess });
   }
   recordStop(workspaceId: string, conversationId: string, runId: string, credentialId: string): void {
     this.store.recordStop(workspaceId, conversationId, runId, credentialId);
@@ -153,7 +168,14 @@ export class ProgrammaticPushback {
       // the same takeover events so /events can backfill them.
       if (config.enabled && !secret) continue;
       const prior = this.store.getProjection<PushbackSnapshot>(credentialId, view.workspaceId, view.id);
-      const next = pushbackNotifications(view, prior, { now: this.clock(), stoppedByCredential: this.store.stoppedRuns(view.workspaceId, view.id, credentialId), stalledThresholdMs: this.stalledThresholdMs });
+      const next = pushbackNotifications(view, prior, {
+        now: this.clock(),
+        stoppedByCredential: this.store.stoppedRuns(view.workspaceId, view.id, credentialId),
+        stalledThresholdMs: this.stalledThresholdMs,
+        progressIntervalMs: this.progressIntervalMs,
+        progressEnabled: config.progressEnabled !== false,
+        stalledEnabled: config.stalledEnabled !== false,
+      });
       this.store.putProjection(credentialId, view.workspaceId, view.id, next.snapshot);
       for (const notification of next.events) {
         if (config.enabled && secret) this.enqueueNotification(credentialId, config, secret, view, notification);
@@ -162,19 +184,26 @@ export class ProgrammaticPushback {
     }
   }
   private enqueueNotification(credentialId: string, config: PushbackConfig, secret: string, view: ConversationView, notification: PushbackNotification): void {
-    this.enqueue(credentialId, config, view.workspaceId, view.id, notification.type, notification.dedupKey, secret, config.url, (sequence, eventId, mergedCount) => this.notificationEvent(view, notification, sequence, eventId, mergedCount));
+    this.enqueue(credentialId, config, view.workspaceId, view.id, notification.type, notification.dedupKey, secret, config.url, (sequence, eventId, mergedCount) => this.notificationEvent(credentialId, view, notification, sequence, eventId, mergedCount));
   }
-  private notificationEvent(view: ConversationView, notification: PushbackNotification, sequence: number, eventId: string, mergedCount = 1): PushbackEvent {
+  private notificationEvent(credentialId: string, view: ConversationView, notification: PushbackNotification, sequence: number, eventId: string, mergedCount = 1): PushbackEvent {
     const machine = this.machine();
+    const access = this.store.getCredentialAccess(credentialId) ?? emptyAccess;
     return {
       eventId, type: notification.type, occurredAt: notification.occurredAt, machine, workspaceId: view.workspaceId, conversationId: view.id, title: view.title,
       ...(notification.runId === undefined ? {} : { runId: notification.runId }), ...(notification.runStatus === undefined ? {} : { runStatus: notification.runStatus }),
-      ...(notification.request === undefined ? {} : { request: notification.request }), summary: notification.summary, detailUrl: detailUrl(view.workspaceId, view.id), sequence,
+      ...(notification.request === undefined ? {} : { request: notification.request }),
+      ...(notification.finalReply === undefined ? {} : { finalReply: notification.finalReply }),
+      ...(notification.finalReplyUrl === undefined ? {} : { finalReplyUrl: notification.finalReplyUrl }),
+      ...(notification.progress === undefined ? {} : { progress: notification.progress }),
+      ...(notification.stalled === undefined ? {} : { stalled: notification.stalled }),
+      scopes: access.scopes, allowFullAccess: access.allowFullAccess,
+      summary: notification.summary, detailUrl: detailUrl(view.workspaceId, view.id), sequence,
       ...(mergedCount > 1 ? { mergedCount } : {}),
     };
   }
   private persistNotification(credentialId: string, config: PushbackConfig, view: ConversationView, notification: PushbackNotification): void {
-    this.persist(credentialId, config, view.workspaceId, view.id, notification.type, notification.dedupKey, (sequence, eventId) => this.notificationEvent(view, notification, sequence, eventId));
+    this.persist(credentialId, config, view.workspaceId, view.id, notification.type, notification.dedupKey, (sequence, eventId) => this.notificationEvent(credentialId, view, notification, sequence, eventId));
   }
   /** Persist a takeover event without entering the delivery/retry queue. */
   private persist(credentialId: string, config: PushbackConfig, workspaceId: string, conversationId: string, type: string, dedupKey: string, build: (sequence: number, eventId: string) => PushbackEvent): void {
@@ -198,10 +227,10 @@ export class ProgrammaticPushback {
   }
   tick(): void {
     if (this.closed) return;
-    try { this.checkStalled(); this.cleanup(); this.drain(); this.storageFailed = false; }
+    try { this.checkTimedEvents(); this.cleanup(); this.drain(); this.storageFailed = false; }
     catch { this.storageFailure(); }
   }
-  private checkStalled(): void {
+  private checkTimedEvents(): void {
     const now = this.clock();
     for (const projection of this.store.listProjections()) {
       const config = this.store.getConfig(projection.credentialId);
@@ -209,19 +238,30 @@ export class ProgrammaticPushback {
       const secret = config.enabled ? this.store.readSecret(config.secretFilePath) : undefined;
       if (config.enabled && !secret) continue;
       const snapshot = JSON.parse(projection.snapshot) as PushbackSnapshot;
-      let changed = false;
-      for (const [runId, state] of Object.entries(snapshot.runs)) {
-        if (state.status !== 'unknown' || state.stalled || state.unknownSince === undefined || now - state.unknownSince < this.stalledThresholdMs) continue;
-        state.stalled = true; changed = true;
-        const machine = this.machine();
+      const next = timedPushbackNotifications(snapshot, {
+        now,
+        stalledThresholdMs: this.stalledThresholdMs,
+        progressIntervalMs: this.progressIntervalMs,
+        progressEnabled: config.progressEnabled !== false,
+        stalledEnabled: config.stalledEnabled !== false,
+      });
+      if (!next.events.length) continue;
+      for (const notification of next.events) {
         const build = (sequence: number, eventId: string) => ({
-          eventId, type: 'run.stalled', occurredAt: new Date(now).toISOString(), machine, workspaceId: projection.workspaceId, conversationId: projection.conversationId, title: snapshot.title,
-          runId, runStatus: 'unknown', summary: '执行状态未知已超过 5 分钟', detailUrl: detailUrl(projection.workspaceId, projection.conversationId), sequence,
+          eventId, type: notification.type, occurredAt: notification.occurredAt, machine: this.machine(),
+          workspaceId: projection.workspaceId, conversationId: projection.conversationId, title: snapshot.title ?? '',
+          ...(notification.runId === undefined ? {} : { runId: notification.runId }),
+          ...(notification.runStatus === undefined ? {} : { runStatus: notification.runStatus }),
+          ...(notification.progress === undefined ? {} : { progress: notification.progress }),
+          ...(notification.stalled === undefined ? {} : { stalled: notification.stalled }),
+          scopes: (this.store.getCredentialAccess(projection.credentialId) ?? emptyAccess).scopes,
+          allowFullAccess: (this.store.getCredentialAccess(projection.credentialId) ?? emptyAccess).allowFullAccess,
+          summary: notification.summary, detailUrl: detailUrl(projection.workspaceId, projection.conversationId), sequence,
         }) as PushbackEvent;
-        if (config.enabled && secret) this.enqueue(projection.credentialId, config, projection.workspaceId, projection.conversationId, 'run.stalled', digest([runId, 'unknown']), secret, config.url, build);
-        else this.persist(projection.credentialId, config, projection.workspaceId, projection.conversationId, 'run.stalled', digest([runId, 'unknown']), build);
+        if (config.enabled && secret) this.enqueue(projection.credentialId, config, projection.workspaceId, projection.conversationId, notification.type, notification.dedupKey, secret, config.url, build);
+        else this.persist(projection.credentialId, config, projection.workspaceId, projection.conversationId, notification.type, notification.dedupKey, build);
       }
-      if (changed) this.store.putProjection(projection.credentialId, projection.workspaceId, projection.conversationId, snapshot);
+      this.store.putProjection(projection.credentialId, projection.workspaceId, projection.conversationId, next.snapshot);
     }
   }
   private cleanup(): void {
@@ -232,9 +272,11 @@ export class ProgrammaticPushback {
       const secret = this.store.readSecret(config.secretFilePath);
       if (!secret) continue;
       const machine = this.machine();
+      const access = this.store.getCredentialAccess(group.credentialId) ?? emptyAccess;
       this.enqueue(group.credentialId, config, group.workspaceId, '', 'events_dropped', digest(['dropped', group.workspaceId, now]), secret, config.url, (sequence, eventId) => ({
         eventId, type: 'events_dropped', occurredAt: new Date(now).toISOString(), machine, workspaceId: group.workspaceId, conversationId: '', title: '',
-        summary: `${group.dropped} 条事件已超出保留期被丢弃`, detailUrl: eventsUrl(group.workspaceId), sequence, droppedCount: group.dropped,
+        scopes: access.scopes, allowFullAccess: access.allowFullAccess, summary: `${group.dropped} 条事件已超出保留期被丢弃`,
+        detailUrl: eventsUrl(group.workspaceId), sequence, droppedCount: group.dropped,
       }));
     }
   }

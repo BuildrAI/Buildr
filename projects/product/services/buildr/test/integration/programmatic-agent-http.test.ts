@@ -125,7 +125,7 @@ test('browser session reads shared documentation without Bearer, not anonymously
   const response=await fetch(url,{headers:f.webHeaders});assert.equal(response.status,200);
   const doc=await response.json(),external=await f.call('/'+kind,token);
   assert.equal(typeof doc.content,'string');
-  if(kind==='help'){assert.equal(doc.content,await external.text());assert.equal(doc.mediaType,'text/markdown');}
+  if(kind==='help'){assert.equal(doc.content,await external.text());assert.equal(doc.mediaType,'text/markdown');assert.match(doc.content,/run\.progress/);assert.match(doc.content,/run\.stalled/);assert.match(doc.content,/finalReplyUrl/);assert.match(doc.content,/allowFullAccess/);assert.doesNotMatch(doc.content,/GrokBot默认只授/);}
   else{assert.deepEqual(JSON.parse(doc.content),await external.json());assert.equal(doc.mediaType,'application/json');}
   assert.ok(!JSON.stringify(doc).includes(token));
   assert.equal((await fetch(url,{headers:{...f.webHeaders,origin:'https://foreign.example'}})).status,403);
@@ -170,6 +170,7 @@ test('light operation index and self-contained per-operation contracts support s
  assert.equal(index.contractVersion,programmaticContractVersion(full));assert.ok(Buffer.byteLength(JSON.stringify(index))<8_000);
  assert.equal(index.operations.length,PROGRAMMATIC_OPERATIONS.length+2);
  assert.deepEqual(new Set(index.operations.map((item:any)=>item.id)),new Set(['discover','events',...PROGRAMMATIC_OPERATIONS.map(item=>item.id)]));
+ assert.ok(index.operations.some((item:any)=>item.id==='run-final-reply'&&item.scope==='read'));
  for(const item of index.operations){
   const response=await f.call('/operations/'+item.id,token);assert.equal(response.status,200);
   const document=await response.json();assert.equal(document['x-buildr-contract-version'],index.contractVersion);

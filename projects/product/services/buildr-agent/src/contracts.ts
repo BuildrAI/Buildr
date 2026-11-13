@@ -632,8 +632,24 @@ export interface AgentServiceOptions {
   shutdownTimeoutMs?: number;
 }
 
-export type PushbackEventType = 'decision.requested' | 'run.completed' | 'run.failed' | 'run.stopped' | 'run.stalled';
-export interface PushbackRequest { requestId: string; kind: 'approval' | 'question'; title: string; options?: Array<{ id: string; label: string; description?: string }> }
+export type PushbackEventType = 'decision.requested' | 'run.completed' | 'run.failed' | 'run.stopped' | 'run.progress' | 'run.stalled';
+export interface PushbackOption { optionId: string; label: string; description?: string }
+export interface PushbackQuestion { questionId: string; question: string; allowOther: boolean; multiple: boolean; options: PushbackOption[] }
+export interface PushbackRequest {
+  requestId: string;
+  kind: 'approval' | 'question';
+  title: string;
+  description?: string;
+  runId: string;
+  participantId: string;
+  generation: string;
+  conversationRevision: string;
+  options?: PushbackOption[];
+  questions?: PushbackQuestion[];
+}
+export interface PushbackProgress { text: string; elapsedMs: number; completedToolCount: number }
+export interface PushbackStall { idleMs: number; lastActivityAt: string }
+export interface PushbackCredentialAccess { scopes: string[]; allowFullAccess: boolean }
 export interface PushbackEvent {
   eventId: string;
   type: PushbackEventType | 'events_dropped';
@@ -645,6 +661,12 @@ export interface PushbackEvent {
   runId?: string;
   runStatus?: RunStatus;
   request?: PushbackRequest;
+  finalReply?: string;
+  finalReplyUrl?: string;
+  progress?: PushbackProgress;
+  stalled?: PushbackStall;
+  scopes: string[];
+  allowFullAccess: boolean;
   summary: string;
   detailUrl: string;
   sequence: number;
@@ -660,10 +682,12 @@ export interface PushbackSettingsView {
   hasSecret: boolean;
   rateLimitHour: number;
   rateLimitMinute: number;
+  progressEnabled: boolean;
+  stalledEnabled: boolean;
   lastDelivery?: PushbackDeliveryResult;
   recentDeliveries?: PushbackDeliveryResult[];
 }
-export interface PushbackSettingsInput { expectedRevision: string; enabled: boolean; url: string; secret?: string; rateLimitHour?: number; rateLimitMinute?: number }
+export interface PushbackSettingsInput { expectedRevision: string; enabled: boolean; url: string; secret?: string; rateLimitHour?: number; rateLimitMinute?: number; progressEnabled?: boolean; stalledEnabled?: boolean }
 export interface PushbackEventPage { events: PushbackEvent[]; nextCursor: string | null; hasMore: boolean }
 export interface ConversationSummaryView { id: string; title: string; runStatus: RunStatus | null; updatedAt: string; active: boolean; pendingDecisionCount: number }
 export interface ConversationActivityCounts { pendingSend?: number; active: number; running: number; waiting: number; unseen: number; unknown: number; attention: number }

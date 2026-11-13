@@ -51,6 +51,8 @@ test('configuration reads never expose the secret; reveal is revision-checked an
     const initial = s.pb.read('cred-one');
     assert.equal(initial.state, 'unconfigured');
     assert.equal(initial.hasSecret, false);
+    assert.equal(initial.progressEnabled, true);
+    assert.equal(initial.stalledEnabled, true);
     assert.equal((initial as any).secret, undefined);
     assert.throws(() => s.pb.save('cred-one', { expectedRevision: initial.revision, enabled: true, url: URL }), { code: 'agent_pushback_invalid' });
     const saved = s.configure();
@@ -58,9 +60,12 @@ test('configuration reads never expose the secret; reveal is revision-checked an
     assert.equal(saved.hasSecret, true);
     assert.equal((saved as any).secret, undefined, 'the public view never carries the secret');
     assert.equal(saved.url, URL);
+    const tuned = s.pb.save('cred-one', { expectedRevision: saved.revision, enabled: true, url: URL, progressEnabled: false, stalledEnabled: false });
+    assert.equal(tuned.progressEnabled, false);
+    assert.equal(tuned.stalledEnabled, false);
     assert.throws(() => s.pb.reveal('cred-one', { expectedRevision: 'stale' }), { code: 'agent_pushback_conflict' });
-    assert.equal(s.pb.reveal('cred-one', { expectedRevision: saved.revision }).secret, SECRET);
-    const retained = s.pb.save('cred-one', { expectedRevision: saved.revision, enabled: true, url: URL, secret: '' });
+    assert.equal(s.pb.reveal('cred-one', { expectedRevision: tuned.revision }).secret, SECRET);
+    const retained = s.pb.save('cred-one', { expectedRevision: tuned.revision, enabled: true, url: URL, secret: '' });
     assert.equal(s.pb.reveal('cred-one', { expectedRevision: retained.revision }).secret, SECRET, 'an empty secret input retains the stored value');
     const disabled = s.pb.save('cred-one', { expectedRevision: retained.revision, enabled: false, url: URL });
     assert.equal(disabled.state, 'disabled');
@@ -74,6 +79,7 @@ test('only conversations taken over by an enabled credential produce events', as
   try {
     s.configure('cred-one');
     s.configure('cred-two');
+    s.pb.setCredentialAccess('cred-one', { scopes: ['read', 'execute'], allowFullAccess: true });
     s.pb.publish(conversationEvent(view({ run: run('run-one', 'completed') })));
     await s.flush();
     assert.equal(s.fake.calls.length, 0, 'without a takeover marker no credential receives events');
@@ -83,6 +89,8 @@ test('only conversations taken over by an enabled credential produce events', as
     assert.equal(s.fake.calls.length, 1);
     assert.equal(s.fake.calls[0]!.url, URL);
     assert.equal(s.fake.calls[0]!.body.type, 'run.completed');
+    assert.deepEqual(s.fake.calls[0]!.body.scopes, ['read', 'execute']);
+    assert.equal(s.fake.calls[0]!.body.allowFullAccess, true);
     assert.equal(s.fake.calls[0]!.init.headers.authorization, `Bearer ${SECRET}`);
     assert.equal(s.fake.calls[0]!.init.redirect, 'error');
     assert.ok(s.fake.calls[0]!.init.signal, 'delivery is bounded by an abort signal');
@@ -116,8 +124,8 @@ test('disabled pushback records takeover events for backfill without delivering 
     await s.flush();
     assert.equal(s.pb.listEvents('cred-one', 'workspace-one', {}).events.length, 1, 'the same transition is recorded once');
 
-    s.pb.publish(conversationEvent(view({ run: run('run-two', 'unknown'), revision: 'r3' })));
-    s.advance(360000);
+    s.pb.publish(conversationEvent(view({ run: run('run-two', 'running'), revision: 'r3' })));
+    s.advance(1200000);
     s.pb.tick();
     await s.flush();
     assert.ok(s.pb.listEvents('cred-one', 'workspace-one', {}).events.some(event => event.type === 'run.stalled'), 'stalled events are recorded while disabled');
@@ -147,12 +155,15 @@ test('the test notification is isolated, marked test, never retried and requires
   try {
     await assert.rejects(s.pb.test('cred-one', { expectedRevision: s.pb.read('cred-one').revision }), { code: 'agent_pushback_unavailable' });
     const saved = s.configure();
+    s.pb.setCredentialAccess('cred-one', { scopes: ['read', 'execute'], allowFullAccess: false });
     s.fake.fail();
     const result = await s.pb.test('cred-one', { expectedRevision: saved.revision });
     assert.equal(result.success, false);
     assert.equal(result.kind, 'test');
     assert.equal(s.fake.calls.length, 1, 'a failed test is not retried');
     assert.equal(s.fake.calls[0]!.body.type, 'test');
+    assert.deepEqual(s.fake.calls[0]!.body.scopes, ['read', 'execute']);
+    assert.equal(s.fake.calls[0]!.body.allowFullAccess, false);
     assert.equal(s.fake.calls[0]!.body.summary, 'Buildr 回推测试通知');
     assert.equal(s.fake.calls[0]!.init.redirect, 'error');
     assert.equal(s.pb.read('cred-one').lastDelivery!.kind, 'test');
@@ -300,14 +311,14 @@ test('migrateGlobal never overwrites an existing credential configuration', () =
   } finally { s.close(); }
 });
 
-test('the periodic check raises run.stalled after continuous unknown and cleanup emits events_dropped past retention', async () => {
+test('the periodic check raises run.stalled after continuous inactivity and cleanup emits events_dropped past retention', async () => {
   const s = setup({ stalledThresholdMs: 300000, retentionMs: 1000 });
   try {
     s.configure();
     s.pb.markTakeover('workspace-one', 'conversation-one', 'cred-one');
-    s.pb.publish(conversationEvent(view({ run: run('run-one', 'unknown') })));
+    s.pb.publish(conversationEvent(view({ run: run('run-one', 'running') })));
     await s.flush();
-    assert.equal(s.fake.calls.length, 0, 'unknown alone is not yet stalled');
+    assert.equal(s.fake.calls.length, 0, 'a running execution is not yet stalled');
     s.advance(300000);
     s.pb.tick();
     await s.flush();
