@@ -33,7 +33,9 @@ const allowed: any = new Map([
   ['src/infrastructure/testing/context-runtime/node-runner.ts', new Set(['runNodeTestContextHosts'])],
   ['src/infrastructure/filesystem/index.ts', new Set(['copyDirectory', 'removePath'])],
   ['src/infrastructure/filesystem/atomic-files.ts', new Set(['atomicWriteFile'])],
-  ['src/infrastructure/filesystem/exclusive-file-lock.ts', new Set(['publishCandidate', 'moveAndRemove'])],
+  // publishWithoutHardLink claims the lock file with exclusive create on volumes without
+  // hard links, verifies its own token, and removes only the file it created.
+  ['src/infrastructure/filesystem/exclusive-file-lock.ts', new Set(['publishCandidate', 'publishWithoutHardLink', 'moveAndRemove'])],
   // Only saveToken writes a new profile-private credential: exclusive no-follow
   // descriptor, mode 0600, fsync, and cleanup limited to this attempt's file.
   ['src/modules/agent-service/persistence/programmatic-credentials.ts', new Set(['saveToken'])],

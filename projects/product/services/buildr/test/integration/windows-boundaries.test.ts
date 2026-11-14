@@ -64,6 +64,16 @@ test('native exclusive locks reject another owner and release hard-link publicat
   assert.deepEqual(fs.readdirSync(root), []);
 });
 
+test('native exclusive locks fall back when hard links are unsupported', { skip: process.platform !== 'win32' }, t => {
+  const root = temporary(t), file = path.join(root, 'owner.lock'), target = path.join(root, 'target');
+  // Windows ERROR_INVALID_FUNCTION (exFAT/FAT32/ReFS) surfaces as EISDIR from libuv.
+  t.mock.method(fs, 'linkSync', () => { throw Object.assign(new Error('EISDIR: illegal operation on a directory, link'), { code: 'EISDIR' }); });
+  const lock = acquireExclusiveFileLock(file, target, { timeoutMs: 0 });
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).token, lock.record.token);
+  assert.equal(releaseExclusiveFileLock(lock), true);
+  assert.deepEqual(fs.readdirSync(root), []);
+});
+
 test('owned process tree releases descendant sockets and temporary files', { timeout: 15_000 }, async t => {
   const root = temporary(t);
   const grandchild = `const fs=require('node:fs'); const net=require('node:net'); fs.openSync(${JSON.stringify(path.join(root, 'open-file'))},'w'); const server=net.createServer(); server.listen(0,'127.0.0.1',()=>process.send({pid:process.pid,port:server.address().port}));`;

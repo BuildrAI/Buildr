@@ -7,6 +7,16 @@ const SCHEMA = 'buildr.exclusive-file-lock/v1';
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_RETRY_DELAY_MS = 25;
 
+/** libuv maps Windows ERROR_INVALID_FUNCTION to EISDIR. CreateHardLinkW returns that
+ * error on volumes without hard-link support (exFAT/FAT32/ReFS and some network
+ * shares), so EISDIR here means "this filesystem cannot publish the lock", not "the
+ * lock path is a directory". ENOTSUP/ENOSYS report the same capability gap directly. */
+export function isHardLinkUnsupportedError(error: any): boolean {
+  if (!error || typeof error.code !== 'string') return false;
+  if (error.code === 'ENOTSUP' || error.code === 'ENOSYS') return true;
+  return process.platform === 'win32' && error.code === 'EISDIR';
+}
+
 function waitSynchronously(milliseconds: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
@@ -64,18 +74,68 @@ function guardedCleanup(action: () => any, options: any, primaryError: any): any
   }
 }
 
-function publishCandidate(file: string, record: any, options: any): boolean {
-  const candidate = `${file}.candidate-${record.pid}-${record.token}`;
+/** No hard link is available. open(..., 'wx') is still an atomic no-replace claim,
+ * so publish the already-fsynced record through it and prove the published file is
+ * ours before reporting success. A failed claim removes only the file it created. */
+function publishWithoutHardLink(file: string, content: string, record: any, target: string, options: any): boolean {
+  let descriptor: number | null = null;
+  let identity: fs.Stats | null = null;
+  let created = false;
   let primaryError: any = null;
   try {
-    fs.writeFileSync(candidate, `${JSON.stringify(record)}\n`, { flag: 'wx', mode: 0o600 });
-    const descriptor = fs.openSync(candidate, 'r+');
-    try { fs.fsyncSync(descriptor); } finally { fs.closeSync(descriptor); }
-    fs.linkSync(candidate, file);
+    descriptor = fs.openSync(file, 'wx', 0o600);
+    created = true;
+    identity = fs.fstatSync(descriptor);
+    fs.writeFileSync(descriptor, content, 'utf8');
+    fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
+    descriptor = null;
+    const observed = readLock(file, target, options);
+    if (!observed?.record || observed.record.token !== record.token) {
+      throw lockError(`Exclusive filesystem lock ${file} could not be verified after publication.`, 'buildr_exclusive_file_lock_publish_unverified', file);
+    }
     return true;
   } catch (error: any) {
     if (error.code === 'EEXIST') return false;
+    if (error?.code?.startsWith?.('buildr_exclusive_file_lock_')) {
+      primaryError = error;
+      throw error;
+    }
     primaryError = lockError(`Cannot acquire exclusive filesystem lock ${file}: ${error.message}`, 'buildr_exclusive_file_lock_acquire_failed', file, error);
+    throw primaryError;
+  } finally {
+    if (descriptor !== null) { try { fs.closeSync(descriptor); } catch {} }
+    if (primaryError && created) guardedCleanup(() => {
+      const current = fs.lstatSync(file, { throwIfNoEntry: false });
+      // A reclaim may have moved our incomplete claim away; never delete another owner's file.
+      if (identity && (!current || current.dev !== identity.dev || current.ino !== identity.ino)) return;
+      fs.rmSync(file, { force: true });
+    }, options, primaryError);
+  }
+}
+
+function publishCandidate(file: string, record: any, target: string, options: any): boolean {
+  const candidate = `${file}.candidate-${record.pid}-${record.token}`;
+  let primaryError: any = null;
+  try {
+    const content = `${JSON.stringify(record)}\n`;
+    fs.writeFileSync(candidate, content, { flag: 'wx', mode: 0o600 });
+    const descriptor = fs.openSync(candidate, 'r+');
+    try { fs.fsyncSync(descriptor); } finally { fs.closeSync(descriptor); }
+    try { fs.linkSync(candidate, file); return true; }
+    catch (error: any) {
+      if (error.code === 'EEXIST') return false;
+      if (!isHardLinkUnsupportedError(error)) throw error;
+      // A real occupant (including a stale lock from another Buildr version) must be
+      // observed through the normal read/stale path, never mistaken for a volume gap.
+      if (fs.lstatSync(file, { throwIfNoEntry: false })) return false;
+      return publishWithoutHardLink(file, content, record, target, options);
+    }
+  } catch (error: any) {
+    if (error.code === 'EEXIST') return false;
+    primaryError = error?.code?.startsWith?.('buildr_exclusive_file_lock_')
+      ? error
+      : lockError(`Cannot acquire exclusive filesystem lock ${file}: ${error.message}`, 'buildr_exclusive_file_lock_acquire_failed', file, error);
     throw primaryError;
   } finally { guardedCleanup(() => fs.rmSync(candidate, { force: true }), options, primaryError); }
 }
@@ -118,7 +178,7 @@ export function acquireExclusiveFileLock(file: string, target: string, options: 
   while (true) {
     // A bounded wait may give another process time to replace the directory.
     options.assertSafe?.();
-    if (publishCandidate(resolvedFile, record, options)) return Object.freeze({ owner: true, file: resolvedFile, target: resolvedTarget, record });
+    if (publishCandidate(resolvedFile, record, resolvedTarget, options)) return Object.freeze({ owner: true, file: resolvedFile, target: resolvedTarget, record });
     const observed = readLock(resolvedFile, resolvedTarget, options);
     if (!observed) continue;
     if (observed.record && !ownerAlive(observed.record, options)) {
@@ -127,7 +187,7 @@ export function acquireExclusiveFileLock(file: string, target: string, options: 
     }
     const observedAt = now();
     if (observedAt >= deadline) {
-      const owner = observed.record ? `pid=${observed.record.pid} createdAt=${observed.record.createdAt}` : 'owner=invalid-or-unknown';
+      const owner = observed.record ? `pid=${observed.record.pid} createdAt=${observed.record.createdAt}` : 'owner=invalid-or-unknown (the lock record is incomplete or foreign)';
       throw lockError(`Exclusive filesystem lock wait expired for ${resolvedFile}: ${owner}.`, 'buildr_exclusive_file_lock_timeout', resolvedFile);
     }
     pause(Math.min(retryDelayMs, Math.max(1, deadline - observedAt)));

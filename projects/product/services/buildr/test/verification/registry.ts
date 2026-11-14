@@ -530,6 +530,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/agent-service-activation.test.ts',
   ], { schedulingCostMs: 100000, timeoutMs: 300_000, args: ['--test-concurrency=4'] }),
   integrationSlice('integration', [
+    'test/integration/exclusive-file-lock.test.ts',
     'test/integration/browser-launch.test.ts',
     'test/integration/browser-selector-dispatcher-runtime.test.ts',
     'test/integration/development-entry.test.ts',

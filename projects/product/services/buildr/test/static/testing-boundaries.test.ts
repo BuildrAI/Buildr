@@ -52,7 +52,7 @@ test('Windows shared-file selection retains exactly one real Git path case', () 
   const step = verificationSteps.find((item: any) => item.id === 'integration-windows-native');
   const argument = step.executor.args.find((item: string) => item.startsWith('--test-name-pattern='));
   const pattern = new RegExp(argument.slice('--test-name-pattern='.length));
-  for (const [file, expected] of [['test/e2e/worktree-create.test.ts', 1], ['test/integration/windows-boundaries.test.ts', 4]] as const) {
+  for (const [file, expected] of [['test/e2e/worktree-create.test.ts', 1], ['test/integration/windows-boundaries.test.ts', 5]] as const) {
     const source = fs.readFileSync(path.join(productRoot, file), 'utf8');
     const names = [...source.matchAll(/\btest\('([^']+)'/gu)].map(match => match[1]!);
     assert.equal(names.filter(name => pattern.test(name)).length, expected, file);
