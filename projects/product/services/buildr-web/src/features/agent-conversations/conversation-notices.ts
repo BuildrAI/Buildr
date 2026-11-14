@@ -89,6 +89,9 @@ function failureRetrySeconds(diagnostic: string): number | undefined {
 /** 只提炼可公开的原因；原始厂商内容仍留在技术详情中。 */
 export function conversationFailureReason(diagnostic?: string, fault?: Pick<ConversationRun,'fault'>['fault']): ConversationFailureReason {
   const text = diagnostic ?? '';
+  if (/agent_history_changed|原生记录有新变化|原生用户输入尚不能准确映射/i.test(text)) {
+    return { summary: '发送前的原生历史核对未通过，本轮要求未发送。', action: '请核对已保留的原生记录后再继续。' };
+  }
   if (/CALL_COUNT_LIMIT|isQueued|调用次数|调用频率|rate.?limit|too many requests|(?:^|\D)429(?:\D|$)/i.test(text)) {
     const retry = failureRetrySeconds(text);
     return { summary: '模型调用达到当前上限，请求被服务端排队。', action: retry ? `约 ${retry} 秒后重试，或切换到其他模型/供应商。` : '请稍后重试，或切换到其他模型/供应商。' };

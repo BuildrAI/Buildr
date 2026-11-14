@@ -1,3 +1,4 @@
+import { antigravityModelVariant } from '../../domain/antigravity-model.ts';
 import { randomUUID } from 'node:crypto';
 import type { AgentRuntime, ConnectionView } from '../../contracts.ts';
 import {
@@ -28,6 +29,7 @@ export function createAntigravityModelProvider(deps: AntigravityModelProviderDep
     singleton: true,
     observesConnection: true,
     enableDiscoveredModelsByDefault: true,
+    legacyModelVariant: antigravityModelVariant,
     authentication: {
       type: 'oauth',
       label: 'Google 官方登录',

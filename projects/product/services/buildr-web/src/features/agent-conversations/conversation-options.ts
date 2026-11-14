@@ -100,7 +100,17 @@ export function choiceReasoningOptions(choice:ConversationChoice,connection:Conn
 }
 
 /** 只修正下一次选择和发送，不修改历史运行记录。 */
+/** Restore a legacy variant when the same source now exposes its series and depth. */
+export function restoreModelSeriesChoice<T extends {model?:string;modelAccountId?:string;reasoningEffort?:string}>(choice:T,catalog:CatalogModel[]):T {
+  if(!choice.modelAccountId||!choice.model||catalog.some(model=>model.accountId===choice.modelAccountId&&model.modelId===choice.model))return choice;
+  const split=/^(.*)-(low|medium|high|xhigh)$/.exec(choice.model);
+  if(!split||!catalog.some(model=>model.accountId===choice.modelAccountId&&model.modelId===split[1]
+    &&model.reasoningEfforts?.some(depth=>depth.id===split[2])))return choice;
+  return {...choice,model:split[1],reasoningEffort:split[2]};
+}
+
 export function validConversationChoice(choice:ConversationChoice,connection:ConnectionView|undefined,catalog:CatalogModel[]):ConversationChoice {
+  choice=restoreModelSeriesChoice(choice,catalog);
   if(choice.modelAccountId&&!catalog.some(item=>item.accountId===choice.modelAccountId&&item.modelId===choice.model&&item.available&&item.enabled!==false&&(!choice.modelAccountIdentity||item.accountIdentity===choice.modelAccountIdentity)))return {connectionId:choice.connectionId};
   const options=choiceReasoningOptions(choice,connection,catalog);
   return choice.reasoningEffort&&options&&!options.some(item=>item.id===choice.reasoningEffort)?{...choice,reasoningEffort:undefined}:choice;

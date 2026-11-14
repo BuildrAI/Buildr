@@ -489,6 +489,15 @@ export class ModelAccessApplication {
       if(observation.status==='ready') {
         const prefs=this.preferences.get(id)??{};
         const enableByDefault=Boolean(this.providers.get(row.provider)?.enableDiscoveredModelsByDefault);
+        const legacyVariant = this.providers.get(row.provider)?.legacyModelVariant;
+        if (legacyVariant) {
+          for (const model of observation.models) {
+            if (Object.hasOwn(prefs, model.id)) continue;
+            const prior = Object.entries(prefs).find(([id, preference]) =>
+              legacyVariant(id)?.family === model.id && preference.enabled && preference.contextWindow !== undefined);
+            if (prior) prefs[model.id] = { enabled: true, contextWindow: prior[1].contextWindow };
+          }
+        }
         // A curated custom catalog stays authoritative; inspections only refresh availability.
         if(!observation.curatedModels){for(const model of observation.models)if(!Object.hasOwn(prefs,model.id))Object.defineProperty(prefs,model.id,{value:{enabled:enableByDefault&&model.kind!=='combination'&&!/^fusion(?:-|$)/i.test(model.id)},enumerable:true,writable:true,configurable:true});row.models = structuredClone(observation.models);}
         this.preferences.set(id,prefs); row.observedAt = this.now;

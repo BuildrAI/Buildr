@@ -774,6 +774,7 @@ test('答复操作栏同时遵守当前与保留执行事实，输入可继续�
   assert.deepEqual([...finalReplyIds(done)],['stage']);assert.deepEqual([...forkableReplyIds(done)],['stage']);
   for(const executionState of ['active','unknown'])assert.equal(finalReplyIds({...done,run:{...done.run,executionState}}).size,0);
   assert.equal(finalReplyIds({...done,requests:[{runId:'current'}]}).size,0);
+  assert.equal(finalReplyIds({...done,run:{...done.run,status:'failed',accepted:false}}).size,0);
   assert.deepEqual([...finalReplyIds({...done,forkState:{status:'failed'}})],['stage']);
   assert.equal(forkableReplyIds({...done,forkState:{status:'failed'}}).size,0);
   assert.equal(finalReplyIds({...done,entries:[final,{...final,id:'streaming',status:'running'}]}).size,0);

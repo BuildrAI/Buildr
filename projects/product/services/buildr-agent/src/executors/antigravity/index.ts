@@ -1,3 +1,4 @@
+import { antigravityModelVariant } from '../../domain/antigravity-model.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import { readFile, realpath } from 'node:fs/promises';
@@ -105,6 +106,8 @@ export const antigravityExecutorDescriptor: ExecutorDescriptor = {
     account: 'native',
     native: {
       sourceProviders: [NATIVE_SOURCE_ID],
+      legacyModelVariant: antigravityModelVariant,
+      useRequestedModelPerTurn: true,
       exclusive: true,
       exclusiveReason: EXCLUSIVE_REASON,
       binding: 'account-identity',
@@ -667,7 +670,31 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     if (readback !== 'default') {
       throw new ExecutorInputRejected('antigravity_permission_unavailable: Antigravity 默认审批模式回读不一致，已拒绝发送。');
     }
-    handle.sessionPayload = updated;
+    this.mergeSessionConfig(handle, updated);
+  }
+
+  private mergeSessionConfig(handle: ConversationProcessHandle, update: any): void {
+    const previous = handle.sessionPayload;
+    handle.sessionPayload = { ...previous, ...update, models: { ...previous?.models, ...update?.models } };
+    const model = findConfigOption(update, 'model')?.currentValue;
+    if (model && !update?.models?.currentModelId) handle.sessionPayload.models.currentModelId = model;
+  }
+
+  private async applySeriesOptions(handle: ConversationProcessHandle, sessionId: string, model: string, depth: string | undefined): Promise<void> {
+    for (const [configId, value] of [['model', model], ['thought_level', depth]] as const) {
+      if (!value || findConfigOption(handle.sessionPayload, configId)?.currentValue === value) continue;
+      let updated: any;
+      try {
+        updated = await handle.client.request('session/set_config_option', { sessionId, configId, value }, 15_000);
+      } catch {
+        throw new ExecutorInputRejected(`antigravity_model_unavailable: Antigravity 无法确认所选模型或深度 ${value}。`);
+      }
+      const payload = Array.isArray(updated) ? { configOptions: updated } : updated;
+      if (findConfigOption(payload, configId)?.currentValue !== value) {
+        throw new ExecutorInputRejected(`antigravity_model_unavailable: Antigravity 模型设置回读不一致（${configId}）。`);
+      }
+      this.mergeSessionConfig(handle, payload);
+    }
   }
 
   private async applyModelAndEffort(
@@ -677,12 +704,22 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     reasoningEffort?: string,
   ): Promise<void> {
     if (model) {
-      const available = Array.isArray(handle.sessionPayload?.models?.availableModels)
-        ? (handle.sessionPayload.models.availableModels as any[]).map(m => String(m?.modelId ?? m?.id ?? ''))
-        : [];
-      if (available.length > 0 && !available.includes(model)) {
-        throw new ExecutorInputRejected(`antigravity_model_unavailable: Antigravity 当前账号不支持模型 ${model}。`);
+      const probe = await this.verifyLiveAccountIdentity();
+      const legacy = antigravityModelVariant(model);
+      const series = probe.models.find(item => item.id === (legacy?.family ?? model));
+      const depth = legacy?.depth ?? reasoningEffort ?? series?.defaultReasoningEffort;
+      const variantId = `${series?.id}-${depth}`;
+      const variant = antigravityModelVariant(variantId) ? variantId : model;
+      if (!series || !probe.nativeModelIds?.includes(variant)) {
+        throw new ExecutorInputRejected(`antigravity_model_unavailable: Antigravity 当前账号不支持模型 ${variant}。`);
       }
+      if (findConfigOption(handle.sessionPayload, 'model')?.values.includes(series.id)
+        && (antigravityModelVariant(variant) || !findConfigOption(handle.sessionPayload, 'thought_level')?.values.length || !series.reasoningEfforts?.length)) {
+        await this.applySeriesOptions(handle, sessionId, series.id, antigravityModelVariant(variant) ? depth : undefined);
+        return;
+      }
+      model = variant;
+      if (antigravityModelVariant(variant)) reasoningEffort = undefined;
       if (handle.sessionPayload?.models?.currentModelId !== model) {
         let updated: any;
         try {
@@ -695,7 +732,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
         if (readback !== model) {
           throw new ExecutorInputRejected(`antigravity_model_unavailable: Antigravity 模型回读不一致（期望 ${model}，实际 ${String(readback ?? '未知')}），已拒绝发送。`);
         }
-        handle.sessionPayload = updated;
+        this.mergeSessionConfig(handle, updated);
       }
     }
 
@@ -722,7 +759,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
             `antigravity_reasoning_unavailable: Antigravity 思考深度回读不一致（期望 ${reasoningEffort}，实际 ${String(readback ?? '未知')}），已拒绝发送。`,
           );
         }
-        handle.sessionPayload = updated;
+        this.mergeSessionConfig(handle, updated);
       }
     }
   }
@@ -1700,14 +1737,12 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
 
     const items = new Map<string, ExecutorItem>();
     const seenUserTexts = new Set<string>();
-    const seenClientRequestIds = new Set<string>();
 
     const durableRows = readImmutableJsonlFile(antigravitySessionRecordPath(this.configRoot, input.contextRef.id)) ?? [];
     for (const row of durableRows) {
       if (row?.sessionId !== input.contextRef.id || (row.cwd !== undefined && row.cwd !== input.cwd)) continue;
       if (row.type === 'user' && typeof row.text === 'string' && typeof row.id === 'string') {
         const clientRequestId = typeof row.clientRequestId === 'string' ? row.clientRequestId : undefined;
-        if (clientRequestId) seenClientRequestIds.add(clientRequestId);
         seenUserTexts.add(row.text);
         items.set(`message:${row.id}`, {
           id: row.id,
@@ -1741,14 +1776,14 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       }
     }
 
-    // Also reconcile via `session/load` replay when native history has entries not yet in durable rows,
-    // keeping replay isolated from any live turn projection.
+    // Replay is a fallback for sessions without a durable projection. Live
+    // and replay message IDs/splits differ, so merging both invents history.
     const activeTurn = this.turns.get(input.contextRef.id);
-    if (!activeTurn?.pending) {
+    if (!items.size && !activeTurn?.pending && !activeTurn?.backgroundWork) {
       const existingHandle = this.coordinator.getConversationProcess(input.contextRef.id);
       if (existingHandle && existingHandle.handshake.supportsLoad) {
         await this.replaySessionLoadInto(existingHandle, input.contextRef.id, input.cwd, items, seenUserTexts);
-      } else if (items.size === 0) {
+      } else {
         try {
           const probe = await this.verifyLiveAccountIdentity(
             typeof input.contextRef.data?.accountIdentity === 'string' ? input.contextRef.data.accountIdentity : undefined,

@@ -42,7 +42,7 @@ import { ConversationTurn } from './ConversationTurn';
 import { ConversationTranscript } from './ConversationTranscript';
 import { imageSelectionError, conversationDocumentTypes } from './conversation-images';
 import { uploadConversationMaterials } from './conversation-material-upload';
-import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,executionAgentName,executionSelectionChanged,nativeConversationChoice,permissionModeLabels,readConversationPermission,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,validConversationChoice,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
+import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,executionAgentName,restoreModelSeriesChoice,executionSelectionChanged,nativeConversationChoice,permissionModeLabels,readConversationPermission,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,validConversationChoice,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
 import { appendDraftAttachment, canGenerateConversationTitle, conversationConflictNeedsRefresh, conversationTurnBinding, executionLocked, groupConversationStream, conversationStreamTurns, conversationTurnExecution, conversationTurnTiming, participantExecutionPairs, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state';
 import { conversationActionKey, conversationInputAttemptAccepted, conversationInputAttemptMatches, createConversationActions, createConversationInputAttempts, reconcileConversationInputAttempt } from './conversation-actions';
 import { useNewConversationImages } from './useNewConversationImages';
@@ -150,7 +150,11 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const selectedSourceModel=context.modelCatalog.find(model=>model.accountId===choice.modelAccountId&&model.modelId===choice.model&&(!choice.modelAccountIdentity||model.accountIdentity===choice.modelAccountIdentity));
   const effectiveModel=choice.model;
   const effectiveModelLabel=selectedSourceModel?.label||selectedConversationModel(connection,effectiveModel)?.label||effectiveModel||'默认模型';
-  const executionChangedFor=(value:ConversationView|null|undefined)=>executionSelectionChanged(value?.run,value?latestConversationParticipant(value)?.connectionId:undefined,{...choice,model:effectiveModel});
+  const executionChangedFor=(value:ConversationView|null|undefined)=>{
+    const run=value?.run;
+    const current=run?restoreModelSeriesChoice(run,context.modelCatalog):undefined;
+    return executionSelectionChanged(current,value?latestConversationParticipant(value)?.connectionId:undefined,{...choice,model:effectiveModel});
+  };
   const executionChanged=executionChangedFor(chat);
   const waitingHandoffAvailable=Boolean(executionChanged&&chat?.run?.status==='waiting-question'&&handoffSelections[choiceKey]===chat.run.id&&currentConversationRequests(chat).length&&currentConversationRequests(chat).every(request=>request.kind==='question'&&request.runId===chat.run!.id&&request.participantId===chat.run!.participantId&&request.generation===chat.run!.generation)&&!chat.pendingSend);
   const waitingQuestions=currentConversationRequests(chat).filter(request=>request.kind==='question');

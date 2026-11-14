@@ -232,7 +232,8 @@ export function finalConversationReplyIds(entries:readonly ConversationEntry[],r
   const finals=new Set<string>();
   for(const rows of groups.values()){
     const runId=rows.find(entry=>entry.runId)?.runId;
-    if(!conversationRunSettled(runId?known.get(runId):undefined))continue;
+    const run=runId?known.get(runId):undefined;
+    if(!conversationRunSettled(run)||run?.status==='failed'&&run.accepted===false)continue;
     // A settled run's reply is its last primary assistant message, extended backwards
     // over earlier assistant segments separated only by thinking. Upstream gateways can
     // split one answer into several message items; a tool arriving after the reply does

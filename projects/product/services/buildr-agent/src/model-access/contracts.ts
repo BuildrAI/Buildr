@@ -163,6 +163,7 @@ export interface ModelProvider {
   readonly clearCatalogOnUnauthenticated?: boolean;
   /** Newly discovered non-combination models default to enabled when first observed. */
   readonly enableDiscoveredModelsByDefault?: boolean;
+  readonly legacyModelVariant?: (modelId: string) => { family: string; depth: string } | undefined;
   /** Connection account inspection delegates to this model provider without starting the executor runtime. */
   readonly observesConnection?: boolean;
   /** Accounts of this provider carry user-declared endpoint configuration. */

@@ -335,6 +335,33 @@ test('3.1 & 3.2: interaction policy injection, policy change handling, model/eff
   );
 });
 
+test('Antigravity groups native variants and uses the same series on consecutive turns', async t => {
+  const h = await createHarness(t, { scenario: 'series-catalog', autoAllow: true, models: [
+    { modelId: 'gemini-4-carbon-medium', name: 'Gemini 4 Carbon (Medium)' },
+    { modelId: 'gemini-4-carbon-low', name: 'Gemini 4 Carbon (Low)' },
+    { modelId: 'gemini-4-hydrogen-xhigh', name: 'Gemini 4 Hydrogen (XHigh)' },
+    { modelId: 'gemini-pro-orchestrator', name: 'Orchestrator (Carbon)' },
+  ] });
+  const rt = await h.openRuntime();
+  const models = await rt.models();
+  assert.deepEqual(models.map(model => [model.id, model.reasoningEfforts?.map(depth => depth.id)]), [
+    ['gemini-4-carbon', ['low', 'medium']], ['gemini-4-hydrogen', ['xhigh']], ['gemini-pro-orchestrator', undefined],
+  ]);
+  const contextRef = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+  for (const id of ['one', 'two']) {
+    const events: ExecutorEvent[] = [];
+    await rt.send({ contextRef, cwd: h.cwd, model: 'gemini-4-carbon', reasoningEffort: 'low',
+      text: id, images: [], clientRequestId: id, onEvent: event => events.push(event) });
+    assert.ok(events.some(event => event.type === 'completed' && event.status === 'completed'));
+  }
+  const configs = await h.readFixtureJsonl('fixture-configs.jsonl');
+  assert.equal(configs.filter(row => row.method === 'session/set_model').length, 0);
+  assert.equal(configs.filter(row => row.configId === 'thought_level' && row.value === 'low').length, 1);
+  const history = await rt.readHistory({ contextRef, cwd: h.cwd });
+  assert.equal(history.filter(item => item.role === 'user').length, 2);
+  assert.ok(history.filter(item => item.role === 'assistant' && item.kind === 'message').every(item => item.id.startsWith('message:')));
+});
+
 test('3.3: pre-turn account identity verification rejects terminal account switch and corrupted identity with zero work input', async t => {
   const h = await createHarness(
     t,

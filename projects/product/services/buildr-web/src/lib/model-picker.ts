@@ -1,6 +1,6 @@
 export function reasoningEffortLabel(effort:{id:string;label:string}) {
   const labels:Record<string,string>={minimal:'最小',low:'低',medium:'中',high:'高',xhigh:'极高',max:'最高',ultra:'极致',none:'无',off:'关闭',disabled:'关闭',auto:'自动',adaptive:'自适应'};
-  return labels[effort.id]||effort.label;
+  return effort.id==='xhigh'&&effort.label==='Extra' ? '额外' : labels[effort.id]||effort.label;
 }
 
 /** Rank only explicit depth values. Auto/adaptive/unknown choices are not depth steps. */

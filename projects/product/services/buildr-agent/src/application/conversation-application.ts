@@ -299,7 +299,9 @@ export class ConversationApplication {
         const compat = sourceCompatibility(descriptor, account);
         if (!compat.compatible) fail(compat.reasonCode ?? 'agent_model_source_unsupported', compat.reason ?? '当前执行器不支持所选模型来源。', 409);
       }
-      const model = account.models.find(item => item.id === participant.modelId);
+      const legacy = participant.modelId ? descriptor?.modelPolicy?.native?.legacyModelVariant?.(participant.modelId) : undefined;
+      const model = account.models.find(item => item.id === participant.modelId)
+        ?? (legacy ? account.models.find(item => item.id === legacy.family && item.reasoningEfforts?.some(depth => depth.id === legacy.depth)) : undefined);
       if (model?.enabled === false) fail('agent_model_disabled', '所选模型已停用，请重新选择。', 409);
       const offering = model ? selectedOffering(model, participant.serviceTier) : undefined;
       if (!offering) fail('agent_model_unavailable', '该模型不在当前接入的可用目录中。', 409);
@@ -1033,6 +1035,12 @@ export class ConversationApplication {
     // The revision is an observation hint, not a selection identity. Current source,
     // identity, model availability and capability are revalidated below.
     const availableModels = source?.models ?? connection.models;
+    const legacyVariant = source && input.model ? modelPolicy?.native?.legacyModelVariant?.(input.model) : undefined;
+    if (legacyVariant && availableModels.some(model => model.id === legacyVariant.family
+      && model.reasoningEfforts?.some(depth => depth.id === legacyVariant.depth))) {
+      input.model = legacyVariant.family;
+      input.reasoningEffort = legacyVariant.depth;
+    }
     const selectedModel = input.model ? availableModels.find(model => model.id === input.model) : source ? source.models.find(model=>model.enabled!==false) : connection.models.find(model => model.isDefault);
     if (waitingQuestions && source) { const quotaError = modelQuotaFailure(source, selectedModel as ModelOffering | undefined, Date.parse(this.options.now())); if (quotaError) throw quotaError; }
     if (input.model && !selectedModel) fail('agent_model_unavailable', '该模型不在当前接入的可用目录中。', 409);
@@ -1048,7 +1056,9 @@ export class ConversationApplication {
     if (input.reasoningEffort && !boundModel?.reasoningEfforts?.some(effort => effort.id === input.reasoningEffort)) fail('agent_reasoning_unavailable', '该思考深度不在所选模型的可用目录中。', 409);
     if (!connection.capabilities.text) fail('agent_capability_unavailable', '此接入尚不支持文本输入。', 409);
     if (record.view.forkState && record.view.forkState.status !== 'ready') fail('agent_fork_pending', '此分叉尚未完成，不能发送新指令；原对话不受影响。', 409);
-    const latest = record.participants.findLast(value => !value.historical && value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && value.modelId === input.model && (!input.modelAccountId || value.modelAccountIdentity === source?.identity && value.modelConfiguration===configuration));
+    const latest = record.participants.findLast(value => !value.historical && value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && (value.modelId === input.model && (!input.modelAccountId || value.modelAccountIdentity === source?.identity && value.modelConfiguration===configuration)
+      || source && value.modelAccountIdentity === source.identity && value.modelId && input.model
+        && modelPolicy?.native?.legacyModelVariant?.(value.modelId)?.family === input.model));
     // Released historical outcomes are not native ownership. Keep the latest
     // uncertain context isolated, and never let a held context block new input:
     // the independent-participant path below preserves its exact old controls.
@@ -1088,7 +1098,7 @@ export class ConversationApplication {
     // Reasoning effort and permission mode are per-turn parameters: every executor receives them with the new
     // input, so changing either alone reuses the execution combination instead of organizing a user-visible handoff.
     const switching = Boolean(previous && (previous.connectionId!==input.connectionId || previous.modelAccountId!==input.modelAccountId ||
-      previous.modelAccountIdentity!==source?.identity || previous.modelId!==input.model || previous.serviceTier!==input.serviceTier));
+      previous.modelAccountIdentity!==source?.identity || (previous.modelId!==input.model && !(source && previous.modelId && input.model && modelPolicy?.native?.legacyModelVariant?.(previous.modelId)?.family === input.model)) || previous.serviceTier!==input.serviceTier));
     const history = changes.map(entry => ({sequence:entry.sequence,role:entry.role,provider:entry.provider,text:entry.kind==='tool'?`${entry.name??'工具'} · ${entry.status??'结果未知'}（具体内容见本地来源）`:entry.text.length>4096?entry.text.slice(0,4096)+'…（完整原文见本地来源）':entry.text}));
     const maxInputBytes=receivingBudget(connection.capabilities.maxInputBytes,boundModel&&'contextWindow' in boundModel?boundModel.contextWindow:undefined,boundModel&&'maxOutputTokens' in boundModel?boundModel.maxOutputTokens:undefined);
     const localRounds=changes.length ? organizeHandoff(changes,{...record.inheritedContext?.outcomes,...record.runOutcomes,...(record.view.run?{[record.view.run.id]:record.view.run}:{})}) : [];
@@ -1788,7 +1798,7 @@ export class ConversationApplication {
       this.save(record);
       this.discoverParticipation(workspaceId,id,runId);
       dispatched = true;
-      await runtime.send({ contextRef: participant.contextRef!, cwd: record.view.cwd, text: prepared.text, images: prepared.images, model: prepared.draft.modelAccountId ? selectedRuntime.model : prepared.draft.model, reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, clientRequestId: record.attempts.find(value => value.runId === runId)!.clientRequestId, onEvent: event => {
+      await runtime.send({ contextRef: participant.contextRef!, cwd: record.view.cwd, text: prepared.text, images: prepared.images, model: prepared.draft.modelAccountId && !this.options.connections.descriptor(participant.connectionId)?.modelPolicy?.native?.useRequestedModelPerTurn ? selectedRuntime.model : prepared.draft.model, reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, clientRequestId: record.attempts.find(value => value.runId === runId)!.clientRequestId, onEvent: event => {
         this.event(workspaceId, id, runId, event);
         if (event.type === 'accepted') queueMicrotask(() => { void this.generateAutomaticTitle(workspaceId, id, runId, runtime).catch(() => {}); });
       } });

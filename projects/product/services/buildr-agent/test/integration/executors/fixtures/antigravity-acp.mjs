@@ -150,6 +150,8 @@ function appendTranscript(sessionId, row) {
 function buildSessionPayload(session, auth) {
   const availableModels = catalogModels(auth);
   const currentModelId = session.model ?? availableModels[0]?.modelId ?? 'gemini-2.5-pro';
+  const series = scenario() === 'series-catalog';
+  const seriesId = id => id.replace(/-(low|medium|high|xhigh)$/, '');
   const currentThought = session.thoughtLevel ?? 'high';
   const currentMode = session.mode ?? 'default';
   const efforts = Array.isArray(control().thoughtLevels)
@@ -179,8 +181,8 @@ function buildSessionPayload(session, auth) {
         name: 'Model',
         category: 'model',
         type: 'select',
-        currentValue: currentModelId,
-        options: availableModels.map(item => ({ value: item.modelId, name: item.name ?? item.modelId, description: item.description ?? '' })),
+        currentValue: series ? seriesId(currentModelId) : currentModelId,
+        options: availableModels.map(item => ({ value: series ? seriesId(item.modelId) : item.modelId, name: item.name ?? item.modelId, description: item.description ?? '' })),
       },
       {
         id: 'thought_level',
@@ -839,6 +841,7 @@ function handleMessage(message) {
       return;
     }
     const auth = currentAuth();
+    if (scenario() === 'series-catalog') { result(id, {}); return; }
     const available = catalogModels(auth).map(item => item.modelId);
     if (!available.includes(params.modelId)) {
       fail(id, -32602, `Unknown model: ${String(params.modelId)}`);
@@ -870,7 +873,8 @@ function handleMessage(message) {
     }
     writeSession(session);
     appendLog('fixture-configs.jsonl', { method, sessionId: session.id, configId, value });
-    result(id, buildSessionPayload(session, auth));
+    const payload = buildSessionPayload(session, auth);
+    result(id, scenario() === 'series-catalog' ? { configOptions: payload.configOptions } : payload);
     return;
   }
 

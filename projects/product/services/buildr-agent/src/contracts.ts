@@ -44,6 +44,10 @@ export interface ExecutorPlatformLoginPolicy {
   requiredMessage?: string;
 }
 export interface ExecutorNativeModelPolicy {
+  /** Translate a previously persisted variant ID when the source now reports a series. */
+  legacyModelVariant?(modelId: string): { family: string; depth: string } | undefined;
+  /** The requested model is selected per turn on the same native runtime. */
+  useRequestedModelPerTurn?: boolean;
   sourceProviders: readonly string[];
   exclusive?: boolean;
   exclusiveReason?: string;

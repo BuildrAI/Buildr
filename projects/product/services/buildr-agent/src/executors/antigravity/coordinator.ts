@@ -1,3 +1,4 @@
+import { antigravityModelVariant } from '../../domain/antigravity-model.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -47,6 +48,7 @@ export interface AntigravityAccountProbeResult {
   identityUnconfirmed?: boolean;
   accountLabel?: string;
   tier?: AntigravityTierObservation;
+  nativeModelIds?: string[];
   models: Array<AgentModel & { images?: boolean; tools?: boolean; contextWindow?: number; maxOutputTokens?: number }>;
   quota: ModelQuotaObservation;
   capabilities?: AntigravityHandshakeCapabilities;
@@ -192,47 +194,49 @@ function extractExplicitAccount(meta: Record<string, unknown>): {
   return { present: true, valid: true, identifier: chosenId, label: chosenLabel ?? chosenId };
 }
 
-function extractModelsFromSessionPayload(
-  payload: any,
-  supportsImage: boolean,
-): Array<AgentModel & { images?: boolean; tools?: boolean }> {
-  const rawModels = Array.isArray(payload?.models?.availableModels) ? payload.models.availableModels : [];
-  const currentModelId = typeof payload?.models?.currentModelId === 'string' ? payload.models.currentModelId : undefined;
-  const configOptions = Array.isArray(payload?.configOptions) ? payload.configOptions : [];
-  const thoughtOption = configOptions.find((opt: any) => opt && opt.id === 'thought_level' && Array.isArray(opt.options));
-  const reasoningEfforts = thoughtOption
-    ? (thoughtOption.options as any[])
-        .filter(item => item && typeof item.value === 'string' && item.value.trim())
-        .map(item => ({
-          id: String(item.value),
-          label: typeof item.name === 'string' && item.name.trim() ? item.name.trim() : String(item.value),
-        }))
-    : undefined;
-  const defaultReasoningEffort = typeof thoughtOption?.currentValue === 'string' && thoughtOption.currentValue
-    ? thoughtOption.currentValue
-    : reasoningEfforts?.[0]?.id;
+const variantDepths = ['low', 'medium', 'high', 'xhigh'] as const;
 
-  const result: Array<AgentModel & { images?: boolean; tools?: boolean }> = [];
-  const seen = new Set<string>();
+function extractModelsFromSessionPayload(payload: any, supportsImage: boolean) {
+  const rawModels = Array.isArray(payload?.models?.availableModels) ? payload.models.availableModels : [];
+  const current = payload?.models?.currentModelId;
+  const ids = new Set<string>();
+  const groups = new Map<string, AgentModel & { images: boolean; tools: boolean }>();
   for (const item of rawModels) {
     const id = typeof item?.modelId === 'string' ? item.modelId.trim() : typeof item?.id === 'string' ? item.id.trim() : '';
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    const label = typeof item?.name === 'string' && item.name.trim() ? item.name.trim() : id;
-    result.push({
-      id,
-      label,
-      ...(currentModelId ? { isDefault: id === currentModelId } : result.length === 0 ? { isDefault: true } : {}),
-      ...(reasoningEfforts?.length ? { reasoningEfforts } : {}),
-      ...(defaultReasoningEffort ? { defaultReasoningEffort } : {}),
-      images: supportsImage,
-      tools: true,
-    });
+    if (!id || ids.has(id)) continue;
+    ids.add(id);
+    const variant = antigravityModelVariant(id);
+    const key = variant?.family ?? id;
+    const label = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : id;
+    const model: AgentModel & { images: boolean; tools: boolean } = groups.get(key) ?? { id: key, label: variant ? label.replace(/ \((Low|Medium|High|XHigh|Extra)\)$/i, '') : label,
+      images: supportsImage, tools: true };
+    if (id === current) model.isDefault = true;
+    if (variant) {
+      const depth = { id: variant.depth, label: variant.depth === 'xhigh' ? 'Extra' : variant.depth[0]!.toUpperCase() + variant.depth.slice(1) };
+      (model.reasoningEfforts ??= []).push(depth);
+      if (id === current) model.defaultReasoningEffort = variant.depth;
+    }
+    groups.set(key, model);
   }
-  if (result.length && !result.some(m => m.isDefault)) {
-    result[0]!.isDefault = true;
+  const models = [...groups.values()];
+  // Older programs can expose a flat model catalog plus a dedicated depth
+  // option. A variant catalog already specifies per-model depth in its IDs.
+  const thought = ![...ids].some(antigravityModelVariant) && Array.isArray(payload?.configOptions)
+    ? payload.configOptions.find((option: any) => option?.id === 'thought_level') : undefined;
+  if (thought && Array.isArray(thought.options)) {
+    const options = thought.options.filter((option: any) => typeof option?.value === 'string')
+      .map((option: any) => ({ id: option.value, label: option.name ?? option.value }));
+    for (const model of models) {
+      model.reasoningEfforts = options;
+      model.defaultReasoningEffort = thought.currentValue;
+    }
   }
-  return result;
+  if (models.length && !models.some(model => model.isDefault)) models[0]!.isDefault = true;
+  for (const model of models) {
+    model.reasoningEfforts?.sort((a, b) => variantDepths.indexOf(a.id as typeof variantDepths[number]) - variantDepths.indexOf(b.id as typeof variantDepths[number]));
+    model.defaultReasoningEffort ??= model.reasoningEfforts?.find(depth => depth.id === 'medium')?.id ?? model.reasoningEfforts?.[0]?.id;
+  }
+  return { models, nativeModelIds: [...ids] };
 }
 
 function unavailableQuota(tierLabel?: string, diagnostic?: string): ModelQuotaObservation {
@@ -581,7 +585,7 @@ export class AntigravityCoordinator {
         ? `${explicit.label} · ${tier.label}`
         : `Google 个人账号（agy 未公开邮箱） · ${tier.label}`;
 
-      const models = extractModelsFromSessionPayload(sessionResult, handshake.image);
+      const { models, nativeModelIds } = extractModelsFromSessionPayload(sessionResult, handshake.image);
       const quota = extractQuotaFromMeta(mergedMeta, tier.label);
 
       if (!models.length) {
@@ -605,6 +609,7 @@ export class AntigravityCoordinator {
         accountLabel,
         tier,
         models,
+        nativeModelIds,
         quota,
         capabilities: handshake,
       };
