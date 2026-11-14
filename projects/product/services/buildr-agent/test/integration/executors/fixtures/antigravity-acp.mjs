@@ -281,6 +281,37 @@ async function runPrompt(id, params) {
     imageCount,
   });
 
+  if (text.includes('[[buildr:background-continuation]]')) {
+    if (activeScenario === 'continuation-fails') {
+      activePrompt = undefined;
+      fail(id, -32603, 'continuation failed');
+      return;
+    }
+    const finalText = '后台结果已读取，继续处理完成。';
+    const finalMsgId = `msg-${randomUUID()}`;
+    notify('session/update', {
+      sessionId,
+      update: { sessionUpdate: 'agent_message_chunk', messageId: finalMsgId, content: { type: 'text', text: finalText } },
+    });
+    session.messages.push({ id: finalMsgId, role: 'assistant', text: finalText });
+    writeSession(session);
+    appendTranscript(sessionId, {
+      type: 'turn_complete',
+      promptId: userMessageId,
+      cwd: session.cwd,
+      stopReason: 'end_turn',
+      finalText,
+      backgroundActive: false,
+    });
+    activePrompt = undefined;
+    result(id, {
+      userMessageId,
+      stopReason: 'end_turn',
+      usage: { inputTokens: 950_000, outputTokens: 1_200, totalTokens: 951_200 },
+    });
+    return;
+  }
+
   if (activeScenario === 'disconnect') {
     notify('session/update', {
       sessionId,
@@ -510,7 +541,7 @@ async function runPrompt(id, params) {
     },
   });
   const tool2Text = isDiff ? '--- a/src/index.ts\n+++ b/src/index.ts\n@@ -1 +1 @@\n-old\n+new' : 'PASS all checks (12 tests)';
-  if (!['unsettled-tool', 'late-command-result', 'background-transcript-exit'].includes(activeScenario) && !text.includes('[UNSETTLED_TOOL]')) {
+  if (!['unsettled-tool', 'late-command-result', 'continuation-fails', 'native-background-continuation', 'background-transcript-exit'].includes(activeScenario) && !text.includes('[UNSETTLED_TOOL]')) {
     notify('session/update', {
       sessionId,
       update: {
@@ -583,14 +614,16 @@ async function runPrompt(id, params) {
     { id: `final-${randomUUID()}`, role: 'assistant', text: authoritativeFinal },
   );
   writeSession(session);
-  appendTranscript(sessionId, {
-    type: 'turn_complete',
-    promptId: userMessageId,
-    cwd: session.cwd,
-    stopReason,
-    finalText: authoritativeFinal,
-    backgroundActive,
-  });
+  if (activeScenario !== 'native-background-continuation') {
+    appendTranscript(sessionId, {
+      type: 'turn_complete',
+      promptId: userMessageId,
+      cwd: session.cwd,
+      stopReason,
+      finalText: authoritativeFinal,
+      backgroundActive,
+    });
+  }
 
   if (activeScenario === 'background-transcript-exit') {
     const file = join(cliRoot, 'brain', sessionId, '.system_generated', 'logs', 'transcript_full.jsonl');
@@ -602,12 +635,58 @@ async function runPrompt(id, params) {
     setTimeout(() => writeRow({ source: 'SYSTEM', type: 'SYSTEM_MESSAGE',
       content: `[Message] timestamp=test sender=${task} priority=HIGH content=Task id "${task}" finished with result:\nCommand exited with code 7.\nCommand output: fixture failure` }), 250);
   }
-  if (activeScenario === 'late-command-result') {
-    setTimeout(() => notify('session/update', {
-      sessionId,
-      update: { sessionUpdate: 'tool_call_update', toolCallId: tool2Id, status: 'completed',
-        content: [{ type: 'content', content: { type: 'text', text: 'original command exited with code 0' } }] },
-    }), 250);
+  if (activeScenario === 'late-command-result' || activeScenario === 'continuation-fails') {
+    setTimeout(() => {
+      notify('session/update', {
+        sessionId,
+        update: { sessionUpdate: 'tool_call_update', toolCallId: tool2Id, status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'original command exited with code 0' } }] },
+      });
+      appendTranscript(sessionId, {
+        type: 'tool_result',
+        toolCallId: tool2Id,
+        cwd: session.cwd,
+        kind: 'execute',
+        name: 'command',
+        status: 'completed',
+        output: 'original command exited with code 0',
+      });
+    }, 250);
+  }
+  if (activeScenario === 'native-background-continuation') {
+    setTimeout(() => {
+      notify('session/update', {
+        sessionId,
+        update: { sessionUpdate: 'tool_call_update', toolCallId: tool2Id, status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'native command exited with code 0' } }] },
+      });
+      appendTranscript(sessionId, {
+        type: 'tool_result',
+        toolCallId: tool2Id,
+        cwd: session.cwd,
+        kind: 'execute',
+        name: 'command',
+        status: 'completed',
+        output: 'native command exited with code 0',
+      });
+    }, 250);
+    setTimeout(() => {
+      appendTranscript(sessionId, {
+        type: 'turn_complete',
+        promptId: userMessageId,
+        cwd: session.cwd,
+        stopReason: 'end_turn',
+        finalText: authoritativeFinal,
+        backgroundActive: false,
+      });
+      activePrompt = undefined;
+      result(id, {
+        userMessageId,
+        stopReason: 'end_turn',
+        usage: { inputTokens: 950_000, outputTokens: 1_200, totalTokens: 951_200 },
+      });
+    }, 350);
+    return;
   }
   activePrompt = undefined;
   if (activeScenario === 'missing-terminal-response') {

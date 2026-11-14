@@ -622,7 +622,75 @@ test('Antigravity keeps the original background command until its late exit resu
   assert.equal(ended.tools.find(tool => tool.id === original.id)?.status, 'completed');
   assert.ok(events.some(event => event.type === 'item' && event.item.id === original.id
     && event.item.status === 'completed' && event.item.text === 'original command exited with code 0'));
+  assert.ok(events.some(event => event.type === 'item' && event.item.kind === 'message'
+    && event.item.role === 'assistant' && event.item.text.includes('后台结果已读取')));
+  assert.equal(events.some(event => event.type === 'item' && event.item.kind === 'message'
+    && event.item.role === 'user' && event.item.text.includes('[[buildr:background-continuation]]')), false);
   assert.equal(events.filter(event => event.type === 'completed').length, 1);
+
+  const persisted = await h.executor.readPersistedExecution!({
+    configRoot: h.configRoot,
+    executable: h.executable,
+    bindingIdentity: rt.bindingIdentity,
+    contextRef,
+    executionRef: accepted.executionRef,
+    cwd: h.cwd,
+    nativeInputs: [{
+      clientRequestId: 'late-command',
+      text: '后台退出回执',
+      createdAt: new Date(Date.now() - 10_000).toISOString(),
+    }],
+  });
+  assert.ok(persisted);
+  assert.equal(persisted.items.some(item => item.kind === 'message' && item.role === 'user'
+    && item.text.includes('[[buildr:background-continuation]]')), false);
+  assert.ok(persisted.items.some(item => item.kind === 'message' && item.role === 'assistant'
+    && item.text.includes('后台结果已读取')));
+});
+
+test('Antigravity keeps the round unknown when background continuation cannot start', { timeout: 10_000 }, async t => {
+  const h = await createHarness(t, { scenario: 'continuation-fails', autoAllow: true });
+  const rt = await h.openRuntime();
+  const contextRef = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+  const events: ExecutorEvent[] = [];
+  const unknown = Promise.withResolvers<void>();
+  await rt.send({
+    contextRef, cwd: h.cwd, text: '后台续行失败', images: [], clientRequestId: 'continuation-fails',
+    onEvent: event => {
+      events.push(event);
+      if (event.type === 'observation' && event.observation.diagnostic?.includes('后台结果未能交回模型')) unknown.resolve();
+    },
+  });
+  const active = await rt.observe({ contextRef });
+  assert.ok(active.backgroundWork);
+  await unknown.promise;
+  const ended = await rt.observe({ contextRef });
+  assert.equal(ended.status, 'unknown');
+  assert.equal(events.some(event => event.type === 'completed'), false);
+  assert.ok(ended.diagnostic?.includes('后台结果未能交回模型'), ended.diagnostic);
+});
+
+test('Antigravity completes the same round when the native harness keeps it open', { timeout: 10_000 }, async t => {
+  const h = await createHarness(t, { scenario: 'native-background-continuation', autoAllow: true });
+  const rt = await h.openRuntime();
+  const contextRef = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+  const events: ExecutorEvent[] = [];
+  const finished = Promise.withResolvers<void>();
+  await rt.send({
+    contextRef, cwd: h.cwd, text: '原生自行续行', images: [], clientRequestId: 'native-continuation',
+    onEvent: event => {
+      events.push(event);
+      if (event.type === 'completed') finished.resolve();
+    },
+  });
+  await finished.promise;
+  const ended = await rt.observe({ contextRef });
+  assert.equal(ended.status, 'idle');
+  assert.equal(events.filter(event => event.type === 'completed').length, 1);
+  assert.ok(events.some(event => event.type === 'item' && event.item.kind === 'message'
+    && event.item.role === 'assistant' && event.item.text.includes('已完成处理')));
+  assert.equal(events.some(event => event.type === 'item' && event.item.kind === 'message'
+    && event.item.text.includes('后台结果已读取')), false);
 });
 
 test('Antigravity correlates a system exit receipt with the original command and retains failure', { timeout: 10_000 }, async t => {

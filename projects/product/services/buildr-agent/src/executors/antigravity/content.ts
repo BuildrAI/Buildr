@@ -14,6 +14,7 @@ import { parseReference } from '../native-process.ts';
 const CONTEXT_ID_PATTERN = /^[a-zA-Z0-9_-]{8,128}$/;
 const MAX_TRANSCRIPT_BYTES = 64 * 1024 * 1024;
 const PROVIDER = 'antigravity';
+export const ANTIGRAVITY_CONTINUATION_MARKER = '[[buildr:background-continuation]]';
 
 export function isValidAntigravityContextId(contextId: string): boolean {
   return CONTEXT_ID_PATTERN.test(contextId);
@@ -296,6 +297,7 @@ export const readAntigravityPersistedExecution: NonNullable<AgentExecutor['readP
       const row = rows[index];
       if (row?.sessionId !== input.contextRef.id || (row.cwd !== undefined && row.cwd !== input.cwd)) continue;
       if (row.type !== 'user' || typeof row.text !== 'string' || typeof row.timestamp !== 'string') continue;
+      if (row.text.includes(ANTIGRAVITY_CONTINUATION_MARKER)) continue;
       if (!Number.isFinite(Date.parse(row.timestamp))) continue;
       prompts.push({
         id: typeof row.id === 'string' && row.id ? row.id : `user:${index}`,
