@@ -1037,3 +1037,79 @@ test('antigravity probe cleans up temporary conversation DB and brain directorie
   ]);
   assert.deepEqual(await readdir(path.join(cliDir, 'brain')), [realCtx.id]);
 });
+
+test('antigravity stop clears backgroundWork release proof and cold prepareRelease stays symmetric with canRelease', { timeout: 15_000 }, async t => {
+  const h = await createHarness(t, { scenario: 'continuation-fails', autoAllow: true });
+  const rt = await h.openRuntime();
+  const ctx = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+
+  await rt.send({
+    contextRef: ctx,
+    cwd: h.cwd,
+    text: '触发后台命令后立即停止',
+    images: [],
+    clientRequestId: 'bg-stop-proof',
+    onEvent: () => {},
+  });
+  const active = await rt.observe({ contextRef: ctx });
+  assert.equal(active.backgroundWork, true);
+  assert.equal(active.executionRef?.data?.backgroundWork, true);
+
+  const stopObs = await rt.stop({ contextRef: ctx, executionRef: active.executionRef! });
+  assert.equal(stopObs.status, 'stopped');
+  assert.equal(stopObs.executionRef?.data?.backgroundWork, false, 'confirmed stop must clear backgroundWork in returned executionRef');
+  await rt.close();
+
+  if (process.platform !== 'win32') {
+    assert.equal(
+      await h.executor.readReleasedControl!({
+        bindingIdentity: rt.bindingIdentity,
+        contextRef: ctx,
+        executionRef: stopObs.executionRef!,
+        cwd: h.cwd,
+      }),
+      true,
+      'cold readReleasedControl must accept stopped executionRef once backgroundWork is cleared',
+    );
+  }
+
+  // Reopen cold runtime and open a reader handle via resumeContext:
+  // stale backgroundWork=true must return false from prepareRelease WITHOUT closing the resumed handle,
+  // while cleared stopObs.executionRef must return true from both prepareRelease and canRelease.
+  await h.setControl({ scenario: '', autoAllow: true });
+  const rtCold = await h.openRuntime();
+  await rtCold.resumeContext({ contextRef: ctx, cwd: h.cwd, permissionMode: 'default' });
+
+  const staleBgRef = {
+    ...stopObs.executionRef!,
+    data: { ...stopObs.executionRef!.data, backgroundWork: true },
+  };
+  assert.equal(await rtCold.prepareRelease!({ contextRef: ctx, executionRef: staleBgRef }), false);
+  assert.equal(await rtCold.canRelease!({ contextRef: ctx, executionRef: staleBgRef }), false);
+
+  // Confirm the resumed conversation handle was not prematurely closed by prepareRelease failing/returning.
+  const followUpEvents: ExecutorEvent[] = [];
+  await rtCold.send({
+    contextRef: ctx,
+    cwd: h.cwd,
+    text: '冷态预检后继续发送',
+    images: [],
+    clientRequestId: 'cold-after-prepare',
+    onEvent: ev => followUpEvents.push(ev),
+  });
+  assert.equal(followUpEvents.some(ev => ev.type === 'completed' && ev.status === 'completed'), true);
+  const followUpAccepted = followUpEvents.find((ev): ev is Extract<ExecutorEvent, { type: 'accepted' }> => ev.type === 'accepted')!;
+
+  if (process.platform !== 'win32') {
+    assert.equal(await rtCold.prepareRelease!({ contextRef: ctx, executionRef: stopObs.executionRef! }), true);
+    assert.equal(await rtCold.prepareRelease!({ contextRef: ctx, executionRef: followUpAccepted.executionRef }), true);
+    assert.equal(await rtCold.canRelease!({ contextRef: ctx, executionRef: followUpAccepted.executionRef }), true);
+    assert.equal(await rtCold.canReclaimStorage!(), false, 'prepareRelease must not prematurely reclaim runtime storage before close');
+  }
+
+  await rtCold.close();
+  if (process.platform !== 'win32') {
+    assert.equal(await rtCold.canRelease!({ contextRef: ctx, executionRef: stopObs.executionRef! }), true);
+    assert.equal(await rtCold.canRelease!({ contextRef: ctx, executionRef: followUpAccepted.executionRef }), true);
+  }
+});

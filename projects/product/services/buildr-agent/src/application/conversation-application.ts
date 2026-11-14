@@ -463,6 +463,10 @@ export class ConversationApplication {
             continue;
           }
           if(!runId||record.view.requests.some(request=>request.participantId===member.id)||this.workers.has(runId)||this.recoveries.has(runId)||this.observations.has(`${held.workspaceId}/${held.id}`)||this.titleWork.has(held.id)||this.supplements.size||this.repliesInFlight.size){safe=false;break;}
+          if(run?.resourcesReleased){
+            candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId});
+            continue;
+          }
           const participant=record.participants.find(value=>value.id===member.id);
           // Older histories may no longer retain this participant's RunView.
           // Only its exact accepted native attempt can prove physical release.
@@ -500,7 +504,7 @@ export class ConversationApplication {
             if(value.leaseIdentity)this.options.modelAccess?.leases.release(value.leaseIdentity);
             if(this.sourceRuntimes.get(value.id)===value.source){this.sourceRuntimes.delete(value.id);this.sourceOwners.delete(value.id);this.sourceConnections.delete(value.id);}
             const record=this.load(value.workspaceId,value.conversationId),run=conversationRuns(record.view).find(run=>run.id===value.runId);
-            if(!run||run.id!==value.runId||run.participantId!==value.id||run.generation!==this.options.generation)continue;
+            if(!run||run.id!==value.runId||run.participantId!==value.id||run.generation!==this.options.generation||run.resourcesReleased)continue;
             const newlyReleased=!run.resourcesReleased;
             const executionEnded=run.executionState==='ended'&&!unfinishedRun(run);
             run.executionState=run.executionState==='ended'?'ended':facts.get(value.id)!;run.resourcesReleased=true;

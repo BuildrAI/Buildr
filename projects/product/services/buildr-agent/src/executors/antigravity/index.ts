@@ -1714,6 +1714,9 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
         if (killedAndIdle) {
           turn.stopConfirmed = true;
           this.clearBackgroundTracking(turn);
+          if (turn.executionRef.data?.backgroundWork) {
+            turn.executionRef = { ...turn.executionRef, data: { ...turn.executionRef.data, backgroundWork: false } };
+          }
           turn.status = 'stopped';
           this.closeTextSegment(turn, 'unknown');
           for (const [id, tool] of turn.tools) {
@@ -1741,6 +1744,9 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     }, { allowUnknownBackgroundWork: true })) {
       turn.stopConfirmed = true;
       this.clearBackgroundTracking(turn);
+      if (turn.executionRef.data?.backgroundWork) {
+        turn.executionRef = { ...turn.executionRef, data: { ...turn.executionRef.data, backgroundWork: false } };
+      }
       turn.status = 'stopped';
       this.releaseProofs.add(this.releaseKey(turn.contextId, turn.executionRef));
     } else {
@@ -1758,12 +1764,24 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
 
   async prepareRelease(input: { contextRef: ContextRef; executionRef: ExecutionRef }): Promise<boolean> {
     const turn = this.turns.get(input.contextRef.id);
-    if (turn && turn.executionId === input.executionRef.id) {
-      if (turn.pending || turn.backgroundWork || turn.requests.size > 0) return false;
-      if (!['idle', 'stopped'].includes(turn.status)) return false;
+    if (!turn || turn.executionId !== input.executionRef.id) {
+      return Boolean(await this.canRelease(input));
     }
-    await this.coordinator.closeConversationProcess(input.contextRef.id);
-    return true;
+    if (turn.pending || turn.backgroundWork || turn.requests.size > 0) return false;
+    if (!['idle', 'stopped'].includes(turn.status)) return false;
+
+    const handle = this.coordinator.getConversationProcess(input.contextRef.id);
+    const effectiveRef = input.executionRef.data
+      ? { ...input.executionRef, data: { ...input.executionRef.data, backgroundWork: false } }
+      : input.executionRef;
+    const released = handle
+      ? await handle.client.released(effectiveRef, input.contextRef.id, this.bindingIdentity, true)
+      : Boolean(await this.canRelease({ contextRef: input.contextRef, executionRef: effectiveRef }));
+    if (released) {
+      this.releaseProofs.add(this.releaseKey(input.contextRef.id, input.executionRef));
+      return true;
+    }
+    return false;
   }
 
   async canRelease(input: {
@@ -1771,31 +1789,38 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     executionRef: ExecutionRef;
   }): Promise<boolean | { executionState: 'ended' | 'unknown' }> {
     const turn = this.turns.get(input.contextRef.id);
-    if (turn && turn.executionId === input.executionRef.id) {
-      if (turn.pending || turn.backgroundWork || turn.requests.size > 0) return false;
-      if (!['idle', 'stopped'].includes(turn.status)) return false;
+    const matchingTurn = turn && turn.executionId === input.executionRef.id ? turn : undefined;
+    if (matchingTurn) {
+      if (matchingTurn.pending || matchingTurn.backgroundWork || matchingTurn.requests.size > 0) return false;
+      if (!['idle', 'stopped'].includes(matchingTurn.status)) return false;
     }
+
+    const hasProof = this.releaseProofs.has(this.releaseKey(input.contextRef.id, input.executionRef));
+    const allowClearedBackground = hasProof || Boolean(matchingTurn && (matchingTurn.stopConfirmed || !matchingTurn.backgroundWork));
+    const effectiveRef = allowClearedBackground && input.executionRef.data
+      ? { ...input.executionRef, data: { ...input.executionRef.data, backgroundWork: false } }
+      : input.executionRef;
 
     const handle = this.coordinator.getConversationProcess(input.contextRef.id);
     let released = false;
     if (handle) {
-      released = await handle.client.released(input.executionRef, input.contextRef.id, this.bindingIdentity, true);
-    } else if (this.releaseProofs.has(this.releaseKey(input.contextRef.id, input.executionRef))) {
-      released = true;
+      released = await handle.client.released(effectiveRef, input.contextRef.id, this.bindingIdentity, true);
     } else if (typeof input.contextRef.data?.cwd === 'string') {
       released = await releasedNativeControl(
         PROVIDER,
         {
           bindingIdentity: this.bindingIdentity,
           contextRef: input.contextRef,
-          executionRef: input.executionRef,
+          executionRef: effectiveRef,
           cwd: input.contextRef.data.cwd,
         },
-        { allowUnknownBackgroundWork: turn?.stopConfirmed === true },
+        { allowUnknownBackgroundWork: allowClearedBackground },
       );
+    } else if (hasProof) {
+      released = true;
     }
     if (!released) return false;
-    if (turn && [...turn.tools.values()].some(t => t.status !== 'completed')) {
+    if (matchingTurn && [...matchingTurn.tools.values()].some(t => t.status !== 'completed')) {
       return { executionState: 'unknown' };
     }
     return true;

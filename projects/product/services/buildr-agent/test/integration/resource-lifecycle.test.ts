@@ -458,3 +458,103 @@ test('session replacement has durable source/target identities and truthful acce
   }finally{await f.close();}
  }
 });
+
+test('historical already-released retained runs opened for observation do not deadlock idle release on shared runtime',async()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-released-history-'));
+ try{
+  const contexts=new Map<string,{execution:string;backgroundWork:boolean}>();
+  let activeRuntime:AgentRuntime|undefined,closeCount=0;const sent:string[]=[];
+  const capabilities={text:true,images:false,approval:false,questions:false,stop:true,resume:true,maxInputBytes:65536};
+  const executor:AgentExecutor={
+   descriptor:{id:'local',label:'Local',capabilities},
+   async open(){
+    if(activeRuntime&&!activeRuntime.closed)return activeRuntime;
+    let disposed=false;const liveExecutions=new Set<string>();
+    const runtime:AgentRuntime={
+     get closed(){return disposed;},bindingIdentity:'released-history-fixture',capabilities,
+     inspectAccount:async()=>({status:'ready'}),models:async()=>[{id:'model',label:'Model'}],beginLogin:async()=>{},cancelLogin:async()=>{},
+     async createContext(){const ref={id:randomUUID(),data:{cwd:root}};contexts.set(ref.id,{execution:'',backgroundWork:false});return ref;},
+     async resumeContext({contextRef}){assert.ok(contexts.has(contextRef.id));},
+     readHistory:async()=>[],
+     async send(input){
+      sent.push(input.text);
+      const state=contexts.get(input.contextRef.id)!;state.execution=input.clientRequestId;liveExecutions.add(input.clientRequestId);
+      const executionRef={id:input.clientRequestId,data:{backgroundWork:false}};
+      input.onEvent({type:'accepted',executionRef});
+      state.backgroundWork=false;
+      input.onEvent({type:'completed',status:'completed'});
+      input.onEvent({type:'observation',observation:{status:'idle',executionRef,tools:[]}});
+     },
+     observe:async({executionRef})=>executionRef&&liveExecutions.has(executionRef.id)?{status:'idle',executionRef,tools:[]}:{status:'idle',tools:[]},
+     reply:async()=>{},stop:async()=>({status:'stopped',tools:[]}),
+     // Simulate the exact cold-vs-live asymmetry: an older already-released run's
+     // historical executionRef carries backgroundWork=true so cold canRelease rejects it.
+     async prepareRelease({executionRef}){return liveExecutions.has(executionRef.id)?!contexts.get(executionRef.id)?.backgroundWork:true;},
+     async canRelease({executionRef}){
+      if(disposed&&!liveExecutions.has(executionRef.id)&&executionRef.data?.backgroundWork===true)return false;
+      return executionRef.data?.backgroundWork!==true;
+     },
+     async close(){if(!disposed){disposed=true;closeCount++;}},
+    };
+    activeRuntime=runtime;return runtime;
+   },
+  };
+  const provider:ModelProvider={id:'fixture',label:'Fixture',async open(){return {protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'model',label:'Model',images:false,tools:true},{id:'other-model',label:'Other',images:false,tools:true}]}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>{throw Error('unused');},close:async()=>{}};}};
+  const service=createAgentService({dataRoot:root,generationAlive:()=>false,executors:[executor],modelProviders:[provider],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+  try{
+   await service.connections.connect('local',{expectedRevision:'unconfigured'});
+   const account=await service.models.accounts.add({provider:'fixture'});
+   const checked=await service.models.accounts.check(account.id);
+   await service.models.accounts.preferences(account.id,{expectedRevision:checked.revision,models:[{id:'model',enabled:true},{id:'other-model',enabled:true}]});
+   const wait=async(predicate:()=>boolean)=>{for(let n=0;n<300;n++){if(predicate())return;await new Promise(r=>setTimeout(r,5));}assert.fail('state did not settle');};
+
+   // 1. Create a conversation with an older participant (p1) and hand off to a second participant (p2).
+   let chat=await service.conversations.create('workspace',{});
+   const firstDraft={expectedRevision:chat.revision,connectionId:'local',modelAccountId:account.id,model:'model',text:'first'};
+   const firstPreview=service.conversations.prepareSend('workspace',chat.id,firstDraft);
+   service.conversations.send('workspace',chat.id,{...firstDraft,previewToken:firstPreview.token,clientRequestId:randomUUID()});
+   await wait(()=>service.conversations.read('workspace',chat.id).run?.status==='completed');
+   chat=service.conversations.read('workspace',chat.id);
+   const handoffDraft={expectedRevision:chat.revision,connectionId:'local',modelAccountId:account.id,model:'other-model',text:'second',handoffSummary:'prior completed'};
+   const handoffPreview=service.conversations.prepareSend('workspace',chat.id,handoffDraft);
+   service.conversations.send('workspace',chat.id,{...handoffDraft,previewToken:handoffPreview.token,clientRequestId:randomUUID()});
+   await wait(()=>service.conversations.read('workspace',chat.id).participants.length===2&&service.conversations.read('workspace',chat.id).run?.status==='completed');
+   await service.releaseIdleSources();
+
+   // 2. Persist the historical participant as already resourcesReleased with stale backgroundWork=true in executionRef.
+   const repository=new ConversationRepository(path.join(root,'agent-service'));
+   const stored=repository.readConversation(chat.id)!;
+   const historicalRun=stored.view.retainedRuns![0]!;
+   historicalRun.status='unknown';historicalRun.executionState='unknown';historicalRun.stopRequested=true;historicalRun.resourcesReleased=true;
+   const historicalAttempt=stored.attempts.find(a=>a.runId===historicalRun.id)!;
+   historicalAttempt.executionRef={id:historicalAttempt.executionRef!.id,data:{backgroundWork:true}};
+   repository.saveConversation(stored,stored.view.revision);
+
+   // 3. Read-only observe opens both participants onto the same shared runtime; active release + next send must succeed.
+   await service.conversations.observe('workspace',chat.id);
+   await service.releaseIdleSources();
+   const currentBeforeThird=service.conversations.read('workspace',chat.id);
+   const thirdDraft={expectedRevision:currentBeforeThird.revision,connectionId:'local',modelAccountId:account.id,model:'other-model',text:'third'};
+   const thirdPreview=service.conversations.prepareSend('workspace',chat.id,thirdDraft);
+   service.conversations.send('workspace',chat.id,{...thirdDraft,previewToken:thirdPreview.token,clientRequestId:randomUUID()});
+   await wait(()=>service.conversations.read('workspace',chat.id).entries.some(e=>e.text==='third'&&e.status==='accepted')&&service.conversations.read('workspace',chat.id).run?.status==='completed'&&!service.activity().reasons.some(r=>['execution','title','recovery','observation'].includes(r.kind)));
+   await service.releaseIdleSources();
+
+   const afterRelease=service.conversations.read('workspace',chat.id);
+   assert.equal(afterRelease.run?.status,'completed');
+   assert.equal(afterRelease.run?.resourcesReleased,true);
+   const preservedHistory=afterRelease.retainedRuns?.find(r=>r.id===historicalRun.id);
+   assert.equal(preservedHistory?.status,'unknown');
+   assert.equal(preservedHistory?.executionState,'unknown');
+   assert.equal(preservedHistory?.resourcesReleased,true);
+   assert.ok(closeCount>=3,'shared observation runtime must release without getting wedged in sourceReleasePending');
+
+   // 4. Subsequent send must not throw agent_runtime_release_unconfirmed.
+   const fourthDraft={expectedRevision:afterRelease.revision,connectionId:'local',modelAccountId:account.id,model:'other-model',text:'fourth'};
+   const fourthPreview=service.conversations.prepareSend('workspace',chat.id,fourthDraft);
+   service.conversations.send('workspace',chat.id,{...fourthDraft,previewToken:fourthPreview.token,clientRequestId:randomUUID()});
+   await wait(()=>service.conversations.read('workspace',chat.id).entries.some(e=>e.text==='fourth'&&e.status==='accepted')&&service.conversations.read('workspace',chat.id).run?.status==='completed');
+   assert.equal(sent.length,4);
+  }finally{await service.close();}
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+});
