@@ -133,6 +133,10 @@ interface ExecutorOpenBaseOptions {
   environment: Readonly<Record<string, string>>;
   signal?: AbortSignal;
   binding?: ExecutorBinding;
+  /** Non-throwing participant binding hint used to preserve identity across transient st_dev remount drift when config realpath + inode match. */
+  preferredBinding?: ExecutorBinding;
+  /** Verified historical st_dev values observed for the same mounted volume when legacy records lack bindingData. */
+  volumeDevs?: readonly number[];
 }
 export type ExecutorOpenOptions = ExecutorOpenBaseOptions & (
   | { gateway?: ModelGatewayConfiguration; nativeSource?: undefined }
@@ -335,7 +339,7 @@ export interface AgentExecutor {
   /** Read exact durable terminal evidence without opening a native process or taking its controls. */
   readPersistedExecution?(input: {
     configRoot: string; nativeAccountConfigRoot?: string; executable: string; programSource?: string; gatewayIdentity?: string;
-    bindingIdentity: string; contextRef: ContextRef; executionRef: ExecutionRef; cwd: string;
+    bindingIdentity: string; bindingData?: Record<string, unknown>; volumeDevs?: readonly number[]; contextRef: ContextRef; executionRef: ExecutionRef; cwd: string;
     startedAt?: string;
     /** Exact admitted inputs for this run, used only when the native format has no Buildr request id. */
     nativeInputs?: ReadonlyArray<{clientRequestId:string;text:string;createdAt:string}>;

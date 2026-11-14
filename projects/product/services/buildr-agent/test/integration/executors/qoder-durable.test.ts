@@ -132,3 +132,19 @@ test('diagnostic reclamation preserves exact end evidence while recovery is unre
   assert.equal(removeStorageCandidate(f.root, released.find(item => item.path === log)!, () => use), true);
   assert.deepEqual(await readFile(f.transcript), original);
 });
+
+test('Qoder durable evidence survives transient st_dev remount drift at the same inode while rejecting tampered provenance', async t => {
+  const f = await fixture(t), provenance = await nativeBindingProvenance('qoder', f.input.executable, f.config);
+  const driftedDev = provenance.dev + 8192, driftedProv = { ...provenance, dev: driftedDev };
+  const driftedIdentity = hash(['buildr-model-gateway/v1', hash(driftedProv), f.input.gatewayIdentity]);
+  const driftedInput = {
+    ...f.input,
+    bindingIdentity: driftedIdentity,
+    volumeDevs: [driftedDev],
+    contextRef: { id: f.input.contextRef.id, data: { native: opaqueReference('qoder', f.input.contextRef.id, f.input.cwd, driftedIdentity) } },
+    executionRef: { id: f.input.executionRef.id, data: { resourceContext: f.input.contextRef.id, resourceBinding: driftedIdentity, backgroundWork: false } },
+  };
+  const restored = await readQoderPersistedExecution(driftedInput);
+  assert.equal(restored?.observation.status, 'idle');
+  assert.equal(await readQoderPersistedExecution({ ...driftedInput, bindingData: { ...driftedProv, ino: provenance.ino + 1, gatewayIdentity: f.input.gatewayIdentity } }), undefined);
+});

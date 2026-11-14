@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { zstdDecompressSync } from 'node:zlib';
 import type { AgentExecutor } from '../../contracts.ts';
-import { nativeBindingProvenance, parseReference } from '../native-process.ts';
+import { nativeBindingProvenance, parseReference, resolveProvenanceForIdentity, sameVolumeProvenance } from '../native-process.ts';
 import { dshExecutionObservation, dshHistoryItems } from './protocol.ts';
 
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -21,8 +21,14 @@ export const readDshPersistedExecution: NonNullable<AgentExecutor['readPersisted
   if (native.nativeSessionId !== input.contextRef.id || !/^session-[a-f0-9-]{36}$/.test(input.contextRef.id)) return;
   if (input.executionRef.data && (input.executionRef.data.resourceContext !== input.contextRef.id || input.executionRef.data.resourceBinding !== input.bindingIdentity)) return;
   const provenance = await nativeBindingProvenance('dsh', input.executable, path.join(input.configRoot,'dsh-home'), input.programSource);
-  const binding = input.gatewayIdentity ? digest(['buildr-model-gateway/v1', digest(provenance), input.gatewayIdentity]) : digest(provenance);
-  if (binding !== input.bindingIdentity) return;
+  if (input.bindingData !== undefined && (
+    (input.gatewayIdentity ? input.bindingData.gatewayIdentity !== input.gatewayIdentity : Boolean(input.bindingData.gatewayIdentity))
+    || Boolean(input.bindingData.nativeSourceIdentity)
+    || !sameVolumeProvenance(provenance, input.bindingData)
+  )) return;
+  const wrap = (nativeIdentity: string) => input.gatewayIdentity ? digest(['buildr-model-gateway/v1', nativeIdentity, input.gatewayIdentity]) : nativeIdentity;
+  const candidateDevs = typeof input.bindingData?.dev === 'number' ? [input.bindingData.dev, ...(input.volumeDevs ?? [])] : input.volumeDevs;
+  if (!resolveProvenanceForIdentity(provenance, input.bindingIdentity, candidateDevs, wrap)) return;
   const home = path.join(input.configRoot, 'dsh-home'), sessions = path.join(home, 'sessions');
   if (!await plain(input.configRoot, true) || !await plain(home, true) || !await plain(sessions, true)) return;
   const buckets = await readdir(sessions);

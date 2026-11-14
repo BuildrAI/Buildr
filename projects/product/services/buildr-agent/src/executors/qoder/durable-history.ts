@@ -3,7 +3,7 @@ import { lstat, open, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { AgentExecutor } from '../../contracts.ts';
-import { nativeBindingProvenance, parseReference } from '../native-process.ts';
+import { nativeBindingProvenance, parseReference, resolveProvenanceForIdentity, sameVolumeProvenance } from '../native-process.ts';
 import { qoderHistoryItems, qoderInterruptedObservation } from './protocol.ts';
 
 type Input = Parameters<NonNullable<AgentExecutor['readPersistedExecution']>>[0];
@@ -83,8 +83,14 @@ export const readQoderPersistedExecution: NonNullable<AgentExecutor['readPersist
   const account = input.nativeAccountConfigRoot ?? input.configRoot, config = path.join(account, 'qoder-config');
   if (!await directory(input.configRoot) || !await directory(account) || !await directory(config)) return;
   const provenance = await nativeBindingProvenance('qoder', input.executable, config, input.programSource);
-  const binding = input.gatewayIdentity ? digest(['buildr-model-gateway/v1', digest(provenance), input.gatewayIdentity]) : digest(provenance);
-  if (binding !== input.bindingIdentity) return;
+  if (input.bindingData !== undefined && (
+    (input.gatewayIdentity ? input.bindingData.gatewayIdentity !== input.gatewayIdentity : Boolean(input.bindingData.gatewayIdentity))
+    || Boolean(input.bindingData.nativeSourceIdentity)
+    || !sameVolumeProvenance(provenance, input.bindingData)
+  )) return;
+  const wrap = (nativeIdentity: string) => input.gatewayIdentity ? digest(['buildr-model-gateway/v1', nativeIdentity, input.gatewayIdentity]) : nativeIdentity;
+  const candidateDevs = typeof input.bindingData?.dev === 'number' ? [input.bindingData.dev, ...(input.volumeDevs ?? [])] : input.volumeDevs;
+  if (!resolveProvenanceForIdentity(provenance, input.bindingIdentity, candidateDevs, wrap)) return;
 
   const projects = path.join(config, 'projects'), buckets = await children(projects, 1000);
   if (!buckets) return;

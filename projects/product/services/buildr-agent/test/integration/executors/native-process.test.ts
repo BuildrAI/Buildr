@@ -99,6 +99,37 @@ test('major admission preserves v2 fingerprints saved under the old minor-series
     }
   } finally {await rm(root,{recursive:true,force:true});}
 });
+test('transient st_dev remount drift preserves v2 bindings at the same realpath and inode while rejecting replaced directories', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-native-dev-drift-'));
+  try {
+    for (const [provider, series, before, after] of [['codex', '0.163', '0.163.0', '0.164.0-alpha.11.1'], ['dsh', '0.2', '0.2.1-rc.2', '0.3.0'], ['qoder', '1.1', '1.1.75', '1.2.0']]) {
+      const executable = join(root, `${provider}.js`); await writeFile(executable, 'program');
+      const configRoot = join(root, provider!); await mkdir(configRoot);
+      const config = await realpath(configRoot), info = await stat(config);
+      const driftedDev = info.dev + 4096;
+      const provenance = { format: 'buildr-native-binding/v2', provider, executable: await realpath(executable), config, dev: driftedDev, ino: info.ino, series };
+      const identity = createHash('sha256').update(JSON.stringify(provenance)).digest('hex');
+      const prior = { identity, data: { ...provenance, observedVersion: before } };
+      const reference = opaqueReference(provider!, 'existing-session-across-reboot', root, identity);
+      const actual = await nativeBinding(provider!, executable, after!, configRoot, prior);
+      assert.equal(actual.identity, identity);
+      assert.equal(actual.data.dev, driftedDev, 'retains recorded provenance dev so identity stays self-consistent across multiple reboots');
+      assert.equal(actual.data.observedVersion, after);
+      assert.equal(parseReference(reference, provider!, root, actual.identity).nativeSessionId, 'existing-session-across-reboot');
+
+      const minorDriftDev = Math.floor(info.dev / 256) * 256 + ((info.dev + 2) % 256);
+      const minorProvenance = { ...provenance, dev: minorDriftDev };
+      const minorIdentity = createHash('sha256').update(JSON.stringify(minorProvenance)).digest('hex');
+      const adoptedWithoutData = await nativeBinding(provider!, executable, after!, configRoot, { identity: minorIdentity });
+      assert.equal(adoptedWithoutData.identity, minorIdentity);
+      assert.equal(adoptedWithoutData.data.dev, minorDriftDev);
+
+      await rename(configRoot, `${configRoot}-replaced`); await mkdir(configRoot);
+      await assert.rejects(nativeBinding(provider!, executable, after!, configRoot, prior), /binding_mismatch/);
+      await assert.rejects(nativeBinding(provider!, executable, after!, configRoot, { identity: minorIdentity }), /binding_mismatch/);
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 test('pre-provenance bindings retain their native identity only at recorded legacy locations', async () => {
   const root=await mkdtemp(join(tmpdir(),'buildr-native-legacy-'));
   try {

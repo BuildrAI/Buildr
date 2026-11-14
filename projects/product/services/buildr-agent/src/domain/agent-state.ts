@@ -93,6 +93,7 @@ export interface StoredParticipant {
   provider: string;
   label: string;
   bindingIdentity: string;
+  bindingData?: Record<string, unknown>;
   contextRef?: ContextRef;
   deliveredThrough: number;
   /** Persisted native home base for gateway participants (dir containing codex-home/dsh-home); stable once chosen. */

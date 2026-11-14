@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import type { ExecutorNativeSource, ExecutorOpenOptions, ModelGatewayConfiguration } from '../contracts.ts';
-import { nativeBinding } from './native-process.ts';
+import type { ExecutorBinding, ExecutorNativeSource, ExecutorOpenOptions, ModelGatewayConfiguration } from '../contracts.ts';
+import { nativeBinding, resolveProvenanceForIdentity, sameVolumeProvenance, type NativeBindingProvenance } from './native-process.ts';
 
 /** Only a restricted, local gateway lease crosses into a native consumer. */
 export type ExecutorGateway = ModelGatewayConfiguration;
@@ -53,38 +53,70 @@ export function checkedNativeSource(source?: ExecutorNativeSource): ExecutorNati
   return structuredClone(source);
 }
 
+function provenanceFromNativeData(data: Record<string, unknown>): NativeBindingProvenance {
+  const { observedVersion: _observedVersion, ...provenance } = data as NativeBindingProvenance & { observedVersion?: unknown };
+  return provenance;
+}
+
+function candidateVolumeDevs(binding: ExecutorBinding | undefined, volumeDevs?: readonly number[]): readonly number[] | undefined {
+  const recorded = typeof binding?.data?.dev === 'number' ? [binding.data.dev] : [];
+  return recorded.length || volumeDevs?.length ? [...recorded, ...(volumeDevs ?? [])] : undefined;
+}
+
 export async function consumerBinding(provider: string, executable: string, version: string, config: string, options: ExecutorOpenOptions) {
   assertOpenModelBinding(options as { gateway?: unknown; nativeSource?: unknown });
   if (options.nativeSource) {
     const nativeSource = checkedNativeSource(options.nativeSource)!;
     const native = await nativeBinding(provider, executable, version, config, undefined, options.programSource);
+    const provenance = provenanceFromNativeData(native.data);
     const nativeSourceIdentity = createHash('sha256')
       .update(JSON.stringify(['buildr-native-source/v1', nativeSource.accountId, nativeSource.accountIdentity]))
       .digest('hex');
-    const identity = createHash('sha256')
-      .update(JSON.stringify(['buildr-native-source-binding/v1', native.identity, nativeSourceIdentity]))
+    const wrap = (nativeIdentity: string) => createHash('sha256')
+      .update(JSON.stringify(['buildr-native-source-binding/v1', nativeIdentity, nativeSourceIdentity]))
       .digest('hex');
-    if (
-      options.binding &&
-      (options.binding.identity !== identity || options.binding.data?.nativeSourceIdentity !== nativeSourceIdentity || Boolean(options.binding.data?.gatewayIdentity))
-    ) {
-      throw new Error('agent_context_binding_mismatch');
+    if (options.binding) {
+      if (
+        Boolean(options.binding.data?.gatewayIdentity)
+        || (options.binding.data !== undefined && (options.binding.data.nativeSourceIdentity !== nativeSourceIdentity || !sameVolumeProvenance(provenance, options.binding.data)))
+      ) {
+        throw new Error('agent_context_binding_mismatch');
+      }
+      const matched = resolveProvenanceForIdentity(provenance, options.binding.identity, candidateVolumeDevs(options.binding, options.volumeDevs), wrap);
+      if (!matched) throw new Error('agent_context_binding_mismatch');
+      return { identity: options.binding.identity, data: { ...matched, observedVersion: version, nativeSourceIdentity } };
     }
-    return { identity, data: { ...native.data, nativeSourceIdentity } };
+    if (options.preferredBinding && !options.preferredBinding.data?.gatewayIdentity
+        && (options.preferredBinding.data === undefined || (options.preferredBinding.data.nativeSourceIdentity === nativeSourceIdentity && sameVolumeProvenance(provenance, options.preferredBinding.data)))) {
+      const matched = resolveProvenanceForIdentity(provenance, options.preferredBinding.identity, candidateVolumeDevs(options.preferredBinding, options.volumeDevs), wrap);
+      if (matched) return { identity: options.preferredBinding.identity, data: { ...matched, observedVersion: version, nativeSourceIdentity } };
+    }
+    return { identity: wrap(native.identity), data: { ...native.data, nativeSourceIdentity } };
   }
   if (!options.gateway) {
     if (options.binding?.data?.gatewayIdentity || options.binding?.data?.nativeSourceIdentity) {
       throw new Error('agent_context_binding_mismatch');
     }
-    return await nativeBinding(provider, executable, version, config, options.binding, options.programSource);
+    return await nativeBinding(provider, executable, version, config, options.binding, options.programSource, options.volumeDevs);
   }
   if (options.binding?.data?.nativeSourceIdentity) throw new Error('agent_context_binding_mismatch');
   const native = await nativeBinding(provider, executable, version, config, undefined, options.programSource);
-  const identity = createHash('sha256').update(JSON.stringify(['buildr-model-gateway/v1', native.identity, options.gateway.identity])).digest('hex');
-  if (options.binding && (options.binding.identity !== identity || options.binding.data?.gatewayIdentity !== options.gateway.identity)) {
-    throw new Error('agent_context_binding_mismatch');
+  const provenance = provenanceFromNativeData(native.data);
+  const wrap = (nativeIdentity: string) => createHash('sha256').update(JSON.stringify(['buildr-model-gateway/v1', nativeIdentity, options.gateway!.identity])).digest('hex');
+  if (options.binding) {
+    if (options.binding.data !== undefined && (options.binding.data.gatewayIdentity !== options.gateway.identity || !sameVolumeProvenance(provenance, options.binding.data))) {
+      throw new Error('agent_context_binding_mismatch');
+    }
+    const matched = resolveProvenanceForIdentity(provenance, options.binding.identity, candidateVolumeDevs(options.binding, options.volumeDevs), wrap);
+    if (!matched) throw new Error('agent_context_binding_mismatch');
+    return { identity: options.binding.identity, data: { ...matched, observedVersion: version, gatewayIdentity: options.gateway.identity } };
   }
-  return { identity, data: { ...native.data, gatewayIdentity: options.gateway.identity } };
+  if (options.preferredBinding && !options.preferredBinding.data?.nativeSourceIdentity
+      && (options.preferredBinding.data === undefined || (options.preferredBinding.data.gatewayIdentity === options.gateway.identity && sameVolumeProvenance(provenance, options.preferredBinding.data)))) {
+    const matched = resolveProvenanceForIdentity(provenance, options.preferredBinding.identity, candidateVolumeDevs(options.preferredBinding, options.volumeDevs), wrap);
+    if (matched) return { identity: options.preferredBinding.identity, data: { ...matched, observedVersion: version, gatewayIdentity: options.gateway.identity } };
+  }
+  return { identity: wrap(native.identity), data: { ...native.data, gatewayIdentity: options.gateway.identity } };
 }
 
 export function gatewayModel(gateway: ExecutorGateway, id?: string) {

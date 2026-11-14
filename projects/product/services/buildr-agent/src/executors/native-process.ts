@@ -315,16 +315,82 @@ export async function nativeBindingProvenance(provider: string, executable: stri
   // Keep the v2 namespace byte-for-byte: changing admission must not change old native IDs.
   return { format: 'buildr-native-binding/v2', provider, executable: programSource ?? source, config, dev: info.dev, ino: info.ino, series: nativeProgramPolicy(provider).bindingSeries };
 }
-export async function nativeBinding(provider: string, executable: string, version: string, configRoot: string, prior?: ExecutorBinding, programSource?: string): Promise<Required<Pick<ExecutorBinding, 'identity' | 'data'>>> {
+export type NativeBindingProvenance = Awaited<ReturnType<typeof nativeBindingProvenance>>;
+
+function validDeviceId(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+/** True when prior provenance proves the exact same provider, program source, config realpath, series, and non-zero inode across an OS st_dev remount change. */
+export function sameVolumeProvenance(provenance: NativeBindingProvenance, priorData: Record<string, unknown> | undefined): boolean {
+  if (!priorData || !validDeviceId(priorData.dev)) return false;
+  if (
+    priorData.format !== provenance.format
+    || priorData.provider !== provenance.provider
+    || priorData.executable !== provenance.executable
+    || priorData.config !== provenance.config
+    || priorData.ino !== provenance.ino
+    || priorData.series !== provenance.series
+  ) {
+    return false;
+  }
+  return priorData.dev === provenance.dev || provenance.ino > 0;
+}
+
+/** Match an existing binding identity against the verified live config provenance when st_dev drifted across volume remounts. */
+export function resolveProvenanceForIdentity(
+  provenance: NativeBindingProvenance,
+  expectedIdentity: string,
+  candidateDevs?: Iterable<number>,
+  wrapIdentity: (nativeIdentity: string) => string = value => value,
+): NativeBindingProvenance | undefined {
+  if (!expectedIdentity) return undefined;
+  const hashProvenance = (value: NativeBindingProvenance) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  if (wrapIdentity(hashProvenance(provenance)) === expectedIdentity) return provenance;
+  if (provenance.ino <= 0) return undefined;
+  const seen = new Set<number>([provenance.dev]);
+  const testDev = (dev: number): NativeBindingProvenance | undefined => {
+    if (!validDeviceId(dev) || seen.has(dev)) return undefined;
+    seen.add(dev);
+    const candidate = { ...provenance, dev };
+    return wrapIdentity(hashProvenance(candidate)) === expectedIdentity ? candidate : undefined;
+  };
+  if (candidateDevs) {
+    for (const dev of candidateDevs) {
+      const matched = testDev(dev);
+      if (matched) return matched;
+    }
+  }
+  if (validDeviceId(provenance.dev)) {
+    const majorBase = Math.floor(provenance.dev / 256) * 256;
+    for (let minor = 0; minor < 256; minor++) {
+      const matched = testDev(majorBase + minor);
+      if (matched) return matched;
+    }
+  }
+  return undefined;
+}
+
+export async function nativeBinding(
+  provider: string,
+  executable: string,
+  version: string,
+  configRoot: string,
+  prior?: ExecutorBinding,
+  programSource?: string,
+  volumeDevs?: Iterable<number>,
+): Promise<Required<Pick<ExecutorBinding, 'identity' | 'data'>>> {
   if (!isCompatibleProgram(provider, version)) throw new Error(`${provider}_version_unsupported`);
   const provenance = await nativeBindingProvenance(provider, executable, configRoot, programSource);
   const source = await realpath(executable);
   const data = { ...provenance, observedVersion: version };
   if (!prior) return { identity: createHash('sha256').update(JSON.stringify(provenance)).digest('hex'), data };
   if (prior.data !== undefined) {
-    if (Object.entries(provenance).some(([key, value]) => prior.data?.[key] !== value)) throw new Error('agent_context_binding_mismatch');
-    return { identity: prior.identity, data };
+    if (!sameVolumeProvenance(provenance, prior.data)) throw new Error('agent_context_binding_mismatch');
+    return { identity: prior.identity, data: { ...provenance, dev: prior.data.dev as number, observedVersion: version } };
   }
+  const matched = resolveProvenanceForIdentity(provenance, prior.identity, volumeDevs);
+  if (matched) return { identity: prior.identity, data: { ...matched, observedVersion: version } };
   // Older local records have only a fingerprint and source locations. Preserve their
   // existing native IDs only at the same explicitly recorded program/config paths.
   const exactLegacy = prior.identity === await bindingFingerprint(provider, executable, version, configRoot);

@@ -341,9 +341,10 @@ export class ConversationApplication {
   }
   private async openSource(record:StoredConversation,participant:StoredParticipant,runId?:string):Promise<PreparedSource> {
     const bound = await this.validateOrBindParticipantSource(record, participant, runId);
+    const preferredBinding = participant.bindingIdentity ? { identity: participant.bindingIdentity, data: participant.bindingData } : undefined;
     if (bound.kind === 'account-identity') {
       const nativeHomeRoot = this.participantHomeRoot(participant);
-      const runtime = await this.options.connections.nativeSourceRuntime(participant.connectionId, bound.nativeSource, record.view.id);
+      const runtime = await this.options.connections.nativeSourceRuntime(participant.connectionId, bound.nativeSource, record.view.id, preferredBinding);
       return { runtime, model: bound.nativeSource.modelId, nativeHomeRoot };
     }
     const lease = bound.lease;
@@ -351,7 +352,7 @@ export class ConversationApplication {
     try {const runtime=await this.options.connections.runtime(participant.connectionId, { identity: lease.identity, baseUrl: lease.baseUrl, apiKey: lease.apiKey,
       ...(nativeHomeRoot?{nativeHomeRoot}:{}),
       ...(bound.kind === 'gateway-lease' ? { nativeModel: { provider: participant.connectionId, id: participant.modelId!, accountIdentity: participant.modelAccountIdentity! } } : {}),
-      models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] });return {runtime,model:lease.model,leaseIdentity:lease.identity,nativeHomeRoot};}
+      models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] }, false, preferredBinding);return {runtime,model:lease.model,leaseIdentity:lease.identity,nativeHomeRoot};}
     catch(error){this.options.modelAccess!.leases.release(lease.identity);throw error;}
   }
   /** Executors declaring sharedNativeHome share one home per connection; pre-existing ones keep their original lease home so the binding stays stable. */
@@ -1233,7 +1234,7 @@ export class ConversationApplication {
     let participant = record.participants.find(value=>value.id===prepared.preview.participantId);
     const connection = this.options.connections.get(prepared.draft.connectionId);
     if (!participant) {
-      participant = { id: randomUUID(), connectionId: connection.id, provider: connection.provider, label: connection.label, modelAccountId: prepared.draft.modelAccountId, modelAccountIdentity: prepared.draft.modelAccountId ? this.options.modelAccess?.accounts.snapshot(prepared.draft.modelAccountId).identity : undefined, modelId: prepared.draft.model,serviceTier:prepared.draft.serviceTier,modelConfiguration:prepared.configuration,modelLeaseConfiguration:prepared.modelLeaseConfiguration, bindingIdentity: prepared.draft.modelAccountId ? '' : this.options.connections.binding(connection.id) ?? '', deliveredThrough: 0 };
+      participant = { id: randomUUID(), connectionId: connection.id, provider: connection.provider, label: connection.label, modelAccountId: prepared.draft.modelAccountId, modelAccountIdentity: prepared.draft.modelAccountId ? this.options.modelAccess?.accounts.snapshot(prepared.draft.modelAccountId).identity : undefined, modelId: prepared.draft.model,serviceTier:prepared.draft.serviceTier,modelConfiguration:prepared.configuration,modelLeaseConfiguration:prepared.modelLeaseConfiguration, bindingIdentity: prepared.draft.modelAccountId ? '' : this.options.connections.binding(connection.id) ?? '', bindingData: prepared.draft.modelAccountId ? undefined : this.options.connections.bindingData?.(connection.id), deliveredThrough: 0 };
       record.participants.push(participant);
     }
     participant.modelLeaseConfiguration ??= prepared.modelLeaseConfiguration;
@@ -1658,6 +1659,7 @@ export class ConversationApplication {
       const participant = record.participants.find(value => value.id === record!.view.run!.participantId)!;
       if (participant.bindingIdentity && participant.bindingIdentity !== runtime.bindingIdentity) fail('agent_binding_changed', '此参与者的原连接身份不匹配，不能恢复到其他配置。', 409);
       participant.bindingIdentity = runtime.bindingIdentity;
+      if (runtime.bindingData) participant.bindingData = structuredClone(runtime.bindingData);
       if (selectedRuntime.nativeHomeRoot) participant.nativeHomeRoot = selectedRuntime.nativeHomeRoot;
       if (this.conversationStopRequested(record,runId) || record.view.run!.status === 'stopping') { record.view.run!.status = 'stopped'; this.save(record); return; }
       let replacedContext: ContextRef | undefined;
@@ -1709,6 +1711,7 @@ export class ConversationApplication {
           const current=this.currentRun(workspaceId,id,runId);if(!current)return;
           const storedParticipant=current.participants.find(value=>value.id===participant.id)!;
           storedParticipant.contextRef=ref;storedParticipant.bindingIdentity=runtime.bindingIdentity;
+          if(runtime.bindingData)storedParticipant.bindingData=structuredClone(runtime.bindingData);
           if(selectedRuntime.nativeHomeRoot)storedParticipant.nativeHomeRoot=selectedRuntime.nativeHomeRoot;
           if(replacedContext&&!current.view.entries.some(entry=>entry.id==='native-session-'+runId))current.view.entries.push({
             id:'native-session-'+runId, sequence:(current.view.entries.at(-1)?.sequence??0)+1, createdAt:this.options.now(),
@@ -2279,7 +2282,7 @@ export class ConversationApplication {
         return entry?.text.trim()&&(!entry.status||!['failed'].includes(entry.status))?[{clientRequestId:value.clientRequestId,text:entry.text,createdAt:entry.createdAt}]:[];
       });
       let evidence;
-      try{evidence=await this.options.connections.readPersistedExecution(participant.connectionId,{bindingIdentity:participant.bindingIdentity,contextRef:participant.contextRef,executionRef:attempt.executionRef,cwd:record.view.cwd,gatewayIdentity,startedAt:run.startedAt,nativeInputs});}
+      try{evidence=await this.options.connections.readPersistedExecution(participant.connectionId,{bindingIdentity:participant.bindingIdentity,bindingData:participant.bindingData,contextRef:participant.contextRef,executionRef:attempt.executionRef,cwd:record.view.cwd,gatewayIdentity,startedAt:run.startedAt,nativeInputs});}
       catch{continue; /* Native observation remains available; unsafe evidence never overrides it. */}
       if(!evidence||!['idle','stopped'].includes(evidence.observation.status)||evidence.observation.tools.some(tool=>tool.status!=='completed')||evidence.observation.executionRef?.id!==attempt.executionRef.id)continue;
       record=this.load(workspaceId,id);

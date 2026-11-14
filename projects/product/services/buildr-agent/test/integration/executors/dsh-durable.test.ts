@@ -65,3 +65,14 @@ test('a file changed while being read is not accepted as stable terminal evidenc
  });
  assert.equal(await readDshPersistedExecution(f.input),undefined);
 });
+test('durable DSH evidence survives transient st_dev remount drift at the same inode while rejecting mismatched gateway or tampered provenance',async t=>{
+ const f=await fixture(t),provenance=await nativeBindingProvenance('dsh',f.input.executable,join(f.input.configRoot,'dsh-home'));
+ const driftedDev=provenance.dev+8192,driftedProv={...provenance,dev:driftedDev};
+ const driftedIdentity=hash(['buildr-model-gateway/v1',hash(driftedProv),f.input.gatewayIdentity]);
+ const driftedInput={...f.input,bindingIdentity:driftedIdentity,volumeDevs:[driftedDev],
+  contextRef:{id:f.input.contextRef.id,data:{native:opaqueReference('dsh',f.input.contextRef.id,f.input.cwd,driftedIdentity)}},
+  executionRef:{id:f.input.executionRef.id,data:{resourceContext:f.input.contextRef.id,resourceBinding:driftedIdentity}}};
+ const restored=await readDshPersistedExecution(driftedInput);
+ assert.equal(restored?.observation.status,'idle');
+ assert.equal(await readDshPersistedExecution({...driftedInput,bindingData:{...driftedProv,ino:provenance.ino+1,gatewayIdentity:f.input.gatewayIdentity}}),undefined);
+});

@@ -26,6 +26,205 @@ test('a model lease binds source identity across endpoint/key rotation and refus
     assert.throws(() => gatewayModel(lease, 'unbound-model'), /model_mismatch/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+test('consumerBinding and AgentService preserve both pre-reboot and post-reboot bindings across st_dev drift while rejecting replaced homes', async () => {
+  const { stat, rename } = await import('node:fs/promises');
+  const { createHash } = await import('node:crypto');
+  const { createAgentService } = await import('../../../src/application/agent-service.ts');
+  const { ConversationRepository } = await import('../../../src/persistence/conversation-repository.ts');
+  const sha256 = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  const root = await mkdtemp(join(tmpdir(), 'buildr-gateway-dev-drift-'));
+  let service: ReturnType<typeof createAgentService> | undefined;
+  try {
+    const executable = join(root, 'codex.mjs');
+    await writeFile(executable, await readFile(new URL('./fixtures/codex-cli.mjs', import.meta.url)));
+    const cfgDir = join(root, 'cfg'); await mkdir(cfgDir, { recursive: true });
+    const cfgReal = await realpath(cfgDir), cfgStat = await stat(cfgReal);
+    const oldDev = Math.floor(cfgStat.dev / 256) * 256 + ((cfgStat.dev + 2) % 256);
+    const oldProv = { format: 'buildr-native-binding/v2', provider: 'codex', executable: await realpath(executable), config: cfgReal, dev: oldDev, ino: cfgStat.ino, series: '0.163' };
+    const oldGatewayIdentity = sha256(['buildr-model-gateway/v1', sha256(oldProv), lease.identity]);
+
+    // 1. Direct consumerBinding with bindingData, legacy preferredBinding (no data), and volumeDevs
+    const rebound = await consumerBinding('codex', executable, '0.164.0', cfgDir, {
+      connectionId: 'codex', configRoot: cfgDir, environment: {}, gateway: lease,
+      binding: { identity: oldGatewayIdentity, data: { ...oldProv, observedVersion: '0.163.0', gatewayIdentity: lease.identity } },
+    });
+    assert.equal(rebound.identity, oldGatewayIdentity);
+    assert.equal(rebound.data.dev, oldDev);
+
+    const legacyPreferred = await consumerBinding('codex', executable, '0.164.0', cfgDir, {
+      connectionId: 'codex', configRoot: cfgDir, environment: {}, gateway: lease,
+      preferredBinding: { identity: oldGatewayIdentity },
+    });
+    assert.equal(legacyPreferred.identity, oldGatewayIdentity);
+    assert.equal(legacyPreferred.data.dev, oldDev);
+
+    // Non-matching preferredBinding falls back cleanly without throwing so caller can surface agent_binding_changed
+    const mismatchedPreferred = await consumerBinding('codex', executable, '0.164.0', cfgDir, {
+      connectionId: 'codex', configRoot: cfgDir, environment: {}, gateway: lease,
+      preferredBinding: { identity: 'tampered-identity' },
+    });
+    assert.notEqual(mismatchedPreferred.identity, 'tampered-identity');
+
+    // Replaced directory (changed inode) still rejects strict binding
+    await rename(cfgDir, `${cfgDir}-old`); await mkdir(cfgDir);
+    await assert.rejects(consumerBinding('codex', executable, '0.164.0', cfgDir, {
+      connectionId: 'codex', configRoot: cfgDir, environment: {}, gateway: lease,
+      binding: { identity: oldGatewayIdentity, data: { ...oldProv, observedVersion: '0.163.0', gatewayIdentity: lease.identity } },
+    }), /binding_mismatch/);
+
+    // 2. End-to-end AgentService: connection check + pre-reboot AND post-reboot gateway conversations coexist across st_dev drift
+    const dataRoot = join(root, 'service-data'); await mkdir(dataRoot, { recursive: true });
+    const workDir = join(root, 'workspace'); await mkdir(workDir, { recursive: true });
+    const syntheticProvider = {
+      id: 'synth-acct',
+      label: 'Synthetic Gateway',
+      linked: true,
+      open: async () => ({
+        protocol: 'openai-responses' as const,
+        identity: async () => 'synth-account-1',
+        inspect: async () => ({
+          status: 'ready' as const,
+          identity: 'synth-account-1',
+          label: 'Synthetic Account',
+          models: [{ id: 'gpt-synth', label: 'GPT Synth', contextWindow: 128000, maxOutputTokens: 16000, images: true, tools: true }],
+        }),
+        beginLogin: async () => {},
+        cancelLogin: async () => {},
+        infer: async () => new Response(
+          'event: response.completed\ndata: {"type":"response.completed","response":{"id":"r1","status":"completed","output":[]}}\n\n',
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        ),
+        close: async () => {},
+      }),
+    };
+    const openService = () => createAgentService({
+      dataRoot,
+      executors: [createCodexExecutor()],
+      modelProviders: [syntheticProvider],
+      environment: { PATH: process.env.PATH ?? '' },
+      resolveWorkspace: async () => ({ rootPath: workDir }),
+    });
+    service = openService();
+    const initialConn = service.connections.read('codex');
+    const enabled = await service.connections.connect('codex', {
+      expectedRevision: initialConn.revision,
+      executable,
+    });
+    assert.equal(enabled.status, 'ready');
+    await service.models.accounts.list({ refresh: true });
+    const checkedAcct = await service.models.accounts.check('synth-acct');
+    const enabledAcct = await service.models.accounts.preferences('synth-acct', {
+      expectedRevision: checkedAcct.revision,
+      models: [{ id: 'gpt-synth', enabled: true }],
+    });
+    assert.equal(enabledAcct.status, 'ready');
+
+    const waitRun = async (conversationId: string, runId: string) => {
+      for (let i = 0; i < 80; i++) {
+        const view = service!.conversations.read('ws', conversationId);
+        if (view.run?.id === runId && ['completed', 'failed'].includes(view.run.status)) return view;
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      assert.fail(`run ${runId} did not settle`);
+    };
+
+    const chatPre = await service.conversations.create('ws', {});
+    const sentPre = service.conversations.send('ws', chatPre.id, {
+      expectedRevision: chatPre.revision,
+      clientRequestId: 'pre-reboot-1',
+      connectionId: 'codex',
+      modelAccountId: 'synth-acct',
+      model: 'gpt-synth',
+      text: '重启前第一轮网关会话 [finish]',
+    });
+    assert.equal((await waitRun(chatPre.id, sentPre.run.id)).run?.status, 'completed');
+
+    const chatPost = await service.conversations.create('ws', {});
+    const sentPost = service.conversations.send('ws', chatPost.id, {
+      expectedRevision: chatPost.revision,
+      clientRequestId: 'post-reboot-1',
+      connectionId: 'codex',
+      modelAccountId: 'synth-acct',
+      model: 'gpt-synth',
+      text: '重启后新建网关会话 [finish]',
+    });
+    assert.equal((await waitRun(chatPost.id, sentPost.run.id)).run?.status, 'completed');
+    await service.close(); service = undefined;
+
+    // Simulate OS reboot in SQLite: connection + chatPre were recorded under rebootOldDev (with legacy missing participant.bindingData), while chatPost used current dev
+    const agentRoot = join(dataRoot, 'agent-service');
+    const repo = new ConversationRepository(agentRoot);
+    const connStored = repo.readConnection('codex')!;
+    const homeDir = await realpath(join(agentRoot, 'connections', 'codex', 'codex-home'));
+    const homeStat = await stat(homeDir);
+    const rebootOldDev = Math.floor(homeStat.dev / 256) * 256 + ((homeStat.dev + 5) % 256);
+    const oldConnProv = {
+      format: 'buildr-native-binding/v2',
+      provider: 'codex',
+      executable: connStored.bindingData!.executable,
+      config: homeDir,
+      dev: rebootOldDev,
+      ino: homeStat.ino,
+      series: connStored.bindingData!.series,
+    };
+    const oldConnIdentity = sha256(oldConnProv);
+    connStored.bindingIdentity = oldConnIdentity;
+    connStored.bindingData = { ...connStored.bindingData, ...oldConnProv };
+    const priorConnRev = connStored.view.revision;
+    connStored.view.revision = randomUUID();
+    repo.saveConnection(connStored, priorConnRev);
+
+    const preStored = repo.readConversation(chatPre.id)!;
+    for (const part of preStored.participants) {
+      const leaseId = String(part.bindingData?.gatewayIdentity);
+      assert.ok(leaseId.length > 0);
+      const oldGwIdentity = sha256(['buildr-model-gateway/v1', oldConnIdentity, leaseId]);
+      part.bindingIdentity = oldGwIdentity;
+      delete part.bindingData; // Exercise legacy pre-fix participant without bindingData
+      if (part.contextRef?.data?.native) {
+        const parsed = JSON.parse(String(part.contextRef.data.native));
+        parsed.bindingIdentity = oldGwIdentity;
+        part.contextRef.data.native = JSON.stringify(parsed);
+      }
+      for (const att of preStored.attempts) {
+        if (att.executionRef?.data?.resourceBinding) att.executionRef.data.resourceBinding = oldGwIdentity;
+      }
+    }
+    const priorPreRev = preStored.view.revision;
+    preStored.view.revision = randomUUID();
+    repo.saveConversation(preStored, priorPreRev);
+
+    // Reopen AgentService after simulated reboot: connection check AND both pre-reboot & post-reboot gateway conversations succeed!
+    service = openService();
+    const checked = await service.connections.check('codex');
+    assert.equal(checked.status, 'ready');
+
+    const latestPre = service.conversations.read('ws', chatPre.id);
+    const sentPre2 = service.conversations.send('ws', chatPre.id, {
+      expectedRevision: latestPre.revision,
+      clientRequestId: 'pre-reboot-2',
+      connectionId: 'codex',
+      modelAccountId: 'synth-acct',
+      model: 'gpt-synth',
+      text: '跨重启继续原网关会话 [finish]',
+    });
+    assert.equal((await waitRun(chatPre.id, sentPre2.run.id)).run?.status, 'completed');
+
+    const latestPost = service.conversations.read('ws', chatPost.id);
+    const sentPost2 = service.conversations.send('ws', chatPost.id, {
+      expectedRevision: latestPost.revision,
+      clientRequestId: 'post-reboot-2',
+      connectionId: 'codex',
+      modelAccountId: 'synth-acct',
+      model: 'gpt-synth',
+      text: '继续重启后新建网关会话 [finish]',
+    });
+    assert.equal((await waitRun(chatPost.id, sentPost2.run.id)).run?.status, 'completed');
+  } finally {
+    await service?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 test('DSH overlay adds the gateway route without putting secrets into configuration', async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-dsh-gateway-'));
   try {

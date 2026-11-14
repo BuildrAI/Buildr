@@ -74,12 +74,13 @@ export class ConversationForks {
     // Historical identities remain visible, but no original context can be resumed or controlled.
     child.participants = source.participants.filter(value => child.view.entries.some(entry => entry.participantId === value.id))
       .map(value => ({ ...structuredClone(value), historical: true, contextRef: undefined, deliveredThrough: 0 }));
-    const receiving: StoredParticipant = { ...structuredClone(participant), id: randomUUID(), contextRef: undefined, deliveredThrough: through };
+    const receiving: StoredParticipant = { ...structuredClone(participant), id: randomUUID(), bindingIdentity: '', bindingData: undefined, contextRef: undefined, deliveredThrough: through };
     child.participants.push(receiving);
     const sourceRuntime = await this.options.runtime(nativeSource, participant);
     const targetRuntime = await this.options.runtime(child, receiving);
     if (!targetRuntime.forkContext || sourceRuntime.bindingIdentity !== participant.bindingIdentity) fail('agent_fork_unavailable', '当前程序或接入身份不支持准确分叉，请核对程序版本与原接入。', 409);
     receiving.bindingIdentity = targetRuntime.bindingIdentity;
+    if (targetRuntime.bindingData) receiving.bindingData = structuredClone(targetRuntime.bindingData);
     // Check the observed source again after async setup, before any native side effect.
     source = this.options.load(scope, id);
     expected(source.view.revision, input.expectedRevision);

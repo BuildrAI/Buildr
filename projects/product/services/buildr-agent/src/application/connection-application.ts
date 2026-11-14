@@ -4,7 +4,7 @@ import { interactionPolicy } from '../domain/interaction-policy.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AgentExecutor, AgentRuntime, ConnectionModelPolicyView, ConnectionSendGate, ConnectionView, ExecutorDescriptor, ExecutorNativeSource, LoginObservation, ModelGatewayConfiguration } from '../contracts.ts';
+import type { AgentExecutor, AgentRuntime, ConnectionModelPolicyView, ConnectionSendGate, ConnectionView, ExecutorBinding, ExecutorDescriptor, ExecutorNativeSource, LoginObservation, ModelGatewayConfiguration } from '../contracts.ts';
 import { expected, fail, nonempty, safeDiagnostic } from '../domain/agent-state.ts';
 import type { StoredConnection } from '../domain/agent-state.ts';
 import type { ConversationRepository } from '../persistence/conversation-repository.ts';
@@ -298,9 +298,19 @@ export class ConnectionApplication {
     }
     return this.check(id);
   }
-  async runtime(id: string, gateway?: ModelGatewayConfiguration, accountProbe = false): Promise<AgentRuntime> {
+  private recordedVolumeDevs(record: StoredConnection): number[] {
+    const data = record.bindingData;
+    if (!data || typeof data.dev !== 'number' || !Number.isSafeInteger(data.dev) || data.dev < 0 || typeof data.config !== 'string' || typeof data.ino !== 'number' || data.ino <= 0) return [];
+    try {
+      const info = fs.statSync(fs.realpathSync(data.config));
+      return info.isDirectory() && info.ino === data.ino ? [data.dev] : [];
+    } catch {
+      return [];
+    }
+  }
+  async runtime(id: string, gateway?: ModelGatewayConfiguration, accountProbe = false, preferredBinding?: ExecutorBinding): Promise<AgentRuntime> {
     this.assertProgramAvailable(id);
-    if (gateway) return this.gatewayRuntime(id, gateway);
+    if (gateway) return this.gatewayRuntime(id, gateway, preferredBinding);
     const releasing = this.probeReleases.get(id);
     if (releasing) await releasing;
     this.assertProgramAvailable(id);
@@ -348,7 +358,7 @@ export class ConnectionApplication {
     }
     return promise;
   }
-  private async gatewayRuntime(id: string, gateway: ModelGatewayConfiguration): Promise<AgentRuntime> {
+  private async gatewayRuntime(id: string, gateway: ModelGatewayConfiguration, preferredBinding?: ExecutorBinding): Promise<AgentRuntime> {
     const key = `${id}:${gateway.identity}`;
     const existing = this.gatewayRuntimes.get(key);
     if (existing) {
@@ -364,13 +374,25 @@ export class ConnectionApplication {
     const configRoot = path.join(this.options.root, 'connections', id, 'model-bindings', createHash('sha256').update(gateway.identity).digest('hex'));
     const lifecycle = this.lifecycles.get(id);
     const opening = new AbortController(); this.opening.set(key, opening);
-    const promise = this.openExecutor(this.executors.get(id)!, { interaction: interactionPolicy, connectionId: id, configRoot, executable: record.view.executable, programSource: record.programSource, environment: this.options.environment, signal: opening.signal, gateway, nativeAccountConfigRoot: gateway.nativeHomeRoot ?? this.nativeAccountRoot(id, record) }).then(async runtime => {
+    const promise = this.openExecutor(this.executors.get(id)!, {
+      interaction: interactionPolicy,
+      connectionId: id,
+      configRoot,
+      executable: record.view.executable,
+      programSource: record.programSource,
+      environment: this.options.environment,
+      signal: opening.signal,
+      gateway,
+      nativeAccountConfigRoot: gateway.nativeHomeRoot ?? this.nativeAccountRoot(id, record),
+      volumeDevs: this.recordedVolumeDevs(record),
+      ...(preferredBinding ? { preferredBinding } : {}),
+    }).then(async runtime => {
       if (this.closing || opening.signal.aborted || this.lifecycles.get(id) !== lifecycle) { await runtime.close(); fail('agent_connection_disabled', '接入已断开。', 409); }
       return runtime;
     }).catch(error => { if (this.gatewayRuntimes.get(key) === promise) this.gatewayRuntimes.delete(key); throw error; }).finally(() => { this.opening.delete(key); });
     this.gatewayRuntimes.set(key, promise); return promise;
   }
-  async nativeSourceRuntime(id: string, nativeSource: ExecutorNativeSource, conversationId: string): Promise<AgentRuntime> {
+  async nativeSourceRuntime(id: string, nativeSource: ExecutorNativeSource, conversationId: string, preferredBinding?: ExecutorBinding): Promise<AgentRuntime> {
     this.assertProgramAvailable(id);
     const sourceHash = createHash('sha256').update(JSON.stringify([conversationId, nativeSource.accountId, nativeSource.accountIdentity])).digest('hex');
     const key = `${id}:native-source:${sourceHash}`;
@@ -399,9 +421,11 @@ export class ConnectionApplication {
       signal: opening.signal,
       nativeSource,
       nativeAccountConfigRoot: this.nativeAccountRoot(id, record),
+      volumeDevs: this.recordedVolumeDevs(record),
       ...(record.bindingIdentity
         ? { binding: { identity: record.bindingIdentity, data: record.bindingData, executable: record.view.executable, configRoot: record.view.configPath } }
         : {}),
+      ...(preferredBinding ? { preferredBinding } : {}),
     }).then(async runtime => {
       if (this.closing || opening.signal.aborted || this.lifecycles.get(id) !== lifecycle) { await runtime.close(); fail('agent_connection_disabled', '接入已断开。', 409); }
       return runtime;
@@ -409,15 +433,16 @@ export class ConnectionApplication {
     this.gatewayRuntimes.set(key, promise); return promise;
   }
   binding(id: string): string | undefined { return this.stored(id).bindingIdentity; }
+  bindingData(id: string): Record<string, unknown> | undefined { const data = this.stored(id).bindingData; return data ? structuredClone(data) : undefined; }
   async readReleasedControl(id:string,input:Parameters<NonNullable<AgentExecutor['readReleasedControl']>>[0]):Promise<boolean>{
     return await this.executors.get(id)?.readReleasedControl?.(input)??false;
   }
-  async readPersistedExecution(id: string, input: Omit<Parameters<NonNullable<AgentExecutor['readPersistedExecution']>>[0], 'configRoot'|'nativeAccountConfigRoot'|'executable'|'programSource'>) {
+  async readPersistedExecution(id: string, input: Omit<Parameters<NonNullable<AgentExecutor['readPersistedExecution']>>[0], 'configRoot'|'nativeAccountConfigRoot'|'executable'|'programSource'|'volumeDevs'>) {
     const executor = this.executors.get(id), record = this.stored(id);
     if (!executor?.readPersistedExecution || !record.view.executable) return;
     const base = path.join(this.options.root, 'connections', id);
     const configRoot = input.gatewayIdentity ? path.join(base, 'model-bindings', createHash('sha256').update(input.gatewayIdentity).digest('hex')) : base;
-    return executor.readPersistedExecution({ ...input, configRoot, nativeAccountConfigRoot: this.nativeAccountRoot(id, record), executable: record.view.executable, programSource: record.programSource });
+    return executor.readPersistedExecution({ ...input, configRoot, nativeAccountConfigRoot: this.nativeAccountRoot(id, record), executable: record.view.executable, programSource: record.programSource, volumeDevs: this.recordedVolumeDevs(record) });
   }
   async readSupplementReceipt(id: string, input: Omit<Parameters<NonNullable<AgentExecutor['readSupplementReceipt']>>[0], 'configRoot'|'nativeAccountConfigRoot'|'executable'|'programSource'>) {
     const executor = this.executors.get(id), record = this.stored(id);
