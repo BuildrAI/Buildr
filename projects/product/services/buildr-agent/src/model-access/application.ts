@@ -43,7 +43,7 @@ const selectionModels = (models: ModelOffering[]) => models.map(model => ({
 })).sort(byId);
 function conflict(actual: string, expected: string | undefined) { if (expected !== undefined && expected !== actual) throw new ModelAccessError('model_revision_conflict', '模型供应商已变化，请刷新后重试。'); }
 interface Stored { version: 1; accounts: ModelAccountView[]; preferences?:Record<string,Record<string,ModelPreference>>; removedProviders?:string[] }
-interface LeaseRecord { view: ModelGatewayLease; input: ModelLeaseInput; tokenHash: string; requests: Map<AbortController,string>; cancelledRun?:string; streamFailure?:{code:string;message:string;runId:string} }
+interface LeaseRecord { view: ModelGatewayLease; input: ModelLeaseInput; tokenHash: string; requests: Map<AbortController,string>; toolSignatures?: Map<string,string>; cancelledRun?:string; streamFailure?:{code:string;message:string;runId:string} }
 
 /** Owns metadata and local routes. Upstream credentials stay inside provider runtimes. */
 export class ModelAccessApplication {
@@ -267,7 +267,7 @@ export class ModelAccessApplication {
   async ensureLinked() {
     await this.ready;
     for (const provider of this.providers.values()) {
-      if ((!provider.connectionId && !provider.linked) || this.rows.has(provider.id) || this.removedProviders.has(provider.id)) continue;
+      if ((!provider.connectionId && !provider.linked) || this.rows.has(provider.id) || (provider.singleton && [...this.rows.values()].some(row => row.provider === provider.id)) || this.removedProviders.has(provider.id)) continue;
       this.rows.set(provider.id, { id:provider.id, identity:randomUUID(), provider:provider.id, ...(provider.connectionId?{connectionId:provider.connectionId}:{}), label:provider.label, revision:randomUUID(),enabled:true,status:'not-authenticated',models:[] });
       await this.save();
     }
@@ -301,10 +301,15 @@ export class ModelAccessApplication {
     }
     return await this.changed(row);
   }
+  private replacedModelSource(row: ModelAccountView) {
+    if (row.provider !== 'custom') return false;
+    return [...this.rows.values()].some(replacement =>
+      replacement.credentialConfigured === true && this.providers.get(replacement.provider)?.replacesSource?.(row));
+  }
   list(input:{includeDisabled?:boolean}={}) {
     if (this.storageError) throw this.storageError;
     return {
-      accounts: [...this.rows.values()].filter(row=>input.includeDisabled||row.sourceEnabled!==false).map(row => this.view(row)),
+      accounts: [...this.rows.values()].filter(row=>!this.replacedModelSource(row)&&(input.includeDisabled||row.sourceEnabled!==false)).map(row => this.view(row)),
       providers: [...this.providers.values()].map(provider => ({
         id: provider.id,
         label: provider.label,
@@ -629,7 +634,7 @@ export class ModelAccessApplication {
     if (this.storageError) throw this.storageError;
     const models: CatalogModel[] = [];
     for (const stored of this.rows.values()) {
-      if (stored.sourceEnabled === false) continue;
+      if (stored.sourceEnabled === false || this.replacedModelSource(stored)) continue;
       const row = this.view(stored);
       for (const model of row.models) {
         models.push({
@@ -674,6 +679,7 @@ export class ModelAccessApplication {
   }
   async createLease(input: ModelLeaseInput): Promise<ModelGatewayLease> {
     await this.ready; const account = this.current(input.accountId);
+    if(this.replacedModelSource(account))throw new ModelAccessError('model_source_migrated','此模型已迁移，请在 Google AI 分组中重新选择。',409);
     if(account.sourceEnabled===false)throw new ModelAccessError('model_source_disabled','所选模型来源已停用，请重新启用或选择其他来源。');
     conflict(account.revision,input.expectedRevision);
     if(input.expectedIdentity!==undefined&&input.expectedIdentity!==account.identity) throw new ModelAccessError('model_account_identity_changed','套餐登录来源已变化，请建立新的执行上下文。');
@@ -780,7 +786,7 @@ export class ModelAccessApplication {
       const token=auth?.startsWith('Bearer ')?auth.slice(7):typeof apiKey==='string'?apiKey:undefined;
       if(!token || (typeof apiKey==='string'&&auth?.startsWith('Bearer ')&&apiKey!==token)) throw new ModelAccessError('model_gateway_unauthorized','模型调用缺少准确本机认证。',401);
       lease = this.leasesByToken.get(digest(token)); if (!lease) throw new ModelAccessError('model_gateway_unauthorized','模型调用的本机凭据已失效。',401);
-      const account = this.current(lease.input.accountId); if (!account.enabled) throw new ModelAccessError('model_account_unavailable','所选套餐已断开。');
+      const account = this.current(lease.input.accountId); if (this.replacedModelSource(account)) throw new ModelAccessError('model_source_migrated','此模型已迁移，请在 Google AI 分组中重新选择。',409); if (!account.enabled) throw new ModelAccessError('model_account_unavailable','所选套餐已断开。');
       if(account.identity!==lease.input.expectedIdentity)throw new ModelAccessError('model_account_identity_changed','供应商登录来源已变化，原调用不可改用新身份。',409);
       const pathname = new URL(req.url ?? '/',this.origin).pathname;
       if (req.method === 'GET' && (pathname === '/v1/models' || pathname === '/models')) { this.json(res,200,{object:'list',data:[{id:lease.view.model,object:'model',owned_by:account.provider}]}); return; }
@@ -790,21 +796,23 @@ export class ModelAccessApplication {
       if(lease.cancelledRun===lease.input.runId)throw new ModelAccessError('model_run_stopped','本轮已停止，不再发出模型请求。',409);
       const binding={...lease.input};lease.requests.set(controller,binding.runId);
       const runtime = await this.runtime(account.id), opaque = this.opaque(await this.encryptionKey(),lease.view.identity);
+      const upstreamProtocol = runtime.protocolForModel?.(binding.modelId) ?? runtime.protocol;
+      if (upstreamProtocol === 'gemini') opaque.toolSignatures = lease.toolSignatures ??= new Map();
       controller.signal.throwIfAborted();
       const quotaFailure = modelQuotaFailure(account, lease.view.offering, Date.parse(this.now)); if (quotaFailure) throw quotaFailure;
       requestId = randomUUID();
       diagnostic = {provider:account.provider,conversationId:binding.conversationId,runId:binding.runId};
       phase = 'request-translation';
-      const translated = translateRequest(body,protocol,runtime.protocol,opaque); translated.model = binding.modelId;
+      const translated = translateRequest(body,protocol,upstreamProtocol,opaque); translated.model = binding.modelId;
       // Capability ceiling only: leave native output defaults and context budgeting intact.
       const limit=lease.view.offering.maxOutputTokens;
       if(limit)for(const key of ['max_tokens','max_completion_tokens','max_output_tokens'])if(typeof translated[key]==='number'&&translated[key]>limit)translated[key]=limit;
       delete translated.service_tier;if(binding.serviceTier)translated.service_tier=binding.serviceTier;
-      if (runtime.protocol === 'chat-completions' && Array.isArray(translated.messages)) {
+      if (upstreamProtocol === 'chat-completions' && Array.isArray(translated.messages)) {
         diagnostic.toolResultCount = translated.messages.filter(message => object(message).role === 'tool').length;
       }
       phase = 'provider-request';
-      const upstream = await runtime.infer({body:translated,modelId:binding.modelId,signal:AbortSignal.any([controller.signal,upstreamController.signal]),context:{accountId:account.id,agentId:binding.agentId,conversationId:binding.conversationId,runId:binding.runId,requestId}});
+      const upstream = await runtime.infer({body:translated,modelId:binding.modelId,providerIdentity:binding.expectedIdentity,signal:AbortSignal.any([controller.signal,upstreamController.signal]),context:{accountId:account.id,agentId:binding.agentId,conversationId:binding.conversationId,runId:binding.runId,requestId}});
       upstreamHttpStatus = upstream.status;
       phase = 'provider-response';
       if (!upstream.ok) {
@@ -815,9 +823,9 @@ export class ModelAccessApplication {
         let detail: unknown; try { if (size <= 8192) detail = object(JSON.parse(body)).error; } catch { /* Non-JSON error bodies stay private. */ }
         throw upstreamFailure(detail, upstream.status);
       }
-      const guarded=guardToolArgumentStream(upstream,runtime.protocol,error=>{lease!.streamFailure={...modelFailure(error),runId:binding.runId};upstreamController.abort();});
+      const guarded=guardToolArgumentStream(upstream,upstreamProtocol,error=>{lease!.streamFailure={...modelFailure(error),runId:binding.runId};upstreamController.abort();});
       phase = 'response-translation';
-      const response = await translateResponse(guarded,runtime.protocol,protocol,{model:lease.view.model,stream:body.stream===true,request:body,opaque,signal:controller.signal,onStreamError:error=>reportFailure(error,'response-stream')});
+      const response = await translateResponse(guarded,upstreamProtocol,protocol,{model:lease.view.model,stream:body.stream===true,request:body,opaque,signal:controller.signal,onStreamError:error=>reportFailure(error,'response-stream')});
       if (!response.body) throw new ModelAccessError('model_response_empty','模型服务返回空响应。',502);
       res.writeHead(response.status,{'Content-Type':response.headers.get('content-type') || 'application/json','Cache-Control':'no-store'});
       const reader = response.body.getReader();

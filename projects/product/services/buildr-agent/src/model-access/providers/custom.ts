@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { LoginObservation } from '../../contracts.ts';
-import { ModelAccessError, type CustomProviderConfig, type CustomProviderConfigureInput, type CustomProviderDiscoveryInput, type CustomProviderDiscoveryResult, type CustomProviderModel, type ModelOffering, type ModelProtocol, type ModelProvider, type ModelProviderObservation, type ModelProviderRuntime, type ProviderInferenceInput, type ProtocolJson } from '../contracts.ts';
+import { ModelAccessError, type CustomProviderConfig, type CustomProviderConfigureInput, type CustomProviderDiscoveryInput, type CustomProviderDiscoveryResult, type CustomProviderModel, type ModelOffering, type ModelQuotaObservation, type ModelProtocol, type ModelProvider, type ModelProviderObservation, type ModelProviderRuntime, type ProviderInferenceInput, type ProtocolJson } from '../contracts.ts';
 import { PrivateApiKey } from './private-api-key.ts';
 import { record, string } from './private-account.ts';
 
@@ -16,6 +16,7 @@ const NO_CATALOG_DISCOVERY = '该端点没有提供可读取的模型列表接�
 
 export interface CustomProviderOptions {
   fetch?: typeof fetch;
+  quota?: (accountId: string, baseUrl: string) => Promise<ModelQuotaObservation | undefined>;
   requestTimeoutMs?: number;
 }
 
@@ -88,7 +89,7 @@ export function createCustomModelProvider(options: CustomProviderOptions = {}): 
     presentation: { vendorLabel: '自定义供应商' },
     async open(input) {
       if (!input.custom) throw new ModelAccessError('model_custom_config_missing', '自定义供应商缺少端点配置。', 409);
-      return new CustomRuntime(input.custom, new PrivateApiKey(input.configRoot), options);
+      return new CustomRuntime(input.custom, new PrivateApiKey(input.configRoot), options, input.accountId);
     },
     async discover(input) {
       const baseUrl = normalizeCustomBaseUrl(input.baseUrl), protocol = normalizeCustomProtocol(input.protocol);
@@ -109,7 +110,9 @@ class CustomRuntime implements ModelProviderRuntime {
   private readonly lifetime = new AbortController();
   private config: CustomProviderConfig;
   private cachedKey?: string;
-  constructor(config: CustomProviderConfig, store: PrivateApiKey, options: CustomProviderOptions) {
+  private readonly observeQuota?: () => Promise<ModelQuotaObservation | undefined>;
+  constructor(config: CustomProviderConfig, store: PrivateApiKey, options: CustomProviderOptions, accountId: string) {
+    if (options.quota) this.observeQuota = () => options.quota!(accountId, this.config.baseUrl);
     this.config = structuredClone(config);
     this.store = store;
     this.fetch = options.fetch ?? fetch;
@@ -131,7 +134,7 @@ class CustomRuntime implements ModelProviderRuntime {
     catch (error) { return { status: 'failed', identity, credentialConfigured: Boolean(apiKey), models: [], curatedModels: true, diagnostic: error instanceof ModelAccessError ? error.message : '端点检查未完成，请稍后重试。' }; }
     if (result.kind === 'models' || result.kind === 'no-catalog') {
       const diagnostic = result.kind === 'no-catalog' ? NO_CATALOG_NOTICE : result.diagnostic;
-      return { status: 'ready', identity, credentialConfigured: Boolean(apiKey), models: this.models(), curatedModels: true, ...(diagnostic ? { diagnostic } : {}) };
+      return { status: 'ready', identity, credentialConfigured: Boolean(apiKey), models: this.models(), curatedModels: true, quota: await this.observeQuota?.(), ...(diagnostic ? { diagnostic } : {}) };
     }
     return { status: 'failed', incomplete: true, identity, credentialConfigured: Boolean(apiKey), models: this.models(), curatedModels: true, diagnostic: result.diagnostic };
   }

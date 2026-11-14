@@ -13,6 +13,7 @@ export type AccountQuotaLine = {
   kind: 'balance' | 'window' | 'summary';
   text: string;
   label?: string;
+  groupLabel?: string;
   percent?: number;
   credits?: string;
   resetsAt?: string;
@@ -74,7 +75,7 @@ export function accountQuotaView(account: ModelAccount, now = Date.now(), compac
     lines.push(...balanceLines(quota.balances, compact).map(text => ({ kind: 'balance' as const, label: '账户余额', text })));
     lines.push(...(quota.windows ?? []).map(window => {
       const credits = quotaWindowCredits(window, compact);
-      return { kind: 'window' as const, label: window.label, percent: window.remainingPercent, ...(credits ? { credits } : {}), text: `${window.label} · 剩余 ${window.remainingPercent}%`, resetsAt: window.resetsAt };
+      return { kind: 'window' as const, label: window.label, groupLabel: window.groupLabel, percent: window.remainingPercent, ...(credits ? { credits } : {}), text: `${window.label} · 剩余 ${window.remainingPercent}%`, resetsAt: window.resetsAt };
     }));
     if (!lines.length && typeof quota.remainingPercent === 'number') lines.push({ kind: 'window', label: '供应商额度', percent: quota.remainingPercent, text: `供应商额度 · 剩余 ${quota.remainingPercent}%`, resetsAt: quota.resetsAt });
     if (!lines.length && quota.summary) lines.push({ kind: 'summary', text: quota.summary });
@@ -98,4 +99,14 @@ export function quotaOverviewAccounts(accounts: ModelAccount[]): ModelAccount[] 
     .sort((left, right) => compareSourceNames(accountSourceName(left), accountSourceName(right))
       || compareSourceNames(left.accountLabel || left.label, right.accountLabel || right.label)
       || left.id.localeCompare(right.id));
+}
+
+export function groupQuotaWindows<T extends { groupLabel?: string }>(windows: readonly T[]) {
+  const groups = new Map<string | undefined, T[]>();
+  for (const window of windows) {
+    const group = groups.get(window.groupLabel);
+    if (group) group.push(window);
+    else groups.set(window.groupLabel, [window]);
+  }
+  return [...groups];
 }

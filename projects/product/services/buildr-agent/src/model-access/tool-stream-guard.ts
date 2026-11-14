@@ -52,6 +52,7 @@ export class ToolArgumentGuard {
 export function guardToolArgumentStream(response:Response,protocol:ModelProtocol,onFailure:(error:ModelAccessError)=>void):Response {
   if(!response.body||!response.headers.get('content-type')?.includes('text/event-stream'))return response;
   const reader=response.body.getReader(),decoder=new TextDecoder(),encoder=new TextEncoder(),guard=new ToolArgumentGuard();
+  const cloudCodeEnvelope = protocol === 'gemini' && response.headers.get('x-buildr-gemini-envelope') === 'cloud-code';
   let buffer='',ended=false;
   const close=()=>{void reader.cancel().catch(()=>{}).finally(()=>reader.releaseLock());};
   const body=new ReadableStream<Uint8Array>({
@@ -64,7 +65,7 @@ export function guardToolArgumentStream(response:Response,protocol:ModelProtocol
           const frame=buffer.slice(0,boundary.index);buffer=buffer.slice(boundary.index+boundary[0].length);
           if(Buffer.byteLength(frame)>MAX_EVENT_BYTES)throw new ModelAccessError('model_stream_too_large','模型单个流事件超过限制。',502);
           const data=frame.split(/\r?\n/).filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trimStart()).join('\n');
-          if(data&&data!=='[DONE]'){let event:unknown;try{event=JSON.parse(data);}catch{throw new ModelAccessError('model_stream_invalid','模型流返回了无效数据。',502);}guard.accept(event,protocol);}
+          if(data&&data!=='[DONE]'){let event:unknown;try{event=JSON.parse(data);}catch{throw new ModelAccessError('model_stream_invalid','模型流返回了无效数据。',502);}guard.accept(cloudCodeEnvelope ? object(event).response ?? event : event,protocol);}
         }
         if(Buffer.byteLength(buffer)>MAX_EVENT_BYTES)throw new ModelAccessError('model_stream_too_large','模型单个流事件超过限制。',502);
         if(chunk.done){ended=true;reader.releaseLock();controller.close();}else controller.enqueue(chunk.value);

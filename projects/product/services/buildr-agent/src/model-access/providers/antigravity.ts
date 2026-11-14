@@ -44,12 +44,12 @@ export function createAntigravityModelProvider(deps: AntigravityModelProviderDep
     presentation: {
       vendorLabel: 'Google',
       sourceLabel: 'Google 个人账号',
-      quotaLabel: 'Google AI',
+      quotaLabel: 'Antigravity 原生账号',
       quotaUnavailableNote:
-        'Antigravity CLI 当前未公开订阅剩余额度与登录邮箱，模型仍可正常使用；若在终端原位覆盖登录其他账号，请在此执行“切换账号”以隔离旧对话。',
+        'Buildr 当前无法读取剩余额度，可在 Antigravity CLI 中运行 /usage；登录邮箱由官方客户端管理，模型仍可正常使用；若在终端原位覆盖登录其他账号，请在此执行“切换账号”以隔离旧对话。',
       billing: {
-        url: 'https://one.google.com/about/ai-plans',
-        label: '查看 Google AI 订阅',
+        url: 'https://antigravity.google/docs/cli/commands/usage',
+        label: '查看额度方法',
       },
     },
     async open(): Promise<ModelProviderRuntime> {

@@ -711,3 +711,258 @@ test('deleted linked sources stay suppressed until an explicit re-add clears the
     assert.ok(access.accounts.list({includeDisabled:true}).accounts.some(item=>item.id==='linked-fixture'));
   }finally{await access.close();await rm(root,{recursive:true,force:true});}
 });
+
+for (const route of ['responses', 'messages'] as const) {
+  test('Google AI OAuth through the local gateway preserves signed tool calls for ' + route, { timeout: 60_000 }, async () => {
+    const { createGoogleAiSubscriptionProvider } = await import('../../src/model-access/providers/google-ai-subscription.ts');
+    const root = await mkdtemp(join(tmpdir(), 'buildr-google-ai-'));
+    const requests: any[] = [];
+    let status = 200, nativeRun = false, nativeAgent = '', refreshes = 0, subject = 'test-user';
+    const fakeFetch: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url === 'https://oauth2.googleapis.com/token') {
+        const form = new URLSearchParams(String(init?.body));
+        if (form.get('grant_type') === 'refresh_token') {
+          assert.equal(form.get('refresh_token'), 'test-refresh');
+          refreshes++;
+        } else {
+          assert.equal(form.get('code'), 'test-code');
+          assert.ok(form.get('code_verifier'));
+        }
+        return Response.json({ access_token: 'test-access', refresh_token: 'test-refresh', expires_in: 3600 });
+      }
+      assert.equal(new Headers(init?.headers).get('authorization'), 'Bearer test-access');
+      if (url.endsWith('/userinfo')) return Response.json({ sub: subject });
+      if (url.endsWith(':loadCodeAssist')) return Response.json({ cloudaicompanionProject: 'test-project' });
+      if (url.endsWith(':fetchAvailableModels')) return Response.json({ models: { 'gemini-test': { displayName: 'Gemini Test' } } });
+      if (url.endsWith(':retrieveUserQuotaSummary')) {
+        return Response.json({ groups: [{ displayName: 'Gemini Models', buckets: [
+          { bucketId: 'gemini-week', displayName: 'Weekly Limit', window: 'weekly', remainingFraction: 0.99 },
+          { bucketId: 'gemini-five-hours', displayName: 'Five Hour Limit', window: '5h', remainingFraction: 0.97 },
+        ] }] });
+      }
+      assert.ok(url.endsWith(':streamGenerateContent?alt=sse'));
+      const payload = JSON.parse(String(init?.body));
+      assert.equal(payload.project, 'test-project');
+      assert.equal(payload.enabledCreditTypes, undefined);
+      requests.push(payload);
+      if (status !== 200) return new Response('private error', { status });
+      const toolResult = payload.request.contents.flatMap((message: any) => message.parts).find((part: any) => part.functionResponse);
+      if (nativeRun && toolResult) {
+        assert.match(JSON.stringify(toolResult), /google-ai-native-ok/);
+        assert.equal(toolResult.functionResponse.id, 'call_native');
+      }
+      const declarations = payload.request.tools?.flatMap((tool: any) => tool.functionDeclarations ?? []) ?? [];
+      const shell = declarations.find((tool: any) => /^(bash|exec_command|shell|shell_command)$/i.test(tool.name));
+      const nativeTool = shell && { name: shell.name, args: {
+        [shell.name === 'exec_command' ? 'cmd' : 'command']: 'printf google-ai-native-ok',
+        ...(shell.parameters?.properties?.description ? { description: 'Print fixture marker' } : {}),
+      } };
+      if (nativeRun && !toolResult && declarations.length) assert.ok(nativeTool, JSON.stringify(declarations.map((tool: any) => tool.name)));
+      const parts = nativeRun && !toolResult && nativeTool && !String(payload.request.contents?.at(-1)?.parts?.[0]?.text).includes('compaction')
+        ? [{ functionCall: { id: 'call_native', ...nativeTool }, thoughtSignature: 'test-signature' }]
+        : requests.length === 1
+        ? [{ functionCall: { id: 'call_google', name: 'read_file', args: { path: 'a.txt' } }, thoughtSignature: 'test-signature' }]
+        : [{ text: 'Read complete' }];
+      return frames([{ response: { candidates: [{ content: { parts }, finishReason: 'STOP' }] } }]);
+    };
+    const access = createModelAccess({ root, providers: [createGoogleAiSubscriptionProvider({ clientId: 'test-client', fetch: fakeFetch })] });
+    try {
+      const account = await access.accounts.add({ provider: 'google-ai-subscription' });
+      await access.accounts.login(account.id, { expectedRevision: account.revision });
+      let pending = access.accounts.read(account.id);
+      for (let tries = 0; !pending.loginAttempt?.url && tries < 100; tries++) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        pending = access.accounts.read(account.id);
+      }
+      const cancelledUrl = new URL(new URL(pending.loginAttempt!.url!).searchParams.get('redirect_uri')!);
+      const cancelled = await access.accounts.cancelLogin(account.id, pending.loginAttempt!.id, { expectedRevision: pending.revision });
+      assert.equal(cancelled.loginAttempt?.state, 'cancelled');
+      await assert.rejects(fetch(cancelledUrl));
+      async function authorize() {
+        await access.accounts.login(account.id, { expectedRevision: access.accounts.read(account.id).revision });
+        let current = access.accounts.read(account.id);
+        for (let tries = 0; !current.loginAttempt?.url && tries < 100; tries++) {
+          await new Promise(resolve => setTimeout(resolve, 10));
+          current = access.accounts.read(account.id);
+        }
+        const auth = new URL(current.loginAttempt!.url!);
+        const callback = new URL(auth.searchParams.get('redirect_uri')!);
+        callback.searchParams.set('code', 'test-code');
+        callback.searchParams.set('state', auth.searchParams.get('state')!);
+        assert.equal((await fetch(callback)).status, 200);
+        for (let tries = 0; current.loginAttempt?.state !== 'completed' && tries < 100; tries++) {
+          await new Promise(resolve => setTimeout(resolve, 10));
+          current = access.accounts.read(account.id);
+        }
+        assert.equal(current.loginAttempt?.state, 'completed', current.loginAttempt?.diagnostic);
+        return current;
+      }
+      const current = await authorize();
+      assert.deepEqual(current.quota?.windows?.map(window => window.remainingPercent), [99, 97]);
+      const lease = await access.leases.create({
+        accountId: account.id, modelId: 'gemini-test', agentId: route === 'responses' ? 'codex' : 'claude-code',
+        conversationId: 'google-test', runId: 'test-run',
+      });
+      const send = (body: ProtocolJson) => fetch(lease.baseUrl + '/' + route, {
+        method: 'POST', headers: { authorization: 'Bearer ' + lease.apiKey, 'content-type': 'application/json' },
+        body: JSON.stringify({ model: lease.model, stream: true, ...body }),
+      });
+      const firstBody = route === 'responses'
+        ? { input: 'Read a.txt', tools: [{ type: 'function', name: 'read_file', parameters: { type: 'object' } }] }
+        : { messages: [{ role: 'user', content: 'Read a.txt' }], tools: [{ name: 'read_file', input_schema: { type: 'object' } }], max_tokens: 128 };
+      const first = await send(firstBody), wire = await first.text();
+      assert.equal(first.status, 200, wire);
+      assert.ok(!wire.includes('test-signature'));
+      const events = wire.split('\n').filter(line => line.startsWith('data: {')).map(line => JSON.parse(line.slice(6)));
+      let next: ProtocolJson;
+      if (route === 'responses') {
+        const output = events.find(event => event.type === 'response.completed')?.response.output;
+        assert.ok(output?.some((item: any) => item.type === 'function_call' && item.call_id === 'call_google'), wire);
+        next = { ...firstBody, input: [
+          { role: 'user', content: 'Read a.txt' }, ...output,
+          { type: 'function_call_output', call_id: 'call_google', output: 'tool result' },
+        ] };
+      } else {
+        const blocks = events.filter(event => event.type === 'content_block_start').map(event => event.content_block);
+        assert.ok(blocks.some(block => block.type === 'redacted_thinking'), wire);
+        const tool = blocks.find(block => block.type === 'tool_use');
+        assert.equal(tool?.id, 'call_google', wire);
+        tool.input = { path: 'a.txt' };
+        next = { ...firstBody, messages: [
+          { role: 'user', content: 'Read a.txt' }, { role: 'assistant', content: blocks },
+          { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call_google', content: 'tool result' }] },
+        ] };
+      }
+      assert.match(await (await send(next)).text(), /Read complete/);
+      const parts = requests[1].request.contents.flatMap((message: any) => message.parts);
+      assert.deepEqual(parts.find((part: any) => part.functionCall), {
+        functionCall: { name: 'read_file', args: { path: 'a.txt' }, id: 'call_google' }, thoughtSignature: 'test-signature',
+      });
+      assert.equal(parts.find((part: any) => part.functionResponse).functionResponse.id, 'call_google');
+      for (status of [403, 429]) {
+        const failure = await send(firstBody);
+        assert.equal(failure.status, status);
+        assert.equal((await failure.json()).error.code, 'google_ai_upstream_' + status);
+      }
+      const agents = route === 'responses'
+        ? [['codex', process.env.BUILDR_TEST_CODEX_BINARY], ['dsh', process.env.BUILDR_TEST_DSH_BINARY]]
+        : [['claude-code', process.env.BUILDR_TEST_CLAUDE_BINARY], ['qoder', process.env.BUILDR_TEST_QODER_BINARY]];
+      for (const [agentId, executable] of agents) {
+        if (!agentId || !executable) continue;
+        nativeAgent = agentId;
+        const initialRequests = requests.length;
+        status = 200;
+        nativeRun = true;
+        const executor = agentId === 'dsh' ? (await import('../../src/executors/dsh/index.ts')).createDshExecutor()
+          : agentId === 'qoder' ? (await import('../../src/executors/qoder/index.ts')).createQoderExecutor()
+          : agentId === 'codex' ? (await import('../../src/executors/codex/index.ts')).createCodexExecutor()
+          : (await import('../../src/executors/claude/index.ts')).createClaudeExecutor();
+        const nativeLease = await access.leases.create({
+          accountId: account.id, modelId: 'gemini-test', agentId, conversationId: 'native-test-' + agentId, runId: 'native-run',
+        });
+        const runtime = await executor.open({
+          connectionId: agentId, configRoot: join(root, 'native-' + agentId), executable,
+          ...(agentId === 'qoder' && process.env.BUILDR_TEST_QODER_ACCOUNT_ROOT ? { nativeAccountConfigRoot: process.env.BUILDR_TEST_QODER_ACCOUNT_ROOT } : {}),
+          environment: { PATH: process.env.PATH ?? '', HOME: root },
+          gateway: { identity: nativeLease.identity, baseUrl: nativeLease.baseUrl, apiKey: nativeLease.apiKey,
+            models: [{ id: nativeLease.model, label: 'Gemini Test', tools: true, vision: false, contextWindow: 200000, maxOutputTokens: 4096 }] },
+        });
+        try {
+          const cwd = join(root, 'workspace-' + agentId);
+          await mkdir(cwd);
+          if (agentId === 'qoder') {
+            const account = await runtime.inspectAccount();
+            assert.equal(account.status, 'ready', account.diagnostic ?? 'Qoder requires its own platform login');
+          }
+          const contextRef = await runtime.createContext({ cwd, permissionMode: 'full-access' });
+          const items: Array<{ text?: string }> = [];
+          let executionRef: import('../../src/contracts.ts').ExecutionRef | undefined;
+          const replies: Promise<void>[] = [];
+          await runtime.send({
+            cwd, contextRef, text: 'Run the read-only fixture command.', images: [], model: nativeLease.model, permissionMode: 'full-access',
+            clientRequestId: 'fb300092-3242-4c06-84ba-142ae75327a3',
+            onEvent(event) {
+              if (event.type === 'item') items.push(event.item);
+              if (event.type === 'accepted') executionRef = event.executionRef;
+              if (event.type === 'request' && event.request.kind === 'approval' && executionRef && runtime.reply) {
+                const safeFixture = event.request.title === '允许 Bash？' && event.request.description?.trim() === 'printf google-ai-native-ok';
+                const reply = runtime.reply({ contextRef, executionRef, requestId: event.request.id, answer: safeFixture ? 'approve' : 'deny' });
+                void reply.catch(() => {});
+                replies.push(reply);
+              }
+            },
+          });
+          await Promise.all(replies);
+          const nativeRequests = requests.slice(initialRequests);
+          assert.ok(nativeRequests.length >= 2, nativeAgent);
+          assert.ok(items.some(item => item.text === 'Read complete'), JSON.stringify(items).slice(-1800));
+          const replayed = nativeRequests.find(request => request.request.contents.some((message: any) =>
+            message.parts.some((part: any) => part.functionResponse?.id === 'call_native')));
+          assert.ok(replayed, 'Native tool result must reach the Google upstream');
+          const replayedParts = replayed.request.contents.flatMap((message: any) => message.parts);
+          assert.equal(replayedParts.find((part: any) => part.functionCall?.id === 'call_native')?.thoughtSignature, 'test-signature');
+        } finally {
+          await runtime.close();
+        }
+      }
+      const credentialPath = join(root, 'accounts', account.id, 'model-credential.json');
+      const credential = JSON.parse(await readFile(credentialPath, 'utf8'));
+      await writeFile(credentialPath, JSON.stringify({ ...credential, expiresAt: 1 }));
+      status = 429;
+      nativeRun = false;
+      const responses = await Promise.all([send(firstBody), send(firstBody)]);
+      for (const response of responses) {
+        assert.equal(response.status, 429);
+        await response.body?.cancel();
+      }
+      assert.equal(refreshes, 1);
+      subject = 'different-user';
+      const replacement = await authorize();
+      assert.notEqual(replacement.identity, current.identity);
+      assert.equal((await send(firstBody)).status, 401);
+      const disconnected = await access.accounts.disconnect(account.id, { expectedRevision: access.accounts.read(account.id).revision });
+      assert.equal((await send(firstBody)).status, 401);
+      await access.accounts.remove(account.id, { expectedRevision: disconnected.revision });
+      assert.ok(!access.accounts.list({ includeDisabled: true }).accounts.some(row => row.id === account.id));
+    } finally {
+      await access.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+}
+
+test('a replacement provider retires only its verified legacy source and preserves stored bindings', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-google-ai-migration-'));
+  const infer = async () => chat({ role: 'assistant', content: 'ok' });
+  const old = { ...provider(infer), id: 'custom' };
+  const replacement = {
+    ...provider(infer), id: 'google-ai-subscription', linked: true,
+    replacesSource: (account: { id: string }) => account.id === 'legacy-google',
+    async open(input: Parameters<ModelProvider['open']>[0]) {
+      const runtime = await provider(infer).open(input);
+      return { ...runtime, inspect: async () => ({ ...await runtime.inspect(), credentialConfigured: true }) };
+    },
+  };
+  const rows = ['legacy-google', 'unrelated'].map(id => ({
+    id, provider: 'custom', label: id, revision: 'old', identity: id, status: 'ready', enabled: true, models: [model],
+  }));
+  await writeFile(join(root, 'accounts.json'), JSON.stringify({ version: 1, accounts: rows }));
+  const access = createModelAccess({ root, providers: [old, replacement] });
+  try {
+    await access.ensureLinked();
+    const input = { accountId: 'legacy-google', modelId: model.id, agentId: 'codex', conversationId: 'history', runId: 'new' };
+    assert.ok(await access.leases.create(input));
+    const ready = await access.accounts.check(replacement.id);
+    assert.equal(ready.status, 'ready');
+    assert.deepEqual(access.accounts.list({ includeDisabled: true }).accounts.map(row => row.id), ['unrelated', replacement.id]);
+    assert.equal(access.accounts.read('legacy-google').identity, 'legacy-google');
+    assert.ok(!access.catalog.list().models.some(row => row.accountId === 'legacy-google'));
+    await assert.rejects(access.leases.create(input), { code: 'model_source_migrated' });
+    await access.accounts.disconnect(ready.id, { expectedRevision: ready.revision });
+    assert.ok(!access.accounts.list().accounts.some(row => row.id === 'legacy-google'));
+  } finally {
+    await access.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

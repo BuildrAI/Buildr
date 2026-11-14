@@ -62,7 +62,7 @@ export interface ModelQuotaObservation {
   diagnostic?:string;
   /** Decimal strings preserve the native wallet precision; currencies are never converted. */
   balances?: Array<{currency:string;total:string;toppedUp?:string;granted?:string}>;
-  windows?: Array<{id:string;label:string;remainingPercent:number;resetsAt?:string;limitWindowSeconds?:number;/** Platform-reported credit amounts; omitted when the source only reports percentages. */remainingCredits?:number;totalCredits?:number}>;
+  windows?: Array<{id:string;label:string;groupLabel?:string;remainingPercent:number;resetsAt?:string;limitWindowSeconds?:number;/** Platform-reported credit amounts; omitted when the source only reports percentages. */remainingCredits?:number;totalCredits?:number}>;
 }
 export interface CustomProviderModel {
   /** Upstream model id, sent verbatim. */
@@ -125,11 +125,13 @@ export interface ProviderInferenceInput {
   /** Already translated to the runtime's declared protocol. */
   body: ProtocolJson;
   modelId: string;
+  providerIdentity?: string;
   signal: AbortSignal;
   context: { accountId: string; agentId: string; conversationId: string; runId: string; requestId: string };
 }
 export interface ModelProviderRuntime {
   readonly protocol: ModelProtocol;
+  protocolForModel?(modelId: string): ModelProtocol;
   inspect(): Promise<ModelProviderObservation>;
   /** Local credential identity; read by this provider, never derived from an agent connection. */
   identity?(): Promise<string>;
@@ -153,6 +155,9 @@ export interface ModelProvider {
   readonly linked?: boolean;
   /** Built-in source that owns exactly one local account. */
   readonly singleton?: boolean;
+  /** Probe for a reusable local login even before the first successful observation. */
+  readonly autoInspect?: boolean;
+  readonly replacesSource?: (account: ModelAccountView) => boolean;
   readonly authentication?: ModelProviderAuthentication;
   readonly group?: ModelProviderGroup;
   readonly modeLabel?: string;

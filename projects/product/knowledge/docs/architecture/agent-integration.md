@@ -251,9 +251,14 @@ ChatGPT 订阅与 `ChatGPT API` 是两个独立供应商，可同时启用：Cod
 
 Buildr自动将已连接的Codex、DSH、Qoder账号发现为共享模型供应商。登录与续期仍由对应原生运行实例负责；Codex通过app-server取得有效凭据，DSH同一宿主装配固定上游桥，Qoder只读该Buildr私有配置的账号，使用签名模型协议传递工具定义及结果。账号身份变化或断开撤销旧供应商；旧独立套餐和会话保留为额外账号。Qoder套餐模型可由Codex、DSH消费，工具仍由所选执行方执行。
 
+### 独立 Google AI 订阅模型来源
+
+[Google AI 供应商](../../../services/buildr-agent/src/model-access/providers/google-ai-proxy.ts) 由 Agent Service 启动和关闭本机代理。模型账号复用该配置域中已有的 OAuth 登录，按模型选择代理协议，通过现有模型网关供兼容 Harness 使用。模型目录和 Gemini、Claude / GPT 的额度窗口归属于同一个供应商，四个窗口取自同一次 daily 响应。
+
+
 ### Google 个人账号与 Antigravity 协调
 
-[Google 个人账号来源](../../../services/buildr-agent/src/model-access/providers/antigravity.ts)（`native-antigravity`）由 [Antigravity 执行器](../../../services/buildr-agent/src/executors/antigravity/index.ts)托管登录（`oauth-personal`），支持免费账号、Google AI Pro 与 Google AI Ultra。当受管 `agy` 确认 `oauth-personal` 已登录、绑定身份可建立且模型目录非空时，来源状态为 `ready`；原生 `_meta.antigravity.tier` 可识别时展示对应档位，不可识别时展示“档位不可读”但仍可使用；模型目录为空或认证归属不可确认时进入 `failed`（“身份不可确认”或无可用模型）并在发送前拒绝。官方 ACP 未公开额度窗口时如实显示不可读并指向 Google 官方订阅管理入口，不按档位或模型名称推算剩余配额。
+[Google 个人账号来源](../../../services/buildr-agent/src/model-access/providers/antigravity.ts)（`native-antigravity`）由 [Antigravity 执行器](../../../services/buildr-agent/src/executors/antigravity/index.ts)托管登录（`oauth-personal`），支持免费账号、Google AI Pro 与 Google AI Ultra。当受管 `agy` 确认 `oauth-personal` 已登录、绑定身份可建立且模型目录非空时，来源状态为 `ready`；原生 `_meta.antigravity.tier` 可识别时展示对应档位，不可识别时展示“档位不可读”但仍可使用；模型目录为空或认证归属不可确认时进入 `failed`（“身份不可确认”或无可用模型）并在发送前拒绝。官方 ACP 未公开额度窗口时如实显示不可读并链接到 Antigravity CLI 的官方 `/usage` 用量说明，不按档位或模型名称推算剩余配额。
 
 OAuth 令牌仅保存在系统密钥环 `jetski-standalone-oauth-token`（与本机终端 `agy` 共享，与桌面 IDE 分离），Buildr 不直接读取、写入或删除系统密钥环条目；来源声明 `sharing: executor-exclusive(['antigravity'])` 与 `inference: 'none'`，其他执行方显示不可选原因并拒绝签发网关租约，单次生成与提交说明自动排除该来源。发起登录时，短命登录子进程经专用 `PATH` 打开器替身捕获官方 PKCE 授权地址，地址仅在 `waiting-browser` 期间经 `LoginAttemptView.url` 返回，完成、取消、过期或被替代后清除，日志脱敏且不进入对话事件。
 

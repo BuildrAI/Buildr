@@ -1,4 +1,4 @@
-import { antigravityModelVariant } from '../../domain/antigravity-model.ts';
+import { antigravityModelVariant, antigravityReasoningEffort } from '../../domain/antigravity-model.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -212,7 +212,7 @@ function extractModelsFromSessionPayload(payload: any, supportsImage: boolean) {
       images: supportsImage, tools: true };
     if (id === current) model.isDefault = true;
     if (variant) {
-      const depth = { id: variant.depth, label: variant.depth === 'xhigh' ? 'Extra' : variant.depth[0]!.toUpperCase() + variant.depth.slice(1) };
+      const depth = antigravityReasoningEffort(variant.depth);
       (model.reasoningEfforts ??= []).push(depth);
       if (id === current) model.defaultReasoningEffort = variant.depth;
     }

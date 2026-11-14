@@ -87,6 +87,7 @@ export function createAgentService(options: AgentServiceOptions) {
   for (const provider of providerList) {
     if (provider.connectionId && provider.observesConnection) connectionAccountObservers.set(provider.connectionId, provider.id);
   }
+  const autoInspectProviders = new Set(providerList.filter(provider => provider.autoInspect).map(provider => provider.id));
   const models = createModelAccess({
     root: path.join(root, 'model-access'),
     executors: () => connections.descriptors(),
@@ -142,7 +143,7 @@ export function createAgentService(options: AgentServiceOptions) {
         await models.ensureLinked();
         if(closed)return;
         const accounts = models.accounts.list().accounts.filter(account =>
-          account.enabled && (account.connectionId || ['ready', 'failed'].includes(account.status)) &&
+          account.enabled && (account.connectionId || autoInspectProviders.has(account.provider) || ['ready', 'failed'].includes(account.status)) &&
           !account.loginAttempt?.state?.match(/^(initializing|waiting-browser|checking)$/));
         const selected = accounts.filter(account => !warmOnly || !account.connectionId || connectionAccountObservers.has(account.connectionId) || connections.hasAccountRuntime(account.connectionId));
         discoverySkippedCold = selected.length !== accounts.length;

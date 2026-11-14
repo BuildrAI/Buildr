@@ -7,7 +7,7 @@ const list = (v: unknown): unknown[] => Array.isArray(v) ? v : [];
 const string = (v: unknown): string => typeof v === 'string' ? v : '';
 const number = (v: unknown): number => typeof v === 'number' && Number.isFinite(v) ? v : 0;
 const id = () => randomUUID().replaceAll('-', '');
-export interface OpaqueReasoning { encode(value: ProtocolJson): string; decode(value: string): ProtocolJson }
+export interface OpaqueReasoning { encode(value: ProtocolJson): string; decode(value: string): ProtocolJson; toolSignatures?: Map<string, string> }
 function reasoningSummary(value: ProtocolJson): ProtocolJson[] {
   const text = string(record(value).thinking).trim();
   return text ? [{ type: 'summary_text', text }] : [];
@@ -241,6 +241,7 @@ function serializeRequest(parsed: Parsed, protocol: ModelProtocol, opaque: Opaqu
     if (body.reasoning_effort) { body.reasoning = { effort: body.reasoning_effort }; delete body.reasoning_effort; }
   } else {
     const system: string[] = [], contents: ProtocolJson[] = [], callNames = new Map<string, string>();
+    const signedCalls = new Map<string, string>();
     const push = (role: 'user' | 'model', parts: ProtocolJson[]) => {
       if (!parts.length) return;
       const previous = contents.at(-1);
@@ -256,7 +257,13 @@ function serializeRequest(parsed: Parsed, protocol: ModelProtocol, opaque: Opaqu
       for (const part of message.parts) {
         if (part.type === 'text') parts.push({ text: part.text });
         else if (part.type === 'image') parts.push(geminiImage(part.url));
-        else if (part.type === 'tool') { callNames.set(part.id, part.name); parts.push({ functionCall: { name: part.name, args: parseArguments(part.arguments) } }); }
+        else if (part.type === 'reasoning' && part.value.type === 'gemini-tool-signature') {
+          signedCalls.set(string(part.value.callId), string(part.value.signature));
+        } else if (part.type === 'tool') {
+          callNames.set(part.id, part.name);
+          const thoughtSignature = signedCalls.get(part.id) ?? opaque.toolSignatures?.get(part.id);
+          parts.push({ functionCall: { name: part.name, args: parseArguments(part.arguments), ...(part.id ? { id: part.id } : {}) }, ...(thoughtSignature ? { thoughtSignature } : {}) });
+        }
         else if (part.type === 'result') { const name = callNames.get(part.id); if (!name) throw new ModelAccessError('model_tool_result_unsupported', 'Gemini 工具结果缺少可解析的工具名称。', 400); parts.push({ functionResponse: { name, response: geminiToolResult(part.content), ...(part.id ? { id: part.id } : {}) } }); }
       }
       push(message.role === 'assistant' ? 'model' : 'user', parts);
@@ -376,7 +383,11 @@ async function* decodeRawEvents(response: Response, protocol: ModelProtocol): As
         if (part.functionCall !== undefined) {
           const call = record(part.functionCall), name = string(call.name);
           if (!name) throw new ModelAccessError('model_tool_invalid', 'Gemini 工具调用缺少名称。', 502);
-          yield { type: 'tool', key: String(index), id: `call_${id()}`, name, delta: JSON.stringify(call.args ?? {}) };
+          const callId = string(call.id) || `call_${id()}`;
+          if (typeof part.thoughtSignature === 'string' && part.thoughtSignature) {
+            yield { type: 'reasoning', opaque: { type: 'gemini-tool-signature', callId, signature: part.thoughtSignature } };
+          }
+          yield { type: 'tool', key: String(index), id: callId, name, delta: JSON.stringify(call.args ?? {}) };
         } else if (typeof part.text === 'string') {
           if (part.thought === true) yield { type: 'reasoning', delta: part.text };
           else if (part.text) yield { type: 'text', delta: part.text };
@@ -390,7 +401,8 @@ async function* decodeRawEvents(response: Response, protocol: ModelProtocol): As
     return;
   }
   if (!response.body) throw new ModelAccessError('model_stream_empty', '模型流没有响应正文。', 502);
-  for await (const body of sse(response.body)) {
+  for await (const frame of sse(response.body)) {
+    const body = protocol === 'gemini' && response.headers.get('x-buildr-gemini-envelope') === 'cloud-code' && frame.response ? record(frame.response) : frame;
     if (body.error || body.type === 'error' || body.type === 'response.failed') throw upstreamFailure(body.error ?? record(body.response).error ?? body);
     if (protocol === 'chat-completions') {
       const choice = record(list(body.choices)[0]), delta = record(choice.delta);
@@ -444,7 +456,11 @@ async function* decodeRawEvents(response: Response, protocol: ModelProtocol): As
         if (part.functionCall !== undefined) {
           const call = record(part.functionCall), name = string(call.name);
           if (!name) throw new ModelAccessError('model_tool_invalid', 'Gemini 工具调用缺少名称。', 502);
-          yield { type: 'tool', key: `gemini-${geminiToolIndex++}`, id: `call_${id()}`, name, delta: JSON.stringify(call.args ?? {}) };
+          const callId = string(call.id) || `call_${id()}`;
+          if (typeof part.thoughtSignature === 'string' && part.thoughtSignature) {
+            yield { type: 'reasoning', opaque: { type: 'gemini-tool-signature', callId, signature: part.thoughtSignature } };
+          }
+          yield { type: 'tool', key: `gemini-${geminiToolIndex++}`, id: callId, name, delta: JSON.stringify(call.args ?? {}) };
         } else if (typeof part.text === 'string') {
           if (part.thought === true) yield { type: 'reasoning', delta: part.text };
           else if (part.text) yield { type: 'text', delta: part.text };
@@ -502,7 +518,12 @@ class Output {
     if (value.type === 'usage') { this.usage.input = value.input || this.usage.input; this.usage.output = value.output || this.usage.output; this.usage.cache = value.cache || this.usage.cache; return ''; }
     if (value.type === 'finish') { this.reason = value.reason; return ''; }
     if (value.type === 'reasoning') {
-      const fresh=this.lastKind!=='reasoning';
+      const signatures = this.opaque.toolSignatures;
+      if (signatures && value.opaque?.type === 'gemini-tool-signature') {
+        if (signatures.size >= 256) signatures.delete(signatures.keys().next().value!);
+        signatures.set(string(value.opaque.callId), string(value.opaque.signature));
+      }
+      const fresh=this.lastKind!=='reasoning'||value.opaque?.type==='gemini-tool-signature';
       if (fresh) { this.reasoningBlocks.push({index:this.contentIndex++,id:`rs_${id()}`,value:{}}); this.messageIndex=undefined; }
       this.lastKind='reasoning'; const block=this.reasoningBlocks.at(-1)!;
       block.value = { ...block.value, ...value.opaque, type: value.opaque?.type ?? block.value.type ?? 'thinking', thinking: string(block.value.thinking) + (value.delta ?? ''), ...(value.signature ? { signature: string(block.value.signature) + value.signature } : {}) };
@@ -511,7 +532,7 @@ class Output {
       if(this.protocol==='anthropic-messages') {
         const first=fresh;
         let result=first?this.closeBlock()+this.flushTools():'';
-        if(first) {this.openBlock=block.index;result+=this.event('content_block_start',{index:block.index,content_block:block.value.type==='responses-reasoning'?{type:'redacted_thinking',data:this.opaque.encode(block.value)}:{type:'thinking',thinking:''}});}
+        if(first) {this.openBlock=block.index;result+=this.event('content_block_start',{index:block.index,content_block:(block.value.type==='responses-reasoning'||block.value.type==='gemini-tool-signature')?{type:'redacted_thinking',data:this.opaque.encode(block.value)}:{type:'thinking',thinking:''}});}
         if(value.delta) result+=this.event('content_block_delta',{index:block.index,delta:{type:'thinking_delta',thinking:value.delta}});
         if(value.signature) result+=this.event('content_block_delta',{index:block.index,delta:{type:'signature_delta',signature:value.signature}});
         return result;
@@ -559,7 +580,7 @@ class Output {
     if (this.protocol === 'responses') return { id: this.responseId, object: 'response', status: this.reason === 'length' ? 'incomplete' : 'completed', model: this.model, output: this.responsesOutput(), usage: { input_tokens: this.usage.input, output_tokens: this.usage.output, total_tokens: this.usage.input + this.usage.output } };
     if (this.protocol === 'chat-completions') return { id: this.responseId, object: 'chat.completion', model: this.model, choices: [{ index: 0, message: { role: 'assistant', content: this.text || null, ...(this.tools.size ? { tool_calls: [...this.tools.values()].map(tool => ({ id: tool.id, type: 'function', function: { name: tool.name, arguments: tool.arguments } })) } : {}), ...(Object.keys(this.reasoning).length ? { reasoning_content: this.reasoning.thinking ?? '', reasoning_signature: this.reasoning.type==='responses-reasoning' ? this.opaque.encode(this.reasoning) : this.reasoning.signature } : {}) }, finish_reason: this.tools.size ? 'tool_calls' : this.reason === 'length' || this.reason === 'max_tokens' ? 'length' : 'stop' }], usage: { prompt_tokens: this.usage.input, completion_tokens: this.usage.output, total_tokens: this.usage.input + this.usage.output } };
     const ordered:Array<{index:number;part:ProtocolJson}>=[];
-    for(const block of this.reasoningBlocks) ordered.push({index:block.index,part:block.value.type==='responses-reasoning'?{type:'redacted_thinking',data:this.opaque.encode(block.value)}:block.value});
+    for(const block of this.reasoningBlocks) ordered.push({index:block.index,part:(block.value.type==='responses-reasoning'||block.value.type==='gemini-tool-signature')?{type:'redacted_thinking',data:this.opaque.encode(block.value)}:block.value});
     for(const message of this.messages) ordered.push({index:message.index,part:{type:'text',text:message.text}});
     for(const tool of this.tools.values()) ordered.push({index:tool.outputIndex,part:{type:'tool_use',id:tool.id,name:tool.name,input:parseArguments(tool.arguments||'{}')}});
     const content=ordered.sort((a,b)=>a.index-b.index).map(value=>value.part);

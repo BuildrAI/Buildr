@@ -15,3 +15,11 @@
 .ac-account-quota-overview .ac-account-quota-credits{color:var(--soft-muted);font-size:var(--font-size-meta);margin-left:4px;white-space:nowrap}
 .ac-account-quota-overview .ac-account-quota-warning{display:block;color:var(--soft-muted);font-size:var(--font-size-meta);margin-top:4px}
 .ac-account-quota-overview .ant-spin{display:block;padding:16px}
+
+.ac-account-quota-reset {
+  display: block;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.ac-account-quota-group{font-size:var(--font-size-secondary)}

@@ -1,3 +1,5 @@
+import { cliProxyQuotaReader } from './cliproxy-quota.ts';
+import { createGoogleAiProxyProvider } from './google-ai-proxy.ts';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { AgentProgramManager, AgentRuntime, ConnectionView } from '../../contracts.ts';
@@ -134,9 +136,10 @@ export function createDefaultModelProviders(deps: DefaultModelProvidersDependenc
     ...linkedProviders,
     ...(hasConnection('antigravity') ? [createAntigravityModelProvider({ connections, now })] : []),
     createCodexModelProvider(),
+    createGoogleAiProxyProvider(path.join(root, '..', 'CLIProxyAPI')),
     createOpenAIApiModelProvider(),
     createAnthropicApiModelProvider(),
-    createCustomModelProvider(),
+    createCustomModelProvider({ quota: cliProxyQuotaReader(path.join(root, '..', 'CLIProxyAPI')) }),
     createDevinModelProvider(),
     createDeepSeekModelProvider({
       ownerFactory: async input => {

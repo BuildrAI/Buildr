@@ -248,8 +248,8 @@ test('5.1: D7 Google personal account status table, default model enablement, ex
   assert.equal(unauth.inference, 'none');
   assert.equal(unauth.sharing?.kind, 'executor-exclusive');
   assert.deepEqual(unauth.sharing?.executors, ['antigravity']);
-  assert.equal(unauth.presentation?.billing?.url, 'https://one.google.com/about/ai-plans');
-  assert.ok(unauth.presentation?.quotaUnavailableNote?.includes('未公开订阅剩余额度'));
+  assert.deepEqual(unauth.presentation?.billing, { url: 'https://antigravity.google/docs/cli/commands/usage', label: '查看额度方法' });
+  assert.ok(unauth.presentation?.quotaUnavailableNote?.includes('/usage'));
 
   // Executor compatibility: ONLY antigravity is compatible
   const compatById = Object.fromEntries(
