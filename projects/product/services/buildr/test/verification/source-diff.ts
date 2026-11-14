@@ -8,7 +8,14 @@ export type SourceChangeEvidence = {
   beforeDigest: string;
   afterDigest: string;
 };
+export type VerificationCheckDiffEvidence = {
+  path: string;
+  checkIds: string[];
+  beforeDigest: string;
+  afterDigest: string;
+};
 const digest = (text: string) => createHash('sha256').update(text).digest('hex');
+const verificationChecksPattern = /^(?:services\/[^/]+\/)?tools\/testing\/verification-checks\.ts$/u;
 const named = (node: any) => node.type === 'ExportNamedDeclaration' && node.source && !node.declaration;
 const name = (node: any): string => node.name ?? node.value;
 const member = (node: any) => `${name(node.local)}:${name(node.exported)}`;
@@ -57,7 +64,7 @@ export function sourceChangeEvidence(
   if (!/\.[cm]?ts$/u.test(file)) return null;
   try {
     const old = parseVerificationModule(before), current = parseVerificationModule(after);
-    if (/^(?:services\/[^/]+\/)?tools\/testing\/verification-checks\.ts$/u.test(file)
+    if (verificationChecksPattern.test(file)
       && selectionMetadataOnly(old, current)) return proof('verification-metadata');
     // Keep original statement bytes, including ASI-sensitive newlines and type
     // declarations erased by Node. Only named export lists may differ.
@@ -133,6 +140,159 @@ export function sourceChangeEvidence(
     const stars = { body: current.body.filter((node: any) => node.type === 'ExportAllDeclaration') };
     if (publicNames(stars, 'after').some(value => addedNames.includes(value))) return null;
     return proof('additive-exports');
+  } catch {
+    return null;
+  }
+}
+
+function stripAstLocations(node: any): any {
+  if (!node || typeof node !== 'object') return node;
+  if (Array.isArray(node)) return node.map(stripAstLocations);
+  return Object.fromEntries(
+    Object.entries(node)
+      .filter(([key]) => !['start', 'end', 'loc', 'range', 'raw'].includes(key))
+      .map(([key, value]) => [key, stripAstLocations(value)]),
+  );
+}
+
+function unwrapCheckArrayExpression(node: any): { elements: any[]; transform: any } | null {
+  let current = node;
+  while (current && ['TSAsExpression', 'TSTypeAssertion', 'TSSatisfiesExpression'].includes(current.type)) {
+    current = current.expression;
+  }
+  if (!current) return null;
+  if (current.type === 'ArrayExpression') return { elements: current.elements, transform: null };
+  if (current.type === 'CallExpression' && !current.optional && current.callee?.type === 'MemberExpression'
+    && !current.callee.computed && current.callee.property?.name === 'map'
+    && current.callee.object?.type === 'ArrayExpression') {
+    return { elements: current.callee.object.elements, transform: stripAstLocations(current.arguments) };
+  }
+  return null;
+}
+
+function staticCheckElementId(node: any): string | null {
+  if (!node || node.type !== 'ObjectExpression') return null;
+  for (const property of node.properties ?? []) {
+    if (property.type !== 'Property' || property.computed || property.kind !== 'init' || property.method || property.shorthand) continue;
+    const key = property.key?.type === 'Identifier' ? property.key.name : property.key?.type === 'Literal' ? String(property.key.value) : null;
+    if (key === 'id' && property.value?.type === 'Literal' && typeof property.value.value === 'string' && property.value.value.length > 0) {
+      return property.value.value;
+    }
+  }
+  return null;
+}
+
+function collectReferencedIdentifiers(node: any, seen = new Set<string>()): Set<string> {
+  if (!node || typeof node !== 'object') return seen;
+  if (Array.isArray(node)) {
+    for (const item of node) collectReferencedIdentifiers(item, seen);
+    return seen;
+  }
+  if (node.type === 'Identifier' && typeof node.name === 'string') seen.add(node.name);
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'start' || key === 'end' || key === 'loc' || key === 'range' || key === 'raw') continue;
+    if (node.type === 'Property' && !node.computed && key === 'key') continue;
+    if (node.type === 'MemberExpression' && !node.computed && key === 'property') continue;
+    collectReferencedIdentifiers(value, seen);
+  }
+  return seen;
+}
+
+function parseVerificationCheckCatalog(source: string): {
+  importsKey: string;
+  catalogTransforms: Record<string, string>;
+  checks: Map<string, string>;
+} | null {
+  const ast = parseVerificationModule(source);
+  const imports: any[] = [];
+  const helpers = new Map<string, { raw: any; canonical: string }>();
+  const catalogs: Array<{ name: string; elements: any[]; transform: string }> = [];
+
+  for (const statement of ast.body ?? []) {
+    if (statement.type === 'ImportDeclaration') {
+      imports.push(stripAstLocations(statement));
+      continue;
+    }
+    const declaration = statement.type === 'ExportNamedDeclaration' && !statement.source ? statement.declaration : statement;
+    if (!declaration || declaration.type !== 'VariableDeclaration' || declaration.kind !== 'const') return null;
+    for (const declarator of declaration.declarations ?? []) {
+      if (declarator.id?.type !== 'Identifier' || !declarator.init) return null;
+      const name = declarator.id.name;
+      const arrayInfo = unwrapCheckArrayExpression(declarator.init);
+      const isCatalog = arrayInfo !== null && arrayInfo.elements.some(element => staticCheckElementId(element) !== null);
+      if (isCatalog && arrayInfo.elements.every(element => element !== null && (staticCheckElementId(element) !== null
+        || element.type === 'SpreadElement' && element.argument?.type === 'Identifier'))) {
+        catalogs.push({ name, elements: arrayInfo.elements, transform: JSON.stringify(arrayInfo.transform) });
+      } else {
+        helpers.set(name, { raw: declarator.init, canonical: JSON.stringify(stripAstLocations(declarator.init)) });
+      }
+    }
+  }
+
+  const helperDepsCache = new Map<string, string[]>();
+  const resolveHelperDeps = (name: string, stack = new Set<string>()): string[] => {
+    if (helperDepsCache.has(name)) return helperDepsCache.get(name)!;
+    if (stack.has(name) || !helpers.has(name)) return [];
+    const nextStack = new Set([...stack, name]);
+    const collected = new Set<string>();
+    for (const ref of collectReferencedIdentifiers(helpers.get(name)!.raw)) {
+      if (!helpers.has(ref)) continue;
+      collected.add(ref);
+      for (const nested of resolveHelperDeps(ref, nextStack)) collected.add(nested);
+    }
+    const ordered = [...collected].sort();
+    helperDepsCache.set(name, ordered);
+    return ordered;
+  };
+
+  const catalogTransforms: Record<string, string> = {};
+  const checks = new Map<string, string>();
+  const catalogNames = new Set(catalogs.map(catalog => catalog.name));
+
+  for (const catalog of catalogs) {
+    catalogTransforms[catalog.name] = catalog.transform;
+    for (const element of catalog.elements) {
+      if (element.type === 'SpreadElement') {
+        if (!catalogNames.has(element.argument.name)) return null;
+        continue;
+      }
+      const id = staticCheckElementId(element);
+      if (!id || checks.has(id)) return null;
+      const directRefs = [...collectReferencedIdentifiers(element)].filter(ref => helpers.has(ref));
+      const allHelperNames = new Set<string>();
+      for (const ref of directRefs) {
+        allHelperNames.add(ref);
+        for (const nested of resolveHelperDeps(ref)) allHelperNames.add(nested);
+      }
+      const deps = [...allHelperNames].sort().map(name => [name, helpers.get(name)!.canonical]);
+      checks.set(id, JSON.stringify({
+        catalog: catalog.name,
+        transform: catalog.transform,
+        element: stripAstLocations(element),
+        deps,
+      }));
+    }
+  }
+  return { importsKey: JSON.stringify(imports), catalogTransforms, checks };
+}
+
+/** Narrow verification-checks.ts edits that add, remove or modify individual
+ * check entries without altering module imports or shared catalog transforms. */
+export function changedVerificationCheckEvidence(file: string, before: string, after: string): VerificationCheckDiffEvidence | null {
+  if (!verificationChecksPattern.test(file) || !/\.[cm]?ts$/u.test(file)) return null;
+  if (before === after) return { path: file, checkIds: [], beforeDigest: digest(before), afterDigest: digest(after) };
+  try {
+    const oldCatalog = parseVerificationCheckCatalog(before);
+    const currentCatalog = parseVerificationCheckCatalog(after);
+    if (!oldCatalog || !currentCatalog) return null;
+    if (oldCatalog.importsKey !== currentCatalog.importsKey) return null;
+    const allTransformNames = [...new Set([...Object.keys(oldCatalog.catalogTransforms), ...Object.keys(currentCatalog.catalogTransforms)])];
+    for (const name of allTransformNames) {
+      if (oldCatalog.catalogTransforms[name] !== currentCatalog.catalogTransforms[name]) return null;
+    }
+    const allIds = [...new Set([...oldCatalog.checks.keys(), ...currentCatalog.checks.keys()])].sort();
+    const checkIds = allIds.filter(id => oldCatalog.checks.get(id) !== currentCatalog.checks.get(id));
+    return { path: file, checkIds, beforeDigest: digest(before), afterDigest: digest(after) };
   } catch {
     return null;
   }

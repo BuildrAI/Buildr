@@ -63,7 +63,7 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   unit: testing(SERVICE_OWNER, 'Development', 'Unit', 'Pure Buildr logic behaves correctly with collaborators replaced.', TEST_ENVIRONMENTS.pure),
   integration: testing(SERVICE_OWNER, 'Development', 'Integration', 'Generated inputs and verification tools preserve their process, build and compatibility boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-agent-host': testing(SERVICE_OWNER, 'Development', 'Integration', 'The host consumes the Agent public package through delivery, activation and authenticated HTTP boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-generated-artifacts': testing(SERVICE_OWNER, 'Development', 'Integration', 'Generated artifact sets are reproducible and refresh the checkout DTO projection without transient reads.', TEST_ENVIRONMENTS.repeatedFilesystem),
+  'integration-generated-artifacts': testing(SERVICE_OWNER, 'Development', 'Integration', 'Generated artifact sets are reproducible in isolated staging directories without transient reads.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-code': testing(SERVICE_OWNER, 'Development', 'Integration', 'Code browsing, editing, observation and Git operations preserve the actual checkout and mutation boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-knowledge': testing(SERVICE_OWNER, 'Development', 'Integration', 'Knowledge and Agent source reading preserve current content, provenance and HTTP results.', TEST_ENVIRONMENTS.repeatedCli),
   'integration-workspace-assets': testing(SERVICE_OWNER, 'Development', 'Integration', 'Workspace assets preserve composition, registration, mutation and user content.', TEST_ENVIRONMENTS.repeatedGitCli),
@@ -508,6 +508,7 @@ const integrationSlice: any = (id: any, files: any, options: any = {}) => Object
   executorType: options.executorType ?? 'node-test',
   schedulingCostMs: options.schedulingCostMs,
   ...(options.timeoutMs == null ? {} : { timeoutMs: options.timeoutMs }),
+  ...(options.preparations ? { preparations: options.preparations } : {}),
   concurrencyClass: options.concurrencyClass ?? 'workspace-heavy',
   ...(options.resourceDemand ? { resourceDemand: options.resourceDemand } : {}),
   resources: Object.freeze(options.resources ?? []),
@@ -546,12 +547,14 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/verification-inputs.test.ts',
     'test/integration/windows-artifact-diagnosis.test.ts',
   ], { schedulingCostMs: 153000, timeoutMs: 300_000, args: ['--test-concurrency=4'] }),
-  // buildGeneratedArtifactSet refreshes the checkout DTO projection in addition
-  // to its temporary outputs. Keep that one writer exclusive without forcing
-  // the other tool-boundary files to wait for an idle machine.
+  // Generated artifact set tests write only to their isolated temporary staging
+  // roots (refreshCheckoutProjection: false), so they no longer mutate the checkout.
   integrationSlice('integration-generated-artifacts', [
     'test/integration/generated-artifact-set.test.ts',
-  ], { schedulingCostMs: 55000, timeoutMs: 120_000, concurrencyClass: 'exclusive', args: ['--test-concurrency=1'] }),
+  ], {
+    schedulingCostMs: 55000, timeoutMs: 120_000, concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=1'],
+    preparations: sharedCheckPreparation.map(value => ({ ...value, cwd: path.resolve(import.meta.dirname, '../..', value.cwd) })),
+  }),
   integrationSlice('integration-code', [
     'test/integration/retire-legacy-agent-data.test.ts',
     'test/integration/code-branch-application.test.ts',
@@ -797,6 +800,7 @@ const builtInVerificationSteps: any = Object.freeze([
     profiles: ['candidate'],
     schedulingCostMs: slice.schedulingCostMs,
     ...(slice.timeoutMs == null ? {} : { timeoutMs: slice.timeoutMs }),
+    ...(slice.preparations ? { preparations: slice.preparations } : {}),
     concurrencyClass: slice.concurrencyClass,
     ...(slice.resourceDemand ? { resourceDemand: slice.resourceDemand } : {}),
     resources: [...slice.resources],
@@ -940,7 +944,7 @@ const serviceSteps = serviceSets.flatMap(([service, checks]) => checks.map((chec
     requiredEnvironment: check.requiredEnvironment ?? [], requiresFiles: (check.requiresFiles ?? []).map((file: string) => path.resolve(root, file)),
     platforms: check.platforms, timeoutMs: check.timeoutMs ?? 300_000,
     reuse: check.requiredEnvironment?.length ? false : check.reuse ?? inherited?.reuse
-      ?? { scope: service === 'dsh-plugin' ? 'plugin' : service === 'buildr-web' ? 'web' : 'repository' },
+      ?? (service === 'dsh-plugin' ? { scope: 'plugin' } : service === 'buildr-web' ? { scope: 'web' } : service === 'buildr-agent' ? { scope: 'backend', releaseNotes: false } : { scope: 'repository' }),
     testing: { ownerScope: `service:product/${service}`, primaryIntent: 'Development', executionBoundary: check.type,
       proves: check.proves ?? check.name, primaryEvidenceOwner: check.id,
       environment: { footprints, isolation: footprints.length ? 'unique-temporary-root' : 'none' }, resetBurden: footprints.length ? 'single-cleanup' : 'none' },
@@ -978,7 +982,7 @@ const browserSteps = BROWSER_SELECTORS.map((selector: string) => Object.freeze({
   resourceDemand: selector === 'agent-conversations'
     ? { workers: AGENT_CONVERSATION_WORKERS, processes: AGENT_CONVERSATION_WORKERS, workspaceIo: 2 }
     : { workers: 1, processes: 1, workspaceIo: 1 },
-  reuse: false,
+  reuse: { scope: 'web', releaseNotes: false },
   testing: { ownerScope: 'project:product', primaryIntent: 'Development', executionBoundary: 'E2E', primaryEvidenceOwner: `e2e-browser:${selector}`,
     proves: `The ${selector} user journey works through the real hosted frontend and backend.`,
     environment: { footprints: ['filesystem', 'cli', 'git', 'workspace-lifecycle'], isolation: 'unique-temporary-root' }, resetBurden: 'lifecycle' },

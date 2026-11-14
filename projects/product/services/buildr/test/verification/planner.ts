@@ -722,7 +722,16 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
     if (!valid || contentChanges.has(file)) throw new Error(`Invalid or duplicate content evidence: ${file}`);
     contentChanges.set(file, evidence);
   }
-  const semanticPaths = paths.filter(file => !contentChanges.has(file));
+  const changedVerificationChecks: any = new Map();
+  for (const evidence of request.changedVerificationChecks ?? []) {
+    const file = normalizeProductPath(evidence.path);
+    const valid = paths.includes(file) && /^(?:services\/[^/]+\/)?tools\/testing\/verification-checks\.ts$/u.test(file)
+      && Array.isArray(evidence.checkIds) && evidence.checkIds.every((id: any) => typeof id === 'string' && id.length > 0)
+      && /^[a-f0-9]{64}$/u.test(evidence.beforeDigest ?? '') && /^[a-f0-9]{64}$/u.test(evidence.afterDigest ?? '');
+    if (!valid || changedVerificationChecks.has(file)) throw new Error(`Invalid or duplicate verification check evidence: ${file}`);
+    changedVerificationChecks.set(file, evidence);
+  }
+  const semanticPaths = paths.filter(file => !contentChanges.has(file) && !changedVerificationChecks.has(file));
   const tags: string[] = [...new Set<string>([...(request.tags ?? []), ...(request.semantic ? semanticTagsForPaths(semanticPaths) : [])])];
   const knownTags = new Set(steps.flatMap((step: any) => step.tags ?? []));
   for (const tag of request.tags ?? []) if (!knownTags.has(tag)) throw new Error(`Unknown semantic tag: ${tag}`);
@@ -813,14 +822,25 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
     const selectedBrowsers = browserOwnersByPath.get(productPath) ?? new Set<string>();
     const direct: any[] = steps.filter((item: any) => matchedStepInput(item, productPath, selectedBrowsers));
     const evidence = contentChanges.get(productPath);
+    const checkEvidence = !evidence ? changedVerificationChecks.get(productPath) : undefined;
     // Ownership decides which edges mean behavioral impact. Static/public
     // contract owners are never removed just because an export is additive.
     const skipped = evidence ? direct.filter(item =>
       ['Integration', 'E2E'].includes(item.testing?.executionBoundary)
-      && (item.behaviorOnlyInputs ?? []).some((pattern: string) => matchesInput(productPath, pattern))) : [];
+      && (item.behaviorOnlyInputs ?? []).some((pattern: string) => matchesInput(productPath, pattern)))
+      : checkEvidence ? direct.filter(item =>
+        ['Integration', 'E2E'].includes(item.testing?.executionBoundary) && (
+          item.serviceOwned === true && !checkEvidence.checkIds.includes(item.id)
+          || !item.serviceOwned && (item.behaviorOnlyInputs ?? []).some((pattern: string) => matchesInput(productPath, pattern))))
+      : [];
     const matched: any = direct.filter(item => !skipped.includes(item));
     if (evidence) refinements.push(Object.freeze({
       ...evidence, skippedOwnerIds: Object.freeze(skipped.map(item => item.id)),
+      retainedOwnerIds: Object.freeze(matched.map((item: any) => item.id)),
+    }));
+    else if (checkEvidence) refinements.push(Object.freeze({
+      ...checkEvidence, kind: 'verification-check-diff',
+      skippedOwnerIds: Object.freeze(skipped.map(item => item.id)),
       retainedOwnerIds: Object.freeze(matched.map((item: any) => item.id)),
     }));
     const releaseOwners: any = steps

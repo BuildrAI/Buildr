@@ -6,7 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { collectChangedProductPaths, collectImpactSnapshot, contentChangesAtSnapshot } from './changed-paths.ts';
+import { collectChangedProductPaths, collectImpactSnapshot, contentChangesAtSnapshot, verificationCheckChangesAtSnapshot } from './changed-paths.ts';
 import { estimateVerificationPlan } from './planner.ts';
 import { createVerificationPlan, budgetRelatedVerificationPlan } from './planner.ts';
 import { executePlan, localExecutionStep } from './plan-runner.ts';
@@ -87,16 +87,20 @@ export function planVerification(request: ReturnType<typeof parseVerificationArg
   const impactSnapshot = snapshotBase && (!request.planOnly || previousSnapshot) && !options.collectChanged
     ? previousSnapshot?.version === 1 ? collectImpactSnapshot(changed, snapshotOptions, previousSnapshot)
       : collectVerificationContentSnapshot({ ...snapshotOptions, base: snapshotBase, env: options.env, environmentInputs: steps.flatMap((step: any) => step.requiredEnvironment ?? []) }, previousSnapshot) : null;
-  if (impactSnapshot && changed.contentChanges?.length && !previousSnapshot && !options.collectChanged) {
+  if (impactSnapshot && (changed.contentChanges?.length || changed.changedVerificationChecks?.length) && !previousSnapshot && !options.collectChanged) {
     // Discovery may precede an expensive snapshot. Re-read paths and bind the
     // bounded proofs to those exact bytes before omitting any behavior owner.
     changed = collectChangedProductPaths({ ...snapshotOptions, base: request.base });
-    changed = { ...changed, contentChanges: contentChangesAtSnapshot(changed, impactSnapshot, snapshotOptions) };
+    changed = {
+      ...changed,
+      contentChanges: contentChangesAtSnapshot(changed, impactSnapshot, snapshotOptions),
+      changedVerificationChecks: verificationCheckChangesAtSnapshot(changed, impactSnapshot, snapshotOptions),
+    };
   }
   const deliveryChanged = changed;
   if (impactSnapshot && previousEvidence?.coverage?.impactSnapshot) {
     const paths = impactSnapshot.changedSincePrevious;
-    changed = { ...changed, paths, contentChanges: [], versionOnlyPackagePaths: (changed.versionOnlyPackagePaths ?? []).filter((file: string) => paths.includes(file)),
+    changed = { ...changed, paths, contentChanges: [], changedVerificationChecks: [], versionOnlyPackagePaths: (changed.versionOnlyPackagePaths ?? []).filter((file: string) => paths.includes(file)),
       selectionOnlyPaths: (changed.selectionOnlyPaths ?? []).filter((file: string) => paths.includes(file)),
       selectionReasons: (changed.selectionReasons ?? []).filter((item: any) => paths.includes(item.path)) };
   }

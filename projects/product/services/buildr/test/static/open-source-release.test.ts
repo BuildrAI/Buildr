@@ -441,7 +441,10 @@ test('publish workflow delegates one protected transaction and consumes the Cand
   assert.equal(document.jobs.candidate.steps.filter((step: any) => step.run?.includes('release-consumption.ts verify')).length, 1);
   assert.equal(document.jobs.release.steps.filter((step: any) => step.run?.includes('release-publication.ts')).length, 1);
   assert.equal(document.jobs.release.steps.filter((step: any) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile publisher').length, 1);
-  for (const job of Object.values(document.jobs) as any[]) assert.equal(job['runs-on'], 'macos-latest');
+  assert.equal(document.jobs.contract['runs-on'], 'ubuntu-latest');
+  assert.equal(document.jobs.candidate['runs-on'], 'ubuntu-latest');
+  assert.equal(document.jobs.candidate.needs, undefined);
+  assert.equal(document.jobs.release['runs-on'], 'macos-latest');
   assert.match(document.jobs.contract.steps.find((step: any) => step.name === 'Confirm the frozen dispatch identity').run, /inputs.source_commit.*\^\{tree\}/u);
   assert.equal(document.jobs.contract.steps.find((step: any) => step.name === 'Download the original failed publisher evidence').with['run-id'], '${{ fromJSON(inputs.release_context).executorRecovery.previousRunId }}');
   assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN|NPM_TOKEN|npm publish|npm pack|artifacts:prepare|application-payload.*build/);

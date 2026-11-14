@@ -23,6 +23,10 @@ export function parseVerificationModule(source: string): any {
 // Shared by working-tree and immutable Git input readers. This only resolves
 // known execution semantics; unknown dynamic readers retain their fallback.
 export function discoveredVerificationFiles(step: any, files: string[]): { selected: string[]; inventory: string[] } {
+  if (step.executor?.file === 'test/verification/browser-selector-dispatcher.ts') {
+    const entry = step.browserSelector === 'connection-skills' ? 'test/e2e/connection-skills.ts' : 'test/e2e/buildr-web-browser.test.ts';
+    return { selected: ['tools/development/run-isolated-workspace-check.ts', entry], inventory: [] };
+  }
   if (step.executor?.file !== 'test/verification/journeys.ts') return { selected: [], inventory: [] };
   const inventory = files.filter(file => /^test\/(?:integration|e2e)\/.*\.test\.[cm]?[jt]sx?$/u.test(file)).sort();
   // The declared members come from the same Journey registry as execution.

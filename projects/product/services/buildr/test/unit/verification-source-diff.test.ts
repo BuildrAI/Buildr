@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { sourceChangeEvidence } from '../verification/source-diff.ts';
+import { sourceChangeEvidence, changedVerificationCheckEvidence } from '../verification/source-diff.ts';
 import { createVerificationPlan, budgetRelatedVerificationPlan } from '../verification/planner.ts';
 import { semanticTagsForPaths } from '../verification/semantic-tags.ts';
 import { selectBrowserSelectors } from '../verification/browser-selector-dispatcher.ts';
@@ -244,4 +244,49 @@ test('only inert source ownership metadata can refine service verification decla
   ]) assert.equal(sourceChangeEvidence(path, previous, changed), null, changed);
   const unknown = ids(plan([path], []));
   assert.ok(unknown.includes('agent-integration-recovery'), 'recipe or unknown declaration changes remain broad');
+});
+
+test('changedVerificationCheckEvidence narrows verification-checks.ts edits to impacted check IDs', () => {
+  const path = 'services/buildr-agent/tools/testing/verification-checks.ts';
+  const previous = [
+    "import { sharedCheckPreparation } from '../../../buildr/tools/testing/verification-checks.ts';",
+    "const storageRuntimeFiles = ['test/integration/storage-lifecycle.test.ts'];",
+    "const nativeFiles = ['test/integration/executors/codex.test.ts'];",
+    "export const agentIntegrationChecks = [",
+    "  { id: 'agent-integration-storage-runtime', type: 'Integration', testFiles: storageRuntimeFiles, timeoutMs: 180000 },",
+    "  { id: 'agent-integration-conversations', type: 'Integration', testFiles: ['test/integration/conversations.test.ts'], timeoutMs: 90000 },",
+    "  { id: 'agent-integration-native', type: 'Integration', testFiles: nativeFiles, timeoutMs: 120000 },",
+    "].map(group => ({ ...group, type: 'Integration' }));",
+  ].join('\n');
+
+  const timeoutEdited = previous.replace('timeoutMs: 90000', 'timeoutMs: 95000');
+  const testFileEdited = previous.replace('conversations.test.ts', 'conversations-extra.test.ts');
+  for (const after of [timeoutEdited, testFileEdited]) {
+    const ev = changedVerificationCheckEvidence(path, previous, after);
+    assert.deepEqual(ev?.checkIds, ['agent-integration-conversations']);
+    const result = ids(createVerificationPlan({ paths: [path], changedVerificationChecks: [ev], related: true, semantic: true, target: 'source' }));
+    assert.ok(result.includes('agent-integration-conversations'));
+    for (const staticId of ['agent-unit', 'agent-source-boundaries', 'agent-typecheck', 'unit', 'test-syntax', 'test-typecheck']) {
+      assert.ok(result.includes(staticId), `Static/Unit owner ${staticId} must remain retained`);
+    }
+    assert.ok(!result.includes('agent-integration-storage-runtime'));
+    assert.ok(!result.includes('agent-integration-native'));
+    assert.ok(!result.includes('integration-agent-host'));
+    assert.ok(!result.includes('repository-onboarding'));
+  }
+
+  const added = previous.replace(
+    "].map(",
+    "  { id: 'agent-integration-extra', type: 'Integration', testFiles: ['test/integration/extra.test.ts'], timeoutMs: 60000 },\n].map("
+  );
+  assert.deepEqual(changedVerificationCheckEvidence(path, previous, added)?.checkIds, ['agent-integration-extra']);
+
+  const helperEdited = previous.replace('storage-lifecycle.test.ts', 'storage-lifecycle-v2.test.ts');
+  assert.deepEqual(changedVerificationCheckEvidence(path, previous, helperEdited)?.checkIds, ['agent-integration-storage-runtime']);
+
+  const importEdited = previous.replace("sharedCheckPreparation", "sharedCheckPreparation, otherHelper");
+  assert.equal(changedVerificationCheckEvidence(path, previous, importEdited), null);
+
+  const transformEdited = previous.replace("group => ({ ...group, type: 'Integration' })", "group => ({ ...group, type: 'E2E' })");
+  assert.equal(changedVerificationCheckEvidence(path, previous, transformEdited), null);
 });

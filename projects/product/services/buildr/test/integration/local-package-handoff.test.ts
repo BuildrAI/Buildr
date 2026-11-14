@@ -472,8 +472,7 @@ test('production executes the frozen checkout builder and an interrupted verific
   const service = path.join(f.repo, 'projects/product/services/buildr');
   const output = path.join(service, 'build/verification/candidates', f.sourceCommit, 'candidate-package');
   const manifest = path.join(output, 'release-artifact.json');
-  const commands: string[] = [], receipts: any[] = [];
-  let restorationFails = false;
+  const commands: string[] = [], artifactArgs: string[][] = [], receipts: any[] = [];
   const artifact = { manifest: { sourceCommit: f.sourceCommit, sha256: 'a'.repeat(64) }, manifestPath: manifest };
   const dependencies = {
     prepareSource: async () => ({ status: 'ready', transport: 'not-consumed-by-this-failure-path' }),
@@ -484,10 +483,7 @@ test('production executes the frozen checkout builder and an interrupted verific
       if (args[0].endsWith('local-package-build.ts')) {
         fs.mkdirSync(output, { recursive: true }); fs.writeFileSync(manifest, JSON.stringify(artifact.manifest));
       }
-      if (args[0].endsWith('candidate-environment.ts')) {
-        assert.deepEqual(args.slice(1), ['prepare', '--profile', 'base']);
-        if (restorationFails) return { status: 1 };
-      }
+      if (args[0].endsWith('artifact.ts')) artifactArgs.push(args.slice(1));
       return { status: args[0].endsWith('artifact.ts') ? 1 : 0 };
     },
   };
@@ -495,16 +491,14 @@ test('production executes the frozen checkout builder and an interrupted verific
   assert.equal((await prepareLocalMainPackage(options, dependencies)).status, 'local-artifact-verification-required');
   assert.equal((await prepareLocalMainPackage({ ...options, previous: receipts[0] }, dependencies)).status, 'local-artifact-verification-required');
   assert.equal(commands.filter(file => file.endsWith('local-package-build.ts')).length, 1);
-  const artifactRuns = commands.map((file, index) => file.endsWith('artifact.ts') ? index : -1).filter(index => index >= 0);
-  assert.equal(artifactRuns.length, 2);
-  for (const index of artifactRuns) assert.ok(commands[index + 1]?.endsWith('candidate-environment.ts'),
-    'even failed artifact checks must restore the source dependency environment before returning');
+  assert.equal(artifactArgs.length, 2);
+  const expectedConsumerDir = path.join(service, 'build/verification/candidates', f.sourceCommit, 'consumer-env');
+  for (const args of artifactArgs) {
+    assert.equal(args[args.indexOf('--consumer-dir') + 1], expectedConsumerDir);
+  }
+  assert.equal(commands.some(file => file.endsWith('candidate-environment.ts')), false,
+    'isolated consumer worktree verification must not trigger base restoration');
   assert.ok(commands.includes(path.join(f.repo, 'skills/buildr-release/scripts/local-package-build.ts')));
   assert.equal(receipts[0].artifactSha256, artifact.manifest.sha256);
   assert.equal(f.git('status', '--porcelain').includes('source.txt'), false);
-  restorationFails = true;
-  const deferred = await prepareLocalMainPackage({ ...options, previous: receipts[0] }, dependencies);
-  assert.equal(deferred.status, 'local-source-environment-required');
-  assert.equal(deferred.localArtifact.artifact.sha256, artifact.manifest.sha256);
-  assert.equal(commands.filter(file => file.endsWith('local-package-build.ts')).length, 1);
 });

@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import { normalizeProductPath } from './planner.ts';
 import { VERIFICATION_GOVERNED_REPOSITORY_INPUTS, isVerificationGovernedRepositoryInput } from './ownership.ts';
 import { sameFilesystemPath } from '../../src/infrastructure/git/checkout-identity.ts';
-import { sourceChangeEvidence, type SourceChangeEvidence } from './source-diff.ts';
+import { changedVerificationCheckEvidence, sourceChangeEvidence, type SourceChangeEvidence, type VerificationCheckDiffEvidence } from './source-diff.ts';
 
 const require: any = createRequire(import.meta.url);
 
@@ -178,6 +178,7 @@ export function collectChangedProductPaths(options: any): any  {
   }
   const uniquePaths: any = [...new Set(paths)].sort();
   const contentChanges: SourceChangeEvidence[] = [];
+  const changedVerificationChecks: VerificationCheckDiffEvidence[] = [];
   // Read exact comparison bytes, not a task's prose or a path-only assertion.
   // Use the merge base, matching the triple-dot discovery above.
   for (const productPath of uniquePaths.filter((file: string) => /\.[cm]?tsx?$/u.test(file))) {
@@ -198,12 +199,17 @@ export function collectChangedProductPaths(options: any): any  {
         if (!stat.isFile() || stat.isSymbolicLink() || stat.mode & 0o111) throw new Error('Unknown source mode');
         return fs.readFileSync(absolute, 'utf8');
       };
-      const evidence = sourceChangeEvidence(productPath, read(workspacePath, 'before'), read(workspacePath, 'after'),
+      const beforeText = read(workspacePath, 'before'), afterText = read(workspacePath, 'after');
+      const evidence = sourceChangeEvidence(productPath, beforeText, afterText,
         (specifier, version) => {
           if (!specifier.startsWith('./') && !specifier.startsWith('../')) throw new Error('External barrel');
           return read(path.posix.normalize(path.posix.join(path.posix.dirname(workspacePath), specifier)), version);
         });
       if (evidence) contentChanges.push(evidence);
+      else {
+        const checkDiff = changedVerificationCheckEvidence(productPath, beforeText, afterText);
+        if (checkDiff) changedVerificationChecks.push(checkDiff);
+      }
     } catch { /* New, deleted, unreadable or opaque source retains broad ownership. */ }
   }
   const versionOnlyPackagePaths: any[] = [];
@@ -247,7 +253,24 @@ export function collectChangedProductPaths(options: any): any  {
       }
     } catch {}
   }
-  return { base, head, comparison, paths: uniquePaths, source: 'git', contentChanges, versionOnlyPackagePaths, selectionOnlyPaths: [...new Set(selectionOnlyPaths)].sort(), selectionReasons };
+  return { base, head, comparison, paths: uniquePaths, source: 'git', contentChanges, changedVerificationChecks, versionOnlyPackagePaths, selectionOnlyPaths: [...new Set(selectionOnlyPaths)].sort(), selectionReasons };
+}
+
+function matchesSnapshotFileEvidence(filePath: string, afterDigest: string, snapshot: any, productRoot: string, projectRoot: string, repository: string): boolean {
+  try {
+    const file = normalizeProductPath(filePath);
+    const projectOwned = /^(?:services|knowledge|openspec|docs)\//u.test(file);
+    const absolute = path.resolve(projectOwned ? projectRoot : productRoot, file);
+    const relative = path.relative(repository, absolute).replaceAll('\\', '/');
+    if (relative.startsWith('../') || path.isAbsolute(relative)) return false;
+    const stat = fs.lstatSync(absolute);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.mode & 0o111) return false;
+    const bytes = fs.readFileSync(absolute);
+    if (crypto.createHash('sha256').update(bytes).digest('hex') !== afterDigest) return false;
+    const hash = crypto.createHash('sha256').update(String(stat.mode));
+    if (snapshot.version === 1) hash.update('\0');
+    return hash.update(bytes).digest('hex') === snapshot.files[snapshot.version === 1 ? file : relative];
+  } catch { return false; }
 }
 
 /** A proof observed before snapshot collection must not narrow different
@@ -256,22 +279,16 @@ export function contentChangesAtSnapshot(changed: any, snapshot: any, options: a
   if (!snapshot?.files || ![1, 2].includes(snapshot.version)) return [];
   const productRoot = fs.realpathSync(options.productRoot), projectRoot = fs.realpathSync(options.projectRoot);
   const repository = fs.realpathSync(git(productRoot, ['rev-parse', '--show-toplevel']).trim());
-  return (changed.contentChanges ?? []).filter((evidence: SourceChangeEvidence) => {
-    try {
-      const file = normalizeProductPath(evidence.path);
-      const projectOwned = /^(?:services|knowledge|openspec|docs)\//u.test(file);
-      const absolute = path.resolve(projectOwned ? projectRoot : productRoot, file);
-      const relative = path.relative(repository, absolute).replaceAll('\\', '/');
-      if (relative.startsWith('../') || path.isAbsolute(relative)) return false;
-      const stat = fs.lstatSync(absolute);
-      if (!stat.isFile() || stat.isSymbolicLink() || stat.mode & 0o111) return false;
-      const bytes = fs.readFileSync(absolute);
-      if (crypto.createHash('sha256').update(bytes).digest('hex') !== evidence.afterDigest) return false;
-      const hash = crypto.createHash('sha256').update(String(stat.mode));
-      if (snapshot.version === 1) hash.update('\0');
-      return hash.update(bytes).digest('hex') === snapshot.files[snapshot.version === 1 ? file : relative];
-    } catch { return false; }
-  });
+  return (changed.contentChanges ?? []).filter((evidence: SourceChangeEvidence) =>
+    matchesSnapshotFileEvidence(evidence.path, evidence.afterDigest, snapshot, productRoot, projectRoot, repository));
+}
+
+export function verificationCheckChangesAtSnapshot(changed: any, snapshot: any, options: any): VerificationCheckDiffEvidence[] {
+  if (!snapshot?.files || ![1, 2].includes(snapshot.version)) return [];
+  const productRoot = fs.realpathSync(options.productRoot), projectRoot = fs.realpathSync(options.projectRoot);
+  const repository = fs.realpathSync(git(productRoot, ['rev-parse', '--show-toplevel']).trim());
+  return (changed.changedVerificationChecks ?? []).filter((evidence: VerificationCheckDiffEvidence) =>
+    matchesSnapshotFileEvidence(evidence.path, evidence.afterDigest, snapshot, productRoot, projectRoot, repository));
 }
 
 /** Capture changed contents so a repair compares against the actual preceding run,

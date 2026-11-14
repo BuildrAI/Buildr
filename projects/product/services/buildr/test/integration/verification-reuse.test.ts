@@ -7,6 +7,8 @@ import { collectVerificationReuseSnapshot, createVerificationReuseIdentity, crea
   type VerificationReuseSnapshot, type VerificationReuseStep, type VerificationReuseRecord } from '../verification/verification-reuse.ts';
 import { createCandidateRoundExecution } from '../verification/candidate-round.ts';
 import { executePlan } from '../verification/plan-runner.ts';
+import { verificationSteps } from '../verification/registry.ts';
+import { collectVerificationSourceInputs } from '../verification/verification-source-inputs.ts';
 import { execFileSync } from 'node:child_process';
 
 test('proof collection reads only needed dependency trees while preserving identities and byte drift detection', t => {
@@ -230,4 +232,200 @@ test('round file coverage adopts only matching complete files and retains origin
     // Restore the completed a/b record for the next independent case.
     fs.writeFileSync(output, JSON.stringify(complete));
   }
+});
+
+test('browser selectors compute fallback-free reuse proofs and agent test edits stay isolated across split groups', t => {
+  const productRoot = path.resolve(import.meta.dirname, '../..');
+  const repositoryRoot = path.resolve(productRoot, '../../../..');
+  const browserSteps = verificationSteps.filter((item: any) => item.id.startsWith('e2e-browser:'));
+  assert.equal(browserSteps.length, 14);
+  for (const item of browserSteps) assert.deepEqual(item.reuse, { scope: 'web', releaseNotes: false });
+  const storageStep = verificationSteps.find((item: any) => item.id === 'agent-integration-storage-runtime');
+  const conversationsStep = verificationSteps.find((item: any) => item.id === 'agent-integration-conversations');
+  const shellStep = browserSteps.find((item: any) => item.id === 'e2e-browser:shell');
+  assert.ok(storageStep && conversationsStep && shellStep);
+
+  const realInputs = collectVerificationSourceInputs(repositoryRoot, productRoot, [...browserSteps, storageStep, conversationsStep]);
+  for (const item of browserSteps) {
+    const proof = realInputs.proofInputs[item.id];
+    assert.equal(proof.fallback, false, `${item.id} must resolve without fallback`);
+    assert.deepEqual(proof.unresolved, [], `${item.id} must have no unresolved inputs`);
+  }
+  const realSnapshot = collectVerificationReuseSnapshot({ productRoot, steps: browserSteps });
+  for (const item of browserSteps) {
+    assert.ok(createVerificationReuseIdentity(item, realSnapshot)?.key, `${item.id} must compute a reuse identity`);
+  }
+
+  const fixtureRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-split-reuse-')));
+  t.after(() => fs.rmSync(fixtureRoot, { recursive: true, force: true }));
+  const write = (rel: string, text: string) => {
+    const target = path.join(fixtureRoot, rel);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, text);
+  };
+  write('.gitignore', 'node_modules/\nbuild/\n');
+  write('projects/product/services/buildr/package.json', '{"type":"module"}\n');
+  write('projects/product/services/buildr/node_modules/fixture/package.json', '{"name":"fixture","version":"1.0.0"}');
+  write('projects/product/services/buildr/tools/testing/run-service-tests.ts', 'export const runner = true;\n');
+  write('projects/product/services/buildr/test/verification/worker-budget.ts', 'export const budget = 1;\n');
+  write('projects/product/services/buildr/tools/development/run-isolated-workspace-check.ts', 'export const isolated = true;\n');
+  write('projects/product/services/buildr/test/verification/browser-selector-dispatcher.ts', 'export const dispatch = true;\n');
+  write('projects/product/services/buildr/test/e2e/buildr-web-browser.test.ts', 'export const webTest = true;\n');
+  write('projects/product/services/buildr-web/package.json', '{"type":"module"}\n');
+  write('projects/product/services/buildr-web/node_modules/fixture/package.json', '{"name":"fixture","version":"1.0.0"}');
+  write('projects/product/services/buildr-agent/package.json', '{"type":"module"}\n');
+  write('projects/product/services/buildr-agent/tools/testing/run-integration.ts', 'export const run = true;\n');
+  write('projects/product/services/buildr-agent/test/integration/conversations.test.ts', 'export const v = 1;\n');
+  write('projects/product/services/buildr-agent/test/integration/storage-lifecycle.test.ts', 'export const v = 1;\n');
+  execFileSync('git', ['init', '--initial-branch=dev', fixtureRoot], { stdio: 'ignore' });
+  execFileSync('git', ['-C', fixtureRoot, 'add', '.']);
+  execFileSync('git', ['-C', fixtureRoot, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'base'], { stdio: 'ignore' });
+
+  const serviceRoot = path.join(fixtureRoot, 'projects/product/services/buildr');
+  const agentFixtureRoot = path.join(fixtureRoot, 'projects/product/services/buildr-agent');
+  const subset = [
+    { ...conversationsStep, executor: { ...conversationsStep.executor, cwd: agentFixtureRoot, discoveredFiles: ['../buildr-agent/test/integration/conversations.test.ts'] }, platforms: undefined },
+    { ...storageStep, executor: { ...storageStep.executor, cwd: agentFixtureRoot, discoveredFiles: ['../buildr-agent/test/integration/storage-lifecycle.test.ts'] }, platforms: undefined },
+    { ...shellStep, platforms: undefined },
+  ];
+  const before = collectVerificationReuseSnapshot({ productRoot: serviceRoot, steps: subset });
+  assert.equal(before.proofInputs![subset[0].id].fallback, false);
+  assert.equal(before.proofInputs![subset[1].id].fallback, false);
+  assert.equal(before.proofInputs![subset[2].id].fallback, false);
+  const beforeConv = createVerificationReuseIdentity(subset[0], before)!.key;
+  const beforeStorage = createVerificationReuseIdentity(subset[1], before)!.key;
+  const beforeShell = createVerificationReuseIdentity(subset[2], before)!.key;
+
+  write('projects/product/services/buildr-agent/test/integration/conversations.test.ts', 'export const v = 2;\n');
+  const after = collectVerificationReuseSnapshot({ productRoot: serviceRoot, steps: subset });
+  assert.notEqual(createVerificationReuseIdentity(subset[0], after)!.key, beforeConv);
+  assert.equal(createVerificationReuseIdentity(subset[1], after)!.key, beforeStorage);
+  assert.equal(createVerificationReuseIdentity(subset[2], after)!.key, beforeShell);
+});
+
+test('bundled browser execution persists reuse records for covered members and invalidates both on failure', async t => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-bundle-reuse-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const serviceRoot = path.join(root, 'projects/product/services/buildr');
+  const reuseDir = path.join(root, 'reuse-cache');
+  const write = (rel: string, text: string) => {
+    const target = path.join(root, rel);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, text);
+  };
+  write('.gitignore', 'node_modules/\nbuild/\n');
+  write('projects/product/services/buildr/package.json', '{"type":"module"}\n');
+  write('projects/product/services/buildr/node_modules/fixture/package.json', '{"name":"fixture","version":"1.0.0"}');
+  write('projects/product/services/buildr/tools/development/run-isolated-workspace-check.ts', 'export const isolated = true;\n');
+  write('projects/product/services/buildr/test/verification/browser-selector-dispatcher.ts', 'export const dispatch = true;\n');
+  write('projects/product/services/buildr/test/e2e/buildr-web-browser.test.ts', 'export const webTest = true;\n');
+  write('projects/product/services/buildr-web/package.json', '{"type":"module"}\n');
+  write('projects/product/services/buildr-web/node_modules/fixture/package.json', '{"name":"fixture","version":"1.0.0"}');
+  execFileSync('git', ['init', '--initial-branch=dev', root], { stdio: 'ignore' });
+  execFileSync('git', ['-C', root, 'add', '.']);
+  execFileSync('git', ['-C', root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'base'], { stdio: 'ignore' });
+
+  const makeStep = (selector: string) => ({
+    id: `e2e-browser:${selector}`,
+    name: `Browser journey: ${selector}`,
+    browserSelector: selector,
+    browserBundle: 'workbench-surface',
+    target: 'source',
+    dependsOn: [],
+    contexts: [],
+    platformScope: { kind: 'common' },
+    concurrencyClass: 'workspace-heavy',
+    resourceDemand: { workers: 1, processes: 1 },
+    executor: { type: 'node', file: 'test/verification/browser-selector-dispatcher.ts', args: ['--selector', selector, '--run'] },
+    reuse: { scope: 'web', releaseNotes: false },
+    testing: { executionBoundary: 'E2E' },
+  });
+  const shellStep = makeStep('shell');
+  const workbenchStep = makeStep('workbench');
+
+  const coordinator = () => ({
+    root: path.join(root, 'coord'),
+    acquire: async () => ({ claims: [], release: async () => [] }),
+    releaseAll: () => [],
+  });
+  const baseEnv = { BUILDR_VERIFICATION_REUSE_DIR: reuseDir, BUILDR_AGENT_PREPARED_RUNTIME_REUSE: '0' };
+  const calls: string[][] = [];
+  let shouldPass = false;
+  const executorFactory = () => async (step: any) => {
+    calls.push(step.browserSelectors ?? [step.browserSelector]);
+    return {
+      status: shouldPass ? 'passed' : 'failed',
+      exitCode: shouldPass ? 0 : 1,
+      childOutcome: shouldPass ? 'passed' : 'failed',
+      childExitCode: shouldPass ? 0 : 1,
+      childSignal: null,
+      durationMs: 25,
+      stdout: '',
+      stderr: '',
+      processCleanup: { status: 'clean' },
+      startedAt: '2026-08-13T00:00:00.000Z',
+      finishedAt: '2026-08-13T00:00:00.025Z',
+    };
+  };
+
+  const failedRun = await executePlan({ steps: [shellStep, workbenchStep] }, {
+    productRoot: serviceRoot,
+    env: baseEnv,
+    reuse: {},
+    resourceCoordinator: coordinator(),
+    executorFactory,
+  });
+  assert.equal(failedRun.passed, false);
+  assert.deepEqual(calls, [['shell', 'workbench']]);
+  assert.equal(failedRun.sourceBundle.records.length, 0, 'failed representative must not persist reuse records');
+
+  calls.length = 0;
+  shouldPass = true;
+  const passedRun = await executePlan({ steps: [shellStep, workbenchStep] }, {
+    productRoot: serviceRoot,
+    env: baseEnv,
+    reuse: {},
+    resourceCoordinator: coordinator(),
+    executorFactory,
+  });
+  assert.equal(passedRun.passed, true);
+  assert.deepEqual(calls, [['shell', 'workbench']]);
+  assert.deepEqual(passedRun.sourceBundle.records.map((item: any) => item.identity.stepId).sort(), ['e2e-browser:shell', 'e2e-browser:workbench']);
+  assert.equal(passedRun.results.find((item: any) => item.id === 'e2e-browser:workbench').sourceRecord?.result.durationSource, 'parent-run-upper-bound');
+
+  calls.length = 0;
+  const reusedMemberRun = await executePlan({ steps: [workbenchStep] }, {
+    productRoot: serviceRoot,
+    env: baseEnv,
+    reuse: {},
+    resourceCoordinator: coordinator(),
+    executorFactory,
+  });
+  assert.equal(reusedMemberRun.passed, true);
+  assert.equal(calls.length, 0, 'covered member must reuse persisted record without re-executing');
+  assert.equal(reusedMemberRun.results[0].disposition, 'reused');
+
+  calls.length = 0;
+  shouldPass = false;
+  const forcedFailure = await executePlan({ steps: [shellStep, workbenchStep] }, {
+    productRoot: serviceRoot,
+    env: baseEnv,
+    reuse: { force: true },
+    resourceCoordinator: coordinator(),
+    executorFactory,
+  });
+  assert.equal(forcedFailure.passed, false);
+  assert.equal(forcedFailure.sourceBundle.records.length, 0);
+
+  calls.length = 0;
+  shouldPass = true;
+  const afterFailure = await executePlan({ steps: [workbenchStep] }, {
+    productRoot: serviceRoot,
+    env: baseEnv,
+    reuse: {},
+    resourceCoordinator: coordinator(),
+    executorFactory,
+  });
+  assert.equal(afterFailure.passed, true);
+  assert.deepEqual(calls, [['workbench']], 'failed representative must keep covered member invalidated');
 });

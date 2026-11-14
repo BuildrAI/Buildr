@@ -108,8 +108,9 @@ testing:
       - 完整入口以实际登记和发现集合运行本类全部检查，不按旧目录名推定分类，不在地图复制成员。
       - 所有公开入口支持 --plan 查看选择，使用 --check <id> 显式指定检查；计划和选择成功不等于实际验证通过。
       - 智能体服务（Agent Service）的完整入口由自身检查登记发现全部组；可用 --check 精确选择
-        agent-integration、agent-integration-native、agent-integration-startup、agent-integration-handoff
-        或 agent-integration-recovery。
+        agent-integration、agent-integration-storage-runtime、agent-integration-models-accounts、
+        agent-integration-conversations、agent-integration-native、agent-integration-native-runtime、
+        agent-integration-startup、agent-integration-handoff 或 agent-integration-recovery。
       - 重型独立进程组使用统一资源预算，每组申请一个工作位，由 agent-process-tests 限制同机最多两组；直接诊断入口也受
         BUILDR_VERIFICATION_WORKER_BUDGET
         约束，最多两个文件并行。数据库、可写包、运行目录与进程身份各自隔离；同次完整运行仅共用只读 Node.js 程序输入，仍逐次执行完整摘要校验。

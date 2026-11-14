@@ -57,10 +57,16 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
     members.set(file, names === null ? null : new Set([...(before ?? []), ...names])); pending.push(file);
   };
   const local = (file: string) => file.startsWith(prefix) ? file.slice(prefix.length) : null;
+  const agentPrefix = prefix.replace(/buildr\/$/u, 'buildr-agent/');
+  const agentLocal = (file: string) => file.startsWith(agentPrefix) ? file.slice(agentPrefix.length) : null;
   const recipeFile = (file: string) => {
     const relative = local(file);
-    return !options.legacyDeclarations && ['projects/product/verification.yml', '.github/workflows/verify.yml', '.github/workflows/verify-package.yml'].includes(file)
-      || file.startsWith('skills/buildr-release/') || relative !== null && (relative.startsWith('test/') || relative.startsWith('tools/release/') || relative.startsWith('tools/verification/'));
+    const agentRelative = agentLocal(file);
+    return !options.legacyDeclarations && (
+      ['projects/product/verification.yml', '.github/workflows/verify.yml', '.github/workflows/verify-package.yml'].includes(file)
+      || /^projects\/product\/services\/[^/]+\/tools\/testing\/verification-checks\.ts$/u.test(file)
+      || agentRelative !== null && (agentRelative.startsWith('test/') || agentRelative.startsWith('tools/testing/'))
+    ) || file.startsWith('skills/buildr-release/') || relative !== null && (relative.startsWith('test/') || relative.startsWith('tools/release/') || relative.startsWith('tools/verification/'));
   };
   // These fixture/source checks were reviewed for real checkout readers. Their
   // inputs are executable/shipped assets, not this Product's planning material.
@@ -90,7 +96,32 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
       if (relative && path.matchesGlob(relative, selector)) add(file!);
     }
   }
-  let fallback = verificationEntryFiles(step.executor).length === 0 && !(step.executor.files?.length > 0);
+  const discoveredIntegrationFiles: string[] = !options.legacyDeclarations
+    && step.service === 'buildr-agent'
+    && step.executor?.type === 'command'
+    && Array.isArray(step.executor.args)
+    && step.executor.args.some((argument: string) => String(argument).replaceAll('\\', '/').endsWith('tools/testing/run-integration.ts'))
+    && Array.isArray(step.executor.discoveredFiles)
+    && step.executor.discoveredFiles.length > 0
+    && step.executor.discoveredFiles.every((file: string) => !/[*?[]/u.test(file))
+    ? step.executor.discoveredFiles.map((file: string) => path.posix.normalize(prefix + file))
+    : [];
+  if (discoveredIntegrationFiles.length > 0) {
+    add(agentPrefix + 'tools/testing/run-integration.ts');
+    add(prefix + 'tools/testing/run-service-tests.ts');
+    add(prefix + 'test/verification/worker-budget.ts');
+    if (discoveredIntegrationFiles.some(file => file.includes('/test/integration/process/'))) {
+      for (const fixture of [
+        agentPrefix + 'test/integration/fixtures/agent-process-entry.mjs',
+        agentPrefix + 'test/integration/fixtures/agent-host-process.mjs',
+        agentPrefix + 'test/integration/fixtures/fixture-version.json',
+      ]) if (byPath.has(fixture)) selected.add(fixture);
+    }
+    for (const file of discoveredIntegrationFiles) add(file);
+  }
+  let fallback = verificationEntryFiles(step.executor).length === 0
+    && !(step.executor.files?.length > 0)
+    && discoveredIntegrationFiles.length === 0;
   let readsReleaseNotes = false;
   const unresolved = new Set<string>();
   // A command's executable (for example the external Node binary) is not a
@@ -139,10 +170,11 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
     const executable = options.proof ? (options.analysis?.executable ?? executableModuleInputs)(text, !options.legacyDeclarations) : null;
     // Child scripts are often passed to spawn via a repository-relative literal,
     // rather than imported into the current test process.
-    const catalog = /\/test\/(?:verification|context)\/(?:registry|ownership|journey-suites|profiles|dispositions)\.ts$/u.test(file);
+    const catalog = /\/test\/(?:verification|context)\/(?:registry|ownership|journey-suites|profiles|dispositions)\.ts$/u.test(file)
+      || !options.legacyDeclarations && /\/test\/verification\/ownership\/[^/]+\.ts$/u.test(file);
     const children = executable?.children ?? [...text.matchAll(/['"]((?:test|tools)\/[^'"\n]+\.[cm]?[jt]sx?)['"]/gu)].map(match => match[1]!);
     for (const target of catalog ? [] : children) {
-      const child = prefix + target;
+      const child = (!options.legacyDeclarations && agentLocal(file) !== null ? agentPrefix : prefix) + target;
       if (byPath.has(child)) add(child); else if (!executable) { fallback = true; unresolved.add(file + ':child:' + target); }
     }
     // Computed module paths retain the conservative scope. Never infer their

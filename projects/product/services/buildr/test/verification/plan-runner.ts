@@ -237,6 +237,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
       execute,
       concurrency,
       schedulingMode: options.schedulingMode,
+      fastFailBoundaries: options.fastFailBoundaries ?? ['Static', 'Unit'],
       ...(concurrency?.resources?.['browser-runtime']
         ? { priorityResources: options.priorityResources ?? ['browser-runtime'] }
         : {}),
@@ -264,6 +265,9 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
         options.onComplete?.(result, step);
       },
     });
+    for (const result of results) {
+      if (coveredBrowserSteps.has(result.id) && !result.coveredBy) result.coveredBy = coveredBrowserSteps.get(result.id);
+    }
   } finally {
     timings.executionMs = Date.now() - executionStartedAt;
     clearInterval(heartbeat);

@@ -179,7 +179,7 @@ export function createVerificationReuseIdentity(step: VerificationReuseStep, sna
   if (requiresFreshExternalVerification(step, snapshot)) return null;
   if (step.reuse.git === 'comparison' && !snapshot.gitComparison) return null;
   const selected = legacy ? null : snapshot.proofInputs?.[step.id];
-  const proof = selected?.selectionIdentity === digest({ executor: step.executor, scope: step.reuse.scope }) ? selected : null;
+  const proof = selected?.selectionIdentity === digest({ executor: portableVerificationExecutor(step.executor, snapshot), scope: step.reuse.scope }) ? selected : null;
   const inputs = proof ?? (step.reuse.inputMode ? snapshot.stepInputs?.[step.id] : null);
   if ((proof || step.reuse.inputMode) && (!inputs || inputs.unavailable)) return null;
   if (!inputs && snapshot.unavailableScopes?.includes(step.reuse.scope)) return null;
@@ -558,9 +558,27 @@ export function createVerificationPlanReuse(plan: any, options: any): any {
       if (changedFiles.length || snapshot.sourceCommit !== after.sourceCommit) {
         options.stream?.write(`[verification-reuse] source drift ${JSON.stringify(sourceDrift)}\n`);
       }
+      const resultsById = new Map(results.map((item: any) => [item.id, item]));
       for (const result of results) {
         const step = steps.find((item: VerificationReuseStep) => item.id === result.id);
         if (!step || result.disposition === 'reused') continue;
+        if (result.coveredBy) {
+          const covering = resultsById.get(result.coveredBy);
+          if (!covering) continue;
+          const coverStart = covering.startedAt ?? result.startedAt ?? new Date().toISOString();
+          const coverFinish = covering.finishedAt ?? coverStart;
+          const coverOrigin: VerificationReuseOrigin = { kind: env.GITHUB_RUN_ID ? 'ci' : 'local', runId: options.runId ?? `verification-${process.pid}`,
+            sourceCommit: snapshot.sourceCommit, startedAt: coverStart, finishedAt: coverFinish,
+            ...(env.GITHUB_RUN_ID ? { workflow: { runId: env.GITHUB_RUN_ID, runAttempt: Number(env.GITHUB_RUN_ATTEMPT || 1) } } : {}) };
+          store.stage(step, {
+            ...covering,
+            id: step.id,
+            fileCoverage: undefined,
+            fileRecords: undefined,
+            durationSource: 'parent-run-upper-bound',
+          }, coverOrigin);
+          continue;
+        }
         const start = result.startedAt ?? new Date().toISOString(), finish = result.finishedAt ?? start;
         const origin: VerificationReuseOrigin = { kind: env.GITHUB_RUN_ID ? 'ci' : 'local', runId: options.runId ?? `verification-${process.pid}`,
           sourceCommit: snapshot.sourceCommit, startedAt: start, finishedAt: finish,

@@ -4,9 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
-import { runLocalArtifactVerification } from '../verification/artifact.ts';
+import { parseArtifactArgs, runLocalArtifactVerification, createLocalArtifactPlan } from '../verification/artifact.ts';
 import { candidateProofDescriptors } from '../verification/candidate-repair.ts';
-import { createLocalArtifactPlan } from '../verification/artifact.ts';
 
 test('local package execution preserves local identity and continues independent nodes after a failed node', t => {
   const output = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-local-package-test-'));
@@ -103,4 +102,67 @@ test('local package continuation collects every independent group after a failed
   });
   assert.equal(result.status, 'failed'); assert.equal(result.results.length, result.nodes.length);
   assert.equal(calls.length, result.nodes.length); assert.ok(result.results.some((item: any) => item.status === 'passed'));
+});
+
+test('consumerDirectory isolates --omit=dev preparations and executes cleanup even when a node fails', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-artifact-consumer-dir-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const consumerDirectory = path.join(root, 'consumer-env');
+  const output = path.join(root, 'output');
+  const parsed = parseArtifactArgs(['--artifact-dir', '/original', '--output', output, '--consumer-dir', consumerDirectory]);
+  assert.equal(parsed.consumerDirectory, consumerDirectory);
+
+  const consumerRoots = {
+    projectRoot: path.join(consumerDirectory, 'projects/product'),
+    serviceRoot: path.join(consumerDirectory, 'projects/product/services/buildr'),
+    webRoot: path.join(consumerDirectory, 'projects/product/services/buildr-web'),
+  };
+  const consumerEntry = path.join(consumerRoots.serviceRoot, 'test/verification/candidate-ci.ts');
+  let checkoutCount = 0;
+  let cleanedUp = 0;
+  const preparedProfiles: Array<{ profile: string; roots: any }> = [];
+  const executions: Array<{ entry: string; cwd: string; id: string }> = [];
+
+  const result = runLocalArtifactVerification(parsed, {
+    platform: 'darwin',
+    nodeVersion: '24.15.0',
+    readArtifact: () => ({ identity: { sha256: 'original' } }),
+    assertCheckout: () => {},
+    reusableEvidence: () => false,
+    prepareConsumerCheckout: (_productRoot: string, targetDir: string) => {
+      checkoutCount++;
+      assert.equal(targetDir, path.resolve(consumerDirectory));
+      return {
+        roots: consumerRoots,
+        entry: consumerEntry,
+        cleanup: () => { cleanedUp++; },
+      };
+    },
+    prepare: ({ profile, roots }: any) => { preparedProfiles.push({ profile, roots }); },
+    execute: (_command: string, args: string[], execOptions: any) => {
+      executions.push({ entry: args[0]!, cwd: execOptions.cwd, id: args[2]! });
+      return { status: args[2] === 'host-minimum-macos' ? 1 : 0, stdout: '', stderr: '' };
+    },
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.equal(checkoutCount, 1);
+  assert.equal(cleanedUp, 1);
+  for (const entry of preparedProfiles) {
+    if (['consumer', 'publisher', 'host'].includes(entry.profile)) {
+      assert.deepEqual(entry.roots, consumerRoots);
+    } else {
+      assert.equal(entry.roots, undefined);
+    }
+  }
+  const sourceProductRoot = path.resolve(import.meta.dirname, '../..');
+  for (const run of executions) {
+    const node = createLocalArtifactPlan('darwin').nodes.find((item: any) => item.id === run.id);
+    if (['consumer', 'publisher', 'host'].includes(node.preparation)) {
+      assert.equal(run.entry, consumerEntry);
+      assert.equal(run.cwd, consumerRoots.serviceRoot);
+    } else {
+      assert.equal(run.cwd, sourceProductRoot);
+    }
+  }
 });

@@ -87,7 +87,8 @@ test('local lifecycle IO isolation admits independent work without expanding wor
   const writer = verificationSteps.find((check:any)=>check.id==='integration');
   assert.equal(localExecutionStep(writer,profile,profile.limits).concurrencyClass,'workspace-heavy');
   const artifactWriter = verificationSteps.find((check:any)=>check.id==='integration-generated-artifacts');
-  assert.equal(localExecutionStep(artifactWriter,profile,profile.limits).concurrencyClass,'exclusive');
+  assert.equal(localExecutionStep(artifactWriter,profile,profile.limits).concurrencyClass,'cpu-heavy');
+  assert.equal(localExecutionStep({ ...artifactWriter, concurrencyClass: 'exclusive' },profile,profile.limits).concurrencyClass,'exclusive');
   assert.equal(localExecutionStep(definitions[0],{id:'ci'},profile.limits),definitions[0]);
   const limited = {...profile.limits,capacities:{...profile.limits.capacities,workspaceIo:1}};
   assert.equal(localExecutionStep(definitions[0],profile,limited).resourceDemand.workspaceIo,1);

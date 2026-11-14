@@ -15,7 +15,7 @@ export const officialRegistry: any = 'https://registry.npmjs.org/';
 
 /** Shared publication propagation wait; observations are ordinary logs, not write permission. */
 export async function waitForRegistryPublication<T extends { published: boolean }>(read: () => Promise<T>, options: any = {}): Promise<T | { published: false }> {
-  const attempts = options.attempts ?? 24, delayMs = options.delayMs ?? 20_000;
+  const attempts = options.attempts ?? 12, delayMs = options.delayMs ?? 10_000;
   if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 24 || !Number.isFinite(delayMs) || delayMs < 0 || delayMs > 20_000) throw new Error('Invalid registry publication wait budget.');
   const now = options.now ?? Date.now, startedAt = now();
   const observe = options.onObservation ?? ((value: any) => process.stdout.write(`[release] registry-readback ${JSON.stringify(value)}\n`));

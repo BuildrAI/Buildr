@@ -539,3 +539,36 @@ test('空闲 browser 槽位优先启动浏览器检查，槽位占满后普通�
   assert.ok(started.indexOf('heavy-b') < started.indexOf('browser-b'), '浏览器槽位占满后普通检查不得等待');
   assert.deepEqual(results.map((item: any) => item.status), ['passed', 'passed', 'passed', 'passed']);
 });
+
+test('fastFailBoundaries 在 cost 调度下优先启动已就绪的 Static 与 Unit 检查，未传时保持纯成本顺序', async () => {
+  const withBoundary = (id: string, boundary: string, cost: number) => ({
+    ...step(id, [], 'default', cost),
+    testing: { executionBoundary: boundary },
+  });
+  const fastStarted: string[] = [];
+  await runVerificationDag(plan([
+    withBoundary('integration-heavy', 'Integration', 500),
+    withBoundary('static-fast', 'Static', 5),
+    withBoundary('unit-fast', 'Unit', 10),
+  ]), {
+    concurrency: { global: 1, classes: { default: 1, exclusive: 1 } },
+    schedulingMode: 'cost',
+    fastFailBoundaries: ['Static', 'Unit'],
+    onStart: (item: any) => fastStarted.push(item.id),
+    execute: async () => ({ status: 'passed', exitCode: 0, durationMs: 1 }),
+  });
+  assert.deepEqual(fastStarted, ['static-fast', 'unit-fast', 'integration-heavy']);
+
+  const rawStarted: string[] = [];
+  await runVerificationDag(plan([
+    withBoundary('integration-heavy', 'Integration', 500),
+    withBoundary('static-fast', 'Static', 5),
+    withBoundary('unit-fast', 'Unit', 10),
+  ]), {
+    concurrency: { global: 1, classes: { default: 1, exclusive: 1 } },
+    schedulingMode: 'cost',
+    onStart: (item: any) => rawStarted.push(item.id),
+    execute: async () => ({ status: 'passed', exitCode: 0, durationMs: 1 }),
+  });
+  assert.deepEqual(rawStarted, ['integration-heavy', 'unit-fast', 'static-fast']);
+});

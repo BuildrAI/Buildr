@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
@@ -170,4 +172,24 @@ test('trusted publish preserves npm result and adds only authority-related diagn
   const success: any = runTrustedPublish(['candidate.tgz'], { execute: () => ({ status: 0, stdout: '+ @buildr-ai/buildr', stderr: '' }) });
   assert.equal(success.status, 0);
   assert.equal(success.diagnostic, null);
+});
+
+test('real publish.yml keeps parallel ubuntu-latest preflight and single protected release job', async () => {
+  const repoRoot = path.resolve(import.meta.dirname, '../../../../../..');
+  const realWorkflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/publish.yml'), 'utf8');
+  const inspected = inspectWorkflowAuthority(realWorkflow);
+  assert.equal(inspected.protectedJobId, 'release');
+  assert.deepEqual(inspected.environmentJobs, [{ id: 'release', environment: 'npm-production' }]);
+  assert.deepEqual(inspected.privilegedJobs, []);
+  assert.equal(inspected.triggers.workflowDispatch, true);
+  assert.equal(inspected.triggers.push, false);
+  assert.deepEqual(inspected.release.needs, ['candidate', 'contract']);
+  assert.equal(inspected.release.environment, 'npm-production');
+  const { default: YAML } = await import('yaml');
+  const parsed = YAML.parse(realWorkflow);
+  assert.equal(parsed.jobs.contract['runs-on'], 'ubuntu-latest');
+  assert.equal(parsed.jobs.candidate['runs-on'], 'ubuntu-latest');
+  assert.equal(parsed.jobs.candidate.needs, undefined);
+  assert.deepEqual(parsed.jobs.release.needs, ['contract', 'candidate']);
+  assert.equal(parsed.jobs.release.environment, 'npm-production');
 });

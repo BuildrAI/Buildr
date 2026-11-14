@@ -69,12 +69,42 @@ export async function publishFrozenArtifact(options: any, dependencies: any = {}
     if (command.stdout) process.stdout.write(command.stdout);
     if (command.stderr) process.stderr.write(command.stderr);
     process.stdout.write(`[release] npm-publish exitCode=${command.status ?? 'unknown'}\n`);
+    const now = dependencies.now ?? Date.now;
+    const shortFailureReadback = command.status !== 0 && command.diagnostic !== null;
+    const waitOptions = shortFailureReadback
+      ? { attempts: 3, delayMs: 5_000, ...dependencies.registryWait, sleep: dependencies.sleep, now }
+      : { ...dependencies.registryWait, sleep: dependencies.sleep, now };
+    let readbackObservations = 0;
+    const readbackStartedAt = now();
     const after = await waitForRegistryPublication(async () => {
       const state = await read(); assertRegistryArtifact(state, manifest); return state;
-    }, { ...dependencies.registryWait, sleep: dependencies.sleep, now: dependencies.now });
+    }, {
+      ...waitOptions,
+      onObservation: dependencies.onObservation
+        ? (value: any) => { readbackObservations++; dependencies.onObservation(value); }
+        : (value: any) => { readbackObservations++; process.stdout.write(`[release] registry-readback ${JSON.stringify(value)}\n`); },
+    });
+    const readbackElapsedMs = now() - readbackStartedAt;
+    process.stdout.write(`[release] npm-readback attempts=${readbackObservations} elapsedMs=${readbackElapsedMs} confirmed=${after.published ? 'true' : 'false'}\n`);
     if (!after.published) {
       publishEffect.state = command.status === 0 ? 'unknown' : 'not-confirmed';
-      return { status: 'blocked', action: 'readback-required', attempted, effects, diagnostic: command.diagnostic ?? { code: 'npm-publication-unconfirmed', message: 'Official Registry has not confirmed the publish result.' }, nextActions: ['回读同一版本与integrity后恢复；未知状态下不重复publish。'] };
+      const fallbackDiagnostic = {
+        code: 'npm-publication-unconfirmed',
+        message: `Official Registry has not confirmed ${manifest.packageName}@${manifest.version} after ${readbackObservations} readback checks (${readbackElapsedMs}ms); npm exit=${command.status ?? 'unknown'}.`,
+        attempts: readbackObservations,
+        elapsedMs: readbackElapsedMs,
+        exitCode: command.status ?? null,
+      };
+      return {
+        status: 'blocked',
+        action: 'readback-required',
+        attempted,
+        effects,
+        diagnostic: command.diagnostic ?? fallbackDiagnostic,
+        nextActions: command.status === 0
+          ? ['回读同一版本与integrity后恢复；npm publish已返回成功但官方源尚未可见，未知状态下不重复publish。']
+          : ['回读同一版本与integrity后恢复；未知状态下不重复publish。'],
+      };
     }
     publishEffect.state = 'confirmed';
     dependencies.onEffects?.(effects);
