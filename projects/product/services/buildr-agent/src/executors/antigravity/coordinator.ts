@@ -21,6 +21,7 @@ import {
   type NativeEnvironment,
 } from '../native-process.ts';
 import { AntigravityAcpClient, type AntigravityAcpServerRequest } from './acp.ts';
+import { isValidAntigravityContextId } from './content.ts';
 import { createAntigravityOpenerShim, redactAuthUrl } from './opener-shim.ts';
 import { ensureAntigravityAutoUpdateDisabled } from './program.ts';
 
@@ -460,6 +461,7 @@ export class AntigravityCoordinator {
       environment: env,
       diagnostics: this.diagnostics,
     });
+    let probeSessionId: string | undefined;
     try {
       const initResult = await client.request(
         'initialize',
@@ -551,7 +553,7 @@ export class AntigravityCoordinator {
         };
       }
 
-      const probeSessionId = typeof sessionResult?.sessionId === 'string' ? sessionResult.sessionId : undefined;
+      probeSessionId = typeof sessionResult?.sessionId === 'string' ? sessionResult.sessionId : undefined;
       if (probeSessionId && handshake.supportsClose) {
         await client.request('session/close', { sessionId: probeSessionId }, 5_000).catch(() => {});
       }
@@ -615,7 +617,21 @@ export class AntigravityCoordinator {
       };
     } finally {
       await client.close();
+      await this.cleanupProbeSessionArtifacts(probeSessionId);
     }
+  }
+
+  /** Remove empty conversation DB/brain artifacts created solely by an ephemeral ACP probe session. */
+  private async cleanupProbeSessionArtifacts(probeSessionId?: string): Promise<void> {
+    if (!probeSessionId || !isValidAntigravityContextId(probeSessionId)) return;
+    const cliRoot = path.join(nativeHome(this.canonicalConfigRoot).home, '.gemini', 'antigravity-cli');
+    const targets = [
+      path.join(cliRoot, 'conversations', `${probeSessionId}.db`),
+      path.join(cliRoot, 'conversations', `${probeSessionId}.db-wal`),
+      path.join(cliRoot, 'conversations', `${probeSessionId}.db-shm`),
+      path.join(cliRoot, 'brain', probeSessionId),
+    ];
+    await Promise.all(targets.map(target => fsp.rm(target, { recursive: true, force: true }).catch(() => {})));
   }
 
   async beginLogin(update: (value: LoginObservation) => void): Promise<void> {

@@ -772,6 +772,12 @@ function handleMessage(message) {
       messages: [],
     };
     writeSession(session);
+    if (control().createCliSessionArtifacts) {
+      mkdirSync(join(cliRoot, 'conversations'), { recursive: true });
+      writeFileSync(join(cliRoot, 'conversations', `${sessionId}.db`), 'sqlite-probe-fixture');
+      writeFileSync(join(cliRoot, 'conversations', `${sessionId}.db-wal`), '');
+      mkdirSync(join(cliRoot, 'brain', sessionId, '.system_generated', 'logs'), { recursive: true });
+    }
     appendLog('fixture-sessions.jsonl', { method: 'session/new', sessionId, cwd: params.cwd, appendPrompt, skipPermissions });
     result(id, buildSessionPayload(session, auth));
     return;

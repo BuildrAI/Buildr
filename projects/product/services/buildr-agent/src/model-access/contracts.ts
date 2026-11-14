@@ -173,6 +173,8 @@ export interface ModelProvider {
   readonly legacyModelVariant?: (modelId: string) => { family: string; depth: string } | undefined;
   /** Connection account inspection delegates to this model provider without starting the executor runtime. */
   readonly observesConnection?: boolean;
+  /** Include this provider in startup and periodic background discovery; defaults to true. */
+  readonly backgroundRefresh?: boolean;
   /** Accounts of this provider carry user-declared endpoint configuration. */
   readonly custom?: boolean;
   open(input: { accountId: string; configRoot: string; environment: Readonly<Record<string, string>>; custom?: CustomProviderConfig }): Promise<ModelProviderRuntime>;

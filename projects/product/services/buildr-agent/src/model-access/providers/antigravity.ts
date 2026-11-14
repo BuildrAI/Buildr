@@ -28,6 +28,7 @@ export function createAntigravityModelProvider(deps: AntigravityModelProviderDep
     connectionId: ANTIGRAVITY_CONNECTION_ID,
     singleton: true,
     observesConnection: true,
+    backgroundRefresh: false,
     enableDiscoveredModelsByDefault: true,
     legacyModelVariant: antigravityModelVariant,
     authentication: {

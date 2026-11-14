@@ -84,8 +84,10 @@ export function createAgentService(options: AgentServiceOptions) {
   const programUpdates = new ProgramUpdates(() => connections.list(), programManager, now, options.programRelease);
   const preparations = new PreparationApplication(connections, programManager, generation, now);
   const providerList = options.modelProviders ?? createDefaultModelProviders({ root, connections, programManager, readAccountIdentity: accountId => models.accounts.read(accountId).identity, now });
+  const noBackgroundRefreshProviders = new Set<string>();
   for (const provider of providerList) {
     if (provider.connectionId && provider.observesConnection) connectionAccountObservers.set(provider.connectionId, provider.id);
+    if (provider.backgroundRefresh === false) noBackgroundRefreshProviders.add(provider.id);
   }
   const autoInspectProviders = new Set(providerList.filter(provider => provider.autoInspect).map(provider => provider.id));
   const models = createModelAccess({
@@ -145,7 +147,11 @@ export function createAgentService(options: AgentServiceOptions) {
         const accounts = models.accounts.list().accounts.filter(account =>
           account.enabled && (account.connectionId || autoInspectProviders.has(account.provider) || ['ready', 'failed'].includes(account.status)) &&
           !account.loginAttempt?.state?.match(/^(initializing|waiting-browser|checking)$/));
-        const selected = accounts.filter(account => !warmOnly || !account.connectionId || connectionAccountObservers.has(account.connectionId) || connections.hasAccountRuntime(account.connectionId));
+        const selected = accounts.filter(account => {
+          if (!warmOnly) return true;
+          if (noBackgroundRefreshProviders.has(account.provider)) return false;
+          return !account.connectionId || connectionAccountObservers.has(account.connectionId) || connections.hasAccountRuntime(account.connectionId);
+        });
         discoverySkippedCold = selected.length !== accounts.length;
         const results = await Promise.allSettled(selected.map(account => models.accounts.check(account.id)));
         discoveryDiagnostic=results.some(result=>result.status==='rejected'||!!result.value.diagnostic)?'部分供应商核对失败，已保留已有模型列表。':undefined;

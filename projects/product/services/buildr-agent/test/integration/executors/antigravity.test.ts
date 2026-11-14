@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -933,4 +933,39 @@ test('4.1 & 4.2: concurrent per-conversation stop isolation (including cancel ti
   });
   assert.ok(persisted);
   assert.equal(persisted.observation.status, 'idle');
+});
+
+test('antigravity probe cleans up temporary conversation DB and brain directories while preserving real sessions', async t => {
+  const h = await createHarness(
+    t,
+    { createCliSessionArtifacts: true },
+    {
+      authenticated: true,
+      methodId: 'oauth-personal',
+      email: 'probe-cleanup@example.com',
+      tier: { id: 'g1-ultra-tier', name: 'Google AI Ultra' },
+    },
+  );
+  const rt = await h.openRuntime();
+  const observed = await rt.inspectModelSource!({ forceFresh: true });
+  assert.equal(observed.status, 'ready');
+
+  const cliDir = path.join(h.configRoot, 'home', '.gemini', 'antigravity-cli');
+  assert.deepEqual(await readdir(path.join(cliDir, 'conversations')), []);
+  assert.deepEqual(await readdir(path.join(cliDir, 'brain')), []);
+
+  const realCtx = await rt.createContext({ cwd: h.cwd });
+  assert.deepEqual(await readdir(path.join(cliDir, 'conversations')), [
+    `${realCtx.id}.db`,
+    `${realCtx.id}.db-wal`,
+  ]);
+  assert.deepEqual(await readdir(path.join(cliDir, 'brain')), [realCtx.id]);
+
+  // A subsequent explicit probe must clean up only its own probe session and leave real sessions untouched.
+  await rt.inspectModelSource!({ forceFresh: true });
+  assert.deepEqual(await readdir(path.join(cliDir, 'conversations')), [
+    `${realCtx.id}.db`,
+    `${realCtx.id}.db-wal`,
+  ]);
+  assert.deepEqual(await readdir(path.join(cliDir, 'brain')), [realCtx.id]);
 });

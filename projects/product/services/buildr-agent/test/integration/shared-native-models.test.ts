@@ -5,6 +5,7 @@ import {tmpdir}from'node:os';import{join}from'node:path';import{createCipheriv}f
 import{createModelAccess}from'../../src/model-access/application.ts';
 import{createAgentService}from'../../src/index.ts';
 import{createQoderModelProvider,readQoderIdentity,requestQoderModel,unwrapQoderStream}from'../../src/model-access/providers/qoder.ts';
+import{createAntigravityModelProvider}from'../../src/model-access/providers/antigravity.ts';
 import type{AgentExecutor}from'../../src/contracts.ts';
 const offering={id:'model',label:'Model',images:false,tools:true};
 const signal=()=>AbortSignal.timeout(3000);
@@ -215,5 +216,31 @@ test('background catalog starts once, ticks every 60 seconds, never overlaps, pr
   assert.equal(calls,4);assert.equal(restored.models[0]?.available,true);assert.equal(restored.diagnostic,undefined);
   await service.close();const after=calls;t.mock.timers.tick(60_000);service.models.startRefreshing();assert.equal(calls,after,'close clears scheduling and forbids restarting');
   const reopened=create();try{const saved=await reopened.models.catalog.list();assert.equal(saved.models[0]?.available,true);assert.equal(calls,after,'persisted result is immediately readable after restart');}finally{await reopened.close();}
+ }finally{await service.close();t.mock.timers.reset();await rm(root,{recursive:true,force:true});}
+});
+
+test('providers with backgroundRefresh disabled skip startup and 60-second polling while keeping explicit checks',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-no-bg-probe-'));
+ t.mock.timers.enable({apis:['setInterval','Date']});
+ let inspectCalls=0;
+ const executor={descriptor:{id:'agy-like',label:'AgyLike',capabilities:{text:true,images:false,stop:true,resume:true,approval:false,questions:false,maxInputBytes:1000}},async open(){return{bindingIdentity:'agy-like',capabilities:this.descriptor.capabilities,inspectAccount:async()=>({status:'ready' as const}),models:async()=>[offering],beginLogin:async()=>{throw Error('unsupported');},cancelLogin:async()=>{},createContext:async()=>({id:'context'}),resumeContext:async()=>{},readHistory:async()=>[],send:async()=>{},observe:async()=>({status:'idle' as const,tools:[]}),reply:async()=>{},stop:async()=>({status:'stopped' as const,tools:[]}),close:async()=>{}};}} satisfies AgentExecutor;
+ const provider={id:'native-agy-like',label:'Google',connectionId:'agy-like',singleton:true,observesConnection:true,backgroundRefresh:false,async open(){return{protocol:'gemini' as const,async inspect(){inspectCalls++;return{status:'ready' as const,identity:'acct-1',models:[offering]};},beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>{throw Error('unused');},close:async()=>{}};}};
+ const service=createAgentService({dataRoot:root,executors:[executor],modelProviders:[provider],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+ try{
+  const realAntigravity=createAntigravityModelProvider({connections:{get:()=>{throw Error('unused');},useProgram:async(_id,work)=>work(),runtime:async()=>{throw Error('unused');}},now:()=>new Date().toISOString()});
+  assert.equal(realAntigravity.observesConnection,true);
+  assert.equal(realAntigravity.backgroundRefresh,false);
+  await service.connections.connect('agy-like',{expectedRevision:'unconfigured'});
+  assert.equal(inspectCalls,1,'connecting probes once');
+  await service.connections.check('agy-like',{expectedRevision:service.connections.read('agy-like').revision});
+  assert.equal(inspectCalls,2,'explicit connection check still probes');
+  service.models.startRefreshing();
+  t.mock.timers.tick(60_000);
+  t.mock.timers.tick(60_000);
+  assert.equal(inspectCalls,2,'startup and 60s background refresh must skip backgroundRefresh=false providers');
+  await service.models.catalog.list({refresh:true});
+  assert.equal(inspectCalls,3,'explicit catalog refresh still checks the provider');
+  await service.models.accounts.check('native-agy-like');
+  assert.equal(inspectCalls,4,'explicit account check still checks the provider');
  }finally{await service.close();t.mock.timers.reset();await rm(root,{recursive:true,force:true});}
 });
