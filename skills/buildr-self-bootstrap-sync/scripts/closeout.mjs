@@ -703,6 +703,43 @@ function option(args, name) {
   return value;
 }
 
+function isRepairableRootRuntimeDrift(findings, targetId) {
+  const staleCode = `runtime.${targetId.replaceAll('-', '_')}_stale`;
+  return Array.isArray(findings) && findings.length > 0 && findings.every((finding) => finding?.scope === '.'
+    && (finding.code === staleCode || (finding.code === 'components.runtime_orphan' && finding.agent === targetId)));
+}
+
+function verifyAndRepairRuntimeDoctor({ execute, identity, environment, root, successor, assertHead, doctorArgs, renderArgs, targetId, operationSuffix = '', phaseResult }) {
+  const suffix = operationSuffix ? `-${operationSuffix}` : '';
+  const doctor = developmentEntryCommand(execute, identity, environment, root, [...doctorArgs, '--target', root, '--json'], `final-doctor${suffix}`, phaseResult);
+  requirePassed(doctor, 'self-bootstrap-closeout.doctor-failed', '最终诊断命令失败。');
+  let health = parseJson(doctor, 'self-bootstrap-closeout.doctor-invalid', '最终诊断结果无效。');
+  const initialRuntime = health.agentRuntime || null;
+  if (health.health?.ready !== true && isRepairableRootRuntimeDrift(health.findings, targetId)) {
+    // Workspace-owned projection drift does not authorize package publication
+    // or a shared-resource downgrade. Repair derived files once, in this owner.
+    assertHead(successor);
+    const refreshed = developmentEntryCommand(execute, identity, environment, root,
+      ['render', ...renderArgs, '--product-skill', '--target', root], `refresh-workspace-runtime${suffix}`, phaseResult);
+    requirePassed(refreshed, 'self-bootstrap-closeout.runtime-refresh-failed', '工作空间投射刷新失败，保留当前内容。');
+    assertHead(successor);
+    if (changedPaths(execute, root, phaseResult, `after-runtime-refresh${suffix}`).length) {
+      throw closeoutError('self-bootstrap-closeout.runtime-refresh-source-drift', '投射刷新改变了源文件，保留现场并停止。');
+    }
+    const rechecked = developmentEntryCommand(execute, identity, environment, root,
+      [...doctorArgs, '--target', root, '--json'], `final-doctor-after-runtime-refresh${suffix}`, phaseResult);
+    requirePassed(rechecked, 'self-bootstrap-closeout.doctor-failed', '投射刷新后的最终诊断命令失败。');
+    health = parseJson(rechecked, 'self-bootstrap-closeout.doctor-invalid', '投射刷新后的最终诊断结果无效。');
+  }
+  if (health.health?.ready !== true) {
+    throw closeoutError('self-bootstrap-closeout.doctor-not-ready', '最终工作空间诊断未就绪。', {
+      ...(operationSuffix ? { adapterId: targetId } : {}),
+      findings: health.findings,
+    });
+  }
+  return { health, agentRuntime: health.agentRuntime || initialRuntime };
+}
+
 /**
  * @param {{workspaceRoot: string, taskId?: string|null, baseRef: string, deliveredRef: string,
  * targetBranch: string, remote: string, agent: string, nodeExecutable: string,
@@ -842,27 +879,31 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
     const identity = verifyDevelopmentEntryIdentity({ execute, root, nodeExecutable, successor, environment, phaseResult: active });
     markPassed(active, successor, digest(identity));
     start('finalize'); assertHead(successor);
-    const doctor = developmentEntryCommand(execute, identity, environment, root, ['doctor', '--agent', agent, '--target', root, '--json'], 'final-doctor', active);
-    requirePassed(doctor, 'self-bootstrap-closeout.doctor-failed', '最终诊断命令失败。');
-    let health = parseJson(doctor, 'self-bootstrap-closeout.doctor-invalid', '最终诊断结果无效。');
-    if (health.health?.ready !== true && Array.isArray(health.findings) && health.findings.length > 0
-      && health.findings.every((finding) => finding.code === `runtime.${agent.replaceAll('-', '_')}_stale` && finding.scope === '.')) {
-      // Workspace-owned projection drift does not authorize package publication
-      // or a shared-resource downgrade. Repair derived files once, in this owner.
+    const primaryDoctor = verifyAndRepairRuntimeDoctor({
+      execute, identity, environment, root, successor, assertHead,
+      doctorArgs: ['doctor', '--agent', agent],
+      renderArgs: [agent],
+      targetId: agent,
+      phaseResult: active,
+    });
+    const primaryAdapter = typeof primaryDoctor.agentRuntime?.adapterId === 'string' && primaryDoctor.agentRuntime.adapterId
+      ? primaryDoctor.agentRuntime.adapterId
+      : agent;
+    const extraAdapters = [...new Set(
+      (Array.isArray(primaryDoctor.agentRuntime?.detectedAdapters) ? primaryDoctor.agentRuntime.detectedAdapters : [])
+        .filter((adapterId) => typeof adapterId === 'string' && /^[A-Za-z0-9._-]+$/.test(adapterId) && adapterId !== primaryAdapter && adapterId !== agent),
+    )];
+    for (const adapterId of extraAdapters) {
       assertHead(successor);
-      const refreshed = developmentEntryCommand(execute, identity, environment, root,
-        ['render', agent, '--product-skill', '--target', root], 'refresh-workspace-runtime', active);
-      requirePassed(refreshed, 'self-bootstrap-closeout.runtime-refresh-failed', '工作空间投射刷新失败，保留当前内容。');
-      assertHead(successor);
-      if (changedPaths(execute, root, active, 'after-runtime-refresh').length) {
-        throw closeoutError('self-bootstrap-closeout.runtime-refresh-source-drift', '投射刷新改变了源文件，保留现场并停止。');
-      }
-      const rechecked = developmentEntryCommand(execute, identity, environment, root,
-        ['doctor', '--agent', agent, '--target', root, '--json'], 'final-doctor-after-runtime-refresh', active);
-      requirePassed(rechecked, 'self-bootstrap-closeout.doctor-failed', '投射刷新后的最终诊断命令失败。');
-      health = parseJson(rechecked, 'self-bootstrap-closeout.doctor-invalid', '投射刷新后的最终诊断结果无效。');
+      verifyAndRepairRuntimeDoctor({
+        execute, identity, environment, root, successor, assertHead,
+        doctorArgs: ['doctor', '--adapter', adapterId],
+        renderArgs: ['--adapter', adapterId],
+        targetId: adapterId,
+        operationSuffix: adapterId,
+        phaseResult: active,
+      });
     }
-    if (health.health?.ready !== true) throw closeoutError('self-bootstrap-closeout.doctor-not-ready', '最终工作空间诊断未就绪。', { findings: health.findings });
     markPassed(active, successor, successor);
     return result('passed');
   } catch (error) {

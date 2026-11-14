@@ -677,6 +677,110 @@ for (const agent of ['codex', 'claude-code']) for (const mode of ['stale', 'othe
   });
 }
 
+for (const mode of ['current', 'stale', 'orphan', 'conflict', 'source-drift']) {
+  test(`multi-adapter finalization checks and repairs other detected runtime adapters: ${mode}`, t => {
+    const f = fixture(t), relative = 'projects/product/services/buildr/src/modules/runtime-fixture.ts';
+    fs.mkdirSync(path.dirname(path.join(f.root, relative)), { recursive: true });
+    fs.writeFileSync(path.join(f.root, relative), 'export const runtime = true;\n');
+    git(f.root, 'add', '--', relative); git(f.root, 'commit', '-m', 'multi adapter runtime fixture'); git(f.root, 'push', 'origin', 'dev');
+    const deliveredRef = git(f.root, 'rev-parse', 'HEAD'), perform = executor(f.root), bridge = fs.realpathSync(f.projectBridge), canonicalRoot = fs.realpathSync(f.root);
+    const calls: string[][] = [];
+    let extraDoctors = 0, extraRenders = 0;
+    const result = runDirectSelfBootstrapCloseout({
+      workspaceRoot: f.root, baseRef: f.baseRef, deliveredRef, targetBranch: 'dev', remote: 'origin',
+      agent: 'codex', nodeExecutable: process.execPath, environment: f.environment,
+      execute(command: string, args: string[], context: any) {
+        calls.push(args);
+        if (command === bridge && args[0] === 'doctor') {
+          if (args.includes('--agent')) {
+            assert.equal(args[args.indexOf('--agent') + 1], 'codex');
+            return {
+              status: 0,
+              stdout: JSON.stringify({
+                agentRuntime: { adapterId: 'agents-standard', detectedAdapters: ['claude-code', 'agents-standard'] },
+                health: { ready: true },
+                findings: [],
+              }),
+              stderr: '',
+            };
+          }
+          assert.equal(args[args.indexOf('--adapter') + 1], 'claude-code');
+          extraDoctors++;
+          if (mode === 'current' || extraDoctors > 1) return { status: 0, stdout: JSON.stringify({ health: { ready: true }, findings: [] }), stderr: '' };
+          if (mode === 'conflict') {
+            return { status: 0, stdout: JSON.stringify({ health: { ready: false }, findings: [{ code: 'runtime.claude_code_conflict', scope: '.' }] }), stderr: '' };
+          }
+          const findings: any[] = [{ code: 'runtime.claude_code_stale', scope: '.' }];
+          if (mode === 'orphan') findings.push({ code: 'components.runtime_orphan', scope: '.', agent: 'claude-code' });
+          return { status: 0, stdout: JSON.stringify({ health: { ready: false }, findings }), stderr: '' };
+        }
+        if (command === bridge && args[0] === 'render') {
+          extraRenders++;
+          assert.deepEqual(args, ['render', '--adapter', 'claude-code', '--product-skill', '--target', canonicalRoot]);
+          if (mode === 'source-drift') fs.writeFileSync(path.join(f.root, 'drift.txt'), 'unexpected source write\n');
+          return { status: 0, stdout: '', stderr: '' };
+        }
+        return perform(command, args, context);
+      },
+    });
+    const expectedPassed = ['current', 'stale', 'orphan'].includes(mode);
+    assert.equal(result.status, expectedPassed ? 'passed' : 'blocked', JSON.stringify(result));
+    assert.equal(calls.some(args => args[0] === 'doctor' && args.includes('--adapter') && args.includes('agents-standard')), false);
+    assert.equal(extraDoctors, ['stale', 'orphan'].includes(mode) ? 2 : 1);
+    assert.equal(extraRenders, ['stale', 'orphan', 'source-drift'].includes(mode) ? 1 : 0);
+    if (mode === 'conflict') assert.equal(result.diagnostic?.code, 'self-bootstrap-closeout.doctor-not-ready');
+    if (mode === 'conflict') assert.equal(result.diagnostic?.details?.adapterId, 'claude-code');
+    if (mode === 'source-drift') assert.equal(result.diagnostic?.code, 'self-bootstrap-closeout.runtime-refresh-source-drift');
+    if (mode !== 'source-drift') assert.equal(git(f.root, 'status', '--porcelain'), '');
+  });
+}
+
+test('multi-adapter finalization refreshes agents-standard when claude-code is the active host', t => {
+  const f = fixture(t), relative = 'projects/product/services/buildr/src/modules/runtime-fixture-claude.ts';
+  fs.mkdirSync(path.dirname(path.join(f.root, relative)), { recursive: true });
+  fs.writeFileSync(path.join(f.root, relative), 'export const runtime = true;\n');
+  git(f.root, 'add', '--', relative); git(f.root, 'commit', '-m', 'claude host fixture'); git(f.root, 'push', 'origin', 'dev');
+  const deliveredRef = git(f.root, 'rev-parse', 'HEAD'), perform = executor(f.root), bridge = fs.realpathSync(f.projectBridge), canonicalRoot = fs.realpathSync(f.root);
+  let standardDoctors = 0, standardRenders = 0;
+  const result = runDirectSelfBootstrapCloseout({
+    workspaceRoot: f.root, baseRef: f.baseRef, deliveredRef, targetBranch: 'dev', remote: 'origin',
+    agent: 'claude-code', nodeExecutable: process.execPath, environment: f.environment,
+    execute(command: string, args: string[], context: any) {
+      if (command === bridge && args[0] === 'doctor') {
+        if (args.includes('--agent')) {
+          return {
+            status: 0,
+            stdout: JSON.stringify({
+              agentRuntime: { adapterId: 'claude-code', detectedAdapters: ['claude-code', 'agents-standard'] },
+              health: { ready: true },
+              findings: [],
+            }),
+            stderr: '',
+          };
+        }
+        assert.deepEqual(args, ['doctor', '--adapter', 'agents-standard', '--target', canonicalRoot, '--json']);
+        standardDoctors++;
+        return {
+          status: 0,
+          stdout: JSON.stringify(standardDoctors > 1
+            ? { health: { ready: true }, findings: [] }
+            : { health: { ready: false }, findings: [{ code: 'runtime.agents_standard_stale', scope: '.' }] }),
+          stderr: '',
+        };
+      }
+      if (command === bridge && args[0] === 'render') {
+        standardRenders++;
+        assert.deepEqual(args, ['render', '--adapter', 'agents-standard', '--product-skill', '--target', canonicalRoot]);
+        return { status: 0, stdout: '', stderr: '' };
+      }
+      return perform(command, args, context);
+    },
+  });
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.equal(standardDoctors, 2);
+  assert.equal(standardRenders, 1);
+});
+
 for (const [role, sourcePath] of [
   ['module', 'src/modules/workspace/application/runtime-fixture.ts'],
   ['bin', 'bin/runtime-fixture.mjs'],
