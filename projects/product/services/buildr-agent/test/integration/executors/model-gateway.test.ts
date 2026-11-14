@@ -80,7 +80,7 @@ test('consumerBinding and AgentService preserve both pre-reboot and post-reboot 
       label: 'Synthetic Gateway',
       linked: true,
       open: async () => ({
-        protocol: 'openai-responses' as const,
+        protocol: 'responses' as const,
         identity: async () => 'synth-account-1',
         inspect: async () => ({
           status: 'ready' as const,
