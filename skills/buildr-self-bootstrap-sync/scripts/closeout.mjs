@@ -846,12 +846,12 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
     requirePassed(doctor, 'self-bootstrap-closeout.doctor-failed', '最终诊断命令失败。');
     let health = parseJson(doctor, 'self-bootstrap-closeout.doctor-invalid', '最终诊断结果无效。');
     if (health.health?.ready !== true && Array.isArray(health.findings) && health.findings.length > 0
-      && health.findings.every((finding) => finding.code === `runtime.${agent}_stale` && finding.scope === '.')) {
+      && health.findings.every((finding) => finding.code === `runtime.${agent.replaceAll('-', '_')}_stale` && finding.scope === '.')) {
       // Workspace-owned projection drift does not authorize package publication
       // or a shared-resource downgrade. Repair derived files once, in this owner.
       assertHead(successor);
       const refreshed = developmentEntryCommand(execute, identity, environment, root,
-        ['render', agent, '--target', root], 'refresh-workspace-runtime', active);
+        ['render', agent, '--product-skill', '--target', root], 'refresh-workspace-runtime', active);
       requirePassed(refreshed, 'self-bootstrap-closeout.runtime-refresh-failed', '工作空间投射刷新失败，保留当前内容。');
       assertHead(successor);
       if (changedPaths(execute, root, active, 'after-runtime-refresh').length) {
