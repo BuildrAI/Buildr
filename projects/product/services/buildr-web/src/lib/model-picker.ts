@@ -20,8 +20,7 @@ const modelNameOrder=new Intl.Collator('zh-Hans-CN',{sensitivity:'base',numeric:
 export function filterModelGroups(groups:readonly ModelPickerGroup[],query:string):ModelPickerGroup[] {
   const needle=query.trim().toLocaleLowerCase();
   const visible=needle?groups.map(group=>{
-    const source=group.label.toLocaleLowerCase().includes(needle);
-    return {...group,options:group.options.filter(option=>source||option.label.toLocaleLowerCase().includes(needle))};
+    return {...group,options:group.options.filter(option=>option.label.toLocaleLowerCase().includes(needle))};
   }).filter(group=>group.options.length>0):groups;
   return visible.map(group=>({...group,options:[...group.options].sort((a,b)=>modelNameOrder.compare(a.label,b.label))})).sort((a,b)=>modelNameOrder.compare(a.label,b.label));
 }

@@ -126,6 +126,7 @@ export interface ProviderInferenceInput {
   body: ProtocolJson;
   modelId: string;
   providerIdentity?: string;
+  reasoningEffort?: string;
   signal: AbortSignal;
   context: { accountId: string; agentId: string; conversationId: string; runId: string; requestId: string };
 }
@@ -168,6 +169,7 @@ export interface ModelProvider {
   readonly clearCatalogOnUnauthenticated?: boolean;
   /** Newly discovered non-combination models default to enabled when first observed. */
   readonly enableDiscoveredModelsByDefault?: boolean;
+  readonly modelAlias?: (modelId: string) => string | undefined;
   readonly legacyModelVariant?: (modelId: string) => { family: string; depth: string } | undefined;
   /** Connection account inspection delegates to this model provider without starting the executor runtime. */
   readonly observesConnection?: boolean;
@@ -232,6 +234,7 @@ export interface ModelLeaseInput {
   expectedIdentity?: string;
   serviceTier?: string;
   sseKeepalive?: boolean;
+  reasoningEffort?: string;
 }
 export interface ModelGatewayLease {
   identity: string;

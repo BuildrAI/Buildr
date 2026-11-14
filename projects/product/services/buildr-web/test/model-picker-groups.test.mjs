@@ -19,9 +19,9 @@ test('空查询按显示名称排序来源与组内模型，并返回独立副�
   assert.deepEqual(groups[0].options.map(option => option.label), ['Qwen3.8-Max', 'DeepSeek-Flash']);
 });
 
-test('按模型名称过滤，来源名匹配时保留整个来源', () => {
+test('按模型名称过滤', () => {
   assert.deepEqual(labels(filterModelGroups(groups, 'flash')), [['Qoder', ['DeepSeek-Flash']]]);
-  assert.deepEqual(labels(filterModelGroups(groups, 'chatgpt')), [['ChatGPT', ['GPT-6-Astra', 'GPT-6.1-Sol', 'GPT-固件版本']]]);
+  assert.deepEqual(labels(filterModelGroups(groups, 'chatgpt')), []);
   assert.deepEqual(labels(filterModelGroups(groups, 'GPT')).length, 1);
   assert.deepEqual(labels(filterModelGroups(groups, '不存在')), []);
 });

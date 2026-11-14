@@ -332,6 +332,7 @@ export class ConversationApplication {
       expectedIdentity: participant.modelAccountIdentity,
       modelId: participant.modelId!,
       serviceTier: participant.serviceTier,
+      reasoningEffort: record.view.run?.id === runId ? record.view.run?.reasoningEffort : undefined,
       conversationId: record.view.id,
       agentId: participant.connectionId,
       runId: runId ?? 'prepare',
@@ -1042,6 +1043,7 @@ export class ConversationApplication {
       input.model = legacyVariant.family;
       input.reasoningEffort = legacyVariant.depth;
     }
+    if (source && input.model) input.model = this.options.modelAccess?.resolveModelAlias(source.id, input.model) ?? input.model;
     const selectedModel = input.model ? availableModels.find(model => model.id === input.model) : source ? source.models.find(model=>model.enabled!==false) : connection.models.find(model => model.isDefault);
     if (waitingQuestions && source) { const quotaError = modelQuotaFailure(source, selectedModel as ModelOffering | undefined, Date.parse(this.options.now())); if (quotaError) throw quotaError; }
     if (input.model && !selectedModel) fail('agent_model_unavailable', '该模型不在当前接入的可用目录中。', 409);

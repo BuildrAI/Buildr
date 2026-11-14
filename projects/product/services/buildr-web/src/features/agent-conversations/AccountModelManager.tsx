@@ -53,7 +53,6 @@ const count=(source:ModelSourceView)=>source.models.filter(model=>model.enabled)
 /** Shared candidate view. Sources, selection and every operation are supplied by its host. */
 export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,onLogin,onDisconnect,onPrepare,onEnable,onContext,onCancelLogin,onConfigureKey,onCustomDiscover,onCustomModels,onAddProvider,onEditProvider,onDeleteProvider,onDeleteUsage,onLogoutManaged,onSwitchManagedAccount,onManagedAccountImpact,refreshingIds=[],showDisabled=false,onShowDisabled,onSourceEnabled}:Props){
   const [query,setQuery]=useState(''),[filter,setFilter]=useState('all'),[family,setFamily]=useState('all');
-  const [sourceQuery,setSourceQuery]=useState('');
   const [deleting,setDeleting]=useState<ModelSourceView|null>(null),[deleteBusy,setDeleteBusy]=useState(false),[deleteError,setDeleteError]=useState('');
   const [deleteUsage,setDeleteUsage]=useState<number|undefined>(undefined),[deleteUsageLoaded,setDeleteUsageLoaded]=useState(false),[deleteUsageLoading,setDeleteUsageLoading]=useState(false);
   const deleteUsageToken=useRef(0);
@@ -67,13 +66,11 @@ export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,o
   const [readingModels,setReadingModels]=useState(''),[modelNotice,setModelNotice]=useState('');
   const entries=sources.filter(source=>showDisabled||source.sourceEnabled!==false);
   const disabledCount=sources.filter(source=>source.sourceEnabled===false).length;
-  const sourceTerm=sourceQuery.trim().toLowerCase();
-  const matchedEntries=sourceTerm?entries.filter(source=>[source.providerLabel,source.accountLabel,source.modeLabel,source.groupLabel,source.custom?.baseUrl??''].some(value=>(value??'').toLowerCase().includes(sourceTerm))):entries;
   const sourceGroups=[
-    {key:'subscription',label:'订阅账号',items:matchedEntries.filter(source=>!source.managed&&source.provider!=='custom'&&source.authType!=='api-key')},
-    {key:'api-key',label:'API Key',items:matchedEntries.filter(source=>!source.managed&&source.provider!=='custom'&&source.authType==='api-key')},
-    {key:'custom',label:'自定义供应商',items:matchedEntries.filter(source=>!source.managed&&source.provider==='custom')},
-    {key:'managed',label:'智能体接入',items:matchedEntries.filter(source=>source.managed)},
+    {key:'subscription',label:'订阅账号',items:entries.filter(source=>!source.managed&&source.provider!=='custom'&&source.authType!=='api-key')},
+    {key:'api-key',label:'API Key',items:entries.filter(source=>!source.managed&&source.provider!=='custom'&&source.authType==='api-key')},
+    {key:'custom',label:'自定义供应商',items:entries.filter(source=>!source.managed&&source.provider==='custom')},
+    {key:'managed',label:'智能体接入',items:entries.filter(source=>source.managed)},
   ].filter(group=>group.items.length);
   function startDelete(source:ModelSourceView){
     setDeleting(source);setDeleteError('');setDeleteUsage(undefined);setDeleteUsageLoaded(false);
@@ -167,10 +164,9 @@ export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,o
       <div className="amm-source-heading"><p className="amm-nav-caption">供应商</p></div>
       {onAddProvider&&<div className="amm-add-provider"><Button block icon={<PlusOutlined aria-hidden="true"/>} disabled={busy} onClick={onAddProvider}>添加供应商</Button></div>}
       {onShowDisabled&&<Checkbox className="amm-show-disabled" checked={showDisabled} onChange={event=>onShowDisabled(event.target.checked)}>显示已停用{disabledCount?` (${disabledCount})`:''}</Checkbox>}
-      <Input className="amm-source-search" size="small" prefix={<SearchOutlined aria-hidden/>} aria-label="搜索供应商" placeholder="搜索供应商" value={sourceQuery} allowClear onChange={event=>setSourceQuery(event.target.value)}/>
       <button className={!selected?'active':''} onClick={()=>choose('all')}><span className="amm-provider-mark all"><RobotOutlined aria-hidden/></span><span>全部供应商</span></button>
       {sourceGroups.map(group=><Fragment key={group.key}><p className="amm-source-group-label">{group.label}</p>{group.items.map(source=><button key={source.id} className={selection.sourceId===source.id?'active':''} onClick={()=>choose(source.id)}><span className={`amm-provider-mark is-${source.provider}`}>{source.providerLabel.slice(0,1)}</span><span>{source.providerLabel}<small title={source.provider==='custom'?source.custom?.baseUrl??source.accountLabel:source.accountLabel}>{sidebarDetail(source)}</small></span><i className={source.status==='ready'?'connected':'disconnected'} aria-label={sourceStatusLabel(source)}/></button>)}</Fragment>)}
-      {!sourceGroups.length&&<p className="amm-source-empty">没有匹配的供应商</p>}
+      {!sourceGroups.length&&<p className="amm-source-empty">暂无供应商</p>}
       <div className="amm-nav-note">登录一次<br/>模型供不同智能体使用</div>
     </aside>
     <main className="amm-main">

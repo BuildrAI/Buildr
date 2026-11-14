@@ -12,6 +12,16 @@ import { cliProxyQuotaReader } from './cliproxy-quota.ts';
 const providerId = 'google-ai-subscription';
 const failure = () => new ModelAccessError('google_ai_service_unavailable', 'Google AI 服务暂不可用，请稍后重试。', 503);
 
+// CLIProxyAPI v8.0.69 Antigravity registry describes configurable routes.
+const configurableDepths: Record<string, readonly string[]> = {
+  'claude-opus-5-5-high': ['low', 'medium', 'high'],
+  'claude-sonnet-5-5-high': ['low', 'medium', 'high'],
+  'gemini-4-argon-high': ['low', 'medium', 'high'],
+  'gemini-4-carbon-high': ['low', 'medium', 'high'],
+  'gemini-4-hydrogen-xhigh': ['low', 'medium', 'high', 'xhigh'],
+  'gemini-3.8-flash-tiered': ['low', 'medium', 'high'],
+};
+
 export function createGoogleAiProxyProvider(directory: string): ModelProvider {
   const quota = cliProxyQuotaReader(directory);
   const configPath = join(directory, 'config.yaml');
@@ -68,6 +78,7 @@ export function createGoogleAiProxyProvider(directory: string): ModelProvider {
       return group === 'gemini' && account.custom.protocol === 'chat-completions' ||
         group === 'claude' && account.custom.protocol === 'anthropic-messages';
     },
+    modelAlias: id => id === 'gemini-3.8-flash-tiered' ? 'gemini-3.8-flash-high' : undefined,
     id: providerId, label: 'Google AI', linked: true, singleton: true, autoInspect: true,
     authentication: { type: 'oauth', label: 'Google AI', description: '登录 Google AI 账号后即可使用订阅模型。' },
     modeLabel: '订阅', group: { id: 'google-ai', label: 'Google AI' },
@@ -107,6 +118,7 @@ export function createGoogleAiProxyProvider(directory: string): ModelProvider {
           signal: AbortSignal.any([lifetime.signal, init.signal ?? AbortSignal.timeout(10_000)]),
           headers: { authorization: 'Bearer ' + settings.key, 'content-type': 'application/json', ...(route === '/messages' ? { 'anthropic-version': '2023-06-01' } : {}) } });
       }
+      let flashTiered = false;
       return {
         protocol: 'chat-completions',
         protocolForModel,
@@ -123,15 +135,20 @@ export function createGoogleAiProxyProvider(directory: string): ModelProvider {
               if (Array.isArray(data) && data.length) break;
               await delay(200, undefined, { signal: lifetime.signal });
             }
+            const ids = new Set(Array.isArray(data) ? data.map(row => row?.id) : []);
+            flashTiered = ids.has('gemini-3.8-flash-tiered');
             const models = Array.isArray(data) ? data.flatMap((row: { id?: unknown; display_name?: unknown; name?: unknown }) => {
               if (typeof row?.id !== 'string' || !/^(gemini|claude|gpt|carbon)(?:[-_.]|$)/i.test(row.id)) return [];
               if (/-image(?:-|$)/i.test(row.id)) return [];
+              if (row.id === 'gemini-3.8-flash-tiered' && ids.has('gemini-3.8-flash-high')) return [];
               const upstreamLabel = row.display_name ?? row.name;
               const label = antigravityModelLabel(row.id, typeof upstreamLabel === 'string' ? upstreamLabel : undefined);
               const depth = antigravityModelVariant(row.id)?.depth ?? /-(low|medium|high|xhigh)$/.exec(row.id)?.[1];
+              const route = row.id === 'gemini-3.8-flash-high' && flashTiered ? 'gemini-3.8-flash-tiered' : row.id;
+              const levels = configurableDepths[route] ?? (depth ? [depth] : []);
               return [{
                 id: row.id, label, tools: true, images: !/^gpt-/i.test(row.id),
-                ...(depth ? { reasoningEfforts: [antigravityReasoningEffort(depth)], defaultReasoningEffort: depth } : {}),
+                ...(levels.length ? { reasoningEfforts: levels.map(antigravityReasoningEffort), defaultReasoningEffort: depth ?? levels.at(-1) } : {}),
               }];
             }) : [];
             if (!models.length) throw failure();
@@ -171,14 +188,26 @@ export function createGoogleAiProxyProvider(directory: string): ModelProvider {
           if (!account || createHash('sha256').update(account.identity).digest('hex') !== input.providerIdentity)
             throw new ModelAccessError('model_identity_conflict', 'Google AI 登录已变化，请刷新模型后重试。', 409);
           const route = protocolForModel(input.modelId) === 'anthropic-messages' ? '/messages' : '/chat/completions';
-          // The upstream model ID already selects the fixed reasoning variant.
           const body = { ...input.body };
-          if (/-((?:x)?high|medium|low)$/.test(input.modelId)) {
+          const reasoning = body.reasoning as { effort?: unknown } | undefined;
+          const outputConfig = body.output_config as Record<string, unknown> | undefined;
+          const effort = input.reasoningEffort ?? reasoning?.effort ?? body.reasoning_effort ?? outputConfig?.effort;
+          const defaultDepth = /-(low|medium|high|xhigh)$/.exec(input.modelId)?.[1];
+          const model = input.modelId === 'gemini-3.8-flash-high' && flashTiered && effort !== undefined && effort !== 'high'
+            ? 'gemini-3.8-flash-tiered' : input.modelId;
+          const levels = configurableDepths[model];
+          if (levels) {
+            const depth = effort ?? defaultDepth ?? levels.at(-1);
+            if (typeof depth !== 'string' || !levels.includes(depth))
+              throw new ModelAccessError('agent_reasoning_unavailable', '该模型不支持所选思考深度。', 400);
+            body.model = depth === defaultDepth && model === input.modelId ? model : `${model}(${depth})`;
+          }
+          if (levels || defaultDepth) {
             delete body.reasoning_effort;
             delete body.reasoning;
-            if (body.output_config && typeof body.output_config === 'object') {
-              const { effort: _effort, ...outputConfig } = body.output_config as Record<string, unknown>;
-              if (Object.keys(outputConfig).length) body.output_config = outputConfig;
+            if (outputConfig) {
+              const { effort: _effort, ...rest } = outputConfig;
+              if (Object.keys(rest).length) body.output_config = rest;
               else delete body.output_config;
             }
           }

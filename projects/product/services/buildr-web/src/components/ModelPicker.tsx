@@ -54,7 +54,7 @@ export function ModelPicker({selectedKey,modelLabel,defaultLabel='默认模型',
       popupMatchSelectWidth placement={popupPlacement} dropdownAlign={popupAlign} virtual={false} listHeight={248}
       popupRender={menu=><div ref={modelPopup}>
         {notice&&<p className="ac-model-notice" role="note">{notice}</p>}
-        <div className="ac-model-search"><Input size="small" allowClear prefix={<SearchOutlined aria-hidden="true"/>} placeholder="搜索模型或供应商" aria-label="搜索模型" autoComplete="off" value={query} onChange={event=>setQuery(event.target.value)}
+        <div className="ac-model-search"><Input size="small" allowClear prefix={<SearchOutlined aria-hidden="true"/>} placeholder="搜索模型" aria-label="搜索模型" autoComplete="off" value={query} onChange={event=>setQuery(event.target.value)}
           onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();closeModelList();controlsRef.current?.querySelector<HTMLElement>('.ac-model-picker [role="combobox"]')?.focus();}}}/></div>
         <nav className="ac-model-source-nav" aria-label="模型供应商快速定位">{visibleGroups.map(group=><Button key={group.id} size="small" type="text" onMouseDown={event=>{event.preventDefault();event.stopPropagation();}} onClick={event=>{event.stopPropagation();jumpToGroup(group.id);}}>{group.label}</Button>)}</nav>{menu}</div>}
       classNames={{popup:{root:'ac-panel-popup ac-choice-popup ac-model-list-popup'}}}

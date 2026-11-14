@@ -18,12 +18,7 @@ await step('模型设置使用供应商侧栏并从全部内置声明生成添�
   const sourceList=accounts.locator('.amm-source-list');
   await sourceList.locator('.amm-source-group-label').getByText('订阅账号',{exact:true}).waitFor();
   await sourceList.locator('.amm-source-group-label').getByText('智能体接入',{exact:true}).waitFor();
-  const sourceSearch=sourceList.getByLabel('搜索供应商',{exact:true});
-  const chatgptSource=sourceList.getByRole('button').filter({hasText:'ChatGPT'});
-  await sourceSearch.fill('Devin');
-  assert.equal(await chatgptSource.count(),0,'搜索只保留匹配的供应商');
-  await sourceSearch.fill('');
-  await chatgptSource.first().waitFor();
+  assert.equal(await sourceList.getByLabel('搜索供应商',{exact:true}).count(),0);
   await accounts.getByRole('button',{name:'添加供应商',exact:true}).click();
   const provider=page.getByRole('dialog',{name:/添加供应商/});
   await provider.waitFor();

@@ -495,6 +495,11 @@ export class ModelAccessApplication {
         const prefs=this.preferences.get(id)??{};
         const enableByDefault=Boolean(this.providers.get(row.provider)?.enableDiscoveredModelsByDefault);
         const legacyVariant = this.providers.get(row.provider)?.legacyModelVariant;
+        const alias = this.providers.get(row.provider)?.modelAlias;
+        for (const [id, preference] of Object.entries(prefs)) {
+          const target = alias?.(id);
+          if (target && !Object.hasOwn(prefs, target)) prefs[target] = { ...preference };
+        }
         if (legacyVariant) {
           for (const model of observation.models) {
             if (Object.hasOwn(prefs, model.id)) continue;
@@ -677,6 +682,11 @@ export class ModelAccessApplication {
     this.starting = (async () => { const server = createServer((req,res) => { void this.handle(req,res); }); this.server = server; server.requestTimeout = 30_000; server.headersTimeout = 15_000; server.keepAliveTimeout = 5_000; server.listen(0,'127.0.0.1'); await once(server,'listening'); const address = server.address(); if (!address || typeof address === 'string') throw new Error('model_gateway_listen_failed'); return this.origin = `http://127.0.0.1:${address.port}`; })().finally(() => { this.starting = undefined; });
     return this.starting;
   }
+  resolveModelAlias(accountId: string, modelId: string) {
+    const account = this.current(accountId);
+    if (account.models.some(model => model.id === modelId)) return modelId;
+    return this.providers.get(account.provider)?.modelAlias?.(modelId) ?? modelId;
+  }
   async createLease(input: ModelLeaseInput): Promise<ModelGatewayLease> {
     await this.ready; const account = this.current(input.accountId);
     if(this.replacedModelSource(account))throw new ModelAccessError('model_source_migrated','此模型已迁移，请在 Google AI 分组中重新选择。',409);
@@ -699,12 +709,12 @@ export class ModelAccessApplication {
         throw new ModelAccessError(compatibility.reasonCode ?? 'model_source_executor_incompatible', compatibility.reason ?? '当前执行器不支持所选模型来源。');
       }
     }
-    const model = this.view(account).models.find(model => model.id === input.modelId);
+    const model = this.view(account).models.find(model => model.id === this.resolveModelAlias(input.accountId, input.modelId));
     if(model?.enabled===false)throw new ModelAccessError('model_disabled','所选模型已停用，请重新选择。');
     const offering=model?selectedOffering(model,input.serviceTier):undefined; if (!offering) throw new ModelAccessError('model_unavailable', '所选模型不在账号当前目录中。');
     const quotaFailure = modelQuotaFailure(account, offering, Date.parse(this.now)); if (quotaFailure) throw quotaFailure;
     const identity = modelLeaseIdentity(account.id,account.identity,input.modelId,input.conversationId,input.agentId,modelConfiguration(offering,input.serviceTier));
-    const existing = this.leasesByIdentity.get(identity); if (existing) { this.updateRun(identity,input.runId); return structuredClone(existing.view); }
+    const existing = this.leasesByIdentity.get(identity); if (existing) { this.updateRun(identity,input.runId); existing.input.reasoningEffort = input.reasoningEffort; return structuredClone(existing.view); }
     const baseUrl = await this.start(), token = randomBytes(32).toString('base64url'); await this.encryptionKey();
     const view: ModelGatewayLease = { identity, baseUrl: baseUrl + '/v1', apiKey: token, model: `buildr-${identity.slice(0,32)}`, offering: structuredClone(offering), accountId: account.id, accountLabel: account.accountLabel || account.label, provider: account.provider };
     const lease: LeaseRecord = { view, input: { ...input, expectedIdentity: account.identity }, tokenHash: digest(token), requests: new Map() }; this.leasesByToken.set(lease.tokenHash,lease); this.leasesByIdentity.set(identity,lease); return structuredClone(view);
@@ -812,7 +822,7 @@ export class ModelAccessApplication {
         diagnostic.toolResultCount = translated.messages.filter(message => object(message).role === 'tool').length;
       }
       phase = 'provider-request';
-      const upstream = await runtime.infer({body:translated,modelId:binding.modelId,providerIdentity:binding.expectedIdentity,signal:AbortSignal.any([controller.signal,upstreamController.signal]),context:{accountId:account.id,agentId:binding.agentId,conversationId:binding.conversationId,runId:binding.runId,requestId}});
+      const upstream = await runtime.infer({body:translated,modelId:binding.modelId,providerIdentity:binding.expectedIdentity,reasoningEffort:binding.reasoningEffort,signal:AbortSignal.any([controller.signal,upstreamController.signal]),context:{accountId:account.id,agentId:binding.agentId,conversationId:binding.conversationId,runId:binding.runId,requestId}});
       upstreamHttpStatus = upstream.status;
       phase = 'provider-response';
       if (!upstream.ok) {
@@ -871,6 +881,7 @@ export class ModelAccessApplication {
 export function createModelAccess(options: ModelAccessOptions) {
   const application = new ModelAccessApplication(options);
   return {
+    resolveModelAlias: (accountId: string, modelId: string) => application.resolveModelAlias(accountId, modelId),
     ensureLinked: () => application.ensureLinked(), invalidate: (id:string,input?:{abortActive?:boolean}) => application.invalidate(id,input), clearAuthentication: (id: string) => application.clearAuthentication(id),
     accounts: { list: (input?:{includeDisabled?:boolean}) => application.list(input), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string;custom?:CustomProviderConfigureInput}) => application.add(input), configure: (id:string,input:{expectedRevision:string;apiKey:string}) => application.configure(id,input), configureCustom: (id:string,input:CustomProviderConfigureInput) => application.configureCustom(id,input), discoverCustom: (input:CustomProviderDiscoveryInput) => application.discoverCustom(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input), remove: (id:string,input:{expectedRevision:string}) => application.remove(id,input) },
     catalog: { list: () => application.catalog() },
