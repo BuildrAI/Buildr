@@ -1,7 +1,7 @@
 import { createQoderNativeContent } from './content.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import { generateQoderNativeTitle } from './model-title.ts';
-import { generateModelTitle } from '../model-title.ts';
+import { generateGatewayTitle } from '../model-title.ts';
 import {readQoderPersistedExecution} from './durable-history.ts';
 import { qoderStorage } from './storage.ts';
 import {qoderSdkPair} from './sdk-pair.ts';
@@ -202,12 +202,7 @@ class QoderRuntime implements AgentRuntime {
   async models() { return this.gateway ? structuredClone(this.gateway.models) : await this.rpc.call('models', { cwd: this.configRoot }, 40000); }
   async generateTitle(input: ExecutorTitleInput): Promise<string | undefined> {
     this.reference(input.contextRef, input.cwd); input.signal.throwIfAborted();
-    if (this.gateway) {
-      const model = gatewayModel(this.gateway);
-      return generateModelTitle(input, model.id, 'chat-completions', init => fetch(this.gateway!.baseUrl.replace(/\/$/, '') + '/chat/completions', {
-        ...init, headers: { ...Object.fromEntries(new Headers(init.headers)), authorization: 'Bearer ' + this.gateway!.apiKey }, redirect: 'error',
-      }), Math.min(128, model.maxOutputTokens ?? 128));
-    }
+    if (this.gateway) return generateGatewayTitle(this.gateway, input, 'chat-completions');
     return await generateQoderNativeTitle(input, (path, init) => this.requestModel(path, init));
   }
   async beginLogin(update: (value: LoginObservation) => void): Promise<void> {

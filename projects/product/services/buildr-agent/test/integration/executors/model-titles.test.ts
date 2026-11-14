@@ -161,3 +161,124 @@ test('Codex malformed structured title has a stable diagnostic code',async()=>{
     await assert.rejects(generateCodexTitle(fixture.rpc,{contextRef:{id:'work'},cwd:'/work',description:'{}',signal:new AbortController().signal},directory,new Set()),/agent_title_output_invalid/);
   } finally {await fs.rm(directory,{recursive:true,force:true});}
 });
+
+
+test('Codex gateway generateTitle uses tool-free /chat/completions at lowest reasoning effort without spawning an auxiliary thread', async () => {
+  const http = await import('node:http');
+  const { createCodexExecutor } = await import('../../../src/executors/codex/index.ts');
+  const requests: Array<{ url?: string; auth?: string; body: Record<string, unknown> }> = [];
+  const server = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', chunk => { raw += chunk; });
+    req.on('end', () => {
+      requests.push({ url: req.url, auth: req.headers.authorization, body: JSON.parse(raw) });
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ choices: [{ message: { content: '{"title":"网关轻量标题"}' }, finish_reason: 'stop' }] }));
+    });
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as { port: number };
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'buildr-codex-gw-title-'));
+  const workspace = path.join(root, 'workspace');
+  await fs.mkdir(workspace);
+  const log = path.join(root, 'rpc.jsonl');
+  const executable = path.join(root, 'codex-fixture.mjs');
+  let source = await fs.readFile(new URL('./fixtures/codex-cli.mjs', import.meta.url), 'utf8');
+  source = source.replace(
+    "r.on('line',l=>{const m=JSON.parse(l);",
+    `r.on('line',l=>{const m=JSON.parse(l);fs.appendFileSync(${JSON.stringify(log)},m.method+'\\n');`,
+  );
+  await fs.writeFile(executable, source);
+  let runtime: AgentRuntime | undefined;
+  try {
+    runtime = await createCodexExecutor().open({
+      connectionId: 'codex',
+      configRoot: path.join(root, 'profile'),
+      executable,
+      environment: { PATH: process.env.PATH ?? '' },
+      gateway: {
+        identity: 'lease-codex-gw',
+        baseUrl: `http://127.0.0.1:${port}`,
+        apiKey: 'gw-secret',
+        models: [{
+          id: 'gemini-4-carbon',
+          label: 'Gemini 4 Carbon',
+          maxOutputTokens: 8192,
+          reasoningEfforts: [{ id: 'low', label: 'Low' }, { id: 'high', label: 'High' }],
+        }],
+      },
+    });
+    const contextRef = await runtime.createContext({ cwd: workspace });
+    const beforeTitleRpc = (await fs.readFile(log, 'utf8')).trim().split('\n').filter(Boolean);
+    const title = await runtime.generateTitle!({
+      contextRef,
+      cwd: workspace,
+      description: JSON.stringify({ messages: [{ role: 'user', text: '排查模型标题超时问题' }] }),
+      model: 'gemini-4-carbon',
+      reasoningEffort: 'high',
+      signal: new AbortController().signal,
+    });
+    assert.equal(title, '网关轻量标题');
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0]!.url, '/chat/completions');
+    assert.equal(requests[0]!.auth, 'Bearer gw-secret');
+    assert.equal(requests[0]!.body.model, 'gemini-4-carbon');
+    assert.equal(requests[0]!.body.reasoning_effort, 'low');
+    assert.equal(requests[0]!.body.max_tokens, 512);
+    assert.deepEqual(requests[0]!.body.tools, []);
+    const afterTitleRpc = (await fs.readFile(log, 'utf8')).trim().split('\n').filter(Boolean);
+    assert.deepEqual(afterTitleRpc.slice(beforeTitleRpc.length), []);
+  } finally {
+    await runtime?.close();
+    server.close();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('generateCodexTitle passes effort to turn/start and distinguishes timeout from cancellation', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'buildr-codex-effort-abort-'));
+  try {
+    const withEffort = titleRpc(directory, { network: false });
+    const title = await generateCodexTitle(
+      withEffort.rpc,
+      { contextRef: { id: 'work' }, cwd: '/work', description: '{}', signal: new AbortController().signal },
+      directory,
+      new Set(),
+      false,
+      'low',
+    );
+    assert.equal(title, '供应商入驻审核流程梳理');
+    const turn = withEffort.calls.find(call => call.method === 'turn/start')!;
+    assert.equal(turn.params.effort, 'low');
+
+    const timeoutRpc = titleRpc(directory, { network: false, delay: 500 });
+    const timeoutController = new AbortController();
+    const pendingTimeout = generateCodexTitle(
+      timeoutRpc.rpc,
+      { contextRef: { id: 'work' }, cwd: '/work', description: '{}', signal: timeoutController.signal },
+      directory,
+      new Set(),
+    );
+    setTimeout(() => timeoutController.abort(new Error('agent_title_timeout')), 10);
+    await assert.rejects(
+      pendingTimeout,
+      err => err instanceof Error && err.message === 'agent_title_timeout' && err.name !== 'AbortError',
+    );
+
+    const cancelRpc = titleRpc(directory, { network: false, delay: 500 });
+    const cancelController = new AbortController();
+    const pendingCancel = generateCodexTitle(
+      cancelRpc.rpc,
+      { contextRef: { id: 'work' }, cwd: '/work', description: '{}', signal: cancelController.signal },
+      directory,
+      new Set(),
+    );
+    setTimeout(() => cancelController.abort(), 10);
+    await assert.rejects(
+      pendingCancel,
+      err => err instanceof Error && err.message === 'agent_title_cancelled' && err.name === 'AbortError',
+    );
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});

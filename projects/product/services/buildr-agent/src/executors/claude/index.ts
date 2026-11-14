@@ -10,11 +10,12 @@ import { HANDOFF_SUMMARY_PROMPT } from '../../domain/handoff-material.ts';
 import { checkedGateway, consumerBinding, type ExecutorGateway } from '../model-gateway.ts';
 import { findExecutable, inspectVersion, isolatedEnvironment, nativeHome, NativeRpc, opaqueReference, ownedProcessGroupIdle, parseReference, privateDirectories, releasedNativeControl } from '../native-process.ts';
 import { isCompatibleProgram } from '../program-policy.ts';
-import { generateModelTitle } from '../model-title.ts';
+import { generateGatewayTitle } from '../model-title.ts';
 import { claudeEffort, claudeGatewayEnvironment } from './protocol.ts';
 import { claudeNativeContent, readClaudePersistedExecution, readClaudeSupplementReceipt } from './content.ts';
 import { importClaudeFork } from './fork.ts';
 
+const CLAUDE_TITLE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const provider = 'claude-code';
 const capabilities = {
   interaction:{policy:interactionPolicy.version,nonBlockingQuestions:false},supplement:true,
@@ -236,7 +237,7 @@ class ClaudeRuntime implements AgentRuntime {
   async generateTitle(input:ExecutorTitleInput):Promise<string|undefined>{
     this.reference(input.contextRef,input.cwd);
     const gateway=this.gateway;if(!gateway)return;
-    return await generateModelTitle(input,gateway.models[0]!.id,'anthropic-messages',init=>fetch(gateway.baseUrl+'/messages',{...init,headers:{...init.headers,authorization:'Bearer '+gateway.apiKey}}));
+    return await generateGatewayTitle(gateway,input,'anthropic-messages',CLAUDE_TITLE_EFFORTS);
   }
   async readTitle(input:{contextRef:ContextRef;cwd:string}):Promise<string|undefined>{
     this.reference(input.contextRef,input.cwd);return await this.rpc.call('title',{contextId:input.contextRef.id,cwd:input.cwd});

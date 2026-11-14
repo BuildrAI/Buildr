@@ -23,7 +23,7 @@ import { AgentServiceError } from '../../domain/agent-state.ts';
 import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInputReceipt } from '../../contracts.ts';
 import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
 import type { ExecutorForkInput, ExecutorTitleInput } from '../../contracts.ts';
-import { generateModelTitle } from '../model-title.ts';
+import { generateGatewayTitle, generateModelTitle, titleTokenCap } from '../model-title.ts';
 const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 // @deepseek-ai/dsh-llm-pi-ai Config.reasoningEfforts uses these THINKING_LEVELS keys (0.2.1-rc.3).
 const dshReasoningEfforts = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
@@ -204,19 +204,13 @@ export class DshRuntime implements AgentRuntime {
     // The caller prefers trusted native titles; missing native output must not
     // disable the isolated fallback for ordinary conversations.
     if(this.gateway){
-      // A gateway lease exposes exactly one model. The caller names the model by
-      // its account catalog id, which is not a gateway route, so auxiliary
-      // requests always use the lease model rather than resolving that id.
-      const model=gatewayModel(this.gateway);
-      return generateModelTitle(input,model.id,'chat-completions',init=>fetch(this.gateway!.baseUrl.replace(/\/$/,'')+'/chat/completions',{
-        ...init,headers:{...Object.fromEntries(new Headers(init.headers)),authorization:'Bearer '+this.gateway!.apiKey},redirect:'error',
-      }),Math.min(128,model.maxOutputTokens??128));
+      return generateGatewayTitle(this.gateway,input,'chat-completions');
     }
     const selected=input.model??(await this.models()).find((model:{id:string;isDefault?:boolean})=>model.isDefault)?.id;
     // The native account bridge is owned by DeepSeek. Never route another
     // configured native provider's selection through that account by guessing.
     if(!selected?.startsWith('deepseek::')||!this.modelBridge)throw new Error('agent_title_unavailable');
-    return generateModelTitle(input,selected.slice('deepseek::'.length),'anthropic-messages',init=>this.requestModel('/anthropic/v1/messages',init));
+    return generateModelTitle(input,selected.slice('deepseek::'.length),'anthropic-messages',init=>this.requestModel('/anthropic/v1/messages',init),titleTokenCap(undefined,input.reasoningEffort),input.reasoningEffort);
   }
   async beginLogin(update: (value: LoginObservation) => void): Promise<void> {
     if (this.gateway) { update({ state: 'failed', diagnostic: 'agent_gateway_login_managed_by_model_account' }); return; }

@@ -9,6 +9,7 @@ import type { AgentCapabilities, AgentExecutor, AgentRuntime, ExecutorItem } fro
 import { createAgentService, connectAgentProcess, prepareAgentRuntime, stopAgentProcess } from '../../src/index.ts';
 import { createGoogleAiProxyProvider } from '../../src/model-access/providers/google-ai-proxy.ts';
 import { cliProxyBinaryName } from '../../src/model-access/providers/google-ai-proxy-install.ts';
+import { generateGatewayTitle } from '../../src/executors/model-title.ts';
 
 function makeTempDir(t: TestContext): string {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'google-ai-proxy-lifecycle-')));
@@ -174,11 +175,13 @@ test('cold-started CLIProxyAPI waits for async model registration, leaves config
     '  req.on("end", () => {',
     '    const parsed = JSON.parse(raw);',
     `    fs.appendFileSync(${JSON.stringify(requestLogFile)}, JSON.stringify({ url: req.url, body: parsed }) + "\\n");`,
+    '    const promptText = JSON.stringify(parsed.messages ?? "");',
+    '    const replyText = promptText.includes("精短标题") ? JSON.stringify({ title: "低推理标题:" + parsed.model }) : "ok:" + parsed.model;',
     '    res.writeHead(200, { "content-type": "application/json" });',
     '    if (req.url === "/v1/messages") {',
-    '      res.end(JSON.stringify({ id: "msg_1", type: "message", role: "assistant", model: parsed.model, content: [{ type: "text", text: "ok:" + parsed.model }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 3 } }));',
+    '      res.end(JSON.stringify({ id: "msg_1", type: "message", role: "assistant", model: parsed.model, content: [{ type: "text", text: replyText }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 3 } }));',
     '    } else {',
-    '      res.end(JSON.stringify({ id: "cmpl_1", object: "chat.completion", model: parsed.model, choices: [{ index: 0, message: { role: "assistant", content: "ok:" + parsed.model }, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }));',
+    '      res.end(JSON.stringify({ id: "cmpl_1", object: "chat.completion", model: parsed.model, choices: [{ index: 0, message: { role: "assistant", content: replyText }, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }));',
     '    }',
     '  });',
     '});',
@@ -258,6 +261,14 @@ test('cold-started CLIProxyAPI waits for async model registration, leaves config
         async observe({ executionRef }) { return { status: 'idle', executionRef, tools: [] }; },
         async reply() {},
         async stop() { return { status: 'stopped', tools: [] }; },
+        async generateTitle(titleInput) {
+          return generateGatewayTitle(
+            gateway!,
+            titleInput,
+            gateway!.models[0]!.id === 'claude-opus-5-5' ? 'anthropic-messages' : 'chat-completions',
+            new Set(['low', 'medium', 'high']),
+          );
+        },
         async close() {},
       };
       return runtime;
@@ -362,6 +373,73 @@ test('cold-started CLIProxyAPI waits for async model registration, leaves config
       ],
     );
     assert.equal(fs.readFileSync(path.join(proxyDir, 'config.yaml'), 'utf8'), originalConfig);
+
+    // 4. Request-level reasoning overrides lease default even while the main turn runs at high effort.
+    const geminiTitleChat = await secondService.conversations.create('workspace', {});
+    const geminiHighDraft = {
+      expectedRevision: geminiTitleChat.revision,
+      connectionId: 'codex',
+      modelAccountId: accountId!,
+      model: 'gemini-4-carbon',
+      reasoningEffort: 'high',
+      permissionMode: 'full-access' as const,
+      text: 'turn-gemini-title',
+    };
+    const geminiTitlePreview = secondService.conversations.prepareSend('workspace', geminiTitleChat.id, geminiHighDraft);
+    secondService.conversations.send('workspace', geminiTitleChat.id, { ...geminiHighDraft, previewToken: geminiTitlePreview.token, clientRequestId: randomUUID() });
+    let resolvedGemini!: ReturnType<typeof secondService.conversations.read>;
+    await waitUntil(() => {
+      resolvedGemini = secondService.conversations.read('workspace', geminiTitleChat.id);
+      if (resolvedGemini.run && ['failed', 'stopped', 'interrupted', 'unknown'].includes(resolvedGemini.run.status)) {
+        assert.fail(`gemini title turn status=${resolvedGemini.run.status}: ${resolvedGemini.run.diagnostic}`);
+      }
+      if (resolvedGemini.titleState?.status === 'failed') {
+        assert.fail(`gemini title failed: ${resolvedGemini.titleState.reason}`);
+      }
+      return resolvedGemini.run?.status === 'completed' && resolvedGemini.titleState?.status === 'generated';
+    });
+    assert.equal(resolvedGemini.title, '低推理标题:gemini-4-carbon-low');
+    assert.equal(resolvedGemini.entries.some(entry => entry.role === 'assistant' && entry.text.includes('gemini-4-carbon-high')), true);
+
+    const claudeTitleChat = await secondService.conversations.create('workspace', {});
+    const claudeHighDraft = {
+      expectedRevision: claudeTitleChat.revision,
+      connectionId: 'codex',
+      modelAccountId: accountId!,
+      model: 'claude-opus-5-5',
+      reasoningEffort: 'high',
+      permissionMode: 'full-access' as const,
+      text: 'turn-claude-title',
+    };
+    const claudeTitlePreview = secondService.conversations.prepareSend('workspace', claudeTitleChat.id, claudeHighDraft);
+    secondService.conversations.send('workspace', claudeTitleChat.id, { ...claudeHighDraft, previewToken: claudeTitlePreview.token, clientRequestId: randomUUID() });
+    let resolvedClaude!: ReturnType<typeof secondService.conversations.read>;
+    await waitUntil(() => {
+      resolvedClaude = secondService.conversations.read('workspace', claudeTitleChat.id);
+      if (resolvedClaude.run && ['failed', 'stopped', 'interrupted', 'unknown'].includes(resolvedClaude.run.status)) {
+        assert.fail(`claude title turn status=${resolvedClaude.run.status}: ${resolvedClaude.run.diagnostic}`);
+      }
+      if (resolvedClaude.titleState?.status === 'failed') {
+        assert.fail(`claude title failed: ${resolvedClaude.titleState.reason}`);
+      }
+      return resolvedClaude.run?.status === 'completed' && resolvedClaude.titleState?.status === 'generated';
+    });
+    assert.equal(resolvedClaude.title, '低推理标题:claude-opus-5-5-low');
+    assert.equal(resolvedClaude.entries.some(entry => entry.role === 'assistant' && entry.text.includes('claude-opus-5-5-high')), true);
+
+    const loggedAfterTitles = fs.readFileSync(requestLogFile, 'utf8')
+      .trim()
+      .split('\n')
+      .slice(3)
+      .map(line => JSON.parse(line) as { url: string; body: Record<string, unknown> });
+    const geminiTitleReq = loggedAfterTitles.find(entry => entry.url === '/v1/chat/completions' && entry.body.model === 'gemini-4-carbon-low');
+    assert.ok(geminiTitleReq);
+    assert.equal(geminiTitleReq.body.max_tokens, 512);
+    assert.equal('reasoning_effort' in geminiTitleReq.body, false);
+    const claudeTitleReq = loggedAfterTitles.find(entry => entry.url === '/v1/messages' && entry.body.model === 'claude-opus-5-5-low');
+    assert.ok(claudeTitleReq);
+    assert.equal(claudeTitleReq.body.max_tokens, 512);
+    assert.equal('output_config' in claudeTitleReq.body, false);
   } finally {
     await secondService.close();
   }

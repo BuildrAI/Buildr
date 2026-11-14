@@ -416,7 +416,9 @@ export function createGoogleAiProxyProvider(directory: string, options: GoogleAi
           const body = { ...input.body };
           const reasoning = body.reasoning as { effort?: unknown } | undefined;
           const outputConfig = body.output_config as Record<string, unknown> | undefined;
-          const effort = input.reasoningEffort ?? reasoning?.effort ?? body.reasoning_effort ?? outputConfig?.effort;
+          // Per-request reasoning effort overrides (such as low-effort auxiliary titles)
+          // must win over the conversation lease's default work effort.
+          const effort = reasoning?.effort ?? body.reasoning_effort ?? outputConfig?.effort ?? input.reasoningEffort;
           let upstreamModel: string;
           try {
             upstreamModel = resolveGoogleAiUpstreamModel(table, input.modelId, effort);

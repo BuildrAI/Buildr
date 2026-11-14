@@ -385,7 +385,7 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
   } };
   return { executor, contexts, sends, replies, opens, loginUpdate: () => loginUpdate };
 }
-function fixture(executors: AgentExecutor[], settings: { taskIds?: string[]; modelProviders?: AgentServiceOptions['modelProviders']; autoContinueInterrupted?: boolean; shutdownTimeoutMs?: number; now?: () => Date; controlSupersededRun?: AgentServiceOptions['controlSupersededRun'] } = {}) {
+function fixture(executors: AgentExecutor[], settings: { taskIds?: string[]; modelProviders?: AgentServiceOptions['modelProviders']; autoContinueInterrupted?: boolean; shutdownTimeoutMs?: number; titleTimeoutMs?: number; now?: () => Date; controlSupersededRun?: AgentServiceOptions['controlSupersededRun'] } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-core-'));
   const workspace = path.join(root, 'workspace'); fs.mkdirSync(workspace);
   const nativeProviders:AgentServiceOptions['modelProviders']=[{id:'native-qoder',label:'Fixture Qoder',linked:true,async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[{id:'test-model',label:'Test',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){throw Error('unused');},async close(){}};}},{id:'native-qoder-cn',label:'Fixture CN',linked:true,async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[{id:'test-model',label:'Test',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){throw Error('unused');},async close(){}};}}];
@@ -3978,4 +3978,238 @@ test('queue-only conversation stop publishes its committed cancellation and pres
    const event=await iterator.next();assert.equal(event.value.payload.conversation.pendingSend,undefined);assert.equal(native.sends.length,0);
   }finally{subscription.close();}
  }finally{await f.close();}
+});
+
+
+test('custom titleTimeoutMs aborts hanging automatic title with agent_title_timeout rather than agent_title_cancelled', async () => {
+  const native = fake('local');
+  const open = native.executor.open;
+  const abortReasons: unknown[] = [];
+  native.executor.open = async options => ({
+    ...await open(options),
+    async generateTitle(input) {
+      return await new Promise<string | undefined>((_resolve, reject) => {
+        const onAbort = () => {
+          abortReasons.push(input.signal.reason);
+          reject(new Error('agent_title_cancelled'));
+        };
+        if (input.signal.aborted) onAbort();
+        else input.signal.addEventListener('abort', onAbort, { once: true });
+      });
+    },
+  });
+  const f = fixture([native.executor], { titleTimeoutMs: 40 });
+  try {
+    await connected(f.service, 'local');
+    const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', '挂起超时测试');
+    const failed = await waitUntil(
+      () => f.service.conversations.read('workspace-one', chat.id),
+      value => value.run?.status === 'completed' && value.titleState?.status === 'failed',
+    );
+    assert.match(failed.titleState!.reason!, /agent_title_timeout/);
+    assert.doesNotMatch(failed.titleState!.reason!, /agent_title_cancelled/);
+    await waitUntil(() => abortReasons.length, count => count === 1);
+    assert.ok(abortReasons[0] instanceof Error);
+    assert.equal((abortReasons[0] as Error).message, 'agent_title_timeout');
+  } finally {
+    await f.close();
+  }
+});
+
+test('streaming transient title failure retries once after first round completes with visible answer and never retries on later turns', async () => {
+  const native = fake('local', { hold: true });
+  const open = native.executor.open;
+  const seen: ExecutorTitleInput[] = [];
+  native.executor.open = async options => ({
+    ...await open(options),
+    async models() {
+      return [{
+        id: 'reasoner',
+        label: 'Reasoner',
+        isDefault: true,
+        reasoningEfforts: [{ id: 'minimal', label: 'Minimal' }, { id: 'high', label: 'High' }],
+        defaultReasoningEffort: 'high',
+      }];
+    },
+    async generateTitle(input) {
+      seen.push(input);
+      if (seen.length === 1) throw new Error('agent_title_timeout');
+      return '首轮完成补试成功标题';
+    },
+  });
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local');
+    const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', '请检查标题补偿逻辑');
+    const streaming = await waitUntil(
+      () => f.service.conversations.read('workspace-one', chat.id),
+      value => seen.length === 1 && value.run?.status === 'running' && value.titleState?.status === 'fallback',
+    );
+    await new Promise(resolve => setTimeout(resolve, 15));
+    assert.equal(f.service.conversations.read('workspace-one', chat.id).titleState?.status, 'fallback');
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0]!.reasoningEffort, 'minimal');
+    const firstMessages = JSON.parse(seen[0]!.description).messages as Array<{ role: string; text: string }>;
+    assert.equal(firstMessages.length, 1);
+    assert.equal(firstMessages[0]!.role, 'user');
+    assert.equal(streaming.title, '请检查标题补偿逻辑');
+
+    for (const context of native.contexts.values()) context.unblock?.();
+    const named = await waitUntil(
+      () => f.service.conversations.read('workspace-one', chat.id),
+      value => value.run?.status === 'completed' && value.titleState?.status === 'generated',
+    );
+    assert.equal(named.title, '首轮完成补试成功标题');
+    assert.equal(seen.length, 2);
+    assert.equal(seen[1]!.reasoningEffort, 'minimal');
+    const retryMessages = JSON.parse(seen[1]!.description).messages as Array<{ role: string; text: string }>;
+    assert.deepEqual(retryMessages.map(item => item.role), ['user', 'assistant']);
+
+    send(f.service, chat.id, 'local', '第二轮继续对话');
+    await waitUntil(() => native.sends.length, count => count === 2);
+    for (const context of native.contexts.values()) context.unblock?.();
+    await waitUntil(
+      () => f.service.conversations.read('workspace-one', chat.id),
+      value => value.run?.status === 'completed' && value.entries.filter(entry => entry.role === 'user').length === 2,
+    );
+    await new Promise(resolve => setTimeout(resolve, 15));
+    assert.equal(seen.length, 2);
+  } finally {
+    for (const context of native.contexts.values()) {
+      context.observation = { status: 'stopped', tools: [] };
+      context.unblock?.();
+    }
+    await f.close();
+  }
+});
+
+test('streaming transient title failure plus failed compensation retry settles as failed with two total attempts', async () => {
+  const native = fake('local', { hold: true });
+  const open = native.executor.open;
+  let calls = 0;
+  native.executor.open = async options => ({
+    ...await open(options),
+    async generateTitle() {
+      calls++;
+      throw new Error('agent_title_timeout');
+    },
+  });
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local');
+    const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', '排查补偿双失败边界');
+    await waitUntil(
+      () => f.service.conversations.read('workspace-one', chat.id),
+      value => calls === 1 && value.run?.status === 'running' && value.titleState?.status === 'fallback',
+    );
+    for (const context of native.contexts.values()) context.unblock?.();
+    const failed = await waitUntil(
+      () => f.service.conversations.read('workspace-one', chat.id),
+      value => value.run?.status === 'completed' && value.titleState?.status === 'failed',
+    );
+    assert.equal(calls, 2);
+    assert.equal(failed.title, '排查补偿双失败边界');
+    assert.match(failed.titleState!.reason!, /agent_title_timeout/);
+
+    send(f.service, chat.id, 'local', '后续轮次不再补试');
+    await waitUntil(() => native.sends.length, count => count === 2);
+    for (const context of native.contexts.values()) context.unblock?.();
+    await waitUntil(
+      () => f.service.conversations.read('workspace-one', chat.id),
+      value => value.run?.status === 'completed' && value.entries.filter(entry => entry.role === 'user').length === 2,
+    );
+    await new Promise(resolve => setTimeout(resolve, 15));
+    assert.equal(calls, 2);
+  } finally {
+    for (const context of native.contexts.values()) {
+      context.observation = { status: 'stopped', tools: [] };
+      context.unblock?.();
+    }
+    await f.close();
+  }
+});
+
+test('stopped first round flushes deferred streaming title failure without compensation retry', async () => {
+  const native = fake('local', { hold: true });
+  const open = native.executor.open;
+  let calls = 0;
+  native.executor.open = async options => ({
+    ...await open(options),
+    async generateTitle() {
+      calls++;
+      throw new Error('agent_title_timeout');
+    },
+  });
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local');
+    const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', '停止后不补试标题');
+    const running = await waitUntil(
+      () => f.service.conversations.read('workspace-one', chat.id),
+      value => calls === 1 && value.run?.status === 'running' && value.titleState?.status === 'fallback',
+    );
+    await f.service.conversations.stopAll('workspace-one', chat.id, {
+      expectedRevision: running.revision,
+      clientRequestId: randomUUID(),
+    });
+    for (const context of native.contexts.values()) {
+      context.observation = { status: 'stopped', tools: [] };
+      context.unblock?.();
+    }
+    const stopped = await waitUntil(
+      () => f.service.conversations.read('workspace-one', chat.id),
+      value => value.run?.status === 'stopped' && value.titleState?.status === 'failed',
+    );
+    await new Promise(resolve => setTimeout(resolve, 15));
+    assert.equal(calls, 1);
+    assert.match(stopped.titleState!.reason!, /agent_title_timeout/);
+  } finally {
+    for (const context of native.contexts.values()) {
+      context.observation = { status: 'stopped', tools: [] };
+      context.unblock?.();
+    }
+    await f.close();
+  }
+});
+
+test('non-retryable failure during streaming does not trigger compensation retry after completion', async () => {
+  const native = fake('local', { hold: true });
+  const open = native.executor.open;
+  let calls = 0;
+  native.executor.open = async options => ({
+    ...await open(options),
+    async generateTitle() {
+      calls++;
+      return '超长标题'.repeat(25);
+    },
+  });
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local');
+    const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', '非瞬态错误不补试');
+    const streamingFailed = await waitUntil(
+      () => f.service.conversations.read('workspace-one', chat.id),
+      value => calls === 1 && value.run?.status === 'running' && value.titleState?.status === 'failed',
+    );
+    assert.match(streamingFailed.titleState!.reason!, /agent_title_invalid/);
+    for (const context of native.contexts.values()) context.unblock?.();
+    const completed = await waitUntil(
+      () => f.service.conversations.read('workspace-one', chat.id),
+      value => value.run?.status === 'completed',
+    );
+    await new Promise(resolve => setTimeout(resolve, 15));
+    assert.equal(calls, 1);
+    assert.equal(completed.titleState?.status, 'failed');
+  } finally {
+    for (const context of native.contexts.values()) {
+      context.observation = { status: 'stopped', tools: [] };
+      context.unblock?.();
+    }
+    await f.close();
+  }
 });

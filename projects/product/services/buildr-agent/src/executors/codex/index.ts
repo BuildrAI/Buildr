@@ -22,6 +22,7 @@ import { generateCodexTitle } from './title.ts';
 import { codexThreadPermissions, codexTurnPermissions } from './permissions.ts';
 import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInputReceipt } from '../../contracts.ts';
 import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
+import { generateGatewayTitle } from '../model-title.ts';
 import type { ExecutorForkInput } from '../../contracts.ts';
 
 const capabilities = { endQuestionWait: true, interaction: { policy: interactionPolicy.version, nonBlockingQuestions: true }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
@@ -257,8 +258,8 @@ class CodexRuntime implements AgentRuntime {
   }
   async generateTitle(input: ExecutorTitleInput): Promise<string | undefined> {
     this.reference(input.contextRef, input.cwd);
-    if (this.gateway) input = { ...input, model: gatewayModel(this.gateway).id };
-    return await generateCodexTitle(this.rpc, input, this.titleDirectory, this.auxiliary);
+    if (this.gateway) return await generateGatewayTitle(this.gateway, input, 'chat-completions');
+    return await generateCodexTitle(this.rpc, input, this.titleDirectory, this.auxiliary, false, codexEffort(input.reasoningEffort));
   }
   async summarizeHandoff(input:ExecutorTitleInput):Promise<string|undefined>{
     this.reference(input.contextRef,input.cwd);

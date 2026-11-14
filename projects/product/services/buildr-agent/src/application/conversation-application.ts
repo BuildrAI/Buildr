@@ -1,4 +1,5 @@
 import { executionLog,diagnosticCode } from '../storage/execution-log.ts';
+import { lowestReasoningEffort, titleAbortError } from '../executors/model-title.ts';
 import { releaseQuestionWait } from './question-wait-release.ts';
 import { mergeParticipation, instructionParticipation, applyParticipationSources, participationSource, validParticipationSource, normalizeParticipation, participationGaps, PARTICIPATION_LIMITS } from '../domain/participation.ts';
 import { singleParticipation, summarizeParticipation } from '../domain/participation-record.ts';
@@ -51,9 +52,20 @@ import type { ConversationStopInput } from '../contracts.ts';
 import { finalReplyForRun } from '../domain/conversation-activity.ts';
 
 type PreparedSource = { runtime: AgentRuntime; model: string; leaseIdentity?: string; nativeHomeRoot?: string };
-const TITLE_TIMEOUT_MS = 10_000;
+const TITLE_TIMEOUT_MS = 30_000;
 const STALE_TITLE_REASON = '标题生成在服务重启后未完成；当前名称已保留，可显式重新生成。';
 const NEUTRAL_TITLE = '新对话';
+const RETRYABLE_EARLY_TITLE_CODES = new Set([
+  'agent_title_timeout',
+  'agent_title_failed',
+  'agent_title_transport_closed',
+  'agent_native_process_closed',
+  'agent_native_request_failed',
+]);
+function normalizeTitleFailureCode(error: unknown): string {
+  const raw = error instanceof Error ? ('code' in error ? String(error.code) : error.message) : '';
+  return /^agent_(?:title|native|revision)_[a-z_]+$/.test(raw) ? raw : 'agent_title_failed';
+}
 const FALLBACK_TITLE_LIMIT = 60;
 const MAX_TEXT_BYTES = 64 * 1024;
 const MAX_ITEM_BYTES = 1024 * 1024;
@@ -66,7 +78,7 @@ async function within<T>(work: Promise<T>, milliseconds: number, code: string, s
   let cancel: (() => void) | undefined;
   const cancelled = new Promise<never>((_, reject) => {
     if (!signal) return;
-    cancel = () => reject(new Error('agent_title_cancelled'));
+    cancel = () => reject(titleAbortError(signal));
     if (signal.aborted) cancel(); else signal.addEventListener('abort', cancel, {once:true});
   });
   try { return await Promise.race([work, cancelled, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(code)), milliseconds); })]); }
@@ -144,6 +156,9 @@ export class ConversationApplication {
   private readonly supersededCleanups = new Map<string,Promise<void>>();
   private readonly repliesInFlight = new Map<string, string>();
   private readonly titleWork = new Map<string, AbortController>();
+  private readonly streamingSends = new Set<string>();
+  private readonly pendingTitleRetries = new Map<string, unknown>();
+  private readonly automaticTitleRetried = new Set<string>();
   private readonly sourceConnections = new Map<string,string>();
   private readonly sourceRuntimes = new Map<string, Promise<{runtime: AgentRuntime; model: string; leaseIdentity?:string}>>();
   private readonly sourceReleasePending = new Map<AgentRuntime,()=>Promise<boolean>>();
@@ -178,9 +193,13 @@ export class ConversationApplication {
     now(): string;
     host: HostContext;
     autoContinueInterrupted?: boolean;
+    titleTimeoutMs?: number;
     generationAlive?: (generation: string) => boolean;
     generationReleased?: (generation: string) => boolean;
   };
+  private get titleTimeoutMs(): number {
+    return this.options.titleTimeoutMs ?? TITLE_TIMEOUT_MS;
+  }
   constructor(options: ConversationApplication['options']) {
     this.options = options;
     this.diagnostics=executionLog(options.root,options.generation);
@@ -1669,6 +1688,8 @@ export class ConversationApplication {
     const rootRunId = attempt?.automaticRetry?.rootRunId ?? lineage?.[1] ?? runId;
     let dispatched = false;
     let creatingContext = false;
+    let titleRuntime: AgentRuntime | undefined;
+    let retryEligibleCompletion = false;
     try {
       let record = this.currentRun(workspaceId, id, runId); if (!record) return;
       if (!hostVerified) {
@@ -1692,6 +1713,7 @@ export class ConversationApplication {
       if (startingParticipant.modelAccountId) await this.validateOrBindParticipantSource(record, startingParticipant, runId);
       const selectedRuntime = await this.sourceRuntime(record, startingParticipant);
       const runtime = selectedRuntime.runtime;
+      titleRuntime = runtime;
       record = this.currentRun(workspaceId, id, runId); if (!record) return;
       const participant = record.participants.find(value => value.id === record!.view.run!.participantId)!;
       if (participant.bindingIdentity && participant.bindingIdentity !== runtime.bindingIdentity) fail('agent_binding_changed', '此参与者的原连接身份不匹配，不能恢复到其他配置。', 409);
@@ -1838,10 +1860,14 @@ export class ConversationApplication {
       this.save(record);
       this.discoverParticipation(workspaceId,id,runId);
       dispatched = true;
+      this.streamingSends.delete(runId);
       await runtime.send({ contextRef: participant.contextRef!, cwd: record.view.cwd, text: prepared.text, images: prepared.images, model: prepared.draft.modelAccountId && !this.options.connections.descriptor(participant.connectionId)?.modelPolicy?.native?.useRequestedModelPerTurn ? selectedRuntime.model : prepared.draft.model, reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, clientRequestId: record.attempts.find(value => value.runId === runId)!.clientRequestId, onEvent: event => {
+        if (event.type === 'accepted') this.streamingSends.add(runId);
+        else if (event.type === 'completed') this.streamingSends.delete(runId);
         this.event(workspaceId, id, runId, event);
-        if (event.type === 'accepted') queueMicrotask(() => { void this.generateAutomaticTitle(workspaceId, id, runId, runtime).catch(() => {}); });
+        if (event.type === 'accepted') queueMicrotask(() => { void this.generateAutomaticTitle(workspaceId, id, runId, runtime, { allowEarlyRetry: true }).catch(() => {}); });
       } });
+      this.streamingSends.delete(runId);
       // An old stop may already be observing this conversation. Its snapshot
       // cannot stand in for the just-finished new execution.
       const settled=this.ownedRun(workspaceId,id,runId);
@@ -1849,7 +1875,7 @@ export class ConversationApplication {
       const ended = this.currentRun(workspaceId, id, runId);
       if (ended?.view.run?.fault && ['failed','unknown'].includes(ended.view.run.status)) await this.recoverExecutionFailure(workspaceId,id,runId);
       else if (ended?.view.run?.status === 'failed') await this.retryFailure(workspaceId, id, runId, prepared, retries, rootRunId, ended.view.run.diagnostic ?? '', runtime);
-      void this.generateAutomaticTitle(workspaceId, id, runId, runtime).catch(() => {});
+      retryEligibleCompletion = ended?.view.run?.status === 'completed';
     } catch (error) {
       this.diagnostics({event:'run-failed',workspaceId,conversationId:id,runId,code:diagnosticCode(error)});
       const record = this.currentRun(workspaceId, id, runId);
@@ -1861,7 +1887,7 @@ export class ConversationApplication {
         return;
       }
       const run = record.view.run!;
-      if(run.status==='completed'&&run.executionState==='ended'&&run.tools.every(tool=>tool.status==='completed')&&!(error instanceof NativeRequestError&&error.fault))return;
+      if(run.status==='completed'&&run.executionState==='ended'&&run.tools.every(tool=>tool.status==='completed')&&!(error instanceof NativeRequestError&&error.fault)){retryEligibleCompletion=true;return;}
       const rejectedBeforeInput = !run.accepted && (error instanceof ExecutorInputRejected || error instanceof AgentServiceError && ['agent_permission_invalid', 'agent_permission_unavailable', 'agent_permission_unverified', 'agent_reasoning_unavailable', 'agent_model_source_changed'].includes(error.code));
       const userStopping = run.status === 'stopping';
       const possiblyDelivered = dispatched && !rejectedBeforeInput;
@@ -1882,12 +1908,14 @@ export class ConversationApplication {
       else if (!userStopping && run.accepted && run.fault) await this.recoverExecutionFailure(workspaceId,id,runId);
       else if (!dispatched && !userStopping && (!creatingContext || error instanceof NativeRequestError)) await this.retryFailure(workspaceId, id, runId, prepared, retries, rootRunId, error instanceof Error && transientFailure(error.message) ? error.message : safeDiagnostic(error), undefined);
     } finally {
+      this.streamingSends.delete(runId);
       if (!dispatched) {
         const detached = this.ownedRun(workspaceId,id,runId);
         if (detached && detached.record.view.run?.id !== runId && !detached.run.accepted && !detached.record.attempts.find(attempt=>attempt.runId===runId)?.executionRef) {
           detached.run.status='stopped'; detached.run.executionState='ended'; detached.run.diagnostic='新要求已接续，本轮尚未交付原生执行。';this.save(detached.record);
         }
       }
+      if (titleRuntime) this.finishAutomaticTitle(workspaceId, id, runId, titleRuntime, retryEligibleCompletion);
     }
   }
 
@@ -2019,8 +2047,7 @@ export class ConversationApplication {
     // A rename during this request still wins; a title explicitly generated
     // for a previously manual name must record its own failure.
     if (current.view.run?.id !== runId || current.view.titleState?.status === 'manual' || current.view.titleState?.status === 'generated') return;
-    const raw = error instanceof Error ? ('code' in error ? String(error.code) : error.message) : '';
-    const code = /^agent_(?:title|native|revision)_[a-z_]+$/.test(raw) ? raw : 'agent_title_failed';
+    const code = normalizeTitleFailureCode(error);
     const explanations: Record<string,string> = {
       agent_title_timeout: '独立标题请求超时，已中断本次生成',
       agent_title_cancelled: '独立标题请求已取消',
@@ -2066,13 +2093,72 @@ export class ConversationApplication {
     });
     return JSON.stringify({ messages });
   }
+  /** Resolves the model's lowest advertised reasoning effort for isolated title generation. */
+  private titleReasoningEffort(record: StoredConversation, participant: StoredParticipant): string | undefined {
+    const run = record.view.run;
+    if (!run) return undefined;
+    try {
+      const descriptor = this.options.connections.descriptor(participant.connectionId);
+      const connection = this.options.connections.get(participant.connectionId);
+      if (participant.modelAccountId && this.options.modelAccess) {
+        const account = this.options.modelAccess.accounts.snapshot(participant.modelAccountId);
+        const rawId = run.model ?? participant.modelId;
+        const targetId = rawId ? (this.options.modelAccess.resolveModelAlias(account.id, rawId) ?? rawId) : undefined;
+        const legacy = targetId
+          ? (descriptor?.modelPolicy?.native?.legacyModelVariant?.(targetId)
+            ?? this.options.modelAccess.resolveLegacyModelVariant?.(account.id, targetId))
+          : undefined;
+        const model = (targetId ? account.models.find(item => item.id === targetId) : undefined)
+          ?? (legacy ? account.models.find(item => item.id === legacy.family && item.reasoningEfforts?.some(depth => depth.id === legacy.depth)) : undefined)
+          ?? (!rawId ? account.models.find(item => item.enabled !== false) : undefined);
+        const offering = model ? selectedOffering(model, participant.serviceTier) : undefined;
+        return lowestReasoningEffort(offering?.reasoningEfforts);
+      }
+      const targetId = run.model ?? participant.modelId;
+      const legacy = targetId ? descriptor?.modelPolicy?.native?.legacyModelVariant?.(targetId) : undefined;
+      const model = (targetId ? connection.models.find(item => item.id === targetId) : undefined)
+        ?? (legacy ? connection.models.find(item => item.id === legacy.family && item.reasoningEfforts?.some(depth => depth.id === legacy.depth)) : undefined)
+        ?? (!targetId ? connection.models.find(item => item.isDefault) : undefined);
+      return lowestReasoningEffort(model?.reasoningEfforts);
+    } catch {
+      return undefined;
+    }
+  }
   /** Exactly one automatic attempt, started in parallel with the accepted first round. */
-  private async generateAutomaticTitle(workspaceId: string, id: string, runId: string, runtime: AgentRuntime): Promise<void> {
+  private async generateAutomaticTitle(workspaceId: string, id: string, runId: string, runtime: AgentRuntime, options?: { allowEarlyRetry?: boolean; afterCompletion?: boolean }): Promise<void> {
     const record = this.currentRun(workspaceId, id, runId);
     if (!record || this.closing) return;
     if (record.attempts.filter(attempt => !attempt.supplement && !attempt.automaticRetry).length !== 1) return;
+    if ((!options?.afterCompletion && this.pendingTitleRetries.has(runId)) || this.automaticTitleRetried.has(runId)) return;
     if (!this.titleEligible(record) || this.titleWork.has(id)) return;
-    await this.summarizeTitle(workspaceId, id, undefined, runtime, false, false).catch(() => {});
+    await this.summarizeTitle(workspaceId, id, undefined, runtime, false, false, Boolean(options?.allowEarlyRetry)).catch(() => {});
+  }
+  /** Settles any deferred streaming title failure once the first round ends. */
+  private finishAutomaticTitle(workspaceId: string, id: string, runId: string, runtime: AgentRuntime, retryEligibleCompletion: boolean): void {
+    if (this.pendingTitleRetries.has(runId)) {
+      const deferredError = this.pendingTitleRetries.get(runId);
+      this.pendingTitleRetries.delete(runId);
+      const current = this.currentRun(workspaceId, id, runId);
+      if (!current || this.closing) return;
+      if (
+        retryEligibleCompletion &&
+        current.view.run!.status === 'completed' &&
+        !this.titleWork.has(id) &&
+        !this.automaticTitleRetried.has(runId) &&
+        current.attempts.filter(attempt => !attempt.supplement && !attempt.automaticRetry).length === 1 &&
+        this.titleEligible(current) &&
+        Boolean(this.titleDescription(current, true))
+      ) {
+        this.automaticTitleRetried.add(runId);
+        void this.summarizeTitle(workspaceId, id, undefined, runtime, false, true, false).catch(() => {});
+        return;
+      }
+      if (this.titleEligible(current) && current.view.titleState?.status !== 'manual' && current.view.titleState?.status !== 'generated') {
+        this.recordTitleFailure(workspaceId, id, runId, 'automatic', deferredError);
+      }
+      return;
+    }
+    if (retryEligibleCompletion) void this.generateAutomaticTitle(workspaceId, id, runId, runtime, { afterCompletion: true }).catch(() => {});
   }
   async generateTitle(workspaceId: string, id: string, input: { expectedRevision: string }): Promise<ConversationView> {
     let record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision); this.assertAccepting(record);
@@ -2086,7 +2172,7 @@ export class ConversationApplication {
     await this.summarizeTitle(workspaceId, id, input.expectedRevision, runtime, true);
     return this.read(workspaceId, id,{compactTools:true});
   }
-  private async summarizeTitle(workspaceId: string, id: string, revision: string | undefined, runtime: AgentRuntime, explicit: boolean, requireAnswer = explicit): Promise<void> {
+  private async summarizeTitle(workspaceId: string, id: string, revision: string | undefined, runtime: AgentRuntime, explicit: boolean, requireAnswer = explicit, allowEarlyRetry = !explicit): Promise<void> {
     if (this.titleWork.has(id)) { if (explicit) fail('agent_title_busy', '正在生成本段对话的标题，请稍后查看。', 409); return; }
     let record = this.load(workspaceId, id);
     if (revision !== undefined) expected(record.view.revision, revision);
@@ -2096,16 +2182,29 @@ export class ConversationApplication {
     const description = this.titleDescription(record, requireAnswer);
     if (!participant?.contextRef || !description || !explicit && !this.titleEligible(record)) return;
     const runId = run.id;
+    if (explicit) this.pendingTitleRetries.delete(runId);
     if (!runtime.generateTitle) {
       if (explicit) fail('agent_title_unavailable', '此执行方尚未提供可用的精短标题，原有标题已保留。', 409);
       this.recordTitleFailure(workspaceId, id, runId, 'automatic', new Error('agent_title_unavailable'));
       return;
     }
+    const startedWhileRunning = !explicit && allowEarlyRetry && this.streamingSends.has(runId) && run.status !== 'completed' && !this.automaticTitleRetried.has(runId) && record.attempts.filter(attempt => !attempt.supplement && !attempt.automaticRetry).length === 1;
+    const reasoningEffort = this.titleReasoningEffort(record, participant);
+    const timeoutMs = this.titleTimeoutMs;
     const controller = new AbortController(); this.titleWork.set(id, controller);
     record.view.titleState = { status: 'generating' }; this.save(record); revision = record.view.revision;
-    const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS); timeout.unref();
+    const timeout = setTimeout(() => controller.abort(new Error('agent_title_timeout')), timeoutMs); timeout.unref();
+    let retryAfterCompletion = false;
     try {
-      const title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: run.model, freshInstruction: Boolean(record.view.forkedFrom), signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
+      const title = await within(runtime.generateTitle({
+        contextRef: participant.contextRef,
+        cwd: record.view.cwd,
+        description,
+        model: run.model,
+        ...(reasoningEffort ? { reasoningEffort } : {}),
+        freshInstruction: Boolean(record.view.forkedFrom),
+        signal: controller.signal,
+      }), timeoutMs, 'agent_title_timeout', controller.signal);
       const current = this.load(workspaceId, id);
       if (current.view.run?.id !== runId) {
         if (current.titleOrigin === 'fallback' && current.view.titleState?.status === 'generating') { current.view.titleState = { status: 'fallback' }; this.save(current); }
@@ -2119,10 +2218,43 @@ export class ConversationApplication {
       if (!this.acceptTitle(current, title, explicit)) throw new Error(title ? 'agent_title_invalid' : 'agent_title_empty');
       this.save(current);
     } catch (error) {
-      controller.abort();
+      controller.abort(error instanceof Error ? error : undefined);
+      const current = this.load(workspaceId, id);
+      if (current.view.run?.id !== runId) {
+        if (current.titleOrigin === 'fallback' && current.view.titleState?.status === 'generating') { current.view.titleState = { status: 'fallback' }; this.save(current); }
+        return;
+      }
+      const code = normalizeTitleFailureCode(error);
+      const canRecover =
+        startedWhileRunning &&
+        !this.closing &&
+        !this.automaticTitleRetried.has(runId) &&
+        RETRYABLE_EARLY_TITLE_CODES.has(code) &&
+        current.attempts.filter(attempt => !attempt.supplement && !attempt.automaticRetry).length === 1 &&
+        current.titleOrigin === 'fallback' &&
+        current.view.titleState?.status !== 'manual' &&
+        current.view.titleState?.status !== 'generated';
+      if (canRecover && current.view.run!.status === 'completed' && Boolean(this.titleDescription(current, true))) {
+        this.automaticTitleRetried.add(runId);
+        current.view.titleState = { status: 'fallback' };
+        this.save(current);
+        retryAfterCompletion = true;
+        return;
+      }
+      if (canRecover && !['stopped', 'stopping', 'failed', 'unknown', 'completed'].includes(current.view.run!.status) && this.workers.has(runId)) {
+        this.pendingTitleRetries.set(runId, error);
+        current.view.titleState = { status: 'fallback' };
+        this.save(current);
+        return;
+      }
       this.recordTitleFailure(workspaceId, id, runId, explicit ? 'manual' : 'automatic', error);
       if (explicit) { if (error && typeof error === 'object' && 'code' in error) throw error; fail('agent_title_failed', '标题生成未完成，原有标题与工作结果已保留。', 502); }
-    } finally { clearTimeout(timeout); if (this.titleWork.get(id) === controller) this.titleWork.delete(id); this.scheduleSourceRelease(workspaceId, id); }
+    } finally {
+      clearTimeout(timeout);
+      if (this.titleWork.get(id) === controller) this.titleWork.delete(id);
+      if (retryAfterCompletion && !this.closing) void this.summarizeTitle(workspaceId, id, undefined, runtime, false, true, false).catch(() => {});
+      this.scheduleSourceRelease(workspaceId, id);
+    }
   }
 
   /** Startup scans executions, never task status. No browser subscription is required. */
@@ -3031,6 +3163,9 @@ export class ConversationApplication {
       record.view.run.status = 'failed'; record.view.run.diagnostic = '宿主退出，自动重试已取消；工作记录已保留。'; this.save(record);
     }
     this.retryWaits.clear();
+    this.streamingSends.clear();
+    this.pendingTitleRetries.clear();
+    this.automaticTitleRetried.clear();
     for (const controller of this.titleWork.values()) controller.abort();
     // A retained unknown turn can keep the conversation in listPending even
     // after its current turn has finished. Never turn that completion into a
