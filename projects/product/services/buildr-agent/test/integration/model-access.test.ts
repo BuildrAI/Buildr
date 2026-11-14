@@ -713,9 +713,10 @@ test('deleted linked sources stay suppressed until an explicit re-add clears the
 });
 
 for (const route of ['responses', 'messages'] as const) {
-  test('Google AI OAuth through the local gateway preserves signed tool calls for ' + route, { timeout: 60_000 }, async () => {
+  test('Google AI OAuth through the local gateway preserves signed tool calls for ' + route, { timeout: 60_000 }, async t => {
     const { createGoogleAiSubscriptionProvider } = await import('../../src/model-access/providers/google-ai-subscription.ts');
     const root = await mkdtemp(join(tmpdir(), 'buildr-google-ai-'));
+    t.after(async () => { await rm(root, { recursive: true, force: true }); });
     const requests: any[] = [];
     let status = 200, nativeRun = false, nativeAgent = '', refreshes = 0, subject = 'test-user';
     const fakeFetch: typeof fetch = async (input, init) => {
@@ -932,8 +933,9 @@ for (const route of ['responses', 'messages'] as const) {
   });
 }
 
-test('a replacement provider retires only its verified legacy source and preserves stored bindings', async () => {
+test('a replacement provider retires only its verified legacy source and preserves stored bindings', async t => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-google-ai-migration-'));
+  t.after(async () => { await rm(root, { recursive: true, force: true }); });
   const infer = async () => chat({ role: 'assistant', content: 'ok' });
   const old = { ...provider(infer), id: 'custom' };
   const replacement = {

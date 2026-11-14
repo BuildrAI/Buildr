@@ -86,7 +86,7 @@ try {
   if (!tarball) tarball = (await createCandidatePackage(productRoot, packDir)).tarball;
   const installed: any = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', [
     'install', '--offline', '--ignore-scripts', '--prefix', prefix, tarball,
-  ], { env: { npm_config_cache: path.join(root, 'npm-cache'), npm_config_update_notifier: 'false' } });
+  ], { env: { npm_config_cache: path.join(root, 'npm-cache'), NPM_CONFIG_CACHE: path.join(root, 'npm-cache'), npm_config_update_notifier: 'false' } });
   assert.equal(installed.status, 0, installed.stderr);
   const packagedCli: any = path.join(prefix, 'node_modules', '.bin', process.platform === 'win32' ? 'buildr.cmd' : 'buildr');
   const packagedRoot: any = path.join(prefix, 'node_modules', '@buildr-ai', 'buildr');

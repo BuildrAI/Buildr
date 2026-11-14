@@ -140,7 +140,7 @@ test('publication effects use the real artifact and recover each external partia
   const cli = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   realInstallCount++;
   progress('registry-install', 'started', installStartedAt, { realInstallCount });
-  const installation = spawnSync(cli, ['install', '--offline', '--ignore-scripts', '--prefix', prefix, artifact.tarball], { encoding: 'utf8', shell: process.platform === 'win32', env: { ...process.env, npm_config_cache: npmCache } });
+  const installation = spawnSync(cli, ['install', '--offline', '--ignore-scripts', '--prefix', prefix, artifact.tarball], { encoding: 'utf8', shell: process.platform === 'win32', env: { ...process.env, npm_config_cache: npmCache, NPM_CONFIG_CACHE: npmCache } });
   installDurationMs += Date.now() - installStartedAt;
   progress('registry-install', installation.status === 0 ? 'passed' : 'failed', installStartedAt, {
     realInstallCount, ...childFacts(installation),

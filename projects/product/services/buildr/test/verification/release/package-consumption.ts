@@ -365,6 +365,7 @@ export async function runPackageConsumption(env: any = process.env): Promise<any
     BUILDR_APP_DATA_DIR: appData,
     BUILDR_PRODUCT_DATA_DIR: appData,
     npm_config_cache: npmCache,
+    NPM_CONFIG_CACHE: npmCache,
     npm_config_update_notifier: 'false',
   };
   process.stdout.write(`[package-consumption] node=${JSON.stringify(exactNode.audit)}\n`);

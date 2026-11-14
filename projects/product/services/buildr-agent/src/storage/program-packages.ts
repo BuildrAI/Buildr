@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { nativeProgramPolicies } from '../executors/program-policy.ts';
 import { listConnectionProgramReferences } from '../persistence/connection-relocation.ts';
-import { safeStoragePath, storageCandidate, type StorageCandidate, type StorageUse } from './files.ts';
+import { reanchorSharedDentries, safeStoragePath, storageCandidate, type StorageCandidate, type StorageUse } from './files.ts';
 
 /** Managed program packages are reclaimable only without any binding, upgrade
  * rollback/target or default-destination reference. Unknown references retain. */
@@ -114,4 +114,12 @@ export function programPackageCandidates(root: string, use: StorageUse, cutoff: 
 export function programPackageUnreferenced(root: string, directory: string): boolean {
   const references = programPackageReferences(root);
   return references.complete && !references.directories.has(directory);
+}
+
+/** Re-stat bound/protected program package trees before macOS lsof so shared hard-link vnodes resolve to active packages. */
+export function reanchorProtectedProgramInodes(root: string): void {
+  if (process.platform !== 'darwin') return;
+  for (const directory of programPackageReferences(root).directories) {
+    if (safeStoragePath(root, directory)) reanchorSharedDentries(directory);
+  }
 }

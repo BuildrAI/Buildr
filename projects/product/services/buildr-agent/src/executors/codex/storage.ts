@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { devNull } from 'node:os';
+import { devNull, tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { safeStoragePath } from '../../storage/files.ts';
@@ -8,25 +8,62 @@ import { safeStoragePath } from '../../storage/files.ts';
 /** Logs are not native state/session databases. Read the complete SQLite view
  * (including WAL schema) and reject any added non-diagnostic table. Producer
  * UUIDs are not PIDs: collection instead requires the whole config to be idle. */
-export function codexDiagnosticLogs(config:string) {
-  const home=path.join(config,'codex-home');
-  const resources:Array<{relativePath:string;quiescentDatabase:string}>=[];
-  if(!safeStoragePath(config,home))return resources;
-  for(const name of fs.readdirSync(home).filter(name=>/^logs_[12]\.sqlite$/.test(name))){
-    const file=path.join(home,name),stat=fs.lstatSync(file);
-    if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1)continue;
-    try{
-      const db=new DatabaseSync(file,{readOnly:true});let valid=false;
-      try{
-        const tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row=>row.name);
-        const columns=db.prepare('PRAGMA table_info(logs)').all().map(row=>row.name);
-        valid=tables.includes('logs')&&tables.every(name=>['logs','sqlite_sequence','_sqlx_migrations'].includes(String(name)))&&
-          ['ts','feedback_log_body','thread_id','process_uuid'].every(name=>columns.includes(name));
-      }finally{db.close();}
-      if(valid)for(const suffix of ['-wal','-shm',''])if(fs.existsSync(file+suffix)){
-        resources.push({relativePath:path.join('codex-home',name+suffix),quiescentDatabase:path.join('codex-home',name)});
+const validatedCodexLogs = new Map<string, boolean>();
+const maxValidatedCodexLogs = 2048;
+
+function fileSignature(target: string): { stat: fs.Stats; tag: string } | undefined {
+  if (!fs.existsSync(target)) return { stat: undefined as unknown as fs.Stats, tag: 'missing' };
+  const stat = fs.lstatSync(target);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) return undefined;
+  return { stat, tag: `${stat.size}:${stat.mtimeMs}:${stat.ino}` };
+}
+
+function inspectCodexLogSchema(file: string, name: string): boolean {
+  const probeDir = fs.mkdtempSync(path.join(tmpdir(), 'buildr-codex-log-probe-'));
+  try {
+    const target = path.join(probeDir, name);
+    fs.copyFileSync(file, target);
+    if (fs.existsSync(file + '-wal')) fs.copyFileSync(file + '-wal', target + '-wal');
+    // Probe a private copy so WAL/SHM inspection never bumps live mtimes.
+    const db = new DatabaseSync(target);
+    try {
+      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row => row.name);
+      const columns = db.prepare('PRAGMA table_info(logs)').all().map(row => row.name);
+      return tables.includes('logs') && tables.every(table => ['logs', 'sqlite_sequence', '_sqlx_migrations'].includes(String(table))) &&
+        ['ts', 'feedback_log_body', 'thread_id', 'process_uuid'].every(column => columns.includes(column));
+    } finally {
+      db.close();
+    }
+  } finally {
+    fs.rmSync(probeDir, { recursive: true, force: true });
+  }
+}
+
+export function codexDiagnosticLogs(config: string) {
+  const home = path.join(config, 'codex-home');
+  const resources: Array<{ relativePath: string; quiescentDatabase: string }> = [];
+  if (!safeStoragePath(config, home)) return resources;
+  for (const name of fs.readdirSync(home).filter(name => /^logs_[12]\.sqlite$/.test(name))) {
+    const file = path.join(home, name);
+    try {
+      const mainSig = fileSignature(file);
+      const walSig = fileSignature(file + '-wal');
+      const shmSig = fileSignature(file + '-shm');
+      if (!mainSig || mainSig.tag === 'missing' || !walSig || !shmSig) continue;
+      const cacheKey = `${file}\0${mainSig.tag}\0${walSig.tag}\0${shmSig.tag}`;
+      let valid = validatedCodexLogs.get(cacheKey);
+      if (valid === undefined) {
+        valid = inspectCodexLogSchema(file, name);
+        if (validatedCodexLogs.size >= maxValidatedCodexLogs) {
+          const oldest = validatedCodexLogs.keys().next().value;
+          if (oldest !== undefined) validatedCodexLogs.delete(oldest);
+        }
+        validatedCodexLogs.set(cacheKey, valid);
       }
-    }catch{/* Unknown/migrating schemas stay intact. */}
+      if (valid) for (const suffix of ['-wal', '-shm', '']) if (fs.existsSync(file + suffix)) {
+        resources.push({ relativePath: path.join('codex-home', name + suffix), quiescentDatabase: path.join('codex-home', name) });
+      }
+    } catch { /* Unknown/migrating schemas stay intact. */ }
   }
   return resources;
 }

@@ -285,6 +285,7 @@ export function createReleaseArtifact(payloadRoot: any, destination: any, option
       env: {
         ...process.env,
         npm_config_cache: path.join(stagingBase, 'npm-cache'),
+        NPM_CONFIG_CACHE: path.join(stagingBase, 'npm-cache'),
         npm_config_update_notifier: 'false',
       },
     });

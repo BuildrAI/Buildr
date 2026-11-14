@@ -22,6 +22,7 @@ test('formal npm entry fails closed before enrollment when receipt and payload i
         ...process.env,
         PATH: [path.dirname(process.execPath), process.env.PATH].filter(Boolean).join(path.delimiter),
         npm_config_cache: path.join(root, 'npm-cache'),
+        NPM_CONFIG_CACHE: path.join(root, 'npm-cache'),
         npm_config_update_notifier: 'false',
       },
     });
@@ -64,6 +65,7 @@ test('npm global postinstall enrolls identity-bound update authority for two pre
           BUILDR_APP_DATA_DIR: appData,
           BUILDR_PRODUCT_DATA_DIR: appData,
           npm_config_cache: npmCache,
+          NPM_CONFIG_CACHE: npmCache,
           npm_config_update_notifier: 'false',
         },
       });
@@ -111,6 +113,7 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
         ...process.env,
         PATH: [path.dirname(process.execPath), process.env.PATH].filter(Boolean).join(path.delimiter),
         npm_config_cache: npmCache,
+        NPM_CONFIG_CACHE: npmCache,
         npm_config_update_notifier: 'false',
       },
     });

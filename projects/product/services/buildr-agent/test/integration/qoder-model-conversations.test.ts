@@ -265,8 +265,9 @@ test('Qoder standalone account shares models with Codex without preparing Qoder 
   } finally { await service.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-test('pre-upgrade Qoder conversation keeps reading legacy tool details and smoothly starts a fresh session with handoff', async () => {
+test('pre-upgrade Qoder conversation keeps reading legacy tool details and smoothly starts a fresh session with handoff', async t => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-preupgrade-'));
+  t.after(async () => { await rm(root, { recursive: true, force: true }); });
   const legacySessionId = '33333333-4444-4555-8666-777777777777';
   const legacyConfig = join(root, 'agent-service/connections/qoder/qoder-config');
   const accountRoot = join(root, 'agent-service/model-access/accounts/native-qoder');

@@ -7,11 +7,11 @@ import { recordSharedCacheUse } from '../storage/shared-cache.ts';
 import { sharedToolchainEnvironment } from '../storage/toolchain-environment.ts';
 import type { AgentExecutor, AgentRuntime, ExecutorOpenOptions } from '../contracts.ts';
 import { claim, privateDirectory } from '../process/ownership.ts';
-import { ensureStorageDirectory, safeStoragePath, storageCandidate, type StorageCandidate, type StorageUse } from '../storage/files.ts';
+import { disposableGatewayLease, ensureStorageDirectory, observeStorageUse, safeStoragePath, storageCandidate, storageInUse, type StorageCandidate, type StorageUse } from '../storage/files.ts';
 
 /** Service-owned storage lifecycle; vendor adapters only name regenerable directories. */
 export class ExecutorStorage {
-  private readonly bindings = new WeakMap<AgentRuntime, { root: string; executor: AgentExecutor }>();
+  private readonly bindings = new WeakMap<AgentRuntime, { root: string; executor: AgentExecutor; nativeRoot?: string }>();
   private readonly root: string;
   constructor(root: string) { this.root = root; }
 
@@ -38,7 +38,11 @@ export class ExecutorStorage {
     try {
       lock = claim(path.dirname(this.root), 'storage');
       for (const snapshot of executor.storage.snapshots ?? []) {
-        const seed = path.join(connection, 'cache', snapshot.key), target = path.join(options.configRoot, snapshot.relative);
+        const rel = options.nativeAccountConfigRoot ? path.relative(this.root, options.nativeAccountConfigRoot) : '';
+        const snapshotRoot = rel && !rel.startsWith('..') && !path.isAbsolute(rel)
+          ? options.nativeAccountConfigRoot!
+          : options.configRoot;
+        const seed = path.join(connection, 'cache', snapshot.key), target = path.join(snapshotRoot, snapshot.relative);
         if (!/^[a-z][a-z0-9-]*$/.test(snapshot.key) || fs.existsSync(target) || !safeStoragePath(this.root, seed) || !snapshot.identity(seed)) continue;
         ensureStorageDirectory(this.root, path.dirname(target));
         const staged = path.join(path.dirname(target), '.prime-' + randomUUID());
@@ -52,24 +56,45 @@ export class ExecutorStorage {
     return options;
   }
 
-  opened(runtime: AgentRuntime, executor: AgentExecutor, root: string): AgentRuntime {
+  opened(runtime: AgentRuntime, executor: AgentExecutor, root: string, nativeRoot?: string): AgentRuntime {
     if (!this.bindings.has(runtime)) {
       const send=runtime.send;
       const observe=()=>{try{recordSharedCacheUse(this.root);}catch{/* Retain unsafe observations during maintenance. */}};
       runtime.send=async input=>{observe();try{return await send.call(runtime,input);}finally{observe();}};
     }
-    this.bindings.set(runtime, { root, executor }); return runtime;
+    this.bindings.set(runtime, { root, executor, nativeRoot }); return runtime;
   }
 
   async released(runtime: AgentRuntime): Promise<void> {
     const binding = this.bindings.get(runtime);
-    if (!binding || !binding.executor.storage?.transientDirectories.some(relative => fs.existsSync(path.join(binding.root, relative)))) return;
+    if (!binding) return;
+    const hasTransient = binding.executor.storage?.transientDirectories.some(relative => fs.existsSync(path.join(binding.root, relative))) ?? false;
+    const leaseRelative = path.relative(this.root, binding.root).split(path.sep).join('/');
+    const isolatedGatewayLease = Boolean(
+      binding.nativeRoot
+      && path.resolve(binding.nativeRoot) !== path.resolve(binding.root)
+      && /^connections\/[^/]+\/model-bindings\/[a-f0-9]{64}$/.test(leaseRelative),
+    );
+    if (!hasTransient && !isolatedGatewayLease) return;
     if (!runtime.closed || !await runtime.canReclaimStorage?.()) return;
-    const worker = new Worker(new URL(import.meta.url.endsWith('.ts') ? '../process/storage-maintenance.ts' : '../process/storage-maintenance.js', import.meta.url), {
-      workerData: { kind: 'agent-storage-release', dataRoot: path.dirname(this.root), provider: binding.executor.descriptor.id, configRoot: binding.root },
-    });
-    // Keep this narrow release alive until its rename/delete has finished.
-    await new Promise<void>((resolve, reject) => { worker.once('error', reject); worker.once('exit', () => resolve()); });
+    if (hasTransient) {
+      const worker = new Worker(new URL(import.meta.url.endsWith('.ts') ? '../process/storage-maintenance.ts' : '../process/storage-maintenance.js', import.meta.url), {
+        workerData: { kind: 'agent-storage-release', dataRoot: path.dirname(this.root), provider: binding.executor.descriptor.id, configRoot: binding.root },
+      });
+      // Keep this narrow release alive until its rename/delete has finished.
+      await new Promise<void>((resolve, reject) => { worker.once('error', reject); worker.once('exit', () => resolve()); });
+    }
+    if (isolatedGatewayLease) this.reclaimGatewayLeaseShell(binding.root);
+  }
+
+  private reclaimGatewayLeaseShell(leaseRoot: string): void {
+    const lock = claim(path.dirname(this.root), 'storage');
+    try {
+      if (!safeStoragePath(this.root, leaseRoot) || !disposableGatewayLease(this.root, leaseRoot)) return;
+      if (storageInUse(leaseRoot, observeStorageUse())) return;
+      fs.rmSync(leaseRoot, { recursive: true, force: true });
+    } catch { /* Retain unprovable or busy gateway leases safely. */ }
+    finally { lock.release(); }
   }
 
   /** Caller holds storage lock. A retained seed prevents re-downloading the checkout every turn. */

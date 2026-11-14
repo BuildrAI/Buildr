@@ -55,6 +55,7 @@ test('installed package independently delivers three complete builtin connection
     BUILDR_PRODUCT_DATA_DIR: path.join(root, 'installed-product-data'),
     BUILDR_LOCAL_APP_NO_OPEN: '1',
     npm_config_cache: path.join(root, 'npm-cache'),
+    NPM_CONFIG_CACHE: path.join(root, 'npm-cache'),
     npm_config_userconfig: userConfig,
     npm_config_update_notifier: 'false',
     npm_config_audit: 'false',

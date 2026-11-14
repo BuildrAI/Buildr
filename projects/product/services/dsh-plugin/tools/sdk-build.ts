@@ -26,6 +26,10 @@ export function planBuildCleanup(entries: readonly BuildEntry[], keep = 1): { ke
   if (!Number.isInteger(keep) || keep < 0) throw new Error('keep must be a non-negative integer');
   const kept = new Set<string>(), removed = new Set<string>(), unattributed = new Set<string>();
   for (const kind of BUILD_KINDS) {
+    if (kind === 'dependency-store') {
+      entries.filter(entry => entry.kind === kind).forEach(entry => removed.add(entry.name));
+      continue;
+    }
     entries.filter(entry => entry.kind === kind)
       .sort((left, right) => right.mtimeMs - left.mtimeMs)
       .forEach((entry, index) => (index < keep ? kept : removed).add(entry.name));

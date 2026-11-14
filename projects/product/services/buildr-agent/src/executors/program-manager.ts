@@ -699,12 +699,15 @@ export class NativeProgramManager implements AgentProgramManager {
     try {
       const home = path.join(staging, '.home');
       const temporary = path.join(staging, '.tmp');
-      await privateDirectories(home, temporary);
+      const npmCache = path.join(staging, '.cache', 'npm');
+      await privateDirectories(home, temporary, npmCache);
       const installEnv = isolatedEnvironment(
         env,
         home,
         temporary,
         {
+          npm_config_cache: npmCache,
+          NPM_CONFIG_CACHE: npmCache,
           npm_config_update_notifier: 'false',
           npm_config_registry: 'https://registry.npmjs.org/',
           ...(distribution.installEnv ?? {}),

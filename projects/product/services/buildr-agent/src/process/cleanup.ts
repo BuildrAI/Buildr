@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { claim, clearProcessRecord, controlRoot, live, readPrivate, readProcessInstances, readProcessRecord, removeProcessInstance, writePrivate } from './ownership.ts';
 import { validateRuntimeContents } from './runtime-unit.ts';
-import { observeStorageUse, removeStorageCandidate, safeStoragePath, storageCandidate, type StorageCandidate, type StorageUse } from '../storage/files.ts';
+import { observeStorageUse, reanchorSharedDentries, removeStorageCandidate, safeStoragePath, storageCandidate, type StorageCandidate, type StorageUse } from '../storage/files.ts';
 import type { AgentRuntimeUnit } from '../execution-contracts.ts';
 
 const day = 24 * 60 * 60_000;
@@ -17,16 +17,42 @@ function pendingRuntime(dataRoot:string):AgentRuntimeUnit|undefined {
 
 function confirmedStop(dataRoot:string,record:ReturnType<typeof readProcessInstances>[number]):boolean {
   if(live(record.identity.pid))return false;
-  const receipt=readPrivate<{instanceId:string;confirmed:boolean}>(path.join(controlRoot(dataRoot),'last-stop.json'));
-  return Boolean(record.stopped&&record.confirmed || receipt?.confirmed&&typeof receipt.instanceId==='string'&&receipt.instanceId===record.identity.instanceId);
+  const receipt=readPrivate<{instanceId:string;confirmed:boolean;history?:Array<{instanceId:string;confirmed:boolean}>}>(path.join(controlRoot(dataRoot),'last-stop.json'));
+  const recorded=receipt&&(
+    (receipt.confirmed&&typeof receipt.instanceId==='string'&&receipt.instanceId===record.identity.instanceId)
+    || Boolean(receipt.history?.some(entry=>entry&&entry.confirmed&&typeof entry.instanceId==='string'&&entry.instanceId===record.identity.instanceId))
+  );
+  return Boolean(record.stopped&&record.confirmed || recorded);
 }
 
 function currentRuntime(dataRoot:string):AgentRuntimeUnit|undefined {
   const current=readProcessRecord(dataRoot);
   if(!current)return;
-  const stopped=readPrivate<{instanceId:string;confirmed:boolean}>(path.join(controlRoot(dataRoot),'last-stop.json'));
-  if(stopped?.confirmed&&typeof stopped.instanceId==='string'&&stopped.instanceId===current.identity.instanceId&&!live(current.identity.pid))return;
+  const stopped=readPrivate<{instanceId:string;confirmed:boolean;history?:Array<{instanceId:string;confirmed:boolean}>}>(path.join(controlRoot(dataRoot),'last-stop.json'));
+  const recorded=stopped&&(
+    (stopped.confirmed&&typeof stopped.instanceId==='string'&&stopped.instanceId===current.identity.instanceId)
+    || Boolean(stopped.history?.some(entry=>entry&&entry.confirmed&&typeof entry.instanceId==='string'&&entry.instanceId===current.identity.instanceId))
+  );
+  if(recorded&&!live(current.identity.pid))return;
   return current.identity.runtime;
+}
+
+/** Re-stat protected active/pending/live runtime trees before macOS lsof so XNU vnode path cache stays anchored on live owners rather than stale hard-linked dentries. */
+export function reanchorProtectedRuntimeInodes(dataRoot: string, keep?: AgentRuntimeUnit): void {
+  if (process.platform !== 'darwin') return;
+  const agentRoot = path.join(dataRoot, 'agent-service');
+  const directories = new Set<string>();
+  if (keep?.directory) directories.add(keep.directory);
+  const current = currentRuntime(dataRoot);
+  if (current?.directory) directories.add(current.directory);
+  const pending = pendingRuntime(dataRoot);
+  if (pending?.directory) directories.add(pending.directory);
+  for (const record of readProcessInstances(dataRoot)) {
+    if (live(record.identity.pid) && record.identity.runtime.directory) directories.add(record.identity.runtime.directory);
+  }
+  for (const directory of directories) {
+    if (safeStoragePath(agentRoot, directory)) reanchorSharedDentries(directory);
+  }
 }
 
 export function runtimeUnreferenced(dataRoot: string, directory: string, keep?: AgentRuntimeUnit): boolean {
@@ -89,12 +115,15 @@ export function retireRuntimeRecords(dataRoot: string, directory: string): void 
 export function cleanupStoppedProcesses(dataRoot: string, keep: AgentRuntimeUnit, reconcile = false): void {
   // Preserve the existing timely reaping of normal, authenticated shutdowns.
   if (!reconcile && !readProcessInstances(dataRoot).some(record => confirmedStop(dataRoot,record))) return;
-  const root = path.join(dataRoot, 'agent-service'), use = observeStorageUse();
+  const root = path.join(dataRoot, 'agent-service');
+  reanchorProtectedRuntimeInodes(dataRoot, keep);
+  const use = observeStorageUse();
   for (const item of retainedRuntimeCandidates(dataRoot, use, keep, Date.now(), !reconcile).filter(item => item.eligible)) {
     let lock: ReturnType<typeof claim> | undefined;
     try {
       lock = claim(dataRoot, 'storage');
-      if (removeStorageCandidate(root, item, observeStorageUse, () => runtimeUnreferenced(dataRoot, item.path, keep))) retireRuntimeRecords(dataRoot, item.path);
+      const observe = () => { reanchorProtectedRuntimeInodes(dataRoot, keep); return observeStorageUse(); };
+      if (removeStorageCandidate(root, item, observe, () => runtimeUnreferenced(dataRoot, item.path, keep))) retireRuntimeRecords(dataRoot, item.path);
     } catch { /* A busy, unknown or changed directory does not stop other work. */ }
     finally { lock?.release(); }
   }

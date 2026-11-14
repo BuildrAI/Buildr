@@ -197,7 +197,7 @@ test('the real frozen Buildr npm artifact installs the private runtime without s
   fs.mkdirSync(consumer);
   const installed = spawnSync(process.execPath, [path.join(serviceRoot, 'tools/development/run-development-npm.ts'),
     'install', '--prefix', consumer, '--ignore-scripts', '--offline', '--no-audit', '--no-fund', artifact.tarball], {
-    cwd: consumer, encoding: 'utf8', timeout: 60_000, env: { ...process.env, npm_config_cache: path.join(root, 'empty-cache') },
+    cwd: consumer, encoding: 'utf8', timeout: 60_000, env: { ...process.env, npm_config_cache: path.join(root, 'empty-cache'), NPM_CONFIG_CACHE: path.join(root, 'empty-cache') },
   });
   assert.equal(installed.status, 0, installed.stderr);
   const packageRoot = path.join(consumer, 'node_modules/@buildr-ai/buildr');

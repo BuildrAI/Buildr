@@ -168,8 +168,9 @@ test('Qoder CN reads a completed turn from the native transcript without a termi
   });
 });
 
-test('Qoder CN cold read attributes a prefixed primary input and a queued attachment to the same completed turn', { timeout: 15000 }, async () => {
+test('Qoder CN cold read attributes a prefixed primary input and a queued attachment to the same completed turn', { timeout: 15000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-cn-native-lineage-'));
+  t.after(async () => { await rm(root, { recursive: true, force: true }); });
   const workspace = join(root, 'workspace'), configRoot = join(root, 'config'), config = join(configRoot, 'qoder-cn-config');
   await mkdir(workspace); await mkdir(join(config, 'projects', 'fixture'), { recursive: true });
   const contextId = randomUUID(), bindingIdentity = 'fixture-binding';

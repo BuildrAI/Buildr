@@ -195,7 +195,7 @@ export class ConnectionApplication {
   }
 
   private async openExecutor(executor: AgentExecutor, options: import('../contracts.ts').ExecutorOpenOptions): Promise<AgentRuntime> {
-    return this.storage.opened(await executor.open(this.storage.options(executor, {...options,diagnostics:executionLog(this.options.root,this.options.generation)})), executor, options.configRoot);
+    return this.storage.opened(await executor.open(this.storage.options(executor, {...options,diagnostics:executionLog(this.options.root,this.options.generation)})), executor, options.configRoot, options.nativeAccountConfigRoot);
   }
 
   private stored(id: string): StoredConnection {

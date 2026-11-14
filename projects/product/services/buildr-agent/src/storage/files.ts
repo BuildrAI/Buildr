@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 export interface StorageUse { complete: boolean; paths: readonly string[]; diagnostic?: string }
 export interface StorageCandidate {
   kind: 'cache' | 'runtime' | 'diagnostic' | 'test-artifact' | 'runtime-share' | 'runtime-object' | 'shared-cache' | 'program-package' | 'native-session' | 'native-home'; path: string; ownerRoot: string;
-  sizeBytes: number; identity?: string; eligible: boolean; reason: string;
+  sizeBytes: number; identity?: string; eligible: boolean; reason: string; boundaryRoot?: string; orphanReclaim?: boolean;
   rootChanged?: number;
   /** Only regenerable cache data with a fresh execution/recovery proof may
    * narrow occupancy to its own subtree; account ownership remains unchanged. */
@@ -58,6 +58,13 @@ export function safeStoragePath(root: string, target: string): boolean {
   } catch { return false; }
 }
 
+export function ownStorageDirectory(directory: string): boolean {
+  try {
+    const stat = fs.lstatSync(directory, { throwIfNoEntry: false });
+    return Boolean(stat && stat.isDirectory() && !stat.isSymbolicLink() && (!process.getuid || stat.uid === process.getuid() || (stat.uid === 0 && (stat.mode & 0o1000) !== 0)));
+  } catch { return false; }
+}
+
 export function ensureStorageDirectory(root: string, target: string): void {
   const relative = path.relative(root, target);
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative) || fs.lstatSync(root).isSymbolicLink()) throw new Error('storage_path_unsafe');
@@ -89,7 +96,9 @@ export function storageVersion(directory: string, renamedRootChanged?: number): 
   const walk = (file: string) => {
     const stat = fs.lstatSync(file);
     // Only the collector's own rename may normalize root ctime; previews include it to detect rewrites.
-    hash.update(JSON.stringify([path.relative(directory, file), stat.dev, stat.ino, stat.mode, stat.size, stat.mtimeMs, file === directory ? renamedRootChanged ?? stat.ctimeMs : stat.ctimeMs]));
+    // Child read-only files (immutable object views) omit inode ctime so unlinking peer hard-links does not invalidate sibling candidates.
+    const entryChanged = file === directory ? renamedRootChanged ?? stat.ctimeMs : stat.isFile() && (stat.mode & 0o222) === 0 ? 0 : stat.ctimeMs;
+    hash.update(JSON.stringify([path.relative(directory, file), stat.dev, stat.ino, stat.uid, stat.mode, stat.size, stat.mtimeMs, entryChanged]));
     modified = Math.max(modified, stat.mtimeMs);
     if (stat.isDirectory()) for (const name of fs.readdirSync(file).sort()) walk(path.join(file, name));
     else sizeBytes += stat.blocks * 512;
@@ -109,8 +118,9 @@ export function storageCandidate(root: string, kind: StorageCandidate['kind'], d
 }
 
 /** The caller holds the service storage lock; recheck immediately around the narrow rename. */
-export function removeStorageCandidate(root: string, item: StorageCandidate, observe = observeStorageUse, unreferenced: (directory: string) => boolean = () => true): boolean {
-  const safe = () => item.kind === 'diagnostic' || item.kind === 'native-session' || item.kind === 'native-home' ? safeStorageResource(root, item.path) : safeStoragePath(root, item.path);
+export function removeStorageCandidate(root: string, item: StorageCandidate, observe = observeStorageUse, unreferenced: (directory: string) => boolean = () => true, allowedBoundaries?: ReadonlySet<string>): boolean {
+  const boundary = item.boundaryRoot && allowedBoundaries?.has(item.boundaryRoot) ? item.boundaryRoot : root;
+  const safe = () => item.kind === 'diagnostic' || item.kind === 'native-session' || item.kind === 'native-home' ? safeStorageResource(boundary, item.path) : safeStoragePath(boundary, item.path);
   if (!item.eligible || !item.identity || !safe() || !unreferenced(item.path) || storageInUse(storageUseRoot(item), observe())) return false;
   if (storageVersion(item.path).identity !== item.identity) return false;
   const retired = path.join(path.dirname(item.path), '.reclaim-' + randomUUID());
@@ -195,4 +205,107 @@ function removeSmallResourceBatch(root:string,items:StorageCandidate[],unreferen
     }
   }finally{for(const{item,retired}of renamed)try{restore(item,retired);}catch{/* Keep the renamed file rather than overwrite a replacement. */}}
   return removed;
+}
+
+const orphanReclaimPattern = /^\.reclaim-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const orphanWalkSkips = new Set(['node_modules', '.git', 'sessions', 'projects', 'plugins', '_cacache', 'tmp']);
+
+export function orphanReclaimCandidates(root: string, use: StorageUse, recentCutoff = Date.now() - 15 * 60_000): StorageCandidate[] {
+  const items: StorageCandidate[] = [], seen = new Set<string>(), dataRoot = path.dirname(root);
+  const scanDir = (boundary: string, parent: string) => {
+    if (parent === boundary ? !ownStorageDirectory(boundary) : !safeStoragePath(boundary, parent)) return;
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(parent, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (!orphanReclaimPattern.test(entry.name) || entry.isSymbolicLink() || !entry.isDirectory()) continue;
+      const target = path.join(parent, entry.name);
+      if (seen.has(target)) continue;
+      seen.add(target);
+      const item = storageCandidate(boundary, 'cache', target, target, use, recentCutoff);
+      item.orphanReclaim = true;
+      if (boundary !== root) item.boundaryRoot = boundary;
+      if (item.eligible) item.reason = 'orphan_reclaim';
+      items.push(item);
+    }
+  };
+  let nodes = 0;
+  const walk = (boundary: string, directory: string, depth: number) => {
+    scanDir(boundary, directory);
+    if (depth >= 4 || nodes >= 4096) return;
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(directory, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (++nodes > 4096) return;
+      if (!entry.isDirectory() || entry.isSymbolicLink() || orphanReclaimPattern.test(entry.name) || orphanWalkSkips.has(entry.name)) continue;
+      const child = path.join(directory, entry.name);
+      if (safeStoragePath(boundary, child)) walk(boundary, child, depth + 1);
+    }
+  };
+  walk(root, root, 0);
+  scanDir(root, path.join(root, 'program-probes', 'tmp'));
+  scanDir(dataRoot, path.join(dataRoot, 'runtimes'));
+  return items;
+}
+
+export function probeTempCandidates(root: string, use: StorageUse, recentCutoff = Date.now() - 15 * 60_000): StorageCandidate[] {
+  const probeTmp = path.join(root, 'program-probes', 'tmp');
+  if (!safeStoragePath(root, probeTmp)) return [];
+  const items: StorageCandidate[] = [];
+  let entries: fs.Dirent[];
+  try { entries = fs.readdirSync(probeTmp, { withFileTypes: true }); } catch { return []; }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.isSymbolicLink() || orphanReclaimPattern.test(entry.name)) continue;
+    const target = path.join(probeTmp, entry.name);
+    if (safeStoragePath(root, target)) items.push(storageCandidate(root, 'cache', target, target, use, recentCutoff));
+  }
+  return items;
+}
+
+export function disposableGatewayLease(root: string, leaseRoot: string): boolean {
+  if (!safeStoragePath(root, leaseRoot)) return false;
+  let nodes = 0;
+  const walk = (directory: string, depth: number, inTopTmp: boolean): boolean => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (++nodes > 256) return false;
+      const full = path.join(directory, entry.name);
+      const stat = fs.lstatSync(full);
+      if (stat.isSymbolicLink()) return false;
+      if (stat.isDirectory()) {
+        if (!walk(full, depth + 1, depth === 0 && entry.name === 'tmp' || inTopTmp)) return false;
+        continue;
+      }
+      if (!stat.isFile() || stat.nlink !== 1) return false;
+      if (depth > 0 && !inTopTmp) return false;
+    }
+    return true;
+  };
+  try { return walk(leaseRoot, 0, false); } catch { return false; }
+}
+
+/** Re-stat non-symlink regular files under an active tree on macOS so XNU vnode path cache stays anchored on live hard-link owners. */
+export function reanchorSharedDentries(directory: string): void {
+  if (process.platform !== 'darwin') return;
+  try {
+    const rootStat = fs.lstatSync(directory, { throwIfNoEntry: false });
+    if (!rootStat || !rootStat.isDirectory() || rootStat.isSymbolicLink()) return;
+  } catch { return; }
+  const walk = (current: string, depth: number) => {
+    if (depth >= 16) return;
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) walk(full, depth + 1);
+      else if (entry.isFile()) {
+        try {
+          const stat = fs.lstatSync(full, { throwIfNoEntry: false });
+          if (!stat || !stat.isFile() || stat.isSymbolicLink() || stat.nlink <= 1) continue;
+          const fd = fs.openSync(full, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+          fs.closeSync(fd);
+        } catch { /* Ignore transient changes. */ }
+      }
+    }
+  };
+  walk(directory, 0);
 }

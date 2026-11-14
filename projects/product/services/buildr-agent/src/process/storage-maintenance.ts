@@ -71,7 +71,7 @@ async function runMaintenance(): Promise<void> {
       item.eligible = false;
       item.reason = 'cache_usage_observation_failed';
     }
-    const result = collectAgentStorage(plan, 512, { budgetMs: 2000 });
+    const result = collectAgentStorage(plan, 512, { budgetMs: 4000 });
     stage('collection');
     try {
       ensureStorageDirectory(root, path.join(root, 'process'));

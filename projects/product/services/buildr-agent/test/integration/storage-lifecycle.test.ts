@@ -206,7 +206,7 @@ test('public maintenance re-inventories previews and cannot apply a forged crede
   file(path.join(cache, 'package')); file(path.join(plugins, 'plugin')); cleanPluginCheckout(plugins);
   const account = path.join(config, 'codex-home/auth.json'); file(account, 'credential'); age(config);
   const executor=createNativeExecutors()[0]!;new ConversationRepository(path.join(dataRoot,'agent-service')).saveConnection({view:{id:'codex',provider:'codex',label:'fixture',revision:'one',enabled:false,status:'disconnected',models:[],capabilities:executor.descriptor.capabilities}} as any);
-  const plan = inspectAgentStorage({ dataRoot }); assert.equal(plan.items.filter(x => x.eligible).length, 2);
+  const plan = inspectAgentStorage({ dataRoot, tempRoots: [] }); assert.equal(plan.items.filter(x => x.eligible).length, 2);
   file(path.join(plugins, 'new-plugin'));
   plan.items.push({ kind: 'cache', path: path.dirname(account), ownerRoot: config, sizeBytes: 1, identity: 'forged', eligible: true, reason: 'forged' });
   const result = collectAgentStorage(plan);
@@ -224,7 +224,7 @@ test('maintenance reclaims unbound program packages and keeps bound or upgrading
   const repository = new ConversationRepository(root);
   const executor = createNativeExecutors().find(item => item.descriptor.id === 'qoder')!;
   repository.saveConnection({ view: { id: 'qoder', provider: 'qoder', label: 'fixture', revision: 'one', enabled: true, status: 'connected', executable: path.join(bound, 'node_modules/index.js'), models: [], capabilities: executor.descriptor.capabilities } } as any);
-  const plan = inspectAgentStorage({ dataRoot, scanHomes: false });
+  const plan = inspectAgentStorage({ dataRoot, scanHomes: false, tempRoots: [] });
   const items = plan.items.filter(item => item.kind === 'program-package');
   assert.equal(items.find(item => item.path === old)?.eligible, true);
   assert.equal(items.find(item => item.path === bound)?.reason, 'program_package_referenced');
@@ -365,7 +365,7 @@ test('nested confirmed shutdowns use their own references and storage lock witho
     file(path.join(profile, 'agent-service/unique-result'), 'preserve profile data');
     return runtime;
   });
-  const plan = inspectAgentStorage({ dataRoot });
+  const plan = inspectAgentStorage({ dataRoot, tempRoots: [] });
   assert.ok(plan.items.find(x => x.path === versions[0]!.directory)?.eligible);
   assert.equal(plan.items.find(x => x.path === versions[1]!.directory)?.reason, 'runtime_retained_reference');
   const lock = claim(ended, 'storage');
@@ -739,4 +739,181 @@ test('transient verification evidence directories require valid lifecycle proof 
   assert.equal(fs.existsSync(transientDir), false);
   assert.equal(fs.existsSync(callerManagedDir), true);
   assert.equal(fs.existsSync(unmarkedDir), true);
+});
+
+test('codex WAL diagnostics keep timestamps untouched during inspect and collect cleanly', { skip: process.platform !== 'darwin' }, async t => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const dataRoot = fixture(t), home = path.join(dataRoot, 'agent-service/connections/codex/codex-home');
+  fs.mkdirSync(home, { recursive: true });
+  const executor = createNativeExecutors().find(x => x.descriptor.id === 'codex')!;
+  new ConversationRepository(path.join(dataRoot, 'agent-service')).saveConnection({ view: { id: 'codex', provider: 'codex', label: 'fixture', revision: 'one', enabled: false, status: 'disconnected', models: [], capabilities: executor.descriptor.capabilities } } as any);
+  const dbPath = path.join(home, 'logs_2.sqlite');
+  const db = new DatabaseSync(dbPath);
+  db.exec('PRAGMA journal_mode=WAL; CREATE TABLE logs(ts INTEGER,feedback_log_body TEXT,thread_id TEXT,process_uuid TEXT); INSERT INTO logs VALUES (1, \'ok\', \'t1\', \'p1\');');
+  const wal = fs.existsSync(dbPath + '-wal') ? fs.readFileSync(dbPath + '-wal') : Buffer.from('wal-frame');
+  const shm = fs.existsSync(dbPath + '-shm') ? fs.readFileSync(dbPath + '-shm') : Buffer.from('shm-index');
+  db.close();
+  // Re-materialize WAL/SHM after clean close so orphaned WAL/SHM reclamation and mtime preservation are exercised.
+  fs.writeFileSync(dbPath + '-wal', wal);
+  fs.writeFileSync(dbPath + '-shm', shm);
+  age(home);
+  const beforeMtimes = Object.fromEntries(['', '-wal', '-shm'].map(s => [s, fs.statSync(dbPath + s).mtimeMs]));
+  const plan = inspectAgentStorage({ dataRoot, scanHomes: false, tempRoots: [] });
+  for (const suffix of ['', '-wal', '-shm']) {
+    assert.equal(fs.statSync(dbPath + suffix).mtimeMs, beforeMtimes[suffix], `inspect must not bump ${suffix || 'main'} mtime`);
+    assert.equal(plan.items.find(x => x.path === dbPath + suffix)?.eligible, true);
+  }
+  const collected = collectAgentStorage(plan);
+  for (const suffix of ['', '-wal', '-shm']) {
+    assert.equal(collected.results.find(x => x.path === dbPath + suffix)?.status, 'removed');
+    assert.equal(fs.existsSync(dbPath + suffix), false);
+  }
+});
+
+test('gateway lease seeds snapshot into nativeAccountConfigRoot and released removes disposable lease shell', { skip: process.platform !== 'darwin' }, async t => {
+  const dataRoot = fixture(t), root = path.join(dataRoot, 'agent-service');
+  const executor = createNativeExecutors().find(x => x.descriptor.id === 'codex')!;
+  const connection = path.join(root, 'connections/codex');
+  const seed = path.join(connection, 'cache/curated-plugins');
+  file(path.join(seed, 'plugin.js'), 'plugin');
+  cleanPluginCheckout(seed);
+  execFileSync('git', ['-C', seed, 'remote', 'remove', 'origin']);
+  const pinned = execFileSync('git', ['-C', seed, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  file(path.join(seed, '.git/FETCH_HEAD'), `${pinned}\t\t'${pinned}' of https://github.com/openai/plugins\n`);
+  const storage = new ExecutorStorage(root);
+  const leaseRoot = path.join(connection, 'model-bindings', 'e'.repeat(64));
+  fs.mkdirSync(leaseRoot, { recursive: true });
+  file(path.join(leaseRoot, 'buildr-model-catalog.json'), '{}');
+  storage.options(executor, { connectionId: 'codex', configRoot: leaseRoot, nativeAccountConfigRoot: connection, environment: {} });
+  assert.equal(fs.existsSync(path.join(connection, 'codex-home/.tmp/plugins/plugin.js')), true);
+  assert.equal(fs.existsSync(path.join(leaseRoot, 'codex-home/.tmp/plugins')), false);
+  const fakeRuntime: AgentRuntime = {
+    bindingIdentity: 'b',
+    capabilities: executor.descriptor.capabilities,
+    closed: true,
+    canReclaimStorage: async () => true,
+    inspectAccount: async () => ({ status: 'ready' }),
+    models: async () => [],
+    beginLogin: async () => {},
+    cancelLogin: async () => {},
+    createContext: async () => ({ id: 'c' }),
+    resumeContext: async () => {},
+    readHistory: async () => [],
+    send: async () => {},
+    observe: async () => ({ status: 'idle', tools: [] }),
+    reply: async () => {},
+    stop: async () => ({ status: 'stopped', tools: [] }),
+    close: async () => {},
+  };
+  storage.opened(fakeRuntime, executor, leaseRoot, connection);
+  await storage.released(fakeRuntime);
+  assert.equal(fs.existsSync(leaseRoot), false, 'disposable gateway lease shell is reclaimed on release');
+
+  const populatedLease = path.join(connection, 'model-bindings', 'f'.repeat(64));
+  file(path.join(populatedLease, 'codex-home/sessions/keep.jsonl'), 'keep');
+  storage.opened(fakeRuntime, executor, populatedLease, connection);
+  await storage.released(fakeRuntime);
+  assert.equal(fs.existsSync(path.join(populatedLease, 'codex-home/sessions/keep.jsonl')), true, 'non-disposable subdir state stays intact');
+});
+
+test('host temp states, probe caches and orphan reclaim dirs are reclaimed ahead of heavy runtimes', { skip: process.platform !== 'darwin' }, async t => {
+  const { defaultHostTempRoots } = await import('../../src/storage/test-artifacts.ts');
+  const prevRequired = process.env.BUILDR_TEST_STATE_REQUIRED, prevTestContext = process.env.NODE_TEST_CONTEXT;
+  try {
+    process.env.BUILDR_TEST_STATE_REQUIRED = '1';
+    assert.deepEqual(defaultHostTempRoots(), []);
+    delete process.env.BUILDR_TEST_STATE_REQUIRED;
+    delete process.env.NODE_TEST_CONTEXT;
+    assert.ok(defaultHostTempRoots().length > 0);
+  } finally {
+    if (prevRequired === undefined) delete process.env.BUILDR_TEST_STATE_REQUIRED;
+    else process.env.BUILDR_TEST_STATE_REQUIRED = prevRequired;
+    if (prevTestContext === undefined) delete process.env.NODE_TEST_CONTEXT;
+    else process.env.NODE_TEST_CONTEXT = prevTestContext;
+  }
+
+  const base = fixture(t), dataRoot = path.join(base, 'profile'), root = path.join(dataRoot, 'agent-service');
+  const hostTmp = path.join(base, 'host-tmp'), hostTmpLink = path.join(base, 'host-tmp-link');
+  fs.mkdirSync(hostTmp, { recursive: true });
+  fs.symlinkSync(hostTmp, hostTmpLink);
+  const stateDir = path.join(hostTmp, 'buildr-test-state-dead01');
+  fs.mkdirSync(stateDir, { recursive: true });
+  file(path.join(stateDir, '.buildr-test-state.json'), JSON.stringify({ schemaVersion: 1, root: stateDir, producerPid: process.pid, completed: true }));
+  file(path.join(stateDir, 'payload.txt'), 'temp');
+
+  const probeDir = path.join(root, 'program-probes/tmp/qodercli-natives-v1.1.0-user');
+  file(path.join(probeDir, 'native.node'), 'probe');
+  const orphanDir = path.join(root, 'process/runtimes/.reclaim-00000000-0000-4000-8000-000000000001');
+  file(path.join(orphanDir, 'stale.txt'), 'orphan');
+  const pkg = path.join(base, 'package'), node = path.join(base, 'fixture-node');
+  file(node, 'node-fixture'); fs.chmodSync(node, 0o700);
+  file(path.join(pkg, 'package.json'), '{"type":"module"}');
+  file(path.join(pkg, 'build/runtime-contracts.json'), JSON.stringify({ contracts: AGENT_EXECUTION_CONTRACTS, storageVersion: 1 }));
+  file(path.join(pkg, 'build/entry.js'), 'export const fixture = 1;\n// ' + 'x'.repeat(256 * 1024));
+  const heavyUnit = prepareAgentRuntime({ dataRoot, packageRoot: pkg, entry: 'build/entry.js', node });
+  file(path.join(pkg, 'build/entry.js'), 'export const fixture = 2;');
+  const rollbackUnit = prepareAgentRuntime({ dataRoot, packageRoot: pkg, entry: 'build/entry.js', node });
+  const heavyRuntime = heavyUnit.directory;
+  age(hostTmp); age(probeDir); age(orphanDir); age(heavyRuntime, Date.now() - 3 * day); age(rollbackUnit.directory, Date.now() - 2 * day);
+
+  const plan = inspectAgentStorage({ dataRoot, scanHomes: false, tempRoots: [hostTmpLink] });
+  assert.equal(plan.items.find(x => x.path === stateDir)?.eligible, true);
+  assert.equal(plan.items.find(x => x.path === probeDir)?.eligible, true);
+  assert.equal(plan.items.find(x => x.path === orphanDir)?.eligible, true);
+  assert.equal(plan.items.find(x => x.path === heavyRuntime)?.eligible, true);
+
+  const first = collectAgentStorage(plan, 3, { budgetMs: 10000 });
+  for (const p of [stateDir, probeDir, orphanDir]) {
+    assert.equal(first.results.find(x => x.path === p)?.status, 'removed', `${p} removed ahead of runtime`);
+    assert.equal(fs.existsSync(p), false);
+  }
+  assert.equal(fs.existsSync(heavyRuntime), true, 'runtime deferred behind higher-priority non-runtime items when limit=3');
+});
+
+test('re-anchoring protected runtimes clears XNU hardlink attribution drift so unreferenced runtimes and orphans reclaim', { skip: process.platform !== 'darwin' }, async t => {
+  const base = fixture(t), dataRoot = path.join(base, 'profile'), root = path.join(dataRoot, 'agent-service');
+  const pkg = path.join(base, 'package'), node = path.join(base, 'fixture-node');
+  file(node, 'node-fixture'); fs.chmodSync(node, 0o700);
+  file(path.join(pkg, 'package.json'), '{"type":"module"}');
+  file(path.join(pkg, 'build/runtime-contracts.json'), JSON.stringify({ contracts: AGENT_EXECUTION_CONTRACTS, storageVersion: 1 }));
+  file(path.join(pkg, 'build/entry.js'), 'export const v = 1;');
+  const oldUnit = prepareAgentRuntime({ dataRoot, packageRoot: pkg, entry: 'build/entry.js', node });
+  file(path.join(pkg, 'build/entry.js'), 'export const v = 2;');
+  const rollbackUnit = prepareAgentRuntime({ dataRoot, packageRoot: pkg, entry: 'build/entry.js', node });
+  file(path.join(pkg, 'build/entry.js'), 'export const v = 3;');
+  const liveUnit = prepareAgentRuntime({ dataRoot, packageRoot: pkg, entry: 'build/entry.js', node });
+  assert.equal(fs.statSync(oldUnit.node).ino, fs.statSync(liveUnit.node).ino);
+
+  const child = spawn(process.execPath, ['-e', "require('fs').openSync(process.argv[1],'r');process.stdout.write('ready');setInterval(()=>{},1000)", liveUnit.node], { stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(async () => { if (child.exitCode === null && child.signalCode === null) { const exited = once(child, 'exit'); child.kill(); await exited; } });
+  await once(child.stdout!, 'data');
+  const generation = randomUUID();
+  const liveRecord = { identity: { dataRoot, generation, pid: child.pid, runtime: liveUnit }, origin: 'http://127.0.0.1:1', token: 'fixture' };
+  writePrivate(path.join(controlRoot(dataRoot), 'instance.json'), liveRecord);
+  writePrivate(path.join(controlRoot(dataRoot), 'instances', generation + '.json'), liveRecord);
+
+  const orphanDir = path.join(root, 'process/runtimes/.reclaim-00000000-0000-4000-8000-000000000002');
+  fs.mkdirSync(orphanDir, { recursive: true });
+  fs.linkSync(liveUnit.node, path.join(orphanDir, 'node'));
+  age(oldUnit.directory, Date.now() - 3 * day);
+  age(rollbackUnit.directory, Date.now() - 2 * day);
+  age(orphanDir, Date.now() - 3 * day);
+
+  // Poison XNU hardlink vnode path cache onto the unreferenced orphan/old dentries before maintenance.
+  fs.lstatSync(oldUnit.node);
+  fs.lstatSync(path.join(orphanDir, 'node'));
+
+  const plan = inspectAgentStorage({ dataRoot, scanHomes: false, tempRoots: [] });
+  assert.equal(plan.items.find(x => x.path === oldUnit.directory)?.eligible, true, 'old unreferenced runtime must remain eligible despite shared inode');
+  assert.equal(plan.items.find(x => x.path === orphanDir)?.eligible, true, 'orphan reclaim sharing inode with live node must remain eligible');
+  assert.equal(plan.items.find(x => x.path === liveUnit.directory)?.eligible, false);
+  assert.equal(plan.items.find(x => x.path === rollbackUnit.directory)?.eligible, false);
+
+  const collected = collectAgentStorage(plan);
+  assert.equal(collected.results.find(x => x.path === oldUnit.directory)?.status, 'removed');
+  assert.equal(collected.results.find(x => x.path === orphanDir)?.status, 'removed');
+  assert.equal(fs.existsSync(oldUnit.directory), false);
+  assert.equal(fs.existsSync(orphanDir), false);
+  assert.equal(fs.existsSync(liveUnit.directory), true);
+  assert.equal(fs.existsSync(rollbackUnit.directory), true);
 });

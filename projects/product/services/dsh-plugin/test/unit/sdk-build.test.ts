@@ -25,11 +25,11 @@ test('cleanup keeps the newest entry of every kind and reports the rest', () => 
     { name: 'notes', kind: buildKind('notes'), mtimeMs: 5 },
   ];
   const plan = planBuildCleanup(entries, 1);
-  assert.deepEqual(plan.keep, ['dsh-release-sdk-new', 'dsh-release-sdk-pnpm-store', 'dsh-source-sdk-new']);
-  assert.deepEqual(plan.remove, ['dsh-release-sdk-old', 'dsh-source-sdk-old']);
+  assert.deepEqual(plan.keep, ['dsh-release-sdk-new', 'dsh-source-sdk-new']);
+  assert.deepEqual(plan.remove, ['dsh-release-sdk-old', 'dsh-release-sdk-pnpm-store', 'dsh-source-sdk-old']);
   assert.deepEqual(plan.unattributed, ['notes']);
-  assert.equal(plan.remove.includes('dsh-release-sdk-pnpm-store'), false, 'the only dependency store stays until a newer one exists');
-  assert.deepEqual(planBuildCleanup(entries, 2).remove, []);
+  assert.equal(plan.remove.includes('dsh-release-sdk-pnpm-store'), true, 'deprecated dependency store is scheduled for pruning even with keep >= 1');
+  assert.deepEqual(planBuildCleanup(entries, 2).remove, ['dsh-release-sdk-pnpm-store']);
   assert.deepEqual(planBuildCleanup(entries, 0).remove, ['dsh-release-sdk-new', 'dsh-release-sdk-old', 'dsh-release-sdk-pnpm-store', 'dsh-source-sdk-new', 'dsh-source-sdk-old']);
   assert.throws(() => planBuildCleanup(entries, -1));
   assert.throws(() => planBuildCleanup(entries, 0.5));

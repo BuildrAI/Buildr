@@ -220,3 +220,19 @@ test('exact releases install side by side; Qoder verifies package and program ve
   await assert.rejects(install('codex','latest'),{code:'agent_install_version_invalid'});
   assert.equal(fs.readdirSync(path.join(profile,'programs','codex')).some(name=>name.startsWith('.prepare-')||name.startsWith('package-0.166.0')),false);
 });
+
+test('program installer isolates both npm_config_cache and NPM_CONFIG_CACHE per staging attempt', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-program-npm-cache-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bin = path.join(root, 'bin'); fs.mkdirSync(bin);
+  const capture = path.join(root, 'npm-env.json');
+  fs.writeFileSync(path.join(bin, 'npm-cli.js'), `const fs=require('node:fs'),path=require('node:path');fs.writeFileSync(${JSON.stringify(capture)},JSON.stringify({lower:process.env.npm_config_cache,upper:process.env.NPM_CONFIG_CACHE}));const args=process.argv.slice(2),prefix=args[args.indexOf('--prefix')+1],dir=path.join(prefix,'node_modules/@openai/codex');fs.mkdirSync(path.join(dir,'bin'),{recursive:true});const exe=path.join(dir,'bin/codex.js');fs.writeFileSync(exe,"console.log('codex-cli 0.165.0');");fs.chmodSync(exe,0o755);fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify({name:'@openai/codex',version:'0.165.0'}));`);
+  const profile = path.join(root, 'profile');
+  const manager = new NativeProgramManager(profile, { PATH: bin + path.delimiter + path.dirname(process.execPath), HOME: root, npm_config_cache: '/outer/npm-lower', NPM_CONFIG_CACHE: '/outer/npm-upper' });
+  await manager.install({ provider: 'codex', version: '0.165.0', signal: new AbortController().signal, progress: () => {} });
+  const observed = JSON.parse(fs.readFileSync(capture, 'utf8'));
+  assert.equal(observed.lower, observed.upper);
+  const normalizeVar = (p: string) => p.replace(/^\/private(?=\/var\/)/, '');
+  assert.ok(normalizeVar(observed.lower).startsWith(path.join(normalizeVar(profile), 'programs/codex/.prepare-')), observed.lower);
+  assert.equal(path.basename(observed.lower), 'npm');
+});

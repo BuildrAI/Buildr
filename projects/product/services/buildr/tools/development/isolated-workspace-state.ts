@@ -43,6 +43,9 @@ export function createIsolatedWorkspaceState(options: { env?: NodeJS.ProcessEnv;
       // Synthetic service fixtures must not adopt or verify the real user's
       // package cache; dependency preparation still uses the native manager.
       BUILDR_TOOLCHAIN_HOST_HOME: path.join(root,'tool-host'),
+      npm_config_cache: path.join(root, 'tool-host', 'npm-cache'),
+      NPM_CONFIG_CACHE: path.join(root, 'tool-host', 'npm-cache'),
+      NODE_COMPILE_CACHE: path.join(root, 'tool-host', 'node-compile'),
       TMPDIR: temp,
       TMP: temp,
       TEMP: temp,

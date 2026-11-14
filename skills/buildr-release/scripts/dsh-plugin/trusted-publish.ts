@@ -113,6 +113,7 @@ export function isolatedPluginNpmEnvironment(env: NodeJS.ProcessEnv, configDirec
   for (const [key, value] of Object.entries(env)) if (!/^(?:npm_config_|NPM_TOKEN$|NODE_AUTH_TOKEN$)/i.test(key)) isolated[key] = value;
   isolated.NPM_CONFIG_USERCONFIG = join(configDirectory, 'user.npmrc');
   isolated.NPM_CONFIG_GLOBALCONFIG = join(configDirectory, 'global.npmrc');
+  isolated.npm_config_cache = join(configDirectory, 'cache');
   isolated.NPM_CONFIG_CACHE = join(configDirectory, 'cache');
   return isolated;
 }

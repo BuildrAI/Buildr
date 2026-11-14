@@ -398,7 +398,14 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
         await service.close(); await new Promise<void>(resolve => setImmediate(resolve));
         const activity = service.activity();
         confirmed=!activity.busy;
-        writePrivate(path.join(controlRoot(options.dataRoot), 'last-stop.json'), { instanceId, confirmed, reasons: activity.reasons });
+        const stopFile = path.join(controlRoot(options.dataRoot), 'last-stop.json');
+        const prev = readPrivate<{ instanceId?: string; confirmed?: boolean; reasons?: string[]; history?: Array<{ instanceId: string; confirmed: boolean; reasons?: string[] }> }>(stopFile);
+        const priorHistory = prev ? [
+          ...(Array.isArray(prev.history) ? prev.history : []),
+          ...(typeof prev.instanceId === 'string' && typeof prev.confirmed === 'boolean' ? [{ instanceId: prev.instanceId, confirmed: prev.confirmed, reasons: prev.reasons }] : []),
+        ] : [];
+        const history = [...priorHistory.filter(entry => entry && typeof entry.instanceId === 'string' && entry.instanceId !== instanceId), { instanceId, confirmed, reasons: activity.reasons }].slice(-32);
+        writePrivate(stopFile, { instanceId, confirmed, reasons: activity.reasons, history });
         writeProcessInstance(options.dataRoot, {...processRecord(),stopped:true,confirmed});
         await channel.close(); clearProcessRecord(options.dataRoot, instanceId);
         diagnostics({event:'service-close-result',confirmed});

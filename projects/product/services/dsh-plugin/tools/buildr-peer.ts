@@ -89,7 +89,7 @@ export function smokePeerEnvironment(scope: SmokeScope, nodeExecutable: string):
   return { PATH: `${path.dirname(nodeExecutable)}${path.delimiter}/usr/bin${path.delimiter}/bin`, ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
     HOME: path.join(root, 'home'), USERPROFILE: path.join(root, 'home'), APPDATA: path.join(root, 'appdata'), LOCALAPPDATA: path.join(root, 'localappdata'),
     XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_DATA_HOME: path.join(root, 'data'), XDG_STATE_HOME: path.join(root, 'state'),
-    TMPDIR: path.join(root, 'tmp'), TMP: path.join(root, 'tmp'), TEMP: path.join(root, 'tmp'), NPM_CONFIG_USERCONFIG: user, NPM_CONFIG_GLOBALCONFIG: global, NPM_CONFIG_CACHE: path.join(root, 'npm-cache'), NPM_CONFIG_REGISTRY: OFFICIAL_REGISTRY,
+    TMPDIR: path.join(root, 'tmp'), TMP: path.join(root, 'tmp'), TEMP: path.join(root, 'tmp'), NPM_CONFIG_USERCONFIG: user, NPM_CONFIG_GLOBALCONFIG: global, npm_config_cache: path.join(root, 'npm-cache'), NPM_CONFIG_CACHE: path.join(root, 'npm-cache'), NPM_CONFIG_REGISTRY: OFFICIAL_REGISTRY,
     BUILDR_APP_DATA_DIR: scope.appData, BUILDR_PRODUCT_DATA_DIR: scope.productData, BUILDR_LOCAL_APP_NO_OPEN: '1' };
 }
 export interface PreparedBuildrPeer { schemaVersion: typeof PEER_SCHEMA; status: 'prepared'; artifact: CompatibilityArtifact; root: string; packageRoot: string; nodeExecutable: string; cliEntry: string; cliSha256: string; nodeSha256: string; sourceCapture: boolean; manifestPath: string; files: Record<string, string>; npmVersion: string }

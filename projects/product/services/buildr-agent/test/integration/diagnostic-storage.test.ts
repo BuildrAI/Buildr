@@ -268,7 +268,7 @@ test('an exited producer does not authorize reclaim while a different process ho
 
 test('public collection rechecks dependency changes and applies a bounded batch without accepting forged account paths', { skip: process.platform !== 'darwin' }, t => {
   const f = fixture(t), run = f.run(), second = f.run(deadPid, 'second'), events = f.segment();
-  const plan = inspectAgentStorage({ dataRoot: f.dataRoot }); assert.ok(plan.items.find(x => x.path === events.name)?.eligible);
+  const plan = inspectAgentStorage({ dataRoot: f.dataRoot, tempRoots: [] }); assert.ok(plan.items.find(x => x.path === events.name)?.eligible);
   f.record.participants = [{ id: 'q', provider: 'qoder', connectionId: 'qoder', label: 'q', bindingIdentity: 'b', contextRef: { id: events.context }, deliveredThrough: 0 }];
   f.record.view.run = { id: 'r', participantId: 'q', provider: 'qoder', generation: 'g', status: 'unknown', accepted: true, tools: [], startedAt: 'now', updatedAt: 'now' };
   f.record.view.revision = 'r2'; f.repo.saveConversation(f.record, 'r1');
@@ -279,7 +279,7 @@ test('public collection rechecks dependency changes and applies a bounded batch 
   assert.ok(fs.existsSync(events.name)); assert.ok(fs.existsSync(f.config));
   assert.ok(result.results.some(x => x.reason === 'storage_batch_deferred'));
   f.record.view.run.status = 'completed'; f.record.view.run.resourcesReleased = true; f.record.view.revision = 'r3'; f.repo.saveConversation(f.record, 'r2');
-  const next = collectAgentStorage(inspectAgentStorage({ dataRoot: f.dataRoot }));
+  const next = collectAgentStorage(inspectAgentStorage({ dataRoot: f.dataRoot, tempRoots: [] }));
   assert.equal(next.results.find(x => x.path === events.name)?.status, 'removed');
 });
 
