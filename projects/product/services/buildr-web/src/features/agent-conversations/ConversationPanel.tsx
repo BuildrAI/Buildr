@@ -43,7 +43,7 @@ import { ConversationTranscript } from './ConversationTranscript';
 import { imageSelectionError, conversationDocumentTypes } from './conversation-images';
 import { uploadConversationMaterials } from './conversation-material-upload';
 import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,executionAgentName,restoreModelSeriesChoice,executionSelectionChanged,nativeConversationChoice,permissionModeLabels,readConversationPermission,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,validConversationChoice,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
-import { appendDraftAttachment, canGenerateConversationTitle, conversationConflictNeedsRefresh, conversationTurnBinding, executionLocked, groupConversationStream, conversationStreamTurns, conversationTurnExecution, conversationTurnTiming, participantExecutionPairs, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state';
+import { appendDraftAttachment, canGenerateConversationTitle, conversationConflictNeedsRefresh, conversationTurnBinding, executionLocked, groupConversationStream, conversationStreamTurns, conversationTurnExecution, conversationTurnTiming, conversationTurnExpansionKey, conversationTurnExpanded, conversationProcessExpansionAfterSettle, participantExecutionPairs, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state';
 import { conversationActionKey, conversationInputAttemptAccepted, conversationInputAttemptMatches, createConversationActions, createConversationInputAttempts, reconcileConversationInputAttempt } from './conversation-actions';
 import { useNewConversationImages } from './useNewConversationImages';
 import { useConversationAttachments } from './useConversationAttachments';
@@ -671,6 +671,23 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const actionError=conversationActionError(error||(replyFailure&&!confirmedConversationReply(chat,replyFailure.attempt)?replyFailure.message:'')||(needsDefaultRoot?defaultRootError:''),modelWarning);
   const connectionWarning=context.streamError&&needsConversationObservation(chat)&&run?.status!=='unknown'&&<Alert className="ac-stream-disconnect" type="warning" showIcon message="实时连接正在恢复" description={context.streamError.replace(/^对话连接已中断[；;]\s*/,'')} action={<Button type="text" size="small" loading={observing} onClick={()=>void observe()}>重新连接并核对</Button>}/>;
   const turns=useMemo(()=>conversationStreamTurns(transcript,[...(chat?.retainedRuns??[]),...(run?[run]:[])]),[transcript,chat?.retainedRuns,run]);
+  const latestTurn=turns.at(-1);
+  const latestTurnKey=latestTurn?conversationTurnExpansionKey(latestTurn,run):undefined;
+  const latestTurnExecution=latestTurn?conversationTurnExecution(latestTurn,run):undefined;
+  const latestTurnLive=Boolean(latestTurn&&(latestTurnExecution?.active||latestTurn.items.some(item=>item.type==='process-block'&&item.active)));
+  const latestTurnHasProcess=Boolean(latestTurn?.items.some(item=>item.type==='process-block'));
+  const latestTurnExpanded=Boolean(latestTurn&&conversationTurnExpanded(latestTurn,run,expandedToolGroups));
+  const previousLatestTurn=useRef({conversationId:chat?.id,live:latestTurnLive,expanded:latestTurnExpanded});
+  useEffect(()=>{
+    // The final reply is promoted out of the live process when the run settles; that
+    // transition is the point where the answer starts appearing in the main line.
+    const previous=previousLatestTurn.current;
+    if(previous.conversationId===chat?.id&&previous.live&&!latestTurnLive&&latestTurnKey&&latestTurnHasProcess){
+      const next=conversationProcessExpansionAfterSettle(previous.expanded,bottom.current);
+      if(next!==undefined)setExpandedToolGroups(values=>values[latestTurnKey]===next?values:{...values,[latestTurnKey]:next});
+    }
+    previousLatestTurn.current={conversationId:chat?.id,live:latestTurnLive,expanded:latestTurnExpanded};
+  },[chat?.id,latestTurnLive,latestTurnKey,latestTurnHasProcess,latestTurnExpanded]);
   const turnIdentity=(entry:ConversationEntry|undefined)=>{
     if(!entry)return '';
     const {participant,run:boundRun}=conversationTurnBinding(entry,chat);
@@ -758,8 +775,8 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
             const settled=turn.items.filter(item=>item.type==='process-block'&&!item.active);
             const hasSupplement=turn.items.some(item=>item.type==='entry'&&item.entry.kind==='message'&&item.entry.role==='user');
             const hasProcess=turn.items.some(item=>item.type==='process-block');
-            const turnExpansionKey='turn:'+(execution.current?run?.id:assistant?.runId??prompt?.runId??turn.key);
-            const turnExpanded=expandedToolGroups[turnExpansionKey]??(execution.active||turn.items.some(item=>item.type==='process-block'&&item.active)||hasExpandedProcess);
+            const turnExpansionKey=conversationTurnExpansionKey(turn,run);
+            const turnExpanded=conversationTurnExpanded(turn,run,expandedToolGroups);
             const turnRuns=[...(chat.retainedRuns??[]),...(run?[run]:[])];
             const timing=conversationTurnTiming(turn,turnRuns);
             /* A released run may have ended without a verified outcome; the current

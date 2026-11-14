@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {needsConversationObservation,groupConversationStream,processBlockKey,carryExpandedProcessBlocks,processEntryStatus,conversationStreamTurns,conversationTurnExecution,conversationRunLive} from '../src/features/agent-conversations/conversation-state.ts';
+import {needsConversationObservation,groupConversationStream,processBlockKey,carryExpandedProcessBlocks,processEntryStatus,conversationStreamTurns,conversationTurnExecution,conversationRunLive,conversationTurnExpansionKey,conversationTurnExpanded,conversationProcessExpansionAfterSettle} from '../src/features/agent-conversations/conversation-state.ts';
 import {processTool,conversationFileTarget} from '../src/features/agent-conversations/conversation-process.ts';
 import {visibleConversationEntries} from '../src/features/agent-conversations/conversation-notices.ts';
 const message=(id,text,runId='r1',role='assistant')=>({id,sequence:0,kind:'message',role,text,runId,createdAt:'2026-10-26T00:00:00Z'});
@@ -349,4 +349,27 @@ test('无思考间隔的相邻进度说明在过程区合并，工具仍独立',
  assert.equal(items.length,1);assert.equal(items[0].type,'process-block');
  assert.equal(items[0].entries[0].text,'不高，而且是一次性对账。');
  assert.deepEqual(items[0].entries.map(entry=>entry.id),['a','t']);
+});
+test('最新一轮结束时只在底部自动折叠，离开底部或已收起保持现状',()=>{
+ assert.equal(conversationProcessExpansionAfterSettle(true,true),false);
+ assert.equal(conversationProcessExpansionAfterSettle(true,false),true);
+ assert.equal(conversationProcessExpansionAfterSettle(false,true),undefined);
+ assert.equal(conversationProcessExpansionAfterSettle(false,false),undefined);
+});
+test('轮次展开状态按运行活跃、显式选择和结束折叠决策计算',()=>{
+ const entries=[tool('t'),message('a','收尾完成。')];
+ const live={id:'r1',status:'running'};
+ const settled={id:'r1',status:'completed',executionState:'ended',tools:[]};
+ const liveTurn=conversationStreamTurns(groupConversationStream(entries,live))[0];
+ const liveKey=conversationTurnExpansionKey(liveTurn,live);
+ assert.equal(liveKey,'turn:r1');
+ assert.equal(conversationTurnExpanded(liveTurn,live,{}),true);
+ assert.equal(conversationTurnExpanded(liveTurn,live,{[liveKey]:false}),false);
+ const settledTurn=conversationStreamTurns(groupConversationStream(entries,settled))[0];
+ const settledKey=conversationTurnExpansionKey(settledTurn,settled);
+ assert.equal(conversationTurnExpanded(settledTurn,settled,{}),false);
+ assert.equal(conversationTurnExpanded(settledTurn,settled,{[settledKey]:true}),true);
+ assert.equal(conversationTurnExpanded(settledTurn,settled,{[settledKey]:false}),false);
+ assert.equal(conversationProcessExpansionAfterSettle(conversationTurnExpanded(liveTurn,live,{}),false),true);
+ assert.equal(conversationProcessExpansionAfterSettle(conversationTurnExpanded(liveTurn,live,{}),true),false);
 });

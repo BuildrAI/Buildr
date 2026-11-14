@@ -402,6 +402,22 @@ export function processBlockSummary(entries:readonly ConversationEntry[]):{runni
 export function processBlockKey(entries:readonly ConversationEntry[]):string {
   return 'process-block:'+entries[0].id;
 }
+/** Stable per-turn expansion key shared by the render and the settle-time collapse decision. */
+export function conversationTurnExpansionKey(turn:ConversationTurnItems,run?:ConversationRun):string {
+  const first=turn.items.find(item=>item.type==='process-block'||item.type==='entry'&&item.entry.role==='assistant');
+  const assistant=first?.type==='process-block'?first.entries[0]:first?.entry;
+  const execution=conversationTurnExecution(turn,run);
+  return 'turn:'+(execution.current?run?.id:assistant?.runId??turn.prompt?.runId??turn.key);
+}
+export function conversationTurnExpanded(turn:ConversationTurnItems,run:ConversationRun|undefined,expanded:Record<string,boolean>):boolean {
+  const key=conversationTurnExpansionKey(turn,run);
+  const hasExpanded=turn.items.some(item=>item.type==='process-block'&&!item.active&&expanded[processBlockKey(item.entries)]===true);
+  return expanded[key]??(conversationTurnExecution(turn,run).active||turn.items.some(item=>item.type==='process-block'&&item.active)||hasExpanded);
+}
+/** At settle, only collapse when the reader is at the bottom; a scrolled-away or already collapsed process keeps its state. */
+export function conversationProcessExpansionAfterSettle(expanded:boolean,atBottom:boolean):boolean|undefined {
+  return expanded?!atBottom:undefined;
+}
 
 /** Prepending steps can change a block's first entry; keep explicit open/closed choices on overlapping blocks. */
 export function carryExpandedProcessBlocks(current:readonly ConversationEntry[],added:readonly ConversationEntry[],expanded:Record<string,boolean>,run?:ConversationRun):Record<string,boolean>{
