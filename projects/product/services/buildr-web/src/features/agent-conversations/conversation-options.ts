@@ -106,7 +106,7 @@ export function restoreModelSeriesChoice<T extends {model?:string;modelAccountId
   const split=/^(.*)-(low|medium|high|xhigh)$/.exec(choice.model);
   if(!split||!catalog.some(model=>model.accountId===choice.modelAccountId&&model.modelId===split[1]
     &&model.reasoningEfforts?.some(depth=>depth.id===split[2])))return choice;
-  return {...choice,model:split[1],reasoningEffort:split[2]};
+  return {...choice,model:split[1],reasoningEffort:choice.reasoningEffort??split[2]};
 }
 
 export function validConversationChoice(choice:ConversationChoice,connection:ConnectionView|undefined,catalog:CatalogModel[]):ConversationChoice {
@@ -137,7 +137,8 @@ export function executionSelectionChanged(run:Pick<ConversationRun,'model'|'mode
 
 /** 状态行表达执行身份（智能体与模型）；来源账号只保留在模型设置和发送预览。 */
 export function conversationRunIdentity(run:ConversationRun,connection:ConnectionView|undefined,catalog:CatalogModel[]):string {
-  const shared=catalog.find(model=>model.accountId===run.modelAccountId&&model.modelId===run.model);
+  const restored=restoreModelSeriesChoice(run,catalog);
+  const shared=catalog.find(model=>model.accountId===restored.modelAccountId&&model.modelId===restored.model);
   const sharedName=shared?(shared.provider==='custom'?(shared.accountLabel||'自定义供应商'):(shared.presentation?.quotaLabel||shared.presentation?.sourceLabel||modelSourceName(shared.provider))):undefined;
   const model=shared?sharedName+' / '+shared.label:selectedConversationModel(connection,run.model)?.label||run.model;
   const agent=connection?.provider===run.provider&&connection.label?connection.label:executionAgentName(run.provider);

@@ -9,6 +9,12 @@ import { createAgentService } from '../../src/index.ts';
 import { createModelAccess } from '../../src/model-access/application.ts';
 import { createGoogleAiProxyProvider } from '../../src/model-access/providers/google-ai-proxy.ts';
 import {
+  GOOGLE_AI_ANTIGRAVITY_CATALOG,
+  buildGoogleAiRouteTable,
+  googleAiModelAlias,
+  resolveGoogleAiUpstreamModel,
+} from '../../src/model-access/providers/google-ai-proxy-catalog.ts';
+import {
   CLIPROXY_ALLOWED_HOSTS,
   CLIPROXY_RELEASES,
   CLIPROXY_RELEASE_BASE_URL,
@@ -450,4 +456,96 @@ test('concurrent ensureCliProxyInstalled calls coalesce into a single download',
   release.resolve();
   await Promise.all([first, second]);
   assert.equal(fetches, 1);
+});
+
+test('GOOGLE_AI_ANTIGRAVITY_CATALOG declares unique variant and base entries for all Antigravity models', () => {
+  const ids = GOOGLE_AI_ANTIGRAVITY_CATALOG.antigravity.map(entry => entry.id);
+  assert.equal(new Set(ids).size, ids.length, 'catalog model IDs must be unique');
+  for (const expected of [
+    'gemini-4-carbon-low', 'gemini-4-carbon-medium', 'gemini-4-carbon-high',
+    'gemini-4-argon-low', 'gemini-4-argon-medium', 'gemini-4-argon-high',
+    'gemini-4-hydrogen-low', 'gemini-4-hydrogen-medium', 'gemini-4-hydrogen-high', 'gemini-4-hydrogen-xhigh',
+    'gemini-3.8-flash-low', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-high', 'gemini-3.8-flash-tiered',
+    'claude-opus-5-5-low', 'claude-opus-5-5-medium', 'claude-opus-5-5-high',
+    'claude-sonnet-5-5-low', 'claude-sonnet-5-5-medium', 'claude-sonnet-5-5-high',
+    'claude-opus-4-6-thinking', 'claude-sonnet-4-6',
+    'gemini-3-flash', 'gemini-3.1-flash-lite', 'gemini-3.5-flash-lite',
+    'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-flash-thinking',
+    'gpt-oss-120b-medium',
+  ]) {
+    assert.ok(ids.includes(expected), `missing expected catalog entry ${expected}`);
+  }
+});
+
+test('buildGoogleAiRouteTable aggregates series variants and maps every (model, effort) to an exact upstream model ID', () => {
+  const table = buildGoogleAiRouteTable([
+    { id: 'chat_20706' },
+    { id: 'tab_flash_lite_preview' },
+    { id: 'gemini-3.1-flash-image' },
+    { id: 'gemini-4-carbon-high', display_name: 'Gemini 4 Carbon (High)' },
+    { id: 'gemini-4-carbon-low', display_name: 'Gemini 4 Carbon (Low)' },
+    { id: 'gemini-4-carbon-medium', display_name: 'Gemini 4 Carbon (Medium)' },
+    { id: 'gemini-4-hydrogen-xhigh', display_name: 'Gemini 4 Hydrogen (XHigh)' },
+    { id: 'gemini-4-hydrogen-low', display_name: 'Gemini 4 Hydrogen (Low)' },
+    { id: 'gemini-4-hydrogen-medium', display_name: 'Gemini 4 Hydrogen (Medium)' },
+    { id: 'gemini-4-hydrogen-high', display_name: 'Gemini 4 Hydrogen (High)' },
+    { id: 'gemini-3.8-flash-low', display_name: 'Gemini 3.8 Flash (Low)' },
+    { id: 'gemini-3.8-flash-medium', display_name: 'Gemini 3.8 Flash (Medium)' },
+    { id: 'gemini-3.8-flash-high', display_name: 'Gemini 3.8 Flash (High)' },
+    { id: 'gemini-3.8-flash-tiered', display_name: 'Gemini 3.8 Flash (Tiered)' },
+    { id: 'claude-opus-5-5-low', display_name: 'Claude Opus 5.5 (Low)' },
+    { id: 'claude-opus-5-5-medium', display_name: 'Claude Opus 5.5 (Medium)' },
+    { id: 'claude-opus-5-5-high', display_name: 'Claude Opus 5.5 (High)' },
+    { id: 'gpt-oss-120b-medium', display_name: 'GPT-OSS 120B (Medium)' },
+    { id: 'gemini-3-flash', display_name: 'Gemini 3 Flash' },
+    { id: 'gemini-2.5-pro', display_name: 'Gemini 2.5 Pro' },
+  ]);
+
+  assert.deepEqual(
+    table.models.map(m => ({
+      id: m.id,
+      label: m.label,
+      images: m.images,
+      efforts: m.reasoningEfforts?.map(e => e.id),
+      defaultEffort: m.defaultReasoningEffort,
+    })),
+    [
+      { id: 'gemini-4-carbon', label: 'Gemini 4 Carbon', images: true, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
+      { id: 'gemini-4-hydrogen', label: 'Gemini 4 Hydrogen', images: true, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium' },
+      { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', images: true, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
+      { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', images: true, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
+      { id: 'gpt-oss-120b-medium', label: 'GPT-OSS 120B', images: false, efforts: ['medium'], defaultEffort: 'medium' },
+      { id: 'gemini-3-flash', label: 'Gemini 3 Flash', images: true, efforts: undefined, defaultEffort: undefined },
+      { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', images: true, efforts: undefined, defaultEffort: undefined },
+    ],
+  );
+
+  // Every series + effort maps 1:1 to a real upstream model ID without any `(depth)` suffix.
+  assert.equal(resolveGoogleAiUpstreamModel(table, 'gemini-4-carbon', 'low'), 'gemini-4-carbon-low');
+  assert.equal(resolveGoogleAiUpstreamModel(table, 'gemini-4-carbon', 'medium'), 'gemini-4-carbon-medium');
+  assert.equal(resolveGoogleAiUpstreamModel(table, 'gemini-4-carbon', 'high'), 'gemini-4-carbon-high');
+  assert.equal(resolveGoogleAiUpstreamModel(table, 'gemini-4-carbon', undefined), 'gemini-4-carbon-medium');
+  assert.equal(resolveGoogleAiUpstreamModel(table, 'gemini-4-hydrogen', 'xhigh'), 'gemini-4-hydrogen-xhigh');
+  assert.equal(resolveGoogleAiUpstreamModel(table, 'gemini-3.8-flash', 'low'), 'gemini-3.8-flash-low');
+  assert.equal(resolveGoogleAiUpstreamModel(table, 'claude-opus-5-5', 'medium'), 'claude-opus-5-5-medium');
+  assert.equal(resolveGoogleAiUpstreamModel(table, 'gpt-oss-120b-medium', 'medium'), 'gpt-oss-120b-medium');
+  assert.equal(resolveGoogleAiUpstreamModel(table, 'gpt-oss-120b-medium', undefined), 'gpt-oss-120b-medium');
+  assert.equal(resolveGoogleAiUpstreamModel(table, 'gemini-3-flash', undefined), 'gemini-3-flash');
+
+  // Legacy persisted model IDs resolve to the exact requested effort's variant.
+  assert.equal(googleAiModelAlias('gemini-4-carbon-high'), 'gemini-4-carbon');
+  assert.equal(googleAiModelAlias('gemini-3.8-flash-tiered'), 'gemini-3.8-flash');
+  assert.equal(resolveGoogleAiUpstreamModel(table, 'gemini-4-carbon-high', 'medium'), 'gemini-4-carbon-medium');
+  assert.equal(resolveGoogleAiUpstreamModel(table, 'gemini-4-carbon-high', undefined), 'gemini-4-carbon-high');
+  assert.equal(resolveGoogleAiUpstreamModel(table, 'gemini-3.8-flash-tiered', 'low'), 'gemini-3.8-flash-low');
+
+  // Unsupported efforts and unentitled subsets are rejected instead of fabricated.
+  assert.throws(() => resolveGoogleAiUpstreamModel(table, 'gemini-4-carbon', 'xhigh'), { code: 'agent_reasoning_unavailable' });
+  assert.throws(() => resolveGoogleAiUpstreamModel(table, 'gemini-3-flash', 'medium'), { code: 'agent_reasoning_unavailable' });
+  assert.throws(() => resolveGoogleAiUpstreamModel(table, 'nonexistent-model', undefined), { code: 'model_unavailable' });
+
+  const partial = buildGoogleAiRouteTable([{ id: 'gemini-4-carbon-high' }]);
+  assert.deepEqual(partial.models[0]?.reasoningEfforts?.map(e => e.id), ['high']);
+  assert.equal(partial.models[0]?.defaultReasoningEffort, 'high');
+  assert.throws(() => resolveGoogleAiUpstreamModel(partial, 'gemini-4-carbon', 'medium'), { code: 'agent_reasoning_unavailable' });
 });

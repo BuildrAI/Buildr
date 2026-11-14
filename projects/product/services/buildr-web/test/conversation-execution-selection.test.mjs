@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {executionSelectionChanged} from '../src/features/agent-conversations/conversation-options.ts';
+import {conversationRunIdentity,executionSelectionChanged,restoreModelSeriesChoice} from '../src/features/agent-conversations/conversation-options.ts';
 
 const run={model:'small',modelAccountId:'account',serviceTier:'standard',permissionMode:'default',reasoningEffort:'low'};
 const choice={connectionId:'local',model:'small',modelAccountId:'account',serviceTier:'standard',reasoningEffort:'high'};
@@ -24,4 +24,61 @@ test('real execution target changes still organize a handoff',()=>{
   assert.equal(executionSelectionChanged(run,'local',{...choice,model:'other-model'}),true);
   assert.equal(executionSelectionChanged(run,'local',{...choice,modelAccountId:'other-account'}),true);
   assert.equal(executionSelectionChanged(run,'local',{...choice,serviceTier:'fast'}),true);
+});
+
+test('restoreModelSeriesChoice preserves explicit reasoningEffort from legacy Google AI choices while migrating model ID to series',()=>{
+  const catalog=[{
+    id:'google-ai-subscription:gemini-4-carbon',
+    accountId:'google-ai-subscription',
+    accountIdentity:'acc-1',
+    accountRevision:'rev-1',
+    accountLabel:'Google AI',
+    provider:'google-ai-subscription',
+    presentation:{vendorLabel:'Google AI',sourceLabel:'Google AI'},
+    modelId:'gemini-4-carbon',
+    label:'Gemini 4 Carbon',
+    available:true,
+    images:true,
+    tools:true,
+    reasoningEfforts:[{id:'low',label:'Low'},{id:'medium',label:'Medium'},{id:'high',label:'High'}],
+    defaultReasoningEffort:'medium',
+  }];
+
+  // Explicit `medium` selected alongside legacy `gemini-4-carbon-high` must NOT be overwritten to `high`.
+  const explicitMedium=restoreModelSeriesChoice({
+    connectionId:'codex',
+    modelAccountId:'google-ai-subscription',
+    model:'gemini-4-carbon-high',
+    reasoningEffort:'medium',
+  },catalog);
+  assert.equal(explicitMedium.model,'gemini-4-carbon');
+  assert.equal(explicitMedium.reasoningEffort,'medium');
+
+  // Omitted reasoningEffort falls back to the legacy variant suffix.
+  const inferredLow=restoreModelSeriesChoice({
+    connectionId:'antigravity',
+    modelAccountId:'google-ai-subscription',
+    model:'gemini-4-carbon-low',
+  },catalog);
+  assert.equal(inferredLow.model,'gemini-4-carbon');
+  assert.equal(inferredLow.reasoningEffort,'low');
+
+  // Historical run status label resolves legacy variant ID against the aggregated series catalog.
+  const label=conversationRunIdentity({
+    id:'run-1',
+    participantId:'p-1',
+    provider:'codex',
+    generation:'g-1',
+    status:'completed',
+    accepted:true,
+    tools:[],
+    modelAccountId:'google-ai-subscription',
+    model:'gemini-4-carbon-high',
+    reasoningEffort:'medium',
+    startedAt:'2026-11-14T00:00:00Z',
+    updatedAt:'2026-11-14T00:00:00Z',
+    executionState:'ended',
+    canContinue:false,
+  },{id:'codex',provider:'codex',label:'Codex',status:'ready',models:[],capabilities:{text:true,images:true,approval:true,questions:true,stop:true,resume:true}},catalog);
+  assert.equal(label,'Codex · Google AI / Gemini 4 Carbon');
 });

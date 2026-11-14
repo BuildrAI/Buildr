@@ -299,7 +299,10 @@ export class ConversationApplication {
         const compat = sourceCompatibility(descriptor, account);
         if (!compat.compatible) fail(compat.reasonCode ?? 'agent_model_source_unsupported', compat.reason ?? '当前执行器不支持所选模型来源。', 409);
       }
-      const legacy = participant.modelId ? descriptor?.modelPolicy?.native?.legacyModelVariant?.(participant.modelId) : undefined;
+      const legacy = participant.modelId
+        ? (descriptor?.modelPolicy?.native?.legacyModelVariant?.(participant.modelId)
+          ?? access.resolveLegacyModelVariant?.(account.id, participant.modelId))
+        : undefined;
       const model = account.models.find(item => item.id === participant.modelId)
         ?? (legacy ? account.models.find(item => item.id === legacy.family && item.reasoningEfforts?.some(depth => depth.id === legacy.depth)) : undefined);
       if (model?.enabled === false) fail('agent_model_disabled', '所选模型已停用，请重新选择。', 409);
@@ -1037,11 +1040,16 @@ export class ConversationApplication {
     // The revision is an observation hint, not a selection identity. Current source,
     // identity, model availability and capability are revalidated below.
     const availableModels = source?.models ?? connection.models;
-    const legacyVariant = source && input.model ? modelPolicy?.native?.legacyModelVariant?.(input.model) : undefined;
+    const resolveLegacyVariant = (modelId: string | undefined) =>
+      source && modelId
+        ? (modelPolicy?.native?.legacyModelVariant?.(modelId)
+          ?? this.options.modelAccess?.resolveLegacyModelVariant?.(source.id, modelId))
+        : undefined;
+    const legacyVariant = resolveLegacyVariant(input.model);
     if (legacyVariant && availableModels.some(model => model.id === legacyVariant.family
       && model.reasoningEfforts?.some(depth => depth.id === legacyVariant.depth))) {
       input.model = legacyVariant.family;
-      input.reasoningEffort = legacyVariant.depth;
+      input.reasoningEffort ??= legacyVariant.depth;
     }
     if (source && input.model) input.model = this.options.modelAccess?.resolveModelAlias(source.id, input.model) ?? input.model;
     const selectedModel = input.model ? availableModels.find(model => model.id === input.model) : source ? source.models.find(model=>model.enabled!==false) : connection.models.find(model => model.isDefault);
@@ -1061,7 +1069,8 @@ export class ConversationApplication {
     if (record.view.forkState && record.view.forkState.status !== 'ready') fail('agent_fork_pending', '此分叉尚未完成，不能发送新指令；原对话不受影响。', 409);
     const latest = record.participants.findLast(value => !value.historical && value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && (value.modelId === input.model && (!input.modelAccountId || value.modelAccountIdentity === source?.identity && value.modelConfiguration===configuration)
       || source && value.modelAccountIdentity === source.identity && value.modelId && input.model
-        && modelPolicy?.native?.legacyModelVariant?.(value.modelId)?.family === input.model));
+        && resolveLegacyVariant(value.modelId)?.family === input.model
+        && (!input.modelAccountId || value.modelConfiguration === configuration)));
     // Released historical outcomes are not native ownership. Keep the latest
     // uncertain context isolated, and never let a held context block new input:
     // the independent-participant path below preserves its exact old controls.
@@ -1126,7 +1135,7 @@ export class ConversationApplication {
     // Reasoning effort and permission mode are per-turn parameters: every executor receives them with the new
     // input, so changing either alone reuses the execution combination instead of organizing a user-visible handoff.
     const switching = Boolean(previous && (previous.connectionId!==input.connectionId || previous.modelAccountId!==input.modelAccountId ||
-      previous.modelAccountIdentity!==source?.identity || (previous.modelId!==input.model && !(source && previous.modelId && input.model && modelPolicy?.native?.legacyModelVariant?.(previous.modelId)?.family === input.model)) || previous.serviceTier!==input.serviceTier));
+      previous.modelAccountIdentity!==source?.identity || (previous.modelId!==input.model && !(source && previous.modelId && input.model && (resolveLegacyVariant(previous.modelId)?.family === input.model || this.options.modelAccess?.resolveModelAlias(source.id, previous.modelId) === input.model))) || previous.serviceTier!==input.serviceTier));
     const history = changes.map(entry => ({sequence:entry.sequence,role:entry.role,provider:entry.provider,text:entry.kind==='tool'?`${entry.name??'工具'} · ${entry.status??'结果未知'}（具体内容见本地来源）`:entry.text.length>4096?entry.text.slice(0,4096)+'…（完整原文见本地来源）':entry.text}));
     const maxInputBytes=receivingBudget(connection.capabilities.maxInputBytes,boundModel&&'contextWindow' in boundModel?boundModel.contextWindow:undefined,boundModel&&'maxOutputTokens' in boundModel?boundModel.maxOutputTokens:undefined);
     const localRounds=changes.length ? organizeHandoff(changes,{...record.inheritedContext?.outcomes,...record.runOutcomes,...(record.view.run?{[record.view.run.id]:record.view.run}:{})}) : [];
@@ -1155,7 +1164,8 @@ export class ConversationApplication {
     const text=needsCompression&&sources?indexedPrefix+formatHandoffNavigation(rounds,sources.sourceId,Math.min(2048,Math.max(0,maxInputBytes-Buffer.byteLength(indexedPrefix+suffix))))+suffix:fullText;
     const difference:Array<{kind:'agent'|'model';label:string;before:string;after:string}>=[];
     if(previous&&previous.connectionId!==input.connectionId)difference.push({kind:'agent',label:'智能体',before:previous.label,after:connection.label});
-    if(previous&&(record.view.run?.model!==input.model||previous.modelAccountId!==input.modelAccountId))difference.push({kind:'model',label:'模型',before:record.view.run?.model??'默认模型',after:boundModel?.label??input.model??'默认模型'});
+    const sameLegacyRunModel = Boolean(source && record.view.run?.model && input.model && (resolveLegacyVariant(record.view.run.model)?.family === input.model || this.options.modelAccess?.resolveModelAlias(source.id, record.view.run.model) === input.model));
+    if(previous&&((!sameLegacyRunModel&&record.view.run?.model!==input.model)||previous.modelAccountId!==input.modelAccountId))difference.push({kind:'model',label:'模型',before:record.view.run?.model??'默认模型',after:boundModel?.label??input.model??'默认模型'});
     const handoff={agent:connection.label,model:boundModel?.label??input.model??'默认模型',changes:difference,rounds:displayRounds(rounds),roundCount:rounds.length,body:text,sourceThrough:through,mode:needsCompression?'indexed' as const:'records' as const,...(sources?{sourcePath:sources.index,sourceId:sources.sourceId}:{})};
     const inputBytes = Buffer.byteLength(text);
     const imageBytes = images.reduce((total, image) => total + record.attachments[image.id]!.size, 0);

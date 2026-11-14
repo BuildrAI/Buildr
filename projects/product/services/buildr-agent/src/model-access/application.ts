@@ -720,6 +720,11 @@ export class ModelAccessApplication {
     if (account.models.some(model => model.id === modelId)) return modelId;
     return this.providers.get(account.provider)?.modelAlias?.(modelId) ?? modelId;
   }
+  resolveLegacyModelVariant(accountId: string, modelId: string) {
+    const account = this.current(accountId);
+    if (account.models.some(model => model.id === modelId)) return undefined;
+    return this.providers.get(account.provider)?.legacyModelVariant?.(modelId);
+  }
   async createLease(input: ModelLeaseInput): Promise<ModelGatewayLease> {
     await this.ready; const account = this.current(input.accountId);
     if(this.replacedModelSource(account))throw new ModelAccessError('model_source_migrated','此模型已迁移，请在 Google AI 分组中重新选择。',409);
@@ -915,6 +920,7 @@ export function createModelAccess(options: ModelAccessOptions) {
   const application = new ModelAccessApplication(options);
   return {
     resolveModelAlias: (accountId: string, modelId: string) => application.resolveModelAlias(accountId, modelId),
+    resolveLegacyModelVariant: (accountId: string, modelId: string) => application.resolveLegacyModelVariant(accountId, modelId),
     ensureLinked: () => application.ensureLinked(), invalidate: (id:string,input?:{abortActive?:boolean}) => application.invalidate(id,input), clearAuthentication: (id: string) => application.clearAuthentication(id),
     accounts: { list: (input?:{includeDisabled?:boolean}) => application.list(input), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string;custom?:CustomProviderConfigureInput}) => application.add(input), configure: (id:string,input:{expectedRevision:string;apiKey:string}) => application.configure(id,input), configureCustom: (id:string,input:CustomProviderConfigureInput) => application.configureCustom(id,input), discoverCustom: (input:CustomProviderDiscoveryInput) => application.discoverCustom(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input), remove: (id:string,input:{expectedRevision:string}) => application.remove(id,input) },
     catalog: { list: () => application.catalog() },

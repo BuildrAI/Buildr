@@ -1,4 +1,4 @@
-import { antigravityModelVariant, antigravityReasoningEffort } from '../../domain/antigravity-model.ts';
+import { ANTIGRAVITY_VARIANT_DEPTHS, antigravityModelVariant, antigravityReasoningEffort } from '../../domain/antigravity-model.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -195,8 +195,6 @@ function extractExplicitAccount(meta: Record<string, unknown>): {
   return { present: true, valid: true, identifier: chosenId, label: chosenLabel ?? chosenId };
 }
 
-const variantDepths = ['low', 'medium', 'high', 'xhigh'] as const;
-
 function extractModelsFromSessionPayload(payload: any, supportsImage: boolean) {
   const rawModels = Array.isArray(payload?.models?.availableModels) ? payload.models.availableModels : [];
   const current = payload?.models?.currentModelId;
@@ -234,7 +232,7 @@ function extractModelsFromSessionPayload(payload: any, supportsImage: boolean) {
   }
   if (models.length && !models.some(model => model.isDefault)) models[0]!.isDefault = true;
   for (const model of models) {
-    model.reasoningEfforts?.sort((a, b) => variantDepths.indexOf(a.id as typeof variantDepths[number]) - variantDepths.indexOf(b.id as typeof variantDepths[number]));
+    model.reasoningEfforts?.sort((a, b) => ANTIGRAVITY_VARIANT_DEPTHS.indexOf(a.id as typeof ANTIGRAVITY_VARIANT_DEPTHS[number]) - ANTIGRAVITY_VARIANT_DEPTHS.indexOf(b.id as typeof ANTIGRAVITY_VARIANT_DEPTHS[number]));
     model.defaultReasoningEffort ??= model.reasoningEfforts?.find(depth => depth.id === 'medium')?.id ?? model.reasoningEfforts?.[0]?.id;
   }
   return { models, nativeModelIds: [...ids] };

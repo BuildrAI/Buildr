@@ -1,12 +1,20 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { readFile, readdir } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { lstat, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { privateDirectories } from '../../executors/native-process.ts';
 import { ModelAccessError, type ModelProvider } from '../contracts.ts';
-import { antigravityModelLabel, antigravityModelVariant, antigravityReasoningEffort } from '../../domain/antigravity-model.ts';
+import { antigravityModelVariant } from '../../domain/antigravity-model.ts';
 import { cliProxyQuotaReader } from './cliproxy-quota.ts';
+import {
+  GOOGLE_AI_ANTIGRAVITY_CATALOG,
+  buildGoogleAiRouteTable,
+  googleAiModelAlias,
+  resolveGoogleAiUpstreamModel,
+  type GoogleAiRouteTable,
+} from './google-ai-proxy-catalog.ts';
 import {
   cliProxyBinaryName,
   ensureCliProxyInstalled,
@@ -59,19 +67,37 @@ export interface GoogleAiProxyProviderOptions {
   stopGraceMs?: number;
 }
 
-// CLIProxyAPI v8.0.69 Antigravity registry describes configurable routes.
-const configurableDepths: Record<string, readonly string[]> = {
-  'claude-opus-5-5-high': ['low', 'medium', 'high'],
-  'claude-sonnet-5-5-high': ['low', 'medium', 'high'],
-  'gemini-4-argon-high': ['low', 'medium', 'high'],
-  'gemini-4-carbon-high': ['low', 'medium', 'high'],
-  'gemini-4-hydrogen-xhigh': ['low', 'medium', 'high', 'xhigh'],
-  'gemini-3.8-flash-tiered': ['low', 'medium', 'high'],
-};
+const CATALOG_SNAPSHOT_JSON = JSON.stringify(GOOGLE_AI_ANTIGRAVITY_CATALOG) + '\n';
+
+async function assertNotSymlink(targetPath: string): Promise<void> {
+  try {
+    const info = await lstat(targetPath);
+    if (info.isSymbolicLink() || !info.isFile()) {
+      throw new ModelAccessError('model_google_ai_config_unsafe', 'Google AI 代理配置文件路径不安全。', 409);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw error;
+  }
+}
+
+async function writePrivateRuntimeFile(directory: string, targetPath: string, content: string): Promise<void> {
+  await assertNotSymlink(targetPath);
+  const tempPath = join(directory, `.runtime-${randomUUID()}.tmp`);
+  try {
+    await writeFile(tempPath, content, { flag: 'wx', mode: 0o600 });
+    await assertNotSymlink(targetPath);
+    await rename(tempPath, targetPath);
+  } finally {
+    await rm(tempPath, { force: true }).catch(() => {});
+  }
+}
 
 export function createGoogleAiProxyProvider(directory: string, options: GoogleAiProxyProviderOptions = {}): ModelProvider {
   const quota = cliProxyQuotaReader(directory);
   const configPath = join(directory, 'config.yaml');
+  const runtimeCatalogPath = join(directory, '.buildr-models-catalog.json');
+  const runtimeConfigPath = join(directory, '.buildr-runtime-config.yaml');
   const binaryPath = join(directory, cliProxyBinaryName(options.platform));
   let activeInstall: { promise: Promise<{ binaryPath: string; configPath: string; downloaded: boolean }>; controller: AbortController; waiters: number } | undefined;
 
@@ -109,13 +135,32 @@ export function createGoogleAiProxyProvider(directory: string, options: GoogleAi
   }
 
   async function config() {
-    const value = JSON.parse(await readFile(configPath, 'utf8'));
+    const value = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, any>;
     const { host, port } = value.server;
     const key = value.access?.['api-keys']?.[0];
     const auth = value.oauth?.['auth-dir'];
     if (host !== '127.0.0.1' || !Number.isInteger(port) || port < 1024 || port > 65535 ||
         typeof key !== 'string' || !key || typeof auth !== 'string' || resolve(directory, auth) !== join(directory, 'auth')) throw failure();
-    return { baseUrl: `http://127.0.0.1:${port}/v1`, key, auth: resolve(directory, auth) };
+    return { baseUrl: `http://127.0.0.1:${port}/v1`, key, auth: resolve(directory, auth), raw: value };
+  }
+  async function prepareRuntimeConfig(raw: Record<string, unknown>): Promise<string> {
+    await privateDirectories(directory);
+    await writePrivateRuntimeFile(directory, runtimeCatalogPath, CATALOG_SNAPSHOT_JSON);
+    const existingModels = raw.models && typeof raw.models === 'object' && !Array.isArray(raw.models)
+      ? (raw.models as Record<string, unknown>)
+      : {};
+    const customCatalog = typeof existingModels.catalog === 'string' && existingModels.catalog.trim()
+      ? existingModels.catalog
+      : runtimeCatalogPath;
+    const runtimePayload = {
+      ...raw,
+      models: {
+        ...existingModels,
+        catalog: customCatalog,
+      },
+    };
+    await writePrivateRuntimeFile(directory, runtimeConfigPath, JSON.stringify(runtimePayload) + '\n');
+    return runtimeConfigPath;
   }
   async function credential(auth: string) {
     const entries = await readdir(auth).catch((error: NodeJS.ErrnoException) => {
@@ -147,7 +192,8 @@ export function createGoogleAiProxyProvider(directory: string, options: GoogleAi
       return group === 'gemini' && account.custom.protocol === 'chat-completions' ||
         group === 'claude' && account.custom.protocol === 'anthropic-messages';
     },
-    modelAlias: id => id === 'gemini-3.8-flash-tiered' ? 'gemini-3.8-flash-high' : undefined,
+    legacyModelVariant: antigravityModelVariant,
+    modelAlias: googleAiModelAlias,
     id: providerId, label: 'Google AI', singleton: true,
     authentication: { type: 'oauth', label: 'Google AI', description: '登录 Google AI 账号后即可使用订阅模型；首次添加会自动下载并初始化本地代理组件。' },
     modeLabel: '订阅', group: { id: 'google-ai', label: 'Google AI' },
@@ -165,11 +211,12 @@ export function createGoogleAiProxyProvider(directory: string, options: GoogleAi
       const runtimeChildren = new Set<ChildProcess>();
       const failedSpawns = new WeakSet<ChildProcess>();
       const stopTasks = new WeakMap<ChildProcess, Promise<void>>();
+      let cachedRoutes: { identity: string; table: GoogleAiRouteTable } | undefined;
 
-      function start(args: string[]): ChildProcess {
+      function start(args: string[], effectiveConfigPath: string): ChildProcess {
         if (closed || lifetime.signal.aborted) throw failure();
         ensureExitHook();
-        const child = spawn(binaryPath, [...args, '-config', configPath], {
+        const child = spawn(binaryPath, [...args, '-config', effectiveConfigPath], {
           cwd: directory,
           detached: process.platform !== 'win32',
           stdio: ['ignore', 'pipe', 'pipe'],
@@ -223,24 +270,41 @@ export function createGoogleAiProxyProvider(directory: string, options: GoogleAi
         return task;
       }
 
-      async function ensureServer(baseUrl: string) {
+      async function ensureServer(settings: Awaited<ReturnType<typeof config>>, expectModels: boolean) {
         lifetime.signal.throwIfAborted();
         if (starting) return starting;
         if (server?.pid && server.exitCode === null && server.signalCode === null) return;
         // Refuse to share the port with an unowned process.
-        const existing = await fetch(baseUrl + '/models', { signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(700)]), redirect: 'error' }).catch(() => undefined);
+        const existing = await fetch(settings.baseUrl + '/models', { signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(700)]), redirect: 'error' }).catch(() => undefined);
         if (existing) { await existing.body?.cancel(); throw failure(); }
         lifetime.signal.throwIfAborted();
         if (starting) return starting;
         if (server?.pid && server.exitCode === null && server.signalCode === null) return;
-        const child = server = start(['-local-model']);
+        const effectiveConfigPath = await prepareRuntimeConfig(settings.raw);
+        lifetime.signal.throwIfAborted();
+        if (starting) return starting;
+        if (server?.pid && server.exitCode === null && server.signalCode === null) return;
+        const child = server = start(['-local-model'], effectiveConfigPath);
         starting = (async () => {
-          for (let attempt = 0; attempt < 40; attempt++) {
+          let listening = false;
+          for (let attempt = 0; attempt < 50; attempt++) {
             await delay(100, undefined, { signal: lifetime.signal });
             if (!child.pid || child.exitCode !== null || child.signalCode !== null) break;
-            const response = await fetch(baseUrl + '/models', { signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(400)]), redirect: 'error' }).catch(() => undefined);
-            if (response) { await response.body?.cancel(); return; }
+            const response = await fetch(settings.baseUrl + '/models', {
+              headers: { authorization: 'Bearer ' + settings.key },
+              signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(500)]),
+              redirect: 'error',
+            }).catch(() => undefined);
+            if (!response) continue;
+            if (!response.ok) {
+              await response.body?.cancel();
+              continue;
+            }
+            listening = true;
+            const payload = await response.json().catch(() => undefined);
+            if (!expectModels || (Array.isArray(payload?.data) && payload.data.length > 0)) return;
           }
+          if (listening && child.pid && child.exitCode === null && child.signalCode === null) return;
           throw failure();
         })().catch(async error => {
           if (server === child) server = undefined;
@@ -249,13 +313,33 @@ export function createGoogleAiProxyProvider(directory: string, options: GoogleAi
         }).finally(() => { starting = undefined; });
         return starting;
       }
-      async function request(settings: Awaited<ReturnType<typeof config>>, route: string, init: RequestInit) {
-        await ensureServer(settings.baseUrl);
+      async function request(settings: Awaited<ReturnType<typeof config>>, route: string, init: RequestInit, expectModels = true) {
+        await ensureServer(settings, expectModels);
         return fetch(settings.baseUrl + route, { ...init, redirect: 'error',
           signal: AbortSignal.any([lifetime.signal, init.signal ?? AbortSignal.timeout(10_000)]),
           headers: { authorization: 'Bearer ' + settings.key, 'content-type': 'application/json', ...(route === '/messages' ? { 'anthropic-version': '2023-06-01' } : {}) } });
       }
-      let flashTiered = false;
+      async function loadRouteTable(
+        settings: Awaited<ReturnType<typeof config>>,
+        identity: string,
+        signal: AbortSignal,
+        forceRefresh: boolean,
+      ): Promise<GoogleAiRouteTable> {
+        if (!forceRefresh && cachedRoutes?.identity === identity && cachedRoutes.table.models.length > 0) {
+          return cachedRoutes.table;
+        }
+        let data: unknown;
+        for (let attempt = 0; attempt < 15; attempt++) {
+          const response = await request(settings, '/models', { signal }, true);
+          if (!response.ok) { await response.body?.cancel(); throw failure(); }
+          data = (await response.json()).data;
+          if (Array.isArray(data) && data.length) break;
+          await delay(200, undefined, { signal: AbortSignal.any([lifetime.signal, signal]) });
+        }
+        const table = buildGoogleAiRouteTable(data);
+        if (table.models.length > 0) cachedRoutes = { identity, table };
+        return table;
+      }
       return {
         protocol: 'chat-completions',
         protocolForModel,
@@ -264,33 +348,13 @@ export function createGoogleAiProxyProvider(directory: string, options: GoogleAi
             await ensureInstalled(lifetime.signal);
             const settings = await config();
             const account = await credential(settings.auth);
-            if (!account) return { status: 'not-authenticated', models: [] };
-            let data: unknown;
-            for (let attempt = 0; attempt < 15; attempt++) {
-              const response = await request(settings, '/models', {});
-              if (!response.ok) { await response.body?.cancel(); throw failure(); }
-              data = (await response.json()).data;
-              if (Array.isArray(data) && data.length) break;
-              await delay(200, undefined, { signal: lifetime.signal });
+            if (!account) {
+              cachedRoutes = undefined;
+              return { status: 'not-authenticated', models: [] };
             }
-            const ids = new Set(Array.isArray(data) ? data.map(row => row?.id) : []);
-            flashTiered = ids.has('gemini-3.8-flash-tiered');
-            const models = Array.isArray(data) ? data.flatMap((row: { id?: unknown; display_name?: unknown; name?: unknown }) => {
-              if (typeof row?.id !== 'string' || !/^(gemini|claude|gpt|carbon)(?:[-_.]|$)/i.test(row.id)) return [];
-              if (/-image(?:-|$)/i.test(row.id)) return [];
-              if (row.id === 'gemini-3.8-flash-tiered' && ids.has('gemini-3.8-flash-high')) return [];
-              const upstreamLabel = row.display_name ?? row.name;
-              const label = antigravityModelLabel(row.id, typeof upstreamLabel === 'string' ? upstreamLabel : undefined);
-              const depth = antigravityModelVariant(row.id)?.depth ?? /-(low|medium|high|xhigh)$/.exec(row.id)?.[1];
-              const route = row.id === 'gemini-3.8-flash-high' && flashTiered ? 'gemini-3.8-flash-tiered' : row.id;
-              const levels = configurableDepths[route] ?? (depth ? [depth] : []);
-              return [{
-                id: row.id, label, tools: true, images: !/^gpt-/i.test(row.id),
-                ...(levels.length ? { reasoningEfforts: levels.map(antigravityReasoningEffort), defaultReasoningEffort: depth ?? levels.at(-1) } : {}),
-              }];
-            }) : [];
-            if (!models.length) throw failure();
-            return { status: 'ready', credentialConfigured: true, identity: account.identity, models, quota: await quota(providerId, settings.baseUrl, account.project) };
+            const table = await loadRouteTable(settings, account.identity, lifetime.signal, true);
+            if (!table.models.length) throw failure();
+            return { status: 'ready', credentialConfigured: true, identity: account.identity, models: table.models, quota: await quota(providerId, settings.baseUrl, account.project) };
           } catch (error) {
             return { status: 'failed', incomplete: true, models: [], diagnostic: error instanceof ModelAccessError ? error.message : 'Google AI 服务暂不可用，请稍后重新检查。' };
           }
@@ -299,9 +363,11 @@ export function createGoogleAiProxyProvider(directory: string, options: GoogleAi
           lifetime.signal.throwIfAborted();
           if (login) return;
           update({ state: 'initializing', diagnostic: '正在检查并准备 Google AI 本地代理组件…' });
+          let effectiveConfigPath: string;
           try {
             await ensureInstalled(lifetime.signal);
-            await config();
+            const settings = await config();
+            effectiveConfigPath = await prepareRuntimeConfig(settings.raw);
           } catch (error) {
             if (!closed && !lifetime.signal.aborted) {
               update({ state: 'failed', diagnostic: error instanceof ModelAccessError ? error.message : 'Google AI 代理组件准备失败，请重试。' });
@@ -310,7 +376,7 @@ export function createGoogleAiProxyProvider(directory: string, options: GoogleAi
           }
           lifetime.signal.throwIfAborted();
           if (login) return;
-          const child = login = start(['-antigravity-login', '-no-browser']);
+          const child = login = start(['-antigravity-login', '-no-browser'], effectiveConfigPath);
           let buffer = '', opened = false;
           const read = (chunk: Buffer) => {
             if (opened || login !== child) return;
@@ -339,36 +405,40 @@ export function createGoogleAiProxyProvider(directory: string, options: GoogleAi
         },
         async cancelLogin() { const child = login; login = undefined; await stop(child); },
         async infer(input) {
-          await ensureInstalled(AbortSignal.any([lifetime.signal, input.signal]));
+          const combinedSignal = AbortSignal.any([lifetime.signal, input.signal]);
+          await ensureInstalled(combinedSignal);
           const settings = await config();
           const account = await credential(settings.auth);
           if (!account || createHash('sha256').update(account.identity).digest('hex') !== input.providerIdentity)
             throw new ModelAccessError('model_identity_conflict', 'Google AI 登录已变化，请刷新模型后重试。', 409);
-          const route = protocolForModel(input.modelId) === 'anthropic-messages' ? '/messages' : '/chat/completions';
+          const hadCachedTable = cachedRoutes?.identity === account.identity && cachedRoutes.table.models.length > 0;
+          let table = await loadRouteTable(settings, account.identity, input.signal, false);
           const body = { ...input.body };
           const reasoning = body.reasoning as { effort?: unknown } | undefined;
           const outputConfig = body.output_config as Record<string, unknown> | undefined;
           const effort = input.reasoningEffort ?? reasoning?.effort ?? body.reasoning_effort ?? outputConfig?.effort;
-          const defaultDepth = /-(low|medium|high|xhigh)$/.exec(input.modelId)?.[1];
-          const model = input.modelId === 'gemini-3.8-flash-high' && flashTiered && effort !== undefined && effort !== 'high'
-            ? 'gemini-3.8-flash-tiered' : input.modelId;
-          const levels = configurableDepths[model];
-          if (levels) {
-            const depth = effort ?? defaultDepth ?? levels.at(-1);
-            if (typeof depth !== 'string' || !levels.includes(depth))
-              throw new ModelAccessError('agent_reasoning_unavailable', '该模型不支持所选思考深度。', 400);
-            body.model = depth === defaultDepth && model === input.modelId ? model : `${model}(${depth})`;
-          }
-          if (levels || defaultDepth) {
-            delete body.reasoning_effort;
-            delete body.reasoning;
-            if (outputConfig) {
-              const { effort: _effort, ...rest } = outputConfig;
-              if (Object.keys(rest).length) body.output_config = rest;
-              else delete body.output_config;
+          let upstreamModel: string;
+          try {
+            upstreamModel = resolveGoogleAiUpstreamModel(table, input.modelId, effort);
+          } catch (error) {
+            if (hadCachedTable && error instanceof ModelAccessError && error.code === 'model_unavailable') {
+              table = await loadRouteTable(settings, account.identity, input.signal, true);
+              upstreamModel = resolveGoogleAiUpstreamModel(table, input.modelId, effort);
+            } else {
+              throw error;
             }
           }
-          return request(settings, route, { method: 'POST', body: JSON.stringify(body), signal: input.signal });
+          const route = protocolForModel(upstreamModel) === 'anthropic-messages' ? '/messages' : '/chat/completions';
+          body.model = upstreamModel;
+          delete body.reasoning_effort;
+          delete body.reasoning;
+          delete body.thinking;
+          if (outputConfig && typeof outputConfig === 'object' && !Array.isArray(outputConfig)) {
+            const { effort: _effort, ...rest } = outputConfig;
+            if (Object.keys(rest).length) body.output_config = rest;
+            else delete body.output_config;
+          }
+          return request(settings, route, { method: 'POST', body: JSON.stringify(body), signal: input.signal }, true);
         },
         async close() {
           closed = true;
