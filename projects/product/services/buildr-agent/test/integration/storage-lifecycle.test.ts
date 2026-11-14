@@ -708,3 +708,35 @@ test('a completed adoption acknowledgement cannot pin a confirmed stopped runtim
  assert.equal(fs.existsSync(path.join(controlRoot(dataRoot),'instance.json')),false);assert.equal(fs.existsSync(path.join(controlRoot(dataRoot),'pending.json')),false);
 
 });
+
+test('transient verification evidence directories require valid lifecycle proof and honor retention cutoff', async t => {
+  const { testArtifactCandidates, testArtifactUnreferenced } = await import('../../src/storage/test-artifacts.ts');
+  const root = path.join(fixture(t), 'agent-service'), config = path.join(root, 'connections/claude-code/model-bindings/' + 'a'.repeat(64));
+  const transientDir = path.join(config, 'tmp/buildr-unit-evidence-fixture');
+  const callerManagedDir = path.join(config, 'tmp/buildr-static-evidence-managed');
+  const unmarkedDir = path.join(config, 'tmp/buildr-unit-evidence-unmarked');
+  const writeTiming = (dir: string, lifecycle: Record<string, unknown>) => file(path.join(dir, 'timing.json'), JSON.stringify({
+    schemaVersion: 'buildr.verification-timing/v1',
+    summaryPath: path.join(dir, 'timing.json'),
+    evidenceLifecycle: lifecycle,
+  }));
+  writeTiming(transientDir, { evidenceRetention: 'transient', cleanupAfter: 'consumer-finished', cleanupStatus: 'retained', cleanupReference: transientDir });
+  file(path.join(transientDir, 'diagnostics/out.log'), 'logs');
+  writeTiming(callerManagedDir, { evidenceRetention: 'caller-managed', cleanupAfter: 'caller-policy', cleanupStatus: 'not-applicable' });
+  file(path.join(unmarkedDir, 'diagnostics/out.log'), 'logs');
+
+  const recent = testArtifactCandidates(root, config, unused, Date.now() - 24 * 60 * 60_000);
+  assert.equal(recent.find(x => x.path === transientDir)?.reason, 'storage_recent');
+  assert.equal(recent.find(x => x.path === transientDir)?.eligible, false);
+
+  age(transientDir); age(callerManagedDir); age(unmarkedDir);
+  const aged = testArtifactCandidates(root, config, unused, Date.now() - 24 * 60 * 60_000);
+  const target = aged.find(x => x.path === transientDir)!;
+  assert.equal(target.eligible, true);
+  assert.equal(aged.find(x => x.path === callerManagedDir)?.reason, 'test_creator_active_or_unproven');
+  assert.equal(aged.find(x => x.path === unmarkedDir)?.reason, 'test_creator_active_or_unproven');
+  assert.equal(removeStorageCandidate(root, target, () => unused, moved => testArtifactUnreferenced(moved, transientDir)), true);
+  assert.equal(fs.existsSync(transientDir), false);
+  assert.equal(fs.existsSync(callerManagedDir), true);
+  assert.equal(fs.existsSync(unmarkedDir), true);
+});

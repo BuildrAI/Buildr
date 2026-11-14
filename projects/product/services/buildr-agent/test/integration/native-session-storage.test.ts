@@ -320,3 +320,78 @@ test('identity drift after planning retains the whole home', async t => {
   assert.equal(result.results.find(item => item.path === home.config)?.reason, 'storage_changed');
   assert.equal(fs.existsSync(home.config), true);
 });
+
+test('claude-code standalone sessions and dead lease homes follow complete reference proof and subagent protection', async t => {
+  const f = fixture(t);
+  const liveHome = path.join(f.root, 'connections', 'claude-code', 'model-bindings', binding('a'));
+  const deadHome = path.join(f.root, 'connections', 'claude-code', 'model-bindings', binding('b'));
+  const subagentHome = path.join(f.root, 'connections', 'claude-code', 'model-bindings', binding('c'));
+  const claudeFile = (home: string, id: string) => path.join(home, 'claude-config', 'projects', '-workspace', `${id}.jsonl`);
+
+  const liveId = randomUUID(), staleStandaloneId = randomUUID(), deadId = randomUUID(), subagentId = randomUUID();
+  const liveFile = claudeFile(liveHome, liveId), staleStandaloneFile = claudeFile(liveHome, staleStandaloneId);
+  const deadFile = claudeFile(deadHome, deadId), subagentFile = claudeFile(subagentHome, subagentId);
+  writeFile(liveFile, '{"live":true}\n');
+  writeFile(staleStandaloneFile, '{"stale":true}\n');
+  writeFile(path.join(liveHome, 'claude-config', '.claude.json'), '{"ok":true}\n');
+  writeFile(deadFile, '{"dead":true}\n');
+  writeFile(path.join(deadHome, 'claude-config', '.claude.json'), '{"dead":true}\n');
+  writeFile(path.join(deadHome, 'tmp', 'scratch.txt'), 'tmp');
+  writeFile(subagentFile, '{"withSubagent":true}\n');
+  writeFile(path.join(subagentHome, 'claude-config', 'projects', '-workspace', subagentId, 'subagents', 'agent-1.jsonl'), '{"sub":true}\n');
+  age(liveHome); age(deadHome); age(subagentHome);
+
+  const repo = new ConversationRepository(f.root), cwd = '/workspace', participantId = randomUUID();
+  const record: StoredConversation = {
+    view: { id: randomUUID(), workspaceId: 'ws', revision: 'r1', cwd, title: 'claude', updatedAt: 'now', hidden: false, requests: [], participants: [], entries: [] },
+    participants: [{ id: participantId, connectionId: 'claude-code', provider: 'claude-code', label: 'Claude Code',
+      bindingIdentity: 'binding', deliveredThrough: 0, modelAccountId: 'native-qoder-cn',
+      nativeHomeRoot: liveHome,
+      contextRef: { id: liveId, data: { native: opaqueReference('claude-code', liveId, cwd, 'binding') } } }],
+    sources: {}, nativeTools: {}, attachments: {}, requests: {},
+    attempts: [{ clientRequestId: randomUUID(), inputDigest: 'digest', runId: randomUUID(), participantId, through: 0, userEntryId: 'user', accepted: true,
+      executionRef: { id: randomUUID(), data: { resourceContext: liveId } } }],
+  };
+  repo.saveConversation(record);
+  // Protect subagent session by durable native source reference without naming the home root.
+  const ref: NativeToolContent = { version: 3, provider: 'claude-code', contextId: subagentId, entry: toolEntry('claude-sub-tool'),
+    session: { config: 'connections/claude-code', cwd: '/workspace' }, text: [] };
+  const encoded = ConversationEntryStore.encodeReference(ref), db = new DatabaseSync(repo.filename);
+  try { db.prepare('INSERT INTO conversation_entry_contents(conversation_id,content_revision,codec,body_bytes,body) VALUES(?,?,?,?,?)')
+    .run('claude-sub', randomUUID(), encoded.codec, Buffer.from(encoded.body as Uint8Array).length, encoded.body); } finally { db.close(); }
+
+  // Also verify durable source.path pointing into claude-config/projects/<slug>/<uuid>.jsonl protects that session.
+  const pathHeldId = randomUUID(), pathHeldFile = claudeFile(liveHome, pathHeldId);
+  writeFile(pathHeldFile, '{"pathHeld":true}\n'); age(liveHome);
+  const pathRef: NativeToolContent = { version: 2, provider: 'claude-code', contextId: randomUUID(), entry: toolEntry('claude-path-tool'),
+    text: [{ source: { path: path.relative(f.root, pathHeldFile).split(path.sep).join('/'), offset: 0, length: 4, sha256: '0'.repeat(64), codec: 'json' }, pointer: [] }] };
+  const pathEncoded = ConversationEntryStore.encodeReference(pathRef), db2 = new DatabaseSync(repo.filename);
+  try { db2.prepare('INSERT INTO conversation_entry_contents(conversation_id,content_revision,codec,body_bytes,body) VALUES(?,?,?,?,?)')
+    .run('claude-path', randomUUID(), pathEncoded.codec, Buffer.from(pathEncoded.body as Uint8Array).length, pathEncoded.body); } finally { db2.close(); }
+
+  assert.equal(inspectAgentStorage({ dataRoot: f.dataRoot, scanHomes: false }).items.some(item => item.kind === 'native-session' || item.kind === 'native-home'), false);
+  const sessionPlan = inspect(f.dataRoot);
+  assert.equal(sessionPlan.items.find(item => item.path === liveFile)?.reason, 'native_session_referenced');
+  assert.equal(sessionPlan.items.find(item => item.path === pathHeldFile)?.reason, 'native_session_referenced');
+  assert.equal(sessionPlan.items.find(item => item.path === staleStandaloneFile)?.eligible, true);
+  assert.equal(sessionPlan.items.some(item => item.path === subagentFile), false, 'sessions with sibling subagent/tool-results dirs are not deleted standalone');
+
+  const homePlanItems = inspectHomes(f.dataRoot);
+  assert.equal(homePlanItems.items.find(item => item.path === liveHome)?.reason, 'native_home_referenced');
+  assert.equal(homePlanItems.items.find(item => item.path === subagentHome)?.reason, 'native_home_session_referenced');
+  assert.equal(homePlanItems.items.find(item => item.path === deadHome)?.eligible, true);
+
+  const sessionCollected = collectAgentStorage(sessionPlan, 128, { confirmNativeSessions: true });
+  assert.equal(sessionCollected.results.find(item => item.path === staleStandaloneFile)?.status, 'removed');
+  assert.equal(fs.existsSync(staleStandaloneFile), false);
+  assert.equal(fs.existsSync(liveFile), true);
+  assert.equal(fs.existsSync(pathHeldFile), true);
+
+  age(deadHome);
+  const freshHomePlan = inspectHomes(f.dataRoot);
+  const homeCollected = collectAgentStorage(freshHomePlan, 128, { confirmNativeSessions: true });
+  assert.equal(homeCollected.results.find(item => item.path === deadHome)?.status, 'removed');
+  assert.equal(fs.existsSync(deadHome), false);
+  assert.equal(fs.existsSync(liveHome), true);
+  assert.equal(fs.existsSync(subagentHome), true);
+});

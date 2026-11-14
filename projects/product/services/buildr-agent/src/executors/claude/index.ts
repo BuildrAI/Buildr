@@ -32,6 +32,7 @@ export function createClaudeExecutor(): AgentExecutor {
         gateway:{protocol:'anthropic-messages',sseKeepalive:true},
       },
       runtimeTraits:{
+        nativeSessionReclamation:true,
         upgradeVerification:'runtime',
       },
     },

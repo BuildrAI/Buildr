@@ -15,7 +15,10 @@ export interface NativeSessionReferenceProof {
 
 const codexSession = /^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/u;
 const dshSession = /^session-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/u;
-const providers = ['codex', 'dsh'] as const;
+const claudeSessionFile = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/u;
+const claudeSessionDir = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/u;
+const providers = ['codex', 'dsh', 'claude-code'] as const;
+type NativeSessionProvider = typeof providers[number];
 const maximumEntries = 20000;
 
 export function nativeSessionRetainedReason(item: StorageCandidate, references: NativeSessionReferenceProof): string | undefined {
@@ -28,12 +31,13 @@ export function nativeSessionRetainedReason(item: StorageCandidate, references: 
   return undefined;
 }
 
-/** Individual Codex rollout files and DSH session directories under known
- * model bindings are the only native objects this plan can ever expose. */
+/** Individual Codex rollout files, DSH session directories, and standalone
+ * Claude Code session files under known model bindings are the only native
+ * objects this plan can ever expose. */
 export function nativeSessionCandidates(root: string, use: StorageUse, cutoff: number, references: NativeSessionReferenceProof): StorageCandidate[] {
   const items: StorageCandidate[] = [], state = { nodes: 0 };
   let visited = 0;
-  const candidate = (provider: 'codex' | 'dsh', contextId: string, binding: string, target: string) => {
+  const candidate = (provider: NativeSessionProvider, contextId: string, binding: string, target: string) => {
     if (++visited > maximumEntries) return;
     const item: StorageCandidate = { kind: 'native-session', path: target, ownerRoot: target, sizeBytes: 0, eligible: false,
       reason: 'storage_path_unsafe', nativeSession: { provider, contextId, binding } };
@@ -53,11 +57,12 @@ export function nativeSessionCandidates(root: string, use: StorageUse, cutoff: n
     const account = path.join(root, 'connections', provider);
     // The shared per-connection home (gateway + native login) holds sessions too;
     // the same context reference proof, stability window and occupancy apply.
-    const sharedHome = path.join(account, provider === 'codex' ? 'codex-home' : 'dsh-home');
+    const sharedHome = path.join(account, provider === 'codex' ? 'codex-home' : provider === 'dsh' ? 'dsh-home' : 'claude-config');
     const accountRelative = path.relative(root, account).split(path.sep).join('/');
     if (safeStoragePath(root, sharedHome)) {
       if (provider === 'codex') codexSessions(path.join(sharedHome, 'sessions'), state, (file, contextId) => candidate(provider, contextId, accountRelative, file));
-      else dshSessions(path.join(sharedHome, 'sessions'), state, (directory, contextId) => candidate(provider, contextId, accountRelative, directory));
+      else if (provider === 'dsh') dshSessions(path.join(sharedHome, 'sessions'), state, (directory, contextId) => candidate(provider, contextId, accountRelative, directory));
+      else claudeSessions(path.join(sharedHome, 'projects'), state, (file, contextId) => candidate(provider, contextId, accountRelative, file));
     }
     const bindings = path.join(account, 'model-bindings');
     if (!safeStoragePath(root, bindings)) continue;
@@ -66,7 +71,8 @@ export function nativeSessionCandidates(root: string, use: StorageUse, cutoff: n
       if (!/^[a-f0-9]{64}$/.test(id) || !safeStoragePath(root, binding)) continue;
       const relative = path.relative(root, binding).split(path.sep).join('/');
       if (provider === 'codex') codexSessions(path.join(binding, 'codex-home', 'sessions'), state, (file, contextId) => candidate(provider, contextId, relative, file));
-      else dshSessions(path.join(binding, 'dsh-home', 'sessions'), state, (directory, contextId) => candidate(provider, contextId, relative, directory));
+      else if (provider === 'dsh') dshSessions(path.join(binding, 'dsh-home', 'sessions'), state, (directory, contextId) => candidate(provider, contextId, relative, directory));
+      else claudeSessions(path.join(binding, 'claude-config', 'projects'), state, (file, contextId) => candidate(provider, contextId, relative, file));
     }
   }
   return items;
@@ -88,13 +94,13 @@ export function nativeHomeRetainedReason(item: StorageCandidate, references: Nat
 /** Belt-and-braces: even when no reference names the home path, a single
  * referenced session inside it retains the whole directory. Walks the actual
  * (possibly already renamed) home so the deletion re-proof stays accurate. */
-export function nativeHomeSessionReferenced(home: string, provider: 'codex' | 'dsh', references: NativeSessionReferenceProof): boolean {
+export function nativeHomeSessionReferenced(home: string, provider: NativeSessionProvider, references: NativeSessionReferenceProof): boolean {
   const state = { nodes: 0 };
   let referenced = false;
   const check = (contextId: string) => { if (references.contexts.has(provider + ':' + contextId)) referenced = true; };
-  const sessions = path.join(home, provider === 'codex' ? 'codex-home' : 'dsh-home', 'sessions');
-  if (provider === 'codex') codexSessions(sessions, state, (_file, contextId) => check(contextId));
-  else dshSessions(sessions, state, (_directory, contextId) => check(contextId));
+  if (provider === 'codex') codexSessions(path.join(home, 'codex-home', 'sessions'), state, (_file, contextId) => check(contextId));
+  else if (provider === 'dsh') dshSessions(path.join(home, 'dsh-home', 'sessions'), state, (_directory, contextId) => check(contextId));
+  else claudeSessionEntries(path.join(home, 'claude-config', 'projects'), state, contextId => check(contextId));
   return referenced;
 }
 
@@ -161,6 +167,37 @@ function dshSessions(directory: string, state: { nodes: number }, add: (session:
           add(file, match[1]!);
         } catch { /* A partial session directory is not a candidate. */ }
       }, 2);
+    }
+  } catch { /* Unreadable session roots retain their sessions by omission. */ }
+}
+
+function claudeSessions(directory: string, state: { nodes: number }, add: (file: string, contextId: string) => void): void {
+  try {
+    for (const workspace of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (++state.nodes > maximumEntries || !workspace.isDirectory() || workspace.isSymbolicLink()) continue;
+      const workspaceDir = path.join(directory, workspace.name);
+      walk(workspaceDir, state, (file, name) => {
+        const match = claudeSessionFile.exec(name);
+        if (!match) return;
+        // Retain sessions with a sibling <uuid>/ directory (subagents/tool-results)
+        // for whole-home reclamation rather than leaving orphaned child dirs.
+        if (fs.existsSync(path.join(path.dirname(file), match[1]!))) return;
+        add(file, match[1]!);
+      }, 1);
+    }
+  } catch { /* Unreadable session roots retain their sessions by omission. */ }
+}
+
+function claudeSessionEntries(directory: string, state: { nodes: number }, add: (contextId: string) => void): void {
+  try {
+    for (const workspace of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (++state.nodes > maximumEntries || !workspace.isDirectory() || workspace.isSymbolicLink()) continue;
+      walk(path.join(directory, workspace.name), state, (_file, name) => {
+        const fileMatch = claudeSessionFile.exec(name);
+        if (fileMatch) { add(fileMatch[1]!); return; }
+        const dirMatch = claudeSessionDir.exec(name);
+        if (dirMatch) add(dirMatch[1]!);
+      }, 1);
     }
   } catch { /* Unreadable session roots retain their sessions by omission. */ }
 }

@@ -80,6 +80,7 @@ export interface ConnectionModelPolicyView {
 }
 export interface ExecutorRuntimeTraits {
   sharedNativeHome?: boolean;
+  nativeSessionReclamation?: boolean;
   upgradeVerification?: 'runtime' | 'account-probe';
   transientAccountProbe?: boolean;
   configurationIncludesPermission?: readonly string[];

@@ -6,7 +6,7 @@ import type {NativeToolContent} from '../native-content-contracts.ts';
 import {entryContentRevision} from '../domain/entry-revision.ts';
 import {fail} from '../domain/agent-state.ts';
 import {safeStoragePath} from '../storage/files.ts';
-import {sharedNativeHomeProviders} from '../executors/index.ts';
+import {nativeSessionProviders} from '../executors/index.ts';
 
 /** Strip tool bodies before organizing, hashing or serializing handoff material. */
 export function handoffEntry(entry:ConversationEntry):ConversationEntry {
@@ -73,7 +73,7 @@ function storedNativeReferences(value:unknown):NativeToolContent[] {
   if(Array.isArray(node)){for(const item of node)walk(item);return;}
   const record=node as Partial<NativeToolContent>&{session?:{config?:unknown}};
   const provider=record.provider;
-  if(typeof provider==='string'&&sharedNativeHomeProviders().has(provider)&&(typeof record.contextId==='string'||typeof record.session?.config==='string'))
+  if(typeof provider==='string'&&nativeSessionProviders().has(provider)&&(typeof record.contextId==='string'||typeof record.session?.config==='string'))
    references.push(record as NativeToolContent);
   for(const child of Object.values(record))walk(child);
  };

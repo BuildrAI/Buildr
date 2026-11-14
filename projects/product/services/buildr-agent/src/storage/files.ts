@@ -18,9 +18,9 @@ export interface StorageCandidate {
   runtimeDataRoot?: string;
   diagnostic?: { provider: string; producerPid?: number; contextId?: string; config?:string; database?:string };
   /** Exact native session identity read from the provider-owned layout. */
-  nativeSession?: { provider: 'codex' | 'dsh'; contextId: string; binding: string };
+  nativeSession?: { provider: 'codex' | 'dsh' | 'claude-code'; contextId: string; binding: string };
   /** Whole legacy lease home reclaimable only after a complete no-reference proof. */
-  nativeHome?: { provider: 'codex' | 'dsh' };
+  nativeHome?: { provider: 'codex' | 'dsh' | 'claude-code' };
 }
 export interface StorageVersion { identity: string; sizeBytes: number; modified: number; rootChanged: number }
 export const storageUseRoot=(item:StorageCandidate)=>item.kind==='cache'&&item.useRoot===item.path?item.path:item.ownerRoot;

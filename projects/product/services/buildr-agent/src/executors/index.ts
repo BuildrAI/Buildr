@@ -59,6 +59,14 @@ export function sharedNativeHomeProviders(): ReadonlySet<string> {
   return cachedSharedHomeProviders;
 }
 
+export function nativeSessionProviders(): ReadonlySet<string> {
+  return new Set(
+    defaultNativeExecutors()
+      .filter(executor => executor.descriptor.runtimeTraits?.sharedNativeHome || executor.descriptor.runtimeTraits?.nativeSessionReclamation)
+      .map(executor => executor.descriptor.id),
+  );
+}
+
 export function nativeContentSpec(provider: string, executors?: readonly AgentExecutor[]): ExecutorNativeContentSpec | undefined {
   if (!executors) return defaultNativeSpecs().get(provider);
   const matched = executors.find(executor => executor.descriptor.id === provider);

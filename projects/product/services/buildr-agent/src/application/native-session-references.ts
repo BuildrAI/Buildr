@@ -4,7 +4,7 @@ import type { ConversationRepository } from '../persistence/conversation-reposit
 import type { NativeSessionReferenceProof } from '../storage/native-sessions.ts';
 import { configRoot } from './native-content-resolver.ts';
 import { handoffNativeReferences } from './handoff-sources.ts';
-import { sharedNativeHomeProviders } from '../executors/index.ts';
+import { nativeSessionProviders } from '../executors/index.ts';
 
 export interface NativeSessionReferences extends NativeSessionReferenceProof { diagnostics: string[] }
 
@@ -15,7 +15,7 @@ const modelBinding = /^connections\/([a-z][a-z0-9-]*)\/model-bindings\/([a-f0-9]
  * index. Any unreadable source keeps its whole scope. */
 export function nativeSessionReferences(root: string, repository: Pick<ConversationRepository, 'readNativeHeaders' | 'readNativeToolReferences'>): NativeSessionReferences {
   const contexts = new Set<string>(), unknownContext = new Set<string>(), unresolved = new Set<string>(), homes = new Set<string>(), diagnostics: string[] = [];
-  const providers = sharedNativeHomeProviders();
+  const providers = nativeSessionProviders();
   const headers = repository.readNativeHeaders();
   if (!headers.complete) diagnostics.push('native_session_headers_unreadable');
   for (const header of headers.headers) {
@@ -50,7 +50,7 @@ export function nativeSessionReferences(root: string, repository: Pick<Conversat
 }
 
 function collect(reference: NativeToolContent, contexts: Set<string>, unresolved: Set<string>, homes: Set<string>, root: string): void {
-  const providers = sharedNativeHomeProviders();
+  const providers = nativeSessionProviders();
   const provider = reference.provider;
   if (!providers.has(provider)) return;
   const contextId = reference.contextId;
@@ -82,7 +82,8 @@ function collect(reference: NativeToolContent, contexts: Set<string>, unresolved
     // file bytes themselves are the reference even when contextId differs.
     const file = source.path.split(path.sep).join('/');
     const session = /(?:^|\/)session-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$)/u.exec(file)
-      ?? /(?:^|\/)rollout-[^/]+-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/u.exec(file);
+      ?? /(?:^|\/)rollout-[^/]+-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/u.exec(file)
+      ?? /(?:^|\/)claude-config\/projects\/[^/]+\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\.jsonl|\/|$)/u.exec(file);
     if (session) contexts.add(provider + ':' + session[1]!);
   }
   if (conflict) return;
