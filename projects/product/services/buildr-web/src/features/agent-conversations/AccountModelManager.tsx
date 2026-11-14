@@ -65,6 +65,7 @@ export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,o
   const [removing,setRemoving]=useState<string>();
   const [readingModels,setReadingModels]=useState(''),[modelNotice,setModelNotice]=useState('');
   const entries=sources.filter(source=>showDisabled||source.sourceEnabled!==false);
+  const activeLogoutConversations=Array.isArray(logoutImpact?.activeConversations)?logoutImpact.activeConversations:[];
   const disabledCount=sources.filter(source=>source.sourceEnabled===false).length;
   const sourceGroups=[
     {key:'subscription',label:'订阅账号',items:entries.filter(source=>!source.managed&&source.provider!=='custom'&&source.authType!=='api-key')},
@@ -244,7 +245,7 @@ export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,o
       finally{setLogoutBusy(false);}
     }}>
     {loggingOut&&<><p>{loggingOut.mode==='switch'?`退出当前「${loggingOut.source.providerLabel}」并登录其他账号？`:`退出「${loggingOut.source.providerLabel}」的本机登录？`}</p>
-      {logoutImpactLoading?<p className="amm-delete-usage">正在检查运行中的对话…</p>:logoutImpactLoaded&&logoutImpact?.activeConversations.length?<Alert className="amm-delete-impact" type="warning" showIcon message={`将先停止 ${logoutImpact.activeConversations.length} 个正在运行的对话`} description={<ul className="amm-delete-summary">{logoutImpact.activeConversations.map(item=><li key={item.workspaceId+':'+item.conversationId}>{item.title||item.conversationId}</li>)}</ul>}/>:logoutImpactLoaded?<p className="amm-delete-usage">当前没有正在运行的对话。</p>:null}
+      {logoutImpactLoading?<p className="amm-delete-usage">正在检查运行中的对话…</p>:logoutImpactLoaded&&activeLogoutConversations.length?<Alert className="amm-delete-impact" type="warning" showIcon message={`将先停止 ${activeLogoutConversations.length} 个正在运行的对话`} description={<ul className="amm-delete-summary">{activeLogoutConversations.map(item=><li key={item.workspaceId+':'+item.conversationId}>{item.title||item.conversationId}</li>)}</ul>}/>:logoutImpactLoaded?<p className="amm-delete-usage">当前没有正在运行的对话。</p>:null}
       {loggingOut.source.hostKeyringAuth&&<Alert className="amm-delete-impact" type="info" showIcon message="同时影响本机命令行登录" description={`此操作通过受管程序更新当前系统用户密钥环中的登录凭据，本机共享同一密钥环的 ${loggingOut.source.agentLabel||loggingOut.source.providerLabel} 命令行（如 agy）登录状态也会同步${loggingOut.mode==='switch'?'切换':'退出'}；期间新发送会暂停，草稿与历史记录保留。`}/>}
       <p className="amm-delete-usage">{loggingOut.mode==='switch'?'原账号下的历史对话会保留，切换完成后不会自动复用原原生会话，下次发送前需确认新账号模型。':'退出后该智能体程序会断开，使用此供应商的对话会保留，但下一次发送前需要重新登录或选择其他模型。'}</p></>}
     {logoutError&&<Alert type="warning" showIcon message={logoutError}/>}

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createAgentService } from '../../src/index.ts';
 import { qoderExecutorDescriptor } from '../../src/executors/qoder/index.ts';
+import { opaqueReference } from '../../src/executors/native-process.ts';
 import type { AgentExecutor, ExecutorOpenOptions } from '../../src/contracts.ts';
 import type { ModelProvider } from '../../src/model-access/contracts.ts';
 
@@ -162,4 +163,258 @@ test('only Qoder consuming its own linked account gets a native model route, wit
     assert.equal(bound[1].gateway!.nativeModel,undefined);
     assert.ok(sent.every(input=>input.model?.startsWith('buildr-')),'public model names remain separate from leased execution routes');
   } finally {await service.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('Qoder standalone account shares models with Codex without preparing Qoder agent, and works regardless of Qoder connection status', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-standalone-route-'));
+  const accountRoot = join(root, 'agent-service/model-access/accounts/native-qoder');
+  const opens: ExecutorOpenOptions[] = [];
+  const capabilities = { text: true, images: false, approval: false, questions: false, stop: true, resume: false, maxInputBytes: 65536 };
+  let qoderAccepted = 0, codexAccepted = 0;
+  const qoderExecutor: AgentExecutor = { descriptor: { id: 'qoder', label: 'Qoder', capabilities, modelPolicy: qoderExecutorDescriptor('qoder').modelPolicy }, async open(options) {
+    opens.push(options);
+    let execution = '';
+    return {
+      bindingIdentity: 'qoder-fixture', capabilities,
+      inspectAccount: async () => ({ status: 'not-authenticated' }), models: async () => [],
+      beginLogin: async () => {}, cancelLogin: async () => {},
+      async createContext() {
+        assert.equal(options.nativeAccountConfigRoot, accountRoot);
+        assert.equal(await readFile(join(options.nativeAccountConfigRoot!, 'qoder-config/.auth/user'), 'utf8'), 'fixture-login');
+        return { id: randomUUID() };
+      },
+      resumeContext: async () => {}, readHistory: async () => [],
+      async send(input) {
+        qoderAccepted++;
+        execution = input.clientRequestId;
+        input.onEvent({ type: 'accepted', executionRef: { id: input.clientRequestId } });
+        input.onEvent({ type: 'completed', status: 'completed' });
+      },
+      observe: async () => ({ status: 'idle', tools: [], executionRef: { id: execution } }), reply: async () => {}, stop: async () => ({ status: 'stopped', tools: [] }), close: async () => {},
+    };
+  }};
+  const codexExecutor: AgentExecutor = { descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) {
+    opens.push(options);
+    let execution = '';
+    return {
+      bindingIdentity: 'codex-fixture', capabilities,
+      inspectAccount: async () => ({ status: 'ready' }), models: async () => [],
+      beginLogin: async () => {}, cancelLogin: async () => {},
+      createContext: async () => ({ id: randomUUID() }), resumeContext: async () => {}, readHistory: async () => [],
+      async send(input) {
+        codexAccepted++;
+        execution = input.clientRequestId;
+        input.onEvent({ type: 'accepted', executionRef: { id: input.clientRequestId } });
+        input.onEvent({ type: 'completed', status: 'completed' });
+      },
+      observe: async () => ({ status: 'idle', tools: [], executionRef: { id: execution } }), reply: async () => {}, stop: async () => ({ status: 'stopped', tools: [] }), close: async () => {},
+    };
+  }};
+  const provider: ModelProvider = { id: 'native-qoder', label: 'Qoder', linked: true, async open(input) {
+    assert.equal(input.configRoot, accountRoot);
+    return { protocol: 'chat-completions',
+      inspect: async () => ({ status: 'ready', identity: 'qoder-user', models: [{ id: 'qoder-max', label: 'Qoder Max', tools: true, images: false }] }),
+      beginLogin: async () => {}, cancelLogin: async () => {}, infer: async () => { throw new Error('no paid inference'); }, close: async () => {},
+    };
+  }};
+  const service = createAgentService({ dataRoot: root, executors: [qoderExecutor, codexExecutor], modelProviders: [provider], resolveWorkspace: () => ({ rootPath: root }), assertTask() {} });
+  try {
+    await mkdir(join(accountRoot, 'qoder-config/.auth'), { recursive: true });
+    await writeFile(join(accountRoot, 'qoder-config/.auth/user'), 'fixture-login');
+    await service.models.catalog.list({ refresh: true });
+    const account = await service.models.accounts.check('native-qoder');
+    assert.equal(account.connectionId, undefined);
+    await service.models.accounts.preferences(account.id, { expectedRevision: account.revision, models: [{ id: 'qoder-max', enabled: true }] });
+    // Even before Qoder agent is prepared or connected, Codex can already use Qoder's model source.
+    const prepareCodex = { expectedRevision: 'unconfigured', programOnly: true };
+    await service.connections.connect('codex', prepareCodex);
+    const codexChat = await service.conversations.create('workspace', {});
+    const codexDraft = { expectedRevision: codexChat.revision, connectionId: 'codex', modelAccountId: account.id, model: 'qoder-max', text: 'codex uses standalone qoder' };
+    const codexPreview = service.conversations.prepareSend('workspace', codexChat.id, codexDraft);
+    service.conversations.send('workspace', codexChat.id, { ...codexDraft, previewToken: codexPreview.token, clientRequestId: randomUUID() });
+    for (let i = 0; i < 200 && !['completed', 'failed'].includes(service.conversations.read('workspace', codexChat.id).run?.status ?? ''); i++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(service.conversations.read('workspace', codexChat.id).run?.status, 'completed');
+    assert.equal(codexAccepted, 1);
+
+    // Preparing Qoder program lets Qoder execute via the standalone model account even though program account reports not-authenticated.
+    const prepareQoder = { expectedRevision: 'unconfigured', programOnly: true };
+    await service.connections.connect('qoder', prepareQoder);
+    assert.equal(service.connections.read('qoder').status, 'ready');
+    const qoderChat = await service.conversations.create('workspace', {});
+    const qoderDraft = { expectedRevision: qoderChat.revision, connectionId: 'qoder', model: 'qoder-max', text: 'qoder runs standalone' };
+    const qoderPreview = service.conversations.prepareSend('workspace', qoderChat.id, qoderDraft);
+    assert.equal(qoderPreview.modelAccountId, account.id);
+    service.conversations.send('workspace', qoderChat.id, { ...qoderDraft, previewToken: qoderPreview.token, clientRequestId: randomUUID() });
+    for (let i = 0; i < 200 && !['completed', 'failed'].includes(service.conversations.read('workspace', qoderChat.id).run?.status ?? ''); i++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(service.conversations.read('workspace', qoderChat.id).run?.status, 'completed');
+    assert.equal(qoderAccepted, 1);
+
+    // Disconnecting Qoder agent preserves the ready standalone Qoder model account.
+    await service.connections.disconnect('qoder', { expectedRevision: service.connections.read('qoder').revision });
+    assert.equal(service.models.accounts.read(account.id).status, 'ready');
+
+    // Reconnect Qoder agent and delete the shared standalone Qoder model account:
+    // credentials are removed and the Qoder connection immediately presents as not-authenticated.
+    await service.connections.connect('qoder', { ...prepareQoder, expectedRevision: service.connections.read('qoder').revision });
+    assert.equal(service.connections.read('qoder').status, 'ready');
+    const latestAccount = service.models.accounts.read(account.id);
+    await service.models.accounts.remove(account.id, { expectedRevision: latestAccount.revision });
+    const afterDelete = service.connections.read('qoder');
+    assert.equal(afterDelete.status, 'not-authenticated');
+    assert.deepEqual(afterDelete.models, []);
+  } finally { await service.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test('pre-upgrade Qoder conversation keeps reading legacy tool details and smoothly starts a fresh session with handoff', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-preupgrade-'));
+  const legacySessionId = '33333333-4444-4555-8666-777777777777';
+  const legacyConfig = join(root, 'agent-service/connections/qoder/qoder-config');
+  const accountRoot = join(root, 'agent-service/model-access/accounts/native-qoder');
+  const capabilities = { text: true, images: false, approval: false, questions: false, stop: true, resume: true, maxInputBytes: 65536 };
+  let conversationId = '';
+  let followupSentText = '';
+  let phaseTwoOpens = 0;
+
+  const { createQoderNativeContent } = await import('../../src/executors/qoder/content.ts');
+  // Phase 1: Pre-upgrade Qoder runtime & connection-owned native-qoder provider
+  {
+    const preExecutor: AgentExecutor = {
+      descriptor: {
+        id: 'qoder', label: 'Qoder', capabilities,
+        modelPolicy: { account: 'native', gateway: { protocol: 'chat-completions' }, native: { sourceProviders: ['qoder', 'native-qoder'], exclusive: true, binding: 'gateway-lease', platformLogin: 'required-for-sources' } },
+      },
+      nativeContent: createQoderNativeContent('qoder'),
+      async open() {
+        let execution = '';
+        return {
+          bindingIdentity: 'qoder-binding',
+          bindingData: { config: legacyConfig },
+          capabilities,
+          inspectAccount: async () => ({ status: 'ready' }),
+          models: async () => [{ id: 'qmodel', label: 'Qoder Model' }],
+          beginLogin: async () => {}, cancelLogin: async () => {},
+          async createContext(input) { return { id: legacySessionId, data: { native: opaqueReference('qoder', legacySessionId, input.cwd, 'qoder-binding') } }; },
+          async resumeContext() {}, async readHistory() { return []; },
+          async send(input) {
+            execution = input.clientRequestId;
+            await mkdir(join(legacyConfig, 'projects/proj'), { recursive: true });
+            await writeFile(join(legacyConfig, 'projects/proj', `${legacySessionId}.jsonl`), [
+              JSON.stringify({ type: 'user', uuid: 'u1', promptId: 'p1', sessionId: legacySessionId, cwd: input.cwd, isSidechain: false, message: { content: [{ type: 'text', text: input.text }] } }),
+              JSON.stringify({ type: 'assistant', uuid: 'a1', promptId: 'p1', sessionId: legacySessionId, cwd: input.cwd, isSidechain: false, message: { content: [{ type: 'tool_use', id: 'legacy-tool-1', name: 'Bash', input: { command: 'echo legacy' } }] } }),
+              JSON.stringify({ type: 'user', uuid: 'tr1', promptId: 'p1', sessionId: legacySessionId, cwd: input.cwd, isSidechain: false, sourceToolAssistantUUID: 'a1', toolUseResult: { stdout: 'legacy-stdout' }, message: { content: [{ type: 'tool_result', tool_use_id: 'legacy-tool-1', content: 'ok' }] } }),
+            ].join('\n') + '\n');
+            input.onEvent({ type: 'accepted', executionRef: { id: execution, data: { resourceContext: legacySessionId } } });
+            input.onEvent({ type: 'item', item: { id: 'legacy-tool-1', kind: 'tool', role: 'system', name: 'command', status: 'completed', text: '', executionId: execution, nativeTool: true } });
+            input.onEvent({ type: 'completed', status: 'completed' });
+          },
+          observe: async () => ({ status: 'idle', tools: [], executionRef: { id: execution } }),
+          reply: async () => {}, stop: async () => ({ status: 'stopped', tools: [] }), close: async () => {},
+        };
+      },
+    };
+    const preProvider: ModelProvider = {
+      id: 'native-qoder', label: 'Qoder', connectionId: 'qoder',
+      async open() {
+        return {
+          protocol: 'chat-completions',
+          inspect: async () => ({ status: 'ready', identity: 'qoder:legacy-user', models: [{ id: 'qmodel', label: 'Qoder Model', tools: true, images: false }] }),
+          beginLogin: async () => {}, cancelLogin: async () => {}, infer: async () => Response.json({}), close: async () => {},
+        };
+      },
+    };
+    const service1 = createAgentService({ dataRoot: root, executors: [preExecutor], modelProviders: [preProvider], resolveWorkspace: () => ({ rootPath: root }), assertTask() {} });
+    try {
+      await service1.connections.connect('qoder', { expectedRevision: 'unconfigured' });
+      await service1.models.catalog.list({ refresh: true });
+      const acc = await service1.models.accounts.check('native-qoder');
+      await service1.models.accounts.preferences(acc.id, { expectedRevision: acc.revision, models: [{ id: 'qmodel', enabled: true }] });
+      const chat = await service1.conversations.create('workspace', {});
+      conversationId = chat.id;
+      const draft = { expectedRevision: chat.revision, connectionId: 'qoder', modelAccountId: acc.id, model: 'qmodel', text: 'turn 1 legacy' };
+      const preview = service1.conversations.prepareSend('workspace', chat.id, draft);
+      service1.conversations.send('workspace', chat.id, { ...draft, previewToken: preview.token, clientRequestId: randomUUID() });
+      for (let i = 0; i < 200 && service1.conversations.read('workspace', chat.id).run?.status !== 'completed'; i++) await new Promise(resolve => setTimeout(resolve, 5));
+      assert.equal(service1.conversations.read('workspace', chat.id).run?.status, 'completed');
+    } finally { await service1.close(); }
+  }
+
+  // Phase 2: Post-upgrade standalone native-qoder + model-account scoped qoder executor
+  {
+    const postExecutor: AgentExecutor = {
+      descriptor: { id: 'qoder', label: 'Qoder', capabilities, modelPolicy: qoderExecutorDescriptor('qoder').modelPolicy },
+      nativeContent: createQoderNativeContent('qoder'),
+      async open(options) {
+        phaseTwoOpens++;
+        let execution = '';
+        return {
+          bindingIdentity: 'qoder-binding',
+          bindingData: { config: join(accountRoot, 'qoder-config') },
+          capabilities,
+          inspectAccount: async () => ({ status: 'not-authenticated' }),
+          models: async () => [],
+          beginLogin: async () => {}, cancelLogin: async () => {},
+          async createContext(input) {
+            assert.equal(options.nativeAccountConfigRoot, accountRoot);
+            const id = randomUUID();
+            return { id, data: { native: opaqueReference('qoder', id, input.cwd, 'qoder-binding') } };
+          },
+          async resumeContext() { throw new Error('must not resume pre-upgrade legacy context'); },
+          async readHistory() { return []; },
+          async send(input) {
+            execution = input.clientRequestId;
+            followupSentText = input.text;
+            input.onEvent({ type: 'accepted', executionRef: { id: execution } });
+            input.onEvent({ type: 'completed', status: 'completed' });
+          },
+          observe: async () => ({ status: 'idle', tools: [], executionRef: { id: execution } }),
+          reply: async () => {}, stop: async () => ({ status: 'stopped', tools: [] }), close: async () => {},
+        };
+      },
+    };
+    const postProvider: ModelProvider = {
+      id: 'native-qoder', label: 'Qoder', linked: true,
+      async open(input) {
+        assert.equal(input.configRoot, accountRoot);
+        return {
+          protocol: 'chat-completions',
+          inspect: async () => ({ status: 'ready', identity: 'qoder:legacy-user', models: [{ id: 'qmodel', label: 'Qoder Model', tools: true, images: false }] }),
+          beginLogin: async () => {}, cancelLogin: async () => {}, infer: async () => Response.json({}), close: async () => {},
+        };
+      },
+    };
+    const service2 = createAgentService({ dataRoot: root, executors: [postExecutor], modelProviders: [postProvider], resolveWorkspace: () => ({ rootPath: root }), assertTask() {} });
+    try {
+      // Migrated account drops connectionId and re-authenticates standalone
+      const migrated = service2.models.accounts.read('native-qoder');
+      assert.equal(migrated.connectionId, undefined);
+      const checked = await service2.models.accounts.check('native-qoder');
+      assert.equal(checked.status, 'ready');
+      await service2.models.accounts.preferences(checked.id, { expectedRevision: checked.revision, models: [{ id: 'qmodel', enabled: true }] });
+      const prepareProgram = { expectedRevision: service2.connections.read('qoder').revision, programOnly: true };
+      await service2.connections.connect('qoder', prepareProgram);
+
+      // Old conversation keeps reading tool details stored under connections/qoder/qoder-config
+      const legacyView = service2.conversations.read('workspace', conversationId, { compactTools: true });
+      const toolEntry = legacyView.entries.find(entry => entry.kind === 'tool');
+      assert.ok(toolEntry?.detail?.revision, 'tool entry has persisted native reference');
+      const detail = service2.conversations.readEntry('workspace', conversationId, toolEntry.id, toolEntry.detail.revision);
+      assert.ok(detail);
+      assert.equal(detail.input, '{"command":"echo legacy"}');
+      assert.equal(detail.text, 'legacy-stdout');
+
+      // Follow-up send smoothly previews & starts a new session with handoff rather than failing with 409 agent_binding_changed
+      const current = service2.conversations.read('workspace', conversationId);
+      const draft = { expectedRevision: current.revision, connectionId: 'qoder', model: 'qmodel', text: 'follow up after upgrade' };
+      const preview = service2.conversations.prepareSend('workspace', conversationId, draft);
+      assert.equal(preview.fits, true);
+      assert.match(preview.diagnostic ?? '', /本轮将开启新的 Qoder 会话/);
+      service2.conversations.send('workspace', conversationId, { ...draft, previewToken: preview.token, clientRequestId: randomUUID() });
+      for (let i = 0; i < 200 && service2.conversations.read('workspace', conversationId).run?.status !== 'completed'; i++) await new Promise(resolve => setTimeout(resolve, 5));
+      const updated = service2.conversations.read('workspace', conversationId);
+      assert.equal(updated.run?.status, 'completed', updated.run?.diagnostic);
+      assert.ok(phaseTwoOpens >= 1);
+      assert.match(followupSentText, /follow up after upgrade/);
+    } finally { await service2.close(); }
+  }
+  await rm(root, { recursive: true, force: true });
 });

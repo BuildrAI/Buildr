@@ -189,3 +189,13 @@ test('Google 个人账号覆盖免费、Pro、Ultra、档位不可读、身份�
  const loggedOutPrepared=modelSourceViews([{...baseAcc,status:'not-authenticated',models:[]}],[{...baseConn,enabled:false,status:'disconnected'}]).find(item=>item.id==='native-antigravity');
  assert.equal(loggedOutPrepared.program,'ready');
 });
+
+test('Qoder 独立订阅账号不依赖 Qoder 智能体接入即可展示登录进度并归入订阅账号视图',()=>{
+ const standalone={id:'native-qoder',provider:'native-qoder',label:'Qoder',revision:'r1',enabled:true,status:'not-authenticated',models:[],diagnostic:'旧提示'};
+ const waiting=modelSourceViews([{...standalone,loginAttempt:{id:'l1',state:'waiting-browser',url:'https://qoder.com/device'}}],[]).find(item=>item.id==='native-qoder');
+ assert.ok(waiting);
+ assert.equal(waiting.connectionId,undefined);
+ assert.equal(waiting.loginPending,true);
+ assert.equal(waiting.loginUrl,'https://qoder.com/device');
+ assert.equal(waiting.diagnostic,undefined);
+});

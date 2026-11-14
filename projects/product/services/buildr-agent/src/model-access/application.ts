@@ -601,6 +601,7 @@ export class ModelAccessApplication {
       if (linked) this.removedProviders.delete(row.provider);
       throw error;
     }
+    this.options.changed?.({ ...structuredClone(row), revision: randomUUID(), enabled: false, status: 'disconnected', models: [] });
     return this.list({ includeDisabled: true });
   }
   private async removeAccountRoot(id: string) {

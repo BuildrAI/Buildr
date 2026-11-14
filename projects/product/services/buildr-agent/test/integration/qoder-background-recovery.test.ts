@@ -15,7 +15,7 @@ async function until<T>(read: () => T, check: (value: T) => boolean): Promise<T>
 
 const authUser = 'fixture-user', authMachine = '1234567890123456-machine';
 async function login(root: string) {
-  const config = join(root, 'agent-service/connections/qoder/qoder-config'), key = Buffer.from(authMachine.slice(0, 16)), cipher = createCipheriv('aes-128-cbc', key, key);
+  const config = join(root, 'agent-service/model-access/accounts/native-qoder/qoder-config'), key = Buffer.from(authMachine.slice(0, 16)), cipher = createCipheriv('aes-128-cbc', key, key);
   await mkdir(join(config, '.auth'), { recursive: true });
   await writeFile(join(config, '.auth', 'machine_id'), authMachine);
   await writeFile(join(config, '.auth', 'user'), Buffer.concat([cipher.update(JSON.stringify({ uid: authUser, security_oauth_token: 'fixture-secret' })), cipher.final()]).toString('base64'));
@@ -26,7 +26,7 @@ async function fixture() {
   const executable = join(root, 'qoder.mjs');
   await writeFile(executable, await readFile(new URL('./executors/fixtures/qoder-conversation-cli.mjs', import.meta.url)));
   const native = createQoderExecutor();
-  const provider: ModelProvider = { id: 'native-qoder', connectionId: 'qoder', label: 'Fixture', async open() { return {
+  const provider: ModelProvider = { id: 'native-qoder', linked: true, label: 'Fixture', async open() { return {
     protocol: 'chat-completions', inspect: async () => ({ status: 'ready', identity: 'qoder:' + authUser, models: [{ id: 'fixture-model', label: 'Fixture', tools: true, images: false }] }),
     beginLogin: async () => {}, cancelLogin: async () => {}, infer: async () => { throw Error('No paid inference in fixture'); }, close: async () => {},
   }; } };
@@ -58,7 +58,7 @@ test('Qoder normal completion survives automatic source release and reopening wi
     const reopened = await reader.conversations.observe('workspace', chat.id);
     assert.equal(reopened.run!.status, 'completed');
     assert.equal(reopened.run!.updatedAt, final.run!.updatedAt, 'reading historical output cannot restart or extend the clock');
-    const inputs = (await readFile(join(root, 'agent-service/connections/qoder/qoder-config/native-inputs.jsonl'), 'utf8')).trim().split('\n');
+    const inputs = (await readFile(join(root, 'agent-service/model-access/accounts/native-qoder/qoder-config/native-inputs.jsonl'), 'utf8')).trim().split('\n');
     assert.equal(inputs.length, 1);
   } finally { await reader?.close(); await service.close(); await rm(root, { recursive: true, force: true }); }
 });
@@ -80,7 +80,7 @@ test('Qoder native background continuation converges through conversation storag
     const runId = before.run!.id;
     await until(read, value => value.run?.status === 'tools-active');
     assert.equal(read().run?.resourcesReleased, undefined);
-    const config = join(root, 'agent-service/connections/qoder/qoder-config');
+    const config = join(root, 'agent-service/model-access/accounts/native-qoder/qoder-config');
     await writeFile(join(config, 'report-background-progress'), 'yes');
     const progress = await until(read, value => value.entries.some(entry => entry.text.includes('integration checks are running')));
     assert.equal(progress.run?.status, 'tools-active');
@@ -138,7 +138,7 @@ test('Qoder legacy lost-result recovery releases only exited exact controls and 
     assert.notEqual(final.run!.generation, generation);
     assert.equal(final.run!.status, 'unknown');
     assert.equal(final.run!.executionState, 'unknown', 'a final answer and closed controls do not prove operation success');
-    const inputs = (await readFile(join(root, 'agent-service/connections/qoder/qoder-config/native-inputs.jsonl'), 'utf8')).trim().split('\n');
+    const inputs = (await readFile(join(root, 'agent-service/model-access/accounts/native-qoder/qoder-config/native-inputs.jsonl'), 'utf8')).trim().split('\n');
     assert.equal(inputs.length, 1, 'reading and releasing must never replay work');
     assert.equal(next.allowsReleasedContinuation('workspace', chat.id, { ...draft, modelAccountIdentity: final.run!.modelAccountIdentity, serviceTier: final.run!.serviceTier, reasoningEffort: final.run!.reasoningEffort, permissionMode: final.run!.permissionMode, text: '', continueRunId: runId, expectedRevision: final.revision }), true);
   } finally { await next?.close(); await old.close(); await rm(root, { recursive: true, force: true }); }

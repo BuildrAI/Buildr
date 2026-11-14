@@ -1,4 +1,4 @@
-import { constants } from 'node:fs';
+import { constants, realpathSync } from 'node:fs';
 import { lstat, open, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -80,7 +80,25 @@ export const readQoderPersistedExecution: NonNullable<AgentExecutor['readPersist
   const native = parseReference(String(input.contextRef.data?.native ?? ''), 'qoder', input.cwd, input.bindingIdentity);
   if (native.nativeSessionId !== input.contextRef.id || input.executionRef.data?.resourceContext !== input.contextRef.id ||
       input.executionRef.data.resourceBinding !== input.bindingIdentity || input.executionRef.data.backgroundWork !== false) return;
-  const account = input.nativeAccountConfigRoot ?? input.configRoot, config = path.join(account, 'qoder-config');
+  const matchesRoot = (configPath: string, rootDir: string) => {
+    const dir = path.dirname(path.resolve(configPath));
+    const resolvedRoot = path.resolve(rootDir);
+    if (dir === resolvedRoot) return true;
+    try { return path.dirname(realpathSync(configPath)) === realpathSync(rootDir); }
+    catch { return false; }
+  };
+  const legacyConnectionRoot = input.gatewayIdentity ? path.resolve(input.configRoot, '../..') : input.configRoot;
+  const legacyAccountRoot = input.nativeAccountConfigRoot
+    && typeof input.bindingData?.config === 'string'
+    && !matchesRoot(input.bindingData.config, input.nativeAccountConfigRoot)
+    ? (matchesRoot(input.bindingData.config, input.configRoot)
+      ? input.configRoot
+      : matchesRoot(input.bindingData.config, legacyConnectionRoot)
+        ? legacyConnectionRoot
+        : undefined)
+    : undefined;
+  const account = legacyAccountRoot ?? (input.nativeAccountConfigRoot ?? input.configRoot);
+  const config = path.join(account, 'qoder-config');
   if (!await directory(input.configRoot) || !await directory(account) || !await directory(config)) return;
   const provenance = await nativeBindingProvenance('qoder', input.executable, config, input.programSource);
   if (input.bindingData !== undefined && (

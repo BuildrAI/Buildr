@@ -18,8 +18,14 @@ function withAccount(view: ConnectionView, account: ModelAccountView, status: Co
  * When an executor's default native model account owns the execution login,
  * present connection status and available models from that live model account.
  */
-export function presentConnection(view: ConnectionView, account?: ModelAccountView): ConnectionView {
-  if (!view.modelPolicy?.native?.defaultSourceAccountId || !view.enabled || !view.configPath || !account) return view;
+export function presentConnection(view: ConnectionView, account?: ModelAccountView, accountManaged = false): ConnectionView {
+  if (!view.modelPolicy?.native?.defaultSourceAccountId || !view.enabled || !view.configPath) return view;
+  if (!account) {
+    if (!accountManaged) return view;
+    const next = withStatus(view, 'not-authenticated', []);
+    delete next.account;
+    return next;
+  }
   if (account.sourceEnabled === false) return withAccount(view, account, 'not-authenticated', [], `${view.label} 模型来源已停用，请在“模型”中重新启用。`);
   if (!account.enabled) return withAccount(view, account, 'not-authenticated', [], `${view.label} 模型供应商已停用。`);
   if (account.status !== 'ready') {

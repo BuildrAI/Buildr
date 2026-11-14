@@ -1093,7 +1093,32 @@ export class ConversationApplication {
       && typeof latest.contextRef.data.policyDigest === 'string'
       && latest.contextRef.data.policyDigest !== currentPolicyDigest,
     );
-    const participant = held || isolatedContinuation || policyChangedContinuation ? undefined : latest;
+    const expectedAccountRoot = modelPolicy?.native?.accountConfigScope === 'model-account' && modelPolicy.native.defaultSourceAccountId
+      ? path.join(this.options.root, 'model-access', 'accounts', modelPolicy.native.defaultSourceAccountId)
+      : undefined;
+    const isUnderDir = (candidate: string, parentDir: string) => {
+      const rel = path.relative(parentDir, candidate);
+      return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+    };
+    const accountConfigMigratedContinuation = Boolean(
+      expectedAccountRoot
+      && typeof latest?.bindingData?.config === 'string'
+      && (() => {
+        const resolvedCandidate = path.resolve(String(latest.bindingData!.config));
+        const resolvedRoot = path.resolve(expectedAccountRoot);
+        if (isUnderDir(resolvedCandidate, resolvedRoot)) return false;
+        const realCandidate = (() => { try { return fs.realpathSync(resolvedCandidate); } catch { return resolvedCandidate; } })();
+        const realRoot = (() => {
+          try { return fs.realpathSync(resolvedRoot); }
+          catch {
+            try { return path.join(fs.realpathSync(this.options.root), 'model-access', 'accounts', modelPolicy!.native!.defaultSourceAccountId!); }
+            catch { return resolvedRoot; }
+          }
+        })();
+        return !isUnderDir(realCandidate, realRoot);
+      })(),
+    );
+    const participant = held || isolatedContinuation || policyChangedContinuation || accountConfigMigratedContinuation ? undefined : latest;
     const through = record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0;
     const changes = handoffEntries([...(record.inheritedContext?.entries??[]),...record.view.entries],participant?.deliveredThrough??0).map(handoffEntry);
     const previous = record.participants.find(value=>value.id===record.view.run?.participantId) ?? record.participants.at(-1);
@@ -1137,7 +1162,7 @@ export class ConversationApplication {
     const fits = inputBytes <= maxInputBytes && images.length <= MAX_VISUAL_INPUTS && imageBytes <= 32 * 1024 * 1024 && images.every(image => record.attachments[image.id]!.size <= (connection.capabilities.maxImageBytes ?? MAX_IMAGE_BYTES)) && (!images.length || (connection.capabilities.images && (!source || Boolean(selectedModel && 'images' in selectedModel && selectedModel.images))));
     const token = createHmac('sha256', this.previewSecret).update(JSON.stringify({ id: record.view.id, input, sourceRevision: source?.revision, through, text, ids })).digest('hex');
     const previewDiagnostic = fits
-      ? (policyChangedContinuation ? `本轮将开启新的 ${connection.label} 会话` : undefined)
+      ? (policyChangedContinuation || accountConfigMigratedContinuation ? `本轮将开启新的 ${connection.label} 会话` : undefined)
       : images.length && !canAttachHistory
         ? '所选执行方或模型无法接收这些图片，请选择支持图片的执行组合；草稿已保留。'
         : '必要交接资料仍超出接收容量，请选择容量更大的模型；草稿与本地资料保留。';

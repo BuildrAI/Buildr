@@ -161,7 +161,7 @@ function conversation(t: test.TestContext, provider = 'qoder') {
 function fixture(t: test.TestContext, provider: string) {
   const dataRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'native-content-'))), root=path.join(dataRoot,'agent-service');
   t.after(() => fs.rmSync(dataRoot, { recursive: true, force: true }));
-  const configRoot = path.join(root, 'connections', provider), contextId = (provider === 'dsh' ? 'session-' : '') + randomUUID(), cwd = '/exact/workspace';
+  const configRoot = path.join(root, provider === 'qoder' ? path.join('model-access', 'accounts', 'native-qoder') : path.join('connections', provider)), contextId = (provider === 'dsh' ? 'session-' : '') + randomUUID(), cwd = '/exact/workspace';
   const output = randomBytes(9000).toString('hex'), input = 'exact command', toolId = 'native-call';
   let file: string, rows: any[];
   if (provider === 'codex') {
@@ -222,7 +222,7 @@ test('native image values return independently persisted bytes and reject privat
   const found = f.read()!.images[0]!;
   const reference = { version: 1 as const, provider: 'qoder', contextId: f.contextId, value: found.value, size: image.length, sha256: nativeContentHash(image) };
   const reader = new NativeContentReader(f.root); assert.deepEqual(reader.attachment(reference), image);
-  const escaped = structuredClone(reference); escaped.value.source.path = 'connections/qoder/qoder-config/auth.json';
+  const escaped = structuredClone(reference); escaped.value.source.path = 'model-access/accounts/native-qoder/qoder-config/auth.json';
   assert.throws(() => reader.attachment(escaped), /原生正文/);
   const oversized = structuredClone(reference); oversized.value.source.length = 1024 * 1024 * 1024;
   assert.throws(() => reader.attachment(oversized), /原生正文/);

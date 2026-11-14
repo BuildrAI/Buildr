@@ -17,6 +17,7 @@ const builtinDescriptors = new Map(createNativeExecutors().map(executor => [exec
 
 const UUID_CTX = '11111111-2222-4333-8444-555555555555';
 const UUID_OTHER = '99999999-8888-4777-8666-555555555555';
+const UUID_QODER_STANDALONE = '22222222-3333-4444-8555-666666666666';
 const DSH_CTX = `session-${UUID_CTX}`;
 
 const baseCaps: AgentCapabilities = {
@@ -36,7 +37,7 @@ function makeRoot(t: TestContext): string {
   return dir;
 }
 
-test('characterization: replaceProgram upgrade verification (runtime verifyUpgrade vs Qoder CN separate account probe)', async t => {
+test('characterization: replaceProgram upgrade verification (runtime verifyUpgrade vs Qoder/Qoder CN separate account probe)', async t => {
   const dir = makeRoot(t);
   const root = path.join(dir, 'agent-service');
   const repo = new ConversationRepository(root);
@@ -94,6 +95,7 @@ test('characterization: replaceProgram upgrade verification (runtime verifyUpgra
   };
   };
 
+  const qoderAccountRoot = path.join(root, 'model-access', 'accounts', 'native-qoder');
   const qoderCnAccountRoot = path.join(root, 'model-access', 'accounts', 'native-qoder-cn');
   const app = new ConnectionApplication({
     repository: repo,
@@ -105,7 +107,7 @@ test('characterization: replaceProgram upgrade verification (runtime verifyUpgra
       makeExec('claude-code', 'Claude Code'),
     ],
     environment: {},
-    nativeAccountConfigRoots: { 'qoder-cn': qoderCnAccountRoot },
+    nativeAccountConfigRoots: { qoder: qoderAccountRoot, 'qoder-cn': qoderCnAccountRoot },
     generation: 'gen-1',
     now: () => '2026-11-13T00:00:00.000Z',
     changed: () => {},
@@ -130,7 +132,7 @@ test('characterization: replaceProgram upgrade verification (runtime verifyUpgra
   }
   assert.equal(events.some(e => e.id === 'codex' && e.verified), false);
 
-  // 2. Qoder & Claude Code run verifyUpgrade directly on candidate; omitting it rejects and preserves exeV1
+  // 2. Claude Code runs verifyUpgrade directly on candidate; omitting it rejects and preserves exeV1
   omitVerifyFor = 'claude-code';
   {
     const release = app.acquireProgramChange('claude-code')!;
@@ -143,34 +145,26 @@ test('characterization: replaceProgram upgrade verification (runtime verifyUpgra
     assert.equal(app.get('claude-code').executable, exeV1);
   }
   omitVerifyFor = undefined;
-  {
-    const release = app.acquireProgramChange('qoder')!;
-    try {
-      const updated = await app.replaceProgram('qoder', app.get('qoder'), exeV2);
-      assert.equal(updated.executable, exeV2);
-    } finally { release(); }
-    const qoderCandidate = events.findLast(e => e.id === 'qoder' && e.exe === exeV2)!;
-    assert.equal(qoderCandidate.verified, true);
-    assert.equal(qoderCandidate.nativeAccountConfigRoot, undefined);
-  }
 
-  // 3. Qoder CN opens a separate accountProbe with nativeAccountConfigRoot = qoderCnAccountRoot, verifies & closes the probe, keeps candidate open
-  events.length = 0;
-  {
-    const release = app.acquireProgramChange('qoder-cn')!;
-    try {
-      const updated = await app.replaceProgram('qoder-cn', app.get('qoder-cn'), exeV2);
-      assert.equal(updated.executable, exeV2);
-    } finally { release(); }
+  // 3. Qoder & Qoder CN open a separate accountProbe with their nativeAccountConfigRoot, verify & close the probe, keep candidate open
+  for (const [id, accountRoot] of [['qoder', qoderAccountRoot], ['qoder-cn', qoderCnAccountRoot]] as const) {
+    events.length = 0;
+    {
+      const release = app.acquireProgramChange(id)!;
+      try {
+        const updated = await app.replaceProgram(id, app.get(id), exeV2);
+        assert.equal(updated.executable, exeV2);
+      } finally { release(); }
+    }
+    const opens = events.filter(e => e.id === id && e.exe === exeV2);
+    assert.equal(opens.length, 2, `${id} opens connection candidate + separate account probe`);
+    assert.equal(opens[0]!.nativeAccountConfigRoot, undefined);
+    assert.equal(opens[0]!.verified, false);
+    assert.equal(opens[0]!.closed, false);
+    assert.equal(opens[1]!.nativeAccountConfigRoot, accountRoot);
+    assert.equal(opens[1]!.verified, true);
+    assert.equal(opens[1]!.closed, true);
   }
-  const cnOpens = events.filter(e => e.id === 'qoder-cn' && e.exe === exeV2);
-  assert.equal(cnOpens.length, 2, 'Qoder CN opens connection candidate + separate account probe');
-  assert.equal(cnOpens[0]!.nativeAccountConfigRoot, undefined);
-  assert.equal(cnOpens[0]!.verified, false);
-  assert.equal(cnOpens[0]!.closed, false);
-  assert.equal(cnOpens[1]!.nativeAccountConfigRoot, qoderCnAccountRoot);
-  assert.equal(cnOpens[1]!.verified, true);
-  assert.equal(cnOpens[1]!.closed, true);
 
   // If Verify fails, old executable stays bound
   failVerifyFor = 'qoder';
@@ -185,7 +179,7 @@ test('characterization: replaceProgram upgrade verification (runtime verifyUpgra
   }
 });
 
-test('characterization: transient account probes close after programOnly connect and check for codex, dsh, and observed qoder', async t => {
+test('characterization: transient account probes close after programOnly connect and check for codex, dsh, and observed antigravity', async t => {
   const dir = makeRoot(t);
   const root = path.join(dir, 'agent-service');
   const repo = new ConversationRepository(root);
@@ -230,28 +224,31 @@ test('characterization: transient account probes close after programOnly connect
   const app = new ConnectionApplication({
     repository: repo,
     root,
-    executors: ['codex', 'dsh', 'qoder', 'qoder-cn', 'claude-code'].map(makeExec),
+    executors: ['codex', 'dsh', 'qoder', 'qoder-cn', 'claude-code', 'antigravity'].map(makeExec),
     environment: {},
-    observeAccount: id => id === 'qoder' ? Promise.resolve({ status: 'ready', models: [{ id: 'qm', label: 'QM', isDefault: true }], account: { label: 'Q', loginMethod: 'Qoder' } }) : undefined,
+    observeAccount: id => id === 'antigravity' ? Promise.resolve({ status: 'ready', models: [{ id: 'am', label: 'AM', isDefault: true }], account: { label: 'A', loginMethod: 'Google' } }) : undefined,
     generation: 'gen-1',
     now: () => '2026-11-13T00:00:00.000Z',
     changed: () => {},
   });
   t.after(() => app.close());
 
-  for (const id of ['codex', 'dsh', 'qoder', 'qoder-cn', 'claude-code']) {
+  for (const id of ['codex', 'dsh', 'qoder', 'qoder-cn', 'claude-code', 'antigravity']) {
     await app.connect(id, { expectedRevision: app.get(id).revision, executable: exe, programOnly: true });
   }
   assert.equal(app.hasAccountRuntime('codex'), false);
   assert.equal(app.hasAccountRuntime('dsh'), false);
-  assert.equal(app.hasAccountRuntime('qoder'), false);
+  assert.equal(app.hasAccountRuntime('qoder'), true);
   assert.equal(app.hasAccountRuntime('qoder-cn'), true);
   assert.equal(app.hasAccountRuntime('claude-code'), true);
+  assert.equal(app.hasAccountRuntime('antigravity'), false);
 
   await app.check('codex');
   await app.check('dsh');
+  await app.check('antigravity');
   assert.equal(app.hasAccountRuntime('codex'), false);
   assert.equal(app.hasAccountRuntime('dsh'), false);
+  assert.equal(app.hasAccountRuntime('antigravity'), false);
 });
 
 test('characterization: native tool detail reading across all 5 providers, path boundaries, session/tool mismatches, and legacy v1/v2 references', t => {
@@ -282,7 +279,12 @@ test('characterization: native tool detail reading across all 5 providers, path 
     { seq: 3, type: 'tool/result', data: { turn: 1, message: { toolCallId: 'call-dsh', content: [{ type: 'text', text: 'file.txt' }] } } },
   ]);
 
-  // 3. Qoder transcript
+  // 3. Qoder transcripts (standalone model-access/accounts/native-qoder + legacy connections/qoder)
+  writeTranscript(`model-access/accounts/native-qoder/qoder-config/projects/proj/${UUID_QODER_STANDALONE}.jsonl`, [
+    { type: 'user', uuid: 'u-qs', promptId: 'p-qs', sessionId: UUID_QODER_STANDALONE, cwd, isSidechain: false, message: { content: [{ type: 'text', text: 'run' }] } },
+    { type: 'assistant', uuid: 'a-qs', promptId: 'p-qs', sessionId: UUID_QODER_STANDALONE, cwd, isSidechain: false, message: { content: [{ type: 'tool_use', id: 'call-qoder-standalone', name: 'Bash', input: { command: 'ls' } }] } },
+    { type: 'user', uuid: 'tr-qs', promptId: 'p-qs', sessionId: UUID_QODER_STANDALONE, cwd, isSidechain: false, sourceToolAssistantUUID: 'a-qs', toolUseResult: { stdout: 'standalone-ok' }, message: { content: [{ type: 'tool_result', tool_use_id: 'call-qoder-standalone', content: 'ok' }] } },
+  ]);
   writeTranscript(`connections/qoder/qoder-config/projects/proj/${UUID_CTX}.jsonl`, [
     { type: 'user', uuid: 'u-q', promptId: 'p-1', sessionId: UUID_CTX, cwd, isSidechain: false, message: { content: [{ type: 'text', text: 'run' }] } },
     { type: 'assistant', uuid: 'a-q', promptId: 'p-1', sessionId: UUID_CTX, cwd, isSidechain: false, message: { content: [{ type: 'tool_use', id: 'call-qoder', name: 'Bash', input: { command: 'pwd' } }] } },
@@ -325,10 +327,20 @@ test('characterization: native tool detail reading across all 5 providers, path 
   assert.equal(dshDetail.input, '{"command":"ls"}');
   assert.equal(dshDetail.text, 'file.txt');
 
+  const qoderStandaloneDetail = readNativeTool(root, makeRef('qoder', UUID_QODER_STANDALONE, 'call-qoder-standalone', 'model-access/accounts/native-qoder'));
+  assert.ok(qoderStandaloneDetail);
+  assert.equal(qoderStandaloneDetail.input, '{"command":"ls"}');
+  assert.equal(qoderStandaloneDetail.text, 'standalone-ok');
+
   const qoderDetail = readNativeTool(root, makeRef('qoder', UUID_CTX, 'call-qoder', 'connections/qoder'));
   assert.ok(qoderDetail);
   assert.equal(qoderDetail.input, '{"command":"pwd"}');
   assert.equal(qoderDetail.text, '/workspace/project');
+
+  const qoderLegacyFallbackDetail = readNativeTool(root, makeRef('qoder', UUID_CTX, 'call-qoder', 'model-access/accounts/native-qoder'));
+  assert.ok(qoderLegacyFallbackDetail);
+  assert.equal(qoderLegacyFallbackDetail.input, '{"command":"pwd"}');
+  assert.equal(qoderLegacyFallbackDetail.text, '/workspace/project');
 
   const cnDetail = readNativeTool(root, makeRef('qoder-cn', UUID_CTX, 'call-cn', 'model-access/accounts/native-qoder-cn'));
   assert.ok(cnDetail);
@@ -397,6 +409,28 @@ test('characterization: native tool detail reading across all 5 providers, path 
   assert.ok(resolvedRef);
   assert.equal(resolvedRef.session?.config, 'model-access/accounts/native-qoder-cn');
   assert.equal(resolvedRef.session?.turnId, undefined);
+
+  const qoderResolved = resolver.tool({
+    view: { id: 'c2', workspaceId: 'ws', revision: 'r1', cwd, title: 't', updatedAt: 'now', hidden: false, entries: [], participants: [], requests: [] },
+    participants: [{ id: 'pq1', connectionId: 'qoder', provider: 'qoder', label: 'Qoder', bindingIdentity: 'binding-q1', deliveredThrough: 0 }],
+    sources: { 'pq1:tool:call-qoder-standalone': 'eq1' },
+    requests: {},
+    attempts: [{ runId: 'run-q1', participantId: 'pq1', clientRequestId: 'req-q1', inputDigest: 'd1', through: 1, userEntryId: 'u1', accepted: true, executionRef: { id: 'sdk-exec-q1', data: { resourceContext: UUID_QODER_STANDALONE } } }],
+    attachments: {},
+    nativeTools: { eq1: true },
+  }, { ...baseEntry, id: 'eq1', runId: 'run-q1', provider: 'qoder' });
+  assert.equal(qoderResolved?.session?.config, 'model-access/accounts/native-qoder');
+
+  const qoderLegacyResolved = resolver.tool({
+    view: { id: 'c3', workspaceId: 'ws', revision: 'r1', cwd, title: 't', updatedAt: 'now', hidden: false, entries: [], participants: [], requests: [] },
+    participants: [{ id: 'pq2', connectionId: 'qoder', provider: 'qoder', label: 'Qoder', bindingIdentity: 'binding-q2', bindingData: { config: path.join(root, 'connections', 'qoder', 'qoder-config') }, deliveredThrough: 0 }],
+    sources: { 'pq2:tool:call-qoder': 'eq2' },
+    requests: {},
+    attempts: [{ runId: 'run-q2', participantId: 'pq2', clientRequestId: 'req-q2', inputDigest: 'd1', through: 1, userEntryId: 'u1', accepted: true, executionRef: { id: 'sdk-exec-q2', data: { resourceContext: UUID_CTX } } }],
+    attachments: {},
+    nativeTools: { eq2: true },
+  }, { ...baseEntry, id: 'eq2', runId: 'run-q2', provider: 'qoder' });
+  assert.equal(qoderLegacyResolved?.session?.config, 'connections/qoder');
 });
 
 test('characterization: existing npm NativeProgramManager discover, release failures, and managed reuse', async t => {

@@ -24,8 +24,23 @@ export function configRoot(
   const descriptor = executors.find(executor => executor.descriptor.id === participant.provider)?.descriptor;
   const nativePolicy = descriptor?.modelPolicy?.native;
   // Executors with model-account-scoped native configs keep transcripts under that account root.
+  // Pre-upgrade participants still retain their legacy connection/lease config dir in bindingData.config.
   if (nativePolicy?.accountConfigScope === 'model-account' && nativePolicy.defaultSourceAccountId) {
-    return path.join(root, 'model-access', 'accounts', nativePolicy.defaultSourceAccountId);
+    const accountRoot = path.join(root, 'model-access', 'accounts', nativePolicy.defaultSourceAccountId);
+    const bindingConfig = typeof participant.bindingData?.config === 'string' ? participant.bindingData.config : undefined;
+    if (bindingConfig) {
+      const legacyDir = path.dirname(path.resolve(bindingConfig));
+      const baseResolved = path.resolve(base);
+      const baseReal = (() => { try { return fs.realpathSync(base); } catch { return undefined; } })();
+      if (legacyDir === baseResolved || (baseReal !== undefined && legacyDir === baseReal)) return base;
+      const bindingsPrefix = path.join(baseResolved, 'model-bindings') + path.sep;
+      const realBindingsPrefix = baseReal !== undefined ? path.join(baseReal, 'model-bindings') + path.sep : undefined;
+      if (!legacyDir.startsWith(bindingsPrefix) && (!realBindingsPrefix || !legacyDir.startsWith(realBindingsPrefix))) {
+        return accountRoot;
+      }
+    } else {
+      return accountRoot;
+    }
   }
   if (!participant.modelAccountId || nativePolicy?.exclusive || nativePolicy?.binding === 'account-identity') return base;
   if (!participant.modelAccountIdentity || !participant.modelId || participant.modelConfiguration === undefined) return;

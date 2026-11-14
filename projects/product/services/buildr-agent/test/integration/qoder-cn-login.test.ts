@@ -4,16 +4,17 @@ import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCipheriv } from 'node:crypto';
-import { createQoderCnModelProvider } from '../../src/model-access/providers/qoder-cn.ts';
+import { createQoderAccountModelProvider, createQoderCnModelProvider } from '../../src/model-access/providers/qoder-cn.ts';
 
 /** Emulates the official CLI: prints the device URL, then writes native credentials. */
-const fixture = `#!/usr/bin/env node
+function makeCliFixture(envVar: string, url: string) {
+  return `#!/usr/bin/env node
 const { mkdirSync, writeFileSync } = require('node:fs');
 const { createCipheriv } = require('node:crypto');
 if (process.argv.includes('--version')) { process.stdout.write('1.1.86\\n'); process.exit(0); }
 if (process.argv.includes('login')) {
-  const config = process.env.QODERCN_CONFIG_DIR;
-  process.stdout.write('Open https://qoder.cn/device/selectAccounts?challenge=fixture to sign in\\n');
+  const config = process.env[${JSON.stringify(envVar)}];
+  process.stdout.write('Open ${url} to sign in\\n');
   const machine = 'machine-id-fixture-1';
   mkdirSync(config + '/.auth', { recursive: true });
   writeFileSync(config + '/.auth/machine_id', machine);
@@ -25,6 +26,9 @@ if (process.argv.includes('login')) {
 }
 process.exit(2);
 `;
+}
+const fixture = makeCliFixture('QODERCN_CONFIG_DIR', 'https://qoder.cn/device/selectAccounts?challenge=fixture');
+const qoderFixture = makeCliFixture('QODER_CONFIG_DIR', 'https://qoder.com/device/selectAccounts?challenge=fixture');
 
 test('Qoder CN account logs in without a prepared agent and then reads its own identity', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-cn-login-'));
@@ -102,4 +106,54 @@ test('unavailable managed login reports a terminal reason without enabling an ag
     await runtime.beginLogin(value => observations.push(value));
     assert.deepEqual(observations.at(-1), { state: 'failed', diagnostic: '官方新版本不兼容' });
   } finally { await runtime.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test('Qoder standalone account logs in without a prepared agent and reads its own identity', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-login-'));
+  try {
+    const bin = join(root, 'bin'); await mkdir(bin, { recursive: true });
+    const executable = join(bin, 'qodercli');
+    await writeFile(executable, qoderFixture); await chmod(executable, 0o755);
+    const runtime = await createQoderAccountModelProvider().open({ accountId: 'native-qoder', configRoot: join(root, 'account'), environment: { PATH: bin + ':' + (process.env.PATH ?? '') } });
+    try {
+      assert.equal((await runtime.inspect()).status, 'not-authenticated');
+      const states: string[] = [];
+      let url: string | undefined;
+      await runtime.beginLogin(value => { states.push(value.state); if (value.url) url = value.url; });
+      assert.deepEqual(states, ['initializing', 'waiting-browser', 'completed']);
+      assert.match(url ?? '', /^https:\/\/qoder\.com\/device\/selectAccounts/);
+      assert.equal(await runtime.identity?.(), 'qoder:account-a');
+    } finally { await runtime.close(); }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('Qoder reports a missing CLI instead of pretending to wait for a browser', { timeout: 20000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-missing-'));
+  try {
+    const runtime = await createQoderAccountModelProvider().open({ accountId: 'native-qoder', configRoot: join(root, 'account'), environment: { PATH: join(root, 'empty') } });
+    try {
+      const states: string[] = []; let diagnostic: string | undefined;
+      await runtime.beginLogin(value => { states.push(value.state); if (value.diagnostic) diagnostic = value.diagnostic; });
+      assert.deepEqual(states, ['initializing', 'failed']);
+      assert.match(diagnostic ?? '', /未找到 Qoder 命令行程序/);
+    } finally { await runtime.close(); }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('Qoder standalone account prepares its own managed login program with no PATH CLI or agent connection', { timeout: 30000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-managed-'));
+  try {
+    const executable = join(root, 'official.cjs'); await writeFile(executable, qoderFixture);
+    const calls: string[] = [];
+    const runtime = await createQoderAccountModelProvider({
+      async discover(input) { calls.push(input.provider); return { candidates: [], installation: { label: 'Qoder', version: '1.1.86', url: 'https://qoder.com', canInstall: true } }; },
+      async install(input) { calls.push(input.version!); input.progress('download'); return executable; },
+    }).open({ accountId: 'native-qoder', configRoot: join(root, 'account'), environment: { PATH: join(root, 'empty') } });
+    try {
+      const states: string[] = []; await runtime.beginLogin(value => states.push(value.state));
+      assert.deepEqual(calls, ['qoder', '1.1.86']);
+      assert.equal(states.at(-1), 'completed'); assert.ok(states.includes('waiting-browser'));
+      assert.equal(await runtime.identity?.(), 'qoder:account-a');
+    } finally { await runtime.close(); }
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

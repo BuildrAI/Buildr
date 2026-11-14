@@ -30,11 +30,12 @@ await step('模型设置使用供应商侧栏并从全部内置声明生成添�
   // rendered so the complete list is observable without virtual-window timing.
   await dropdown.locator('.ant-select-item-option').first().waitFor();
   const optionTexts=await dropdown.locator('.ant-select-item-option').allInnerTexts();
-  for(const label of ['ChatGPT API','Claude API','Codex / ChatGPT','Devin','DeepSeek','Qoder CN','自定义供应商']){
+  for(const label of ['ChatGPT API','Claude API','Codex / ChatGPT','Devin','DeepSeek','Qoder','Qoder CN','自定义供应商']){
     assert.ok(optionTexts.some((text:string)=>text.includes(label)),'添加列表包含 '+label+'：'+JSON.stringify(optionTexts));
   }
   assert.ok(optionTexts.some((text:string)=>text.includes('由Codex智能体接入')),'托管来源标明 Codex 归属：'+JSON.stringify(optionTexts));
   assert.ok(optionTexts.some((text:string)=>text.includes('由DSH智能体接入')),'托管来源标明 DSH 归属：'+JSON.stringify(optionTexts));
+  assert.equal(optionTexts.some((text:string)=>text.includes('由Qoder智能体接入')),false);
   await dropdown.getByText('自定义供应商',{exact:true}).click();
   await provider.getByLabel('显示名称').waitFor();
   assert.equal(await provider.getByLabel('模型列表路径').inputValue(),'/models');
@@ -258,7 +259,7 @@ await step('模型设置页额度窗口显示 Qoder 剩余 credits',async()=>{
     await page.getByRole('button',{name:'智能体与模型设置',exact:true}).click();
     const drawer=page.getByRole('dialog',{name:/^智能体与模型/});await drawer.waitFor();
     await drawer.locator('.ams-setup').getByRole('tab',{name:'模型',exact:true}).click();
-    await drawer.locator('.amm-source-list').getByRole('button').filter({hasText:/Qoder/}).click();
+    await drawer.locator('.amm-source-list').getByRole('button').filter({hasNotText:'Qoder CN'}).filter({hasText:'Qoder'}).click();
     const card=drawer.locator('.amm-quota-card');
     await card.getByText('套餐内 Credits',{exact:true}).waitFor();
     await card.getByText('0 / 1,000 credits',{exact:true}).waitFor();

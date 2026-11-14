@@ -141,7 +141,7 @@ for(const provider of ['dsh','qoder'] as const)test(`${provider} live tool outpu
       const result=provider==='dsh'?{seq:3,type:'tool/result',data:{turn:1,message:{toolCallId:id,content:[{type:'text',text:output}]}}}:{type:'user',session_id:input.contextRef.id,message:{content:[{type:'tool_result',tool_use_id:id,content:output}]}};
       const projected=(record:any)=>provider==='dsh'?dshItem(record):qoderHistoryItems([{type:'user',uuid:input.clientRequestId,session_id:input.contextRef.id,message:{content:[{type:'text',text:'run'}]}},call,record],input.contextRef.id).filter(item=>item.kind==='tool');
       const raw=(record:any)=>({...record,sessionId:input.contextRef.id,cwd:input.cwd,isSidechain:false,promptId:input.clientRequestId,sourceToolAssistantUUID:record.type==='user'?'assistant':undefined});
-      file=provider==='dsh'?path.join(options.configRoot,'dsh-home/sessions/bucket',input.contextRef.id,'session.v4.jsonl.zstd'):path.join(options.configRoot,'qoder-config/projects/bucket',input.contextRef.id+'.jsonl');fs.mkdirSync(path.dirname(file),{recursive:true});
+      file=provider==='dsh'?path.join(options.configRoot,'dsh-home/sessions/bucket',input.contextRef.id,'session.v4.jsonl.zstd'):path.join(options.nativeAccountConfigRoot??options.configRoot,'qoder-config/projects/bucket',input.contextRef.id+'.jsonl');fs.mkdirSync(path.dirname(file),{recursive:true});
       const rows=provider==='dsh'?[{type:'session',version:4,id:input.contextRef.id,cwd:input.cwd},{seq:0,type:'turn/start',data:{turn:1}},{seq:1,type:'user/message',data:{turn:1,source:{rpcId:input.clientRequestId},content:[{type:'text',text:'run'}]}},call]:[raw({type:'user',uuid:input.clientRequestId,message:{content:[{type:'text',text:'run'}]}}),raw(call)];
       fs.writeFileSync(file,provider==='dsh'?Buffer.concat(rows.map(row=>zstdCompressSync(Buffer.from(JSON.stringify(row)+'\n')))):rows.map(row=>JSON.stringify(row)+'\n').join(''));
       for(const item of projected(call))input.onEvent({type:'item',item:{...item,executionId:executionRef.id}});
@@ -388,8 +388,8 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
 function fixture(executors: AgentExecutor[], settings: { taskIds?: string[]; modelProviders?: AgentServiceOptions['modelProviders']; autoContinueInterrupted?: boolean; shutdownTimeoutMs?: number; now?: () => Date; controlSupersededRun?: AgentServiceOptions['controlSupersededRun'] } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-core-'));
   const workspace = path.join(root, 'workspace'); fs.mkdirSync(workspace);
-  const cnProviders:AgentServiceOptions['modelProviders']=[{id:'native-qoder-cn',label:'Fixture CN',linked:true,async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[{id:'test-model',label:'Test',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){throw Error('unused');},async close(){}};}}];
-  const options = { ...settings, modelProviders: settings.modelProviders ?? (executors.some(executor=>executor.descriptor.id==='qoder-cn') ? cnProviders : []), dataRoot: path.join(root, 'profile'), executors, resolveWorkspace(id: string) { assert.equal(id, 'workspace-one'); return { rootPath: workspace }; }, assertTask(_id: string, taskId: string) { assert.ok((settings.taskIds ?? ['task-one']).includes(taskId), '任务不存在'); } };
+  const nativeProviders:AgentServiceOptions['modelProviders']=[{id:'native-qoder',label:'Fixture Qoder',linked:true,async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[{id:'test-model',label:'Test',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){throw Error('unused');},async close(){}};}},{id:'native-qoder-cn',label:'Fixture CN',linked:true,async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[{id:'test-model',label:'Test',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){throw Error('unused');},async close(){}};}}];
+  const options = { ...settings, modelProviders: settings.modelProviders ?? (executors.some(executor=>executor.descriptor.id==='qoder'||executor.descriptor.id==='qoder-cn') ? nativeProviders : []), dataRoot: path.join(root, 'profile'), executors, resolveWorkspace(id: string) { assert.equal(id, 'workspace-one'); return { rootPath: workspace }; }, assertTask(_id: string, taskId: string) { assert.ok((settings.taskIds ?? ['task-one']).includes(taskId), '任务不存在'); } };
   const service = createAgentService(options);
   return { root, workspace, options, service, async close() { await service.close(); fs.rmSync(root, { recursive: true, force: true }); } };
 }
@@ -397,7 +397,7 @@ function fixture(executors: AgentExecutor[], settings: { taskIds?: string[]; mod
 test('Qoder expired preparation retains the account-switch action for native and shared models', async () => {
   const native=fake('qoder'),open=native.executor.open;
   native.executor.open=async input=>({...await open(input),inspectAccount:async()=>({status:'expired'})});
-  const f=fixture([native.executor]);
+  const f=fixture([native.executor],{modelProviders:[]});
   try {
     await f.service.connections.connect('qoder',{expectedRevision:'unconfigured'});
     const conversation=await f.service.conversations.create('workspace-one',{});
@@ -427,7 +427,7 @@ test('a lost native context is replaced visibly instead of failing later message
     assert.match(receipt.text, /原生会话已无法恢复/);
   } finally { await f.close(); }
 });
-async function connected(service: ReturnType<typeof createAgentService>, id: string) { const view=await service.connections.connect(id, { expectedRevision: service.connections.read(id).revision });if(id==='qoder-cn'){await service.models.accounts.list({refresh:true});const checked=await service.models.accounts.check('native-qoder-cn');await service.models.accounts.preferences('native-qoder-cn',{expectedRevision:checked.revision,models:[{id:'test-model',enabled:true}]});}return view; }
+async function connected(service: ReturnType<typeof createAgentService>, id: string) { const view=await service.connections.connect(id, { expectedRevision: service.connections.read(id).revision });if(id==='qoder'||id==='qoder-cn'){const accountId='native-'+id;await service.models.accounts.list({refresh:true});const checked=await service.models.accounts.check(accountId);await service.models.accounts.preferences(accountId,{expectedRevision:checked.revision,models:[{id:'test-model',enabled:true}]});}return view; }
 async function waitUntil<T>(read: () => T, predicate: (value: T) => boolean): Promise<T> {
   for (let i = 0; i < 500; i++) { const value = read(); if (predicate(value)) return value; await new Promise(resolve => setTimeout(resolve, 2)); }
   assert.fail('observable state did not settle: ' + JSON.stringify(read()).slice(-1800));
@@ -2300,7 +2300,7 @@ for (const continued of [true,false]) test('released Qoder crash history can con
     checking=cold.conversations.recoverInterrupted();
     await observing;
     const view=cold.conversations.read('workspace-one',chat.id);
-    const draft={expectedRevision:view.revision,connectionId:'qoder',continueRunId:original.id,text:'',model:original.model,permissionMode:original.permissionMode};
+    const draft={expectedRevision:view.revision,connectionId:'qoder',continueRunId:original.id,text:'',modelAccountId:original.modelAccountId,modelAccountIdentity:original.modelAccountIdentity,model:original.model,permissionMode:original.permissionMode};
     const preview=await cold.conversations.prepareHandoff('workspace-one',chat.id,draft);
     assert.equal(preview.fits,true);
     assert.equal(native.sends.length,1,'observation cannot resend the original input');

@@ -85,6 +85,7 @@ export function createAgentService(options: AgentServiceOptions) {
   const preparations = new PreparationApplication(connections, programManager, generation, now);
   const providerList = options.modelProviders ?? createDefaultModelProviders({ root, connections, programManager, readAccountIdentity: accountId => models.accounts.read(accountId).identity, now });
   const noBackgroundRefreshProviders = new Set<string>();
+  const registeredProviderIds = new Set(providerList.map(provider => provider.id));
   for (const provider of providerList) {
     if (provider.connectionId && provider.observesConnection) connectionAccountObservers.set(provider.connectionId, provider.id);
     if (provider.backgroundRefresh === false) noBackgroundRefreshProviders.add(provider.id);
@@ -97,9 +98,18 @@ export function createAgentService(options: AgentServiceOptions) {
     providers: providerList,
     environment: executorEnvironment(options.environment ?? process.env),
     changed: account => {
+      const affected = new Set<string>();
       if (account.connectionId && connectionAccountObservers.get(account.connectionId) === account.id) {
+        affected.add(account.connectionId);
+      }
+      for (const executor of executorList) {
+        if (executor.descriptor.modelPolicy?.native?.defaultSourceAccountId === account.id) {
+          affected.add(executor.descriptor.id);
+        }
+      }
+      for (const connectionId of affected) {
         try {
-          const view = connections.get(account.connectionId);
+          const view = connections.get(connectionId);
           events.publish({ type: 'connection', revision: view.revision, payload: { connection: view } });
         } catch {
           // Connection may not be registered in isolated custom-provider tests.
@@ -110,8 +120,10 @@ export function createAgentService(options: AgentServiceOptions) {
   presentConnectionView = view => {
     const accountId = view.modelPolicy?.native?.defaultSourceAccountId;
     if (!accountId) return view;
-    try { return presentConnection(view, models.accounts.snapshot(accountId)); }
-    catch { return view; }
+    let account: ReturnType<typeof models.accounts.snapshot> | undefined;
+    try { account = models.accounts.snapshot(accountId); }
+    catch { account = undefined; }
+    return presentConnection(view, account, registeredProviderIds.has(accountId));
   };
   let closed = false;
   let discovery:Promise<void>|undefined, discoveryDiagnostic:string|undefined;

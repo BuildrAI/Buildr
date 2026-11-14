@@ -5,10 +5,12 @@ import { nativeContentFiles, nativeContentImages, nativeContentRows } from '../n
 import {nativeToolContext,nativeToolRows} from '../native-tool-source.ts';
 import {visibleText} from '../native-process.ts';
 
+const qoderAccountConfigPrefix = 'model-access/accounts/native-qoder/';
 const qoderCnAccountConfigPrefix = 'model-access/accounts/native-qoder-cn/';
 
 export function readQoderTool(root:string,reference:NativeToolContent,product:'qoder'|'qoder-cn'='qoder') {
-  let input=nativeToolContext(root,reference,product,product==='qoder-cn'?{accountConfigPrefix:qoderCnAccountConfigPrefix}:undefined);if(!input)return;
+  const accountConfigPrefix = product === 'qoder-cn' ? qoderCnAccountConfigPrefix : qoderAccountConfigPrefix;
+  let input=nativeToolContext(root,reference,product,{accountConfigPrefix});if(!input)return;
   const configDirectory=product==='qoder'?'qoder-config':'qoder-cn-config';
   try{
     let primary=nativeContentFiles(input,path.join(input.configRoot,configDirectory,'projects'),file=>path.basename(file)===input!.contextId+'.jsonl',3);
@@ -18,6 +20,12 @@ export function readQoderTool(root:string,reference:NativeToolContent,product:'q
     if(!primary.length&&product==='qoder-cn'&&reference.session?.config==='connections/qoder-cn'&&
       !existsSync(path.join(input.configRoot,configDirectory,'projects'))) {
       input={...input,configRoot:path.join(root,'model-access','accounts','native-qoder-cn')};
+      primary=nativeContentFiles(input,path.join(input.configRoot,configDirectory,'projects'),file=>path.basename(file)===input!.contextId+'.jsonl',3);
+    }
+    // Pre-upgrade international Qoder sessions kept transcripts under connections/qoder.
+    if(!primary.length&&product==='qoder'&&reference.session?.config==='model-access/accounts/native-qoder'&&
+      existsSync(path.join(root,'connections','qoder',configDirectory,'projects'))) {
+      input={...input,configRoot:path.join(root,'connections','qoder')};
       primary=nativeContentFiles(input,path.join(input.configRoot,configDirectory,'projects'),file=>path.basename(file)===input!.contextId+'.jsonl',3);
     }
     if(primary.length!==1)return;
@@ -95,9 +103,10 @@ export function qoderContent(input: NativeContentContext, product: 'qoder'|'qode
 
 export function createQoderNativeContent(product: 'qoder' | 'qoder-cn' = 'qoder') {
   const configDirectory = product === 'qoder' ? 'qoder-config' : 'qoder-cn-config';
+  const accountConfigPrefix = product === 'qoder-cn' ? qoderCnAccountConfigPrefix : qoderAccountConfigPrefix;
   return defineNativeContent({
     allowedPath: new RegExp(`^${configDirectory}\\/projects\\/.+\\.jsonl$`),
-    ...(product === 'qoder-cn' ? { accountConfigPrefix: qoderCnAccountConfigPrefix } : {}),
+    accountConfigPrefix,
     omitExecutionTurnId: true,
     sessionRoots: [{
       relative: `${configDirectory}/projects`,

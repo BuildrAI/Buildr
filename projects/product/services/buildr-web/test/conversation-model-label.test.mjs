@@ -71,7 +71,7 @@ test('自持源账号在未登录时仍显示，且按产品名标注',async()=>
   const {modelSourceViews}=await import('../src/features/agent-conversations/account-model-view.ts');
   const accounts=[
     {id:'native-qoder-cn',provider:'native-qoder-cn',label:'Qoder CN',revision:'r1',enabled:true,status:'not-authenticated',models:[]},
-    {id:'native-qoder',provider:'native-qoder',connectionId:'qoder',label:'Qoder',revision:'r2',enabled:true,status:'ready',models:[]},
+    {id:'native-qoder',provider:'native-qoder',label:'Qoder',revision:'r2',enabled:true,status:'not-authenticated',models:[]},
     {id:'2bb3d2b7-c228-477b-b86f-ba806e91647d',provider:'codex',label:'旧账号',revision:'r3',enabled:true,status:'not-authenticated',models:[]},
   ];
   const sources=modelSourceViews(accounts,[]);
@@ -80,7 +80,11 @@ test('自持源账号在未登录时仍显示，且按产品名标注',async()=>
   assert.equal(cn.providerLabel,'Qoder CN');
   assert.equal(cn.provider,'qoder-cn');
   assert.equal(cn.status,'not-authenticated');
-  assert.ok(sources.some(source=>source.id==='native-qoder'));
+  const qoder=sources.find(source=>source.id==='native-qoder');
+  assert.ok(qoder);
+  assert.equal(qoder.providerLabel,'Qoder');
+  assert.equal(qoder.provider,'qoder');
+  assert.equal(qoder.status,'not-authenticated');
   assert.equal(sources.some(source=>source.id.startsWith('2bb3d2b7')),false,'无归属的旧行仍隐藏');
 });
 

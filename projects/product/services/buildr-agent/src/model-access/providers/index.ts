@@ -4,7 +4,6 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { AgentProgramManager, AgentRuntime, ConnectionView } from '../../contracts.ts';
 import { createDeepSeekAccountOwner } from '../../executors/dsh/model-source-owner.ts';
-import { qoderProduct } from '../../executors/qoder/product.ts';
 import { ModelAccessError, type ModelProvider } from '../contracts.ts';
 import { createAnthropicApiModelProvider } from './anthropic-api.ts';
 import { createAntigravityModelProvider } from './antigravity.ts';
@@ -13,8 +12,7 @@ import { createCustomModelProvider } from './custom.ts';
 import { createDeepSeekModelProvider } from './deepseek.ts';
 import { createDevinModelProvider } from './devin.ts';
 import { createOpenAIApiModelProvider } from './openai-api.ts';
-import { createQoderCnModelProvider } from './qoder-cn.ts';
-import { createQoderModelProvider, readQoderIdentity, requestQoderModel } from './qoder.ts';
+import { createQoderAccountModelProvider, createQoderCnModelProvider } from './qoder-cn.ts';
 
 export interface DefaultModelProvidersDependencies {
   root: string;
@@ -90,24 +88,13 @@ export function createDefaultModelProviders(deps: DefaultModelProvidersDependenc
       };
     },
   };
-  const qoderConfig = path.join(root, 'connections', 'qoder', qoderProduct('qoder').configDirectory);
-  const qoder = createQoderModelProvider({
-    async identity() {
-      if (!connections.get('qoder').enabled) throw new Error('qoder_login_required');
-      return 'qoder:' + (await readQoderIdentity(qoderConfig)).userID;
-    },
-    async inspect() {
-      if (!connections.get('qoder').enabled) return { status: 'not-authenticated' };
-      await readQoderIdentity(qoderConfig);
-      return { status: 'ready' };
-    },
-    request(url, init, expectedIdentity) {
-      if (!connections.get('qoder').enabled) return Promise.resolve(new Response(null, { status: 401 }));
-      return requestQoderModel(qoderConfig, url, init, fetch, url === '/chat' ? readAccountIdentity('native-qoder') : expectedIdentity);
-    },
-  });
   const hasConnection = (id: string) => !connections.descriptor || connections.descriptor(id) !== undefined;
-  const linkedProviders = [createCodexModelProvider({ owner: owner('codex') }), nativeDsh, qoder, createQoderCnModelProvider(programManager)]
+  const linkedProviders = [
+    createCodexModelProvider({ owner: owner('codex') }),
+    nativeDsh,
+    createQoderAccountModelProvider(programManager),
+    createQoderCnModelProvider(programManager),
+  ]
     .filter(provider => !provider.connectionId || hasConnection(provider.connectionId))
     .map(provider => ({
     ...provider,

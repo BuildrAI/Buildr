@@ -6,7 +6,7 @@ import { test, type TestContext } from 'node:test';
 import { createAgentService } from '../../src/application/agent-service.ts';
 import type { AgentCapabilities, AgentExecutor, AgentRuntime, ExecutorOpenOptions, ModelGatewayConfiguration } from '../../src/contracts.ts';
 import { createNativeExecutors } from '../../src/executors/index.ts';
-import { qoderCnModelAccountId } from '../../src/executors/qoder/product.ts';
+import { qoderCnModelAccountId, qoderModelAccountId } from '../../src/executors/qoder/product.ts';
 import type { ModelOffering, ModelProtocol, ModelProvider } from '../../src/model-access/contracts.ts';
 import { createCustomModelProvider } from '../../src/model-access/providers/custom.ts';
 
@@ -203,7 +203,7 @@ function setupHarness(t: TestContext) {
   };
   const modelProviders: ModelProvider[] = [
     createFakeSourceProvider({ id: 'codex', label: 'Codex / ChatGPT', singleton: true, state: sourceStates.codex }),
-    createFakeSourceProvider({ id: 'native-qoder', label: 'Qoder', connectionId: 'qoder', state: sourceStates['native-qoder'] }),
+    createFakeSourceProvider({ id: qoderModelAccountId, label: 'Qoder', linked: true, state: sourceStates['native-qoder'] }),
     createFakeSourceProvider({ id: qoderCnModelAccountId, label: 'Qoder CN', linked: true, state: sourceStates[qoderCnModelAccountId] }),
     createFakeSourceProvider({ id: 'devin', label: 'Devin', singleton: true, state: sourceStates.devin }),
     createFakeSourceProvider({ id: 'openai', label: 'ChatGPT API', singleton: true, state: sourceStates.openai }),
@@ -305,7 +305,9 @@ test('characterization: 5 executors × representative model sources send validat
   // 1. Native (omitted modelAccountId):
   await expectAccepted('codex');
   await expectAccepted('dsh');
-  await expectAccepted('qoder');
+  const qoderDefault = await expectAccepted('qoder');
+  assert.equal(qoderDefault.modelAccountId, qoderModelAccountId);
+  assert.equal(qoderDefault.model, 'qoder-pro');
   const qoderCnDefault = await expectAccepted('qoder-cn');
   assert.equal(qoderCnDefault.modelAccountId, qoderCnModelAccountId);
   assert.equal(qoderCnDefault.model, 'qoder-cn-pro');
@@ -339,12 +341,14 @@ test('characterization: 5 executors × representative model sources send validat
   }
 });
 
-test('characterization: send validation rejection order and Qoder CN readySourceSupersedesConnection exception', async t => {
+test('characterization: send validation rejection order and Qoder/Qoder CN readySourceSupersedesConnection exception', async t => {
   const harness = setupHarness(t);
   const accounts = await prepareSourcesAndConnections(harness);
   const { service, executorStates, sourceStates } = harness;
 
-  // Step 4 vs Step 6: Qoder expired connection beats missing/unready source lookup
+  // Step 4 vs Step 6: when default Qoder model source is expired, expired connection beats missing/unready source lookup
+  sourceStates[qoderModelAccountId].status = 'expired';
+  await service.models.accounts.check(qoderModelAccountId);
   executorStates.qoder.status = 'expired';
   await service.connections.check('qoder');
   {
@@ -361,6 +365,8 @@ test('characterization: send validation rejection order and Qoder CN readySource
   }
 
   // Step 4 platformLogin: Qoder not-authenticated + explicit source -> qoder_platform_login_required (before source compatibility!)
+  sourceStates[qoderModelAccountId].status = 'not-authenticated';
+  await service.models.accounts.check(qoderModelAccountId);
   executorStates.qoder.status = 'not-authenticated';
   await service.connections.check('qoder');
   {
@@ -376,43 +382,50 @@ test('characterization: send validation rejection order and Qoder CN readySource
       (error: any) => error?.code === 'qoder_platform_login_required',
     );
   }
+  sourceStates[qoderModelAccountId].status = 'ready';
+  await service.models.accounts.check(qoderModelAccountId);
   executorStates.qoder.status = 'ready';
   await service.connections.check('qoder');
 
-  // Step 3 Qoder CN exception: stale connection status ('expired' or 'not-authenticated') does NOT veto when Qoder CN model account is ready!
-  for (const staleStatus of ['expired', 'not-authenticated'] as const) {
-    executorStates['qoder-cn'].status = staleStatus;
-    await service.connections.check('qoder-cn');
-    const chat = await service.conversations.create('ws', {});
-    const preview = service.conversations.prepareSend('ws', chat.id, {
-      expectedRevision: chat.revision,
-      connectionId: 'qoder-cn',
-      text: 'CN 就绪来源优先',
-    });
-    assert.equal(preview.modelAccountId, qoderCnModelAccountId);
-    assert.equal(preview.model, 'qoder-cn-pro');
-  }
-
-  // Conversely, when Qoder CN model account itself is expired AND connection is expired -> qoder_platform_login_expired
-  sourceStates[qoderCnModelAccountId].status = 'expired';
-  await service.models.accounts.check(qoderCnModelAccountId);
-  executorStates['qoder-cn'].status = 'expired';
-  await service.connections.check('qoder-cn');
-  {
-    const chat = await service.conversations.create('ws', {});
-    assert.throws(
-      () => service.conversations.prepareSend('ws', chat.id, {
+  // Step 3 Qoder & Qoder CN exception: stale connection status ('expired' or 'not-authenticated') does NOT veto when standalone model account is ready!
+  for (const [connectionId, accountId, modelId] of [
+    ['qoder', qoderModelAccountId, 'qoder-pro'],
+    ['qoder-cn', qoderCnModelAccountId, 'qoder-cn-pro'],
+  ] as const) {
+    for (const staleStatus of ['expired', 'not-authenticated'] as const) {
+      executorStates[connectionId].status = staleStatus;
+      await service.connections.check(connectionId);
+      const chat = await service.conversations.create('ws', {});
+      const preview = service.conversations.prepareSend('ws', chat.id, {
         expectedRevision: chat.revision,
-        connectionId: 'qoder-cn',
-        text: 'CN 均过期',
-      }),
-      (error: any) => error?.code === 'qoder_platform_login_expired',
-    );
+        connectionId,
+        text: '就绪来源优先',
+      });
+      assert.equal(preview.modelAccountId, accountId);
+      assert.equal(preview.model, modelId);
+    }
+
+    // Conversely, when standalone model account itself is expired AND connection is expired -> qoder_platform_login_expired
+    sourceStates[accountId].status = 'expired';
+    await service.models.accounts.check(accountId);
+    executorStates[connectionId].status = 'expired';
+    await service.connections.check(connectionId);
+    {
+      const chat = await service.conversations.create('ws', {});
+      assert.throws(
+        () => service.conversations.prepareSend('ws', chat.id, {
+          expectedRevision: chat.revision,
+          connectionId,
+          text: '均过期',
+        }),
+        (error: any) => error?.code === 'qoder_platform_login_expired',
+      );
+    }
+    sourceStates[accountId].status = 'ready';
+    await service.models.accounts.check(accountId);
+    executorStates[connectionId].status = 'ready';
+    await service.connections.check(connectionId);
   }
-  sourceStates[qoderCnModelAccountId].status = 'ready';
-  await service.models.accounts.check(qoderCnModelAccountId);
-  executorStates['qoder-cn'].status = 'ready';
-  await service.connections.check('qoder-cn');
 
   // Step 6 vs Step 7: Unauthenticated or changed source fails with source status/identity error BEFORE incompatibility
   sourceStates.openai.status = 'expired';
@@ -645,9 +658,10 @@ test('executor declarations project public modelPolicy and Claude Code reports s
     account: 'native',
     gateway: { protocol: 'chat-completions' },
     native: {
-      sourceProviders: ['qoder', 'native-qoder'],
+      sourceProviders: ['qoder', qoderModelAccountId],
       exclusive: true,
       binding: 'gateway-lease',
+      defaultSourceAccountId: qoderModelAccountId,
       platformLogin: 'required-for-sources',
     },
   });
