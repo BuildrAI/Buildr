@@ -76,40 +76,46 @@ export function AgentConnectionSettings(){
  function configureKey(id:string,key:string){return act(async()=>{let account=accounts.find(item=>item.id===id);if(!account){const provider=newModelSourceProvider(id),declared=provider?providers.find(item=>item.id===provider):undefined;if(!provider||(declared&&declared.authentication?.type!=='api-key'))throw new Error('供应商已变化，请刷新后重试。');account=await context.api.addModelAccount(provider);update(account);setSelection(current=>({...current,sourceId:account!.id}));}const configured=await context.api.configureModelAccount(account,key);update(configured);setSelection(current=>({...current,sourceId:configured.id}));});}
  async function saveProvider(input:ProviderConnectionInput):Promise<void>{
   let account:ModelAccount|undefined,startLogin=false;
+  let failureMessage='';
   const saved=await act(async()=>{
-   if(input.kind==='custom'){
-    const custom={label:input.label,baseUrl:input.baseUrl!,protocol:input.protocol!,modelsPath:input.modelsPath??DEFAULT_CUSTOM_MODELS_PATH,useApiKey:Boolean(input.useApiKey),...(input.apiKey?{apiKey:input.apiKey}:{})};
-    const existing=input.accountId?await context.api.modelAccount(input.accountId):undefined;
-    const endpoint=(url:string)=>url.trim().replace(/\/+$/,'');
-    if((!existing||endpoint(existing.custom?.baseUrl??'')!==endpoint(custom.baseUrl)||existing.custom?.protocol!==custom.protocol)&&accountsRef.current.some(item=>item.id!==existing?.id&&item.custom&&
-      endpoint(item.custom.baseUrl)===endpoint(custom.baseUrl)&&item.custom.protocol===custom.protocol)){
-      throw new Error('该端点与协议已接入，请编辑已有供应商。');
+   try{
+    if(input.kind==='custom'){
+     const custom={label:input.label,baseUrl:input.baseUrl!,protocol:input.protocol!,modelsPath:input.modelsPath??DEFAULT_CUSTOM_MODELS_PATH,useApiKey:Boolean(input.useApiKey),...(input.apiKey?{apiKey:input.apiKey}:{})};
+     const existing=input.accountId?await context.api.modelAccount(input.accountId):undefined;
+     const endpoint=(url:string)=>url.trim().replace(/\/+$/,'');
+     if((!existing||endpoint(existing.custom?.baseUrl??'')!==endpoint(custom.baseUrl)||existing.custom?.protocol!==custom.protocol)&&accountsRef.current.some(item=>item.id!==existing?.id&&item.custom&&
+       endpoint(item.custom.baseUrl)===endpoint(custom.baseUrl)&&item.custom.protocol===custom.protocol)){
+       throw new Error('该端点与协议已接入，请编辑已有供应商。');
+     }
+     if(existing&&!existing.custom)throw new Error('供应商已变化，请刷新后重试。');
+     account=existing
+       ?await context.api.configureCustomModelAccount(existing,{...custom,models:existing.custom?.models??[]})
+       :await context.api.addCustomModelAccount({...custom,models:[]});
+     if(!account)throw new Error('供应商未创建。');
+     update(account);
+     setSelection({sourceId:account.id,tab:'models'});
+     return;
     }
-    if(existing&&!existing.custom)throw new Error('供应商已变化，请刷新后重试。');
-    account=existing
-      ?await context.api.configureCustomModelAccount(existing,{...custom,models:existing.custom?.models??[]})
-      :await context.api.addCustomModelAccount({...custom,models:[]});
-    if(!account)throw new Error('供应商未创建。');
+    const provider=providers.find(item=>item.id===input.kind);
+    if(!provider)throw new Error('供应商已变化，请刷新后重试。');
+    if(provider.connectionId)throw new Error('该供应商由智能体接入管理，请在“智能体”页完成登录。');
+    let existing=providerAccount(accountsRef.current,provider);
+    if(!existing){existing=await context.api.addModelAccount(provider.id);update(existing);}
+    if(provider.authentication?.type==='api-key'){
+     if(!input.apiKey)throw new Error('请输入 API Key。');
+     account=await context.api.configureModelAccount(existing,input.apiKey);
+    }else{
+     account=existing;
+     startLogin=account.status!=='ready'||!account.enabled;
+    }
     update(account);
-    setSelection({sourceId:account.id,tab:'models'});
-    return;
+    setSelection({sourceId:account.id,tab:'quota'});
+   }catch(failure){
+    failureMessage=failure instanceof Error?failure.message:'';
+    throw failure;
    }
-   const provider=providers.find(item=>item.id===input.kind);
-   if(!provider)throw new Error('供应商已变化，请刷新后重试。');
-   if(provider.connectionId)throw new Error('该供应商由智能体接入管理，请在“智能体”页完成登录。');
-   let existing=providerAccount(accountsRef.current,provider);
-   if(!existing){existing=await context.api.addModelAccount(provider.id);update(existing);}
-   if(provider.authentication?.type==='api-key'){
-    if(!input.apiKey)throw new Error('请输入 API Key。');
-    account=await context.api.configureModelAccount(existing,input.apiKey);
-   }else{
-    account=existing;
-    startLogin=account.status!=='ready'||!account.enabled;
-   }
-   update(account);
-   setSelection({sourceId:account.id,tab:'quota'});
   });
-  if(!saved)throw new Error('供应商配置未完成。');
+  if(!saved)throw new Error(failureMessage||'供应商配置未完成。');
   setProviderEditing(null);
   if(account&&startLogin)login(account.id);
  }

@@ -177,6 +177,8 @@ export interface ModelProvider {
   readonly backgroundRefresh?: boolean;
   /** Accounts of this provider carry user-declared endpoint configuration. */
   readonly custom?: boolean;
+  /** Optional on-demand preparation (e.g. downloading local proxy binary/config) when adding an account. */
+  prepare?(input: { configRoot: string; environment: Readonly<Record<string, string>>; signal?: AbortSignal }): Promise<void>;
   open(input: { accountId: string; configRoot: string; environment: Readonly<Record<string, string>>; custom?: CustomProviderConfig }): Promise<ModelProviderRuntime>;
   /** Stateless discovery for an unsaved custom configuration. */
   discover?(input: CustomProviderDiscoveryInput): Promise<CustomProviderDiscoveryResult>;

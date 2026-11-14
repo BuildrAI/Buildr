@@ -57,6 +57,9 @@ export class ModelAccessApplication {
   private readonly leasesByToken = new Map<string, LeaseRecord>();
   private readonly leasesByIdentity = new Map<string, LeaseRecord>();
   private readonly operations = new Map<string, number>();
+  private readonly addingSingletons = new Set<string>();
+  private readonly activePreparations = new Set<Promise<void>>();
+  private readonly lifetime = new AbortController();
   private ready: Promise<void>;
   private writeChain: Promise<void> = Promise.resolve();
   private pendingWrites = 0;
@@ -333,6 +336,7 @@ export class ModelAccessApplication {
   read(id: string) { return this.view(this.current(id)); }
   async add(input: { provider: string; label?: string; custom?: CustomProviderConfigureInput }) {
     await this.ready; if (this.storageError) throw this.storageError;
+    if (this.closed || this.metadataReadOnly) throw new ModelAccessError('model_access_closed', '模型供应商配置未能保存。', 503);
     const provider = this.providers.get(input.provider);
     if (!provider || provider.connectionId) throw new ModelAccessError('model_provider_unavailable', '此模型来源由已有账号自动发现。', 404);
     if (provider.custom) {
@@ -351,8 +355,36 @@ export class ModelAccessApplication {
     if (provider.singleton && [...this.rows.values()].some(row=>row.provider===provider.id)) {
       throw new ModelAccessError('model_provider_already_configured', '该供应商已有账号，请在供应商列表中管理已有连接。', 409);
     }
-    const row: ModelAccountView = { id: randomUUID(), identity:randomUUID(), provider: provider.id, label: input.label?.trim().slice(0, 160) || provider.label, revision: randomUUID(), enabled: true, status: 'not-authenticated', credentialConfigured: false, models: [] };
-    this.rows.set(row.id, row); await this.save(); this.options.changed?.(this.view(row)); return this.view(row);
+    if (provider.singleton && this.addingSingletons.has(provider.id)) {
+      throw new ModelAccessError('model_provider_already_configured', '正在添加该供应商，请稍后刷新查看。', 409);
+    }
+    const id = randomUUID();
+    if (provider.singleton) this.addingSingletons.add(provider.id);
+    try {
+      if (provider.prepare) {
+        const prep = provider.prepare({
+          configRoot: join(this.options.root, 'accounts', id),
+          environment: this.options.environment ?? {},
+          signal: this.lifetime.signal,
+        });
+        this.activePreparations.add(prep);
+        try { await prep; }
+        finally { this.activePreparations.delete(prep); }
+      }
+      if (this.closed || this.metadataReadOnly) throw new ModelAccessError('model_access_closed', '模型供应商配置未能保存。', 503);
+      if (provider.singleton && [...this.rows.values()].some(row => row.provider === provider.id)) {
+        throw new ModelAccessError('model_provider_already_configured', '该供应商已有账号，请在供应商列表中管理已有连接。', 409);
+      }
+      this.removedProviders.delete(provider.id);
+      const row: ModelAccountView = { id, identity: randomUUID(), provider: provider.id, label: input.label?.trim().slice(0, 160) || provider.label, revision: randomUUID(), enabled: true, status: 'not-authenticated', credentialConfigured: false, models: [] };
+      this.rows.set(row.id, row);
+      try { await this.save(); }
+      catch (error) { this.rows.delete(row.id); throw error; }
+      this.options.changed?.(this.view(row));
+      return this.view(row);
+    } finally {
+      if (provider.singleton) this.addingSingletons.delete(provider.id);
+    }
   }
   async configureCustom(id: string, input: CustomProviderConfigureInput) {
     await this.ready;
@@ -876,7 +908,7 @@ export class ModelAccessApplication {
       catch{this.storageError=new ModelAccessError('model_storage_unavailable','配置维护恢复后账号资料未能核对，原数据已保留。',409);}
     }
   }
-  async close() { if (this.closed) return; this.closed = true; await this.ready.catch(()=>{}); for (const identity of [...this.leasesByIdentity.keys()]) this.release(identity); this.urls.clear(); await Promise.allSettled([...this.runtimes.values()].map(async pending => { await (await pending).close(); })); this.runtimes.clear(); if (this.server) { this.server.closeAllConnections(); await new Promise<void>(resolve => this.server!.close(()=>resolve())); } await this.writeChain; }
+  async close() { if (this.closed) return; this.closed = true; this.lifetime.abort(); await this.ready.catch(()=>{}); for (const identity of [...this.leasesByIdentity.keys()]) this.release(identity); this.urls.clear(); await Promise.allSettled([...this.activePreparations]); await Promise.allSettled([...this.runtimes.values()].map(async pending => { await (await pending).close(); })); this.runtimes.clear(); if (this.server) { this.server.closeAllConnections(); await new Promise<void>(resolve => this.server!.close(()=>resolve())); } await this.writeChain; }
 }
 
 export function createModelAccess(options: ModelAccessOptions) {

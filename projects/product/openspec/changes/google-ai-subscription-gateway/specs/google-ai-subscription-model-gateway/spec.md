@@ -2,7 +2,18 @@
 
 ### Requirement: 内置 Google AI 供应商
 
-Buildr SHALL 使用单一内置供应商展示已授权 Google AI 账号的可用订阅模型。Agent Service SHALL 管理本机代理进程并对模型调用校验登录身份。
+Buildr SHALL 使用单一非原生内置供应商展示已授权 Google AI 账号的可用订阅模型。未添加该供应商时，Agent Service SHALL NOT 自动创建账号或后台探测本地代理；添加或运行缺失本地代理组件时，系统 SHALL 按需下载、校验并初始化本地代理，已有安装与凭据 SHALL 被原样复用。Agent Service SHALL 管理本机代理进程生命周期并在退出时同步回收所有持有的代理子进程，并对模型调用校验登录身份。
+
+#### Scenario: 按需下载与已有目录复用
+
+- **WHEN** 用户首次添加 Google AI 供应商且本机缺少 `CLIProxyAPI` 二进制或 `config.yaml`
+- **THEN** 系统 SHALL 从官方 Release 下载对应平台安装包并校验内置 SHA-256 后安装到本地目录，同时自动生成回环端口配置与随机凭据
+- **AND** 若目标目录已存在有效的代理程序与配置文件，系统 SHALL 直接复用而不重复下载或覆盖已有配置与登录凭据
+
+#### Scenario: 退出 Agent Service 回收代理进程
+
+- **WHEN** Agent Service 收到关闭请求、退出信号或运行时关闭
+- **THEN** 系统 SHALL 中止启动中的代理并终止所有由其启动的 `CLIProxyAPI` 服务与登录子进程，不遗留孤儿进程
 
 #### Scenario: 复用已有登录
 

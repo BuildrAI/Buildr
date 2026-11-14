@@ -46,7 +46,7 @@ export function failure(res: ServerResponse, error: unknown): void {
 }
 export async function listen(handler: (req: IncomingMessage, res: ServerResponse) => Promise<void>): Promise<{ server: Server; origin: string; close(): Promise<void> }> {
   const server = createServer((req, res) => { void handler(req, res).catch(error => failure(res, error)); });
-  server.requestTimeout = 30_000; server.headersTimeout = 15_000;
+  server.requestTimeout = 10 * 60_000; server.headersTimeout = 15_000;
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('agent_process_address_invalid');
   let closing: Promise<void> | undefined;

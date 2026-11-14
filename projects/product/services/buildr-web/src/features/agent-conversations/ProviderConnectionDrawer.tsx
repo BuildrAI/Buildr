@@ -97,10 +97,11 @@ export function ProviderConnectionDrawer({open,initial,providers,connections,con
     finally{setSaving(false);}
   }
 
-  return <DrawerShell open={open} title={editing?'编辑自定义供应商':'添加供应商'} onClose={onClose} closeAriaLabel="关闭供应商配置"
+  return <DrawerShell open={open} title={editing?'编辑自定义供应商':'添加供应商'} onClose={()=>{if(!saving)onClose();}} closeAriaLabel="关闭供应商配置"
     width="min(460px,100vw)" footer={<Space><Button disabled={saving} onClick={onClose}>取消</Button><Button type="primary" loading={saving} disabled={Boolean(busy)} onClick={()=>form.submit()}>{connect?'保存并登录':'保存供应商'}</Button></Space>}>
     <Form form={form} layout="vertical" requiredMark={false} initialValues={initial??providerInitial(fallback)} onFinish={save} onValuesChange={()=>setError('')}>
       {error&&<p className="amm-provider-form-error" role="alert">{error}</p>}
+      {saving&&connect&&<p className="amm-provider-form-hint" role="status">正在准备本地代理组件并初始化配置，首次下载可能需要数十秒，请稍候…</p>}
       <Form.Item label="接入方式" name="kind" rules={[{required:true,message:'请选择接入方式'}]}>
         <Select aria-label="接入方式" options={options} virtual={false} disabled={editing} onChange={value=>{
           const next=providerInitial(providers.find(item=>item.id===value));

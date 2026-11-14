@@ -1,6 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { once } from 'node:events';
 import { readFile, readdir } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -8,9 +7,57 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { ModelAccessError, type ModelProvider } from '../contracts.ts';
 import { antigravityModelLabel, antigravityModelVariant, antigravityReasoningEffort } from '../../domain/antigravity-model.ts';
 import { cliProxyQuotaReader } from './cliproxy-quota.ts';
+import {
+  cliProxyBinaryName,
+  ensureCliProxyInstalled,
+  type CliProxyInstallLimits,
+  type CliProxyReleaseAsset,
+} from './google-ai-proxy-install.ts';
 
 const providerId = 'google-ai-subscription';
 const failure = () => new ModelAccessError('google_ai_service_unavailable', 'Google AI 服务暂不可用，请稍后重试。', 503);
+const DEFAULT_STOP_GRACE_MS = 1_000;
+
+const liveProxyChildren = new Set<ChildProcess>();
+let exitHookRegistered = false;
+
+function killProcessTree(child: ChildProcess, sig: NodeJS.Signals): void {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  if (process.platform !== 'win32' && child.pid && child.pid > 1) {
+    try {
+      process.kill(-child.pid, sig);
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ESRCH') return;
+    }
+  }
+  try {
+    child.kill(sig);
+  } catch {
+    /* Process already exited. */
+  }
+}
+
+function ensureExitHook(): void {
+  if (exitHookRegistered) return;
+  exitHookRegistered = true;
+  process.on('exit', () => {
+    for (const child of liveProxyChildren) {
+      killProcessTree(child, 'SIGKILL');
+    }
+  });
+}
+
+export interface GoogleAiProxyProviderOptions {
+  fetch?: typeof fetch;
+  platform?: NodeJS.Platform;
+  arch?: string;
+  releaseBaseUrl?: string;
+  allowedHosts?: readonly string[];
+  releases?: Readonly<Partial<Record<string, CliProxyReleaseAsset>>>;
+  limits?: CliProxyInstallLimits;
+  stopGraceMs?: number;
+}
 
 // CLIProxyAPI v8.0.69 Antigravity registry describes configurable routes.
 const configurableDepths: Record<string, readonly string[]> = {
@@ -22,9 +69,45 @@ const configurableDepths: Record<string, readonly string[]> = {
   'gemini-3.8-flash-tiered': ['low', 'medium', 'high'],
 };
 
-export function createGoogleAiProxyProvider(directory: string): ModelProvider {
+export function createGoogleAiProxyProvider(directory: string, options: GoogleAiProxyProviderOptions = {}): ModelProvider {
   const quota = cliProxyQuotaReader(directory);
   const configPath = join(directory, 'config.yaml');
+  const binaryPath = join(directory, cliProxyBinaryName(options.platform));
+  let activeInstall: { promise: Promise<{ binaryPath: string; configPath: string; downloaded: boolean }>; controller: AbortController; waiters: number } | undefined;
+
+  async function ensureInstalled(signal?: AbortSignal) {
+    signal?.throwIfAborted();
+    if (!activeInstall) {
+      const controller = new AbortController();
+      const entry = {
+        controller,
+        waiters: 0,
+        promise: ensureCliProxyInstalled(directory, { ...options, signal: controller.signal }).finally(() => {
+          if (activeInstall === entry) activeInstall = undefined;
+        }),
+      };
+      activeInstall = entry;
+    }
+    const entry = activeInstall;
+    entry.waiters++;
+    const onAbort = () => {
+      entry.waiters = Math.max(0, entry.waiters - 1);
+      if (entry.waiters === 0) entry.controller.abort(signal?.reason);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    try {
+      return await Promise.race([
+        entry.promise,
+        ...(signal ? [new Promise<never>((_, reject) => {
+          if (signal.aborted) reject(signal.reason);
+          else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        })] : []),
+      ]);
+    } finally {
+      signal?.removeEventListener('abort', onAbort);
+    }
+  }
+
   async function config() {
     const value = JSON.parse(await readFile(configPath, 'utf8'));
     const { host, port } = value.server;
@@ -48,20 +131,6 @@ export function createGoogleAiProxyProvider(directory: string): ModelProvider {
     const account = accounts[0];
     return account ? { identity: `google-ai:${account.email}:${account.project_id ?? ''}`, project: String(account.project_id ?? '') } : undefined;
   }
-  function start(args: string[]) {
-    const child = spawn(join(directory, 'cli-proxy-api'), [...args, '-config', configPath], { cwd: directory, stdio: ['ignore', 'pipe', 'pipe'] });
-    child.on('error', () => {});
-    child.stdout?.resume();
-    child.stderr?.resume();
-    return child;
-  }
-  async function stop(child: ChildProcess | undefined) {
-    if (!child?.pid || child.exitCode !== null || child.signalCode !== null) return;
-    const exited = new Promise<void>(done => child.once('exit', () => done()));
-    child.kill();
-    await Promise.race([exited, delay(1500, undefined, { ref: false })]);
-    if (child.exitCode === null && child.signalCode === null) { child.kill('SIGKILL'); await exited; }
-  }
   const protocolForModel = (model: string) => /^claude-/i.test(model) ? 'anthropic-messages' as const : 'chat-completions' as const;
 
   let legacySources: { baseUrl: string; accounts: Record<string, unknown> } | undefined;
@@ -79,23 +148,87 @@ export function createGoogleAiProxyProvider(directory: string): ModelProvider {
         group === 'claude' && account.custom.protocol === 'anthropic-messages';
     },
     modelAlias: id => id === 'gemini-3.8-flash-tiered' ? 'gemini-3.8-flash-high' : undefined,
-    id: providerId, label: 'Google AI', linked: true, singleton: true, autoInspect: true,
-    authentication: { type: 'oauth', label: 'Google AI', description: '登录 Google AI 账号后即可使用订阅模型。' },
+    id: providerId, label: 'Google AI', singleton: true,
+    authentication: { type: 'oauth', label: 'Google AI', description: '登录 Google AI 账号后即可使用订阅模型；首次添加会自动下载并初始化本地代理组件。' },
     modeLabel: '订阅', group: { id: 'google-ai', label: 'Google AI' },
     presentation: { vendorLabel: 'Google AI', sourceLabel: 'Google AI' },
     sharing: { kind: 'gateway' }, inference: 'gateway', enableDiscoveredModelsByDefault: true,
     clearCatalogOnUnauthenticated: true,
+    async prepare({ signal }) {
+      await ensureInstalled(signal);
+    },
     async open() {
       let server: ChildProcess | undefined, login: ChildProcess | undefined;
       let starting: Promise<void> | undefined;
       let closed = false;
       const lifetime = new AbortController();
+      const runtimeChildren = new Set<ChildProcess>();
+      const failedSpawns = new WeakSet<ChildProcess>();
+      const stopTasks = new WeakMap<ChildProcess, Promise<void>>();
+
+      function start(args: string[]): ChildProcess {
+        if (closed || lifetime.signal.aborted) throw failure();
+        ensureExitHook();
+        const child = spawn(binaryPath, [...args, '-config', configPath], {
+          cwd: directory,
+          detached: process.platform !== 'win32',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
+        });
+        liveProxyChildren.add(child);
+        runtimeChildren.add(child);
+        const release = () => {
+          liveProxyChildren.delete(child);
+          runtimeChildren.delete(child);
+        };
+        child.once('error', () => {
+          failedSpawns.add(child);
+          release();
+        });
+        child.once('exit', release);
+        child.stdout?.resume();
+        child.stderr?.resume();
+        if (closed || lifetime.signal.aborted) {
+          void stop(child);
+          throw failure();
+        }
+        return child;
+      }
+
+      async function stop(child: ChildProcess | undefined): Promise<void> {
+        if (!child) return;
+        const existing = stopTasks.get(child);
+        if (existing) return existing;
+        const task = (async () => {
+          if (failedSpawns.has(child) || child.exitCode !== null || child.signalCode !== null) return;
+          const exited = new Promise<void>(done => {
+            if (failedSpawns.has(child) || child.exitCode !== null || child.signalCode !== null) {
+              done();
+              return;
+            }
+            child.once('exit', () => done());
+            child.once('error', () => done());
+          });
+          killProcessTree(child, 'SIGTERM');
+          await Promise.race([exited, delay(options.stopGraceMs ?? DEFAULT_STOP_GRACE_MS, undefined, { ref: false })]);
+          if (!failedSpawns.has(child) && child.exitCode === null && child.signalCode === null) {
+            killProcessTree(child, 'SIGKILL');
+            await exited;
+          }
+        })().finally(() => {
+          liveProxyChildren.delete(child);
+          runtimeChildren.delete(child);
+        });
+        stopTasks.set(child, task);
+        return task;
+      }
+
       async function ensureServer(baseUrl: string) {
         lifetime.signal.throwIfAborted();
         if (starting) return starting;
         if (server?.pid && server.exitCode === null && server.signalCode === null) return;
         // Refuse to share the port with an unowned process.
-        const existing = await fetch(baseUrl + '/models', { signal: AbortSignal.timeout(700), redirect: 'error' }).catch(() => undefined);
+        const existing = await fetch(baseUrl + '/models', { signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(700)]), redirect: 'error' }).catch(() => undefined);
         if (existing) { await existing.body?.cancel(); throw failure(); }
         lifetime.signal.throwIfAborted();
         if (starting) return starting;
@@ -105,11 +238,15 @@ export function createGoogleAiProxyProvider(directory: string): ModelProvider {
           for (let attempt = 0; attempt < 40; attempt++) {
             await delay(100, undefined, { signal: lifetime.signal });
             if (!child.pid || child.exitCode !== null || child.signalCode !== null) break;
-            const response = await fetch(baseUrl + '/models', { signal: AbortSignal.timeout(400), redirect: 'error' }).catch(() => undefined);
+            const response = await fetch(baseUrl + '/models', { signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(400)]), redirect: 'error' }).catch(() => undefined);
             if (response) { await response.body?.cancel(); return; }
           }
           throw failure();
-        })().catch(async error => { await stop(child); throw error; }).finally(() => { starting = undefined; });
+        })().catch(async error => {
+          if (server === child) server = undefined;
+          await stop(child);
+          throw error;
+        }).finally(() => { starting = undefined; });
         return starting;
       }
       async function request(settings: Awaited<ReturnType<typeof config>>, route: string, init: RequestInit) {
@@ -124,6 +261,7 @@ export function createGoogleAiProxyProvider(directory: string): ModelProvider {
         protocolForModel,
         async inspect() {
           try {
+            await ensureInstalled(lifetime.signal);
             const settings = await config();
             const account = await credential(settings.auth);
             if (!account) return { status: 'not-authenticated', models: [] };
@@ -158,7 +296,18 @@ export function createGoogleAiProxyProvider(directory: string): ModelProvider {
           }
         },
         async beginLogin(update) {
-          await config();
+          lifetime.signal.throwIfAborted();
+          if (login) return;
+          update({ state: 'initializing', diagnostic: '正在检查并准备 Google AI 本地代理组件…' });
+          try {
+            await ensureInstalled(lifetime.signal);
+            await config();
+          } catch (error) {
+            if (!closed && !lifetime.signal.aborted) {
+              update({ state: 'failed', diagnostic: error instanceof ModelAccessError ? error.message : 'Google AI 代理组件准备失败，请重试。' });
+            }
+            return;
+          }
           lifetime.signal.throwIfAborted();
           if (login) return;
           const child = login = start(['-antigravity-login', '-no-browser']);
@@ -177,12 +326,20 @@ export function createGoogleAiProxyProvider(directory: string): ModelProvider {
           const timedOut = setTimeout(() => { void stop(child); }, 300_000);
           timedOut.unref();
           try {
-            const [code] = await once(child, 'exit');
+            const [code] = await new Promise<[number | null]>((resolve, reject) => {
+              if (failedSpawns.has(child)) { reject(failure()); return; }
+              if (child.exitCode !== null || child.signalCode !== null) { resolve([child.exitCode]); return; }
+              child.once('exit', exitCode => resolve([exitCode]));
+              child.once('error', reject);
+            });
             if (login === child && !closed) update(code === 0 && opened ? { state: 'completed' } : { state: 'failed', diagnostic: 'Google AI 授权未完成，请重新登录。' });
+          } catch {
+            if (login === child && !closed) update({ state: 'failed', diagnostic: 'Google AI 代理登录程序启动失败，请重试。' });
           } finally { clearTimeout(timedOut); if (login === child) login = undefined; }
         },
         async cancelLogin() { const child = login; login = undefined; await stop(child); },
         async infer(input) {
+          await ensureInstalled(AbortSignal.any([lifetime.signal, input.signal]));
           const settings = await config();
           const account = await credential(settings.auth);
           if (!account || createHash('sha256').update(account.identity).digest('hex') !== input.providerIdentity)
@@ -216,7 +373,13 @@ export function createGoogleAiProxyProvider(directory: string): ModelProvider {
         async close() {
           closed = true;
           lifetime.abort();
-          await Promise.all([stop(login), stop(server)]);
+          const pendingStart = starting;
+          const children = new Set<ChildProcess>(runtimeChildren);
+          if (login) children.add(login);
+          if (server) children.add(server);
+          login = undefined;
+          server = undefined;
+          await Promise.allSettled([pendingStart?.catch(() => {}), ...[...children].map(child => stop(child))]);
         },
       };
     },
