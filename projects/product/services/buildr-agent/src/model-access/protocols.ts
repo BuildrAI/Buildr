@@ -262,7 +262,7 @@ function serializeRequest(parsed: Parsed, protocol: ModelProtocol, opaque: Opaqu
         } else if (part.type === 'tool') {
           callNames.set(part.id, part.name);
           const thoughtSignature = signedCalls.get(part.id) ?? opaque.toolSignatures?.get(part.id);
-          parts.push({ functionCall: { name: part.name, args: parseArguments(part.arguments), ...(part.id ? { id: part.id } : {}) }, ...(thoughtSignature ? { thoughtSignature } : {}) });
+          parts.push({ functionCall: { name: part.name, args: parseArguments(part.arguments), ...((part.id && opaque.toolSignatures) ? { id: part.id } : {}) }, ...(thoughtSignature ? { thoughtSignature } : {}) });
         }
         else if (part.type === 'result') { const name = callNames.get(part.id); if (!name) throw new ModelAccessError('model_tool_result_unsupported', 'Gemini 工具结果缺少可解析的工具名称。', 400); parts.push({ functionResponse: { name, response: geminiToolResult(part.content), ...(part.id ? { id: part.id } : {}) } }); }
       }
