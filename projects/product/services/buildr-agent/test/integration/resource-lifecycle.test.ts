@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {createAgentService} from '../../src/index.ts';
-import type {AgentExecutor,AgentRuntime,ExecutorObservation,AgentServiceOptions} from '../../src/contracts.ts';
+import {ExecutorInputRejected,type AgentExecutor,type AgentRuntime,type ExecutorObservation,type AgentServiceOptions} from '../../src/contracts.ts';
 import type {ModelProvider} from '../../src/model-access/contracts.ts';
 import {ConversationRepository} from '../../src/persistence/conversation-repository.ts';
 import {PendingSendRepository} from '../../src/persistence/pending-send-repository.ts';
@@ -477,6 +477,7 @@ test('historical already-released retained runs opened for observation do not de
      async resumeContext({contextRef}){assert.ok(contexts.has(contextRef.id));},
      readHistory:async()=>[],
      async send(input){
+      if(input.text==='reject-before-delivery')throw new ExecutorInputRejected('invalid input');
       sent.push(input.text);
       const state=contexts.get(input.contextRef.id)!;state.execution=input.clientRequestId;liveExecutions.add(input.clientRequestId);
       const executionRef={id:input.clientRequestId,data:{backgroundWork:false}};
@@ -555,6 +556,31 @@ test('historical already-released retained runs opened for observation do not de
    service.conversations.send('workspace',chat.id,{...fourthDraft,previewToken:fourthPreview.token,clientRequestId:randomUUID()});
    await wait(()=>service.conversations.read('workspace',chat.id).entries.some(e=>e.text==='fourth'&&e.status==='accepted')&&service.conversations.read('workspace',chat.id).run?.status==='completed');
    assert.equal(sent.length,4);
+   await service.releaseIdleSources();
+
+   // 5. Settled pre-delivery failure on active participant must fall back to prior accepted attempt and release idle observation runtimes.
+   const beforeReject=service.conversations.read('workspace',chat.id);
+   const rejectDraft={expectedRevision:beforeReject.revision,connectionId:'local',modelAccountId:account.id,model:'other-model',text:'reject-before-delivery'};
+   const rejectPreview=service.conversations.prepareSend('workspace',chat.id,rejectDraft);
+   service.conversations.send('workspace',chat.id,{...rejectDraft,previewToken:rejectPreview.token,clientRequestId:randomUUID()});
+   await wait(()=>service.conversations.read('workspace',chat.id).entries.some(e=>e.text==='reject-before-delivery'&&e.status==='failed')&&service.conversations.read('workspace',chat.id).run?.status==='failed'&&!service.activity().reasons.some(r=>['execution','title','recovery','observation'].includes(r.kind)));
+   await service.releaseIdleSources();
+   await service.conversations.observe('workspace',chat.id);
+   const closeBeforeStep5Release=closeCount;
+   await service.releaseIdleSources();
+   assert.equal(service.activity().reasons.some(r=>r.kind==='source-resource'),false);
+   assert.ok(closeCount>closeBeforeStep5Release&&closeCount>=4,'pre-delivery failed latest run must fall back to prior accepted attempt and release idle shared runtime');
+
+   // 6. Settled pre-delivery failure with no prior accepted work also releases idle shared runtime.
+   const chat2=await service.conversations.create('workspace',{});
+   const firstRejectDraft={expectedRevision:chat2.revision,connectionId:'local',modelAccountId:account.id,model:'model',text:'reject-before-delivery'};
+   const firstRejectPreview=service.conversations.prepareSend('workspace',chat2.id,firstRejectDraft);
+   service.conversations.send('workspace',chat2.id,{...firstRejectDraft,previewToken:firstRejectPreview.token,clientRequestId:randomUUID()});
+   await wait(()=>service.conversations.read('workspace',chat2.id).entries.some(e=>e.text==='reject-before-delivery'&&e.status==='failed')&&service.conversations.read('workspace',chat2.id).run?.status==='failed'&&!service.activity().reasons.some(r=>['execution','title','recovery','observation'].includes(r.kind)));
+   const closeBeforeStep6Release=closeCount;
+   await service.releaseIdleSources();
+   assert.equal(service.activity().reasons.some(r=>r.kind==='source-resource'),false);
+   assert.ok(closeCount>closeBeforeStep6Release,'settled pre-delivery failure without prior accepted attempt must release idle shared runtime');
   }finally{await service.close();}
  }finally{fs.rmSync(root,{recursive:true,force:true});}
 });

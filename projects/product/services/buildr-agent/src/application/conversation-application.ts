@@ -478,17 +478,25 @@ export class ConversationApplication {
             if(!attempt){safe=false;break;}
             candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId,prepare:proof,proof});continue;
           }
+          // A settled pre-delivery failure never started native execution; fall back
+          // to the participant's prior accepted attempt (or admit if none exists)
+          // so its failed record does not pin idle shared runtimes indefinitely.
+          const failedBeforeDelivery=run?.status==='failed'&&run.accepted===false&&!attempt?.executionRef&&!run.tools.length&&!this.retryWaits.has(runId)&&Boolean(attempt?.userEntryId&&record.view.entries.find(entry=>entry.id===attempt.userEntryId)?.status==='failed');
+          const effectiveAttempt=failedBeforeDelivery?[...record.attempts].reverse().find(value=>value.participantId===member.id&&value.accepted):attempt;
+          if(failedBeforeDelivery&&!effectiveAttempt){
+            candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId});continue;
+          }
           // An unaccepted submission can only be released by its exact native
           // proof. General logical quiescence must not turn a missing receipt
           // into permission to close that source.
-          if(!attempt?.accepted){safe=false;break;}
-          const exactProof=participant?.contextRef&&attempt?.executionRef&&runtime.canRelease;
-          const releaseInput=exactProof?{contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}:undefined;
+          if(!effectiveAttempt?.accepted){safe=false;break;}
+          const exactProof=participant?.contextRef&&effectiveAttempt?.executionRef&&runtime.canRelease;
+          const releaseInput=exactProof?{contextRef:participant!.contextRef!,executionRef:effectiveAttempt!.executionRef!}:undefined;
           // A native SDK can retain an idle daemon until its runtime is closed.
           // Logical quiescence permits that close, never substitutes for the
           // physical group proof below. Legacy executors keep their old check.
           if(exactProof?!await (runtime.prepareRelease?runtime.prepareRelease(releaseInput!):runtime.canRelease!(releaseInput!)).catch(()=>false):!settled){safe=false;break;}
-          candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId,...(exactProof?{proof:()=>runtime.canRelease!({contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}).catch(()=>false)}:{})});
+          candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId,...(exactProof?{proof:()=>runtime.canRelease!({contextRef:participant!.contextRef!,executionRef:effectiveAttempt!.executionRef!}).catch(()=>false)}:{})});
         }
         if(!safe || this.forks.active)continue;
         // Recheck after asynchronous native proof, then freeze reuse before close.
