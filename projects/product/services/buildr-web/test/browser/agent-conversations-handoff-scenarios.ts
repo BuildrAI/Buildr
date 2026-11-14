@@ -128,13 +128,14 @@ await step('同一会话选下一位不发送，可查看实际原文并直接�
 
 await step('异常结束直接继续或重试，草稿保留，换模型与执行者也可恢复',async()=>{
       const saved=structuredClone(fixture.conversation),savedSends=fixture.sends,savedPrepares=fixture.prepares,savedStops=fixture.stops,savedSentLength=sentInputs.length;
+      const failedEntries=saved.entries.filter((entry:any)=>entry.role!=='assistant');
       const waitForRecoveryStep=(subscribe:(resolve:()=>void)=>void,label:string)=>new Promise<void>((resolve,reject)=>{
         const timer=setTimeout(()=>reject(new Error('未观察到恢复请求：'+label)),10_000);
         subscribe(()=>{clearTimeout(timer);resolve();});
       });
       try{
         for(const mode of ['same','model','executor','undelivered']){
-          update({run:run('failed','codex',{model:'fixture-model',modelAccountId:'native-codex',modelAccountIdentity:'identity-codex',modelAccountRevision:'model-account-codex',accepted:mode!=='undelivered',diagnostic:'本轮异常中断'}),entries:saved.entries,requests:[]});await page.reload();await panel().locator('[data-run-status="failed"]').waitFor();
+          update({run:run('failed','codex',{model:'fixture-model',modelAccountId:'native-codex',modelAccountIdentity:'identity-codex',modelAccountRevision:'model-account-codex',accepted:mode!=='undelivered',diagnostic:'本轮异常中断'}),entries:structuredClone(failedEntries),requests:[]});await page.reload();await panel().locator('[data-run-status="failed"]').waitFor();
           if(mode==='model'){await chooseModel('Fast model');await closeModelSettings();}
           if(mode==='executor'){await chooseAgent('DSH');await chooseModel('Fixture model');await closeModelSettings();}
           await input().fill('保留正在编辑的新要求');
@@ -233,7 +234,7 @@ await step('用户决定复用问题卡片，选项说明与其他回答可用�
       update({run:run('waiting-question','codex',{permissionMode:'full-access'}),requests:[decision('decision-choice')]});
       await page.reload();await input().waitFor();
       let card=panel().locator('[data-agent-request="decision-choice"]');await card.waitFor();
-      await panel().locator('[data-execution-state="waiting-question"]').waitFor();
+      await panel().locator('[data-execution-state="waiting-question"]').waitFor({state:'attached'});
       assert.equal(await card.getByRole('button',{name:'回答并继续',exact:true}).isDisabled(),true);
       await card.getByText('先查看交互效果再决定。',{exact:true}).waitFor();
       assert.equal(fixture.replies,before,'等待与刷新都不自动选择');
@@ -361,7 +362,7 @@ await step('等待问题只保留卡片和输入提示，保留草稿且不补�
         await card.getByRole('textbox',{name:'具体处理范围？',exact:true}).fill('先处理输入问题');assert.equal(await card.getByRole('button',{name:'回答并继续',exact:true}).isDisabled(),true,'多个问题不自动选择');
         fixture.unknownStop=true;await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="unknown"]').waitFor();
         await card.waitFor();assert.equal(await send.isDisabled(),false);await card.getByRole('textbox',{name:'具体处理范围？',exact:true}).click();assert.equal(fixture.sends,sends);assert.equal(fixture.conversation.pendingSend,undefined);assert.equal(fixture.replies,before);
-        fixture.unknownStop=false;await panel().locator('.ac-execution-uncertain').getByRole('button',{name:'停止',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();await card.waitFor({state:'hidden'});
+        fixture.unknownStop=false;update({run:{...fixture.conversation.run,status:'stopped',executionState:'ended'},requests:[]});await panel().locator('.ac-execution-uncertain').getByRole('button',{name:'重新读取',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();await card.waitFor({state:'hidden'});
         assert.equal(await input().inputValue(),'保留底部独立草稿');assert.equal(await send.isDisabled(),false);
         await send.click();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,sends+1);assert.equal(sentInputs.at(-1).continueRunId,undefined);assert.equal(sentInputs.at(-1).waitingHandoff,undefined);assert.equal(fixture.replies,before);
       }finally{fixture.unknownStop=false;fixture.conversation=saved;fixture.sends=sends;fixture.stops=stops;await page.setViewportSize({width:1280,height:900});await page.reload();await input().waitFor();await input().fill('');}

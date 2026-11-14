@@ -1076,13 +1076,33 @@ const historyRuns = {
       assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),true);assert.equal(await panel().locator('.ac-compose-wrap').getByRole('button',{name:'停止对话',exact:true}).count(),1);assert.equal(await panel().locator('.ac-thread-actions').getByRole('button',{name:'停止对话',exact:true}).count(),0);
       const stream=panel().locator('.ac-stream');await stream.evaluate((node:HTMLElement)=>node.scrollTop=300);const stickyHead=panel().locator('.ac-turn.is-executing>.ac-turn-head');const sticky=await stickyHead.evaluate((node:HTMLElement)=>({top:node.getBoundingClientRect().top,stream:node.closest('.ac-stream')!.getBoundingClientRect().top,position:getComputedStyle(node).position}));assert.equal(sticky.position,'sticky');assert.ok(Math.abs(sticky.top-sticky.stream)<2,JSON.stringify(sticky));assert.equal(await panel().locator('.ac-turn.is-executing>.ac-turn-head>.ac-turn-context').evaluate((node:HTMLElement)=>getComputedStyle(node).position),'static','气泡自身不吸顶，随吸顶头一起固定');
       await panel().getByRole('button',{name:'展开内容',exact:true}).first().click();assert.equal(await panel().locator('.ac-turn-prompt-content').first().evaluate((node:HTMLElement)=>getComputedStyle(node).overflowY),'auto');await panel().getByRole('button',{name:'收起内容',exact:true}).click();assert.match(await panel().locator('.ac-turn-identity').first().innerText(),/Codex · Fixture model/);assert.ok(await panel().locator('.ac-turn-identity .ac-execution-indicator').first().innerText()!=='0:00');
+      await page.context().grantPermissions(['clipboard-read','clipboard-write']);
+      const promptEntry=panel().locator('[data-entry-id="long-user"]');
+      const promptCopy=promptEntry.getByRole('button',{name:'复制消息',exact:true});
+      await promptCopy.waitFor();
+      const promptGeometry=await promptEntry.evaluate((node:HTMLElement)=>{
+        const bubble=node.querySelector<HTMLElement>('.ac-user-bubble')!.getBoundingClientRect();
+        const actions=node.querySelector<HTMLElement>('.ac-user-actions')!.getBoundingClientRect();
+        return {bubbleBottom:bubble.bottom,actionsTop:actions.top,bubbleRight:bubble.right,actionsRight:actions.right};
+      });
+      assert.ok(promptGeometry.actionsTop>=promptGeometry.bubbleBottom-1&&Math.abs(promptGeometry.actionsRight-promptGeometry.bubbleRight)<=2,JSON.stringify(promptGeometry));
+      await promptCopy.click();
+      await promptEntry.getByRole('button',{name:'已复制',exact:true}).waitFor();
+      assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),long,'折叠态长用户消息仍可完整复制全文');
       // Legacy supplementary entries remain readable; new input no longer creates them.
-      update({entries:[...fixture.conversation.entries,{...entry('legacy-supplement',3,'user','执行中补充图文'),attachments:[]}]});
+      update({entries:[...fixture.conversation.entries,{...entry('legacy-supplement',3,'user','执行中补充图文'),attachments:[]},{id:'reply-supplement-question',sequence:4,kind:'notice',role:'user',text:JSON.stringify({请求标识:'q-1',问题:'确认范围',回答:'仅当前模块'}),runId:'run-fixture',participantId:'participant-codex',createdAt:new Date().toISOString(),status:'accepted'}]});
       await page.reload();await input().waitFor();
       await panel().getByRole('button',{name:'收起处理过程',exact:true}).waitFor();
       assert.equal(await panel().getByRole('button',{name:'收起处理过程',exact:true}).getAttribute('aria-expanded'),'true','执行中的过程默认展开');
       const supplement=panel().locator('.ac-turn-content .ac-message.is-user').filter({hasText:'执行中补充图文'});
       await supplement.waitFor();assert.equal(await panel().locator('.ac-turn').count(),1,'历史同轮补充仍在原轮展示');
+      await supplement.getByRole('button',{name:'复制消息',exact:true}).click();
+      await supplement.getByRole('button',{name:'已复制',exact:true}).waitFor();
+      assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),'执行中补充图文');
+      const replyNotice=panel().locator('[data-entry-id="reply-supplement-question"]');
+      await replyNotice.getByRole('button',{name:'复制消息',exact:true}).click();
+      await replyNotice.getByRole('button',{name:'已复制',exact:true}).waitFor();
+      assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),'确认范围\n答复：仅当前模块');
       assert.equal(fixture.supplementaryCalls,previousSupplementCalls);
       fixture.conversation=previous;fixture.attachmentUploads=previousUploads;await page.reload();await input().fill('下一轮仍是草稿');
   },

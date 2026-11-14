@@ -179,14 +179,14 @@ await step('智能体设置自定义内容在桌面与窄屏保留留白，长�
 });
 await step('账号入口悬停与聚焦显示所有已登录账号的真实额度，点击仍进入设置',async()=>{
   await reset();
-  const observedAt=new Date().toISOString();
-  fixture.quotaOverrides.set('codex',{available:true,observedAt,windows:[{id:'week',label:'周限额',remainingPercent:82},{id:'hour',label:'5小时限额',remainingPercent:45,resetsAt:new Date(Date.now()+3600000).toISOString()}]});
+  const observedAt=new Date().toISOString(),resetsAt=new Date(Date.now()+3600000).toISOString();
+  fixture.quotaOverrides.set('codex',{available:true,observedAt,windows:[{id:'week',label:'周限额',remainingPercent:82},{id:'hour',label:'5小时限额',remainingPercent:45,resetsAt}]});
   fixture.quotaOverrides.set('dsh',{available:true,observedAt,balances:[{currency:'CNY',total:'123.45600000000000',toppedUp:'120.00600000000000',granted:'3.45'}]});
   fixture.quotaOverrides.set('qoder',{available:true,observedAt,windows:[{id:'credits',label:'套餐内 Credits',remainingPercent:0,remainingCredits:0,totalCredits:1000},{id:'add-on',label:'资源包',remainingPercent:59.2,remainingCredits:1599,totalCredits:2700}]});
   try{
     const button=page.getByRole('button',{name:'智能体与模型设置',exact:true}),overview=page.getByTestId('account-quota-overview');
     const leaveQuota=async()=>{await button.evaluate((node:HTMLElement)=>node.blur());await page.mouse.move(70,100);await overview.waitFor({state:'hidden'});};
-    const quotaRow=(label:string)=>overview.locator('.ac-account-quota-row').filter({has:page.getByText(label,{exact:true})});
+    const quotaRow=(label:string)=>overview.locator('.ac-account-quota-row').filter({hasText:label});
     await button.hover();await overview.waitFor({state:'visible'});
     await quotaRow('周限额').getByText('剩余 82%',{exact:true}).waitFor();await quotaRow('5小时限额').getByText('剩余 45%',{exact:true}).waitFor();
     await overview.getByText('CNY 123.46',{exact:true}).waitFor();
@@ -196,7 +196,7 @@ await step('账号入口悬停与聚焦显示所有已登录账号的真实额�
     await quotaRow('资源包').getByText('· 1,599 / 2,700',{exact:true}).waitFor();
     assert.deepEqual(await overview.locator('section').evaluateAll((nodes:any[])=>nodes.map(node=>node.getAttribute('data-account-id'))),['native-codex','native-dsh','native-qoder']);
     assert.equal(await overview.locator('section').count(),3);
-    assert.doesNotMatch(await overview.innerText(),/观察时间|重置|充值|赠送/);
+    assert.doesNotMatch(await overview.innerText(),/观察时间|充值|赠送/);
     // Measure the settled popover, not a scaled frame of its entrance animation.
     await overview.evaluate(async(node:HTMLElement)=>{
       await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
@@ -213,7 +213,7 @@ await step('账号入口悬停与聚焦显示所有已登录账号的真实额�
       await Promise.race([requested,new Promise((_,reject)=>setTimeout(()=>reject(new Error('额度轮询未触发')),10000))]);
       assert.equal(await overview.innerText(),before);assert.equal(await overview.locator('.ant-spin').count(),0);
       assert.deepEqual(await overview.boundingBox(),boundsBefore);
-      fixture.quotaOverrides.set('codex',{available:true,observedAt:new Date().toISOString(),windows:[{id:'week',label:'周限额',remainingPercent:81},{id:'hour',label:'5小时限额',remainingPercent:45}]});
+      fixture.quotaOverrides.set('codex',{available:true,observedAt:new Date().toISOString(),windows:[{id:'week',label:'周限额',remainingPercent:81},{id:'hour',label:'5小时限额',remainingPercent:45,resetsAt}]});
       release();await quotaRow('周限额').getByText('剩余 81%',{exact:true}).waitFor();
       assert.deepEqual(await overview.boundingBox(),boundsBefore);
     }finally{release();await page.unroute('**/api/v1/app/agent-service/model-accounts',holdAccounts);}

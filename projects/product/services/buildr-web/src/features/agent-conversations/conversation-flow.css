@@ -14,7 +14,7 @@
 .ac-execution-indicator.is-active .ac-execution-light{animation:ac-execution-breathe 2.2s ease-in-out infinite}
 .ac-execution-indicator time{color:#84958b;line-height:20px}
 .ac-turn{position:relative;min-width:0;margin-bottom:24px}
-.ac-turn-head{display:flex;flex-direction:column;gap:16px;padding-block:12px}
+.ac-turn-head{display:flex;flex-direction:column;gap:8px;padding-block:12px}
 .ac-turn-context{position:static;min-width:0}
 .ac-turn-context:empty{display:none}
 .ac-turn.is-executing>.ac-turn-head{position:sticky;top:0;z-index:2;background:var(--soft-surface,#fff)}

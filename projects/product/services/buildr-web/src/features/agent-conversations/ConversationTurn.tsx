@@ -1,5 +1,6 @@
 import { DownOutlined, RightOutlined } from '@ant-design/icons';
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { CopyButton } from '../../components/CopyButton';
 import { ConversationExecutionIndicator } from './ConversationExecutionIndicator';
 import { locateConversationContent } from './conversation-reading';
 
@@ -49,11 +50,14 @@ export function ConversationTurn({ id, runId, prompt, identity, executing = fals
     <div className="ac-turn-head">
       <div className="ac-turn-context">
         {prompt && <article className="ac-message is-user ac-turn-prompt" data-entry-id={prompt.id}>
-          <div ref={content} className={'ac-turn-prompt-content' + (expanded ? ' is-expanded' : '')} tabIndex={expanded ? 0 : undefined}>
-            {prompt.text && <p>{prompt.text}</p>}{prompt.images}
+          <div className="ac-user-bubble">
+            <div ref={content} className={'ac-turn-prompt-content' + (expanded ? ' is-expanded' : '')} tabIndex={expanded ? 0 : undefined}>
+              {prompt.text && <p>{prompt.text}</p>}{prompt.images}
+            </div>
+            {long && <button type="button" className="ac-turn-prompt-toggle" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? '收起内容' : '展开内容'}</button>}
+            {prompt.diagnostic}
           </div>
-          {long && <button type="button" className="ac-turn-prompt-toggle" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? '收起内容' : '展开内容'}</button>}
-          {prompt.diagnostic}
+          {prompt.text && <span className="ac-reply-actions ac-user-actions"><CopyButton type="text" text={prompt.text} ariaLabel="复制消息" failureMessage="复制失败，请手动选择文字。" /></span>}
         </article>}
       </div>
       {showIdentity && <div className="ac-turn-identity">

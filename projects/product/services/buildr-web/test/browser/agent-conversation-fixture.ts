@@ -341,7 +341,10 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     if(modelCatalog().filter(model=>model.label===label).length>1){
       const agent=await panel().locator('.ac-provider-select .ant-select-selection-item').innerText();
       const connection=connections.find(item=>item.label===agent);assert.ok(connection,'按当前智能体明确选择同名原生模型来源');
-      await popup.getByRole('textbox',{name:'搜索模型',exact:true}).fill(modelSourceName(connection.provider));
+      const sourceId='native-'+connection.id;
+      await popup.locator(`.ant-select-item-group:has([data-model-source="${sourceId}"]) ~ .ant-select-item-option`).getByText(label,{exact:true}).first().click();
+      await popup.waitFor({state:'hidden'});
+      return;
     }
     await popup.getByText(label,{exact:true}).click();await popup.waitFor({state:'hidden'});
   };
