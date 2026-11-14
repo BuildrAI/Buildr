@@ -15,6 +15,8 @@ import { finalReplyIds, forkableReplyIds } from './conversation-fork';
 import { currentConversationRequests } from './conversation-state';
 import { conversationModelLabel } from './conversation-model-label';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, type ReactNode } from 'react';
+import { SplitDivider } from '../../components/SplitDivider';
+import { readOptionalPreference, writeOptionalPreference } from '../../lib/optional-preferences';
 import { Alert, Button, Dropdown, Input, Modal, Popover, Select, Spin, Tag } from 'antd';
 import { ArrowDownOutlined, ArrowUpOutlined, CommentOutlined, EllipsisOutlined, MinusOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, StopOutlined, TeamOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { MarkdownHost } from '../../components/MarkdownHost';
@@ -25,7 +27,7 @@ import { useAgentConversations } from './AgentConversationsContext';
 import {useEarlierConversationEntries} from './useEarlierConversationEntries';
 import {conversationImageSource,conversationImageLinkSource} from './conversation-markdown-images';
 import { ConversationImagePreview } from './ConversationImagePreview';
-import {needsConversationObservation, conversationObservationFeedback, carryExpandedProcessBlocks, conversationContinuationText, conversationRecoveryAction, canCloseUncertainConversation, canContinueConversation, canSettleRetainedRun} from './conversation-state';
+import {FOCUS_HISTORY_DEFAULT_WIDTH, FOCUS_HISTORY_MIN_WIDTH, canSplitFocusHistory, clampFocusHistoryWidth, focusHistoryMaxWidth, needsConversationObservation, conversationObservationFeedback, carryExpandedProcessBlocks, conversationContinuationText, conversationRecoveryAction, canCloseUncertainConversation, canContinueConversation, canSettleRetainedRun} from './conversation-state';
 import { ConversationHistory, type ConversationWorkspace } from './ConversationHistory';
 import { ConversationRequest } from './ConversationRequest';
 import { ConversationPendingSend } from './ConversationPendingSend';
@@ -69,6 +71,38 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const context=useAgentConversations(),chat=context.conversation;
   const navigate=useNavigate(),location=useLocation();
   const panelId=embedded?'agent-child-conversation-panel-'+context.scope?.conversationId:'agent-conversation-panel';
+  const focusHistoryWidthKey='buildr.agent-conversation-history-width';
+  const focusHistoryPaneId=panelId+'-history';
+  const [historyWidth,setHistoryWidth]=useState<number>(()=>{const saved=Number(readOptionalPreference(focusHistoryWidthKey));return Number.isFinite(saved)&&saved>=FOCUS_HISTORY_MIN_WIDTH?saved:FOCUS_HISTORY_DEFAULT_WIDTH;});
+  const [panelWidth,setPanelWidth]=useState<number>(()=>(typeof window!=='undefined'?Math.max(0,window.innerWidth-52):0));
+  const [viewportWidth,setViewportWidth]=useState<number>(()=>(typeof window!=='undefined'?window.innerWidth:1280));
+  const historyDrag=useRef<{pointerId:number;x:number;width:number}|null>(null);
+  const [historyResizing,setHistoryResizing]=useState(false);
+  useLayoutEffect(()=>{
+    if(embedded)return;
+    const element=document.getElementById(panelId);
+    const measure=()=>{
+      const rectWidth=element?.getBoundingClientRect().width??0;
+      const nextPanelWidth=rectWidth>0?rectWidth:(typeof window!=='undefined'?Math.max(0,window.innerWidth-52):0);
+      if(nextPanelWidth>0)setPanelWidth(nextPanelWidth);
+      if(typeof window!=='undefined')setViewportWidth(window.innerWidth);
+    };
+    measure();
+    const observer=element&&typeof ResizeObserver!=='undefined'?new ResizeObserver(measure):null;
+    observer?.observe(element!);
+    window.addEventListener('resize',measure);
+    return()=>{observer?.disconnect();window.removeEventListener('resize',measure);};
+  },[embedded,panelId,context.full,context.open,context.view]);
+  const focusSplit=Boolean(context.full&&!embedded&&canSplitFocusHistory(panelWidth,viewportWidth));
+  const historyMaxWidth=focusHistoryMaxWidth(panelWidth);
+  const effectiveHistoryWidth=clampFocusHistoryWidth(historyWidth,panelWidth);
+  const commitHistoryWidth=useCallback((nextWidth:number)=>{
+    const liveWidth=document.getElementById(panelId)?.getBoundingClientRect().width||panelWidth;
+    const clamped=clampFocusHistoryWidth(nextWidth,liveWidth);
+    setHistoryWidth(clamped);
+    writeOptionalPreference(focusHistoryWidthKey,String(clamped));
+  },[panelId,panelWidth]);
+  const stopHistoryResize=useCallback(()=>{historyDrag.current=null;setHistoryResizing(false);},[]);
   const [modulePreference,setModulePreference]=useState(readConversationModulePreference);
   const [modelPreference,setModelPreference]=useState(readConversationModelPreference);
   const draft=useConversationDraft(context.scope?.workspaceId||defaultWorkspaceId||'@default',context.scope?.conversationId||null);
@@ -722,9 +756,20 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     return <article key={entry.id} className={'ac-message is-'+entry.role} data-entry-id={entry.id} data-message-provider={entry.provider}>{entry.role==='user'?<div className="ac-user-bubble">{body}</div>:body}{entry.role==='user'&&text&&<span className="ac-reply-actions ac-user-actions"><CopyButton type="text" text={text} ariaLabel="复制消息" failureMessage="复制失败，请手动选择文字。"/></span>}{entry.role==='assistant'&&finalReplies.has(entry.id)&&<span className="ac-reply-actions"><CopyButton type="text" text={entry.text} ariaLabel="复制回复" failureMessage="复制失败，请手动选择文字。"/>{chat&&forkableReplies.has(entry.id)&&<ConversationForkAction conversation={chat} entryId={entry.id}/>}</span>}</article>;
   };
   const fileError=fileLinkFailure&&context.isSelectionCurrent(fileLinkFailure.selection)&&<Alert type="warning" message={fileLinkFailure.message} description={<code>{fileLinkFailure.reference}</code>} closable onClose={()=>setFileLinkFailure(null)} action={<CopyButton type="text" text={fileLinkFailure.reference} ariaLabel="复制来源路径" failureMessage="复制失败，请手动复制来源路径。"/>}/>;
-  const panel=<section id={panelId} className={'ac-panel'+(context.full?' is-full':'')+(embedded?' ac-child-panel':'')} aria-label={embedded?'子对话':'内部对话'} data-dock={context.side} data-conversation-id={chat?.id}>
-    {context.view==='history'&&!context.full&&<ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId}/>}
-    <div className="ac-conversation-view" hidden={context.view==='history'&&!context.full}>
+  const panel=<section id={panelId} className={'ac-panel'+(context.full?' is-full':'')+(historyResizing?' is-resizing':'')+(embedded?' ac-child-panel':'')} aria-label={embedded?'子对话':'内部对话'} data-dock={context.side} data-conversation-id={chat?.id}>
+    {context.view==='history'&&!focusSplit&&<ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId}/>}
+    {focusSplit&&context.view==='history'&&<>
+      <aside id={focusHistoryPaneId} className="ac-focus-history-pane" style={{width:effectiveHistoryWidth}}><ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} keepHistoryOpen/></aside>
+      <SplitDivider className={'ac-focus-history-divider'+(historyResizing?' is-dragging':'')} aria-label="调整专注模式对话列表宽度" aria-controls={focusHistoryPaneId} aria-orientation="vertical" aria-valuemin={FOCUS_HISTORY_MIN_WIDTH} aria-valuemax={historyMaxWidth} aria-valuenow={Math.round(effectiveHistoryWidth)} aria-valuetext={`${Math.round(effectiveHistoryWidth)} 像素`} title={`拖拽调整对话列表宽度（${FOCUS_HISTORY_MIN_WIDTH}–${historyMaxWidth}px）；方向键微调，双击恢复`}
+        onPointerDown={event=>{if(event.button!==0||historyDrag.current)return;event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);historyDrag.current={pointerId:event.pointerId,x:event.clientX,width:effectiveHistoryWidth};setHistoryResizing(true);}}
+        onPointerMove={event=>{const start=historyDrag.current;if(start?.pointerId===event.pointerId)commitHistoryWidth(start.width+event.clientX-start.x);}}
+        onPointerUp={event=>{if(historyDrag.current?.pointerId===event.pointerId){stopHistoryResize();if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}}}
+        onPointerCancel={event=>{if(historyDrag.current?.pointerId===event.pointerId)stopHistoryResize();}}
+        onLostPointerCapture={event=>{if(historyDrag.current?.pointerId===event.pointerId)stopHistoryResize();}}
+        onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();commitHistoryWidth(event.key==='Home'?FOCUS_HISTORY_MIN_WIDTH:event.key==='End'?historyMaxWidth:effectiveHistoryWidth+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?32:16));}}
+        onDoubleClick={()=>commitHistoryWidth(FOCUS_HISTORY_DEFAULT_WIDTH)}/>
+    </>}
+    <div className="ac-conversation-view" hidden={context.view==='history'&&!focusSplit}>
       <header className="ac-thread-header" data-run-status={run&&['running','completed'].includes(run.status)?run.status:undefined}>
         {!embedded&&!context.open&&<Button type="text" icon={<UnorderedListOutlined/>} aria-label="查看对话列表" title="对话列表" onClick={()=>context.openHistory(null,{preserveVisibility:true})}/>}
         <div className="ac-thread-heading">
@@ -822,10 +867,9 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
           execution={<><ConversationOptions showAgent={false} key={choiceKey+':'+context.side+':'+context.open} connections={context.connections} value={choice} disabled={sending} onChange={select}/><Button type="primary" shape="circle" icon={<ArrowUpOutlined/>} aria-label="发送对话" title={waitingHandoffAvailable?waitingHandoffLabel:'发送'} disabled={!canSend||(!waitingHandoffAvailable&&!sendText.trim()&&!images.length)} loading={sending} onClick={()=>void prepare(false)}/></>}/>
         <div className="ac-location-meta"><span>所属工作空间：<Popover rootClassName="ac-panel-popup" title="对话信息" trigger="click" open={locationOpen} onOpenChange={setLocationOpen} content={settings}><button type="button" className="ac-location-name" aria-label="对话信息与工作空间" title={(chat?.cwd||newCwd)||undefined}>{chat?(workspace?.name||(chat.workspaceId==='@default'?'默认工作空间':chat.workspaceId)):(workspaces.find(item=>item.id===draftWorkspaceId)?.name||'默认工作空间')}</button></Popover></span><span>· <ConversationTaskLink key={chat?chat.workspaceId+':'+chat.id:'draft'} taskLinks={chat?conversationTaskLinks(chat):boundTaskLinks} onAssign={assignTask} onNavigate={()=>context.setFull(false)}/></span><small className="ac-location-keys">Enter 发送 · Shift+Enter 换行</small></div>
       </div>
-    </div>
-    {context.full&&context.view==='history'&&<div className="ac-history-drawer"><ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId}/></div>}
     <ConversationHandoffDrawer loadHistory={chat?(input,signal)=>context.api.historySource(chat.workspaceId,chat.id,input,signal):undefined} loadEntry={chat?(entry,signal)=>context.api.entry(chat.workspaceId,chat.id,entry,signal,viewedHandoff?.handoff?.sourceId):undefined} onOpenFile={path=>void openProcessFile(path)} open={previewOpen} side={context.side} material={viewedHandoff?.handoff??prepared?.preview.handoff??null} onChooseModel={!viewedHandoff&&prepared&&!prepared.preview.fits?()=>{setPreviewOpen(false);requestAnimationFrame(()=>document.getElementById(panelId)?.querySelector<HTMLButtonElement>('.ac-model-trigger')?.click());}:undefined} onContinue={!viewedHandoff&&prepared&&prepared.preview.fits?()=>{if(prepared.input.continueRunId&&!prepared.input.waitingHandoff)void prepare(false,false,prepared.input.continueRunId);else void commit(prepared);}:undefined} continueLabel={prepared?.input.waitingHandoff?(prepared.input.waitingHandoff.answers?.length?'回答并交接':prepared.input.continueRunId?'交接并继续':'交接并发送'):undefined} continuing={sending} continueDisabled={!canSend||Boolean(chat?.pendingSend)} delivery={viewedHandoff&&viewedHandoff.status!=='accepted'?viewedHandoff.status==='failed'?'failed':'unknown':undefined} received={viewedHandoff?.status==='accepted'} notice={!viewedHandoff&&prepared&&prepared.preview.fits?prepared.preview.diagnostic:undefined} issue={viewedHandoff&&viewedHandoff.status!=='accepted'?'尚未确认接收，请先核对原执行。':prepared&&!prepared.preview.fits?prepared.preview.diagnostic:undefined} onClose={()=>{setPreviewOpen(false);setSelectedHandoff(null);setPrepared(null);}}/>
     <Modal open={rename} title="重命名对话" centered getContainer={false} styles={{mask:{position:'absolute'},wrapper:{position:'absolute'}}} onCancel={()=>setRename(false)} onOk={()=>void updateMetadata({title:title.trim()})} okButtonProps={{disabled:!title.trim()}} okText="保存" cancelText="取消"><Input aria-label="对话名称" value={title} onChange={event=>setTitle(event.target.value)}/></Modal>
+    </div>
   </section>;
   return <>{embedded?panel:<ConversationDock panel={panel} portalTarget={portalTarget} workspaces={workspaces}/>}
     {imageLink&&context.isSelectionCurrent(imageLink.selection)&&<ConversationImagePreview key={imageLink.selection.generation+':'+imageLink.href} href={imageLink.href} reference={imageLink.reference} onClose={()=>setImageLink(null)}/>}

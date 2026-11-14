@@ -20,7 +20,7 @@ import { startConversationRecoveryRead } from './conversation-observation-fallba
 
 type Scope = {workspaceId: string; conversationId: string};
 export type DraftScope = {workspaceId: string; taskId?: string;taskLinks?:{workspaceId:string;taskId:string}[]};
-type VisibilityOptions={preserveVisibility?:boolean};
+type VisibilityOptions={preserveVisibility?:boolean;preserveHistoryView?:boolean};
 export type TextConversationActionInput = {workspaceId: string; cwd: string; text: string};
 export type TextConversationActionResult =
   | {status: 'started'; conversation: ConversationView}
@@ -67,7 +67,13 @@ function savePanel(open: boolean, scope: Scope | null) {try {sessionStorage.setI
 export function AgentConversationsProvider({children, client = agentConversationsApi}: {children: ReactNode; client?: AgentConversationsClient}) {
   const [initialPanel] = useState(savedPanel);
   const historyCache=useMemo(createConversationHistoryCache,[client]);
-  const [open, setOpenState] = useState(initialPanel.open), [full, setFull] = useState(false), [view, setView] = useState<'conversation' | 'history'>('conversation');
+  const [open, setOpenState] = useState(initialPanel.open), [full, setFullState] = useState(false), fullRef = useRef(false), [view, setView] = useState<'conversation' | 'history'>('conversation');
+  const setFull = useCallback((value: boolean | ((current: boolean) => boolean)) => {
+    const next = typeof value === 'function' ? value(fullRef.current) : value;
+    fullRef.current = next;
+    setFullState(next);
+    if (!next) setView('conversation');
+  }, []);
   const visibility=useRef({open:initialPanel.open,version:0});
   const setVisibility=useCallback((value:boolean,explicit=true)=>{visibility.current={open:value,version:visibility.current.version+(explicit?1:0)};setOpenState(value);},[]);
   const [side, setSide] = useState<'left' | 'right'>(() => readOptionalPreference('buildr.agent-conversation-side') === 'left' ? 'left' : 'right');
@@ -188,7 +194,7 @@ export function AgentConversationsProvider({children, client = agentConversation
       setConversation(null);
       eventCursor.current = undefined;
     }
-    setView('conversation');
+    if(!options.preserveHistoryView)setView('conversation');
     if(!options.preserveVisibility)setVisibility(true);
     setLoading(true); setError(''); setStreamError('');
     savePanel(visibility.current.open,nextScope);
@@ -330,7 +336,7 @@ export function AgentConversationsProvider({children, client = agentConversation
     };
     void recover();return()=>{active=false;if(timer)clearTimeout(timer);setRecovering(false);};
   },[client,scope?.workspaceId,scope?.conversationId,conversation?.run?.id,conversation?.run?.generation,conversation?.run?.participantId,conversation?.run?.status,apply,getSelection,isSelectionCurrent]);
-  const newConversation = useCallback((options:VisibilityOptions&{scope?:DraftScope|null}={}) => { advanceSelection(); eventCursor.current=undefined; scopeRef.current = null; setScope(null); setDraftScope(options.scope??null); conversationRef.current=null; setConversation(null); setError(''); setStreamError(''); setView('conversation'); if(!options.preserveVisibility)setVisibility(true); setLoading(false); savePanel(visibility.current.open,null); }, [advanceSelection,setVisibility]);
+  const newConversation = useCallback((options:VisibilityOptions&{scope?:DraftScope|null}={}) => { advanceSelection(); eventCursor.current=undefined; scopeRef.current = null; setScope(null); setDraftScope(options.scope??null); conversationRef.current=null; setConversation(null); setError(''); setStreamError(''); if(!options.preserveHistoryView)setView('conversation'); if(!options.preserveVisibility)setVisibility(true); setLoading(false); savePanel(visibility.current.open,null); }, [advanceSelection,setVisibility]);
   const startTextConversation = useCallback(async (input: TextConversationActionInput): Promise<TextConversationActionResult> => {
     if(productActionBusy.current)return {status:'busy',message:'已有一项操作正在提交，请先等待原操作完成。'};
     productActionBusy.current=true;setProductActionPending(true);setProductActionError('');
@@ -374,7 +380,7 @@ export function AgentConversationsProvider({children, client = agentConversation
     if(!isSelectionCurrent(observed))return result;
     setLoading(false);setError('');
     const nextOpen=createdConversationVisibility(observedVisibility,visibility.current,selection===undefined);
-    eventCursor.current=undefined;scopeRef.current={workspaceId:result.workspaceId,conversationId:result.id};setScope(scopeRef.current);setDraftScope(null);savePanel(nextOpen,scopeRef.current);conversationRef.current=result;setConversation(result);setView('conversation');setVisibility(nextOpen,false);setStreamError('');return result;
+    eventCursor.current=undefined;scopeRef.current={workspaceId:result.workspaceId,conversationId:result.id};setScope(scopeRef.current);setDraftScope(null);savePanel(nextOpen,scopeRef.current);conversationRef.current=result;setConversation(result);if(!fullRef.current)setView('conversation');setVisibility(nextOpen,false);setStreamError('');return result;
   },[client,advanceSelection,isSelectionCurrent,setVisibility]);
   const setOpen = useCallback((value: boolean) => { setVisibility(value); savePanel(value,scopeRef.current); if (!value) setFull(false); }, [setVisibility]);
   const openHistory=useCallback((workspaceId:string|null=null,options:VisibilityOptions={})=>{setHistoryWorkspaceId(workspaceId);setView('history');if(!options.preserveVisibility)setVisibility(true);savePanel(visibility.current.open,scopeRef.current);},[setVisibility]);

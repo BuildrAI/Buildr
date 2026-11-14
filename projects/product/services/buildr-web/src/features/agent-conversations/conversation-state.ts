@@ -520,3 +520,27 @@ export function currentConversationRequests(conversation: ConversationView | nul
   return conversation.requests.filter(request=>runs.some(run=>!run.supersededBy&&!['completed','stopped'].includes(run.status)&&
     !(request.kind==='question'&&run.questionsEndedBy)&&request.runId===run.id&&request.participantId===run.participantId&&request.generation===run.generation));
 }
+
+export const FOCUS_HISTORY_MIN_WIDTH = 300;
+export const FOCUS_HISTORY_DEFAULT_WIDTH = 340;
+export const FOCUS_HISTORY_MAX_WIDTH = 420;
+export const CONVERSATION_DETAIL_FULL_WIDTH = 800;
+export const CONVERSATION_DETAIL_MIN_SPLIT_WIDTH = 560;
+export const FOCUS_SPLIT_MIN_PANEL_WIDTH = FOCUS_HISTORY_MIN_WIDTH + CONVERSATION_DETAIL_MIN_SPLIT_WIDTH;
+
+/** Focused side-by-side split stays disabled on mobile viewports and overly narrow panels. */
+export function canSplitFocusHistory(panelWidth: number, viewportWidth = panelWidth + 52): boolean {
+  return Number.isFinite(panelWidth) && Number.isFinite(viewportWidth) && viewportWidth > 760 && panelWidth >= FOCUS_SPLIT_MIN_PANEL_WIDTH;
+}
+
+/** Dynamic cap preserves the full 800px conversation reading width whenever space permits. */
+export function focusHistoryMaxWidth(panelWidth: number): number {
+  if (!Number.isFinite(panelWidth) || panelWidth <= 0) return FOCUS_HISTORY_MAX_WIDTH;
+  return Math.max(FOCUS_HISTORY_MIN_WIDTH, Math.min(FOCUS_HISTORY_MAX_WIDTH, Math.floor(panelWidth - CONVERSATION_DETAIL_FULL_WIDTH)));
+}
+
+export function clampFocusHistoryWidth(width: number, panelWidth?: number): number {
+  const base = Number.isFinite(width) && width > 0 ? width : FOCUS_HISTORY_DEFAULT_WIDTH;
+  const max = panelWidth !== undefined ? focusHistoryMaxWidth(panelWidth) : FOCUS_HISTORY_MAX_WIDTH;
+  return Math.min(max, Math.max(FOCUS_HISTORY_MIN_WIDTH, Math.round(base)));
+}

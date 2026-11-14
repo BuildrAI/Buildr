@@ -905,3 +905,34 @@ test('停止未确认时可显式结束等待，不依赖受理或释放证明�
   assert.equal(canContinueConversation({...view,run:{...view.run,stopRequested:false}}),false);
  }
 });
+
+test('专注模式分屏宽度优先保护右侧 800px 阅读宽度，窄窗口退回单栏',async()=>{
+ const {
+  FOCUS_HISTORY_MIN_WIDTH,
+  FOCUS_HISTORY_DEFAULT_WIDTH,
+  FOCUS_HISTORY_MAX_WIDTH,
+  canSplitFocusHistory,
+  focusHistoryMaxWidth,
+  clampFocusHistoryWidth,
+ }=await import('../src/features/agent-conversations/conversation-state.ts');
+ assert.equal(FOCUS_HISTORY_MIN_WIDTH,300);
+ assert.equal(FOCUS_HISTORY_DEFAULT_WIDTH,340);
+ assert.equal(FOCUS_HISTORY_MAX_WIDTH,420);
+ // 宽屏桌面：最大 420px，默认 340px，最小 300px
+ assert.equal(canSplitFocusHistory(1548,1600),true);
+ assert.equal(focusHistoryMaxWidth(1548),420);
+ assert.equal(clampFocusHistoryWidth(0,1548),340);
+ assert.equal(clampFocusHistoryWidth(200,1548),300);
+ assert.equal(clampFocusHistoryWidth(600,1548),420);
+ // 中等桌面：动态上限为 panelWidth - 800，绝不压缩右侧 800px
+ assert.equal(canSplitFocusHistory(1148,1200),true);
+ assert.equal(focusHistoryMaxWidth(1148),348);
+ assert.equal(clampFocusHistoryWidth(400,1148),348);
+ // 紧凑桌面：上限钳制在 300px，确保右侧至少 560px
+ assert.equal(canSplitFocusHistory(960,1012),true);
+ assert.equal(focusHistoryMaxWidth(960),300);
+ assert.equal(clampFocusHistoryWidth(360,960),300);
+ // 过窄桌面或移动端视口退回单栏
+ assert.equal(canSplitFocusHistory(859,911),false);
+ assert.equal(canSplitFocusHistory(860,760),false);
+});

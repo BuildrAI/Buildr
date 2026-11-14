@@ -720,35 +720,106 @@ const historyRuns = {
   }
   },
   'history/focus-mode-drawer': async (fixture: AgentConversationFixture) => {
-  const {capture,input,page,panel,run,update}=fixture;
-  const saved=structuredClone(fixture.conversation);
+  const {capture,input,page,panel,run,update,workspaceId,workspaceRoot}=fixture;
+  const saved=structuredClone(fixture.conversation),originalAdditional=[...fixture.additionalConversations];
   const toggleFull=async(label:string)=>{await panel().getByRole('button',{name:'更多对话操作',exact:true}).click();await page.getByRole('menuitem',{name:label,exact:true}).click();await page.locator('.ant-dropdown:visible').waitFor({state:'hidden'});};
-  const rail=page.getByRole('complementary',{name:'当前对话与所有对话',exact:true}),listEntry=rail.locator('.ac-all-conversations'),drawer=panel().locator('.ac-history-drawer');
+  const rail=page.getByRole('complementary',{name:'当前对话与所有对话',exact:true}),listEntry=rail.locator('.ac-all-conversations'),focusPane=panel().locator('.ac-focus-history-pane'),divider=page.getByRole('separator',{name:'调整专注模式对话列表宽度',exact:true});
+  const dragDivider=async(deltaX:number)=>{
+    const box=(await divider.boundingBox())!;
+    const cx=box.x+box.width/2,cy=box.y+box.height/2;
+    await page.mouse.move(cx,cy);
+    await page.mouse.down();
+    await page.mouse.move(cx+deltaX,cy);
+    await page.mouse.up();
+  };
   try{
+    await page.setViewportSize({width:1600,height:1000});
+    fixture.additionalConversations.splice(0,fixture.additionalConversations.length,...originalAdditional,{...structuredClone(saved),id:'focus-second',workspaceId,cwd:workspaceRoot,title:'第二条专注会话',revision:'focus-second-r1',hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[{id:'focus-second-user',sequence:1,kind:'message',role:'user',text:'第二条专注会话正文',createdAt:new Date().toISOString()}],requests:[],run:run('completed'),activity:undefined});
     update({title:'专注列表现场',requests:[],run:run('completed'),entries:[{id:'focus-user',sequence:1,kind:'message',role:'user',text:'专注列表不替换对话',createdAt:new Date().toISOString()}]});
+    await page.evaluate(()=>localStorage.removeItem('buildr.agent-conversation-history-width'));
     await page.reload();await input().waitFor();
     await toggleFull('专注对话');
-    await listEntry.click();await drawer.waitFor();await drawer.locator('.ac-history-row').first().waitFor();
-    assert.ok(await input().isVisible(),'专注模式打开列表栏后对话输入保持可见');
+    const composerBefore=Math.round((await panel().locator('.ac-composer').boundingBox())!.width);
+    const messageWidthBefore=Math.round((await panel().locator('.ac-message-list').boundingBox())!.width);
+    await listEntry.click();
+    await focusPane.waitFor();await divider.waitFor();await focusPane.locator('.ac-history-row').first().waitFor();
+    assert.equal(await panel().locator('.ac-history-drawer').count(),0,'专注模式不再渲染叠加历史浮层');
+    assert.ok(await input().isVisible(),'专注分屏打开左栏后对话输入保持可见');
     assert.ok(await panel().getByText('专注列表不替换对话',{exact:true}).isVisible(),'对话正文不被历史替换');
-    const geometry=await page.evaluate(()=>{const host=document.querySelector('#agent-conversation-panel')!.getBoundingClientRect(),bar=document.querySelector('.ac-history-drawer')!.getBoundingClientRect();return{hostLeft:host.left,hostWidth:host.width,barLeft:bar.left,barWidth:bar.width};});
-    assert.ok(Math.abs(geometry.barLeft-geometry.hostLeft)<1,'列表栏贴近面板左侧');
-    assert.ok(geometry.barWidth<=421&&geometry.barWidth<geometry.hostWidth,'列表栏宽度有界且不占满面板');
-    await capture(page,'conversation-focus-history-drawer.png');
-    await listEntry.click();await drawer.waitFor({state:'hidden'});
-    assert.ok((await panel().getAttribute('class'))?.includes('is-full'),'再次点击入口不退出专注模式');
-    await listEntry.click();await drawer.waitFor();
-    await fixture.backToConversation();await drawer.waitFor({state:'hidden'});
-    await listEntry.click();await drawer.waitFor();await drawer.locator('.ac-history-row').first().waitFor();
-    await drawer.locator('.ac-history-row-main').first().click();await drawer.waitFor({state:'hidden'});await input().waitFor();
-    assert.ok(await input().isVisible(),'选择对话后关闭列表栏并保留对话');
+    const paneBox=(await focusPane.boundingBox())!,detailBox=(await panel().locator('.ac-conversation-view').boundingBox())!,composerSplit=(await panel().locator('.ac-composer').boundingBox())!,messageSplit=(await panel().locator('.ac-message-list').boundingBox())!;
+    assert.ok(Math.abs(paneBox.width-340)<=1,'专注分屏左栏默认宽度为 340px');
+    assert.ok(detailBox.x>=paneBox.x+paneBox.width-1,'左右分屏并列展示，左栏不遮挡右侧详情');
+    assert.ok(Math.abs(composerSplit.width-composerBefore)<1,'展开左栏后右侧输入区宽度零压缩');
+    assert.ok(Math.abs(messageSplit.width-messageWidthBefore)<1,'展开左栏后右侧正文阅读宽度零压缩');
+
+    await dragDivider(-120);
+    assert.equal(await divider.getAttribute('aria-valuenow'),'300','左拖下限钳制在 300px');
+    assert.equal(Math.round((await focusPane.boundingBox())!.width),300);
+    const leftOverflow=await focusPane.evaluate((node:HTMLElement)=>{const body=node.querySelector<HTMLElement>('.ac-history-body')??node;return{paneScroll:node.scrollWidth,paneClient:node.clientWidth,bodyScroll:body.scrollWidth,bodyClient:body.clientWidth};});
+    assert.ok(leftOverflow.paneScroll<=leftOverflow.paneClient+1&&leftOverflow.bodyScroll<=leftOverflow.bodyClient+1,'最小 300px 下左栏无横向溢出: '+JSON.stringify(leftOverflow));
+
+    await dragDivider(260);
+    assert.equal(await divider.getAttribute('aria-valuenow'),'420','右拖上限钳制在 420px');
+    assert.equal(Math.round((await focusPane.boundingBox())!.width),420);
+    assert.ok(Math.abs((await panel().locator('.ac-composer').boundingBox())!.width-composerBefore)<1,'左栏最大 420px 时仍不压缩右侧宽度');
+
+    await divider.dblclick();
+    assert.equal(Math.round((await focusPane.boundingBox())!.width),340,'双击分隔条恢复默认 340px');
+    await divider.press('ArrowRight');
+    assert.equal(Math.round((await focusPane.boundingBox())!.width),356,'方向键右移步进 16px');
+    assert.equal(await page.evaluate(()=>localStorage.getItem('buildr.agent-conversation-history-width')),'356','列表宽度偏好写入本地存储');
+
+    await page.setViewportSize({width:1180,height:900});
+    await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('.ac-focus-history-pane');return Boolean(node&&Math.round(node.getBoundingClientRect().width)===328);});
+    const narrowDetail=(await panel().locator('.ac-conversation-view').boundingBox())!,narrowComposer=(await panel().locator('.ac-composer').boundingBox())!;
+    assert.ok(narrowDetail.width>=799,'1180px 窗口优先保留右侧 800px 宽度');
+    assert.ok(Math.abs(narrowComposer.width-composerBefore)<1,'1180px 窗口不压缩右侧输入宽度');
+    assert.equal(await page.evaluate(()=>localStorage.getItem('buildr.agent-conversation-history-width')),'356','窗口临时变窄不覆盖已保存宽度偏好');
+
+    await page.setViewportSize({width:1600,height:1000});
+    await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('.ac-focus-history-pane');return Boolean(node&&Math.round(node.getBoundingClientRect().width)===356);});
+
+    await page.setViewportSize({width:820,height:900});
+    await focusPane.waitFor({state:'hidden'});
+    assert.equal(await panel().locator('.ac-focus-history-pane').count(),0,'超窄专注窗口不渲染左右分屏');
+    await panel().locator('.ac-history').waitFor();
+    assert.equal(await input().isVisible(),false,'超窄专注窗口退回面板内单栏历史');
+    await page.setViewportSize({width:1600,height:1000});
+    await focusPane.waitFor();await input().waitFor();
+
+    const secondRow=focusPane.locator('button[data-conversation-id="focus-second"]');
+    await secondRow.waitFor();await secondRow.click();
+    await panel().getByText('第二条专注会话正文',{exact:true}).waitFor();
+    assert.ok(await focusPane.isVisible(),'点击切换对话后左侧列表保持展开');
+    assert.ok((await secondRow.locator('..').getAttribute('class'))?.includes('is-selected'),'切换后左侧列表高亮选中对话');
+
+    await fixture.startNewConversation();
+    await page.waitForFunction(()=>Boolean(document.querySelector('.ac-focus-history-pane'))&&document.querySelectorAll('.ac-focus-history-pane .ac-history-row.is-selected').length===0);
+    await input().fill('专注分屏新草稿');
+    assert.equal(await input().inputValue(),'专注分屏新草稿');
+    assert.ok(await focusPane.isVisible(),'新建对话时左侧列表保持展开');
+
+    await focusPane.locator(`button[data-conversation-id="${saved.id}"]`).click();
+    await panel().getByText('专注列表不替换对话',{exact:true}).waitFor();
+    await capture(page,'conversation-focus-history-split.png');
+
+    await listEntry.click();await focusPane.waitFor({state:'hidden'});
+    assert.ok((await panel().getAttribute('class'))?.includes('is-full'),'再次点击列表入口收起左栏而不退出专注模式');
+    await listEntry.click();await focusPane.waitFor();
+    await fixture.backToConversation();await focusPane.waitFor({state:'hidden'});
+    assert.ok((await panel().getAttribute('class'))?.includes('is-full'),'点击当前对话入口收起左栏且保持专注模式');
+
     await toggleFull('恢复分屏');
+    await page.waitForFunction(()=>!document.querySelector('#agent-conversation-panel')?.classList.contains('is-full'));
     await listEntry.click();await panel().locator('.ac-history').waitFor();
-    assert.equal(await panel().locator('.ac-history-drawer').count(),0,'分屏模式不渲染临时栏');
-    assert.equal(await input().isVisible(),false,'分屏模式历史仍在面板内替换对话');
+    assert.equal(await panel().locator('.ac-focus-history-pane').count(),0,'普通分屏模式不渲染专注历史分栏');
+    assert.equal(await input().isVisible(),false,'普通分屏模式历史仍在面板内替换对话');
     await fixture.backToConversation();await input().waitFor();
   }finally{
     fixture.conversation=saved;
+    fixture.additionalConversations.splice(0,fixture.additionalConversations.length,...originalAdditional);
+    await page.setViewportSize({width:1600,height:1000});
+    await page.evaluate(()=>localStorage.removeItem('buildr.agent-conversation-history-width'));
     if((await panel().getAttribute('class'))?.includes('is-full'))await toggleFull('恢复分屏');
     await page.reload();await input().waitFor();
   }

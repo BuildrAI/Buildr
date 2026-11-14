@@ -19,7 +19,7 @@ import { useDebouncedValue } from './useDebouncedValue';
 import './conversation-activity.css';
 export type ConversationWorkspace = {id:string;name:string;rootPath:string};
 type HistoryGroupResult = {total?:number;busy:boolean;error:boolean};
-export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWorkspaceId}:{workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null}) {
+export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWorkspaceId,keepHistoryOpen=false}:{workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;keepHistoryOpen?:boolean}) {
   const context=useAgentConversations();
   const draftIds=useConversationDraftPresence();
   const initial=context.historyWorkspaceId??'';
@@ -46,7 +46,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   const modelName=(id:string)=>conversationModelLabel(id,context.connections,context.modelCatalog);
   const workspaceName=(id:string)=>id===DEFAULT_HISTORY_GROUP?'默认':workspaces.find(item=>item.id===id)?.name||id;
   const renderRow=(row:ConversationSummary)=><div key={row.workspaceId+':'+row.id} className={'ac-history-row'+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
-    <button type="button" className="ac-history-row-main" data-conversation-id={row.id} onClick={()=>void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true})}>
+    <button type="button" className="ac-history-row-main" data-conversation-id={row.id} onClick={()=>void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true,preserveHistoryView:keepHistoryOpen})}>
       <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/>{draftIds.includes(row.id)&&<span className="ac-draft-status">有草稿</span>}</span>
       {sendActivity(row)?.reason&&<span className="ac-send-reason">{sendActivity(row)?.reason}</span>}
       {row.searchSnippet&&<span className="ac-history-row-snippet" title={row.searchSnippet}>{row.searchSnippet}</span>}
@@ -79,7 +79,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   });
   const empty=groupsSettled&&visibleGroups.every(id=>groupResults.values[id]?.total===0);
   return <section className="ac-history" aria-label="对话列表">
-    <header className="ac-thread-header">{!context.open&&<Button type="text" icon={<ArrowLeftOutlined/>} aria-label="返回当前对话" onClick={()=>context.setView('conversation')}/>}<strong>对话列表</strong>{!context.open&&<Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" onClick={()=>context.newConversation({preserveVisibility:true})}/>}</header>
+    <header className="ac-thread-header">{!context.open&&<Button type="text" icon={<ArrowLeftOutlined/>} aria-label="返回当前对话" onClick={()=>context.setView('conversation')}/>}<strong>对话列表</strong>{!context.open&&<Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" onClick={()=>context.newConversation({preserveVisibility:true,preserveHistoryView:keepHistoryOpen})}/>}</header>
     <div className="ac-history-body">
       <div className="ac-history-toolbar"><Input allowClear prefix={<SearchOutlined/>} aria-label="搜索对话" placeholder="搜索对话" value={query} onChange={event=>setQuery(event.target.value)}/><Select aria-label="对话列表工作空间" value={workspaceId} options={[{value:'',label:'全部工作空间'},...workspaces.map(item=>({value:item.id,label:item.name}))]} onChange={value=>{setWorkspaceId(value);setFilter(null);}}/></div>
       <BuildrParticipation workspaceId={workspaceId||'@default'}/>

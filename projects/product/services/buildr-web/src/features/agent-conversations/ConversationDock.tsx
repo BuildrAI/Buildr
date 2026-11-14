@@ -7,6 +7,7 @@ import { ConversationDockSurface } from './ConversationDockSurface';
 import { AccountQuotaButton } from './AccountQuotaButton';
 import type { ConversationWorkspace } from './ConversationHistory';
 import { readOptionalPreference, writeOptionalPreference } from '../../lib/optional-preferences';
+import { canSplitFocusHistory } from './conversation-state';
 import './conversation-dock.css';
 
 type Props = { panel: ReactElement<HTMLAttributes<HTMLElement> & {ref?: Ref<HTMLElement>}>; portalTarget?: HTMLElement | null; workspaces: ConversationWorkspace[] };
@@ -58,5 +59,5 @@ export function ConversationDock({panel, portalTarget, workspaces}: Props) {
     onPointerUp={event => finish(event.pointerId)} onPointerCancel={event => finish(event.pointerId)} onLostPointerCapture={event => finish(event.pointerId)} onDoubleClick={() => resize(defaultWidth, true)}>
     <span className="split-divider-header-marker" aria-hidden="true"/>
   </SplitDivider>;
-  return render(<ConversationDockSurface panel={panel} activity={<ConversationActivity workspaces={workspaces}/>} settingsEntry={<AccountQuotaButton/>} open={context.open} view={context.view} onPreviewCurrent={()=>context.setView('conversation')} full={context.full} side={context.side} width={width} onToggle={()=>context.toggleView('conversation')} onNew={preserve=>context.newConversation({preserveVisibility:preserve})} onSettings={()=>context.setSettings(true)} divider={divider}/>);
+  return render(<ConversationDockSurface panel={panel} activity={<ConversationActivity workspaces={workspaces}/>} settingsEntry={<AccountQuotaButton/>} open={context.open} view={context.view} onPreviewCurrent={()=>context.setView('conversation')} full={context.full} side={context.side} width={width} onToggle={()=>context.toggleView('conversation')} onNew={preserve=>context.newConversation({preserveVisibility:preserve,preserveHistoryView:context.full&&context.view==='history'&&typeof window!=='undefined'&&canSplitFocusHistory(document.getElementById('agent-conversation-panel')?.getBoundingClientRect().width||Math.max(0,window.innerWidth-52),window.innerWidth)})} onSettings={()=>context.setSettings(true)} divider={divider}/>);
 }

@@ -36,5 +36,6 @@
 
 .ac-panel:not(.is-full) .ac-request{max-width:none}
 .ac-panel.is-full{position:relative}
-/* 专注模式的历史左栏是临时浏览浮层：不替换当前对话，选择或返回后关闭。 */
-.ac-history-drawer{position:absolute;top:0;bottom:0;left:0;z-index:11;width:min(420px,100%);background:#fff;border-right:1px solid var(--soft-line);box-shadow:4px 0 18px #273f3220}
+/* 专注模式左侧列表采用持久分栏：与右侧对话详情并列，经可拖拽分隔条调节宽度并优先保留右侧阅读空间。 */
+.ac-focus-history-pane{flex:none;position:relative;z-index:1;display:flex;flex-direction:column;min-width:0;min-height:0;height:100%;background:#fff}
+.ac-focus-history-divider.split-divider{flex:none;position:relative;z-index:4;margin-inline:-4.5px}
