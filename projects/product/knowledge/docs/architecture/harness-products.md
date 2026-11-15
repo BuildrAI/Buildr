@@ -2,6 +2,8 @@
 
 当前重构采用两层产品关系：**Harness 负责 Agent 执行及完整网页；Development 为 Harness 准备工程现场和上下文。** 本页解释实现边界，不代替任务验证、人工验收或公开发布批准。
 
+整体关系见[双产品系统图](../../archify/system/buildr-system-overview.html)。
+
 ## 产品关系
 
 | 产品 | 拥有的功能 | 不承担的职责 |

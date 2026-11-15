@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {canCloseUncertainConversation} from '../../src/features/agent-conversations/conversation-state.ts';
+import {canCloseUncertainConversation} from '../../../buildr-harness-web/src/features/agent-conversations/conversation-state.ts';
 import {resolveQuestionAnswer,questionAnswerDisplay} from '../../../buildr-harness/src/domain/question-answer.ts';
-import type {ConnectionView} from '../../src/features/agent-conversations/types.ts';
+import type {ConnectionView} from '../../../buildr-harness-web/src/features/agent-conversations/types.ts';
 import {modelSourceName} from '../../src/lib/model-picker.ts';
 
 /** Actual hosted UI; only the new HTTP transport is replaced with explicit fixtures. */

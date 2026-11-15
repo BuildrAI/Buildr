@@ -71,6 +71,12 @@ export function planBrowserCommands(selectors: any[], webDistRoot: string, env: 
     }];
   }
   return selected.flatMap((selector: string) => {
+    // Dialogue behavior belongs to the complete Harness page. Development proves
+    // only its real frame/engineering boundary, not the retired component host.
+    if(selector==='agent-conversations'){if(env.BUILDR_AGENT_JOURNEY_PART||env.BUILDR_AGENT_JOURNEY_BATCH||env.BUILDR_AGENT_SCENARIO_FOCUS)throw Object.assign(new Error('旧组件场景选择不适用于网页集成，请使用完整 Harness 检查或 Development frame 检查。'),{code:'browser_agent_conversation_focus_retired'});return [
+      {id:'browser:agent-conversations:development-frame',argv:[process.execPath,isolationRunner,'--script',path.join(productRoot,'test/e2e/harness-frame.ts')],cwd:productRoot,timeoutMs:180000,env:{...env,BUILDR_BROWSER_WEB_DIST_ROOT:webDistRoot}},
+      {id:'browser:agent-conversations:harness-web',argv:[process.execPath,'--test',path.resolve(productRoot,'../buildr-harness-web/test/browser/standalone.test.ts')],cwd:path.resolve(productRoot,'../buildr-harness-web'),timeoutMs:180000,env:{...env}},
+    ];}
     const groups = selector === 'code' || selector === 'code-explorer' ? planCodeBrowserGroups(env, selector) : selector === 'agent-conversations' ? planAgentConversationGroups(env) : [null];
     return groups.map((group: any) => ({
       id: `browser:${selector}${group ? ':' + group.id : ''}`,
@@ -185,17 +191,9 @@ export function selectBrowserSelectors(changedPaths: any): any  {
       add(plan,'agent-conversations',originalValue,'Conversation browser scenarios keep their direct browser owner.');
       continue;
     }
+    if(originalValue.includes('/features/harness-ui/')){add(plan,'agent-conversations',originalValue,'Development 工程网页嵌入与上下文集成发生变化。');if(originalValue.endsWith('.css'))add(plan,'layout',originalValue,'工程嵌入布局发生变化。');continue;}
     if (originalValue.startsWith('services/buildr-harness-web/')) {
-      if (!originalValue.includes('/test/')) {
-        add(plan, 'agent-conversations', originalValue, 'The shared Harness UI is the conversation implementation used by Development.');
-        if (!originalValue.includes('/features/agent-conversations/')) {
-          for (const selector of ['layout', 'task-materials', 'articles']) add(plan, selector, originalValue, 'Shared reading, theme and layout also affect Development consumers.');
-        }
-      }
-      continue;
-    }
-    if (originalValue.startsWith('services/buildr-harness-web/')) {
-      plan.reasons.push({path: originalValue, selector: null, reason: 'Standalone Harness shell changes require harness-standalone-acceptance; Development browser journeys do not prove that shell.'});
+      plan.reasons.push({path: originalValue, selector: null, reason: '完整 Harness 网页由自身检查负责；工程嵌入由 harness-frame-browser 负责，不按共享组件扩大全部工程页面。'});
       continue;
     }
     if (originalValue.startsWith('services/buildr-web/') && !originalValue.startsWith('services/buildr-web/src/')) {

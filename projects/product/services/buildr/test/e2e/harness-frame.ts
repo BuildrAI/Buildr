@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';import path from 'node:path';
+import path from 'node:path';
 import {createRuntime as createFixture} from '../helpers/runtime-harness.ts';
 import {createRuntime,runtimeProvide} from '../../src/bootstrap/runtime.ts';
 import {WORKSPACE_APPLICATION} from '../../src/modules/workspace/module.ts';
@@ -10,8 +10,9 @@ import {launchTestBrowser} from './browser-launch.ts';
 const root=process.env.BUILDR_SMOKE_ROOT;if(!root)throw new Error('isolated_workspace_runner_required');
 const work=path.join(root,'workspace');
 const fixture=createFixture();fixture.initializeWorkspace({targetRoot:work,name:'嵌套网页验收',description:'隔离工程现场',profile:'team',agent:null});
+fixture.createTask(work,{taskId:'frame-task',title:'框内关联任务',intent:'核对工程关联归属',status:'active',projects:[],services:[],changes:[]});
 const runtime=createRuntime(),workspace=runtimeProvide(runtime,WORKSPACE_APPLICATION);
-const app=createLocalWorkspaceServer(runtime,{ensureRegisteredTarget:workspace.ensureRegisteredTarget,resolveRegisteredWorkspace:workspace.resolveRegisteredWorkspace,targetRoot:work,webProfile:{profile:'development'},staticRoot:path.resolve(import.meta.dirname,'../../web-dist')});
+const app=createLocalWorkspaceServer(runtime,{ensureRegisteredTarget:workspace.ensureRegisteredTarget,resolveRegisteredWorkspace:workspace.resolveRegisteredWorkspace,targetRoot:work,webProfile:{profile:'development'},staticRoot:process.env.BUILDR_BROWSER_WEB_DIST_ROOT??path.resolve(import.meta.dirname,'../../web-dist')});
 const browser=await launchTestBrowser();
 try{
  const {url,initialWorkspaceId}=await app.ready;
@@ -27,10 +28,20 @@ try{
  const input=frame.getByRole('textbox',{name:'对话输入',exact:true});await input.fill('不会发送的验收草稿');
  // Forged protocol/source must not switch or submit the actual conversation.
  await page.evaluate(()=>window.postMessage({protocol:'buildr.harness-frame/v1',event:'selection',workspaceId:'forged',conversationId:'forged'},location.origin));
- console.log('frame-layout',await page.locator('.development-harness-frame').evaluate(node=>({html:node.outerHTML.slice(0,2300),rect:node.getBoundingClientRect().toJSON(),buttons:[...node.querySelectorAll('button')].map(b=>({text:b.textContent,rect:b.getBoundingClientRect().toJSON()}))})));await page.screenshot({path:'/tmp/harness-refactor-frame-before-focus.png'});
  await page.getByRole('button',{name:'专注',exact:true}).click();assert.equal(await page.locator('iframe[title="Buildr Harness"]').getAttribute('data-acceptance-identity'),'retained');assert.equal(await input.inputValue(),'不会发送的验收草稿');
  await page.getByRole('button',{name:'退出专注',exact:true}).click();assert.equal(await input.inputValue(),'不会发送的验收草稿');
  await page.getByRole('button',{name:'收起',exact:true}).click();await page.locator('#global-conversations-entry').click();assert.equal(await input.inputValue(),'不会发送的验收草稿');
+ const conversation=await page.evaluate(async(workspaceId)=>{const token=document.querySelector('meta[name="buildr-session"]')!.getAttribute('content')!;const response=await fetch(`/api/v1/workspaces/${workspaceId}/agent-conversations`,{method:'POST',headers:{'content-type':'application/json','x-buildr-session':token},body:'{}'});const value=await response.json();if(!response.ok)throw Error(JSON.stringify(value));return value;},initialWorkspaceId);
+ await page.locator('.development-harness-frame>header').getByRole('button',{name:'全部对话',exact:true}).click();
+ await page.evaluate(({workspaceId,conversationId})=>(document.querySelector('iframe[title="Buildr Harness"]') as HTMLIFrameElement).contentWindow!.postMessage({protocol:'buildr.harness-frame/v1',action:'open',workspaceId,conversationId},location.origin),{workspaceId:initialWorkspaceId,conversationId:conversation.id});
+ await page.getByRole('button',{name:'关联任务',exact:true}).click();
+ await page.locator('.ac-association-search input').fill('框内');
+ const saved=page.waitForResponse(response=>response.request().method()==='PATCH'&&response.url().endsWith('/agent-conversations/'+conversation.id));
+ await page.locator('.ac-association-candidate').filter({hasText:'框内关联任务'}).click();const savedResponse=await saved;assert.equal(savedResponse.status(),200);const savedView=await savedResponse.json();assert.ok(savedView.taskLinks.some((link:{taskId:string})=>link.taskId==='frame-task'));
+ await page.waitForFunction(async({workspaceId,id})=>{const token=document.querySelector('meta[name="buildr-session"]')!.getAttribute('content')!;const response=await fetch(`/api/v1/workspaces/${workspaceId}/agent-conversations/${id}`,{headers:{'x-buildr-session':token}});const value=await response.json();return value.taskLinks?.some((link:{taskId:string})=>link.taskId==='frame-task');},{workspaceId:initialWorkspaceId,id:conversation.id});
+ assert.equal(await frame.getByRole('button',{name:'关联任务',exact:true}).count(),0,'engineering task controls belong to Development, not the embedded product');
+ await page.locator('[data-associated-task="frame-task"]').click();await page.waitForURL('**/tasks/frame-task');
+ if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_SCREENSHOT_DIR,'development-harness-embedded.png')});
  await page.locator('.development-harness-frame>header').getByRole('button',{name:'设置',exact:true}).click();await frame.getByRole('tab',{name:'智能体',exact:true}).waitFor();
- assert.deepEqual(errors,[]);console.log(JSON.stringify({status:'passed',checks:['authenticated-frame','same-complete-web','workspace-selection','embedded-focused-draft-retention','exact-window-message-check','settings-in-frame'],realModelCalls:0}));
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({status:'passed',checks:['authenticated-frame','same-complete-web','workspace-selection','embedded-focused-draft-retention','exact-window-message-check','settings-in-frame','development-task-association-and-navigation'],realModelCalls:0}));
 }finally{await browser.close();await app.shutdown();await runtimeProvide(runtime,AGENT_SERVICE_APPLICATION).close();await stopAgentProcess({dataRoot:process.env.BUILDR_APP_DATA_DIR!,mode:'stop-owned'});}

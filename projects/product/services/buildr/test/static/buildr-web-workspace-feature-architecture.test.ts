@@ -164,7 +164,7 @@ test('Buildr Web 对话与公共模型库不出现执行方品牌字面量分支
     'native-antigravity',
   ]);
   const allowedHistoricalFallbackFiles = new Set(['lib/model-picker.ts']);
-  const roots = ['features/agent-conversations', 'lib'];
+  const roots = ['features/harness-ui', 'lib'];
   const scanned: string[] = [];
   const violations: string[] = [];
   const visit = (directory: string) => {
@@ -185,10 +185,10 @@ test('Buildr Web 对话与公共模型库不出现执行方品牌字面量分支
     }
   };
   for (const dir of roots) visit(path.join(webSource, dir));
-  assert.ok(scanned.length >= 25, 'expected agent-conversations and lib TypeScript files to be scanned');
+  assert.ok(scanned.length >= 25, 'expected Development integration and lib TypeScript files to be scanned');
   assert.deepEqual(
     violations,
     [],
-    'buildr-web agent-conversations and lib must rely on server-declared presentation, compatibility, and nativeDetail metadata',
+    'buildr-web harness-ui and lib must rely on server-declared presentation, compatibility, and nativeDetail metadata',
   );
 });

@@ -4,7 +4,6 @@ import { AgentConversationsProvider, useAgentConversationShell } from '../featur
 import { ConversationWorkspace } from '../features/harness-ui/ConversationWorkspace';
 import { ConversationActivity } from '../features/harness-ui/ConversationActivity';
 import { CommentOutlined } from '@ant-design/icons';
-import { AgentConnectionSettings } from '../features/harness-ui/AgentConnectionSettings';
 import { AppPrimaryNavigation } from './AppPrimaryNavigation';
 import { AppShellHeader, AppShellFrame } from './AppShellView';
 import { WorkbenchPreferencesProvider } from '../features/workbench/hooks/useWorkbenchPreferences';
@@ -570,7 +569,6 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
           ) : null}
         </div>
       </DrawerShell>
-      <AgentConnectionSettings />
       <WorkspaceSettingsDrawer open={settingsOpen} workspaceId={settingsWorkspaceId}
         onClose={() => setSettingsOpen(false)} onSaved={workspaceSettingsSaved} />
     </WorkbenchPreferencesProvider>

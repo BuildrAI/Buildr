@@ -1,8 +1,8 @@
+import {conversationApiPath as path} from '../references';
 import {api} from '../../../api';
 import type {ConversationView,ConversationSummary,CatalogModel} from '../types';
 import type {AgentParticipationParticipation,AgentParticipationSummaryParticipationSummary,AgentParticipationSummaryQueryParticipationSummaryQuery} from '../../../../build/generated/agent-service-http-dto';
 const app='/api/v1/app/agent-service';
-const path=(workspaceId:string,id?:string)=>workspaceId.startsWith('scope:')?'/api/v2/agent-service/scopes/'+encodeURIComponent(workspaceId)+'/conversations'+(id?'/'+encodeURIComponent(id):''):'/api/v1/workspaces/'+encodeURIComponent(workspaceId)+'/agent-service/conversations'+(id?'/'+encodeURIComponent(id):'');
 const query=(input:Record<string,unknown>)=>new URLSearchParams(Object.entries(input).filter(([key,value])=>key!=='signal'&&value!==undefined&&value!=='').map(([key,value])=>[key,String(value)]));
 const get=<T,>(url:string,signal?:AbortSignal)=>api(url,{signal,headers:{'x-buildr-session':''}}) as Promise<T>;
 export const agentConversationsApi={

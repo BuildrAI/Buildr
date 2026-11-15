@@ -35,7 +35,7 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
     }
     for (const link of view.querySelectorAll<HTMLAnchorElement>('a.markdown-relative-link')) {
         const reference = link.getAttribute('data-markdown-href') || '';
-        if(reference.trim().startsWith('@')){link.classList.remove('markdown-relative-link');link.removeAttribute('href');link.setAttribute('title','工程对象请在 Development 中打开');continue;}
+        if(reference.trim().startsWith('@')){link.classList.remove('markdown-relative-link');if(window.parent!==window&&currentOptions.taskLinkPathname){link.setAttribute('href','#');link.addEventListener('click',event=>{event.preventDefault();window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'work-object',reference,scopePath:currentOptions.taskLinkPathname},location.origin);});}else{link.removeAttribute('href');link.setAttribute('title','工程对象请在 Development 中打开');}continue;}
         link.addEventListener('click', (event) => {
           event.preventDefault();
           const href = link.getAttribute('data-markdown-href') || link.getAttribute('href') || '';
