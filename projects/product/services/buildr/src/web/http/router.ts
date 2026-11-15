@@ -1,3 +1,4 @@
+import {harnessWebRoot} from '@buildr-ai/buildr-harness';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
@@ -74,8 +75,20 @@ export function createLocalWorkspaceRequestRouter({
       jsonResponse(response, 503, { error: { code: 'app_shutting_down', message: 'Buildr 正在退出。' } });
       return;
     }
+    if(request.method==='GET'&&pathname.startsWith('/harness/')){
+      const cookie=String(request.headers.cookie||'').split(';').map((value:string)=>value.trim()).find((value:string)=>value.startsWith('buildr-frame='));
+      if(cookie?.slice('buildr-frame='.length)!==sessionToken)throw Object.assign(new Error('Harness 页面会话已失效。'),{code:'session_forbidden',status:403});
+      assertReadRequest({...request,headers:{...request.headers,'x-buildr-session':sessionToken}},trustedOrigin,sessionToken);
+      if(pathname==='/harness/'||pathname==='/harness/index.html'){
+        const html=(await readFile(path.join(harnessWebRoot(),'index.html'),'utf8')).replace('</head>',`<meta name="buildr-session" content="${sessionToken}"><meta name="buildr-web-profile" content="development-harness"></head>`);
+        response.setHeader('set-cookie',imageSessionCookie(sessionToken));
+        response.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','content-security-policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'",'x-frame-options':'SAMEORIGIN'});response.end(html);return;
+      }
+      if(await serveDistAsset(response,pathname.slice('/harness'.length),harnessWebRoot(),request))return;
+      jsonResponse(response,404,{error:{code:'harness_asset_missing',message:'Harness 网页资源不存在。'}});return;
+    }
     if (request.method === 'GET' && (pathname === '/' || workspaceAppRoute.test(pathname))) {
-      response.setHeader('set-cookie', imageSessionCookie(sessionToken));
+      response.setHeader('set-cookie', [imageSessionCookie(sessionToken),`buildr-frame=${sessionToken}; Path=/harness/; HttpOnly; SameSite=Strict`]);
       textResponse(response, 200, injectedIndexHtml(sessionToken, previewIdentity, webProfile, staticRoot), 'text/html; charset=utf-8');
       return;
     }

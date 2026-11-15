@@ -1,11 +1,11 @@
-import { createProgrammaticHttpContribution, createAgentServiceHttpContribution, agentRuntimeStatus } from '@buildr-ai/buildr-agent';
+import { createProgrammaticHttpContribution, createAgentServiceHttpContribution, agentRuntimeStatus } from '@buildr-ai/buildr-harness';
 import { createAgentCliContributions } from './interfaces/cli/agent.ts';
 import { createParticipationSourceObserver } from './application/participation-source.ts';
 import { AGENT_ASSETS_SOURCE_QUERY } from '../agent-assets/source/module.ts';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
-import { connectHarnessProcess as connectAgentProcess, restartAgentProcess, prepareAgentRuntime, AgentServiceError } from '@buildr-ai/buildr-agent';
-import type { AgentHostCapabilities, AgentProcessConnection, AgentOperations, AgentRuntimeUnit } from '@buildr-ai/buildr-agent';
+import { connectHarnessProcess as connectAgentProcess, restartAgentProcess, prepareAgentRuntime, AgentServiceError } from '@buildr-ai/buildr-harness';
+import type { AgentHostCapabilities, AgentProcessConnection, AgentOperations, AgentRuntimeUnit } from '@buildr-ai/buildr-harness';
 import { WORKSPACE_APPLICATION } from '../workspace/module.ts';
 import { TASK_QUERY_APPLICATION } from '../task/module.ts';
 import { defaultWorkspaceRoot } from './infrastructure/default-workspace.ts';

@@ -41,7 +41,7 @@ Buildr 已有独立执行后台和可替换宿主契约，但对话界面、HTTP
 
 ## Impact
 
-- `services/buildr-agent/`：公开契约、通用启动激活、来源授权和策略、宿主注册、目录提供者、通用工作对象关联、程序凭据唯一维护及共享 HTTP/SSE。
+- `services/buildr-harness/`：公开契约、通用启动激活、来源授权和策略、宿主注册、目录提供者、通用工作对象关联、程序凭据唯一维护及共享 HTTP/SSE。
 - `services/buildr/src/modules/agent-service/`：保留 Development 宿主与受认证代理，迁出通用协议和程序凭据维护；旧接口仅映射到唯一能力，不保留第二套业务处理器。
 - Development 工程业务模块与应用装配：收口对话、生成和执行服务依赖，验证不加载 Harness 接入时已有非执行业务仍可独立使用；不另造通用插件框架或所有厂家统一 SDK。
 - 协议 Schema、生成类型、程序帮助和验证入口迁到唯一所有者；Harness 测试不依赖 `buildr/test` 私有工具。现有 UI 本阶段只通过兼容接口回归，抽包属于第二变更。

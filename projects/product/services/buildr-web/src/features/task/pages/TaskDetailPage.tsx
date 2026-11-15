@@ -14,7 +14,7 @@ import { workspaceHref } from '../../../lib/labels';
 import { TaskOverview } from '../components/TaskOverview';
 import { TaskChecklist } from '../components/TaskChecklist';
 import { TaskSummary } from '../components/TaskSummary';
-import { TaskConversationEntry } from '../../agent-conversations/TaskConversationEntry';
+import { TaskConversationEntry } from '../../harness-ui/TaskConversationEntry';
 import { TaskHeaderMetadata } from '../components/TaskHeaderMetadata';
 import { useTaskVisit } from '../hooks/useTaskVisit';
 import { useWorkbenchPreferences } from '../../workbench/hooks/useWorkbenchPreferences';

@@ -39,7 +39,7 @@ for (const order of ['harness-first', 'development-first'] as const) {
   run('npm', ['install', '--global', '--offline', '--prefix', prefix, artifacts[0]!], env, work);
   const firstProduct = order === 'harness-first' ? harness : development;
   assert.equal(fs.existsSync(order === 'harness-first' ? development : harness), false, 'the first startup has only one product installed');
-  const core = await import(pathToFileURL(path.join(firstProduct, 'node_modules/@buildr-ai/buildr-agent/build/index.js')).href);
+  const core = await import(pathToFileURL(path.join(firstProduct, ...(order==='harness-first'?['build/index.js']:['node_modules/@buildr-ai/buildr-harness/build/index.js']))).href);
   let web: ReturnType<typeof spawn> | undefined;
   let stderr = '';
   const startDevelopment = async () => {
@@ -83,7 +83,7 @@ for (const order of ['harness-first', 'development-first'] as const) {
       // Only the native program is a fixture. Both installed products, core,
       // configuration isolation, public operations and npm effects stay real.
       // This test must never contact a paid provider or inherit a live account.
-      const source = fs.readFileSync(path.resolve(import.meta.dirname, '../../../buildr-agent/test/integration/executors/fixtures/codex-cli.mjs'), 'utf8');
+      const source = fs.readFileSync(path.resolve(import.meta.dirname, '../../../buildr-harness/test/integration/executors/fixtures/codex-cli.mjs'), 'utf8');
       // Seed only this test's managed-program collaborator. This does not
       // claim to verify an official program download or its install receipt.
       const executable = path.join(dataRoot, 'agent-service/programs/codex/uninstall-fixture/codex.mjs');

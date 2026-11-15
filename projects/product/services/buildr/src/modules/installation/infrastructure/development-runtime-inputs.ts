@@ -6,8 +6,8 @@ import { spawnSync } from 'node:child_process';
 const product = 'projects/product';
 const service = `${product}/services/buildr`;
 const frontend = `${product}/services/buildr-web`;
-const agent = `${product}/services/buildr-agent`;
-const preparedAgent = `${service}/node_modules/@buildr-ai/buildr-agent`;
+const agent = `${product}/services/buildr-harness`;
+const preparedAgent = `${service}/node_modules/@buildr-ai/buildr-harness`;
 
 // One definition for the running development product and its closeout restart.
 // Documentation, tests and the independently installed DSH plugin are not inputs.

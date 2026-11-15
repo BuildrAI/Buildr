@@ -57,7 +57,7 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
     members.set(file, names === null ? null : new Set([...(before ?? []), ...names])); pending.push(file);
   };
   const local = (file: string) => file.startsWith(prefix) ? file.slice(prefix.length) : null;
-  const agentPrefix = prefix.replace(/buildr\/$/u, 'buildr-agent/');
+  const agentPrefix = prefix.replace(/buildr\/$/u, 'buildr-harness/');
   const agentLocal = (file: string) => file.startsWith(agentPrefix) ? file.slice(agentPrefix.length) : null;
   const recipeFile = (file: string) => {
     const relative = local(file);
@@ -97,7 +97,7 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
     }
   }
   const discoveredIntegrationFiles: string[] = !options.legacyDeclarations
-    && step.service === 'buildr-agent'
+    && step.service === 'buildr-harness'
     && step.executor?.type === 'command'
     && Array.isArray(step.executor.args)
     && step.executor.args.some((argument: string) => String(argument).replaceAll('\\', '/').endsWith('tools/testing/run-integration.ts'))

@@ -2,7 +2,7 @@
 
 Buildr 产品使用四类检查：静态检查（Static Check）、单元测试（Unit Test）、集成测试（Integration Test）、端到端测试（End-to-End Test，E2E）。日常开发按用户目标定向选择检查，推送前取得四服务全部静态检查（Static Check）与单元测试（Unit Test）的有效完整证明。发布核对准确交付物及真实平台差异，不另造第五类测试。
 
-本页解释产品自身执行方式；[项目声明](../../../verification.yml)公开少量稳定入口，[准备声明](../../../preparation.yml)记录真实准备命令。四服务是 `buildr`、`buildr-web`、`buildr-agent` 与 `dsh-plugin`，成员发现、类型和相关选择由[实际执行登记](../../../services/buildr/test/verification/registry.ts)与项目程序负责，不在说明和地图各复制一份文件清单。
+本页解释产品自身执行方式；[项目声明](../../../verification.yml)公开少量稳定入口，[准备声明](../../../preparation.yml)记录真实准备命令。四服务是 `buildr`、`buildr-web`、`buildr-harness` 与 `dsh-plugin`，成员发现、类型和相关选择由[实际执行登记](../../../services/buildr/test/verification/registry.ts)与项目程序负责，不在说明和地图各复制一份文件清单。
 
 ## 三层职责
 
@@ -97,15 +97,15 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 第二轮完整四类实测：112项选择、106项实际执行、106项通过、6项环境或平台不可用，总墙钟37分05秒；准备39.9秒、执行2155.5秒、复用收尾23.5秒。所有执行项累计102分51秒，global=3下理论下限约34分17秒，实际为下限的108.2%；三路并发占用33分16秒，说明机器接近持续满载。14个浏览器选择器累计31分28秒，浏览器流水从第46秒持续到第1015秒，之后约20分钟由Integration/E2E进程链和末尾独占组构成。对话组502秒中两个批次分别274秒和254秒，只有约26秒重叠，因为`e2e-browser:code`在前241秒占用另一个浏览器槽位；即使两个批次完全并行，浏览器总工作不变，只会把其他浏览器组后移。reading bundle全量139秒，r2三个独立现场合计约155秒。继续提速应优先减少真实重复生命周期或缩短长集成套件，而不是继续压缩对话组或提高默认并发。
 
-智能体服务（Agent Service）的完整集成入口是从 `services/buildr-agent` 运行 `../buildr/tools/development/run-development-npm run test:integration`；它按[服务检查登记](../../../services/buildr-agent/tools/testing/verification-checks.ts)发现全部组，项目完整入口也消费同一登记。`agent-integration` 覆盖对话状态、控制与 Qoder 服务契约，`agent-integration-storage-runtime` 独立覆盖存储、准备与宿主运行单元契约，`agent-integration-models-accounts` 独立覆盖模型目录与账号接入契约，`agent-integration-conversations` 独立覆盖较长的对话生命周期文件；四组成员互斥，完整入口仍发现同一全集。前三者各申请2个工作进程与2份I/O，后者申请1个工作进程与1份I/O，在原全局额度内并行，避免大文件堵住组内文件队列。`agent-integration-native` 与 `agent-integration-native-runtime` 互斥分担 `executors/**` 厂商协议与运行测试；重型独立进程按启动与归属、跨版本交接、观察与恢复分别归入 `agent-integration-startup`、`agent-integration-handoff`、`agent-integration-recovery`。真实退避上限用例独立归入 `agent-integration-recovery-budget`，避免27秒左右的真实等待挤占恢复组串行预算；保持唯一主归属与完整发现，原恢复组预算不变。使用 `--check` 选择其中一组不能宣称完整智能体覆盖。
+智能体服务（Agent Service）的完整集成入口是从 `services/buildr-harness` 运行 `../buildr/tools/development/run-development-npm run test:integration`；它按[服务检查登记](../../../services/buildr-harness/tools/testing/verification-checks.ts)发现全部组，项目完整入口也消费同一登记。`agent-integration` 覆盖对话状态、控制与 Qoder 服务契约，`agent-integration-storage-runtime` 独立覆盖存储、准备与宿主运行单元契约，`agent-integration-models-accounts` 独立覆盖模型目录与账号接入契约，`agent-integration-conversations` 独立覆盖较长的对话生命周期文件；四组成员互斥，完整入口仍发现同一全集。前三者各申请2个工作进程与2份I/O，后者申请1个工作进程与1份I/O，在原全局额度内并行，避免大文件堵住组内文件队列。`agent-integration-native` 与 `agent-integration-native-runtime` 互斥分担 `executors/**` 厂商协议与运行测试；重型独立进程按启动与归属、跨版本交接、观察与恢复分别归入 `agent-integration-startup`、`agent-integration-handoff`、`agent-integration-recovery`。真实退避上限用例独立归入 `agent-integration-recovery-budget`，避免27秒左右的真实等待挤占恢复组串行预算；保持唯一主归属与完整发现，原恢复组预算不变。使用 `--check` 选择其中一组不能宣称完整智能体覆盖。
 
 重型组每组申请一个工作位，统一资源协调器（Resource Coordinator）以 `agent-process-tests` 限制同机最多两组；组内文件依照外层 `BUILDR_VERIFICATION_WORKER_BUDGET` 串行执行。直接诊断可运行 `node tools/testing/run-integration.ts --group all` 或指定同一检查标识，也服从该预算，最多并行两个文件。准备包由一次执行共享准备；每个用例的可写包、数据库和进程身份独立。
 
 本机执行计划为真实Agent进程组、Archify和嵌套Git组申请最多两份工作空间I/O额度，不再随额度增长而占满全部。四份额度下最多两组重型生命周期可重叠；三份及以下仍保持原互斥，避免在没有足够空间时强行并发。`agent-process-tests`具名正确性锁、组内工作进程与进程预算、其他资源锁和清理责任不随之放大，独立协议和轻量检查可在剩余预算内执行。刷新当前检出目录生成文件的工具边界组仍全局独占。长组耗时估计用于现有成本优先调度，既不是通过证据，也不改变期限；实际重叠、等待原因、墙钟、失败率和清理须由完整运行证据核对。
 
-在本机支持的平台，`agent-integration-startup` 中五个只消费现成环境的场景，由[准备夹具](../../../services/buildr-agent/test/support/prepared-process-fixture.ts)每轮真实准备一次，再复制各用例独立的运行目录，重写私有路径并通过生产完整字节校验。数据库、会话和进程仍独立；种子污染拒绝使用，不跨轮缓存。测试运行环境创建、升级和迁移本身的场景继续真实准备；Windows 保留完整准备路径。
+在本机支持的平台，`agent-integration-startup` 中五个只消费现成环境的场景，由[准备夹具](../../../services/buildr-harness/test/support/prepared-process-fixture.ts)每轮真实准备一次，再复制各用例独立的运行目录，重写私有路径并通过生产完整字节校验。数据库、会话和进程仍独立；种子污染拒绝使用，不跨轮缓存。测试运行环境创建、升级和迁移本身的场景继续真实准备；Windows 保留完整准备路径。
 
-支持的平台使用写时复制（Copy-on-Write）克隆包。完整运行由[只读输入提供者](../../../services/buildr-agent/test/support/immutable-process-inputs.ts)保有一份只读 Node.js 副本，测试运行单元通过硬链接（Hard Link）共用相同程序字节，仍保留独立路径和编译包。可写内容不建立硬链接（Hard Link）。不同 Node.js 字节、跨卷及不支持的平台退回独立副本；Windows 暂不启用硬链接（Hard Link）共用。输入持有者只在运行单元链接全部释放后清理，异常时保留诊断。
+支持的平台使用写时复制（Copy-on-Write）克隆包。完整运行由[只读输入提供者](../../../services/buildr-harness/test/support/immutable-process-inputs.ts)保有一份只读 Node.js 副本，测试运行单元通过硬链接（Hard Link）共用相同程序字节，仍保留独立路径和编译包。可写内容不建立硬链接（Hard Link）。不同 Node.js 字节、跨卷及不支持的平台退回独立副本；Windows 暂不启用硬链接（Hard Link）共用。输入持有者只在运行单元链接全部释放后清理，异常时保留诊断。
 
 生产运行单元继续真实物化并在每次校验时读取全部字节，摘要使用同一个有界缓冲区（Buffer）分块计算，不缓存旧摘要。
 

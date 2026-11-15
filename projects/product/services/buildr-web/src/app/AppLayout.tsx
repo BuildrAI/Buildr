@@ -1,10 +1,10 @@
 import { InstallationInfoDialog } from '../features/installation/components/InstallationInfoDialog';
 import { WorkspacePreparationNotice } from '../features/workspace/components/WorkspacePreparationNotice';
-import { AgentConversationsProvider, useAgentConversationShell } from '../features/agent-conversations/AgentConversationsContext';
-import { ConversationWorkspace } from '../features/agent-conversations/ConversationWorkspace';
-import { ConversationActivity } from '../features/agent-conversations/ConversationActivity';
+import { AgentConversationsProvider, useAgentConversationShell } from '../features/harness-ui/AgentConversationsContext';
+import { ConversationWorkspace } from '../features/harness-ui/ConversationWorkspace';
+import { ConversationActivity } from '../features/harness-ui/ConversationActivity';
 import { CommentOutlined } from '@ant-design/icons';
-import { AgentConnectionSettings } from '../features/agent-conversations/AgentConnectionSettings';
+import { AgentConnectionSettings } from '../features/harness-ui/AgentConnectionSettings';
 import { AppPrimaryNavigation } from './AppPrimaryNavigation';
 import { AppShellHeader, AppShellFrame } from './AppShellView';
 import { WorkbenchPreferencesProvider } from '../features/workbench/hooks/useWorkbenchPreferences';
@@ -488,7 +488,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
                 { key: 'installation-info', icon: <InfoCircleOutlined />, label: '安装信息', onClick: () => setInstallationInfoOpen(true) },
                 { key: 'check-update', icon: <SyncOutlined />, label: <span id="check-buildr-update">检查更新…</span>, onClick: () => updateEntryRef.current?.check() },
                 { key: 'restart', icon: <PoweroffOutlined />, disabled: Boolean(preview), title: preview ? '托管预览由开发工具重新启动' : undefined, label: <span id="restart-buildr">重启 Buildr Web</span>, onClick: () => { void restart(); } },
-                { key: 'restart-agent', icon: <SyncOutlined />, disabled: Boolean(preview) || agentRestarting, label: <span id="restart-buildr-agent">重启 Agent 执行服务</span>, onClick: () => { void restartAgent(); } },
+                { key: 'restart-agent', icon: <SyncOutlined />, disabled: Boolean(preview) || agentRestarting, label: <span id="restart-buildr-harness">重启 Agent 执行服务</span>, onClick: () => { void restartAgent(); } },
                 { key: 'quit', danger: true, icon: <CloseCircleOutlined />, label: <span id="quit-buildr">退出 Buildr Web</span>, onClick: () => { void quit(); } },
               ] }}
               trigger={['hover']} placement="bottomRight"

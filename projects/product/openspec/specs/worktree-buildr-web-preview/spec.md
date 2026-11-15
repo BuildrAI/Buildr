@@ -130,7 +130,7 @@ Buildr Web Preview MUST在自身实例store中保存Task ID、canonical Workspac
 
 ### Requirement: 任务预览必须准备并钉住候选运行产物
 
-任务预览（`--task`）启动 MUST 在拉起候选宿主前，于该任务工作树内准备候选运行产物：构建 Agent 私有包并物化到工作树宿主的 `node_modules/@buildr-ai/buildr-agent`，并构建 `web-dist`（含所需 DTO）。工作树相关源码相对上次准备发生变化时 MUST 重新准备；未变化时 MAY 复用已准备产物。准备的所有写入 MUST 限定在任务工作树内，MUST NOT 写入开发版应用数据根、canonical Workspace 或其他预览。准备失败 MUST 在启动宿主前 fail closed 并报告失败阶段，MUST NOT 以陈旧或未准备的私有包冒充候选代码。
+任务预览（`--task`）启动 MUST 在拉起候选宿主前，于该任务工作树内准备候选运行产物：构建 Agent 私有包并物化到工作树宿主的 `node_modules/@buildr-ai/buildr-harness`，并构建 `web-dist`（含所需 DTO）。工作树相关源码相对上次准备发生变化时 MUST 重新准备；未变化时 MAY 复用已准备产物。准备的所有写入 MUST 限定在任务工作树内，MUST NOT 写入开发版应用数据根、canonical Workspace 或其他预览。准备失败 MUST 在启动宿主前 fail closed 并报告失败阶段，MUST NOT 以陈旧或未准备的私有包冒充候选代码。
 
 #### Scenario: 首次启动准备候选产物
 - **WHEN** 任务工作树尚无已准备的候选私有包或 `web-dist`，调用方启动任务预览

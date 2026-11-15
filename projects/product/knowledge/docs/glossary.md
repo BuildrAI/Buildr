@@ -141,21 +141,21 @@
 - 定义：Buildr 按一段交流与工作保存的独立对话身份，承载可见历史、参与者与执行观察，可关联任务（Task）。
 - 适用范围：全局对话入口、任务内部对话、历史读取和跨执行方接续。
 - 避免混用：不等于某厂商的原生会话（Session），也不成为任务状态、代码或其他实际成果的唯一权威。
-- 来源：[智能体接入](architecture/agent-integration.md)与[公开契约](../../services/buildr-agent/src/contracts.ts)。
+- 来源：[智能体接入](architecture/agent-integration.md)与[公开契约](../../services/buildr-harness/src/contracts.ts)。
 
 ## 对话参与者（Conversation Participant）
 
 - 定义：某个独立接入在一段统一对话中的参与身份，绑定自己的原生上下文和已收到的可见历史位置。
 - 适用范围：Codex、DSH、Qoder、Claude Code、Antigravity 在同一对话中依次参与及换回恢复。
 - 避免混用：共享可见历史不等于迁移隐藏推理、工具状态或原生权限；参与者不是独立任务（Task）。
-- 来源：[对话应用](../../services/buildr-agent/src/application/conversation-application.ts)。
+- 来源：[对话应用](../../services/buildr-harness/src/application/conversation-application.ts)。
 
 ## 智能体服务（Agent Service）
 
-- 定义：`services/buildr-agent/` 所实现的独立代码单元，维护内部对话、独立接入、执行控制和恢复，以私有库随 Buildr 主包发行。
+- 定义：`services/buildr-harness/` 所实现的独立代码单元，维护内部对话、独立接入、执行控制和恢复，以私有库随 Buildr 主包发行。
 - 适用范围：当前由 Buildr 本机宿主（Host）装配的应用服务（Application Service）及其公开执行器（Executor）契约。
 - 避免混用：不是额外部署要求，也不等于已经实现自研的 Buildr 智能体（Agent）；未来自研执行者可以沿同一契约接入。
-- 来源：[公开入口](../../services/buildr-agent/src/index.ts)与[宿主装配](../../services/buildr/src/modules/agent-service/module.ts)。
+- 来源：[公开入口](../../services/buildr-harness/src/index.ts)与[宿主装配](../../services/buildr/src/modules/agent-service/module.ts)。
 
 ## 任务上下文（Task Context）
 

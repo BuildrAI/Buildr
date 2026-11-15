@@ -11,39 +11,39 @@ impacts:
       - openspec/changes/agent-executor-capability-policy/design.md
       - openspec/changes/antigravity-cli-integration/design.md
       - openspec/changes/antigravity-cli-integration/specs/antigravity-cli-execution/spec.md
-      - services/buildr-agent/src/domain/model-policy.ts
-      - services/buildr-agent/src/executors/program-release.ts
-      - services/buildr-agent/src/executors/program-archive.ts
-      - services/buildr-agent/src/executors/antigravity/index.ts
-      - services/buildr-agent/src/model-access/providers/antigravity.ts
+      - services/buildr-harness/src/domain/model-policy.ts
+      - services/buildr-harness/src/executors/program-release.ts
+      - services/buildr-harness/src/executors/program-archive.ts
+      - services/buildr-harness/src/executors/antigravity/index.ts
+      - services/buildr-harness/src/model-access/providers/antigravity.ts
       - services/buildr-web/src/features/agent-conversations/AccountModelManager.tsx
   - type: product-overview
     target: knowledge/docs/overview.md
     reason: 全局内部对话已接入的执行方列表补充 Claude Code 与 Antigravity。
     status: updated
     sourceIdentities:
-      - services/buildr-agent/src/executors/index.ts
+      - services/buildr-harness/src/executors/index.ts
   - type: terminology
     target: knowledge/docs/glossary.md
     reason: 智能体运行时、智能体会话与对话参与者的适用示例补充 DSH、Claude Code 与 Antigravity ACP 会话。
     status: updated
     sourceIdentities:
-      - services/buildr-agent/src/executors/antigravity/index.ts
+      - services/buildr-harness/src/executors/antigravity/index.ts
       - services/buildr/docs/agent-runtime-adapters.md
   - type: code-map
     target: knowledge/code-map/system-services-assets.md
     reason: 智能体服务工程边界与声明式策略、官方清单安装及原生执行器目录说明同步 Antigravity。
     status: updated
     sourceIdentities:
-      - services/buildr-agent/src/executors/antigravity/index.ts
-      - services/buildr-agent/src/executors/program-release.ts
-      - services/buildr-agent/src/executors/program-archive.ts
+      - services/buildr-harness/src/executors/antigravity/index.ts
+      - services/buildr-harness/src/executors/program-release.ts
+      - services/buildr-harness/src/executors/program-archive.ts
   - type: code-map
     target: knowledge/code-map/technical-layers.md
     reason: 内部对话技术层补充 Antigravity 按对话进程隔离权限与连接级协调者发送闸门定位，并在知识索引登记对应代码来源。
     status: updated
     sourceIdentities:
-      - services/buildr-agent/src/executors/antigravity/index.ts
-      - services/buildr-agent/src/model-access/providers/antigravity.ts
+      - services/buildr-harness/src/executors/antigravity/index.ts
+      - services/buildr-harness/src/model-access/providers/antigravity.ts
       - knowledge/index.yml
 unresolvedItems: []

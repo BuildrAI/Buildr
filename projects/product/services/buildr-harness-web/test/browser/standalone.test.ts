@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {chromium, type Route} from 'playwright-core';
-import {connectHarnessProcess, prepareAgentRuntime, executionScopeKey, stopAgentProcess} from '../../../buildr-agent/src/index.ts';
-import {agentRuntimePackageTree} from '../../../buildr-agent/tools/package-runtime.ts';
+import {connectHarnessProcess, prepareAgentRuntime, executionScopeKey, stopAgentProcess} from '../../../buildr-harness/src/index.ts';
+import {agentRuntimePackageTree} from '../../../buildr-harness/tools/package-runtime.ts';
 
 async function until<T>(read: () => T | Promise<T>, accept: (value: T) => boolean, label: string) {
   const deadline = Date.now() + 10000; let lastError: unknown;
@@ -62,7 +62,7 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     if (failures.length) throw new AggregateError(failures, 'standalone browser cleanup unconfirmed: ' + root);
     fs.rmSync(root, {recursive: true, force: true});
   });
-  const coreRoot = path.resolve(import.meta.dirname, '../../../buildr-agent');
+  const coreRoot = path.resolve(import.meta.dirname, '../../../buildr-harness');
   fs.mkdirSync(work);
   agentRuntimePackageTree(coreRoot).materialize(packageRoot);
   let fixtureSource = fs.readFileSync(path.join(coreRoot, 'test/integration/fixtures/agent-process-entry.mjs'), 'utf8');

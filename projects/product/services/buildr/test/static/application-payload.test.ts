@@ -24,10 +24,10 @@ test('clean installs copy the bundled local agent using the lockfile install mod
   const metadata = JSON.parse(read('package.json'));
   const lock = JSON.parse(read('package-lock.json'));
   assert.match(read('.npmrc'), /^install-links=true$/m);
-  const dependency = metadata.dependencies['@buildr-ai/buildr-agent'];
-  assert.equal(dependency, 'file:../buildr-agent');
-  assert.ok(metadata.bundleDependencies.includes('@buildr-ai/buildr-agent'));
-  const entry = lock.packages['node_modules/@buildr-ai/buildr-agent'];
+  const dependency = metadata.dependencies['@buildr-ai/buildr-harness'];
+  assert.equal(dependency, 'file:../buildr-harness');
+  assert.ok(metadata.bundleDependencies.includes('@buildr-ai/buildr-harness'));
+  const entry = lock.packages['node_modules/@buildr-ai/buildr-harness'];
   assert.equal(entry.resolved, dependency);
   assert.notEqual(entry.link, true, 'bundled local packages use copies rather than checkout symlinks');
 });

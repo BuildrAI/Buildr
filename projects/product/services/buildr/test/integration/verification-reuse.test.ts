@@ -273,19 +273,19 @@ test('browser selectors compute fallback-free reuse proofs and agent test edits 
   write('projects/product/services/buildr/test/e2e/buildr-web-browser.test.ts', 'export const webTest = true;\n');
   write('projects/product/services/buildr-web/package.json', '{"type":"module"}\n');
   write('projects/product/services/buildr-web/node_modules/fixture/package.json', '{"name":"fixture","version":"1.0.0"}');
-  write('projects/product/services/buildr-agent/package.json', '{"type":"module"}\n');
-  write('projects/product/services/buildr-agent/tools/testing/run-integration.ts', 'export const run = true;\n');
-  write('projects/product/services/buildr-agent/test/integration/conversations.test.ts', 'export const v = 1;\n');
-  write('projects/product/services/buildr-agent/test/integration/storage-lifecycle.test.ts', 'export const v = 1;\n');
+  write('projects/product/services/buildr-harness/package.json', '{"type":"module"}\n');
+  write('projects/product/services/buildr-harness/tools/testing/run-integration.ts', 'export const run = true;\n');
+  write('projects/product/services/buildr-harness/test/integration/conversations.test.ts', 'export const v = 1;\n');
+  write('projects/product/services/buildr-harness/test/integration/storage-lifecycle.test.ts', 'export const v = 1;\n');
   execFileSync('git', ['init', '--initial-branch=dev', fixtureRoot], { stdio: 'ignore' });
   execFileSync('git', ['-C', fixtureRoot, 'add', '.']);
   execFileSync('git', ['-C', fixtureRoot, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'base'], { stdio: 'ignore' });
 
   const serviceRoot = path.join(fixtureRoot, 'projects/product/services/buildr');
-  const agentFixtureRoot = path.join(fixtureRoot, 'projects/product/services/buildr-agent');
+  const agentFixtureRoot = path.join(fixtureRoot, 'projects/product/services/buildr-harness');
   const subset = [
-    { ...conversationsStep, executor: { ...conversationsStep.executor, cwd: agentFixtureRoot, discoveredFiles: ['../buildr-agent/test/integration/conversations.test.ts'] }, platforms: undefined },
-    { ...storageStep, executor: { ...storageStep.executor, cwd: agentFixtureRoot, discoveredFiles: ['../buildr-agent/test/integration/storage-lifecycle.test.ts'] }, platforms: undefined },
+    { ...conversationsStep, executor: { ...conversationsStep.executor, cwd: agentFixtureRoot, discoveredFiles: ['../buildr-harness/test/integration/conversations.test.ts'] }, platforms: undefined },
+    { ...storageStep, executor: { ...storageStep.executor, cwd: agentFixtureRoot, discoveredFiles: ['../buildr-harness/test/integration/storage-lifecycle.test.ts'] }, platforms: undefined },
     { ...shellStep, platforms: undefined },
   ];
   const before = collectVerificationReuseSnapshot({ productRoot: serviceRoot, steps: subset });
@@ -296,7 +296,7 @@ test('browser selectors compute fallback-free reuse proofs and agent test edits 
   const beforeStorage = createVerificationReuseIdentity(subset[1], before)!.key;
   const beforeShell = createVerificationReuseIdentity(subset[2], before)!.key;
 
-  write('projects/product/services/buildr-agent/test/integration/conversations.test.ts', 'export const v = 2;\n');
+  write('projects/product/services/buildr-harness/test/integration/conversations.test.ts', 'export const v = 2;\n');
   const after = collectVerificationReuseSnapshot({ productRoot: serviceRoot, steps: subset });
   assert.notEqual(createVerificationReuseIdentity(subset[0], after)!.key, beforeConv);
   assert.equal(createVerificationReuseIdentity(subset[1], after)!.key, beforeStorage);

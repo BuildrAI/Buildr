@@ -1,0 +1,138 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {conversationFailureImpact, visibleConversationEntries, latestVisibleConversationMessage, conversationModelWarning, conversationActionError, conversationHandoffReceipt, conversationNativeSessionDiagnostic, conversationNativeSessionIssue, conversationNativeSessionSummary, conversationSystemNoticeText} from '../../src/features/agent-conversations/conversation-notices.ts';
+
+const receipt=(id, extra={})=>({id,kind:'notice',role:'system',text:'已请求重试上次未送达的要求。',participantId:'codex',...extra});
+test('连续重试仅显示最后一条，保留原始记录与后续回复',()=>{
+  const entries=[receipt('one'),receipt('two'),receipt('three'),{id:'reply',kind:'message',role:'assistant',text:'继续执行'}];
+  const original=structuredClone(entries);
+  assert.deepEqual(visibleConversationEntries(entries).map(e=>e.id),['three','reply']);
+  assert.deepEqual(entries,original);
+  assert.deepEqual(visibleConversationEntries([receipt('one',{text:'已请求继续上次执行。'}),receipt('two',{text:'已请求继续上次执行。'})]).map(e=>e.id),['two']);
+});
+test('参与者、内容和其他工作记录形成合并边界，普通用户内容不会去重',()=>{
+  for(const middle of [receipt('middle',{participantId:'dsh'}),receipt('middle',{text:'已请求继续上次执行。'}),{id:'middle',kind:'tool',role:'system',text:'检查失败'},{id:'middle',kind:'message',role:'assistant',text:'说明'}]){
+    assert.deepEqual(visibleConversationEntries([receipt('one'),middle,receipt('two')]).map(e=>e.id),['one','middle','two']);
+  }
+  const users=[receipt('one',{kind:'message',role:'user'}),receipt('two',{kind:'message',role:'user'})];
+  assert.deepEqual(visibleConversationEntries(users),users);
+});
+test('目录未就绪不误报模型停用，真实停用与供应商不可用分别说明',()=>{
+  assert.equal(conversationModelWarning(false,'account',undefined),undefined);
+  assert.equal(conversationModelWarning(true,undefined,undefined),undefined);
+  assert.equal(conversationModelWarning(true,'account',{available:true,enabled:true}),undefined);
+  assert.match(conversationModelWarning(true,'account',{available:false,enabled:false}),/已停用/);
+  assert.match(conversationModelWarning(true,'account',{available:false,enabled:true}),/供应商.*状态/);
+  assert.match(conversationModelWarning(true,'account',undefined),/供应商/);
+  assert.match(
+    conversationModelWarning(true,undefined,undefined,{accountId:'native-antigravity',accountIdentity:'agy-epoch:old',cleared:true},[{accountId:'native-antigravity',accountIdentity:'agy-epoch:new',available:true,enabled:true}]),
+    /登录账号已变化.*原会话不会在新账号下自动继续/,
+  );
+  assert.match(
+    conversationModelWarning(true,undefined,undefined,{accountId:'native-antigravity',accountIdentity:'agy-epoch:old',cleared:true},[]),
+    /供应商当前不可用/,
+  );
+});
+test('重试后的模型警告只取当前状态，恢复后去除旧错误，其他失败仍可见',()=>{
+  const warning=conversationModelWarning(true,'account',{available:false});
+  assert.equal(conversationActionError('所选模型暂不可用，请重新选择。',warning),undefined);
+  assert.equal(conversationActionError(warning,warning),undefined);
+  assert.equal(conversationActionError('所选模型暂不可用，请重新选择。',undefined),undefined);
+  assert.equal(conversationActionError('图片上传失败',warning),'图片上传失败');
+  assert.equal(conversationActionError('输入内容超出容量',undefined),'输入内容超出容量');
+});
+
+test('未回答问题的系统存档静默保留，用户回答和真实错误不隐藏',()=>{
+ const archived=['retired-question-','waiting-question-','waiting-handoff-'].map(prefix=>receipt(prefix+'id',{text:'{"请求标识":"id","问题":"继续吗？","状态":"未回答"}'}));
+ const answered=receipt('waiting-handoff-answered',{role:'user',text:'我选择继续'});
+ const error=receipt('failure',{text:'原生执行失败'});
+ const userText=receipt('retired-question-user',{role:'user',kind:'message',text:'retired-question- 是我的内容'});
+ const entries=[...archived,answered,error,userText],snapshot=structuredClone(entries);
+ assert.deepEqual(visibleConversationEntries(entries).map(entry=>entry.id),[answered.id,error.id,userText.id]);
+ assert.deepEqual(entries,snapshot,'隐藏展示不删除、改写或代答历史问题');
+});
+
+test('子任务消息只按可靠父工具来源隐藏，真实用户输入、父工具和主助手正文保持可见',()=>{
+ const child={id:'child',kind:'message',role:'assistant',text:'完全相同的报告',parentToolId:'agent-tool'};
+ const childInput={...child,id:'child-input',role:'user',text:'子任务内部输入'};
+ const parent={id:'agent-tool',kind:'tool',role:'system',text:'完全相同的报告'};
+ const main={id:'main',kind:'message',role:'assistant',text:'完全相同的报告'};
+ const user={id:'user',kind:'message',role:'user',text:'子任务内部输入'};
+ assert.deepEqual(visibleConversationEntries([childInput,child,parent,user,main]),[parent,user,main]);
+ assert.deepEqual(visibleConversationEntries([{...child,parentToolId:undefined},main]).map(entry=>entry.id),['child','main']);
+});
+
+test('同组合内部接续不产生交接提示，真实换家和接收失败仍准确显示',()=>{
+ for(const agent of ['Qoder','DSH','Codex']){
+  const entry={text:'旧文案',status:'accepted',handoff:{agent,changes:[]}};
+  assert.equal(conversationHandoffReceipt(entry),'');
+  assert.equal(conversationHandoffReceipt({...entry,status:'failed'}),'新要求未接收');
+  assert.equal(conversationHandoffReceipt({...entry,status:'unknown'}),'新要求接收待确认');
+ }
+ assert.equal(conversationHandoffReceipt({text:'交给 DSH',status:'accepted',handoff:{agent:'DSH',changes:[{after:'DSH'},{after:'GPT'}]}}),'DSH · GPT 已接手');
+ assert.equal(conversationHandoffReceipt({text:'兼容旧历史'}),'兼容旧历史');
+});
+
+test('已读定位只选可见主消息，隐藏子消息和存档不遮蔽主答复或明确用户回答',()=>{
+ const main={id:'main',kind:'message',role:'assistant',text:'可见主答复'};
+ const archive={id:'retired-question-id',kind:'notice',role:'system',text:'内部问题存档'};
+ const child={id:'child',kind:'message',role:'assistant',text:'子报告',parentToolId:'agent-tool'};
+ const childUser={...child,id:'child-user',role:'user',text:'内部输入'};
+ assert.equal(latestVisibleConversationMessage([main,archive,childUser,child]),main);
+ const reply={id:'reply-explicit',kind:'notice',role:'user',text:'我明确回答继续'};
+ assert.equal(latestVisibleConversationMessage([main,reply,archive,child]),reply);
+ assert.equal(latestVisibleConversationMessage([archive,childUser,child]),undefined);
+});
+
+test('系统恢复指令只呈现准确接收状态，原始记录与普通消息保持原样',()=>{
+  const raw=receipt('system',{text:'系统自动恢复：原控制资源已释放，先核对未知工具引用和当前成果。',status:'accepted'});
+  assert.equal(conversationSystemNoticeText(raw),'已自动接续上次工作。');
+  assert.equal(conversationSystemNoticeText({...raw,status:'sending'}),'正在自动核对并接续上次工作。');
+  assert.equal(conversationSystemNoticeText({...raw,status:'failed'}),'自动恢复未能接续。');
+  assert.equal(conversationSystemNoticeText({...raw,status:'unknown'}),'自动恢复是否接续仍待确认。');
+  assert.equal(conversationSystemNoticeText({...raw,kind:'message',role:'user'}),raw.text);
+  assert.equal(conversationSystemNoticeText({...raw,kind:'message',role:'assistant'}),raw.text);
+  assert.match(raw.text,/未知工具引用/);
+});
+
+
+test('原生会话交接与后台接管在主对话说明情况，身份与受理状态留在诊断',()=>{
+ const nativeSession={reason:'backend-adoption',description:'原轮控制已释放',from:{contextId:'same-session',generation:'old'},to:{contextId:'same-session',generation:'new'}};
+ const entry={text:'内部准备',status:'sending',nativeSession};
+ assert.equal(conversationNativeSessionSummary(entry),'后台已接管，本轮仍在原原生会话中继续。原执行与历史记录保留。');
+ assert.doesNotMatch(conversationNativeSessionSummary(entry),/same-session|old|后台代次|运行内容/);
+ const diagnostic=conversationNativeSessionDiagnostic(entry),field=(label)=>diagnostic.find(item=>item.label===label)?.value;
+ assert.deepEqual(diagnostic.map(item=>item.label),['类型','原生会话','后台代次','变化依据','原因','本轮状态']);
+ assert.equal(field('类型'),'后台接管，原生会话保留');assert.equal(field('原生会话'),'same-session → same-session');assert.equal(field('后台代次'),'old → new');
+ assert.equal(field('变化依据'),'后台变化来源：历史未记录');assert.equal(field('本轮状态'),'等待受理');
+ assert.equal(conversationNativeSessionDiagnostic({...entry,status:'accepted'}).find(item=>item.label==='本轮状态')?.value,'已受理');
+ assert.equal(conversationNativeSessionIssue({...entry,status:'failed'}),'本轮未送达');
+ assert.equal(conversationNativeSessionIssue({...entry,status:'unknown'}),'本轮送达待确认');
+ const replacement={...nativeSession,reason:'session-replacement',description:'用户执行选择变化',to:{contextId:'next-session',generation:'new'}};
+ assert.equal(conversationNativeSessionSummary({...entry,nativeSession:replacement}),'执行选择已变化，本轮改在新的原生会话中继续。原执行与历史记录保留。');
+ assert.equal(conversationNativeSessionDiagnostic({...entry,nativeSession:replacement}).find(item=>item.label==='原生会话')?.value,'same-session → next-session');
+ const policyReplacement={...nativeSession,reason:'session-replacement',description:'交互政策已更新，使用新的原生会话',to:{contextId:'policy-session',generation:'new'}};
+ assert.equal(conversationNativeSessionSummary({...entry,nativeSession:policyReplacement}),'交互政策已更新，本轮改在新的原生会话中继续。原执行与历史记录保留。');
+});
+
+test('后台变化按内容证据展示，不猜提交或操作者，历史诚实降级',()=>{
+ const event={status:'accepted',text:'',nativeSession:{reason:'backend-adoption',description:'原会话复用',from:{contextId:'s',generation:'g1'},to:{contextId:'s',generation:'g2'},backendChange:{reason:'runtime-content-changed',detectedAt:'2026-11-02T00:00:00Z',fromGeneration:'g1',fromDigest:'before',toDigest:'after'}}};
+ const basis=(value)=>conversationNativeSessionDiagnostic(value).find(item=>item.label==='变化依据')?.value;
+ assert.match(basis(event),/运行内容变化.*2026-11-02.*before → after/);
+ assert.match(basis({...event,nativeSession:{...event.nativeSession,backendChange:{...event.nativeSession.backendChange,reason:'process-restarted'}}}),/同一运行内容.*重启/);
+ assert.equal(basis({...event,nativeSession:{...event.nativeSession,backendChange:undefined}}),'后台变化来源：历史未记录');
+ assert.match(conversationNativeSessionSummary(event),/后台程序内容已更新/);
+});
+
+test('失败提示不把未确认受理当未送达，也不把未知工具当结束',()=>{
+ const accepted={status:'failed',accepted:true,tools:[]};
+ assert.match(conversationFailureImpact(accepted),/已受理.*未完成/);
+ assert.match(conversationFailureImpact(accepted),/新的要求/);
+ const unconfirmed=conversationFailureImpact({...accepted,accepted:false});
+ assert.match(unconfirmed,/尚未确认/);assert.doesNotMatch(unconfirmed,/未送达|原操作未执行/);
+ for(const status of ['running','unknown']){
+  const text=conversationFailureImpact({...accepted,tools:[{id:'t',label:'work',status}]});
+  assert.match(text,/结果待确认/);assert.doesNotMatch(text,/可以发送新的要求/);
+ }
+ assert.equal(conversationFailureImpact({...accepted,status:'completed'}),undefined);
+});

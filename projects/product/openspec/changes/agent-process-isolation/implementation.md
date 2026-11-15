@@ -6,11 +6,11 @@
 
 | 契约（Contract） | 唯一声明与承载 | 关键行为 |
 |---|---|---|
-| 执行操作（Agent Operations） | `buildr-agent/src/process/operations.ts`、`operation-schemas.ts`、`process/client.ts` | 异步操作、认证回环传输、二进制附件和观察事件；保留原请求核对入口，丢失响应不自动重发 |
+| 执行操作（Agent Operations） | `buildr-harness/src/process/operations.ts`、`operation-schemas.ts`、`process/client.ts` | 异步操作、认证回环传输、二进制附件和观察事件；保留原请求核对入口，丢失响应不自动重发 |
 | 宿主能力（Host Capabilities） | `execution-contracts.ts`、`application/host-context.ts`、`process/host-channel.ts` | 以来源、对象和观察版本解析执行环境、核验可选关联及发现查询范围；不可达与失效分开，已受理执行不依赖宿主持久在线 |
 | 运行管理（Lifecycle） | `process/server.ts`、`ownership.ts`、`runtime-unit.ts`、`handoff.ts` | 同配置域单持有、准确身份、忙闲、保留代码/完整依赖/Node.js、原子空闲交接与安全失败恢复 |
 
-Buildr 的 `modules/agent-service/module.ts` 只提供业务权威与公共客户端（Client）装配，网页入口保持地址、认证和业务映射。核心装配位于 `buildr-agent/src/application/agent-service.ts`，不导入 Buildr 内部模块。业务材料、任务状态、提交说明校验与草稿保护继续归 Buildr。原生连接、模型转接、对话、交接、待回应及私有数据由独立后台持有。
+Buildr 的 `modules/agent-service/module.ts` 只提供业务权威与公共客户端（Client）装配，网页入口保持地址、认证和业务映射。核心装配位于 `buildr-harness/src/application/agent-service.ts`，不导入 Buildr 内部模块。业务材料、任务状态、提交说明校验与草稿保护继续归 Buildr。原生连接、模型转接、对话、交接、待回应及私有数据由独立后台持有。
 
 ## 已执行的直接检查
 

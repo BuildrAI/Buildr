@@ -5,12 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run harness:prepare && tsc -b && vite build",
+    "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "node ../buildr/test/verification/cli.ts unit --check frontend-logic",
     "typecheck": "node ../buildr/tools/testing/run-types.ts --build",
-    "test:static": "node ../buildr/test/verification/cli.ts static --check frontend-typecheck",
-    "harness:prepare": "node ../buildr/tools/development/prepare-development-ui.ts"
+    "test:static": "node ../buildr/test/verification/cli.ts static --check frontend-typecheck"
   },
   "dependencies": {
     "@ant-design/icons": "^5.6.1",
@@ -37,8 +36,7 @@
     "node-sql-parser": "5.4.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-router-dom": "^7.6.0",
-    "@buildr-ai/buildr-harness-ui": "file:../buildr-harness-ui"
+    "react-router-dom": "^7.6.0"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",

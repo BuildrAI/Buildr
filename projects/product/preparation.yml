@@ -1,42 +1,30 @@
 schemaVersion: buildr.project-preparation/v1
-# 顺序即依赖：buildr-agent 必须先安装并构建，buildr 的 postinstall 会物化它的公开包。
+# 顺序即依赖：buildr-harness 必须先安装并构建，buildr 的 postinstall 会物化它的公开包。
 entries:
-  - id: buildr-agent.npm-ci
-    title: 安装 Buildr 智能体服务锁定依赖
-    scope: {kind: service, service: buildr-agent}
-    cwd: services/buildr-agent
+  - id: buildr-harness.npm-ci
+    title: 安装 Harness 核心及独立入口锁定依赖
+    scope: {kind: service, service: buildr-harness}
+    cwd: services/buildr-harness
     executable: ../buildr/tools/development/run-development-npm
     args: [ci, --ignore-scripts]
-  - id: buildr-agent.build
-    title: 编译智能体服务公开包入口
-    scope: {kind: service, service: buildr-agent}
-    cwd: services/buildr-agent
-    executable: ../buildr/tools/development/run-development-npm
-    args: [run, build]
-  - id: buildr-harness-ui.npm-ci
-    title: 安装共享 Harness 界面锁定依赖
-    scope: {kind: service, service: buildr-harness-ui}
-    cwd: services/buildr-harness-ui
-    executable: ../buildr/tools/development/run-development-npm
-    args: [ci, --ignore-scripts]
-  - id: buildr-harness-ui.build
-    title: 编译共享 Harness 界面公开包
-    scope: {kind: service, service: buildr-harness-ui}
-    cwd: services/buildr-harness-ui
-    executable: ../buildr/tools/development/run-development-npm
-    args: [run, build]
   - id: buildr-harness-web.npm-ci
     title: 安装独立 Harness 网页锁定依赖
     scope: {kind: service, service: buildr-harness-web}
     cwd: services/buildr-harness-web
     executable: ../buildr/tools/development/run-development-npm
     args: [ci, --ignore-scripts]
-  - id: buildr-harness.npm-ci
-    title: 安装独立 Harness CLI 锁定依赖
+  - id: buildr-harness-web.build
+    title: 构建完整唯一 Harness 网页
+    scope: {kind: service, service: buildr-harness-web}
+    cwd: services/buildr-harness-web
+    executable: ../buildr/tools/development/run-development-npm
+    args: [run, build]
+  - id: buildr-harness.build
+    title: 编译智能体服务公开包入口
     scope: {kind: service, service: buildr-harness}
     cwd: services/buildr-harness
     executable: ../buildr/tools/development/run-development-npm
-    args: [ci, --ignore-scripts]
+    args: [run, build]
   - id: buildr.npm-ci
     title: 安装 Buildr 主体锁定依赖
     scope: {kind: service, service: buildr}

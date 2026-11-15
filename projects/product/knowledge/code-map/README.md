@@ -32,7 +32,7 @@ projects/product/                         项目（Project）：跨服务产品�
     ├── manifest.yml                      旧兼容服务清单；全局登记在工作空间根
     ├── buildr/                           命令行、后端、本机网页宿主与主包
     ├── buildr-web/                       Development 页面与业务适配
-    ├── buildr-agent/                     Harness 公共核心及独立承载
+    ├── buildr-harness/                     Harness 公共核心及独立承载
     ├── buildr-harness-ui/                完整共享对话与设置界面
     ├── buildr-harness-web/               独立目录型网页薄壳
     ├── buildr-harness/                   独立 CLI、启动器及包

@@ -63,7 +63,7 @@ function readied(entry: PreparationEntry, root: string): boolean {
     const lockStat = fs.statSync(lock, { throwIfNoEntry: false });
     return Boolean(markerStat?.isFile() && lockStat?.isFile() && markerStat.mtimeMs >= lockStat.mtimeMs);
   }
-  if (entry.id === 'buildr-agent.build') {
+  if (entry.id === 'buildr-harness.build') {
     return fs.statSync(path.join(service, 'build', 'index.js'), { throwIfNoEntry: false })?.isFile() === true;
   }
   return false;
@@ -99,7 +99,7 @@ export function prepareDevelopmentDependencies({
       continue;
     }
     const executable = path.join(cwd, entry.executable);
-    const result = entry.id === 'buildr-agent.build'
+    const result = entry.id === 'buildr-harness.build'
       ? withDevelopmentAgentPreparationLock(path.join(root, 'services/buildr'), () => {
         // Another public preparation entry may have completed the build while
         // this caller waited. Never delete its output to rebuild it again.
@@ -121,7 +121,7 @@ export function prepareDevelopmentDependencies({
  * marker and the private Agent build are the two inputs every later step needs. */
 export function developmentDependenciesReady(root = projectRoot): boolean {
   return readied({ id: 'buildr.npm-ci', cwd: 'services/buildr', executable: '', args: [] }, root)
-    && readied({ id: 'buildr-agent.build', cwd: 'services/buildr-agent', executable: '', args: [] }, root);
+    && readied({ id: 'buildr-harness.build', cwd: 'services/buildr-harness', executable: '', args: [] }, root);
 }
 
 export function ensureDevelopmentDependencies({ root = projectRoot, ...options }: { root?: string } & Parameters<typeof prepareDevelopmentDependencies>[0] = {}): void {

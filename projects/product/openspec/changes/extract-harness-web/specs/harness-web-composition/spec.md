@@ -4,48 +4,31 @@
 
 ## ADDED Requirements
 
-### Requirement: 对话界面必须共享实现并通过宿主能力集成
+### Requirement: Harness 必须提供完整唯一网页并由 Development 嵌入
 
-本次独立网页、Development 专注模式和工作空间内嵌模式 MUST 消费同一个完整可嵌入的 Harness 对话功能，而非仅复用基础控件。共同功能 MUST 覆盖对话导航/列表/搜索/历史、消息与工具过程、输入/附件/发送/待发送及失败反馈、内核/模型/账号/权限选择、问题/审批/停止/接续、完整内核连接与订阅/BYOK设置，以及订阅/缓存/重连/冲突反馈和对话交互状态。Development 的对话集成 MUST 只实现入口布局、明确业务上下文及业务动作，MUST NOT 再造发送/审批/停止/恢复编排或设置表单。
+系统 MUST 将对话导航、历史、消息、工具展示、输入、附件、发送、模型与账号设置、问题、审批、停止、接续和恢复全部实现在 buildr-harness-web。独立 buildr-harness-ui 包 MUST 删除；Development MUST NOT 导入或重组 Harness React 组件及执行状态容器。
 
-共享功能 MUST 提供可直接承载的高层界面与必要公开动作，不要求每个宿主重新拼接低层控件和接线。共享功能 MUST 不依赖 Development 任务、代码、路由或工作空间私有实现；差异 MUST 经具名、有限的宿主适配和附加区域提供，不能注入万能业务分派器。独立入口 MUST 不呈现不存在的任务系统，界面适配 MUST 不替代服务端核验或授予业务写入。
+Development 的 harness-ui 模块 MUST 只准备工程现场、选择工作空间、嵌入网页、维护任务关联和工程导航；任务选择控件 MUST 留在 Development 页面区域。Harness MUST 不管理工程任务状态。
 
-共享功能 MUST 不要求独立应用壳或 DSH 插件运行上下文才能使用。Development 的非对话业务页面 MUST 可依据自身公开能力展示事实，不能把 Harness 对话状态容器或模型连接就绪作为前提；其对话挂载由集成层提供。上述共享承诺 MUST 仅约束 Harness 承载的功能，不强制未来使用其他宿主原生对话的产品加载本功能包。
+#### Scenario: 相同网页服务两种产品
+- **WHEN** 用户独立打开 Harness 或在 Development 使用内嵌/专注模式
+- **THEN** 页面 MUST 消费同一完整网页产物，Development 不实现第二套对话控制
 
-#### Scenario: 工程业务页面独立呈现
-- **WHEN** Development 业务组件在没有挂载 Harness 对话状态容器的环境中读取已有任务或代码事实
-- **THEN** 这些业务组件 MUST 可按自身接口工作；对话入口由接入层提供，不能暗中创建模型连接或执行
+#### Scenario: 工程上下文交接
+- **WHEN** Development 选择工作空间并新建对话
+- **THEN** Development MUST 提供准确工作范围，Harness 自己创建对话并拥有执行交互；选择不自动发送模型消息
 
-#### Scenario: 独立网页与两种 Development 模式使用同一 UI 套件
-- **WHEN** 用户分别从 Harness 启动器、Development 专注模式及工作空间内嵌模式使用对话
-- **THEN** 三种呈现 MUST 消费同一完整功能的公开界面、设置面板、订阅及交互状态编排，仅由应用壳、布局及宿主适配体现差异
-- **AND** MUST NOT 用外观相似的第二套消息、模型或审批实现冒充复用
+#### Scenario: 页面通信校验
+- **WHEN** 页面接收非准确父/子窗口、错误 origin 或未知协议消息
+- **THEN** 接收方 MUST 忽略消息，不改变选择或触发执行
 
-#### Scenario: 只提供窄宿主适配即可使用完整对话
-- **WHEN** 宿主仅提供准确客户端/会话适配、范围与布局，以及需要的业务动作
-- **THEN** 对话功能 MUST 自身提供列表/历史、输入、发送、控制及设置，不要求宿主实现事件合并、重连循环或账号表单
+#### Scenario: 显式工程操作只由 Harness 提交
+- **WHEN** 用户在 Development 发起已授权的工程上下文交接
+- **THEN** Development MUST 用准确请求身份交给 Harness 处理，Harness 自己维护首次提交及恢复；响应未知不得自动重发
 
-#### Scenario: 内嵌形态保持完整能力
-- **WHEN** 同一服务及执行器能力在较窄的 Development 内嵌面板中展示
-- **THEN** 历史、搜索和完整设置 MUST 仍可通过抽屉或其他适配入口操作，发送、问题、审批、停止和接续 MUST 沿用共同实现
-- **AND** 原生不支持的能力 MUST 保留同一准确限制，不以“完整功能”为由伪造支持
-
-#### Scenario: 添加模型或修复对话核心行为
-- **WHEN** 在既有公共契约内增加模型选项、调整消息渲染或修复停止交互
-- **THEN** 共同功能 MUST 在 Harness 所属实现中完成变更，两产品消费兼容更新后获得同一行为
-- **AND** Development 可以升级依赖、重建及执行集成检查，但 MUST 不被要求另实现相同核心逻辑
-
-#### Scenario: 业务附加区不接管对话功能
-- **WHEN** Development 提供任务关联控件、明确选中材料或文件打开动作
-- **THEN** 宿主 MUST 只维护这些业务适配，共同功能继续拥有对话头部组织、输入材料展示与发送控制，不导入整个业务客户端集合
-
-#### Scenario: Development 打开关联任务和生成文件
-- **WHEN** 用户从共用对话界面打开任务或文件
-- **THEN** Development 宿主 MUST 导航到准确对象，共用界面不直接调用业务私有模块
-
-#### Scenario: 独立入口无业务插槽
-- **WHEN** 目录宿主未提供任务或参与观察能力
-- **THEN** 对话与内核/模型设置 MUST 仍完整可用，不显示失效任务入口或要求创建业务对象
+#### Scenario: 工程业务独立工作
+- **WHEN** 工程页面未装配 Harness 网页
+- **THEN** 任务、知识和代码事实 MUST 可独立读取，不隐式创建执行
 
 ### Requirement: 多入口必须共享持久事实而不覆盖未提交输入
 
@@ -61,7 +44,7 @@
 
 ### Requirement: 独立网页只能按明确入口意图启用
 
-独立 Harness Web MUST 有可托管的生产静态产物，直接使用完整功能包和前置的唯一 API。仅使用 Development 时 MUST 默认不监听独立 Harness 网页端口，内嵌和专注 MUST 继续走 Development 同源代理。用户显式打开独立 Harness 时，MUST 允许在同一逻辑服务中启用一个独立回环网页入口，包括两产品同装、同开；它 MUST 不创建第二个执行核心、目录宿主进程或对话库。内部通信和模型网关端口 MUST 不作为浏览器接口公开。
+独立 Harness Web MUST 有可托管的生产静态产物，提供完整唯一网页和前置的唯一 API。仅使用 Development 时 MUST 默认不监听独立 Harness 网页端口，内嵌和专注 MUST 通过 Development 受认证的同源路径托管该网页并使用同一 API。用户显式打开独立 Harness 时，MUST 允许在同一逻辑服务中启用一个独立回环网页入口，包括两产品同装、同开；它 MUST 不创建第二个执行核心、目录宿主进程或对话库。内部通信和模型网关端口 MUST 不作为浏览器接口公开。
 
 #### Scenario: 只打开 Development
 - **WHEN** 用户仅从 Development 使用内嵌或专注模式

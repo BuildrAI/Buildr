@@ -1,5 +1,5 @@
 import { CODE_HTTP_SCHEMAS } from '../../../src/modules/code/interfaces/http/code-http-contracts.ts';
-import { renderAgentHttpDtos } from '../../../../buildr-agent/tools/codegen/http-dto.ts';
+import { renderAgentHttpDtos } from '../../../../buildr-harness/tools/codegen/http-dto.ts';
 import { CODE_GENERATION_HTTP_SCHEMAS } from '../../../src/modules/code/interfaces/http/code-generation-http.ts';
 import { KNOWLEDGE_HTTP_SCHEMAS } from '../../../src/modules/knowledge/interfaces/http/knowledge-http-contracts.ts';
 

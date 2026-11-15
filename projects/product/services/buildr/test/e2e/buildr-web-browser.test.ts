@@ -1,6 +1,6 @@
 import { runTaskListJourney } from '../../../buildr-web/test/browser/task-list-journey.ts';
 import { AGENT_SERVICE_APPLICATION } from '../../src/modules/agent-service/module.ts';
-import { stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { stopAgentProcess } from '@buildr-ai/buildr-harness';
 import { TASK_MATERIALS_APPLICATION } from '../../src/modules/task/materials/module.ts';
 import { showPrimaryNavigation } from '../../../buildr-web/test/browser/primary-navigation-controls.ts';
 import assert from 'node:assert/strict';

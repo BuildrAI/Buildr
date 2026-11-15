@@ -33,14 +33,14 @@ test('task-report changes keep their verification owner without selecting the te
 
 test('Agent application behavior changes select the group containing their Qoder integration regression', () => {
   const plan = createVerificationPlan({
-    paths: ['services/buildr-agent/src/application/conversation-application.ts'],
+    paths: ['services/buildr-harness/src/application/conversation-application.ts'],
     related: true,
     semantic: true,
     target: 'source',
   });
   const group = plan.steps.find((step: any) => step.id === 'agent-integration');
   assert.ok(group, 'conversation-application.ts must select agent-integration');
-  assert.ok(group.executor.discoveredFiles.includes('../buildr-agent/test/integration/qoder-model-conversations.test.ts'));
+  assert.ok(group.executor.discoveredFiles.includes('../buildr-harness/test/integration/qoder-model-conversations.test.ts'));
 });
 
 test('package metadata semantic classifier only permits the three version fields', () => {

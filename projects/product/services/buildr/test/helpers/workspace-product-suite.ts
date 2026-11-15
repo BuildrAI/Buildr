@@ -6,7 +6,7 @@ import path from 'node:path';
 import { execFile, execFileSync, spawn, spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
-import { prepareAgentRuntime, stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { prepareAgentRuntime, stopAgentProcess } from '@buildr-ai/buildr-harness';
 
 import { createRuntime } from './runtime-harness.ts';
 import { renderWorkspaceManifest } from '../../src/modules/workspace/persistence/workspace-manifest-repository.ts';
@@ -799,9 +799,9 @@ suiteTest('app-process', '任务预览单一数据目标：工作树代码 + 开
   const candidateScope = path.join(candidateNodeModules, '@buildr-ai');
   fs.mkdirSync(candidateScope, { recursive: true });
   for (const entry of fs.readdirSync(realScope)) {
-    if (entry !== 'buildr-agent') linkEntry(path.join(realScope, entry), path.join(candidateScope, entry));
+    if (entry !== 'buildr-harness') linkEntry(path.join(realScope, entry), path.join(candidateScope, entry));
   }
-  fs.cpSync(path.join(realScope, 'buildr-agent'), path.join(candidateScope, 'buildr-agent'), { recursive: true });
+  fs.cpSync(path.join(realScope, 'buildr-harness'), path.join(candidateScope, 'buildr-harness'), { recursive: true });
   fs.cpSync(path.join(PRODUCT_ROOT, 'build', 'generated'), path.join(candidateProduct, 'build', 'generated'), { recursive: true });
   createWebStaticFixture(path.join(candidateProduct, 'web-dist'));
   fs.writeFileSync(path.join(candidateNodeModules, '.buildr-preview-candidate.json'), JSON.stringify({
@@ -809,7 +809,7 @@ suiteTest('app-process', '任务预览单一数据目标：工作树代码 + 开
     sourceDigest: previewCandidateSourceDigest(candidateProduct),
     preparedAt: new Date().toISOString(),
     webDist: path.join(candidateProduct, 'web-dist'),
-    agentPackage: path.join(candidateScope, 'buildr-agent'),
+    agentPackage: path.join(candidateScope, 'buildr-harness'),
   }));
   fs.mkdirSync(appData, { recursive: true });
   const registryFile = path.join(appData, 'workspace-registry.json');

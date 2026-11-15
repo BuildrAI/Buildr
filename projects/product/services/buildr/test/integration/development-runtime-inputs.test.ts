@@ -10,7 +10,7 @@ import { readCurrentInstallationOrigin } from '../../src/modules/installation/in
 
 const service = 'projects/product/services/buildr';
 const frontend = 'projects/product/services/buildr-web';
-const agent = 'projects/product/services/buildr-agent';
+const agent = 'projects/product/services/buildr-harness';
 function fixture(t: any) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-inputs-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -42,7 +42,7 @@ test('documentation, test and independent plugin commits preserve running develo
   }
 });
 
-for (const name of [`${service}/src/index.ts`, `${agent}/src/index.ts`, `${agent}/package-lock.json`, `${agent}/build/index.js`, `${service}/node_modules/@buildr-ai/buildr-agent/build/index.js`, `${service}/node_modules/@buildr-ai/buildr-agent/package.json`, `${service}/package-lock.json`, `${frontend}/src/App.tsx`, `${frontend}/vite.config.ts`, `${frontend}/package-lock.json`, `${service}/tools/development/run-development-cli`, `${service}/tools/development/resolve-development-node`, 'projects/product/.node-version', `${service}/tools/codegen/contracts/task-dto.ts`, `${service}/web-dist/index.html`]) {
+for (const name of [`${service}/src/index.ts`, `${agent}/src/index.ts`, `${agent}/package-lock.json`, `${agent}/build/index.js`, `${service}/node_modules/@buildr-ai/buildr-harness/build/index.js`, `${service}/node_modules/@buildr-ai/buildr-harness/package.json`, `${service}/package-lock.json`, `${frontend}/src/App.tsx`, `${frontend}/vite.config.ts`, `${frontend}/package-lock.json`, `${service}/tools/development/run-development-cli`, `${service}/tools/development/resolve-development-node`, 'projects/product/.node-version', `${service}/tools/codegen/contracts/task-dto.ts`, `${service}/web-dist/index.html`]) {
   test(`runtime input ${name} changes identity before a commit`, t => {
     const f = fixture(t), initial = f.identity();
     assert.match(initial!, /^sha256-[a-f0-9]{64}$/);

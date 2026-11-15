@@ -8,13 +8,13 @@ import {renderToStaticMarkup} from 'react-dom/server';
 registerHooks({
   resolve(specifier, context, next) {
     if(specifier.endsWith('.css'))return {url:'data:text/javascript,export default {};',shortCircuit:true};
-    if(context.parentURL?.endsWith('/ConversationAssociationPopover.tsx')){if(specifier.endsWith('.css'))return {url:'data:text/javascript,export default {};',shortCircuit:true};if(specifier==='./conversation-associations')return next(new URL('../src/features/agent-conversations/conversation-associations.ts',import.meta.url).href,context);}
+    if(context.parentURL?.endsWith('/ConversationAssociationPopover.tsx')){if(specifier.endsWith('.css'))return {url:'data:text/javascript,export default {};',shortCircuit:true};if(specifier==='./conversation-associations')return next(new URL('../src/features/harness-ui/conversation-associations.ts',import.meta.url).href,context);}
     if (!context.parentURL?.endsWith('/TaskConversationEntry.tsx')) return next(specifier, context);
     if (specifier === 'react') return {url:'data:text/javascript,'+encodeURIComponent('export const useCallback=value=>value;export const useState=initial=>globalThis.__taskEntryState(initial);export const useEffect=()=>{};export const useContext=()=>true;export const useRef=initial=>({current:initial});'),shortCircuit:true};
     if (specifier.endsWith('/pageTabs')) return {url:'data:text/javascript,export const WorkspaceViewActiveContext={};',shortCircuit:true};
     if (specifier === './AgentConversationsContext') return {url:'data:text/javascript,export const useOptionalAgentConversations=()=>globalThis.__taskEntryContext;',shortCircuit:true};
-    if(specifier==='./ConversationAssociationPopover')return next(new URL('../src/features/agent-conversations/ConversationAssociationPopover.tsx',import.meta.url).href,context);
-    if(specifier==='./conversation-associations')return next(new URL('../src/features/agent-conversations/conversation-associations.ts',import.meta.url).href,context);
+    if(specifier==='./ConversationAssociationPopover')return next(new URL('../src/features/harness-ui/ConversationAssociationPopover.tsx',import.meta.url).href,context);
+    if(specifier==='./conversation-associations')return next(new URL('../src/features/harness-ui/conversation-associations.ts',import.meta.url).href,context);
     if(specifier==='./conversation-association-client')return {url:'data:text/javascript,'+encodeURIComponent('export const ASSOCIATIONS_CHANGED="change";export const associationWorkspaces=()=>[];export const searchConversationAssociations=()=>({items:[],errors:[]});'),shortCircuit:true};
     return next(specifier, context);
   },
@@ -23,7 +23,7 @@ registerHooks({
     return next(url, context);
   },
 });
-const {TaskConversationEntry}=await import('../src/features/agent-conversations/TaskConversationEntry.tsx');
+const {TaskConversationEntry}=await import('../src/features/harness-ui/TaskConversationEntry.tsx');
 
 function markup({rows=[],loading=false,error=''}={}) {
   const states=[rows,loading,false,error,0,{}];let index=0;

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {connectHarnessProcess,resolveHarnessProfile,prepareAgentRuntimeAsync,activateAgentRuntime} from '@buildr-ai/buildr-agent';
+import {connectHarnessProcess,resolveHarnessProfile,prepareAgentRuntimeAsync,activateAgentRuntime} from './index.ts';
 import {installHarnessLauncher,readHarnessLauncher,uninstallHarnessLauncher,verifyHarnessLauncherFile} from './launcher.ts';
 import {inspectDistributionEvidence} from './distribution-evidence.ts';
 const execute=promisify(execFile);

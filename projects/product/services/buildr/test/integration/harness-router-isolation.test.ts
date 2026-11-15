@@ -17,7 +17,7 @@ test('the pre-version workspace router does not bundle or initialize the Harness
     external: ['node:*'], metafile: true, logLevel: 'silent',
   });
   assert.equal(result.warnings.length, 0);
-  assert.equal(Object.keys(result.metafile!.inputs).some(file => /buildr-agent\/build\/(?:process|application|model-access)\//u.test(file)), false);
+  assert.equal(Object.keys(result.metafile!.inputs).some(file => /buildr-harness\/build\/(?:process|application|model-access)\//u.test(file)), false);
   const loaded = spawnSync(process.execPath, ['-e', 'require(process.argv[1])', output], {cwd: root, encoding: 'utf8', timeout: 10000});
   assert.equal(loaded.status, 0, loaded.stderr);
 });

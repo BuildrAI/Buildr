@@ -8,7 +8,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { stopAgentProcess } from '@buildr-ai/buildr-harness';
 
 import { createUpdateLauncher } from '../../src/modules/installation/application/update-launcher.ts';
 import { createRuntime } from '../helpers/runtime-harness.ts';

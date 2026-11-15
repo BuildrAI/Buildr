@@ -8,13 +8,13 @@ const roots = { serviceRoot: '/product/buildr', webRoot: '/product/buildr-web' }
 test('Candidate environment profiles are closed and select the minimum preparation recipe', () => {
   assert.deepEqual(CANDIDATE_ENVIRONMENT_PROFILES, ['base', 'artifact', 'frontend', 'browser-artifact', 'source-runtime', 'consumer', 'host', 'publisher']);
   assert.deepEqual(candidateEnvironmentPlan('host', roots).map((item) => item.id), [
-    'buildr-agent-dependencies',
-    'buildr-agent-build',
+    'buildr-harness-dependencies',
+    'buildr-harness-build',
     'buildr-dependencies',
   ]);
   assert.deepEqual(candidateEnvironmentPlan('base', roots).map((item) => item.id), [
-    'buildr-agent-dependencies',
-    'buildr-agent-build',
+    'buildr-harness-dependencies',
+    'buildr-harness-build',
     'buildr-dependencies',
     'harness-ui-dependencies',
     'harness-ui-build',
@@ -24,8 +24,8 @@ test('Candidate environment profiles are closed and select the minimum preparati
     'generated-contracts-and-test-context',
   ]);
   assert.deepEqual(candidateEnvironmentPlan('artifact', roots).map((item) => item.id), [
-    'buildr-agent-dependencies',
-    'buildr-agent-build',
+    'buildr-harness-dependencies',
+    'buildr-harness-build',
     'buildr-dependencies',
     'harness-ui-dependencies',
     'harness-ui-build',
@@ -34,8 +34,8 @@ test('Candidate environment profiles are closed and select the minimum preparati
     'buildr-web-dependencies',
   ]);
   assert.deepEqual(candidateEnvironmentPlan('source-runtime', roots).map((item) => item.id), [
-    'buildr-agent-dependencies',
-    'buildr-agent-build',
+    'buildr-harness-dependencies',
+    'buildr-harness-build',
     'buildr-dependencies',
     'harness-ui-dependencies',
     'harness-ui-build',
@@ -51,8 +51,8 @@ test('Candidate environment profiles are closed and select the minimum preparati
 test('source-runtime uses locked installs and the single development web preparation owner', () => {
   const plan = candidateEnvironmentPlan('source-runtime', roots);
   assert.deepEqual(plan, [
-    { id: 'buildr-agent-dependencies', executable: 'npm', args: ['ci', '--ignore-scripts'], cwd: '/product/buildr-agent' },
-    { id: 'buildr-agent-build', executable: 'node', args: ['tools/build.ts'], cwd: '/product/buildr-agent' },
+    { id: 'buildr-harness-dependencies', executable: 'npm', args: ['ci', '--ignore-scripts'], cwd: '/product/buildr-harness' },
+    { id: 'buildr-harness-build', executable: 'node', args: ['tools/build.ts'], cwd: '/product/buildr-harness' },
     { id: 'buildr-dependencies', executable: 'npm', args: ['ci', '--install-links'], cwd: roots.serviceRoot },
     { id: 'harness-ui-dependencies', executable: 'npm', args: ['ci', '--ignore-scripts'], cwd: '/product/buildr-harness-ui' },
     { id: 'harness-ui-build', executable: 'node', args: ['tools/build.ts'], cwd: '/product/buildr-harness-ui' },
@@ -81,8 +81,8 @@ test('artifact consumers install only locked production dependencies and never g
 
 test('frontend source shard installs its own locked toolchain and generated inputs without building Web', () => {
   assert.deepEqual(candidateEnvironmentPlan('frontend', roots), [
-    { id: 'buildr-agent-dependencies', executable: 'npm', args: ['ci', '--ignore-scripts'], cwd: '/product/buildr-agent' },
-    { id: 'buildr-agent-build', executable: 'node', args: ['tools/build.ts'], cwd: '/product/buildr-agent' },
+    { id: 'buildr-harness-dependencies', executable: 'npm', args: ['ci', '--ignore-scripts'], cwd: '/product/buildr-harness' },
+    { id: 'buildr-harness-build', executable: 'node', args: ['tools/build.ts'], cwd: '/product/buildr-harness' },
     { id: 'buildr-dependencies', executable: 'npm', args: ['ci', '--install-links'], cwd: roots.serviceRoot },
     { id: 'harness-ui-dependencies', executable: 'npm', args: ['ci', '--ignore-scripts'], cwd: '/product/buildr-harness-ui' },
     { id: 'harness-ui-build', executable: 'node', args: ['tools/build.ts'], cwd: '/product/buildr-harness-ui' },
@@ -95,8 +95,8 @@ test('frontend source shard installs its own locked toolchain and generated inpu
 
 test('Candidate artifact Browser explicitly prepares Chromium and source harness inputs without Web build dependencies', () => {
   assert.deepEqual(candidateEnvironmentPlan('browser-artifact', roots), [
-    { id: 'buildr-agent-dependencies', executable: 'npm', args: ['ci', '--ignore-scripts'], cwd: '/product/buildr-agent' },
-    { id: 'buildr-agent-build', executable: 'node', args: ['tools/build.ts'], cwd: '/product/buildr-agent' },
+    { id: 'buildr-harness-dependencies', executable: 'npm', args: ['ci', '--ignore-scripts'], cwd: '/product/buildr-harness' },
+    { id: 'buildr-harness-build', executable: 'node', args: ['tools/build.ts'], cwd: '/product/buildr-harness' },
     { id: 'buildr-dependencies', executable: 'npm', args: ['ci', '--install-links'], cwd: roots.serviceRoot },
     { id: 'harness-ui-dependencies', executable: 'npm', args: ['ci', '--ignore-scripts'], cwd: '/product/buildr-harness-ui' },
     { id: 'harness-ui-build', executable: 'node', args: ['tools/build.ts'], cwd: '/product/buildr-harness-ui' },

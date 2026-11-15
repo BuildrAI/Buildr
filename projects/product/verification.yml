@@ -7,29 +7,23 @@ testing:
       services:
         - buildr
         - buildr-web
-        - buildr-agent
-        - dsh-plugin
-        - buildr-harness-ui
-        - buildr-harness-web
         - buildr-harness
+        - dsh-plugin
+        - buildr-harness-web
     purpose: 检查已登记服务类型、源码依赖、声明、资源和交付结构，不执行业务流程。
     sourcePaths:
       - services/buildr/**
       - services/buildr-web/**
-      - services/buildr-agent/**
+      - services/buildr-harness/**
       - services/dsh-plugin/**
       - verification.yml
       - preparation.yml
-      - services/buildr-harness-ui/**
       - services/buildr-harness-web/**
-      - services/buildr-harness/**
     testRoots:
       - services/buildr/test/**
       - services/buildr-web/test/**
-      - services/buildr-agent/test/**
-      - services/dsh-plugin/test/**
-      - services/buildr-harness-ui/test/**
       - services/buildr-harness/test/**
+      - services/dsh-plugin/test/**
       - services/buildr-harness-web/test/**
     full:
       kind: command
@@ -55,27 +49,24 @@ testing:
       services:
         - buildr
         - buildr-web
-        - buildr-agent
-        - dsh-plugin
-        - buildr-harness-ui
         - buildr-harness
+        - dsh-plugin
+        - buildr-harness-web
     purpose: 验证已登记服务隔离条件下的内部逻辑与完整内部功能；替换外部协作者，整套保持低成本。
     sourcePaths:
       - services/buildr/**
       - services/buildr-web/**
-      - services/buildr-agent/**
+      - services/buildr-harness/**
       - services/dsh-plugin/**
       - verification.yml
       - preparation.yml
-      - services/buildr-harness-ui/**
-      - services/buildr-harness/**
+      - services/buildr-harness-web/**
     testRoots:
       - services/buildr/test/**
       - services/buildr-web/test/**
-      - services/buildr-agent/test/**
-      - services/dsh-plugin/test/**
-      - services/buildr-harness-ui/test/**
       - services/buildr-harness/test/**
+      - services/dsh-plugin/test/**
+      - services/buildr-harness-web/test/**
     full:
       kind: command
       argv:
@@ -97,27 +88,24 @@ testing:
       services:
         - buildr
         - buildr-web
-        - buildr-agent
-        - dsh-plugin
-        - buildr-harness-ui
         - buildr-harness
+        - dsh-plugin
+        - buildr-harness-web
     purpose: 验证真实数据库、HTTP、文件系统、Git、消息和子进程等技术边界；按真实平台和依赖执行。
     sourcePaths:
       - services/buildr/**
       - services/buildr-web/**
-      - services/buildr-agent/**
+      - services/buildr-harness/**
       - services/dsh-plugin/**
       - verification.yml
       - preparation.yml
-      - services/buildr-harness-ui/**
-      - services/buildr-harness/**
+      - services/buildr-harness-web/**
     testRoots:
       - services/buildr/test/**
       - services/buildr-web/test/**
-      - services/buildr-agent/test/**
-      - services/dsh-plugin/test/**
-      - services/buildr-harness-ui/test/**
       - services/buildr-harness/test/**
+      - services/dsh-plugin/test/**
+      - services/buildr-harness-web/test/**
     full:
       kind: command
       argv:
@@ -150,30 +138,24 @@ testing:
       services:
         - buildr
         - buildr-web
-        - buildr-agent
-        - dsh-plugin
-        - buildr-harness-ui
-        - buildr-harness-web
         - buildr-harness
+        - dsh-plugin
+        - buildr-harness-web
     purpose: 从命令行或浏览器实际入口完成应用流程，核对最终结果，明确替换的外部系统。
     sourcePaths:
       - services/buildr/**
       - services/buildr-web/**
-      - services/buildr-agent/**
+      - services/buildr-harness/**
       - services/dsh-plugin/**
       - verification.yml
       - preparation.yml
-      - services/buildr-harness-ui/**
       - services/buildr-harness-web/**
-      - services/buildr-harness/**
     testRoots:
       - services/buildr/test/**
       - services/buildr-web/test/**
-      - services/buildr-agent/test/**
-      - services/dsh-plugin/test/**
-      - services/buildr-harness-ui/test/**
-      - services/buildr-harness-web/test/**
       - services/buildr-harness/test/**
+      - services/dsh-plugin/test/**
+      - services/buildr-harness-web/test/**
     full:
       kind: command
       argv:
@@ -201,19 +183,15 @@ testing:
     scope:
       project: product
       services:
-        - buildr-agent
-        - buildr-harness-ui
-        - buildr-harness-web
         - buildr-harness
+        - buildr-harness-web
     purpose: 验证复制后的真实离线包、独立正式网页、受保护换代及共享数据保全；不代替原生模型与异平台证据。
     sourcePaths:
       - services/buildr-harness/**
       - services/buildr-harness-web/**
-      - services/buildr-harness-ui/**
-      - services/buildr-agent/**
     testRoots:
       - services/buildr-harness/test/**
-      - services/buildr-agent/test/integration/process/startup/**
+      - services/buildr-harness/test/integration/process/startup/**
       - services/buildr-harness-web/test/browser/**
     full:
       kind: agent

@@ -24,7 +24,7 @@ test('registered checks have exactly one of the four supported types and unique 
 });
 
 test('all four services expose independent source static and unit checks', () => {
-  for (const service of ['buildr', 'buildr-web', 'buildr-agent', 'dsh-plugin']) {
+  for (const service of ['buildr', 'buildr-web', 'buildr-harness', 'dsh-plugin']) {
     const own = verificationSteps.filter((step: any) => step.testing.ownerScope === `service:product/${service}` && step.target === 'source');
     assert.ok(own.some((step: any) => step.testing.executionBoundary === 'Unit'), `${service}: unit`);
     assert.ok(own.some((step: any) => step.testing.executionBoundary === 'Static'), `${service}: static`);

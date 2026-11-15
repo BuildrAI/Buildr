@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { withAgentDataOffline } from '@buildr-ai/buildr-agent';
+import { withAgentDataOffline } from '@buildr-ai/buildr-harness';
 
 import type { PreviewReuseFacet, PreviewReuseFacetOutcome } from './preview-reuse.ts';
 import { MODEL_CATALOG_FACET } from './preview-reuse-model-catalog.ts';
@@ -107,7 +107,7 @@ export function createAgentRuntimeFacet(): PreviewReuseFacet {
         }
       }
 
-      const agentPackage = await import('@buildr-ai/buildr-agent') as unknown as AgentRelocationPackage;
+      const agentPackage = await import('@buildr-ai/buildr-harness') as unknown as AgentRelocationPackage;
       let executables: string[] = [];
       try {
         executables = agentPackage.listConnectionExecutables({ sourceRoot: input.sourceRoot });

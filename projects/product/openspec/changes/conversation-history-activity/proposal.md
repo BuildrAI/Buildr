@@ -35,7 +35,7 @@
 
 ## Impact
 
-- `services/buildr-agent`：`domain/conversation-activity.ts` 的活动判定；Qoder CN transcript 回执读取与 `conversations.read` 的只读补充回执修复。
+- `services/buildr-harness`：`domain/conversation-activity.ts` 的活动判定；Qoder CN transcript 回执读取与 `conversations.read` 的只读补充回执修复。
 - `services/buildr-web`：`conversation-stop.ts` 的停止可用性、`conversation-state.ts` 的恢复与观察判定、`conversation-actions.ts` 的本地发送尝试匹配、`ConversationPanel.tsx` 的发送路由与历史未知展示、`AgentConversationsContext.tsx` 的权威状态校准。
 - 不删除未知工具、诊断、停止请求或历史答复；不把 `unknown` 改写成成功或已确认停止。
 - 不自动重发未知请求，不把普通新消息当作旧问题回答或审批。

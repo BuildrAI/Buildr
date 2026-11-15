@@ -1,6 +1,56 @@
-import {createApiClient as createSharedApiClient} from '@buildr-ai/buildr-harness-ui/api/client';
-import type {SessionAdapter} from './LocalSessionAdapter';
-export type {ApiClient,ApiError,WorkspaceDocument} from '@buildr-ai/buildr-harness-ui/api/client';
+import type { SessionAdapter } from './LocalSessionAdapter.ts';
+
+export type ApiError = Error & { code?: string; status?: number; details?: unknown };
+
+export type ApiClient = (resource: string, options?: RequestInit) => Promise<unknown>;
+
+function createLocalApiClient(options: {
+  sessionAdapter: SessionAdapter;
+  getWorkspaceId?: () => string | null;
+
+}): ApiClient {
+  return async function api(resource: string, init: RequestInit = {}) {
+    const send = async () => {
+      init.signal?.throwIfAborted();
+      const headers = new Headers(init.headers || {});
+      if (init.body || headers.has('x-buildr-session') || !['GET', 'HEAD'].includes((init.method || 'GET').toUpperCase())) {
+        const writeHeaders = options.sessionAdapter.writeHeaders();
+        for (const [key, value] of Object.entries(writeHeaders)) {
+          if (key.toLowerCase()==='x-buildr-session' || !headers.has(key)) headers.set(key, value);
+        }
+      }
+      // JSON endpoints already return no-store. Bypass the browser's cache entry
+      // lock before sending too, especially for concurrent observation requests.
+      const response = await fetch(resource, { cache: 'no-store', ...init, headers });
+      const body = await response.json() as { error?: { message?: string; code?: string; details?: unknown } };
+      if (!response.ok) {
+        const requestId = (body.error?.details as {requestId?:unknown}|undefined)?.requestId;
+        const reference = typeof requestId === 'string' && /^[a-f0-9-]{36}$/.test(requestId) ? `（错误编号：${requestId}）` : '';
+        const error: ApiError = new Error((body.error?.message || 'Buildr 请求失败。') + reference);
+        error.code = body.error?.code;
+        error.status = response.status;
+        error.details = body.error?.details;
+        throw error;
+      }
+      return body;
+    };
+
+    try {
+      return await send();
+    } catch (error) {
+      init.signal?.throwIfAborted();
+      // 令牌随服务进程轮换：过期页面或缺失 meta 先重取当前令牌，再原样重试一次。
+      if ((error as ApiError)?.code !== 'session_forbidden' || typeof options.sessionAdapter.refreshSession !== 'function') throw error;
+      if (!await options.sessionAdapter.refreshSession(init.signal ?? undefined)) {
+        init.signal?.throwIfAborted();
+        throw error;
+      }
+      return send();
+    }
+  };
+}
+export type WorkspaceDocument = { path?: string; name: string; exists: boolean; content: string | null };
+
   function scopedResource(resource: string, options:{getWorkspaceId:()=>string|null}): string {
     const workspaceId = options.getWorkspaceId();
     if (!workspaceId || !resource.startsWith('/api/v1/')) return resource;
@@ -21,4 +71,4 @@ export type {ApiClient,ApiError,WorkspaceDocument} from '@buildr-ai/buildr-harne
     return `/api/v1/workspaces/${encodeURIComponent(workspaceId)}${resource.slice('/api/v1'.length)}`;
   }
 
-export function createApiClient(options:{sessionAdapter:SessionAdapter;getWorkspaceId:()=>string|null}){const client=createSharedApiClient(options);return (resource:string,init?:RequestInit)=>client(scopedResource(resource,options),init);}
+export function createApiClient(options:{sessionAdapter:SessionAdapter;getWorkspaceId:()=>string|null}){const client=createLocalApiClient(options);return (resource:string,init?:RequestInit)=>client(scopedResource(resource,options),init);}

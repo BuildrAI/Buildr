@@ -1,7 +1,7 @@
 # agent-runtime-connections Specification
 
 ## Purpose
-定义独立 `buildr-agent` 服务（Service）的职责、执行者（Executor）契约及首版 Codex、DSH 与 Qoder 原生智能体（Agent）的本机接入边界，使人能够在独立配置中登录并使用真实可用能力，同时准确区分账号、进程、权限和恢复状态，保持外部桌面应用的独立边界，单次生成复用统一模型（Model）能力。公共交互能力与实际执行者（Executor）分离，为以后经独立设计与验收的 Buildr 自研智能体（Agent）保留接入边界，不在本变更实现自研执行能力。
+定义独立 `buildr-harness` 服务（Service）的职责、执行者（Executor）契约及首版 Codex、DSH 与 Qoder 原生智能体（Agent）的本机接入边界，使人能够在独立配置中登录并使用真实可用能力，同时准确区分账号、进程、权限和恢复状态，保持外部桌面应用的独立边界，单次生成复用统一模型（Model）能力。公共交互能力与实际执行者（Executor）分离，为以后经独立设计与验收的 Buildr 自研智能体（Agent）保留接入边界，不在本变更实现自研执行能力。
 
 ## Requirements
 
@@ -48,19 +48,19 @@ Buildr MUST 保持厂家账号配置隔离，并为原生子进程提供原用�
 
 ### Requirement: 智能体服务必须独立维护并随现有宿主交付
 
-新增智能体服务（Agent Service）MUST 以 `services/buildr-agent/` 为独立源码、依赖、构建及验证单元，拥有接入、统一对话、参与关系、执行协调、私有交互存储和语义事件。第一版 MUST 以私有库（Private Library）由 Buildr 同进程宿主（Host）装配，并随现有 Buildr 发行包交付；MUST NOT 因源码独立而要求用户另装常驻服务、启动额外端口或配置另一套本机认证。厂家原生进程仍由各适配器（Adapter）按其实际方式管理。
+新增智能体服务（Agent Service）MUST 以 `services/buildr-harness/` 为独立源码、依赖、构建及验证单元，拥有接入、统一对话、参与关系、执行协调、私有交互存储和语义事件。第一版 MUST 以私有库（Private Library）由 Buildr 同进程宿主（Host）装配，并随现有 Buildr 发行包交付；MUST NOT 因源码独立而要求用户另装常驻服务、启动额外端口或配置另一套本机认证。厂家原生进程仍由各适配器（Adapter）按其实际方式管理。
 
-Buildr 宿主（Host）MUST 保留应用配置域（Profile）解析、工作空间（Workspace）及任务（Task）权威查询、本机身份认证、超文本传输接口（HTTP）与服务端事件流（SSE）传输责任。`buildr-agent` MUST 通过显式注入的窄接口使用必要宿主能力，不导入宿主业务模块内部实现、不直接改写任务或工作资产，也不依赖浏览器请求／响应对象。前端仍归属 `buildr-web`，MUST 通过受认证接口使用安全的公开契约，不能直接依赖服务私有存储或厂家软件开发工具包（SDK）。
+Buildr 宿主（Host）MUST 保留应用配置域（Profile）解析、工作空间（Workspace）及任务（Task）权威查询、本机身份认证、超文本传输接口（HTTP）与服务端事件流（SSE）传输责任。`buildr-harness` MUST 通过显式注入的窄接口使用必要宿主能力，不导入宿主业务模块内部实现、不直接改写任务或工作资产，也不依赖浏览器请求／响应对象。前端仍归属 `buildr-web`，MUST 通过受认证接口使用安全的公开契约，不能直接依赖服务私有存储或厂家软件开发工具包（SDK）。
 
 #### Scenario: 在没有源码相邻目录的正式安装中运行
 - **WHEN** 用户从正式 Buildr 发行包安装并打开新对话能力
-- **THEN** 所需 `buildr-agent` 构建产物及运行依赖 MUST 已包含在该发行包的可解析路径中
+- **THEN** 所需 `buildr-harness` 构建产物及运行依赖 MUST 已包含在该发行包的可解析路径中
 - **AND** MUST NOT 依赖开发工作树、相邻源码目录、实验脚本或未交付的本机依赖
 - **AND** 本机认证及传输 MUST 使用当前 Buildr 宿主（Host），不要求额外启动智能体服务（Agent Service）进程
 
 #### Scenario: 单独验证智能体服务的核心行为
 - **WHEN** 维护者验证统一对话、交付或停止状态
-- **THEN** `buildr-agent` MUST 能以替身执行者（Executor）和显式宿主端口验证自身行为，不要求启动 Buildr Web 或调用真实模型
+- **THEN** `buildr-harness` MUST 能以替身执行者（Executor）和显式宿主端口验证自身行为，不要求启动 Buildr Web 或调用真实模型
 - **AND** 实际安装验证 MUST 另行覆盖宿主装配、运行依赖及三家真实接入，不能由核心单元验证代替
 
 ### Requirement: 统一对话必须通过执行者契约调用实际工作能力

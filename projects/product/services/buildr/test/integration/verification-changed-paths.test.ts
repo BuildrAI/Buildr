@@ -232,7 +232,7 @@ test('source refinement binds actual Git and working bytes, never dirty or missi
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const projectRoot = path.join(root, 'projects/product');
   const productRoot = path.join(projectRoot, 'services/buildr');
-  const agent = path.join(projectRoot, 'services/buildr-agent/src');
+  const agent = path.join(projectRoot, 'services/buildr-harness/src');
   fs.mkdirSync(productRoot, { recursive: true }); fs.mkdirSync(agent, { recursive: true });
   const entry = path.join(agent, 'index.ts');
   const previous = "export { prepare } from './runtime.ts';\n";
@@ -273,7 +273,7 @@ test('source refinement binds actual Git and working bytes, never dirty or missi
 
 test('real verification-checks.ts single-group diff and executor-specific exclusions narrow agent groups accurately', () => {
   const productRoot = path.resolve(import.meta.dirname, '../..', '../..');
-  const checkRel = 'services/buildr-agent/tools/testing/verification-checks.ts';
+  const checkRel = 'services/buildr-harness/tools/testing/verification-checks.ts';
   const beforeText = fs.readFileSync(path.join(productRoot, checkRel), 'utf8');
   const afterText = beforeText.replace(
     /id:\s*'agent-integration-conversations'[\s\S]*?timeoutMs:\s*(\d+)/u,
@@ -305,8 +305,8 @@ test('real verification-checks.ts single-group diff and executor-specific exclus
   }
 
   for (const executorPath of [
-    'services/buildr-agent/src/executors/antigravity/probe.ts',
-    'services/buildr-agent/src/executors/claude/probe.ts',
+    'services/buildr-harness/src/executors/antigravity/probe.ts',
+    'services/buildr-harness/src/executors/claude/probe.ts',
   ]) {
     const executorPlan = createVerificationPlan({ related: true, semantic: true, target: 'source', paths: [executorPath] });
     const executorIds = executorPlan.steps.map((step: any) => step.id);

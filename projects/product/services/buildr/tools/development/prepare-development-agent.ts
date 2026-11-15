@@ -2,15 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
-import { agentRuntimePackageTree } from '../../../buildr-agent/tools/package-runtime.ts';
+import { agentRuntimePackageTree } from '../../../buildr-harness/tools/package-runtime.ts';
 import { withExclusiveFileLock } from '../../src/infrastructure/filesystem/exclusive-file-lock.ts';
 
 const buildrRoot = path.resolve(import.meta.dirname, '../..');
 
 /** Building source and copying it into the host package share one ownership boundary. */
 export function withDevelopmentAgentPreparationLock<T>(serviceRoot: string, action: () => T): T {
-  const destination = path.join(serviceRoot, 'node_modules/@buildr-ai/buildr-agent');
-  return withExclusiveFileLock(path.join(serviceRoot, 'node_modules/.buildr-agent-preparation.lock'), destination,
+  const destination = path.join(serviceRoot, 'node_modules/@buildr-ai/buildr-harness');
+  return withExclusiveFileLock(path.join(serviceRoot, 'node_modules/.buildr-harness-preparation.lock'), destination,
     action, { timeoutMs: 30_000 });
 }
 
@@ -27,7 +27,7 @@ function cleanupPreparationTree(directory: string): void {
 /** Materialize the same public package consumed by an installed Buildr. */
 export function prepareDevelopmentAgent({
   serviceRoot = buildrRoot,
-  agentRoot = path.resolve(serviceRoot, '../buildr-agent'),
+  agentRoot = path.resolve(serviceRoot, '../buildr-harness'),
   build = true,
 }: { serviceRoot?: string; agentRoot?: string; build?: boolean } = {}): string {
   return withDevelopmentAgentPreparationLock(serviceRoot, () => materializeDevelopmentAgent({ serviceRoot, agentRoot, build }));
@@ -35,14 +35,16 @@ export function prepareDevelopmentAgent({
 
 function materializeDevelopmentAgent({ serviceRoot, agentRoot, build }: { serviceRoot: string; agentRoot: string; build: boolean }): string {
   if (build) {
+    const web = spawnSync(process.execPath, [path.resolve(agentRoot, '../buildr-harness-web/tools/build.ts')], {cwd: path.resolve(agentRoot, '../buildr-harness-web'), stdio:'inherit', timeout:240000});
+    if(web.error || web.status!==0)throw web.error??new Error('harness_web_build_failed');
     const result = spawnSync(process.execPath, [path.join(agentRoot, 'tools/build.ts')], { cwd: agentRoot, stdio: 'inherit' });
     if (result.error || result.status !== 0) throw new Error(`agent_preparation_build_failed: ${result.error?.message ?? result.status}`);
   }
-  const finalDestination = path.join(serviceRoot, 'node_modules/@buildr-ai/buildr-agent');
+  const finalDestination = path.join(serviceRoot, 'node_modules/@buildr-ai/buildr-harness');
   fs.mkdirSync(path.dirname(finalDestination), { recursive: true });
   const tree=agentRuntimePackageTree(agentRoot);
   if(tree.matches(finalDestination))return finalDestination;
-  const destination = fs.mkdtempSync(path.join(path.dirname(finalDestination), '.buildr-agent-stage-'));
+  const destination = fs.mkdtempSync(path.join(path.dirname(finalDestination), '.buildr-harness-stage-'));
   try {
     tree.materialize(destination);
     const previous = `${destination}-previous`;

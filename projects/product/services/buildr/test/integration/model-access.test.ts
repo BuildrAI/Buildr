@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
 import test from 'node:test';
-import { createAgentService as createService } from '@buildr-ai/buildr-agent';
+import { createAgentService as createService } from '@buildr-ai/buildr-harness';
 import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.ts';
 import { taskRecordFixture } from '../helpers/task-record-system-fixture.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';

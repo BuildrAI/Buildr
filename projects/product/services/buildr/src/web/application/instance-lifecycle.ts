@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import type http from 'node:http';
-import { assertAgentUpgradeIdle } from '@buildr-ai/buildr-agent';
+import { assertAgentUpgradeIdle } from '@buildr-ai/buildr-harness';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 import { assertLauncherWebProfile, resolveWebProfile, sameWebProfile } from '../../modules/installation/contracts/web-profile.ts';

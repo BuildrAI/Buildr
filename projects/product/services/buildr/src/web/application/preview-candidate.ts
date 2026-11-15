@@ -3,7 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { createHash, type Hash } from 'node:crypto';
-import { computeAgentRuntimeDigest } from '@buildr-ai/buildr-agent';
+import { computeAgentRuntimeDigest } from '@buildr-ai/buildr-harness';
 import { atomicWriteJson } from '../../infrastructure/filesystem/atomic-files.ts';
 
 const CANDIDATE_SCHEMA = 'buildr.local-app-preview-candidate/v1';
@@ -39,7 +39,7 @@ function hashTree(hash: Hash, root: string): void {
  * edit changes the digest, so a stale private package or web-dist is never reused. */
 export function previewCandidateSourceDigest(serviceRoot: string): string {
   const root = path.resolve(serviceRoot);
-  const agentRoot = path.resolve(root, '../buildr-agent');
+  const agentRoot = path.resolve(root, '../buildr-harness');
   const webRoot = path.resolve(root, '../buildr-web');
   const hash = createHash('sha256');
   for (const directory of [path.join(root, 'src'), path.join(agentRoot, 'src'), path.join(webRoot, 'src')]) {
@@ -94,7 +94,7 @@ export type PreviewCandidateArtifacts = { status: 'prepared' | 'reused'; sourceD
 export function preparePreviewCandidateArtifacts(input: { serviceRoot: string; node: string }): PreviewCandidateArtifacts {
   const serviceRoot = path.resolve(input.serviceRoot);
   const webDist = path.join(serviceRoot, 'web-dist');
-  const agentPackage = path.join(serviceRoot, 'node_modules/@buildr-ai/buildr-agent');
+  const agentPackage = path.join(serviceRoot, 'node_modules/@buildr-ai/buildr-harness');
   const markerFile = path.join(serviceRoot, 'node_modules', '.buildr-preview-candidate.json');
   const sourceDigest = previewCandidateSourceDigest(serviceRoot);
   const artifactsPresent = fs.statSync(path.join(webDist, 'index.html'), { throwIfNoEntry: false })?.isFile() === true
@@ -112,7 +112,7 @@ export function preparePreviewCandidateArtifacts(input: { serviceRoot: string; n
 /** Digest of the already prepared worktree private package. MUST run after
  * preparation; never computed from an unprepared node_modules. */
 export function computePreviewCandidateDigest(input: { serviceRoot: string; node: string }): string {
-  const agentPackage = path.join(path.resolve(input.serviceRoot), 'node_modules/@buildr-ai/buildr-agent');
+  const agentPackage = path.join(path.resolve(input.serviceRoot), 'node_modules/@buildr-ai/buildr-harness');
   if (fs.statSync(path.join(agentPackage, 'build/index.js'), { throwIfNoEntry: false })?.isFile() !== true) {
     throw candidateError('候选 Agent 私有包尚未准备，无法计算运行单元 digest。', 'preview_candidate_not_prepared', { agentPackage });
   }

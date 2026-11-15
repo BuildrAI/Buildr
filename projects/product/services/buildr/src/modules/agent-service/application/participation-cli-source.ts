@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { registeredProductInstallations } from '../../installation/module.ts';
-import type { ParticipationSource } from '@buildr-ai/buildr-agent';
+import type { ParticipationSource } from '@buildr-ai/buildr-harness';
 
 /** Only exact, currently authorized installation/development entry targets. Never resolves PATH or runs programs. */
 export function observeParticipationCli(identity:unknown, locator:string|undefined):ParticipationSource|undefined {

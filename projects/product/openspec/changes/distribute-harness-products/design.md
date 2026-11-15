@@ -38,7 +38,7 @@ macOS 使用两个 `.app` 身份，Windows 使用独立应用/快捷方式绑定
 
 ### D3. 安装组合与版本采用
 
-保留 `@buildr-ai/buildr` 和 `buildr`；独立包拟为 `@buildr-ai/buildr-harness`，命令拟为 `buildr-harness`。发布命名前核对名称可用性；内部源码 `buildr-agent` 不为品牌立即改名。
+保留 `@buildr-ai/buildr` 和 `buildr`；独立包拟为 `@buildr-ai/buildr-harness`，命令拟为 `buildr-harness`。发布命名前核对名称可用性；内部源码 `buildr-harness` 不为品牌立即改名。
 
 独立产品壳和安装包负责当前组合选择。工程业务本身按第一变更保持独立，完整路线表见[核心设计 D0](../split-buildr-harness-product/design.md#d0-区分产品能力接入装配与交付宿主)。后续 DSH 生态分别提供原生执行＋Development 的组合，以及插件框架＋Harness＋Development 的完整组合；后者由 Harness 统一多执行程序、模型、对话和交互，Development 也可换成营销等专业环境。它们复用产品能力，不复制工程业务代码。本次不交付这些插件版本，也不因未来可替换而撤掉当前 Development 开箱即用的 Harness。独立安装验收不要求 DSH 桌面或插件系统；用户选择 DSH 原生执行器时仍按其实际依赖准备，这与作为 DSH 插件交付不同。
 
@@ -89,3 +89,7 @@ Antigravity 的 `credentialScope: host-keyring` 需要核对真实密钥环边�
 ## Open Questions
 
 独立 npm 名称的实时可用性、各准确依赖/订阅路径的负责人决定、授权账号及其他平台真实证据尚需取得。它们不改变已选架构；会影响名称最终登记、某项分发/支持声明或对应平台的验收，不能被“无架构待决项”掩盖。
+
+## 本轮边界修订
+
+本变更涉及的核心与独立入口统一为 buildr-harness；buildr-harness-web 拥有完整唯一网页，buildr-harness-ui 退役。Development 在自己的 harness-ui 模块嵌套网页并准备工程上下文，不消费对话 React 组件。具体集成约束以同任务 extract-harness-web 的修订规范为准；不改变既有历史数据根、准确执行控制与独立发行批准边界。

@@ -524,7 +524,7 @@ test('engineering business modules do not import Harness assembly or vendor SDKs
     for (const file of fs.globSync('**/*.ts', {cwd: path.join(source, domain)})) {
       const filename = path.join(source, domain, file);
       for (const match of fs.readFileSync(filename, 'utf8').matchAll(/(?:\bfrom\s+|\bimport\s*\(\s*|\bimport\s+)["']([^"']+)["']/gu)) {
-        if (/agent-service|@buildr-ai\/buildr-agent|@anthropic-ai\/|@qoder-ai\/|@deepseek-ai\//u.test(match[1])) violations.push(`${domain}/${file} -> ${match[1]}`);
+        if (/agent-service|@buildr-ai\/buildr-harness|@anthropic-ai\/|@qoder-ai\/|@deepseek-ai\//u.test(match[1])) violations.push(`${domain}/${file} -> ${match[1]}`);
       }
     }
   }

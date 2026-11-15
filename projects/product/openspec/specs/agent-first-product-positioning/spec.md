@@ -62,7 +62,7 @@ Buildr MUST 将所有潜在工作信息来源描述为 Work Information Space（
 ### Requirement: Buildr 不复制 Agent 的通用工作能力
 Buildr 产品治理核心与公共交互服务 MUST NOT 将自身定位或设计为通用智能体（Agent），也 MUST NOT 接管执行者（Executor）的通用理解、推理、规划、回复生成、工具选择和专业任务执行职责。Buildr 产品核心 MUST 聚焦组织工作资产治理、智能体（Agent）可发现入口、运行时（Runtime）投射、确定性状态变更、完整性保护和诊断；可复用专业动作 MUST 由 Buildr 作为工作方法治理并交给智能体（Agent）使用，而不是实现为治理核心自身的推理或执行主体。
 
-Buildr MUST 允许由独立 `buildr-agent` 服务（Service）维护交互入口、接入连接、统一可见记录、准确恢复和手动跨参与者接续，并通过执行者（Executor）契约调用实际工作能力。公共服务 MUST 仅承担交互与确定性协调，不能把治理、可见对话与推理循环合为一个主体。首版实际执行者（Executor）仅为 Codex、DSH 与 Qoder 原生运行时（Runtime）。未来自研 Buildr 智能体（Agent）如需建设 MUST 作为另一实际执行者（Executor）另行明确设计、能力与验收，通过同一公共边界服务 Buildr；本变更 MUST NOT 实现或宣称该自研能力已可用，也不要求未来实现伪装为外部厂家命令行（CLI）。
+Buildr MUST 允许由独立 `buildr-harness` 服务（Service）维护交互入口、接入连接、统一可见记录、准确恢复和手动跨参与者接续，并通过执行者（Executor）契约调用实际工作能力。公共服务 MUST 仅承担交互与确定性协调，不能把治理、可见对话与推理循环合为一个主体。首版实际执行者（Executor）仅为 Codex、DSH 与 Qoder 原生运行时（Runtime）。未来自研 Buildr 智能体（Agent）如需建设 MUST 作为另一实际执行者（Executor）另行明确设计、能力与验收，通过同一公共边界服务 Buildr；本变更 MUST NOT 实现或宣称该自研能力已可用，也不要求未来实现伪装为外部厂家命令行（CLI）。
 
 #### Scenario: 评审新增产品能力
 - **WHEN** 维护者评审一项拟进入 Buildr 的产品能力
@@ -74,7 +74,7 @@ Buildr MUST 允许由独立 `buildr-agent` 服务（Service）维护交互入口
 - **WHEN** README、产品主说明或开发规则解释 Buildr 与智能体（Agent）的职责边界
 - **THEN** 文档 MUST 说明 Buildr 产品治理核心为智能体（Agent）组织和准备开展工作所需的资产、入口与确定性边界，独立智能体服务（Agent Service）承载公共交互及接入，两者均不等同于实际执行者（Executor）
 - **AND** 文档 MUST 保留智能体（Agent）发现相关内容、形成任务上下文（Task Context）、推理并推进任务的责任
-- **AND** 文档 MUST 区分当前三家可用接入与未来可能建设的自研执行者（Executor），不能仅因存在 `buildr-agent` 目录就声称 Buildr 已具备自研智能体（Agent）
+- **AND** 文档 MUST 区分当前三家可用接入与未来可能建设的自研执行者（Executor），不能仅因存在 `buildr-harness` 目录就声称 Buildr 已具备自研智能体（Agent）
 
 #### Scenario: 在 Buildr 内托管原生对话
 - **WHEN** 人通过 Buildr 内部对话（Conversation）向已接入的原生智能体（Agent）表达目标或回应请求

@@ -8,7 +8,7 @@ Buildr 的内部对话与单次生成共用智能体（Agent）和模型（Model
 
 Codex、DSH与Qoder新工具采用v9兼容边界下的原生调用引用。适配器首次投射工具时标记正文由原生持有，Buildr只保存配置域、会话、轮次、调用ID及编排元数据，工具正文、缺失片段和折叠文本预览不落库，也不逐条比较收益。实时详情沿现有SSE视图传递，传输缓存有界；工具详情的live标记让前端在执行结束后继续接收原生引用切换。原生完成记录可读后清除实时展示，展开通过entry-detail直接读取原生详情。执行控制状态独立更新，源缺失只影响详情。旧正文编码仍沿准确片段引用与有界补转路径。DSH按原生事件与rpc归属读取完整详情，Qoder的SDK执行编号与原生promptId不同，不作为原生筛选条件；通过会话内唯一工具调用及来源消息定位，内部按prompt与工具消息读取，子工具先核对唯一原生父调用及消息归属，再读取该会话下的subagents记录。JSONL与DSH压缩帧均有界遍历，不把整份会话载入内存；普通快照及内部控制回包使用紧凑视图，不隐式读取正文。DSH在原生适配器中合并累计文字并定期让出事件循环，工具、问题及终态保持即时有序交付。附件完整性和唯一原件边界沿既有实现。
 
-`services/buildr-agent/` 是独立的智能体服务（Agent Service）代码单元，维护账号接入、统一对话、执行控制、原生上下文恢复和私有交互库。它通过私有包 `@buildr-ai/buildr-agent` 提供独立执行进程（Agent Process）和公共客户端（Client），由 Development 与独立 Harness 产品纳入各自负载，同域入口复用后台，用户不需要另外安装核心服务。本文描述当前候选实现，尚未激活到保留环境。
+`services/buildr-harness/` 是独立的智能体服务（Agent Service）代码单元，维护账号接入、统一对话、执行控制、原生上下文恢复和私有交互库。它通过私有包 `@buildr-ai/buildr-harness` 提供独立执行进程（Agent Process）和公共客户端（Client），由 Development 与独立 Harness 产品纳入各自负载，同域入口复用后台，用户不需要另外安装核心服务。本文描述当前候选实现，尚未激活到保留环境。
 
 通用 HTTP、程序凭据、来源化权限与独立网页承载属于 Harness 核心；Development 宿主负责自身页面认证和固定目标同源适配，以及已登记工作空间（Workspace）和任务（Task）身份；执行后台（Execution Backend）持有原生连接、统一对话、交接、待回应、模型转接、辅助生成和私有数据写入。前端负责对话、草稿、历史、发送预览和授权答复。各执行器（Executor）负责各自进程、官方登录、规则（Rule）与技能（Skill）发现、工具执行及原生历史。这里的服务（Service）边界也不等于未来自研的 Buildr 智能体（Agent）：未来自研执行者可以沿同一执行器（Executor）契约与 Codex 等并列接入，当前没有该实现。
 
@@ -20,11 +20,11 @@ Codex、DSH与Qoder新工具采用v9兼容边界下的原生调用引用。适�
 | Claude Code | 官方 `@anthropic-ai/claude-agent-sdk` 与独立 `claude` CLI | 不维护原生账号登录（`account: 'source-required'`），只经本机模型网关消费 Anthropic Messages 兼容来源 |
 | Antigravity | 官方发布清单受管 `agy acp`（ACP 协议） | 连接级协调者配合按对话（会话、权限、账号身份与受管程序摘要）隔离的 `agy acp` 子进程组；私有 `HOME` 下设置 `autoUpdate: false`，不接管外部 `agy` 或注入 shell |
 
-原生程序由“准备并连接”发现并核验真实路径、实际版本及来源。软件开发工具包（SDK）和 DSH 客户端随主包携带；缺少原生程序时提供官方安装引导或显式的独立准备动作，不修改全局安装或自动升级。兼容版本与分发策略由各执行方模块在[统一程序策略](../../../services/buildr-agent/src/executors/program-policy.ts)注册，执行适配和准备使用同一策略，缺少一家不阻止其他已就绪接入。
+原生程序由“准备并连接”发现并核验真实路径、实际版本及来源。软件开发工具包（SDK）和 DSH 客户端随主包携带；缺少原生程序时提供官方安装引导或显式的独立准备动作，不修改全局安装或自动升级。兼容版本与分发策略由各执行方模块在[统一程序策略](../../../services/buildr-harness/src/executors/program-policy.ts)注册，执行适配和准备使用同一策略，缺少一家不阻止其他已就绪接入。
 
 ### 执行方声明、模型路径绑定与兼容边界
 
-公共编排层（`application/`、`model-access/application.ts`、`executors/` 公共模块与前端 `agent-conversations`）不以执行方品牌字面量作条件分支，而是统一消费执行方声明（`modelPolicy`、`runtimeTraits`、`nativeContent`、`distribution`）与模型来源声明（`sharing`、`inference`、`presentation`），实现见[模型策略与兼容判定](../../../services/buildr-agent/src/domain/model-policy.ts)：
+公共编排层（`application/`、`model-access/application.ts`、`executors/` 公共模块与前端 `agent-conversations`）不以执行方品牌字面量作条件分支，而是统一消费执行方声明（`modelPolicy`、`runtimeTraits`、`nativeContent`、`distribution`）与模型来源声明（`sharing`、`inference`、`presentation`），实现见[模型策略与兼容判定](../../../services/buildr-harness/src/domain/model-policy.ts)：
 
 1. **执行方模型策略（`modelPolicy`）与运行特性（`runtimeTraits`）**：每个执行方声明基础账号要求（`connection-ready` 或 `source-required`，可选 `readySourceSupersedesConnection`）、原生来源集合与传递/绑定方式（`delivery`、`exclusive`、`binding`），以及支持的网关线协议（`openai-responses`、`openai-chat-completions`、`anthropic-messages`）；`runtimeTraits` 声明网关配置下的共享原生主目录策略、升级验证方式（`runtime-verify` 或 `account-probe`）、临时账号探针支持以及传输中断识别委托（`ExecutorObservationLost`）。
 2. **两条模型路径的绑定契约**：打开运行时与发送前先由 `resolveExecutionModelPath()` 确定唯一路径：
@@ -33,8 +33,8 @@ Codex、DSH与Qoder新工具采用v9兼容边界下的原生调用引用。适�
    - **原生直通（`account-identity`）**：面向不提供网关推理的原生来源（如 Antigravity 的 Google 个人账号 `native-antigravity`），准备与发送均**不签发网关租约**，而是在打开前校验来源就绪、账号身份一致、模型在当前来源目录且启用，向执行方传入互斥的 `nativeSource{ accountId, accountIdentity, modelId, model }`，并由执行方在工作输入副作用前再次核对当前原生账号身份与模型。
 3. **来源共享范围（`sharing`）、推理方式（`inference`）与展示声明（`presentation`）**：模型来源默认 `sharing: { kind: 'gateway' }`、`inference: 'gateway'`；声明 `executor-exclusive` 的来源只允许指定执行方原生使用并向其他执行方公开明确原因，拒绝跨执行方签发租约；声明 `inference: 'none'` 的来源不提供网关推理，禁止签发任何网关租约，并从单次生成（`models.generate`）、提交说明与直接执行模型选择器中排除。账号与目录视图通过 `presentation` 公开厂商名称、卡片名称、额度标签、API Key 提示、额度不可读说明及官方账单链接，前端不再硬编码厂商账单或品牌映射（仅保留离线历史展示兜底表）。
 4. **静态兼容与发送时可用性分离**：服务端以唯一纯函数 `sourceCompatibility()` 根据双方声明计算静态兼容，并在账号与目录视图投射 `executorCompatibility{ connectionId, compatible, reasonCode, reason }`；前端只依据该结论禁用不兼容模型并保留原模型名与悬停原因（字段缺失时前端按兼容放行，交由发送端裁决）。发送时可用性由服务端在工作输入前按固定顺序实时校验：连接已准备 → 连接基础账号就绪（若声明 `readySourceSupersedesConnection` 且所选原生来源已就绪，则不被陈旧连接观察先行拒绝）→ 所选来源存在且启用 → 来源状态 `ready` → 静态兼容 → 账号身份未变 → 模型存在且启用 → 图片、服务档位与推理强度支持。因此静态兼容但已过期或停用的模型明确返回过期或停用原因，不误报为来源不兼容。
-5. **原生工具详情注册（`nativeContent`）**：各执行方通过 `defineNativeContent()` 注册自身的会话根目录、符号链接与路径越界保护及按需详情读取器（见[原生内容边界](../../../services/buildr-agent/src/storage/native-content.ts)）；公共层只对已注册 `nativeContent` 的执行方登记 `nativeTools` 并在对话条目投射 `nativeDetail: true`，前端据此脱敏折叠摘要并按需拉取详情；未注册执行方保留已保存摘要，详情读取明确返回不提供原生详情。
-6. **程序分发策略（`npm` 与官方清单 `manifest`）与失败边界**：程序策略除 npm 包安装外，支持官方发布清单（[清单解析](../../../services/buildr-agent/src/executors/program-release.ts)与[归档安装](../../../services/buildr-agent/src/executors/program-archive.ts)）。清单读取手动处理重定向，逐跳校验 `https:` 与主机白名单（最多 5 跳、响应上限 64 KiB），校验 `sha512` 格式、严格 SemVer（禁止路径分隔符与越界字符）及主版本准入，读取失败直接报错而不静默降级到固定旧版本。归档安装使用独立临时目录 `.prepare-<attemptId>`，流式下载限制 512 MiB 并完整核验 SHA-512，进程内解析 `tar.gz` 单一目标成员（拒绝符号链接、硬链接、设备节点与路径越界，限制最多 16 个成员、解压上限 1 GiB）或落盘独立二进制，设置可执行权限、清理 macOS 隔离扩展属性并通过 `--version` 核对版本后，才原子重命名到 `programs/<provider>/<version>/` 并经同目录临时文件原子切换 `prepared.json`。同一提供者的并发准备互斥归并；任何阶段取消或失败均清理本次临时目录，既有程序、`prepared.json` 与连接绑定保持可用。
+5. **原生工具详情注册（`nativeContent`）**：各执行方通过 `defineNativeContent()` 注册自身的会话根目录、符号链接与路径越界保护及按需详情读取器（见[原生内容边界](../../../services/buildr-harness/src/storage/native-content.ts)）；公共层只对已注册 `nativeContent` 的执行方登记 `nativeTools` 并在对话条目投射 `nativeDetail: true`，前端据此脱敏折叠摘要并按需拉取详情；未注册执行方保留已保存摘要，详情读取明确返回不提供原生详情。
+6. **程序分发策略（`npm` 与官方清单 `manifest`）与失败边界**：程序策略除 npm 包安装外，支持官方发布清单（[清单解析](../../../services/buildr-harness/src/executors/program-release.ts)与[归档安装](../../../services/buildr-harness/src/executors/program-archive.ts)）。清单读取手动处理重定向，逐跳校验 `https:` 与主机白名单（最多 5 跳、响应上限 64 KiB），校验 `sha512` 格式、严格 SemVer（禁止路径分隔符与越界字符）及主版本准入，读取失败直接报错而不静默降级到固定旧版本。归档安装使用独立临时目录 `.prepare-<attemptId>`，流式下载限制 512 MiB 并完整核验 SHA-512，进程内解析 `tar.gz` 单一目标成员（拒绝符号链接、硬链接、设备节点与路径越界，限制最多 16 个成员、解压上限 1 GiB）或落盘独立二进制，设置可执行权限、清理 macOS 隔离扩展属性并通过 `--version` 核对版本后，才原子重命名到 `programs/<provider>/<version>/` 并经同目录临时文件原子切换 `prepared.json`。同一提供者的并发准备互斥归并；任何阶段取消或失败均清理本次临时目录，既有程序、`prepared.json` 与连接绑定保持可用。
 
 统一执行条目通过可选 `parentToolId` 保留原生父工具来源。主助手、子任务报告和工具结果沿同一公共契约保存，但子任务内部输入不成为用户要求，子报告不重复充当主助手最终答复、标题材料或交接说明；结果仍可从原工具详情核对。缺少可靠来源的旧记录不按文本相似度猜测归属。三家适配保留各自原生执行方式，Buildr 不另建替代推理循环。
 
@@ -110,18 +110,18 @@ Qoder 与其他执行器使用同一生命周期：实例只在执行期间持�
 
 正常确认退出的旧后台由既有存储维护线程延迟回收，启动约五秒后首次观察，同类扫描至多每分钟一次；接口主线程不执行系统文件占用扫描。后台每分钟对账已闲置的可重建缓存，以及确认缺失和无回执的保留运行时（Runtime Unit）。诊断积压可以分批加速处理，但不提高正常退出版本的扫描频率。当前、待采用、存活或被系统进程打开的版本受保护；已使用不足一天的内容保留，另保留最近一份完整旧版本。超过保留期且内容完整、无实际引用的目录，可在退出确认缺失或无实例回执时回收。新增文件、内容修改、符号链接或观察失败形成保留理由；物化与回收使用同一窄存储锁。
 
-受管程序包（`programs/<执行器>/` 下的版本包目录与遗留 `.prepare-*` 准备目录）由同一维护计划按真实引用回收：仍被连接绑定（含绑定数据与程序来源）、未完成更新记录的回退来源或待切换目标、当前策略默认安装位置引用，仍被进程打开，或未满一天稳定窗口的目录保留并报告原因；已完成的更新记录只是历史观察，不钉住旧包。引用观察失败保守保留受影响范围；全部引用解除后由后续周期自动回收，不要求人工清理，也不触碰账号配置、原生会话或非受管外部程序。实现见 [程序包引用与候选](../../../services/buildr-agent/src/storage/program-packages.ts)。
+受管程序包（`programs/<执行器>/` 下的版本包目录与遗留 `.prepare-*` 准备目录）由同一维护计划按真实引用回收：仍被连接绑定（含绑定数据与程序来源）、未完成更新记录的回退来源或待切换目标、当前策略默认安装位置引用，仍被进程打开，或未满一天稳定窗口的目录保留并报告原因；已完成的更新记录只是历史观察，不钉住旧包。引用观察失败保守保留受影响范围；全部引用解除后由后续周期自动回收，不要求人工清理，也不触碰账号配置、原生会话或非受管外部程序。实现见 [程序包引用与候选](../../../services/buildr-harness/src/storage/program-packages.ts)。
 
 公开私有包入口提供 `inspectAgentStorage({ dataRoot })` 和 `collectAgentStorage(plan)`。前者默认零写入，返回每个对象的观察身份、大小、候选状态与原因；后者重新盘点，只处理原计划中仍符合条件且身份相同的对象。Linux/Windows 或权限不足无法取得完整进程文件观察时，维护保留内容并返回诊断。计划不能作为后续长期删除授权，也不能把目录大小当作 APFS 独占空间。
 
 ```js
-import { inspectAgentStorage, collectAgentStorage } from '@buildr-ai/buildr-agent';
+import { inspectAgentStorage, collectAgentStorage } from '@buildr-ai/buildr-harness';
 const plan = inspectAgentStorage({ dataRoot: profileDataRoot });
 // 智能体核对具体候选和已有用户授权后，才调用执行能力。
 const result = collectAgentStorage(plan);
 ```
 
-实现入口：[连接存储生命周期](../../../services/buildr-agent/src/application/executor-storage.ts)、[维护计划与条件执行](../../../services/buildr-agent/src/application/storage-maintenance.ts)、[文件与系统占用](../../../services/buildr-agent/src/storage/files.ts)、[运行时回收](../../../services/buildr-agent/src/process/cleanup.ts)。本机具体清理结果属于维护操作证据，不写入长期产品知识。
+实现入口：[连接存储生命周期](../../../services/buildr-harness/src/application/executor-storage.ts)、[维护计划与条件执行](../../../services/buildr-harness/src/application/storage-maintenance.ts)、[文件与系统占用](../../../services/buildr-harness/src/storage/files.ts)、[运行时回收](../../../services/buildr-harness/src/process/cleanup.ts)。本机具体清理结果属于维护操作证据，不写入长期产品知识。
 
 ## 账号与配置怎样接入
 
@@ -205,7 +205,7 @@ Codex 使用原生本地图片输入；Qoder 在软件开发工具包（SDK）�
 
 图形界面（GUI）和对话界面（Talk UI）共享工作空间（Workspace）、任务（Task）及实际成果身份；对话只保存交流和执行观察，不成为代码、文档或任务状态的唯一权威。首版将工作位置、任务关联、发送预览、观察版本与独立控制留在公开契约中；未来业务现场接入应传明确对象身份和已观察版本，由原业务能力保护写入，不能把页面焦点或历史消息当作写入许可。
 
-实现入口：[公开服务与契约](../../../services/buildr-agent/src/index.ts) · [账号应用](../../../services/buildr-agent/src/application/connection-application.ts) · [对话应用](../../../services/buildr-agent/src/application/conversation-application.ts) · [私有交互库](../../../services/buildr-agent/src/persistence/conversation-repository.ts) · [宿主装配](../../../services/buildr/src/modules/agent-service/module.ts) · [对话前端](../../../services/buildr-web/src/features/agent-conversations/) · [界面导航](../../../services/buildr-web/src/app/AppPrimaryNavigation.tsx)。
+实现入口：[公开服务与契约](../../../services/buildr-harness/src/index.ts) · [账号应用](../../../services/buildr-harness/src/application/connection-application.ts) · [对话应用](../../../services/buildr-harness/src/application/conversation-application.ts) · [私有交互库](../../../services/buildr-harness/src/persistence/conversation-repository.ts) · [宿主装配](../../../services/buildr/src/modules/agent-service/module.ts) · [对话前端](../../../services/buildr-web/src/features/agent-conversations/) · [界面导航](../../../services/buildr-web/src/app/AppPrimaryNavigation.tsx)。
 
 ## 单次生成与任务关联
 
@@ -215,7 +215,7 @@ Codex 使用原生本地图片输入；Qoder 在软件开发工具包（SDK）�
 
 正常工作不要求人手动补关联。智能体在当前准确绑定的内部对话中创建、激活或明确接续本轮实际执行任务后，按[任务技能](../../../services/buildr/resources/workspace/skills/buildr/task-manager/SKILL.md)维护关联。仅提及、只读查询或浏览其他任务不自动关联；外部会话缺少准确内部绑定时不猜关系。
 
-[本机对话控制命令](../../../services/buildr-agent/src/process/conversation-control.ts)的 `read` 返回当前 `revision`、完整 `taskLinks` 及旧字段；`link-task` 接收准确 `taskId`，可选 `workspaceId` 指定任务空间，未提供时使用当前对话空间，在同次调用内读取当前集合并使用该观察版本通过原有对话更新接口追加关系，复用宿主任务校验与版本事务；可选 `expectedRevision` 可钉住调用方明确观察，避免跨工具调用的执行更新让关联动作反复使用过期版本。关系元数据由当前后台处理，不交回仍持有原生执行的旧后台；旧执行继续结束时保留新关联。其他任务关联保持，重复追加不写入；冲突后重读判断，响应未知先读回，不重放。该命令不启动后台、不发送消息，也不修改任务状态或执行目录。任务登记与关系保存独立，关联失败保留已成立任务，不能冒充已关联。
+[本机对话控制命令](../../../services/buildr-harness/src/process/conversation-control.ts)的 `read` 返回当前 `revision`、完整 `taskLinks` 及旧字段；`link-task` 接收准确 `taskId`，可选 `workspaceId` 指定任务空间，未提供时使用当前对话空间，在同次调用内读取当前集合并使用该观察版本通过原有对话更新接口追加关系，复用宿主任务校验与版本事务；可选 `expectedRevision` 可钉住调用方明确观察，避免跨工具调用的执行更新让关联动作反复使用过期版本。关系元数据由当前后台处理，不交回仍持有原生执行的旧后台；旧执行继续结束时保留新关联。其他任务关联保持，重复追加不写入；冲突后重读判断，响应未知先读回，不重放。该命令不启动后台、不发送消息，也不修改任务状态或执行目录。任务登记与关系保存独立，关联失败保留已成立任务，不能冒充已关联。
 
 对话底部“关联任务”和任务详情“关联对话”只常驻图标与数量；悬停向上展开，点击固定，键盘与触屏可用。浮层显示已关联对象、来源空间及准确标识，点击对象导航，独立按钮解除；搜索按完整名称或标识精确匹配可访问空间的必要分页，不自动建立关系。新增和解除后保持浮层打开；零项显示0，读取失败不冒充零。手动关联只用于补充或纠正，可逐项添加、解除引用。关联用于查找和接续，不等于已授权执行所有任务；任务进展、验证和完成继续依据当前成果。以上描述对应本仓库实现，安装环境是否采用仍以实际交付和激活为准。
 
@@ -223,7 +223,7 @@ Codex 使用原生本地图片输入；Qoder 在软件开发工具包（SDK）�
 
 ## 统一模型套餐
 
-实现位于 `services/buildr-agent/src/model-access/`，作为私有库随主包捆绑交付；不是新增公开 npm 包。账号元数据和模型观察保存在本应用 `agent-service/model-access/`，厂商凭据由其唯一提供者管理。Devin及按需添加的额外账号明确发起独立浏览器登录；原生账号直接复用已有登录。DeepSeek 由私有 DSH 宿主账号服务持有凭据，通过固定目的地的认证桥接委托模型请求，不向网页或网关消费者导出凭据。
+实现位于 `services/buildr-harness/src/model-access/`，作为私有库随主包捆绑交付；不是新增公开 npm 包。账号元数据和模型观察保存在本应用 `agent-service/model-access/`，厂商凭据由其唯一提供者管理。Devin及按需添加的额外账号明确发起独立浏览器登录；原生账号直接复用已有登录。DeepSeek 由私有 DSH 宿主账号服务持有凭据，通过固定目的地的认证桥接委托模型请求，不向网页或网关消费者导出凭据。
 
 公共模型入口由宿主的 `/api/v1/app/agent-service/model-accounts` 与 `/model-catalog` 管理，沿用本机认证与写入校验；执行方只取得绑定账号、模型、对话和执行方的本机访问凭据。三个模型协议入口只在回环地址监听，不以系统代理环境变量代替套餐连接。
 
@@ -255,12 +255,12 @@ Buildr 自动将已连接的 Codex、DSH 账号发现为共享模型供应商，
 
 ### 独立 Google AI 订阅模型来源
 
-[Google AI 供应商](../../../services/buildr-agent/src/model-access/providers/google-ai-proxy.ts) 由 Agent Service 启动和关闭本机代理。模型账号复用该配置域中已有的 OAuth 登录，按模型选择代理协议，通过现有模型网关供兼容 Harness 使用。模型目录和 Gemini、Claude / GPT 的额度窗口归属于同一个供应商，四个窗口取自同一次 daily 响应。
+[Google AI 供应商](../../../services/buildr-harness/src/model-access/providers/google-ai-proxy.ts) 由 Agent Service 启动和关闭本机代理。模型账号复用该配置域中已有的 OAuth 登录，按模型选择代理协议，通过现有模型网关供兼容 Harness 使用。模型目录和 Gemini、Claude / GPT 的额度窗口归属于同一个供应商，四个窗口取自同一次 daily 响应。
 
 
 ### Google 个人账号与 Antigravity 协调
 
-[Google 个人账号来源](../../../services/buildr-agent/src/model-access/providers/antigravity.ts)（`native-antigravity`）由 [Antigravity 执行器](../../../services/buildr-agent/src/executors/antigravity/index.ts)托管登录（`oauth-personal`），支持免费账号、Google AI Pro 与 Google AI Ultra。当受管 `agy` 确认 `oauth-personal` 已登录、绑定身份可建立且模型目录非空时，来源状态为 `ready`；原生 `_meta.antigravity.tier` 可识别时展示对应档位，不可识别时展示“档位不可读”但仍可使用；模型目录为空或认证归属不可确认时进入 `failed`（“身份不可确认”或无可用模型）并在发送前拒绝。官方 ACP 未公开额度窗口时如实显示不可读并链接到 Antigravity CLI 的官方 `/usage` 用量说明，不按档位或模型名称推算剩余配额。
+[Google 个人账号来源](../../../services/buildr-harness/src/model-access/providers/antigravity.ts)（`native-antigravity`）由 [Antigravity 执行器](../../../services/buildr-harness/src/executors/antigravity/index.ts)托管登录（`oauth-personal`），支持免费账号、Google AI Pro 与 Google AI Ultra。当受管 `agy` 确认 `oauth-personal` 已登录、绑定身份可建立且模型目录非空时，来源状态为 `ready`；原生 `_meta.antigravity.tier` 可识别时展示对应档位，不可识别时展示“档位不可读”但仍可使用；模型目录为空或认证归属不可确认时进入 `failed`（“身份不可确认”或无可用模型）并在发送前拒绝。官方 ACP 未公开额度窗口时如实显示不可读并链接到 Antigravity CLI 的官方 `/usage` 用量说明，不按档位或模型名称推算剩余配额。
 
 OAuth 令牌仅保存在系统密钥环 `jetski-standalone-oauth-token`（与本机终端 `agy` 共享，与桌面 IDE 分离），Buildr 不直接读取、写入或删除系统密钥环条目；来源声明 `sharing: executor-exclusive(['antigravity'])` 与 `inference: 'none'`，其他执行方显示不可选原因并拒绝签发网关租约，单次生成与提交说明自动排除该来源。发起登录时，短命登录子进程经专用 `PATH` 打开器替身捕获官方 PKCE 授权地址，地址仅在 `waiting-browser` 期间经 `LoginAttemptView.url` 返回，完成、取消、过期或被替代后清除，日志脱敏且不进入对话事件。
 
@@ -329,10 +329,10 @@ Buildr 隔离 DSH 的前台 shell 超时由原生执行器终止，默认层覆�
 
 ## 对话事件回推（按凭据）
 
-统一视图的提交出口 `ConversationEvents` 将状态变化交给私有包 `@buildr-ai/buildr-agent` 的按凭据回推投影，不修改执行器或任务记录。只有被程序接入凭据接管的对话才生成事件：`decision.requested`、`run.progress`、`run.completed`、`run.failed`、`run.stopped`、`run.stalled`。事件含 machine、对话与 run 身份、当前凭据 `scopes`/`allowFullAccess`；终态事件含完整 `finalReply` 和只读取该 run 最终回复的 `finalReplyUrl`；决策卡含全部问题、选项及回答身份。只有已写完（`status=completed`）的 assistant 中间消息按 run 至少五分钟一次合并推送；运行中连续二十分钟无消息、工具或状态记录才产生一次停滞事件，单个长工具运行期间的观察心跳与工具正文重新投射（native 骨架、按需读取）都不算活动，计时锚定最后真实记录时间，恢复后重新计时。程序发现入口返回 `buildId`，操作目录、单操作文档（`x-buildr-build-id`）与帮助同步显示；完整 OpenAPI 正文不写入 `buildId`，`contractVersion` 仍只摘要 API 契约内容。
+统一视图的提交出口 `ConversationEvents` 将状态变化交给私有包 `@buildr-ai/buildr-harness` 的按凭据回推投影，不修改执行器或任务记录。只有被程序接入凭据接管的对话才生成事件：`decision.requested`、`run.progress`、`run.completed`、`run.failed`、`run.stopped`、`run.stalled`。事件含 machine、对话与 run 身份、当前凭据 `scopes`/`allowFullAccess`；终态事件含完整 `finalReply` 和只读取该 run 最终回复的 `finalReplyUrl`；决策卡含全部问题、选项及回答身份。只有已写完（`status=completed`）的 assistant 中间消息按 run 至少五分钟一次合并推送；运行中连续二十分钟无消息、工具或状态记录才产生一次停滞事件，单个长工具运行期间的观察心跳与工具正文重新投射（native 骨架、按需读取）都不算活动，计时锚定最后真实记录时间，恢复后重新计时。程序发现入口返回 `buildId`，操作目录、单操作文档（`x-buildr-build-id`）与帮助同步显示；完整 OpenAPI 正文不写入 `buildId`，`contractVersion` 仍只摘要 API 契约内容。
 
 凭据回推配置由 Buildr Web 宿主管理，密钥保存在本机私有文件；管理入口仅网页会话可用。事件投影在 `programmatic-pushback.sqlite` 事务保存并进入持久事件流，按凭据限流合并、租约领取、仅 2xx 确认、指数退避及重启补推；总开关停用只停止投递，仍可经 `events` 补查，单事件开关关闭则不生成对应进度或停滞事件。接收端只接收与转发，不承担业务判断与投递调度。详细配置、payload 字段、轻量回复接口与联调口径见产品 Buildr Skill 的 `references/agent-operations.md`。候选验证、共享服务采用和接收端处理是不同事实，不相互替代。
-问题接续的服务策略位于[对话应用](../../../services/buildr-agent/src/application/conversation-application.ts)，安全释放与通用兜底位于[问题等待释放](../../../services/buildr-agent/src/application/question-wait-release.ts)。[执行器契约](../../../services/buildr-agent/src/contracts.ts)的可选 `endQuestionWait` 只允许释放准确纯问题等待；[Codex适配器](../../../services/buildr-agent/src/executors/codex/index.ts)使用原生轮次中断并等待真实终态，不调用后台终端清理。未提供该能力的执行器由服务在原生观察证明“仅问题等待、无工具与后台工作”后调用通用控制。释放意图保存在原尝试记录，防止重启或响应丢失后重复操作；原问题回答与释放互斥，工具审批不因新轮自动批准或撤销。
+问题接续的服务策略位于[对话应用](../../../services/buildr-harness/src/application/conversation-application.ts)，安全释放与通用兜底位于[问题等待释放](../../../services/buildr-harness/src/application/question-wait-release.ts)。[执行器契约](../../../services/buildr-harness/src/contracts.ts)的可选 `endQuestionWait` 只允许释放准确纯问题等待；[Codex适配器](../../../services/buildr-harness/src/executors/codex/index.ts)使用原生轮次中断并等待真实终态，不调用后台终端清理。未提供该能力的执行器由服务在原生观察证明“仅问题等待、无工具与后台工作”后调用通用控制。释放意图保存在原尝试记录，防止重启或响应丢失后重复操作；原问题回答与释放互斥，工具审批不因新轮自动批准或撤销。
 
 
 ## 按轮交接与来源读取

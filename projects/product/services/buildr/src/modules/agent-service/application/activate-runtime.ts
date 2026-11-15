@@ -1,5 +1,5 @@
-import { activateAgentRuntime, connectHarnessProcess, stopAgentProcess, AgentServiceError } from '@buildr-ai/buildr-agent';
-import type { AgentRuntimeUnit } from '@buildr-ai/buildr-agent';
+import { activateAgentRuntime, connectHarnessProcess, stopAgentProcess, AgentServiceError } from '@buildr-ai/buildr-harness';
+import type { AgentRuntimeUnit } from '@buildr-ai/buildr-harness';
 
 /** Development alone owns its legacy source probe and narrowly scoped recovery. */
 export async function activateAgentServiceRuntime(input: {dataRoot: string; profileId: string; runtime?: AgentRuntimeUnit; timeoutMs?: number}) {

@@ -1,7 +1,7 @@
 import {createRoot} from 'react-dom/client';
 import {App as AntdApp,ConfigProvider} from 'antd';
 import zhCN from 'antd/locale/zh_CN';
-import {softProductTheme} from '@buildr-ai/buildr-harness-ui';
+import {softProductTheme} from './index';
 import {HarnessApp} from './HarnessApp';
 import 'antd/dist/reset.css';
 import './styles.css';

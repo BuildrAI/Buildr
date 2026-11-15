@@ -2,28 +2,28 @@
 
 ### Requirement: buildr-web 必须拥有 Buildr Web React/Vite 源码与构建
 
-`buildr-web` Service MUST 是 Buildr Development 应用壳、业务页面及其前端构建的唯一权威位置。共享 Harness 对话交互及独立 Harness Web MUST 由独立明确的前端工程单元维护，Development MUST 消费其公开包与宿主适配，不保留并行对话实现。`product/buildr` Service MUST NOT 保留权威前端源工程根作为第二事实源。
+系统 MUST 将 Development 工程网页维护在 buildr-web，以 harness-ui 功能模块准备工程上下文、选择工作空间、嵌入完整 Harness 网页和维护对话任务关联。Development MUST NOT 导入 Harness 对话 React 组件或拥有对话执行状态机。Development 安装包 MUST 携带所需的完整网页产物，不依赖相邻源码或 Vite 服务。
+
+#### Scenario: 安装包独立运行
+- **WHEN** 用户从不含相邻源码的 Development 安装包打开对话
+- **THEN** 内嵌网页 MUST 从安装负载取得完整 Harness 页面，认证与静态资源不依赖源码树
 
 #### Scenario: 前端源码所有权
-- **WHEN** 维护者定位 Development 前端源码和共享 Harness 对话源码
-- **THEN** Development 应用与业务源码 MUST 位于 `projects/product/services/buildr-web`，共享 Harness 功能 MUST 位于其登记工程单元
-- **AND** MUST NOT 在 `projects/product/services/buildr/web` 或 Development feature 中保留第二份共享对话实现
+- **WHEN** 维护者定位工程网页及 Harness 对话源码
+- **THEN** Development 工程代码 MUST 位于 buildr-web，完整对话 MUST 位于 buildr-harness-web；Development 的 harness-ui 只拥有网页嵌入与工程集成
 
 #### Scenario: 前端构建产出静态资产
-- **WHEN** 维护者或 CI 执行 Development 正式前端构建
-- **THEN** 构建 MUST 组合匹配的 Harness 界面并产出可被 `buildr` 消费的静态资产
-- **AND** 运行时 MUST NOT 要求 Vite、相邻前端源码或远程 CDN，独立 Harness Web 具有自己的正式静态产物
+- **WHEN** 构建或安装两个产品
+- **THEN** Harness Web MUST 有独立完整生产静态产物，Development MUST 携带所用准确产物并同源嵌套；运行不依赖 Vite、相邻源码或远程 CDN
 
 ### Requirement: 前后端与项目级测试必须按证明对象维护
 
-Development Web Service MUST 拥有业务前端与宿主适配测试；共享 Harness UI 与独立 Web 工程 MUST 拥有自身渲染、交互、状态和客户端测试；Harness 核心 MUST 拥有执行、数据、公开协议及共享服务测试，不要求调用 Development 私有测试入口。Development Service MUST 保留业务、认证代理、安装集成和本机宿主测试。真实跨服务流程 MUST 通过项目验证入口维护，每个断言 owner 唯一，不因两个产品而复制同一套测试。
+Development MUST 拥有工程页面和网页嵌入集成测试；Harness Web MUST 拥有完整对话渲染、交互、状态与客户端测试；Harness 核心 MUST 拥有执行、数据、公开协议和独立入口测试。跨产品安装与组合 MUST 使用准确产品负载，不复制测试实现或用源码检查代替安装验收。
+
+#### Scenario: 验证独立与嵌入形态
+- **WHEN** 运行本次边界重构验证
+- **THEN** 测试 MUST 分别核对完整 Harness 网页、Development 的 iframe 集成及真实安装包消费
 
 #### Scenario: 运行前端与 Browser 验证
-- **WHEN** 本次拆分运行前端检查和生产托管浏览器 E2E
-- **THEN** 各前端测试 MUST 从其真实所属单元执行，组合 E2E MUST 使用对应产品正式静态产物
-- **AND** MUST 分别覆盖独立入口和 Development 集成，不以开发服务器通过替代生产托管验收
-
-#### Scenario: 独立验证 Harness 包
-- **WHEN** 在没有 Development 源码的 Harness 包消费环境中检查公开行为
-- **THEN** Harness MUST 能通过自己的稳定入口验证核心与前端交付，不读取相邻 `buildr/test` 或私有生成物
-- **AND** 组合测试 MUST 另行证明 Development 集成，不能用独立测试冒充
+- **WHEN** 对两产品执行网页验证
+- **THEN** 检查 MUST 从真实所属产品入口运行，分别验证完整 Harness 网页及 Development 集成；局部检查不代替跨产品或真实模型验收

@@ -47,7 +47,7 @@ export function binaryResponse(response: any, status: any, content: any, content
   response.end(content);
 }
 
-export {eventStreamResponse} from '@buildr-ai/buildr-agent';
+export {eventStreamResponse} from '@buildr-ai/buildr-harness';
 
 function isolatedHtmlResponse(response: any, content: any, downloads = false) {
   response.writeHead(200, {

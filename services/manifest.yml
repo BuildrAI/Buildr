@@ -33,47 +33,25 @@ services:
     modulePath: projects/product/services/dsh-plugin
     legacyRefs:
       - product/dsh-plugin
-  buildr-agent:
+  buildr-harness:
     id: 273cb348-2cf5-43ef-bd1a-2abe4d32cfdf
     workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
-    code: buildr-agent
-    name: Buildr 智能体服务
-    description: 独立维护账号接入、统一对话与执行者协调；由Buildr宿主装配并统一交付。
-    type: library
-    repositoryId: 40394b3d-d44d-5bb2-a59b-932a0dd6a597
-    modulePath: projects/product/services/buildr-agent
-    legacyRefs:
-      - product/buildr-agent
-  buildr-harness-ui:
-    id: 7369fd59-8e7d-4850-b4e6-2073bba001a9
-    workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
-    code: buildr-harness-ui
-    name: Buildr Harness 共享界面
-    description: 两产品共同消费的完整对话、输入控制、模型及程序设置；Development通过具名窄接口贡献业务动作。
-    type: library
-    repositoryId: 40394b3d-d44d-5bb2-a59b-932a0dd6a597
-    modulePath: projects/product/services/buildr-harness-ui
-    legacyRefs:
-      - product/buildr-harness-ui
-  buildr-harness-web:
-    id: 83e874cd-8f8a-4bed-9f37-d2e722d9f56e
-    workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
-    code: buildr-harness-web
-    name: Buildr Harness 独立网页
-    description: 使用唯一共享 Harness UI 的目录型产品薄壳及正式静态构建，不包含 Development 业务或额外常驻宿主。
-    type: application
-    repositoryId: 40394b3d-d44d-5bb2-a59b-932a0dd6a597
-    modulePath: projects/product/services/buildr-harness-web
-    legacyRefs:
-      - product/buildr-harness-web
-  buildr-harness:
-    id: 47f0edc0-6c24-4e37-91e8-31a4528a1673
-    workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
     code: buildr-harness
-    name: Buildr Harness 独立安装入口
-    description: 独立 Harness CLI、macOS 启动器、可复制消费的本机包与安装所属；通过公共 Harness 准备和网页发现启动。
+    name: Buildr Harness
+    description: 完整独立 Harness 执行能力、公共协议、CLI、启动器及发行；Development 为其准备工程现场。
     type: application
     repositoryId: 40394b3d-d44d-5bb2-a59b-932a0dd6a597
     modulePath: projects/product/services/buildr-harness
     legacyRefs:
       - product/buildr-harness
+  buildr-harness-web:
+    id: 83e874cd-8f8a-4bed-9f37-d2e722d9f56e
+    workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
+    code: buildr-harness-web
+    name: Buildr Harness Web
+    description: 完整唯一的 Harness 网页；独立打开或由 Development 嵌套，不提供组件装配包。
+    type: application
+    repositoryId: 40394b3d-d44d-5bb2-a59b-932a0dd6a597
+    modulePath: projects/product/services/buildr-harness-web
+    legacyRefs:
+      - product/buildr-harness-web

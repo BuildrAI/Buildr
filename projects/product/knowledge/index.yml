@@ -243,11 +243,11 @@ documentSections:
     summary: "通过已发表文章理解 Buildr 的长期价值与建设思路。"
     entries:
       - location: scope
-        path: docs/publications/buildr-agent-work-infrastructure.md
+        path: docs/publications/buildr-harness-work-infrastructure.md
         title: "Buildr：Agent 的工作基础设施"
         summary: "从工作基础设施的角度理解资料、方法与智能体（Agent）的关系。"
       - location: scope
-        path: docs/publications/buildr-agent-more-and-better.md
+        path: docs/publications/buildr-harness-more-and-better.md
         title: "Buildr：让 Agent 越做越多，越做越好"
         summary: "理解已有积累怎样帮助智能体（Agent）扩展工作范围并改善结果。"
       - location: scope
@@ -2034,42 +2034,42 @@ sources:
   - id: agent-service-public-source
     title: 智能体服务公开边界
     kind: code
-    path: services/buildr-agent/src/index.ts
+    path: services/buildr-harness/src/index.ts
     summary: 私有库公开应用入口，提供独立接入、统一对话、异步准备、明确激活、普通版本复用和目录宿主引用。
   - id: harness-directory-host-source
     title: Harness 目录宿主
     kind: code
-    path: services/buildr-agent/src/application/directory-host.ts
+    path: services/buildr-harness/src/application/directory-host.ts
     summary: 内置目录登记、稳定来源引用及目录和链接身份复核，不创建工程业务对象。
   - id: harness-runtime-activation-source
     title: Harness 通用运行激活
     kind: code
-    path: services/buildr-agent/src/process/activate-runtime.ts
+    path: services/buildr-harness/src/process/activate-runtime.ts
     summary: 异步准备并明确采用准确负载，核验 runtime、instance、generation 和受理状态，不查询 Development 工作对象。
   - id: agent-service-connections-source
     title: 内部对话账号与配置
     kind: code
-    path: services/buildr-agent/src/application/connection-application.ts
+    path: services/buildr-harness/src/application/connection-application.ts
     summary: 官方登录、账号模型检查、独立配置、真实程序绑定与资源关闭。
   - id: agent-service-conversations-source
     title: 统一对话与分别恢复
     kind: code
-    path: services/buildr-agent/src/application/conversation-application.ts
+    path: services/buildr-harness/src/application/conversation-application.ts
     summary: 创建与预览、受理去重、参与者增量接续、原生历史归并及未知不重发。
   - id: agent-service-question-wait-source
     title: 问题等待的原生释放与服务兜底
     kind: code
-    path: services/buildr-agent/src/application/question-wait-release.ts
+    path: services/buildr-harness/src/application/question-wait-release.ts
     summary: 适配器原生能力优先，无活动工具和后台工作时才释放纯问题等待；不补造回答或终止独立工作。
   - id: agent-service-handoff-source
     title: 本地轮次交接与接收预算
     kind: code
-    path: services/buildr-agent/src/domain/handoff-material.ts
+    path: services/buildr-harness/src/domain/handoff-material.ts
     summary: 从本地原始记录组织轮次、动作结果和确认成果，保留终态与诊断，定义交接提示词和保守预算。
   - id: agent-service-handoff-storage-source
     title: 完整交接资料的本地读取投射
     kind: code
-    path: services/buildr-agent/src/application/handoff-sources.ts
+    path: services/buildr-harness/src/application/handoff-sources.ts
     summary: 按内容复用原始轮次资料，生成不可变索引；模型按需读取，不递归转发旧包。
   - id: agent-service-handoff-ui-source
     title: 交接详情与实际发送原文
@@ -2079,87 +2079,87 @@ sources:
   - id: agent-service-preparation-source
     title: 准备并连接
     kind: code
-    path: services/buildr-agent/src/application/preparation-application.ts
+    path: services/buildr-harness/src/application/preparation-application.ts
     summary: 按准确尝试协调程序发现、选择、安装、取消和独立官方登录，不改绑已有上下文。
   - id: agent-service-programs-source
     title: 原生程序发现与安装
     kind: code
-    path: services/buildr-agent/src/executors/program-manager.ts
+    path: services/buildr-harness/src/executors/program-manager.ts
     summary: 核对本机路径、应用身份和版本策略，协调提供者级互斥准备并在独立目录原子切换官方程序。
   - id: agent-service-program-release-source
     title: 官方发布清单解析与校验
     kind: code
-    path: services/buildr-agent/src/executors/program-release.ts
+    path: services/buildr-harness/src/executors/program-release.ts
     summary: 手动逐跳核验 HTTPS 与白名单主机重定向，按大小上限、SHA-512 格式与严格 SemVer 解析官方程序清单。
   - id: agent-service-program-archive-source
     title: 官方程序归档安全安装
     kind: code
-    path: services/buildr-agent/src/executors/program-archive.ts
+    path: services/buildr-harness/src/executors/program-archive.ts
     summary: 流式下载校验 SHA-512，进程内有界解压 tar.gz 单一目标成员或落盘独立二进制，拒绝链接与路径越界。
   - id: agent-service-model-policy-source
     title: 执行方与模型来源兼容及路径策略
     kind: code
-    path: services/buildr-agent/src/domain/model-policy.ts
+    path: services/buildr-harness/src/domain/model-policy.ts
     summary: 根据双方声明判定静态兼容与模型执行路径（网关、gateway-lease、account-identity），投射公开兼容结论。
   - id: agent-service-native-content-source
     title: 原生工具详情边界与注册构造
     kind: code
-    path: services/buildr-agent/src/storage/native-content.ts
+    path: services/buildr-harness/src/storage/native-content.ts
     summary: 统一封装会话根目录真实路径校验与越界拒绝，供各执行器声明按需原生工具详情读取。
   - id: agent-service-program-packages-source
     title: 受管程序包引用与回收候选
     kind: code
-    path: services/buildr-agent/src/storage/program-packages.ts
+    path: services/buildr-harness/src/storage/program-packages.ts
     summary: 观察连接绑定、未完成更新与默认安装位置引用，为维护提供程序包候选并在执行时复查引用。
   - id: agent-service-storage-source
     title: 本机私有交互库
     kind: code
-    path: services/buildr-agent/src/persistence/conversation-repository.ts
+    path: services/buildr-harness/src/persistence/conversation-repository.ts
     summary: 独立SQLite保存配置及统一对话，按修订比较写入，不拥有任务数据库。
   - id: agent-service-codex-source
     title: Codex内部对话执行器
     kind: code
-    path: services/buildr-agent/src/executors/codex/index.ts
+    path: services/buildr-harness/src/executors/codex/index.ts
     summary: 独立应用服务（App Server）、官方账号、原生上下文、流式输出与准确停止。
   - id: agent-service-dsh-source
     title: DSH内部对话执行器
     kind: code
-    path: services/buildr-agent/src/executors/dsh/index.ts
+    path: services/buildr-harness/src/executors/dsh/index.ts
     summary: 完整本机网页宿主（Web Host）与官方客户端（Client），独立账号及原生会话恢复。
   - id: agent-service-codex-permissions-source
     title: Codex本轮权限参数
     kind: code
-    path: services/buildr-agent/src/executors/codex/permissions.ts
+    path: services/buildr-harness/src/executors/codex/permissions.ts
     summary: 显式默认与完全访问策略，逐轮复位而不继承旧上下文权限。
   - id: agent-service-dsh-permissions-source
     title: DSH原生权限预设
     kind: code
-    path: services/buildr-agent/src/executors/dsh/permissions.ts
+    path: services/buildr-harness/src/executors/dsh/permissions.ts
     summary: 读取官方权限预设目录，应用本轮模式并核对准确会话权限快照。
   - id: agent-service-qoder-source
     title: Qoder内部对话执行器
     kind: code
-    path: services/buildr-agent/src/executors/qoder/index.ts
+    path: services/buildr-harness/src/executors/qoder/index.ts
     summary: 隔离工作进程（Worker）使用官方软件开发工具包（SDK）与qodercli，恢复准确原生上下文。
   - id: agent-service-antigravity-source
     title: Antigravity内部对话执行器
     kind: code
-    path: services/buildr-agent/src/executors/antigravity/index.ts
+    path: services/buildr-harness/src/executors/antigravity/index.ts
     summary: 连接级协调者配合按对话隔离的受管 agy acp 进程组，维护会话、权限隔离、审批提问、停止与发送闸门。
   - id: antigravity-model-source
     title: Google 个人账号模型来源
     kind: code
-    path: services/buildr-agent/src/model-access/providers/antigravity.ts
+    path: services/buildr-harness/src/model-access/providers/antigravity.ts
     summary: 声明仅供 Antigravity 原生使用的托管 Google 个人账号来源，映射登录、档位、模型目录与退出切换操作。
   - id: openai-api-model-source
     title: ChatGPT 官方 API Key 来源
     kind: code
-    path: services/buildr-agent/src/model-access/providers/openai-api.ts
+    path: services/buildr-harness/src/model-access/providers/openai-api.ts
     summary: 固定 OpenAI 官方端点，核对候选密钥后原子替换，发现文本对话模型，并以无状态 Responses 推理供统一网关使用。
   - id: private-api-key-source
     title: 模型来源私有 API Key
     kind: code
-    path: services/buildr-agent/src/model-access/providers/private-api-key.ts
+    path: services/buildr-harness/src/model-access/providers/private-api-key.ts
     summary: 在账号私有目录以 0600 文件保存密钥，拒绝链接与非单链接目标，原子替换且不进入公共账号元数据。
   - id: agent-service-model-account-http-source
     title: 模型账号公开 HTTP 入口
@@ -2274,7 +2274,7 @@ sources:
   - id: agent-service-codex-title-source
     title: Codex隔离短标题
     kind: code
-    path: services/buildr-agent/src/executors/codex/title.ts
+    path: services/buildr-harness/src/executors/codex/title.ts
     summary: 使用独立临时只读上下文生成有限文本标题，不污染工作上下文或允许工具副作用。
   - id: agent-service-task-ui-source
     title: 任务内部对话入口
@@ -4258,7 +4258,7 @@ sources:
   - id: model-single-generation-source
     title: 统一模型单次生成
     kind: code
-    path: services/buildr-agent/src/model-access/application.ts
+    path: services/buildr-harness/src/model-access/application.ts
     summary: 复用准确账号和模型绑定，只传给定资料，不提供工具并释放本次请求。
   - id: code-generation-run-source
     title: 提交说明生成请求

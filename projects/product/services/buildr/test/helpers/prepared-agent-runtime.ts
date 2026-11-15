@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
-import { prepareAgentRuntime, validateAgentRuntime } from '@buildr-ai/buildr-agent';
-import type { AgentRuntimeUnit } from '@buildr-ai/buildr-agent';
+import { prepareAgentRuntime, validateAgentRuntime } from '@buildr-ai/buildr-harness';
+import type { AgentRuntimeUnit } from '@buildr-ai/buildr-harness';
 
 export const PREPARED_AGENT_RUNTIME_ENV: any = 'BUILDR_AGENT_PREPARED_RUNTIME_SEED';
 const descriptorName: any = 'seed.json';
@@ -15,7 +15,7 @@ export function prepareSharedAgentRuntime({ productRoot, root }: { productRoot: 
   fs.mkdirSync(profileRoot, { recursive: true, mode: 0o700 });
   const runtime: any = prepareAgentRuntime({
     dataRoot: profileRoot,
-    packageRoot: path.join(productRoot, 'node_modules', '@buildr-ai', 'buildr-agent'),
+    packageRoot: path.join(productRoot, 'node_modules', '@buildr-ai', 'buildr-harness'),
   });
   const descriptor: any = path.join(root, descriptorName);
   fs.writeFileSync(descriptor, JSON.stringify({ schemaVersion: 1, runtime }), { mode: 0o600 });

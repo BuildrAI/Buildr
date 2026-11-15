@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
-import { connectAgentProcess, stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { connectAgentProcess, stopAgentProcess } from '@buildr-ai/buildr-harness';
 
 import { previewDataRoot, startPreview, stopPreview, listPreviews, readPreviewOwner, type PreviewRuntime } from '../../src/web/application/preview-lifecycle.ts';
 import { defaultWebDataRoot } from '../../src/modules/installation/contracts/web-profile.ts';
@@ -139,7 +139,7 @@ test('预览沿用开发版模型目录并可复用、刷新与彻底清理', { 
   assert.equal(fs.statSync(path.join(previewDataRoot('demo', data.dataRoot), 'reuse.json')).mode & 0o777, 0o600);
   assert.equal(fs.readFileSync(path.join(data.modelAccess, 'accounts.json'), 'utf8').includes('m-enabled'), true);
 
-  const { createAgentService } = await import('@buildr-ai/buildr-agent');
+  const { createAgentService } = await import('@buildr-ai/buildr-harness');
   const service = createAgentService({
     dataRoot: previewDataRoot('demo', data.dataRoot),
     modelProviders: [],

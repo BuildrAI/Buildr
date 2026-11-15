@@ -1,7 +1,7 @@
 import { App } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppShell } from '../../../app/AppShellContext';
-import { useOptionalAgentConversations } from '../../agent-conversations/AgentConversationsContext';
+import { useOptionalAgentConversations } from '../../harness-ui/AgentConversationsContext';
 import { SERVICE_RUNTIME_CHANGED } from '../api/service-runtime-api';
 import { runtimeDefinitionSignature } from '../configurationOutcome.ts';
 import { executeRuntimeConfiguration, type RuntimeConfigurationTarget } from '../configurationAction';

@@ -1,6 +1,6 @@
 import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';import {createHash} from 'node:crypto';
 const root=path.resolve(import.meta.dirname,'..');
-export function collectThirdParty(output=path.join(root,'build/third-party'),packageRoots=[root,path.resolve(root,'../buildr-harness-ui'),path.resolve(root,'../buildr-harness-web')]){
+export function collectThirdParty(output=path.join(root,'build/third-party'),packageRoots=[root,path.resolve(root,'../buildr-harness-web')]){
   const components=new Map<string,{name:string;version:string;license:string;evidence:Array<{file:string;sha256:string}>}>(),seen=new Set<string>();
   fs.mkdirSync(output,{recursive:true});
   const visit=(directory:string)=>{

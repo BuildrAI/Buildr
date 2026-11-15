@@ -181,8 +181,8 @@ test('local preparation reports actual executed and reused operations and repair
     execute: ((_command: string, args: string[]) => {
       calls++;
       const id = args[0] === 'ci'
-        ? args.includes('--ignore-scripts') ? 'buildr-agent-dependencies' : args.includes('--install-links') ? 'buildr-dependencies' : 'buildr-web-dependencies'
-        : args[0] === 'tools/build.ts' ? 'buildr-agent-build' : 'generated-contracts-and-test-context';
+        ? args.includes('--ignore-scripts') ? 'buildr-harness-dependencies' : args.includes('--install-links') ? 'buildr-dependencies' : 'buildr-web-dependencies'
+        : args[0] === 'tools/build.ts' ? 'buildr-harness-build' : 'generated-contracts-and-test-context';
       outputs.set(id, `sha256-output-${id}`);
       return { status: 0 };
     }) as any,

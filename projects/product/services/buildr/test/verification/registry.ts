@@ -4,10 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serviceVerificationChecks as buildrChecks, sharedCheckPreparation } from '../../tools/testing/verification-checks.ts';
 import { serviceVerificationChecks as webChecks } from '../../../buildr-web/tools/testing/verification-checks.ts';
-import {serviceVerificationChecks as harnessUiChecks} from '../../../buildr-harness-ui/tools/testing/verification-checks.ts';
 import {serviceVerificationChecks as harnessWebChecks} from '../../../buildr-harness-web/tools/testing/verification-checks.ts';
-import {serviceVerificationChecks as harnessCliChecks} from '../../../buildr-harness/tools/testing/verification-checks.ts';
-import { serviceVerificationChecks as agentChecks } from '../../../buildr-agent/tools/testing/verification-checks.ts';
+import {serviceVerificationChecks as harnessCliChecks} from '../../../buildr-harness/tools/testing/entry-verification-checks.ts';
+import { serviceVerificationChecks as agentChecks } from '../../../buildr-harness/tools/testing/verification-checks.ts';
 import { serviceVerificationChecks as pluginChecks } from '../../../dsh-plugin/tools/testing/verification-checks.ts';
 import { BROWSER_BUNDLES, BROWSER_SELECTORS } from './browser-selector-catalog.ts';
 import { AGENT_CONVERSATION_WORKERS } from '../../../buildr-web/test/browser/agent-conversation-groups.ts';
@@ -924,8 +923,8 @@ const builtInVerificationSteps: any = Object.freeze([
  * composes those declarations with cross-service journeys and release consumers. */
 const servicesRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const serviceSets: any[] = [
-  ['buildr', buildrChecks], ['buildr-web', webChecks], ['buildr-agent', agentChecks],
-  ['buildr-harness-ui', harnessUiChecks], ['buildr-harness-web', harnessWebChecks],
+  ['buildr', buildrChecks], ['buildr-web', webChecks], ['buildr-harness', agentChecks],
+  ['buildr-harness-web', harnessWebChecks],
   ['buildr-harness', harnessCliChecks], ['dsh-plugin', pluginChecks],
 ];
 const serviceSteps = serviceSets.flatMap(([service, checks]) => checks.map((check: any) => {
@@ -953,7 +952,7 @@ const serviceSteps = serviceSets.flatMap(([service, checks]) => checks.map((chec
     platformEvidence: check.platformEvidence ?? inherited?.platformEvidence,
     timeoutMs: check.timeoutMs ?? 300_000,
     reuse: check.requiredEnvironment?.length ? false : check.reuse ?? inherited?.reuse
-      ?? (service === 'dsh-plugin' ? { scope: 'plugin' } : ['buildr-web','buildr-harness-ui','buildr-harness-web'].includes(service) ? { scope: 'web' } : service === 'buildr-agent' ? { scope: 'backend', releaseNotes: false } : { scope: 'repository' }),
+      ?? (service === 'dsh-plugin' ? { scope: 'plugin' } : ['buildr-web','buildr-harness-web'].includes(service) ? { scope: 'web' } : service === 'buildr-harness' ? { scope: 'backend', releaseNotes: false } : { scope: 'repository' }),
     testing: { ownerScope: `service:product/${service}`, primaryIntent: 'Development', executionBoundary: check.type,
       proves: check.proves ?? check.name, primaryEvidenceOwner: check.id,
       environment: { footprints, isolation: footprints.length ? 'unique-temporary-root' : 'none' }, resetBurden: footprints.length ? 'single-cleanup' : 'none' },
@@ -1160,7 +1159,7 @@ export const CANDIDATE_CI_SHARDS: any = Object.freeze(declaredCandidateShards.ma
   const additions = serviceSteps.filter((step: any) => step.profiles.includes('candidate') && !existing.has(step.id)
     && (step.platformScope.kind === 'platform' ? shard.id === `platform-boundaries-${shard.runner}` && step.platformScope.runners.includes(shard.runner)
       : step.service === 'buildr-web' ? shard.id === 'frontend-logic-macos'
-        : step.service === 'buildr-agent' ? shard.id === 'agent-service-macos' : shard.id === 'preflight-macos')).map((step: any) => step.id);
+        : step.service === 'buildr-harness' ? shard.id === 'agent-service-macos' : shard.id === 'preflight-macos')).map((step: any) => step.id);
   return Object.freeze({ ...shard, stepIds: Object.freeze([...new Set([...shard.stepIds.flatMap((id: string) => serviceReplacements.get(id) ?? (verificationSteps.some((step: any) => step.id === id) ? [id] : [])), ...additions])]) });
 }));
 

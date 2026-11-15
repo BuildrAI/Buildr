@@ -2,13 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { withExclusiveFileLock } from '../../src/infrastructure/filesystem/exclusive-file-lock.ts';
 
-export const AGENT_PACKAGE_NAME = '@buildr-ai/buildr-agent';
+export const AGENT_PACKAGE_NAME = '@buildr-ai/buildr-harness';
 export const AGENT_PACKAGE_PATH = `node_modules/${AGENT_PACKAGE_NAME}`;
 
 /** Copy only the prepared public runtime unit. No neighbouring source fallback. */
 export function copyAgentRuntimePackage(from: string, destination: string): string {
   if (fs.existsSync(path.join(from, 'tools/development/prepare-development-agent.ts'))) {
-    return withExclusiveFileLock(path.join(from, 'node_modules/.buildr-agent-preparation.lock'), path.join(from, AGENT_PACKAGE_PATH),
+    return withExclusiveFileLock(path.join(from, 'node_modules/.buildr-harness-preparation.lock'), path.join(from, AGENT_PACKAGE_PATH),
       () => copyRuntimePackage(from, destination), { timeoutMs: 30_000 });
   }
   return copyRuntimePackage(from, destination);

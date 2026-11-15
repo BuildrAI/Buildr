@@ -53,7 +53,7 @@ function warnRecoveryFailure(error: unknown): void {
   console.warn('中断执行恢复检查未完成，已有工作记录保留。', ...(code ? [code] : []));
 }
 
-export function createRuntime(options: { agentRuntime?: import('@buildr-ai/buildr-agent').AgentRuntimeUnit } = {}): any  {
+export function createRuntime(options: { agentRuntime?: import('@buildr-ai/buildr-harness').AgentRuntimeUnit } = {}): any  {
   const runtime = createRuntimeInfrastructure();
   const registry = createModuleRegistry();
   registry.install(createAgentAssetsRuntimeModule());

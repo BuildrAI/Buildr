@@ -185,7 +185,7 @@ export function selectBrowserSelectors(changedPaths: any): any  {
       add(plan,'agent-conversations',originalValue,'Conversation browser scenarios keep their direct browser owner.');
       continue;
     }
-    if (originalValue.startsWith('services/buildr-harness-ui/')) {
+    if (originalValue.startsWith('services/buildr-harness-web/')) {
       if (!originalValue.includes('/test/')) {
         add(plan, 'agent-conversations', originalValue, 'The shared Harness UI is the conversation implementation used by Development.');
         if (!originalValue.includes('/features/agent-conversations/')) {

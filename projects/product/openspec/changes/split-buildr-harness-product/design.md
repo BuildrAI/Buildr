@@ -4,13 +4,13 @@
 
 | 当前证据 | 对设计的影响 |
 | --- | --- |
-| [`process/server.ts`](../../../services/buildr-agent/src/process/server.ts) 已有独立后台、兼容并行激活；`operationScopes` 限同来源，`ownsPolicy` 仍由旧来源独占 | 复用运行机制，分离调用者、目标来源和来源策略 |
+| [`process/server.ts`](../../../services/buildr-harness/src/process/server.ts) 已有独立后台、兼容并行激活；`operationScopes` 限同来源，`ownsPolicy` 仍由旧来源独占 | 复用运行机制，分离调用者、目标来源和来源策略 |
 | [`activate-runtime.ts`](../../../services/buildr/src/modules/agent-service/application/activate-runtime.ts) 在 Development 编排准备/激活并用 `buildr/@default` 探测 | 底层能力已在公共包，缺的是产品无关的统一启动编排，不能机械搬业务特例 |
-| [`host-channel.ts`](../../../services/buildr-agent/src/process/host-channel.ts) 支持多宿主注册；任务字段及映射仍在核心 | 多连接不是跨来源授权；可选工作对象能力和旧字段必须兼容 |
+| [`host-channel.ts`](../../../services/buildr-harness/src/process/host-channel.ts) 支持多宿主注册；任务字段及映射仍在核心 | 多连接不是跨来源授权；可选工作对象能力和旧字段必须兼容 |
 | HTTP/SSE、Schema 和 [`programmatic-credentials.ts`](../../../services/buildr/src/modules/agent-service/persistence/programmatic-credentials.ts) 仍在 Development | 迁移闭环所有者，凭据路径继续保留，不只搬路由文件 |
 | [`programmatic-http.ts`](../../../services/buildr/src/modules/agent-service/interfaces/http/programmatic-http.ts) 区分显式发送和 `/messages` 省略模式 | 保留当前主规范与实现，不能照抄活跃旧增量的概括 |
-| [`process/client.ts`](../../../services/buildr-agent/src/process/client.ts) 的 `matches` 与 [`runtime-unit.ts`](../../../services/buildr-agent/src/process/runtime-unit.ts) 精确比较三组 v1 契约 | v2 不能只替换常量；发现、协议协商和运行负载兼容必须分别保留 |
-| [`execution-contracts.ts`](../../../services/buildr-agent/src/execution-contracts.ts) 的旧范围解码依赖 `legacySourceId`，进程启动再把它传入核心 | 历史来源解码必须固定，不得由首先连接的产品决定 |
+| [`process/client.ts`](../../../services/buildr-harness/src/process/client.ts) 的 `matches` 与 [`runtime-unit.ts`](../../../services/buildr-harness/src/process/runtime-unit.ts) 精确比较三组 v1 契约 | v2 不能只替换常量；发现、协议协商和运行负载兼容必须分别保留 |
+| [`execution-contracts.ts`](../../../services/buildr-harness/src/execution-contracts.ts) 的旧范围解码依赖 `legacySourceId`，进程启动再把它传入核心 | 历史来源解码必须固定，不得由首先连接的产品决定 |
 
 以下均为拟议设计，不把尚未抽取的包或能力登记成当前事实。
 
@@ -57,7 +57,7 @@
 
 ### D2. Harness 负责通用准备、发现和激活
 
-在 `buildr-agent` 公开包边界内组合已有 `prepareAgentRuntime`、异步准备、`connectAgentProcess` 和生命周期观察，形成唯一通用启动编排。输入是已核验数据域、候选负载和连接/明确激活意图；输出是准确 runtime digest、instance、generation、受理状态及局部失败。
+在 `buildr-harness` 公开包边界内组合已有 `prepareAgentRuntime`、异步准备、`connectAgentProcess` 和生命周期观察，形成唯一通用启动编排。输入是已核验数据域、候选负载和连接/明确激活意图；输出是准确 runtime digest、instance、generation、受理状态及局部失败。
 
 - 普通连接优先采用现有兼容后台，安装另一产品不自动选择“更高版本”。
 - 明确激活复用现有准备锁、兼容判断、精确采用与有界失败恢复；启动了进程不等于目标 ready。
@@ -167,3 +167,7 @@ SSE 保留首片、游标、增量、代次和有界恢复，代理不缓冲成�
 无存储变化时可回退兼容调用方；新格式已启用则不得盲目降级，沿受保护恢复处理。任何软件回退都不撤销已经发生的文件或外部副作用。
 
 知识影响：`overview.md`、`architecture/agent-boundaries.md`、`agent-integration.md`、`technical.md`、`buildr-data-design.md` 及两份服务/技术层代码地图，在实现时按真实边界更新；本阶段仅将影响纳入任务清单。解释时分开工程业务依赖与独立产品组合，不能将未来 DSH 插件写为当前能力。通用操作说明归 Harness，Development 任务关联说明留在 Development。
+
+## 本轮边界修订
+
+本变更涉及的核心与独立入口统一为 buildr-harness；buildr-harness-web 拥有完整唯一网页，buildr-harness-ui 退役。Development 在自己的 harness-ui 模块嵌套网页并准备工程上下文，不消费对话 React 组件。具体集成约束以同任务 extract-harness-web 的修订规范为准；不改变既有历史数据根、准确执行控制与独立发行批准边界。

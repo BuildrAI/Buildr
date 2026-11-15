@@ -12,7 +12,7 @@
 
 ## 3. 测试与验证
 
-- [x] 3.1 更新 buildr-agent 活动判定与 unknown settlement 集成测试。
+- [x] 3.1 更新 buildr-harness 活动判定与 unknown settlement 集成测试。
 - [x] 3.2 更新 buildr-web 停止控制与恢复提示测试。
 - [x] 3.3 运行相关前端、Agent、静态检查与规格校验。
 

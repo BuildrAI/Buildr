@@ -1,71 +1,45 @@
-# Harness 与 Development：实现边界和使用入口
+# Buildr Harness 与 Development：产品、代码与发行边界
 
-本页解释双产品候选的当前实现，不是公开发布或完整验收声明。行为承诺见三个活动变更：[核心与协议](../../../openspec/changes/split-buildr-harness-product/proposal.md)、[共享界面与独立网页](../../../openspec/changes/extract-harness-web/proposal.md)、[独立发行](../../../openspec/changes/distribute-harness-products/proposal.md)。文件和协作定位见[代码地图](../../code-map/harness-products.md)。
+当前重构采用两层产品关系：**Harness 负责 Agent 执行及完整网页；Development 为 Harness 准备工程现场和上下文。** 本页解释实现边界，不代替任务验证、人工验收或公开发布批准。
 
-整体关系见[双产品系统图](../../archify/system/buildr-system-overview.html)。产品入口、共享功能和业务权威是三个不同层次：
+## 产品关系
 
-| 层次 | Buildr Harness | Buildr Development |
+| 产品 | 拥有的功能 | 不承担的职责 |
 | --- | --- | --- |
-| 面向用户的用途 | 在普通本机目录中使用不同原生执行程序及模型来源 | 在软件工程现场管理工作空间、任务、知识、代码及成果 |
-| 网页呈现 | 独立 Harness Web | 工程页面中的内嵌与专注模式 |
-| 共同能力 | 完整对话、模型/账号设置、执行观察与控制 | 默认消费左侧共同能力，不重新实现对话状态机 |
-| 自己的业务责任 | 目录身份、通用对话与执行资料 | 工程对象、任务状态、文件及导航 |
+| Buildr Harness | 原生 Harness/执行程序和多模型来源接入、独立账号、对话、附件、问题与审批、停止、接续、恢复、普通工作目录，以及完整网页 | 工程任务、知识、工作空间治理与工程成果状态 |
+| Buildr Development | 工程工作空间、任务、知识、代码与成果；向 Harness 交接准确目录和工程上下文 | 第二套对话 UI、原生执行状态机、模型账号管理 |
 
-这是职责拆分，不是复制两套聊天程序。两个入口可以各自安装和打开；工程业务不进入 Harness，Harness 也不要求目录先初始化为 Development 工作空间。
+Development 工作空间可以理解为具备工程信息的工作目录，但工作目录与工程对象不是同一权威。独立 Harness 不要求目录先初始化为 Development 工作空间。
 
-## 两个产品，一套同域执行事实
+## 四个目录
 
-Development 保留 `buildr` 命令、工作空间、任务、知识、代码与工程文件导航。独立 Harness 使用 `buildr-harness`，以明确登记的本机目录为新对话起点，不登记工程任务，也不把目录解释成文件沙箱。执行器仍是已接入的原生程序，产品拆分没有替换推理循环。
+- `services/buildr-harness/`：原 buildr-agent 核心，合并 CLI、启动器及独立包工具；公开包名 `@buildr-ai/buildr-harness`。
+- `services/buildr-harness-web/`：完整唯一网页，包含全部对话、设置及目录交互；原独立 buildr-harness-ui 服务删除。
+- `services/buildr/`：Development CLI、后端、工程应用、资源和发行。
+- `services/buildr-web/`：Development 工程页面，`src/features/harness-ui/` 专门维护工程集成。
 
-产品标识、安装入口与共享数据域不是同一个身份。相同用户、配置域和明确数据根下，两个入口复用发现到的共享后台；开发版与发布版保留旧数据根，不迁移日常资料。普通打开不隐式采用新候选。显式激活仍核对协议、持久格式与并行资格；原代次保持准确执行归属，不能借换代重放工作。
+开发对话输入、工具展示、模型设置或执行控制时修改 Harness；开发任务、知识、工作空间或工程导航时修改 Development。Development 的 harness-ui 只是集成模块，不是可复用对话组件包。
 
-关闭页面、退出一个入口或卸载入口都不等于删除账号与历史；保留负载用于已有工作及重新连接。真实卸载与重装的证明必须针对实际包，不能仅用源码夹具代替。
+## 网页集成
 
-## 页面、调用者与来源权限
+独立入口和 Development 消费同一 Harness 网页产物。Development 从公共核心包取得静态资源目录，经受认证的 `/harness/` 同源路径托管，使用 iframe 嵌入；不导入对话 React 组件。内嵌与专注只调整外层布局，保留同一 iframe、当前对话、草稿和阅读位置。
 
-第一方完整用户页面可以读取同域全部来源，并按原执行身份停止或答复已有工作。程序凭据、旧 v1 客户端和普通宿主不会因此获得全来源权限。每个工作范围仍有来源身份；离线 Development 历史不会变成目录型来源。目录宿主负责目录身份及有限文件读取，不负责任务状态。
+工作空间选择、任务关联、工程参与和工程文件导航留在 Development。有限页面协议核对准确 origin、父/子窗口和消息类型。配置、新建、打开、历史、设置只改变界面；显式工程上下文交接由 Harness 自己执行首次提交和恢复。未知响应不自动重发。
 
-`workObjectLinks` 保存来源、范围、类型和对象身份；旧 `taskLinks/taskIds/taskId/link-task` 只是任务兼容投影。旧任务写入保留未知类型和其他来源关系。关联不发送工作、不完成任务，也不构成执行授权。
+同源 iframe 是可信产品模块边界，不是不可信网页的权限沙箱。页面来源必须是安装负载中的真实 Harness 产物，不能接入任意远程网页或下发长期后台密钥。
 
-通用路由、校验、模式语义、程序凭据和回推维护在核心中只有一套实现。Development 保留自身页面认证及固定目标的同源适配，不持有第二份凭据数据库。源化 URL 与旧工作空间 URL 映射到同一应用操作。
+## 核心与数据兼容
 
-## 独立网页不是另一个常驻宿主
+包与源码改名不迁移 `agent-service` 的已有数据根、账号、对话库及控制脚本路径。相同用户、配置域和准确数据根可复用同一逻辑后台；开发、发布和隔离预览不隐式混用。关闭或卸载入口不删除共享历史与账号。原生程序仍拥有其推理循环；Harness 统一接入与控制，不自研另一套循环。
 
-显式打开 Harness 才启用共享后台中的回环网页。初次由系统分配端口，后续使用保留地址，不占用 Development 固定端口。新代次只有取得监听权后才能承载网页；旧事件流结束后由页面重新连接，旧轮不因此转移执行权。
+## 发行内容
 
-短时、单次、目标绑定的登录票据只通过 URL fragment 传递，交换后立即清除。页面会话与后台 owner/caller 密钥分离；会话有效期、撤销、Host、Origin 和写入校验分别生效。长期秘密不进入页面或 URL query。内容摘要静态资源保留供已打开页面继续读取；页面会话格式不兼容的候选会被拒绝。
+Harness 本机包携带编译核心、CLI、启动器、完整网页、运行依赖和许可证据；不含 Development 工程业务、用户账号或工作空间私人资料。Development 主包 `@buildr-ai/buildr` 携带工程实现与网页、工程资源，并携带所用 Harness 运行负载及完整网页，无需用户手动先装另一份独立 CLI。
 
-共享界面同时用于 Development 专注/内嵌组合和独立 Harness。任务控件、工程参与观察与文件导航由 Development 贡献；独立壳没有任务管理占位。文件预览按准确对话目录、目录修订、真实路径、类型及上限核对，不拼接 Shell 命令。
+Node 最低要求仍为 `24.15.0`；原生程序管理、真实模型账号和使用权是各自边界，不因制包成功自动取得。Harness 独立包当前仍 `private:true`，本机验收包不是正式公开发布旁路；许可证据和平台批准不能代填。Windows 实测不在本轮范围。
 
-### 网页入口与模型授权回调是两条独立链路
+## DSH 插件组合
 
-Harness 网页登录票据用于进入第一方页面，不等于模型供应商认证。Codex 的 ChatGPT 登录由独立配置中的原生程序发起，回调地址以该次官方授权链接的 `redirect_uri` 为准；不能用 Development 的网页端口或 Harness 当前网页端口替换它。当前原生登录采用回环回调，模型登录结束、失败或超时后，对应临时监听可以退出。
+清楚的上下层边界允许未来独立提供 Harness 插件、只准备工程现场的 Development 插件，以及两者组合的插件。本轮只保证代码职责可区分，不声称已经实现或发行三套新插件；现有 dsh-plugin 服务仍独立。
 
-排查“登录后回到本机地址却拒绝连接”时，先按准确登录尝试读取状态，再分别核对官方链接声明、原登录标签的实际导航和监听生命周期。只记录脱敏后的主机、端口与路径，不输出 `code`、`state`、`id_token` 或完整回调 URL。已确认失败/过期后才发起新尝试并让本人完成官方认证；不能刷新旧回调冒充重试，也不能仅凭页面操作完成便认定账号可用。实际成功仍需连接状态及非空模型目录证明。
-
-## 当前开发入口
-
-从产品根使用受保留 Node 的项目包装程序，不替换用户 PATH 中的 `buildr`：
-
-```sh
-services/buildr/tools/development/run-development-node services/buildr-harness/tools/pack-local.ts /绝对路径/隔离验收包
-```
-
-该入口构建独立正式网页、核心与 CLI，物化完整运行依赖并随包附许可证据；输出只用于本机验收，`publicationApproved:false`。复制后的包应在无相邻源码的环境离线安装，再以安装包的命令显式选择隔离数据根：
-
-```sh
-buildr-harness web --data-root /绝对路径/隔离数据域 --no-open
-buildr-harness launcher install --target /隔离位置/Buildr-Harness.app --data-root /绝对路径/隔离数据域
-```
-
-`--no-open` 不签发或打印登录票据。正常启动器会打开票据页面。`activate` 是显式候选采用，不等于普通打开。启动器的状态和卸载都核对自有入口绑定；未知同名应用不会被覆盖。
-
-Windows 候选使用 `.lnk` 与自有旁文件目录，绑定明确的 PowerShell、Node、入口及数据域；本机 macOS 不模拟安装 Windows 快捷方式。对应原生检查仅在 Windows 执行，包装文本及类型检查不代表该平台整产品验收。
-
-## 不得从局部成功推导的结论
-
-- 当前 macOS 启动器实现与其他系统的支持声明分别验收；没有另一平台的真实证据，就不能声称跨平台完成。
-- 真实账号、付费模型、订阅和原生程序权限不能由替身成功推导。产品拆分不新增模型使用权。
-- `release:check` 与安装包的 `distribution-check` 对准确版本负责人决定及许可证据进行检查；MIT 等 SPDX 字段本身不是负责人的发行批准。主包正式发布器另在 npm 写入前检查冻结包自身证据及平台支持批准；缺失、禁止、限制、版本不符和被替换的许可文件都不能作为允许发行。
-- 本机包、网页和启动器通过不等于已发布；公开发布仍需独立授权。候选未集成时不向日常自举环境同步，也不接管用户密钥环。
-- 完整准备、测试选择和证明边界以 [`preparation.yml`](../../../preparation.yml) 与 [`verification.yml`](../../../verification.yml) 为准；执行结果属于对应任务的真实报告，不保存在本页。
+文件定位见[代码地图](../../code-map/harness-products.md)。具体承诺见[网页集成变更](../../../openspec/changes/extract-harness-web/proposal.md)、[核心变更](../../../openspec/changes/split-buildr-harness-product/proposal.md)和[发行变更](../../../openspec/changes/distribute-harness-products/proposal.md)。

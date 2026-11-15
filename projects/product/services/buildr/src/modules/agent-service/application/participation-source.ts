@@ -1,4 +1,4 @@
-import type { ParticipationSourceRequest, ParticipationSourceResult } from '@buildr-ai/buildr-agent';
+import type { ParticipationSourceRequest, ParticipationSourceResult } from '@buildr-ai/buildr-harness';
 import type { AgentAssetSourceQuery } from '../../agent-assets/source/module.ts';
 import { observeParticipationCli } from './participation-cli-source.ts';
 

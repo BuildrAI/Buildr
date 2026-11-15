@@ -1,11 +1,13 @@
-import {useCallback,useEffect,useMemo,useState} from 'react';
+import {FrameSubmissions} from './frame-submissions';
+import {engineeringFile} from './engineering-files';
+import {useCallback,useEffect,useMemo,useState,useRef} from 'react';
 import {Alert,Button,Input,Modal,Select,Space} from 'antd';
 import {FolderOpenOutlined,PlusOutlined,SettingOutlined,UnorderedListOutlined} from '@ant-design/icons';
-import {AgentConversationsProvider,AgentConnectionSettings,ConversationWorkspace,HarnessUiHostProvider,useAgentConversations,type HarnessUiHost} from '@buildr-ai/buildr-harness-ui';
-import {MarkdownReader} from '@buildr-ai/buildr-harness-ui/components/MarkdownReader';
-import {api} from '@buildr-ai/buildr-harness-ui/api/index';
-import type {ConversationWorkspace as ScopeView} from '@buildr-ai/buildr-harness-ui/conversations/ConversationHistory';
-import type {ConversationView} from '@buildr-ai/buildr-harness-ui/conversations/types';
+import {AgentConversationsProvider,AgentConnectionSettings,ConversationWorkspace,HarnessDirectoryFilesProvider,useAgentConversations,type HarnessDirectoryFiles} from './index';
+import {MarkdownReader} from './components/MarkdownReader';
+import {api} from './api/index';
+import type {ConversationWorkspace as ScopeView} from './features/agent-conversations/ConversationHistory';
+import type {ConversationView} from './features/agent-conversations/types';
 
 type Ref={sourceId:string;id:string};
 type Directory={ref:Ref;rootPath:string;revision:string};
@@ -16,15 +18,17 @@ const request=<T,>(path:string,input?:unknown)=>api(path,input===undefined?{head
 
 export function HarnessApp(){
   const [file,setFile]=useState<{path:string;value:Preview}|null>(null);
-  const host=useMemo<HarnessUiHost>(()=>({
+  const host=useMemo<HarnessDirectoryFiles>(()=>({
     scopeRequired:true,
-    readFile:(conversation:ConversationView,path:string,_signal:AbortSignal)=>request<Preview>('/api/v1/harness/files',{conversationId:conversation.id,path}),
-    async openFile(conversation,path){const value=await request<Preview>('/api/v1/harness/files',{conversationId:conversation.id,path});setFile({path,value});},
+    readFile:(conversation:ConversationView,path:string,signal:AbortSignal)=>window.parent!==window?engineeringFile('read',conversation.workspaceId,conversation.id,path,signal):request<Preview>('/api/v1/harness/files',{conversationId:conversation.id,path}),
+    async openFile(conversation,path){if(window.parent!==window){await engineeringFile('open',conversation.workspaceId,conversation.id,path);return;}const value=await request<Preview>('/api/v1/harness/files',{conversationId:conversation.id,path});setFile({path,value});},
   }),[]);
-  return <HarnessUiHostProvider host={host}><AgentConversationsProvider><Workspace/></AgentConversationsProvider><Modal open={!!file} title={file?.path} footer={null} width="min(1000px, 94vw)" onCancel={()=>setFile(null)}>{file&&(file.value.kind==='markdown'?<MarkdownReader content={file.value.content} path={file.path}/>:<pre className="harness-source">{file.value.content}</pre>)}{file?.value.truncated&&<Alert type="info" message="内容超过预览上限，仅显示前 1 MiB。"/>}</Modal></HarnessUiHostProvider>;
+  return <HarnessDirectoryFilesProvider host={host}><AgentConversationsProvider><Workspace/></AgentConversationsProvider><Modal open={!!file} title={file?.path} footer={null} width="min(1000px, 94vw)" onCancel={()=>setFile(null)}>{file&&(file.value.kind==='markdown'?<MarkdownReader content={file.value.content} path={file.path}/>:<pre className="harness-source">{file.value.content}</pre>)}{file?.value.truncated&&<Alert type="info" message="内容超过预览上限，仅显示前 1 MiB。"/>}</Modal></HarnessDirectoryFilesProvider>;
 }
 function Workspace(){
+  const embedded=window.parent!==window;
   const context=useAgentConversations();
+  const submissions=useRef(new FrameSubmissions<unknown>());
   const [scopes,setScopes]=useState<ScopeView[]>([]),[directories,setDirectories]=useState<Directory[]>([]),[selected,setSelected]=useState<string>(),[error,setError]=useState(''),[choosing,setChoosing]=useState(false),[path,setPath]=useState(''),[busy,setBusy]=useState(false);
   const refresh=useCallback(async()=>{
     const [catalog,listed]=await Promise.all([request<Catalog>('/api/v1/harness/scopes'),request<{directories:Directory[]}>('/api/v1/harness/directories')]);
@@ -32,11 +36,35 @@ function Workspace(){
     setScopes(catalog.scopes.map(scope=>{const directory=listed.directories.find(value=>key(value.ref)===scope.key);return {id:scope.key,name:directory?directory.rootPath:`${scope.ref.sourceId} / ${scope.ref.id}${scope.authority==='offline'?'（来源离线）':''}`,rootPath:directory?.rootPath??''};}));
     setSelected(previous=>previous&&listed.directories.some(value=>key(value.ref)===previous)?previous:listed.directories[0]?key(listed.directories[0].ref):undefined);
   },[]);
-  useEffect(()=>{void refresh().catch(failure=>setError(failure instanceof Error?failure.message:'工作范围读取失败。'));context.setOpen(true);context.setFull(true);},[refresh]);
+  useEffect(()=>{if(!embedded)void refresh().catch(failure=>setError(failure instanceof Error?failure.message:'工作范围读取失败。'));context.setOpen(true);context.setFull(true);},[refresh]);
+  useEffect(()=>{
+    if(!embedded)return;
+    const listener=(event:MessageEvent)=>{
+      if(event.source!==window.parent||event.origin!==location.origin)return;
+      const message=event.data;
+      if(!message||message.protocol!=='buildr.harness-frame/v1')return;
+      if(message.action==='configure'&&Array.isArray(message.workspaces))setScopes(message.workspaces.filter((value:ScopeView)=>typeof value?.id==='string'&&typeof value.name==='string'&&typeof value.rootPath==='string'));
+      if(message.action==='new'&&typeof message.workspaceId==='string')context.newConversation({scope:{workspaceId:message.workspaceId,...(typeof message.taskId==='string'?{taskId:message.taskId}:{})}});
+      if(message.action==='open'&&typeof message.workspaceId==='string'&&typeof message.conversationId==='string')void context.openConversation(message.workspaceId,message.conversationId);
+      if(message.action==='history')context.openHistory(null);
+      if(message.action==='settings')context.setSettings(true);
+      if(message.action==='start-text'&&typeof message.requestId==='string'&&message.input&&typeof message.input.workspaceId==='string'&&typeof message.input.cwd==='string'&&typeof message.input.text==='string'){
+        const reply=(result:unknown)=>window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'result',requestId:message.requestId,result},location.origin);
+        if(context.startTextConversation)void submissions.current.once(message.requestId,message.input,()=>context.startTextConversation!(message.input)).then(reply).catch(()=>reply({status:'recovering',reason:'submission-unknown',message:'原提交结果未确认，请核对原对话。'}));
+        else reply({status:'unavailable',message:'Harness 尚未准备工程操作入口。'});
+      }
+    };
+    window.addEventListener('message',listener);
+    window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'ready'},location.origin);
+    return()=>window.removeEventListener('message',listener);
+  },[embedded,context.newConversation,context.openConversation,context.openHistory,context.setSettings,context.startTextConversation]);
+  useEffect(()=>{
+    if(embedded)window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'selection',workspaceId:context.conversation?.workspaceId??null,conversationId:context.conversation?.id??null},location.origin);
+  },[embedded,context.conversation?.workspaceId,context.conversation?.id]);
   const create=async()=>{
     if(!path.trim()||busy)return;setBusy(true);setError('');
     try{const directory=await request<Directory>('/api/v1/harness/directories',{path:path.trim()});await refresh();const scope=key(directory.ref);setSelected(scope);context.newConversation({scope:{workspaceId:scope}});context.setFull(true);setChoosing(false);setPath('');}
     catch(failure){setError(failure instanceof Error?failure.message:'目录未登记，输入已保留。');}finally{setBusy(false);}
   };
-  return <div className="harness-shell"><header className="harness-header"><strong>Buildr Harness</strong><Space><Select aria-label="新对话起点目录" value={selected} style={{width:'min(420px, 40vw)'}} placeholder="选择已登记目录" options={directories.map(value=>({value:key(value.ref),label:value.rootPath}))} onChange={setSelected}/><Button icon={<FolderOpenOutlined/>} onClick={()=>setChoosing(true)}>选择目录</Button><Button icon={<PlusOutlined/>} disabled={!selected} onClick={()=>{context.newConversation({scope:{workspaceId:selected!}});context.setFull(true);}}>新建对话</Button><Button icon={<UnorderedListOutlined/>} onClick={()=>context.openHistory(null)}>全部对话</Button><Button icon={<SettingOutlined/>} onClick={()=>context.setSettings(true)}>设置</Button></Space></header>{error&&<Alert type="warning" closable onClose={()=>setError('')} message={error}/>}<main className="harness-main"><ConversationWorkspace workspaces={scopes} defaultWorkspaceId={selected??null}/></main><AgentConnectionSettings/><Modal open={choosing} title="选择新对话的起点目录" confirmLoading={busy} onOk={()=>void create()} onCancel={()=>{if(!busy)setChoosing(false);}} okText="登记目录并新建"><p>输入本机已有目录的绝对路径。目录身份会被核对；它是执行起点，不是文件沙箱。</p><Input autoFocus aria-label="Harness 起点目录绝对路径" value={path} onChange={event=>setPath(event.target.value)} onPressEnter={()=>void create()}/></Modal></div>;
+  return <div className="harness-shell">{!embedded&&<header className="harness-header"><strong>Buildr Harness</strong><Space><Select aria-label="新对话起点目录" value={selected} style={{width:'min(420px, 40vw)'}} placeholder="选择已登记目录" options={directories.map(value=>({value:key(value.ref),label:value.rootPath}))} onChange={setSelected}/><Button icon={<FolderOpenOutlined/>} onClick={()=>setChoosing(true)}>选择目录</Button><Button icon={<PlusOutlined/>} disabled={!selected} onClick={()=>{context.newConversation({scope:{workspaceId:selected!}});context.setFull(true);}}>新建对话</Button><Button icon={<UnorderedListOutlined/>} onClick={()=>context.openHistory(null)}>全部对话</Button><Button icon={<SettingOutlined/>} onClick={()=>context.setSettings(true)}>设置</Button></Space></header>}{error&&<Alert type="warning" closable onClose={()=>setError('')} message={error}/>}<main className="harness-main"><ConversationWorkspace workspaces={scopes} defaultWorkspaceId={selected??null}/></main><AgentConnectionSettings/><Modal open={choosing} title="选择新对话的起点目录" confirmLoading={busy} onOk={()=>void create()} onCancel={()=>{if(!busy)setChoosing(false);}} okText="登记目录并新建"><p>输入本机已有目录的绝对路径。目录身份会被核对；它是执行起点，不是文件沙箱。</p><Input autoFocus aria-label="Harness 起点目录绝对路径" value={path} onChange={event=>setPath(event.target.value)} onPressEnter={()=>void create()}/></Modal></div>;
 }

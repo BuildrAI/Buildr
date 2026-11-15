@@ -1,4 +1,4 @@
-import { AgentProgramUpdates } from '../../agent-conversations/AgentProgramUpdates';
+import { AgentProgramUpdates } from '../../harness-ui/AgentProgramUpdates';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { App, Button, Space, Tag, Tooltip } from 'antd';
 import { ExclamationCircleOutlined, SyncOutlined, DownloadOutlined } from '@ant-design/icons';

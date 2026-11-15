@@ -12,14 +12,14 @@ import {
 
 const DECLARATION = `schemaVersion: buildr.project-preparation/v1
 entries:
-  - id: buildr-agent.npm-ci
-    scope: {kind: service, service: buildr-agent}
-    cwd: services/buildr-agent
+  - id: buildr-harness.npm-ci
+    scope: {kind: service, service: buildr-harness}
+    cwd: services/buildr-harness
     executable: ../buildr/tools/development/run-development-npm
     args: [ci, --ignore-scripts]
-  - id: buildr-agent.build
-    scope: {kind: service, service: buildr-agent}
-    cwd: services/buildr-agent
+  - id: buildr-harness.build
+    scope: {kind: service, service: buildr-harness}
+    cwd: services/buildr-harness
     executable: ../buildr/tools/development/run-development-npm
     args: [run, build]
   - id: buildr.npm-ci
@@ -56,7 +56,7 @@ function fixture(): { root: string; calls: Array<{ executable: string; args: str
   };
   service('buildr', { react: '*' });
   service('buildr-web', { react: '*' });
-  service('buildr-agent', { react: '*' });
+  service('buildr-harness', { react: '*' });
   // Zero-dependency service: no lockfile, never invokes npm ci.
   const plugin = path.join(root, 'services', 'dsh-plugin');
   fs.mkdirSync(plugin, { recursive: true });
@@ -81,7 +81,7 @@ function fixture(): { root: string; calls: Array<{ executable: string; args: str
 test('preparation executes declared entries in order and only pays for what is missing', () => {
   const { root, calls, execute } = fixture() as any;
   const result = prepareDevelopmentDependencies({ root, execute });
-  assert.deepEqual(result.executed, ['buildr-agent.npm-ci', 'buildr-agent.build', 'buildr.npm-ci', 'buildr-web.npm-ci']);
+  assert.deepEqual(result.executed, ['buildr-harness.npm-ci', 'buildr-harness.build', 'buildr.npm-ci', 'buildr-web.npm-ci']);
   assert.deepEqual(result.reused, ['dsh-plugin.npm-ci']);
   assert.equal(calls.length, 4);
   // The private Agent must be installed and built before the main service ci

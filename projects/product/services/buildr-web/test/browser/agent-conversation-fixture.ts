@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {canCloseUncertainConversation} from '../../src/features/agent-conversations/conversation-state.ts';
-import {resolveQuestionAnswer,questionAnswerDisplay} from '../../../buildr-agent/src/domain/question-answer.ts';
+import {resolveQuestionAnswer,questionAnswerDisplay} from '../../../buildr-harness/src/domain/question-answer.ts';
 import type {ConnectionView} from '../../src/features/agent-conversations/types.ts';
 import {modelSourceName} from '../../src/lib/model-picker.ts';
 

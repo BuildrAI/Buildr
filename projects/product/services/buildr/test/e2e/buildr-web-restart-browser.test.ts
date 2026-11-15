@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { stopAgentProcess } from '@buildr-ai/buildr-harness';
 import type { Page, Route } from 'playwright-core';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.ts';
 import { launchTestBrowser } from './browser-launch.ts';
@@ -111,7 +111,7 @@ test('真实生产页面重启恢复、已知失败真正重试及未知状态�
     const token=await tokenOf(page);
     const before=await page.evaluate(async () => (await fetch('/api/v1/app/agent-service/runtime',{headers:{'x-buildr-session':document.querySelector('meta[name="buildr-session"]')?.getAttribute('content')??''}})).json());
     await page.locator('#more-actions').hover();
-    await page.locator('#restart-buildr-agent').click();
+    await page.locator('#restart-buildr-harness').click();
     const modal=page.locator('.ant-modal-confirm');
     await Promise.race([modal.waitFor(),page.locator('#restart-buildr-error').waitFor().then(async()=>{throw new Error(await page.locator('#restart-buildr-error').innerText());})]);
     assert.match(await modal.innerText(),/只重启独立执行服务/);

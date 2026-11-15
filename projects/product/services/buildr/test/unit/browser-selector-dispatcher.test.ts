@@ -409,7 +409,7 @@ test('test-only changes retain browser ownership without inferring unrelated pro
   assert.equal(ids.some((id:string)=>id.startsWith('agent-integration')),false);
   const explicit=createVerificationPlan({paths:[file],tags:['handoff'],related:true,semantic:true,target:'source'},verificationSteps);
   assert.ok(explicit.steps.some((s:any)=>s.id==='agent-integration-handoff'));
-  const transport=createVerificationPlan({paths:['services/buildr-agent/src/process/transport.ts'],related:true,semantic:true,target:'source'},verificationSteps);
+  const transport=createVerificationPlan({paths:['services/buildr-harness/src/process/transport.ts'],related:true,semantic:true,target:'source'},verificationSteps);
   assert.ok(transport.steps.some((s:any)=>s.id==='agent-integration-handoff'));
   const preparation=createVerificationPlan({paths:['test/verification/web-dist.ts'],related:true,semantic:true,target:'source'},verificationSteps);
   assert.ok(preparation.steps.some((s:any)=>s.id.startsWith('e2e-browser:')));

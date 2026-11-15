@@ -6,8 +6,8 @@ import test from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 
-import { createAgentService } from '@buildr-ai/buildr-agent';
-import type { AgentExecutor, AgentRuntime, ContextRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions } from '@buildr-ai/buildr-agent';
+import { createAgentService } from '@buildr-ai/buildr-harness';
+import type { AgentExecutor, AgentRuntime, ContextRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions } from '@buildr-ai/buildr-harness';
 
 import { applyPreviewReuse, parsePreviewReuseSelection } from '../../src/web/application/preview-reuse.ts';
 

@@ -8,7 +8,7 @@ test('programmatic credentials have only one narrowly reviewed filesystem writer
   const file = 'src/modules/agent-service/persistence/programmatic-credentials.ts';
   const shim = readFileSync(new URL('../../' + file, import.meta.url), 'utf8');
   assert.deepEqual(findManagedMutationViolations(shim, file), [], 'Development no longer writes credentials');
-  const source = readFileSync(new URL('../../../buildr-agent/src/persistence/programmatic-credentials.ts', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../../../buildr-harness/src/persistence/programmatic-credentials.ts', import.meta.url), 'utf8');
   const violations = findManagedMutationViolations(source, file);
   assert.equal(violations.length, 1);
   assert.match(violations[0], /direct mutation in saveToken$/);

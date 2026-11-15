@@ -1,6 +1,6 @@
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {createAgentService, type AgentRuntime, type ExecutorEvent} from '@buildr-ai/buildr-agent';
+import {createAgentService, type AgentRuntime, type ExecutorEvent} from '@buildr-ai/buildr-harness';
 import {taskRecordFixture} from './task-record-system-fixture.ts';
 import {createRuntime,runtimeContributions} from './runtime-harness.ts';
 import {createLocalWorkspaceServer} from '../../src/web/http/server.ts';

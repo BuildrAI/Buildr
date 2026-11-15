@@ -52,7 +52,7 @@ test('same inputs create byte-identical payload and installed resource mapping d
     const runtimeMetadata: any = JSON.parse(fs.readFileSync(path.join(first.root, 'resources/product/package.json'), 'utf8'));
     assert.equal(runtimeMetadata.devDependencies, undefined);
     assert.equal(runtimeMetadata.scripts, undefined);
-    assert.deepEqual(Object.keys(runtimeMetadata.dependencies), ['@buildr-ai/buildr-agent', '@vscode/ripgrep-universal', 'ajv', 'mysql2', 'node-sql-parser', 'yaml']);
+    assert.deepEqual(Object.keys(runtimeMetadata.dependencies), ['@buildr-ai/buildr-harness', '@vscode/ripgrep-universal', 'ajv', 'mysql2', 'node-sql-parser', 'yaml']);
     for(const target of ['darwin-arm64/rg','darwin-x64/rg','linux-x64/rg','linux-arm64/rg','win32-x64/rg.exe','win32-arm64/rg.exe'])assert.ok(first.manifest.files.some((entry:any)=>entry.path==='resources/runtime/ripgrep/'+target),target);
     assert.equal(runtimeMetadata.devDependencies, undefined);
 

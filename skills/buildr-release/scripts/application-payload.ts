@@ -126,7 +126,7 @@ function runtimePackageMetadata(metadata: any): any  {
     type: metadata.type,
     engines: metadata.engines,
     dependencies: Object.fromEntries(Object.entries(metadata.dependencies || {}).map(([name, version]) => [name,
-      name === '@buildr-ai/buildr-agent' ? JSON.parse(fs.readFileSync(path.join(serviceRoot, 'node_modules', name, 'package.json'), 'utf8')).version : version,
+      name === '@buildr-ai/buildr-harness' ? JSON.parse(fs.readFileSync(path.join(serviceRoot, 'node_modules', name, 'package.json'), 'utf8')).version : version,
     ]).sort(([left]: any, [right]: any) => left.localeCompare(right))),
   };
 }
@@ -179,7 +179,7 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
       platform: 'node',
       format: 'cjs',
       target: 'node24',
-      external: ['node:*', '@buildr-ai/buildr-agent'],
+      external: ['node:*', '@buildr-ai/buildr-harness'],
       legalComments: 'none',
       sourcemap: false,
       metafile: true,
@@ -222,7 +222,7 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
     const metadata: any = packageMetadata();
     fs.writeFileSync(path.join(resourceRoot, 'product/package.json'), `${JSON.stringify(runtimePackageMetadata(metadata), null, 2)}\n`, { encoding: 'utf8', mode: 0o644 });
     const distributionRoot = path.join(resourceRoot, 'product/distribution');
-    collectThirdParty(distributionRoot, [serviceRoot, path.resolve(serviceRoot, '../buildr-harness-ui'), path.resolve(serviceRoot, '../buildr-web')]);
+    collectThirdParty(distributionRoot, [serviceRoot, path.resolve(serviceRoot, '../buildr-harness-web'), path.resolve(serviceRoot, '../buildr-web')]);
     fs.copyFileSync(path.resolve(serviceRoot, '../buildr-harness/resources/distribution-decisions.json'), path.join(distributionRoot, 'decisions.json'));
     fs.copyFileSync(path.join(serviceRoot, 'tools/build/platform-support.json'), path.join(distributionRoot, 'platform-support.json'));
     const productionDependencies: any = dependencyInventory(resourceRoot, metadata);

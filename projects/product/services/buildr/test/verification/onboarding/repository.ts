@@ -109,7 +109,7 @@ try {
   const pathSentinels: any[] = [path.join(installBin, 'buildr'), path.join(installBin, 'buildr.cmd')];
   for (const sentinel of pathSentinels) fs.writeFileSync(sentinel, `npm-owned sentinel: ${path.basename(sentinel)}\n`);
   const sentinelContents: any = new Map(pathSentinels.map((sentinel: any) => [sentinel, fs.readFileSync(sentinel, 'utf8')]));
-  const copiedAgent = path.join(copiedProduct, 'services/buildr-agent');
+  const copiedAgent = path.join(copiedProduct, 'services/buildr-harness');
   run(developmentNode, [npmCliForNode(developmentNode), 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: copiedAgent, env });
   run(developmentNode, [path.join(copiedAgent, 'tools/build.ts')], { cwd: copiedAgent, env });
   run(developmentNode, [npmCliForNode(developmentNode), 'ci', '--install-links', '--no-audit', '--no-fund'], { cwd: copiedService, env });

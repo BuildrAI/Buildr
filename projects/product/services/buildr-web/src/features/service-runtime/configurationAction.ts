@@ -1,5 +1,5 @@
-import type { TextConversationActionInput, TextConversationActionResult } from '../agent-conversations/AgentConversationsContext';
-import type { ConversationView } from '../agent-conversations/types';
+import type { TextConversationActionInput, TextConversationActionResult } from '../harness-ui/AgentConversationsContext';
+import type { ConversationView } from '../harness-ui/types';
 import type { RuntimeDefinitionView } from './api/service-runtime-api';
 import { runtimeConfigurationPrompt } from './configurationPrompt.ts';
 

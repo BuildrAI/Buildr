@@ -1,4 +1,4 @@
-import {defaultHarnessDataRoot} from '@buildr-ai/buildr-agent/profile';
+import {defaultHarnessDataRoot} from '@buildr-ai/buildr-harness/profile';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';

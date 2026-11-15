@@ -13,10 +13,13 @@
   },
   "dependencies": {
     "@ant-design/icons": "^5.6.1",
-    "@buildr-ai/buildr-harness-ui": "file:../buildr-harness-ui",
     "antd": "^5.29.3",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "entities": "7.0.0",
+    "marked": "16.4.2",
+    "mermaid": "12.2.0",
+    "dompurify": "3.4.17"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",

@@ -19,7 +19,7 @@ globalThis[key] = value => {
 };
 registerHooks({ load(url, context, nextLoad) {
   const result = nextLoad(url, context);
-  if (!/buildr-agent\/(?:src|build)\/application\/conversation-application\.(?:ts|js)(?:\?|$)/u.test(url) || result.source == null) return result;
+  if (!/buildr-harness\/(?:src|build)\/application\/conversation-application\.(?:ts|js)(?:\?|$)/u.test(url) || result.source == null) return result;
   const source = typeof result.source === 'string' ? result.source : Buffer.from(result.source).toString('utf8');
   return { ...result, source: source + `
 const verificationOriginalRead = ConversationApplication.prototype.read;

@@ -23,7 +23,7 @@ service_root=$(CDPATH= cd "$script_root/../.." && pwd)
 product_root=$(CDPATH= cd "$service_root/../.." && pwd)
 if [ "${BUILDR_DEVELOPMENT_PREPARE_SKIP:-0}" != "1" ] && [ -f "$product_root/preparation.yml" ]; then
   needs_prepare=0
-  for svc in buildr buildr-web buildr-agent dsh-plugin; do
+  for svc in buildr buildr-web buildr-harness buildr-harness-web dsh-plugin; do
     svc_dir="$product_root/services/$svc"
     if [ -f "$svc_dir/package-lock.json" ] \
       && { [ ! -f "$svc_dir/node_modules/.package-lock.json" ] \
@@ -31,7 +31,7 @@ if [ "${BUILDR_DEVELOPMENT_PREPARE_SKIP:-0}" != "1" ] && [ -f "$product_root/pre
       needs_prepare=1
     fi
   done
-  if [ "$needs_prepare" = "1" ] || [ ! -f "$product_root/services/buildr-agent/build/index.js" ]; then
+  if [ "$needs_prepare" = "1" ] || [ ! -f "$product_root/services/buildr-harness/build/index.js" ]; then
     "$selected_node" "$script_root/prepare-development-dependencies.ts" || exit $?
   fi
 fi

@@ -15,4 +15,4 @@
 - `programmatic-agent-access`: 凭据增加全部授权开关，发现透传连接权限模式，公共对话操作在凭据授权时接受 full-access。
 
 ## Impact
-buildr 的 agent-service 程序接入 HTTP 准入/发现、凭据持久化与管理 API、文档生成及集成测试；buildr-web 的程序接入凭据创建/卡片开关与 API 客户端。不改 buildr-agent 执行层（已支持）。与独立任务 programmatic-access-phase-2 触及相同文件，本变更以按 schema 的通用准入兼容其单步续聊接口落地。任务说明见 [任务说明](@task/programmatic-full-access)。
+buildr 的 agent-service 程序接入 HTTP 准入/发现、凭据持久化与管理 API、文档生成及集成测试；buildr-web 的程序接入凭据创建/卡片开关与 API 客户端。不改 buildr-harness 执行层（已支持）。与独立任务 programmatic-access-phase-2 触及相同文件，本变更以按 schema 的通用准入兼容其单步续聊接口落地。任务说明见 [任务说明](@task/programmatic-full-access)。
