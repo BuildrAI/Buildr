@@ -272,3 +272,4 @@
 .ac-document-thumbnail > .anticon { grid-row: 1 / 3; align-self: center; }
 .ac-document-name { line-height: 20px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ac-document-thumbnail small { line-height: 18px; color: var(--text-secondary,#65717b); }
+.ac-engineering-context-anchor{display:inline-block;flex:none;width:82px;height:24px}

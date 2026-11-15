@@ -110,6 +110,8 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     }, {profile, account: {id: account.id, identity: account.identity}});
     const a = await context.newPage(), b = await context.newPage();
     await a.goto(origin);
+    assert.equal(await a.locator('.harness-header').count(),0,'no duplicate outer navigation');
+    assert.equal(await a.locator('.ac-collapsed-rail').count(),1);
     const inputA = a.getByRole('textbox', {name: '对话输入', exact: true});
     await until(() => a.locator('.ac-model-label').innerText(), value => value.includes('Fixture'), 'fixture model selection');
     await inputA.fill('question');
@@ -126,7 +128,7 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     const conversationId = await a.locator('.ac-panel[data-conversation-id]').getAttribute('data-conversation-id');
     assert.ok(conversationId);
     await b.goto(origin);
-    await b.locator('.harness-header button').filter({hasText: '全部对话'}).click();
+    await b.locator('.ac-collapsed-rail .ac-all-conversations').click();
     await b.locator(`.ac-history-row-main[data-conversation-id="${conversationId}"]`).click();
     await b.getByRole('radio', {name: 'Accepted', exact: true}).waitFor({state: 'visible', timeout: 10000});
     const inputB = b.getByRole('textbox', {name: '对话输入', exact: true});
@@ -191,7 +193,7 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     }
     assert.equal(fs.readFileSync(path.join(dataRoot, 'native-replies.jsonl'), 'utf8').trim().split('\n').length, 2, 'question and approval each consume one native reply');
     assert.equal(fs.readFileSync(path.join(dataRoot, 'native-sends.jsonl'), 'utf8').trim().split('\n').length, 3);
-    await a.locator('.harness-header button').filter({hasText: '设置'}).click();
+    await a.locator('.ac-collapsed-rail .ac-account-settings').click();
     await a.getByRole('tab', {name: '智能体', exact: true}).click();
     await a.locator('.ams-executors').waitFor({state: 'visible', timeout: 10000});
     await a.getByRole('tab', {name: '模型', exact: true}).click();

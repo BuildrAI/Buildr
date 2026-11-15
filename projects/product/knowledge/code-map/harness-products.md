@@ -22,7 +22,7 @@
 ## 关键调用链
 
 1. Development 的 harness-ui 选择工程工作空间，向 iframe 传递明确范围；Harness Web 创建/打开对话并调用公共 HTTP。工程宿主向核心解析准确执行目录与必要上下文。
-2. Harness Web 通知当前对话身份；Development 自己查询当前对象并按已观察修订维护任务关联，不把关联等同于执行授权或任务完成。
+2. Harness Web 通知当前对话身份及输入区数值布局锚点；Development 自己查询当前对象并按已观察修订维护任务关联，控件原位呈现在工作空间信息旁，不把关联等同于执行授权或任务完成。
 3. 两种呈现都由 Harness 自己处理模型选择、发送、审批、停止和恢复。Development 只交接明确工程操作；结果未知不重发。
 4. Harness 核心构建把完整网页放入 `build/harness-web-dist/`；独立入口直接承载，Development 从同一公共包定位并嵌入，不依赖相邻源码。
 

@@ -16,7 +16,7 @@ targets:
 
 # Buildr：Agent 的工作基础设施
 
-![共享工作资产支撑产品、开发与验证的示意图](assets/buildr-harness-work-infrastructure.webp)
+![共享工作资产支撑产品、开发与验证的示意图](assets/buildr-agent-work-infrastructure.webp)
 
 GitHub：[https://github.com/BuildrAI/Buildr](https://github.com/BuildrAI/Buildr)
 
@@ -32,4 +32,4 @@ Buildr 不是另一个 Agent。它组织的是 Agent 完成工作时依赖的工
 
 这个合集会记录 Buildr 的产品思考、核心模型、设计取舍和真实实践：怎样组织工作资产，怎样让产品、开发与验证持续对齐，以及怎样让 Agent 越做越多，越做越好。
 
-本文在墨问中与[《Buildr：让 Agent 越做越多，越做越好》](buildr-harness-more-and-better.md)互相关联。
+本文在墨问中与[《Buildr：让 Agent 越做越多，越做越好》](buildr-agent-more-and-better.md)互相关联。

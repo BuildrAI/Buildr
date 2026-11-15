@@ -28,4 +28,4 @@
 - [生成入口](../../../services/buildr-web/src/features/code/components/SourceControlCommitPanel.tsx)：独立读取模型目录，选模型、生成、取消及手写提交。
 - [公共模型选择界面](../../../services/buildr-web/src/components/ModelPicker.tsx)与[共享映射](../../../services/buildr-web/src/lib/model-picker.ts)：搜索、来源分组、强度及档位交互，不持有业务上下文或偏好。
 - [执行模型选择](../../../services/buildr-web/src/components/ExecutionModelSelect.tsx)与[执行模型偏好映射](../../../services/buildr-web/src/lib/execution-model.ts)：提交场景独立选择与按账号身份隔离的强度、档位记忆。
-- [对话适配](../../../services/buildr-web/src/features/agent-conversations/ConversationOptions.tsx)：保留对话上下文用量及原有偏好，将模型操作交给同一公共界面。
+- [对话适配](../../../services/buildr-harness-web/src/features/agent-conversations/ConversationOptions.tsx)：保留对话上下文用量及原有偏好，将模型操作交给同一公共界面。

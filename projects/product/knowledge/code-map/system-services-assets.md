@@ -46,7 +46,7 @@
 - **[`services/buildr-harness/`](../../services/buildr-harness/)**：由两个产品消费的私有核心，维护内部对话和执行接入；提供独立执行进程（Agent Process），没有单独的公开 npm 发布或额外安装步骤。
   - [`src/index.ts`](../../services/buildr-harness/src/index.ts) 与 [`src/contracts.ts`](../../services/buildr-harness/src/contracts.ts)：唯一公开应用入口、宿主（Host）依赖、视图、执行器（Executor）和独立控制契约；主包按包名消费。核心装配位于 [`application/agent-service.ts`](../../services/buildr-harness/src/application/agent-service.ts)，独立承载不反向导入公开入口。
   - [`src/execution-contracts.ts`](../../services/buildr-harness/src/execution-contracts.ts)、[`src/operation-schemas.ts`](../../services/buildr-harness/src/operation-schemas.ts)和[`src/process/`](../../services/buildr-harness/src/process/)：三组版本化契约（Contract）、唯一通用声明、公共客户端（Client）、独立承载、持有锁、保留运行单元（Runtime Unit）和空闲版本交接；Buildr 不直接持有执行核心。
-  - [`src/application/directory-host.ts`](../../services/buildr-harness/src/application/directory-host.ts)：共享后台的目录权威，保存稳定引用及选中路径/真实目录身份，重新执行前核验，不复制工作空间或任务；[`src/process/activate-runtime.ts`](../../services/buildr-harness/src/process/activate-runtime.ts)统一异步准备、兼容激活和准确就绪观察，`connectHarnessProcess` 普通连接不隐式升级。独立网页由同一后台承载；共享界面、独立壳与 CLI 的职责见[双产品地图](harness-products.md)，实际安装和发行验收另行核对。
+  - [`src/application/directory-host.ts`](../../services/buildr-harness/src/application/directory-host.ts)：共享后台的目录权威，保存稳定引用及选中路径/真实目录身份，重新执行前核验，不复制工作空间或任务；[`src/process/activate-runtime.ts`](../../services/buildr-harness/src/process/activate-runtime.ts)统一异步准备、兼容激活和准确就绪观察，`connectHarnessProcess` 普通连接不隐式升级。独立网页由同一后台承载；完整网页、工程集成与 CLI 的职责见[双产品地图](harness-products.md)，实际安装和发行验收另行核对。
   - [`src/application/connection-application.ts`](../../services/buildr-harness/src/application/connection-application.ts)：独立接入、官方登录尝试、账号和模型检查、程序及配置绑定与资源释放。
   - [`src/application/native-content-resolver.ts`](../../services/buildr-harness/src/application/native-content-resolver.ts) 与 [`src/storage/native-content.ts`](../../services/buildr-harness/src/storage/native-content.ts)：按执行器注册的 `nativeContent` 与模型绑定提供正文引用、路径边界保护及 `nativeDetail` 投射；`executors/index.ts` 按注册表分派详情读取，DSH/Qoder 的详情遍历复用 [`src/executors/native-tool-source.ts`](../../services/buildr-harness/src/executors/native-tool-source.ts)。后台维护继续补转旧片段编码，数据库层不解析厂商格式。
   - [`src/application/preparation-application.ts`](../../services/buildr-harness/src/application/preparation-application.ts)：准备尝试、发现与选择、独立安装、登录接续及取消；刷新按准确尝试查询，不改绑已有上下文。
@@ -66,7 +66,7 @@
 
 - **[`services/buildr-web/src/features/`](../../services/buildr-web/src/features/)**：功能拥有自己的页面、业务请求、完整交互与状态。只按实际需要建立 `pages/`、`components/`、`hooks/`、`api/`，不要求目录对称。
   - **[`code/`](../../services/buildr-web/src/features/code/)**：具体工作树（Worktree）的文件、差异（Diff）与固定历史阅读。源代码管理与资源管理器保留“列表/树 + 阅读区”两栏；源代码管理在阅读区顶部固定“未提交变更 / 提交历史”两个视图页签，左栏保留紧邻列表的同名切换；两处入口各自独立，页签只切换右侧阅读视图、左栏切换只切换列表，只有在列表中选择文件、比较层或提交时阅读区才切到该对象所属视图，每个视图一次只显示一个差异、临时完整文件或提交详情，不创建文件页签；切换视图恢复各自的文件或固定提交现场。资源管理器沿用多文件页签，两处展开阅读只显示图标，源代码管理的展开按钮位于阅读区视图页签行右端。[`SourceControlImagePreview.tsx`](../../services/buildr-web/src/features/code/components/SourceControlImagePreview.tsx)消费已核对比较结果的新旧图片及缺侧，在共享阅读壳内按宽度显示；图片格式、字节和版本由后端读取负责，页面不猜路径或替换来源。
-  - **[`agent-conversations/`](../../services/buildr-web/src/features/agent-conversations/)**：全局内部对话、统一历史、独立账号、发送预览、工具与授权问题、停止和状态核对；[文本产品动作](../../services/buildr-web/src/features/agent-conversations/conversation-product-action.ts)与手工首条发送共用提交身份和恢复，通过共享上下文（Context）承接服务运行配置，不感知配置业务；使用独立客户端（Client），不复用一次生成登记。
+  - **[`harness-ui/`](../../services/buildr-web/src/features/harness-ui/)**：Development 的完整网页嵌入、工作空间选项、工程关联及上下文交接；统一历史、账号、消息、审批及控制由 Harness 完整网页维护。[文本产品动作](../../services/buildr-harness-web/src/features/agent-conversations/conversation-product-action.ts)与手工首条发送共用提交身份和恢复，通过共享上下文（Context）承接服务运行配置，不感知配置业务；使用独立客户端（Client），不复用一次生成登记。
   - **[`service-runtime/`](../../services/buildr-web/src/features/service-runtime/)**：服务目录本地摘要、服务详情及任务本地验证共用实例事实与操作；启动可选单项或多项及前端连接目标，日志按实例阅读，工作台保持只读汇总；数据操作由同一客户端隔离，QA 页面及客户端退场。
 - **[`src/app/`](../../services/buildr-web/src/app/)**：应用壳和跨页组合。[`AppPrimaryNavigation.tsx`](../../services/buildr-web/src/app/AppPrimaryNavigation.tsx) 保持最左侧一级图标列和二级菜单悬停、固定；[`AppNavigation.tsx`](../../services/buildr-web/src/app/AppNavigation.tsx) 与 [`navigation.ts`](../../services/buildr-web/src/app/navigation.ts) 管理各区菜单；[`AppLayout.tsx`](../../services/buildr-web/src/app/AppLayout.tsx) 将全局对话停靠在右侧或一级图标列左侧，不改原中右工作屏的展开与折叠；[`WorkspacePages.tsx`](../../services/buildr-web/src/app/WorkspacePages.tsx) 保留页面实例及各自路由位置，并维护工作台、工作空间与代码共用的页面页签集；代码页签进入该页签集，文件页签仍留在代码页内部。宿主（Host）分别保存打开列表与有序固定偏好，关闭页面保留其固定位置；[`workspace-pages.ts`](../../services/buildr-web/src/app/workspace-pages.ts) 负责可信页面解析、固定区前置及两区排序边界，[`PageTabStrip.tsx`](../../services/buildr-web/src/app/PageTabStrip.tsx) 提供左侧固定操作、拖动与键盘排序，激活页面保持个人顺序。[`WorkspacePaneHost.tsx`](../../services/buildr-web/src/app/WorkspacePaneHost.tsx) 汇集已打开页面与右侧对象，持有中右显示和暂看选择。[`WorkspacePaneContext.tsx`](../../services/buildr-web/src/app/WorkspacePaneContext.tsx) 提供固定内容目标注册及明确展开回调，数据和草稿仍由领域入口持有。
   - [`WorkspaceStage.tsx`](../../services/buildr-web/src/components/WorkspaceStage.tsx)：适配页面及对象内容，通过传送门（Portal）连接固定目标；其 `WorkspacePaneStage` 负责分屏比例、收起及按真实身份保存滚动。内嵌详情不注册第二宿主（Host），代码区沿用自己的内部布局。
@@ -86,9 +86,9 @@
 
 该服务与 Buildr 主包共用代码库（Repository），却拥有自己的包版本与发布事实；Buildr 主包候选不包含插件产物。发布与安装边界见[独立插件流程](../docs/flows/dsh-plugin-release.md)。
 
-## 共享界面与独立 Harness 入口
+## 完整 Harness 网页与 Development 集成
 
-完整对话和设置的唯一界面来源为 [`buildr-harness-ui`](../../services/buildr-harness-ui/)；Development 旧路径保留业务适配及兼容导出。独立 [`buildr-harness-web`](../../services/buildr-harness-web/) 负责目录型薄壳和正式静态构建，[`buildr-harness`](../../services/buildr-harness/) 负责 CLI、本机启动器和独立包。三者均不接管任务状态，详见[双产品代码地图](harness-products.md)。
+完整对话和设置的唯一界面来源为 [`buildr-harness-web`](../../services/buildr-harness-web/)，包含工作空间目录选择、对话导航及正式静态构建；独立 buildr-harness-ui 已删除。Development 的 [`harness-ui`](../../services/buildr-web/src/features/harness-ui/) 负责 iframe、工程工作空间选项、任务关联及文件导航，不导入对话组件或重做执行状态。独立 [`buildr-harness`](../../services/buildr-harness/) 同时拥有执行核心、CLI、本机启动器和独立包；不接管任务状态，详见[双产品代码地图](harness-products.md)。
 
 ## 构建与消费
 

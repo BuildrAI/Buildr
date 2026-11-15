@@ -4,7 +4,7 @@
 
 ## What Changes
 
-- 消费 [核心与 API](../split-buildr-harness-product/proposal.md) 和 [完整 UI 与网页](../extract-harness-web/proposal.md)，不再次修改其能力条款。
+- 消费 [核心与 API](../split-buildr-harness-product/proposal.md) 和 [完整 UI 与网页](../archive/2026-11-16-extract-harness-web/proposal.md)，不再次修改其能力条款。
 - 交付 Buildr Harness 与 Buildr Development 两个可独立点击的启动器；Development 未运行时 Harness 也能启动，反之无需用户先开 Harness。
 - 分离产品 ID、发布/开发渠道、共享数据域和网页入口身份，改造 `webProfileName`、启动器绑定、实例发现及替换规则；不能只新增一个 runtime role 或改显示名。
 - 保留 `@buildr-ai/buildr` / `buildr` 与旧数据路径；新增 Harness 独立包及 CLI。Development 仍内置兼容负载；两安装入口复用同域服务。

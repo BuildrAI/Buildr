@@ -20,19 +20,21 @@ try{
  const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
  await page.goto(url+'/workspaces/'+initialWorkspaceId+'/overview');
  await page.getByRole('button',{name:'新建对话',exact:true}).first().click();
- const modal=page.getByRole('dialog',{name:'选择新对话的工作空间'});await modal.waitFor();await modal.getByRole('button',{name:'新建对话',exact:true}).click();
  const frame=page.frameLocator('iframe[title="Buildr Harness"]');
- await modal.waitFor({state:'hidden'});
+ assert.equal(await page.getByRole('dialog',{name:'选择新对话的工作空间'}).count(),0,'new conversation stays in place');
+ assert.equal(await page.locator('.development-harness-frame>header').count(),0,'no duplicate outer toolbar');
  await frame.getByRole('textbox',{name:'对话输入',exact:true}).waitFor({timeout:30000});
  const frameIdentity=await page.locator('iframe[title="Buildr Harness"]').evaluate((node:HTMLIFrameElement)=>{node.dataset.acceptanceIdentity='retained';return node.src;});assert.equal(new URL(frameIdentity).pathname,'/harness/');
+ await frame.locator('.ac-welcome').getByRole('combobox',{name:'新对话工作空间',exact:true}).waitFor();
+ const workspaceBounds=await frame.getByRole('button',{name:'对话信息与工作空间',exact:true}).boundingBox();assert.ok(workspaceBounds&&workspaceBounds.y+workspaceBounds.height<=1000,'workspace metadata remains within viewport');
  const input=frame.getByRole('textbox',{name:'对话输入',exact:true});await input.fill('不会发送的验收草稿');
  // Forged protocol/source must not switch or submit the actual conversation.
  await page.evaluate(()=>window.postMessage({protocol:'buildr.harness-frame/v1',event:'selection',workspaceId:'forged',conversationId:'forged'},location.origin));
- await page.getByRole('button',{name:'专注',exact:true}).click();assert.equal(await page.locator('iframe[title="Buildr Harness"]').getAttribute('data-acceptance-identity'),'retained');assert.equal(await input.inputValue(),'不会发送的验收草稿');
- await page.getByRole('button',{name:'退出专注',exact:true}).click();assert.equal(await input.inputValue(),'不会发送的验收草稿');
- await page.getByRole('button',{name:'收起',exact:true}).click();await page.locator('#global-conversations-entry').click();assert.equal(await input.inputValue(),'不会发送的验收草稿');
+ await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();await frame.getByText('专注对话',{exact:true}).click();await page.locator('.development-harness-frame.is-full').waitFor();if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_SCREENSHOT_DIR,'development-harness-focused.png')});assert.equal(await page.locator('iframe[title="Buildr Harness"]').getAttribute('data-acceptance-identity'),'retained');assert.equal(await input.inputValue(),'不会发送的验收草稿');
+ await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();await frame.getByText('恢复分屏',{exact:true}).click();await page.locator('.development-harness-frame.is-full').waitFor({state:'hidden'});assert.equal(await input.inputValue(),'不会发送的验收草稿');
+ await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();await frame.getByText('收起对话',{exact:true}).click();await page.locator('.development-harness-frame').waitFor({state:'hidden'});if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_SCREENSHOT_DIR,'development-harness-collapsed.png')});assert.equal(await page.locator('.development-harness-frame').isVisible(),false);assert.equal(await page.locator('.development-harness-rail').evaluate(node=>node.getBoundingClientRect().width),52);await page.locator('.development-harness-rail').getByRole('button',{name:'展开当前对话',exact:true}).click();assert.equal(await input.inputValue(),'不会发送的验收草稿');
  const conversation=await page.evaluate(async(workspaceId)=>{const token=document.querySelector('meta[name="buildr-session"]')!.getAttribute('content')!;const response=await fetch(`/api/v1/workspaces/${workspaceId}/agent-conversations`,{method:'POST',headers:{'content-type':'application/json','x-buildr-session':token},body:'{}'});const value=await response.json();if(!response.ok)throw Error(JSON.stringify(value));return value;},initialWorkspaceId);
- await page.locator('.development-harness-frame>header').getByRole('button',{name:'全部对话',exact:true}).click();
+ await frame.locator('.ac-collapsed-rail .ac-all-conversations').click();await page.locator('.development-harness-frame>footer').waitFor({state:'hidden'});
  await page.evaluate(({workspaceId,conversationId})=>(document.querySelector('iframe[title="Buildr Harness"]') as HTMLIFrameElement).contentWindow!.postMessage({protocol:'buildr.harness-frame/v1',action:'open',workspaceId,conversationId},location.origin),{workspaceId:initialWorkspaceId,conversationId:conversation.id});
  await page.getByRole('button',{name:'关联任务',exact:true}).click();
  await page.locator('.ac-association-search input').fill('框内');
@@ -41,7 +43,7 @@ try{
  await page.waitForFunction(async({workspaceId,id})=>{const token=document.querySelector('meta[name="buildr-session"]')!.getAttribute('content')!;const response=await fetch(`/api/v1/workspaces/${workspaceId}/agent-conversations/${id}`,{headers:{'x-buildr-session':token}});const value=await response.json();return value.taskLinks?.some((link:{taskId:string})=>link.taskId==='frame-task');},{workspaceId:initialWorkspaceId,id:conversation.id});
  assert.equal(await frame.getByRole('button',{name:'关联任务',exact:true}).count(),0,'engineering task controls belong to Development, not the embedded product');
  await page.locator('[data-associated-task="frame-task"]').click();await page.waitForURL('**/tasks/frame-task');
- if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_SCREENSHOT_DIR,'development-harness-embedded.png')});
- await page.locator('.development-harness-frame>header').getByRole('button',{name:'设置',exact:true}).click();await frame.getByRole('tab',{name:'智能体',exact:true}).waitFor();
+ await page.keyboard.press('Escape');if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_SCREENSHOT_DIR,'development-harness-embedded.png')});
+ await frame.locator('.ac-collapsed-rail .ac-account-settings').click();await frame.getByRole('tab',{name:'智能体',exact:true}).waitFor();
  assert.deepEqual(errors,[]);console.log(JSON.stringify({status:'passed',checks:['authenticated-frame','same-complete-web','workspace-selection','embedded-focused-draft-retention','exact-window-message-check','settings-in-frame','development-task-association-and-navigation'],realModelCalls:0}));
 }finally{await browser.close();await app.shutdown();await runtimeProvide(runtime,AGENT_SERVICE_APPLICATION).close();await stopAgentProcess({dataRoot:process.env.BUILDR_APP_DATA_DIR!,mode:'stop-owned'});}

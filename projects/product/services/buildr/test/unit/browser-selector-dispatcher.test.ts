@@ -25,7 +25,7 @@ test('Browser dispatcher skips Chrome for HTTP-only Buildr Web changes', () => {
   assert.match(plan.reasons[0].reason, /HTTP\/API owner/);
 });
 test('complete Harness webpage has its own browser owner, not component consumers',()=>{
- const standalone=selectBrowserSelectors(['services/buildr-harness-web/src/HarnessApp.tsx']);assert.deepEqual(standalone.selectors,[]);assert.ok(standalone.reasons.some(value=>value.reason.includes('完整 Harness 网页')));
+ const standalone=selectBrowserSelectors(['services/buildr-harness-web/src/HarnessApp.tsx']);assert.deepEqual(standalone.selectors,[]);assert.ok(standalone.reasons.some((value:{reason:string})=>value.reason.includes('完整 Harness 网页')));
  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/harness-ui/ConversationWorkspace.tsx']).selectors,['agent-conversations']);
 });
 
@@ -174,9 +174,9 @@ test('conflicting diagnostic input is rejected without changing unrelated checks
 test('current dialogue browser entry proves complete Harness webpage and Development frame separately',()=>{
  const commands=planBrowserCommands(['agent-conversations'],'/tmp/conversation-web-dist',{});
  assert.deepEqual(commands.map(item=>item.id),['browser:agent-conversations:development-frame','browser:agent-conversations:harness-web']);
- assert.match(commands[0].argv[1],/run-isolated-workspace-check\.ts$/);assert.ok(commands[0].argv.some(value=>value.endsWith('harness-frame.ts')));assert.equal(commands[0].env.BUILDR_BROWSER_WEB_DIST_ROOT,'/tmp/conversation-web-dist');
- assert.ok(commands[1].argv.some(value=>value.endsWith('standalone.test.ts')));
- assert.throws(()=>planBrowserCommands(['agent-conversations'],'/tmp/dist',{BUILDR_AGENT_JOURNEY_PART:'history'}),error=>error.code==='browser_agent_conversation_focus_retired');
+ assert.match(commands[0].argv[1],/run-isolated-workspace-check\.ts$/);assert.ok(commands[0].argv.some((value:string)=>value.endsWith('harness-frame.ts')));assert.equal(commands[0].env.BUILDR_BROWSER_WEB_DIST_ROOT,'/tmp/conversation-web-dist');
+ assert.ok(commands[1].argv.some((value:string)=>value.endsWith('standalone.test.ts')));
+ assert.throws(()=>planBrowserCommands(['agent-conversations'],'/tmp/dist',{BUILDR_AGENT_JOURNEY_PART:'history'}),(error:unknown)=>error instanceof Error&&'code' in error&&error.code==='browser_agent_conversation_focus_retired');
 });
 
 test('对话静态批次互斥覆盖所有逻辑组与独立场景，并优先保持时序敏感组同进程',()=>{

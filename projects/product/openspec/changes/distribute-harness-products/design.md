@@ -1,6 +1,6 @@
 ## Context
 
-前置分别交付[目录宿主、通用激活与 API](../split-buildr-harness-product/design.md)和[完整 UI、网页发现与换代](../extract-harness-web/design.md)。本变更交付真实安装与可点击入口，不重复实现前置能力。
+前置分别交付[目录宿主、通用激活与 API](../split-buildr-harness-product/design.md)和[完整 UI、网页发现与换代](../archive/2026-11-16-extract-harness-web/design.md)。本变更交付真实安装与可点击入口，不重复实现前置能力。
 
 当前 [`web-profile.ts`](../../../services/buildr/src/modules/installation/contracts/web-profile.ts) 只接受 `npm/host` 与 `development/development`，profile 身份混入 runtime role；开发启动器硬编码 4458，实例替换以原产品约定判断。因此“复用启动器”只表示复用构建/安装技术，绝非只改两个显示名。
 

@@ -9,7 +9,7 @@ Buildr 已有独立执行后台和可替换宿主契约，但对话界面、HTTP
 | 变更 | 唯一负责范围 | 独立完成依据 |
 | --- | --- | --- |
 | 本变更 `split-buildr-harness-product` | 目录宿主、通用启动激活、来源授权、唯一 API 与凭据维护 | 不加载 Development 业务即可准备并运行目录工作；Development 通过兼容代理回接 |
-| [extract-harness-web](../extract-harness-web/proposal.md) | 完整对话功能包、三种承载、独立网页监听与换代 | 独立网页、专注、内嵌共用实现；同源认证及网页交接通过 |
+| [extract-harness-web](../archive/2026-11-16-extract-harness-web/proposal.md) | 完整对话功能包、三种承载、独立网页监听与换代 | 独立网页、专注、内嵌共用实现；同源认证及网页交接通过 |
 | [distribute-harness-products](../distribute-harness-products/proposal.md) | 独立安装、两产品启动器、安装身份及发行边界 | 两个真实启动器可独立点击使用；安装共存、升级和卸载保全资料 |
 
 三个变更不相互重复写同一规范条款；技术变更完成不代表已获得供应商许可、跨平台支持证明或公开发布授权。

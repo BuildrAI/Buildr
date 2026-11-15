@@ -89,7 +89,7 @@ test('explicit checks, tags, repair and full modes never silently truncate; smal
 
 test('additive existing-module export retains public checks but not behavior journeys', () => {
   const result = plan();
-  assert.deepEqual(ids(result).sort(), ['agent-source-boundaries', 'agent-typecheck', 'agent-unit', 'generated-contracts'].sort());
+  assert.deepEqual(ids(result).sort(), ['agent-source-boundaries', 'agent-typecheck', 'agent-unit', 'generated-contracts', 'harness-cli-typecheck'].sort());
   assert.equal(result.refinements[0].kind, 'additive-exports');
   assert.ok(result.refinements[0].skippedOwnerIds.includes('agent-integration-recovery'));
   assert.deepEqual(result.gaps, []);
