@@ -2,6 +2,17 @@
 
 本页解释双产品候选的当前实现，不是公开发布或完整验收声明。行为承诺见三个活动变更：[核心与协议](../../../openspec/changes/split-buildr-harness-product/proposal.md)、[共享界面与独立网页](../../../openspec/changes/extract-harness-web/proposal.md)、[独立发行](../../../openspec/changes/distribute-harness-products/proposal.md)。文件和协作定位见[代码地图](../../code-map/harness-products.md)。
 
+整体关系见[双产品系统图](../../archify/system/buildr-system-overview.html)。产品入口、共享功能和业务权威是三个不同层次：
+
+| 层次 | Buildr Harness | Buildr Development |
+| --- | --- | --- |
+| 面向用户的用途 | 在普通本机目录中使用不同原生执行程序及模型来源 | 在软件工程现场管理工作空间、任务、知识、代码及成果 |
+| 网页呈现 | 独立 Harness Web | 工程页面中的内嵌与专注模式 |
+| 共同能力 | 完整对话、模型/账号设置、执行观察与控制 | 默认消费左侧共同能力，不重新实现对话状态机 |
+| 自己的业务责任 | 目录身份、通用对话与执行资料 | 工程对象、任务状态、文件及导航 |
+
+这是职责拆分，不是复制两套聊天程序。两个入口可以各自安装和打开；工程业务不进入 Harness，Harness 也不要求目录先初始化为 Development 工作空间。
+
 ## 两个产品，一套同域执行事实
 
 Development 保留 `buildr` 命令、工作空间、任务、知识、代码与工程文件导航。独立 Harness 使用 `buildr-harness`，以明确登记的本机目录为新对话起点，不登记工程任务，也不把目录解释成文件沙箱。执行器仍是已接入的原生程序，产品拆分没有替换推理循环。
