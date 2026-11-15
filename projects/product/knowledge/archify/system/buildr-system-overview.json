@@ -9,7 +9,7 @@
     "repository": {
       "url": "https://github.com/BuildrAI/Buildr.git",
       "revision": "d165161d636b72d8371983ba401505897bfb5d5f",
-      "link_mode": "web"
+      "link_mode": "local-only"
     }
   },
   "components": [
