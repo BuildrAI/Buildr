@@ -19,6 +19,7 @@ Buildr SHALL 使用单一非原生内置供应商展示已授权 Google AI 账�
 
 - **WHEN** Agent Service 观察到本机代理配置域内有效的 Google AI 登录和模型目录
 - **THEN** 模型选择器 SHALL 在 Google AI 下展示可供兼容 Harness 使用的模型
+- **AND** 模型按系列聚合展示可用推理强度，推理请求 SHALL 按所选模型系列与推理强度映射到真实上游模型标识
 - **AND** 已准确识别的旧代理自定义来源 SHALL 退出列表和选择器，旧会话 SHALL 保留历史并在新调用时提示重新选择
 
 #### Scenario: 发起登录

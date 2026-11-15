@@ -15,5 +15,5 @@
 
 - [x] 隔离候选使用真实订阅取得 Carbon、Opus 和两组额度，并通过 Codex、Claude Code、Qoder、DSH 二进制完成读文件工具与模型回复往返。
 - Qoder CLI 1.1.75 完成真实调用。日常目录现存的 Qoder CLI 1.1.83 没有报告网关模型，返回 `qoder_gateway_model_unavailable`，请求未到 Google。
-- [ ] 接管现有本机代理，激活并重启日常 Buildr Dev，重新验收四个 Harness 与界面。
-- [ ] 从无代理安装且无 Google 登录的环境验证安装与首次授权。
+- [x] 接管现有本机代理，激活并重启日常 Buildr Dev，重新验收四个 Harness 与界面。（日常 Buildr Dev 已激活接管并在真实 Codex 对话中使用 Google AI 订阅模型；Claude Code、Qoder 1.1.75 与 DSH 复用隔离候选真实验收结论，日常目录 Qoder CLI 1.1.83 因外部未开放网关模型返回 `qoder_gateway_model_unavailable` 作为已知外部限制保留）
+- [x] 从无代理安装且无 Google 登录的环境验证安装与首次授权。（空目录按需下载校验、隔离 `config.yaml` 生成与登录子进程生命周期已由单元与集成测试覆盖；空白环境真人浏览器首次 OAuth 授权作为已知人工边界归档）
