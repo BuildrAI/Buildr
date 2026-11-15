@@ -100,7 +100,7 @@ documentSections:
       - location: scope
         path: knowledge/docs/architecture/technical.md
         title: "Buildr 怎样实现"
-        summary: "理解四个服务（Service）、模块协作、运行和写入保护。"
+        summary: "理解各服务（Service）、模块协作、运行和写入保护。"
       - location: scope
         path: knowledge/docs/architecture/external-connections.md
         title: "外部系统连接"
@@ -306,6 +306,18 @@ objects:
     title: 智能体接入与执行
     summary: 内部对话与单次生成共用智能体和模型配置；服务运行配置复用首条文本提交，外部桌面关联已退役。
 artifacts:
+  - id: harness-products-article
+    title: Harness 与 Development 实现边界
+    kind: document
+    path: knowledge/docs/architecture/harness-products.md
+    objects: [agent-integration, system-structure]
+    sources: [agent-service-public-source, harness-directory-host-source, harness-runtime-activation-source, harness-ui-host-source, harness-web-shell-source, harness-cli-source]
+  - id: harness-products-map
+    title: 双产品代码地图
+    kind: code-map
+    path: knowledge/code-map/harness-products.md
+    objects: [agent-integration, system-structure]
+    sources: [agent-service-public-source, harness-directory-host-source, harness-runtime-activation-source, harness-ui-host-source, harness-web-shell-source, harness-cli-source]
   - id: product-release-flow
     title: Buildr 发布
     kind: document
@@ -544,6 +556,8 @@ artifacts:
       - system-structure
     sources:
       - agent-service-public-source
+      - harness-directory-host-source
+      - harness-runtime-activation-source
       - agent-service-connections-source
       - agent-service-model-policy-source
       - agent-service-native-content-source
@@ -571,6 +585,8 @@ artifacts:
       - system-structure
     sources:
       - agent-service-public-source
+      - harness-directory-host-source
+      - harness-runtime-activation-source
       - agent-service-storage-source
       - agent-service-model-policy-source
       - agent-service-native-content-source
@@ -1598,6 +1614,21 @@ artifacts:
       - file-responsibility-graph
       - project-terms
 sources:
+  - id: harness-ui-host-source
+    title: Harness 共享界面窄宿主接口
+    kind: code
+    path: services/buildr-harness-ui/src/host.tsx
+    summary: 明确任务、参与和文件适配，不依赖 Development 私有实现。
+  - id: harness-web-shell-source
+    title: Harness 独立目录壳
+    kind: code
+    path: services/buildr-harness-web/src/HarnessApp.tsx
+    summary: 目录选择、全来源历史与有限文件预览，消费完整共享界面。
+  - id: harness-cli-source
+    title: Harness 独立入口
+    kind: code
+    path: services/buildr-harness/src/cli.ts
+    summary: 同域共享核心的启动、显式激活及自有启动器管理。
   - id: npm-update-application-source
     title: 安装更新应用
     kind: code
@@ -2004,7 +2035,17 @@ sources:
     title: 智能体服务公开边界
     kind: code
     path: services/buildr-agent/src/index.ts
-    summary: 私有库公开应用入口，装配独立接入、统一对话、事件、持久化与退出。
+    summary: 私有库公开应用入口，提供独立接入、统一对话、异步准备、明确激活、普通版本复用和目录宿主引用。
+  - id: harness-directory-host-source
+    title: Harness 目录宿主
+    kind: code
+    path: services/buildr-agent/src/application/directory-host.ts
+    summary: 内置目录登记、稳定来源引用及目录和链接身份复核，不创建工程业务对象。
+  - id: harness-runtime-activation-source
+    title: Harness 通用运行激活
+    kind: code
+    path: services/buildr-agent/src/process/activate-runtime.ts
+    summary: 异步准备并明确采用准确负载，核验 runtime、instance、generation 和受理状态，不查询 Development 工作对象。
   - id: agent-service-connections-source
     title: 内部对话账号与配置
     kind: code
@@ -2259,7 +2300,7 @@ sources:
     title: 代码阅读能力装配
     kind: code
     path: services/buildr/src/modules/code/module.ts
-    summary: 装配已登记代码来源的命令行、网页及只读应用入口，不拥有 Git 写入。
+    summary: 装配已登记代码来源、命令行、网页及代码业务；单次模型生成经可选端口注入，不依赖 Harness 接入模块。
   - id: code-source-control-read
     title: 源代码管理比较用例
     kind: code

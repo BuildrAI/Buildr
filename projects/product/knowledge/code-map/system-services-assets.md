@@ -43,9 +43,10 @@
 
 ## 智能体服务（Agent Service）的工程边界
 
-- **[`services/buildr-agent/`](../../services/buildr-agent/)**：与主包统一发行的私有库，维护内部对话和执行接入；提供独立执行进程（Agent Process），没有单独的公开 npm 发布或额外安装步骤。
+- **[`services/buildr-agent/`](../../services/buildr-agent/)**：由两个产品消费的私有核心，维护内部对话和执行接入；提供独立执行进程（Agent Process），没有单独的公开 npm 发布或额外安装步骤。
   - [`src/index.ts`](../../services/buildr-agent/src/index.ts) 与 [`src/contracts.ts`](../../services/buildr-agent/src/contracts.ts)：唯一公开应用入口、宿主（Host）依赖、视图、执行器（Executor）和独立控制契约；主包按包名消费。核心装配位于 [`application/agent-service.ts`](../../services/buildr-agent/src/application/agent-service.ts)，独立承载不反向导入公开入口。
   - [`src/execution-contracts.ts`](../../services/buildr-agent/src/execution-contracts.ts)、[`src/operation-schemas.ts`](../../services/buildr-agent/src/operation-schemas.ts)和[`src/process/`](../../services/buildr-agent/src/process/)：三组版本化契约（Contract）、唯一通用声明、公共客户端（Client）、独立承载、持有锁、保留运行单元（Runtime Unit）和空闲版本交接；Buildr 不直接持有执行核心。
+  - [`src/application/directory-host.ts`](../../services/buildr-agent/src/application/directory-host.ts)：共享后台的目录权威，保存稳定引用及选中路径/真实目录身份，重新执行前核验，不复制工作空间或任务；[`src/process/activate-runtime.ts`](../../services/buildr-agent/src/process/activate-runtime.ts)统一异步准备、兼容激活和准确就绪观察，`connectHarnessProcess` 普通连接不隐式升级。独立网页由同一后台承载；共享界面、独立壳与 CLI 的职责见[双产品地图](harness-products.md)，实际安装和发行验收另行核对。
   - [`src/application/connection-application.ts`](../../services/buildr-agent/src/application/connection-application.ts)：独立接入、官方登录尝试、账号和模型检查、程序及配置绑定与资源释放。
   - [`src/application/native-content-resolver.ts`](../../services/buildr-agent/src/application/native-content-resolver.ts) 与 [`src/storage/native-content.ts`](../../services/buildr-agent/src/storage/native-content.ts)：按执行器注册的 `nativeContent` 与模型绑定提供正文引用、路径边界保护及 `nativeDetail` 投射；`executors/index.ts` 按注册表分派详情读取，DSH/Qoder 的详情遍历复用 [`src/executors/native-tool-source.ts`](../../services/buildr-agent/src/executors/native-tool-source.ts)。后台维护继续补转旧片段编码，数据库层不解析厂商格式。
   - [`src/application/preparation-application.ts`](../../services/buildr-agent/src/application/preparation-application.ts)：准备尝试、发现与选择、独立安装、登录接续及取消；刷新按准确尝试查询，不改绑已有上下文。
@@ -84,6 +85,10 @@
 - **[`test/`](../../services/dsh-plugin/test/)**：入口、发现、进程、来源界面、业务资格及真实装载器（Loader）装卸的单元与集成检查。被忽略的 `build/` 保存构建结果及候选压缩包（Tarball）；官方桌面采用另以真实应用验收。
 
 该服务与 Buildr 主包共用代码库（Repository），却拥有自己的包版本与发布事实；Buildr 主包候选不包含插件产物。发布与安装边界见[独立插件流程](../docs/flows/dsh-plugin-release.md)。
+
+## 共享界面与独立 Harness 入口
+
+完整对话和设置的唯一界面来源为 [`buildr-harness-ui`](../../services/buildr-harness-ui/)；Development 旧路径保留业务适配及兼容导出。独立 [`buildr-harness-web`](../../services/buildr-harness-web/) 负责目录型薄壳和正式静态构建，[`buildr-harness`](../../services/buildr-harness/) 负责 CLI、本机启动器和独立包。三者均不接管任务状态，详见[双产品代码地图](harness-products.md)。
 
 ## 构建与消费
 

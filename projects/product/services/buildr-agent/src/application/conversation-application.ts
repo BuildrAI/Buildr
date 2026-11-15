@@ -6,8 +6,8 @@ import { singleParticipation, summarizeParticipation } from '../domain/participa
 import type { ParticipationInput, ParticipationSummaryInput, ParticipationMatch } from '../participation-contracts.ts';
 import { NativeObservationError, isObservationLostError } from '../domain/error-diagnostic.ts';
 import { pendingConversationSummary } from '../domain/pending-summary.ts';
-import {conversationTaskLinks,setConversationTaskLinks,sameTaskLink,sameTaskLinks} from '../domain/conversation-task-links.ts';
-import type {ConversationTaskLink} from '../contracts.ts';
+import {conversationWorkObjectLinks,setConversationWorkObjectLinks,sameWorkObject,conversationTaskLinks,setConversationTaskLinks,sameTaskLink} from '../domain/conversation-task-links.ts';
+import type {ConversationWorkObjectLink,ConversationTaskLink} from '../contracts.ts';
 import { presentedFilesForEntry, needsLegacyPresentedFilesRead, normalizePresentedFiles } from '../domain/presented-files.ts';
 import { modelLeaseIdentity } from '../model-access/model-preferences.ts';
 import { answerAttachmentIds, resolveQuestionAnswer, questionAnswerDisplay, normalizeQuestionCapabilities } from '../domain/question-answer.ts';
@@ -195,10 +195,14 @@ export class ConversationApplication {
     now(): string;
     host: HostContext;
     autoContinueInterrupted?: boolean;
+    continuationPolicy?(scope: string): boolean;
     titleTimeoutMs?: number;
     generationAlive?: (generation: string) => boolean;
     generationReleased?: (generation: string) => boolean;
   };
+  private shouldContinueInterrupted(scope: string): boolean {
+    return this.options.continuationPolicy?.(scope) ?? this.options.autoContinueInterrupted ?? false;
+  }
   private get titleTimeoutMs(): number {
     return this.options.titleTimeoutMs ?? TITLE_TIMEOUT_MS;
   }
@@ -541,7 +545,7 @@ export class ConversationApplication {
             }
             // Resource bookkeeping is not additional execution time.
             if(!executionEnded)run.updatedAt=this.options.now();this.save(record);
-            if(newlyReleased && record.view.run?.id===run.id && record.interruption?.runId===run.id && !record.interruption.cancelled && !record.interruption.attempted && this.options.autoContinueInterrupted && !this.closing) {
+            if(newlyReleased && record.view.run?.id===run.id && record.interruption?.runId===run.id && !record.interruption.cancelled && !record.interruption.attempted && this.shouldContinueInterrupted(value.workspaceId) && !this.closing) {
               queueMicrotask(()=>{void this.recoverOne(value.workspaceId,value.conversationId).catch(()=>{});});
             }
           }
@@ -614,7 +618,7 @@ export class ConversationApplication {
     const record = this.options.repository.readConversation(nonempty(id, '对话身份'));
     if (!record || record.view.workspaceId !== workspaceId) fail('agent_conversation_missing', '该工作空间中没有此对话。', 404);
     record.attachments ??= {};
-    setConversationTaskLinks(record.view,conversationTaskLinks(record.view));
+    setConversationWorkObjectLinks(record.view,conversationWorkObjectLinks(record.view,this.options.host.ref(record.view.workspaceId).sourceId),this.options.host.ref(record.view.workspaceId).sourceId);
     normalizeQuestionCapabilities(record);
     // Older records may predate the public contract; expose an empty string
     // rather than an absent field so every request reader sees the same shape.
@@ -623,7 +627,7 @@ export class ConversationApplication {
   }
   private readonly legacyPresentedFiles = new Map<string, ReturnType<typeof presentedFilesForEntry>>();
   private view(record: ConversationReadState & Partial<Pick<StoredConversation, 'attempts'>>, before?: number, limit?: number, readLegacyFiles = false, compactTools = true, includeContinuationPrompt = true): ConversationView {
-    setConversationTaskLinks(record.view,conversationTaskLinks(record.view));
+    setConversationWorkObjectLinks(record.view,conversationWorkObjectLinks(record.view,this.options.host.ref(record.view.workspaceId).sourceId),this.options.host.ref(record.view.workspaceId).sourceId);
     normalizeQuestionCapabilities(record);
     const entries = before === undefined ? record.view.entries : record.view.entries.filter(entry => entry.sequence < before);
     const count = limit === undefined ? undefined : bounded(limit, PAGE_SIZE, 200);
@@ -854,7 +858,7 @@ export class ConversationApplication {
     const chosen=records.slice(0,limit);
     return {conversations:chosen.map(record=>this.summaryView(record)),nextCursor:records.length>limit?`${chosen.at(-1)!.view.updatedAt}/${chosen.at(-1)!.view.id}`:undefined};
   }
-  async create(workspaceId: string, input: { cwd?: string; taskId?: string; taskLinks?:ConversationTaskLink[]; title?: string }): Promise<ConversationView> {
+  async create(workspaceId: string, input: { cwd?: string; taskId?: string; taskLinks?:ConversationTaskLink[]; workObjectLinks?:ConversationWorkObjectLink[]; title?: string }): Promise<ConversationView> {
     const record = await this.candidate(workspaceId, input);
     this.options.repository.saveConversation(record);
     this.options.events.publish({ type: 'conversation', workspaceId, conversationId: record.view.id, revision: record.view.revision, payload: { conversation: this.view(record) } });
@@ -865,10 +869,11 @@ export class ConversationApplication {
       for (const owner of this.sourceOwners.values()) this.scheduleSourceRelease(owner.workspaceId, owner.id);
     });
   }
-  private async candidate(workspaceId: string, input: { cwd?: string; taskId?: string; taskLinks?:ConversationTaskLink[]; title?: string }): Promise<StoredConversation> {
+  private async candidate(workspaceId: string, input: { cwd?: string; taskId?: string; taskLinks?:ConversationTaskLink[]; workObjectLinks?:ConversationWorkObjectLink[]; title?: string }): Promise<StoredConversation> {
     const workspace = await this.options.host.resolve(workspaceId);
-    if(input.taskLinks!==undefined&&input.taskId!==undefined)fail('agent_input_invalid','不能同时提交 taskId 和 taskLinks。');
-    const links=await this.verifyTaskLinks(workspaceId,input.taskLinks??(input.taskId?[{workspaceId,taskId:input.taskId}]:[]));
+    if([input.taskLinks,input.taskId,input.workObjectLinks].filter(value=>value!==undefined).length>1)fail('agent_input_invalid','不能同时提交 taskId 和 taskLinks。');
+    const links=input.workObjectLinks === undefined ? await this.verifyTaskLinks(workspaceId,input.taskLinks??(input.taskId?[{workspaceId,taskId:input.taskId}]:[])) : undefined;
+    const objects=input.workObjectLinks === undefined ? undefined : await this.verifyWorkObjectLinks(workspaceId,input.workObjectLinks);
     const selected = input.cwd ?? workspace.rootPath;
     if (!path.isAbsolute(selected)) fail('agent_cwd_invalid', '请选择准确的绝对工作目录。');
     let cwd: string;
@@ -878,8 +883,27 @@ export class ConversationApplication {
       id: randomUUID(), workspaceId, cwd, taskId: input.taskId, title: input.title ? nonempty(input.title, '对话标题', 160) : NEUTRAL_TITLE, titleState:{status:input.title?'manual':'pending'},
       revision: randomUUID(), hidden: false, updatedAt: this.options.now(), participants: [], entries: [], requests: [],
     }, hostScope: workspace, titleOrigin: input.title ? 'manual' : 'default', participants: [], sources: {}, attempts: [], requests: {}, attachments: {} };
-    setConversationTaskLinks(record.view,links);
+    if(objects)setConversationWorkObjectLinks(record.view,objects,this.options.host.ref(workspaceId).sourceId);
+    else setConversationTaskLinks(record.view,links!,this.options.host.ref(workspaceId).sourceId);
     return record;
+  }
+  private async verifyWorkObjectLinks(workspaceId:string, values:unknown, previous:ConversationWorkObjectLink[]=[]):Promise<ConversationWorkObjectLink[]> {
+    if(!Array.isArray(values)||values.length>100)fail('agent_input_invalid','工作对象关联必须为不超过100项的数组。');
+    const links:ConversationWorkObjectLink[]=[];
+    // Association mutations require the conversation authority even for an empty set.
+    await this.options.host.resolve(workspaceId);
+    for(const value of values){
+      if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!['sourceId','scopeId','kind','id','revision','snapshot'].includes(key)))fail('agent_input_invalid','工作对象引用无效。');
+      const ref={sourceId:nonempty(value.sourceId,'对象来源'),scopeId:nonempty(value.scopeId,'对象范围'),kind:nonempty(value.kind,'对象类型'),id:nonempty(value.id,'对象身份')};
+      if(value.revision!==undefined)nonempty(value.revision,'对象版本');
+      if(value.snapshot!==undefined&&(!value.snapshot||typeof value.snapshot!=='object'||Array.isArray(value.snapshot)||Object.keys(value.snapshot).some(key=>key!=='title')||value.snapshot.title!==undefined&&typeof value.snapshot.title!=='string'))fail('agent_input_invalid','对象显示快照无效。');
+      if(links.some(link=>sameWorkObject(link,ref)))continue;
+      const prior=previous.find(link=>sameWorkObject(link,ref));
+      if(prior&&JSON.stringify(value)===JSON.stringify(prior)){links.push(structuredClone(prior));continue;}
+      const observed=await this.options.host.verifyObject(ref,value.revision);
+      links.push({...ref,revision:observed.revision,...(value.snapshot?{snapshot:structuredClone(value.snapshot)}:{})});
+    }
+    return links;
   }
   private async verifyTaskLinks(workspaceId:string,values:unknown,previous:ConversationTaskLink[]=[]):Promise<ConversationTaskLink[]> {
     if(!Array.isArray(values)||values.length>100)fail('agent_input_invalid','任务关联必须为不超过100项的数组。');
@@ -894,18 +918,22 @@ export class ConversationApplication {
     }
     return links;
   }
-  async update(workspaceId: string, id: string, input: { expectedRevision: string; title?: string; hidden?: boolean; taskId?: string | null; taskIds?: string[]; taskLinks?:ConversationTaskLink[] }): Promise<ConversationView> {
+  async update(workspaceId: string, id: string, input: { expectedRevision: string; title?: string; hidden?: boolean; taskId?: string | null; taskIds?: string[]; taskLinks?:ConversationTaskLink[]; workObjectLinks?:ConversationWorkObjectLink[] }): Promise<ConversationView> {
     const record = this.load(workspaceId, id);
     // Streaming saves change the conversation revision continuously, so a rename
     // typed during an active run would always look stale. A title is local
     // metadata whose manual value takes precedence; other fields keep the check.
-    const titleOnly=input.title!==undefined&&input.hidden===undefined&&input.taskId===undefined&&input.taskIds===undefined&&input.taskLinks===undefined;
+    const titleOnly=input.title!==undefined&&input.hidden===undefined&&input.taskId===undefined&&input.taskIds===undefined&&input.taskLinks===undefined&&input.workObjectLinks===undefined;
     if(!titleOnly)expected(record.view.revision, input.expectedRevision);
-    if([input.taskId,input.taskIds,input.taskLinks].filter(value=>value!==undefined).length>1)fail('agent_input_invalid','不能同时提交多种任务关联字段。');
+    if([input.taskId,input.taskIds,input.taskLinks,input.workObjectLinks].filter(value=>value!==undefined).length>1)fail('agent_input_invalid','不能同时提交多种任务关联字段。');
     const title=input.title===undefined?undefined:nonempty(input.title, '对话标题', 160);
     if(input.hidden!==undefined&&typeof input.hidden!=='boolean')fail('agent_input_invalid','隐藏状态无效。');
     let previous:ConversationTaskLink[]|undefined,links:ConversationTaskLink[]|undefined;
+    const sourceId=this.options.host.ref(workspaceId).sourceId;
+    const previousObjects=conversationWorkObjectLinks(record.view,sourceId);
+    const objects=input.workObjectLinks===undefined?undefined:await this.verifyWorkObjectLinks(workspaceId,input.workObjectLinks,previousObjects);
     if(input.taskLinks!==undefined||input.taskIds!==undefined||input.taskId!==undefined){
+      await this.options.host.resolve(workspaceId);
       previous=conversationTaskLinks(record.view);
       const local=input.taskIds??(input.taskId===null?[]:[input.taskId!]);
       if(input.taskLinks===undefined&&(!Array.isArray(local)||local.length>100))fail('agent_input_invalid','任务关联必须为不超过100项的数组。');
@@ -918,9 +946,10 @@ export class ConversationApplication {
     }
     for(let attempt=0;;attempt++){
       const current=this.load(workspaceId,id);
-      if(links&&!sameTaskLinks(conversationTaskLinks(current.view),previous!))fail('agent_revision_conflict','对话已变化，请重新读取后判断关联。',409);
+      if((links||objects)&&JSON.stringify(conversationWorkObjectLinks(current.view,sourceId))!==JSON.stringify(previousObjects))fail('agent_revision_conflict','对话已变化，请重新读取后判断关联。',409);
       if(title!==undefined){current.view.title=title;current.titleOrigin='manual';current.view.titleState={status:'manual'};}
-      if(links)setConversationTaskLinks(current.view,links);
+      if(objects)setConversationWorkObjectLinks(current.view,objects,sourceId);
+      else if(links)setConversationTaskLinks(current.view,links,sourceId);
       if(input.hidden!==undefined)current.view.hidden=input.hidden;
       try{this.save(current);return this.view(current);}
       catch(error){if(attempt>=6||!(error instanceof AgentServiceError)||error.code!=='agent_revision_conflict')throw error;}
@@ -1200,7 +1229,7 @@ export class ConversationApplication {
     const ids=[...new Set([...priorImages,...currentImages])];
     const materials = this.media.expand(record, ids);
     const images = materials.images;
-    const context=JSON.stringify({childOf:record.view.childOf,inheritedPendingQuestions:record.inheritedContext?.pendingQuestions,conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,conversationTitle:record.view.title,taskId:record.view.taskId,taskIds:record.view.taskIds,taskLinks:conversationTaskLinks(record.view),sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',retainedExecutions:conversationRuns(record.view).filter(unfinishedRun).map(run=>({id:run.id,participantId:run.participantId,generation:run.generation,status:run.status,executionState:run.executionState,resourcesReleased:run.resourcesReleased,toolCount:run.tools.filter(tool=>tool.status!=='completed').length})),unansweredRequests:record.view.requests.map(request=>({id:request.id,runId:request.runId,participantId:request.participantId,generation:request.generation,kind:request.kind,title:request.title.slice(0,200)})),sourceIndex:sources?.index,sourceId:sources?.sourceId,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。历史视频只提供带时间点的抽样画面，不含音轨，不能声称连续观看。':undefined});
+    const context=JSON.stringify({childOf:record.view.childOf,inheritedPendingQuestions:record.inheritedContext?.pendingQuestions,conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,conversationTitle:record.view.title,taskId:record.view.taskId,taskIds:record.view.taskIds,taskLinks:conversationTaskLinks(record.view),workObjectLinks:conversationWorkObjectLinks(record.view,this.options.host.ref(record.view.workspaceId).sourceId),sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',retainedExecutions:conversationRuns(record.view).filter(unfinishedRun).map(run=>({id:run.id,participantId:run.participantId,generation:run.generation,status:run.status,executionState:run.executionState,resourcesReleased:run.resourcesReleased,toolCount:run.tools.filter(tool=>tool.status!=='completed').length})),unansweredRequests:record.view.requests.map(request=>({id:request.id,runId:request.runId,participantId:request.participantId,generation:request.generation,kind:request.kind,title:request.title.slice(0,200)})),sourceIndex:sources?.index,sourceId:sources?.sourceId,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。历史视频只提供带时间点的抽样画面，不含音轨，不能声称连续观看。':undefined});
     const questionEntries = changes.filter(entry=>entry.kind==='notice'&&entry.runId===record.view.run?.id);
     const hasHandoffAnswers = questionEntries.some(entry=>entry.id.startsWith('waiting-handoff-'));
     const unanswered = questionEntries.filter(entry=>entry.role==='system'&&entry.id.startsWith(hasHandoffAnswers?'waiting-handoff-':'waiting-question-')).map(entry=>entry.text);
@@ -2370,7 +2399,7 @@ export class ConversationApplication {
       if(run.generation===this.options.generation&&run.status==='running'){
         delete record.interruption;run.interrupted=undefined;run.diagnostic=undefined;this.save(record);return;
       }
-      if(!this.options.autoContinueInterrupted){unavailable('系统中断后执行未完成。工作记录已保留，你可以发送“继续”接着处理。');return;}
+      if(!this.shouldContinueInterrupted(workspaceId)){unavailable('系统中断后执行未完成。工作记录已保留，你可以发送“继续”接着处理。');return;}
       if(marker.awaitingUser){unavailable('执行未完成：中断前有待确认的问题或授权，请查看原问题后继续。');return;}
       const stopped=run.status==='stopped'&&run.tools.every(tool=>tool.status==='completed');
       const released=run.resourcesReleased===true&&run.tools.every(tool=>tool.status!=='running');
@@ -2519,7 +2548,7 @@ export class ConversationApplication {
     const current = this.observations.get(key); if (current) return current;
     const work = this.reconcile(workspaceId, id).finally(() => { this.observations.delete(key); this.scheduleSourceRelease(workspaceId, id); }).then(view => {
       const marker = this.load(workspaceId, id).interruption;
-      if (!this.closing && this.options.autoContinueInterrupted && !this.recoveries.has(key) && marker && !marker.cancelled && !marker.attempted && marker.runId === view.run?.id && (view.run?.status === 'stopped' || view.run?.resourcesReleased)) {
+      if (!this.closing && this.shouldContinueInterrupted(workspaceId) && !this.recoveries.has(key) && marker && !marker.cancelled && !marker.attempted && marker.runId === view.run?.id && (view.run?.status === 'stopped' || view.run?.resourcesReleased)) {
         // A later successful observation can release a previously uncertain recovery.
         queueMicrotask(() => { void this.recoverOne(workspaceId, id).catch(() => {}); });
       }

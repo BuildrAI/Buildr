@@ -62,7 +62,7 @@ export async function listen(handler: (req: IncomingMessage, res: ServerResponse
   } };
 }
 export async function request(origin: string, token: string, route: string, value?: unknown, signal?: AbortSignal): Promise<any> {
-  const operation = route === '/operations' ? (value as { operation?: string } | undefined)?.operation : undefined;
+  const operation = ['/operations', '/v2/operations'].includes(route) ? (value as { operation?: string } | undefined)?.operation : undefined;
   const payload = value === undefined ? undefined : JSON.stringify(value);
   // A private JSON control must never reuse a socket closed while synchronous
   // runtime preparation prevented this client from processing its close event.

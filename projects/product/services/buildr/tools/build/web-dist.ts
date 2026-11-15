@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 
 import { createOwnedArtifactStaging, inventoryGeneratedArtifact } from './generated-artifacts.ts';
+import {prepareDevelopmentHarnessUi} from '../development/prepare-development-ui.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const webRoot = path.resolve(serviceRoot, '../buildr-web');
@@ -190,6 +191,7 @@ export function buildWebDist(outputRoot: string, root = webRoot, {
   }
   // Resolve every prerequisite before touching the live output.
   const npmCli = resolveNpm();
+  if (fs.existsSync(webRoot) && frontend === fs.realpathSync(webRoot)) prepareDevelopmentHarnessUi();
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const owned = createOwnedArtifactStaging(path.dirname(target), '.buildr-web-dist-');
   const candidate = path.join(owned.root, 'candidate');

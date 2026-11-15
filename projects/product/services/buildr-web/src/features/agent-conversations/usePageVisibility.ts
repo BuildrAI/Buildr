@@ -1,6 +1,2 @@
-import { useSyncExternalStore } from 'react';
-import { isPageVisible, subscribePageVisibility } from './page-visibility';
-
-export function usePageVisibility(): boolean {
-  return useSyncExternalStore(subscribePageVisibility, isPageVisible, () => true);
-}
+// Compatibility path only; the complete implementation belongs to Harness UI.
+export * from '@buildr-ai/buildr-harness-ui/conversations/usePageVisibility';

@@ -11,6 +11,9 @@ import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixtur
 import { readReleaseArtifact } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
 import { createVerificationPhaseRecorder, VERIFICATION_PHASE_TIMING_PREFIX } from '../verification/timing/phases.ts';
 
+// Publication protocol scenarios isolate the legal-review collaborator. Real artifact
+// policy is exercised separately and this fixture is not a distribution approval.
+const permittedDistributionFixture = () => ({status: 'eligible', publicationApproved: true, findings: []});
 const phaseScope = 'integration-candidate-release-effects';
 const diagnosticRoot = process.env.BUILDR_DIAGNOSTICS_OUTPUT;
 const phaseOutput = process.env.BUILDR_VERIFICATION_PHASE_OUTPUT;
@@ -63,6 +66,28 @@ const git = (repo: string, args: string[]) => {
   assert.equal(result.status, 0, result.stderr);
   return result.stdout.trim();
 };
+test('unapproved frozen distribution cannot reach npm while matching confirmed public bytes remain a fact', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-unapproved-distribution-'));
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  const built = await createReleaseArtifactFixture(path.join(root, 'artifact'), '1'.repeat(40));
+  const artifact = readReleaseArtifact(built.manifestPath), version = artifact.manifest.version;
+  let published = false, writes = 0;
+  const result = () => publishFrozenArtifact({manifestPath: built.manifestPath, npmTag: version.includes('-') ? 'next' : 'latest'}, {
+    fetchImpl: async () => published
+      ? new Response(JSON.stringify({name: artifact.manifest.packageName, version, dist: {integrity: artifact.manifest.integrity}}), {status: 200})
+      : new Response('{}', {status: 404}),
+    publish: () => {writes++; assert.fail('unapproved evidence cannot authorize publication');},
+  });
+  const blocked = await result();
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.action, 'distribution-review-required');
+  assert.equal(blocked.diagnostic.code, 'distribution-approval-required');
+  assert.equal(writes, 0);
+  assert.deepEqual(blocked.effects, []);
+  published = true;
+  assert.equal((await result()).action, 'reused');
+  assert.equal(writes, 0);
+});
 
 test('publication failure and checkpoints preserve an unknown pair check without attempting npm publication', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-publication-compatibility-'));
@@ -217,6 +242,7 @@ test('publication effects use the real artifact and recover each external partia
         const fetchImpl: typeof fetch = (url, init) => fetch(`${api}${new URL(String(url)).pathname}`, init);
         const dependencies = {
           fetchImpl,
+          verifyDistribution: permittedDistributionFixture,
           observePublishedPackageArtifact: async () => ({ observation: { status: 'absent', packageName: '@buildr-ai/buildr-dsh-plugin' } }),
           publish: async (args: string[]) => {
             assert.equal(args[0], artifact.tarball, 'the exact prebuilt tarball is consumed');
@@ -316,6 +342,7 @@ test('publishFrozenArtifact converges on delayed registry propagation without re
   const fetchImpl: typeof fetch = (url, init) => fetch(`${api}${new URL(String(url)).pathname}`, init);
   const result = await publishFrozenArtifact({ manifestPath: built.manifestPath, npmTag }, {
     fetchImpl,
+    verifyDistribution: permittedDistributionFixture,
     publish: async (args: string[]) => {
       assert.equal(args[0], artifact.tarball, 'the exact prebuilt tarball is consumed');
       const response = await fetch(`${api}/registry-write`, { method: 'PUT', body: fs.readFileSync(args[0]!) });
@@ -366,6 +393,7 @@ test('publishFrozenArtifact retries the frozen bytes on official 404 and reuses 
     npmAttempted: false, effects: [] };
   const dependencies = {
     fetchImpl,
+    verifyDistribution: permittedDistributionFixture,
     publish: async () => { publishCalls++; return { status: 0, stdout: '', stderr: '' }; },
     registryWait: { attempts: 3, delayMs: 1 },
     onEffects: (effects: any[]) => { journal.npmAttempted = true; journal.effects = structuredClone(effects); },
@@ -452,6 +480,7 @@ test('publishFrozenArtifact uses a short readback window on failed authority pub
   const diagnostic = { schemaVersion: 'buildr.trusted-publish-diagnostic/v1', code: 'trusted-publisher-authority-check-required' };
   const result = await publishFrozenArtifact({ manifestPath: built.manifestPath, npmTag, previousAttempt: 'not-attempted' }, {
     fetchImpl,
+    verifyDistribution: permittedDistributionFixture,
     now: () => clock,
     sleep: async (ms: number) => { slept.push(ms); clock += ms; },
     onObservation: () => {},

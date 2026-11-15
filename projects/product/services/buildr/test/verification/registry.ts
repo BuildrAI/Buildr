@@ -4,6 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serviceVerificationChecks as buildrChecks, sharedCheckPreparation } from '../../tools/testing/verification-checks.ts';
 import { serviceVerificationChecks as webChecks } from '../../../buildr-web/tools/testing/verification-checks.ts';
+import {serviceVerificationChecks as harnessUiChecks} from '../../../buildr-harness-ui/tools/testing/verification-checks.ts';
+import {serviceVerificationChecks as harnessWebChecks} from '../../../buildr-harness-web/tools/testing/verification-checks.ts';
+import {serviceVerificationChecks as harnessCliChecks} from '../../../buildr-harness/tools/testing/verification-checks.ts';
 import { serviceVerificationChecks as agentChecks } from '../../../buildr-agent/tools/testing/verification-checks.ts';
 import { serviceVerificationChecks as pluginChecks } from '../../../dsh-plugin/tools/testing/verification-checks.ts';
 import { BROWSER_BUNDLES, BROWSER_SELECTORS } from './browser-selector-catalog.ts';
@@ -564,6 +567,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/code-commit-sync.test.ts',
     'test/integration/code-commit-guidance.test.ts',
     'test/integration/code-commit-message-http.test.ts',
+    'test/integration/code-module-isolation.test.ts',
     'test/integration/code-commit-message-large-http.test.ts',
     'test/integration/code-discard-application.test.ts',
     'test/integration/code-explorer-application.test.ts',
@@ -736,6 +740,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/update-flow-http-contract.test.ts',
     'test/integration/update-flow-recovery.test.ts',
     'test/integration/workspace-cli-routing.test.ts',
+    'test/integration/harness-router-isolation.test.ts',
   ], { schedulingCostMs: 18000, args: ['--test-concurrency=2'] }),
   integrationSlice('integration-data-store', [
     'test/integration/workspace-management-fence.test.ts',
@@ -919,7 +924,9 @@ const builtInVerificationSteps: any = Object.freeze([
  * composes those declarations with cross-service journeys and release consumers. */
 const servicesRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const serviceSets: any[] = [
-  ['buildr', buildrChecks], ['buildr-web', webChecks], ['buildr-agent', agentChecks], ['dsh-plugin', pluginChecks],
+  ['buildr', buildrChecks], ['buildr-web', webChecks], ['buildr-agent', agentChecks],
+  ['buildr-harness-ui', harnessUiChecks], ['buildr-harness-web', harnessWebChecks],
+  ['buildr-harness', harnessCliChecks], ['dsh-plugin', pluginChecks],
 ];
 const serviceSteps = serviceSets.flatMap(([service, checks]) => checks.map((check: any) => {
   const root = path.join(servicesRoot, service);
@@ -929,7 +936,7 @@ const serviceSteps = serviceSets.flatMap(([service, checks]) => checks.map((chec
   const footprints = ['Static', 'Unit'].includes(check.type) ? [] : ['filesystem', 'cli'];
   return Object.freeze({
     dependsOn: [], groups: [], profiles: inherited?.profiles ?? (service === 'dsh-plugin' ? [] : ['candidate']),
-    contexts: [], resources: check.resources ?? [], developmentRunners: [], platformScope: COMMON_PLATFORM_SCOPE,
+    contexts: [], resources: check.resources ?? [], developmentRunners: [],
     isolationMode: footprints.length ? 'sandbox' : 'none', resetStrategy: footprints.length ? 'recreate' : 'none',
     parallelSafety: 'worker-safe', concurrencyClass: 'cpu-heavy', resourceDemand: check.resourceDemand ?? inherited?.resourceDemand ?? { workers: 1, processes: 1 },
     ...(inherited?.keepFinalDoctor === true ? { keepFinalDoctor: true } : {}),
@@ -942,9 +949,11 @@ const serviceSteps = serviceSets.flatMap(([service, checks]) => checks.map((chec
     executor: { type: 'command', ...command(check.command), discoveredFiles: (check.testFiles ?? []).map((file: string) => path.relative(path.join(servicesRoot, 'buildr'), path.join(root, file)).replaceAll('\\', '/')) },
     preparations: (check.prepare ?? []).map(command), requirements: check.requirements ?? [],
     requiredEnvironment: check.requiredEnvironment ?? [], requiresFiles: (check.requiresFiles ?? []).map((file: string) => path.resolve(root, file)),
-    platforms: check.platforms, timeoutMs: check.timeoutMs ?? 300_000,
+    platforms: check.platforms, platformScope: check.platforms?.length ? platformScope(...check.platforms) : COMMON_PLATFORM_SCOPE,
+    platformEvidence: check.platformEvidence ?? inherited?.platformEvidence,
+    timeoutMs: check.timeoutMs ?? 300_000,
     reuse: check.requiredEnvironment?.length ? false : check.reuse ?? inherited?.reuse
-      ?? (service === 'dsh-plugin' ? { scope: 'plugin' } : service === 'buildr-web' ? { scope: 'web' } : service === 'buildr-agent' ? { scope: 'backend', releaseNotes: false } : { scope: 'repository' }),
+      ?? (service === 'dsh-plugin' ? { scope: 'plugin' } : ['buildr-web','buildr-harness-ui','buildr-harness-web'].includes(service) ? { scope: 'web' } : service === 'buildr-agent' ? { scope: 'backend', releaseNotes: false } : { scope: 'repository' }),
     testing: { ownerScope: `service:product/${service}`, primaryIntent: 'Development', executionBoundary: check.type,
       proves: check.proves ?? check.name, primaryEvidenceOwner: check.id,
       environment: { footprints, isolation: footprints.length ? 'unique-temporary-root' : 'none' }, resetBurden: footprints.length ? 'single-cleanup' : 'none' },
@@ -1149,8 +1158,9 @@ const declaredCandidateShards: any = [
 export const CANDIDATE_CI_SHARDS: any = Object.freeze(declaredCandidateShards.map((shard: any) => {
   const existing = new Set(declaredCandidateShards.flatMap((item: any) => item.stepIds));
   const additions = serviceSteps.filter((step: any) => step.profiles.includes('candidate') && !existing.has(step.id)
-    && (step.service === 'buildr-web' ? shard.id === 'frontend-logic-macos'
-      : step.service === 'buildr-agent' ? shard.id === 'agent-service-macos' : shard.id === 'preflight-macos')).map((step: any) => step.id);
+    && (step.platformScope.kind === 'platform' ? shard.id === `platform-boundaries-${shard.runner}` && step.platformScope.runners.includes(shard.runner)
+      : step.service === 'buildr-web' ? shard.id === 'frontend-logic-macos'
+        : step.service === 'buildr-agent' ? shard.id === 'agent-service-macos' : shard.id === 'preflight-macos')).map((step: any) => step.id);
   return Object.freeze({ ...shard, stepIds: Object.freeze([...new Set([...shard.stepIds.flatMap((id: string) => serviceReplacements.get(id) ?? (verificationSteps.some((step: any) => step.id === id) ? [id] : [])), ...additions])]) });
 }));
 

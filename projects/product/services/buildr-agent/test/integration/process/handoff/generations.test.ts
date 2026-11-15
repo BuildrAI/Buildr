@@ -18,7 +18,7 @@ test('parallel versions retain old controls, dispatch durable next instructions 
   fs.copyFileSync(path.join(import.meta.dirname,'../../fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
   const marker=path.join(packageRoot,'build/fixture-version.json');fs.writeFileSync(marker,JSON.stringify({version:'old'}));
   const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='parallel-test',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
-  assert.equal(runtime.parallelCompatibility,3);
+  assert.equal(runtime.parallelCompatibility,4);
   assert.equal(canRunParallel(runtime,{...runtime,parallelCompatibility:1}),false,'old versions retain native writers and must drain before adopting this version');
   assert.equal(canRunParallel({...runtime,parallelCompatibility:1},runtime),false);
   assert.equal(canRunParallel(runtime,runtime),true);

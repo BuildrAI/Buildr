@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { test, type TestContext } from 'node:test';
 import { ConversationEntryStore } from '../../src/persistence/conversation-entry-store.ts';
-import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
+import { ConversationRepository, CONVERSATION_SCHEMA_VERSION } from '../../src/persistence/conversation-repository.ts';
 import type { StoredConversation } from '../../src/domain/agent-state.ts';
 import { controlRoot, writePrivate } from '../../src/process/ownership.ts';
 import { writeLegacyConversationDatabase } from '../support/legacy-conversation-database.ts';
@@ -26,7 +26,7 @@ function record(id = 'chat'): StoredConversation {
 function tool(id: string, status: 'completed' | 'running' = 'completed') {
   return { id, sequence: 1, kind: 'tool' as const, role: 'system' as const, status, text: ('真实日志 ' + id + '\n').repeat(5000), input: 'command '.repeat(4000), createdAt: 'now' };
 }
-function backups(directory: string) { return fs.readdirSync(directory).filter(name => name.startsWith('conversations.pre-v9-')); }
+function backups(directory: string) { return fs.readdirSync(directory).filter(name => name.startsWith(`conversations.pre-v${CONVERSATION_SCHEMA_VERSION}-`)); }
 
 test('entry revisions are stored once across main/inherited positions, small previews reuse bodies and late repairs remain exact', t => {
   const { repo } = fixture(t), r = record();
@@ -80,7 +80,7 @@ test('v4 reads do not migrate; write migrates canonical data, verifies then dele
   const old = new DatabaseSync(repo.filename); old.exec('PRAGMA journal_mode=WAL');
   r.view.title = 'committed WAL title'; old.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(r), r.view.id);
   r.view.revision = 'r2'; repo.saveConversation(r, 'r1');
-  assert.equal(old.prepare('PRAGMA user_version').get()!.user_version, 9);
+  assert.equal(old.prepare('PRAGMA user_version').get()!.user_version, CONVERSATION_SCHEMA_VERSION);
   assert.throws(() => old.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(r), r.view.id), /agent_storage_writer_incompatible/);
   old.close();
   assert.deepEqual(backups(directory), [], 'verified migration immediately deletes its exact backup');
@@ -118,7 +118,7 @@ test('backup failure leaves legacy database untouched, and missing positions can
   writeLegacyConversationDatabase(repo.filename, [r]);
   const before = fs.readFileSync(repo.filename), open = fs.openSync;
   fs.openSync = ((filename: fs.PathLike, ...args: any[]) => {
-    if (String(filename).includes('conversations.pre-v9-')) throw Object.assign(new Error('simulated disk full'), { code: 'ENOSPC' });
+    if (String(filename).includes(`conversations.pre-v${CONVERSATION_SCHEMA_VERSION}-`)) throw Object.assign(new Error('simulated disk full'), { code: 'ENOSPC' });
     return (open as any)(filename, ...args);
   }) as typeof fs.openSync;
   try { assert.throws(() => repo.startReadModels(), { code: 'agent_storage_unavailable' }); }
@@ -159,6 +159,6 @@ for (const failure of ['validation', 'deletion'] as const) {
     assert.equal(backups(directory).length, 1);
     assert.deepEqual(repo.readConversation(r.view.id)!.view.entries, r.view.entries);
     const db = new DatabaseSync(repo.filename, { readOnly: true });
-    try { assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, 9); } finally { db.close(); }
+    try { assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, CONVERSATION_SCHEMA_VERSION); } finally { db.close(); }
   });
 }

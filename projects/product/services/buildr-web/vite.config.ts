@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { precompressedAssets } from './tools/precompressed-assets.mjs';
 
 export default defineConfig({
+  resolve:{dedupe:['react','react-dom','antd','@ant-design/icons']},
   plugins: [react(), precompressedAssets()],
   build: {
     outDir: '../buildr/web-dist',

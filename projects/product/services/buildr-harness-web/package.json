@@ -1,0 +1,29 @@
+{
+  "name": "@buildr-ai/buildr-harness-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "node tools/build.ts",
+    "test:static": "node --test test/*.test.ts",
+    "test:e2e": "node --test test/browser/*.test.ts",
+    "browser:prepare": "playwright-core install chromium --only-shell",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.6.1",
+    "@buildr-ai/buildr-harness-ui": "file:../buildr-harness-ui",
+    "antd": "^5.29.3",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.5.0",
+    "playwright-core": "1.61.1",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.5"
+  }
+}

@@ -10,10 +10,13 @@ import { AgentServiceError } from '../domain/agent-state.ts';
 import { claimStorage, controlRoot, privateDirectory, readPackageRecord, readPrivate, writePrivate } from './ownership.ts';
 
 
-function files(root: string): string[] {
+function files(root: string, skipNpmShims=false): string[] {
   const result: string[] = [];
   const visit = (directory: string) => {
     for (const name of fs.readdirSync(directory).sort()) {
+      // npm creates executable shims during installation. Native programs are
+      // explicitly managed/bound, never dispatched through this ambient PATH.
+      if(skipNpmShims&&name==='.bin')continue;
       const file = path.join(directory, name), info = fs.lstatSync(file);
       if (info.isSymbolicLink()) throw new AgentServiceError('agent_runtime_symlink', '执行运行单元不能包含未物化的链接。', 409);
       if (info.isDirectory()) visit(file);
@@ -45,7 +48,7 @@ function runtimeFileNames(packageRoot: string): string[] {
   const build = path.join(packageRoot, 'build');
   if (!fs.existsSync(build)) throw new AgentServiceError('agent_runtime_entry_missing', '执行运行单元尚未构建。', 409);
   const names = files(build).map(name => path.join('build', name));
-  if (fs.existsSync(path.join(packageRoot, 'node_modules'))) names.push(...files(path.join(packageRoot, 'node_modules')).map(name => path.join('node_modules', name)));
+  if (fs.existsSync(path.join(packageRoot, 'node_modules'))) names.push(...files(path.join(packageRoot, 'node_modules'),true).map(name => path.join('node_modules', name)));
   names.push('package.json');
   return names.sort();
 }
@@ -68,12 +71,12 @@ export function prepareAgentRuntime(input: { dataRoot: string; packageRoot?: str
   checkCancelled();
   // The source package may legitimately be hard-linked by copy workflows; the digest below
   // already covers this descriptor, so exclusive ownership is not required here.
-  const compatibility = readPackageRecord<{ parallelCompatibility?: 1 | 2 | 3 }>(path.join(packageRoot, 'build/runtime-contracts.json'));
+  const compatibility = readPackageRecord<{ parallelCompatibility?: 1 | 2 | 3 | 4 }>(path.join(packageRoot, 'build/runtime-contracts.json'));
   const lock = claimStorage(input.dataRoot);
   try {
   const units = path.join(controlRoot(input.dataRoot), 'runtimes'); privateDirectory(units);
   const directory = path.join(units, digest);
-  const descriptor: AgentRuntimeUnit = { schemaVersion: 1, digest, directory, entry: path.join(directory, entry), node: path.join(directory, process.platform === 'win32' ? 'node.exe' : 'node'), ...([1,2,3].includes(compatibility?.parallelCompatibility ?? 0) ? { parallelCompatibility: compatibility!.parallelCompatibility } : {}) };
+  const descriptor: AgentRuntimeUnit = { schemaVersion: 1, digest, directory, entry: path.join(directory, entry), node: path.join(directory, process.platform === 'win32' ? 'node.exe' : 'node'), ...([1,2,3,4].includes(compatibility?.parallelCompatibility ?? 0) ? { parallelCompatibility: compatibility!.parallelCompatibility } : {}) };
   if (fs.existsSync(directory)) { validateAgentRuntime(input.dataRoot, descriptor); checkCancelled(); const now = new Date(); fs.utimesSync(directory, now, now); return descriptor; }
   const stage = path.join(units, '.stage-' + randomUUID()); privateDirectory(stage);
   try {
@@ -90,10 +93,10 @@ export function prepareAgentRuntime(input: { dataRoot: string; packageRoot?: str
 export function canRunParallel(current: AgentRuntimeUnit, target: AgentRuntimeUnit): boolean {
   // v1 shares storage but retains idle native writers. Its upgrade must drain
   // before a successor can resume the same native sessions.
-  if (current.parallelCompatibility !== 3 || target.parallelCompatibility !== 3) return false;
+  if (![3,4].includes(current.parallelCompatibility ?? 0) || target.parallelCompatibility !== current.parallelCompatibility) return false;
   const left = readPrivate<{parallelCompatibility?:number;storageVersion:number}>(path.join(current.directory, 'build/runtime-contracts.json'));
   const right = readPrivate<{parallelCompatibility?:number;storageVersion:number}>(path.join(target.directory, 'build/runtime-contracts.json'));
-  return left?.parallelCompatibility === 3 && right?.parallelCompatibility === 3 && left.storageVersion === right.storageVersion;
+  return !!left && !!right && left.parallelCompatibility === current.parallelCompatibility && right.parallelCompatibility === current.parallelCompatibility && left.storageVersion === right.storageVersion;
 }
 export function validateRuntimeContents(dataRoot: string, runtime: AgentRuntimeUnit): void {
   const expected = path.join(controlRoot(dataRoot), 'runtimes', runtime.digest);
@@ -117,3 +120,6 @@ export function validateAgentRuntime(dataRoot: string, runtime: AgentRuntimeUnit
     finally { db.close(); }
   }
 }
+
+/** Page-session/static-resource compatibility is separate from storage parallelism. */
+export function runtimeSupportsHarnessWeb(runtime:AgentRuntimeUnit):boolean{return readPrivate<{webCompatibility?:number}>(path.join(runtime.directory,'build/runtime-contracts.json'))?.webCompatibility===1;}

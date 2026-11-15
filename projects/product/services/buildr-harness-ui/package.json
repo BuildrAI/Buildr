@@ -1,0 +1,71 @@
+{
+  "name": "@buildr-ai/buildr-harness-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "files": [
+    "dist/"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./conversations/*": {
+      "types": "./dist/src/features/agent-conversations/*.d.ts",
+      "import": "./dist/src/features/agent-conversations/*.js"
+    },
+    "./components/*": {
+      "types": "./dist/src/components/*.d.ts",
+      "import": "./dist/src/components/*.js"
+    },
+    "./lib/*": {
+      "types": "./dist/src/lib/*.d.ts",
+      "import": "./dist/src/lib/*.js"
+    },
+    "./api/*": {
+      "types": "./dist/src/api/*.d.ts",
+      "import": "./dist/src/api/*.js"
+    },
+    "./markdown": {
+      "types": "./dist/src/markdown.d.ts",
+      "import": "./dist/src/markdown.js"
+    },
+    "./theme": {
+      "types": "./dist/src/theme.d.ts",
+      "import": "./dist/src/theme.js"
+    },
+    "./typography": {
+      "types": "./dist/src/typography.d.ts",
+      "import": "./dist/src/typography.js"
+    },
+    "./mermaid-renderer": {
+      "types": "./dist/src/mermaid-renderer.d.ts",
+      "import": "./dist/src/mermaid-renderer.js"
+    }
+  },
+  "scripts": {
+    "build": "node tools/build.ts",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "node tools/run-logic-tests.mjs",
+    "test:static": "node --test test/static/*.test.mjs && npm run typecheck"
+  },
+  "peerDependencies": {
+    "@ant-design/icons": "^5.6.1",
+    "antd": "^5.29.3",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "dependencies": {
+    "entities": "7.0.0",
+    "marked": "16.4.2",
+    "mermaid": "12.2.0",
+    "dompurify": "3.4.17"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "typescript": "5.8.3"
+  }
+}

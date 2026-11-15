@@ -1,4 +1,4 @@
-import {conversationTaskLinks,setConversationTaskLinks} from '../domain/conversation-task-links.ts';
+import {conversationWorkObjectLinks,setConversationWorkObjectLinks} from '../domain/conversation-task-links.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import type { AgentRuntime, ConversationForkInput, ConversationView } from '../contracts.ts';
 import { expected, fail, nonempty, safeDiagnostic, type StoredConversation, type StoredParticipant } from '../domain/agent-state.ts';
@@ -64,7 +64,7 @@ export class ConversationForks {
       through = following.sequence;
     }
     const child = await this.options.candidate(scope, { cwd: source.view.cwd, taskId: source.view.taskId });
-    setConversationTaskLinks(child.view,structuredClone(conversationTaskLinks(source.view)));
+    setConversationWorkObjectLinks(child.view,structuredClone(conversationWorkObjectLinks(source.view)));
     child.view.id = childId;
     child.view.forkedFrom = { conversationId: id, workspaceId: scope, entryId: entry.id, runId, throughSequence: through, title: source.view.title, forkedAt: this.options.now() };
     child.view.entries = structuredClone(source.view.entries.filter(value => value.sequence <= through));
@@ -131,6 +131,7 @@ export class ConversationForks {
         record.view.taskId = current.view.taskId;
         record.view.taskIds = current.view.taskIds;
         record.view.taskLinks = current.view.taskLinks;
+        record.view.workObjectLinks = current.view.workObjectLinks;
         record.titleOrigin = current.titleOrigin;
         record.attachments = { ...current.attachments, ...record.attachments };
       }

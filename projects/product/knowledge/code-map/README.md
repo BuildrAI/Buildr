@@ -29,23 +29,31 @@ projects/product/                         项目（Project）：跨服务产品�
 │       ├── flows/                         跨对象流程
 │       └── guides/                        使用、开发与运行入口
 └── services/
-    ├── manifest.yml                      服务登记
+    ├── manifest.yml                      旧兼容服务清单；全局登记在工作空间根
     ├── buildr/                           命令行、后端、本机网页宿主与主包
-    ├── buildr-web/                       React 页面和前端交互
+    ├── buildr-web/                       Development 页面与业务适配
+    ├── buildr-agent/                     Harness 公共核心及独立承载
+    ├── buildr-harness-ui/                完整共享对话与设置界面
+    ├── buildr-harness-web/               独立目录型网页薄壳
+    ├── buildr-harness/                   独立 CLI、启动器及包
     └── dsh-plugin/                       独立 DSH 桌面插件源码与候选
 ```
 
 [关系维护与代码定位](project-service-repositories.md)连接对象约束、登记读取、应用写入与前端操作。
 
+[双产品边界与定位](harness-products.md)解释核心、共享 UI、独立网页和 Development 装配的当前实现。
+
 ## 逐层阅读
 
 [知识建设与维护](knowledge-maintenance.md)从工作方法、读取与页面、成果位置三个职责区解释实际文件。
 
-1. [服务、工程目录与功能定位](system-services-assets.md)：三个服务的目录、生成与打包职责，以及从用户能力定位实现。
+1. [服务、工程目录与功能定位](system-services-assets.md)：各服务的目录、生成与打包职责，以及从用户能力定位实现。
 2. [模块内部目录树与对象](technical-layers.md)：领域、应用、数据访问、技术实现和接口如何协作。
 3. [调用、数据与副作用](../docs/architecture/technical.md)：谁发起调用、谁拥有数据和写入。
 
 对应技术图：[系统总览](../archify/system/buildr-system-overview.html)、[调用与数据责任](../archify/flows/capability-data-responsibility.html)。
+
+上述总览图仍描述拆分前的已提交结构，不作为当前双产品候选的代码证据；当前候选的服务所有权以[双产品代码地图](harness-products.md)及其真实源码链接为准。图源的提交级证据更新尚未完成，不能由当前未提交实现冒充。
 
 ## 代码落位判断
 

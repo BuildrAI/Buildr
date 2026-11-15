@@ -77,7 +77,7 @@
     "contracts:check:runtime-system": "node tools/codegen/contracts/runtime-system-dto.ts --check && node tools/codegen/contracts/workbench-dto.ts --check",
     "test-context:generate": "node tools/testing/test-context-build.ts generate",
     "test-context:check": "node tools/testing/test-context-build.ts check",
-    "artifacts:prepare": "npm run agent:prepare && npm run contracts:prepare && npm run test-context:generate",
+    "artifacts:prepare": "npm run agent:prepare && npm run harness-ui:prepare && npm run contracts:prepare && npm run test-context:generate",
     "candidate:prepare": "node tools/verification/candidate-environment.ts prepare",
     "typecheck": "node tools/testing/run-types.ts --project tsconfig.json",
     "build:web": "npm run contracts:prepare && npm run contracts:check && npm run contracts:check:workspace && node tools/build/web-dist.ts",
@@ -94,7 +94,8 @@
     "test:e2e": "node --import ./test/register-development-entry.ts test/verification/cli.ts e2e",
     "test:system": "node --import ./test/register-development-entry.ts test/verification/cli.ts system",
     "test:related": "node --import ./test/register-development-entry.ts test/verification/cli.ts related",
-    "browser:prepare": "playwright-core install chromium --only-shell"
+    "browser:prepare": "playwright-core install chromium --only-shell",
+    "harness-ui:prepare": "node tools/development/prepare-development-ui.ts"
   },
   "engines": {
     "node": ">=24.15.0"

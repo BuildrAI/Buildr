@@ -1,4 +1,2 @@
-/** Keep React's state identity when a small polling projection has not changed. */
-export function retainObservation<T>(previous: T, next: T): T {
-  return JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
-}
+// Compatibility path only; the complete implementation belongs to Harness UI.
+export * from '@buildr-ai/buildr-harness-ui/conversations/retain-observation';

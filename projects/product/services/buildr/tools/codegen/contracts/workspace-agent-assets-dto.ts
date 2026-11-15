@@ -1,5 +1,5 @@
 import { CODE_HTTP_SCHEMAS } from '../../../src/modules/code/interfaces/http/code-http-contracts.ts';
-import { AGENT_SERVICE_HTTP_SCHEMAS } from '../../../src/modules/agent-service/interfaces/http/agent-service-http-contracts.ts';
+import { renderAgentHttpDtos } from '../../../../buildr-agent/tools/codegen/http-dto.ts';
 import { CODE_GENERATION_HTTP_SCHEMAS } from '../../../src/modules/code/interfaces/http/code-generation-http.ts';
 import { KNOWLEDGE_HTTP_SCHEMAS } from '../../../src/modules/knowledge/interfaces/http/knowledge-http-contracts.ts';
 
@@ -15,7 +15,7 @@ const productRoot: any = path.resolve(serviceRoot, '../..');
 
 const targets: any = Object.freeze([
   { name: 'code-http-dto.ts', schemas: CODE_HTTP_SCHEMAS },
-  { name: 'agent-service-http-dto.ts', schemas: AGENT_SERVICE_HTTP_SCHEMAS },
+  { name: 'agent-service-http-dto.ts', render:renderAgentHttpDtos },
   { name: 'code-generation-http-dto.ts', schemas: CODE_GENERATION_HTTP_SCHEMAS },
   { name: 'knowledge-http-dto.ts', schemas: KNOWLEDGE_HTTP_SCHEMAS },
   { name: 'workspace-http-dto.ts', backendRelative: 'modules/workspace/interfaces/http', schemas: WORKSPACE_HTTP_SCHEMAS },
@@ -23,6 +23,7 @@ const targets: any = Object.freeze([
 ]);
 
 async function renderTarget(target: any): Promise<any>  {
+  if(target.render)return target.render();
   const parts: any[] = [];
   for (const [key, schema] of Object.entries(target.schemas) as Array<[string, any]>) {
     const { $schema: _draft, $id: _id, title: _title, ...body }: any = schema;

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "productId": "buildr-harness",
+  "platforms": {
+    "darwin": {
+      "launcherImplemented": true,
+      "support": "candidate",
+      "evidenceRequired": "准确安装包的真实应用打开、重复及并发打开、共享后台身份与清理"
+    },
+    "win32": {
+      "launcherImplemented": true,
+      "support": "not-verified",
+      "evidenceRequired": "Windows 原生入口及对应平台真实验收；macOS 结果不替代"
+    },
+    "linux": {
+      "launcherImplemented": false,
+      "support": "not-declared"
+    }
+  },
+  "publicationApproved": false
+}

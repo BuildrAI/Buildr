@@ -1,0 +1,10 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {collectThirdParty} from './collect-third-party.ts';
+import {inspectDistributionEvidence} from '../src/distribution-evidence.ts';
+const root = path.resolve(import.meta.dirname, '..');
+collectThirdParty();
+const decisions = JSON.parse(fs.readFileSync(path.join(root, 'resources/distribution-decisions.json'), 'utf8')).decisions;
+const result = inspectDistributionEvidence(path.join(root, 'build/third-party'), decisions);
+console.log(JSON.stringify(result, null, 2));
+if (result.status !== 'eligible') process.exitCode = 1;

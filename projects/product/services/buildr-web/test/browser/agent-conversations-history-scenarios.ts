@@ -735,9 +735,34 @@ const historyRuns = {
   try{
     await page.setViewportSize({width:1600,height:1000});
     fixture.additionalConversations.splice(0,fixture.additionalConversations.length,...originalAdditional,{...structuredClone(saved),id:'focus-second',workspaceId,cwd:workspaceRoot,title:'第二条专注会话',revision:'focus-second-r1',hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[{id:'focus-second-user',sequence:1,kind:'message',role:'user',text:'第二条专注会话正文',createdAt:new Date().toISOString()}],requests:[],run:run('completed'),activity:undefined});
-    update({title:'专注列表现场',requests:[],run:run('completed'),entries:[{id:'focus-user',sequence:1,kind:'message',role:'user',text:'专注列表不替换对话',createdAt:new Date().toISOString()}]});
+    update({title:'专注列表现场',requests:[],run:run('completed'),entries:[{id:'focus-user',sequence:1,kind:'message',role:'user',text:'专注列表不替换对话',createdAt:new Date().toISOString()},
+      {id:'focus-reading',sequence:2,kind:'message',role:'assistant',text:Array.from({length:60},(_,i)=>`布局连续性段落 ${i+1}。`).join('\n\n'),createdAt:new Date().toISOString()}]});
     await page.evaluate(()=>localStorage.removeItem('buildr.agent-conversation-history-width'));
     await page.reload();await input().waitFor();
+    await panel().getByText('专注列表不替换对话',{exact:true}).waitFor();
+    const draft='布局切换保留的未发送草稿',sentBefore=fixture.sentInputs.length;
+    await input().fill(draft);
+    await input().evaluate((node:HTMLTextAreaElement)=>node.setSelectionRange(2,7));
+    const cwdBefore=await panel().getByRole('button',{name:'对话信息与工作空间',exact:true}).innerText();
+    const reading=panel().locator('.ac-stream');
+    await page.waitForFunction(()=>{const node=document.querySelector('.ac-stream');return !!node&&node.scrollHeight-node.clientHeight>240;});
+    await reading.evaluate((node:HTMLElement)=>{
+      node.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));
+      node.scrollTop=120;node.dispatchEvent(new Event('scroll'));
+      node.dispatchEvent(new PointerEvent('pointerup',{bubbles:true}));
+    });
+    await page.waitForFunction(()=>Math.abs((document.querySelector('.ac-stream')?.scrollTop??0)-120)<2);
+    const assertContinuous=async()=>{
+      assert.equal(await input().inputValue(),draft,'布局切换保留同一未发送草稿');
+      assert.deepEqual(await input().evaluate((node:HTMLTextAreaElement)=>[node.selectionStart,node.selectionEnd]),[2,7],'布局切换保留输入选区');
+      assert.equal(await panel().getByRole('button',{name:'对话信息与工作空间',exact:true}).innerText(),cwdBefore,'布局切换不改变执行目录');
+      assert.ok(Math.abs(await reading.evaluate((node:HTMLElement)=>node.scrollTop)-120)<2,'布局切换保留阅读位置');
+      assert.equal(fixture.sentInputs.length,sentBefore,'布局切换不能发送工作');
+    };
+    await toggleFull('专注对话');
+    await assertContinuous();
+    await toggleFull('恢复分屏');
+    await assertContinuous();
     await toggleFull('专注对话');
     const composerBefore=Math.round((await panel().locator('.ac-composer').boundingBox())!.width);
     const messageWidthBefore=Math.round((await panel().locator('.ac-message-list').boundingBox())!.width);

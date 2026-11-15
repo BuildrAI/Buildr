@@ -191,7 +191,18 @@ await step('Devin SWE-2默认及完全访问可选，模式切换保留草稿与
         await page.reload();await input().waitFor();assert.equal(await input().inputValue(),'兼容选择草稿');assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),false);
         assert.equal(fixture.sends,sendsBefore);assert.equal(fixture.prepares,preparesBefore);await assertModelSummary('Devin / SWE-2');await capture(page,'agent-model-compatibility-codex.png');
         await chooseOption('执行权限','完全访问');assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),false);const dropdown=await openModelList();const swe=dropdown.locator('.ant-select-item-option').filter({hasText:'SWE-2'}),gpt=dropdown.locator('.ant-select-item-option').filter({hasText:'GPT-6.1 Sol'});await swe.waitFor();assert.equal(await isBlocked(swe),false);assert.equal(await isBlocked(gpt),false);await swe.click();await closeModelList();await capture(page,'agent-model-compatibility-full-access.png');
-        assert.equal(await input().inputValue(),'兼容选择草稿');assert.equal(fixture.sends,sendsBefore);assert.equal(fixture.prepares,preparesBefore);await chooseOption('执行权限','默认权限');assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),false);await page.reload();await input().waitFor();assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),false);assert.equal(await input().inputValue(),'兼容选择草稿');
+        assert.equal(await input().inputValue(),'兼容选择草稿');
+        assert.equal(fixture.sends,sendsBefore);
+        assert.equal(fixture.prepares,preparesBefore);
+        await chooseOption('执行权限','默认权限');
+        assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),false);
+        await page.reload();
+        await input().waitFor();
+        // The input mounts before the selected conversation finishes loading.
+        // Await the actual send state, not merely the presence of its textbox.
+        await page.waitForFunction(()=>document.querySelector<HTMLButtonElement>('#agent-conversation-panel button[aria-label="发送对话"]')?.disabled===false);
+        assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),false);
+        assert.equal(await input().inputValue(),'兼容选择草稿');
         for(const [label,modelId] of [['SWE-2','swe-2'],['GPT-6.1 Sol','gpt-6-1-sol']]){await chooseModel(label);await closeModelSettings();for(const permission of ['默认权限','完全访问']){await chooseOption('执行权限',permission);await input().fill('Devin模型发送验证');const mode=permission==='默认权限'?'default':'full-access';await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();for(const request of [sentInputs.at(-1)])assert.deepEqual([request.connectionId,request.modelAccountId,request.model,request.permissionMode],['codex',devin.accountId,modelId,mode]);await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();}}await chooseOption('执行权限','默认权限');assert.equal(fixture.sends,sendsBefore+4);assert.equal(fixture.prepares,preparesBefore);await input().fill('兼容选择草稿');
         await chooseModel('共享模型');await closeModelSettings();assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),false);assert.equal(await input().inputValue(),'兼容选择草稿');assert.equal(fixture.sends,sendsBefore+4);assert.equal(fixture.prepares,preparesBefore);
       }finally{fixture.sharedModels=previousModels;update(previousConversation);await page.reload();await input().waitFor();await input().fill(previousDraft);await chooseOption('执行权限',previousPermission);}

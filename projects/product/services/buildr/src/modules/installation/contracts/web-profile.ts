@@ -1,6 +1,6 @@
+import {defaultHarnessDataRoot} from '@buildr-ai/buildr-agent/profile';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -41,13 +41,7 @@ export function webProfileName(productIdentity: any) {
 
 export function defaultWebDataRoot(profile: any, options: any = {}) {
   if (!WEB_PROFILE_NAMES.includes(profile)) throw new Error(`Unsupported Buildr Web profile: ${profile}.`);
-  const platform = options.platform || process.platform;
-  const env = options.env || process.env;
-  const home = options.home || os.homedir();
-  if (platform === 'darwin') return path.join(home, 'Library', 'Application Support', profile === 'released' ? 'Buildr' : 'Buildr Dev');
-  if (platform === 'win32') return path.win32.join(env.LOCALAPPDATA || path.win32.join(home, 'AppData', 'Local'), profile === 'released' ? 'Buildr' : 'Buildr Dev');
-  const stateHome = env.XDG_STATE_HOME || path.posix.join(home, '.local', 'state');
-  return path.posix.join(stateHome, profile === 'released' ? 'buildr' : 'buildr-dev');
+  return defaultHarnessDataRoot(profile,options);
 }
 
 export function resolveWebProfile(productIdentity: any, options: any = {}) {

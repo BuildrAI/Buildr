@@ -9,7 +9,10 @@ testing:
         - buildr-web
         - buildr-agent
         - dsh-plugin
-    purpose: 检查四服务类型、源码依赖、声明、资源和交付结构，不执行业务流程。
+        - buildr-harness-ui
+        - buildr-harness-web
+        - buildr-harness
+    purpose: 检查已登记服务类型、源码依赖、声明、资源和交付结构，不执行业务流程。
     sourcePaths:
       - services/buildr/**
       - services/buildr-web/**
@@ -17,11 +20,17 @@ testing:
       - services/dsh-plugin/**
       - verification.yml
       - preparation.yml
+      - services/buildr-harness-ui/**
+      - services/buildr-harness-web/**
+      - services/buildr-harness/**
     testRoots:
       - services/buildr/test/**
       - services/buildr-web/test/**
       - services/buildr-agent/test/**
       - services/dsh-plugin/test/**
+      - services/buildr-harness-ui/test/**
+      - services/buildr-harness/test/**
+      - services/buildr-harness-web/test/**
     full:
       kind: command
       argv:
@@ -33,7 +42,7 @@ testing:
       - 完整入口以实际登记和发现集合运行本类全部检查，不按旧目录名推定分类，不在地图复制成员。
       - 所有公开入口支持 --plan 查看选择，使用 --check <id> 显式指定检查；计划和选择成功不等于实际验证通过。
       - 任务开发按用户请求、目标、真实改动及调用边界选齐相关四类，使用 test:related 或明确指定的现有检查，不要求正式任务或比较基线。
-      - 推送前必须取得四服务全部静态检查（Static Check）与单元测试（Unit Test）的有效完整证明；不能仅用相关检查冒充全量。
+      - 推送前必须取得已登记服务全部静态检查（Static Check）与单元测试（Unit Test）的有效完整证明；不能仅用相关检查冒充全量。
       - DSH 插件的 plugin-typecheck 与 plugin-test-typecheck 依赖外部准备的 DSH
         SDK，登记为仅显式选择，由插件服务 test:static 与发布/候选验证执行，不属于日常 check 全量范围。
       - 仅在内容、配方、依赖、工具与必要环境仍适用时复用有效结果，保留实际来源；缺失、失败和未覆盖如实报告。
@@ -48,7 +57,9 @@ testing:
         - buildr-web
         - buildr-agent
         - dsh-plugin
-    purpose: 验证四服务隔离条件下的内部逻辑与完整内部功能；替换外部协作者，整套保持低成本。
+        - buildr-harness-ui
+        - buildr-harness
+    purpose: 验证已登记服务隔离条件下的内部逻辑与完整内部功能；替换外部协作者，整套保持低成本。
     sourcePaths:
       - services/buildr/**
       - services/buildr-web/**
@@ -56,11 +67,15 @@ testing:
       - services/dsh-plugin/**
       - verification.yml
       - preparation.yml
+      - services/buildr-harness-ui/**
+      - services/buildr-harness/**
     testRoots:
       - services/buildr/test/**
       - services/buildr-web/test/**
       - services/buildr-agent/test/**
       - services/dsh-plugin/test/**
+      - services/buildr-harness-ui/test/**
+      - services/buildr-harness/test/**
     full:
       kind: command
       argv:
@@ -71,7 +86,7 @@ testing:
       - 完整入口以实际登记和发现集合运行本类全部检查，不按旧目录名推定分类，不在地图复制成员。
       - 所有公开入口支持 --plan 查看选择，使用 --check <id> 显式指定检查；计划和选择成功不等于实际验证通过。
       - 任务开发按用户请求、目标、真实改动及调用边界选齐相关四类，使用 test:related 或明确指定的现有检查，不要求正式任务或比较基线。
-      - 推送前必须取得四服务全部静态检查（Static Check）与单元测试（Unit Test）的有效完整证明；不能仅用相关检查冒充全量。
+      - 推送前必须取得已登记服务全部静态检查（Static Check）与单元测试（Unit Test）的有效完整证明；不能仅用相关检查冒充全量。
       - 仅在内容、配方、依赖、工具与必要环境仍适用时复用有效结果，保留实际来源；缺失、失败和未覆盖如实报告。
     requirements:
       - 稳定版 Node >=24.15.0 与相邻 npm，通过项目包装入口运行
@@ -84,6 +99,8 @@ testing:
         - buildr-web
         - buildr-agent
         - dsh-plugin
+        - buildr-harness-ui
+        - buildr-harness
     purpose: 验证真实数据库、HTTP、文件系统、Git、消息和子进程等技术边界；按真实平台和依赖执行。
     sourcePaths:
       - services/buildr/**
@@ -92,11 +109,15 @@ testing:
       - services/dsh-plugin/**
       - verification.yml
       - preparation.yml
+      - services/buildr-harness-ui/**
+      - services/buildr-harness/**
     testRoots:
       - services/buildr/test/**
       - services/buildr-web/test/**
       - services/buildr-agent/test/**
       - services/dsh-plugin/test/**
+      - services/buildr-harness-ui/test/**
+      - services/buildr-harness/test/**
     full:
       kind: command
       argv:
@@ -110,7 +131,8 @@ testing:
       - 智能体服务（Agent Service）的完整入口由自身检查登记发现全部组；可用 --check 精确选择
         agent-integration、agent-integration-storage-runtime、agent-integration-models-accounts、
         agent-integration-conversations、agent-integration-native、agent-integration-native-runtime、
-        agent-integration-startup、agent-integration-handoff 或 agent-integration-recovery。
+        agent-integration-startup、agent-integration-handoff 或
+        agent-integration-recovery。
       - 重型独立进程组使用统一资源预算，每组申请一个工作位，由 agent-process-tests 限制同机最多两组；直接诊断入口也受
         BUILDR_VERIFICATION_WORKER_BUDGET
         约束，最多两个文件并行。数据库、可写包、运行目录与进程身份各自隔离；同次完整运行仅共用只读 Node.js 程序输入，仍逐次执行完整摘要校验。
@@ -130,6 +152,9 @@ testing:
         - buildr-web
         - buildr-agent
         - dsh-plugin
+        - buildr-harness-ui
+        - buildr-harness-web
+        - buildr-harness
     purpose: 从命令行或浏览器实际入口完成应用流程，核对最终结果，明确替换的外部系统。
     sourcePaths:
       - services/buildr/**
@@ -138,11 +163,17 @@ testing:
       - services/dsh-plugin/**
       - verification.yml
       - preparation.yml
+      - services/buildr-harness-ui/**
+      - services/buildr-harness-web/**
+      - services/buildr-harness/**
     testRoots:
       - services/buildr/test/**
       - services/buildr-web/test/**
       - services/buildr-agent/test/**
       - services/dsh-plugin/test/**
+      - services/buildr-harness-ui/test/**
+      - services/buildr-harness-web/test/**
+      - services/buildr-harness/test/**
     full:
       kind: command
       argv:
@@ -165,3 +196,34 @@ testing:
       - 稳定版 Node >=24.15.0 与相邻 npm，通过项目包装入口运行
       - 对应检查声明的真实平台与独立环境；浏览器、软件开发工具包（SDK）及准确原包按需准备
       - 不自动借用真实账号、调用付费模型或派发公开发布，超出现有授权时反馈用户决定
+  - id: harness-standalone-acceptance
+    title: Harness 独立包及正式网页端到端验收
+    scope:
+      project: product
+      services:
+        - buildr-agent
+        - buildr-harness-ui
+        - buildr-harness-web
+        - buildr-harness
+    purpose: 验证复制后的真实离线包、独立正式网页、受保护换代及共享数据保全；不代替原生模型与异平台证据。
+    sourcePaths:
+      - services/buildr-harness/**
+      - services/buildr-harness-web/**
+      - services/buildr-harness-ui/**
+      - services/buildr-agent/**
+    testRoots:
+      - services/buildr-harness/test/**
+      - services/buildr-agent/test/integration/process/startup/**
+      - services/buildr-harness-web/test/browser/**
+    full:
+      kind: agent
+      instructions:
+        - 使用 services/buildr/tools/development/run-development-node
+          services/buildr-harness/tools/pack-local.ts <隔离产物目录>
+          制作本机验收包，复制为不可变摘要路径后，在独立 consumer 离线 npm install
+          --ignore-scripts；显式隔离数据域，以安装的 buildr-harness web --no-open
+          启动。通过公共客户端取得准确运行身份与短时票据，浏览器实际验证目录登记、无发送草稿、模型/智能体/程序设置、刷新及换代保留；审看截图。启动器按当前平台安装到测试专用目录，实际打开和重复/并发打开，核对核心复用。清理只处理本轮准确绑定的页面、入口和服务；未做的真实账号、另一产品消费或其他平台保留缺口，不以替身或静态通过冒充。
+    selection:
+      - 源码组通过不等于安装后或浏览器通过；复用证据必须对应相同字节、环境与目标。
+    requirements:
+      - 本机稳定版 Node >=24.15.0 与 npm；可用受控浏览器；不调用付费模型或修改日常配置域。

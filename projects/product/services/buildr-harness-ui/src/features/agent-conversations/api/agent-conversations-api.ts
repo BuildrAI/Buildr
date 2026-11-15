@@ -1,0 +1,250 @@
+import { timeAttachmentStage } from './attachment-timing.ts';
+import { conversationStopAllObservedScope, stopConversationWithRecovery, stopAllWithRecovery } from '../conversation-stop.ts';
+import type { AgentConversationHistoryPageHistoryPage, AgentParticipationParticipation, AgentParticipationSummaryParticipationSummary, AgentParticipationSummaryQueryParticipationSummaryQuery } from '../../../../build/generated/agent-service-http-dto';
+import { sharedConversationRead } from './shared-conversation-read.ts';
+import { conversationTransferDecoder } from './conversation-transfer.ts';
+import type { ProgramUpdatesView, ProgramUpgradeView } from '../types.ts';
+import type { AgentDraftImagesDraftImages, AgentDraftStartStartDraft } from '../../../../build/generated/agent-service-http-dto';
+import type { ActivityCounts, ActivityFilter } from '../conversation-activity.ts';
+import { createApiClient, LocalSessionAdapter } from '../../../api/index.ts';
+import type { ApiClient, ApiError, SessionAdapter } from '../../../api/index.ts';
+import { parseEventFrame } from '../conversation-state.ts';
+import type { AgentModelCustomConfigureModelCustomConfigure, AgentModelCustomDiscoveryModelCustomDiscovery, AgentModelCustomDiscoveryResultModelCustomDiscoveryResult } from '../../../../build/generated/agent-service-http-dto';
+import type { ModelAccount, ModelProviderView, CatalogModel, AttachmentView, ConnectionAccountImpact, ConnectionView, ConversationEvent, ConversationSummary, ConversationEntry, ConversationView, PendingConversation, PreparationView, ProviderId, SendInput, SendPreview, SupplementInput, SupplementResult } from '../types.ts';
+
+export type CustomProviderConfigInput=Omit<AgentModelCustomConfigureModelCustomConfigure,'expectedRevision'>;
+export type CustomDiscoveryInput=AgentModelCustomDiscoveryModelCustomDiscovery;
+export type CustomDiscoveryResult=AgentModelCustomDiscoveryResultModelCustomDiscoveryResult;
+export type DraftImages = AgentDraftImagesDraftImages;
+export type StartDraftInput = AgentDraftStartStartDraft;
+export type ConversationPage={conversations:ConversationView[];nextCursor?:string;total?:number;activityCounts?:ActivityCounts;stats?:{modelExecutions?:Array<{accountId:string;accountLabel:string;model:string;count:number}>;executions?:Array<{provider:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>}};
+const appPath = '/api/v1/app/agent-service';
+const path = (workspaceId:string,conversationId?:string)=>{
+  let base:string;
+  if(workspaceId.startsWith('scope:')){
+    const decoded=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(workspaceId.slice(6).replaceAll('-','+').replaceAll('_','/')),value=>value.charCodeAt(0))));
+    if(!Array.isArray(decoded)||decoded.length!==2||decoded.some(value=>typeof value!=='string'||!value))throw new Error('执行范围引用无效。');
+    base='/api/v1/harness/sources/'+encodeURIComponent(decoded[0])+'/scopes/'+encodeURIComponent(decoded[1])+'/conversations';
+  }else base=workspaceId==='@default'?appPath+'/conversations':'/api/v1/workspaces/'+encodeURIComponent(workspaceId)+'/agent-conversations';
+  return base+(conversationId?'/'+encodeURIComponent(conversationId):'');
+};
+const post = (body: unknown): RequestInit => ({method: 'POST', body: JSON.stringify(body)});
+function waitForConversationRead(delay: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    signal.throwIfAborted();
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', abort);
+      resolve();
+    }, delay);
+    const abort = () => { clearTimeout(timer); reject(signal.reason); };
+    signal.addEventListener('abort', abort, { once: true });
+  });
+}
+
+export function createAgentConversationsClient(client: ApiClient, session: SessionAdapter, fetcher: typeof fetch = fetch) {
+  let activityReadGeneration=0;
+  let activitySnapshot:(ConversationPage & {revision:string;pending:PendingConversation[]})|undefined;
+  const request = async <T,>(url: string, init: RequestInit = {}): Promise<T> => {
+    const mutation = init.method && !['GET','HEAD'].includes(init.method.toUpperCase());
+    if (mutation) {read.invalidate();activitySnapshot=undefined;activityReadGeneration++;}
+    const send = () => client(url, { ...init, headers: {...session.writeHeaders(), ...Object.fromEntries(new Headers(init.headers))} }) as Promise<T>;
+    try { return await send(); } catch (failure) {
+      if ((failure as ApiError)?.code !== 'session_forbidden' || !session.refreshSession || !await session.refreshSession()) throw failure;
+      return await send();
+    } finally { if (mutation) {read.invalidate();activitySnapshot=undefined;activityReadGeneration++;} }
+  };
+  const read = sharedConversationRead(<T,>(url:string,signal:AbortSignal) => request<T>(url,{signal}));
+  type ModelCatalogResult = {models:CatalogModel[];diagnostic?:string;hasSnapshot?:boolean;revision?:string};
+  let catalogGeneration=0;
+  let catalogSnapshot:(ModelCatalogResult & {revision:string})|undefined;
+  let catalogRead:Promise<ModelCatalogResult>|undefined;
+  const changeModels=async<T,>(url:string,init:RequestInit={}):Promise<T>=>{
+    catalogRead=undefined;catalogSnapshot=undefined;catalogGeneration++;
+    try{return await request<T>(url,init);}finally{catalogRead=undefined;catalogSnapshot=undefined;catalogGeneration++;}
+  };
+  const fetchModelCatalog=async(signal?:AbortSignal):Promise<ModelCatalogResult>=>{
+    const generation=catalogGeneration,previous=catalogSnapshot;
+    const result=await request<ModelCatalogResult|{revision:string;unchanged:true}>(appPath+'/model-catalog'+(previous?'?revision='+previous.revision:''),signal?{signal}:{});
+    if('unchanged' in result&&result.unchanged===true){
+      if(previous&&previous.revision===result.revision)return previous;
+      const fresh=await request<ModelCatalogResult>(appPath+'/model-catalog',signal?{signal}:{});
+      if(generation===catalogGeneration&&fresh.revision)catalogSnapshot={...fresh,revision:fresh.revision};
+      return fresh;
+    }
+    const full=result as ModelCatalogResult;
+    if(generation===catalogGeneration&&full.revision)catalogSnapshot={...full,revision:full.revision};
+    return full;
+  };
+  return {
+    participation(workspaceId:string,conversationId:string,runId:string,signal?:AbortSignal) { return read<AgentParticipationParticipation>(path(workspaceId,conversationId)+'/participation?runId='+encodeURIComponent(runId),signal); },
+    participationSummary(workspaceId:string,input:AgentParticipationSummaryQueryParticipationSummaryQuery={},signal?:AbortSignal) { const query=new URLSearchParams(Object.entries(input).filter(([,v])=>v!==undefined&&v!=='').map(([k,v])=>[k,String(v)])); return read<AgentParticipationSummaryParticipationSummary>(path(workspaceId)+'/participation-summary?'+query,signal); },
+    defaultWorkspace(signal?: AbortSignal) { return request<{rootPath: string}>(appPath+'/default-workspace', {signal}); },
+    modelAccount(id:string) {return request<ModelAccount>(appPath+'/model-accounts/'+encodeURIComponent(id));},
+    modelAccounts(signal?:AbortSignal,includeDisabled=false) {return read<{accounts:ModelAccount[];providers:ModelProviderView[]}>(appPath+'/model-accounts'+(includeDisabled?'?includeDisabled=true':''),signal);},
+    modelAccountUsage(id:string) {return request<{references:number}>(appPath+'/model-accounts/'+encodeURIComponent(id)+'/usage');},
+    modelCatalog(signal?:AbortSignal) {
+      // Independently cancellable callers must not cancel a shared read.
+      if(signal)return fetchModelCatalog(signal);
+      if(!catalogRead){const pending=fetchModelCatalog().finally(()=>{if(catalogRead===pending)catalogRead=undefined;});catalogRead=pending;}
+      return catalogRead;
+    },
+    addModelAccount(provider:string) {return changeModels<ModelAccount>(appPath+'/model-accounts',post({provider}));},
+    addCustomModelAccount(input:CustomProviderConfigInput) {return changeModels<ModelAccount>(appPath+'/model-accounts',post({provider:'custom',custom:input}));},
+    configureCustomModelAccount(account:ModelAccount,input:CustomProviderConfigInput) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+encodeURIComponent(account.id)+'/custom',post({expectedRevision:account.revision,...input}));},
+    discoverCustomModels(input:CustomDiscoveryInput,signal?:AbortSignal) {return request<CustomDiscoveryResult>(appPath+'/model-custom/discovery',{...post(input),signal});},
+    modelSourceEnabled(account:ModelAccount,sourceEnabled:boolean) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/preferences',post({expectedRevision:account.revision,sourceEnabled}));},
+    modelPreferences(account:ModelAccount,models:Array<{id:string;enabled?:boolean;contextWindow?:number|null}>) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/preferences',post({expectedRevision:account.revision,models}));},
+    configureModelAccount(account:ModelAccount,apiKey:string) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/api-key',post({expectedRevision:account.revision,apiKey}));},
+    modelAccountAction(account:ModelAccount,action:'check'|'disconnect'|'login-attempts') {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/'+action,post({expectedRevision:account.revision}));},
+    deleteModelAccount(account:ModelAccount) {return changeModels<{accounts:ModelAccount[];providers:ModelProviderView[]}>(appPath+'/model-accounts/'+encodeURIComponent(account.id),{method:'DELETE',body:JSON.stringify({expectedRevision:account.revision})});},
+    modelLoginAttempt(accountId:string,attemptId:string,signal?:AbortSignal) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+accountId+'/login-attempts/'+attemptId,{signal});},
+    cancelModelLogin(account:ModelAccount) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/login-attempts/'+account.loginAttempt!.id+'/cancel',post({expectedRevision:account.revision}));},
+    upgradeProgram(id: string, input: {expectedRevision: string; expectedVersion: string}) { return request<ProgramUpgradeView>(`${appPath}/connections/${encodeURIComponent(id)}/program-upgrades`, post(input)); },
+    programUpdates(signal?: AbortSignal) { return request<ProgramUpdatesView>(appPath + '/program-updates', {signal}); },
+    checkProgramUpdates(connectionId?: string) { return request<ProgramUpdatesView>(appPath + '/program-updates/check', post(connectionId ? {connectionId} : {})); },
+    connections(signal?: AbortSignal) { return request<{connections: ConnectionView[]}>(appPath + '/connections', {signal}); },
+    prepareConnection(connection: ConnectionView, options: {executable?: string; install?: boolean} = {}) { return request<PreparationView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/preparation-attempts`, post({expectedRevision: connection.revision, ...options})); },
+    currentPreparation(connectionId: string, signal?: AbortSignal) { return request<{attempt: PreparationView|null}>(`${appPath}/connections/${encodeURIComponent(connectionId)}/preparation-attempts`, {signal}); },
+    preparation(connectionId: string, attemptId: string, signal?: AbortSignal) { return request<PreparationView>(`${appPath}/connections/${encodeURIComponent(connectionId)}/preparation-attempts/${encodeURIComponent(attemptId)}`, {signal}); },
+    cancelPreparation(connectionId: string, attemptId: string) { return request<PreparationView>(`${appPath}/connections/${encodeURIComponent(connectionId)}/preparation-attempts/${encodeURIComponent(attemptId)}/cancel`, post({})); },
+    connect(provider: ProviderId, expectedRevision?: string) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(provider)}/connect`, post({expectedRevision})); },
+    check(connection: ConnectionView) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/check`, post({expectedRevision: connection.revision})); },
+    disconnect(connection: ConnectionView) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/disconnect`, post({expectedRevision: connection.revision})); },
+    connectionAccountImpact(id: string, signal?: AbortSignal) { return request<ConnectionAccountImpact>(`${appPath}/connections/${encodeURIComponent(id)}/account-impact`, {signal}); },
+    logoutConnection(connection: ConnectionView, switchAccount = false) { return changeModels<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/logout`, post({expectedRevision: connection.revision, ...(switchAccount ? {switchAccount: true} : {})})); },
+    login(connection: ConnectionView) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/login-attempts`, post({expectedRevision: connection.revision})); },
+    loginAttempt(connectionId: string, id: string, signal?: AbortSignal) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connectionId)}/login-attempts/${encodeURIComponent(id)}`, {signal}); },
+    cancelLogin(connection: ConnectionView, id: string) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/login-attempts/${encodeURIComponent(id)}/cancel`, post({expectedRevision:connection.revision})); },
+    async activitySummary(signal?:AbortSignal):Promise<ConversationPage & {pending:PendingConversation[]}> {
+      const generation=activityReadGeneration,previous=activitySnapshot;
+      const result=await read<(ConversationPage & {revision:string;pending:PendingConversation[]})|{revision:string;unchanged:true}>(appPath+'/activity-summary'+(previous?'?revision='+previous.revision:''),signal);
+      if ('unchanged' in result) {
+        if (!previous || previous.revision!==result.revision) throw new Error('活动摘要版本不可复用，请重试。');
+        return previous;
+      }
+      if(generation===activityReadGeneration)activitySnapshot=result; return result;
+    },
+    pending(signal?: AbortSignal) { return read<{conversations: PendingConversation[]}>(appPath + '/pending-summary', signal); },
+    listAll(options:{draftConversationIds?:string[];workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:Exclude<ActivityFilter,null>;cursor?:string;limit?:number;signal?:AbortSignal}={}) {const params=new URLSearchParams();for(const [key,value] of Object.entries(options))if(key!=='signal'&&value!==undefined)params.set(key,key==='draftConversationIds'?JSON.stringify(value):String(value));return read<ConversationPage>(appPath+'/conversations'+(params.size?'?'+params:''),options.signal);},
+    seen(conversation:ConversationView,through:number) {return request<{activity:NonNullable<ConversationView['activity']>}>(path(conversation.workspaceId,conversation.id)+'/seen',post({through}));},
+    list(workspaceId: string, options: {taskId?: string; cursor?: string; hidden?: boolean; query?: string; signal?: AbortSignal} = {}) { const params = new URLSearchParams(); if (options.taskId) params.set('taskId', options.taskId); if (options.cursor) params.set('cursor', options.cursor); if (options.hidden) params.set('hidden', 'true'); if (options.query) params.set('query', options.query); return read<{conversations: ConversationSummary[]; nextCursor?: string}>(path(workspaceId) + (params.size ? '?' + params : ''), options.signal); },
+    draftImages(id:string) {return request<DraftImages>(path('@default')+'/drafts/'+encodeURIComponent(id));},
+    removeDraftImage(id:string,expectedRevision:string,imageId:string) {return request<DraftImages>(path('@default')+'/drafts/'+encodeURIComponent(id)+'/attachments/'+encodeURIComponent(imageId),{method:'DELETE',body:JSON.stringify({expectedRevision})});},
+    startDraft(workspaceId:string,id:string,input:StartDraftInput) {return request<{conversation:ConversationView}>(path(workspaceId)+'/drafts/'+encodeURIComponent(id)+'/send',post(input));},
+    lookupDraft(workspaceId:string,id:string,requestId:string) {return request<{found:boolean;conversation?:ConversationView}>(path(workspaceId)+'/drafts/'+encodeURIComponent(id)+'/submissions/'+encodeURIComponent(requestId));},
+    async uploadDraftImage(id:string,revision:string,file:File,metadata?:{frame?:boolean;video?:{duration:number;frames:Array<{id:string;time:number}>}}) {
+      const bytes=await timeAttachmentStage('read-file',()=>file.arrayBuffer());
+      const send=()=>timeAttachmentStage('request',()=>fetcher(path('@default')+'/drafts/'+encodeURIComponent(id)+'/attachments',{method:'POST',cache:'no-store',headers:{...session.writeHeaders(),'content-type':file.type,'x-buildr-draft-revision':revision,'x-buildr-image-name':encodeURIComponent(file.name),...(metadata?.frame?{'x-buildr-frame':'true'}:{}),...(metadata?.video?{'x-buildr-video':JSON.stringify(metadata.video)}:{})},body:bytes}));
+      let response=await send();
+      if(response.status===403&&session.refreshSession){const body=await response.clone().json().catch(()=>null);if(body?.error?.code==='session_forbidden'&&await session.refreshSession())response=await send();}
+      const body=await response.json();
+      if(!response.ok){const error:ApiError=new Error(body.error?.message||'草稿图片保存失败。');error.status=response.status;error.code=body.error?.code;throw error;}
+      return body as DraftImages;
+    },
+    async readDraftImage(id:string,imageId:string,signal?:AbortSignal):Promise<Blob> {
+      const send=()=>fetcher(path('@default')+'/drafts/'+encodeURIComponent(id)+'/attachments/'+encodeURIComponent(imageId),{cache:'no-store',signal,headers:session.writeHeaders()});
+      let response=await send();
+      if(response.status===403&&session.refreshSession){const body=await response.clone().json().catch(()=>null);if(body?.error?.code==='session_forbidden'&&await session.refreshSession())response=await send();}
+      if(!response.ok)throw new Error('草稿图片读取失败，请重新添加或稍后重试。');
+      const blob = await response.blob();
+      const encodedName = response.headers.get('content-disposition')?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+      if (encodedName) { try { return new File([blob], decodeURIComponent(encodedName), {type:blob.type}); } catch { /* Old responses need no name. */ } }
+      return blob;
+    },
+    create(input: {workspaceId: string; cwd?: string; taskId?: string; taskLinks?:{workspaceId:string;taskId:string}[]}) { return request<ConversationView>(path(input.workspaceId), post({cwd: input.cwd, taskId: input.taskId,taskLinks:input.taskLinks})); },
+    async read(workspaceId: string, id: string, signal?: AbortSignal) {
+      const deadline = AbortSignal.timeout(15_000);
+      const observation = signal ? AbortSignal.any([signal, deadline]) : deadline;
+      for (const delay of [500, 1500, 3000, 0]) {
+        try {
+          return await read<ConversationView>(path(workspaceId, id), observation);
+        } catch (failure) {
+          if (observation.aborted || !delay || (failure as ApiError)?.status !== 503) throw failure;
+          await waitForConversationRead(delay, observation);
+        }
+      }
+      throw new Error('无法读取对话。');
+    },
+    probeRevision(workspaceId: string, id: string, signal?: AbortSignal) {
+      return request<Pick<ConversationView, 'revision'>>(path(workspaceId, id) + '?limit=1', {signal});
+    },
+    historySource(workspaceId:string,id:string,input:{sourceId:string;roundId?:string;cursor?:number;limit?:number},signal?:AbortSignal) {
+      const query=new URLSearchParams(Object.entries(input).filter(([,v])=>v!==undefined).map(([k,v])=>[k,String(v)]));
+      return read<AgentConversationHistoryPageHistoryPage>(path(workspaceId,id)+'/history-source?'+query,signal);
+    },
+    entryReference(workspaceId:string,id:string,entryId:string,revision:string,signal?:AbortSignal) { return read<ConversationEntry>(path(workspaceId,id)+'/entry-detail/'+encodeURIComponent(entryId)+'?'+new URLSearchParams({revision}),signal); },
+    entry(workspaceId:string,id:string,entry:ConversationEntry,signal?:AbortSignal,sourceId?:string) {return request<ConversationEntry>(path(workspaceId,id)+'/entry-detail/'+encodeURIComponent(entry.id)+'?'+new URLSearchParams({revision:entry.detail!.revision,...(sourceId?{sourceId}:{})}),{signal});},
+    entries(workspaceId: string, id: string, cursor: number, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id) + '/entries?' + new URLSearchParams({before: String(cursor)}), {signal}); },
+    update(conversation: ConversationView, input: {title?: string; hidden?: boolean; taskId?: string | null; taskIds?: string[];taskLinks?:{workspaceId:string;taskId:string}[]}) { return request<ConversationView>(path(conversation.workspaceId, conversation.id), {method: 'PATCH', body: JSON.stringify({...input, expectedRevision: conversation.revision})}); },
+    fork(conversation:ConversationView,entryId:string,clientRequestId:string) {return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/fork',post({expectedRevision:conversation.revision,entryId,clientRequestId}));},
+    createChild(conversation:ConversationView,input:{expectedRevision:string;clientRequestId:string}) {return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/children',post(input));},
+    children(workspaceId:string,id:string,options:{cursor?:string;signal?:AbortSignal}={}) {return read<ConversationPage>(path(workspaceId,id)+'/children'+(options.cursor?'?'+new URLSearchParams({cursor:options.cursor}):''),options.signal);},
+    generateTitle(conversation:ConversationView) {return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/generate-title',post({expectedRevision:conversation.revision}));},
+    prepare(conversation: ConversationView, input: SendInput) { return request<SendPreview>(path(conversation.workspaceId, conversation.id) + '/prepare-send', post(input)); },
+    send(conversation: ConversationView, input: SendInput & {previewToken?: string; clientRequestId: string}) { return request<{conversation: ConversationView}>(path(conversation.workspaceId, conversation.id) + '/send', post(input)); },
+    queueSend(conversation: ConversationView, input: SendInput & {clientRequestId: string; expectedPendingRevision?: string; previousRunId?: string}) { return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/pending-send', post(input)); },
+    cancelPendingSend(conversation: ConversationView, expectedPendingRevision: string) { return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/cancel-pending-send', post({expectedPendingRevision})); },
+    supplement(conversation: ConversationView, input: Pick<SupplementInput,'text'|'attachmentIds'|'clientRequestId'|'sameRunOnly'>, owner?:Pick<SupplementInput,'runId'|'participantId'|'generation'>) {
+      const run=owner?{id:owner.runId,participantId:owner.participantId,generation:owner.generation}:conversation.run;
+      if(!run)return Promise.reject(new Error('原执行已结束，请核对后再发送；输入已保留。'));
+      return request<SupplementResult>(path(conversation.workspaceId,conversation.id)+'/supplement',post({...input,runId:run.id,participantId:run.participantId,generation:run.generation}));
+    },
+    stop(conversation: ConversationView, toolId?: string) { return stopConversationWithRecovery(conversation,current=>{const run=current.run!;return request<ConversationView>(path(current.workspaceId,current.id)+'/stop',post({expectedRevision:current.revision,runId:run.id,participantId:run.participantId,generation:run.generation,toolId}));},()=>request<ConversationView>(path(conversation.workspaceId,conversation.id)+'?limit=1')); },
+    stopAll(conversation:ConversationView,clientRequestId=crypto.randomUUID()) { return stopAllWithRecovery(conversation,clientRequestId,current=>request<ConversationView>(path(current.workspaceId,current.id)+'/stop-all',post({expectedRevision:current.revision,clientRequestId,observedScope:conversationStopAllObservedScope(current)})),()=>request<ConversationView>(path(conversation.workspaceId,conversation.id)+'?limit=1')); },
+    observeRun(conversation:ConversationView) { const run=conversation.run;if(!run)return Promise.reject(new Error('没有可以核对的执行。'));return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/observe-run',post({expectedRevision:conversation.revision,runId:run.id,participantId:run.participantId,generation:run.generation})); },
+    settleRetainedRun(conversation:ConversationView,run:NonNullable<ConversationView['run']>) { return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/settle-retained-run',post({expectedRevision:conversation.revision,runId:run.id,participantId:run.participantId,generation:run.generation})); },
+    observe(conversation: ConversationView) { return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/observe', post({})); },
+    reply(conversation: ConversationView, requestId: string, input: {answer: unknown}) { const pending = conversation.requests.find(item => item.id === requestId); if (!pending) return Promise.reject(new Error('原请求已经变化，请重新读取。')); return request<ConversationView>(path(conversation.workspaceId, conversation.id) + `/requests/${encodeURIComponent(requestId)}/reply`, post({...input, expectedRevision: conversation.revision, runId: pending.runId, participantId: pending.participantId, generation: pending.generation})); },
+    async upload(conversation: ConversationView, file: File, video?: { duration: number; frames: Array<{ id: string; time: number }> }) {
+      const bytes = await timeAttachmentStage('read-file',()=>file.arrayBuffer());
+      const revisionHeader:Record<string,string>=conversation.attachmentRevision?{'x-buildr-attachment-revision':conversation.attachmentRevision}:{'x-buildr-conversation-revision':conversation.revision};
+      const send = () => timeAttachmentStage('request',()=>fetcher(path(conversation.workspaceId,conversation.id) + '/attachments', {method:'POST',cache:'no-store',headers:{...session.writeHeaders(),'content-type':file.type,'x-buildr-image-name':encodeURIComponent(file.name),...revisionHeader,...(video?{'x-buildr-video':JSON.stringify(video)}:{})},body:bytes}));
+      let response = await send();
+      if(response.status===403 && session.refreshSession){const body=await response.clone().json().catch(()=>null);if(body?.error?.code==='session_forbidden' && await session.refreshSession())response=await send();}
+      const body=await response.json();
+      if(!response.ok){const error:ApiError=new Error(body.error?.message||'附件上传失败。');error.status=response.status;error.code=body.error?.code;error.details=body.error?.details;throw error;}
+      return body as AttachmentView;
+    },
+    async readImage(conversation: ConversationView, id: string, signal?: AbortSignal): Promise<Blob> {
+      const send = () => fetcher(path(conversation.workspaceId, conversation.id) + '/attachments/' + encodeURIComponent(id), { cache: 'no-store', signal, headers: session.writeHeaders() });
+      let response = await send();
+      if (response.status === 403 && session.refreshSession) {
+        const body = await response.clone().json().catch(() => null);
+        if (body?.error?.code === 'session_forbidden' && await session.refreshSession()) response = await send();
+      }
+      if (!response.ok) throw new Error('附件读取失败，请重新加载。');
+      const blob = await response.blob();
+      const encodedName = response.headers.get('content-disposition')?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+      if (encodedName) { try { return new File([blob], decodeURIComponent(encodedName), {type:blob.type}); } catch { /* Old responses need no name. */ } }
+      return blob;
+    },
+    async subscribe(workspaceId: string, id: string, signal: AbortSignal, onEvent: (event: ConversationEvent) => void, cursor?: number) {
+      let transfer='delta-v2';
+      const send=()=>fetcher(path(workspaceId,id)+'/events',{cache:'no-store',signal,headers:{...session.writeHeaders(),accept:'text/event-stream','x-buildr-conversation-transfer':transfer,...(cursor?{'last-event-id':String(cursor)}:{})}});
+      const authenticated=async()=>{
+        let response=await send();
+        if(response.status===403&&session.refreshSession){
+          const body=await response.clone().json().catch(()=>null);
+          if(body?.error?.code==='session_forbidden'&&await session.refreshSession(signal)){signal.throwIfAborted();await response.body?.cancel();response=await send();}
+        }
+        return response;
+      };
+      let response=await authenticated();
+      if(response.status===400){await response.body?.cancel();signal.throwIfAborted();transfer='delta-v1';response=await authenticated();}
+      if (!response.ok || !response.body) {
+        const body=await response.json().catch(()=>null);
+        const reference=body?.error?.details?.requestId;
+        const requestId=typeof reference==='string'&&/^[a-f0-9-]{36}$/.test(reference)?`（错误编号：${reference}）`:'';
+        const error: ApiError = new Error((body?.error?.message||'实时连接暂不可用。')+requestId);
+        error.status=response.status;error.code=body?.error?.code;throw error;
+      }
+      const reader = response.body.getReader(), decoder = new TextDecoder(), decodeEvent=conversationTransferDecoder(workspaceId,id); let buffer = '';
+      try { while (!signal.aborted) { const {value, done} = await reader.read(); if (done) break; buffer = (buffer + decoder.decode(value, {stream:true})).replace(/\r\n/g, '\n'); if (buffer.length > 8 * 1024 * 1024) throw new Error('事件缓冲超限，需要重新读取对话。'); let boundary; while ((boundary = buffer.indexOf('\n\n')) >= 0) { const frame = parseEventFrame(buffer.slice(0,boundary)); buffer = buffer.slice(boundary + 2); if (frame.data) onEvent(decodeEvent(JSON.parse(frame.data) as ConversationEvent)); } } } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+      if (!signal.aborted) throw new Error('对话连接已中断；暂时无法同步最新进展，已收到的消息仍保留。');
+    },
+  };
+}
+const session = new LocalSessionAdapter();
+export const agentConversationsApi = createAgentConversationsClient(createApiClient({sessionAdapter: {writeHeaders: () => session.writeHeaders()}}), session);
+type Client = ReturnType<typeof createAgentConversationsClient>;
+export type AgentConversationsClient = Omit<Client,'activitySummary'|'probeRevision'> & Partial<Pick<Client,'activitySummary'|'probeRevision'>>;

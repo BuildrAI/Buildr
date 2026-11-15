@@ -1,3 +1,4 @@
+import {fixturePackage} from './fixture-package.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -19,7 +20,7 @@ export const stopAgentProcess: typeof stop = input => phase('stop', () => stop(i
 export const copyPackage = (source: string, target: string) => phase('copy-package', () => fs.cpSync(source,target,{recursive:true,mode:fs.constants.COPYFILE_FICLONE}));
 export const cleanup = (root: string) => phase('cleanup', () => fs.rmSync(root,{recursive:true,force:true}));
 
-export const prepared=path.resolve(import.meta.dirname,'../../../buildr/node_modules/@buildr-ai/buildr-agent');
+export const prepared=fixturePackage();
 export const isLive=(pid:number)=>{try{process.kill(pid,0);return true;}catch{return false;}};
 export async function until<T>(read:()=>Promise<T>,accept:(value:T)=>boolean,timeoutMs=10000):Promise<T>{const deadline=Date.now()+timeoutMs;let last:unknown;for(;;){try{const value=await read();if(accept(value))return value;last=value;}catch(error){last=error;}if(Date.now()>=deadline)break;await new Promise(resolve=>setTimeout(resolve,50));}let startup='';const observed=last as {identity?:{dataRoot?:string}};if(observed?.identity?.dataRoot?.startsWith(os.tmpdir())){try{startup='\nstartup log: '+fs.readFileSync(path.join(observed.identity.dataRoot,'agent-service/process/startup.log'),'utf8').slice(-8192);}catch{}}assert.fail('state did not settle: '+JSON.stringify(last)+startup);}
 export async function actor(options:{dataRoot:string;profileId:string;runtime:AgentRuntimeUnit;workspace:string;autoContinueInterrupted?:boolean;legacySourceId?:string}){

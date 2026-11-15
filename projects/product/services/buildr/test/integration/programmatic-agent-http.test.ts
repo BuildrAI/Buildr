@@ -12,7 +12,7 @@ import {programmaticOpenApi,programmaticContractVersion,programmaticOperationInd
 function expandRefs(value:any,document:any):any {
  if(!value||typeof value!=='object')return value;
  if(Array.isArray(value))return value.map(item=>expandRefs(item,document));
- if(value.$ref){assert.match(value.$ref,/^#\/components\/schemas\//);const name=value.$ref.slice('#/components/schemas/'.length);assert.ok(document.components.schemas[name],`unresolved ${name}`);return expandRefs(document.components.schemas[name],document);}
+ if(value.$ref){const match=value.$ref.match(/^#\/components\/(schemas|responses)\/([^/]+)$/);assert.ok(match,`unsupported ${value.$ref}`);const kind=match[1],name=match[2];assert.ok(document.components[kind]?.[name],`unresolved ${value.$ref}`);return expandRefs(document.components[kind][name],document);}
  return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,expandRefs(item,document)]));
 }
 function withoutSchemaIds(value:any):any {
@@ -182,6 +182,15 @@ test('light operation index and self-contained per-operation contracts support s
  assert.equal(index.buildId,'test-build');
  assert.equal(index.operations.length,PROGRAMMATIC_OPERATIONS.length+2);
  assert.deepEqual(new Set(index.operations.map((item:any)=>item.id)),new Set(['discover','events',...PROGRAMMATIC_OPERATIONS.map(item=>item.id)]));
+ assert.deepEqual(new Set(index.sourceOperations.map((item:any)=>item.id)),new Set(['source-events',...PROGRAMMATIC_OPERATIONS.map(item=>'source-'+item.id)]));
+ for(const alias of index.sourceOperations){
+  assert.ok(index.operations.some((item:any)=>item.id===alias.aliasOf));
+  assert.match(alias.path,/\/sources\/\{sourceId\}\/scopes\/\{scopeId\}/);
+  const sourceDoc=await(await f.call('/operations/'+alias.id,token)).json();
+  assert.equal(sourceDoc['x-buildr-operation-id'],alias.id);
+  assert.deepEqual(Object.keys(sourceDoc.paths),[alias.path]);
+  assert.deepEqual(expandRefs(sourceDoc.paths,sourceDoc),expandRefs({[alias.path]:full.paths[alias.path]},full));
+ }
  assert.ok(index.operations.some((item:any)=>item.id==='run-final-reply'&&item.scope==='read'));
  for(const item of index.operations){
   const response=await f.call('/operations/'+item.id,token);assert.equal(response.status,200);

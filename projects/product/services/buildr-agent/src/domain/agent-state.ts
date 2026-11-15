@@ -2,14 +2,9 @@ import {ModelAccessError} from '../model-access/contracts.ts';
 import { qoderLoginExpiredMessage } from '../model-access/providers/qoder-auth.ts';
 import { NativeObservationError, NativeRequestError } from './error-diagnostic.ts';
 import type { ConnectionView, ContextRef, ConversationView, ExecutionRef, RunStatus, RunView } from '../contracts.ts';
+import {AgentServiceError} from './service-error.ts';
+export {AgentServiceError} from './service-error.ts';
 
-export class AgentServiceError extends Error {
-  readonly code: string;
-  readonly status: number;
-  constructor(code: string, message: string, status = 400) {
-    super(message); this.name = 'AgentServiceError'; this.code = code; this.status = status;
-  }
-}
 export function fail(code: string, message: string, status = 400): never { throw new AgentServiceError(code, message, status); }
 export function nonempty(value: unknown, label: string, maximum = 1024): string {
   if (typeof value !== 'string' || !value.trim() || value.length > maximum) fail('agent_input_invalid', `${label}无效。`);

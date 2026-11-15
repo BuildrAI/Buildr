@@ -1,0 +1,30 @@
+import { useEffect, useRef, useState } from 'react';
+import type { ConversationView } from './types.ts';
+import { ImageThumbnail, type DraftImage } from './ConversationImageInput.tsx';
+
+type ReadImage = (conversation: ConversationView, id: string, signal?: AbortSignal) => Promise<Blob>;
+function StoredImage({ conversation, id, index, read }: { conversation: ConversationView; id: string; index: number; read: ReadImage }) {
+  const target = useRef<HTMLDivElement>(null);
+  const [image, setImage] = useState<Pick<DraftImage, 'name' | 'file'>>();
+  const [failed, setFailed] = useState(false), [retry, setRetry] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController(); let active = true, started = false;
+    setImage(undefined); setFailed(false);
+    const load = () => {
+      if (started) return; started = true;
+      void read(conversation, id, controller.signal).then(blob => {
+        const name = blob instanceof File ? blob.name : `${blob.type.startsWith('video/')?'视频':blob.type.startsWith('image/')?'图片':'文档'} ${index + 1}`;
+        if (active) setImage({ name, file: new File([blob], name, { type: blob.type }) });
+      }).catch(() => { if (active) setFailed(true); });
+    };
+    const observer: IntersectionObserver | undefined = typeof IntersectionObserver === 'undefined' ? undefined : new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) { observer?.disconnect(); load(); }
+    }, { rootMargin: '200px' });
+    if (observer && target.current) observer.observe(target.current); else load();
+    return () => { active = false; observer?.disconnect(); controller.abort(); };
+  }, [conversation.workspaceId, conversation.id, id, index, read, retry]);
+  return <div ref={target} className="ac-stored-image">{image ? <ImageThumbnail image={image} /> : failed ? <button type="button" onClick={() => setRetry(value => value + 1)}>重新加载附件</button> : <span>附件 {index + 1}</span>}</div>;
+}
+export function ConversationMessageImages({ conversation, ids, read, label = '已发送附件' }: { conversation: ConversationView; ids: string[]; read: ReadImage; label?: string }) {
+  return <div className="ac-attachments ac-message-images" aria-label={label}>{ids.map((id, index) => <StoredImage key={conversation.id + ':' + id} conversation={conversation} id={id} index={index} read={read} />)}</div>;
+}

@@ -7,6 +7,7 @@ const node = (script: string, ...args: string[]) => ({ file: process.execPath, a
 /** Generated inputs are explicit preparation, shared once by checks in one execution. */
 export const sharedCheckPreparation = [
   node('tools/development/prepare-development-agent.ts'),
+  node('tools/development/prepare-development-ui.ts'),
   ...['task-dto', 'task-professional-dto', 'runtime-system-dto', 'workbench-dto', 'workspace-agent-assets-dto']
     .map(name => node(`tools/codegen/contracts/${name}.ts`)),
   node('tools/testing/test-context-build.ts', 'generate'),
@@ -14,13 +15,22 @@ export const sharedCheckPreparation = [
 
 export const serviceVerificationChecks = [
   {
+    id: 'harness-products-consumption', type: 'E2E', name: 'Real Harness and Development package coexistence and retained restart',
+    sourcePaths: ['src/**', 'services/buildr-harness/**', 'services/buildr-agent/**', 'services/buildr-harness-ui/**', 'services/buildr-harness-web/**'],
+    command: node('tools/development/run-isolated-workspace-check.ts', '--script', path.join(root, 'test/e2e/harness-products.ts'), '--', '--active-uninstall'),
+    requiredEnvironment: ['BUILDR_HARNESS_ARTIFACT', 'BUILDR_DEVELOPMENT_ARTIFACT'],
+    selection: 'explicit-only',
+    timeoutMs: 360000,
+    requirements: ['Two exact offline tarballs; active execution uninstall/reinstall uses a native-program fixture, never a paid provider or live account. No publication.'],
+  },
+  {
     id: 'test-syntax', type: 'Static', name: 'All service test and helper JavaScript/TypeScript syntax',
-    sourcePaths: ['test/**', 'tools/testing/test-syntax.ts', 'services/buildr-web/test/**', 'services/buildr-agent/test/**', 'services/dsh-plugin/test/**'],
+    sourcePaths: ['test/**', 'tools/testing/test-syntax.ts', 'services/buildr-web/test/**', 'services/buildr-harness-ui/test/**', 'services/buildr-harness-web/test/**', 'services/buildr-harness/test/**', 'services/buildr-agent/test/**', 'services/dsh-plugin/test/**'],
     command: node('tools/testing/test-syntax.ts'),
   },
   {
     id: 'test-typecheck', type: 'Static', name: 'Buildr, Web and Agent TypeScript tests and helpers',
-    sourcePaths: ['test/**', 'tools/testing/**', 'tsconfig*.json', 'services/buildr-web/test/**', 'services/buildr-agent/test/**'],
+    sourcePaths: ['test/**', 'tools/testing/**', 'tsconfig*.json', 'services/buildr-web/test/**', 'services/buildr-harness-ui/test/**', 'services/buildr-agent/test/**'],
     command: node('tools/testing/run-types.ts', '--project', 'tsconfig.tests.json'), prepare: sharedCheckPreparation,
     requirements: ['Strict TypeScript checking includes test helpers and browser journeys; JavaScript files receive syntax checks.'],
   },

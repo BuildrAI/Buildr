@@ -38,6 +38,12 @@ export function candidateEnvironmentPlan(profileValue: string, roots = { service
   plan.push({ id: 'buildr-dependencies', executable: 'npm', args: consumesArtifact ? ['ci', '--omit=dev', '--ignore-scripts', '--install-links'] : ['ci', '--install-links'], cwd: roots.serviceRoot });
   if (profile === 'publisher') plan.push({ id: 'publisher-npm', executable: 'npm', args: ['install', '--prefix', path.join(roots.serviceRoot, 'node_modules/.buildr-publisher'), '--ignore-scripts', '--no-save', '--no-package-lock', '--no-audit', '--no-fund', `npm@${PUBLISH_NPM_VERSION}`], cwd: roots.serviceRoot });
   if (consumesArtifact) return plan;
+  plan.push(
+    {id: 'harness-ui-dependencies', executable: 'npm', args: ['ci', '--ignore-scripts'], cwd: path.resolve(roots.serviceRoot, '../buildr-harness-ui')},
+    {id: 'harness-ui-build', executable: 'node', args: ['tools/build.ts'], cwd: path.resolve(roots.serviceRoot, '../buildr-harness-ui')},
+    {id: 'harness-web-dependencies', executable: 'npm', args: ['ci', '--ignore-scripts'], cwd: path.resolve(roots.serviceRoot, '../buildr-harness-web')},
+    {id: 'harness-cli-dependencies', executable: 'npm', args: ['ci', '--ignore-scripts'], cwd: path.resolve(roots.serviceRoot, '../buildr-harness')},
+  );
   // Base checks import Web pure modules directly, so a fresh preflight needs
   // the locked Web dependency tree even when no browser build is requested.
   if (profile === 'base' || profile === 'artifact' || profile === 'frontend' || profile === 'source-runtime') {

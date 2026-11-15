@@ -1,7 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import process from 'node:process';
-import { sharedCheckPreparation } from '../../../buildr/tools/testing/verification-checks.ts';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const processTests = (group: string, omit: string) => fs.globSync(`test/integration/process/${group}/*.test.ts`, { cwd: root }).filter(file => path.basename(file) !== omit).sort();
@@ -9,16 +8,19 @@ const handoffTests = (...names: string[]) => names.map(name => `test/integration
 const recoveryTests = (...names: string[]) => names.map(name => `test/integration/process/recovery/${name}`);
 const integrationTests = (...names: string[]) => names.map(name => `test/integration/${name}`);
 const executorTests = (...names: string[]) => names.map(name => `test/integration/executors/${name}`);
+const harnessProductFiles = ['harness-product.test.ts', 'harness-protocol.test.ts', 'harness-web.test.ts'].map(name => `test/integration/process/startup/${name}`);
 const storageRuntimeFiles = integrationTests(
   'component-sharing.test.ts',
   'conversation-storage.test.ts',
   'diagnostic-storage.test.ts',
+  'directory-host.test.ts',
   'host-contract.test.ts',
   'native-session-storage.test.ts',
   'native-state-storage.test.ts',
   'npm-cache-migration.test.ts',
   'participation-storage.test.ts',
   'preparation.test.ts',
+  'programmatic-credentials.test.ts',
   'process-contract-errors.test.ts',
   'process-transport.test.ts',
   'program-release.test.ts',
@@ -28,6 +30,7 @@ const storageRuntimeFiles = integrationTests(
   'runtime-materialization.test.ts',
   'runtime-preparation.test.ts',
   'storage-lifecycle.test.ts',
+  'source-continuation-policy.test.ts',
 );
 const modelsAccountsFiles = integrationTests(
   'account-environment.test.ts',
@@ -64,7 +67,7 @@ const nativeRuntimeFiles = executorTests(
 );
 const nativeRuntimeSet = new Set(nativeRuntimeFiles);
 const nativeTests = fs.globSync('test/integration/executors/**/*.test.ts', { cwd: root }).filter(file => !nativeRuntimeSet.has(file)).sort();
-const runner = path.resolve(root, '../buildr/tools/testing/run-service-tests.ts');
+const runner = path.resolve(root, 'tools/testing/run-tests.ts');
 /** Each integration file has one primary owner. The public full entry consumes this catalogue. */
 export const agentIntegrationChecks = [
   { id: 'agent-integration-storage-runtime', name: 'Agent storage, preparation and host-runtime contracts',
@@ -87,7 +90,14 @@ export const agentIntegrationChecks = [
     testFiles: nativeTests, schedulingCostMs: 45000, timeoutMs: 120000,
     resourceDemand: { workers: 2, processes: 2 } },
   { id: 'agent-integration-startup', name: 'Agent real process startup, host exits and ownership',
-    testFiles: processTests('startup', 'ownership.test.ts'), schedulingCostMs: 55000, timeoutMs: 90000,
+    testFiles: processTests('startup', 'ownership.test.ts').filter(file => !harnessProductFiles.includes(file)), schedulingCostMs: 55000, timeoutMs: 90000,
+    resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
+  { id: 'agent-integration-harness-product', name: 'Harness standalone directories, shared startup and explicit version activation',
+    testFiles: harnessProductFiles, schedulingCostMs: 55000, timeoutMs: 120000,
+    resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
+  { id: 'agent-integration-compatibility', name: 'Real unmodified v1 and v2 process compatibility',
+    testFiles: ['test/integration/process/compatibility/v1-v2.test.ts'], schedulingCostMs: 90000, timeoutMs: 240000,
+    requiredEnvironment: ['BUILDR_AGENT_V1_PACKAGE'],
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
   { id: 'agent-integration-startup-ownership', name: 'Agent real host exits and retained ownership',
     testFiles: ['test/integration/process/startup/ownership.test.ts'], schedulingCostMs: 80000, timeoutMs: 120000,
@@ -128,9 +138,9 @@ export const agentIntegrationChecks = [
       ? ['src/executors/antigravity/**', 'src/executors/claude/**', 'src/executors/codex/**', 'src/executors/dsh/**', 'src/executors/qoder/**', 'src/executors/qoder-cn/**'] : []),
   ],
   sourcePaths: ['src/**', 'tools/testing/**', 'test/support/**', 'test/integration/fixtures/**', 'package.json',
-    'services/buildr/tools/testing/run-service-tests.ts', 'services/buildr/test/verification/worker-budget.ts'],
+    'tools/package-runtime.ts', 'tools/runtime-package-tree.ts'],
   command: { file: process.execPath, args: [path.resolve(root, 'tools/testing/run-integration.ts'), '--group', group.id], cwd: '.' },
-  prepare: [{ ...sharedCheckPreparation[0], cwd: '../buildr' }], replaces: ['agent-service'],
+  prepare: [{file:process.execPath,args:[path.resolve(root,'tools/build.ts')],cwd:'.'}], replaces: ['agent-service'],
 }));
 
 export const serviceVerificationChecks = [
@@ -147,7 +157,7 @@ export const serviceVerificationChecks = [
   {
     id: 'agent-typecheck', type: 'Static', name: 'Agent production TypeScript types',
     sourcePaths: ['src/**', 'tsconfig.json', 'package.json'],
-    command: { file: process.execPath, args: [path.resolve(root, '../buildr/tools/testing/run-types.ts'), '--project', 'tsconfig.json', '--noEmit'], cwd: '.' },
+    command: { file: process.execPath, args: [path.resolve(root, 'node_modules/typescript/bin/tsc'), '--project', 'tsconfig.json', '--noEmit'], cwd: '.' },
   },
   ...agentIntegrationChecks,
 ] as const;

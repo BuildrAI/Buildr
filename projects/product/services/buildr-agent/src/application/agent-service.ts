@@ -1,3 +1,4 @@
+import {createProgrammaticAccess} from './programmatic-access.ts';
 import { ProgrammaticPushback } from './programmatic-pushback.ts';
 import { conversationRuns, unfinishedRun } from '../domain/agent-state.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
@@ -204,12 +205,13 @@ export function createAgentService(options: AgentServiceOptions) {
     const diagnostic=discoveryDiagnostic||(failed?'部分供应商核对失败或登录已失效，请在智能体与模型中查看。':undefined);
     return {...result,hasSnapshot,...(diagnostic?{diagnostic}:{})};
   };
-  const conversations = new ConversationApplication({ backendChange:options.backendChange, conversationControl:options.conversationControl, controlSupersededRun:options.controlSupersededRun, repository, connections, modelAccess: {...models, accounts: {...models.accounts, check: checkModelAccount}}, events, root, generation, now, host: new HostContext(options), get autoContinueInterrupted() { return options.autoContinueInterrupted; }, generationAlive: options.generationAlive, generationReleased:options.generationReleased, ...(options.titleTimeoutMs === undefined ? {} : { titleTimeoutMs: options.titleTimeoutMs }) });
+  const conversations = new ConversationApplication({ backendChange:options.backendChange, conversationControl:options.conversationControl, controlSupersededRun:options.controlSupersededRun, repository, connections, modelAccess: {...models, accounts: {...models.accounts, check: checkModelAccount}}, events, root, generation, now, host: new HostContext(options), get autoContinueInterrupted() { return options.autoContinueInterrupted; }, continuationPolicy: options.continuationPolicy, generationAlive: options.generationAlive, generationReleased:options.generationReleased, ...(options.titleTimeoutMs === undefined ? {} : { titleTimeoutMs: options.titleTimeoutMs }) });
   pushbackRunLiveness = (workspaceId, conversationId) => conversations.readRunLiveness(workspaceId, conversationId);
   const upgrades = new ProgramUpgrades({root,connections,programs:programManager,checks:programUpdates,release:id=>conversations.releaseForProgramUpgrade(id),now});
   const withUpgrades=(snapshot:ReturnType<typeof programUpdates.list>)=>({programs:snapshot.programs.map(program=>({...program,upgrade:(()=>{const job=upgrades.read(program.connectionId);return job&&(job.executable===program.executable||job.installedExecutable===program.executable)?job:undefined;})()}))});
   return {
     generation,
+    programmatic:createProgrammaticAccess(options),
     pushback: {
       read: (credentialId: string) => pushback.read(credentialId),
       save: (credentialId: string, input: import('../contracts.ts').PushbackSettingsInput) => pushback.save(credentialId, input),

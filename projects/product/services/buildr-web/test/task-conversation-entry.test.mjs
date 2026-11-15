@@ -7,6 +7,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 
 registerHooks({
   resolve(specifier, context, next) {
+    if(specifier.endsWith('.css'))return {url:'data:text/javascript,export default {};',shortCircuit:true};
     if(context.parentURL?.endsWith('/ConversationAssociationPopover.tsx')){if(specifier.endsWith('.css'))return {url:'data:text/javascript,export default {};',shortCircuit:true};if(specifier==='./conversation-associations')return next(new URL('../src/features/agent-conversations/conversation-associations.ts',import.meta.url).href,context);}
     if (!context.parentURL?.endsWith('/TaskConversationEntry.tsx')) return next(specifier, context);
     if (specifier === 'react') return {url:'data:text/javascript,'+encodeURIComponent('export const useCallback=value=>value;export const useState=initial=>globalThis.__taskEntryState(initial);export const useEffect=()=>{};export const useContext=()=>true;export const useRef=initial=>({current:initial});'),shortCircuit:true};

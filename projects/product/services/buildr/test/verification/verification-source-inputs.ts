@@ -109,8 +109,8 @@ export function createVerificationSourceInputReader(repositoryRoot: string, prod
     // Windows boundary fixtures retain the entire backend runtime/materialized
     // source and common declarations, independently of changed-path ownership.
     'platform-backend': source.entries.filter(([file]) => file!.startsWith(backend) || common(file!)),
-    web: source.entries.filter(([file]) => inBackend(file!) || file!.startsWith(web)),
-    plugin: source.entries.filter(([file]) => inBackend(file!) || file!.startsWith(web) || file!.startsWith(plugin) || file!.startsWith('.github/')),
+    web: source.entries.filter(([file]) => inBackend(file!) || (file!.startsWith(web)||file!.startsWith(`${prefix}buildr-harness-ui/`)||file!.startsWith(`${prefix}buildr-harness-web/`))),
+    plugin: source.entries.filter(([file]) => inBackend(file!) || (file!.startsWith(web)||file!.startsWith(`${prefix}buildr-harness-ui/`)||file!.startsWith(`${prefix}buildr-harness-web/`)) || file!.startsWith(plugin) || file!.startsWith('.github/')),
     product: source.entries.filter(([file]) => file!.startsWith('projects/product/') || file!.startsWith('skills/buildr-release/') || file === 'CHANGELOG.md' || file!.startsWith('.github/')),
     repository: source.entries,
     runtime: source.entries.filter(([file]) => !['knowledge', 'openspec', 'tasks'].some(directory => file!.startsWith(`projects/product/${directory}/`))),

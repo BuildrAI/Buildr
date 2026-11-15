@@ -1,3 +1,4 @@
+import { DIRECTORY_SOURCE_ID } from '../application/directory-host.ts';
 import { randomUUID } from 'node:crypto';
 import type { AgentHostCapabilities } from '../execution-contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
@@ -24,17 +25,30 @@ export async function exposeAgentHost(sourceId: string, host: AgentHostCapabilit
 /** Connections can disappear; stable authority source identities do not. */
 export class AgentHostRegistry implements AgentHostCapabilities {
   private peers = new Map<string, HostPeer>();
-  attach(value: HostPeer): boolean {
+  private readonly directoryHost?: AgentHostCapabilities;
+  constructor(directoryHost?: AgentHostCapabilities) { this.directoryHost = directoryHost; }
+  validatePeer(value: HostPeer): void {
     if (!value || typeof value.sourceId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(value.sourceId) || typeof value.peerId !== 'string' || typeof value.token !== 'string' || value.token.length < 32) throw new AgentServiceError('agent_host_peer_invalid', '宿主连接身份无效。');
+    if (this.directoryHost && value.sourceId === DIRECTORY_SOURCE_ID) throw new AgentServiceError('agent_host_source_reserved', '内置目录来源不能由外部回调接管。', 409);
     localOrigin(value.origin);
+  }
+  attach(value: HostPeer): boolean {
+    this.validatePeer(value);
     // A refreshed live callback takes precedence over callbacks from old hosts.
     const previous = this.peers.get(value.peerId);
     this.peers.delete(value.peerId);
     this.peers.set(value.peerId, structuredClone(value));
     return !previous || previous.sourceId !== value.sourceId || previous.origin !== value.origin || previous.token !== value.token;
   }
+  sourceOf(peerId: string): string | undefined { return this.peers.get(peerId)?.sourceId; }
+  sources(): string[] { return [...new Set([...this.peers.values()].map(peer => peer.sourceId))]; }
   detach(peerId: string): void { this.peers.delete(peerId); }
   private async call(method: Method, sourceId: string, input: unknown): Promise<any> {
+    if (this.directoryHost && sourceId === DIRECTORY_SOURCE_ID) {
+      const operation = this.directoryHost[method];
+      if (!operation) throw new AgentServiceError('agent_host_capability_unavailable', '目录宿主未提供此可选能力。', 409);
+      return (operation as (input: unknown) => Promise<unknown>).call(this.directoryHost, input);
+    }
     const peers = [...this.peers.values()].filter(peer => peer.sourceId === sourceId).reverse();
     let transportFailure: string | undefined;
     for (const peer of peers) {
@@ -52,6 +66,6 @@ export class AgentHostRegistry implements AgentHostCapabilities {
   }
   observeParticipation(input: import('../participation-contracts.ts').ParticipationSourceRequest): Promise<import('../participation-contracts.ts').ParticipationSourceResult> { return this.call('observeParticipation',input.ref.sourceId,input); }
   resolveExecutionScope(input: Parameters<AgentHostCapabilities['resolveExecutionScope']>[0]) { return this.call('resolveExecutionScope', input.ref.sourceId, input); }
-  verifyWorkObject(input: Parameters<AgentHostCapabilities['verifyWorkObject']>[0]) { return this.call('verifyWorkObject', input.ref.sourceId, input); }
+  verifyWorkObject(input: Parameters<NonNullable<AgentHostCapabilities['verifyWorkObject']>>[0]) { return this.call('verifyWorkObject', input.ref.sourceId, input); }
   listExecutionScopes(input: Parameters<AgentHostCapabilities['listExecutionScopes']>[0]) { return this.call('listExecutionScopes', input.sourceId, input); }
 }

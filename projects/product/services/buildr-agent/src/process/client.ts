@@ -1,8 +1,9 @@
+import { HarnessCallerClient } from './caller-client.ts';
 import { pendingConversationSummary } from '../domain/pending-summary.ts';
 import { conversationEventDecoder, type TransferEvent } from '../domain/conversation-transfer.ts';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { AgentHostCapabilities, AgentLifecycleContract, AgentProcessIdentity, AgentProcessStatus, AgentRuntimeUnit } from '../execution-contracts.ts';
+import type { AgentHostCapabilities, AgentLifecycleContract, AgentProcessIdentity, AgentProcessStatus, AgentRuntimeUnit, HarnessCaller, ExecutionScopeRef, SourceContinuationPolicy } from '../execution-contracts.ts';
 import { AGENT_EXECUTION_CONTRACTS } from '../execution-contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { exposeAgentHost } from './host-channel.ts';
@@ -29,12 +30,16 @@ export interface AgentProcessConnectionOptions {
   dataRoot: string;
   profileId: string;
   sourceId: string;
+  /** Explicit v2 negotiation. Omitted callers retain the v1 same-source contract. */
+  caller?: HarnessCaller;
   host?: AgentHostCapabilities;
   runtime?: AgentRuntimeUnit;
   autoContinueInterrupted?: boolean;
   legacySourceId?: string;
   /** Activation owners wait; ordinary clients retain old-run controls during an update. */
   requireRuntime?: boolean;
+  /** v1 preserves automatic alignment; new product clients explicitly reuse. */
+  adoptRuntime?: boolean;
   activationTimeoutMs?: number;
   /** Cancels initialization only; disconnecting never cancels retained executions. */
   signal?: AbortSignal;
@@ -126,11 +131,21 @@ async function ensure(options: AgentProcessConnectionOptions & {runtime:AgentRun
 
 export interface AgentProcessConnection {
   operations: AgentOperations;
+  sourcePolicy: { read(sourceId: string): Promise<SourceContinuationPolicy>; configure(sourceId: string, input: {expectedRevision: string; autoContinueInterrupted: boolean}): Promise<SourceContinuationPolicy> };
+  scopeCatalog(): Promise<{scopes: Array<{key: string; ref: ExecutionScopeRef; authority: 'builtin' | 'registered' | 'offline'}>}>;
+  /** First-party local directory registration; never accepts a programmatic bearer token. */
+  directories: { preview(input:{conversationId:string;path:string}):Promise<{kind:string;content:string;truncated:boolean}>; list(): Promise<import('../application/directory-host.ts').HarnessDirectory[]>; register(path: string): Promise<import('../application/directory-host.ts').HarnessDirectory> };
+  web:{restart(input:{expectedGeneration:string}):Promise<ReturnType<typeof import('../interfaces/http/runtime-status.ts').agentRuntimeStatus>>;status():Promise<import('./web-endpoint.ts').HarnessWebStatus>;enable(input?:{port?:number}):Promise<import('./web-endpoint.ts').HarnessWebStatus>;login():Promise<{url:string;expiresAt:number;endpointId:string}>};
   lifecycle: AgentLifecycleContract;
   /** Runtime unit this client ships; a different running unit is a version-alignment window. */
   runtime: AgentRuntimeUnit;
   disconnect(): Promise<void>;
 }
+/** Product-neutral connection: opening an entry never implicitly activates its package. */
+export function connectHarnessProcess(input: AgentProcessConnectionOptions): Promise<AgentProcessConnection> {
+  return connectAgentProcess({...input, adoptRuntime: false});
+}
+
 export async function connectAgentProcess(input: AgentProcessConnectionOptions): Promise<AgentProcessConnection> {
   input.signal?.throwIfAborted();
   const dataRoot = path.resolve(input.dataRoot);
@@ -144,7 +159,12 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
     input.signal?.throwIfAborted();
     host = input.host ? await exposeAgentHost(input.sourceId, input.host) : undefined;
   } catch(error) { initialStartup?.release(); throw error; }
-  const options = { ...input, dataRoot, runtime };
+  const options = { ...input, legacySourceId: input.legacySourceId ?? 'buildr', dataRoot, runtime };
+  const callerTransport = new HarnessCallerClient(input.caller);
+  const sendTo = async (candidate: ProcessRecord, route: string, value?: unknown, signal?: AbortSignal) => {
+    const endpoint = await callerTransport.endpoint(candidate, route, value);
+    return request(candidate.origin, endpoint.token, endpoint.route, endpoint.input, signal);
+  };
   let record: ProcessRecord, closed = false, reconnect = false;
   let requestedDigest: string | undefined;
   const pendingSends = new PendingSendRepository(path.join(options.dataRoot,'agent-service'));
@@ -165,7 +185,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
     const instanceId = candidate.identity.instanceId;
     const pending = attaching.get(instanceId);
     if (pending) return pending;
-    const registration = request(candidate.origin, candidate.token, '/host/attach', {
+    const registration = sendTo(candidate, '/host/attach', {
       peer: host.peer, autoContinueInterrupted: options.autoContinueInterrupted,
     }, AbortSignal.timeout(3000)).then(() => {
       attached.set(instanceId, candidate);
@@ -232,7 +252,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
     record = await ensure(options, initialStartup); await connected();
     const retired = readPrivate<string[]>(path.join(controlRoot(options.dataRoot),'retired-runtimes.json')) ?? [];
     const retainedOlder = readProcessInstances(options.dataRoot).some(candidate=>candidate.identity.runtime.digest===options.runtime.digest&&(candidate.retiring||candidate.stopped));
-    if (record.identity.runtime.digest !== options.runtime.digest && !retired.includes(options.runtime.digest) && !retainedOlder) {
+    if ((options.requireRuntime || options.adoptRuntime !== false) && record.identity.runtime.digest !== options.runtime.digest && !retired.includes(options.runtime.digest) && !retainedOlder) {
       try { await request(record.origin, record.token, '/runtime', { expectedGeneration: record.identity.generation, runtime: options.runtime }); requestedDigest=options.runtime.digest; }
       catch (error) { if (!(error instanceof AgentServiceError) || error.code !== 'agent_process_switching') throw error; }
       if (options.requireRuntime) await awaitRuntime(options.runtime, options.activationTimeoutMs);
@@ -261,7 +281,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
       }
     }
     if (closed) throw new AgentServiceError('agent_process_client_closed', '执行后台连接已释放。', 503);
-    try { return await request(current.origin, current.token, route, value, signal); }
+    try { return await sendTo(current, route, value, signal); }
     catch (error) {
       if (error instanceof AgentServiceError || signal?.aborted) throw error;
       // Never replay a mutation after a transport loss. The original request can be observed.
@@ -270,7 +290,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
       throw new AgentServiceError('agent_operation_result_unknown', '执行后台连接中断，操作结果尚待核对；不会自动重发。', 503);
     }
   }
-  const operations: any = { pushback: {}, connections: {}, conversations: {}, models: { accounts: {}, catalog: {} } };
+  const operations: any = { programmatic: {}, pushback: {}, connections: {}, conversations: {}, models: { accounts: {}, catalog: {} } };
   Object.defineProperty(operations, 'generation', { get: () => record.identity.generation });
   for (const name of OPERATION_NAMES) {
     const parts = name.split('.'), method = parts.pop()!; let owner = operations;
@@ -324,15 +344,18 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
     const current = await connected();
     if(requestedDigest&&current.identity.runtime.digest!==requestedDigest)throw new AgentServiceError('agent_process_switching','新版尚未就绪，本次模型调用未受理。',503);
     generating.set(requestId,current);
-    const cancel = () => { void request(current.origin,current.token,'/cancel-generation', { requestId }).catch(() => {}); };
+    const cancel = () => { void sendTo(current,'/cancel-generation', { requestId }).catch(() => {}); };
     signal.addEventListener('abort', cancel, { once: true });
-    try { return await request(current.origin,current.token,'/generate', { requestId, input: payload }, signal); }
+    try { return await sendTo(current,'/generate', { requestId, input: payload }, signal); }
     finally { signal.removeEventListener('abort', cancel); generating.delete(requestId); }
   };
   operations.conversations.subscribe = async (scope: string, id: string): Promise<AgentSubscription> => {
     const current = await connected(), controller = new AbortController(); subscriptions.add(controller);
     let response: Response;
-    try { response = await fetch(current.origin + '/events', { method: 'POST', headers: { Authorization: 'Bearer ' + current.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ sourceId: options.sourceId, scope, id, transfer: 'delta-v2' }), signal: controller.signal }); }
+    try {
+      const endpoint = await callerTransport.endpoint(current, '/events', {sourceId: options.sourceId, scope, id, transfer: 'delta-v2'});
+      response = await fetch(current.origin + endpoint.route, { method: 'POST', headers: { Authorization: 'Bearer ' + endpoint.token, 'Content-Type': 'application/json' }, body: JSON.stringify(endpoint.input), signal: controller.signal });
+    }
     catch (error) { subscriptions.delete(controller); throw error; }
     if (!response.ok || !response.body) { subscriptions.delete(controller); await response.body?.cancel(); throw new AgentServiceError('agent_process_subscription_failed', '执行后台事件连接未建立。', response.status); }
     const stream = response.body;
@@ -359,16 +382,30 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
     },
     async shutdown(value) { await call('/shutdown', value); },
   };
-  return { operations, lifecycle, runtime: options.runtime, async disconnect() {
+  return { operations, lifecycle, web:{restart:input=>call('/web',{operation:'restart',...input}),status:()=>call('/web',{operation:'status'}),enable:(input={})=>call('/web',{operation:'enable',...input}),login:()=>call('/web',{operation:'login'})}, scopeCatalog: () => call('/scope-catalog', {}), sourcePolicy: {
+    read: policySource => call('/source-policy', {operation: 'read', policySource}),
+    configure: (policySource, value) => call('/source-policy', {operation: 'configure', policySource, ...value}),
+  }, directories: {
+    preview:input=>call('/directories',{sourceId:options.sourceId,operation:'preview',...input}),
+    async list() {
+      if ((await connected()).identity.capabilities?.directoryHost !== 1) throw new AgentServiceError('agent_capability_unavailable', '现有后台尚不支持目录宿主；未另起后台或更换版本。', 409);
+      return call('/directories', {sourceId: options.sourceId, operation: 'list'});
+    },
+    async register(selectedPath) {
+      if ((await connected()).identity.capabilities?.directoryHost !== 1) throw new AgentServiceError('agent_capability_unavailable', '现有后台尚不支持目录宿主；目录输入已保留，未更换版本。', 409);
+      return call('/directories', {sourceId: options.sourceId, operation: 'register', path: selectedPath});
+    },
+  }, runtime: options.runtime, async disconnect() {
     if (closed) return;
     closed = true;
     for (const controller of subscriptions) controller.abort();
     for (const [requestId,origin] of generating) await request(origin.origin, origin.token, '/cancel-generation', { requestId }, AbortSignal.timeout(1000)).catch(() => {});
     if (host) {
       await Promise.allSettled(attaching.values());
-      await Promise.all([...attached.values()].map(origin=>request(origin.origin,origin.token,'/host/detach',{peerId:host.peer.peerId},AbortSignal.timeout(1000)).catch(()=>{})));
+      await Promise.all([...attached.values()].map(origin=>sendTo(origin,'/host/detach',{peerId:host.peer.peerId},AbortSignal.timeout(1000)).catch(()=>{})));
       await host.close();
     }
+    await callerTransport.close();
   } };
 }
 

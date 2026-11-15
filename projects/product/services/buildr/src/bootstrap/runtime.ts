@@ -4,7 +4,7 @@ import { AGENT_ASSETS_SOURCE_MODULE } from '../modules/agent-assets/source/modul
 import { createConnectionSkillsModule, CONNECTION_SKILLS_APPLICATION } from '../modules/connection-skills/module.ts';
 import { SERVICE_RUNTIME_MODULE } from '../modules/service-runtime/module.ts';
 import { createMySqlQueryModule } from '../modules/mysql-query/module.ts';
-import { CODE_MODULE, CODE_GENERATION_APPLICATION, CODE_SOURCE_CONTROL_OBSERVATIONS } from '../modules/code/module.ts';
+import { createCodeModule, CODE_GENERATION_APPLICATION, CODE_SOURCE_CONTROL_OBSERVATIONS } from '../modules/code/module.ts';
 import { AGENT_SERVICE_APPLICATION, createAgentServiceModule } from '../modules/agent-service/module.ts';
 import { WORKBENCH_MODULE } from '../modules/workbench/module.ts';
 import { createKnowledgeModule } from '../modules/knowledge/module.ts';
@@ -76,7 +76,7 @@ export function createRuntime(options: { agentRuntime?: import('@buildr-ai/build
   registry.install(AGENT_ASSETS_SOURCE_MODULE);
   registry.install(createChangeModule(runtime));
   registry.install(createAgentServiceModule({ readLocalInstance: readLocalBuildrWebInstance, readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, ...(options.agentRuntime ? { runtime: options.agentRuntime } : {}) }));
-  registry.install(CODE_MODULE);
+  registry.install(createCodeModule({generateModel: input => registry.provide(AGENT_SERVICE_APPLICATION).generate(input)}));
   registry.install(createConnectionSkillsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
   registry.install(SERVICE_RUNTIME_MODULE);
   registry.install(createMySqlQueryModule());

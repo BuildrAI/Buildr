@@ -4213,3 +4213,33 @@ test('non-retryable failure during streaming does not trigger compensation retry
     await f.close();
   }
 });
+
+
+test('canonical work objects deduplicate full identities and legacy updates preserve opaque relations', async()=>{
+  const native=fake(),f=fixture([native.executor],{taskIds:['task-one','task-two']});
+  try {
+    const chat=await f.service.conversations.create('workspace-one',{});
+    const object={sourceId:'local',scopeId:'workspace-one',kind:'work-item',id:'task-one'};
+    let current=await f.service.conversations.update('workspace-one',chat.id,{expectedRevision:chat.revision,workObjectLinks:[object,object,{...object,scopeId:'workspace-two'}]});
+    assert.equal(current.workObjectLinks?.length,2);
+    assert.deepEqual(current.taskLinks,[{workspaceId:'workspace-one',taskId:'task-one'},{workspaceId:'workspace-two',taskId:'task-one'}]);
+    assert.equal(current.workObjectLinks?.[0]?.revision,'task-one');
+    const repo=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));
+    try {
+      const record=repo.readConversation(chat.id)!;
+      const opaque={sourceId:'future-host',scopeId:'other',kind:'future-artifact',id:'task-one',revision:'future',snapshot:{title:'not authority'},unknownFutureSetting:{keep:true}};
+      record.view.workObjectLinks!.push(opaque);
+      const previous=record.view.revision;record.view.revision=randomUUID();repo.saveConversation(record,previous);
+      current=await f.service.conversations.update('workspace-one',chat.id,{expectedRevision:record.view.revision,taskIds:['task-two']});
+      assert.deepEqual(current.workObjectLinks?.find(link=>link.kind==='future-artifact'),opaque);
+      assert.equal(current.workObjectLinks?.filter(link=>link.id==='task-one').length,2,'remote same-code task and opaque object survive');
+      assert.deepEqual(current.taskIds,['task-two']);
+      assert.equal(current.run,undefined);assert.equal(native.sends.length,0);
+      await assert.rejects(f.service.conversations.update('workspace-one',chat.id,{expectedRevision:current.revision,workObjectLinks:[{...object,revision:'stale'}]}),{code:'agent_work_object_changed'});
+      await assert.rejects(f.service.conversations.update('workspace-one',chat.id,{expectedRevision:current.revision,taskLinks:[],workObjectLinks:[]}),{code:'agent_input_invalid'});
+      current=await f.service.conversations.update('workspace-one',chat.id,{expectedRevision:current.revision,taskLinks:[]});
+      assert.deepEqual(current.workObjectLinks,[opaque]);
+      assert.deepEqual(current.taskLinks,[]);
+    } finally {repo.stopReadModels();}
+  } finally {await f.close();}
+});

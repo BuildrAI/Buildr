@@ -11,10 +11,10 @@ function identity(db: DatabaseSync): string {
   const hash = createHash('sha256');
   const version=Number(db.prepare('PRAGMA user_version').get()!.user_version);
   hash.update(String(version));
-  for (const table of ['connections', 'conversations', 'conversation_entry_contents', 'conversation_read_entries']) {
+  for (const table of ['connections', 'conversations', 'conversation_entry_contents', 'conversation_read_entries', 'source_continuation_policies']) {
     if (version<5 && table.startsWith('conversation_')) continue;
     if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)) continue;
-    for (const row of db.prepare(`SELECT * FROM ${table} ORDER BY ${table.startsWith('conversation_') ? 'conversation_id,' + (table.endsWith('contents') ? 'content_revision' : 'scope,sequence') : 'id'}`).iterate()) {
+    for (const row of db.prepare(`SELECT * FROM ${table} ORDER BY ${table === 'source_continuation_policies' ? 'source_id' : table.startsWith('conversation_') ? 'conversation_id,' + (table.endsWith('contents') ? 'content_revision' : 'scope,sequence') : 'id'}`).iterate()) {
       const {body,...fields}=row; hash.update(JSON.stringify(fields));
       if (typeof body==='string' || body instanceof Uint8Array) hash.update(body);
     }
@@ -23,7 +23,7 @@ function identity(db: DatabaseSync): string {
 }
 
 /** Hold the same ownership boundary as process admission, not merely a SQLite write lock. */
-export function beginConversationMigration(db: DatabaseSync, directory: string): { release(): void; complete(): void } {
+export function beginConversationMigration(db: DatabaseSync, directory: string, targetVersion = 9): { release(): void; complete(): void } {
   const dataRoot = path.basename(directory) === 'agent-service' ? path.dirname(directory) : directory;
   let owner: ReturnType<typeof claim> | undefined, storage: ReturnType<typeof claim> | undefined;
   const release = () => { storage?.release(); owner?.release(); };
@@ -36,7 +36,7 @@ export function beginConversationMigration(db: DatabaseSync, directory: string):
     let cleanup: (() => void) | undefined;
     const version = db.prepare('PRAGMA user_version').get()!.user_version as number;
     if (version > 0) {
-      const fingerprint = identity(db), filename = path.join(directory, `conversations.pre-v9-${fingerprint}.sqlite`);
+      const fingerprint = identity(db), filename = path.join(directory, `conversations.pre-v${targetVersion}-${fingerprint}.sqlite`);
       if (!fs.existsSync(filename)) {
         const fd = fs.openSync(filename, 'wx', 0o600); fs.closeSync(fd);
         try { db.prepare('VACUUM INTO ?').run(filename); }
@@ -53,7 +53,7 @@ export function beginConversationMigration(db: DatabaseSync, directory: string):
         let current: DatabaseSync | undefined, source: DatabaseSync | undefined;
         try {
           current = new DatabaseSync(path.join(directory, 'conversations.sqlite'), { readOnly: true });
-          if (current.prepare('PRAGMA user_version').get()!.user_version !== 9 ||
+          if (current.prepare('PRAGMA user_version').get()!.user_version !== targetVersion ||
               Object.values(current.prepare('PRAGMA integrity_check').get()!)[0] !== 'ok') return;
           source = new DatabaseSync(filename, { readOnly: true });
           if (identity(source) !== fingerprint) return;

@@ -185,6 +185,19 @@ export function selectBrowserSelectors(changedPaths: any): any  {
       add(plan,'agent-conversations',originalValue,'Conversation browser scenarios keep their direct browser owner.');
       continue;
     }
+    if (originalValue.startsWith('services/buildr-harness-ui/')) {
+      if (!originalValue.includes('/test/')) {
+        add(plan, 'agent-conversations', originalValue, 'The shared Harness UI is the conversation implementation used by Development.');
+        if (!originalValue.includes('/features/agent-conversations/')) {
+          for (const selector of ['layout', 'task-materials', 'articles']) add(plan, selector, originalValue, 'Shared reading, theme and layout also affect Development consumers.');
+        }
+      }
+      continue;
+    }
+    if (originalValue.startsWith('services/buildr-harness-web/')) {
+      plan.reasons.push({path: originalValue, selector: null, reason: 'Standalone Harness shell changes require harness-standalone-acceptance; Development browser journeys do not prove that shell.'});
+      continue;
+    }
     if (originalValue.startsWith('services/buildr-web/') && !originalValue.startsWith('services/buildr-web/src/')) {
       plan.mode = 'full';
       plan.selectors = ['all'];

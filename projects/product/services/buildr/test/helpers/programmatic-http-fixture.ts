@@ -21,9 +21,10 @@ export async function programmaticHttpFixture(t:any,options:ProgrammaticHttpFixt
  const native:AgentRuntime={bindingIdentity:'fixture-binding',capabilities,inspectAccount:async()=>({status:'ready'}),models:async()=>[{id:'fixture-model',label:'Fixture',isDefault:true}],beginLogin:async()=>{},cancelLogin:async()=>{},createContext:async()=>({id:'context'}),resumeContext:async()=>{},readHistory:async()=>[],
   async send(input){sends++;emit=input.onEvent;emit({type:'accepted',executionRef:{id:'native-run'},inputItemId:input.clientRequestId});emit({type:'item',item:{id:'result-note',kind:'message',role:'assistant',text:'fixture result',executionId:'native-run',status:'completed'}});if(holdSend)await ending;else emit({type:'completed',status:'completed'});},
   observe:async()=>({status:observedStatus,executionRef:{id:'native-run'},tools:[]}),reply:async()=>{replies++;},stop:async()=>{stops++;finish();return{status:'stopped',tools:[]};},close:async()=>{finish();}};
- const service=createAgentService({dataRoot:path.join(base,'agent'),environment:{HOME:base},modelProviders:[],executors:[{descriptor:{id:'fixture',label:'Fixture',capabilities},open:async()=>native}],resolveWorkspace:()=>({rootPath:root}),assertTask(){},...(options.pushbackTransport?{pushbackTransport:options.pushbackTransport}:{}),...(options.pushbackNow?{pushbackNow:options.pushbackNow}:{})});
+ const appData=path.join(base,'app');
+ const service=createAgentService({dataRoot:appData,legacySourceId:'buildr',environment:{HOME:base},modelProviders:[],executors:[{descriptor:{id:'fixture',label:'Fixture',capabilities},open:async()=>native}],resolveWorkspace:()=>({rootPath:root}),assertTask(){},...(options.pushbackTransport?{pushbackTransport:options.pushbackTransport}:{}),...(options.pushbackNow?{pushbackNow:options.pushbackNow}:{})});
  await service.connections.connect('fixture',{expectedRevision:'unconfigured'});
- const runtime=createRuntime();let workspaceId='';const appData=path.join(base,'app');
+ const runtime=createRuntime();let workspaceId='';
  const agent=createAgentServiceHttpContribution(()=>service);
  const program=createProgrammaticHttpContribution(()=>service,agent,{dataRoot:()=>appData,version:()=>'test-version',buildId:()=>'test-build',workspaces:()=>[{id:workspaceId,name:'Allowed'}]});
  const contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>!['agent-service.http','programmatic-access.http'].includes(item.id));contributions.push(agent,program);

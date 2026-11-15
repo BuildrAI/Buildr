@@ -14,7 +14,7 @@ import { NativeContentReader, nativeContentHash } from '../../src/storage/native
 import { nativePreview } from '../../src/executors/native-process.ts';
 import { opaqueReference } from '../../src/executors/native-process.ts';
 import type { StoredConversation } from '../../src/domain/agent-state.ts';
-import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
+import { ConversationRepository, CONVERSATION_SCHEMA_VERSION } from '../../src/persistence/conversation-repository.ts';
 import { ConversationEntryStore } from '../../src/persistence/conversation-entry-store.ts';
 import { NativeContentStore } from '../../src/persistence/native-content-store.ts';
 import { maintainNativeContent } from '../../src/application/native-content-maintenance.ts';
@@ -289,9 +289,9 @@ test('v5 upgrade preserves normalized bodies and rejects a retained old writer b
   db.exec("DROP TRIGGER conversation_body_format_insert; DROP TRIGGER conversation_body_format_update; UPDATE conversations SET body=json_set(body,'$._bodyFormat',5); PRAGMA user_version=5");
   const original=f.repo.readPage(f.r.view.id)!.view.entries;
   assert.equal(maintainNativeContent(f.dataRoot).diagnostic,'native_content_maintenance_deferred','maintenance cannot silently upgrade an old live store');
-  f.repo.startReadModels();assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,9);
+  f.repo.startReadModels();assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,CONVERSATION_SCHEMA_VERSION);
   assert.deepEqual(f.repo.readPage(f.r.view.id)!.view.entries,original);
-  assert.equal(fs.readdirSync(f.root).some(name=>name.startsWith('conversations.pre-v9-')),false);
+  assert.equal(fs.readdirSync(f.root).some(name=>name.startsWith(`conversations.pre-v${CONVERSATION_SCHEMA_VERSION}-`)),false);
   assert.throws(()=>db.prepare("UPDATE conversations SET body=json_set(body,'$._bodyFormat',5)").run(),/agent_storage_writer_incompatible/);db.close();
 });
 
@@ -461,9 +461,9 @@ test('v6 reference migration verifies persisted bytes even when the native sourc
   db.prepare("UPDATE conversation_entry_contents SET codec='native-v1',body=? WHERE content_revision=?").run(JSON.stringify(reference),row.content_revision);
   db.exec("DROP TRIGGER conversation_body_format_insert; DROP TRIGGER conversation_body_format_update; UPDATE conversations SET body=json_set(body,'$._bodyFormat',6); PRAGMA user_version=6");
   fs.unlinkSync(f.file);f.repo.startReadModels();
-  assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,9);
+  assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,CONVERSATION_SCHEMA_VERSION);
   assert.equal(db.prepare("SELECT count(*) n FROM conversation_entry_contents WHERE codec='native-v1'").get()!.n,1);
-  assert.equal(fs.readdirSync(f.root).some(name=>name.startsWith('conversations.pre-v9-')),false,'verified migration backup does not retain another database copy');
+  assert.equal(fs.readdirSync(f.root).some(name=>name.startsWith(`conversations.pre-v${CONVERSATION_SCHEMA_VERSION}-`)),false,'verified migration backup does not retain another database copy');
   assert.throws(()=>db.prepare("UPDATE conversations SET body=json_set(body,'$._bodyFormat',6)").run(),/agent_storage_writer_incompatible/);
   assert.throws(()=>f.repo.readEntry(f.r.view.id,f.entry.id,row.content_revision),{code:'agent_native_content_unavailable'});
 });

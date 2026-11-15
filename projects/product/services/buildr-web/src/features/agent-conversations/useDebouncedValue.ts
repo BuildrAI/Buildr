@@ -1,10 +1,2 @@
-import { useEffect, useState } from 'react';
-
-export function useDebouncedValue<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(timer);
-  }, [value, delay]);
-  return debounced;
-}
+// Compatibility path only; the complete implementation belongs to Harness UI.
+export * from '@buildr-ai/buildr-harness-ui/conversations/useDebouncedValue';

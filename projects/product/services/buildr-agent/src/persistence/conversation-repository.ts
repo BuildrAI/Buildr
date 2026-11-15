@@ -2,7 +2,7 @@ import { NativeContentReader } from '../storage/native-content.ts';
 import { PendingSendRepository } from './pending-send-repository.ts';
 import { normalizeParticipation } from '../domain/participation.ts';
 import { projectParticipation, type ParticipationProjection } from '../domain/participation-record.ts';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { summaryView, messageSignature, messageActivityAt, userActivityAt, pendingDecisionCount, conversationActive } from '../domain/conversation-activity.ts';
 import type { ConversationView, RunView } from '../contracts.ts';
 import { unfinishedRun } from '../domain/agent-state.ts';
@@ -17,7 +17,7 @@ import type { NativeToolContent } from '../native-content-contracts.ts';
 import type { ConversationEntry } from '../contracts.ts';
 import { beginConversationMigration, migrateConversationEntries } from './conversation-migration.ts';
 
-export const CONVERSATION_SCHEMA_VERSION = 9;
+export const CONVERSATION_SCHEMA_VERSION = 10;
 const SCHEMA_VERSION = CONVERSATION_SCHEMA_VERSION;
 // 附件准备不等于开始；已发送或结果未知的尝试仍必须可发现。
 const LEGACY_HAS_WORK = "(json_array_length(json_extract(body,'$.view.entries'))>0 OR json_array_length(json_extract(body,'$.attempts'))>0 OR json_type(body,'$.view.run')='object' OR json_type(body,'$.view.childOf')='object')";
@@ -75,7 +75,7 @@ export class ConversationRepository {
         db.exec('PRAGMA busy_timeout=2000');
         const row = db.prepare('PRAGMA user_version').get() as { user_version: number };
         if (row.user_version > SCHEMA_VERSION) fail('agent_storage_newer', '此交互库来自较新版本，请使用匹配的 Buildr。', 409);
-        if (write && row.user_version < SCHEMA_VERSION) migration = beginConversationMigration(db, this.directory);
+        if (write && row.user_version < SCHEMA_VERSION) migration = beginConversationMigration(db, this.directory, SCHEMA_VERSION);
         if (write && row.user_version===0) db.exec('PRAGMA auto_vacuum=INCREMENTAL');
         // Native tools may read/backup this same private database while events persist.
         // Readers must not turn a completed native operation into a failed observation.
@@ -161,6 +161,15 @@ export class ConversationRepository {
                 BEGIN SELECT RAISE(ABORT,'agent_storage_writer_incompatible'); END;`).join('\n')}
               PRAGMA user_version=9; COMMIT;`);
           }
+          if (row.user_version < 10) {
+            db.exec(`BEGIN IMMEDIATE; DROP TRIGGER IF EXISTS conversation_body_format_insert; DROP TRIGGER IF EXISTS conversation_body_format_update;
+              UPDATE conversations SET body=json_set(body,'$._bodyFormat',10);
+              CREATE TABLE IF NOT EXISTS source_continuation_policies(source_id TEXT PRIMARY KEY, revision TEXT NOT NULL, body TEXT NOT NULL);
+              ${['INSERT','UPDATE OF body'].map((op,index)=>`CREATE TRIGGER conversation_body_format_${index?'update':'insert'} BEFORE ${op} ON conversations
+                WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 10 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
+                BEGIN SELECT RAISE(ABORT,'agent_storage_writer_incompatible'); END;`).join('\n')}
+              PRAGMA user_version=10; COMMIT;`);
+          }
           const HAS_WORK = hasWork(db);
         db.exec('CREATE TABLE IF NOT EXISTS conversation_participation (id TEXT PRIMARY KEY, revision TEXT NOT NULL, body TEXT NOT NULL)');
           // Rebuildable acceleration, not a storage-version change. SQLite also
@@ -202,6 +211,41 @@ export class ConversationRepository {
   readConnection(id: string): StoredConnection | undefined {
     const db = this.open(false); if (!db) return;
     try { const row = db.prepare('SELECT body FROM connections WHERE id=?').get(id) as { body: string } | undefined; return row ? JSON.parse(row.body) : undefined; }
+    finally { db.close(); }
+  }
+  readContinuationPolicy(sourceId: string): {sourceId: string; revision: string; autoContinueInterrupted: boolean} | undefined {
+    const db = this.open(false);
+    if (!db) return;
+    try {
+      if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name='source_continuation_policies'").get()) return;
+      const row = db.prepare('SELECT revision,body FROM source_continuation_policies WHERE source_id=?').get(sourceId) as {revision: string; body: string} | undefined;
+      if (!row) return;
+      const body = JSON.parse(row.body);
+      if (body.version !== 1 || typeof body.autoContinueInterrupted !== 'boolean') fail('agent_source_policy_invalid', '来源恢复策略不可识别，原记录保留。', 409);
+      return {sourceId, revision: row.revision, autoContinueInterrupted: body.autoContinueInterrupted};
+    } finally { db.close(); }
+  }
+  saveContinuationPolicy(sourceId: string, input: {expectedRevision: string; autoContinueInterrupted: boolean}) {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(sourceId) || typeof input.autoContinueInterrupted !== 'boolean' || typeof input.expectedRevision !== 'string') fail('agent_source_policy_invalid', '来源恢复策略字段无效。');
+    const db = this.open(true)!;
+    try {
+      db.exec('BEGIN IMMEDIATE');
+      const prior = db.prepare('SELECT revision,body FROM source_continuation_policies WHERE source_id=?').get(sourceId) as {revision: string; body: string} | undefined;
+      if ((prior?.revision ?? 'absent') !== input.expectedRevision) fail('agent_source_policy_conflict', '来源恢复策略已变化，请重读后决定。', 409);
+      const previous = prior ? JSON.parse(prior.body) : {version: 1};
+      if (previous.version !== 1) fail('agent_source_policy_invalid', '来源恢复策略版本不可识别。', 409);
+      const revision = prior && previous.autoContinueInterrupted === input.autoContinueInterrupted ? prior.revision : randomUUID();
+      db.prepare('INSERT INTO source_continuation_policies(source_id,revision,body) VALUES(?,?,?) ON CONFLICT(source_id) DO UPDATE SET revision=excluded.revision,body=excluded.body').run(sourceId, revision, JSON.stringify({...previous, autoContinueInterrupted: input.autoContinueInterrupted}));
+      db.exec('COMMIT');
+      return {sourceId, revision, autoContinueInterrupted: input.autoContinueInterrupted};
+    } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; }
+    finally { db.close(); }
+  }
+  /** Scope discovery reads saved authority references, including offline hosts. */
+  listScopeKeys(): string[] {
+    const db = this.open(false);
+    if (!db) return [];
+    try { return (db.prepare('SELECT DISTINCT workspace_id FROM conversations ORDER BY workspace_id').all() as Array<{workspace_id: string}>).map(row => row.workspace_id); }
     finally { db.close(); }
   }
   listConnections(): StoredConnection[] {

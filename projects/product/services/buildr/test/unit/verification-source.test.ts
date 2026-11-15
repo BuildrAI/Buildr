@@ -61,20 +61,21 @@ test('common source coverage is identical on Windows and macOS and native proof 
   assert.deepEqual(ids('win32', 'common'), common, 'the development machine does not define another product suite');
   for (const id of ['unit', 'unit', 'integration', 'frontend-logic', 'e2e-app-process', 'workspace-lifecycle', 'npm-launcher-candidate']) assert.ok(common.includes(id), id);
   assert.deepEqual(ids('darwin', 'platform'), ['integration-macos-native']);
-  assert.deepEqual(ids('win32', 'platform'), ['integration-windows-native']);
-  for (const [platform, native] of [['darwin', 'integration-macos-native'], ['win32', 'integration-windows-native']]) {
+  assert.deepEqual(ids('win32', 'platform'), ['integration-windows-native', 'harness-windows-native']);
+  assert.equal(common.includes('harness-windows-native'), false, 'native shortcuts cannot inherit common-source evidence');
+  for (const [platform, native] of [['darwin', ['integration-macos-native']], ['win32', ['integration-windows-native', 'harness-windows-native']]] as const) {
     const plan = createSourceVerificationPlan(platform, { scope: 'platform' });
     assert.equal(plan.steps.some((step: any) => step.id === 'unit'), false, 'native source selection must not attach unrelated source checks');
-    assert.deepEqual([...ids(platform, 'all')].sort(), [...common, native].sort());
+    assert.deepEqual([...ids(platform, 'all')].sort(), [...common, ...native].sort());
   }
   assert.equal(createSourceVerificationPlan('unsupported').status, 'blocked');
 });
 
 test('platform source and original-package plans cannot execute each other or rebuild the original', () => {
-  for (const [runner, native] of [['macos', 'integration-macos-native'], ['windows', 'integration-windows-native']]) {
+  for (const [runner, native] of [['macos', ['integration-macos-native']], ['windows', ['integration-windows-native', 'harness-windows-native']]] as const) {
     const source = createPlatformSourceVerificationPlan({ runner });
     const artifact = createPlatformArtifactVerificationPlan({ runner });
-    assert.deepEqual(source.steps.map((step: any) => step.id), [native]);
+    assert.deepEqual(source.steps.map((step: any) => step.id), [...native]);
     assert.deepEqual(artifact.steps.map((step: any) => step.id), ['release-tarball-consumption']);
     assert.equal(artifact.requiresArtifact, true);
     assert.ok(artifact.steps.every((step: any) => step.executor.consumesArtifact && step.executor.type !== 'candidate-artifact' && step.dependsOn.length === 0));

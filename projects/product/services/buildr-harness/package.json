@@ -1,0 +1,32 @@
+{
+  "name": "@buildr-ai/buildr-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "buildr-harness": "bin/buildr-harness.mjs"
+  },
+  "files": [
+    "bin/",
+    "build/",
+    "LICENSE",
+    "resources/"
+  ],
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "scripts": {
+    "build": "node tools/build.ts",
+    "typecheck": "tsc --project tsconfig.check.json",
+    "test": "node --test test/*.test.ts",
+    "release:check": "node tools/check-distribution.ts"
+  },
+  "dependencies": {
+    "@buildr-ai/buildr-agent": "file:../buildr-agent"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "@types/node": "24.13.3"
+  }
+}

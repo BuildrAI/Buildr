@@ -17,6 +17,7 @@ import {
 } from '../../../projects/product/services/buildr/src/infrastructure/product-resources/index.ts';
 import { sameFilesystemPath } from '../../../projects/product/services/buildr/src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { assertGeneratedArtifactEntry } from '../../../projects/product/services/buildr/tools/build/generated-artifacts.ts';
+import {collectThirdParty} from '../../../projects/product/services/buildr-harness/tools/collect-third-party.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../projects/product/services/buildr');
 const MAIN_ENTRY: any = path.join(serviceRoot, '../../../../skills/buildr-release/scripts/application-payload-entry.ts');
@@ -220,6 +221,10 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
     fs.writeFileSync(path.join(resourceRoot, 'product/README.md'), renderPackageReadme(fs.readFileSync(path.join(serviceRoot, 'README.md'), 'utf8'), sourceCommit), { mode: 0o644 });
     const metadata: any = packageMetadata();
     fs.writeFileSync(path.join(resourceRoot, 'product/package.json'), `${JSON.stringify(runtimePackageMetadata(metadata), null, 2)}\n`, { encoding: 'utf8', mode: 0o644 });
+    const distributionRoot = path.join(resourceRoot, 'product/distribution');
+    collectThirdParty(distributionRoot, [serviceRoot, path.resolve(serviceRoot, '../buildr-harness-ui'), path.resolve(serviceRoot, '../buildr-web')]);
+    fs.copyFileSync(path.resolve(serviceRoot, '../buildr-harness/resources/distribution-decisions.json'), path.join(distributionRoot, 'decisions.json'));
+    fs.copyFileSync(path.join(serviceRoot, 'tools/build/platform-support.json'), path.join(distributionRoot, 'platform-support.json'));
     const productionDependencies: any = dependencyInventory(resourceRoot, metadata);
     const files: any = fileInventory(destination)
       .filter((entry: any) => entry.path !== APPLICATION_PAYLOAD_MANIFEST)

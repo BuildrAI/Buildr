@@ -1,3 +1,4 @@
+import {fixturePackage} from './fixture-package.ts';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,7 +8,7 @@ import { phase } from './process-timing.ts';
 import { shareFixtureNode } from './immutable-process-inputs.ts';
 
 const seedKey = 'BUILDR_AGENT_TEST_FIXTURE_ROOT';
-const packageSource = path.resolve(import.meta.dirname, '../../../buildr/node_modules/@buildr-ai/buildr-agent');
+const packageSource = fixturePackage();
 
 function prepare(dataRoot: string, packageRoot: string, env: NodeJS.ProcessEnv): AgentRuntimeUnit {
   fs.cpSync(packageSource, packageRoot, { recursive: true, mode: fs.constants.COPYFILE_FICLONE });

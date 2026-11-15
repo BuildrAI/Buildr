@@ -20,7 +20,7 @@ const input=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
 const provider={id:'fixture',label:'fixture',open:async()=>({protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'m',label:'m',images:false,tools:false}]}),beginLogin:async()=>{},cancelLogin:async()=>{},close:async()=>{},infer:async({signal})=>new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(Error('cancelled')),{once:true}))})};
 await startAgentExecutionServer({...input,serviceOptions:{executors:[],modelProviders:[provider]}});\n`);
   const old=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/activation-fixture.mjs'});
-  const legacy=await connectAgentProcess({dataRoot,profileId,runtime:old,sourceId:'local'});
+  const legacy=await connectAgentProcess({dataRoot,profileId,runtime:old,sourceId:'local',legacySourceId:'local'});
   const legacyStatus=await legacy.lifecycle.status();
   const added=await legacy.operations.models.accounts.add({provider:'fixture'});
   const checked=await legacy.operations.models.accounts.check(added.id);
@@ -67,7 +67,7 @@ test('activation refuses an attempted broken target without claiming uncertain s
   fs.writeFileSync(path.join(packageRoot,'build/activation-broken.mjs'),`import fs from 'node:fs';fs.writeFileSync(${JSON.stringify(attempted)},'attempted');throw Error('fixture startup failure');\n`);
   const broken=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/activation-broken.mjs'});
   await assert.rejects(activateAgentServiceRuntime({dataRoot,profileId,runtime:broken}),(error:any)=>{
-    assert.ok(['agent_process_activation_failed','agent_process_start_unconfirmed'].includes(error.code));
+    assert.ok(['agent_process_activation_failed','agent_process_start_unconfirmed'].includes(error.code), `${error.code}: ${error.message}`);
     assert.equal(error.stage,'connect');assert.ok(error.message.includes(`connect / ${error.code}`));return true;
   });
   assert.equal(fs.readFileSync(attempted,'utf8'),'attempted');

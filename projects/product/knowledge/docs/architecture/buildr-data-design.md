@@ -101,6 +101,16 @@ MySQL 查询偏好保存在本机 SQLite 的 `mysql_skill_query_preferences`，�
 
 工作台（Workbench）的 `workbench_preferences` 保存计划、关注、收藏及最近访问等个人组织方式。加入计划不等于激活任务（Task），移除收藏也不删除原资源；这些引用由应用解析，不是数据库外键（Foreign Key）。字段、主键和约束集中在[表参考](buildr-database-tables.md)。
 
+## Harness 私有资料与工程业务分开
+
+Harness 的对话、原生上下文引用、程序凭据、来源策略和目录引用属于共享配置域，工程任务状态仍由各工作空间的 SQLite 维护。两个产品入口不会各建一份账号或对话库，也不因先启动目录型 Harness 就重命名旧 `buildr/@default` 或裸范围历史。具体职责见[双产品边界](harness-products.md)。
+
+当前候选持久格式为 schema 10，并行资格为 `parallelCompatibility:4`：来源化接续策略按修订维护；对话的 `workObjectLinks` 保存 `{sourceId, scopeId, kind, id}` 及可选观察信息。旧任务字段是兼容投影，旧格式更新保留其他来源、未知类型和未知字段。不能保全新格式的旧写入者须通过受保护交接退场，不能只因传输 v1 能读取就放行并行写入。
+
+程序凭据仍使用旧私有路径和标识，但唯一维护者已迁到 Harness；程序调用范围是 `executionScopes`。旧 `workspaceIds` 更新只替换 `buildr` 来源子集，保留不可见的其他来源。凭据 ID、令牌摘要、私有令牌文件、撤销与回推不属于 Development 第二份数据库。
+
+独立网页的短时单次票据、页面会话摘要和保留静态资源与 owner/caller 密钥分开。页面会话格式的 `webCompatibility` 与存储并行资格是不同判断；拒绝不兼容候选不删除原历史或使原轮重新执行。入口卸载只移除自有入口，保留资料与准确运行单元的清理须另有依据。
+
 ## 正文与索引分别保存
 
 OpenSpec 的 `specs/` 保存当前承诺，`changes/` 保存一次变更的提案、设计、规范增量和清单。任务（Task）引用变更身份，不把所有材料复制到数据库中。

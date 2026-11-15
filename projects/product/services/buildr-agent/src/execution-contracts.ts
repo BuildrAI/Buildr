@@ -5,15 +5,33 @@ export const AGENT_EXECUTION_CONTRACTS = Object.freeze({
   lifecycle: 'buildr.agent-lifecycle/v1',
 });
 
+/** Keep the v1 discovery projection truthful; new semantics are opt-in. */
+export const HARNESS_EXECUTION_CONTRACTS = Object.freeze({
+  operations: 'buildr.agent-operations/v2',
+  host: 'buildr.agent-host/v2',
+  lifecycle: AGENT_EXECUTION_CONTRACTS.lifecycle,
+});
+export type HarnessCaller =
+  | { kind: 'first-party-user'; product: 'buildr-harness' | 'buildr-development' }
+  | { kind: 'host'; sourceId: string };
+export interface HarnessCallerSession {
+  contract: typeof HARNESS_EXECUTION_CONTRACTS;
+  id: string;
+  token: string;
+  generation: string;
+  expiresAt: number;
+}
+
 export interface ExecutionScopeRef { sourceId: string; id: string }
 export interface WorkObjectRef { sourceId: string; scopeId: string; kind: string; id: string }
 export interface ExecutionScope { ref: ExecutionScopeRef; revision: string; rootPath: string }
+export interface SourceContinuationPolicy { sourceId: string; revision: string; autoContinueInterrupted: boolean }
 export interface WorkObjectObservation { ref: WorkObjectRef; revision: string }
 
 /** Read-only host authority. Unreachable is an error, never an invalid object observation. */
 export interface AgentHostCapabilities {
   resolveExecutionScope(input: { ref: ExecutionScopeRef; expectedRevision?: string }): Promise<ExecutionScope>;
-  verifyWorkObject(input: { ref: WorkObjectRef; expectedRevision?: string }): Promise<WorkObjectObservation>;
+  verifyWorkObject?(input: { ref: WorkObjectRef; expectedRevision?: string }): Promise<WorkObjectObservation>;
   observeParticipation?(input: import('./participation-contracts.ts').ParticipationSourceRequest): Promise<import('./participation-contracts.ts').ParticipationSourceResult>;
   listExecutionScopes(input: { sourceId: string }): Promise<{ refs: ExecutionScopeRef[]; revision: string }>;
 }
@@ -26,17 +44,20 @@ export interface AgentRuntimeUnit {
   entry: string;
   node: string;
   /** Equal values explicitly permit concurrent use of the private storage. */
-  parallelCompatibility?: 1 | 2 | 3;
+  parallelCompatibility?: 1 | 2 | 3 | 4;
 }
 export interface AgentProcessIdentity {
   contracts: typeof AGENT_EXECUTION_CONTRACTS;
+  /** Additive discovery; v1 identities without this field remain valid. */
+  capabilities?: { directoryHost?: 1; harnessWeb?: 1 };
+  supportedContracts?: { operations: string[]; host: string[]; lifecycle: string[] };
   instanceId: string;
   generation: string;
   profileId: string;
   dataRoot: string;
   pid: number;
   runtime: AgentRuntimeUnit;
-  parallelCompatibility?: 1 | 2 | 3;
+  parallelCompatibility?: 1 | 2 | 3 | 4;
 }
 export interface AgentProcessStatus {
   identity: AgentProcessIdentity;

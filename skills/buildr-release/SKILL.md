@@ -11,6 +11,12 @@ description: 准备、检查、发布或恢复 Buildr 主包、DSH 插件或联�
 
 ## 执行入口
 
+### 双产品发行限制
+
+主包候选把准确依赖许可文件、摘要、版本决定及平台支持声明纳入不可变负载。正式发布器在新的 npm 写入前读取该原包证据；`distribution-approval-required` 只阻止受影响发行物的写入，不阻止本机开发、独立检查或既有原工作。不得以 SPDX、私有验收包、替身测试或当前源码目录中的另一份批准替代原包证据，也不得替负责人填入允许决定。审批或证据改变属于新候选输入，保留旧原包，不就地补丁修改冻结字节。若官方源已确认同摘要公开包，继续如实采用公开事实，不用新检查否定它或重新写入。
+
+独立 `@buildr-ai/buildr-harness` 当前保留 `private:true`，只提供本机验收包，没有另开正式公开发布旁路。两产品的原包均可通过源码工具 `projects/product/services/buildr-harness/tools/inspect-artifact-distribution.ts <tarball> <准确包名>` 检查。Harness 的安装包另提供 `buildr-harness distribution-check --json` 只读核对本包证据。检查允许不等于人已授权发布或已取得模型/订阅使用权；Windows 候选实现、原生入口验证与支持声明分别保留，不把 macOS 结果代填为 Windows 通过。
+
 ### 本机正式消费预演与冻结规则
 
 新准备在分发前调用 `scripts/local-consumption-preflight.ts`：主包用既有 `candidate-ci.ts plan/aggregate` 只采用真实本机证明，再调用正式发布器的原包读取与覆盖函数；插件共用正式消费者的准确原包和完整证明读取。首次成功预演的主包汇总随 handoff 和原始证明冻结；相同原包、证明与规则接续时直接采用，输入变化则拒绝。GitHub 保全模式核对来源、规则、字节与覆盖后采用该汇总，不重复推导；旧交接、独立验证源及显式对端检查仍走原路径。实际重新执行预演时使用独立派生证据目录，不能让上次成功掩盖本次失败；回执只证明本机消费，不虚构 Actions 身份或公开资格。`local-consumption-preflight-required` 时保留原包，修复读取／契约后继续，不重建 SDK、制包或启动测试轮。

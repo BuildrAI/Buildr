@@ -24,6 +24,14 @@ test('Browser dispatcher skips Chrome for HTTP-only Buildr Web changes', () => {
   assert.deepEqual(plan.selectors, []);
   assert.match(plan.reasons[0].reason, /HTTP\/API owner/);
 });
+test('shared Harness UI selects its Development consumers without mislabeling standalone shell coverage', () => {
+  assert.deepEqual(selectBrowserSelectors(['services/buildr-harness-ui/src/features/agent-conversations/ConversationPanel.tsx']).selectors, ['agent-conversations']);
+  const shared = selectBrowserSelectors(['services/buildr-harness-ui/src/markdown.tsx']);
+  for (const selector of ['agent-conversations', 'layout', 'task-materials', 'articles']) assert.ok(shared.selectors.includes(selector));
+  const standalone = selectBrowserSelectors(['services/buildr-harness-web/src/HarnessApp.tsx']);
+  assert.deepEqual(standalone.selectors, []);
+  assert.ok(standalone.reasons.some((value: any) => value.reason.includes('harness-standalone-acceptance')));
+});
 
 test('Browser dispatcher selects only affected resource selectors', () => {
   const plan: any = selectBrowserSelectors([

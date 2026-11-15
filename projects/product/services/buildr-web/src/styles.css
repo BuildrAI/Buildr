@@ -1,23 +1,7 @@
+@import '../../buildr-harness-ui/src/shared.css';
 /* Buildr Web — soft product supplements on Ant Design 5 */
 
-:root {
-  --soft-bg: #f7f8f9;
-  --soft-surface: #ffffff;
-  --soft-ink: #252a31;
-  --soft-muted: #5e6873;
-  --soft-line: #e1e5e9;
-  --soft-primary: #397d74;
-  --soft-sidebar: #f6f7f8;
-  --soft-development-bg: #fff6dc;
-  --soft-development-ink: #805817;
-  --soft-development-line: #e2bc67;
-  --page-gutter: 32px;
-  --main-content-width: 1200px;
-  --reading-content-width: 1200px;
-  --main-content-gutter: 24px;
-  --sidebar-width: 256px;
-  --sidebar-collapsed-width: 64px;
-}
+
 
 *,
 *::before,
@@ -1499,40 +1483,6 @@ button.table-action {
 .artifact-heading small { overflow-wrap: anywhere; color: var(--soft-muted); font: var(--font-size-meta)/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .artifact-content { max-height: 500px; overflow: auto; padding: 12px 14px; }
 .artifact-missing { margin: 0; padding: 12px; color: var(--soft-muted); font-size: var(--font-size-body); }
-.markdown-body { display: grid; gap: 12px; font-size: var(--font-size-reading); line-height: 1.8; color: #34473d; font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-.markdown-body > :first-child { margin-top: 0; }
-.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6 { margin: 8px 0 0; color: var(--soft-ink); line-height: 1.3; font-weight: 750; }
-.markdown-body h1 { font-size: var(--font-size-title); }
-.markdown-body h2 { padding-bottom: 4px; border-bottom: 1px solid #e4ebe6; font-size: var(--font-size-heading); }
-.markdown-body h3 { font-size: var(--font-size-subheading); }
-.markdown-body h4, .markdown-body h5, .markdown-body h6 { font-size: var(--font-size-body); }
-.markdown-body p, .markdown-body li { margin: 0; font-size: inherit; line-height: inherit; }
-.markdown-body ul, .markdown-body ol { display: grid; gap: 6px; margin: 0; padding-left: 22px; }
-.markdown-body ul.task-list { padding-left: 4px; list-style: none; }
-.markdown-body li.task-list-item { display: grid; grid-template-columns: 16px 1fr; gap: 8px; align-items: start; }
-.markdown-body li.task-list-item input[type="checkbox"] { margin: 4px 0 0; }
-.markdown-body blockquote { display:grid; gap:10px; min-width:0; margin:0; padding:4px 0 4px 16px; border-left:3px solid var(--soft-line); color:var(--soft-muted); }
-.markdown-body li > p + p, .markdown-body li > ul, .markdown-body li > ol, .markdown-task-content > ul, .markdown-task-content > ol { margin-top:6px; }
-.markdown-task-content { min-width:0; }
-.markdown-task-content > p + p { margin-top:6px; }
-.markdown-body hr { width: 100%; height: 1px; margin: 4px 0; border: 0; background: #d7e0da; }
-.markdown-body a { color: #1f6b4a; text-decoration: underline; text-underline-offset: 2px; }
-.markdown-body code { padding: 1px 5px; border-radius: 4px; background: #eef3f0; font: var(--font-size-code)/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
-.markdown-body pre { margin: 0; padding: 10px 12px; overflow: auto; border: 1px solid var(--soft-line); border-radius: 6px; background: #f3f6f4; }
-.markdown-body pre code { padding: 0; background: transparent; font: var(--font-size-code)/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
-.markdown-body table { width: 100%; border-collapse: collapse; font-size: var(--font-size-reading); }
-.markdown-body th, .markdown-body td { padding: 6px 8px; border: 1px solid var(--soft-line); text-align: left; vertical-align: top; }
-.markdown-body th { background: #f5f7f5; color: var(--soft-ink); font-weight: 700; }
-.markdown-body strong { color: var(--soft-ink); }
-.markdown-body img { display: block; width: auto; max-width: min(100%, 840px); height: auto; margin: 4px auto; border: 1px solid var(--soft-line); border-radius: 8px; }
-/* 可放大的 Markdown 图片：只在宿主提供预览时附加该类，保持其他阅读面行为不变。 */
-.markdown-body img.markdown-zoomable-image { cursor: zoom-in; }
-.markdown-body img.markdown-zoomable-image:hover { border-color: #c4d4cd; }
-.markdown-body img.markdown-zoomable-image:focus-visible { outline: 2px solid var(--soft-primary); outline-offset: 2px; }
-.markdown-image-fallback { display: block; padding: 8px 10px; border: 1px dashed var(--soft-line); border-radius: 6px; color: var(--soft-muted); font-size: var(--font-size-secondary); }
-.markdown-link-fallback-label { color: var(--soft-ink); text-decoration: underline dotted; text-underline-offset: 2px; }
-.markdown-link-fallback-note { margin-left: 4px; color: var(--soft-muted); font-size: var(--font-size-secondary); overflow-wrap: anywhere; }
-.markdown-link-fallback-note code { font-size: var(--font-size-code); white-space: normal; overflow-wrap: anywhere; }
 .task-intent-markdown { margin-top: 8px; }
 .task-intent-markdown > .markdown-body > p { color: inherit; font-size: inherit; line-height: inherit; }
 .task-document-preview { display: grid; gap: 12px; }
@@ -1943,14 +1893,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: var(--font
 }
 
 /* 统一抽屉壳。 */
-.drawer-shell .ant-drawer-mask { background: rgba(28, 36, 43, .18); }
-.drawer-shell .ant-drawer-header { padding: 16px 20px 14px; border-bottom: 1px solid var(--soft-line); }
-.drawer-shell-heading { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.drawer-shell-eyebrow { color: var(--soft-muted); font-size: var(--font-size-meta); font-weight: 600; letter-spacing: .08em; }
-.drawer-shell-title { color: var(--soft-ink); font-size: var(--font-size-subheading); font-weight: 650; }
-.drawer-shell-sub { color: var(--soft-muted); font-size: var(--font-size-body); font-weight: 400; }
-.drawer-shell .ant-drawer-body { padding: 18px 20px; }
-.drawer-shell .ant-drawer-footer { padding: 12px 20px; border-top: 1px solid var(--soft-line); background: #fff; }
+
 
 /* 接入菜单退出：窗口缩放会取消过渡使 transitionend 永不抵达，缩短退出过渡让其按时结束并卸载。 */
 .agent-connect-menu.ant-slide-up-leave-active { transition-duration: 0.01s !important; }

@@ -11,7 +11,15 @@
       "import": "./build/index.js",
       "default": "./build/index.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./profile": {
+      "types": "./build/profile.d.ts",
+      "import": "./build/profile.js",
+      "default": "./build/profile.js"
+    },
+    "./http-dto": {
+      "types": "./build/http-dto.d.ts"
+    }
   },
   "files": [
     "build/",
@@ -23,9 +31,10 @@
   "scripts": {
     "build": "node tools/build.ts",
     "typecheck": "tsc --project tsconfig.json --noEmit",
-    "test": "node ../buildr/test/verification/cli.ts unit --check agent-unit",
-    "test:static": "node ../buildr/test/verification/cli.ts static --check agent-source-boundaries --check agent-typecheck",
-    "test:integration": "node tools/testing/run-integration.ts"
+    "test": "node tools/testing/run-tests.ts 'test/unit/*.test.ts'",
+    "test:static": "node tools/testing/run-tests.ts 'test/static/*.test.ts' && npm run typecheck",
+    "test:integration": "node tools/testing/run-integration.ts",
+    "contracts:generate": "node tools/codegen/http-dto.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.322",
@@ -54,6 +63,7 @@
   "devDependencies": {
     "@types/node": "24.13.3",
     "@types/ws": "8.18.1",
+    "json-schema-to-typescript": "15.0.4",
     "typescript": "7.0.2"
   }
 }

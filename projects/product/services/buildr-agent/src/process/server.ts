@@ -1,3 +1,11 @@
+import {agentRuntimeStatus} from '../interfaces/http/runtime-status.ts';
+import {HarnessWebEndpoint} from './web-endpoint.ts';
+import {connectHarnessProcess} from './client.ts';
+import type {AgentProcessConnection} from './client.ts';
+import { HarnessDirectoryHost, DIRECTORY_SOURCE_ID } from '../application/directory-host.ts';
+import { SourceContinuationPolicies } from './source-policies.ts';
+import { HarnessCallerClient } from './caller-client.ts';
+import { HarnessCallerSessions } from './caller-sessions.ts';
 import { executionLog,diagnosticCode } from '../storage/execution-log.ts';
 import type { ServiceEvent } from '../contracts.ts';
 import { conversationEventEncoder } from '../domain/conversation-transfer.ts';
@@ -9,7 +17,7 @@ import { once } from 'node:events';
 import { setTimeout as pause } from 'node:timers/promises';
 import { createAgentService } from '../application/agent-service.ts';
 import type { AgentServiceOptions } from '../contracts.ts';
-import { AGENT_EXECUTION_CONTRACTS, executionScopeRef } from '../execution-contracts.ts';
+import { AGENT_EXECUTION_CONTRACTS, HARNESS_EXECUTION_CONTRACTS, executionScopeRef, executionScopeKey } from '../execution-contracts.ts';
 import type { AgentProcessIdentity, AgentProcessStatus, AgentRuntimeUnit } from '../execution-contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { AgentHostRegistry } from './host-channel.ts';
@@ -17,7 +25,7 @@ import { dispatchOperation, validateOperation } from './operations.ts';
 import { authorize, body, json, listen, request, privateToken, keepEventStreamAlive } from './transport.ts';
 import { claim, claimStorage, clearProcessRecord, controlRoot, readPrivate, writePrivate, readProcessRecord, readProcessInstances, writeProcessInstance, generationAlive, live, readLock } from './ownership.ts';
 import type { ProcessBootstrap, ProcessRecord } from './ownership.ts';
-import { validateAgentRuntime, canRunParallel } from './runtime-unit.ts';
+import { validateAgentRuntime, canRunParallel, runtimeSupportsHarnessWeb } from './runtime-unit.ts';
 import { launchAgentProcess } from './handoff.ts';
 import { ConversationRepository } from '../persistence/conversation-repository.ts';
 import { ConversationReadModel } from '../persistence/conversation-read-model.ts';
@@ -32,15 +40,18 @@ const PARALLEL_START_WAIT_MS = RUNTIME_REGISTRATION_WAIT_MS + 20_000;
 
 interface PendingRuntime { runtime: AgentRuntimeUnit; state: 'waiting' | 'switching' | 'parallel-starting' | 'failed'; coordinatorPid?: number; handoffFile?: string; diagnostic?: string }
 export async function startAgentExecutionServer(options: ProcessBootstrap & { serviceOptions?: Pick<AgentServiceOptions, 'executors' | 'modelProviders' | 'programManager'> }) {
+  options = {...options, legacySourceId: options.legacySourceId ?? 'buildr'};
   validateAgentRuntime(options.dataRoot, options.runtime);
   let owner = claim(options.dataRoot, 'owner'), ownsMetadata = true;
   let abortStart: (() => Promise<void>) | undefined;
   let cleanupDiagnostics:(()=>void)|undefined;
   try {
-  const hosts = new AgentHostRegistry();
+  const directories = new HarnessDirectoryHost(options.dataRoot);
+  const hosts = new AgentHostRegistry(directories);
+  const sourcePolicies = new SourceContinuationPolicies(options.dataRoot, options.legacySourceId!, () => options.autoContinueInterrupted ?? false);
   const backendChange = runtimeChange(readProcessRecord(options.dataRoot), options.runtime.digest, new Date().toISOString());
   const retainedOwners=new Map(readProcessInstances(options.dataRoot).map(record=>[record.identity.generation,record.identity]));
-  const service = createAgentService({ ...options.serviceOptions, backendChange, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, get autoContinueInterrupted() { return options.autoContinueInterrupted; }, host: hosts, controlSupersededRun:async(scope,id,control,action)=>{
+  const service = createAgentService({ ...options.serviceOptions, backendChange, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, get autoContinueInterrupted() { return options.autoContinueInterrupted; }, continuationPolicy: scope => sourcePolicies.enabled(scope), host: hosts, controlSupersededRun:async(scope,id,control,action)=>{
     const target=await recipient(scope,id,control.generation);
     if(target)return forward(target,'/operations',{contract:AGENT_EXECUTION_CONTRACTS.operations,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,operation:action==='stop'?'conversations.stop':action==='release-question-wait'?'conversations.releaseQuestionWait':'conversations.observeRun',args:[scope,id,control]});
     return action==='stop'?service.conversations.stop(scope,id,control):action==='release-question-wait'?service.conversations.releaseQuestionWait(scope,id,control):service.conversations.observeRun(scope,id,control);
@@ -77,7 +88,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       return;
     }
   }
-  const identity: AgentProcessIdentity = { contracts: AGENT_EXECUTION_CONTRACTS, instanceId, generation: service.generation, profileId: options.profileId, dataRoot: path.resolve(options.dataRoot), pid: process.pid, runtime: options.runtime, parallelCompatibility: options.runtime.parallelCompatibility };
+  const identity: AgentProcessIdentity = { contracts: AGENT_EXECUTION_CONTRACTS, capabilities: {directoryHost: 1,harnessWeb:1}, supportedContracts: {operations: [AGENT_EXECUTION_CONTRACTS.operations, HARNESS_EXECUTION_CONTRACTS.operations], host: [AGENT_EXECUTION_CONTRACTS.host, HARNESS_EXECUTION_CONTRACTS.host], lifecycle: [AGENT_EXECUTION_CONTRACTS.lifecycle]}, instanceId, generation: service.generation, profileId: options.profileId, dataRoot: path.resolve(options.dataRoot), pid: process.pid, runtime: options.runtime, parallelCompatibility: options.runtime.parallelCompatibility };
   const diagnostics=executionLog(path.join(options.dataRoot,'agent-service'),service.generation);
   const previous=readProcessRecord(options.dataRoot);
   diagnostics({event:'service-start',runtimeDigest:options.runtime.digest,previousGeneration:previous?.identity.generation,previousPid:previous?.identity.pid,reason:backendChange?.reason??'initial-start'});
@@ -143,10 +154,19 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   async function conversationBusy(scope: string, id: string): Promise<boolean> {
     return service.conversationInputBusy(scope, id);
   }
-  async function forward(record: ProcessRecord, route: string, input: any): Promise<any> {
+  const forwardingClients = new Map<string, HarnessCallerClient>();
+  async function forward(record: ProcessRecord, route: string, input: any, caller?: ReturnType<HarnessCallerSessions['authenticate']>): Promise<any> {
     const visited: string[] = input.forwarded ?? [];
     if (!Array.isArray(visited) || visited.length > 8 || visited.includes(identity.instanceId)) throw new AgentServiceError('agent_process_route_conflict', '执行归属发生变化，请重新读取。', 409);
-    try { return await request(record.origin, record.token, route, {...input,forwarded:[...visited,identity.instanceId]}); }
+    try {
+      const payload = {...input,forwarded:[...visited,identity.instanceId]};
+      if (!caller) return await request(record.origin, record.token, route, payload);
+      const key = JSON.stringify(caller.caller);
+      let client = forwardingClients.get(key);
+      if (!client) { client = new HarnessCallerClient(caller.caller); forwardingClients.set(key, client); }
+      const endpoint = await client.endpoint(record, route, payload);
+      return await request(record.origin, endpoint.token, endpoint.route, endpoint.input);
+    }
     catch (error) { if (error instanceof AgentServiceError) throw error; throw new AgentServiceError('agent_operation_result_unknown', '原后台操作结果尚待核对，不会自动重发。', 503); }
   }
   const sends = new PendingSends({dataRoot:options.dataRoot,service,active:()=>!closing&&accepting&&!retiring&&(!pending||pending.state==='failed'||pending.runtime.digest===options.runtime.digest)&&readProcessRecord(options.dataRoot)?.identity.instanceId===instanceId,generationAlive:generation=>generationAlive(options.dataRoot,generation),conversationBusy});
@@ -154,21 +174,119 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (typeof key !== 'string' || !key || executionScopeRef(key, options.legacySourceId).sourceId !== sourceId) throw new AgentServiceError('agent_host_source_mismatch', '执行范围不属于当前接入来源。', 409);
   }
   function operationScopes(sourceId: string, name: string, args: any[]): void {
+    const input=args.at(-1);
+    if(input&&typeof input==='object'&&input.workObjectLinks!==undefined)throw new AgentServiceError('agent_capability_unavailable','工作对象引用需要明确的 v2 调用身份。',409);
     if (name === 'conversations.listAll' || name === 'conversations.activityEpoch') {
       if (!Array.isArray(args[0])) throw new AgentServiceError('agent_process_input_invalid', '执行范围列表无效。');
       for (const key of args[0]) scope(sourceId, key);
     } else if (name.startsWith('conversations.') && !['conversations.pending','conversations.pendingSummary'].includes(name)) scope(sourceId, args[0]);
   }
+  const callers = new HarnessCallerSessions(service.generation);
+  let webConnection:Promise<AgentProcessConnection>|undefined;
+  const web=new HarnessWebEndpoint({dataRoot:options.dataRoot,generation:identity.generation,instanceId,staticRoot:path.join(options.runtime.directory,'build/harness-web-dist'),runtimeDigest:options.runtime.digest,ownsListener:()=>ownsMetadata&&!closing&&!retiring,
+    connect:()=>webConnection??=connectHarnessProcess({dataRoot:options.dataRoot,profileId:options.profileId,runtime:options.runtime,sourceId:DIRECTORY_SOURCE_ID,caller:{kind:'first-party-user',product:'buildr-harness'}}).catch(error=>{webConnection=undefined;throw error;}),
+  });
   const channel = await listen(async (req, res) => {
-    authorize(req, options.token);
-    if (req.method === 'GET' && req.url === '/identity') { json(res, 200, identity); return; }
-    if (req.method === 'GET' && req.url === '/status') { json(res, 200, status()); return; }
+    const isV2 = req.url?.startsWith('/v2/') === true;
+    const caller = isV2 ? callers.authenticate(req) : undefined;
+    if (!caller) authorize(req, options.token);
+    const route = isV2 ? req.url!.slice(3) : req.url;
+    if (caller && !['/operations', '/events', '/directories', '/host/attach', '/host/detach', '/scope-catalog', '/source-policy', '/web', '/caller-close', '/generate', '/cancel-generation'].includes(route!)) throw new AgentServiceError('agent_caller_operation_denied', '调用连接没有后台管理权限。', 403);
+    if (req.method === 'GET' && route === '/identity') { json(res, 200, identity); return; }
+    if (req.method === 'GET' && route === '/status') { json(res, 200, status()); return; }
     if (req.method !== 'POST') throw new AgentServiceError('agent_process_operation_invalid', '不支持的执行后台入口。', 404);
-    const attachmentUpload = req.url === '/operations' && req.headers['x-buildr-operation'] === 'conversations.addAttachment';
+    const attachmentUpload = route === '/operations' && req.headers['x-buildr-operation'] === 'conversations.addAttachment';
     const input = await body(req, attachmentUpload ? 46 * 1024 * 1024 : undefined);
     if (attachmentUpload && input.operation !== 'conversations.addAttachment') throw new AgentServiceError('agent_process_operation_invalid', '附件传输操作不匹配。');
-    if (req.url === '/host/attach') {
+    if (route === '/caller/negotiate') {
+      // This path remains owner-token-only; caller tokens cannot issue identities.
+      if (closing) throw new AgentServiceError('agent_process_switching', '后台正在退出，未建立调用连接。', 503);
+      json(res, 200, callers.issue(input)); return;
+    }
+    if (caller) {
+      if (input.caller !== undefined || input.authoritySources !== undefined || input.sourceId !== undefined) throw new AgentServiceError('agent_caller_identity_assertion', '请求体不能声明调用身份或来源权限。', 403);
+      if (route === '/caller-close') { callers.close(caller); json(res, 200, {closed: true}); return; }
+      if (route === '/operations') {
+        if (input.contract !== HARNESS_EXECUTION_CONTRACTS.operations || typeof input.operation !== 'string' || !Array.isArray(input.args)) throw new AgentServiceError('agent_caller_contract_unsupported', '操作未协商新版契约。', 409);
+        callers.operation(caller, input);
+        input.sourceId = input.targetScope?.sourceId ?? (caller.caller.kind === 'host' ? caller.caller.sourceId : 'harness-local');
+        input.contract = AGENT_EXECUTION_CONTRACTS.operations;
+      } else if (route === '/events') {
+        if (!input.targetScope) throw new AgentServiceError('agent_caller_scope_denied', '事件订阅缺少准确目标来源。', 403);
+        input.sourceId = callers.scope(caller, input.scope, input.targetScope).sourceId;
+      } else if (route === '/host/attach') callers.authority(caller, input.peer?.sourceId);
+      else if (route === '/host/detach') {
+        const source = hosts.sourceOf(input.peerId);
+        if (source) callers.authority(caller, source);
+      } else if (route === '/directories') {
+        callers.directory(caller, !['list','preview'].includes(input.operation)); input.sourceId = DIRECTORY_SOURCE_ID;
+      } else if (['/generate', '/cancel-generation'].includes(route!) && !callers.isFirstParty(caller)) throw new AgentServiceError('agent_caller_operation_denied', '此调用连接没有模型管理或生成权限。', 403);
+    }
+    if(route==='/web'){
+      if(!caller||!callers.isFirstParty(caller))throw new AgentServiceError('agent_caller_operation_denied','独立网页管理需要本机第一方身份。',403);
+      if(input.operation==='status'){json(res,200,web.status());return;}
+      if(caller.caller.kind!=='first-party-user'||caller.caller.product!=='buildr-harness')throw new AgentServiceError('agent_caller_operation_denied','Development 不隐式启用独立 Harness 网页。',403);
+      if(input.operation==='restart'&&Object.keys(input).every(key=>['operation','expectedGeneration'].includes(key))){
+        if(input.expectedGeneration!==identity.generation)throw new AgentServiceError('agent_process_generation_changed','执行后台代次已变化，未重启。',409);
+        if(!ownsMetadata||retiring||closing||status().activity.busy)throw new AgentServiceError('agent_process_busy','仍有执行或交接未释放，未重启。',409);
+        pending={runtime:options.runtime,state:'waiting'};savePending(pending);json(res,202,agentRuntimeStatus(status()));return;
+      }
+      if(input.operation==='enable'&&!runtimeSupportsHarnessWeb(options.runtime))throw new AgentServiceError('agent_web_runtime_incompatible','此负载未声明受支持的页面会话格式。',409);
+      if(input.operation==='enable'&&Object.keys(input).every(key=>['operation','port'].includes(key))){json(res,200,await web.enable(input));return;}
+      if(input.operation==='login'&&Object.keys(input).join()==='operation'){json(res,200,await web.login());return;}
+      throw new AgentServiceError('agent_process_input_invalid','网页管理操作无效。');
+    }
+    if (route === '/source-policy') {
+      if (!caller) throw new AgentServiceError('agent_caller_contract_unsupported', '恢复策略维护需要新版调用身份。', 409);
+      callers.policy(caller, input.policySource, input.operation !== 'read');
+      if (input.operation === 'read') { json(res, 200, sourcePolicies.read(input.policySource)); return; }
+      if (input.operation !== 'configure') throw new AgentServiceError('agent_source_policy_invalid', '恢复策略操作无效。');
+      if (!accepting || retiring || closing) throw new AgentServiceError('agent_process_switching', '当前代次不再维护来源策略。', 503);
+      const updated = sourcePolicies.configure(input.policySource, input);
+      if (updated.autoContinueInterrupted) recoverAfterHostAttach();
+      json(res, 200, updated); return;
+    }
+    if (route === '/scope-catalog') {
+      if (!caller) throw new AgentServiceError('agent_caller_contract_unsupported', '范围发现需要显式新版调用连接。', 409);
+      const keys = new Set(repository.listScopeKeys());
+      for (const directory of directories.list()) keys.add(executionScopeKey(directory.ref));
+      const registered = new Set(hosts.sources());
+      await Promise.all([...registered].filter(source => callers.isFirstParty(caller) || caller.caller.kind === 'host' && caller.caller.sourceId === source).map(async sourceId => {
+        try {
+          const result = await hosts.listExecutionScopes({sourceId});
+          for (const ref of result.refs) {
+            if (ref.sourceId !== sourceId) throw new AgentServiceError('agent_host_source_mismatch', '宿主范围发现来源不匹配。', 409);
+            // Preserve the original bare key for Development's historical scopes.
+            keys.add(sourceId === 'buildr' ? ref.id : executionScopeKey(ref));
+          }
+        } catch { registered.delete(sourceId); }
+      }));
+      const scopes = [...keys].filter(key => callers.canRead(caller, key)).map(key => {
+        const ref = executionScopeRef(key, 'buildr');
+        return {key, ref, authority: ref.sourceId === DIRECTORY_SOURCE_ID ? 'builtin' : registered.has(ref.sourceId) ? 'registered' : 'offline'};
+      });
+      json(res, 200, {scopes}); return;
+    }
+    if (route === '/directories') {
+      if (input.sourceId !== DIRECTORY_SOURCE_ID) throw new AgentServiceError('agent_host_source_mismatch', '此入口不是目录宿主。', 409);
+      if (input.operation === 'list') { json(res, 200, directories.list()); return; }
+      if(input.operation==='preview'){
+        const record=typeof input.conversationId==='string'?repository.readConversation(input.conversationId):undefined;
+        if(!record?.hostScope||executionScopeRef(record.view.workspaceId,'buildr').sourceId!==DIRECTORY_SOURCE_ID)throw new AgentServiceError('agent_directory_file_forbidden','仅能读取准确目录对话的来源文件。',403);
+        json(res,200,await directories.preview({ref:record.hostScope.ref,expectedRevision:record.hostScope.revision,path:input.path}));return;
+      }
+      if (input.operation !== 'register' || typeof input.path !== 'string') throw new AgentServiceError('agent_process_input_invalid', '目录操作无效。');
+      if (closing || retiring || !accepting) throw new AgentServiceError('agent_process_switching', '目录登记暂不可写，输入已保留。', 503);
+      json(res, 200, directories.register(input.path)); return;
+    }
+    if (route === '/host/attach') {
       if (closing) throw new AgentServiceError('agent_process_switching','执行后台正在退出，宿主尚未接入。',503);
+      hosts.validatePeer(input.peer);
+      if (caller && typeof input.autoContinueInterrupted === 'boolean' && sourcePolicies.read(input.peer.sourceId).revision === 'absent') {
+        if (!accepting || retiring) throw new AgentServiceError('agent_process_switching', '当前代次不再维护来源策略。', 503);
+        try { sourcePolicies.configure(input.peer.sourceId, {expectedRevision: 'absent', autoContinueInterrupted: input.autoContinueInterrupted}); }
+        catch (error) { if (!(error instanceof AgentServiceError) || error.code !== 'agent_source_policy_conflict') throw error; }
+      }
       const attached = hosts.attach(input.peer);
       // A new owning host refreshes policy even when the old bootstrap launched this generation.
       const ownsPolicy = input.peer.sourceId === options.legacySourceId;
@@ -177,8 +295,8 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if (attached || enabledRecovery) recoverAfterHostAttach();
       json(res, 200, { attached: true }); return;
     }
-    if (req.url === '/host/detach') { hosts.detach(input.peerId); json(res, 200, { detached: true }); return; }
-    if (req.url === '/conversation-state') {
+    if (route === '/host/detach') { hosts.detach(input.peerId); json(res, 200, { detached: true }); return; }
+    if (route === '/conversation-state') {
       if (input.observe===true) {
         scope(input.sourceId,input.scope);
         const released=await service.observeForRelease(input.scope,input.id,input.runId,input.generation);
@@ -187,17 +305,18 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if (retiring) await service.releaseIdleSources({workspaceId:input.scope,id:input.id});
       json(res, 200, {generation:identity.generation,busy:service.conversationBusy(input.scope,input.id) || retiring && service.retainsConversationSource(input.scope,input.id)}); return;
     }
-    if (req.url === '/revoke') {
+    if (route === '/revoke') {
       if (input.connectionId) { service.revokeModel('native-'+input.connectionId); await service.connections.disconnect(input.connectionId, {expectedRevision:service.connections.read(input.connectionId).revision}); }
       if (input.accountId) service.revokeModel(input.accountId);
       json(res, 200, {revoked:true}); return;
     }
-    if (req.url === '/runtime') {
+    if (route === '/runtime') {
       const current = readProcessRecord(options.dataRoot);
       if (retiring && current && current.identity.instanceId !== instanceId) { json(res, 200, await forward(current, '/runtime', {...input,expectedGeneration:current.identity.generation})); return; }
       if(closing || !accepting)throw new AgentServiceError('agent_process_switching','执行后台正在切换，尚未受理新更新。',503);
       if (input.expectedGeneration !== identity.generation) throw new AgentServiceError('agent_control_stale', '执行后台代次已变化。', 409);
       validateAgentRuntime(options.dataRoot, input.runtime);
+      if(web.status().enabled&&!runtimeSupportsHarnessWeb(input.runtime))throw new AgentServiceError('agent_web_runtime_incompatible','候选不兼容现有页面会话或保留资源，原网页和工作已保留。',409);
       const nextPending = input.runtime.digest === options.runtime.digest ? undefined : { runtime: input.runtime, state: 'waiting' as const };
       const observedPending = pending;
       const started = performance.now();
@@ -254,13 +373,13 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
         throw error;
       }
     }
-    if (req.url === '/shutdown') {
+    if (route === '/shutdown') {
       if (input.expectedGeneration !== identity.generation || !['if-idle','stop-owned'].includes(input.mode)) throw new AgentServiceError('agent_control_stale', '退出请求已变化。', 409);
       if (input.mode === 'if-idle' && status().activity.busy) throw new AgentServiceError('agent_process_busy', '执行后台仍有工作或待确认事项。', 409);
       accepting = false; json(res, 202, { accepted: true }); setImmediate(() => { void close('authenticated-shutdown').finally(() => { process.exitCode = 0; }); }); return;
     }
-    if (req.url === '/cancel-generation') { generations.get(input.requestId)?.abort(); json(res, 200, { cancelled: true }); return; }
-    if (req.url === '/events') {
+    if (route === '/cancel-generation') { generations.get(input.requestId)?.abort(); json(res, 200, { cancelled: true }); return; }
+    if (route === '/events') {
       scope(input.sourceId, input.scope);
       const subscription = service.conversations.subscribe(input.scope, input.id,{compactTools:true});
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store' });
@@ -302,7 +421,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     }
     inflight++;
     try {
-      if (req.url === '/generate') {
+      if (route === '/generate') {
         const current = readProcessRecord(options.dataRoot);
         if (retiring && current && current.identity.instanceId !== instanceId) throw new AgentServiceError('agent_process_switching','新模型调用请重新连接当前后台，本次尚未受理。',503);
         if (!accepting) throw new AgentServiceError('agent_process_switching', '新版尚未就绪，本次模型请求尚未受理。', 503);
@@ -313,10 +432,11 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
         finally { res.removeListener('close',disconnected); generations.delete(input.requestId); }
         return;
       }
-      if (req.url !== '/operations' || input.contract !== AGENT_EXECUTION_CONTRACTS.operations || typeof input.sourceId !== 'string' || typeof input.operation !== 'string' || !Array.isArray(input.args)) throw new AgentServiceError('agent_process_operation_invalid', '执行操作契约不匹配。');
-      operationScopes(input.sourceId, input.operation, input.args);
+      if (route !== '/operations' || input.contract !== AGENT_EXECUTION_CONTRACTS.operations || typeof input.sourceId !== 'string' || typeof input.operation !== 'string' || !Array.isArray(input.args)) throw new AgentServiceError('agent_process_operation_invalid', '执行操作契约不匹配。');
+      if (!caller) operationScopes(input.sourceId, input.operation, input.args);
       validateOperation(input.operation, input.args);
       const name: string = input.operation;
+      if(name.startsWith('programmatic.')&&!accepting)throw new AgentServiceError('agent_process_switching','凭据维护等待协调后台就绪，尚未写入。',503);
       if(name==='conversations.read')await service.conversations.reconcileSupplementReceipts(input.args[0],input.args[1]);
       if (['conversations.observe','conversations.observeRun'].includes(name) &&
           await service.reconcilePersisted(input.args[0],input.args[1],name==='conversations.observeRun'?input.args[2]:undefined)) {
@@ -351,7 +471,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
         if (!ownsRun || ['conversations.update','conversations.settleRetainedRun','conversations.readEntry','conversations.readHistory','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) target = current;
       }
       if (target) {
-        const result=await forward(target, '/operations', input);
+        const result=await forward(target, '/operations', input, caller);
         // Legacy owners can leave a settled, unaccepted submission permanently
         // "stopping" because there is no native execution identity to control.
         // Cancel only its recovery intent; retain delivery and resource unknowns.
@@ -377,14 +497,15 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
         const released=await Promise.allSettled(readProcessInstances(options.dataRoot).filter(record=>record.identity.instanceId!==instanceId&&!record.stopped&&live(record.identity.pid)).map(record=>request(record.origin,record.token,'/revoke',revoke)));
         if(released.some(value=>value.status==='rejected'))throw new AgentServiceError('agent_connection_release_unconfirmed','接入已断开，部分旧执行释放尚待核对。',409);
       }
-      if (input.operation === 'conversations.pending') result = { conversations: result.conversations.filter((value: {workspaceId:string}) => executionScopeRef(value.workspaceId, options.legacySourceId).sourceId === input.sourceId) };
+      if (['conversations.pending', 'conversations.pendingSummary'].includes(input.operation)) result = { conversations: result.conversations.filter((value: {workspaceId:string}) => caller ? callers.canRead(caller, value.workspaceId) : executionScopeRef(value.workspaceId, options.legacySourceId).sourceId === input.sourceId) };
       json(res, 200, result);
     } finally { inflight--; }
   });
-  abortStart = async () => { await channel.close(); await service.close(); };
+  abortStart = async () => { await web.close(); await webConnection?.then(value=>value.disconnect()); await channel.close(); await service.close(); };
   const processRecord = (): ProcessRecord => ({identity,origin:channel.origin,token:options.token,retiring,...(backendChange ? {backendChange} : {})});
   writeProcessInstance(options.dataRoot, processRecord());
   writePrivate(path.join(controlRoot(options.dataRoot), 'instance.json'), processRecord());
+  void web.resume().catch(()=>{});
   let closeWork: Promise<void> | undefined;
   function close(reason='internal-close'): Promise<void> {
     if (closeWork) return closeWork;
@@ -395,7 +516,11 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     closeWork = (async () => {
       try {
         for (const controller of generations.values()) controller.abort();
-        await service.close(); await new Promise<void>(resolve => setImmediate(resolve));
+        await web.close();
+        await webConnection?.then(value=>value.disconnect()).catch(()=>{});
+        await service.close();
+        await Promise.all([...forwardingClients.values()].map(client => client.close()));
+        await new Promise<void>(resolve => setImmediate(resolve));
         const activity = service.activity();
         confirmed=!activity.busy;
         const stopFile = path.join(controlRoot(options.dataRoot), 'last-stop.json');
@@ -436,6 +561,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     retiring = false;
     service.resumeMetadata();
     accepting = true;
+    void web.resume().catch(()=>{});
     return true;
   }
 
@@ -453,6 +579,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       await savePendingAfterStorageWait(starting);
       pending = starting;
       if (closing) return;
+      await web.releaseListener();
       retiring = true;
       writeProcessInstance(options.dataRoot, processRecord());
       writePrivate(path.join(controlRoot(options.dataRoot),'instance.json'),processRecord());
@@ -471,7 +598,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       throw new AgentServiceError('agent_process_start_unconfirmed','新版尚未确认就绪，原工作和待发送内容已保留。',503);
     } catch (error) {
       diagnostics({event:'service-adoption-record-failed',code:diagnosticCode(error),reason:'parallel-adoption'});
-      if (ownsMetadata) { service.resumeMetadata(); accepting = !closing; }
+      if (ownsMetadata) { service.resumeMetadata(); accepting = !closing; void web.resume().catch(()=>{}); }
       else if (!closing) restoreParallelOwner();
       pending = {runtime:target,state:'failed',diagnostic:'新版后台未确认就绪，原工作和待发送内容已保留。'};
       if (ownsMetadata && !closing) await savePendingAfterStorageWait(pending);

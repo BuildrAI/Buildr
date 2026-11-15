@@ -13,6 +13,30 @@ entries:
     cwd: services/buildr-agent
     executable: ../buildr/tools/development/run-development-npm
     args: [run, build]
+  - id: buildr-harness-ui.npm-ci
+    title: 安装共享 Harness 界面锁定依赖
+    scope: {kind: service, service: buildr-harness-ui}
+    cwd: services/buildr-harness-ui
+    executable: ../buildr/tools/development/run-development-npm
+    args: [ci, --ignore-scripts]
+  - id: buildr-harness-ui.build
+    title: 编译共享 Harness 界面公开包
+    scope: {kind: service, service: buildr-harness-ui}
+    cwd: services/buildr-harness-ui
+    executable: ../buildr/tools/development/run-development-npm
+    args: [run, build]
+  - id: buildr-harness-web.npm-ci
+    title: 安装独立 Harness 网页锁定依赖
+    scope: {kind: service, service: buildr-harness-web}
+    cwd: services/buildr-harness-web
+    executable: ../buildr/tools/development/run-development-npm
+    args: [ci, --ignore-scripts]
+  - id: buildr-harness.npm-ci
+    title: 安装独立 Harness CLI 锁定依赖
+    scope: {kind: service, service: buildr-harness}
+    cwd: services/buildr-harness
+    executable: ../buildr/tools/development/run-development-npm
+    args: [ci, --ignore-scripts]
   - id: buildr.npm-ci
     title: 安装 Buildr 主体锁定依赖
     scope: {kind: service, service: buildr}

@@ -1,7 +1,7 @@
 export * from './participation-contracts.ts';
 import type { ParticipationObservation } from './participation-contracts.ts';
 import type { ModelProvider } from './model-access/contracts.ts';
-import type { AgentHostCapabilities } from './execution-contracts.ts';
+import type { WorkObjectRef, AgentHostCapabilities } from './execution-contracts.ts';
 /** Public executor protocol. Vendor credentials and opaque state never become UI state. */
 export type ProviderId = string;
 export type PermissionMode = 'default' | 'full-access';
@@ -562,6 +562,11 @@ export interface PendingRequestView extends ExecutorRequest {
   runId: string;
   generation: string;
 }
+export interface ConversationWorkObjectLink extends WorkObjectRef {
+  revision?: string;
+  /** Display only; never authority for verification or execution. */
+  snapshot?: { title?: string };
+}
 export interface ConversationTaskLink {workspaceId:string;taskId:string}
 export interface ConversationStopObservedScope {
   currentRunId: string | null;
@@ -599,6 +604,8 @@ export interface ConversationView {
   taskIds?: string[];
   /** Complete cross-workspace association set; legacy fields project local links. */
   taskLinks?: ConversationTaskLink[];
+  /** Canonical relation set; task fields are compatibility projections. */
+  workObjectLinks?: ConversationWorkObjectLink[];
   title: string;
   revision: string;
   hidden: boolean;
@@ -666,6 +673,8 @@ export interface StartConversationDraft extends Omit<SendDraft, 'expectedRevisio
   cwd?: string;
   taskId?: string;
   taskLinks?: ConversationTaskLink[];
+  /** Canonical relation set; task fields are compatibility projections. */
+  workObjectLinks?: ConversationWorkObjectLink[];
   expectedDraftRevision: string;
   clientRequestId: string;
 }
@@ -734,6 +743,8 @@ export interface AgentServiceOptions {
   generationReleased?: (generation: string) => boolean;
   /** Trusted host profile only; released installations default to manual continuation. */
   autoContinueInterrupted?: boolean;
+  /** The owning source decides recovery; the legacy boolean is only a fallback. */
+  continuationPolicy?(scope: string): boolean;
   modelProviders?: ModelProvider[];
   dataRoot: string;
   executors?: AgentExecutor[];

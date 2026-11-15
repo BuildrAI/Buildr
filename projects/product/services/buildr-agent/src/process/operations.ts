@@ -9,6 +9,7 @@ export interface AgentSubscription { events: AsyncIterable<ServiceEvent>; close(
 /** Public asynchronous operations; native SDK objects never cross this boundary. */
 export interface AgentOperations {
   generation: string;
+  programmatic: RemoteMethods<AgentService['programmatic']>;
   pushback: RemoteMethods<AgentService['pushback']>;
   connections: RemoteMethods<AgentService['connections']>;
   conversations: Omit<RemoteMethods<AgentService['conversations']>, 'subscribe' | 'recoverInterrupted' | 'observeForRelease' | 'retainsConversationSource'> & { subscribe(scope: string, id: string): Promise<AgentSubscription> };
@@ -16,6 +17,7 @@ export interface AgentOperations {
 }
 
 const names = {
+  programmatic:['list','create','update','regenerate','revoke','updateFullAccess','authenticate'],
   pushback: ['read','save','reveal','test','markTakeover','setCredentialAccess','recordStop','listEvents','migrateGlobal'],
   connections: ['upgradeProgram','programUpdates','checkProgramUpdates','list','read','prepare','preparation','currentPreparation','cancelPreparation','connect','check','login','loginAttempt','cancelLogin','accountImpact','logout','disconnect'],
   conversations: ['readHistory','participation','participationSummary','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','activityEpoch','modelAccountReferences','readEntry','readRunFinalReply','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','releaseQuestionWait','settleRetainedRun','stop','stopAll','reply','addAttachment','readAttachment','pending','pendingSummary','lookupRequest'],

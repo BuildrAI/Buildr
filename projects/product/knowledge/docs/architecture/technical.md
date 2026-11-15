@@ -1,6 +1,6 @@
 # Buildr 怎样实现
 
-本文帮助开发者判断改动属于哪里、会影响哪些事实，以及需要分别验证什么。Buildr 由四个服务（Service）协作：`services/buildr` 负责命令、业务能力、文件与 SQLite、本机网页宿主（Host）和 Buildr npm 分发；`services/buildr-web` 负责 React 页面与交互；`services/buildr-agent` 负责独立配置、统一对话与原生执行接入，以私有包提供独立执行进程（Agent Process）及公共客户端（Client），随主包统一发行；`services/dsh-plugin` 独立构建、验证和发布 DSH 桌面插件。四者共用一个 Git 代码库（Repository），保持明确源码与构建边界，沿用同一[产品术语表](../glossary.md)。
+本文帮助开发者判断改动属于哪里、会影响哪些事实，以及需要分别验证什么。Buildr 的 Development、Harness 和 DSH 插件在同一代码库中按职责组织为七个服务。`buildr` / `buildr-web` 维护工程业务与其页面；`buildr-agent` 是共享执行核心；`buildr-harness-ui` 维护完整共享对话与设置；`buildr-harness-web` 是独立目录型薄壳；`buildr-harness` 维护独立 CLI、启动器和包；`dsh-plugin` 保持独立插件发行。服务划分不等于七个常驻进程，也不表示各入口已完成公开发行；边界及候选限制见[双产品说明](harness-products.md)。
 
 整体组成见[系统全景图](../../archify/system/buildr-system-overview.html)，下面按调用与写入职责展开。
 

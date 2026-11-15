@@ -106,3 +106,14 @@ test('test Node sharing keeps private paths, rejects mutation, survives peer cle
   },{});
   assert.equal(result,0);assert.equal(fs.existsSync(inputRoot),false);
 });
+
+
+test('npm generated bin shims are not runtime inputs, while dependency and build links still fail closed',t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'harness-npm-shims-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const pkg=packageInput(root),dataRoot=path.join(root,'profile'),node=path.join(root,'node');fs.writeFileSync(node,'test node');
+  fs.mkdirSync(path.join(pkg,'node_modules/dependency'),{recursive:true});fs.writeFileSync(path.join(pkg,'node_modules/dependency/cli.js'),'export {};');
+  fs.mkdirSync(path.join(pkg,'node_modules/.bin'));fs.symlinkSync('../dependency/cli.js',path.join(pkg,'node_modules/.bin/dependency'));
+  const runtime=prepareAgentRuntime({dataRoot,packageRoot:pkg,node,entry:'build/entry.js'});assert.equal(fs.existsSync(path.join(runtime.directory,'node_modules/.bin')),false);assert.doesNotThrow(()=>validateAgentRuntime(dataRoot,runtime));
+  fs.symlinkSync('cli.js',path.join(pkg,'node_modules/dependency/unsafe.js'));assert.throws(()=>prepareAgentRuntime({dataRoot,packageRoot:pkg,node,entry:'build/entry.js'}),{code:'agent_runtime_symlink'});fs.unlinkSync(path.join(pkg,'node_modules/dependency/unsafe.js'));
+  fs.symlinkSync('../node_modules/.bin',path.join(pkg,'build/.bin'));assert.throws(()=>prepareAgentRuntime({dataRoot,packageRoot:pkg,node,entry:'build/entry.js'}),{code:'agent_runtime_symlink'});
+});

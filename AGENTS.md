@@ -34,6 +34,6 @@
 
 ## Buildr 自举边界
 
-- 本空间用于开发 Buildr 自身；产品治理事实只在 `projects/product/` 维护，四个服务的职责以[产品资产边界](projects/product/AGENTS.md#资产边界)为准。Buildr 交付到本空间的资产只通过当前产品检出目录（Checkout）的 `update` / `sync` 更新，不直接编辑。
+- 本空间用于开发 Buildr 自身；产品治理事实只在 `projects/product/` 维护，各服务的职责以[产品资产边界](projects/product/AGENTS.md#资产边界)为准。Buildr 交付到本空间的资产只通过当前产品检出目录（Checkout）的 `update` / `sync` 更新，不直接编辑。
 - 开发命令使用 `projects/product/buildr`。`PATH` 中的默认 `buildr` 属于 npm 安装，不得由开发检出目录创建、覆盖或要求绑定当前源码。
 - 正式自举激活只由 `buildr-self-bootstrap-sync` 的唯一执行器（Runner）编排 `sync`、Buildr Web Dev 安装、开发入口身份（development entry identity）检查、最终诊断（Doctor）或收尾恢复（Finish resume），不得自行拆分、补跑或替代。成功必须以环境保留的 Node（Environment retained Node）显式验证本次已交付的保留检出目录中的 `projects/product/buildr`，且最终工作空间 Doctor 为 `ready`。

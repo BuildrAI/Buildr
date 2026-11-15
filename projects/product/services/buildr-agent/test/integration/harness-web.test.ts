@@ -1,0 +1,66 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import {request as httpRequest} from 'node:http';
+import {HarnessWebEndpoint} from '../../src/process/web-endpoint.ts';
+import {HarnessWebSessions} from '../../src/process/web-session-store.ts';
+import {createAgentService} from '../../src/application/agent-service.ts';
+import {HarnessDirectoryHost} from '../../src/application/directory-host.ts';
+import {executionScopeKey} from '../../src/execution-contracts.ts';
+import type {AgentProcessConnection} from '../../src/process/client.ts';
+
+function root(t:import('node:test').TestContext){const value=fs.mkdtempSync(path.join(os.tmpdir(),'harness-page-'));t.after(()=>fs.rmSync(value,{recursive:true,force:true}));return value;}
+test('logical page sessions persist; tickets are target-bound, single use, expiring and revocable',t=>{
+  const dataRoot=root(t);let now=100;const a=new HarnessWebSessions(dataRoot,()=>now),identity={instanceId:'a',generation:'g1',pid:process.pid,released:false};
+  a.enable(48000);a.listening(identity,48000);const origin='http://127.0.0.1:48000';
+  const first=a.issue(origin,'old-bundle');
+  assert.throws(()=>a.exchange('http://127.0.0.1:48001',first.ticket),{code:'agent_web_ticket_invalid'});
+  const session=a.exchange(origin,first.ticket);assert.equal(a.authenticate(session.token),true);
+  assert.throws(()=>a.exchange(origin,first.ticket),{code:'agent_web_ticket_invalid'});
+  const next=a.issue(origin,'old-bundle');now=next.expiresAt;
+  assert.throws(()=>a.exchange(origin,next.ticket),{code:'agent_web_ticket_invalid'});
+  const b=new HarnessWebSessions(dataRoot,()=>now);assert.equal(b.authenticate(session.token),true);assert.equal(b.cookieName(),a.cookieName());
+  b.revoke(session.token);assert.equal(a.authenticate(session.token),false);
+  assert.throws(()=>b.enable(48001),{code:'agent_web_endpoint_changed'});
+  const disk=fs.readFileSync(path.join(dataRoot,'agent-service/harness-web/session-state.json'),'utf8');assert.ok(!disk.includes(session.token)&&!disk.includes(first.ticket));
+});
+
+test('loopback endpoint is explicit, stable across generation handoff, keeps old bundles and rejects false readiness',async t=>{
+  const dataRoot=root(t),work=path.join(dataRoot,'work'),staticRoot=path.join(dataRoot,'web');fs.mkdirSync(work);fs.mkdirSync(path.join(staticRoot,'assets'),{recursive:true});
+  fs.writeFileSync(path.join(work,'note.md'),'# source checked');
+  fs.writeFileSync(path.join(staticRoot,'index.html'),'<!doctype html><html><head><script type="module" src="./assets/main.js"></script></head><body>shared page</body></html>');fs.writeFileSync(path.join(staticRoot,'assets/main.js'),'export const page="old"');
+  const directories=new HarnessDirectoryHost(dataRoot),directory=directories.register(work),key=executionScopeKey(directory.ref);
+  const service=createAgentService({dataRoot,legacySourceId:'buildr',environment:{HOME:dataRoot},executors:[],modelProviders:[],host:directories});
+  const conversation=await service.conversations.create(key,{});
+  const connection={operations:service,scopeCatalog:async()=>({scopes:[{key,ref:directory.ref}]}),runtime:{digest:'fixture'},directories:{list:async()=>directories.list(),register:async(value:string)=>directories.register(value),preview:async(input:{path:string})=>directories.preview({ref:directory.ref,expectedRevision:directory.revision,path:input.path})}} as unknown as AgentProcessConnection;
+  const options={dataRoot,staticRoot,ownsListener:()=>true,connect:async()=>connection};
+  const a=new HarnessWebEndpoint({...options,instanceId:'a',generation:'g1'}),early=new HarnessWebEndpoint({...options,instanceId:'early',generation:'g2'});
+  let b:HarnessWebEndpoint|undefined;
+  t.after(async()=>{await a.close();await early.close();await b?.close();await service.close();fs.rmSync(dataRoot,{recursive:true,force:true});});
+  assert.equal(a.status().enabled,false);assert.equal(a.status().ready,false);
+  const enabled=await a.enable();assert.equal(enabled.ready,true);const origin=enabled.origin!;assert.notEqual(new URL(origin).port,'4458');
+  const ticket=await a.login();assert.ok(ticket.url.startsWith(origin+'/#ticket='));assert.equal(new URL(ticket.url).search,'');
+  const value=new URLSearchParams(new URL(ticket.url).hash.slice(1)).get('ticket');
+  let response=await fetch(origin+'/');const bootstrap=await response.text();assert.match(bootstrap,/history.replaceState/);assert.ok(!bootstrap.includes(value!));
+  response=await fetch(origin+'/session/ticket',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({ticket:value})});assert.equal(response.status,200);
+  const cookie=response.headers.get('set-cookie')!.split(';')[0]!,token=cookie.slice(cookie.indexOf('=')+1);
+  response=await fetch(origin+'/',{headers:{cookie}});assert.equal(response.status,200);const old=await response.text();assert.ok(old.includes(token));const oldBundle=/\/bundles\/([a-f0-9]{64})\/assets\/main.js/.exec(old)![0];
+  response=await fetch(origin+oldBundle,{headers:{cookie}});assert.match(await response.text(),/"old"/);
+  response=await fetch(origin+'/session/ticket',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({ticket:value})});assert.equal(response.status,401);
+  response=await fetch(origin+'/api/v1/harness/scopes',{headers:{cookie,origin:'https://foreign.invalid'}});assert.equal(response.status,403);
+  const forgedHost=await new Promise<number|undefined>((resolve,reject)=>{const request=httpRequest(origin+'/api/v1/harness/scopes',{headers:{cookie,host:'evil.invalid'}},response=>{response.resume();response.once('end',()=>resolve(response.statusCode));});request.once('error',reject);request.end();});assert.equal(forgedHost,403);
+  response=await fetch(origin+'/api/v1/harness/directories',{method:'POST',headers:{cookie,origin,'content-type':'application/json'},body:JSON.stringify({path:work})});assert.equal(response.status,403,'cookie without exact write header cannot mutate');
+  response=await fetch(origin+'/api/v1/harness/files',{method:'POST',headers:{cookie,origin,'x-buildr-session':token,'content-type':'application/json'},body:JSON.stringify({conversationId:conversation.id,path:path.join(work,'note.md')})});assert.equal(response.status,200);assert.match((await response.json()).content,/source checked/);
+  await assert.rejects(early.enable(),{code:'agent_web_not_ready'});assert.equal(early.status().ready,false);assert.equal(early.status().origin,origin);assert.equal(a.status().ready,true,'port conflicts do not replace the owner');
+  await a.releaseListener();fs.writeFileSync(path.join(staticRoot,'assets/main.js'),'export const page="new"');
+  b=new HarnessWebEndpoint({...options,instanceId:'b',generation:'g2'});assert.equal((await b.resume()).origin,origin);assert.equal(b.status().ready,true);
+  response=await fetch(origin+'/',{headers:{cookie}});assert.equal(response.status,200,'valid logical session survives generation change');const current=await response.text();assert.notEqual(/\/bundles\/([a-f0-9]{64})\//.exec(current)![1],/\/bundles\/([a-f0-9]{64})\//.exec(old)![1]);
+  response=await fetch(origin+oldBundle,{headers:{cookie}});assert.match(await response.text(),/"old"/,'old scripts remain available');
+  const read='/api/v1/harness/sources/harness-local/scopes/'+directory.ref.id+'/conversations/'+conversation.id;
+  response=await fetch(origin+read,{headers:{cookie}});assert.equal(response.status,200);assert.equal((await response.json()).id,conversation.id);
+  const abort=new AbortController();response=await fetch(origin+read+'/events',{headers:{cookie},signal:abort.signal});assert.equal(response.status,200);assert.match(new TextDecoder().decode((await response.body!.getReader().read()).value),/data:/);abort.abort();
+  response=await fetch(origin+'/session/revoke',{method:'POST',headers:{cookie,origin,'x-buildr-session':token}});assert.equal(response.status,200);
+  response=await fetch(origin+read,{headers:{cookie}});assert.equal(response.status,403);
+});
