@@ -583,6 +583,7 @@ artifacts:
       - agent-service-handoff-ui-source
       - agent-service-host-source
       - agent-service-ui-source
+      - agent-conversation-state-source
       - agent-service-ui-context-source
       - agent-service-product-action-source
       - service-runtime-configuration-action-source
@@ -2143,7 +2144,12 @@ sources:
     title: 全局内部对话
     kind: code
     path: services/buildr-web/src/features/agent-conversations/ConversationPanel.tsx
-    summary: 统一历史、发送与接续预览、模型深度、授权问题、停止与标题操作；正文图片可点击放大到原始像素。
+    summary: 统一历史、发送与接续预览、模型深度、授权问题、停止与标题操作；桌面专注模式以左侧可拖拽限宽分屏并排展示对话历史并保护右侧阅读宽度，正文图片可点击放大到原始像素。
+  - id: agent-conversation-state-source
+    title: 对话恢复判定与专注分屏宽度约束
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/conversation-state.ts
+    summary: 判定保留未知执行的确认、关闭与继续条件，以及桌面专注模式下左侧对话列表 300–420px 限宽与右侧 800px 阅读宽度优先保护计算。
   - id: agent-conversation-image-preview-source
     title: 对话图片放大预览
     kind: code
