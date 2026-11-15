@@ -279,6 +279,8 @@ export interface AgentRuntime {
   canReclaimStorage?(): Promise<boolean>;
   /** True only when this owned transport is no longer usable; absence is not failure. */
   readonly closed?: boolean;
+  /** Set only after this runtime's own control processes exit. 0 is a clean exit. */
+  readonly exitCode?: number | null;
   /** Stable for compatible program updates at the verified source and config. */
   bindingIdentity: string;
   bindingData?: Record<string, unknown>;

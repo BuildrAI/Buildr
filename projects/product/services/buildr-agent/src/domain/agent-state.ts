@@ -74,6 +74,8 @@ export function safeDiagnostic(error: unknown): string {
   return error instanceof NativeObservationError && error.diagnostic ? message + ' 原因：' + error.diagnostic : message;
 }
 export const BUSY_STATES: ReadonlySet<RunStatus> = new Set(['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown']);
+/** An old generation closed its native process. The run stays unknown and can still be continued. */
+export const RETIRED_EXECUTION_DIAGNOSTIC = '服务退休中断了本轮执行；已有结果保留，可以继续。';
 
 export const conversationRuns = (view: Pick<ConversationView, 'run' | 'retainedRuns'>): RunView[] => [...(view.run ? [view.run] : []), ...(view.retainedRuns ?? [])];
 export const unfinishedRun = (run: RunView): boolean => BUSY_STATES.has(run.status) || run.tools.some(tool => tool.status !== 'completed');

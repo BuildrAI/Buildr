@@ -32,7 +32,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ExecutorInputRejected } from '../contracts.ts';
 import type { AgentRuntime, AgentServiceOptions, ContextRef, ConversationActivityCounts, ConversationEntry, ConversationSummaryView, ConversationView, ExecutorEvent, ExecutorImage, ExecutorItem, ExecutorNativeSource, ExecutorObservation, RunStatus, RunView, SendDraft, SendPreview } from '../contracts.ts';
-import { AgentServiceError, BUSY_STATES, conversationRuns, unfinishedRun, expected, fail, nonempty, safeDiagnostic } from '../domain/agent-state.ts';
+import { AgentServiceError, BUSY_STATES, RETIRED_EXECUTION_DIAGNOSTIC, conversationRuns, unfinishedRun, expected, fail, nonempty, safeDiagnostic } from '../domain/agent-state.ts';
 import type { StoredConversation, StoredParticipant } from '../domain/agent-state.ts';
 import type { ConversationRepository } from '../persistence/conversation-repository.ts';
 import type { ConnectionApplication } from './connection-application.ts';
@@ -165,6 +165,8 @@ export class ConversationApplication {
   private readonly sourceReleases = new Map<AgentRuntime,Promise<void>>();
   private readonly sourceOwners = new Map<string, {workspaceId: string; id: string}>();
   private releasingIdleSources?: Promise<void>;
+  /** This generation is retiring and must not freeze an in-flight run as unrecoverable. */
+  private releasingRetired = false;
   private readonly idleReleaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly releaseChecks = new Map<string,Promise<boolean>>();
   private readonly supplementReceiptChecks = new Map<string,Promise<void>>();
@@ -506,7 +508,20 @@ export class ConversationApplication {
           for(const value of candidates)if(value.prepare&&!await value.prepare())return false;
           await this.options.connections.releaseGatewayRuntime(runtime);
           const facts=new Map<string,'ended'|'unknown'>();
-          for(const value of candidates){const proof=value.proof?await value.proof():true;if(!proof)return false;facts.set(value.id,proof===true?'ended':proof.executionState);}
+          for(const value of candidates){
+            const proof=value.proof?await value.proof():true;
+            if(!proof){
+              const settled=conversationRuns(this.load(value.workspaceId,value.conversationId).view).find(run=>run.id===value.runId);
+              // A finished run whose own control process exited 0 must not keep the
+              // next message behind a proof the dead process can no longer give.
+              // A non-zero or unreported exit, including work that appears during
+              // close, still leaves the release unconfirmed.
+              if(!(settled && !unfinishedRun(settled) && runtime.closed && runtime.exitCode===0))return false;
+              facts.set(value.id,'ended');
+              continue;
+            }
+            facts.set(value.id,proof===true?'ended':proof.executionState);
+          }
           if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)))return false;
           for(const value of candidates){
             if(value.leaseIdentity)this.options.modelAccess?.leases.release(value.leaseIdentity);
@@ -547,13 +562,14 @@ export class ConversationApplication {
   retainsConversationSource(workspaceId:string,id:string): boolean {
     return this.nativeSourceOwners.has(`${workspaceId}/${id}`) || [...this.sourceOwners.entries()].some(([participant,owner])=>this.sourceRuntimes.has(participant)&&owner.workspaceId===workspaceId && owner.id===id);
   }
-  /** A retiring generation releases idle native sources after a bounded grace.
-   * Ownership proof may never arrive; the exact uncertainty is recorded on the
-   * run and the process may exit instead of retrying a proof that no longer
-   * exists. Live execution, input, recovery, title and reply work is never
-   * touched, and no new effect is ever sent for an unknown run. */
+  /** A retiring generation releases native sources after a bounded grace.
+   * Ownership proof may never arrive. An in-flight run stays continuable:
+   * its control process is closed, the result stays unknown, and a later
+   * message may continue the same goal. Nothing is sent automatically.
+   * Live input, recovery, title and reply work is never touched. */
   async releaseRetiredWork(): Promise<void> {
     if(this.closing||this.workers.size||this.supplements.size||this.repliesInFlight.size||this.recoveries.size||this.forks.active||this.titleWork.size)return;
+    this.releasingRetired=true;
     const runtimes=new Set<AgentRuntime>();
     for(const [id,source] of [...this.sourceRuntimes]){
       const value=await Promise.race([source.catch(()=>undefined),new Promise<undefined>(resolve=>setImmediate(()=>resolve(undefined)))]);
@@ -570,7 +586,8 @@ export class ConversationApplication {
         run.resourcesReleased=true;run.executionState='unknown';
         if(!['stopped','failed','completed'].includes(run.status)){run.status='unknown';run.interrupted=true;}
         run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
-        run.diagnostic='执行后台已退役并释放后台连接；本轮结束状态未确认，已有操作结果保留，不会重发。';
+        delete run.fault;
+        run.diagnostic=RETIRED_EXECUTION_DIAGNOSTIC;
         run.updatedAt=this.options.now();changed=true;
       }
       if(changed)this.save(record);
@@ -682,7 +699,8 @@ export class ConversationApplication {
       const continuation = record.continuations?.[run.id] ?? (record.attempts ? continuationPrompt(record as Pick<StoredConversation, 'view' | 'attempts'>, run.id) : undefined);
       if (continuation) run.continuedFrom = includeContinuationPrompt ? continuation : {runId: continuation.runId, userEntryId: continuation.userEntryId};
       if (run.generation !== this.options.generation && !this.options.generationAlive?.(run.generation) && BUSY_STATES.has(run.status)) {
-        run.status = 'unknown'; run.interrupted = true; run.diagnostic = '服务重启后原执行尚待核对，工作记录已保留。';
+        run.status = 'unknown'; run.interrupted = true;
+        if (run.diagnostic !== RETIRED_EXECUTION_DIAGNOSTIC) run.diagnostic = '服务重启后原执行尚待核对，工作记录已保留。';
       }
     }
     view.pendingSend = this.pendingSends.view(this.pendingSends.read(view.workspaceId, view.id));
@@ -2545,7 +2563,18 @@ export class ConversationApplication {
           if (target) {
             if (target.generation !== this.options.generation) this.retireQuestions(record,record.view.requests.filter(request=>request.runId===target.id));
             if (attempt?.executionRef && observation?.executionRef?.id !== attempt.executionRef.id) {
-              target.status = 'unknown'; target.diagnostic = '原生观察未匹配本轮执行，不能据此结束或重新发送。';
+              const retiredGeneration = target.resourcesReleased === true && target.interrupted === true && target.diagnostic === RETIRED_EXECUTION_DIAGNOSTIC && target.generation !== this.options.generation && this.options.generationAlive?.(target.generation) !== true;
+              if (!observation?.executionRef && (this.releasingRetired || retiredGeneration)) {
+                target.status = 'unknown';
+                target.interrupted = true;
+                target.resourcesReleased = true;
+                target.executionState = 'unknown';
+                delete target.fault;
+                target.diagnostic = RETIRED_EXECUTION_DIAGNOSTIC;
+                target.tools = target.tools.map(tool => tool.status === 'running' ? { ...tool, status: 'unknown', canStop: false } : tool);
+              } else {
+                target.status = 'unknown'; target.diagnostic = '原生观察未匹配本轮执行，不能据此结束或重新发送。';
+              }
             } else if (target.generation !== this.options.generation && !observation?.executionRef) {
               target.status = 'unknown'; target.diagnostic = '尚未确认原执行的准确身份，保留记录并重新观察。';
             } else {

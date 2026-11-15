@@ -66,6 +66,10 @@ export class AntigravityAcpClient {
     return this.child.pid;
   }
 
+  get exitCode(): number | null {
+    return this.child.exitCode;
+  }
+
   get transportClosed(): boolean {
     return this.closed;
   }

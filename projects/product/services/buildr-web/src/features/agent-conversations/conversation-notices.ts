@@ -95,6 +95,9 @@ export function conversationFailureReason(diagnostic?: string, fault?: Pick<Conv
   if (/agent_runtime_release_unconfirmed|上一轮资源仍待释放|原执行资源归属尚未确认/i.test(text)) {
     return { summary: '上一轮执行资源尚未完成释放，本轮要求未发送。', action: '请稍后核对执行状态后再继续。' };
   }
+  if (/服务退休中断了本轮执行/.test(text)) {
+    return { summary: '服务退休中断了本轮执行，已有结果保留。', action: '可以继续原目标。' };
+  }
   if (/CALL_COUNT_LIMIT|isQueued|调用次数|调用频率|rate.?limit|too many requests|(?:^|\D)429(?:\D|$)/i.test(text)) {
     const retry = failureRetrySeconds(text);
     return { summary: '模型调用达到当前上限，请求被服务端排队。', action: retry ? `约 ${retry} 秒后重试，或切换到其他模型/供应商。` : '请稍后重试，或切换到其他模型/供应商。' };

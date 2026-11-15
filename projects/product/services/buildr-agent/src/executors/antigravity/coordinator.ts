@@ -935,7 +935,7 @@ export class AntigravityCoordinator {
     }
   }
 
-  async closeProcessesOwnedBy(owner: unknown): Promise<void> {
+  async closeProcessesOwnedBy(owner: unknown): Promise<boolean> {
     const matched: ConversationProcessHandle[] = [];
     for (const [key, handle] of this.conversationProcesses) {
       if (handle.owner !== owner) continue;
@@ -947,6 +947,7 @@ export class AntigravityCoordinator {
       matched.push(handle);
     }
     await Promise.allSettled(matched.map(h => h.client.close()));
+    return matched.length > 0 && matched.every(handle => handle.client.exitCode === 0);
   }
 
   async closeAllConversationProcesses(): Promise<void> {

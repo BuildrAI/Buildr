@@ -32,6 +32,9 @@ test('常见失败分别给出可理解原因，未知诊断安全回退',()=>{
   assert.match(conversationFailureReason('上一轮资源仍待释放，请稍后核对。').action,/请稍后核对执行状态/);
   assert.match(conversationFailureReason('原执行资源归属尚未确认，请稍后核对。').summary,/上一轮执行资源尚未完成释放/);
   assert.doesNotMatch(conversationFailureReason('上一轮资源仍待释放，请稍后核对。').summary,/未识别的原因/);
+  assert.match(conversationFailureReason('服务退休中断了本轮执行；已有结果保留，可以继续。').summary,/服务退休中断了本轮执行/);
+  assert.match(conversationFailureReason('服务退休中断了本轮执行；已有结果保留，可以继续。').action,/可以继续/);
+  assert.doesNotMatch(conversationFailureReason('服务退休中断了本轮执行；已有结果保留，可以继续。').summary,/未识别的原因|不能据此结束/);
   assert.match(conversationFailureReason('model_quota_exhausted：账号额度用尽').summary,/额度不足/);
   assert.match(conversationFailureReason('qoder_platform_login_expired').summary,/登录失效/);
   assert.match(conversationFailureReason('所选模型已停用').summary,/不可用/);

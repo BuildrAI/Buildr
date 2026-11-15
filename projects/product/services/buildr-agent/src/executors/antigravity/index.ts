@@ -24,7 +24,7 @@ import type {
   PermissionMode,
 } from '../../contracts.ts';
 import { ExecutorInputRejected, ExecutorObservationLost } from '../../contracts.ts';
-import { AgentServiceError } from '../../domain/agent-state.ts';
+import { AgentServiceError, RETIRED_EXECUTION_DIAGNOSTIC } from '../../domain/agent-state.ts';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import type { ModelQuotaObservation } from '../../model-access/contracts.ts';
@@ -250,6 +250,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
   participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;
 
   private closedFlag = false;
+  private exitCodeValue: number | null = null;
   private readonly configRoot: string;
   private readonly coordinator: AntigravityCoordinator;
   private readonly nativeSource?: ExecutorNativeSource;
@@ -287,6 +288,10 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
 
   get closed(): boolean {
     return this.closedFlag;
+  }
+
+  get exitCode(): number | null {
+    return this.exitCodeValue;
   }
 
   static async open(options: ExecutorOpenOptions): Promise<AntigravityRuntime> {
@@ -968,6 +973,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     turn.pending = true;
 
     let transportDisconnected = false;
+    let ownerClosed = false;
     const fallbackCompletion = deferred<{ stopReason: string; finalText?: string; backgroundActive?: boolean }>();
     let fallbackTimer: ReturnType<typeof setInterval> | undefined;
     let fallbackGraceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -986,7 +992,28 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
         }
       },
       onServerRequest: request => this.handleServerRequest(turn, request),
-      onExit: () => {
+      onExit: (reason?: string) => {
+        if (reason === 'acp_closed') {
+          ownerClosed = true;
+          if (!turn.pending && !turn.backgroundWork) return;
+          this.clearBackgroundTracking(turn);
+          for (const [id, tool] of turn.tools) {
+            if (tool.status === 'running') turn.tools.set(id, { ...tool, status: 'unknown' });
+          }
+          for (const [, item] of turn.items) {
+            if (item.kind === 'tool' && item.status === 'running') this.emitItem(turn, { ...item, status: 'unknown' });
+          }
+          turn.requests.clear();
+          turn.pending = false;
+          turn.status = 'unknown';
+          delete turn.fault;
+          turn.diagnostic = RETIRED_EXECUTION_DIAGNOSTIC;
+          turn.stream.flush();
+          turn.stream.push({ type: 'observation', observation: this.buildObservation(turn) });
+          turn.markSettled();
+          if (!turn.stopReason) fallbackCompletion.resolve({ stopReason: 'cancelled' });
+          return;
+        }
         if (!turn.pending && !turn.backgroundWork) return;
         this.clearBackgroundTracking(turn);
         if (turn.cancelRequested || turn.stopConfirmed) {
@@ -1056,6 +1083,8 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
         rpcPromise,
         fallbackCompletion.promise.then(res => ({ ...res, fromRpc: false })),
       ]);
+
+      if (ownerClosed) return;
 
       if (transportDisconnected) {
         throw new ExecutorObservationLost('execution');
@@ -1166,6 +1195,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       turn.stream.push({ type: 'completed', status: 'completed' });
       turn.stream.push({ type: 'observation', observation: this.buildObservation(turn) });
     } catch (error) {
+      if (ownerClosed) return;
       if (error instanceof ExecutorObservationLost || transportDisconnected) {
         throw error instanceof ExecutorObservationLost ? error : new ExecutorObservationLost('execution');
       }
@@ -2014,7 +2044,8 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     if (this.closedFlag) return;
     this.closedFlag = true;
     for (const turn of this.turns.values()) clearInterval(turn.backgroundTimer);
-    await this.coordinator.closeProcessesOwnedBy(this);
+    const clean = await this.coordinator.closeProcessesOwnedBy(this);
+    if (clean) this.exitCodeValue = 0;
   }
 }
 
