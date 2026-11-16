@@ -33,16 +33,6 @@ export function catalogModelCompatibility(connection:CompatibilityTarget,item:Co
   return {compatible:true};
 }
 
-export function executorCompatibilityNotice(connection:CompatibilityTarget,catalog:readonly CompatibilityModel[]):string|undefined {
-  const incompatible=catalog.map(item=>({item,result:catalogModelCompatibility(connection,item)})).filter(entry=>!entry.result.compatible&&entry.result.reason);
-  if(!incompatible.length)return undefined;
-  if(typeof connection==='object'&&connection?.modelPolicy?.native?.exclusive){
-    const own=incompatible.find(entry=>entry.item.sharing?.kind!=='executor-exclusive');
-    return own?.result.reason??incompatible[0]!.result.reason;
-  }
-  return incompatible[0]!.result.reason;
-}
-
 /** Disabled choices keep their actual model name; compatibility is not a name suffix. */
 export function catalogConversationOption(connection:CompatibilityTarget,item:CatalogModel) {
   const compatibility=catalogModelCompatibility(connection,item);
@@ -126,13 +116,78 @@ export function conversationReasoningSelection(connection:ConnectionView|undefin
   return {options,index,ordered,inherited:choice.reasoningEffort===undefined,label:index>=0?reasoningEffortLabel(options[index]!):choice.reasoningEffort||'默认'};
 }
 
+export function resolveNativeExecutionAccountId(
+  modelAccountId:string|undefined,
+  connectionId:string|undefined,
+  connections?:ReadonlyArray<Pick<ConnectionView,'id'|'modelPolicy'>>,
+  catalog?:ReadonlyArray<Pick<CatalogModel,'accountId'>>,
+):string|undefined {
+  if(modelAccountId)return modelAccountId;
+  if(!connectionId)return undefined;
+  const connection=connections?.find(item=>item.id===connectionId);
+  if(connection?.modelPolicy?.account==='source-required')return undefined;
+  const candidate=connection?.modelPolicy?.native?.defaultSourceAccountId??`native-${connectionId}`;
+  if(connection?.modelPolicy?.native?.defaultSourceAccountId)return candidate;
+  if(catalog?.some(item=>item.accountId===candidate))return candidate;
+  if(connection?.modelPolicy?.account==='native')return candidate;
+  return undefined;
+}
+
 /**
- * 执行目标是否变化只看智能体、来源账号、模型与档位。
+ * 执行目标是否变化只看智能体、来源账号、模型与档位（按原生账号与系列模型归一）。
  * 思考深度与权限都是单轮参数：原原生会话可以用新强度或新授权接收下一条要求，不构成换人交接。
  */
-export function executionSelectionChanged(run:Pick<ConversationRun,'model'|'modelAccountId'|'serviceTier'>|undefined,participantConnectionId:string|undefined,choice:Pick<ConversationChoice,'connectionId'|'model'|'modelAccountId'|'serviceTier'>):boolean {
-  if(!run)return false;
-  return participantConnectionId!==choice.connectionId||run.model!==choice.model||run.modelAccountId!==choice.modelAccountId||run.serviceTier!==choice.serviceTier;
+export function executionTargetChanges(
+  run:Pick<ConversationRun,'model'|'modelAccountId'|'serviceTier'>|undefined,
+  participantConnectionId:string|undefined,
+  choice:Pick<ConversationChoice,'connectionId'|'model'|'modelAccountId'|'serviceTier'>,
+  options?:{
+    connections?:ReadonlyArray<Pick<ConnectionView,'id'|'models'|'modelPolicy'>>;
+    catalog?:CatalogModel[];
+    participantModel?:string;
+    participantModelAccountId?:string;
+  },
+):{agentChanged:boolean;modelChanged:boolean;changed:boolean} {
+  if(!run)return {agentChanged:false,modelChanged:false,changed:false};
+  const catalog=options?.catalog??[];
+  const connections=options?.connections;
+  const runAccountId=resolveNativeExecutionAccountId(
+    run.modelAccountId??options?.participantModelAccountId,
+    participantConnectionId,
+    connections,
+    catalog,
+  );
+  const choiceAccountId=resolveNativeExecutionAccountId(
+    choice.modelAccountId,
+    choice.connectionId,
+    connections,
+    catalog,
+  );
+  const runConnection=connections?.find(item=>item.id===participantConnectionId);
+  const rawRunModel=run.model??options?.participantModel??(!run.modelAccountId?selectedConversationModel(runConnection)?.id:undefined);
+  const restoredRun=restoreModelSeriesChoice({model:rawRunModel,modelAccountId:runAccountId},catalog);
+  const restoredChoice=restoreModelSeriesChoice({model:choice.model,modelAccountId:choiceAccountId},catalog);
+  const runSource=catalog.find(item=>item.accountId===runAccountId&&item.modelId===restoredRun.model);
+  const choiceSource=catalog.find(item=>item.accountId===choiceAccountId&&item.modelId===restoredChoice.model);
+  const runTier=run.serviceTier??runSource?.defaultServiceTier;
+  const choiceTier=choice.serviceTier??choiceSource?.defaultServiceTier;
+  const agentChanged=participantConnectionId!==choice.connectionId;
+  const hasExplicitChoiceTarget=Boolean(restoredChoice.model)||(!options&&(choice.model!==undefined||choice.modelAccountId!==undefined||choice.serviceTier!==undefined));
+  const modelChanged=hasExplicitChoiceTarget&&(
+    restoredRun.model!==restoredChoice.model||
+    runAccountId!==choiceAccountId||
+    runTier!==choiceTier
+  );
+  return {agentChanged,modelChanged,changed:agentChanged||modelChanged};
+}
+
+export function executionSelectionChanged(
+  run:Pick<ConversationRun,'model'|'modelAccountId'|'serviceTier'>|undefined,
+  participantConnectionId:string|undefined,
+  choice:Pick<ConversationChoice,'connectionId'|'model'|'modelAccountId'|'serviceTier'>,
+  options?:Parameters<typeof executionTargetChanges>[3],
+):boolean {
+  return executionTargetChanges(run,participantConnectionId,choice,options).changed;
 }
 
 /** 状态行表达执行身份（智能体与模型）；来源账号只保留在模型设置和发送预览。 */

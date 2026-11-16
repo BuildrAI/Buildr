@@ -31,7 +31,7 @@ test('供应商名称来自已绑定账号的供应商；自定义供应商显�
 });
 
 test('执行器与模型来源兼容性优先采用服务端声明，缺失时回退策略或交由发送端校验',async()=>{
-  const {catalogConversationOption,catalogModelCompatibility,executorCompatibilityNotice}=await import('../../src/features/agent-conversations/conversation-options.ts');
+  const {catalogConversationOption,catalogModelCompatibility}=await import('../../src/features/agent-conversations/conversation-options.ts');
   const qoder={id:'qoder',label:'Qoder',modelPolicy:{native:{sourceProviders:['native-qoder'],delivery:'runtime-selected',exclusive:true}}};
   const qoderCn={id:'qoder-cn',label:'Qoder CN',modelPolicy:{native:{sourceProviders:['native-qoder-cn'],delivery:'runtime-selected',exclusive:true}}};
   const codex={id:'codex',label:'Codex',modelPolicy:{native:{sourceProviders:['native-codex'],delivery:'runtime-selected',exclusive:false},gateway:{wireProtocols:['openai-responses','openai-chat-completions','anthropic-messages']}}};
@@ -52,9 +52,6 @@ test('执行器与模型来源兼容性优先采用服务端声明，缺失时�
   assert.equal(catalogModelCompatibility(codex,exclusiveSource).compatible,false);
   assert.equal(catalogModelCompatibility('antigravity',exclusiveSource).compatible,true);
   assert.equal(catalogModelCompatibility({id:'legacy-agent'},codexNative).compatible,true,'缺少兼容性字段时不提前误拒');
-  assert.match(executorCompatibilityNotice(qoder,[exclusiveSource,codexNative])??'',/^Qoder Agent 暂不支持选择其他供应商的模型/);
-  assert.match(executorCompatibilityNotice(qoderCn,[codexNative])??'',/^Qoder CN Agent 暂不支持选择其他供应商的模型/);
-  assert.equal(executorCompatibilityNotice(codex,[codexNative]),undefined);
   const disabledOption=catalogConversationOption(codex,exclusiveSource);
   assert.equal(disabledOption.label,'Gemini 2.5 Pro');
   assert.equal(disabledOption.disabled,true);

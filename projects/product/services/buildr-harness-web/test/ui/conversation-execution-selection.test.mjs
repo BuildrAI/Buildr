@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {conversationRunIdentity,executionSelectionChanged,restoreModelSeriesChoice} from '../../src/features/agent-conversations/conversation-options.ts';
+import {conversationRunIdentity,executionSelectionChanged,executionTargetChanges,restoreModelSeriesChoice} from '../../src/features/agent-conversations/conversation-options.ts';
 
 const run={model:'small',modelAccountId:'account',serviceTier:'standard',permissionMode:'default',reasoningEffort:'low'};
 const choice={connectionId:'local',model:'small',modelAccountId:'account',serviceTier:'standard',reasoningEffort:'high'};
@@ -81,4 +81,76 @@ test('restoreModelSeriesChoice preserves explicit reasoningEffort from legacy Go
     canContinue:false,
   },{id:'codex',provider:'codex',label:'Codex',status:'ready',models:[],capabilities:{text:true,images:true,approval:true,questions:true,stop:true,resume:true}},catalog);
   assert.equal(label,'Codex · Google AI / Gemini 4 Carbon');
+});
+
+test('executionTargetChanges normalizes native account IDs, default service tiers, and legacy series IDs',()=>{
+  const connections=[
+    {id:'antigravity',provider:'antigravity',label:'Antigravity',models:[{id:'gemini-pro-orchestrator',label:'Orchestrator (Carbon)',isDefault:true}],modelPolicy:{account:'native',native:{sourceProviders:['native-antigravity'],defaultSourceAccountId:'native-antigravity',exclusive:true}}},
+    {id:'codex',provider:'codex',label:'Codex',models:[{id:'gpt-5',label:'GPT-5',isDefault:true}],modelPolicy:{account:'native',gateway:{protocol:'responses'}}},
+  ];
+  const catalog=[
+    {id:'native-antigravity::gemini-pro-orchestrator',accountId:'native-antigravity',accountIdentity:'agy-1',accountRevision:'r1',accountLabel:'Google',provider:'native-antigravity',modelId:'gemini-pro-orchestrator',label:'Orchestrator (Carbon)',available:true,enabled:true,images:true,tools:true},
+    {id:'native-antigravity::claude-opus-5-5',accountId:'native-antigravity',accountIdentity:'agy-1',accountRevision:'r1',accountLabel:'Google',provider:'native-antigravity',modelId:'claude-opus-5-5',label:'Claude Opus 5.5',available:true,enabled:true,images:true,tools:true,reasoningEfforts:[{id:'low',label:'Low'},{id:'high',label:'High'}],defaultReasoningEffort:'medium'},
+    {id:'native-codex::gpt-5',accountId:'native-codex',accountIdentity:'codex-1',accountRevision:'r2',accountLabel:'ChatGPT',provider:'native-codex',modelId:'gpt-5',label:'GPT-5',available:true,enabled:true,images:true,tools:true,defaultServiceTier:'standard',serviceTiers:[{id:'standard',label:'标准'},{id:'fast',label:'快速'}]},
+  ];
+
+  // 原生运行未写 modelAccountId 时，切走后再选回显式 native-<connectionId> 不再误判交接。
+  assert.deepEqual(
+    executionTargetChanges(
+      {model:'gemini-pro-orchestrator'},
+      'antigravity',
+      {connectionId:'antigravity',model:'gemini-pro-orchestrator',modelAccountId:'native-antigravity'},
+      {connections,catalog},
+    ),
+    {agentChanged:false,modelChanged:false,changed:false},
+  );
+  assert.deepEqual(
+    executionTargetChanges(
+      {model:'gpt-5',modelAccountId:undefined,serviceTier:undefined},
+      'codex',
+      {connectionId:'codex',model:'gpt-5',modelAccountId:'native-codex',serviceTier:'standard'},
+      {connections,catalog},
+    ),
+    {agentChanged:false,modelChanged:false,changed:false},
+  );
+  assert.deepEqual(
+    executionTargetChanges(
+      {model:'gpt-5',modelAccountId:undefined,serviceTier:undefined},
+      'codex',
+      {connectionId:'codex',model:'gpt-5',modelAccountId:'native-codex',serviceTier:'fast'},
+      {connections,catalog},
+    ),
+    {agentChanged:false,modelChanged:true,changed:true},
+  );
+
+  // 历史变体模型 ID（含省略 modelAccountId 的原生记录）与聚合后的系列模型一致时不视为变更。
+  assert.deepEqual(
+    executionTargetChanges(
+      {model:'claude-opus-5-5-high'},
+      'antigravity',
+      {connectionId:'antigravity',model:'claude-opus-5-5',modelAccountId:'native-antigravity'},
+      {connections,catalog},
+    ),
+    {agentChanged:false,modelChanged:false,changed:false},
+  );
+
+  // 同智能体未选定具体模型（如模型停用被清空）时不显示误导性交接；更换智能体且尚未选定模型时仅提示更换智能体。
+  assert.deepEqual(
+    executionTargetChanges(
+      {model:'gpt-5',modelAccountId:'native-codex'},
+      'codex',
+      {connectionId:'codex',model:undefined,modelAccountId:undefined},
+      {connections,catalog},
+    ),
+    {agentChanged:false,modelChanged:false,changed:false},
+  );
+  assert.deepEqual(
+    executionTargetChanges(
+      {model:'gpt-5',modelAccountId:'native-codex'},
+      'codex',
+      {connectionId:'antigravity',model:undefined,modelAccountId:undefined},
+      {connections,catalog},
+    ),
+    {agentChanged:true,modelChanged:false,changed:true},
+  );
 });

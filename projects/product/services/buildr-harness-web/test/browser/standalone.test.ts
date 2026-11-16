@@ -29,9 +29,9 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     let stopResponseLost: unknown;
     const exitedPids = new Set<number>();
     try {await cleanupBrowser?.close();} catch (error) {failures.push(error);}
-    if (cleanupClient) try {
-      const current = await cleanupClient.operations.connections.read('first');
-      if (current.enabled) await cleanupClient.operations.connections.disconnect('first', {expectedRevision: current.revision});
+    if (cleanupClient) for (const connectionId of ['first', 'second']) try {
+      const current = await cleanupClient.operations.connections.read(connectionId);
+      if (current.enabled) await cleanupClient.operations.connections.disconnect(connectionId, {expectedRevision: current.revision});
     } catch (error) {
       if ((error as {code?: string}).code === 'agent_connection_release_unconfirmed') t.diagnostic('fixture connection release receipt unconfirmed; exact owned-process exit is checked separately');
       else if ((error as {code?: string}).code === 'ECONNRESET') releaseResponseLost = error;
@@ -79,6 +79,14 @@ test('standalone production UI sends through real source HTTP, isolates two draf
   fixtureSource = fixtureSource.replace('const current=read(ref);\n        if(current.stopRequested)', 'const current=read(ref);\n        if(current.executionRef.id!==executionRef.id)return;\n        if(current.stopRequested)');
   assert.ok(fixtureSource.includes('const current=read(ref),item='));
   fixtureSource = fixtureSource.replace('const current=read(ref),item=', 'const current=read(ref);if(current.executionRef.id!==executionRef.id)return;const item=');
+  const fixtureModels = "models:[{id:'fixture',label:'Fixture',images:false,tools:false}]";
+  const modelProvidersTail = 'modelProviders:[provider]';
+  assert.ok(fixtureSource.includes(fixtureModels) && fixtureSource.includes(modelProvidersTail));
+  fixtureSource = fixtureSource.replace(fixtureModels, "models:[{id:'fixture',label:'Fixture',images:false,tools:false},{id:'fast',label:'Fast',images:false,tools:false}]");
+  fixtureSource = fixtureSource.replace(
+    modelProvidersTail,
+    "modelProviders:[provider,{id:'exclusive-model',label:'Exclusive model',sharing:{kind:'executor-exclusive',executors:['second'],reason:'受官方授权限制，仅可在 second 中使用。'},async open(){return{protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'exclusive',label:'Exclusive',images:false,tools:false}]}),beginLogin:async()=>{},cancelLogin:async()=>{},async infer(){throw new Error('unused');},close:async()=>{}};}}]",
+  );
   fs.writeFileSync(path.join(packageRoot, 'build/browser-fixture.mjs'), fixtureSource);
   fs.writeFileSync(path.join(packageRoot, 'build/fixture-version.json'), '{"version":"standalone-browser"}');
   const runtime = prepareAgentRuntime({dataRoot, packageRoot, entry: 'build/browser-fixture.mjs'});
@@ -88,11 +96,16 @@ test('standalone production UI sends through real source HTTP, isolates two draf
   ownerPids.add(firstIdentity.pid);
   const browser = await chromium.launch({headless: true});
   cleanupBrowser = browser;
-    const connection = await client.operations.connections.read('first');
-    await client.operations.connections.connect('first', {expectedRevision: connection.revision});
+    for (const connectionId of ['first', 'second']) {
+      const connection = await client.operations.connections.read(connectionId);
+      await client.operations.connections.connect(connectionId, {expectedRevision: connection.revision});
+    }
     const added = await client.operations.models.accounts.add({provider: 'fixture-model'});
     let account = await client.operations.models.accounts.check(added.id);
-    account = await client.operations.models.accounts.preferences(account.id, {expectedRevision: account.revision, models: [{id: 'fixture', enabled: true}]});
+    account = await client.operations.models.accounts.preferences(account.id, {expectedRevision: account.revision, models: [{id: 'fixture', enabled: true}, {id: 'fast', enabled: true}]});
+    const addedExclusive = await client.operations.models.accounts.add({provider: 'exclusive-model'});
+    const checkedExclusive = await client.operations.models.accounts.check(addedExclusive.id);
+    await client.operations.models.accounts.preferences(checkedExclusive.id, {expectedRevision: checkedExclusive.revision, models: [{id: 'exclusive', enabled: true}]});
     await client.operations.models.catalog.list({refresh: true});
     const directory = await client.directories.register(work), scope = executionScopeKey(directory.ref);
     const origin = (await client.web.enable()).origin!;
@@ -193,6 +206,49 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     }
     assert.equal(fs.readFileSync(path.join(dataRoot, 'native-replies.jsonl'), 'utf8').trim().split('\n').length, 2, 'question and approval each consume one native reply');
     assert.equal(fs.readFileSync(path.join(dataRoot, 'native-sends.jsonl'), 'utf8').trim().split('\n').length, 3);
+    const modelTriggerA = a.getByRole('button', {name: '模型与推理强度', exact: true});
+    const modelDialogA = a.getByRole('dialog', {name: '模型与推理强度设置', exact: true});
+    const modelComboA = modelDialogA.getByRole('combobox', {name: '执行模型', exact: true});
+    const modelPopupA = a.locator('.ac-model-list-popup:visible');
+    await modelTriggerA.click();
+    await modelDialogA.waitFor({state: 'visible', timeout: 10000});
+    await modelComboA.focus();
+    await modelComboA.press('ArrowDown');
+    await modelPopupA.waitFor({state: 'visible', timeout: 10000});
+    assert.equal(await a.locator('.ac-model-list-popup .ac-model-notice').count(), 0, 'model dropdown never renders redundant top warning notice');
+    const exclusiveOption = modelPopupA.locator('.ant-select-item-option').filter({hasText: 'Exclusive'});
+    await exclusiveOption.waitFor({state: 'visible', timeout: 10000});
+    assert.match((await exclusiveOption.getAttribute('class')) ?? '', /ant-select-item-option-disabled/u, 'incompatible model stays greyed out and disabled');
+    assert.equal(await exclusiveOption.getAttribute('title'), '受官方授权限制，仅可在 second 中使用。', 'disabled model retains hover compatibility reason');
+    await modelPopupA.locator('.ant-select-item-option').filter({hasText: 'Fast'}).click();
+    await a.locator('.ac-model-list-popup').waitFor({state: 'hidden', timeout: 10000});
+    await modelComboA.focus();
+    await modelComboA.press('Escape');
+    await modelDialogA.waitFor({state: 'hidden', timeout: 10000});
+    await a.locator('.ac-transfer-notice').filter({hasText: '接下来使用'}).waitFor({state: 'visible', timeout: 10000});
+    const agentComboA = a.getByRole('combobox', {name: '下一位智能体', exact: true});
+    const selectDropdownA = a.locator('.ant-select-dropdown:visible');
+    await agentComboA.focus();
+    await agentComboA.press('ArrowDown');
+    await selectDropdownA.locator('.ant-select-item-option').filter({hasText: 'second'}).click();
+    await a.locator('.ant-select-dropdown').waitFor({state: 'hidden', timeout: 10000});
+    assert.equal(await a.locator('.ac-transfer-notice').count(), 1, 'switching to another Harness keeps handoff notice visible');
+    await agentComboA.focus();
+    await agentComboA.press('ArrowDown');
+    await selectDropdownA.locator('.ant-select-item-option').filter({hasText: 'first'}).click();
+    await a.locator('.ant-select-dropdown').waitFor({state: 'hidden', timeout: 10000});
+    await modelTriggerA.click();
+    await modelDialogA.waitFor({state: 'visible', timeout: 10000});
+    await modelComboA.focus();
+    await modelComboA.press('ArrowDown');
+    await modelPopupA.waitFor({state: 'visible', timeout: 10000});
+    await modelPopupA.locator('.ant-select-item-option').getByText('Fixture', {exact: true}).click();
+    await a.locator('.ac-model-list-popup').waitFor({state: 'hidden', timeout: 10000});
+    await modelComboA.focus();
+    await modelComboA.press('Escape');
+    await modelDialogA.waitFor({state: 'hidden', timeout: 10000});
+    await until(() => a.locator('.ac-transfer-notice').count(), value => value === 0, 'switching back to original Harness and model clears transfer notice without reload');
+    assert.equal(fs.readFileSync(path.join(dataRoot, 'native-sends.jsonl'), 'utf8').trim().split('\n').length, 3, 'model and harness switching before send never dispatches native work');
     await a.locator('.ac-collapsed-rail .ac-account-settings').click();
     await a.getByRole('tab', {name: '智能体', exact: true}).click();
     await a.locator('.ams-executors').waitFor({state: 'visible', timeout: 10000});

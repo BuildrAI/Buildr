@@ -8,7 +8,7 @@ import { type ConnectionView, type CatalogModel } from './types.ts';
 import { contextReportWindow, contextUsedPercent, conversationUsageReport } from './conversation-state.ts';
 import { ContextUsageSummary } from './ContextUsageSummary.tsx';
 import {rememberReasoningEffort,restoreReasoningChoice} from './conversation-preferences.ts';
-import {executionAgentName,executorCompatibilityNotice,modelSourceName,nextServiceTier,conversationTierChoice,conversationReasoningSelection,selectedConversationModel,catalogConversationOption,type ConversationChoice} from './conversation-options.ts';
+import {executionAgentName,modelSourceName,nextServiceTier,conversationTierChoice,conversationReasoningSelection,selectedConversationModel,catalogConversationOption,type ConversationChoice} from './conversation-options.ts';
 import {preparedAgentConnections} from '../../lib/model-picker.ts';
 
 type Props = {
@@ -53,7 +53,7 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
   return <div className="ac-execution-options">
     {showAgent&&<ConversationAgentSelect connections={preparedAgentConnections(connections)} value={value} modelCatalog={shared} disabled={disabled} onChange={onChange}/>}
     <Popover trigger={['hover','click']} placement="top" content={<ContextUsageSummary configuredWindow={configuredWindow} report={usageReport} reportWindow={reportWindow} reportLabel={reportLabel}/>}><Button type="text" size="small" className="ac-context-trigger" aria-label="上下文窗口与用量"><Progress type="circle" size={14} strokeWidth={15} percent={usedPercent??0} showInfo={false}/></Button></Popover>
-    <ModelPicker selectedKey={value.modelAccountId?'shared:'+value.modelAccountId+'::'+value.model:value.model||''} modelLabel={modelLabel} defaultLabel={value.model?defaultModel?.label:'请选择模型'} reasoning={reasoning} disabled={disabled} unavailable={unavailable} resetKey={value.connectionId} notice={executorCompatibilityNotice(original,candidates.filter(item=>item.sharing?.kind!=='executor-exclusive'))}
+    <ModelPicker selectedKey={selectedShared?'shared:'+selectedShared.accountId+'::'+selectedShared.modelId:value.modelAccountId?'shared:'+value.modelAccountId+'::'+value.model:value.model||''} modelLabel={modelLabel} defaultLabel={value.model?defaultModel?.label:'请选择模型'} reasoning={reasoning} disabled={disabled} unavailable={unavailable} resetKey={value.connectionId}
       tierSwitchable={!!selectedShared?.serviceTiers&&selectedShared.serviceTiers.length>1} tierDisabled={disabled||selectedShared?.enabled===false||!selectedShared?.available} tierLabel={tier?.label} accelerated={accelerated}
       groups={[...(original?.models.length&&nativeFallback?[{id:'native',label:'原生账号',options:[{value:'',label:'原生默认模型'},...original.models.map(item=>({value:item.id,label:item.label}))]}]:[]),...groups.map(group=>({...group,options:candidates.filter(item=>item.accountId===group.id).map(item=>catalogConversationOption(original,item))}))]}
       onCycleTier={()=>{if(selectedShared){const next=nextServiceTier(selectedShared.serviceTiers,value.serviceTier,selectedShared.defaultServiceTier);onChange(conversationTierChoice(value,selectedShared,next),true);}}}

@@ -49,7 +49,8 @@ registerHooks({
 
 const { AccountModelManager } = await import('../../src/features/agent-conversations/AccountModelManager.tsx');
 const { ConversationHandoffContent } = await import('../../src/features/agent-conversations/ConversationHandoffDrawer.tsx');
-const { catalogConversationOption, executorCompatibilityNotice } = await import('../../src/features/agent-conversations/conversation-options.ts');
+const { ConversationOptions } = await import('../../src/features/agent-conversations/ConversationOptions.tsx');
+const { catalogConversationOption } = await import('../../src/features/agent-conversations/conversation-options.ts');
 
 const baseSource = {
   id: 'native-antigravity',
@@ -204,8 +205,22 @@ test('6.2: ConversationHandoffDrawer surfaces policy-change new session notice a
   const codexOption = catalogConversationOption({ id: 'codex', label: 'Codex' }, googleModel);
   assert.equal(codexOption.disabled, true);
   assert.equal(codexOption.title, '受 Google 官方授权限制，Google 个人账号仅可在 Antigravity 中使用。');
-  assert.equal(
-    executorCompatibilityNotice({ id: 'codex', label: 'Codex' }, [googleModel]),
-    '受 Google 官方授权限制，Google 个人账号仅可在 Antigravity 中使用。',
+
+  const optionsHtml = renderToStaticMarkup(
+    React.createElement(ConversationOptions, {
+      connections: [{ id: 'codex', provider: 'codex', label: 'Codex', enabled: true, status: 'ready', configPath: '/isolated/codex', models: [{ id: 'gpt-5', label: 'GPT-5', isDefault: true }], capabilities: { text: true, images: true, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 65536, permissionModes: ['default', 'full-access'] } }],
+      modelCatalog: [
+        googleModel,
+        { id: 'native-codex::gpt-5', accountId: 'native-codex', accountIdentity: 'codex-id', accountRevision: 'rev-1', provider: 'native-codex', accountLabel: 'ChatGPT', modelId: 'gpt-5', label: 'GPT-5', available: true, enabled: true, images: true, tools: true },
+      ],
+      value: { connectionId: 'codex', model: 'gpt-5', modelAccountId: 'native-codex' },
+      disabled: false,
+      showAgent: false,
+      onChange() {},
+    }),
   );
+  assert.ok(!optionsHtml.includes('ac-model-notice'));
+  assert.ok(!optionsHtml.includes('role="note"'));
+  const pickerSource = readFileSync(new URL('../../src/components/ModelPicker.tsx', import.meta.url), 'utf8');
+  assert.ok(!pickerSource.includes('ac-model-notice'));
 });
