@@ -491,6 +491,86 @@ async function runPrompt(id, params) {
     }
   }
 
+  if (activeScenario === 'native-question' || text.includes('[ASK_NATIVE_QUESTION]')) {
+    const first = await askServer('elicitation/create', {
+      sessionId,
+      mode: 'form',
+      message: 'The agent has a question.',
+      requestedSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          q1: {
+            type: 'string',
+            title: '请选择获取飞书文档内容的方式：',
+            oneOf: [
+              { const: '1', title: '在当前环境扫码配置' },
+              { const: '2', title: '直接发截图到对话中' },
+            ],
+          },
+          q1_other: {
+            type: 'string',
+            title: 'Other',
+            description: 'Optional free-form answer to: 请选择获取飞书文档内容的方式：',
+          },
+        },
+        required: [],
+      },
+    });
+    appendLog('fixture-elicitations.jsonl', { sessionId, elicitation: first });
+    if (turnState.cancelled) {
+      finishActivePrompt({ stopReason: 'cancelled' });
+      return;
+    }
+
+    const second = await askServer('elicitation/create', {
+      sessionId,
+      mode: 'form',
+      message: 'The agent has 2 questions.',
+      requestedSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          q1: {
+            type: 'string',
+            title: '请选择获取飞书文档内容的方式：',
+            oneOf: [
+              { const: '1', title: '在当前环境扫码配置' },
+              { const: '2', title: '直接发截图到对话中' },
+            ],
+          },
+          q1_other: {
+            type: 'string',
+            title: 'Other',
+            description: 'Optional free-form answer to: 请选择获取飞书文档内容的方式：',
+          },
+          q2: {
+            type: 'array',
+            title: '需要同步处理哪些服务？',
+            items: {
+              type: 'string',
+              oneOf: [
+                { const: 'web', title: 'Web' },
+                { const: 'cli', title: 'CLI' },
+              ],
+            },
+          },
+          q2_other: {
+            type: 'string',
+            title: 'Other',
+            description: 'Optional free-form answer to: 需要同步处理哪些服务？',
+          },
+        },
+        required: [],
+      },
+    });
+    appendLog('fixture-elicitations.jsonl', { sessionId, elicitation: second });
+    if (turnState.cancelled) {
+      finishActivePrompt({ stopReason: 'cancelled' });
+      return;
+    }
+  }
+
   if (activeScenario === 'question-invalid' || text.includes('[ASK_INVALID_QUESTION]')) {
     const elicitation = await askServer('elicitation/create', {
       sessionId,

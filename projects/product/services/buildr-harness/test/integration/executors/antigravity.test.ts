@@ -807,6 +807,63 @@ test('3.5: approval excludes persistent grants, preserves request on invalid ans
   assert.deepEqual(elicitations[1]!.elicitation, { action: 'cancel' });
 });
 
+test('3.5b: Antigravity merges native ask_question pairs into single allowOther questions and splits option/other answers', async t => {
+  const h = await createHarness(t, { autoAllow: true });
+  const rt = await h.openRuntime();
+  const ctx = await rt.createContext({ cwd: h.cwd, permissionMode: 'full-access' });
+
+  const capturedRequests: ExecutorRequest[] = [];
+  const events: ExecutorEvent[] = [];
+  await rt.send({
+    contextRef: ctx,
+    cwd: h.cwd,
+    text: '原生 ask_question 配对表单测试 [ASK_NATIVE_QUESTION]',
+    images: [],
+    permissionMode: 'full-access',
+    clientRequestId: 'req-native-question',
+    onEvent: ev => {
+      events.push(ev);
+      if (ev.type === 'request' && ev.request.kind === 'question') {
+        capturedRequests.push(ev.request);
+        const accepted = events.find(
+          (item): item is Extract<ExecutorEvent, { type: 'accepted' }> => item.type === 'accepted',
+        )!;
+        const answer = capturedRequests.length === 1
+          ? { q1: '1' }
+          : { q1: '使用已有应用', q2: ['cli', '以及文档'] };
+        void rt.reply({
+          contextRef: ctx,
+          executionRef: accepted.executionRef,
+          requestId: ev.request.id,
+          answer,
+        });
+      }
+    },
+  });
+
+  assert.equal(capturedRequests.length, 2);
+  assert.equal(capturedRequests[0]!.title, '需要你的回复');
+  assert.deepEqual(capturedRequests[0]!.questions?.map(q => ({ id: q.id, allowOther: q.allowOther, multiple: q.multiple })), [
+    { id: 'q1', allowOther: true, multiple: false },
+  ]);
+  assert.equal(capturedRequests[1]!.title, '需要你的回复');
+  assert.deepEqual(capturedRequests[1]!.questions?.map(q => ({ id: q.id, allowOther: q.allowOther, multiple: q.multiple })), [
+    { id: 'q1', allowOther: true, multiple: false },
+    { id: 'q2', allowOther: true, multiple: true },
+  ]);
+
+  const elicitations = await h.readFixtureJsonl('fixture-elicitations.jsonl');
+  assert.equal(elicitations.length, 2);
+  assert.deepEqual(elicitations[0]!.elicitation, {
+    action: 'accept',
+    content: { q1: '1' },
+  });
+  assert.deepEqual(elicitations[1]!.elicitation, {
+    action: 'accept',
+    content: { q1_other: '使用已有应用', q2: ['cli'], q2_other: '以及文档' },
+  });
+});
+
 test('Antigravity accepts execution-time supplements and keeps the turn open until the last prompt ends', { timeout: 20_000 }, async t => {
   const h = await createHarness(t, { autoAllow: true });
   const rt = await h.openRuntime();
