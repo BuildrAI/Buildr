@@ -54,7 +54,9 @@ export class BrowserProfiles {
       const directory = path.resolve(this.root, profile.directory);
       privateDirectory(this.root, directory);
       const stat = fs.lstatSync(directory);
-      if (profile.directoryIdentity?.dev !== stat.dev || profile.directoryIdentity?.ino !== stat.ino) throw browserError('directory_changed', '浏览器数据目录已被替换，保留当前内容并重新核对归属。');
+      // inode 是目录在本文件系统内的持久身份；macOS(APFS) 重启/重挂载会重新分配 dev，
+      // 仅 dev 变化不代表目录被替换，若一并拦截会让所有恢复路径在 get() 处死锁。
+      if (profile.directoryIdentity?.ino !== stat.ino) throw browserError('directory_changed', '浏览器数据目录已被替换，保留当前内容并重新核对归属。');
     }
     return { profile, revision: profile ? 'sha256-' + crypto.createHash('sha256').update(JSON.stringify(profile)).digest('hex') : 'absent' };
   }
