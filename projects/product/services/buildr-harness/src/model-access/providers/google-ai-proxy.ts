@@ -25,6 +25,7 @@ import {
 const providerId = 'google-ai-subscription';
 const failure = () => new ModelAccessError('google_ai_service_unavailable', 'Google AI 服务暂不可用，请稍后重试。', 503);
 const DEFAULT_STOP_GRACE_MS = 1_000;
+const DEFAULT_EXISTING_WAIT_MS = 5_000;
 
 const liveProxyChildren = new Set<ChildProcess>();
 let exitHookRegistered = false;
@@ -65,6 +66,24 @@ export interface GoogleAiProxyProviderOptions {
   releases?: Readonly<Partial<Record<string, CliProxyReleaseAsset>>>;
   limits?: CliProxyInstallLimits;
   stopGraceMs?: number;
+  existingWaitMs?: number;
+}
+
+async function awaitWithAbort(promise: Promise<void>, signal?: AbortSignal): Promise<void> {
+  if (!signal) return promise;
+  signal.throwIfAborted();
+  let onAbort: (() => void) | undefined;
+  try {
+    await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        onAbort = () => reject(signal.reason);
+        signal.addEventListener('abort', onAbort, { once: true });
+      }),
+    ]);
+  } finally {
+    if (onAbort) signal.removeEventListener('abort', onAbort);
+  }
 }
 
 const CATALOG_SNAPSHOT_JSON = JSON.stringify(GOOGLE_AI_ANTIGRAVITY_CATALOG) + '\n';
@@ -275,51 +294,68 @@ export function createGoogleAiProxyProvider(directory: string, options: GoogleAi
         return task;
       }
 
-      async function ensureServer(settings: Awaited<ReturnType<typeof config>>, expectModels: boolean) {
+      async function ensureServer(settings: Awaited<ReturnType<typeof config>>, expectModels: boolean, signal?: AbortSignal) {
         lifetime.signal.throwIfAborted();
-        if (starting) return starting;
         if (server?.pid && server.exitCode === null && server.signalCode === null) return;
-        // Refuse to share the port with an unowned process.
-        const existing = await fetch(settings.baseUrl + '/models', { signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(700)]), redirect: 'error' }).catch(() => undefined);
-        if (existing) { await existing.body?.cancel(); throw failure(); }
-        lifetime.signal.throwIfAborted();
-        if (starting) return starting;
-        if (server?.pid && server.exitCode === null && server.signalCode === null) return;
-        const effectiveConfigPath = await prepareRuntimeConfig(settings.raw);
-        lifetime.signal.throwIfAborted();
-        if (starting) return starting;
-        if (server?.pid && server.exitCode === null && server.signalCode === null) return;
-        const child = server = start(['-local-model'], effectiveConfigPath);
-        starting = (async () => {
-          let listening = false;
-          for (let attempt = 0; attempt < 50; attempt++) {
-            await delay(100, undefined, { signal: lifetime.signal });
-            if (!child.pid || child.exitCode !== null || child.signalCode !== null) break;
-            const response = await fetch(settings.baseUrl + '/models', {
+        if (starting) return awaitWithAbort(starting, signal);
+        const startTask = (async () => {
+          const existingWaitDeadline = Date.now() + (options.existingWaitMs ?? DEFAULT_EXISTING_WAIT_MS);
+          for (;;) {
+            lifetime.signal.throwIfAborted();
+            if (server?.pid && server.exitCode === null && server.signalCode === null) return;
+            // Refuse to share the port with an unowned process; wait briefly if an owned Buildr proxy is draining.
+            const existing = await fetch(settings.baseUrl + '/models', {
               headers: { authorization: 'Bearer ' + settings.key },
-              signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(500)]),
+              signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(700)]),
               redirect: 'error',
             }).catch(() => undefined);
-            if (!response) continue;
-            if (!response.ok) {
-              await response.body?.cancel();
-              continue;
-            }
-            listening = true;
-            const payload = await response.json().catch(() => undefined);
-            if (!expectModels || (Array.isArray(payload?.data) && payload.data.length > 0)) return;
+            if (!existing) break;
+            const authorized = existing.ok;
+            await existing.body?.cancel().catch(() => {});
+            if (!authorized || Date.now() >= existingWaitDeadline) throw failure();
+            await delay(100, undefined, { signal: lifetime.signal });
           }
-          if (listening && child.pid && child.exitCode === null && child.signalCode === null) return;
-          throw failure();
-        })().catch(async error => {
-          if (server === child) server = undefined;
-          await stop(child);
-          throw error;
-        }).finally(() => { starting = undefined; });
-        return starting;
+          lifetime.signal.throwIfAborted();
+          if (server?.pid && server.exitCode === null && server.signalCode === null) return;
+          const effectiveConfigPath = await prepareRuntimeConfig(settings.raw);
+          lifetime.signal.throwIfAborted();
+          if (server?.pid && server.exitCode === null && server.signalCode === null) return;
+          const child = server = start(['-local-model'], effectiveConfigPath);
+          try {
+            let listening = false;
+            for (let attempt = 0; attempt < 50; attempt++) {
+              await delay(100, undefined, { signal: lifetime.signal });
+              if (!child.pid || child.exitCode !== null || child.signalCode !== null) break;
+              const response = await fetch(settings.baseUrl + '/models', {
+                headers: { authorization: 'Bearer ' + settings.key },
+                signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(500)]),
+                redirect: 'error',
+              }).catch(() => undefined);
+              if (!response) continue;
+              if (!response.ok) {
+                await response.body?.cancel();
+                continue;
+              }
+              listening = true;
+              const payload = await response.json().catch(() => undefined);
+              if (!expectModels || (Array.isArray(payload?.data) && payload.data.length > 0)) return;
+            }
+            if (listening && child.pid && child.exitCode === null && child.signalCode === null) return;
+            throw failure();
+          } catch (error) {
+            if (server === child) server = undefined;
+            await stop(child);
+            throw error;
+          }
+        })().finally(() => {
+          if (starting === startTask) starting = undefined;
+        });
+        starting = startTask;
+        void startTask.catch(() => {});
+        return awaitWithAbort(startTask, signal);
       }
       async function request(settings: Awaited<ReturnType<typeof config>>, route: string, init: RequestInit, expectModels = true) {
-        await ensureServer(settings, expectModels);
+        await ensureServer(settings, expectModels, init.signal ?? undefined);
         return fetch(settings.baseUrl + route, { ...init, redirect: 'error',
           signal: AbortSignal.any([lifetime.signal, init.signal ?? AbortSignal.timeout(10_000)]),
           headers: { authorization: 'Bearer ' + settings.key, 'content-type': 'application/json', ...(route === '/messages' ? { 'anthropic-version': '2023-06-01' } : {}) } });

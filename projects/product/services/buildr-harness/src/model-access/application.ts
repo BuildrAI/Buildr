@@ -52,6 +52,8 @@ export class ModelAccessApplication {
   private readonly preferences = new Map<string,Record<string,ModelPreference>>();
   private readonly removedProviders = new Set<string>();
   private readonly runtimes = new Map<string, Promise<ModelProviderRuntime>>();
+  private readonly runtimeOps = new Map<string, number>();
+  private readonly runtimeClosures = new Map<string, Promise<void>>();
   private readonly checks = new Map<string, { operation: number; promise: Promise<ModelAccountView> }>();
   private readonly urls = new Map<string, { attemptId: string; url: string }>();
   private readonly leasesByToken = new Map<string, LeaseRecord>();
@@ -256,6 +258,7 @@ export class ModelAccessApplication {
     return await provider.open({ accountId: row.id, configRoot: root, environment: this.options.environment ?? {}, ...(custom ? { custom: structuredClone(custom) } : {}) });
   }
   private async runtime(id: string): Promise<ModelProviderRuntime> {
+    while (this.runtimeClosures.has(id)) await this.runtimeClosures.get(id);
     if (this.closed) throw new ModelAccessError('model_access_closed', '模型服务已关闭。', 503);
     const row = this.current(id), provider = this.providers.get(row.provider);
     if (!provider) throw new ModelAccessError('model_provider_unavailable', '此模型来源当前不可用。', 503);
@@ -266,6 +269,44 @@ export class ModelAccessApplication {
       void runtime.catch(() => { if (this.runtimes.get(id) === runtime) this.runtimes.delete(id); });
     }
     return await runtime;
+  }
+  private async withRuntimeOp<T>(id: string, task: (runtime: ModelProviderRuntime) => Promise<T>): Promise<T> {
+    this.runtimeOps.set(id, (this.runtimeOps.get(id) ?? 0) + 1);
+    try {
+      return await task(await this.runtime(id));
+    } finally {
+      const remaining = (this.runtimeOps.get(id) ?? 1) - 1;
+      if (remaining > 0) this.runtimeOps.set(id, remaining);
+      else this.runtimeOps.delete(id);
+    }
+  }
+  private hasActiveRuntimeUse(id: string): boolean {
+    const loginState = this.rows.get(id)?.loginAttempt?.state ?? '';
+    return (this.runtimeOps.get(id) ?? 0) > 0
+      || this.checks.has(id)
+      || ['initializing', 'waiting-browser', 'checking'].includes(loginState)
+      || [...this.leasesByIdentity.values()].some(lease => lease.input.accountId === id && lease.requests.size > 0);
+  }
+  async releaseIdleRuntime(id: string): Promise<void> {
+    if (this.hasActiveRuntimeUse(id)) return;
+    const existingClosure = this.runtimeClosures.get(id);
+    if (existingClosure) {
+      await existingClosure;
+      return;
+    }
+    const pending = this.runtimes.get(id);
+    if (!pending) return;
+    this.runtimes.delete(id);
+    const closing = pending.then(runtime => runtime.close()).catch(() => {});
+    this.runtimeClosures.set(id, closing);
+    try { await closing; }
+    finally { if (this.runtimeClosures.get(id) === closing) this.runtimeClosures.delete(id); }
+  }
+  async releaseIdleRuntimes(): Promise<void> {
+    await Promise.all([
+      ...[...this.runtimes.keys()].map(id => this.releaseIdleRuntime(id)),
+      ...this.runtimeClosures.values(),
+    ]);
   }
   async ensureLinked() {
     await this.ready;
@@ -404,9 +445,10 @@ export class ModelAccessApplication {
       const row = this.current(input.accountId);
       const provider = this.providers.get(row.provider);
       if (!provider?.custom) throw new ModelAccessError('model_custom_unsupported', '此模型来源不支持自定义模型发现。', 400);
-      const runtime = await this.runtime(row.id);
-      if (!runtime.discoverCustom) throw new ModelAccessError('model_custom_unsupported', '此模型来源尚未实现模型发现。', 503);
-      return await runtime.discoverCustom({ accountId: row.id, baseUrl, protocol, modelsPath:input.modelsPath, useApiKey: input.useApiKey, ...(apiKey ? { apiKey } : {}) });
+      return await this.withRuntimeOp(row.id, async runtime => {
+        if (!runtime.discoverCustom) throw new ModelAccessError('model_custom_unsupported', '此模型来源尚未实现模型发现。', 503);
+        return await runtime.discoverCustom({ accountId: row.id, baseUrl, protocol, modelsPath:input.modelsPath, useApiKey: input.useApiKey, ...(apiKey ? { apiKey } : {}) });
+      });
     }
     if (input.useApiKey && !apiKey) throw new ModelAccessError('model_custom_api_key_required', '请填写 API Key 后再获取模型列表。', 400);
     const provider = [...this.providers.values()].find(candidate => candidate.custom && candidate.discover);
@@ -476,11 +518,12 @@ export class ModelAccessApplication {
     const provider = this.providers.get(row.provider);
     if (provider?.authentication?.type !== 'api-key') throw new ModelAccessError('model_credential_unsupported', '此模型来源不支持 API Key 配置。', 400);
     if (typeof input.apiKey !== 'string' || !input.apiKey.trim() || input.apiKey.length > 4096) throw new ModelAccessError('model_api_key_invalid', 'API Key 不能为空且不能超过 4096 个字符。', 400);
-    const runtime = await this.runtime(id);
-    if (!runtime.configure) throw new ModelAccessError('model_credential_unsupported', '此模型来源尚未实现 API Key 配置。', 503);
     const operation = (this.operations.get(id) ?? 0) + 1;
     this.operations.set(id, operation);
-    const observation = await runtime.configure({ apiKey: input.apiKey });
+    const observation = await this.withRuntimeOp(id, async runtime => {
+      if (!runtime.configure) throw new ModelAccessError('model_credential_unsupported', '此模型来源尚未实现 API Key 配置。', 503);
+      return await runtime.configure({ apiKey: input.apiKey });
+    });
     if (this.closed || this.metadataReadOnly) throw new ModelAccessError('model_access_closed', '模型供应商配置未能保存。', 503);
     const before = this.selectionState(row);
     if (observation.identity && row.identity !== digest(observation.identity)) {
@@ -515,7 +558,7 @@ export class ModelAccessApplication {
     const id=row.id;
     let before: string | undefined;
     try {
-      const observation = await (await this.runtime(id)).inspect();
+      const observation = await this.withRuntimeOp(id, runtime => runtime.inspect());
       if (this.closed || this.metadataReadOnly || this.operations.get(id) !== operation) return this.view(this.current(id));
       before=this.selectionState(row);
       const identity=observedAccountIdentity(row,observation.identity);
@@ -579,7 +622,7 @@ export class ModelAccessApplication {
       current.loginAttempt = { id: attemptId, updatedAt: this.now, state: value.state, ...(value.diagnostic ? { diagnostic: value.diagnostic } : {}) };
       await this.changed(current);
     };
-    void this.runtime(id).then(runtime => runtime.beginLogin(value => { void update(value).catch(() => {}); })).catch(() => update({ state: 'failed', diagnostic: '登录未完成，请重新发起。' }).catch(() => {}));
+    void this.withRuntimeOp(id, runtime => runtime.beginLogin(value => { void update(value).catch(() => {}); })).catch(() => update({ state: 'failed', diagnostic: '登录未完成，请重新发起。' }).catch(() => {}));
     return result;
   }
   async attempt(id: string, attemptId: string) { const view = await this.read(id); if (view.loginAttempt?.id !== attemptId) throw new ModelAccessError('model_login_stale', '登录尝试已变化。', 404); return view; }
@@ -896,7 +939,10 @@ export class ModelAccessApplication {
       reportFailure(error);
       if (!res.headersSent && !res.destroyed) { this.json(res,error instanceof ModelAccessError ? error.status : 502,{error:modelFailure(error)}); }
       else if (!res.destroyed) res.destroy();
-    } finally { lease?.requests.delete(controller); }
+    } finally {
+      lease?.requests.delete(controller);
+      if (lease && this.metadataReadOnly) void this.releaseIdleRuntime(lease.input.accountId).catch(() => {});
+    }
   }
   activity() {
     if(this.metadataReadOnly)for(const lease of [...this.leasesByIdentity.values()]){
@@ -913,7 +959,7 @@ export class ModelAccessApplication {
       catch{this.storageError=new ModelAccessError('model_storage_unavailable','配置维护恢复后账号资料未能核对，原数据已保留。',409);}
     }
   }
-  async close() { if (this.closed) return; this.closed = true; this.lifetime.abort(); await this.ready.catch(()=>{}); for (const identity of [...this.leasesByIdentity.keys()]) this.release(identity); this.urls.clear(); await Promise.allSettled([...this.activePreparations]); await Promise.allSettled([...this.runtimes.values()].map(async pending => { await (await pending).close(); })); this.runtimes.clear(); if (this.server) { this.server.closeAllConnections(); await new Promise<void>(resolve => this.server!.close(()=>resolve())); } await this.writeChain; }
+  async close() { if (this.closed) return; this.closed = true; this.lifetime.abort(); await this.ready.catch(()=>{}); for (const identity of [...this.leasesByIdentity.keys()]) this.release(identity); this.urls.clear(); await Promise.allSettled([...this.activePreparations]); await Promise.allSettled([...[...this.runtimes.values()].map(async pending => { await (await pending).close(); }), ...this.runtimeClosures.values()]); this.runtimes.clear(); if (this.server) { this.server.closeAllConnections(); await new Promise<void>(resolve => this.server!.close(()=>resolve())); } await this.writeChain; }
 }
 
 export function createModelAccess(options: ModelAccessOptions) {
@@ -928,6 +974,7 @@ export function createModelAccess(options: ModelAccessOptions) {
     freezeMetadata: (value = true) => application.freezeMetadata(value),
     generate: (input: ModelLeaseInput & {prompt:string;signal:AbortSignal;reasoningEffort?:string}) => application.generate(input),
     leases: { rebindReasoning:(from:string,to:string,value:string)=>application.rebindReasoning(from,to,value), stopRun:(conversationId:string,runId:string)=>application.stopRun(conversationId,runId), streamFailure:(conversationId:string,runId:string)=>application.streamFailure(conversationId,runId), hasActiveRequests:(identity:string)=>application.hasActiveRequests(identity), create: (input:ModelLeaseInput) => application.createLease(input), release: (identity:string) => application.release(identity), updateRun:(identity:string,runId:string)=>application.updateRun(identity,runId) },
+    releaseIdleRuntimes: () => application.releaseIdleRuntimes(),
     close: () => application.close(),
   };
 }

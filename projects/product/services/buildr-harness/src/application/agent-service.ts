@@ -127,6 +127,7 @@ export function createAgentService(options: AgentServiceOptions) {
     return presentConnection(view, account, registeredProviderIds.has(accountId));
   };
   let closed = false;
+  let metadataFrozen = false;
   let discovery:Promise<void>|undefined, discoveryDiagnostic:string|undefined;
   let discoveryTimer:ReturnType<typeof setInterval>|undefined;
   let discoverySkippedCold = false;
@@ -245,16 +246,22 @@ export function createAgentService(options: AgentServiceOptions) {
         const { AgentServiceError } = await import('../domain/agent-state.ts');
         throw new AgentServiceError('agent_process_busy', '仍有账号、准备或配置写入操作，尚未交接维护权。', 409);
       }
-      connections.freezeMetadata(); models.freezeMetadata();
+      connections.freezeMetadata(); models.freezeMetadata(); metadataFrozen = true;
     },
-    resumeMetadata() { connections.freezeMetadata(false); models.freezeMetadata(false); startRefreshing(); },
+    resumeMetadata() { metadataFrozen = false; connections.freezeMetadata(false); models.freezeMetadata(false); startRefreshing(); },
     conversationBusy: (scope: string, id: string) => conversations.busy(scope, id),
     reconcilePersisted: (scope:string,id:string,control?:{expectedRevision:string;runId:string;participantId:string;generation:string}) => conversations.reconcilePersisted(scope,id,control),
     allowsReleasedContinuation: (scope: string, id: string, input: SendDraft) => conversations.allowsReleasedContinuation(scope, id, input),
     conversationInputBusy: (scope: string, id: string) => conversations.inputBusy(scope, id),
     retainsConversationSource: (scope:string,id:string) => conversations.retainsConversationSource(scope,id),
-    releaseIdleSources: (owner?:{workspaceId:string;id:string}) => conversations.releaseIdleSources(owner),
-    releaseRetiredWork: () => conversations.releaseRetiredWork(),
+    releaseIdleSources: async (owner?:{workspaceId:string;id:string}) => {
+      await conversations.releaseIdleSources(owner);
+      if (metadataFrozen) await models.releaseIdleRuntimes();
+    },
+    releaseRetiredWork: async () => {
+      await conversations.releaseRetiredWork();
+      await models.releaseIdleRuntimes();
+    },
     observeForRelease: (scope:string,id:string,runId:string,generation:string) => conversations.observeForRelease(scope,id,runId,generation),
     verifyNext: (scope: string, id: string) => conversations.verifyNext(scope, id),
     validatePending: (scope: string, id: string, input: SendDraft) => conversations.validatePending(scope, id, input),

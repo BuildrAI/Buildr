@@ -603,3 +603,256 @@ test('SIGTERM on isolated AgentProcess terminates both AgentProcess and its CLIP
     }
   }
 });
+
+test('retiring AgentService releases idle and drained Google AI proxy runtimes for successor generation without 503', async t => {
+  const root = makeTempDir(t);
+  const proxyDir = path.join(root, 'CLIProxyAPI');
+  const dataRoot = path.join(root, 'agent-service');
+  const pidFile = path.join(root, 'proxy-handoff.pid');
+  const holdGateFile = path.join(root, 'proxy-hold.gate');
+  const port = await findFreePort();
+  writeMockCliProxy(proxyDir, port, { pidFile });
+  // Extend mock CLIProxyAPI to also answer /v1/chat/completions and hold when requested.
+  const binaryPath = path.join(proxyDir, cliProxyBinaryName());
+  fs.writeFileSync(binaryPath, [
+    '#!/usr/bin/env node',
+    "import http from 'node:http';",
+    "import fs from 'node:fs';",
+    `fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));`,
+    "process.on('SIGTERM', () => process.exit(0));",
+    'const server = http.createServer(async (req, res) => {',
+    "  if (req.url === '/v1/models') {",
+    "    res.writeHead(200, { 'content-type': 'application/json' });",
+    "    res.end(JSON.stringify({ data: [{ id: 'gemini-4-carbon-high', display_name: 'Gemini 4 Carbon' }, { id: 'gemini-4-carbon-medium', display_name: 'Gemini 4 Carbon' }] }));",
+    '    return;',
+    '  }',
+    "  if (req.url === '/v1/chat/completions' && req.method === 'POST') {",
+    "    const chunks = [];",
+    '    for await (const chunk of req) chunks.push(chunk);',
+    "    const text = Buffer.concat(chunks).toString('utf8');",
+    "    if (text.includes('hold-google')) {",
+    `      fs.writeFileSync(${JSON.stringify(holdGateFile + '.started')}, '1');`,
+    `      while (!fs.existsSync(${JSON.stringify(holdGateFile)})) await new Promise(r => setTimeout(r, 20));`,
+    '    }',
+    "    res.writeHead(200, { 'content-type': 'application/json' });",
+    "    res.end(JSON.stringify({ id: 'cmpl-1', object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content: 'handoff-ok' }, finish_reason: 'stop' }] }));",
+    '    return;',
+    '  }',
+    '  res.writeHead(404).end();',
+    '});',
+    `server.listen(${port}, '127.0.0.1');`,
+    '',
+  ].join('\n'), { mode: 0o755 });
+
+  const contexts = new Map<string, ExecutorItem[]>();
+  let releaseHold!: () => void;
+  const holdGate = new Promise<void>(resolve => { releaseHold = resolve; });
+
+  const capabilities: AgentCapabilities = {
+    text: true,
+    images: false,
+    approval: false,
+    questions: false,
+    stop: true,
+    resume: true,
+    maxInputBytes: 65_536,
+  };
+  const codexExecutor: AgentExecutor = {
+    descriptor: { id: 'codex', label: 'Codex', capabilities },
+    async open(input) {
+      const gateway = input.gateway;
+      return {
+        bindingIdentity: 'codex-handoff-mock',
+        capabilities,
+        async inspectAccount() { return { status: 'ready' }; },
+        async models() { return []; },
+        async beginLogin() {},
+        async cancelLogin() {},
+        async createContext() { const ref = { id: randomUUID() }; contexts.set(ref.id, []); return ref; },
+        async resumeContext({ contextRef }) { contexts.set(contextRef.id, contexts.get(contextRef.id) ?? []); },
+        async readHistory({ contextRef }) { return structuredClone(contexts.get(contextRef.id) ?? []); },
+        async send(sendInput) {
+          const execId = randomUUID();
+          sendInput.onEvent({ type: 'accepted', executionRef: { id: execId }, inputItemId: sendInput.clientRequestId });
+          if (sendInput.text === 'hold-unrelated') {
+            await holdGate;
+          } else {
+            const res = await fetch(`${gateway!.baseUrl}/chat/completions`, {
+              method: 'POST',
+              headers: {
+                authorization: `Bearer ${gateway!.apiKey}`,
+                'content-type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: sendInput.model,
+                stream: false,
+                messages: [{ role: 'user', content: sendInput.text }],
+              }),
+            });
+            assert.equal(res.status, 200);
+            const payload = await res.json() as { choices: Array<{ message: { content: string } }> };
+            const item: ExecutorItem = {
+              id: randomUUID(),
+              kind: 'message',
+              role: 'assistant',
+              text: payload.choices[0]!.message.content,
+              executionId: execId,
+              status: 'completed',
+            };
+            contexts.get(sendInput.contextRef.id)!.push(item);
+            sendInput.onEvent({ type: 'item', item });
+          }
+          sendInput.onEvent({ type: 'completed', status: 'completed' });
+        },
+        async observe({ executionRef }) { return { status: 'idle', executionRef, tools: [] }; },
+        async reply() {},
+        async stop() { return { status: 'stopped', tools: [] }; },
+        async close() {},
+      };
+    },
+  };
+
+  const oldService = createAgentService({
+    dataRoot,
+    executors: [codexExecutor],
+    modelProviders: [createGoogleAiProxyProvider(proxyDir, { stopGraceMs: 120, existingWaitMs: 3_000 })],
+    resolveWorkspace: () => ({ rootPath: root }),
+    assertTask() {},
+  });
+  let newService: ReturnType<typeof createAgentService> | undefined;
+  try {
+    await oldService.connections.connect('codex', { expectedRevision: 'unconfigured' });
+    const added = await oldService.models.accounts.add({ provider: 'google-ai-subscription' });
+    const checked = await oldService.models.accounts.check(added.id);
+    assert.equal(checked.status, 'ready');
+    const idlePid = Number(fs.readFileSync(pidFile, 'utf8').trim());
+    assert.equal(processAlive(idlePid), true);
+
+    // Keep an unrelated conversation busy on oldService (as in parallel upgrade draining),
+    // while google-ai-subscription has zero active requests.
+    const unrelated = await oldService.conversations.create('workspace', { title: 'Unrelated Draining' });
+    const unrelatedDraft = { expectedRevision: unrelated.revision, connectionId: 'codex', modelAccountId: added.id, model: 'gemini-4-carbon', text: 'hold-unrelated' };
+    const unrelatedPreview = oldService.conversations.prepareSend('workspace', unrelated.id, unrelatedDraft);
+    oldService.conversations.send('workspace', unrelated.id, { ...unrelatedDraft, previewToken: unrelatedPreview.token, clientRequestId: randomUUID() });
+    await waitUntil(() => oldService.conversations.read('workspace', unrelated.id).run?.accepted === true);
+
+    // Parallel adoption path: freezeMetadata() + releaseIdleSources() must drop idle Google AI proxy immediately.
+    await oldService.freezeMetadata();
+    await oldService.releaseIdleSources();
+    await waitUntil(() => !processAlive(idlePid));
+
+    // Successor generation boots and runs Codex + google-ai-subscription without 503.
+    newService = createAgentService({
+      dataRoot,
+      executors: [codexExecutor],
+      modelProviders: [createGoogleAiProxyProvider(proxyDir, { stopGraceMs: 120, existingWaitMs: 3_000 })],
+      resolveWorkspace: () => ({ rootPath: root }),
+      assertTask() {},
+    });
+    const chat = await newService.conversations.create('workspace', { title: 'Successor Turn' });
+    const draft = { expectedRevision: chat.revision, connectionId: 'codex', modelAccountId: added.id, model: 'gemini-4-carbon', text: 'successor hello' };
+    const preview = newService.conversations.prepareSend('workspace', chat.id, draft);
+    newService.conversations.send('workspace', chat.id, { ...draft, previewToken: preview.token, clientRequestId: randomUUID() });
+    await waitUntil(() => newService!.conversations.read('workspace', chat.id).run?.status === 'completed', 5_000);
+    const newPid = Number(fs.readFileSync(pidFile, 'utf8').trim());
+    assert.notEqual(newPid, idlePid);
+    assert.equal(processAlive(newPid), true);
+
+    // Also verify active-during-freeze case: freezing while a Google AI request is in flight does not interrupt it,
+    // and releasing after resume+re-freeze or completion cleans up.
+    await newService.freezeMetadata();
+    await newService.releaseIdleSources();
+    await waitUntil(() => !processAlive(newPid));
+    newService.resumeMetadata();
+
+    const activeChat = await newService.conversations.create('workspace', { title: 'In-flight Handoff' });
+    const activeDraft = { expectedRevision: activeChat.revision, connectionId: 'codex', modelAccountId: added.id, model: 'gemini-4-carbon', text: 'hold-google' };
+    const activePreview = newService.conversations.prepareSend('workspace', activeChat.id, activeDraft);
+    newService.conversations.send('workspace', activeChat.id, { ...activeDraft, previewToken: activePreview.token, clientRequestId: randomUUID() });
+    await waitUntil(() => fs.existsSync(holdGateFile + '.started'));
+    const inFlightPid = Number(fs.readFileSync(pidFile, 'utf8').trim());
+
+    await newService.freezeMetadata();
+    await newService.releaseIdleSources();
+    assert.equal(processAlive(inFlightPid), true, 'in-flight request must keep its proxy alive until response finishes');
+
+    fs.writeFileSync(holdGateFile, 'go');
+    await waitUntil(() => newService!.conversations.read('workspace', activeChat.id).run?.status === 'completed', 5_000);
+    await waitUntil(() => !processAlive(inFlightPid), 3_000);
+  } finally {
+    releaseHold();
+    fs.writeFileSync(holdGateFile, 'go');
+    await newService?.close().catch(() => {});
+    await oldService.close().catch(() => {});
+    if (fs.existsSync(pidFile)) {
+      const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
+      if (processAlive(pid)) {
+        try { process.kill(pid, 'SIGKILL'); } catch {}
+      }
+    }
+  }
+});
+
+test('Google AI proxy waits for authorized draining listener to vacate port but rejects foreign listener immediately', async t => {
+  const http = await import('node:http');
+  const root = makeTempDir(t);
+  const proxyDir = path.join(root, 'CLIProxyAPI');
+  const pidFile = path.join(root, 'proxy-wait.pid');
+  const port = await findFreePort();
+  writeMockCliProxy(proxyDir, port, { pidFile });
+
+  // 1. Foreign/unauthorized occupant must fail immediately without waiting for existingWaitMs.
+  const foreignServer = http.createServer((_req, res) => {
+    res.writeHead(401, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'unauthorized' }));
+  });
+  await new Promise<void>(resolve => foreignServer.listen(port, '127.0.0.1', () => resolve()));
+  const foreignRuntime = await createGoogleAiProxyProvider(proxyDir, { existingWaitMs: 3_000, stopGraceMs: 120 }).open({
+    accountId: 'g',
+    configRoot: proxyDir,
+    environment: {},
+  });
+  try {
+    const startedAt = Date.now();
+    const obs = await foreignRuntime.inspect();
+    assert.equal(obs.status, 'failed');
+    assert.ok(Date.now() - startedAt < 1_500, 'unauthorized occupant must fail promptly without waiting out existingWaitMs');
+  } finally {
+    await foreignRuntime.close();
+    await new Promise<void>(resolve => foreignServer.close(() => resolve()));
+  }
+
+  // 2. Authorized draining listener (same api-key from config.yaml) vacates port after 250ms -> runtime succeeds cleanly.
+  const drainingServer = http.createServer((req, res) => {
+    if (req.headers.authorization !== 'Bearer mock-key') {
+      res.writeHead(401).end();
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ object: 'list', data: [{ id: 'gemini-4-carbon-medium', owned_by: 'antigravity' }] }));
+  });
+  await new Promise<void>(resolve => drainingServer.listen(port, '127.0.0.1', () => resolve()));
+  const vacateTimer = setTimeout(() => {
+    drainingServer.closeAllConnections?.();
+    drainingServer.close();
+  }, 250);
+  const ownedRuntime = await createGoogleAiProxyProvider(proxyDir, { existingWaitMs: 3_000, stopGraceMs: 120 }).open({
+    accountId: 'g',
+    configRoot: proxyDir,
+    environment: {},
+  });
+  try {
+    const obs = await ownedRuntime.inspect();
+    assert.equal(obs.status, 'ready');
+    assert.ok(obs.models.length > 0);
+    const spawnedPid = Number(fs.readFileSync(pidFile, 'utf8').trim());
+    assert.equal(processAlive(spawnedPid), true);
+  } finally {
+    clearTimeout(vacateTimer);
+    await ownedRuntime.close();
+    if (drainingServer.listening) {
+      drainingServer.closeAllConnections?.();
+      await new Promise<void>(resolve => drainingServer.close(() => resolve()));
+    }
+  }
+});
