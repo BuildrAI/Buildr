@@ -8,7 +8,7 @@ import { query, getSessionInfo, getSessionMessages, getSubagentMessages, forkSes
 import type { ExecutorEvent, ExecutorItem, ExecutorObservation, ExecutorRequest } from '../../contracts.ts';
 import { checkedGateway, gatewayModel, type ExecutorGateway } from '../model-gateway.ts';
 import { bounded, nativePreview } from '../native-process.ts';
-import { claudeAnswers, claudeEffort, claudeGatewayEnvironment, claudeInputId, ClaudeItemProjector, claudeQuestion } from './protocol.ts';
+import { claudeAnswers, claudeEffort, claudeFullAccessSafetyAllow, claudeGatewayEnvironment, claudeInputId, ClaudeItemProjector, claudeQuestion } from './protocol.ts';
 import { ClaudeReceiptCursor, claudeStorageRoot } from './content.ts';
 import { withExecutionFault } from '../../domain/execution-fault.ts';
 import { ClaudeControlInput } from './control.ts';
@@ -50,7 +50,7 @@ interface Round {
 }
 interface Session {
   id: string; cwd: string; q: Query; inputs: Inputs; round?: Round; closed: boolean; initialized: boolean;
-  mode: string; effort?: string;
+  mode: string; effort?: string; fullAccess: boolean;
   nativeContinuation?: boolean;
   taskDrainTimer?: ReturnType<typeof setTimeout>;
   child?:ChildProcessWithoutNullStreams;
@@ -295,6 +295,7 @@ async function event(session: Session, message: any) {
 async function permission(session: Session, name: string, input: Record<string,unknown>, options: any): Promise<PermissionResult> {
   const round=session.round;
   if (!round || session.closed) return {behavior:'deny',message:'No active owning execution.'};
+  if(session.fullAccess&&claudeFullAccessSafetyAllow(options))return {behavior:'allow',updatedInput:input};
   const id=options.requestId??options.toolUseID;
   if (!id || round.pending.has(id)) return {behavior:'deny',message:'Request identity unavailable.'};
   const parent=options.agentID?session.tasks.get(options.agentID)?.toolId:undefined;
@@ -343,7 +344,7 @@ async function open(params: any): Promise<Session> {
   const configRoot=path.dirname(process.env.CLAUDE_CONFIG_DIR!);
   const root=claudeStorageRoot(configRoot);
   const receipts=new ClaudeReceiptCursor({root,configRoot,contextId:params.contextId,cwd:params.cwd});
-  const session:Session={id:params.contextId,cwd:params.cwd,q:undefined!,inputs,closed:false,initialized:false,mode,effort,tools:new Map(),tasks:new Map(),items:new Map(),projector:new ClaudeItemProjector(),receipts,streams:new Map()};
+  const session:Session={id:params.contextId,cwd:params.cwd,q:undefined!,inputs,closed:false,initialized:false,mode,effort,fullAccess:params.permissionMode==='full-access',tools:new Map(),tasks:new Map(),items:new Map(),projector:new ClaudeItemProjector(),receipts,streams:new Map()};
   session.q=query({prompt:inputs,options:{
     cwd:params.cwd,pathToClaudeCodeExecutable:executable,
     ...(persisted?{resume:params.contextId}:{sessionId:params.contextId}),
@@ -419,6 +420,7 @@ async function dispatch(method:string,params:any):Promise<unknown> {
     const previous=observation(session);
     if(session.round&&(!session.round.terminal||previous.status==='running'||previous.backgroundWork||previous.tools.some(tool=>tool.status!=='completed')||session.round.pending.size||session.round.acks.size))throw new Error('agent_execution_busy');
     await session.q.setPermissionMode(params.permissionMode==='full-access'?'bypassPermissions':'default');
+    session.fullAccess=params.permissionMode==='full-access';
     await session.q.applyFlagSettings({effortLevel:claudeEffort(gateway!,params.model,params.reasoningEffort)??null});
     const round:Round={id:params.executionId,inputId:input.uuid!,requestId:params.clientRequestId,accepted:false,stopping:false,pending:new Map(),outstanding:new Set([input.uuid!]),acks:new Map(),resolve:()=>{},reject:()=>{},settled:undefined!};
     round.settled=new Promise<void>((resolve,reject)=>{round.resolve=resolve;round.reject=reject;});

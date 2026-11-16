@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtemp, rm, mkdir, realpath, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, realpath, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -20,7 +20,7 @@ function binary():string {
   const root=path.dirname(createRequire(import.meta.url).resolve(name+'/package.json'));
   return path.join(root,process.platform==='win32'?'claude.exe':'claude');
 }
-async function fixture(t:test.TestContext,scenario:'text'|'tool'|'question'|'child'|'background'|'background-followup'|'skill'|'compact'|'error'='text',usageIn:'start'|'delta'='start'){
+async function fixture(t:test.TestContext,scenario:'text'|'tool'|'question'|'child'|'background'|'background-followup'|'skill'|'compact'|'dangerous'|'error'='text',usageIn:'start'|'delta'='start'){
   const root=await realpath(await mkdtemp(path.join(tmpdir(),'buildr-claude-'))),cwd=path.join(root,'workspace');
   await mkdir(cwd);
   await writeFile(path.join(cwd,'AGENTS.md'),'BUILDR_CLAUDE_RULE_FIXTURE：只执行已授权动作。\n');
@@ -42,9 +42,9 @@ async function fixture(t:test.TestContext,scenario:'text'|'tool'|'question'|'chi
     if(scenario==='error'){res.writeHead(401,{'content-type':'application/json'}).end(JSON.stringify({type:'error',error:{type:'authentication_error',message:'Fixture key rejected'}}));return;}
     const hasResult=body.messages.some((m:any)=>Array.isArray(m.content)&&m.content.some((p:any)=>p.type==='tool_result'));
     const child=Boolean(req.headers['x-claude-code-agent-id']);
-    const tool=scenario==='skill'?'Skill':scenario==='child'?child?'Bash':'Agent':scenario.startsWith('background')||scenario==='tool'?'Bash':'AskUserQuestion';
+    const tool=scenario==='skill'?'Skill':scenario==='child'?child?'Bash':'Agent':scenario.startsWith('background')||scenario==='tool'||scenario==='dangerous'?'Bash':'AskUserQuestion';
     const input=tool==='Skill'?{skill:'buildr-fixture-skill'}:tool==='Agent'?{subagent_type:'general-purpose',description:'Read-only child fixture',prompt:'Run the read-only fixture command, then finish.',model:'haiku'}
-      :tool==='Bash'?scenario.startsWith('background')?{command:scenario==='background-followup'?'sleep 2':'sleep 10',description:'Bounded background fixture',run_in_background:true}:{command:'printf buildr-claude-ok',description:'Read-only fixture command'}
+      :tool==='Bash'?scenario.startsWith('background')?{command:scenario==='background-followup'?'sleep 2':'sleep 10',description:'Bounded background fixture',run_in_background:true}:scenario==='dangerous'?{command:'rm -rf "$(cat buildr-claude-target-path.txt)"',description:'Dangerous removal fixture'}:{command:'printf buildr-claude-ok',description:'Read-only fixture command'}
       :{questions:[{question:'选择验收方式？',header:'验收',multiSelect:false,options:[{label:'自动测试',description:'使用测试'},{label:'手工',description:'人工检查'}]}]};
     const title=JSON.stringify(body.messages).includes('只为以下引用资料生成');
     const summary=String(body.system).includes('你只负责整理交接材料');
@@ -321,6 +321,34 @@ test('Claude real Bash uses approval control and native tool detail', {timeout:6
   assert.ok(events.some(event=>event.type==='item'&&event.item.kind==='tool'&&event.item.text.includes('buildr-claude-ok')));
   const detail=readClaudeTool(f.root,{version:3,provider:'claude-code',contextId:contextRef.id,nativeId:'call-fixture',entry:{id:'call-fixture',sequence:1,kind:'tool',role:'assistant',text:''} as any,text:[],session:{config:'connections/claude-code',cwd:f.cwd}});
   assert.ok(detail?.text.includes('buildr-claude-ok'));
+});
+test('Claude full access answers the built-in dangerous removal check without asking', {timeout:60000}, async t=>{
+  const f=await fixture(t,'dangerous'),contextRef=await f.runtime.createContext({cwd:f.cwd}),events:ExecutorEvent[]=[];
+  const target=path.join(f.cwd,'buildr-claude-removal-target');
+  await writeFile(target,'fixture');
+  await writeFile(path.join(f.cwd,'buildr-claude-target-path.txt'),target);
+  let executionRef:any;
+  await f.runtime.send({contextRef,cwd:f.cwd,text:'Remove the fixture target.',images:[],model:'fixture-model',permissionMode:'full-access',clientRequestId:'removal',onEvent:event=>{
+    events.push(event);
+    if(event.type==='accepted')executionRef=event.executionRef;
+    if(event.type==='request')void f.runtime.reply({contextRef,executionRef,requestId:event.request.id,answer:'approve'});
+  }});
+  assert.equal(events.some(event=>event.type==='request'),false,'完全访问不得要求人工确认危险删除');
+  await assert.rejects(stat(target),/ENOENT/,'自动确认后删除确实执行');
+});
+test('Claude default mode still asks the human for a dangerous removal', {timeout:60000}, async t=>{
+  const f=await fixture(t,'dangerous'),contextRef=await f.runtime.createContext({cwd:f.cwd}),events:ExecutorEvent[]=[];
+  const target=path.join(f.cwd,'buildr-claude-removal-target');
+  await writeFile(target,'fixture');
+  await writeFile(path.join(f.cwd,'buildr-claude-target-path.txt'),target);
+  let executionRef:any;
+  await f.runtime.send({contextRef,cwd:f.cwd,text:'Remove the fixture target.',images:[],model:'fixture-model',permissionMode:'default',clientRequestId:'removal-default',onEvent:event=>{
+    events.push(event);
+    if(event.type==='accepted')executionRef=event.executionRef;
+    if(event.type==='request')void f.runtime.reply({contextRef,executionRef,requestId:event.request.id,answer:'approve'});
+  }});
+  assert.ok(events.some(event=>event.type==='request'&&event.request.kind==='approval'),'默认模式仍要求人工确认');
+  await assert.rejects(stat(target),/ENOENT/,'人工确认后删除确实执行');
 });
 test('Claude full access still asks the human and uses the original question response', {timeout:60000}, async t=>{
   const f=await fixture(t,'question'),contextRef=await f.runtime.createContext({cwd:f.cwd}),events:ExecutorEvent[]=[];

@@ -1,11 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { claudeInputId, claudeItems, ClaudeItemProjector, claudeQuestion, claudeAnswers, claudeGatewayEnvironment, claudeEffort } from '../../src/executors/claude/protocol.ts';
+import { claudeInputId, claudeItems, ClaudeItemProjector, claudeQuestion, claudeAnswers, claudeFullAccessSafetyAllow, claudeGatewayEnvironment, claudeEffort } from '../../src/executors/claude/protocol.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../../src/executors/program-policy.ts';
 import { createClaudeExecutor } from '../../src/executors/claude/index.ts';
 import { ClaudeControlInput } from '../../src/executors/claude/control.ts';
 
 const gateway={identity:'lease',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'private',models:[{id:'buildr-selected',label:'Selected',contextWindow:64000,maxOutputTokens:4096,reasoningEfforts:[{id:'high',label:'High'}]}]};
+test('Claude full access only waives the built-in dangerous removal check',()=>{
+  assert.equal(claudeFullAccessSafetyAllow({decisionReasonType:'safetyCheck',decisionReason:'Dangerous rm operation /workspace/target'}),true);
+  assert.equal(claudeFullAccessSafetyAllow({decisionReasonType:'subcommandResults',decisionReason:'Dangerous rm operation in a nested command'}),true,'compound commands carry the nested safety text');
+  assert.equal(claudeFullAccessSafetyAllow({decisionReasonType:'safetyCheck',decisionReason:'Sending a file through a connector requires approval'}),false);
+  assert.equal(claudeFullAccessSafetyAllow({decisionReasonType:'rule',decisionReason:'Dangerous rm operation'}),false,'ask rules remain human prompts');
+  assert.equal(claudeFullAccessSafetyAllow({}),false);
+});
 test('Claude exact input UUID and every native model purpose stay bound to one lease',()=>{
   assert.match(claudeInputId('input'),/^[a-f0-9-]{36}$/);assert.equal(claudeInputId('input'),claudeInputId('input'));assert.notEqual(claudeInputId('input'),claudeInputId('another'));
   const env=claudeGatewayEnvironment(gateway);

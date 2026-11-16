@@ -27,6 +27,13 @@ export function claudeInputId(request: string): string {
   return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
 }
 
+/** The CLI treats a few safety checks as bypass-immune. Full access may answer
+ * the exact dangerous-removal asks itself; every other prompt stays human. */
+export function claudeFullAccessSafetyAllow(options:any):boolean {
+  const reason=typeof options?.decisionReason==='string'?options.decisionReason:'';
+  return (options?.decisionReasonType==='safetyCheck'||options?.decisionReasonType==='subcommandResults')&&/Dangerous .* operation\b/.test(reason);
+}
+
 /** Every native model purpose uses the same restricted lease, including Haiku and subagents. */
 export function claudeGatewayEnvironment(gateway: ExecutorGateway): Record<string, string> {
   const model = gatewayModel(gateway);

@@ -59,6 +59,7 @@ import {conversationSystemNoticeText,visibleConversationEntries,conversationMode
 import './agent-conversations.css';
 import './conversation-flow.css';
 const statusLabels = {starting:'正在准备执行',running:'正在执行','waiting-approval':'等待授权','waiting-question':'等待你的回复',stopping:'正在停止',stopped:'已确认停止','tools-active':'仍有命令未结束',unknown:'执行状态待确认',completed:'本轮已结束',failed:'本轮执行失败'};
+const unconfirmedSupplementMessage='消息是否送达仍待确认，请勿重复发送；输入已保留。';
 type Prepared = {conversation:ConversationView;input:SendDraft;preview:SendPreview;clientRequestId:string;selection:ConversationSelection;recovery:ConversationSendRecovery};
 type SendOperation={selection:ConversationSelection;continueRunId?:string};
 type Props={workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;portalTarget?:HTMLElement|null;embedded?:boolean;accessory?:ReactNode;onCreateChild?:()=>void};
@@ -230,6 +231,22 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     }));
     return()=>controller.abort();
   },[chat?.id,chat?.run?.id,draft.text,inputAttempts,context.api,context.getSelection,context.isSelectionCurrent]);
+  // A bounded supplement response can return before the native turn absorbs the
+  // input. Once a later authoritative read repairs that exact entry, retire the
+  // false warning and the retained draft instead of asking the user to resend.
+  useEffect(()=>{
+    if(!chat)return;
+    const pending=inputAttempts.read(chat);
+    if(!pending)return;
+    const ids=pending.images.map(image=>image.id);
+    const entry=[...chat.entries].reverse().find(item=>item.runId===pending.runId&&item.kind==='message'&&item.role==='user'&&item.text===pending.text&&(item.attachments??[]).length===ids.length&&(item.attachments??[]).every((id,index)=>id===ids[index]));
+    if(entry?.status!=='accepted')return;
+    inputAttempts.finish(chat,pending.clientRequestId);
+    setError(previous=>previous===unconfirmedSupplementMessage?'':previous);
+    setFeedback('上条追加消息已确认接收，无需重复发送。');
+    draft.clearSubmitted(chat.workspaceId,chat.id,pending.text);
+    setAttachments(previous=>({...previous,[chat.id]:removeSubmittedAttachments(previous[chat.id]||[],ids)}));
+  },[chat?.id,chat?.workspaceId,chat?.entries,inputAttempts,setAttachments]);
   useEffect(()=>{if(context.scope||seededChoice||!newConversationChoice)return;setChoices(previous=>previous[choiceKey]?previous:{...previous,[choiceKey]:newConversationChoice});},[choiceKey,context.scope,seededChoice,newConversationChoice]);
   const select=(value:ConversationChoice,remember=true)=>{
     const resolved=remember&&!value.model&&context.scope&&lastParticipant?.connectionId===value.connectionId&&(chat?.run?.model??lastParticipant?.model)
@@ -472,7 +489,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
             }
             setFeedback('上条追加消息已确认接收，无需重复发送。');return;
           }
-          throw new Error('消息是否送达仍待确认，请勿重复发送；输入已保留。');
+          throw new Error(unconfirmedSupplementMessage);
         }
         if(result.delivery==='accepted'||result.delivery==='continued'){
           if(conversationInputAttemptMatches(pendingInput,current,sendText,requestImages)){
@@ -511,7 +528,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
               }
             }
             const refusal='conversation' in result?result.conversation.entries.slice().reverse().find(entry=>entry.runId===attempt.runId&&entry.kind==='message'&&entry.role==='user'&&entry.status==='failed'&&entry.text===sendText)?.deliveryDiagnostic:result.diagnostic;
-            throw new Error(result.delivery==='unknown'?'消息是否送达仍待确认，请勿重复发送；输入已保留。':refusal||'原轮未接收这条消息；输入已保留，不会另开会话。');
+            throw new Error(result.delivery==='unknown'?unconfirmedSupplementMessage:refusal||'原轮未接收这条消息；输入已保留，不会另开会话。');
           }
           return;
         }

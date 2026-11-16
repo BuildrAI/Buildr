@@ -20,6 +20,11 @@ function primary(input:NativeContentContext):string|undefined {
 function owns(input:NativeContentContext,row:any):boolean {
   return row.sessionId===input.contextId;
 }
+/** A mid-turn input absorbed by the native turn is recorded as a queued command
+ * attachment whose `source_uuid` is the exact admitted input identity. */
+function queuedInputId(row:any):string|undefined {
+  return row?.type==='attachment'&&row.attachment?.type==='queued_command'&&typeof row.attachment.source_uuid==='string'?row.attachment.source_uuid:undefined;
+}
 /** A seek cursor observes only new durable native input receipts. It neither
  * creates a transcript nor treats a successful stdin write as admission. */
 export class ClaudeReceiptCursor {
@@ -53,7 +58,10 @@ export class ClaudeReceiptCursor {
           if(line.length>maxNativeSourceBytes)throw new Error('agent_claude_receipt_budget');
           if(!line.length)continue;
           const row=JSON.parse(line.toString('utf8'));
-          if(owns(this.input,row)&&row.type==='user'&&row.isSidechain!==true&&expected.has(row.uuid))receipts.push(row.uuid);
+          if(owns(this.input,row)&&row.isSidechain!==true){
+            if(row.type==='user'&&expected.has(row.uuid))receipts.push(row.uuid);
+            else{const queued=queuedInputId(row);if(queued&&expected.has(queued))receipts.push(queued);}
+          }
         }
         if(this.tail.length>maxNativeSourceBytes)throw new Error('agent_claude_receipt_budget');
       }
@@ -133,7 +141,9 @@ export const readClaudeSupplementReceipt:NonNullable<AgentExecutor['readSuppleme
     const source=context(input),file=source&&primary(source);if(!source||!file)return;
     const id=claudeInputId(input.clientRequestId);
     for(const row of nativeToolRows(source,'claude-code',file)){
-      if(owns(source,row)&&row.isSidechain!==true&&row.type==='user'&&row.uuid===id&&visibleText(row.message?.content)===input.text)return {inputItemId:id};
+      if(!owns(source,row)||row.isSidechain===true)continue;
+      if(row.type==='user'&&row.uuid===id&&visibleText(row.message?.content)===input.text)return {inputItemId:id};
+      if(queuedInputId(row)===id&&visibleText(row.attachment.prompt)===input.text)return {inputItemId:id};
     }
   }catch{return;}
 };

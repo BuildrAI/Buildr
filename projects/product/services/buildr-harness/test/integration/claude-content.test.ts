@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { ClaudeReceiptCursor, readClaudePersistedExecution, readClaudeTool } from '../../src/executors/claude/content.ts';
+import { ClaudeReceiptCursor, readClaudePersistedExecution, readClaudeSupplementReceipt, readClaudeTool } from '../../src/executors/claude/content.ts';
 import { importClaudeFork } from '../../src/executors/claude/fork.ts';
 import { claudeInputId } from '../../src/executors/claude/protocol.ts';
 import { opaqueReference } from '../../src/executors/native-process.ts';
@@ -35,6 +35,23 @@ test('Claude receipt cursor observes only new exact owned UUIDs and refuses repl
   assert.deepEqual(cursor.read(expected),[]);
   fs.renameSync(f.file,f.file+'.old');fs.writeFileSync(f.file,'');
   assert.throws(()=>cursor.read(expected),/changed/);
+});
+test('Claude receipt cursor admits a mid-turn queued command by its exact source UUID',t=>{
+  const f=fixture(t),id=claudeInputId('queued');
+  const cursor=new ClaudeReceiptCursor(f),expected=new Set([id]);
+  f.append({type:'attachment',uuid:'rendered-row',attachment:{type:'queued_command',prompt:[{type:'text',text:'mid-turn'}],source_uuid:id,delivery_id:'delivery'}});
+  assert.deepEqual(cursor.read(expected),[id],'the attachment row uuid is a rendering identity; delivery is proven by source_uuid');
+  f.append({type:'attachment',uuid:'other-row',attachment:{type:'queued_command',prompt:[{type:'text',text:'other'}],source_uuid:claudeInputId('other')}});
+  assert.deepEqual(cursor.read(expected),[]);
+});
+test('Claude supplement receipt reads a durable mid-turn queued command attachment',async t=>{
+  const f=fixture(t),clientRequestId='absorbed',id=claudeInputId(clientRequestId),text='那这种情况，我想要使用新的指令，会如何？';
+  const read=()=>readClaudeSupplementReceipt({configRoot:f.configRoot,executable:'/program',cwd:f.cwd,bindingIdentity:'binding',contextRef:{id:f.contextId,data:{native:opaqueReference('claude-code',f.contextId,f.cwd,'binding')}},executionRef:{id:'execution'},clientRequestId,text,createdAt:new Date().toISOString()});
+  f.append({type:'attachment',uuid:'other-row',attachment:{type:'queued_command',prompt:[{type:'text',text:'unrelated'}],source_uuid:claudeInputId('other')}});
+  assert.equal(await read(),undefined,'another admitted input cannot confirm this request');
+  f.append({type:'queue-operation',operation:'remove',reason:'absorbed_mid_turn',commandUuid:id,content:text});
+  f.append({type:'attachment',uuid:'rendered-row',attachment:{type:'queued_command',prompt:[{type:'text',text}],source_uuid:id,delivery_id:'delivery'}});
+  assert.deepEqual(await read(),{inputItemId:id});
 });
 for (const layout of ['ordinary','bound','ancestor'] as const) test('Claude cold terminal observation never treats a background launch as completed work ('+layout+')',async t=>{
   const f=fixture(t,layout),id=claudeInputId('base');

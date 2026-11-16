@@ -169,6 +169,29 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       fixture.repairSupplementOnRead=false;fixture.supplementaryDelivery='accepted';fixture.conversation=saved;await page.reload();await input().waitFor();
     }
   });
+  await step('追加回执超时后权威读取迟到确认时自动清除告警与保留草稿',async()=>{
+    const saved=structuredClone(fixture.conversation),beforeCalls=fixture.supplementaryCalls,beforeSends=fixture.sends,text='这种情况用新的指令会怎样';
+    try{
+      update({run:run('running','codex',{id:'late-receipt-running',participantId:'participant-codex',generation:'generation-fixture',accepted:true,executionState:'active',resourcesReleased:false}),requests:[],retainedRuns:[]});
+      await page.reload();await input().waitFor();
+      fixture.supplementaryDelivery='unknown';fixture.repairSupplementOnRead=false;
+      await input().fill(text);
+      const response=page.waitForResponse((value:any)=>value.request().method()==='POST'&&value.url().endsWith('/agent-conversations/'+saved.id+'/supplement'));
+      await panel().getByRole('button',{name:'发送对话',exact:true}).click();
+      assert.equal((await response).status(),200);
+      await panel().getByText(/消息是否送达仍待确认/).waitFor();
+      assert.equal(await input().inputValue(),text,'未确认期间草稿保留');
+      fixture.repairSupplementOnRead=true;
+      await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+      await page.waitForFunction(()=>document.querySelector<HTMLTextAreaElement>('textarea[aria-label="对话输入"]')?.value==='');
+      await panel().getByText('上条追加消息已确认接收，无需重复发送。',{exact:true}).waitFor();
+      assert.equal(await panel().getByText(/消息是否送达仍待确认/).count(),0);
+      assert.equal(fixture.supplementaryCalls,beforeCalls+1,'迟到确认不得重发追加');
+      assert.equal(fixture.sends,beforeSends,'迟到确认不得另开会话');
+    }finally{
+      fixture.repairSupplementOnRead=false;fixture.supplementaryDelivery='accepted';fixture.conversation=saved;await page.reload();await input().waitFor();
+    }
+  });
   await step('当前轮已完成且有答复时历史未知轮不再显示停止、继续或状态待确认',async()=>{
     const saved=structuredClone(fixture.conversation);
     try{
