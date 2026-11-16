@@ -15,6 +15,16 @@ import { acquireExclusiveFileLock, releaseExclusiveFileLock } from '../../src/in
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 
+/** Minimal complete source package; production packaging remains strict about every required tree. */
+function createPreparationFixture(agent: string, entry: string): void {
+  for (const directory of ['build', 'bin', 'resources']) fs.mkdirSync(path.join(agent, directory), { recursive: true });
+  fs.writeFileSync(path.join(agent, 'package.json'), JSON.stringify({ name: '@buildr-ai/buildr-harness', version: '0.1.0', private: true, dependencies: {}, bin: { 'buildr-harness': 'bin/buildr-harness.mjs' } }));
+  fs.writeFileSync(path.join(agent, 'LICENSE'), 'fixture');
+  fs.writeFileSync(path.join(agent, 'build/index.js'), entry);
+  fs.writeFileSync(path.join(agent, 'bin/buildr-harness.mjs'), '#!/usr/bin/env node\nconsole.log("fixture");\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(agent, 'resources/platform-support.json'), JSON.stringify({ fixture: true }));
+}
+
 test('dependency preparation waits for Agent publication and adopts its completed build', { timeout: 10_000 }, async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-harness-build-owner-'));
   const host = path.join(root, 'services/buildr'), agent = path.join(root, 'services/buildr-harness');
@@ -48,10 +58,7 @@ test('old staging cleanup failure does not revoke the newly published complete r
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-harness-cleanup-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const host = path.join(root, 'host'), agent = path.join(root, 'agent');
-  fs.mkdirSync(path.join(agent, 'build'), { recursive: true });
-  fs.writeFileSync(path.join(agent, 'package.json'), JSON.stringify({ name: '@buildr-ai/buildr-harness', version: '0.1.0', private: true, dependencies: {} }));
-  fs.writeFileSync(path.join(agent, 'LICENSE'), 'fixture');
-  fs.writeFileSync(path.join(agent, 'build/index.js'), 'export const ready = "old";\n');
+  createPreparationFixture(agent, 'export const ready = "old";\n');
   const destination = prepareDevelopmentAgent({ serviceRoot: host, agentRoot: agent, build: false });
   fs.writeFileSync(path.join(agent, 'build/index.js'), 'export const ready = "new";\n');
   const remove = fs.rmSync, diagnostics: string[] = [];
@@ -82,10 +89,7 @@ test('concurrent source preparations wait for their owner and publish a complete
     fs.rmSync(root, { recursive: true, force: true });
   });
   const host = path.join(root, 'host'), agent = path.join(root, 'agent');
-  fs.mkdirSync(path.join(agent, 'build'), { recursive: true });
-  fs.writeFileSync(path.join(agent, 'package.json'), JSON.stringify({ name: '@buildr-ai/buildr-harness', version: '0.1.0', private: true, dependencies: {} }));
-  fs.writeFileSync(path.join(agent, 'LICENSE'), 'fixture');
-  fs.writeFileSync(path.join(agent, 'build/index.js'), 'export const ready = true;\n');
+  createPreparationFixture(agent, 'export const ready = true;\n');
   const destination = path.join(host, 'node_modules/@buildr-ai/buildr-harness');
   lock = acquireExclusiveFileLock(path.join(host, 'node_modules/.buildr-harness-preparation.lock'), destination);
   const entry = path.join(root, 'prepare.mjs');
@@ -123,10 +127,7 @@ test('unchanged Agent preparation avoids staging and repairs same-size output dr
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-harness-prepare-content-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const host = path.join(root, 'host'), agent = path.join(root, 'agent');
-  fs.mkdirSync(path.join(agent, 'build'), { recursive: true });
-  fs.writeFileSync(path.join(agent, 'package.json'), JSON.stringify({ name: '@buildr-ai/buildr-harness', private: true, dependencies: {} }));
-  fs.writeFileSync(path.join(agent, 'LICENSE'), 'fixture');
-  fs.writeFileSync(path.join(agent, 'build/index.js'), 'original');
+  createPreparationFixture(agent, 'original');
   const options = { serviceRoot: host, agentRoot: agent, build: false };
   const destination = prepareDevelopmentAgent(options);
   const mkdir = t.mock.method(fs, 'mkdtempSync', () => { throw Error('unchanged preparation must not stage a copy'); });
@@ -144,6 +145,28 @@ test('unchanged Agent preparation avoids staging and repairs same-size output dr
     fs.chmodSync(entry, 0o777);
     prepareDevelopmentAgent(options);
     assert.equal(fs.statSync(entry).mode & 0o777, original.mode & 0o777);
+  }
+});
+
+test('missing required Harness launcher or resources preserves the previously prepared runtime', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-harness-required-trees-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  for (const missing of ['bin', 'resources']) {
+    const agent = path.join(root, missing, 'agent'), host = path.join(root, missing, 'host');
+    createPreparationFixture(agent, 'export const ready = true;\n');
+    const options = { serviceRoot: host, agentRoot: agent, build: false };
+    const destination = prepareDevelopmentAgent(options);
+    for (const file of ['bin/buildr-harness.mjs', 'resources/platform-support.json']) {
+      assert.equal(fs.readFileSync(path.join(destination, file), 'utf8'), fs.readFileSync(path.join(agent, file), 'utf8'));
+    }
+    fs.rmSync(path.join(agent, missing), { recursive: true });
+    assert.throws(() => prepareDevelopmentAgent(options), (error: unknown) => {
+      assert.equal((error as NodeJS.ErrnoException).code, 'ENOENT');
+      assert.equal((error as NodeJS.ErrnoException).path, path.join(agent, missing));
+      return true;
+    });
+    assert.equal(fs.readFileSync(path.join(destination, 'build/index.js'), 'utf8'), 'export const ready = true;\n');
+    assert.ok(fs.existsSync(path.join(destination, missing)), 'failed preparation must retain the complete published tree');
   }
 });
 
