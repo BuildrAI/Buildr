@@ -19,13 +19,24 @@ export type DraftImages = AgentDraftImagesDraftImages;
 export type StartDraftInput = AgentDraftStartStartDraft;
 export type ConversationPage={conversations:ConversationView[];nextCursor?:string;total?:number;activityCounts?:ActivityCounts;stats?:{modelExecutions?:Array<{accountId:string;accountLabel:string;model:string;count:number}>;executions?:Array<{provider:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>}};
 const appPath = '/api/v1/app/agent-service';
+const standaloneHarness = typeof document !== 'undefined'
+  && document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content')?.startsWith('harness-');
+const harnessConversationPath = (sourceId: string, scopeId: string) =>
+  '/api/v1/harness/sources/'+encodeURIComponent(sourceId)+'/scopes/'+encodeURIComponent(scopeId)+'/conversations';
 const path = (workspaceId:string,conversationId?:string)=>{
   let base:string;
   if(workspaceId.startsWith('scope:')){
     const decoded=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(workspaceId.slice(6).replaceAll('-','+').replaceAll('_','/')),value=>value.charCodeAt(0))));
     if(!Array.isArray(decoded)||decoded.length!==2||decoded.some(value=>typeof value!=='string'||!value))throw new Error('执行范围引用无效。');
-    base='/api/v1/harness/sources/'+encodeURIComponent(decoded[0])+'/scopes/'+encodeURIComponent(decoded[1])+'/conversations';
-  }else base=workspaceId==='@default'?appPath+'/conversations':'/api/v1/workspaces/'+encodeURIComponent(workspaceId)+'/agent-conversations';
+    base=harnessConversationPath(decoded[0],decoded[1]);
+  }else if(workspaceId==='@default'){
+    base=appPath+'/conversations';
+  }else if(standaloneHarness){
+    // Buildr conversation summaries and saved selections retain their raw workspace IDs.
+    base=harnessConversationPath('buildr',workspaceId);
+  }else{
+    base='/api/v1/workspaces/'+encodeURIComponent(workspaceId)+'/agent-conversations';
+  }
   return base+(conversationId?'/'+encodeURIComponent(conversationId):'');
 };
 const post = (body: unknown): RequestInit => ({method: 'POST', body: JSON.stringify(body)});
