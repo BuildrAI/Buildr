@@ -264,21 +264,62 @@ export function markdownDocumentBody(markdown: string, omitTitle = false) {
   return { content: title ? markdown.slice(title.length) : markdown, headingCounts, anchor: Object.keys(headingCounts)[0] };
 }
 
+const COPY_ICON_PATH = 'M832 64H296c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h496v688c0 4.4 3.6 8 8 8h56c4.4 0 8-3.6 8-8V96c0-17.7-14.3-32-32-32zM704 192H192c-17.7 0-32 14.3-32 32v530.7c0 8.5 3.4 16.6 9.4 22.6l173.3 173.3c2.2 2.2 4.7 4 7.4 5.5v1.9h4.2c3.5 1.3 7.2 2 11 2H704c17.7 0 32-14.3 32-32V224c0-17.7-14.3-32-32-32zM350 856.2L263.9 770H350v86.2zM664 888H414V746c0-22.1-17.9-40-40-40H232V264h432v624z';
+const CHECK_ICON_PATH = 'M912 190h-69.9c-9.8 0-19.1 4.5-25.1 12.2L404.7 724.5 207 474a32 32 0 00-25.1-12.2H112c-6.7 0-10.4 7.7-6.3 12.9l273.9 347c12.8 16.2 37.4 16.2 50.3 0l488.4-618.9c4.1-5.1.4-12.8-6.3-12.8z';
+
+function createSvgElement(doc, tag) {
+  return typeof doc.createElementNS === 'function'
+    ? doc.createElementNS('http://www.w3.org/2000/svg', tag)
+    : doc.createElement(tag);
+}
+
 function createCodeBlock(language, code, doc, sourcePath, complete = true) {
   const block = doc.createElement('div');
   block.className = 'markdown-code-block';
   const copy = doc.createElement('button');
+  copy.className = 'markdown-copy-code';
   copy.setAttribute('type', 'button');
   copy.setAttribute('data-copy-code', '');
-  copy.textContent = '复制代码';
+  copy.setAttribute('aria-label', '复制代码');
+  copy.setAttribute('title', '复制代码');
+  const icon = doc.createElement('span');
+  icon.className = 'markdown-copy-code-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  const svg = createSvgElement(doc, 'svg');
+  svg.setAttribute('viewBox', '64 64 896 896');
+  svg.setAttribute('focusable', 'false');
+  svg.setAttribute('aria-hidden', 'true');
+  const iconPath = createSvgElement(doc, 'path');
+  iconPath.setAttribute('d', COPY_ICON_PATH);
+  svg.append(iconPath);
+  icon.append(svg);
+  const label = doc.createElement('span');
+  label.className = 'markdown-copy-code-label';
+  label.textContent = '复制代码';
+  copy.append(icon, label);
   let restore: ReturnType<typeof setTimeout> | undefined;
+  const setCopyState = (state: 'idle' | 'copied' | 'failed') => {
+    const copied = state === 'copied';
+    const failed = state === 'failed';
+    const text = copied ? '已复制' : failed ? '复制失败，请选择代码复制' : '复制代码';
+    copy.disabled = copied;
+    copy.setAttribute('data-copied', copied ? 'true' : '');
+    copy.setAttribute('data-copy-failed', failed ? 'true' : '');
+    copy.setAttribute('aria-label', text);
+    copy.setAttribute('title', text);
+    iconPath.setAttribute('d', copied ? CHECK_ICON_PATH : COPY_ICON_PATH);
+    label.textContent = text;
+  };
   copy.addEventListener?.('click', async () => {
-    if (copy.dataset.copied === 'true') return;
-    if (!await copyText(code)) { copy.textContent = '复制失败，请选择代码复制'; return; }
-    copy.dataset.copied = 'true';
-    copy.textContent = '已复制';
+    if (copy.getAttribute('data-copied') === 'true') return;
     clearTimeout(restore);
-    restore = setTimeout(() => { copy.dataset.copied = ''; copy.textContent = '复制代码'; }, 3000);
+    if (!await copyText(code)) {
+      setCopyState('failed');
+      restore = setTimeout(() => setCopyState('idle'), 3000);
+      return;
+    }
+    setCopyState('copied');
+    restore = setTimeout(() => setCopyState('idle'), 3000);
   });
   block.append(copy);
   const diagram = language.toLowerCase() === 'mermaid';

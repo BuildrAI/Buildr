@@ -574,3 +574,85 @@ test('failed image falls back in its current view and a fresh render can recover
   const refreshed=renderMarkdown('![可恢复图片](recoverable.png)',options);
   assert.equal(refreshed.querySelector('img')?.getAttribute('src'),'/safe/recoverable.png');
 });
+
+test('代码块渲染组件内复制图标按钮并保留纯文本无障碍状态与失败提示', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const code = 'echo "hello"\necho "world"';
+  const root = renderMarkdown('```sh\n' + code + '\n```');
+  const button = root.querySelector('button');
+  assert.ok(button);
+  assert.equal(button.className, 'markdown-copy-code');
+  assert.equal(button.getAttribute('type'), 'button');
+  assert.equal(button.getAttribute('data-copy-code'), '');
+  assert.equal(button.getAttribute('aria-label'), '复制代码');
+  assert.equal(button.getAttribute('title'), '复制代码');
+  assert.equal(button.textContent, '复制代码');
+  const svg = button.querySelector('svg');
+  assert.equal(svg?.getAttribute('viewBox'), '64 64 896 896');
+  const idlePath = button.querySelector('path')?.getAttribute('d');
+  assert.ok(idlePath);
+
+  const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const originalBody = Object.getOwnPropertyDescriptor(globalThis.document, 'body');
+  const originalHTMLElement = Object.getOwnPropertyDescriptor(globalThis, 'HTMLElement');
+  const copiedValues: string[] = [];
+  let shouldFail = false;
+  try {
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: { clipboard: { async writeText(value: string) { if (shouldFail) throw new Error('denied'); copiedValues.push(value); } } },
+    });
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: { getSelection: () => null },
+    });
+    Object.defineProperty(globalThis, 'HTMLElement', {
+      configurable: true,
+      value: class {},
+    });
+    Object.defineProperty(globalThis.document, 'body', {
+      configurable: true,
+      value: { append() {} },
+    });
+    const origCreate = globalThis.document.createElement;
+    globalThis.document.createElement = (tagName: string): any => {
+      const node: any = origCreate.call(globalThis.document, tagName);
+      node.style = {};
+      node.focus = () => {};
+      node.select = () => {};
+      node.remove = () => {};
+      return node;
+    };
+    try {
+      await button.listeners.get('click')?.();
+      assert.deepEqual(copiedValues, [code]);
+      assert.equal(button.disabled, true);
+      assert.equal(button.getAttribute('data-copied'), 'true');
+      assert.equal(button.getAttribute('aria-label'), '已复制');
+      assert.equal(button.textContent, '已复制');
+      const copiedPath = button.querySelector('path')?.getAttribute('d');
+      assert.notEqual(copiedPath, idlePath);
+
+      shouldFail = true;
+      const failedRoot = renderMarkdown('```sh\n' + code + '\n```');
+      const failedButton = failedRoot.querySelector('button');
+      await failedButton.listeners.get('click')?.();
+      assert.equal(failedButton.getAttribute('data-copy-failed'), 'true');
+      assert.equal(failedButton.getAttribute('aria-label'), '复制失败，请选择代码复制');
+      assert.equal(failedButton.textContent, '复制失败，请选择代码复制');
+      assert.equal(Boolean(failedButton.disabled), false);
+    } finally {
+      globalThis.document.createElement = origCreate;
+    }
+  } finally {
+    if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator);
+    else Reflect.deleteProperty(globalThis, 'navigator');
+    if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
+    else Reflect.deleteProperty(globalThis, 'window');
+    if (originalHTMLElement) Object.defineProperty(globalThis, 'HTMLElement', originalHTMLElement);
+    else Reflect.deleteProperty(globalThis, 'HTMLElement');
+    if (originalBody) Object.defineProperty(globalThis.document, 'body', originalBody);
+    else Reflect.deleteProperty(globalThis.document, 'body');
+  }
+});
