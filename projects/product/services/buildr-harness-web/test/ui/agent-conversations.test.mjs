@@ -643,7 +643,7 @@ test('已释放的未知对话允许继续和关闭，关闭不放过其他在�
  assert.equal(needsConversationObservation({...view,hidden:true}),false,'closing attention also stops background observation of the released doubt');
  const finishedWithHistory={...view,run:{...view.run,status:'completed',tools:[]},retainedRuns:[{...view.run,id:'earlier'}]};
  assert.equal(canCloseUncertainConversation(finishedWithHistory),true);assert.equal(canContinueReleasedConversation(finishedWithHistory),false);assert.equal(needsConversationObservation({...finishedWithHistory,hidden:true}),false);
- assert.deepEqual(conversationRecoveryAction(view),{kind:'recover',label:'继续工作'});
+ assert.deepEqual(conversationRecoveryAction(view),{kind:'recover',label:'继续原任务'});
  const snapshot=structuredClone(view);canCloseUncertainConversation(view);assert.deepEqual(view,snapshot,'availability does not alter execution facts');
  for(const retained of [{...view.run,resourcesReleased:false},{...view.run,executionState:'active'},
   {...view.run,tools:[{id:'live-tool',status:'running'}]},{...view.run,status:'running'}]){
@@ -895,12 +895,12 @@ test('旧格式回退保留认证刷新，取消后不另开订阅',async()=>{
  const abort=new AbortController();let cancelledCalls=0;const cancelled=createAgentConversationsClient(async()=>({}),session,async()=>{cancelledCalls++;abort.abort();return new Response('{}',{status:400});});await assert.rejects(cancelled.subscribe(conversation.workspaceId,conversation.id,abort.signal,()=>{}),{name:'AbortError'});assert.equal(cancelledCalls,1);
 });
 
-test('停止未确认时可显式结束等待，不依赖受理或释放证明且不放宽关闭',async()=>{
+test('停止未确认时可显式继续原任务，不依赖受理或释放证明且不放宽关闭',async()=>{
  const {canContinueConversation,canCloseUncertainConversation,conversationRecoveryAction}=await import('../../src/features/agent-conversations/conversation-state.ts');
  for(const accepted of [true,false]){
   const view={...conversation,requests:[],retainedRuns:[],run:{...conversation.run,status:'unknown',stopRequested:true,accepted,resourcesReleased:false,executionState:'active',tools:[{id:'live',status:'running'}]}};
   assert.equal(canContinueConversation(view),true);
-  assert.deepEqual(conversationRecoveryAction(view),{kind:'recover',label:'结束等待并继续'});
+  assert.deepEqual(conversationRecoveryAction(view),{kind:'recover',label:'继续原任务'});
   assert.equal(canCloseUncertainConversation(view),false);
   assert.equal(canContinueConversation({...view,pendingSend:{id:'queued'}}),false);
   assert.equal(canContinueConversation({...view,run:{...view.run,stopRequested:false}}),false);

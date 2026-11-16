@@ -237,6 +237,8 @@
 .ac-execution-uncertain-actions{display:flex;gap:2px;margin-left:auto;flex:none}
 .ac-execution-uncertain .ant-btn{color:var(--soft-primary);font-size:inherit}
 .ac-execution-uncertain-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ac-execution-uncertain-reason{min-width:0;white-space:normal;overflow-wrap:anywhere}
+.ac-execution-uncertain-detail{margin:2px 0 0;color:var(--soft-muted)}
 .ac-linked-image-reference{display:flex;align-items:flex-start;gap:8px;margin-bottom:16px}
 .ac-linked-image-reference code{min-width:0;flex:1;overflow-wrap:anywhere;color:var(--soft-muted)}
 .ac-linked-image-preview{display:flex;align-items:center;justify-content:center;min-height:100px;max-height:78vh;overflow:hidden}

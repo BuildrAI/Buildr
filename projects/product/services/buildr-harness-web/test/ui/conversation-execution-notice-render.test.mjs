@@ -11,67 +11,64 @@ registerHooks({load(url,context,next){
 }});
 const {ConversationExecutionNotice}=await import('../../src/features/agent-conversations/ConversationExecutionNotice.tsx');
 
-test('已释放疑点的继续与关闭使用独立动作，关闭后仍说明未知结果保留',()=>{
- const base={resourcesReleased:true,observing:false,stopping:false,onObserve(){},onStop(){},onContinue(){},onClose(){}};
- const open=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,base));
- assert.match(open,/>继续工作</);assert.match(open,/>关闭对话</);assert.match(open,/关闭对话只结束关注/);assert.doesNotMatch(open,/>停止</);
- const closed=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{...base,closed:true}));
- assert.match(closed,/对话已关闭，原记录及待确认结果保留/);assert.doesNotMatch(closed,/>关闭对话</);assert.match(closed,/>继续工作</);
- const pending=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{...base,closing:true}));
- assert.equal((pending.match(/disabled=""/g)||[]).length,2,'closing disables observation and continuation');
-});
-test('待确认只占一行，详细原因使用悬停提示，不宣称失败或恢复',()=>{
-  const html=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{diagnostic:'原生用户输入尚不能准确映射',observing:false,stopping:false,onObserve(){},onStop(){}}));
-  assert.equal((html.match(/暂时无法读取执行状态/g)??[]).length,1);
-  assert.equal((html.match(/>重新读取</g)??[]).length,1);
-  assert.match(html,/title="[^"]*原生用户输入尚不能准确映射/);
-  assert.doesNotMatch(html,/<details|<small|ant-alert|执行失败|恢复执行/);
+const live=(over={})=>({status:'unknown',stopRequested:false,resourcesReleased:false,tools:[],...over});
+const render=(props)=>renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{observing:false,stopping:false,onObserve(){},onStop(){},...props}));
+
+test('服务重启中断只显示原因与继续原任务，不再提供关闭、读取或停止',()=>{
+ const run=live({diagnostic:'服务退休中断了本轮执行；已有结果保留，可以继续。',stopRequested:true,resourcesReleased:true,tools:[{id:'background-command',label:'command',status:'unknown'}]});
+ const html=render({run,onContinue(){}});
+ assert.match(html,/服务重启中断了本轮，结果未能确认。/);
+ assert.match(html,/记录和已完成的操作都保留。/);
+ assert.match(html,/1 条后台命令的结束记录缺失，可能仍在运行/);
+ assert.equal((html.match(/>继续原任务</g)||[]).length,1);
+ assert.doesNotMatch(html,/>关闭对话<|>重新读取<|>停止</);
+ assert.doesNotMatch(html,/执行成功|已确认停止|彻底停止/);
 });
 
-test('核对期间只说明正在读取执行记录，不把查询说成恢复连接',()=>{
-  const html=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{observing:true,stopping:false,onObserve(){},onStop(){}}));
-  assert.match(html,/正在读取执行记录/);assert.doesNotMatch(html,/正在恢复连接|暂时无法读取执行状态|恢复成功|正在执行/);
+test('已请求停止但未确认结束时说明真实状态，不替用户认领系统动作',()=>{
+ const html=render({run:live({diagnostic:'停止已请求，但未取得原生结束确认；原工作记录已保留，不会重发。',stopRequested:true}),onContinue(){}});
+ assert.match(html,/已请求停止，但尚未确认结束。/);
+ assert.doesNotMatch(html,/服务重启中断/);
+ assert.equal((html.match(/>继续原任务</g)||[]).length,1);
+ assert.doesNotMatch(html,/>重新读取<|>停止</);
 });
 
-test('后台已释放时说明结果仍未知，保留核对并撤下无效停止按钮',()=>{
- const html=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{resourcesReleased:true,observing:false,stopping:false,onObserve(){},onStop(){}}));
- assert.match(html,/本轮结束状态待确认，原记录保留/);assert.match(html,/>重新读取</);assert.match(html,/title="后台连接已释放/);assert.doesNotMatch(html,/<details|<small|查看原因/);
- assert.doesNotMatch(html,/>停止<|正在停止|已确认停止|执行成功/);
+test('无法归因的已释放中断不猜测具体原因',()=>{
+ const html=render({run:live({resourcesReleased:true}),onContinue(){}});
+ assert.match(html,/本轮执行中断，结果未能确认。/);
+ assert.match(html,/记录和已完成的操作都保留。/);
+ assert.doesNotMatch(html,/服务重启|已请求停止/);
 });
 
-test('缺少明确释放证明时保留停止，不把未知当作已释放',()=>{
- for(const resourcesReleased of [undefined,false]){
-  const html=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{resourcesReleased,stopRequested:false,observing:false,stopping:false,onObserve(){},onStop(){}}));
-  assert.match(html,/>停止</);assert.doesNotMatch(html,/后台已释放/);
- }
+test('仍有活动工作的未知轮保留重新读取与停止，不提供继续',()=>{
+ const html=render({run:live(),onContinue(){}});
+ assert.match(html,/暂时无法读取执行状态/);
+ assert.equal((html.match(/>重新读取</g)||[]).length,1);
+ assert.equal((html.match(/>停止</g)||[]).length,1);
+ assert.doesNotMatch(html,/>继续原任务</);
 });
 
-test('停止请求已提交时明确结束动作，不重复保留停止按钮',()=>{
- const html=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{resourcesReleased:false,stopRequested:true,observing:false,stopping:false,onObserve(){},onStop(){}}));
- assert.match(html,/停止已请求，结束状态待确认/);
- assert.match(html,/停止请求已提交，尚未确认旧执行结束/);
- assert.doesNotMatch(html,/>停止<\/button>|正在执行|执行成功/);
+test('核对期间只说明正在读取执行记录',()=>{
+ const html=render({run:live(),observing:true,onContinue(){}});
+ assert.match(html,/正在读取执行记录/);
+ assert.doesNotMatch(html,/恢复连接|暂时无法读取执行状态/);
 });
 
-test('核对未得到新结果时在原行给出结论，不新增说明行或展开块',()=>{
- const html=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{resourcesReleased:true,feedback:'读取完成：未读到结束记录。',observing:false,stopping:false,onObserve(){},onStop(){}}));
- assert.match(html,/>读取完成：未读到结束记录。<\/span>/);assert.match(html,/title="[^"]*未读到结束记录/);
- assert.doesNotMatch(html,/<small|<details|>停止</);
+test('停止期间说明整轮范围并禁用重复动作',()=>{
+ const html=render({run:live(),stopping:true});
+ assert.match(html,/正在停止本轮及派生工作/);
+ assert.doesNotMatch(html,/读取完成|继续原任务/);
 });
 
-test('停止期间说明整轮范围，返回后直接显示真实停止结果',()=>{
- const base={resourcesReleased:false,observing:false,onObserve(){},onStop(){}};
- const busy=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{...base,stopping:true}));
- assert.match(busy,/正在停止本轮及派生工作/);
- const feedback='已终止本轮独占控制资源；原操作结果仍待核对。';
- const done=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{...base,resourcesReleased:true,stopping:false,feedback}));
- assert.match(done,/>已终止本轮独占控制资源；原操作结果仍待核对。<\/span>/);
- assert.doesNotMatch(done,/>停止<\/button>|执行成功/);
+test('没有可用继续动作时只说明原因，不发明按钮',()=>{
+ const html=render({run:live({resourcesReleased:true,diagnostic:'服务退休中断了本轮执行；已有结果保留，可以继续。'})});
+ assert.match(html,/服务重启中断了本轮，结果未能确认。/);
+ assert.doesNotMatch(html,/<button|继续原任务/);
 });
 
-test('停止未确认的显式继续保留未知说明，不提供虚假的彻底停止',()=>{
- const html=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{resourcesReleased:false,stopRequested:true,observing:false,stopping:false,onObserve(){},onStop(){},onContinue(){}}));
- assert.match(html,/>结束等待并继续</);
- assert.match(html,/独立上下文继续/);
- assert.doesNotMatch(html,/>停止<|已确认停止|彻底停止/);
+test('核对结论保留在同一行的可见文案',()=>{
+ const html=render({run:live({resourcesReleased:false}),feedback:'读取完成：仍无法读取原执行状态，记录已保留。',onContinue(){}});
+ assert.match(html,/>读取完成：仍无法读取原执行状态，记录已保留。<\/span>/);
+ assert.match(html,/title="[^"]*仍无法读取原执行状态/);
+ assert.doesNotMatch(html,/<details|>继续原任务</);
 });

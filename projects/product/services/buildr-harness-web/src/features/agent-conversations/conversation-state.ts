@@ -28,7 +28,7 @@ export function canContinueConversation(conversation: ConversationView | null): 
 export function conversationRecoveryAction(conversation: ConversationView | null, entries: ConversationView['entries'] = conversation?.entries ?? []): {kind:'recover'|'observe';label:string} | null {
   const run = conversation?.run; if (!conversation || !run) return null;
   if (run.status === 'tools-active' && run.canContinue) return null;
-  if (canContinueConversation(conversation)) return {kind:'recover',label:run.stopRequested?'结束等待并继续':'继续工作'};
+  if (canContinueConversation(conversation)) return {kind:'recover',label:'继续原任务'};
   if (run.status === 'unknown' || run.status === 'tools-active' || ['failed','stopped','completed'].includes(run.status) && run.tools.some(tool => tool.status !== 'completed')) return {kind:'observe',label:'核对状态'};
   if (executionLocked(run) || currentConversationRequests(conversation).length || run.tools.some(tool => tool.status !== 'completed')) return null;
   const replied = finalConversationReplyIds(entries, [run]).size > 0;

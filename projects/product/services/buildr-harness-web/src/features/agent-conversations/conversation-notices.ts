@@ -78,6 +78,15 @@ export function conversationFailureImpact(run: Pick<ConversationRun,'status'|'ac
   return `${delivery}对话记录已保留。${work}`;
 }
 
+/** A released or stop-requested unknown run names its real source; the record and finished work stay. */
+export function conversationUnknownExecutionSummary(run: Pick<ConversationRun,'diagnostic'|'stopRequested'|'tools'>): { reason: string; detail: string } {
+  const pending = (run.tools ?? []).filter(tool => tool.status !== 'completed').length;
+  const detail = '记录和已完成的操作都保留。' + (pending ? `另有 ${pending} 条后台命令的结束记录缺失，可能仍在运行；继续时会先核对，不会重跑。` : '');
+  if (/服务退休中断了本轮执行/.test(run.diagnostic ?? '')) return { reason: '服务重启中断了本轮，结果未能确认。', detail };
+  if (run.stopRequested) return { reason: '已请求停止，但尚未确认结束。', detail };
+  return { reason: '本轮执行中断，结果未能确认。', detail };
+}
+
 export type ConversationFailureReason = { summary: string; action?: string };
 
 function failureRetrySeconds(diagnostic: string): number | undefined {
