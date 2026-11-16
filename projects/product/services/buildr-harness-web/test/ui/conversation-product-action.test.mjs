@@ -37,21 +37,28 @@ test('文本产品动作复用首选模型与首条提交身份，成功后清�
   assert.equal(submissions.read(), undefined);
 });
 
-test('未知提交先保留身份并核对，后续调用不会再次发送', async () => {
+test('核对不到原提交后，只在下一次显式操作时使用新身份发送', async () => {
   const store = storage(), submissions = firstConversationSubmissions(store, 'test-submission');
-  let starts = 0, lookups = 0;
+  const starts = [];
+  let lookups = 0;
   const client = {
     async draftImages() { return { revision: 'draft-revision', images: [] }; },
-    async startDraft() { starts++; throw new Error('连接中断'); },
+    async startDraft(_workspaceId, _draftId, {clientRequestId}) {
+      starts.push(clientRequestId);
+      if (starts.length === 1) throw new Error('连接中断');
+      return { conversation };
+    },
     async lookupDraft() { lookups++; return { found: false }; },
   };
   const input = { workspaceId: 'workspace-one', cwd: '/workspaces/one', text: '配置服务' };
   const first = await startConversationProductAction({ client, input, selection, submissions, uuid: ids() });
   assert.deepEqual(first, { status: 'recovering', reason: 'submission-unknown' });
   assert.equal(submissions.read().input.clientRequestId, 'request-one');
-  const second = await startConversationProductAction({ client, input, selection, submissions, uuid: ids() });
-  assert.deepEqual(second, { status: 'recovering', reason: 'existing-submission' });
-  assert.equal(starts, 1);
+  assert.deepEqual(starts, ['request-one']);
+  const nextIds = ['draft-two', 'request-two'];
+  const second = await startConversationProductAction({ client, input, selection, submissions, uuid: () => nextIds.shift() });
+  assert.deepEqual(second, { status: 'started', conversation });
+  assert.deepEqual(starts, ['request-one', 'request-two']);
   assert.equal(lookups, 2);
 });
 

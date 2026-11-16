@@ -4,6 +4,7 @@ export type FirstSubmission = { draftId: string; workspaceId: string; input: Sta
 /** Persist before transport. A lost reply cannot cause a fresh creation identity. */
 export function firstConversationSubmissions(storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>, key = 'buildr.conversation-first') {
   let memory: FirstSubmission | null | undefined;
+  let dispatching: string | undefined;
   return {
     read(): FirstSubmission | undefined {
       if (memory !== undefined) return memory ?? undefined;
@@ -22,9 +23,18 @@ export function firstConversationSubmissions(storage?: Pick<Storage, 'getItem' |
     },
     beginDispatch(requestId: string): FirstSubmission | undefined {
       const current = this.read();
-      if (!current || current.input.clientRequestId !== requestId) return;
+      if (!current || current.input.clientRequestId !== requestId || dispatching) return;
+      dispatching = requestId;
       // If the page disappears before the reply, the new attempt is unknown.
       return this.save({ ...current, failureReason: undefined });
+    },
+    endDispatch(requestId: string) {
+      if (dispatching === requestId) dispatching = undefined;
+    },
+    releaseMissing(submission: FirstSubmission): boolean {
+      if (this.read() !== submission || dispatching || submission.failureReason === 'backend-updating') return false;
+      this.clear(submission.input.clientRequestId);
+      return true;
     },
     clear(requestId: string) {
       if (this.read()?.input.clientRequestId !== requestId) return;

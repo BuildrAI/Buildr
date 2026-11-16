@@ -35,8 +35,12 @@ export class ConversationDrafts {
     return `${value.slice(0,8)}-${value.slice(8,12)}-${value.slice(12,16)}-${value.slice(16,20)}-${value.slice(20,32)}`;
   }
   lookup(scope: string, id: string, requestId: string): { found: boolean; conversation?: ConversationView } {
-    const record = this.ports.repository.readConversation(this.identity(scope, id, requestId));
-    if (!record) return { found: false };
+    const target = this.identity(scope, id, requestId);
+    const record = this.ports.repository.readConversation(target);
+    if (!record) {
+      if (this.starting.has(target)) fail('agent_first_send_result_unknown', '原提交正在处理，请稍后核对。', 503);
+      return { found: false };
+    }
     if (record.view.workspaceId !== scope || record.initialDraft?.id !== id || record.initialDraft.requestId !== requestId) fail('agent_request_conflict', '原提交归属不匹配，请核对工作空间。', 409);
     return { found: true, conversation: this.ports.read(scope, record.view.id) };
   }

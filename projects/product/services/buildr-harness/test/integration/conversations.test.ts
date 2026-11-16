@@ -2968,7 +2968,10 @@ test('first submission persists input and conversation together and is idempoten
     assert.equal(f.service.conversations.lookupDraft('workspace-one', id, input.clientRequestId).found, false);
     assert.deepEqual(f.service.conversations.list('workspace-one').conversations, []);
     await connected(f.service, 'local');
-    const [first, repeated] = await Promise.all([f.service.conversations.startDraft('workspace-one', id, input), f.service.conversations.startDraft('workspace-one', id, input)]);
+    const pending = f.service.conversations.startDraft('workspace-one', id, input);
+    const repeatedStart = f.service.conversations.startDraft('workspace-one', id, input);
+    assert.throws(() => f.service.conversations.lookupDraft('workspace-one', id, input.clientRequestId), { code: 'agent_first_send_result_unknown' });
+    const [first, repeated] = await Promise.all([pending, repeatedStart]);
     assert.equal(first.conversation.id, repeated.conversation.id);
     assert.equal(first.conversation.entries.filter(entry => entry.role === 'user').length, 1);
     const accepted = await waitUntil(() => f.service.conversations.read('workspace-one', first.conversation.id), view => view.run?.status === 'completed');

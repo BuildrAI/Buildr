@@ -20,6 +20,7 @@ export async function recoverConversationProductAction(client: AgentConversation
   const existing = submissions.read();
   if (!existing) return null;
   const observed = await client.lookupDraft(existing.workspaceId, existing.draftId, existing.input.clientRequestId).catch(() => null);
+  if (observed?.found === false && submissions.releaseMissing(existing)) return null;
   if (observed?.found && observed.conversation) submissions.clear(existing.input.clientRequestId);
   return {
     status: 'recovering',
@@ -83,6 +84,7 @@ export async function startConversationProductAction({
     },
   };
   submissions.save(submitted);
+  submissions.beginDispatch(submitted.input.clientRequestId);
   try {
     const result = await client.startDraft(submitted.workspaceId, submitted.draftId, submitted.input);
     submissions.clear(submitted.input.clientRequestId);
@@ -100,5 +102,7 @@ export async function startConversationProductAction({
       return { status: 'started', conversation: observed.conversation };
     }
     return { status: 'recovering', reason: 'submission-unknown' };
+  } finally {
+    submissions.endDispatch(submitted.input.clientRequestId);
   }
 }

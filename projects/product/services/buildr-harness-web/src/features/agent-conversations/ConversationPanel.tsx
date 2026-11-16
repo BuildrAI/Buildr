@@ -349,7 +349,14 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
         if(result.conversation)await acceptFirst(submitted,result.conversation,operation.selection);
         return;
       }
-      if(submitted.failureReason!=='backend-updating')return;
+      if(submitted.failureReason!=='backend-updating'){
+        if(firstSubmissions.releaseMissing(submitted)){
+          setUnconfirmedFirst(undefined);
+          setError('');
+          if(submissionIdentity.current.requestId===submitted.input.clientRequestId)submissionIdentity.current.requestId=crypto.randomUUID();
+        }
+        return;
+      }
       const snapshot=await context.api.draftImages(submitted.draftId);
       if(!stillCurrent())return;
       const staged=new Set(draftMaterialIds(snapshot.images));
@@ -365,8 +372,8 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       if(!context.isSelectionCurrent(operation.selection))return;
       submitted=firstSubmissions.save({draftId:newImages.id,workspaceId:draftWorkspaceId,input:{connectionId:bound.connectionId,modelAccountId:bound.modelAccountId,modelAccountRevision:bound.modelAccountRevision,modelAccountIdentity:bound.modelAccountIdentity,model:bound.model,serviceTier:bound.serviceTier,reasoningEffort:bound.reasoningEffort,permissionMode,text:draft.text,attachmentIds:expectedIds as NonNullable<SendDraft['attachmentIds']>,expectedDraftRevision:snapshot.revision,clientRequestId:submissionIdentity.current.requestId,...(draftWorkspaceId!=='@default'&&newCwd?{cwd:newCwd.trim()}:{}),...(boundTaskLinks.length?{taskLinks:boundTaskLinks}:{})}});
     }
+    if(!firstSubmissions.beginDispatch(submitted.input.clientRequestId))return;
     try{
-      if(!firstSubmissions.beginDispatch(submitted.input.clientRequestId))return;
       const input=draftRevision===undefined?submitted.input:{...submitted.input,expectedDraftRevision:draftRevision};
       const result=await context.api.startDraft(submitted.workspaceId,submitted.draftId,input);
       if(isActive()&&firstSubmissions.read()?.input.clientRequestId===input.clientRequestId){
@@ -382,6 +389,8 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
         firstSubmissions.clear(submitted.input.clientRequestId);setUnconfirmedFirst(undefined);
       }
       throw failure;
+    }finally{
+      firstSubmissions.endDispatch(submitted.input.clientRequestId);
     }
   };
   const recoverFirst = useEffectEvent(async (isActive: () => boolean) => {

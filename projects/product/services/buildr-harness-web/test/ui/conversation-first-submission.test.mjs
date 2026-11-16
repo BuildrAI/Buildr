@@ -76,7 +76,13 @@ test('开始接续前清除未派发证明，页面中断后只能核对这次�
   for(const code of ['agent_process_switching','agent_process_activation_pending','agent_process_activation_failed']){
     assert.equal(manager.recordFailure('request',{status:503,code})?.failureReason,'backend-updating');
     assert.equal(manager.beginDispatch('other'),undefined);
-    assert.equal(manager.beginDispatch('request')?.failureReason,undefined);
+    const dispatch = manager.beginDispatch('request');
+    assert.ok(dispatch);
+    assert.equal(dispatch.failureReason,undefined);
     assert.deepEqual(firstConversationSubmissions(storage).read(),original);
+    assert.equal(manager.releaseMissing(dispatch),false);
+    manager.endDispatch('request');
   }
+  assert.equal(manager.releaseMissing(manager.read()),true);
+  assert.equal(firstConversationSubmissions(storage).read(),undefined);
 });
