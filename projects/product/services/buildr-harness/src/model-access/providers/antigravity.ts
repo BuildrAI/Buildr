@@ -29,6 +29,7 @@ export function createAntigravityModelProvider(deps: AntigravityModelProviderDep
     singleton: true,
     observesConnection: true,
     backgroundRefresh: false,
+    refreshOnStart: true,
     enableDiscoveredModelsByDefault: true,
     legacyModelVariant: antigravityModelVariant,
     authentication: {

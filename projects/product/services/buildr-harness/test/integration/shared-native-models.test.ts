@@ -254,3 +254,23 @@ test('providers with backgroundRefresh disabled skip startup and 60-second polli
   assert.equal(inspectCalls,4,'explicit account check still checks the provider');
  }finally{await service.close();t.mock.timers.reset();await rm(root,{recursive:true,force:true});}
 });
+
+test('providers opting into refreshOnStart run one startup check without periodic polling',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-start-refresh-'));
+ let inspectCalls=0;
+ const executor={descriptor:{id:'agy-start',label:'AgyStart',capabilities:{text:true,images:false,stop:true,resume:true,approval:false,questions:false,maxInputBytes:1000}},async open(){return{bindingIdentity:'agy-start',capabilities:this.descriptor.capabilities,inspectAccount:async()=>({status:'ready' as const}),models:async()=>[offering],beginLogin:async()=>{throw Error('unsupported');},cancelLogin:async()=>{},createContext:async()=>({id:'context'}),resumeContext:async()=>{},readHistory:async()=>[],send:async()=>{},observe:async()=>({status:'idle' as const,tools:[]}),reply:async()=>{},stop:async()=>({status:'stopped' as const,tools:[]}),close:async()=>{}};}} satisfies AgentExecutor;
+ const provider={id:'native-agy-start',label:'Google',connectionId:'agy-start',singleton:true,observesConnection:true,backgroundRefresh:false,refreshOnStart:true,async open(){return{protocol:'gemini' as const,async inspect(){inspectCalls++;return{status:'ready' as const,identity:'acct-1',models:[offering]};},beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>{throw Error('unused');},close:async()=>{}};}};
+ const service=createAgentService({dataRoot:root,executors:[executor],modelProviders:[provider],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+ try{
+  await service.connections.connect('agy-start',{expectedRevision:'unconfigured'});
+  assert.equal(inspectCalls,1,'connecting probes once');
+  service.models.startRefreshing();
+  for(let attempt=0;attempt<20&&inspectCalls<2;attempt++)await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(inspectCalls,2,'startup refreshes an opted-in provider once');
+  await new Promise(resolve=>setTimeout(resolve,50));
+  assert.equal(inspectCalls,2,'backgroundRefresh=false still skips periodic polling');
+  service.models.startRefreshing();
+  for(let attempt=0;attempt<5;attempt++)await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(inspectCalls,2,'repeated startRefreshing does not repeat the startup check');
+ }finally{await service.close();await rm(root,{recursive:true,force:true});}
+});

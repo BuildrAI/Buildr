@@ -90,6 +90,7 @@ export function createAgentService(options: AgentServiceOptions) {
   const preparations = new PreparationApplication(connections, programManager, generation, now);
   const providerList = options.modelProviders ?? createDefaultModelProviders({ connections, programManager, readAccountIdentity: accountId => models.accounts.read(accountId).identity, now });
   const noBackgroundRefreshProviders = new Set<string>();
+  const startupRefreshProviders = new Set(providerList.filter(provider => provider.refreshOnStart).map(provider => provider.id));
   const registeredProviderIds = new Set(providerList.map(provider => provider.id));
   for (const provider of providerList) {
     if (provider.connectionId && provider.observesConnection) connectionAccountObservers.set(provider.connectionId, provider.id);
@@ -182,9 +183,20 @@ export function createAgentService(options: AgentServiceOptions) {
     return discovery;
   };
   const refreshInBackground=()=>{void discover(true).catch(()=>{});};
+  let startupRefreshStarted = false;
+  const refreshStartupAccounts = async () => {
+    await models.ensureLinked();
+    for (const account of models.accounts.list().accounts) {
+      if (closed) return;
+      if (!account.enabled || !startupRefreshProviders.has(account.provider)) continue;
+      if (account.loginAttempt?.state?.match(/^(initializing|waiting-browser|checking)$/)) continue;
+      await checkModelAccount(account.id).catch(() => {});
+    }
+  };
   const startRefreshing=()=>{
     if(closed||discoveryTimer)return;
     void discover(true).catch(()=>{});
+    if(!startupRefreshStarted){startupRefreshStarted=true;void refreshStartupAccounts().catch(()=>{});}
     discoveryTimer=setInterval(refreshInBackground,60_000);discoveryTimer.unref();
   };
   linkedChanged=connection=>{

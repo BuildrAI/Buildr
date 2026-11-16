@@ -176,6 +176,8 @@ export interface ModelProvider {
   readonly observesConnection?: boolean;
   /** Include this provider in startup and periodic background discovery; defaults to true. */
   readonly backgroundRefresh?: boolean;
+  /** Run one account check on service start even when periodic background refresh is disabled. */
+  readonly refreshOnStart?: boolean;
   /** Accounts of this provider carry user-declared endpoint configuration. */
   readonly custom?: boolean;
   /** Optional on-demand preparation (e.g. downloading local proxy binary/config) when adding an account. */
