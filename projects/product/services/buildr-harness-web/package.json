@@ -6,6 +6,7 @@
   "license": "MIT",
   "scripts": {
     "build": "node tools/build.ts",
+    "dev": "vite",
     "test:static": "node --test test/*.test.ts",
     "test:e2e": "node --test test/browser/*.test.ts",
     "browser:prepare": "playwright-core install chromium --only-shell",

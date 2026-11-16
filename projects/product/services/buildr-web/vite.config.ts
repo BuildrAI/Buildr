@@ -1,10 +1,30 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { precompressedAssets } from './tools/precompressed-assets.mjs';
+import { developmentApiProxy, developmentSessionPlugin } from '../buildr/tools/development/dev-web-session.ts';
 
-export default defineConfig({
+const environment = (globalThis as any).process?.env ?? {};
+const developmentHostUrl = environment.BUILDR_DEV_HOST_URL;
+const developmentHarnessUrl = environment.BUILDR_DEV_HARNESS_URL;
+
+export default defineConfig(({ command }) => ({
   resolve:{dedupe:['react','react-dom','antd','@ant-design/icons']},
-  plugins: [react(), precompressedAssets()],
+  plugins: [
+    react(),
+    precompressedAssets(),
+    ...(command === 'serve' && developmentHostUrl ? [developmentSessionPlugin({ hostUrl: developmentHostUrl, profile: 'development', replacePlaceholders: true })] : []),
+  ],
+  ...(command === 'serve' && developmentHostUrl ? {
+    server: {
+      strictPort: true,
+      proxy: {
+        '/api': developmentApiProxy(developmentHostUrl),
+        ...(developmentHarnessUrl ? {
+          '/harness': { target: developmentHarnessUrl, changeOrigin: true, ws: true },
+        } : {}),
+      },
+    },
+  } : {}),
   build: {
     outDir: '../buildr/web-dist',
     emptyOutDir: true,
@@ -23,4 +43,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

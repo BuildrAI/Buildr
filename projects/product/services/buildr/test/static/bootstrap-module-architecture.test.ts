@@ -146,6 +146,12 @@ test('Bootstrap 是唯一 composition root，bin 与公共 Host 不直连 Task �
 test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capability、contribution 与 runtime port', () => {
   const runtime: any = createRuntime();
   assert.deepEqual(runtimeModuleSnapshot(runtime), [{
+    id: 'development-cli',
+    requires: [],
+    provides: [],
+    contributions: { cli: ['dev live'], http: [], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
     id: 'agent-assets-runtime',
     requires: [],
     provides: [AGENT_ASSETS_RUNTIME, AGENT_ASSETS_CAPABILITY_QUERY],
@@ -355,7 +361,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }]);
   assert.deepEqual(runtimeContributions(runtime, 'cli').map((item: any) => item.key), [
-    'assets', 'init', 'mutation recover', 'project create', 'service create',
+    'dev live', 'assets', 'init', 'mutation recover', 'project create', 'service create',
     'package check', 'package build', 'runtime list',
     'commands check', 'commands add', 'commands remove',
     'component list', 'component check', 'component record', 'component install', 'component uninstall',

@@ -9,6 +9,7 @@ import { AGENT_SERVICE_APPLICATION, createAgentServiceModule } from '../modules/
 import { WORKBENCH_MODULE } from '../modules/workbench/module.ts';
 import { createKnowledgeModule } from '../modules/knowledge/module.ts';
 import { createRuntimeInfrastructure } from './runtime-infrastructure.ts';
+import { createDevelopmentCliModule } from './cli/dev.ts';
 import {
   AGENT_ASSETS_CAPABILITY_QUERY,
   AGENT_ASSETS_DIAGNOSTICS_BINDER,
@@ -56,6 +57,7 @@ function warnRecoveryFailure(error: unknown): void {
 export function createRuntime(options: { agentRuntime?: import('@buildr-ai/buildr-harness').AgentRuntimeUnit } = {}): any  {
   const runtime = createRuntimeInfrastructure();
   const registry = createModuleRegistry();
+  registry.install(createDevelopmentCliModule());
   registry.install(createAgentAssetsRuntimeModule());
   registry.install(createWorkspaceModule(runtime, {
     readProductIdentity: readCurrentProductIdentity,
