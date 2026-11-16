@@ -22,6 +22,9 @@ export const DEVELOPMENT_RUNTIME_INPUTS = Object.freeze({
     `${service}/tools/development/resolve-development-node`, `${service}/tools/development/resolve-development-node.cmd`,
     `${service}/tools/development/prepare-development-web.ts`,
     `${service}/tools/development/prepare-development-agent.ts`, `${service}/tools/build/agent-package.ts`,
+    `${service}/tools/development/dev-live.ts`, `${service}/tools/development/dev-web.ts`,
+    `${service}/tools/development/dev-update.ts`, `${service}/tools/development/dev-snapshot.ts`,
+    `${service}/tools/development/dev-source-loader.mjs`, `${service}/tools/development/dev-harness-update.ts`,
     `${agent}/package.json`, `${agent}/package-lock.json`, `${agent}/tsconfig.json`, `${agent}/tools/build.ts`,
     `${preparedAgent}/package.json`,
     `${service}/tools/build/web-dist.ts`,
@@ -31,6 +34,7 @@ export const DEVELOPMENT_RUNTIME_INPUTS = Object.freeze({
     `${harnessWeb}/package.json`, `${harnessWeb}/package-lock.json`, `${harnessWeb}/index.html`,
     `${harnessWeb}/mermaid-renderer.html`, `${harnessWeb}/vite.config.ts`, `${harnessWeb}/tsconfig.json`,
     `${harnessWeb}/tools/build.ts`,
+    `${harnessWeb}/tools/dev-server.mjs`,
   ]),
   prefixes: Object.freeze([
     `${service}/src/`, `${service}/bin/`, `${service}/web-dist/`,
@@ -53,6 +57,12 @@ export function readDevelopmentRuntimeIdentity(productRoot: string, gitRoot: str
     const root = fs.realpathSync(gitRoot);
     const source = fs.realpathSync(productRoot);
     if (source !== fs.realpathSync(path.join(root, service))) return null;
+    const snapshot = (globalThis as any)[Symbol.for('buildr.development-snapshot')];
+    if (snapshot?.serviceRoot === source && /^[a-f0-9]{64}$/.test(snapshot.id)) {
+      // A live source snapshot is not a formal installed runtime, even when
+      // the mutable checkout now happens to match the installed source bytes.
+      return `sha256-${crypto.createHash('sha256').update(JSON.stringify({schemaVersion: 'buildr.development-live/v1', sourceRoot: source, snapshot: snapshot.id})).digest('hex')}`;
+    }
     const paths = [...DEVELOPMENT_RUNTIME_INPUTS.exact, ...DEVELOPMENT_RUNTIME_INPUTS.prefixes];
     const listed = spawnSync('git', ['-C', root, 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', ...paths], { encoding: 'utf8' });
     if (listed.error || listed.status !== 0) return null;

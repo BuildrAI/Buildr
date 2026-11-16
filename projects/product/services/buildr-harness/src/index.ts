@@ -6,7 +6,7 @@ export * from './execution-contracts.ts';
 export { AGENT_OPERATION_SCHEMAS } from './operation-schemas.ts';
 export { activateAgentRuntime } from './process/activate-runtime.ts';
 export { prepareAgentRuntimeAsync } from './process/runtime-preparation.ts';
-export { connectHarnessProcess, connectAgentProcess, stopAgentProcess, restartAgentProcess } from './process/client.ts';
+export { connectHarnessProcess, connectAgentProcess, observeAgentProcess, stopAgentProcess, restartAgentProcess } from './process/client.ts';
 export { assertAgentUpgradeIdle, withAgentDataOffline } from './process/offline-data.ts';
 export type { AgentProcessConnection, AgentProcessConnectionOptions } from './process/client.ts';
 export type { AgentOperations, AgentSubscription } from './process/operations.ts';

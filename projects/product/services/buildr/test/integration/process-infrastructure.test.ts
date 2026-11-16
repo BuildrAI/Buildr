@@ -149,15 +149,15 @@ test('Candidate preparation saves running stages, complete prior operations and 
   assert.equal(failure.status, 'failed');
   assert.equal(failure.checks, 'not-started');
   assert.equal(failure.id, 'fixture-shard');
-  assert.deepEqual(failure.operations.map((item: any) => item.status), ['passed', 'passed', 'passed', 'passed', 'failed']);
-  assert.equal(failure.operations[4].exitCode, null);
-  assert.equal(failure.operations[4].errorCode, 'ETIMEDOUT');
-  assert.equal(failure.operations[4].failureClass, 'timeout');
+  assert.deepEqual(failure.operations.map((item: any) => item.status), ['passed', 'passed', 'passed', 'passed', 'passed', 'passed', 'failed']);
+  assert.equal(failure.operations[6].exitCode, null);
+  assert.equal(failure.operations[6].errorCode, 'ETIMEDOUT');
+  assert.equal(failure.operations[6].failureClass, 'timeout');
   assert.equal(JSON.stringify(failure).includes('private URL'), false);
   snapshots.length = 0;
   const success = run(false);
   assert.equal(success.status, 'passed');
-  assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')).operations.map((item: any) => item.status), ['passed', 'passed', 'passed', 'passed', 'passed']);
+  assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')).operations.map((item: any) => item.status), ['passed', 'passed', 'passed', 'passed', 'passed', 'passed', 'passed']);
   fs.writeFileSync(path.join(root, '.node-version'), '999.0.0\n');
   assert.throws(() => run(false), /does not meet required minimum/);
   const setup = JSON.parse(fs.readFileSync(output, 'utf8'));
@@ -178,21 +178,21 @@ test('local preparation reports actual executed and reused operations and repair
       fingerprint: (item: any, role: string) => role === 'input' ? `sha256-input-${item.id}` : outputs.get(item.id) ?? null,
       read: (id: string) => receipts.get(id), write: (id: string, value: any) => receipts.set(id, value), remove: (id: string) => receipts.delete(id),
     },
-    execute: ((_command: string, args: string[]) => {
+    execute: ((_command: string, args: string[], options: { cwd: string }) => {
       calls++;
       const id = args[0] === 'ci'
-        ? args.includes('--ignore-scripts') ? 'buildr-harness-dependencies' : args.includes('--install-links') ? 'buildr-dependencies' : 'buildr-web-dependencies'
-        : args[0] === 'tools/build.ts' ? 'buildr-harness-build' : 'generated-contracts-and-test-context';
+        ? args.includes('--ignore-scripts') ? options.cwd.endsWith('buildr-harness-web') ? 'harness-web-dependencies' : 'buildr-harness-dependencies' : args.includes('--install-links') ? 'buildr-dependencies' : 'buildr-web-dependencies'
+        : args[0] === 'tools/build.ts' ? options.cwd.endsWith('buildr-harness-web') ? 'harness-web-build' : 'buildr-harness-build' : 'generated-contracts-and-test-context';
       outputs.set(id, `sha256-output-${id}`);
       return { status: 0 };
     }) as any,
   });
-  assert.deepEqual(run().operations.map((operation: any) => operation.disposition), ['executed', 'executed', 'executed', 'executed', 'executed']);
-  assert.deepEqual(run().operations.map((operation: any) => operation.disposition), ['reused', 'reused', 'reused', 'reused', 'reused']);
-  assert.equal(calls, 5);
+  assert.deepEqual(run().operations.map((operation: any) => operation.disposition), ['executed', 'executed', 'executed', 'executed', 'executed', 'executed', 'executed']);
+  assert.deepEqual(run().operations.map((operation: any) => operation.disposition), ['reused', 'reused', 'reused', 'reused', 'reused', 'reused', 'reused']);
+  assert.equal(calls, 7);
   outputs.set('generated-contracts-and-test-context', 'sha256-output-drift');
-  assert.deepEqual(run().operations.map((operation: any) => operation.disposition), ['reused', 'reused', 'reused', 'reused', 'executed']);
-  assert.equal(calls, 6);
+  assert.deepEqual(run().operations.map((operation: any) => operation.disposition), ['reused', 'reused', 'reused', 'reused', 'reused', 'reused', 'executed']);
+  assert.equal(calls, 8);
 });
 
 test('preparation subprocesses do not inherit the parent timing output or operation identity', t => {

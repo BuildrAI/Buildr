@@ -183,7 +183,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   }
   const callers = new HarnessCallerSessions(service.generation);
   let webConnection:Promise<AgentProcessConnection>|undefined;
-  const web=new HarnessWebEndpoint({dataRoot:options.dataRoot,generation:identity.generation,instanceId,staticRoot:path.join(options.runtime.directory,'build/harness-web-dist'),runtimeDigest:options.runtime.digest,ownsListener:()=>ownsMetadata&&!closing&&!retiring,
+  const web=new HarnessWebEndpoint({dataRoot:options.dataRoot,profileId:options.profileId,generation:identity.generation,instanceId,staticRoot:path.join(options.runtime.directory,'build/harness-web-dist'),runtimeDigest:options.runtime.digest,ownsListener:()=>ownsMetadata&&!closing&&!retiring,
     connect:()=>webConnection??=connectHarnessProcess({dataRoot:options.dataRoot,profileId:options.profileId,runtime:options.runtime,sourceId:DIRECTORY_SOURCE_ID,caller:{kind:'first-party-user',product:'buildr-harness'}}).catch(error=>{webConnection=undefined;throw error;}),
   });
   const channel = await listen(async (req, res) => {
@@ -232,7 +232,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
         pending={runtime:options.runtime,state:'waiting'};savePending(pending);json(res,202,agentRuntimeStatus(status()));return;
       }
       if(input.operation==='enable'&&!runtimeSupportsHarnessWeb(options.runtime))throw new AgentServiceError('agent_web_runtime_incompatible','此负载未声明受支持的页面会话格式。',409);
-      if(input.operation==='enable'&&Object.keys(input).every(key=>['operation','port'].includes(key))){json(res,200,await web.enable(input));return;}
+      if(input.operation==='enable'&&Object.keys(input).every(key=>['operation','port','developmentRoot'].includes(key))){json(res,200,await web.enable(input));return;}
       if(input.operation==='rebind'&&Object.keys(input).every(key=>['operation','expectedEndpointId','expectedPort','expectedGeneration','port'].includes(key))){json(res,200,await web.rebind(input));return;}
       if(input.operation==='login'&&Object.keys(input).join()==='operation'){json(res,200,await web.login());return;}
       throw new AgentServiceError('agent_process_input_invalid','网页管理操作无效。');
@@ -317,7 +317,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if(closing || !accepting)throw new AgentServiceError('agent_process_switching','执行后台正在切换，尚未受理新更新。',503);
       if (input.expectedGeneration !== identity.generation) throw new AgentServiceError('agent_control_stale', '执行后台代次已变化。', 409);
       validateAgentRuntime(options.dataRoot, input.runtime);
-      if(web.status().enabled&&!runtimeSupportsHarnessWeb(input.runtime))throw new AgentServiceError('agent_web_runtime_incompatible','候选不兼容现有页面会话或保留资源，原网页和工作已保留。',409);
+      if(web.status().enabled&&!runtimeSupportsHarnessWeb(input.runtime,web.developmentEnabled()))throw new AgentServiceError('agent_web_runtime_incompatible','候选不兼容现有页面会话或开发网页，原网页和工作已保留。',409);
       const nextPending = input.runtime.digest === options.runtime.digest ? undefined : { runtime: input.runtime, state: 'waiting' as const };
       const observedPending = pending;
       const started = performance.now();

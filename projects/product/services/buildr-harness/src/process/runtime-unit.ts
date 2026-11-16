@@ -122,4 +122,7 @@ export function validateAgentRuntime(dataRoot: string, runtime: AgentRuntimeUnit
 }
 
 /** Page-session/static-resource compatibility is separate from storage parallelism. */
-export function runtimeSupportsHarnessWeb(runtime:AgentRuntimeUnit):boolean{return readPrivate<{webCompatibility?:number}>(path.join(runtime.directory,'build/runtime-contracts.json'))?.webCompatibility===1;}
+export function runtimeSupportsHarnessWeb(runtime:AgentRuntimeUnit,development=false):boolean {
+  const value=readPackageRecord<{webCompatibility?:number;developmentWebCompatibility?:number}>(path.join(runtime.directory,'build/runtime-contracts.json'));
+  return value?.webCompatibility===1&&(!development||value.developmentWebCompatibility===1);
+}

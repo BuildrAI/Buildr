@@ -2,355 +2,206 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import process from 'node:process';
-import { spawn, type ChildProcess } from 'node:child_process';
-import { setTimeout as delay } from 'node:timers/promises';
+import {spawn, execFile, type ChildProcess} from 'node:child_process';
+import {promisify} from 'node:util';
+import {pathToFileURL} from 'node:url';
+import {setTimeout as delay} from 'node:timers/promises';
+import {buildrWebDataRoot} from '../../src/modules/workspace/module.ts';
+import {acquireExclusiveFileLock, releaseExclusiveFileLock} from '../../src/infrastructure/filesystem/exclusive-file-lock.ts';
+import {DevelopmentUpdates, assertDevelopmentDependencies, developmentUpdatePaths, replaceDevelopmentHost, withDevelopmentUpdate} from './dev-update.ts';
+import {createDevelopmentSnapshot, pruneDevelopmentSnapshots, type DevelopmentSnapshot} from './dev-snapshot.ts';
 
-import { activateAgentServiceRuntime } from '../../src/modules/agent-service/application/activate-runtime.ts';
-import { buildrWebDataRoot } from '../../src/modules/workspace/module.ts';
-import { buildWebDist } from '../build/web-dist.ts';
-import { prepareDevelopmentAgent } from './prepare-development-agent.ts';
-
-const DEFAULT_HOST_PORT = 4458;
-const DEFAULT_WEB_PORT = 5173;
-const DEFAULT_HARNESS_WEB_PORT = 5174;
+const execute = promisify(execFile);
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
-const productRoot = path.resolve(serviceRoot, '..');
-const agentRoot = path.join(productRoot, 'buildr-harness');
-const webRoot = path.join(productRoot, 'buildr-web');
-const harnessWebRoot = path.join(productRoot, 'buildr-harness-web');
-
-type LiveOptions = {
-  hostPort: number;
-  webPort: number;
-  harnessWebPort: number;
-  open: boolean;
-  workspaceRoot: string;
-};
-
-type InstanceRecord = {
-  url?: string;
-  pid?: number;
-  secret?: string;
-  launcherIdentity?: { channel?: string };
-};
-
-function optionValue(args: string[], name: string, fallback: string): string {
-  const index = args.indexOf(name);
-  if (index === -1) return fallback;
-  const value = args[index + 1];
-  if (!value || value.startsWith('--')) throw new Error(`Missing value for ${name}.`);
-  return value;
-}
-
-function positivePort(args: string[], name: string, fallback: number): number {
-  const value = Number(optionValue(args, name, String(fallback)));
-  if (!Number.isInteger(value) || value < 1 || value > 65535) throw new Error(`${name} must be a valid port.`);
-  return value;
-}
-
-function findWorkspaceRoot(start: string): string | null {
-  let current = path.resolve(start);
-  while (true) {
-    if (fs.existsSync(path.join(current, '.buildr', 'workspace.yml'))) return current;
-    const parent = path.dirname(current);
-    if (parent === current) return null;
-    current = parent;
+const agentRoot = path.resolve(serviceRoot, '../buildr-harness');
+type Instance = {url: string; secret: string; pid: number; productIdentity?: {channel?: string; sourceRoot?: string}; launcherIdentity?: {channel?: string; sourceRoot?: string}};
+const read = <T>(file: string): T | undefined => {try {return JSON.parse(fs.readFileSync(file, 'utf8'));} catch (error: any) {if (error.code === 'ENOENT') return; throw error;}};
+const alive = (pid?: number) => {if (!pid) return false; try {process.kill(pid, 0); return true;} catch (error: any) {return error.code !== 'ESRCH';}};
+async function free(port: number) {return new Promise<boolean>(resolve => {const server = net.createServer(); server.once('error', () => resolve(false)); server.listen(port, '127.0.0.1', () => server.close(() => resolve(true)));});}
+function options(args: string[]) {
+  let port = 4458, target = process.cwd(), open = true;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--no-open') {open = false; continue;}
+    if (!['--target', '--port'].includes(args[i]!)) throw new Error(`Unknown buildr dev option: ${args[i]}. Use the host --port; separate Vite ports have been retired.`);
+    const key = args[i]!, value = args[++i];
+    if (!value || value.startsWith('--')) throw new Error(`Missing value for ${key}.`);
+    if (key === '--target') target = path.resolve(value); else port = Number(value);
   }
-}
-
-function readJson(file: string): any {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
-}
-
-function instanceFile(dataRoot: string): string {
-  return path.join(dataRoot, 'instance.json');
-}
-
-function alive(pid: number | undefined): boolean {
-  if (!pid || !Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch { return false; }
-}
-
-async function hostHealth(url: string, secret: string): Promise<boolean> {
-  try {
-    const response = await fetch(new URL('/api/v1/health', url), {
-      headers: { 'x-buildr-instance': secret },
-      signal: AbortSignal.timeout(1000),
-    });
-    return response.ok;
-  } catch { return false; }
-}
-
-async function portFree(port: number): Promise<boolean> {
-  return new Promise(resolve => {
-    const server = net.createServer();
-    server.once('error', () => resolve(false));
-    server.once('listening', () => server.close(() => resolve(true)));
-    server.listen(port, '127.0.0.1');
-  });
-}
-
-/** Only the ordinary development instance is owned here. Preview instances live
- * under their own data roots and are never discovered or stopped by dev mode. */
-async function stopExistingDevelopmentInstance(dataRoot: string): Promise<void> {
-  const record: InstanceRecord | null = readJson(instanceFile(dataRoot));
-  if (!record || !alive(record.pid)) return;
-  if (record.launcherIdentity?.channel && record.launcherIdentity.channel !== 'development') {
-    throw new Error('Existing instance is not a development instance; refusing to stop it.');
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Development host port must be a valid fixed port.');
+  while (!fs.existsSync(path.join(target, '.buildr/workspace.yml'))) {
+    const parent = path.dirname(target); if (parent === target) throw new Error('Cannot find a Buildr workspace; pass --target.'); target = parent;
   }
-  if (!record.url || !record.secret || !await hostHealth(record.url, record.secret)) {
-    throw new Error(`An unauthenticated process is using the development instance record (PID ${record.pid}); refusing to stop it.`);
-  }
-  const response = await fetch(new URL('/api/v1/app/quit-instance', record.url), {
-    method: 'POST',
-    headers: { 'x-buildr-instance': record.secret },
-    signal: AbortSignal.timeout(5000),
-  });
-  if (!response.ok) throw new Error(`Existing development instance did not accept stop: HTTP ${response.status}.`);
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (!alive(record.pid)) return;
-    await delay(100);
-  }
-  throw new Error(`Existing development instance did not stop within 15s (PID ${record.pid}).`);
+  return {port, target, open};
 }
 
-async function waitForHost(dataRoot: string, hostUrl: string, previousPid: number | null, stopped: () => boolean): Promise<InstanceRecord> {
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    if (stopped()) throw new Error('Development startup stopped.');
-    const record: InstanceRecord | null = readJson(instanceFile(dataRoot));
-    if (record?.secret && record.pid && record.pid !== previousPid && alive(record.pid)) {
-      if (await hostHealth(hostUrl, record.secret)) return record;
-    }
-    await delay(200);
-  }
-  throw new Error('Development host did not become healthy within 30s.');
-}
-
-async function waitForPage(url: string, timeoutMs = 20_000, stopped: () => boolean = () => false): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (stopped()) throw new Error('Development startup stopped.');
-    try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(1000) });
-      if (response.ok) return;
-    } catch { /* keep waiting */ }
-    await delay(200);
-  }
-  throw new Error(`Development page did not become ready: ${url}`);
-}
-
-function spawnChild(command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv; detached?: boolean }): ChildProcess {
-  const child = spawn(command, args, { ...options, stdio: 'inherit' });
-  child.once('exit', (code, signal) => {
-    if (code && code !== 0) console.error(`[dev] ${path.basename(command)} exited with code ${code}${signal ? ` (${signal})` : ''}.`);
-  });
-  return child;
-}
-
-function stopChild(child: ChildProcess | null): void {
-  if (!child?.pid) return;
-  try { process.kill(child.pid, 'SIGTERM'); } catch { /* already gone */ }
-}
-
-function stopHostGroup(child: ChildProcess | null): void {
-  if (!child?.pid) return;
-  try { process.kill(-child.pid, 'SIGTERM'); } catch { stopChild(child); }
-}
-
-function openBrowser(url: string): void {
-  const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
-  try { spawn(command, args, { stdio: 'ignore', detached: true }).unref(); } catch { /* browser open is best effort */ }
-}
-
-type HarnessWatch = {
-  close(): void;
-  ready: Promise<void>;
-};
-
-function watchHarness(dataRoot: string): HarnessWatch {
-  let timer: NodeJS.Timeout | null = null;
-  let running = false;
-  let pending = false;
-  let closed = false;
-  const watchers: fs.FSWatcher[] = [];
-  const schedule = () => {
-    if (closed) return;
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => { timer = null; void rebuild(); }, 500);
-  };
-  const rebuild = async (): Promise<void> => {
-    if (closed) return;
-    if (running) { pending = true; return; }
-    running = true;
-    console.log('[dev] harness changed; rebuilding runtime…');
-    try {
-      prepareDevelopmentAgent({ serviceRoot, agentRoot, build: true, buildWeb: false });
-      const result: any = await activateAgentServiceRuntime({ dataRoot, profileId: 'development' });
-      console.log(`[dev] harness runtime updated${result?.digest ? `: ${String(result.digest).slice(0, 12)}…` : ''}. If this change touched HTTP contracts, restart buildr dev so host-side types regenerate.`);
-    } catch (error) {
-      console.error('[dev] harness rebuild failed; previous runtime retained:', error instanceof Error ? error.message : String(error));
-    } finally {
-      running = false;
-      if (pending && !closed) { pending = false; void rebuild(); }
-    }
-  };
-  const sourceRoot = path.join(agentRoot, 'src');
-  if (fs.existsSync(sourceRoot)) watchers.push(fs.watch(sourceRoot, { recursive: true }, schedule));
-  for (const file of [path.join(agentRoot, 'tools', 'build.ts'), path.join(agentRoot, 'package.json'), path.join(agentRoot, 'tsconfig.json')]) {
-    if (!fs.existsSync(file)) continue;
-    watchers.push(fs.watch(file, schedule));
-  }
-  return {
-    close() {
-      closed = true;
-      if (timer) clearTimeout(timer);
-      for (const watcher of watchers) { try { watcher.close(); } catch { /* already closed */ } }
-    },
-    ready: Promise.resolve(),
-  };
-}
-
-function assertDevelopmentCheckout(): void {
-  for (const directory of [agentRoot, webRoot, harnessWebRoot]) {
-    if (!fs.existsSync(path.join(directory, 'src'))) {
-      throw new Error('buildr dev requires the Buildr product development checkout; run it from the product workspace.');
-    }
-  }
-}
-
-/** A fresh checkout may not have the ignored build outputs yet. The host still
- * renders its ordinary page to expose the development session token, so build
- * only the missing artifacts once; Vite serves the live sources afterwards. */
-function ensureDevelopmentArtifacts(): void {
-  if (!fs.existsSync(path.join(serviceRoot, 'node_modules', '@buildr-ai', 'buildr-harness', 'build', 'index.js'))) {
-    console.log('[dev] preparing the development harness package (first run)…');
-    prepareDevelopmentAgent({ serviceRoot, agentRoot, build: true });
-  }
-  if (!fs.existsSync(path.join(serviceRoot, 'web-dist', 'index.html'))) {
-    console.log('[dev] building the development web shell (first run)…');
-    buildWebDist(path.join(serviceRoot, 'web-dist'));
-  }
-}
-
-function resolveOptions(args: string[]): LiveOptions {
-  const valueOptions = new Set(['--target', '--port', '--web-port', '--harness-web-port']);
-  for (let index = 0; index < args.length; index++) {
-    const argument = args[index];
-    if (argument === '--no-open') continue;
-    if (!valueOptions.has(argument)) throw new Error(`Unknown buildr dev option: ${argument}.`);
-    if (!args[index + 1] || args[index + 1].startsWith('--')) throw new Error(`Missing value for ${argument}.`);
-    index++;
-  }
-  const workspace = optionValue(args, '--target', '');
-  const workspaceRoot = workspace
-    ? path.resolve(workspace)
-    : findWorkspaceRoot(process.cwd()) || findWorkspaceRoot(serviceRoot);
-  if (!workspaceRoot) throw new Error('Cannot find a Buildr workspace; run from the workspace or pass --target.');
-  return {
-    hostPort: positivePort(args, '--port', DEFAULT_HOST_PORT),
-    webPort: positivePort(args, '--web-port', DEFAULT_WEB_PORT),
-    harnessWebPort: positivePort(args, '--harness-web-port', DEFAULT_HARNESS_WEB_PORT),
-    open: !args.includes('--no-open'),
-    workspaceRoot,
-  };
-}
-
-export async function runDevelopmentLive(args: string[] = []): Promise<void> {
-  assertDevelopmentCheckout();
-  const options = resolveOptions(args);
-  ensureDevelopmentArtifacts();
+export async function runDevelopmentLive(args: string[] = []) {
+  const opts = options(args);
+  if (!fs.existsSync(path.resolve(serviceRoot, '../buildr-web/src'))) throw new Error('buildr dev requires the product source checkout.');
   const dataRoot = buildrWebDataRoot();
-  const hostUrl = `http://127.0.0.1:${options.hostPort}`;
-  const webUrl = `http://127.0.0.1:${options.webPort}/`;
-  const harnessWebUrl = `http://127.0.0.1:${options.harnessWebPort}`;
-  const previous: InstanceRecord | null = readJson(instanceFile(dataRoot));
-  const previousPid = alive(previous?.pid) ? previous!.pid! : null;
-
-  console.log('Buildr dev mode');
-  console.log(`  workspace: ${options.workspaceRoot}`);
-  console.log(`  data:      ${dataRoot}`);
-  console.log(`  host:      ${hostUrl} (source watch)`);
-  console.log(`  web:       ${webUrl} (Vite HMR)`);
-  console.log(`  harness:   ${harnessWebUrl}/harness/ (Vite HMR)`);
-  console.log('  Ctrl+C to stop.');
-
-  let host: ChildProcess | null = null;
-  let web: ChildProcess | null = null;
-  let harnessWeb: ChildProcess | null = null;
-  let watcher: HarnessWatch | null = null;
-  let stopping = false;
-  let interrupted = false;
-  const stop = async (): Promise<void> => {
-    if (stopping) return;
-    stopping = true;
-    watcher?.close();
-    stopChild(web);
-    stopChild(harnessWeb);
-    stopHostGroup(host);
-    await delay(800);
-    if (alive(host?.pid ?? undefined)) { try { process.kill(-host!.pid!, 'SIGKILL'); } catch { /* already gone */ } }
-    console.log('\n[dev] stopped.');
+  const paths = developmentUpdatePaths(serviceRoot);
+  const canonical = path.dirname(path.dirname(paths.lock));
+  if (path.resolve(serviceRoot, '../../../..') !== path.dirname(canonical) && !process.env.BUILDR_APP_DATA_DIR) {
+    throw new Error('A task worktree must use an isolated BUILDR_APP_DATA_DIR; candidate code cannot update the retained development profile.');
+  }
+  fs.mkdirSync(dataRoot, {recursive: true});
+  const sessionLock = acquireExclusiveFileLock(path.join(dataRoot, 'development-live.lock'), serviceRoot, {timeoutMs: 0});
+  const statusFile = path.join(dataRoot, 'development-live.json');
+  const instanceFile = path.join(dataRoot, 'instance.json');
+  const hostUrl = `http://127.0.0.1:${opts.port}`;
+  let child: ChildProcess | undefined, owned: Instance | undefined, previous: DevelopmentSnapshot | undefined;
+  let stopping = false, expectedExit = false, paused = false, queue: DevelopmentUpdates | undefined;
+  let crashRestarts = 0;
+  const watchers: fs.FSWatcher[] = [];
+  const status: {phase: string; current: string | null; target: string | null; failure: string | null; pid: number; harness?: unknown} = {phase: 'preparing', current: null, target: null, failure: null, pid: process.pid};
+  const publish = (phase: string, failure: string | null = null) => {
+    status.phase = phase; status.failure = failure;
+    const temporary = `${statusFile}.${process.pid}.tmp`;
+    fs.writeFileSync(temporary, JSON.stringify(status) + '\n', {mode: 0o600}); fs.renameSync(temporary, statusFile);
+    console.log(`[dev] ${phase}; current=${status.current?.slice(0, 12) ?? 'none'} target=${status.target?.slice(0, 12) ?? 'none'}${failure ? `; ${failure}` : ''}`);
   };
-  const signal = new Promise<void>(resolve => {
-    const finish = () => { interrupted = true; void stop().finally(resolve); };
-    process.once('SIGINT', finish);
-    process.once('SIGTERM', finish);
-  });
-
-  const startup = async (): Promise<void> => {
-    await stopExistingDevelopmentInstance(dataRoot);
-    if (stopping) return;
-    if (!await portFree(options.hostPort)) throw new Error(`Port ${options.hostPort} is still occupied; refusing to take over an unowned process.`);
-    if (stopping) return;
-    host = spawnChild(process.execPath, [
-      '--watch-path', path.join(serviceRoot, 'src'),
-      '--watch-path', path.join(serviceRoot, 'bin'),
-      path.join(serviceRoot, 'bin', 'buildr.mjs'),
-      'web', '--target', options.workspaceRoot, '--port', String(options.hostPort), '--no-open',
-    ], { cwd: serviceRoot, env: process.env, detached: true });
-    const instance = await waitForHost(dataRoot, hostUrl, previousPid, () => stopping);
-    if (stopping) return;
-    const hostSessionUrl = instance.url || hostUrl;
-    const env = { ...process.env, BUILDR_DEV_HOST_URL: hostSessionUrl, BUILDR_DEV_HARNESS_URL: harnessWebUrl, BUILDR_DEV_HARNESS_WEB_PORT: String(options.harnessWebPort) };
-    const vite = (root: string, port: number, extra: string[] = []) => {
-      const bin = path.join(root, 'node_modules', 'vite', 'bin', 'vite.js');
-      if (!fs.existsSync(bin)) throw new Error(`Vite is unavailable in ${root}; install development dependencies first.`);
-      return spawnChild(process.execPath, [bin, '--host', '127.0.0.1', '--port', String(port), '--strictPort', ...extra], { cwd: root, env });
-    };
-    web = vite(webRoot, options.webPort);
-    if (stopping) return;
-    harnessWeb = vite(harnessWebRoot, options.harnessWebPort);
-    await Promise.all([
-      waitForPage(webUrl, 20_000, () => stopping),
-      waitForPage(`${harnessWebUrl}/harness/`, 20_000, () => stopping),
-    ]);
-    if (stopping) return;
-    watcher = watchHarness(dataRoot);
-    await watcher.ready;
-    console.log('[dev] ready.');
-    if (options.open) openBrowser(webUrl);
-  };
-
-  try {
-    const started = startup();
-    await Promise.race([started, signal]);
-    if (!interrupted) await signal;
-    else await started.catch(() => { /* startup aborts once stop is observed */ });
-  } catch (error) {
-    if (!interrupted) {
-      await stop();
+  const helperEnv = () => {const env = {...process.env}; for (const key of ['BUILDR_DEV_LIVE', 'BUILDR_DEV_SNAPSHOT', 'BUILDR_DEV_SNAPSHOT_ID', 'BUILDR_DEV_STATUS_FILE']) delete env[key]; return env;};
+  async function command(script: string, tail: string[] = []) {
+    try {
+      const result = await execute(process.execPath, [script, ...tail], {cwd: serviceRoot, env: helperEnv(), timeout: 240_000, maxBuffer: 8 * 1024 * 1024});
+      if (result.stderr) process.stderr.write(result.stderr);
+      return result.stdout;
+    } catch (error: any) {
+      for (const line of String(error.stderr || '').split('\n')) {
+        try { const observed = JSON.parse(line); if (observed.status === 'unconfirmed') status.harness = observed; } catch { /* compiler output is not a runtime observation */ }
+      }
       throw error;
     }
   }
-  await stop();
+  async function observe(instance: Instance) {
+    const response = await fetch(new URL('/api/v1/health', instance.url), {headers: {'x-buildr-instance': instance.secret}, signal: AbortSignal.timeout(2000)});
+    if (!response.ok) throw new Error(`development_instance_unconfirmed: HTTP ${response.status}`);
+    const health: any = await response.json();
+    if (health.pid !== instance.pid || health.productIdentity?.channel !== 'development' || path.resolve(health.productIdentity?.sourceRoot || '') !== serviceRoot) throw new Error('development_instance_owner_mismatch');
+    return health;
+  }
+  async function stopHost() {
+    const current = read<Instance>(instanceFile);
+    if (owned && current?.pid !== owned.pid && alive(owned.pid)) throw new Error('development_instance_replaced; original process retained');
+    if (current && alive(current.pid)) {
+      // A formal update may have replaced our child. Reauthenticate exact source
+      // and record immediately before asking that instance to relinquish the port.
+      await observe(current);
+      const response = await fetch(new URL('/api/v1/app/quit-instance', current.url), {method: 'POST', headers: {'x-buildr-instance': current.secret}, signal: AbortSignal.timeout(5000)});
+      if (!response.ok) throw new Error(`development_stop_unconfirmed: HTTP ${response.status}`);
+      expectedExit = true;
+      const deadline = Date.now() + 20_000;
+      while (alive(current.pid) && Date.now() < deadline) await delay(100);
+      if (alive(current.pid)) throw new Error('development_stop_unconfirmed; no force kill performed');
+    } else if (child && child.exitCode === null && child.signalCode === null) {
+      // Startup did not publish a listener: this is still our exact child handle,
+      // not a recovered PID, and has not accepted browser operations.
+      expectedExit = true; child.kill('SIGTERM');
+      const deadline = Date.now() + 10_000;
+      while (child.exitCode === null && child.signalCode === null && Date.now() < deadline) await delay(50);
+      if (child.exitCode === null && child.signalCode === null) throw new Error('development_startup_exit_unconfirmed');
+    }
+    child = undefined; owned = undefined;
+  }
+  const snapshotEnv = (snapshot: DevelopmentSnapshot) => ({...helperEnv(), BUILDR_DEV_LIVE: '1', BUILDR_DEV_SNAPSHOT: snapshot.file, BUILDR_DEV_SNAPSHOT_ID: snapshot.id, BUILDR_DEV_STATUS_FILE: statusFile});
+  async function check(snapshot: DevelopmentSnapshot) {
+    await execute(process.execPath, ['--import', path.join(snapshot.root, 'loader.mjs'), '--input-type=module', '-e', `await import(${JSON.stringify(pathToFileURL(path.join(serviceRoot, 'src/bootstrap/runtime.ts')).href)})`], {cwd: serviceRoot, env: snapshotEnv(snapshot), timeout: 30_000, maxBuffer: 4 * 1024 * 1024});
+  }
+  async function start(snapshot: DevelopmentSnapshot) {
+    if (stopping) throw new Error('Development startup stopped.');
+    if (!await free(opts.port)) throw new Error(`Port ${opts.port} is occupied; refusing to take over an unowned process.`);
+    expectedExit = false;
+    child = spawn(process.execPath, ['--import', path.join(snapshot.root, 'loader.mjs'), path.join(serviceRoot, 'bin/buildr.mjs'), 'web', '--target', opts.target, '--port', String(opts.port), '--no-open'], {cwd: serviceRoot, env: snapshotEnv(snapshot), stdio: 'inherit'});
+    const started = child;
+    let starting = true;
+    let startupError: Error | undefined;
+    started.once('error', error => {startupError = error;});
+    started.once('exit', () => {if (child === started && !starting && !expectedExit && !stopping) queue?.request('host-exit');});
+    const deadline = Date.now() + 45_000;
+    while (Date.now() < deadline && !stopping) {
+      if (startupError) throw startupError;
+      if (started.exitCode !== null || started.signalCode !== null) throw new Error(`development_host_exited: ${started.exitCode ?? started.signalCode}`);
+      const current = read<Instance>(instanceFile);
+      if (current && current.pid === started.pid) {
+        await observe(current); owned = current;
+        if (current.url !== hostUrl) throw new Error('development_port_changed; refusing a fallback address');
+        const page = await fetch(hostUrl, {signal: AbortSignal.timeout(5000)});
+        if (!page.ok || !(await page.text()).includes('/@vite/client')) throw new Error('development_source_page_not_ready');
+        status.current = snapshot.id; starting = false; return;
+      }
+      await delay(100);
+    }
+    throw new Error('development_host_readiness_timeout');
+  }
+  async function update(changes: Set<string>, current: () => boolean) {
+    if (fs.existsSync(paths.activation)) {paused = true; publish('suspended'); return;}
+    await withDevelopmentUpdate(serviceRoot, async () => {
+      if (stopping || !current()) return;
+      if (changes.has('host-exit')) {
+        if (++crashRestarts > 2) {publish('failed', 'development_host_restart_limit; fix the source to retry'); return;}
+      } else crashRestarts = 0;
+      publish('preparing');
+      assertDevelopmentDependencies([serviceRoot, agentRoot, path.resolve(serviceRoot, '../buildr-web'), path.resolve(serviceRoot, '../buildr-harness-web')]);
+      if (changes.has('harness') || !previous) {
+        const output = await command(path.join(serviceRoot, 'tools/development/dev-harness-update.ts'), [dataRoot]);
+        const line = output.trim().split('\n').at(-1); status.harness = line ? JSON.parse(line) : null;
+      }
+      const candidate = createDevelopmentSnapshot(serviceRoot);
+      status.target = candidate.id;
+      if (previous?.id === candidate.id && owned && alive(owned.pid) && !changes.has('host-exit') && !changes.has('resume')) {publish('ready'); return;}
+      await check(candidate);
+      if (!current() || stopping) return;
+      publish('switching');
+      const lastGood = previous?.id;
+      previous = await replaceDevelopmentHost(candidate, previous, {check: async () => {}, stop: stopHost, start, report: (error, restored) => publish(restored ? 'restored' : 'recovery-failed', String((error as Error).message))});
+      pruneDevelopmentSnapshots(serviceRoot, new Set([previous.id, ...(lastGood ? [lastGood] : [])]));
+      if (previous.id === candidate.id) publish('ready');
+    }, {stopped: () => stopping});
+  }
+  const failed = (error: unknown) => {
+    if ((error as Error).message === 'development_activation_in_progress') {paused = true; publish('suspended');}
+    else publish('failed', (error as Error).message);
+  };
+  let resolveStop: () => void;
+  const stopped = new Promise<void>(resolve => {resolveStop = resolve;});
+  const signal = () => {stopping = true; resolveStop();};
+  process.once('SIGINT', signal); process.once('SIGTERM', signal);
+  let observer: NodeJS.Timeout | undefined;
+  try {
+    // Prepare DTOs/package before freezing code. No first-run frontend production
+    // build is needed to extract a session: the host now renders source directly.
+    queue = new DevelopmentUpdates(update, failed);
+    await update(new Set(['initial']), () => !stopping);
+    for (const [root, kind] of [[path.join(serviceRoot, 'src'), 'host'], [path.join(serviceRoot, 'bin'), 'host'], [path.join(agentRoot, 'src'), 'harness'], [path.join(agentRoot, 'tools'), 'harness']] as const) {
+      watchers.push(fs.watch(root, {recursive: true}, () => queue!.request(kind)));
+    }
+    for (const root of [serviceRoot, agentRoot, path.resolve(serviceRoot, '../buildr-web'), path.resolve(serviceRoot, '../buildr-harness-web')]) {
+      watchers.push(fs.watch(root, (_event, filename) => {
+        if (['package.json', 'package-lock.json', 'tsconfig.json'].includes(String(filename))) queue!.request('harness');
+      }));
+    }
+    observer = setInterval(() => {
+      if (fs.existsSync(paths.activation)) {if (!paused) {paused = true; publish('suspended');}}
+      else if (paused) {paused = false; queue!.request('resume');}
+    }, 500);
+    console.log(`Buildr dev: ${hostUrl} (same-origin source + API + HMR)`);
+    if (opts.open) {
+      const executable = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
+      const browser = spawn(executable, process.platform === 'win32' ? ['/c', 'start', '', hostUrl] : [hostUrl], {stdio: 'ignore'}); browser.once('error', () => {}); browser.unref();
+    }
+    await stopped;
+  } finally {
+    stopping = true;
+    process.removeListener('SIGINT', signal); process.removeListener('SIGTERM', signal);
+    if (observer) clearInterval(observer);
+    for (const watcher of watchers) watcher.close();
+    await queue?.close();
+    // Formal activation owns replacements while its lock exists; do not stop
+    // its successor, or a different process merely sharing our previous port.
+    const current = read<Instance>(instanceFile);
+    try {
+      if ((owned && current?.pid === owned.pid || child && !current) && !fs.existsSync(paths.activation)) await stopHost();
+      publish('stopped');
+    } finally {releaseExclusiveFileLock(sessionLock);}
+  }
 }
-
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
-  runDevelopmentLive(process.argv.slice(2)).catch(error => {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 1;
-  });
-}
+if (process.argv[1] && path.resolve(process.argv[1]) === import.meta.filename) runDevelopmentLive(process.argv.slice(2)).catch(error => {console.error(error.message); process.exitCode = 1;});

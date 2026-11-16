@@ -10,7 +10,7 @@ import {inspectDistributionEvidence} from './distribution-evidence.ts';
 const execute=promisify(execFile);
 export async function main(args:string[]){
   if(['--help','-h','help'].includes(args[0]??'')){
-    console.log('Buildr Harness\n用法：buildr-harness web|activate|launcher install|status|uninstall|distribution-check\n--profile released|development  --data-root <绝对目录>  --port <端口>  --no-open\n独立网页默认端口：development 9519，released 9518；Development入口不变。\n普通 web 复用已有后台；activate 才显式采用候选。关闭或卸载入口不删除共享历史与账号。\nlauncher 使用 macOS .app 或 Windows .lnk；支持状态与许可需分别验收。\ndistribution-check --json 只读核对当前安装包，不授予发布或模型使用权。');
+    console.log('Buildr Harness\n用法：buildr-harness web|activate|launcher install|status|uninstall|distribution-check\n--profile released|development  --data-root <绝对目录>  --port <端口>  --no-open  --live（仅开发源码网页）\n独立网页默认端口：development 9519，released 9518；Development入口不变。\n普通 web 复用已有后台；activate 才显式采用候选。关闭或卸载入口不删除共享历史与账号。\nlauncher 使用 macOS .app 或 Windows .lnk；支持状态与许可需分别验收。\ndistribution-check --json 只读核对当前安装包，不授予发布或模型使用权。');
     return;
   }
   if(args[0]==='--version'){
@@ -19,7 +19,7 @@ export async function main(args:string[]){
   }
   const command=args.shift()??'web',flags=new Map<string,string|boolean>();
   const action=command==='launcher'?args.shift():undefined;
-  for(let index=0;index<args.length;index++){const name=args[index]!;if(['--no-open','--json'].includes(name)){flags.set(name,true);continue;}if(!['--data-root','--profile','--port','--target','--launcher-binding'].includes(name)||!args[index+1]||args[index+1]!.startsWith('--'))throw new Error('参数无效：'+name);flags.set(name,args[++index]!);}
+  for(let index=0;index<args.length;index++){const name=args[index]!;if(['--no-open','--json','--live'].includes(name)){flags.set(name,true);continue;}if(!['--data-root','--profile','--port','--target','--launcher-binding'].includes(name)||!args[index+1]||args[index+1]!.startsWith('--'))throw new Error('参数无效：'+name);flags.set(name,args[++index]!);}
   if(!['web','activate','launcher','distribution-check'].includes(command))throw new Error('用法：buildr-harness web|activate|launcher install|status|uninstall|distribution-check [--profile released|development] [--data-root <目录>] [--no-open]');
   if(command==='distribution-check'){
     if([...flags.keys()].some(key=>key!=='--json'))throw new Error('发行检查只读取当前安装包，不接受其他产品或数据域参数。');
@@ -34,6 +34,7 @@ export async function main(args:string[]){
   let profile=flags.get('--profile')??'released',dataRoot=flags.get('--data-root') as string|undefined;
   if(flags.has('--launcher-binding')){if(command!=='web'||flags.size!==1)throw new Error('启动器绑定不能混入目标覆盖参数。');const binding=verifyHarnessLauncherFile(String(flags.get('--launcher-binding')),process.argv[1]!);profile=binding.profile;dataRoot=binding.dataRoot;}
   if(!['released','development'].includes(String(profile)))throw new Error('配置域必须为 released 或 development。');
+  if(flags.has('--live')&&(command!=='web'||profile!=='development'))throw new Error('--live 只用于 development profile 的源码网页入口。');
   const domain=resolveHarnessProfile({productId:'buildr-harness',channel:profile==='development'?'development':'npm',runtimeRole:profile==='development'?'development':'host'},{dataRoot});
   if(command==='launcher'){
     const defaultTarget=process.platform==='win32'
@@ -45,14 +46,28 @@ export async function main(args:string[]){
   }
   if(command==='activate'){const runtime=await prepareAgentRuntimeAsync({dataRoot:domain.dataRoot});console.log(JSON.stringify(await activateAgentRuntime({dataRoot:domain.dataRoot,profileId:domain.profile,runtime})));return;}
   const port=harnessWebPort(profile as 'released'|'development',flags.has('--port')?Number(flags.get('--port')):undefined);
+  let developmentRoot:string|undefined;
+  if(flags.has('--live')){
+    developmentRoot=fs.realpathSync(path.resolve(import.meta.dirname,'../../buildr-harness-web'));
+    if(JSON.parse(fs.readFileSync(path.join(developmentRoot,'package.json'),'utf8')).name!=='@buildr-ai/buildr-harness-web'
+      ||!fs.existsSync(path.join(developmentRoot,'src'))||!fs.existsSync(path.join(developmentRoot,'tools/dev-server.mjs'))
+      ||!fs.existsSync(path.resolve(import.meta.dirname,'../build/harness-web-dist/index.html')))
+      throw new Error('源码网页需要已准备的产品检出目录和静态回退产物，请先执行项目准备。');
+    // Explicit source mode must not silently reuse an older core that cannot
+    // install its renderer. Adopt compatibly; existing executions keep their owner.
+    const runtime=await prepareAgentRuntimeAsync({dataRoot:domain.dataRoot});
+    await activateAgentRuntime({dataRoot:domain.dataRoot,profileId:domain.profile,runtime});
+  }
   const connection=await connectHarnessProcess({dataRoot:domain.dataRoot,profileId:domain.profile,sourceId:'harness-local',caller:{kind:'first-party-user',product:'buildr-harness'}});
   try {
     const current=await connection.web.status();
     const currentPort=current.origin?Number(new URL(current.origin).port):undefined;
     const ready=current.ready&&current.endpointId&&currentPort&&currentPort!==port
       ?await connection.web.rebind({expectedEndpointId:current.endpointId,expectedPort:currentPort,expectedGeneration:current.generation,port})
-      :await connection.web.enable({port});
+      :await connection.web.enable({port,...(flags.has('--live')?{developmentRoot}: {})});
+    if(flags.has('--live')&&currentPort&&currentPort!==port)await connection.web.enable({developmentRoot});
     if(!ready.ready)throw new Error('Harness 独立网页尚未就绪。');
+    if(flags.has('--live')&&(await connection.web.status()).mode!=='live')throw new Error('Harness 开发网页未确认启用；静态页面与原执行保留。');
     if(!flags.has('--no-open')&&process.env.BUILDR_LAUNCHER_NO_OPEN!=='1'){
       const login=await connection.web.login();
       try{

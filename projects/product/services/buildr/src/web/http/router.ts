@@ -52,6 +52,7 @@ export function createLocalWorkspaceRequestRouter({
   submitTaskRead,
   submitTaskWrite,
   staticRoot,
+  developmentWebs = () => null,
 }: any) {
   const validateRequest = (id: any, value: any) => validateBuildrWebHttp(buildrWebOperation(id).requestSchemaId, value, id);
   const workspaceAppRoute = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/codex|/code(?:/(?:explorer|source-control))?|/overview|/workspace-overview|/connections|/connection-skills|/settings|/knowledge/(?:project|service)/[A-Za-z0-9][A-Za-z0-9._-]*|/skills(?:/[A-Za-z0-9%][A-Za-z0-9%._-]*)?|/repositories(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?|/articles(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/${taskIdPattern})?(?:/edit)?)?|/tasks(?:/${taskIdPattern}(?:/prototypes|/document|/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${taskIdPattern})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?)?/?$`);
@@ -79,6 +80,13 @@ export function createLocalWorkspaceRequestRouter({
       const cookie=String(request.headers.cookie||'').split(';').map((value:string)=>value.trim()).find((value:string)=>value.startsWith('buildr-frame='));
       if(cookie?.slice('buildr-frame='.length)!==sessionToken)throw Object.assign(new Error('Harness 页面会话已失效。'),{code:'session_forbidden',status:403});
       assertReadRequest({...request,headers:{...request.headers,'x-buildr-session':sessionToken}},trustedOrigin,sessionToken);
+      const development = developmentWebs();
+      if (development) {
+        response.setHeader('set-cookie', imageSessionCookie(sessionToken));
+        await development.harness.handle(request, response, {document: pathname === '/harness/' || pathname === '/harness/index.html' || pathname === '/harness/mermaid-renderer.html',
+          entry: pathname.endsWith('/mermaid-renderer.html') ? 'mermaid-renderer.html' : 'index.html', frame: true});
+        return;
+      }
       if(pathname==='/harness/'||pathname==='/harness/index.html'){
         const html=(await readFile(path.join(harnessWebRoot(),'index.html'),'utf8')).replace('</head>',`<meta name="buildr-session" content="${sessionToken}"><meta name="buildr-web-profile" content="development-harness"></head>`);
         response.setHeader('set-cookie',imageSessionCookie(sessionToken));
@@ -89,10 +97,22 @@ export function createLocalWorkspaceRequestRouter({
     }
     if (request.method === 'GET' && (pathname === '/' || workspaceAppRoute.test(pathname))) {
       response.setHeader('set-cookie', [imageSessionCookie(sessionToken),`buildr-frame=${sessionToken}; Path=/harness/; HttpOnly; SameSite=Strict`]);
+      if (developmentWebs()) { await developmentWebs().web.handle(request, response, {document: true}); return; }
       textResponse(response, 200, injectedIndexHtml(sessionToken, previewIdentity, webProfile, staticRoot), 'text/html; charset=utf-8');
       return;
     }
+    if (request.method === 'GET' && !pathname.startsWith('/api/') && developmentWebs()) {
+      await developmentWebs().web.handle(request, response, {document: pathname === '/mermaid-renderer.html', entry: 'mermaid-renderer.html'}); return;
+    }
     if (request.method === 'GET' && !pathname.startsWith('/api/') && await serveDistAsset(response, pathname, staticRoot, request)) return;
+    if (request.method === 'GET' && pathname === '/api/v1/development/status' && developmentWebs()) {
+      assertReadRequest(request, trustedOrigin, sessionToken);
+      let update: unknown = null;
+      if (process.env.BUILDR_DEV_STATUS_FILE) {
+        try { update = JSON.parse(await readFile(process.env.BUILDR_DEV_STATUS_FILE, 'utf8')); } catch { /* observation may race the next atomic status publish */ }
+      }
+      jsonResponse(response, 200, {mode: 'live', pid: process.pid, hostSnapshot: process.env.BUILDR_DEV_SNAPSHOT_ID ?? null, update}); return;
+    }
     if (request.method === 'GET' && pathname === '/api/v1/health') {
       if (request.headers['x-buildr-instance'] !== healthSecret) {
         jsonResponse(response, 403, { error: { code: 'instance_forbidden', message: 'Buildr instance secret 无效。' } });

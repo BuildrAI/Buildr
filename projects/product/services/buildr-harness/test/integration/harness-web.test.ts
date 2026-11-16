@@ -86,3 +86,49 @@ test('loopback endpoint is explicit, stable across generation handoff, keeps old
   assert.equal((await b.resume()).origin,newOrigin);
 
 });
+
+test('development source page keeps ticket authentication and never needs an execution connection',async t=>{
+  const dataRoot=fs.mkdtempSync(path.join(os.tmpdir(),'harness-live-page-')),staticRoot=path.join(dataRoot,'static'),sourceRoot=path.join(dataRoot,'source');
+  fs.mkdirSync(staticRoot);fs.writeFileSync(path.join(staticRoot,'index.html'),'<html><head></head><body>static</body></html>');
+  fs.mkdirSync(path.join(sourceRoot,'src'),{recursive:true});fs.mkdirSync(path.join(sourceRoot,'tools'));
+  fs.writeFileSync(path.join(sourceRoot,'package.json'),JSON.stringify({name:'@buildr-ai/buildr-harness-web',type:'module'}));
+  fs.writeFileSync(path.join(sourceRoot,'vite.config.ts'),'export default {};');
+  fs.writeFileSync(path.join(sourceRoot,'index.html'),'<html><head></head><body><script type="module" src="/src/main.ts"></script></body></html>');
+  fs.writeFileSync(path.join(sourceRoot,'src/main.ts'),'export const value:number=1;');
+  fs.symlinkSync(path.resolve(import.meta.dirname,'../../../buildr-harness-web/tools/dev-server.mjs'),path.join(sourceRoot,'tools/dev-server.mjs'));
+  let connects=0;
+  const options={dataRoot,staticRoot,profileId:'development',ownsListener:()=>true,connect:async()=>{connects++;throw new Error('execution must remain untouched');}};
+  const endpoint=new HarnessWebEndpoint({...options,instanceId:'live-a',generation:'a'});
+  let successor:HarnessWebEndpoint|undefined;
+  t.after(async()=>{await endpoint.close();await successor?.close();fs.rmSync(dataRoot,{recursive:true,force:true});});
+  const enabled=await endpoint.enable({developmentRoot:sourceRoot}),origin=enabled.origin!;
+  assert.equal((await fetch(origin+'/src/main.ts')).status,403);
+  const login=async()=>{
+    const ticket=await endpoint.login();
+    const response=await fetch(origin+'/session/ticket',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({ticket:new URL(ticket.url).hash.slice('#ticket='.length)})});
+    assert.equal(response.status,200);return response.headers.get('set-cookie')!.split(';')[0]!;
+  };
+  const cookies=await Promise.all([login(),login()]);
+  const pages=await Promise.all(cookies.map(async cookie=>{const response=await fetch(origin+'/',{headers:{cookie}});assert.equal(response.status,200);return response.text();}));
+  pages.forEach((html,index)=>{assert.match(html,/\/@vite\/client/);assert.ok(html.includes(cookies[index]!.split('=')[1]!));assert.ok(!html.includes(cookies[1-index]!.split('=')[1]!),'one page cannot receive another session');});
+  assert.equal((await fetch(origin+'/src/main.ts?t=1',{headers:{cookie:cookies[0]!}})).status,200);
+  assert.equal((await fetch(origin+'/src/main.ts',{headers:{cookie:cookies[0]!,origin:'https://foreign.invalid'}})).status,403);
+  await endpoint.releaseListener();
+  successor=new HarnessWebEndpoint({...options,instanceId:'live-b',generation:'b'});
+  assert.equal((await successor.resume()).origin,origin);
+  const recovered=await fetch(origin+'/',{headers:{cookie:cookies[0]!}});assert.equal(recovered.status,200);assert.match(await recovered.text(),/\/@vite\/client/);
+  assert.equal((await fetch(origin+'/?ticket=not-allowed',{headers:{cookie:cookies[0]!}})).status,400);
+  const portProbe=createServer();await new Promise<void>(resolve=>portProbe.listen(0,'127.0.0.1',resolve));const port=(portProbe.address() as {port:number}).port;await new Promise<void>(resolve=>portProbe.close(()=>resolve()));
+  const observed=successor.status();
+  await successor.rebind({expectedEndpointId:observed.endpointId!,expectedPort:Number(new URL(origin).port),expectedGeneration:'b',port});
+  const nextOrigin=`http://127.0.0.1:${port}`,nextTicket=await successor.login();
+  const redeemed=await fetch(nextOrigin+'/session/ticket',{method:'POST',headers:{origin:nextOrigin,'content-type':'application/json'},body:JSON.stringify({ticket:new URL(nextTicket.url).hash.slice('#ticket='.length)})});
+  const nextCookie=redeemed.headers.get('set-cookie')!.split(';')[0]!;
+  const client=await(await fetch(nextOrigin+'/@vite/client',{headers:{cookie:nextCookie}})).text();
+  const wsToken=/const wsToken = "([^"]+)"/.exec(client)![1]!;
+  const upgraded=await new Promise<boolean>(resolve=>{const req=httpRequest(nextOrigin+'/__hmr?token='+wsToken,{headers:{origin:nextOrigin,cookie:nextCookie,connection:'Upgrade',upgrade:'websocket','sec-websocket-version':'13','sec-websocket-protocol':'vite-hmr','sec-websocket-key':'dGhlIHNhbXBsZSBub25jZQ=='}});req.setTimeout(2000,()=>{req.destroy();resolve(false);});req.on('upgrade',(_response,socket)=>{socket.destroy();resolve(true);});req.on('error',()=>resolve(false));req.on('response',response=>{response.resume();resolve(false);});req.end();});
+  assert.equal(upgraded,true,'Vite upgrades follow a rebound listener, not the retired server');
+  assert.equal(connects,0,'frontend activation and handoff do not start or stop model work');
+  const released=new HarnessWebEndpoint({...options,dataRoot:path.join(dataRoot,'released'),profileId:'released',instanceId:'released',generation:'r'});
+  await assert.rejects(released.enable({developmentRoot:sourceRoot}),{code:'agent_web_development_forbidden'});await released.close();
+});

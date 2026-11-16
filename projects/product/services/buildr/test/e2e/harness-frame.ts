@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import {buildWebDist} from '../../tools/build/web-dist.ts';
 import {createRuntime as createFixture} from '../helpers/runtime-harness.ts';
 import {createRuntime,runtimeProvide} from '../../src/bootstrap/runtime.ts';
 import {WORKSPACE_APPLICATION} from '../../src/modules/workspace/module.ts';
@@ -12,7 +13,8 @@ const work=path.join(root,'workspace');
 const fixture=createFixture();fixture.initializeWorkspace({targetRoot:work,name:'嵌套网页验收',description:'隔离工程现场',profile:'team',agent:null});
 fixture.createTask(work,{taskId:'frame-task',title:'框内关联任务',intent:'核对工程关联归属',status:'active',projects:[],services:[],changes:[]});
 const runtime=createRuntime(),workspace=runtimeProvide(runtime,WORKSPACE_APPLICATION);
-const serverOptions={ensureRegisteredTarget:workspace.ensureRegisteredTarget,resolveRegisteredWorkspace:workspace.resolveRegisteredWorkspace,targetRoot:work,webProfile:{profile:'development'},staticRoot:process.env.BUILDR_BROWSER_WEB_DIST_ROOT??path.resolve(import.meta.dirname,'../../web-dist')};
+const staticRoot=process.env.BUILDR_BROWSER_WEB_DIST_ROOT??buildWebDist(path.join(root,'production-web-dist'));
+const serverOptions={ensureRegisteredTarget:workspace.ensureRegisteredTarget,resolveRegisteredWorkspace:workspace.resolveRegisteredWorkspace,targetRoot:work,webProfile:{profile:'development'},staticRoot};
 let activeApp=createLocalWorkspaceServer(runtime,serverOptions);
 const browser=await launchTestBrowser();
 try{

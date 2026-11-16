@@ -73,6 +73,22 @@ async function healthy(record: ProcessRecord, options: AgentProcessConnectionOpt
   }
   catch (error) { if (error instanceof AgentServiceError && error.code === 'agent_process_identity_mismatch') throw error; return false; }
 }
+/** Observe an existing coordinator without preparing, launching, adopting or
+ * reconnecting it. An unknown activation outcome must not replay activation. */
+export async function observeAgentProcess(input: {dataRoot: string; profileId: string}): Promise<AgentProcessStatus | undefined> {
+  const record = readProcessRecord(input.dataRoot);
+  if (!record) return;
+  matches(record.identity, input);
+  if (!live(record.identity.pid)) return;
+  const status: AgentProcessStatus = await request(record.origin, record.token, '/status', undefined, AbortSignal.timeout(3000));
+  matches(status.identity, input);
+  const current = readProcessRecord(input.dataRoot);
+  if (status.identity.instanceId !== record.identity.instanceId || status.identity.generation !== record.identity.generation
+    || status.identity.pid !== record.identity.pid || current?.identity.instanceId !== record.identity.instanceId) {
+    throw new AgentServiceError('agent_process_identity_mismatch', '后台观察期间身份发生变化，未重发更新。', 409);
+  }
+  return status;
+}
 async function claimStartup(dataRoot: string, signal?: AbortSignal): Promise<ReturnType<typeof claim>> {
   for (let i = 0; i < 200; i++) {
     signal?.throwIfAborted();
@@ -135,7 +151,7 @@ export interface AgentProcessConnection {
   scopeCatalog(): Promise<{scopes: Array<{key: string; ref: ExecutionScopeRef; authority: 'builtin' | 'registered' | 'offline'}>}>;
   /** First-party local directory registration; never accepts a programmatic bearer token. */
   directories: { preview(input:{conversationId:string;path:string}):Promise<{kind:string;content:string;truncated:boolean}>; list(): Promise<import('../application/directory-host.ts').HarnessDirectory[]>; register(path: string): Promise<import('../application/directory-host.ts').HarnessDirectory> };
-  web:{rebind(input:{expectedEndpointId:string;expectedPort:number;expectedGeneration:string;port:number}):Promise<import('./web-endpoint.ts').HarnessWebStatus>;restart(input:{expectedGeneration:string}):Promise<ReturnType<typeof import('../interfaces/http/runtime-status.ts').agentRuntimeStatus>>;status():Promise<import('./web-endpoint.ts').HarnessWebStatus>;enable(input?:{port?:number}):Promise<import('./web-endpoint.ts').HarnessWebStatus>;login():Promise<{url:string;expiresAt:number;endpointId:string}>};
+  web:{rebind(input:{expectedEndpointId:string;expectedPort:number;expectedGeneration:string;port:number}):Promise<import('./web-endpoint.ts').HarnessWebStatus>;restart(input:{expectedGeneration:string}):Promise<ReturnType<typeof import('../interfaces/http/runtime-status.ts').agentRuntimeStatus>>;status():Promise<import('./web-endpoint.ts').HarnessWebStatus>;enable(input?:{port?:number;developmentRoot?:string|null}):Promise<import('./web-endpoint.ts').HarnessWebStatus>;login():Promise<{url:string;expiresAt:number;endpointId:string}>};
   lifecycle: AgentLifecycleContract;
   /** Runtime unit this client ships; a different running unit is a version-alignment window. */
   runtime: AgentRuntimeUnit;

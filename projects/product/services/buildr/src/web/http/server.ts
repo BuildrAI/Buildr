@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
 import process from 'node:process';
+import path from 'node:path';
+import {pathToFileURL} from 'node:url';
 
 import { spawnBuildrWebRestartSuccessor } from '../application/restart-web-handoff.ts';
 import { createWebRestartControl } from '../application/restart-control.ts';
@@ -53,10 +55,14 @@ export function createLocalWorkspaceServer(runtime: any, {
   let routeRequest: any = null;
   let shutdownPromise: Promise<void> | null = null;
   let resourceShutdown: Promise<void> | null = null;
+  let developmentWebs: any = null;
 
   function closeResources(): Promise<void> {
     restartControl.dispose();
-    resourceShutdown ||= Promise.resolve().then(() => beforeShutdown?.());
+    resourceShutdown ||= Promise.resolve().then(async () => {
+      await developmentWebs?.close();
+      await beforeShutdown?.();
+    });
     return resourceShutdown;
   }
 
@@ -158,6 +164,7 @@ export function createLocalWorkspaceServer(runtime: any, {
     submitTaskRead,
     submitTaskWrite,
     staticRoot,
+    developmentWebs: () => developmentWebs,
   });
   let hostWasListening = false;
   server.once('listening', () => { hostWasListening = true; });
@@ -169,6 +176,12 @@ export function createLocalWorkspaceServer(runtime: any, {
 
   const ready: Promise<any> = (async () => {
     try {
+      if (process.env.BUILDR_DEV_LIVE === '1' && !previewIdentity
+        && productIdentity?.channel === 'development' && webProfile?.profile === 'development') {
+        const serviceRoot = path.resolve(import.meta.dirname, '../../..');
+        const {createDevelopmentWebs} = await import(pathToFileURL(path.join(serviceRoot, 'tools/development/dev-web.ts')).href);
+        developmentWebs = await createDevelopmentWebs({server, sessionToken, origin: () => origin, serviceRoot});
+      }
       await onReady?.();
     } catch (error) {
       await closeResources().catch(cleanupError => console.error('Buildr Web resource shutdown failed:', cleanupError));

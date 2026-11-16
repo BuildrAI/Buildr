@@ -203,3 +203,18 @@ test('local reads stay available while concurrent detail reads share a callback 
   assert.equal(attachments, initial + 4, 'a mutation still fails before dispatch when registration fails');
   assert.ok(!operations.includes('connections.check'));
 });
+
+test('observing an unknown runtime never creates a process, lock or prepared candidate',async t=>{
+  const {observeAgentProcess}=await import('../../src/index.ts');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'observe-only-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  assert.equal(await observeAgentProcess({dataRoot:root,profileId:'development'}),undefined);
+  assert.deepEqual(fs.readdirSync(root),[]);
+});
+
+
+test('invalid source web port fails before any runtime adoption or materialization',async t=>{
+  const {main}=await import('../../src/cli.ts');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'live-web-invalid-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  await assert.rejects(main(['web','--profile','development','--live','--data-root',root,'--port','70000','--no-open']));
+  assert.deepEqual(fs.readdirSync(root),[]);
+});

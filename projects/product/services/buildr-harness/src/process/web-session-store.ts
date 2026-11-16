@@ -6,7 +6,7 @@ import {AgentServiceError} from '../domain/agent-state.ts';
 export interface WebListenerIdentity {instanceId:string;generation:string;pid:number;released:boolean}
 interface Ticket {hash:string;expiresAt:number;origin:string;bundle:string}
 interface Session {hash:string;expiresAt:number;bundle:string}
-interface State {version:1;endpointId:string;revision:string;enabled:boolean;port:number;listener?:WebListenerIdentity;tickets:Ticket[];sessions:Session[]}
+interface State {version:1;endpointId:string;revision:string;enabled:boolean;port:number;developmentRoot?:string;listener?:WebListenerIdentity;tickets:Ticket[];sessions:Session[]}
 const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
 const fail=(code:string,message:string,status=409):never=>{throw new AgentServiceError(code,message,status);};
 /** Logical-service sessions survive compatible generations. Only hashes reach disk. */
@@ -18,6 +18,7 @@ export class HarnessWebSessions {
   read():State|undefined {
     const value=readPrivate<State>(this.filename);
     if(value&&(value.version!==1||typeof value.endpointId!=='string'||!value.endpointId||!Number.isInteger(value.port)||value.port<0||value.port>65535||typeof value.enabled!=='boolean'||!Array.isArray(value.tickets)||value.tickets.length>128||value.tickets.some(item=>!item||typeof item.hash!=='string'||!/^([a-f0-9]{64})$/.test(item.hash)||!Number.isFinite(item.expiresAt)||typeof item.origin!=='string'||typeof item.bundle!=='string')||!Array.isArray(value.sessions)||value.sessions.length>1024||value.sessions.some(item=>!item||typeof item.hash!=='string'||!/^([a-f0-9]{64})$/.test(item.hash)||!Number.isFinite(item.expiresAt)||typeof item.bundle!=='string')))fail('agent_web_state_invalid','网页服务记录不可识别，未覆盖。');
+    if(value?.developmentRoot!==undefined&&(typeof value.developmentRoot!=='string'||!path.isAbsolute(value.developmentRoot)))fail('agent_web_state_invalid','开发网页来源记录无效，未覆盖。');
     return value;
   }
   private mutate<T>(action:(state:State)=>T):T {
@@ -28,9 +29,9 @@ export class HarnessWebSessions {
       const result=action(state);state.revision=randomUUID();writePrivate(this.filename,state);return result;
     } finally {lock.release();}
   }
-  enable(port?:number):State {
+  enable(port?:number,developmentRoot?:string|null):State {
     if(port!==undefined&&(!Number.isInteger(port)||port<1||port>65535))fail('agent_web_port_invalid','网页端口无效。',400);
-    return this.mutate(state=>{if(port&&state.port&&port!==state.port)fail('agent_web_endpoint_changed','已存在稳定端点，不能另选端口。');state.enabled=true;if(port)state.port=port;return state;});
+    return this.mutate(state=>{if(port&&state.port&&port!==state.port)fail('agent_web_endpoint_changed','已存在稳定端点，不能另选端口。');state.enabled=true;if(port)state.port=port;if(developmentRoot!==undefined){if(developmentRoot===null)delete state.developmentRoot;else state.developmentRoot=developmentRoot;}return state;});
   }
   listening(identity:WebListenerIdentity,port:number):void {
     this.mutate(state=>{

@@ -3,6 +3,9 @@ import {createServer,type IncomingMessage,type Server,type ServerResponse} from 
 import type {Socket} from 'node:net';
 import {once} from 'node:events';
 import {randomBytes} from 'node:crypto';
+import path from 'node:path';
+import fs from 'node:fs';
+import {pathToFileURL} from 'node:url';
 import {HarnessWebSessions,type WebListenerIdentity} from './web-session-store.ts';
 import {HarnessWebAssets} from './web-assets.ts';
 import {AgentServiceError} from '../domain/agent-state.ts';
@@ -12,8 +15,8 @@ import {createProgrammaticHttpContribution} from '../interfaces/http/programmati
 import {eventStreamResponse} from '../interfaces/http/stream-response.ts';
 import type {AgentProcessConnection} from './client.ts';
 
-export interface HarnessWebStatus {enabled:boolean;ready:boolean;endpointId?:string;origin?:string;generation:string;diagnostic?:string}
-interface Options {dataRoot:string;generation:string;instanceId:string;staticRoot:string;runtimeDigest?:string;ownsListener():boolean;connect():Promise<AgentProcessConnection>}
+export interface HarnessWebStatus {enabled:boolean;ready:boolean;endpointId?:string;origin?:string;generation:string;diagnostic?:string;mode?:'live'|'static'}
+interface Options {dataRoot:string;profileId?:string;generation:string;instanceId:string;staticRoot:string;runtimeDigest?:string;ownsListener():boolean;connect():Promise<AgentProcessConnection>}
 /** A listener owned by the shared core, not a third resident host process. */
 export class HarnessWebEndpoint {
   private readonly options:Options;
@@ -27,11 +30,48 @@ export class HarnessWebEndpoint {
   private bundle?:string;
   private diagnostic?:string;
   private origin?:string;
+  private development?:{root:string;handle(req:IncomingMessage,res:ServerResponse,options?:{document?:boolean;entry?:string}):Promise<void>;close():Promise<void>};
+  private developmentWork:Promise<void>=Promise.resolve();
   private closed=false;
   private readonly identity:WebListenerIdentity;
   constructor(options:Options){this.options=options;this.sessions=new HarnessWebSessions(options.dataRoot);this.assets=new HarnessWebAssets(options.dataRoot);this.identity={instanceId:options.instanceId,generation:options.generation,pid:process.pid,released:false};}
-  status():HarnessWebStatus {const state=this.sessions.read();return {enabled:state?.enabled??false,ready:!!this.server?.listening&&state?.listener?.instanceId===this.options.instanceId&&state.listener.generation===this.options.generation&&!state.listener.released&&this.origin===`http://127.0.0.1:${state.port}`,endpointId:state?.endpointId,...(state?.port?{origin:`http://127.0.0.1:${state.port}`} :{}),generation:this.options.generation,...(this.diagnostic?{diagnostic:this.diagnostic}:{})};}
-  async enable(input:{port?:number}={}):Promise<HarnessWebStatus>{if(!this.options.ownsListener()||this.closed)throw new AgentServiceError('agent_web_not_coordinator','独立网页须由当前协调代次启用。',409);this.sessions.enable(input.port);return this.resume();}
+  status():HarnessWebStatus {const state=this.sessions.read();return {enabled:state?.enabled??false,ready:!!this.server?.listening&&state?.listener?.instanceId===this.options.instanceId&&state.listener.generation===this.options.generation&&!state.listener.released&&this.origin===`http://127.0.0.1:${state.port}`,endpointId:state?.endpointId,...(state?.port?{origin:`http://127.0.0.1:${state.port}`} :{}),generation:this.options.generation,...(this.diagnostic?{diagnostic:this.diagnostic}:{}),...(state?.developmentRoot?{mode:this.development?'live' as const:'static' as const}:{})};}
+  developmentEnabled():boolean{return Boolean(this.sessions.read()?.developmentRoot);}
+  async enable(input:{port?:number;developmentRoot?:string|null}={}):Promise<HarnessWebStatus>{
+    if(!this.options.ownsListener()||this.closed)throw new AgentServiceError('agent_web_not_coordinator','独立网页须由当前协调代次启用。',409);
+    if(input.developmentRoot!==undefined&&input.developmentRoot!==null)input={...input,developmentRoot:this.validateDevelopmentRoot(input.developmentRoot)};
+    this.sessions.enable(input.port,input.developmentRoot);
+    await this.resume();
+    if(this.server?.listening)try{await this.configureDevelopment(this.server);}catch(error){this.diagnostic='开发网页未采用，静态页面与原执行保留。';throw error;}
+    return this.status();
+  }
+  private validateDevelopmentRoot(root:string):string {
+    if(this.options.profileId!=='development'||typeof root!=='string'||!path.isAbsolute(root))throw new AgentServiceError('agent_web_development_forbidden','源码热更新只允许显式 development 入口。',403);
+    const real=fs.realpathSync(root);
+    if(JSON.parse(fs.readFileSync(path.join(real,'package.json'),'utf8')).name!=='@buildr-ai/buildr-harness-web'||!fs.statSync(path.join(real,'src')).isDirectory())throw new AgentServiceError('agent_web_development_invalid','Harness 网页开发源码身份不匹配。',409);
+    return real;
+  }
+  private configureDevelopment(server:Server,force=false):Promise<void> {
+    const operation=this.developmentWork.catch(()=>{}).then(()=>this.applyDevelopment(server,force));
+    this.developmentWork=operation;return operation;
+  }
+  private async applyDevelopment(server:Server,force:boolean):Promise<void> {
+    const root=this.sessions.read()?.developmentRoot;
+    if(root===this.development?.root&&!force)return;
+    if(!root){await this.development?.close();this.development=undefined;return;}
+    const real=this.validateDevelopmentRoot(root);
+    const previous=this.development;this.development=undefined;
+    // One upgrade handler per path. A configuration replacement may briefly
+    // fall back to static HTML, but must never double-upgrade the same socket.
+    await previous?.close();
+    // This source adapter is never imported by a static/released endpoint.
+    const {createDevelopmentWeb}=await import(pathToFileURL(path.join(real,'tools/dev-server.mjs')).href);
+    const candidate=await createDevelopmentWeb({root:real,server,authorize:(req:IncomingMessage)=>this.authorize(req),
+      inject:(html:string,req:IncomingMessage)=>html.replace('</head>',`<meta name="buildr-session" content="${this.authorize(req)}"><meta name="buildr-web-profile" content="harness-${this.sessions.read()!.endpointId}"></head>`)});
+    if(this.closed||!this.options.ownsListener()||this.sessions.read()?.developmentRoot!==root){await candidate.close();throw new AgentServiceError('agent_web_endpoint_changed','开发网页目标已变化，未采用旧候选。',409);}
+    this.development={...candidate,root:real};
+    this.diagnostic=undefined;
+  }
   resume():Promise<HarnessWebStatus>{
     if(this.starting)return this.starting;
     if(this.closed||!this.sessions.read()?.enabled||!this.options.ownsListener()||this.server?.listening)return Promise.resolve(this.status());
@@ -43,15 +83,18 @@ export class HarnessWebEndpoint {
       this.bundle=this.assets.install(this.options.staticRoot);
       const server=createServer((req,res)=>{void this.handle(req,res).catch(error=>this.error(res,error));});
       this.server=server;server.requestTimeout=10*60*1000;server.headersTimeout=15000;
+      let sourceDiagnostic:string|undefined;
+      try {await this.configureDevelopment(server);}catch{sourceDiagnostic='开发网页准备失败，静态页面与执行已保留。';}
       server.on('error',()=>{this.diagnostic='网页监听异常，尚未恢复就绪。';server.close();});
       server.on('connection',socket=>{this.sockets.add(socket);socket.once('close',()=>this.sockets.delete(socket));});
       server.listen(state.port,'127.0.0.1');await once(server,'listening');
       const address=server.address();if(!address||typeof address==='string')throw new Error('listener_address_missing');
       if(this.closed||!this.options.ownsListener())throw new AgentServiceError('agent_web_not_coordinator','网页监听期间协调身份已变化。',409);
-      this.origin=`http://127.0.0.1:${address.port}`;this.sessions.listening(this.identity,address.port);this.diagnostic=undefined;
+      this.origin=`http://127.0.0.1:${address.port}`;this.sessions.listening(this.identity,address.port);this.diagnostic=sourceDiagnostic;
       return this.status();
     }catch(error){
       if(this.server?.listening)this.server.close();this.server=undefined;
+      await this.development?.close();this.development=undefined;
       this.diagnostic=(error as {code?:string}).code==='EADDRINUSE'?'稳定网页端口被占用，未抢占或改用其他地址。':error instanceof AgentServiceError?error.message:'网页监听未确认就绪，未改变稳定地址。';
       throw new AgentServiceError('agent_web_not_ready',this.diagnostic,409);
     }
@@ -79,6 +122,8 @@ export class HarnessWebEndpoint {
       throw new AgentServiceError('agent_web_not_ready',(error as {code?:string}).code==='EADDRINUSE'?'目标网页端口被占用，原地址和执行均保留。':'新网页监听未确认，原地址和执行均保留。',409);
     }
     this.server=candidate;this.origin=`http://127.0.0.1:${input.port}`;this.diagnostic=undefined;
+    try {await this.configureDevelopment(candidate,true);}
+    catch {await this.development?.close();this.development=undefined;this.diagnostic='新地址已启用，但开发网页未恢复；静态页面与执行已保留。';}
     candidate.on('error',()=>{this.diagnostic='网页监听异常，尚未恢复就绪。';candidate.close();});
     previous.close();previous.closeAllConnections();
     return this.status();
@@ -90,7 +135,9 @@ export class HarnessWebEndpoint {
   /** Stop accepting on the stable address, without ending old requests or native work. */
   async releaseListener():Promise<void>{
     if(this.starting)await this.starting.catch(()=>{});
+    await this.developmentWork.catch(()=>{});
     const server=this.server;
+    await this.development?.close();this.development=undefined;
     if(server?.listening){server.close();server.closeIdleConnections();for(const stream of this.streams)stream.end();this.streams.clear();const deadline=setTimeout(()=>server.closeAllConnections(),1000);deadline.unref();await new Promise<void>(resolve=>setImmediate(resolve));if(server.listening)throw new AgentServiceError('agent_web_release_unknown','原网页监听释放未确认。',409);this.sessions.released(this.identity);}
     this.server=undefined;
   }
@@ -119,7 +166,7 @@ export class HarnessWebEndpoint {
   private async binary(req:IncomingMessage,limit:number):Promise<Buffer>{const chunks:Buffer[]=[];let size=0;for await(const value of req){const chunk=Buffer.from(value);size+=chunk.length;if(size>limit)throw new AgentServiceError('agent_web_input_too_large','材料超过限制。',413);chunks.push(chunk);}return Buffer.concat(chunks);}
   private async handle(req:IncomingMessage,res:ServerResponse):Promise<void>{
     this.fence(req);const url=new URL(req.url!,this.origin);
-    if(url.search&&!url.pathname.startsWith('/api/'))throw new AgentServiceError('agent_web_query_invalid','网页入口不接受登录 query 或未知查询。',400);
+    if(url.search&&!url.pathname.startsWith('/api/')&&(!this.development||url.pathname==='/'||url.pathname==='/index.html'))throw new AgentServiceError('agent_web_query_invalid','网页入口不接受登录 query 或未知查询。',400);
     // API queries are parsed below from the original URL; the public index never accepts secrets in query.
     if(req.method==='POST'&&url.pathname==='/session/ticket'){
       const input=await body(req,4096);this.fence(req);if(Object.keys(input).join()!=='ticket')throw new AgentServiceError('agent_web_ticket_invalid','票据参数无效。',400);
@@ -133,11 +180,16 @@ export class HarnessWebEndpoint {
         const nonce=randomBytes(18).toString('base64');
         this.html(res,`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Buildr Harness</title><p id="status">请从 Buildr Harness 启动器打开；已有草稿仍保留。</p><script nonce="${nonce}">async function redeem(){const value=new URLSearchParams(location.hash.slice(1)).get('ticket');history.replaceState(null,'','/');if(!value)return;try{const response=await fetch('/session/ticket',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ticket:value})});if(response.ok)location.replace('/');else document.getElementById('status').textContent='登录票据已失效，请重新从启动器打开；草稿仍保留。';}catch{document.getElementById('status').textContent='网页连接未确认，请核对启动器状态；草稿仍保留。';}}addEventListener('hashchange',redeem);void redeem();</script></html>`,nonce);return;
       }
+      if(this.development){await this.development.handle(req,res,{document:true});return;}
       const html=this.assets.read(this.bundle!,'index.html').bytes.toString('utf8').replaceAll('./assets/',`/bundles/${this.bundle}/assets/`).replace('</head>',`<meta name="buildr-session" content="${token}"><meta name="buildr-web-profile" content="harness-${this.sessions.read()!.endpointId}"></head>`);
       this.html(res,html);return;
     }
     const bundle=url.pathname.match(/^\/bundles\/([a-f0-9]{64})\/(.+)$/);
     if(req.method==='GET'&&bundle){this.authorize(req);const file=this.assets.read(bundle[1]!,decodeURIComponent(bundle[2]!));res.writeHead(200,{'content-type':file.mimeType,'cache-control':'private, max-age=86400, immutable','x-content-type-options':'nosniff'});res.end(file.bytes);return;}
+    if(req.method==='GET'&&!url.pathname.startsWith('/api/')&&this.development){
+      this.authorize(req);
+      await this.development.handle(req,res,{document:url.pathname==='/mermaid-renderer.html',entry:'mermaid-renderer.html'});return;
+    }
     if(req.method==='GET'&&url.pathname==='/mermaid-renderer.html'){this.authorize(req);const file=this.assets.read(this.bundle!,'mermaid-renderer.html');this.html(res,file.bytes.toString('utf8').replaceAll('./assets/',`/bundles/${this.bundle}/assets/`));return;}
     const connection=await this.options.connect();
     if(url.pathname==='/api/v1/harness/scopes'&&req.method==='GET'){this.authorize(req);json(res,200,await connection.scopeCatalog());return;}
