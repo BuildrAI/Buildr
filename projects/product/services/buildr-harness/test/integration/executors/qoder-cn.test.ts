@@ -55,7 +55,7 @@ test('Qoder CN reports a missing login instead of a generic failure', { timeout:
 test('Qoder CN appends a Chinese tool-progress instruction to the native system prompt', { timeout: 15000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-cn-language-')); let runtime: AgentRuntime | undefined;
   try {
-    runtime = await createQoderCnExecutor().open({ connectionId: 'qoder-cn', configRoot: join(root, 'config'), executable: await program(root), environment: { PATH: process.env.PATH ?? '' } });
+    runtime = await createQoderCnExecutor().open({ connectionId: 'qoder-cn', configRoot: join(root, 'config'), executable: await program(root), interaction:{version:'buildr-interaction/v1',instructions:'CUSTOM_LITERAL_{{cwd}}'}, environment: { PATH: process.env.PATH ?? '' } });
     await runtime.inspectAccount();
     const launched = await records(join(root, 'config', 'qoder-cn-config', 'fixture-launch.jsonl'));
     const acp = launched.find(entry => Array.isArray(entry.args) && (entry.args as string[]).includes('--acp'));
@@ -67,6 +67,7 @@ test('Qoder CN appends a Chinese tool-progress instruction to the native system 
     const appendedAt = args.indexOf('--append-system-prompt');
     assert.notEqual(appendedAt, -1);
     assert.match(args[appendedAt + 1]!, /进展说明使用简体中文.*工具返回后.*保留原文/);
+    assert.ok(args[appendedAt + 1]!.startsWith('CUSTOM_LITERAL_{{cwd}}'));
     assert.ok(!args.includes('--system-prompt'), 'keep the native system prompt');
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });

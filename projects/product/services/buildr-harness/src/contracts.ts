@@ -1,3 +1,6 @@
+export interface HarnessSystemPrompt { name:string; revision:string; enabled:boolean; text:string; defaultText:string }
+export interface HarnessSystemPromptInput { expectedRevision:string; enabled:boolean; text:string }
+export interface HarnessSystemPromptSnapshot { revision:string; enabled:boolean; text:string; delivery:'native'|'unsupported' }
 export * from './participation-contracts.ts';
 import type { ParticipationObservation } from './participation-contracts.ts';
 import type { ModelProvider } from './model-access/contracts.ts';
@@ -9,6 +12,7 @@ export type ContextRef = { id: string; data?: Record<string, unknown> };
 export type ExecutionRef = { id: string; data?: Record<string, unknown> };
 
 export interface AgentCapabilities {
+  systemPrompt?: { append: boolean };
   /** Adapter can safely end a question-only wait and reuse its native context. */
   endQuestionWait?: boolean;
   /** Supported Buildr contract, not a claim about model compliance. */
@@ -273,6 +277,7 @@ export class ExecutorObservationLost extends Error {
   }
 }
 export interface AgentRuntime {
+  systemPrompt?: HarnessSystemPromptSnapshot;
   /** Exact adapter configuration metadata; absent means not observed, never inferred. */
   readonly participationInstruction?: import('./participation-contracts.ts').ParticipationMatch;
   /** True only after owned native controls have exited; independent command results stay unknown. */
@@ -512,6 +517,7 @@ export interface ConversationEntry {
   createdAt: string;
 }
 export interface RunView {
+  systemPrompt?: HarnessSystemPromptSnapshot;
   /** Read-only prompt provenance for a run admitted from an explicit continuation. */
   continuedFrom?: {
     runId: string;

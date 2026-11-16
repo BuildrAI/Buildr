@@ -37,3 +37,21 @@ test('DSH registers the common instruction as an additional native section, not 
   assert.equal(sections[0].interpolate, false);
   assert.notEqual(sections[0].complete, true);
 });
+
+import {coreInteractionPolicy,defaultSystemPrompt,composeInteractionPolicy} from '../../src/domain/interaction-policy.ts';
+import {DEFAULT_SYSTEM_PROMPT_TEXT} from '../../src/domain/system-prompt.ts';
+import {createClaudeExecutor} from '../../src/executors/claude/index.ts';
+import {createQoderCnExecutor} from '../../src/executors/qoder-cn/index.ts';
+import {createAntigravityExecutor} from '../../src/executors/antigravity/index.ts';
+
+test('the default editable prompt appends without replacing the core or losing completeness requirements',()=>{
+  assert.ok(interactionPolicy.instructions.startsWith(coreInteractionPolicy.instructions));
+  assert.equal(interactionPolicy.instructions.split(DEFAULT_SYSTEM_PROMPT_TEXT).length,2);
+  assert.equal(composeInteractionPolicy(coreInteractionPolicy,{...defaultSystemPrompt,enabled:false}).instructions,coreInteractionPolicy.instructions);
+  const literal='Literal {{cwd}} and <instructions> remain user-authored text';
+  assert.ok(composeInteractionPolicy(coreInteractionPolicy,{...defaultSystemPrompt,text:literal}).instructions.endsWith(literal));
+});
+
+test('all six built-in adapters declare native append support; handshake may narrow runtime support',()=>{
+  for(const create of [createCodexExecutor,createDshExecutor,createQoderExecutor,createClaudeExecutor,createQoderCnExecutor,createAntigravityExecutor])assert.equal(create().descriptor.capabilities.systemPrompt?.append,true);
+});

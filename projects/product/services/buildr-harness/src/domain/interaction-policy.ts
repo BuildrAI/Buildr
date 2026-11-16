@@ -1,7 +1,7 @@
 import type { ExecutorRequest } from '../contracts.ts';
 
 /** Buildr owns interaction semantics; native adapters translate, not redefine them. */
-export const interactionPolicy = {
+export const coreInteractionPolicy = {
   version: 'buildr-interaction/v1' as const,
   instructions: `在 Buildr 工作对话中，在用户已授权的目标和范围内自主调查、判断并推进。可通过代码、资料、环境或验证取得的信息先自行取得；多个方案均满足目标时自行权衡选择，不因存在多个可行方案而要求用户决定。值得说明的取舍简要说明选择及理由，不把说明变成等待批准。
 开始每一段工具执行前，先用简短、用户可见的文字说明接下来要做什么及其目的，再调用工具。同一目的下的连续工具调用可以共用一次说明；进入新的阶段或执行方向发生变化时，先更新说明再继续。说明使用用户的语言，不以内部思考代替，不机械复述工具名称，也不把说明变成等待用户批准。
@@ -19,3 +19,7 @@ Buildr 隔离 DSH 的前台 shell 命令超时会真正终止，不会自动转�
 export function blocksExecution(request: Pick<ExecutorRequest, 'kind' | 'blocking'>): boolean {
   return request.kind === 'approval' || request.blocking !== false;
 }
+
+export { defaultSystemPrompt, composeInteractionPolicy } from './system-prompt.ts';
+import { composeInteractionPolicy } from './system-prompt.ts';
+export const interactionPolicy = composeInteractionPolicy(coreInteractionPolicy);

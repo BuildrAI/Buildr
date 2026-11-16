@@ -1,3 +1,4 @@
+import { HarnessSystemPromptSettings } from './system-prompt.ts';
 import {createProgrammaticAccess} from './programmatic-access.ts';
 import { ProgrammaticPushback } from './programmatic-pushback.ts';
 import { conversationRuns, unfinishedRun } from '../domain/agent-state.ts';
@@ -52,6 +53,7 @@ export function readTestPushbackTiming(environment: Record<string, string | unde
 export function createAgentService(options: AgentServiceOptions) {
   const generation = randomUUID();
   const root = path.join(options.dataRoot, 'agent-service');
+  const systemPrompt = new HarnessSystemPromptSettings(options.dataRoot);
   const executorList = options.executors ?? createNativeExecutors();
   const resolver=new NativeContentResolver(root,id=>repository.readConversation(id),executorList);
   const repository:ConversationRepository = new ConversationRepository(root,(record,entry)=>resolver.tool(record,entry),reference=>readNativeTool(root,reference,executorList),provider=>nativeContentSpec(provider,executorList));
@@ -81,7 +83,7 @@ export function createAgentService(options: AgentServiceOptions) {
         : [];
     }),
   );
-  const connections = new ConnectionApplication({ repository, root, executors: executorList, environment: executorEnvironment(options.environment ?? process.env), nativeAccountConfigRoots, present: view => presentConnectionView?.(view) ?? view, generation, now, hasObservedAccount: id => connectionAccountObservers.has(id), observeAccount: (id: string) => { const accountId = connectionAccountObservers.get(id); return accountId ? observeConnectionViaModelAccount(id, accountId) : undefined; }, changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
+  const connections = new ConnectionApplication({ systemPrompt: () => systemPrompt.read(), repository, root, executors: executorList, environment: executorEnvironment(options.environment ?? process.env), nativeAccountConfigRoots, present: view => presentConnectionView?.(view) ?? view, generation, now, hasObservedAccount: id => connectionAccountObservers.has(id), observeAccount: (id: string) => { const accountId = connectionAccountObservers.get(id); return accountId ? observeConnectionViaModelAccount(id, accountId) : undefined; }, changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
   const programManager = options.programManager ?? new NativeProgramManager(root, executorEnvironment(options.environment ?? process.env));
   const programUpdates = new ProgramUpdates(() => connections.list(), programManager, now, options.programRelease, id => {
     const digest = connections.bindingData(id)?.executableDigest;
@@ -229,6 +231,7 @@ export function createAgentService(options: AgentServiceOptions) {
   const withUpgrades=(snapshot:ReturnType<typeof programUpdates.list>)=>({programs:snapshot.programs.map(program=>({...program,upgrade:(()=>{const job=upgrades.read(program.connectionId);return job&&(job.executable===program.executable||job.installedExecutable===program.executable)?job:undefined;})()}))});
   return {
     generation,
+    systemPrompt: { read: () => systemPrompt.read(), save: (input: import('../contracts.ts').HarnessSystemPromptInput) => { if(metadataFrozen) throw new AgentServiceError('agent_service_closing','后台正在切换，请稍后重试。',503); return systemPrompt.save(input); } },
     programmatic:createProgrammaticAccess(options),
     pushback: {
       read: (credentialId: string) => pushback.read(credentialId),

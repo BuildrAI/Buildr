@@ -100,9 +100,10 @@ export class ConversationForks {
         rebindReasoning: this.options.rebindReasoning ? value => this.options.rebindReasoning!(sourceRuntime, targetRuntime, value) : undefined,
         executionRef: attempt.executionRef, itemId: sourceKey.slice(participant.id.length + ':message:'.length),
         inputItemIds: [...new Set(nativeSource.attempts.filter(value => value.runId === runId && value.participantId === participant.id && value.accepted).flatMap(value => [value.clientRequestId, ...(value.nativeInputItemId ? [value.nativeInputItemId] : [])]))],
-        onCreated: ref => { receiving.contextRef = ref; this.checkpoint(child); },
+        onCreated: ref => { if(targetRuntime.systemPrompt) ref.data={...ref.data,harnessSystemPromptRevision:targetRuntime.systemPrompt.revision}; receiving.contextRef = ref; this.checkpoint(child); },
       });
       if (!contextRef.id || contextRef.id === participant.contextRef.id) fail('agent_fork_identity_invalid', '分叉没有返回独立的原生身份，不能继续使用。', 409);
+      if(targetRuntime.systemPrompt) contextRef.data={...contextRef.data,harnessSystemPromptRevision:targetRuntime.systemPrompt.revision};
       receiving.contextRef = contextRef;
       this.checkpoint(child);
       // Native fork APIs may remap all message IDs. Freeze the exact inherited projection.

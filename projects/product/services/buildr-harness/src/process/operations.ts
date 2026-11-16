@@ -9,6 +9,7 @@ export interface AgentSubscription { events: AsyncIterable<ServiceEvent>; close(
 /** Public asynchronous operations; native SDK objects never cross this boundary. */
 export interface AgentOperations {
   generation: string;
+  systemPrompt: RemoteMethods<AgentService['systemPrompt']>;
   programmatic: RemoteMethods<AgentService['programmatic']>;
   pushback: RemoteMethods<AgentService['pushback']>;
   connections: RemoteMethods<AgentService['connections']>;
@@ -17,6 +18,7 @@ export interface AgentOperations {
 }
 
 const names = {
+  systemPrompt: ['read','save'],
   programmatic:['list','create','update','regenerate','revoke','updateFullAccess','authenticate'],
   pushback: ['read','save','reveal','test','markTakeover','setCredentialAccess','recordStop','listEvents','migrateGlobal'],
   connections: ['upgradeProgram','programUpdates','checkProgramUpdates','list','read','prepare','preparation','currentPreparation','cancelPreparation','connect','check','login','loginAttempt','cancelLogin','accountImpact','logout','disconnect'],
@@ -30,6 +32,7 @@ const Constructor: any = Ajv2020;
 const ajv = new Constructor({ strict: true, allErrors: true, allowUnionTypes: true });
 const validators = new Map(Object.entries(AGENT_OPERATION_SCHEMAS).map(([name, schema]) => [name, ajv.compile(schema)]));
 const inputs: Record<string, [number, string]> = {
+  'systemPrompt.save':[0,'systemPromptInput'],
   'pushback.save':[1,'pushbackSettingsInput'], 'pushback.reveal':[1,'revision'], 'pushback.test':[1,'revision'], 'pushback.setCredentialAccess':[1,'pushbackCredentialAccess'], 'pushback.listEvents':[2,'pushbackEventsQuery'], 'pushback.migrateGlobal':[1,'pushbackMigrate'],
   'conversations.participation':[2,'participationQuery'], 'conversations.participationSummary':[1,'participationSummaryQuery'],
   'conversations.startDraft':[2,'startDraft'], 'conversations.removeDraftImage':[2,'removeDraftImage'],

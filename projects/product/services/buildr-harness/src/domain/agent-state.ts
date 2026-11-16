@@ -82,6 +82,7 @@ export interface StoredConnection {
   bindingData?: Record<string, unknown>;
 }
 export interface StoredParticipant {
+  systemPromptVersion?: Pick<import('../contracts.ts').HarnessSystemPrompt,'revision'|'enabled'|'text'>;
   historical?: boolean;
   participationContext?: {id:string; configuredAt:string; instruction:import('../participation-contracts.ts').ParticipationMatch};
   modelAccountId?: string; modelAccountIdentity?: string; modelId?: string; serviceTier?:string;modelConfiguration?:string;modelLeaseConfiguration?:string;
@@ -116,7 +117,7 @@ export interface StoredConversation {
   view: ConversationView;
   hostScope?: import('../execution-contracts.ts').ExecutionScope;
   interruption?: { runId: string; awaitingUser: boolean; reason?: 'transport' | 'execution-fault'; attempted?: boolean; cancelled?: boolean };
-  runOutcomes?: Record<string,Pick<RunView,'status'|'diagnostic'|'model'|'provider'|'contextUsage'|'updatedAt'> & {generation?:string}>;
+  runOutcomes?: Record<string,Pick<RunView,'status'|'diagnostic'|'model'|'provider'|'contextUsage'|'systemPrompt'|'updatedAt'> & {generation?:string}>;
   titleOrigin?: 'default' | 'fallback' | 'generated' | 'manual';
   participants: StoredParticipant[];
   sources: Record<string, string>;

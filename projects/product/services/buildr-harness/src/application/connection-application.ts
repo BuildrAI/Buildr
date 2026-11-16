@@ -1,6 +1,6 @@
 import { executionLog } from '../storage/execution-log.ts';
 import { ExecutorStorage } from './executor-storage.ts';
-import { interactionPolicy } from '../domain/interaction-policy.ts';
+import { coreInteractionPolicy, composeInteractionPolicy, defaultSystemPrompt, interactionPolicy } from '../domain/interaction-policy.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -180,6 +180,7 @@ export class ConnectionApplication {
     present?(view: ConnectionView): ConnectionView;
     hasObservedAccount?(id: string): boolean;
     observeAccount?(id: string): Promise<Pick<ConnectionView, 'status' | 'models' | 'diagnostic' | 'account'>> | undefined;
+    systemPrompt?(): import('../contracts.ts').HarnessSystemPrompt;
     generation: string;
     now(): string;
     changed(connection: ConnectionView): void;
@@ -194,8 +195,13 @@ export class ConnectionApplication {
     if (this.executors.size !== options.executors.length) fail('agent_provider_duplicate', '执行者标识重复。');
   }
 
-  private async openExecutor(executor: AgentExecutor, options: import('../contracts.ts').ExecutorOpenOptions): Promise<AgentRuntime> {
-    return this.storage.opened(await executor.open(this.storage.options(executor, {...options,diagnostics:executionLog(this.options.root,this.options.generation)})), executor, options.configRoot, options.nativeAccountConfigRoot);
+  currentSystemPrompt() { return this.options.systemPrompt?.(); }
+  private async openExecutor(executor: AgentExecutor, options: import('../contracts.ts').ExecutorOpenOptions, version?: Pick<import('../contracts.ts').HarnessSystemPrompt,'revision'|'enabled'|'text'>): Promise<AgentRuntime> {
+    const prompt = version ? {...defaultSystemPrompt,...version} : this.options.systemPrompt?.();
+    const interaction = prompt ? composeInteractionPolicy(coreInteractionPolicy, prompt) : options.interaction;
+    const runtime = this.storage.opened(await executor.open(this.storage.options(executor, {...options,interaction,diagnostics:executionLog(this.options.root,this.options.generation)})), executor, options.configRoot, options.nativeAccountConfigRoot);
+    if (prompt) runtime.systemPrompt = {revision:prompt.revision,enabled:prompt.enabled,text:prompt.text,delivery:runtime.capabilities.systemPrompt?.append ? 'native' : 'unsupported'};
+    return runtime;
   }
 
   private stored(id: string): StoredConnection {
@@ -308,18 +314,19 @@ export class ConnectionApplication {
       return [];
     }
   }
-  async runtime(id: string, gateway?: ModelGatewayConfiguration, accountProbe = false, preferredBinding?: ExecutorBinding): Promise<AgentRuntime> {
+  async runtime(id: string, gateway?: ModelGatewayConfiguration, accountProbe = false, preferredBinding?: ExecutorBinding, prompt?: Pick<import('../contracts.ts').HarnessSystemPrompt,'revision'|'enabled'|'text'>): Promise<AgentRuntime> {
     this.assertProgramAvailable(id);
-    if (gateway) return this.gatewayRuntime(id, gateway, preferredBinding);
+    if (gateway) return this.gatewayRuntime(id, gateway, preferredBinding, prompt);
     const releasing = this.probeReleases.get(id);
     if (releasing) await releasing;
     this.assertProgramAvailable(id);
     if (!accountProbe) this.probeRuntimes.delete(id);
+    if (prompt) return this.nativePromptRuntime(id,prompt,preferredBinding);
     const record = this.stored(id);
     const existing = this.runtimes.get(id);
     if (existing) {
       const runtime = await existing;
-      if (!runtime.closed) return runtime; // A healthy owned runtime remains available to stop/reply.
+      if (!runtime.closed) return runtime;
       if (this.runtimes.get(id) === existing) this.runtimes.delete(id);
     }
     if (this.closing) fail('agent_service_closing', '智能体服务正在退出。', 503);
@@ -358,8 +365,25 @@ export class ConnectionApplication {
     }
     return promise;
   }
-  private async gatewayRuntime(id: string, gateway: ModelGatewayConfiguration, preferredBinding?: ExecutorBinding): Promise<AgentRuntime> {
-    const key = `${id}:${gateway.identity}`;
+  /** Work sessions are versioned separately from the shared account/probe runtime. */
+  private async nativePromptRuntime(id:string, prompt: Pick<import('../contracts.ts').HarnessSystemPrompt,'revision'|'enabled'|'text'>, preferredBinding?:ExecutorBinding):Promise<AgentRuntime> {
+    const key=`${id}:work-prompt:${prompt.revision}`, existing=this.gatewayRuntimes.get(key);
+    if(existing){const runtime=await existing;if(!runtime.closed)return runtime;this.gatewayRuntimes.delete(key);}
+    const accountRuntime=this.runtimes.get(id);
+    if(accountRuntime){const runtime=await accountRuntime;if(!runtime.closed&&runtime.systemPrompt?.revision===prompt.revision)return runtime;}
+    const record=this.stored(id);
+    if(!record.view.enabled||this.closing)fail('agent_connection_disabled','请先连接此独立接入。',409);
+    const configRoot=path.join(this.options.root,'connections',id),lifecycle=this.lifecycles.get(id);
+    const opening=new AbortController();this.opening.set(key,opening);
+    const promise=this.openExecutor(this.executors.get(id)!,{interaction:interactionPolicy,connectionId:id,configRoot,executable:record.view.executable,programSource:record.programSource,environment:this.options.environment,signal:opening.signal,
+      ...(preferredBinding?{preferredBinding}:{}),...(record.bindingIdentity?{binding:{identity:record.bindingIdentity,data:record.bindingData,executable:record.view.executable,configRoot:record.view.configPath}}:{})},prompt)
+      .then(async runtime=>{if(this.closing||opening.signal.aborted||this.lifecycles.get(id)!==lifecycle){await runtime.close();fail('agent_connection_disabled','接入已断开。',409);}return runtime;})
+      .catch(error=>{if(this.gatewayRuntimes.get(key)===promise)this.gatewayRuntimes.delete(key);throw error;})
+      .finally(()=>this.opening.delete(key));
+    this.gatewayRuntimes.set(key,promise);return promise;
+  }
+  private async gatewayRuntime(id: string, gateway: ModelGatewayConfiguration, preferredBinding?: ExecutorBinding, prompt?: Pick<import('../contracts.ts').HarnessSystemPrompt,'revision'|'enabled'|'text'>): Promise<AgentRuntime> {
+    const key = `${id}:${gateway.identity}:prompt:${prompt?.revision ?? this.options.systemPrompt?.().revision ?? "builtin"}`;
     const existing = this.gatewayRuntimes.get(key);
     if (existing) {
       const runtime = await existing;
@@ -386,16 +410,16 @@ export class ConnectionApplication {
       nativeAccountConfigRoot: gateway.nativeHomeRoot ?? this.nativeAccountRoot(id, record),
       volumeDevs: this.recordedVolumeDevs(record),
       ...(preferredBinding ? { preferredBinding } : {}),
-    }).then(async runtime => {
+    },prompt).then(async runtime => {
       if (this.closing || opening.signal.aborted || this.lifecycles.get(id) !== lifecycle) { await runtime.close(); fail('agent_connection_disabled', '接入已断开。', 409); }
       return runtime;
     }).catch(error => { if (this.gatewayRuntimes.get(key) === promise) this.gatewayRuntimes.delete(key); throw error; }).finally(() => { this.opening.delete(key); });
     this.gatewayRuntimes.set(key, promise); return promise;
   }
-  async nativeSourceRuntime(id: string, nativeSource: ExecutorNativeSource, conversationId: string, preferredBinding?: ExecutorBinding): Promise<AgentRuntime> {
+  async nativeSourceRuntime(id: string, nativeSource: ExecutorNativeSource, conversationId: string, preferredBinding?: ExecutorBinding, prompt?: Pick<import('../contracts.ts').HarnessSystemPrompt,'revision'|'enabled'|'text'>): Promise<AgentRuntime> {
     this.assertProgramAvailable(id);
     const sourceHash = createHash('sha256').update(JSON.stringify([conversationId, nativeSource.accountId, nativeSource.accountIdentity])).digest('hex');
-    const key = `${id}:native-source:${sourceHash}`;
+    const key = `${id}:native-source:${sourceHash}:prompt:${prompt?.revision ?? this.options.systemPrompt?.().revision ?? "builtin"}`;
     const existing = this.gatewayRuntimes.get(key);
     if (existing) {
       const runtime = await existing;
@@ -426,7 +450,7 @@ export class ConnectionApplication {
         ? { binding: { identity: record.bindingIdentity, data: record.bindingData, executable: record.view.executable, configRoot: record.view.configPath } }
         : {}),
       ...(preferredBinding ? { preferredBinding } : {}),
-    }).then(async runtime => {
+    },prompt).then(async runtime => {
       if (this.closing || opening.signal.aborted || this.lifecycles.get(id) !== lifecycle) { await runtime.close(); fail('agent_connection_disabled', '接入已断开。', 409); }
       return runtime;
     }).catch(error => { if (this.gatewayRuntimes.get(key) === promise) this.gatewayRuntimes.delete(key); throw error; }).finally(() => { this.opening.delete(key); });

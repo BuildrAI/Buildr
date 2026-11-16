@@ -93,6 +93,7 @@ const CONTINUATION_PROMPT_LIMIT = 8_000;
 const SUPPLEMENT_ADMISSION_WINDOW_MS = 800;
 
 const capabilities: AgentCapabilities = {
+  systemPrompt: { append: true },
   interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false },
   supplement: true,
   endQuestionWait: false,
@@ -394,6 +395,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     const baseInstructions = (options.interaction ?? interactionPolicy).instructions;
     const runtimeCapabilities: AgentCapabilities = {
       ...capabilities,
+      systemPrompt: { append: handshake.supportsSystemPromptAppend },
       images: handshake.image,
     };
 

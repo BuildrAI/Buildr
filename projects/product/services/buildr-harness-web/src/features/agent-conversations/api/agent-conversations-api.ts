@@ -1,3 +1,4 @@
+import type { HarnessSystemPromptSystemPrompt, HarnessSystemPromptInputSystemPromptInput } from '../../../../build/generated/agent-service-http-dto';
 import { timeAttachmentStage } from './attachment-timing.ts';
 import { conversationStopAllObservedScope, stopConversationWithRecovery, stopAllWithRecovery } from '../conversation-stop.ts';
 import type { AgentConversationHistoryPageHistoryPage, AgentParticipationParticipation, AgentParticipationSummaryParticipationSummary, AgentParticipationSummaryQueryParticipationSummaryQuery } from '../../../../build/generated/agent-service-http-dto';
@@ -103,6 +104,8 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     addCustomModelAccount(input:CustomProviderConfigInput) {return changeModels<ModelAccount>(appPath+'/model-accounts',post({provider:'custom',custom:input}));},
     configureCustomModelAccount(account:ModelAccount,input:CustomProviderConfigInput) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+encodeURIComponent(account.id)+'/custom',post({expectedRevision:account.revision,...input}));},
     discoverCustomModels(input:CustomDiscoveryInput,signal?:AbortSignal) {return request<CustomDiscoveryResult>(appPath+'/model-custom/discovery',{...post(input),signal});},
+    readSystemPrompt() { return request<HarnessSystemPromptSystemPrompt>(appPath+'/system-prompt'); },
+    saveSystemPrompt(input:HarnessSystemPromptInputSystemPromptInput) { return request<HarnessSystemPromptSystemPrompt>(appPath+'/system-prompt',post(input)); },
     modelSourceEnabled(account:ModelAccount,sourceEnabled:boolean) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/preferences',post({expectedRevision:account.revision,sourceEnabled}));},
     modelPreferences(account:ModelAccount,models:Array<{id:string;enabled?:boolean;contextWindow?:number|null}>) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/preferences',post({expectedRevision:account.revision,models}));},
     configureModelAccount(account:ModelAccount,apiKey:string) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/api-key',post({expectedRevision:account.revision,apiKey}));},

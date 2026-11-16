@@ -285,7 +285,7 @@ export class ConversationApplication {
     const sourceRun=conversationRuns(record.view).find(run=>run.participantId===participant.id);
     if (!participant.modelAccountId) {
       this.nativeSourceOwners.add(`${record.view.workspaceId}/${record.view.id}`);
-      return this.options.connections.runtime(participant.connectionId).then(runtime => ({runtime, model: sourceRun?.model ?? ''}));
+      return this.options.connections.runtime(participant.connectionId,undefined,false,undefined,participant.systemPromptVersion).then(runtime => ({runtime, model: sourceRun?.model ?? ''}));
     }
     this.sourceOwners.set(participant.id, {workspaceId:record.view.workspaceId,id:record.view.id});
     const found = this.sourceRuntimes.get(participant.id);
@@ -375,7 +375,7 @@ export class ConversationApplication {
     const preferredBinding = participant.bindingIdentity ? { identity: participant.bindingIdentity, data: participant.bindingData } : undefined;
     if (bound.kind === 'account-identity') {
       const nativeHomeRoot = this.participantHomeRoot(participant);
-      const runtime = await this.options.connections.nativeSourceRuntime(participant.connectionId, bound.nativeSource, record.view.id, preferredBinding);
+      const runtime = await this.options.connections.nativeSourceRuntime(participant.connectionId, bound.nativeSource, record.view.id, preferredBinding, participant.systemPromptVersion);
       return { runtime, model: bound.nativeSource.modelId, nativeHomeRoot };
     }
     const lease = bound.lease;
@@ -383,7 +383,7 @@ export class ConversationApplication {
     try {const runtime=await this.options.connections.runtime(participant.connectionId, { identity: lease.identity, baseUrl: lease.baseUrl, apiKey: lease.apiKey,
       ...(nativeHomeRoot?{nativeHomeRoot}:{}),
       ...(bound.kind === 'gateway-lease' ? { nativeModel: { provider: participant.connectionId, id: participant.modelId!, accountIdentity: participant.modelAccountIdentity! } } : {}),
-      models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] }, false, preferredBinding);return {runtime,model:lease.model,leaseIdentity:lease.identity,nativeHomeRoot};}
+      models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] }, false, preferredBinding, participant.systemPromptVersion);return {runtime,model:lease.model,leaseIdentity:lease.identity,nativeHomeRoot};}
     catch(error){this.options.modelAccess!.leases.release(lease.identity);throw error;}
   }
   /** Executors declaring sharedNativeHome share one home per connection; pre-existing ones keep their original lease home so the binding stays stable. */
@@ -735,7 +735,7 @@ export class ConversationApplication {
     const started = performance.now();
     for (const run of conversationRuns(record.view)) if (run.stopRequested || run.supersededBy || run.resourcesReleased || !['running','waiting-approval','waiting-question'].includes(run.status)) delete run.contextCompaction;
     if(record.view.run?.status==='completed'){record.view.run.interrupted=undefined;delete record.interruption;}
-    for(const observed of conversationRuns(record.view))if(['completed','failed','stopped','unknown','tools-active'].includes(observed.status)){record.runOutcomes??={};record.runOutcomes[observed.id]={status:observed.status,diagnostic:observed.diagnostic,model:observed.model,provider:observed.provider,contextUsage:observed.contextUsage,generation:observed.generation,updatedAt:observed.updatedAt};}
+    for(const observed of conversationRuns(record.view))if(['completed','failed','stopped','unknown','tools-active'].includes(observed.status)){record.runOutcomes??={};record.runOutcomes[observed.id]={status:observed.status,diagnostic:observed.diagnostic,model:observed.model,provider:observed.provider,contextUsage:observed.contextUsage,systemPrompt:observed.systemPrompt,generation:observed.generation,updatedAt:observed.updatedAt};}
     const prior = record.view.revision;
     record.view.revision = randomUUID(); record.view.updatedAt = this.options.now();
     const persistence = this.options.repository.saveConversation(record, initial ? undefined : prior, {participationUnchanged:textOnly,textEntryId});
@@ -1163,7 +1163,8 @@ export class ConversationApplication {
     if (input.reasoningEffort && !boundModel?.reasoningEfforts?.some(effort => effort.id === input.reasoningEffort)) fail('agent_reasoning_unavailable', '该思考深度不在所选模型的可用目录中。', 409);
     if (!connection.capabilities.text) fail('agent_capability_unavailable', '此接入尚不支持文本输入。', 409);
     if (record.view.forkState && record.view.forkState.status !== 'ready') fail('agent_fork_pending', '此分叉尚未完成，不能发送新指令；原对话不受影响。', 409);
-    const latest = record.participants.findLast(value => !value.historical && value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && (value.modelId === input.model && (!input.modelAccountId || value.modelAccountIdentity === source?.identity && value.modelConfiguration===configuration)
+    const promptVersion = this.options.connections.currentSystemPrompt()?.revision;
+    const latest = record.participants.findLast(value => !value.historical && value.systemPromptVersion?.revision === promptVersion && value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && (value.modelId === input.model && (!input.modelAccountId || value.modelAccountIdentity === source?.identity && value.modelConfiguration===configuration)
       || source && value.modelAccountIdentity === source.identity && value.modelId && input.model
         && resolveLegacyVariant(value.modelId)?.family === input.model
         && (!input.modelAccountId || value.modelConfiguration === configuration)));
@@ -1368,6 +1369,8 @@ export class ConversationApplication {
     const connection = this.options.connections.get(prepared.draft.connectionId);
     if (!participant) {
       participant = { id: randomUUID(), connectionId: connection.id, provider: connection.provider, label: connection.label, modelAccountId: prepared.draft.modelAccountId, modelAccountIdentity: prepared.draft.modelAccountId ? this.options.modelAccess?.accounts.snapshot(prepared.draft.modelAccountId).identity : undefined, modelId: prepared.draft.model,serviceTier:prepared.draft.serviceTier,modelConfiguration:prepared.configuration,modelLeaseConfiguration:prepared.modelLeaseConfiguration, bindingIdentity: prepared.draft.modelAccountId ? '' : this.options.connections.binding(connection.id) ?? '', bindingData: prepared.draft.modelAccountId ? undefined : this.options.connections.bindingData?.(connection.id), deliveredThrough: 0 };
+      const prompt=this.options.connections.currentSystemPrompt();
+      if(prompt)participant.systemPromptVersion={revision:prompt.revision,enabled:prompt.enabled,text:prompt.text};
       record.participants.push(participant);
     }
     participant.modelLeaseConfiguration ??= prepared.modelLeaseConfiguration;
@@ -1385,7 +1388,7 @@ export class ConversationApplication {
     }) : [];
     const automaticRetry = systemRecovery ? record.attempts.find(value => value.runId === record.view.run?.id)?.automaticRetry : undefined;
     record.attempts.push({ clientRequestId, inputDigest, runId: run.id, participantId: participant.id, through: record.view.entries.at(-1)!.sequence, userEntryId, accepted: false, ...(!systemRecovery ? {questionWaits} : {}), ...(raw.continueRunId || systemRecovery && record.view.run ? {continuationOf: raw.continueRunId ?? record.view.run!.id} : {}), ...(automaticRetry ? {automaticRetry: {...automaticRetry}} : {}) });
-    const previousRun=record.view.run;if(previousRun){record.runOutcomes??={};record.runOutcomes[previousRun.id]={status:previousRun.status,diagnostic:previousRun.diagnostic,model:previousRun.model,provider:previousRun.provider,contextUsage:previousRun.contextUsage,generation:previousRun.generation,updatedAt:previousRun.updatedAt};}
+    const previousRun=record.view.run;if(previousRun){record.runOutcomes??={};record.runOutcomes[previousRun.id]={status:previousRun.status,diagnostic:previousRun.diagnostic,model:previousRun.model,provider:previousRun.provider,contextUsage:previousRun.contextUsage,systemPrompt:previousRun.systemPrompt,generation:previousRun.generation,updatedAt:previousRun.updatedAt};}
     if (!participant.modelAccountId) this.nativeSourceOwners.add(`${workspaceId}/${id}`);
     delete record.interruption;
     if (previousRun && (unfinishedRun(previousRun) || record.view.requests.some(request => request.runId === previousRun.id) || previousRun.participantId!==participant.id && !previousRun.resourcesReleased && (this.sourceRuntimes.has(previousRun.participantId) || this.options.generationAlive?.(previousRun.generation)===true))) {
@@ -1820,7 +1823,14 @@ export class ConversationApplication {
       if (this.conversationStopRequested(record,runId) || record.view.run!.status === 'stopping') { record.view.run!.status = 'stopped'; this.save(record); return; }
       let replacedContext: ContextRef | undefined;
       let replacedContextReason: 'unavailable' | 'policy' | undefined;
-      if (participant.contextRef) {
+      if (runtime.systemPrompt) {
+        record.view.run!.systemPrompt = structuredClone(runtime.systemPrompt);
+        this.save(record);
+        if (participant.contextRef && participant.contextRef.data?.harnessSystemPromptRevision !== runtime.systemPrompt.revision) {
+          replacedContext = participant.contextRef; replacedContextReason = 'policy';
+        }
+      }
+      if (participant.contextRef && !replacedContext) {
         try {
           await runtime.resumeContext({ contextRef: participant.contextRef, cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
         } catch (error) {
@@ -1863,6 +1873,7 @@ export class ConversationApplication {
       } else {
         creatingContext = true;
         const ref = await runtime.createContext({ cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
+        if (runtime.systemPrompt) ref.data = {...ref.data,harnessSystemPromptRevision:runtime.systemPrompt.revision};
         this.retryRecordUpdate(()=>{
           const current=this.currentRun(workspaceId,id,runId);if(!current)return;
           const storedParticipant=current.participants.find(value=>value.id===participant.id)!;
@@ -1902,7 +1913,7 @@ export class ConversationApplication {
       const toContext = participant.contextRef!.id;
       const activePolicyDigest = `sha256-${createHash('sha256').update(interactionPolicy.instructions).digest('hex')}`;
       const policySessionReplacement = Boolean(
-        previousParticipant?.contextRef?.data?.supportsResumePolicyUpdate === false
+        previousParticipant?.systemPromptVersion?.revision !== participant.systemPromptVersion?.revision || previousParticipant?.contextRef?.data?.supportsResumePolicyUpdate === false
         && typeof previousParticipant.contextRef.data.policyDigest === 'string'
         && previousParticipant.contextRef.data.policyDigest !== activePolicyDigest,
       );

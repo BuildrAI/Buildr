@@ -17,7 +17,7 @@ import { importClaudeFork } from './fork.ts';
 
 const CLAUDE_TITLE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const provider = 'claude-code';
-const capabilities = {
+const capabilities = { systemPrompt: { append: true },
   interaction:{policy:interactionPolicy.version,nonBlockingQuestions:false},supplement:true,
   permissionModes:['default','full-access'] as PermissionMode[],
   text:true,images:true,maxImageBytes:8*1024*1024,approval:true,questions:true,stop:true,resume:true,maxInputBytes:96*1024,

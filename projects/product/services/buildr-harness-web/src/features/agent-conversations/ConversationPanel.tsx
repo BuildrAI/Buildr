@@ -792,6 +792,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
         </div>
         <div className="ac-thread-actions">
           {accessory}
+          {run?.systemPrompt&&<Popover title="Buildr Harness 系统提示词" trigger="click" content={<div style={{maxWidth:'min(480px,80vw)',whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}><p>{!run.systemPrompt.enabled?'本轮未启用':run.systemPrompt.delivery==='native'?(run.accepted?'已通过原生指令通道提交；不保证模型必然遵守。':'本轮已配置原生指令通道，是否受理以执行状态为准。'):'此执行器未提供原生追加能力，本轮未注入。'}</p><p>{run.systemPrompt.text||'（空内容）'}</p><small>版本：{run.systemPrompt.revision}</small></div>}><Button type="text" size="small">系统提示词</Button></Popover>}
           {participantPairs.length>0&&<Popover rootClassName="ac-panel-popup ac-participant-history" title="参与过此对话" trigger="click" content={<div className="ac-participants" aria-label="参与过此对话的智能体与模型">{participantPairs.map(pair=><span key={pair.key}>{pair.label||context.connections.find(item=>item.id===pair.connectionId)?.label||executionAgentName(pair.provider)} · {pair.modelName}</span>)}</div>}>
             <Button type="text" icon={<TeamOutlined/>} aria-label="参与过此对话的智能体与模型" title="参与过此对话"/>
           </Popover>}

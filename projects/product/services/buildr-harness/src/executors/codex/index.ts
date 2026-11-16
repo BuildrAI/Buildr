@@ -25,7 +25,7 @@ import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type Exec
 import { generateGatewayTitle } from '../model-title.ts';
 import type { ExecutorForkInput } from '../../contracts.ts';
 
-const capabilities = { endQuestionWait: true, interaction: { policy: interactionPolicy.version, nonBlockingQuestions: true }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+const capabilities = { systemPrompt: { append: true }, endQuestionWait: true, interaction: { policy: interactionPolicy.version, nonBlockingQuestions: true }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 // Work-thread overrides also apply on resume; auxiliary title/summary threads stay tool-free.
 const conversationInteraction = {
   config: { features: { default_mode_request_user_input: true } },

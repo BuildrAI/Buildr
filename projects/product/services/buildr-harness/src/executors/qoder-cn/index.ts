@@ -31,7 +31,7 @@ const product = qoderProduct('qoder-cn');
 // product language is Chinese, so pin the native system prompt language at launch.
 const responseLanguageSettings = JSON.stringify({ language: 'Chinese' });
 const progressLanguageInstruction = '面向用户的进展说明使用简体中文，包括调用工具前、工具返回后和连续工具调用之间说明当前进展或下一步。引用命令、代码、路径、标识符、错误消息或工具输出时保留原文。';
-const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+const capabilities = { systemPrompt: { append: true }, interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 
 interface PendingApproval {
   request: ExecutorRequest;
@@ -114,12 +114,14 @@ class QoderCnRuntime implements AgentRuntime {
   private readonly history = new Map<string, Map<string, ExecutorItem>>();
   private loading = false;
   private readonly gateway?: ExecutorGateway;
+  private instructions = interactionPolicy.instructions;
   private readonly contexts = new Map<string, string>();
   private login?: { child: ChildProcessWithoutNullStreams; cancelled: boolean; update: (value: LoginObservation) => void };
 
-  private constructor(bindingIdentity: string, config: string, environments: NodeJS.ProcessEnv, gateway?: ExecutorGateway) {
+  private constructor(bindingIdentity: string, config: string, environments: NodeJS.ProcessEnv, gateway?: ExecutorGateway, instructions=interactionPolicy.instructions) {
+    this.instructions=instructions;
     this.bindingIdentity = bindingIdentity; this.config = config; this.environments = environments; this.gateway = gateway;
-    this.participationInstruction = instructionParticipation('interaction-policy', interactionPolicy.instructions);
+    this.participationInstruction = instructionParticipation('interaction-policy', this.instructions);
   }
 
   get closed(): boolean { return this.closedFlag || this.client?.transportClosed === true; }
@@ -137,7 +139,7 @@ class QoderCnRuntime implements AgentRuntime {
     const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('qoder-cn', version)) throw new Error(`qoder_cn_version_unsupported: requires ${nativeProgramPolicy('qoder-cn').compatibility}`);
     const binding = await consumerBinding('qoder-cn', executable, version, config, options);
-    const runtime = new QoderCnRuntime(binding.identity, config, env, gateway);
+    const runtime = new QoderCnRuntime(binding.identity, config, env, gateway, (options.interaction ?? interactionPolicy).instructions);
     runtime.executable = executable;
     runtime.bindingData = binding.data;
     if (gateway) await runtime.assertNativeAccount();
@@ -151,7 +153,7 @@ class QoderCnRuntime implements AgentRuntime {
     this.opening = (async () => {
       const client = AcpClient.open({
         executable: this.executable,
-        args: ['--acp', '--settings', responseLanguageSettings, '--append-system-prompt', progressLanguageInstruction],
+        args: ['--acp', '--settings', responseLanguageSettings, '--append-system-prompt', this.instructions + '\n' + progressLanguageInstruction],
         cwd: this.config, environment: this.environments,
         onNotification: (method, params) => this.notification(method, params),
         onServerRequest: request => this.serverRequest(request),

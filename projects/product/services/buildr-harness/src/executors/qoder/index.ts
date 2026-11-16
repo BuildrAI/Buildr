@@ -21,7 +21,7 @@ import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInput
 import { checkedGateway, consumerBinding, gatewayModel, type ExecutorGateway } from '../model-gateway.ts';
 import { qoderGatewayPolicy } from './gateway.ts';
 import type { ExecutorForkInput } from '../../contracts.ts';
-const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+const capabilities = { systemPrompt: { append: true }, interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 export function qoderExecutorDescriptor(productId: QoderProductId) {
   const product = qoderProduct(productId);
   const isCn = productId === 'qoder-cn';

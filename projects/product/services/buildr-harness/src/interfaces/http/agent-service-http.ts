@@ -58,6 +58,12 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if(pathname==='/api/v1/harness'||pathname.startsWith('/api/v1/harness/'))return this.handleTopLevel({...context,pathname:'/api/v1/app/agent-service'+pathname.slice('/api/v1/harness'.length)});
       const prefix = '/api/v1/app/agent-service';
       if (pathname !== prefix && !pathname.startsWith(`${prefix}/`)) return null;
+      if (pathname === prefix + '/system-prompt') {
+        query(searchParams, []);
+        if (request.method === 'GET') { authorizeRead(); return result('systemPrompt',await (await resolve()).systemPrompt.read()); }
+        if (request.method === 'POST') { authorizeWrite(); return result('systemPrompt',await (await resolve()).systemPrompt.save(validate('systemPromptInput',await readJsonBody()))); }
+        return null;
+      }
       if(pathname===prefix+'/conversations'&&request.method==='GET'&&!searchParams.has('taskId')){
         authorizeRead();
         query(searchParams,['workspaceId','cursor','limit','hidden','query','activeOnly','agent','model','activityState','draftConversationIds']);

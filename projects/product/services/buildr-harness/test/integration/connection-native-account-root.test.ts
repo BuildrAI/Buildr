@@ -99,3 +99,20 @@ test('only account probes release after their last user and conversation adoptio
   assert.equal(closed, 1);
   assert.equal(app.hasAccountRuntime('codex'), true);
 });
+
+
+test('a work prompt adopts the account probe without later probe cleanup closing its execution',async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'prompt-probe-'));
+  const {defaultSystemPrompt}=await import('../../src/domain/system-prompt.ts');
+  const capabilities={systemPrompt:{append:true},text:true,images:false,approval:false,questions:false,stop:true,resume:true,maxInputBytes:65536};
+  let closed=false,opens=0;
+  const runtime={bindingIdentity:'probe-binding',capabilities,get closed(){return closed;},async close(){closed=true;}} as unknown as AgentRuntime;
+  const executor:AgentExecutor={descriptor:{id:'local',label:'Local',capabilities},async open(){opens++;return runtime;}};
+  const repository=new ConversationRepository(root);
+  repository.saveConnection({view:{id:'local',provider:'local',label:'Local',revision:'configured',status:'ready',enabled:true,configPath:path.join(root,'connections/local'),models:[],capabilities}});
+  const app=new ConnectionApplication({root,repository,executors:[executor],environment:{},generation:'fixture',now:()=>new Date().toISOString(),changed(){},systemPrompt:()=>({...defaultSystemPrompt})});
+  t.after(async()=>{await app.close();fs.rmSync(root,{recursive:true,force:true});});
+  await app.runtime('local',undefined,true);
+  assert.equal(await app.runtime('local',undefined,false,undefined,defaultSystemPrompt),runtime);
+  await app.releaseAccountProbes();assert.equal(closed,false);assert.equal(opens,1);
+});

@@ -24,7 +24,7 @@ import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInput
 import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
 import type { ExecutorForkInput, ExecutorTitleInput } from '../../contracts.ts';
 import { generateGatewayTitle, generateModelTitle, titleTokenCap } from '../model-title.ts';
-const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+const capabilities = { systemPrompt: { append: true }, interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 // @deepseek-ai/dsh-llm-pi-ai Config.reasoningEfforts uses these THINKING_LEVELS keys (0.2.1-rc.3).
 const dshReasoningEfforts = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 export function dshGatewayModels(gateway: ExecutorGateway) {

@@ -4243,3 +4243,81 @@ test('canonical work objects deduplicate full identities and legacy updates pres
     } finally {repo.stopReadModels();}
   } finally {await f.close();}
 });
+
+
+test('Harness system prompt has durable defaults, optimistic concurrency and validated HTTP/IPC settings',async t=>{
+  const native=fake(),f=fixture([native.executor]);t.after(()=>f.close());
+  const before=f.service.systemPrompt.read();
+  assert.equal(before.enabled,true);assert.match(before.text,/简洁.*高效/);
+  assert.equal(fs.existsSync(path.join(f.options.dataRoot,'agent-service/system-prompt.json')),false,'reading defaults does not write');
+  const saved=f.service.systemPrompt.save({expectedRevision:before.revision,enabled:true,text:'Use concise replies. {{literal}}'});
+  assert.notEqual(saved.revision,before.revision);
+  assert.throws(()=>f.service.systemPrompt.save({expectedRevision:before.revision,enabled:false,text:'stale'}),{code:'agent_revision_conflict'});
+  assert.deepEqual(await dispatchOperation(f.service,'systemPrompt.read',[]),saved);
+  await assert.rejects(()=>dispatchOperation(f.service,'systemPrompt.save',[{expectedRevision:saved.revision,enabled:true,text:'x'.repeat(16001)}]));
+  const {HarnessSystemPromptSettings}=await import('../../src/application/system-prompt.ts');
+  assert.deepEqual(new HarnessSystemPromptSettings(f.options.dataRoot).read(),saved);
+  const {createAgentServiceHttpContribution}=await import('../../src/interfaces/http/agent-service-http.ts');
+  const http=createAgentServiceHttpContribution(()=>f.service);let reads=0,writes=0;
+  const context={pathname:'/api/v1/harness/system-prompt',searchParams:new URLSearchParams(),authorizeRead(){reads++;},authorizeWrite(){writes++;},request:{method:'GET'}};
+  const read=await http.handleTopLevel(context);assert.equal(read.status,200);assert.deepEqual(read.body,saved);assert.equal(reads,1);
+  const changed=await http.handleTopLevel({...context,request:{method:'POST'},readJsonBody:async()=>({expectedRevision:saved.revision,enabled:false,text:saved.text})});
+  assert.equal(changed.body.enabled,false);assert.equal(writes,1);
+});
+
+test('Harness prompt changes rebuild only future contexts, preserve old snapshots, and survive switching',async t=>{
+  const native=fake('local'),other=fake('other'),f=fixture([native.executor,other.executor]);t.after(()=>f.close());
+  native.executor.descriptor.capabilities.systemPrompt={append:true};
+  await connected(f.service,'local');await connected(f.service,'other');
+  const chat=await f.service.conversations.create('workspace-one',{});
+  send(f.service,chat.id,'local','first');
+  const first=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+  const old=first.run!.systemPrompt!;assert.equal(old.delivery,'native');
+  const saved=f.service.systemPrompt.save({expectedRevision:old.revision,enabled:true,text:'concise-new-version'});
+  assert.deepEqual(f.service.conversations.read('workspace-one',chat.id).run!.systemPrompt,old,'saving never rewrites an old run');
+  send(f.service,chat.id,'local','second');
+  const second=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.id!==first.run!.id&&v.run?.status==='completed');
+  assert.equal(second.run!.systemPrompt!.revision,saved.revision);
+  assert.notEqual(native.sends[0].contextRef.id,native.sends[1].contextRef.id);
+  assert.ok(native.opens.at(-1)!.interaction!.instructions.endsWith(saved.text));
+  assert.ok(!native.opens[0].interaction!.instructions.includes(saved.text));
+  assert.equal(native.sends.length,2,'no user input is replayed as execution');
+  assert.ok(second.entries.some(entry=>entry.nativeSession?.description.includes('交互政策已更新')));
+  send(f.service,chat.id,'other','third');
+  const third=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.provider==='other'&&v.run.status==='completed');
+  assert.equal(third.run!.systemPrompt!.revision,saved.revision);
+  assert.equal(third.run!.systemPrompt!.delivery,'unsupported','unknown adapters must not claim native support');
+  const disabled=f.service.systemPrompt.save({expectedRevision:saved.revision,enabled:false,text:saved.text});
+  send(f.service,chat.id,'local','fourth');
+  const fourth=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.provider==='local'&&v.run.status==='completed');
+  assert.equal(fourth.run!.systemPrompt!.revision,disabled.revision);assert.equal(fourth.run!.systemPrompt!.enabled,false);
+  assert.ok(!native.opens.at(-1)!.interaction!.instructions.includes(saved.text));
+});
+
+test('saving a Harness prompt leaves an active execution and its exact stop control intact',async t=>{
+  const native=fake('local',{hold:true}),f=fixture([native.executor]);t.after(()=>f.close());
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+  send(f.service,chat.id,'local','continue until stopped');
+  const first=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.accepted===true);
+  const prompt=f.service.systemPrompt.read();f.service.systemPrompt.save({expectedRevision:prompt.revision,enabled:true,text:'new preference'});
+  const unchanged=f.service.conversations.read('workspace-one',chat.id);assert.equal(unchanged.run!.id,first.run!.id);assert.deepEqual(unchanged.run!.systemPrompt,first.run!.systemPrompt);
+  f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:unchanged.revision,runId:first.run!.id,participantId:first.run!.participantId,generation:first.run!.generation});
+  await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='stopped');assert.equal(native.sends.length,1);
+});
+
+
+test('model-account cached source runtimes keep exact old prompt controls and apply new versions',async t=>{
+  const native=fake('codex',{hold:true}),f=fixture([native.executor],{modelProviders:gatewayProviders});t.after(()=>f.close());
+  native.executor.descriptor.capabilities.systemPrompt={append:true};
+  await connected(f.service,'codex');const account=await sharedAccount(f);
+  const chat=await f.service.conversations.create('workspace-one',{});
+  sendWithAccount(f,chat.id,account.id,'old work');
+  const first=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.accepted===true);
+  const prompt=f.service.systemPrompt.read(),saved=f.service.systemPrompt.save({expectedRevision:prompt.revision,enabled:true,text:'gateway-new-prompt'});
+  const sibling=await f.service.conversations.create('workspace-one',{});sendWithAccount(f,sibling.id,account.id,'new independent work');
+  const next=await waitUntil(()=>f.service.conversations.read('workspace-one',sibling.id),v=>v.run?.accepted===true);
+  assert.equal(next.run!.systemPrompt!.revision,saved.revision);assert.equal(first.run!.systemPrompt!.revision,prompt.revision);
+  assert.ok(native.opens.some(open=>open.interaction!.instructions.endsWith(saved.text)));
+  for(const id of [chat.id,sibling.id]){const view=f.service.conversations.read('workspace-one',id),run=view.run!;f.service.conversations.stop('workspace-one',id,{expectedRevision:view.revision,runId:run.id,participantId:run.participantId,generation:run.generation});await waitUntil(()=>f.service.conversations.read('workspace-one',id),v=>v.run?.status==='stopped');}
+  assert.equal(native.sends.length,2,'settings and exact old controls never dispatch additional input');
+});
