@@ -35,9 +35,11 @@ export function prepareDevelopmentAgent({
 
 function materializeDevelopmentAgent({ serviceRoot, agentRoot, build }: { serviceRoot: string; agentRoot: string; build: boolean }): string {
   if (build) {
-    const web = spawnSync(process.execPath, [path.resolve(agentRoot, '../buildr-harness-web/tools/build.ts')], {cwd: path.resolve(agentRoot, '../buildr-harness-web'), stdio:'inherit', timeout:240000});
+    // Preparation is embedded by JSON-returning installers. Build progress and
+    // diagnostics share stderr; stdout belongs to the caller's final receipt.
+    const web = spawnSync(process.execPath, [path.resolve(agentRoot, '../buildr-harness-web/tools/build.ts')], {cwd: path.resolve(agentRoot, '../buildr-harness-web'), stdio:['inherit',2,2], timeout:240000});
     if(web.error || web.status!==0)throw web.error??new Error('harness_web_build_failed');
-    const result = spawnSync(process.execPath, [path.join(agentRoot, 'tools/build.ts')], { cwd: agentRoot, stdio: 'inherit' });
+    const result = spawnSync(process.execPath, [path.join(agentRoot, 'tools/build.ts')], { cwd: agentRoot, stdio: ['inherit', 2, 2] });
     if (result.error || result.status !== 0) throw new Error(`agent_preparation_build_failed: ${result.error?.message ?? result.status}`);
   }
   const finalDestination = path.join(serviceRoot, 'node_modules/@buildr-ai/buildr-harness');

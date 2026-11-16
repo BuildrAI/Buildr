@@ -52,3 +52,38 @@ test('version identity stays available without full runtime bootstrap and preser
   assert.notEqual(invalid.status, 0);
   assert.match(invalid.stderr, /Injected full runtime bootstrap failure/);
 });
+
+test('Agent preparation keeps build progress off the machine-readable stdout channel', t => {
+  const state = createIsolatedWorkspaceState();
+  t.after(() => state.cleanup());
+  const root = path.join(fs.realpathSync(state.root), 'preparation-output');
+  const write = (file: string, text: string) => {
+    const target = path.join(root, file);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, text);
+  };
+  write('package.json', '{"type":"module"}');
+  const entry = 'services/buildr/tools/development/prepare-development-agent.ts';
+  write(entry, fs.readFileSync(path.join(serviceRoot, 'tools/development/prepare-development-agent.ts'), 'utf8'));
+  // Isolate package copying and locking; exercise the real preparation entry and
+  // real child-process stdout/stderr routing, not a second build implementation.
+  write('services/buildr-harness/tools/package-runtime.ts', 'export const agentRuntimePackageTree=()=>({matches:()=>true});');
+  write('services/buildr/src/infrastructure/filesystem/exclusive-file-lock.ts', 'export const withExclusiveFileLock=(_lock,_target,action)=>action();');
+  write('services/buildr-harness-web/tools/build.ts', 'console.log("Harness fixture build output");console.error("Harness fixture diagnostic");');
+  write('services/buildr-harness/tools/build.ts', 'console.log("Core fixture build output");');
+  const invoke = () => spawnSync(process.execPath, [path.join(root, entry)], {
+    cwd: root, env: { ...state.env, NODE_TEST_CONTEXT: undefined }, encoding: 'utf8', timeout: 15_000,
+  });
+  const result = invoke();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).status, 'passed');
+  assert.match(result.stderr, /Harness fixture build output/);
+  assert.match(result.stderr, /Harness fixture diagnostic/);
+  assert.match(result.stderr, /Core fixture build output/);
+  write('services/buildr-harness-web/tools/build.ts', 'console.log("Failed fixture build output");process.exitCode=7;');
+  const failed = invoke();
+  assert.notEqual(failed.status, 0);
+  assert.equal(failed.stdout, '', 'a failed build must not impersonate a JSON receipt');
+  assert.match(failed.stderr, /Failed fixture build output/);
+  assert.match(failed.stderr, /harness_web_build_failed/);
+});
