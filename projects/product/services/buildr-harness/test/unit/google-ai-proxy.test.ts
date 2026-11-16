@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { crc32, deflateRawSync, gzipSync } from 'node:zlib';
+import { executorCompatibilityForSource } from '../../src/domain/model-policy.ts';
+import { createNativeExecutors } from '../../src/executors/index.ts';
 import { createAgentService } from '../../src/index.ts';
 import { createModelAccess } from '../../src/model-access/application.ts';
 import { createGoogleAiProxyProvider } from '../../src/model-access/providers/google-ai-proxy.ts';
@@ -548,4 +550,28 @@ test('buildGoogleAiRouteTable aggregates series variants and maps every (model, 
   assert.deepEqual(partial.models[0]?.reasoningEfforts?.map(e => e.id), ['high']);
   assert.equal(partial.models[0]?.defaultReasoningEffort, 'high');
   assert.throws(() => resolveGoogleAiUpstreamModel(partial, 'gemini-4-carbon', 'medium'), { code: 'agent_reasoning_unavailable' });
+});
+
+test('google-ai-subscription is restricted to codex executor only', async t => {
+  const root = makeTempDir(t);
+  const provider = createGoogleAiProxyProvider(path.join(root, 'CLIProxyAPI'));
+  assert.deepEqual(provider.sharing, {
+    kind: 'executor-exclusive',
+    executors: ['codex'],
+    reason: 'Google AI 当前仅开放给 Codex；其他执行器可能受上游策略限制或未开放外部通道。',
+  });
+
+  const descriptors = createNativeExecutors().map(executor => executor.descriptor);
+  const compatibility = executorCompatibilityForSource(descriptors, {
+    provider: provider.id,
+    sharing: provider.sharing,
+    inference: provider.inference,
+  });
+
+  const byId = new Map(compatibility.map(item => [item.connectionId, item]));
+  assert.equal(byId.get('codex')?.compatible, true);
+  for (const blocked of ['claude-code', 'dsh', 'qoder', 'qoder-cn', 'antigravity']) {
+    assert.equal(byId.get(blocked)?.compatible, false, `${blocked} must be incompatible`);
+    assert.equal(byId.get(blocked)?.reasonCode, 'agent_model_source_unsupported');
+  }
 });

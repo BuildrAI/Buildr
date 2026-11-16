@@ -198,7 +198,12 @@ export function createGoogleAiProxyProvider(directory: string, options: GoogleAi
     authentication: { type: 'oauth', label: 'Google AI', description: '登录 Google AI 账号后即可使用订阅模型；首次添加会自动下载并初始化本地代理组件。' },
     modeLabel: '订阅', group: { id: 'google-ai', label: 'Google AI' },
     presentation: { vendorLabel: 'Google AI', sourceLabel: 'Google AI' },
-    sharing: { kind: 'gateway' }, inference: 'gateway', enableDiscoveredModelsByDefault: true,
+    sharing: {
+      kind: 'executor-exclusive',
+      executors: ['codex'],
+      reason: 'Google AI 当前仅开放给 Codex；其他执行器可能受上游策略限制或未开放外部通道。',
+    },
+    inference: 'gateway', enableDiscoveredModelsByDefault: true,
     clearCatalogOnUnauthenticated: true,
     async prepare({ signal }) {
       await ensureInstalled(signal);
