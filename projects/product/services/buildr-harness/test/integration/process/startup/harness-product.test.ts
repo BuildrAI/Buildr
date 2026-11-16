@@ -26,7 +26,8 @@ test('Harness alone cold-starts, shares directory authority, executes and restar
   const [a, b] = pair as [AgentProcessConnection, AgentProcessConnection];
   assert.equal((await a.lifecycle.identity()).generation, ready.generation);
   assert.equal((await b.lifecycle.identity()).instanceId, ready.instanceId);
-  const directory = await a.directories.register(work);
+  const directory = await a.directories.register(work, '独立工作空间');
+  assert.equal(directory.name,'独立工作空间');
   assert.deepEqual(await b.directories.list(), [directory]);
   const scope = executionScopeKey(directory.ref), chat = await a.operations.conversations.create(scope, {});
   assert.equal(chat.cwd, fs.realpathSync(work));

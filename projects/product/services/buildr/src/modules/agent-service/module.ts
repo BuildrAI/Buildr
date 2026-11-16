@@ -67,7 +67,18 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
           root(ref){assertSource(ref.sourceId);return (ref.id==='@default'?defaultWorkspace():requires[WORKSPACE_APPLICATION].resolveRegisteredWorkspace(ref.id)).rootPath;},
           query:requires[AGENT_ASSETS_SOURCE_QUERY],identity:options.readProductIdentity,
         }),
-        async listExecutionScopes({ sourceId }) { assertSource(sourceId); const refs=registeredWorkspaceIds().map(id=>({sourceId,id}));return {refs,revision:digest(refs)}; },
+        async listExecutionScopes({ sourceId }) {
+          assertSource(sourceId);
+          const refs=registeredWorkspaceIds().map(id=>({sourceId,id}));
+          const labels:Record<string,string>={'@default':'默认工作空间'};
+          const rootPaths:Record<string,string>={'@default':defaultWorkspace().rootPath};
+          for(const entry of requires[WORKSPACE_APPLICATION].listRegisteredWorkspaces().workspaces){
+            if(!entry.workspace?.id||entry.status==='identity_conflict')continue;
+            if(entry.workspace.name)labels[entry.workspace.id]=entry.workspace.name;
+            rootPaths[entry.workspace.id]=entry.rootPath;
+          }
+          return {refs,labels,rootPaths,revision:digest({refs,labels,rootPaths})};
+        },
       };
       const candidateDigest = readPreviewCandidateDigest();
       let pinnedRuntime: AgentRuntimeUnit | undefined;

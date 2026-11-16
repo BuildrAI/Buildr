@@ -837,7 +837,6 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
         </div>
         <div className="ac-thread-actions">
           {accessory}
-          {run?.systemPrompt&&<Popover title="Buildr Harness 系统提示词" trigger="click" content={<div style={{maxWidth:'min(480px,80vw)',whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}><p>{!run.systemPrompt.enabled?'本轮未启用':run.systemPrompt.delivery==='native'?(run.accepted?'已通过原生指令通道提交；不保证模型必然遵守。':'本轮已配置原生指令通道，是否受理以执行状态为准。'):'此执行器未提供原生追加能力，本轮未注入。'}</p><p>{run.systemPrompt.text||'（空内容）'}</p><small>版本：{run.systemPrompt.revision}</small></div>}><Button type="text" size="small">系统提示词</Button></Popover>}
           {participantPairs.length>0&&<Popover rootClassName="ac-panel-popup ac-participant-history" title="参与过此对话" trigger="click" content={<div className="ac-participants" aria-label="参与过此对话的智能体与模型">{participantPairs.map(pair=><span key={pair.key}>{pair.label||context.connections.find(item=>item.id===pair.connectionId)?.label||executionAgentName(pair.provider)} · {pair.modelName}</span>)}</div>}>
             <Button type="text" icon={<TeamOutlined/>} aria-label="参与过此对话的智能体与模型" title="参与过此对话"/>
           </Popover>}
@@ -870,6 +869,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
         {earlier.loading&&<div className="ac-history-loading" role="status" aria-label="正在加载更早记录"><Spin size="small"/></div>}
         <div className="ac-stream-content" ref={streamContent}>
         {context.error&&<Alert type="error" showIcon message={context.error} action={<Button onClick={()=>void context.refresh().catch(fail)}>重新读取</Button>}/>}
+        {run?.systemPrompt?.enabled&&run.systemPrompt.delivery==='unsupported'&&<Alert type="info" showIcon message="当前智能体不支持追加系统提示词，本轮未注入。"/>}
         <ConversationTranscript loading={context.loading}>
         {context.error&&!chat?null:!chat||!visibleEntries.length?<div className="ac-welcome"><CommentOutlined/><h1>{chat?.taskId||boundTaskId?'从这项任务继续':'今天想做什么？'}</h1><p>了解一个问题，或者交办一件事。</p>{!chat&&settings}</div>:<div className="ac-message-list">
           {turns.map((turn,index)=>{

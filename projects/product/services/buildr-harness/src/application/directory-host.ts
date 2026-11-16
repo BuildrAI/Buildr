@@ -6,7 +6,7 @@ import { AgentServiceError } from '../domain/agent-state.ts';
 import { claimStorage, readPrivate, writePrivate } from '../process/ownership.ts';
 
 export const DIRECTORY_SOURCE_ID = 'harness-local';
-export interface HarnessDirectory extends ExecutionScope { selectedPath: string }
+export interface HarnessDirectory extends ExecutionScope { selectedPath: string; name?: string }
 interface DirectoryStore { version: 1; directories: HarnessDirectory[] }
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
@@ -46,13 +46,16 @@ export class HarnessDirectoryHost implements AgentHostCapabilities {
     if (value.version !== 1 || !Array.isArray(value.directories) || value.directories.some(entry =>
       entry?.ref?.sourceId !== DIRECTORY_SOURCE_ID || typeof entry.ref.id !== 'string' || !entry.ref.id ||
       typeof entry.selectedPath !== 'string' || !path.isAbsolute(entry.selectedPath) ||
+      entry.name !== undefined && (typeof entry.name !== 'string' || !entry.name.trim() || entry.name.length > 512) ||
       typeof entry.rootPath !== 'string' || !path.isAbsolute(entry.rootPath) || typeof entry.revision !== 'string' || !entry.revision)) {
       throw new AgentServiceError('agent_directory_record_invalid', '目录登记不可识别，未覆盖原记录。', 409);
     }
     return value;
   }
   list(): HarnessDirectory[] { return structuredClone(this.store().directories); }
-  register(selectedPath: string): HarnessDirectory {
+  register(selectedPath: string, name?: string): HarnessDirectory {
+    if(name !== undefined && (typeof name !== 'string' || name.trim().length > 160 || /[\0\r\n]/.test(name))) throw new AgentServiceError('agent_directory_name_invalid', '工作空间名称无效，请使用不超过 160 字符的单行名称。');
+    const requestedName = name?.trim();
     if (typeof selectedPath !== 'string' || !path.isAbsolute(selectedPath)) throw new AgentServiceError('agent_directory_path_invalid', '请选择准确的绝对目录。');
     const selected = path.normalize(selectedPath);
     const lock = claimStorage(this.dataRoot);
@@ -61,9 +64,10 @@ export class HarnessDirectoryHost implements AgentHostCapabilities {
       const existing = store.directories.find(entry => entry.selectedPath === selected);
       if (existing) {
         this.assertCurrent(existing, observation);
+        if(requestedName && requestedName !== (existing.name || path.basename(existing.rootPath) || existing.rootPath)) throw new AgentServiceError('agent_directory_already_registered', '该目录已登记为其他名称，请直接选择已有工作空间；原名称未改变。', 409);
         return structuredClone(existing);
       }
-      const entry: HarnessDirectory = { ref: { sourceId: DIRECTORY_SOURCE_ID, id: randomUUID() }, selectedPath: selected, ...observation };
+      const entry: HarnessDirectory = { ref: { sourceId: DIRECTORY_SOURCE_ID, id: randomUUID() }, selectedPath: selected, name: requestedName || path.basename(selected) || observation.rootPath, ...observation };
       store.directories.push(entry);
       writePrivate(this.filename, store);
       return structuredClone(entry);
@@ -100,8 +104,10 @@ export class HarnessDirectoryHost implements AgentHostCapabilities {
   }
   async listExecutionScopes({ sourceId }: { sourceId: string }) {
     if (sourceId !== DIRECTORY_SOURCE_ID) throw new AgentServiceError('agent_host_source_mismatch', '目录来源不匹配。', 409);
-    const refs = this.list().map(entry => entry.ref);
-    return { refs, revision: digest(refs) };
+    const entries = this.list(), refs = entries.map(entry => entry.ref);
+    const labels = Object.fromEntries(entries.map(entry => [entry.ref.id, entry.name || path.basename(entry.rootPath) || entry.rootPath]));
+    const rootPaths = Object.fromEntries(entries.map(entry => [entry.ref.id, entry.rootPath]));
+    return { refs, labels, rootPaths, revision: digest({refs,labels,rootPaths}) };
   }
   async verifyWorkObject(): Promise<never> {
     throw new AgentServiceError('agent_host_capability_unavailable', '目录宿主不提供业务工作对象核验。', 409);

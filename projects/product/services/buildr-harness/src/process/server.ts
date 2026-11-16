@@ -259,6 +259,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       const keys = new Set(repository.listScopeKeys());
       for (const directory of directories.list()) keys.add(executionScopeKey(directory.ref));
       const registered = new Set(hosts.sources());
+      const labels = new Map<string,string>(), rootPaths = new Map<string,string>();
       await Promise.all([...registered].filter(source => callers.isFirstParty(caller) || caller.caller.kind === 'host' && caller.caller.sourceId === source).map(async sourceId => {
         try {
           const result = await hosts.listExecutionScopes({sourceId});
@@ -266,12 +267,14 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
             if (ref.sourceId !== sourceId) throw new AgentServiceError('agent_host_source_mismatch', '宿主范围发现来源不匹配。', 409);
             // Preserve the original bare key for Development's historical scopes.
             keys.add(sourceId === 'buildr' ? ref.id : executionScopeKey(ref));
+            const label=result.labels?.[ref.id];if(typeof label==='string'&&label.trim())labels.set(executionScopeKey(ref),label);
+            const rootPath=result.rootPaths?.[ref.id];if(typeof rootPath==='string'&&rootPath)rootPaths.set(executionScopeKey(ref),rootPath);
           }
         } catch { registered.delete(sourceId); }
       }));
       const scopes = [...keys].filter(key => callers.canRead(caller, key)).map(key => {
         const ref = executionScopeRef(key, 'buildr');
-        return {key, ref, authority: ref.sourceId === DIRECTORY_SOURCE_ID ? 'builtin' : registered.has(ref.sourceId) ? 'registered' : 'offline'};
+        return {key, ref, ...(labels.has(executionScopeKey(ref))?{name:labels.get(executionScopeKey(ref))}:{}), ...(rootPaths.has(executionScopeKey(ref))?{rootPath:rootPaths.get(executionScopeKey(ref))}:{}), authority: ref.sourceId === DIRECTORY_SOURCE_ID ? 'builtin' : registered.has(ref.sourceId) ? 'registered' : 'offline'};
       });
       json(res, 200, {scopes}); return;
     }
@@ -285,7 +288,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       }
       if (input.operation !== 'register' || typeof input.path !== 'string') throw new AgentServiceError('agent_process_input_invalid', '目录操作无效。');
       if (closing || retiring || !accepting) throw new AgentServiceError('agent_process_switching', '目录登记暂不可写，输入已保留。', 503);
-      json(res, 200, directories.register(input.path)); return;
+      json(res, 200, directories.register(input.path, input.name)); return;
     }
     if (route === '/host/attach') {
       if (closing) throw new AgentServiceError('agent_process_switching','执行后台正在退出，宿主尚未接入。',503);

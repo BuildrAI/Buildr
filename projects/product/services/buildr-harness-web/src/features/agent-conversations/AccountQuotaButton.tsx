@@ -65,7 +65,7 @@ export function AccountQuotaButton({ onClick }: Props) {
           <strong>{name}</strong>
           <div className="ac-account-quota-value">
             {billing ? <Button type="default" size="small" href={billing.url} target="_blank" rel="noopener noreferrer" icon={<ExportOutlined/>} title={billing.label}>{billing.label}</Button>
-              : view.lines.map((line, index) => <p key={index}>{line.text}{line.credits && <span className="ac-account-quota-credits">· {line.credits}</span>}</p>)}
+              : view.lines.map((line, index) => <p key={index}>{line.text}{line.resetsAt && <small className="ac-account-quota-reset" title={new Date(line.resetsAt).toLocaleString()}>{quotaResetCountdown(line.resetsAt)}</small>}{line.credits && <span className="ac-account-quota-credits">· {line.credits}</span>}</p>)}
             {warning && <small className="ac-account-quota-warning" title={account.quota?.diagnostic}>{warning}</small>}
           </div>
         </>}

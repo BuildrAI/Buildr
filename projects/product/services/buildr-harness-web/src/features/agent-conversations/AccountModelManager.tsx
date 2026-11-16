@@ -107,7 +107,7 @@ export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,o
     void onManagedAccountImpact(source.id).then(value=>{if(token===logoutImpactToken.current){setLogoutImpact(value);setLogoutImpactLoaded(true);}}).catch(()=>{if(token===logoutImpactToken.current)setLogoutImpactLoaded(false);}).finally(()=>{if(token===logoutImpactToken.current)setLogoutImpactLoading(false);});
   }
   const selected=entries.find(source=>source.id===selection.sourceId);
-  const visible=selected?[selected]:entries;
+  const visible=selected?[selected]:sourceGroups.flatMap(group=>group.items);
   const rows=visible.flatMap(source=>source.models.map(model=>({...model,key:source.id+':'+model.id,source})));
   const families=[...new Set(rows.map(row=>row.family))];
   const filtered=rows.filter(row=>(!query||`${row.label} ${row.source.providerLabel}`.toLowerCase().includes(query.toLowerCase()))&&(filter==='all'||row.enabled===(filter==='enabled'))&&(family==='all'||family===row.family));

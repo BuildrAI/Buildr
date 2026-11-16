@@ -8,6 +8,7 @@
 | `services/buildr-harness/src/executors/` | 原生执行适配与程序管理 |
 | `services/buildr-harness/src/model-access/` | 模型来源及独立账号接入 |
 | `services/buildr-harness/src/process/` | 后台连接、准确执行归属、代次、独立网页及认证 |
+| `services/buildr-harness/src/process/directory-picker.ts` | 服务所在电脑的图形目录选择，固定系统参数、有限超时；选择或取消本身不登记目录 |
 | `services/buildr-harness/src/interfaces/http/` | 唯一通用 HTTP/OpenAPI 实现 |
 | `services/buildr-harness/src/cli.ts`、`src/*launcher*.ts` | 独立 CLI 和本机启动器 |
 | `services/buildr-harness/src/web-resource.ts` | 安装后完整网页资源的公共定位，不启动后台 |
@@ -25,6 +26,7 @@
 2. Harness Web 通知当前对话身份及输入区数值布局锚点；Development 自己查询当前对象并按已观察修订维护任务关联，控件原位呈现在工作空间信息旁，不把关联等同于执行授权或任务完成。
 3. 两种呈现都由 Harness 自己处理模型选择、发送、审批、停止和恢复。Development 只交接明确工程操作；结果未知不重发。
 4. Harness 核心构建把完整网页放入 `build/harness-web-dist/`；独立入口直接承载，Development 从同一公共包定位并嵌入，不依赖相邻源码。
+5. 独立网页从范围发现取得宿主提供的名称；目录工作空间显示保存的名称，未填写时默认目录名，身份仍使用准确来源与范围标识。添加表单填写可选名称、通过受认证的本机选择接口取得目录，不提供手填路径，确认后登记并用于新对话，不初始化 Development 工程资产。Development 外壳独立保存对话展开偏好，不接管内层会话记忆。
 
 ## 验证入口
 

@@ -22,7 +22,7 @@ test('authenticated v2 callers share sources and exact offline controls, while v
   });
   const host = (rootPath: string): AgentHostCapabilities => ({
     resolveExecutionScope: async ({ref}) => ({ref, rootPath, revision: rootPath}),
-    listExecutionScopes: async ({sourceId}) => ({refs: [{sourceId, id: 'same'}], revision: rootPath}),
+    listExecutionScopes: async ({sourceId}) => ({refs: [{sourceId, id: 'same'}], labels: {same: sourceId==='alpha'?'甲工作空间':'乙工作空间'}, rootPaths: {same: rootPath}, revision: rootPath}),
     // Work-object verification is genuinely absent, not a dummy task system.
   });
   const alpha = await connectHarnessProcess({...options, sourceId: 'alpha', caller: {kind: 'host', sourceId: 'alpha'}, host: host(a), autoContinueInterrupted: true});
@@ -49,6 +49,10 @@ test('authenticated v2 callers share sources and exact offline controls, while v
   await assert.rejects(alpha.operations.conversations.read(sb, cb.id), {code: 'agent_caller_scope_denied'});
   await assert.rejects(legacy.operations.conversations.read(sb, cb.id), {code: 'agent_host_source_mismatch'});
   const catalog = await user.scopeCatalog();
+  assert.equal(catalog.scopes.find(item=>item.key===sa)?.name,'甲工作空间');
+  assert.equal(catalog.scopes.find(item=>item.key===sb)?.name,'乙工作空间');
+  assert.equal(catalog.scopes.find(item=>item.key===sa)?.rootPath,a);
+  assert.equal(catalog.scopes.find(item=>item.key===sb)?.rootPath,b);
   assert.deepEqual(new Set(catalog.scopes.map(item => item.ref.sourceId)), new Set(['alpha', 'beta']));
   const connection = await user.operations.connections.read('first');
   await user.operations.connections.connect('first', {expectedRevision: connection.revision});

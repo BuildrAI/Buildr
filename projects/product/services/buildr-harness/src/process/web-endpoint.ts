@@ -14,6 +14,7 @@ import {createAgentServiceHttpContribution} from '../interfaces/http/agent-servi
 import {createProgrammaticHttpContribution} from '../interfaces/http/programmatic-http.ts';
 import {eventStreamResponse} from '../interfaces/http/stream-response.ts';
 import type {AgentProcessConnection} from './client.ts';
+import {chooseHarnessDirectory} from './directory-picker.ts';
 
 export interface HarnessWebStatus {enabled:boolean;ready:boolean;endpointId?:string;origin?:string;generation:string;diagnostic?:string;mode?:'live'|'static'}
 interface Options {dataRoot:string;profileId?:string;generation:string;instanceId:string;staticRoot:string;runtimeDigest?:string;ownsListener():boolean;connect():Promise<AgentProcessConnection>}
@@ -193,9 +194,17 @@ export class HarnessWebEndpoint {
     if(req.method==='GET'&&url.pathname==='/mermaid-renderer.html'){this.authorize(req);const file=this.assets.read(this.bundle!,'mermaid-renderer.html');this.html(res,file.bytes.toString('utf8').replaceAll('./assets/',`/bundles/${this.bundle}/assets/`));return;}
     const connection=await this.options.connect();
     if(url.pathname==='/api/v1/harness/scopes'&&req.method==='GET'){this.authorize(req);json(res,200,await connection.scopeCatalog());return;}
+    if(url.pathname==='/api/v1/harness/directories/choose'&&req.method==='POST'){
+      this.authorize(req,true);
+      const input=await body(req,1024);
+      if(Object.keys(input).length)throw new AgentServiceError('agent_directory_path_invalid','目录选择请求无效。');
+      const selected=await chooseHarnessDirectory();
+      this.authorize(req,true);
+      json(res,200,{path:selected});return;
+    }
     if(url.pathname==='/api/v1/harness/directories'){
       if(req.method==='GET'){this.authorize(req);json(res,200,{directories:await connection.directories.list()});return;}
-      if(req.method==='POST'){this.authorize(req,true);const input=await body(req,16384);this.authorize(req,true);if(Object.keys(input).join()!=='path')throw new AgentServiceError('agent_directory_path_invalid','请选择准确目录。');json(res,201,await connection.directories.register(input.path));return;}
+      if(req.method==='POST'){this.authorize(req,true);const input=await body(req,16384);this.authorize(req,true);if(!Object.hasOwn(input,'path')||Object.keys(input).some(key=>!['path','name'].includes(key)))throw new AgentServiceError('agent_directory_path_invalid','请选择准确目录。');json(res,201,await connection.directories.register(input.path,input.name));return;}
     }
     if(url.pathname==='/api/v1/harness/files'&&req.method==='POST'){this.authorize(req,true);const input=await body(req,16384);this.authorize(req,true);if(Object.keys(input).some(key=>!['conversationId','path'].includes(key)))throw new AgentServiceError('agent_directory_file_invalid','文件请求无效。');json(res,200,await connection.directories.preview(input));return;}
     if(!this.handlers){

@@ -1,11 +1,14 @@
 import {createContext,useContext,useState,useRef,useCallback,type ReactNode} from 'react';
+import {readOptionalPreference,writeOptionalPreference} from '../../lib/optional-preferences';
 import {agentConversationsApi} from './api/agent-conversations-api';
 import type {CatalogModel,ConversationView} from './types';
 export type TextConversationActionInput={workspaceId:string;cwd:string;text:string};
 export type TextConversationActionResult={status:'started';conversation:ConversationView}|{status:'recovering';reason:'existing-submission'|'submission-unknown';conversation?:ConversationView;message:string}|{status:'unavailable'|'failed'|'busy';message:string};
 export type FrameCommand={action:'new'|'open'|'history'|'settings'|'configure'|'start-text';workspaceId?:string;conversationId?:string;taskId?:string;workspaces?:{id:string;name:string;rootPath:string}[];input?:TextConversationActionInput;requestId?:string};
 function useIntegration(){
- const [open,setOpen]=useState(false),[full,setFull]=useState(false),[view,setView]=useState<'conversation'|'history'>('conversation'),[settings,setSettingsState]=useState(false);
+ const [open,setOpenState]=useState(()=>readOptionalPreference('buildr.harness-panel-open')==='true');
+ const setOpen=useCallback((value:boolean|((current:boolean)=>boolean))=>setOpenState(current=>{const next=typeof value==='function'?value(current):value;writeOptionalPreference('buildr.harness-panel-open',String(next));return next;}),[]);
+ const [full,setFull]=useState(false),[view,setView]=useState<'conversation'|'history'>('conversation'),[settings,setSettingsState]=useState(false);
  const [conversation,setConversation]=useState<ConversationView|null>(null),[command,setCommand]=useState<FrameCommand|null>(null),[sequence,setSequence]=useState(0);
  const [modelCatalog,setModelCatalog]=useState<CatalogModel[]>([]),[modelCatalogReady,setModelCatalogReady]=useState(false),[modelCatalogError,setModelCatalogError]=useState('');
  const pending=useRef(new Map<string,{resolve:(result:TextConversationActionResult)=>void;timer:ReturnType<typeof setTimeout>}>());

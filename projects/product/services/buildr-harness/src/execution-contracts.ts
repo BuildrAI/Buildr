@@ -33,7 +33,7 @@ export interface AgentHostCapabilities {
   resolveExecutionScope(input: { ref: ExecutionScopeRef; expectedRevision?: string }): Promise<ExecutionScope>;
   verifyWorkObject?(input: { ref: WorkObjectRef; expectedRevision?: string }): Promise<WorkObjectObservation>;
   observeParticipation?(input: import('./participation-contracts.ts').ParticipationSourceRequest): Promise<import('./participation-contracts.ts').ParticipationSourceResult>;
-  listExecutionScopes(input: { sourceId: string }): Promise<{ refs: ExecutionScopeRef[]; revision: string }>;
+  listExecutionScopes(input: { sourceId: string }): Promise<{ refs: ExecutionScopeRef[]; revision: string; labels?: Record<string, string>; rootPaths?: Record<string, string> }>;
 }
 
 export interface AgentActivity { busy: boolean; reasons: Array<{ kind: string; count: number }> }

@@ -22,7 +22,7 @@ export function HarnessSystemPromptSettings(){
     <Space direction="vertical" style={{width:'100%'}} size="middle">
       <Space><Switch aria-label="启用 Buildr Harness 系统提示词" checked={enabled} disabled={!view||busy} onChange={value=>{setEnabled(value);setSaved(false);}}/><span>{enabled?'已启用':'已停用'}</span></Space>
       <Input.TextArea aria-label="系统提示词内容" autoSize={{minRows:8,maxRows:18}} maxLength={16000} showCount value={text} disabled={!view||busy} onChange={event=>{setText(event.target.value);setSaved(false);}}/>
-      <Typography.Paragraph type="secondary">仅影响通过 Buildr 发送的工作对话，不影响独立打开的其他应用或辅助标题。支持情况和本轮提交版本可在对话的“系统提示词”中查看；原生不支持时不会伪装成已注入。</Typography.Paragraph>
+      <Typography.Paragraph type="secondary">仅影响通过 Buildr 发送的工作对话，不影响独立打开的其他应用或辅助标题。原生不支持追加时不会伪装成已注入。</Typography.Paragraph>
       <Space><Button aria-label="保存系统提示词" type="primary" disabled={!view||busy||(text===view.text&&enabled===view.enabled)} loading={busy} onClick={()=>void save()}>保存</Button><Button disabled={!view||busy} onClick={()=>{if(view){setText(view.defaultText);setEnabled(true);setSaved(false);}}}>恢复默认内容</Button>{saved&&<Typography.Text type="success">已保存，下一轮应用</Typography.Text>}</Space>
       {view&&<Typography.Text type="secondary">配置版本：{view.revision.slice(0,19)}</Typography.Text>}
     </Space>

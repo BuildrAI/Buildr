@@ -1,3 +1,4 @@
+import {readLock} from '../../../buildr-harness/src/process/ownership.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -87,6 +88,7 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     modelProvidersTail,
     "modelProviders:[provider,{id:'exclusive-model',label:'Exclusive model',sharing:{kind:'executor-exclusive',executors:['second'],reason:'受官方授权限制，仅可在 second 中使用。'},async open(){return{protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'exclusive',label:'Exclusive',images:false,tools:false}]}),beginLogin:async()=>{},cancelLogin:async()=>{},async infer(){throw new Error('unused');},close:async()=>{}};}}]",
   );
+  fixtureSource = fixtureSource.replace("inspect:async()=>({status:'ready',models:", "inspect:async()=>({status:'ready',quota:{available:true,observedAt:new Date().toISOString(),windows:[{id:'weekly',label:'每周窗口',remainingPercent:5,resetsAt:new Date(Date.now()+3600000).toISOString()}]},models:");
   fs.writeFileSync(path.join(packageRoot, 'build/browser-fixture.mjs'), fixtureSource);
   fs.writeFileSync(path.join(packageRoot, 'build/fixture-version.json'), '{"version":"standalone-browser"}');
   const runtime = prepareAgentRuntime({dataRoot, packageRoot, entry: 'build/browser-fixture.mjs'});
@@ -125,8 +127,51 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await a.goto(origin);
     assert.equal(await a.locator('.harness-header').count(),0,'no duplicate outer navigation');
     assert.equal(await a.locator('.ac-collapsed-rail').count(),1);
+    await a.getByRole('combobox', {name:'新对话工作空间'}).locator('..').locator('..').click();
+    await a.getByText('work', {exact:true}).last().waitFor({state:'visible'});
+    await a.keyboard.press('Escape');
+    let choosePath:string|null=null;
+    await context.route('**/api/v1/harness/directories/choose', route=>route.fulfill({json:{path:choosePath}}));
+    const beforeDirectories=(await client.directories.list()).length;
+    await a.getByRole('button',{name:'添加工作空间',exact:true}).click();
+    const cancelledResponse=a.waitForResponse(response=>response.url().endsWith('/directories/choose'));
+    await a.getByRole('button',{name:'选择本机目录',exact:true}).click();
+    assert.deepEqual(await (await cancelledResponse).json(),{path:null});
+    try{await until(()=>a.getByRole('button',{name:/选择.*目录/}).isEnabled(),value=>value,'cancelled chooser');}
+    catch(error){t.diagnostic(await a.getByRole('dialog',{name:'添加工作空间'}).innerText());throw error;}
+
+    assert.equal((await client.directories.list()).length,beforeDirectories);
+    const dialog=a.getByRole('dialog',{name:'添加工作空间'});
+    assert.equal(await dialog.getByRole('button',{name:'创建并使用',exact:true}).isEnabled(),false);
+    choosePath=work;
+    await dialog.getByRole('button',{name:'选择本机目录',exact:true}).click();
+    await dialog.getByLabel('已选择的工作空间目录').getByText(work,{exact:true}).waitFor();
+    assert.equal(await dialog.getByRole('textbox').count(),1,'only the optional name is editable; no path input');
+    assert.equal(await dialog.getByRole('button',{name:'使用路径备用方式'}).count(),0);
+    await dialog.getByRole('button',{name:'创建并使用',exact:true}).click();
+    await dialog.waitFor({state:'hidden'});
+    assert.equal((await client.directories.list()).length,beforeDirectories,'reusing directory does not duplicate scope');
+    const namedWork=path.join(root,'named-directory');fs.mkdirSync(namedWork);choosePath=namedWork;
+    await a.getByRole('button',{name:'添加工作空间',exact:true}).click();
+    await dialog.getByRole('textbox',{name:'工作空间名称',exact:true}).fill('我的工作空间');
+    await dialog.getByRole('button',{name:'选择本机目录',exact:true}).click();
+    await dialog.getByLabel('已选择的工作空间目录').getByText(namedWork,{exact:true}).waitFor();
+    await dialog.getByRole('button',{name:'创建并使用',exact:true}).click();await dialog.waitFor({state:'hidden'});
+    const named=(await client.directories.list()).find(item=>item.rootPath===fs.realpathSync(namedWork));
+    assert.equal(named?.name,'我的工作空间');
+    await a.reload();
+    await a.getByRole('combobox',{name:'新对话工作空间'}).locator('..').locator('..').click();
+    await a.getByText('我的工作空间',{exact:true}).last().waitFor();
+    await a.keyboard.press('Escape');
+
     const inputA = a.getByRole('textbox', {name: '对话输入', exact: true});
     await until(() => a.locator('.ac-model-label').innerText(), value => value.includes('Fixture'), 'fixture model selection');
+    await a.getByRole('button',{name:'智能体与模型设置',exact:true}).hover();
+    const quotaOverview=a.getByTestId('account-quota-overview');
+    await quotaOverview.getByText(/小时.*分钟后重置/).waitFor({state:'visible'});
+    assert.match(await quotaOverview.innerText(),/每周窗口.*剩余 5%/s);
+    await quotaOverview.screenshot({path:path.join(os.tmpdir(),'conversation-single-quota.png')});
+    await a.mouse.move(5,5);
     await inputA.fill('question');
     await until(() => a.getByRole('button', {name: '发送对话', exact: true}).isEnabled(), value => value, 'send enabled');
     const firstSend = '**/drafts/*/send';
@@ -165,6 +210,7 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     assert.equal(await a.evaluate(() => Object.values(sessionStorage).some(value => value.includes('首发后的新草稿'))), true);
     const conversationId = await a.locator('.ac-panel[data-conversation-id]').getAttribute('data-conversation-id');
     assert.ok(conversationId);
+    assert.equal(await a.getByRole('button',{name:'系统提示词',exact:true}).count(),0);
     await b.goto(origin);
     await b.locator('.ac-collapsed-rail .ac-all-conversations').click();
     await b.locator(`.ac-history-row-main[data-conversation-id="${conversationId}"]`).click();
@@ -282,17 +328,39 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await a.getByRole('button', {name: '添加供应商', exact: true}).waitFor({state: 'visible', timeout: 10000});
     await a.getByRole('tab', {name: '系统提示词', exact: true}).click();
     const promptText = a.getByRole('textbox', {name:'系统提示词内容',exact:true});
+    const savePromptButton=a.getByRole('button',{name:'保存系统提示词',exact:true});
+    const savePrompt=async()=>{
+      for(let attempt=0;attempt<8;attempt++){
+        await until(()=>savePromptButton.getAttribute('class'),value=>!value?.includes('ant-btn-loading'),'prompt save button ready');
+        const response=a.waitForResponse(value=>value.url().endsWith('/system-prompt')&&value.request().method()!=='GET');
+        await savePromptButton.click();
+        const receipt=await response,body=await receipt.json();
+        await until(()=>savePromptButton.getAttribute('class'),value=>!value?.includes('ant-btn-loading'),'prompt save completed');
+        if(receipt.status()===200)return;
+        // A global storage lock can be briefly held by the fixture's background
+        // observers. This rejection happens before writing, not an unknown save.
+        if(receipt.status()===409&&body.error?.code==='agent_process_owned'&&attempt<7){
+          assert.equal((await client.operations.systemPrompt.read()).revision,receipt.request().postDataJSON().expectedRevision);
+          await new Promise(resolve=>setTimeout(resolve,Math.min(100*2**attempt,1000)));
+          continue;
+        }
+        assert.equal(receipt.status(),200,JSON.stringify({body,requests:promptSaves,lock:readLock(dataRoot,'storage'),testPid:process.pid,servicePid:firstIdentity.pid}));
+      }
+    };
+    const promptSaves:Array<unknown>=[];a.on('response',response=>{if(response.url().endsWith('/system-prompt')&&response.request().method()!=='GET')promptSaves.push({status:response.status(),input:response.request().postDataJSON()});});
     await until(()=>promptText.inputValue(),value=>value.includes('简洁'),'system prompt default loaded');
     await promptText.fill('浏览器验收：简洁表达，不省略风险。');
-    await a.getByRole('button',{name:'保存系统提示词',exact:true}).click();
+    await savePrompt();
     await a.getByText('已保存，下一轮应用',{exact:true}).waitFor();
     assert.equal((await client.operations.systemPrompt.read()).text,'浏览器验收：简洁表达，不省略风险。');
     await a.getByRole('switch',{name:'启用 Buildr Harness 系统提示词',exact:true}).click();
-    await a.getByRole('button',{name:'保存系统提示词',exact:true}).click();
+    await savePrompt();
     await until(()=>client.operations.systemPrompt.read(),value=>!value.enabled,'system prompt disabled');
     await a.getByRole('button',{name:'恢复默认内容',exact:true}).click();
-    await a.getByRole('button',{name:'保存系统提示词',exact:true}).click();
-    await until(()=>client.operations.systemPrompt.read(),value=>value.enabled&&value.text===value.defaultText,'system prompt restored');
+    const defaultPrompt=(await client.operations.systemPrompt.read()).defaultText;
+    await until(()=>promptText.inputValue(),value=>value===defaultPrompt,'default prompt editor restored');
+    await savePrompt();
+    try {await until(()=>client.operations.systemPrompt.read(),value=>value.enabled&&value.text===value.defaultText,'system prompt restored');} catch(error) {t.diagnostic(JSON.stringify({saved:await client.operations.systemPrompt.read(),requests:promptSaves,ui:await a.locator('section[aria-label="Buildr Harness 系统提示词"]').innerText()}));throw error;}
     await a.getByRole('tab', {name: '程序接入', exact: true}).click();
     const newAccess = a.getByRole('button', {name: '新建接入', exact: true});
     await until(() => newAccess.isEnabled(), value => value, 'programmatic settings discovery');
