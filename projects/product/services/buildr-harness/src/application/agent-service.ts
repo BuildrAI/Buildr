@@ -258,15 +258,18 @@ export function createAgentService(options: AgentServiceOptions) {
       } catch { reasons.push({kind:'storage-unconfirmed',count:1}); }
       return {busy:reasons.length>0,reasons};
     },
+    programUpgradeBusy: () => upgrades.activity().length > 0,
     async freezeMetadata() {
       clearInterval(discoveryTimer); discoveryTimer = undefined;
       await discovery?.catch(() => {});
-      if ([...upgrades.activity(), ...preparations.activity(), ...connections.activity(), ...models.activity().filter(reason => reason.kind !== 'model-request')].length) {
+      if (upgrades.activity().length) { startRefreshing(); return false; }
+      if ([...preparations.activity(), ...connections.activity(), ...models.activity().filter(reason => reason.kind !== 'model-request')].length) {
         startRefreshing();
         const { AgentServiceError } = await import('../domain/agent-state.ts');
         throw new AgentServiceError('agent_process_busy', '仍有账号、准备或配置写入操作，尚未交接维护权。', 409);
       }
       connections.freezeMetadata(); models.freezeMetadata(); metadataFrozen = true;
+      return true;
     },
     resumeMetadata() { metadataFrozen = false; connections.freezeMetadata(false); models.freezeMetadata(false); startRefreshing(); },
     conversationBusy: (scope: string, id: string) => conversations.busy(scope, id),

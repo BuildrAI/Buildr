@@ -119,12 +119,19 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     })().finally(() => { recovering = false; });
   }
   const generations = new Map<string, AbortController>();
+  function waitingForProgramUpgrade(): boolean {
+    return pending?.state === 'waiting' && service.programUpgradeBusy();
+  }
+  function blocksNewSends(): boolean {
+    return Boolean(pending && pending.state !== 'failed' && pending.runtime.digest !== options.runtime.digest &&
+      !waitingForProgramUpgrade());
+  }
   function status(): AgentProcessStatus {
     const activity = service.activity();
     if (inflight) activity.reasons.push({ kind: 'operation', count: inflight });
     if (recovering) activity.reasons.push({ kind: 'recovery-start', count: 1 });
     activity.busy = activity.reasons.length > 0;
-    return { identity, activity, accepting, retiring, instances: readProcessInstances(options.dataRoot).filter(record => !record.stopped && live(record.identity.pid)).map(record => ({generation:record.identity.generation,runtimeDigest:record.identity.runtime.digest,retiring:Boolean(record.retiring)})), ...(pending && pending.runtime.digest !== options.runtime.digest ? { pendingRuntime: pending.runtime, diagnostic: pending.diagnostic } : {}) };
+    return { identity, activity, accepting, retiring, instances: readProcessInstances(options.dataRoot).filter(record => !record.stopped && live(record.identity.pid)).map(record => ({generation:record.identity.generation,runtimeDigest:record.identity.runtime.digest,retiring:Boolean(record.retiring)})), ...(pending && pending.runtime.digest !== options.runtime.digest ? { pendingRuntime: pending.runtime, diagnostic: pending.diagnostic, ...(waitingForProgramUpgrade() ? {pendingReason: 'program-upgrade' as const} : {}) } : {}) };
   }
   async function recipient(scope: string, id: string, generation?: string): Promise<ProcessRecord | undefined> {
     const conversation = repository.readState(id)?.view;
@@ -169,7 +176,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     }
     catch (error) { if (error instanceof AgentServiceError) throw error; throw new AgentServiceError('agent_operation_result_unknown', '原后台操作结果尚待核对，不会自动重发。', 503); }
   }
-  const sends = new PendingSends({dataRoot:options.dataRoot,service,active:()=>!closing&&accepting&&!retiring&&(!pending||pending.state==='failed'||pending.runtime.digest===options.runtime.digest)&&readProcessRecord(options.dataRoot)?.identity.instanceId===instanceId,generationAlive:generation=>generationAlive(options.dataRoot,generation),conversationBusy});
+  const sends = new PendingSends({dataRoot:options.dataRoot,service,active:()=>!closing&&accepting&&!retiring&&!blocksNewSends()&&readProcessRecord(options.dataRoot)?.identity.instanceId===instanceId,generationAlive:generation=>generationAlive(options.dataRoot,generation),conversationBusy});
   function scope(sourceId: string, key: unknown): void {
     if (typeof key !== 'string' || !key || executionScopeRef(key, options.legacySourceId).sourceId !== sourceId) throw new AgentServiceError('agent_host_source_mismatch', '执行范围不属于当前接入来源。', 409);
   }
@@ -489,7 +496,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       }
       const startsWork = !name.startsWith('conversations.') || ['conversations.fork','conversations.startDraft','conversations.create','conversations.createChild','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.generateTitle'].includes(name);
       if (startsWork && !accepting) throw new AgentServiceError('agent_process_switching', '执行后台正在采用新版，本次新操作尚未受理。', 503);
-      if (['conversations.startDraft','conversations.send'].includes(name) && pending?.state !== 'failed' && pending?.runtime.digest !== undefined && pending.runtime.digest !== options.runtime.digest) throw new AgentServiceError('agent_process_switching','新版尚未就绪，可以提交待发送内容。',503);
+      if (['conversations.startDraft','conversations.send'].includes(name) && blocksNewSends()) throw new AgentServiceError('agent_process_switching','新版尚未就绪，可以提交待发送内容。',503);
       if (name === 'conversations.send' && await conversationBusy(input.args[0],input.args[1]) && !service.allowsReleasedContinuation(input.args[0],input.args[1],input.args[2])) throw new AgentServiceError('agent_conversation_busy','上一轮仍未释放，可以提交待发送内容。',409);
       if (name === 'conversations.send' && new PendingSendRepository(path.join(options.dataRoot,'agent-service')).read(input.args[0],input.args[1])) throw new AgentServiceError('agent_pending_conflict','已有待发送内容，请等待、修改或取消。',409);
       let result: any = await dispatchOperation(service, input.operation, input.args);
@@ -573,7 +580,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     accepting = false;
     try {
       startup = claim(options.dataRoot, 'startup');
-      await service.freezeMetadata();
+      if (!await service.freezeMetadata()) { accepting = !closing; return; }
       if (inflight || recovering || closing) { service.resumeMetadata(); accepting = !closing; return; }
       await service.releaseIdleSources();
       const starting: PendingRuntime = {runtime:target,state:'parallel-starting'};
@@ -681,6 +688,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if (peerExited) recoverAfterHostAttach();
       void sends.pump().catch(()=>{});
     }
+    if (waitingForProgramUpgrade()) return;
     if (pending?.state==='waiting' && canRunParallel(options.runtime,pending.runtime) && !inflight && !recovering && !sends.busy) {
       const target=pending.runtime;
       adopting=adoptParallel(target).catch(error => {

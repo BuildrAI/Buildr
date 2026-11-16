@@ -64,6 +64,7 @@ export interface AgentProcessStatus {
   activity: AgentActivity;
   accepting: boolean;
   pendingRuntime?: AgentRuntimeUnit;
+  pendingReason?: 'program-upgrade';
   diagnostic?: string;
   retiring?: boolean;
   instances?: Array<{ generation: string; runtimeDigest: string; retiring: boolean }>;

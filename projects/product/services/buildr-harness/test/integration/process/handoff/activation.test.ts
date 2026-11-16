@@ -88,3 +88,58 @@ for (const {modelBound,parallel,uncertain} of [{modelBound:true,parallel:true,un
   if(parallel)assert.equal(sent.filter(value=>value.text==='new work').length,1);
   if(parallel)assert.equal(sent.find(value=>value.text==='new work')?.version,'new');
 });
+
+test('a registered Harness candidate waits for a program update while the old owner accepts work', {timeout:90_000}, async t => {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-program-update-handoff-'));
+  const dataRoot=path.join(root,'profile'),workspace=path.join(root,'work'),packageRoot=path.join(root,'package');
+  fs.mkdirSync(workspace);
+  copyPackage(prepared,packageRoot);
+  fs.copyFileSync(path.join(import.meta.dirname,'../../fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
+  const marker=path.join(packageRoot,'build/fixture-version.json');
+  const busy=path.join(dataRoot,'program-update-busy');
+  // Control the program manager's activity without downloading a real program.
+  fs.writeFileSync(path.join(packageRoot,'build/program-update-fixture.mjs'),`
+    import fs from 'node:fs';
+    import path from 'node:path';
+    import {ProgramUpgrades} from './application/program-upgrades.js';
+    const {dataRoot}=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+    ProgramUpgrades.prototype.activity=function(){
+      return fs.existsSync(path.join(dataRoot,'program-update-busy')) ? [{kind:'program-upgrade',count:1}] : [];
+    };
+    await import('./process-fixture.mjs');
+  `);
+  fs.writeFileSync(marker,JSON.stringify({version:'old'}));
+  const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/program-update-fixture.mjs'});
+  const profileId='program-update-handoff',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
+  let main:Awaited<ReturnType<typeof actor>>|undefined,observer:AgentProcessConnection|undefined;
+  t.after(()=>cleanupProcessFixture({root,dataRoot,profileId,host:main,observer}));
+  main=await actor({dataRoot,profileId,runtime,workspace});
+  observer=await connectAgentProcess({dataRoot,profileId,runtime,sourceId:'minimal'});
+  const old=await observer.lifecycle.identity(),connection=await main.call('connections.read',['first']);
+  await main.call('connections.connect',['first',{expectedRevision:connection.revision}]);
+  const send=async(text:string)=>{
+    const draftId=randomUUID(),draft=await observer!.operations.conversations.readDraft(scope,draftId);
+    const result=await main!.call('conversations.startDraft',[scope,draftId,{connectionId:'first',text,clientRequestId:randomUUID(),expectedDraftRevision:draft.revision}]);
+    return until(()=>observer!.operations.conversations.read(scope,result.conversation.id),view=>view.run?.accepted===true);
+  };
+  fs.writeFileSync(busy,'yes');
+  fs.writeFileSync(marker,JSON.stringify({version:'new'}));
+  const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});
+  await assert.rejects(observer.lifecycle.activateRuntime({expectedGeneration:old.generation,runtime:next,timeoutMs:900}),{code:'agent_process_activation_pending'});
+  const waiting=await observer.lifecycle.status();
+  assert.equal(waiting.pendingRuntime?.digest,next.digest);
+  assert.equal(waiting.pendingReason,'program-upgrade');
+  assert.equal(waiting.diagnostic,undefined);
+  assert.equal(waiting.accepting,true);
+  assert.equal((await send('while program updates')).run?.generation,old.generation);
+
+  fs.unlinkSync(busy);
+  const adopted=await until(()=>observer!.lifecycle.status(),status=>status.identity.runtime.digest===next.digest&&status.accepting);
+  assert.equal(adopted.pendingRuntime,undefined);
+  assert.equal((await send('after automatic adoption')).run?.generation,adopted.identity.generation);
+  const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
+  assert.deepEqual(sent.map(({text,version})=>[text,version]),[
+    ['while program updates','old'],
+    ['after automatic adoption','new'],
+  ]);
+});
