@@ -129,7 +129,26 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await until(() => a.locator('.ac-model-label').innerText(), value => value.includes('Fixture'), 'fixture model selection');
     await inputA.fill('question');
     await until(() => a.getByRole('button', {name: '发送对话', exact: true}).isEnabled(), value => value, 'send enabled');
+    const firstSend = '**/drafts/*/send';
+    const firstLookup = '**/drafts/*/submissions/*';
+    const firstAttemptIds: string[] = [], firstEvents: string[] = [];
+    let recoveringFirst = false;
+    const rejectDuringUpdate = async (route: Route) => {
+      firstAttemptIds.push(route.request().postDataJSON().clientRequestId);
+      firstEvents.push('send');
+      if (!recoveringFirst) return route.fulfill({status: 503, json: {error: {code: 'agent_process_switching', message: 'updating'}}});
+      const accepted = await route.fetch();
+      assert.equal(accepted.status(), 202);
+      // The real backend accepted the request, but the browser lost its reply.
+      await route.abort('failed');
+    };
+    const observeFirst = async (route: Route) => {firstEvents.push('lookup');await route.continue();};
+    await a.route(firstSend, rejectDuringUpdate);
+    await a.route(firstLookup, observeFirst);
     await inputA.press('Enter');
+    await a.getByText('上次发送尚未受理：正在等待可接单的执行后台。', {exact: true}).waitFor();
+    await inputA.fill('首发后的新草稿');
+    recoveringFirst = true;
     try {
       await a.getByRole('radio', {name: 'Accepted', exact: true}).waitFor({state: 'visible', timeout: 10000});
     } catch (error) {
@@ -138,6 +157,12 @@ test('standalone production UI sends through real source HTTP, isolates two draf
       t.diagnostic('fixture native inputs: ' + (fs.existsSync(sent) ? fs.readFileSync(sent, 'utf8').trim().split('\n').map(line => JSON.parse(line).text).join(' | ') : 'none'));
       throw error;
     }
+    await a.unroute(firstSend, rejectDuringUpdate);
+    await a.unroute(firstLookup, observeFirst);
+    assert.deepEqual(firstEvents, ['send', 'lookup', 'send', 'lookup']);
+    assert.equal(firstAttemptIds.length, 2);
+    assert.equal(firstAttemptIds[1], firstAttemptIds[0]);
+    assert.equal(await a.evaluate(() => Object.values(sessionStorage).some(value => value.includes('首发后的新草稿'))), true);
     const conversationId = await a.locator('.ac-panel[data-conversation-id]').getAttribute('data-conversation-id');
     assert.ok(conversationId);
     await b.goto(origin);

@@ -231,7 +231,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
     })().finally(() => { connecting = undefined; });
     return connecting;
   }
-  async function awaitRuntime(runtime: AgentRuntimeUnit, timeoutMs = 30_000): Promise<AgentProcessStatus> {
+  async function awaitRuntime(runtime: AgentRuntimeUnit, timeoutMs = 30_000, allowFailedFallback = false): Promise<AgentProcessStatus> {
     const deadline = Date.now() + Math.max(1, Math.min(timeoutMs, 120_000));
     while (!closed) {
       try {
@@ -241,7 +241,15 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
         if (status.identity.instanceId !== current.identity.instanceId || status.identity.runtime.digest !== current.identity.runtime.digest) throw new AgentServiceError('agent_process_identity_mismatch', '新版启用观察身份不匹配。', 409);
         if (status.identity.runtime.digest === runtime.digest && status.accepting && !status.retiring && !status.pendingRuntime) return status;
         if (status.pendingRuntime && status.pendingRuntime.digest !== runtime.digest) throw new AgentServiceError('agent_process_activation_superseded', '启用目标已被另一版本替换，请核对当前目标。', 409);
-        if (status.pendingRuntime?.digest === runtime.digest && status.diagnostic) throw new AgentServiceError('agent_process_activation_failed', status.diagnostic, 503);
+        if (status.pendingRuntime?.digest === runtime.digest && status.diagnostic) {
+          // A failed candidate remains visible to explicit activation callers.
+          // Ordinary work can use the current coordinator after a proven rollback.
+          if (allowFailedFallback && status.accepting && !status.retiring &&
+              readProcessRecord(options.dataRoot)?.identity.instanceId === current.identity.instanceId) {
+            return status;
+          }
+          throw new AgentServiceError('agent_process_activation_failed', status.diagnostic, 503);
+        }
       } catch (error) {
         if (error instanceof AgentServiceError && error.code !== 'agent_process_switching') throw error;
         // Only repeat read-only readiness observations across the handoff gap.
@@ -261,7 +269,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
     matches(status.identity, options);
     if (status.identity.instanceId !== current.identity.instanceId || status.identity.generation !== current.identity.generation || status.identity.runtime.digest !== current.identity.runtime.digest) throw new AgentServiceError('agent_process_identity_mismatch', '新版就绪观察身份不匹配。', 409);
     const target = status.pendingRuntime ?? (requestedDigest ? options.runtime : undefined);
-    if (target) await awaitRuntime(target, options.activationTimeoutMs);
+    if (target) await awaitRuntime(target, options.activationTimeoutMs, true);
     else if (!status.accepting || status.retiring) throw new AgentServiceError('agent_process_activation_failed', status.diagnostic || '当前执行后台未就绪，输入已保留，请核对后台启动状态。', 503);
   }
   try {

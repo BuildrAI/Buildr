@@ -82,13 +82,13 @@ await step('唯一新草稿跨空间、旧对话与刷新恢复，默认空间�
 await step('lost first-send reply recovers the accepted conversation after refresh without replay',async()=>{
       await fixture.startNewConversation();await input().waitFor();await chooseAgent('Codex');await chooseModel('Fixture model');await closeModelSettings();await input().fill('recover the accepted first input');
       const beforeSends=fixture.sends,beforeCreations=fixture.creations;fixture.loseFirstResponse=true;
-      await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByRole('button',{name:'核对并重试原提交',exact:true}).waitFor();
+      await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();
       assert.equal(fixture.sends,beforeSends+1);assert.equal(fixture.creations,beforeCreations+1);const acceptedId=fixture.conversation.id;
       await page.reload();await page.locator('#agent-conversation-panel[data-conversation-id="'+acceptedId+'"]').waitFor();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,beforeSends+1);assert.equal(fixture.creations,beforeCreations+1);
       await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
     });
 
-await step('后台升级明确拒绝首轮后保留提示，刷新和重试沿用原文字与附件',async()=>{
+await step('后台升级明确拒绝首轮后自动核对与接续，保留后来编辑的草稿',async()=>{
       await fixture.startNewConversation();await input().waitFor();await chooseAgent('Codex');
       await input().fill('upgrade preserved original');
       await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'upgrade.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10])});await panel().getByRole('button',{name:'移除图片 upgrade.png',exact:true}).waitFor();
@@ -99,14 +99,13 @@ await step('后台升级明确拒绝首轮后保留提示，刷新和重试沿�
       await page.route(match,rejectWhileUpdating);
       try{
         await panel().getByRole('button',{name:'发送对话',exact:true}).click();
-        const retry=()=>panel().getByRole('button',{name:'检查升级并重试原提交',exact:true});await retry().waitFor();
-        assert.match(await panel().locator('.ant-alert-info').innerText(),/上次发送尚未受理.*执行后台正在升级.*新后台尚未就绪/s);
+        const retry=()=>panel().getByRole('button',{name:'检查并重试原提交',exact:true});await retry().waitFor();
+        assert.match(await panel().locator('.ant-alert-info').innerText(),/上次发送尚未受理.*等待可接单的执行后台/s);
         assert.equal(fixture.sends,beforeSends);assert.equal(fixture.creations,beforeCreations);assert.equal(await panel().getAttribute('data-conversation-id'),null);
-        await page.reload();await retry().waitFor();assert.equal(attempts.length,1,'刷新只核对，不自动重发');
         await fixture.capture(page,'agent-conversation-backend-upgrade-notice.png');
-        await input().fill('later edited draft');updating=false;await retry().click();await panel().locator('[data-run-status="running"]').waitFor();
-        assert.equal(fixture.sends,beforeSends+1);assert.equal(fixture.creations,beforeCreations+1);assert.equal(attempts.length,2);
-        assert.equal(attempts[1].clientRequestId,attempts[0].clientRequestId);assert.equal(sentInputs.at(-1).text,'upgrade preserved original');assert.deepEqual(sentInputs.at(-1).attachmentIds,attempts[0].attachmentIds);assert.equal(attempts[0].attachmentIds.length,1);
+        await input().fill('later edited draft');updating=false;await panel().locator('[data-run-status="running"]').waitFor();
+        assert.equal(fixture.sends,beforeSends+1);assert.equal(fixture.creations,beforeCreations+1);assert.ok(attempts.length>=2);
+        assert.ok(attempts.every(attempt=>attempt.clientRequestId===attempts[0].clientRequestId));assert.equal(sentInputs.at(-1).text,'upgrade preserved original');assert.deepEqual(sentInputs.at(-1).attachmentIds,attempts[0].attachmentIds);assert.equal(attempts[0].attachmentIds.length,1);
         assert.equal(await retry().count(),0);
         await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
         await fixture.startNewConversation();await input().waitFor();assert.equal(await input().inputValue(),'later edited draft','后来编辑的文字仍保留在共享新草稿中');

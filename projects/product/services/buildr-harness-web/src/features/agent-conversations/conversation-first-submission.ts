@@ -18,7 +18,13 @@ export function firstConversationSubmissions(storage?: Pick<Storage, 'getItem' |
       const current = this.read();
       if (!current || current.input.clientRequestId !== requestId) return;
       const failure = error as { status?: number; code?: string } | undefined;
-      return this.save({ ...current, failureReason: failure?.status === 503 && failure.code === 'agent_process_switching' ? 'backend-updating' : undefined });
+      return this.save({ ...current, failureReason: failure?.status === 503 && ['agent_process_switching', 'agent_process_activation_pending', 'agent_process_activation_failed'].includes(failure.code ?? '') ? 'backend-updating' : undefined });
+    },
+    beginDispatch(requestId: string): FirstSubmission | undefined {
+      const current = this.read();
+      if (!current || current.input.clientRequestId !== requestId) return;
+      // If the page disappears before the reply, the new attempt is unknown.
+      return this.save({ ...current, failureReason: undefined });
     },
     clear(requestId: string) {
       if (this.read()?.input.clientRequestId !== requestId) return;

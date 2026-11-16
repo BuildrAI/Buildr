@@ -45,7 +45,12 @@ for (const {modelBound,parallel,uncertain} of [{modelBound:true,parallel:true,un
     try {
       assert.equal((await controls.operations.conversations.read(scope,held.id)).run?.status,oldStatus,'a failed activation must not block a new control client');
       await until(()=>controls.lifecycle.status(),status=>Boolean(status.diagnostic));
-      await assert.rejects(controls.operations.conversations.prepareSend(scope,held.id,{expectedRevision:held.revision,connectionId:'first',...selection,text:'must not send'}),{code:'agent_process_activation_failed'});
+      const fallback = await controls.operations.conversations.create(scope, {});
+      const draft = {expectedRevision:fallback.revision,connectionId:'first',...selection,text:'send after rollback'};
+      const preview = await controls.operations.conversations.prepareSend(scope,fallback.id,draft);
+      const sent = await controls.operations.conversations.send(scope,fallback.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+      assert.equal(sent.run.generation, old.generation);
+      assert.equal((await controls.lifecycle.status()).pendingRuntime?.digest, next.digest);
     } finally {await controls.disconnect();}
     fs.writeFileSync(gate,'yes');
     const ordinary=await connectAgentProcess({dataRoot,profileId,runtime:next,sourceId:'minimal'});

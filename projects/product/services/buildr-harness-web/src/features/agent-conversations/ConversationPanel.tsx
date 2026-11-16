@@ -13,7 +13,7 @@ import { ConversationForkOrigin } from './ConversationForkOrigin.tsx';
 import { finalReplyIds, forkableReplyIds } from './conversation-fork.ts';
 import { currentConversationRequests } from './conversation-state.ts';
 import { conversationModelLabel } from './conversation-model-label.ts';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, type ReactNode } from 'react';
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, Fragment, type ReactNode } from 'react';
 import { SplitDivider } from '../../components/SplitDivider.tsx';
 import { readOptionalPreference, writeOptionalPreference } from '../../lib/optional-preferences.ts';
 import { Alert, Button, Dropdown, Input, Modal, Popover, Select, Spin, Tag } from 'antd';
@@ -326,14 +326,6 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     void context.refreshPending().catch(()=>{});
   };
   useEffect(()=>{if(!context.scope)setUnconfirmedFirst(firstSubmissions.read());},[context.selectionGeneration,context.scope,firstSubmissions]);
-  useEffect(()=>{
-    const pending=firstSubmissions.read();if(context.scope||!pending)return;
-    const selection=context.getSelection();let active=true;
-    void context.api.lookupDraft(pending.workspaceId,pending.draftId,pending.input.clientRequestId).then(async result=>{
-      if(active&&result.found&&result.conversation)await acceptFirst(pending,result.conversation,selection);
-    }).catch(failure=>{if(active)fail(failure);});
-    return()=>{active=false;};
-  },[context.api,firstSubmissions]);
   const submissionIdentity=useRef({draftId:'',requestId:crypto.randomUUID()});
   if(submissionIdentity.current.draftId!==newImages.id)submissionIdentity.current={draftId:newImages.id,requestId:crypto.randomUUID()};
   // 模型目录可能晚于输入到达；首条发送前用最新目录补齐原生账号，避免写入无法归属的执行记录。
@@ -345,13 +337,24 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     if(bound!==choice)setChoices(previous=>({...previous,[choiceKey]:bound}));
     return bound;
   };
-  const sendFirst=async(operation:SendOperation)=>{
+  const sendFirst=async(operation:SendOperation, isActive = () => true)=>{
     let submitted=firstSubmissions.read();
     const fresh=!submitted;
+    let draftRevision: string | undefined;
     if(submitted){
       const result=await context.api.lookupDraft(submitted.workspaceId,submitted.draftId,submitted.input.clientRequestId);
-      if(result.found&&result.conversation){await acceptFirst(submitted,result.conversation,operation.selection);return;}
-      // An explicit retry uses the original payload and identity, never today's edited draft.
+      const stillCurrent=()=>isActive()&&context.isSelectionCurrent(operation.selection)&&firstSubmissions.read()===submitted;
+      if(!stillCurrent())return;
+      if(result.found){
+        if(result.conversation)await acceptFirst(submitted,result.conversation,operation.selection);
+        return;
+      }
+      if(submitted.failureReason!=='backend-updating')return;
+      const snapshot=await context.api.draftImages(submitted.draftId);
+      if(!stillCurrent())return;
+      const staged=new Set(draftMaterialIds(snapshot.images));
+      if(submitted.input.attachmentIds?.some(id=>!staged.has(id)))throw new Error('原提交的附件已变化，当前草稿已保留。');
+      draftRevision=snapshot.revision;
     }else{
       if(draftWorkspaceId!=='@default'&&!newCwd.trim())throw new Error('工作空间目录不可用，请重新选择。');
       const snapshot=await newImages.refresh();
@@ -363,8 +366,12 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       submitted=firstSubmissions.save({draftId:newImages.id,workspaceId:draftWorkspaceId,input:{connectionId:bound.connectionId,modelAccountId:bound.modelAccountId,modelAccountRevision:bound.modelAccountRevision,modelAccountIdentity:bound.modelAccountIdentity,model:bound.model,serviceTier:bound.serviceTier,reasoningEffort:bound.reasoningEffort,permissionMode,text:draft.text,attachmentIds:expectedIds as NonNullable<SendDraft['attachmentIds']>,expectedDraftRevision:snapshot.revision,clientRequestId:submissionIdentity.current.requestId,...(draftWorkspaceId!=='@default'&&newCwd?{cwd:newCwd.trim()}:{}),...(boundTaskLinks.length?{taskLinks:boundTaskLinks}:{})}});
     }
     try{
-      const result=await context.api.startDraft(submitted.workspaceId,submitted.draftId,submitted.input);
-      await acceptFirst(submitted,result.conversation,operation.selection,fresh);
+      if(!firstSubmissions.beginDispatch(submitted.input.clientRequestId))return;
+      const input=draftRevision===undefined?submitted.input:{...submitted.input,expectedDraftRevision:draftRevision};
+      const result=await context.api.startDraft(submitted.workspaceId,submitted.draftId,input);
+      if(isActive()&&firstSubmissions.read()?.input.clientRequestId===input.clientRequestId){
+        await acceptFirst(submitted,result.conversation,operation.selection,fresh);
+      }
     }catch(failure){
       const error=failure as ApiError;
       const preserved=firstSubmissions.recordFailure(submitted.input.clientRequestId,error);
@@ -377,6 +384,35 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       throw failure;
     }
   };
+  const recoverFirst = useEffectEvent(async (isActive: () => boolean) => {
+    if(activeSend.current)return false;
+    const operation:SendOperation={selection:context.getSelection()};
+    activeSend.current=operation;
+    setSending(true);
+    try{
+      await sendFirst(operation,isActive);
+      return firstSubmissions.read()?.failureReason!=='backend-updating';
+    }catch(failure){
+      if(isActive()&&context.isSelectionCurrent(operation.selection))fail(failure);
+      return true;
+    }finally{
+      if(activeSend.current===operation){activeSend.current=null;setSending(false);}
+    }
+  });
+  const firstRequestId=unconfirmedFirst?.input.clientRequestId;
+  const firstFailureReason=unconfirmedFirst?.failureReason;
+  useEffect(()=>{
+    if(context.scope||!firstRequestId)return;
+    let active=true,attempts=0;
+    let timer:ReturnType<typeof setTimeout>;
+    const reconcile=async()=>{
+      if(!active||firstSubmissions.read()?.input.clientRequestId!==firstRequestId)return;
+      const settled=await recoverFirst(()=>active);
+      if(active&&!settled&&firstFailureReason==='backend-updating'&&++attempts<4)timer=setTimeout(reconcile,2_000);
+    };
+    timer=setTimeout(reconcile,firstFailureReason==='backend-updating'?1_000:0);
+    return()=>{active=false;clearTimeout(timer);};
+  },[context.scope,context.selectionGeneration,firstSubmissions,firstRequestId,firstFailureReason]);
   const queue=async(current:ConversationView,input:SendDraft)=>{
     const selection=context.getSelection();
     let storage:Pick<Storage,'getItem'|'setItem'|'removeItem'>={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};

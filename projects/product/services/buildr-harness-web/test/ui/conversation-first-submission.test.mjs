@@ -48,7 +48,7 @@ test('升级明确未受理保存原提交，刷新后仍与未知结果区分',
   const restored=firstConversationSubmissions(storage).read();
   assert.equal(restored.failureReason,'backend-updating');assert.deepEqual(restored.input,original.input);
   const html=renderToStaticMarkup(React.createElement(ConversationFirstSubmissionNotice,{submission:restored,busy:false,onRetry(){assert.fail('render must never resend');}}));
-  assert.match(html,/ant-alert-info/);assert.match(html,/尚未受理/);assert.match(html,/原文字和附件已保留/);assert.match(html,/检查升级并重试原提交/);assert.doesNotMatch(html,/结果待核对/);
+  assert.match(html,/ant-alert-info/);assert.match(html,/尚未受理/);assert.match(html,/原文字和附件已保留/);assert.match(html,/检查并重试原提交/);assert.doesNotMatch(html,/结果待核对/);
 });
 
 test('同次提交重试后结果未知不能沿用升级未受理结论',()=>{
@@ -66,4 +66,17 @@ test('迟到失败不改写另一次提交，也不复活已受理并清理的�
   manager.save(original);const next={...original,input:{...original.input,text:'new text',clientRequestId:'next'}};manager.save(next);
   assert.equal(manager.recordFailure('request',{status:503,code:'agent_process_switching'}),undefined);assert.deepEqual(manager.read(),next);
   manager.clear('next');assert.equal(manager.recordFailure('next',{status:503,code:'agent_process_switching'}),undefined);assert.equal(manager.read(),undefined);
+});
+
+test('开始接续前清除未派发证明，页面中断后只能核对这次在途提交',()=>{
+  const values=new Map(),storage={getItem:key=>values.get(key),setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};
+  const manager=firstConversationSubmissions(storage);
+  const original={draftId:'draft',workspaceId:'workspace',input:{text:'original',connectionId:'codex',clientRequestId:'request',expectedDraftRevision:'images'}};
+  manager.save(original);
+  for(const code of ['agent_process_switching','agent_process_activation_pending','agent_process_activation_failed']){
+    assert.equal(manager.recordFailure('request',{status:503,code})?.failureReason,'backend-updating');
+    assert.equal(manager.beginDispatch('other'),undefined);
+    assert.equal(manager.beginDispatch('request')?.failureReason,undefined);
+    assert.deepEqual(firstConversationSubmissions(storage).read(),original);
+  }
 });
