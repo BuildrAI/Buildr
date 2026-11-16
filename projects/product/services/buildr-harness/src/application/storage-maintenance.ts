@@ -88,10 +88,8 @@ function inventoryAgentStorage(
   const dataRoot = path.resolve(input.dataRoot), root = path.join(dataRoot, 'agent-service');
   const tempRoots = input.tempRoots ?? defaultHostTempRoots();
   const rootSafe = safeStoragePath(dataRoot, root);
-  if (rootSafe) {
-    reanchorProtectedRuntimeInodes(dataRoot);
-    reanchorProtectedProgramInodes(root);
-  }
+  const protectedInodes = rootSafe ? reanchorProtectedRuntimeInodes(dataRoot) : new Set<string>();
+  if (rootSafe) reanchorProtectedProgramInodes(root);
   const use = observeStorageUse();
   const result: AgentStoragePlan = { schemaVersion: 1, dataRoot, generatedAt: new Date().toISOString(), tempRoots, observationComplete: use.complete, items: [], diagnostics: use.diagnostic ? [use.diagnostic] : [] };
   if (!rootSafe) { result.diagnostics.push('storage_root_unsafe'); return result; }
@@ -146,7 +144,7 @@ function inventoryAgentStorage(
     } catch { result.diagnostics.push('native_session_inventory_unknown'); }
   }
   try {
-    if (needs('runtime')) result.items.push(...retainedRuntimeCandidates(dataRoot, use));
+    if (needs('runtime')) result.items.push(...retainedRuntimeCandidates(dataRoot, use, undefined, Date.now(), false, protectedInodes));
     if (needs('runtime-share')) result.items.push(...runtimeSharingCandidates(dataRoot, use));
     if (needs('runtime-object')) result.items.push(...runtimeObjectCandidates(root, use));
   }
@@ -170,7 +168,7 @@ function inventoryAgentStorage(
         result.items.push(candidate);
       }
     }
-    result.items.push(...orphanReclaimCandidates(root, use, Date.now() - 15 * 60_000));
+    result.items.push(...orphanReclaimCandidates(root, use, Date.now() - 15 * 60_000, protectedInodes));
   }
   if (needs('test-artifact')) result.items.push(...hostTempArtifactCandidates(use, cutoff, tempRoots));
   result.sharedCachePolicy=sharedCachePolicy;
@@ -305,11 +303,12 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
         if (!policy || executor && !storage.preserveSnapshot(executor, item.ownerRoot, item.path)) reason = 'cache_seed_or_contents_retained';
         else {
           const needsSharedReanchor = item.kind === 'runtime' || item.kind === 'runtime-share' || item.kind === 'program-package' || Boolean(item.orphanReclaim);
+          const sharedInodes = needsSharedReanchor ? () => reanchorProtectedRuntimeInodes(runtimeDataRoot) : undefined;
           const observeCandidate = needsSharedReanchor
-            ? () => { reanchorProtectedRuntimeInodes(runtimeDataRoot); if (runtimeDataRoot === plan.dataRoot) reanchorProtectedProgramInodes(root); return observeStorageUse(); }
+            ? () => { sharedInodes?.(); if (runtimeDataRoot === plan.dataRoot) reanchorProtectedProgramInodes(root); return observeStorageUse(); }
             : observeStorageUse;
           removed = item.kind === 'runtime-share' ? shareRetainedRuntime(root, item, deadline, observeCandidate) : removeStorageCandidate(root, item, observeCandidate, directory => item.orphanReclaim ? true : item.retire ? cacheUnreferenced(item) : item.kind === 'runtime'
-            ? runtimeUnreferenced(runtimeDataRoot, item.path) : item.kind === 'shared-cache' ? sharedCacheReclaimable(root,item,observeStorageUse(),cacheStorageDependencies(root,repository)) : item.kind === 'program-package' ? programPackageUnreferenced(root, item.path) : item.kind === 'runtime-object' ? runtimeObjectUnreferenced(directory, path.basename(item.path)) : item.kind === 'test-artifact' ? testArtifactUnreferenced(directory, item.path) : item.kind !== 'diagnostic' || diagnosticUnreferenced(item, diagnosticReferences(item)), allowedBoundaries);
+            ? runtimeUnreferenced(runtimeDataRoot, item.path) : item.kind === 'shared-cache' ? sharedCacheReclaimable(root,item,observeStorageUse(),cacheStorageDependencies(root,repository)) : item.kind === 'program-package' ? programPackageUnreferenced(root, item.path) : item.kind === 'runtime-object' ? runtimeObjectUnreferenced(directory, path.basename(item.path)) : item.kind === 'test-artifact' ? testArtifactUnreferenced(directory, item.path) : item.kind !== 'diagnostic' || diagnosticUnreferenced(item, diagnosticReferences(item)), allowedBoundaries, sharedInodes);
           if (removed && item.kind === 'runtime') {
             try { retireRuntimeRecords(runtimeDataRoot, item.path); } catch { current.diagnostics.push('runtime_metadata_retained:' + item.path); }
           }

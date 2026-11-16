@@ -38,8 +38,9 @@ function currentRuntime(dataRoot:string):AgentRuntimeUnit|undefined {
 }
 
 /** Re-stat protected active/pending/live runtime trees before macOS lsof so XNU vnode path cache stays anchored on live owners rather than stale hard-linked dentries. */
-export function reanchorProtectedRuntimeInodes(dataRoot: string, keep?: AgentRuntimeUnit): void {
-  if (process.platform !== 'darwin') return;
+export function reanchorProtectedRuntimeInodes(dataRoot: string, keep?: AgentRuntimeUnit): Set<string> {
+  const inodes = new Set<string>();
+  if (process.platform !== 'darwin') return inodes;
   const agentRoot = path.join(dataRoot, 'agent-service');
   const directories = new Set<string>();
   if (keep?.directory) directories.add(keep.directory);
@@ -51,8 +52,10 @@ export function reanchorProtectedRuntimeInodes(dataRoot: string, keep?: AgentRun
     if (live(record.identity.pid) && record.identity.runtime.directory) directories.add(record.identity.runtime.directory);
   }
   for (const directory of directories) {
-    if (safeStoragePath(agentRoot, directory)) reanchorSharedDentries(directory);
+    if (!safeStoragePath(agentRoot, directory)) continue;
+    for (const inode of reanchorSharedDentries(directory)) inodes.add(inode);
   }
+  return inodes;
 }
 
 export function runtimeUnreferenced(dataRoot: string, directory: string, keep?: AgentRuntimeUnit): boolean {
@@ -63,7 +66,7 @@ export function runtimeUnreferenced(dataRoot: string, directory: string, keep?: 
 }
 
 /** Disk inventory complements receipts: a dead PID is never the sole deletion proof. */
-export function retainedRuntimeCandidates(dataRoot: string, use: StorageUse, keep?: AgentRuntimeUnit, now = Date.now(), confirmedOnly = false): StorageCandidate[] {
+export function retainedRuntimeCandidates(dataRoot: string, use: StorageUse, keep?: AgentRuntimeUnit, now = Date.now(), confirmedOnly = false, sharedInodes?: ReadonlySet<string>): StorageCandidate[] {
   const root = controlRoot(dataRoot), units = path.join(root, 'runtimes');
   if (!fs.existsSync(units) || !safeStoragePath(path.join(dataRoot, 'agent-service'), units)) return [];
   const records = readProcessInstances(dataRoot);
@@ -77,7 +80,7 @@ export function retainedRuntimeCandidates(dataRoot: string, use: StorageUse, kee
   const directories = fs.readdirSync(units).filter(name => /^[a-f0-9]{64}$/.test(name) && (!confirmedOnly || confirmed.has(name)));
   const items = directories.map(digest => {
     const directory = path.join(units, digest);
-    const item = storageCandidate(path.join(dataRoot, 'agent-service'), 'runtime', directory, directory, use, confirmedOnly ? Infinity : now - day);
+    const item = storageCandidate(path.join(dataRoot, 'agent-service'), 'runtime', directory, directory, use, confirmedOnly ? Infinity : now - day, sharedInodes);
     if (protectedDigests.has(digest)) { item.eligible = false; item.reason = 'runtime_retained_reference'; }
     if (item.eligible) {
       try {

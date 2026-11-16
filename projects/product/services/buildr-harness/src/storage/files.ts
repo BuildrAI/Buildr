@@ -37,8 +37,31 @@ export function observeStorageUse(): StorageUse {
   } catch { return { complete: false, paths: [], diagnostic: 'storage_usage_unavailable' }; }
 }
 
-export function storageInUse(owner: string, use: StorageUse): boolean {
-  return !use.complete || use.paths.some(file => file === owner || file.startsWith(owner + path.sep));
+export function inodeIdentity(stat: Pick<fs.Stats, 'dev' | 'ino'>): string {
+  return `${stat.dev}:${stat.ino}`;
+}
+
+function fileInode(file: string): string | undefined {
+  try {
+    const stat = fs.statSync(file);
+    return stat.isFile() ? inodeIdentity(stat) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Shared inodes belong to a protected runtime: removing another hard link is
+ * safe even when XNU reports its path as the open one. */
+export function storageInUse(owner: string, use: StorageUse, sharedInodes?: ReadonlySet<string>): boolean {
+  if (!use.complete) return true;
+  return use.paths.some(file => {
+    if (!(file === owner || file.startsWith(owner + path.sep))) return false;
+    if (sharedInodes?.size) {
+      const inode = fileInode(file);
+      if (inode && sharedInodes.has(inode)) return false;
+    }
+    return true;
+  });
 }
 
 /** Reject links in every ancestor under the owned root; nested links are never followed. */
@@ -106,30 +129,30 @@ export function storageVersion(directory: string, renamedRootChanged?: number): 
   walk(directory); return { identity: hash.digest('hex'), sizeBytes, modified, rootChanged };
 }
 
-export function storageCandidate(root: string, kind: StorageCandidate['kind'], directory: string, ownerRoot: string, use: StorageUse, cutoff: number): StorageCandidate {
+export function storageCandidate(root: string, kind: StorageCandidate['kind'], directory: string, ownerRoot: string, use: StorageUse, cutoff: number, sharedInodes?: ReadonlySet<string>): StorageCandidate {
   const item: StorageCandidate = { kind, path: directory, ownerRoot, sizeBytes: 0, eligible: false, reason: 'storage_path_unsafe' };
   if (!safeStoragePath(root, directory) || !(ownerRoot === root || safeStoragePath(root, ownerRoot))) return item;
   try {
     const version = storageVersion(directory); Object.assign(item, { identity: version.identity, sizeBytes: version.sizeBytes, rootChanged: version.rootChanged });
-    item.reason = !use.complete ? 'storage_usage_unknown' : storageInUse(ownerRoot, use) ? 'storage_in_use' : version.modified > cutoff ? 'storage_recent' : 'unused_rebuildable';
+    item.reason = !use.complete ? 'storage_usage_unknown' : storageInUse(ownerRoot, use, sharedInodes) ? 'storage_in_use' : version.modified > cutoff ? 'storage_recent' : 'unused_rebuildable';
     item.eligible = item.reason === 'unused_rebuildable';
   } catch { item.reason = 'storage_observation_failed'; }
   return item;
 }
 
 /** The caller holds the service storage lock; recheck immediately around the narrow rename. */
-export function removeStorageCandidate(root: string, item: StorageCandidate, observe = observeStorageUse, unreferenced: (directory: string) => boolean = () => true, allowedBoundaries?: ReadonlySet<string>): boolean {
+export function removeStorageCandidate(root: string, item: StorageCandidate, observe = observeStorageUse, unreferenced: (directory: string) => boolean = () => true, allowedBoundaries?: ReadonlySet<string>, sharedInodes?: () => ReadonlySet<string> | undefined): boolean {
   const boundary = item.boundaryRoot && allowedBoundaries?.has(item.boundaryRoot) ? item.boundaryRoot : root;
   const safe = () => item.kind === 'diagnostic' || item.kind === 'native-session' || item.kind === 'native-home' ? safeStorageResource(boundary, item.path) : safeStoragePath(boundary, item.path);
-  if (!item.eligible || !item.identity || !safe() || !unreferenced(item.path) || storageInUse(storageUseRoot(item), observe())) return false;
+  if (!item.eligible || !item.identity || !safe() || !unreferenced(item.path) || storageInUse(storageUseRoot(item), observe(), sharedInodes?.())) return false;
   if (storageVersion(item.path).identity !== item.identity) return false;
   const retired = path.join(path.dirname(item.path), '.reclaim-' + randomUUID());
   fs.renameSync(item.path, retired);
   try {
     const renamedRootChanged = fs.lstatSync(retired).ctimeMs;
-    const use = observe();
+    const use = observe(), shared = sharedInodes?.();
     const permitted = unreferenced(retired), version = storageVersion(retired, item.rootChanged);
-    if (!permitted || !use.complete || storageInUse(storageUseRoot(item), use) || storageInUse(retired, use) ||
+    if (!permitted || !use.complete || storageInUse(storageUseRoot(item), use, shared) || storageInUse(retired, use, shared) ||
         version.identity !== item.identity || version.rootChanged !== renamedRootChanged) {
       if (!fs.existsSync(item.path)) fs.renameSync(retired, item.path);
       return false;
@@ -210,7 +233,7 @@ function removeSmallResourceBatch(root:string,items:StorageCandidate[],unreferen
 const orphanReclaimPattern = /^\.reclaim-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const orphanWalkSkips = new Set(['node_modules', '.git', 'sessions', 'projects', 'plugins', '_cacache', 'tmp']);
 
-export function orphanReclaimCandidates(root: string, use: StorageUse, recentCutoff = Date.now() - 15 * 60_000): StorageCandidate[] {
+export function orphanReclaimCandidates(root: string, use: StorageUse, recentCutoff = Date.now() - 15 * 60_000, sharedInodes?: ReadonlySet<string>): StorageCandidate[] {
   const items: StorageCandidate[] = [], seen = new Set<string>(), dataRoot = path.dirname(root);
   const scanDir = (boundary: string, parent: string) => {
     if (parent === boundary ? !ownStorageDirectory(boundary) : !safeStoragePath(boundary, parent)) return;
@@ -221,7 +244,7 @@ export function orphanReclaimCandidates(root: string, use: StorageUse, recentCut
       const target = path.join(parent, entry.name);
       if (seen.has(target)) continue;
       seen.add(target);
-      const item = storageCandidate(boundary, 'cache', target, target, use, recentCutoff);
+      const item = storageCandidate(boundary, 'cache', target, target, use, recentCutoff, sharedInodes);
       item.orphanReclaim = true;
       if (boundary !== root) item.boundaryRoot = boundary;
       if (item.eligible) item.reason = 'orphan_reclaim';
@@ -282,13 +305,14 @@ export function disposableGatewayLease(root: string, leaseRoot: string): boolean
   try { return walk(leaseRoot, 0, false); } catch { return false; }
 }
 
-/** Re-stat non-symlink regular files under an active tree on macOS so XNU vnode path cache stays anchored on live hard-link owners. */
-export function reanchorSharedDentries(directory: string): void {
-  if (process.platform !== 'darwin') return;
+/** Re-stat non-symlink regular files under an active tree on macOS so XNU vnode path cache stays anchored on live hard-link owners. Returns the inodes shared by hard links. */
+export function reanchorSharedDentries(directory: string): Set<string> {
+  const inodes = new Set<string>();
+  if (process.platform !== 'darwin') return inodes;
   try {
     const rootStat = fs.lstatSync(directory, { throwIfNoEntry: false });
-    if (!rootStat || !rootStat.isDirectory() || rootStat.isSymbolicLink()) return;
-  } catch { return; }
+    if (!rootStat || !rootStat.isDirectory() || rootStat.isSymbolicLink()) return inodes;
+  } catch { return inodes; }
   const walk = (current: string, depth: number) => {
     if (depth >= 16) return;
     let entries: fs.Dirent[];
@@ -301,6 +325,7 @@ export function reanchorSharedDentries(directory: string): void {
         try {
           const stat = fs.lstatSync(full, { throwIfNoEntry: false });
           if (!stat || !stat.isFile() || stat.isSymbolicLink() || stat.nlink <= 1) continue;
+          inodes.add(inodeIdentity(stat));
           const fd = fs.openSync(full, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
           fs.closeSync(fd);
         } catch { /* Ignore transient changes. */ }
@@ -308,4 +333,5 @@ export function reanchorSharedDentries(directory: string): void {
     }
   };
   walk(directory, 0);
+  return inodes;
 }
