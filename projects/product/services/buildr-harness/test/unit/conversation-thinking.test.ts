@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { continuationDraft, continuationPrompt, stoppedContinuation } from '../../src/domain/conversation-continuation.ts';
+import { continuationDraft, continuationPrompt, releasedContinuation, stoppedContinuation } from '../../src/domain/conversation-continuation.ts';
 import { messageSignature } from '../../src/domain/conversation-activity.ts';
-import type { StoredConversation } from '../../src/domain/agent-state.ts';
+import { RETIRED_EXECUTION_DIAGNOSTIC, type StoredConversation } from '../../src/domain/agent-state.ts';
 import type { ConversationEntry, SendDraft } from '../../src/contracts.ts';
 
 const message = (sequence: number, fields: Partial<ConversationEntry>): ConversationEntry => ({
@@ -76,4 +76,36 @@ test('explicit stop escape does not require acceptance, release or completed too
     base.view.run!.stopRequested=false;
     assert.equal(stoppedContinuation(base,draft),false);
   }
+});
+
+test('released retired shutdown records remain eligible for same-context released continuation unless user explicitly stopped', () => {
+  const base = record([message(1, { role: 'user', text: '原目标' })]);
+  base.view.run = {
+    id: 'run-1',
+    participantId: 'p',
+    status: 'unknown',
+    accepted: true,
+    resourcesReleased: true,
+    interrupted: true,
+    stopRequested: true,
+    diagnostic: RETIRED_EXECUTION_DIAGNOSTIC,
+    tools: [{ id: 'call_1', label: 'command', status: 'unknown' }],
+  } as NonNullable<StoredConversation['view']['run']>;
+  base.participants = [{ id: 'p', connectionId: 'local', contextRef: { id: 'ctx-1' } }] as never;
+  const draft = { ...send, connectionId: 'local', permissionMode: 'default' as const };
+
+  assert.equal(stoppedContinuation(base, draft), false);
+  assert.equal(releasedContinuation(base, draft), true);
+  assert.match(continuationDraft(base, draft).text, /旧原生控制资源已核验释放/);
+  assert.match(continuationDraft(base, draft).text, /call_1/);
+
+  const userCancelled = structuredClone(base);
+  userCancelled.interruption = { runId: 'run-1', awaitingUser: false, cancelled: true };
+  assert.equal(stoppedContinuation(userCancelled, draft), true);
+  assert.match(continuationDraft(userCancelled, draft).text, /旧命令可能仍在运行/);
+
+  const userStoppedAll = structuredClone(base);
+  userStoppedAll.stops = [{ id: 'stop-1', targets: [{ runId: 'run-1', participantId: 'p', generation: 'g1' }] }];
+  assert.equal(stoppedContinuation(userStoppedAll, draft), true);
+  assert.match(continuationDraft(userStoppedAll, draft).text, /旧命令可能仍在运行/);
 });

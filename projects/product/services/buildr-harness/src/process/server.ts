@@ -609,7 +609,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     enabled: () => accepting && !retiring && !closing && !inflight && !recovering && !sends.busy && service.canMaintainStorage(),
     runtime: options.runtime, diagnostics,
   });
-  let retiringSince: number | undefined, retirementAttempt = 0;
+  let unsettledSince: number | undefined, retirementAttempt = 0;
   const RETIRED_GRACE_MS = 60_000, RETIRED_RETRY_MS = 5_000;
   let previousTick = performance.now();
   const timer = setInterval(() => {
@@ -618,9 +618,9 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     previousTick = tick;
     if (durationMs >= 500) diagnostics({event:'service-event-loop-delay',durationMs});
     if (closing || adopting) return;
-    if (!retiring) { retiringSince = undefined; retirementAttempt = 0; }
+    if (!retiring || !successorReady) { unsettledSince = undefined; if (!retiring) retirementAttempt = 0; }
     if (retiring) {
-      const now = Date.now(); retiringSince ??= now;
+      const now = Date.now();
       // Retrying a release proof four times a second never changes the outcome
       // and keeps the retired process hot. Retry slowly instead.
       if (now - retirementAttempt < RETIRED_RETRY_MS) return;
@@ -644,13 +644,16 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
         new Promise<void>(resolve => { const stalled = setTimeout(resolve, 20_000); stalled.unref?.(); }),
       ]).then(async () => {
         const current = status();
-        if (!current.activity.busy && !inflight) { void close('retired-idle').finally(()=>{process.exitCode=0;}); return; }
+        if (!current.activity.busy && !inflight) { unsettledSince = undefined; void close('retired-idle').finally(()=>{process.exitCode=0;}); return; }
         // A successor already owns new work; only this generation's own
         // execution can keep it alive. When the remaining reasons are native
         // resources whose release can no longer be proven, record the exact
         // uncertainty and exit instead of holding the process forever.
         const unsettledOnly = current.activity.reasons.every(reason => reason.kind === 'source-resource' || reason.kind === 'unfinished-execution');
-        if (inflight || !unsettledOnly || now - retiringSince! < RETIRED_GRACE_MS) return;
+        if (inflight || !unsettledOnly) { unsettledSince = undefined; return; }
+        const settledAt = Date.now();
+        unsettledSince ??= settledAt;
+        if (settledAt - unsettledSince < RETIRED_GRACE_MS) return;
         await service.releaseRetiredWork();
         if (!status().activity.busy && !inflight) void close('retired-unconfirmed').finally(()=>{process.exitCode=0;});
       }).catch(() => { /* Keep the exact old owner until native release is confirmed. */ }).finally(() => { adopting=undefined; });

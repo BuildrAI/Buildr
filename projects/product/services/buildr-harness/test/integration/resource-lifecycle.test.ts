@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {createAgentService} from '../../src/index.ts';
-import {RETIRED_EXECUTION_DIAGNOSTIC} from '../../src/domain/agent-state.ts';
+import {AgentServiceError,RETIRED_EXECUTION_DIAGNOSTIC} from '../../src/domain/agent-state.ts';
 import {ExecutorInputRejected,type AgentExecutor,type AgentRuntime,type ExecutorObservation,type AgentServiceOptions} from '../../src/contracts.ts';
 import type {ModelProvider} from '../../src/model-access/contracts.ts';
 import {ConversationRepository} from '../../src/persistence/conversation-repository.ts';
@@ -630,7 +630,85 @@ test('retiring an in-flight run stays continuable when later observation has no 
    assert.equal(revived.run?.diagnostic,RETIRED_EXECUTION_DIAGNOSTIC);
    assert.notEqual(revived.run?.diagnostic,'原生观察未匹配本轮执行，不能据此结束或重新发送。');
    assert.equal(revived.run?.fault,undefined);
+   assert.equal(revived.run?.stopRequested,undefined);
    assert.equal(successor.allowsReleasedContinuation('workspace',chat.id,{...input,expectedRevision:revived.revision}),true);
+   const recoveryPreview=successor.conversations.prepareSend('workspace',chat.id,{...input,expectedRevision:revived.revision});
+   assert.equal(recoveryPreview.participantId,revived.run?.participantId,'continuation after retirement must reuse the original participant context');
   }finally{await successor.close();}
  }finally{await f.close();}
+});
+
+test('retiring generation preserves post-send background continuation until completion and then releases cleanly',async()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-post-send-bg-'));
+ let closedCount=0;
+ let emitBackground!:((event:import('../../src/contracts.ts').ExecutorEvent)=>void);
+ let bgExecutionRef:{id:string}|undefined;
+ let bgActive=true;
+ const capabilities={text:true,images:false,approval:false,questions:false,stop:true,resume:true,maxInputBytes:65536};
+ const executor:AgentExecutor={descriptor:{id:'local',label:'Local',capabilities},async open(){
+  let disposed=false;
+  return{get closed(){return disposed;},bindingIdentity:'bg-lifecycle-fixture',capabilities,
+   inspectAccount:async()=>({status:'ready'}),models:async()=>[{id:'model',label:'Model'}],beginLogin:async()=>{},cancelLogin:async()=>{},
+   async createContext(){return{id:randomUUID()};},
+   async resumeContext(){
+    if(bgExecutionRef&&bgActive)throw new AgentServiceError('agent_execution_active','当前 Antigravity 会话仍有未结束的执行。',409);
+   },
+   readHistory:async()=>[],
+   async send(input){
+    emitBackground=input.onEvent;
+    const executionRef={id:input.clientRequestId};
+    bgExecutionRef=executionRef;
+    input.onEvent({type:'accepted',executionRef});
+    input.onEvent({type:'item',item:{id:'bg-cmd',kind:'tool',role:'assistant',name:'command',status:'running',text:'',executionId:executionRef.id}});
+    input.onEvent({type:'observation',observation:{status:'running',backgroundWork:true,executionRef,tools:[{id:'bg-cmd',label:'command',status:'running'}]}});
+   },
+   observe:async({executionRef})=>bgActive
+    ?{status:'running',backgroundWork:true,executionRef,tools:[{id:'bg-cmd',label:'command',status:'running'}]}
+    :{status:'idle',backgroundWork:false,executionRef,tools:[{id:'bg-cmd',label:'command',status:'completed'}]},
+   reply:async()=>{},stop:async()=>({status:'stopped',tools:[]}),
+   async prepareRelease(){return !bgActive;},
+   async canRelease(){return !bgActive;},
+   async close(){if(!disposed){disposed=true;closedCount++;}},
+  };
+ }};
+ const provider:ModelProvider={id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'model',label:'Model',images:false,tools:true}]}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>{throw Error('unused');},close:async()=>{}};}};
+ const service=createAgentService({dataRoot:root,executors:[executor],modelProviders:[provider],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+ const wait=async(predicate:()=>boolean)=>{for(let n=0;n<300;n++){if(predicate())return;await new Promise(r=>setTimeout(r,5));}assert.fail('background state did not settle');};
+ try{
+  await service.connections.connect('local',{expectedRevision:'unconfigured'});
+  const account=await service.models.accounts.add({provider:'fixture'});
+  const checked=await service.models.accounts.check(account.id);
+  await service.models.accounts.preferences(account.id,{expectedRevision:checked.revision,models:[{id:'model',enabled:true}]});
+  const chat=await service.conversations.create('workspace',{});
+  const draft={expectedRevision:chat.revision,connectionId:'local',modelAccountId:account.id,model:'model',text:'run background test'};
+  const preview=service.conversations.prepareSend('workspace',chat.id,draft);
+  service.conversations.send('workspace',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+  await wait(()=>service.conversations.read('workspace',chat.id).run?.status==='running'&&!service.activity().reasons.some(r=>r.kind==='title'));
+  await wait(()=>service.activity().reasons.some(r=>r.kind==='execution')&&service.conversations.read('workspace',chat.id).run?.accepted===true);
+  // Wait for send() worker promise to return while backgroundWork remains true.
+  await new Promise(r=>setTimeout(r,30));
+  assert.ok(service.activity().reasons.some(r=>r.kind==='execution'),'active background continuation must remain counted as execution activity after send() returns');
+  assert.equal(service.retainsConversationSource('workspace',chat.id),true);
+  await service.releaseIdleSources();
+  await service.releaseRetiredWork();
+  const observedDuringBg=await service.conversations.observe('workspace',chat.id);
+  assert.equal(observedDuringBg.run?.status,'running','observing an active background continuation must not call resumeContext or mark run unknown');
+  assert.equal(observedDuringBg.run?.diagnostic,undefined);
+  let current=service.conversations.read('workspace',chat.id);
+  assert.equal(closedCount,0,'retiring drain must not close runtime while background continuation is active');
+  assert.equal(current.run?.status,'running');
+  assert.equal(current.run?.resourcesReleased,undefined);
+
+  bgActive=false;
+  emitBackground({type:'item',item:{id:'bg-cmd',kind:'tool',role:'assistant',name:'command',status:'completed',text:'ok',executionId:bgExecutionRef!.id}});
+  emitBackground({type:'item',item:{id:'final-msg',kind:'message',role:'assistant',text:'后台任务完成后继续完成。',status:'completed'}});
+  emitBackground({type:'completed',status:'completed'});
+  emitBackground({type:'observation',observation:{status:'idle',backgroundWork:false,executionRef:bgExecutionRef,tools:[{id:'bg-cmd',label:'command',status:'completed'}]}});
+  await wait(()=>service.conversations.read('workspace',chat.id).run?.status==='completed');
+  await service.releaseIdleSources();
+  current=service.conversations.read('workspace',chat.id);
+  assert.equal(current.run?.resourcesReleased,true);
+  assert.equal(closedCount,1,'completed background continuation must release cleanly afterwards');
+  assert.equal(service.activity().busy,false);
+ }finally{await service.close();fs.rmSync(root,{recursive:true,force:true});}
 });

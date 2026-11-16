@@ -96,7 +96,7 @@ export class ConversationApplication {
   private readonly stops: ConversationStops;
   activity(): Array<{kind:string;count:number}> {
     return [
-      {kind:'execution',count:this.workers.size},
+      {kind:'execution',count:new Set([...this.workers.keys(), ...this.backgroundRuns.keys()]).size},
       {kind:'stop',count:this.stops.active},
       {kind:'input',count:this.supplements.size},
       {kind:'title',count:this.titleWork.size},
@@ -148,6 +148,8 @@ export class ConversationApplication {
     if(!this.liveTools.size) {clearInterval(this.liveToolTimer);this.liveToolTimer = undefined;}
   }
   private readonly workers = new Map<string, Promise<void>>();
+  private readonly backgroundRuns = new Map<string, { workspaceId: string; id: string; participantId: string }>();
+  private hasLiveExecution(runId: string): boolean { return this.workers.has(runId) || this.backgroundRuns.has(runId); }
   // Only consecutive native text events share a record. Every reuse checks the
   // durable revision; controls and other writers keep the normal load path.
   private readonly streamingRecords = new Map<string, StoredConversation>();
@@ -211,7 +213,7 @@ export class ConversationApplication {
     this.diagnostics=executionLog(options.root,options.generation);
     this.stops=new ConversationStops({
       load:(scope,id)=>this.load(scope,id),save:record=>this.save(record),
-      read:(scope,id)=>this.read(scope,id,{compactTools:true}),pending:this.pendingSends,now:options.now,activeRun:runId=>this.workers.has(runId),
+      read:(scope,id)=>this.read(scope,id,{compactTools:true}),pending:this.pendingSends,now:options.now,activeRun:runId=>this.hasLiveExecution(runId),
       invoke:(scope,id,input,action)=>options.controlSupersededRun
         ?options.controlSupersededRun(scope,id,input,action)
         :action==='stop'?this.stop(scope,id,input):this.observeRun(scope,id,input),
@@ -410,6 +412,9 @@ export class ConversationApplication {
     try { await this.options.connections.releaseGatewayRuntime(source.runtime); }
     catch { return false; }
     if (source.leaseIdentity) this.options.modelAccess?.leases.release(source.leaseIdentity);
+    for (const [runId, entry] of this.backgroundRuns) {
+      if (entry.participantId === participantId) this.backgroundRuns.delete(runId);
+    }
     if (this.sourceRuntimes.get(participantId) === pending) {
       this.sourceRuntimes.delete(participantId); this.sourceOwners.delete(participantId); this.sourceConnections.delete(participantId);
     }
@@ -470,10 +475,21 @@ export class ConversationApplication {
           }
           if(!runId||record.view.requests.some(request=>request.participantId===member.id)||this.workers.has(runId)||this.recoveries.has(runId)||this.observations.has(`${held.workspaceId}/${held.id}`)||this.titleWork.has(held.id)||this.supplements.size||this.repliesInFlight.size){safe=false;break;}
           if(run?.resourcesReleased){
+            this.backgroundRuns.delete(runId);
             candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId});
             continue;
           }
           const participant=record.participants.find(value=>value.id===member.id);
+          if(this.backgroundRuns.has(runId)){
+            const liveObs = participant?.contextRef && attempt?.executionRef
+              ? await runtime.observe({ contextRef: participant.contextRef, executionRef: attempt.executionRef }).catch(() => undefined)
+              : undefined;
+            if (liveObs && liveObs.executionRef?.id === attempt?.executionRef?.id
+              && (liveObs.backgroundWork === true || liveObs.status === 'running' || liveObs.status === 'waiting')) {
+              safe = false; break;
+            }
+            this.backgroundRuns.delete(runId);
+          }
           // Older histories may no longer retain this participant's RunView.
           // Only its exact accepted native attempt can prove physical release.
           const settled=Boolean(run && (run.resourcesReleased||!this.busy(held.workspaceId,held.id)));
@@ -506,7 +522,7 @@ export class ConversationApplication {
         }
         if(!safe || this.forks.active)continue;
         // Recheck after asynchronous native proof, then freeze reuse before close.
-        if(this.forks.active || candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)||this.sourceRuntimes.get(value.id)!==value.source||this.sourceExecution(this.load(value.workspaceId,value.conversationId),value.id).id!==value.runId||this.workers.has(value.runId)||this.observations.has(`${value.workspaceId}/${value.conversationId}`)||this.recoveries.has(`${value.workspaceId}/${value.conversationId}`)||this.titleWork.has(value.conversationId)||this.load(value.workspaceId,value.conversationId).view.requests.some(request=>request.participantId===value.id))||this.supplements.size||this.repliesInFlight.size)continue;
+        if(this.forks.active || candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)||this.sourceRuntimes.get(value.id)!==value.source||this.sourceExecution(this.load(value.workspaceId,value.conversationId),value.id).id!==value.runId||this.hasLiveExecution(value.runId)||this.observations.has(`${value.workspaceId}/${value.conversationId}`)||this.recoveries.has(`${value.workspaceId}/${value.conversationId}`)||this.titleWork.has(value.conversationId)||this.load(value.workspaceId,value.conversationId).view.requests.some(request=>request.participantId===value.id))||this.supplements.size||this.repliesInFlight.size)continue;
         const finish=async()=>{
           if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)))return false;
           for(const value of candidates)if(value.prepare&&!await value.prepare())return false;
@@ -530,6 +546,7 @@ export class ConversationApplication {
           for(const value of candidates){
             if(value.leaseIdentity)this.options.modelAccess?.leases.release(value.leaseIdentity);
             if(this.sourceRuntimes.get(value.id)===value.source){this.sourceRuntimes.delete(value.id);this.sourceOwners.delete(value.id);this.sourceConnections.delete(value.id);}
+            this.backgroundRuns.delete(value.runId);
             const record=this.load(value.workspaceId,value.conversationId),run=conversationRuns(record.view).find(run=>run.id===value.runId);
             if(!run||run.id!==value.runId||run.participantId!==value.id||run.generation!==this.options.generation||run.resourcesReleased)continue;
             const newlyReleased=!run.resourcesReleased;
@@ -572,7 +589,7 @@ export class ConversationApplication {
    * message may continue the same goal. Nothing is sent automatically.
    * Live input, recovery, title and reply work is never touched. */
   async releaseRetiredWork(): Promise<void> {
-    if(this.closing||this.workers.size||this.supplements.size||this.repliesInFlight.size||this.recoveries.size||this.forks.active||this.titleWork.size)return;
+    if(this.closing||this.workers.size||this.backgroundRuns.size||this.supplements.size||this.repliesInFlight.size||this.recoveries.size||this.forks.active||this.titleWork.size)return;
     this.releasingRetired=true;
     const runtimes=new Set<AgentRuntime>();
     for(const [id,source] of [...this.sourceRuntimes]){
@@ -587,6 +604,7 @@ export class ConversationApplication {
       let changed=false;
       for(const run of conversationRuns(record.view)){
         if(run.generation!==this.options.generation||run.resourcesReleased||!unfinishedRun(run))continue;
+        this.backgroundRuns.delete(run.id);
         run.resourcesReleased=true;run.executionState='unknown';
         if(!['stopped','failed','completed'].includes(run.status)){run.status='unknown';run.interrupted=true;}
         run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
@@ -607,7 +625,7 @@ export class ConversationApplication {
     const work=(async()=>{
       await this.observe(workspaceId,id);
       const run=conversationRuns(this.load(workspaceId,id).view).find(run=>run.id===expectedRunId);
-      if (!run || run.id!==expectedRunId || run.generation!==generation || unfinishedRun(run) || this.workers.has(run.id) || this.load(workspaceId,id).view.requests.some(request=>request.runId===run.id)) return false;
+      if (!run || run.id!==expectedRunId || run.generation!==generation || unfinishedRun(run) || this.hasLiveExecution(run.id) || this.load(workspaceId,id).view.requests.some(request=>request.runId===run.id)) return false;
       await this.releaseIdleSources({workspaceId,id});
       if (this.busy(workspaceId,id) || this.retainsConversationSource(workspaceId,id)) return false;
       this.releasedRuns.add(expectedRunId);return true;
@@ -962,7 +980,7 @@ export class ConversationApplication {
   inputBusy(_workspaceId: string, _id: string): boolean { return this.closing; }
   busy(workspaceId: string, id: string): boolean {
     const record = this.load(workspaceId, id);
-    return Boolean(conversationRuns(record.view).some(run => unfinishedRun(run) || this.workers.has(run.id)) || record.view.requests.length || this.titleWork.has(id) || this.recoveries.has(`${workspaceId}/${id}`) || this.observations.has(`${workspaceId}/${id}`));
+    return Boolean(conversationRuns(record.view).some(run => unfinishedRun(run) || this.hasLiveExecution(run.id)) || record.view.requests.length || this.titleWork.has(id) || this.recoveries.has(`${workspaceId}/${id}`) || this.observations.has(`${workspaceId}/${id}`));
   }
   allowsReleasedContinuation(workspaceId: string, id: string, input: SendDraft): boolean {
     const record = this.load(workspaceId, id), run = record.view.run;
@@ -970,7 +988,7 @@ export class ConversationApplication {
     // They must yield to a newly submitted round, which changes the saved revision.
     return Boolean(!this.closing && run && releasedContinuation(record, input) &&
       !record.view.requests.length && !this.pendingSends.read(workspaceId,id) &&
-      conversationRuns(record.view).every(candidate => !this.workers.has(candidate.id) &&
+      conversationRuns(record.view).every(candidate => !this.hasLiveExecution(candidate.id) &&
         (candidate.id === run.id || candidate.resourcesReleased || !unfinishedRun(candidate))) &&
       !this.titleWork.has(id) &&
       !this.supplements.hasPending(workspaceId,id) && ![...this.repliesInFlight.values()].includes(id));
@@ -1590,7 +1608,7 @@ export class ConversationApplication {
     else if (event.type === 'completed') {
       delete run.contextCompaction;
       // A model terminal event alone does not prove that tools have stopped.
-      if (event.status === 'failed') { run.status = 'failed'; run.fault = event.fault; run.diagnostic = event.diagnostic ?? '原生执行失败。'; }
+      if (event.status === 'failed') { this.backgroundRuns.delete(run.id); run.status = 'failed'; run.fault = event.fault; run.diagnostic = event.diagnostic ?? '原生执行失败。'; }
       else { run.diagnostic = event.diagnostic; }
     }
     run.updatedAt = this.options.now();
@@ -1657,8 +1675,12 @@ export class ConversationApplication {
   }
   private applyObservation(record: StoredConversation, observation: ExecutorObservation, run = record.view.run): void {
     if (!run) return;
-    if(this.hasPersistedEnd(record,run))return;
+    if(this.hasPersistedEnd(record,run)){
+      if(run.generation===this.options.generation)this.backgroundRuns.delete(run.id);
+      return;
+    }
     const requests = record.view.requests.filter(request => request.runId === run.id);
+    if(run.generation===this.options.generation&&(run.resourcesReleased||run.stopRequested||run.supersededBy))this.backgroundRuns.delete(run.id);
     if(run.resourcesReleased&&(!['idle','stopped'].includes(observation.status)||observation.tools.some(tool=>tool.status!=='completed')))return;
     const attempt=record.attempts.find(value=>value.runId===run.id);
     if(attempt?.executionRef&&observation.executionRef?.id===attempt.executionRef.id&&observation.executionRef.data){
@@ -1667,6 +1689,22 @@ export class ConversationApplication {
     }
     run.executionState=['idle','stopped'].includes(observation.status)&&observation.tools.every(tool=>tool.status==='completed')?'ended':['running','waiting','tools-active'].includes(observation.status)?'active':'unknown';
     run.tools = observation.tools;
+    if (run.generation === this.options.generation) {
+      const liveBackground = Boolean(
+        !this.closing
+        && !run.resourcesReleased
+        && !run.stopRequested
+        && !run.supersededBy
+        && attempt?.executionRef
+        && observation.executionRef?.id === attempt.executionRef.id
+        && (observation.backgroundWork === true || observation.status === 'running' || observation.status === 'waiting'),
+      );
+      if (liveBackground) {
+        this.backgroundRuns.set(run.id, { workspaceId: record.view.workspaceId, id: record.view.id, participantId: run.participantId });
+      } else if (this.backgroundRuns.delete(run.id)) {
+        this.scheduleSourceRelease(record.view.workspaceId, record.view.id);
+      }
+    }
     if (attempt?.executionRef && attempt.executionRef.id === observation.executionRef?.id && !['completed','failed','stopped'].includes(run.status) && observation.contextCompaction !== undefined) {
       if (observation.contextCompaction === null) delete run.contextCompaction;
       else if (observation.contextCompaction.id && Number.isFinite(Date.parse(observation.contextCompaction.startedAt))) {
@@ -2567,7 +2605,8 @@ export class ConversationApplication {
       try {
         const runtime = (await this.sourceRuntime(record, saved)).runtime;
         if (runtime.bindingIdentity !== saved.bindingIdentity) fail('agent_binding_changed', '参与者的程序或原配置身份已失配。', 409);
-        await runtime.resumeContext({ contextRef: saved.contextRef, cwd: record.view.cwd });
+        const liveAccepted = Boolean(savedRun?.accepted && savedRun.generation === this.options.generation && this.hasLiveExecution(savedRun.id));
+        if (!liveAccepted) await runtime.resumeContext({ contextRef: saved.contextRef, cwd: record.view.cwd });
         const items = await runtime.readHistory({ contextRef: saved.contextRef, cwd: record.view.cwd });
         const receiptRecord = this.load(workspaceId, id);
         if (receiptRecord.view.run?.id !== observedRunId) break;
@@ -2694,7 +2733,9 @@ export class ConversationApplication {
       const run=conversationRuns(record.view).find(value=>value.id===input.runId&&value.participantId===input.participantId&&value.generation===input.generation);
       if(!run)return;
       found=true;
-      run.stopRequested=true;run.canContinue=false;
+      this.backgroundRuns.delete(run.id);
+      if(!this.closing)run.stopRequested=true;
+      run.canContinue=false;
       if(!['completed','failed','stopped'].includes(run.status)){
         const attempt=record.attempts.find(value=>value.runId===run.id);
         const endedWithoutIdentity=!this.workers.has(run.id)&&!attempt?.executionRef&&run.accepted===false;
@@ -2705,7 +2746,7 @@ export class ConversationApplication {
           :'停止已请求，但未取得原生结束确认；原工作记录已保留，不会重发。';
         run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
       }
-      if(record.view.run?.id===run.id)record.interruption={runId:run.id,awaitingUser:false,cancelled:true};
+      if(!this.closing&&record.view.run?.id===run.id)record.interruption={runId:run.id,awaitingUser:false,cancelled:true};
       run.updatedAt=this.options.now();
       this.save(record);
     });
@@ -2755,7 +2796,8 @@ export class ConversationApplication {
       earlyRetryView = undefined;
       const next = this.control(workspaceId, id, input, !input.toolId);
       if (!input.toolId) {
-        next.run.stopRequested = true;
+        this.backgroundRuns.delete(input.runId);
+        if (!this.closing) next.run.stopRequested = true;
         this.options.modelAccess?.leases.stopRun(id, input.runId);
         this.cancelledRetries.add(input.runId);
         const retry = this.retryWaits.get(input.runId);
@@ -3081,7 +3123,7 @@ export class ConversationApplication {
           ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active'].includes(run.status)
           || run.executionState === 'active'
           || run.tools.some(tool => tool.status === 'running')
-          || this.workers.has(run.id)
+          || this.hasLiveExecution(run.id)
           || this.retryWaits.has(run.id)
           || hasOpenRequest;
         if (!isActivelyRunning) continue;
@@ -3156,7 +3198,7 @@ export class ConversationApplication {
       if (!settledRun) continue;
 
       const stillBusy =
-        this.workers.has(target.runId)
+        this.hasLiveExecution(target.runId)
         || this.retryWaits.has(target.runId)
         || ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active'].includes(settledRun.status)
         || settledRun.executionState === 'active'
@@ -3213,7 +3255,7 @@ export class ConversationApplication {
         const record = this.load(saved.view.workspaceId,saved.view.id);
         const run = conversationRuns(record.view).find(run=>run.id===prior.id)!;
         const participant = record.participants.find(value=>value.id===run.participantId);
-        if (run.generation !== this.options.generation || participant?.connectionId !== connectionId || !unfinishedRun(run)) continue;
+        if (run.generation !== this.options.generation || run.resourcesReleased || participant?.connectionId !== connectionId || !unfinishedRun(run)) continue;
         try { await this.stop(record.view.workspaceId,record.view.id,{expectedRevision:record.view.revision,runId:run.id,participantId:run.participantId,generation:run.generation}); }
         catch { const latest=this.ownedRun(record.view.workspaceId,record.view.id,run.id);if(latest){latest.run.status='unknown';latest.run.diagnostic='断开时未能确认原生执行退出。';this.save(latest.record);} }
       }
@@ -3234,6 +3276,7 @@ export class ConversationApplication {
     }
     this.retryWaits.clear();
     this.streamingSends.clear();
+    this.backgroundRuns.clear();
     this.pendingTitleRetries.clear();
     this.automaticTitleRetried.clear();
     for (const controller of this.titleWork.values()) controller.abort();

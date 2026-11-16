@@ -1,6 +1,6 @@
 import { resolvePermissionMode } from './permission-mode.ts';
 import type { RunView, SendDraft } from '../contracts.ts';
-import { fail, type StoredConversation } from './agent-state.ts';
+import { RETIRED_EXECUTION_DIAGNOSTIC, fail, type StoredConversation } from './agent-state.ts';
 
 export type ContinuedFrom = NonNullable<RunView['continuedFrom']>;
 
@@ -33,7 +33,13 @@ export function releasedContinuation(record: StoredConversation, input: SendDraf
 /** Stopping ends the user's wait, not the uncertain native work. Never reuse its context. */
 export function stoppedContinuation(record: StoredConversation, input: SendDraft): boolean {
   const run = record.view.run, participant = record.participants.find(value => value.id === run?.participantId);
+  const retiredShutdownStop = run?.resourcesReleased === true
+    && run.interrupted === true
+    && run.diagnostic === RETIRED_EXECUTION_DIAGNOSTIC
+    && !record.stops?.some(stop => stop.targets.some(target => target.runId === run.id))
+    && record.interruption?.cancelled !== true;
   return Boolean(run && input.continueRunId === run.id && run.status === 'unknown' && run.stopRequested &&
+    !retiredShutdownStop &&
     participant && input.connectionId === participant.connectionId &&
     input.modelAccountId === run.modelAccountId && input.modelAccountIdentity === run.modelAccountIdentity && input.model === run.model &&
     input.serviceTier === run.serviceTier && input.reasoningEffort === run.reasoningEffort &&
