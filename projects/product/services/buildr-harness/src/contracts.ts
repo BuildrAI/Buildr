@@ -91,6 +91,8 @@ export interface ExecutorRuntimeTraits {
   isolateInterruptedContinuation?: boolean;
   /** Native CLI stores login in OS user keyring shared with host CLI invocations; logout/switch coordinates active runs, send gate, and native logout. */
   hostKeyringAuth?: boolean;
+  /** Native title updates without Han characters are ignored so Simplified Chinese smart titles are not overwritten. */
+  requireHanNativeTitle?: boolean;
 }
 export interface ExecutorDescriptor {
   id: ProviderId;
@@ -502,6 +504,8 @@ export interface ConversationEntry {
   participantId?: string;
   provider?: ProviderId;
   runId?: string;
+  /** Lightweight source pointer for continuation/recovery notices (never duplicates prompt body). */
+  continuedFrom?: { runId: string; userEntryId: string };
   status?: 'sending' | 'accepted' | 'unknown' | 'running' | 'completed' | 'failed';
   attachments?: string[];
   deliveryDiagnostic?: string;

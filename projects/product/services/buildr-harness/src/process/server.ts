@@ -611,6 +611,11 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   });
   let unsettledSince: number | undefined, retirementAttempt = 0;
   const RETIRED_GRACE_MS = 60_000, RETIRED_RETRY_MS = 5_000;
+  const watchedPeerGenerations = new Set<string>(
+    readProcessInstances(options.dataRoot)
+      .filter(record => record.identity.instanceId !== instanceId && !record.stopped && live(record.identity.pid))
+      .map(record => record.identity.generation),
+  );
   let previousTick = performance.now();
   const timer = setInterval(() => {
     const tick = performance.now();
@@ -659,7 +664,23 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       }).catch(() => { /* Keep the exact old owner until native release is confirmed. */ }).finally(() => { adopting=undefined; });
       return;
     }
-    if (accepting) void sends.pump().catch(()=>{});
+    if (accepting) {
+      const livePeers = new Set(
+        readProcessInstances(options.dataRoot)
+          .filter(record => record.identity.instanceId !== instanceId && !record.stopped && live(record.identity.pid))
+          .map(record => record.identity.generation),
+      );
+      let peerExited = false;
+      for (const peer of [...watchedPeerGenerations]) {
+        if (!livePeers.has(peer)) {
+          watchedPeerGenerations.delete(peer);
+          peerExited = true;
+        }
+      }
+      for (const peer of livePeers) watchedPeerGenerations.add(peer);
+      if (peerExited) recoverAfterHostAttach();
+      void sends.pump().catch(()=>{});
+    }
     if (pending?.state==='waiting' && canRunParallel(options.runtime,pending.runtime) && !inflight && !recovering && !sends.busy) {
       const target=pending.runtime;
       adopting=adoptParallel(target).catch(error => {

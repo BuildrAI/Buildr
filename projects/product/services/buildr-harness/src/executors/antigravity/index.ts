@@ -22,6 +22,7 @@ import type {
   ExecutorRequest,
   ExecutorSendInput,
   ExecutorSupplementInput,
+  ExecutorTitleInput,
   LoginObservation,
   PermissionMode,
 } from '../../contracts.ts';
@@ -78,6 +79,7 @@ import {
 } from './forms.ts';
 import { antigravityManagedEnvironment, ensureAntigravityAutoUpdateDisabled } from './program.ts';
 import { antigravityStorage } from './storage.ts';
+import { generateAntigravityTitle } from './title.ts';
 
 const PROVIDER = 'antigravity';
 const NATIVE_SOURCE_ID = 'native-antigravity';
@@ -130,6 +132,7 @@ export const antigravityExecutorDescriptor: ExecutorDescriptor = {
     upgradeVerification: 'runtime',
     transientAccountProbe: true,
     hostKeyringAuth: true,
+    requireHanNativeTitle: true,
   },
 };
 
@@ -2228,6 +2231,19 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       }
     }
     return undefined;
+  }
+
+  async generateTitle(input: ExecutorTitleInput): Promise<string | undefined> {
+    if (this.closedFlag) throw new Error('agent_title_transport_closed');
+    return await generateAntigravityTitle({
+      input,
+      owner: this,
+      provider: PROVIDER,
+      configRoot: this.configRoot,
+      bindingIdentity: this.bindingIdentity,
+      coordinator: this.coordinator,
+      verifyAccount: boundIdentity => this.verifyLiveAccountIdentity(boundIdentity),
+    });
   }
 
   async close(): Promise<void> {

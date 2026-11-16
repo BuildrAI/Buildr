@@ -224,14 +224,43 @@ export function conversationRunLive(run?:ConversationRun):boolean {
  * run is its visible reply, regardless of length. Never promote live narration. */
 export function finalConversationReplyIds(entries:readonly ConversationEntry[],runs:readonly ConversationRun[]=[]):Set<string> {
   const known=new Map(runs.map(run=>[run.id,run])),groups=new Map<string,ConversationEntry[]>();let legacy=0;
+  const runUser=new Map<string,string>();
+  for(const run of runs)if(run.continuedFrom){
+    runUser.set(run.id,run.continuedFrom.userEntryId);
+    if(!runUser.has(run.continuedFrom.runId))runUser.set(run.continuedFrom.runId,run.continuedFrom.userEntryId);
+  }
+  for(const entry of entries)if(entry.runId&&entry.continuedFrom){
+    runUser.set(entry.runId,entry.continuedFrom.userEntryId);
+    if(!runUser.has(entry.continuedFrom.runId))runUser.set(entry.continuedFrom.runId,entry.continuedFrom.userEntryId);
+  }
   for(const entry of entries){
+    if(entry.kind==='message'&&entry.role==='user'&&!entry.parentToolId&&entry.runId&&!runUser.has(entry.runId))runUser.set(entry.runId,entry.id);
     if(!entry.runId&&entry.kind==='message'&&entry.role==='user')legacy++;
     const key=entry.runId||'legacy:'+legacy;
     const rows=groups.get(key)??[];rows.push(entry);groups.set(key,rows);
   }
+  const latestRunByUser=new Map<string,string>();
+  for(const entry of entries){
+    if(entry.kind==='message'&&entry.role==='user'&&!entry.parentToolId&&entry.runId&&runUser.get(entry.runId)===entry.id){
+      latestRunByUser.set(entry.id,entry.runId);
+    }else if(entry.kind==='notice'&&entry.runId&&entry.continuedFrom){
+      latestRunByUser.set(entry.continuedFrom.userEntryId,entry.runId);
+    }
+  }
+  const runIndex=new Map(runs.map((run,index)=>[run.id,index] as const));
+  for(let index=0;index<runs.length;index++){
+    const run=runs[index]!;
+    if(!run.continuedFrom||entries.some(entry=>entry.runId===run.id&&entry.kind==='notice'))continue;
+    const userId=run.continuedFrom.userEntryId,current=latestRunByUser.get(userId),currentIndex=current?runIndex.get(current):-1;
+    if(!current||current===run.continuedFrom.runId||(currentIndex!==undefined&&currentIndex>=0&&index>currentIndex)){
+      latestRunByUser.set(userId,run.id);
+    }
+  }
   const finals=new Set<string>();
   for(const rows of groups.values()){
     const runId=rows.find(entry=>entry.runId)?.runId;
+    const rootUser=runId?runUser.get(runId):undefined;
+    if(rootUser&&latestRunByUser.get(rootUser)&&latestRunByUser.get(rootUser)!==runId)continue;
     const run=runId?known.get(runId):undefined;
     if(!conversationRunSettled(run)||run?.status==='failed'&&run.accepted===false)continue;
     // A settled run's reply is its last primary assistant message, extended backwards
@@ -307,31 +336,71 @@ function mergeSplitAssistantSegments(entries:readonly ConversationEntry[]):Conve
   return out;
 }
 export type ConversationTurnItems={key:string;prompt?:ConversationEntry;continuedFrom?:NonNullable<ConversationRun['continuedFrom']>;items:ConversationStreamItem[]};
+function findLastMatch<T>(items:readonly T[],predicate:(value:T)=>boolean):T|undefined {
+  for(let index=items.length-1;index>=0;index--)if(predicate(items[index]!))return items[index];
+  return undefined;
+}
 /** Time the entire owned turn, including a final answer and an unsettled process block. */
 export function conversationTurnTiming(turn:ConversationTurnItems,runs:readonly ConversationRun[]=[]):{startedAt?:string;finishedAt?:string}{
   const entries=[...(turn.prompt?[turn.prompt]:[]),...turn.items.flatMap(item=>item.type==='entry'?[item.entry]:item.entries)];
-  const runId=turn.prompt?.runId??entries.find(entry=>entry.runId)?.runId;
-  const run=runs.find(value=>value.id===runId);
-  const owned=runId?entries.filter(entry=>entry.runId===runId):entries;
-  const times=[...owned.map(entry=>entry.createdAt),...(run?[run.updatedAt]:[])].filter(value=>Number.isFinite(Date.parse(value)));
-  return {startedAt:run?.startedAt??turn.prompt?.createdAt??owned[0]?.createdAt,finishedAt:times.sort((a,b)=>Date.parse(a)-Date.parse(b)).at(-1)};
+  const baseRunId=turn.prompt?.runId??entries.find(entry=>entry.runId)?.runId;
+  const ownedRunIds=new Set<string>();
+  if(baseRunId)ownedRunIds.add(baseRunId);
+  const rootUserEntryId=turn.prompt?.id??turn.continuedFrom?.userEntryId;
+  if(turn.continuedFrom?.runId&&entries.some(entry=>entry.runId===turn.continuedFrom!.runId))ownedRunIds.add(turn.continuedFrom.runId);
+  for(const entry of entries)if(entry.runId&&entry.continuedFrom&&((rootUserEntryId&&entry.continuedFrom.userEntryId===rootUserEntryId)||ownedRunIds.has(entry.continuedFrom.runId)))ownedRunIds.add(entry.runId);
+  let added=true;
+  while(added){
+    added=false;
+    for(const candidate of runs){
+      if(ownedRunIds.has(candidate.id)||!candidate.continuedFrom)continue;
+      if(ownedRunIds.has(candidate.continuedFrom.runId)||(rootUserEntryId&&candidate.continuedFrom.userEntryId===rootUserEntryId)){ownedRunIds.add(candidate.id);added=true;}
+    }
+  }
+  const ownedRuns=runs.filter(value=>ownedRunIds.has(value.id));
+  const owned=ownedRunIds.size?entries.filter(entry=>entry.runId&&ownedRunIds.has(entry.runId)):entries;
+  if(ownedRunIds.size<=1){
+    const run=ownedRuns[0];
+    const times=[...owned.map(entry=>entry.createdAt),...(run?[run.updatedAt]:[])].filter(value=>Number.isFinite(Date.parse(value)));
+    return {startedAt:run?.startedAt??turn.prompt?.createdAt??owned[0]?.createdAt,finishedAt:times.sort((a,b)=>Date.parse(a)-Date.parse(b)).at(-1)};
+  }
+  const liveRun=findLastMatch(ownedRuns,value=>conversationRunLive(value));
+  if(liveRun)return {startedAt:liveRun.startedAt,finishedAt:liveRun.updatedAt};
+  const startTimes=[...(turn.prompt?.createdAt?[turn.prompt.createdAt]:[]),...owned.map(entry=>entry.createdAt),...ownedRuns.map(value=>value.startedAt)].filter(value=>Number.isFinite(Date.parse(value))).sort((a,b)=>Date.parse(a)-Date.parse(b));
+  const finishTimes=[...owned.map(entry=>entry.createdAt),...ownedRuns.map(value=>value.updatedAt)].filter(value=>Number.isFinite(Date.parse(value))).sort((a,b)=>Date.parse(a)-Date.parse(b));
+  return {startedAt:startTimes[0]??turn.prompt?.createdAt??owned[0]?.createdAt,finishedAt:finishTimes.at(-1)};
 }
 export function conversationStreamTurns(items:readonly ConversationStreamItem[],runs:readonly ConversationRun[]=[]):ConversationTurnItems[]{
   const turns:ConversationTurnItems[]=[], owners=new Map<string,ConversationTurnItems>();
-  const continuations=new Map(runs.flatMap(run=>run.continuedFrom?[[run.id,run.continuedFrom] as const]:[]));
+  const continuations=new Map<string,NonNullable<ConversationRun['continuedFrom']>>(runs.flatMap(run=>run.continuedFrom?[[run.id,run.continuedFrom] as const]:[]));
+  for(const item of items){
+    const entries=item.type==='entry'?[item.entry]:item.entries;
+    for(const entry of entries)if(entry.runId&&entry.continuedFrom&&!continuations.has(entry.runId))continuations.set(entry.runId,entry.continuedFrom);
+  }
   const runOwner=(runId:string,key='run:'+runId):ConversationTurnItems=>({key,items:[],...(continuations.has(runId)?{continuedFrom:continuations.get(runId)}:{})});
   for(const item of items){
     const entry=item.type==='entry'?item.entry:item.entries[0];
     const inputOwner=entry.runId?owners.get(entry.runId):undefined;
-    const sameExecution=inputOwner&&(inputOwner.prompt?inputOwner.prompt.runId===entry.runId:
-      inputOwner.key==='run:'+entry.runId||inputOwner.key==='history:'+entry.runId||inputOwner.items.some(value=>value.type==='process-block'&&value.entries[0].runId===entry.runId));
+    const sameExecution=inputOwner&&(inputOwner.prompt
+      ?inputOwner.prompt.runId===entry.runId||inputOwner.items.some(value=>value.type==='entry'&&value.entry.kind==='notice'&&value.entry.runId===entry.runId||value.type==='process-block'&&value.entries[0].runId===entry.runId)
+      :inputOwner.key==='run:'+entry.runId||inputOwner.key==='history:'+entry.runId||inputOwner.items.some(value=>value.type==='process-block'&&value.entries[0].runId===entry.runId||value.type==='entry'&&value.entry.kind==='notice'&&value.entry.runId===entry.runId));
     if(item.type==='entry'&&entry.kind==='message'&&entry.role==='user'&&!sameExecution){
       const turn={key:entry.id,prompt:entry,items:[]};turns.push(turn);
       // Only the first input owns the turn header; later inputs stay in its body.
       if(entry.runId)owners.set(entry.runId,turn);
     }else{
-      if(!turns.length)turns.push({key:'earlier',items:[]});
       let owner=entry.runId?owners.get(entry.runId):undefined;
+      const cont:NonNullable<ConversationRun['continuedFrom']>|undefined=entry.runId?continuations.get(entry.runId):entry.continuedFrom;
+      if(!owner&&cont){
+        const priorTurn=owners.get(cont.runId)??turns.find(turn=>turn.prompt?.id===cont.userEntryId||turn.continuedFrom?.userEntryId===cont.userEntryId||turn.items.some(value=>value.type==='entry'&&(value.entry.id===cont.userEntryId||value.entry.continuedFrom?.userEntryId===cont.userEntryId)));
+        if(priorTurn){
+          owner=priorTurn;
+          if(!owner.prompt&&!owner.continuedFrom?.prompt&&cont.prompt)owner.continuedFrom=cont;
+        }else if(entry.runId&&(entry.kind==='notice'||entry.kind==='handoff')){
+          owner=runOwner(entry.runId);turns.push(owner);owners.set(entry.runId,owner);
+        }
+      }
+      if(!owner&&!turns.length)turns.push({key:'earlier',items:[]});
       if(!owner&&entry.kind==='notice'&&entry.runId){
         owner=runOwner(entry.runId);turns.push(owner);owners.set(entry.runId,owner);
       }
@@ -402,12 +471,16 @@ export function processBlockSummary(entries:readonly ConversationEntry[]):{runni
 export function processBlockKey(entries:readonly ConversationEntry[]):string {
   return 'process-block:'+entries[0].id;
 }
+/** Latest entry carrying turn identity and expansion ownership (shared across live/settled states). */
+export function conversationTurnLatestEntry(turn:ConversationTurnItems,assistantOnly=false):ConversationEntry|undefined {
+  const latest=findLastMatch(turn.items,item=>item.type==='process-block'||item.type==='entry'&&(item.entry.role==='assistant'||(!assistantOnly&&item.entry.kind==='notice'&&Boolean(item.entry.runId))));
+  return latest?.type==='process-block'?latest.entries.at(-1):latest?.entry;
+}
 /** Stable per-turn expansion key shared by the render and the settle-time collapse decision. */
 export function conversationTurnExpansionKey(turn:ConversationTurnItems,run?:ConversationRun):string {
-  const first=turn.items.find(item=>item.type==='process-block'||item.type==='entry'&&item.entry.role==='assistant');
-  const assistant=first?.type==='process-block'?first.entries[0]:first?.entry;
+  const entry=conversationTurnLatestEntry(turn);
   const execution=conversationTurnExecution(turn,run);
-  return 'turn:'+(execution.current?run?.id:assistant?.runId??turn.prompt?.runId??turn.key);
+  return 'turn:'+(execution.current?run?.id:entry?.runId??turn.prompt?.runId??turn.key);
 }
 export function conversationTurnExpanded(turn:ConversationTurnItems,run:ConversationRun|undefined,expanded:Record<string,boolean>):boolean {
   const key=conversationTurnExpansionKey(turn,run);
@@ -420,15 +493,16 @@ export function conversationProcessExpansionAfterSettle(expanded:boolean,atBotto
 }
 
 /** Prepending steps can change a block's first entry; keep explicit open/closed choices on overlapping blocks. */
-export function carryExpandedProcessBlocks(current:readonly ConversationEntry[],added:readonly ConversationEntry[],expanded:Record<string,boolean>,run?:ConversationRun):Record<string,boolean>{
+export function carryExpandedProcessBlocks(current:readonly ConversationEntry[],added:readonly ConversationEntry[],expanded:Record<string,boolean>,run?:ConversationRun,retainedRuns:readonly ConversationRun[]=[]):Record<string,boolean>{
+ const runs=[...retainedRuns,...(run?[run]:[])];
  const marks=new Map<string,boolean>();
- for(const item of conversationStreamTurns(groupConversationStream(current,run)).flatMap(turn=>turn.items))if(item.type==='process-block'){
+ for(const item of conversationStreamTurns(groupConversationStream(current,run,retainedRuns),runs).flatMap(turn=>turn.items))if(item.type==='process-block'){
    const value=expanded[processBlockKey(item.entries)];
    if(value!==undefined)for(const entry of item.entries)marks.set(entry.id,value);
  }
  if(!marks.size)return expanded;
  const entries=[...new Map([...added,...current].map(e=>[e.id,e])).values()].sort((a,b)=>a.sequence-b.sequence),next={...expanded};
- for(const item of conversationStreamTurns(groupConversationStream(entries,run)).flatMap(turn=>turn.items))if(item.type==='process-block'){
+ for(const item of conversationStreamTurns(groupConversationStream(entries,run,retainedRuns),runs).flatMap(turn=>turn.items))if(item.type==='process-block'){
    const value=item.entries.map(e=>marks.get(e.id)).find((v):v is boolean=>v!==undefined);
    if(value!==undefined)next[processBlockKey(item.entries)]=value;
  }

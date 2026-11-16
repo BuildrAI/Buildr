@@ -8,7 +8,8 @@ import { continuationPrompt } from '../domain/conversation-continuation.ts';
 
 export type ConversationReadState = Pick<StoredConversation, 'view' | 'participants' | 'attachments'> & {
   continuations?: Record<string, NonNullable<RunView['continuedFrom']>>;
-  continuationVersion?: 1;
+  continuationLinks?: Record<string, { runId: string; userEntryId: string; noticeEntryId?: string }>;
+  continuationVersion?: 2;
 };
 const busy = "('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active')";
 const tools = (value: string) => `EXISTS(SELECT 1 FROM json_each(${value},'$.tools') AS pending_tool WHERE coalesce(json_extract(pending_tool.value,'$.status'),'unknown')<>'completed')`;
@@ -54,9 +55,14 @@ export class ConversationReadModel {
       const continuation = continuationPrompt(record, run.id);
       return continuation ? [[run.id, continuation]] : [];
     }));
+    const continuationLinks = Object.fromEntries((record.attempts ?? []).flatMap(attempt => {
+      if (attempt.supplement || !attempt.continuationOf) return [];
+      const continuation = continuations[attempt.runId] ?? continuationPrompt(record, attempt.runId);
+      return continuation ? [[attempt.runId, { runId: continuation.runId, userEntryId: continuation.userEntryId, noticeEntryId: attempt.userEntryId }]] : [];
+    }));
     db.prepare(`INSERT INTO conversation_read_states(id,revision,updated_at,state,pending,active,title_work) VALUES(?,?,?,?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,updated_at=excluded.updated_at,state=excluded.state,pending=excluded.pending,active=excluded.active,title_work=excluded.title_work,message_revision=NULL`).run(
-      view.id, view.revision, view.updatedAt, JSON.stringify({view: {...view, entries: []}, participants: record.participants, attachments: record.attachments, continuations, continuationVersion: 1}),
+      view.id, view.revision, view.updatedAt, JSON.stringify({view: {...view, entries: []}, participants: record.participants, attachments: record.attachments, continuations, continuationLinks, continuationVersion: 2}),
       Number(Boolean(common || ['unknown', 'tools-active'].includes(view.run?.status ?? ''))),
       Number(Boolean(common || view.run && unfinishedRun(view.run))), Number(view.titleState?.status === 'generating'));
   }
@@ -178,7 +184,7 @@ export class ConversationReadModel {
       record.view.entries = rows.map(row => JSON.parse(row.body));
     }
     record.view.nextEntryCursor = nextEntryCursor;
-    if (record.continuationVersion !== 1) {
+    if (record.continuationVersion !== 2) {
       const runs = new Set(record.view.entries.flatMap(entry => entry.runId ? [entry.runId] : []));
       const prompts = new Set(record.view.entries.filter(entry => entry.runId && entry.kind === 'message' && entry.role === 'user').map(entry => entry.runId!));
       if ([...runs].some(runId => !prompts.has(runId))) return;

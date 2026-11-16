@@ -4244,7 +4244,6 @@ test('canonical work objects deduplicate full identities and legacy updates pres
   } finally {await f.close();}
 });
 
-
 test('Harness system prompt has durable defaults, optimistic concurrency and validated HTTP/IPC settings',async t=>{
   const native=fake(),f=fixture([native.executor]);t.after(()=>f.close());
   const before=f.service.systemPrompt.read();
@@ -4320,4 +4319,55 @@ test('model-account cached source runtimes keep exact old prompt controls and ap
   assert.ok(native.opens.some(open=>open.interaction!.instructions.endsWith(saved.text)));
   for(const id of [chat.id,sibling.id]){const view=f.service.conversations.read('workspace-one',id),run=view.run!;f.service.conversations.stop('workspace-one',id,{expectedRevision:view.revision,runId:run.id,participantId:run.participantId,generation:run.generation});await waitUntil(()=>f.service.conversations.read('workspace-one',id),v=>v.run?.status==='stopped');}
   assert.equal(native.sends.length,2,'settings and exact old controls never dispatch additional input');
+});
+
+test('in-flight smart title generation is not aborted by native title events and antigravity ignores English-only native titles', async () => {
+  const local = fake('local', { hold: true });
+  const openLocal = local.executor.open;
+  let releaseTitle!: (value: string) => void;
+  let titleAborted = false;
+  const pendingTitle = new Promise<string>(resolve => { releaseTitle = resolve; });
+  local.executor.open = async input => ({
+    ...await openLocal(input),
+    async generateTitle(titleInput) {
+      titleInput.signal.addEventListener('abort', () => { titleAborted = true; }, { once: true });
+      return await pendingTitle;
+    },
+  });
+  assert.equal(builtinDescriptors.get('antigravity')?.runtimeTraits?.requireHanNativeTitle, true);
+  const agy = fake('han-native-title', { hold: true });
+  agy.executor.descriptor.runtimeTraits = { ...agy.executor.descriptor.runtimeTraits, requireHanNativeTitle: true };
+  const f = fixture([local.executor, agy.executor]);
+  try {
+    await connected(f.service, 'local');
+    const c1 = await f.service.conversations.create('workspace-one', {});
+    send(f.service, c1.id, 'local', '优化对话流继续逻辑');
+    await waitUntil(() => f.service.conversations.read('workspace-one', c1.id), value => value.run?.status === 'running' && value.titleState?.status === 'generating');
+    local.sends[0]!.onEvent({ type: 'title', title: 'Native English Override Attempt' });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(titleAborted, false, 'native title event must not abort an active smart title request');
+    assert.equal(f.service.conversations.read('workspace-one', c1.id).titleState?.status, 'generating');
+    releaseTitle('对话流接续体验优化');
+    const named = await waitUntil(() => f.service.conversations.read('workspace-one', c1.id), value => value.titleState?.status === 'generated');
+    assert.equal(named.title, '对话流接续体验优化');
+    for (const context of local.contexts.values()) context.unblock?.();
+    await waitUntil(() => f.service.conversations.read('workspace-one', c1.id), value => value.run?.status === 'completed');
+
+    await connected(f.service, 'han-native-title');
+    const c2 = await f.service.conversations.create('workspace-one', {});
+    send(f.service, c2.id, 'han-native-title', '排查 Antigravity 中文标题');
+    await waitUntil(() => f.service.conversations.read('workspace-one', c2.id), value => value.run?.status === 'running');
+    agy.sends[0]!.onEvent({ type: 'title', title: 'Buildr Conversation Bug Troubleshooting' });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(f.service.conversations.read('workspace-one', c2.id).title, '排查 Antigravity 中文标题');
+    agy.sends[0]!.onEvent({ type: 'title', title: 'Antigravity 中文会话标题' });
+    const chineseNative = await waitUntil(() => f.service.conversations.read('workspace-one', c2.id), value => value.title === 'Antigravity 中文会话标题');
+    assert.equal(chineseNative.titleState?.status, 'generated');
+    for (const context of agy.contexts.values()) context.unblock?.();
+    await waitUntil(() => f.service.conversations.read('workspace-one', c2.id), value => value.run?.status === 'completed');
+  } finally {
+    for (const context of local.contexts.values()) context.unblock?.();
+    for (const context of agy.contexts.values()) context.unblock?.();
+    await f.close();
+  }
 });

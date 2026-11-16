@@ -550,15 +550,19 @@ export class ConversationApplication {
             const record=this.load(value.workspaceId,value.conversationId),run=conversationRuns(record.view).find(run=>run.id===value.runId);
             if(!run||run.id!==value.runId||run.participantId!==value.id||run.generation!==this.options.generation||run.resourcesReleased)continue;
             const newlyReleased=!run.resourcesReleased;
+            const previousStatus=run.status;
             const executionEnded=run.executionState==='ended'&&!unfinishedRun(run);
             run.executionState=run.executionState==='ended'?'ended':facts.get(value.id)!;run.resourcesReleased=true;
             if(run.accepted===false && !record.attempts.find(attempt=>attempt.runId===run.id)?.executionRef && (run.stopRequested||record.interruption?.runId===run.id && record.interruption.cancelled) && !run.tools.length){
               run.status='stopped';run.canContinue=false;
               run.diagnostic='已停止本轮接续并释放后台连接；原输入是否送达仍未知，已有操作结果保留，不会重发。';
-            }else if(BUSY_STATES.has(run.status)){
+            }else if(BUSY_STATES.has(previousStatus)){
               run.status='unknown';run.interrupted=true;
               run.diagnostic=run.executionState==='ended'?'原执行已结束、后台资源已释放；操作结果仍待核对，不会自动重发。':'原生控制资源已释放；独立命令及操作结果仍待核对，不会自动重发。';
               run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
+              if(record.view.run?.id===run.id && run.accepted && !run.stopRequested && !this.conversationStopRequested(record,run.id) && !record.interruption?.cancelled && record.interruption?.runId!==run.id){
+                record.interruption={runId:run.id,awaitingUser:record.view.requests.some(request=>request.runId===run.id)||['waiting-approval','waiting-question'].includes(previousStatus)};
+              }
             }
             // Resource bookkeeping is not additional execution time.
             if(!executionEnded)run.updatedAt=this.options.now();this.save(record);
@@ -605,12 +609,18 @@ export class ConversationApplication {
       for(const run of conversationRuns(record.view)){
         if(run.generation!==this.options.generation||run.resourcesReleased||!unfinishedRun(run))continue;
         this.backgroundRuns.delete(run.id);
+        const previousStatus=run.status;
         run.resourcesReleased=true;run.executionState='unknown';
-        if(!['stopped','failed','completed'].includes(run.status)){run.status='unknown';run.interrupted=true;}
+        if(!['stopped','failed','completed'].includes(previousStatus)){run.status='unknown';run.interrupted=true;}
         run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
         delete run.fault;
         run.diagnostic=RETIRED_EXECUTION_DIAGNOSTIC;
-        run.updatedAt=this.options.now();changed=true;
+        run.updatedAt=this.options.now();
+        if(record.view.run?.id===run.id && run.accepted && !run.stopRequested && !this.conversationStopRequested(record,run.id) && !record.interruption?.cancelled && record.interruption?.runId!==run.id &&
+          (['running','waiting-approval','waiting-question','tools-active'].includes(previousStatus) || previousStatus==='unknown')){
+          record.interruption={runId:run.id,awaitingUser:record.view.requests.some(request=>request.runId===run.id)||['waiting-approval','waiting-question'].includes(previousStatus)};
+        }
+        changed=true;
       }
       if(changed)this.save(record);
     }
@@ -700,8 +710,22 @@ export class ConversationApplication {
       }
       const presentedFiles=presentedFilesForEntry(source);
       const nativeDetail=entry.kind==='tool'&&Boolean(entry.nativeDetail||this.liveTools.has(entry.id)||(entry.detail&&((record as Partial<StoredConversation>).nativeTools?.[entry.id]||(entry.provider&&this.options.connections.hasNativeContent(entry.provider)))));
+      const continuationLink = entry.kind==='notice'&&entry.role==='system'&&entry.runId&&!entry.continuedFrom
+        ? (()=>{
+            if(record.attempts){
+              const attempt=record.attempts.find(value=>value.runId===entry.runId&&!value.supplement);
+              if(!attempt?.continuationOf||attempt.userEntryId!==entry.id)return undefined;
+              const resolved=continuationPrompt(record as Pick<StoredConversation,'view'|'attempts'>,entry.runId);
+              return resolved?{runId:resolved.runId,userEntryId:resolved.userEntryId}:undefined;
+            }
+            const stored=(record as ConversationReadState).continuationLinks?.[entry.runId];
+            if(stored&&(!stored.noticeEntryId||stored.noticeEntryId===entry.id))return {runId:stored.runId,userEntryId:stored.userEntryId};
+            const cached=record.continuations?.[entry.runId];
+            return cached?{runId:cached.runId,userEntryId:cached.userEntryId}:undefined;
+          })()
+        : undefined;
       const result={...entry};delete result.presentedFiles;delete result.nativeDetail;
-      return {...result,...(nativeDetail?{nativeDetail:true}:{}),...(presentedFiles.length?{presentedFiles}:{})};
+      return {...result,...(continuationLink?{continuedFrom:continuationLink}:{}),...(nativeDetail?{nativeDetail:true}:{}),...(presentedFiles.length?{presentedFiles}:{})};
     });
     view.requests = view.requests
       .filter(request => conversationRuns(view).some(run => !run.supersededBy && !(request.kind === 'question' && run.questionsEndedBy) && request.runId === run.id && request.participantId === run.participantId && request.generation === run.generation))
@@ -1380,14 +1404,18 @@ export class ConversationApplication {
     if (prepared.draft.handoffSummary !== undefined) append({ id: randomUUID(), kind: 'notice', role: 'user', text: `用户补充的交接说明：\n${prepared.draft.handoffSummary}`, participantId: participant.id,runId:run.id });
     const userEntryId = randomUUID();
     const manualRecovery = Boolean(raw.continueRunId);
-    append({ id: userEntryId, kind: systemRecovery || manualRecovery ? 'notice' : 'message', role: systemRecovery || manualRecovery ? 'system' : 'user', text: manualRecovery ? record.view.run?.accepted ? '已请求继续上次执行。' : '已请求重试上次未送达的要求。' : prepared.draft.text, participantId:participant.id, provider:participant.provider, runId: run.id, status: 'sending', attachments: prepared.draft.attachmentIds });
+    const continuationOf = raw.continueRunId ?? (systemRecovery && record.view.run ? record.view.run.id : undefined);
+    const continuationLink = continuationOf
+      ? continuationPrompt({ view: record.view, attempts: [...record.attempts, { clientRequestId, inputDigest, runId: run.id, participantId: participant.id, through: 0, userEntryId, accepted: false, continuationOf }] }, run.id)
+      : undefined;
+    append({ id: userEntryId, kind: systemRecovery || manualRecovery ? 'notice' : 'message', role: systemRecovery || manualRecovery ? 'system' : 'user', text: manualRecovery ? record.view.run?.accepted ? '已请求继续上次执行。' : '已请求重试上次未送达的要求。' : prepared.draft.text, participantId:participant.id, provider:participant.provider, runId: run.id, ...(continuationLink ? { continuedFrom: { runId: continuationLink.runId, userEntryId: continuationLink.userEntryId } } : {}), status: 'sending', attachments: prepared.draft.attachmentIds });
     const questionWaits = !systemRecovery ? conversationRuns(record.view).flatMap(old => {
       const requests = record.view.requests.filter(request => request.runId === old.id && request.kind === 'question')
         .flatMap(request => record.requests[request.id] ? [{ id: request.id, nativeId: record.requests[request.id].nativeId }] : []);
       return requests.length ? [{ runId: old.id, requests, ...(old.participantId === participant!.id ? { reuse: true } : {}) }] : [];
     }) : [];
     const automaticRetry = systemRecovery ? record.attempts.find(value => value.runId === record.view.run?.id)?.automaticRetry : undefined;
-    record.attempts.push({ clientRequestId, inputDigest, runId: run.id, participantId: participant.id, through: record.view.entries.at(-1)!.sequence, userEntryId, accepted: false, ...(!systemRecovery ? {questionWaits} : {}), ...(raw.continueRunId || systemRecovery && record.view.run ? {continuationOf: raw.continueRunId ?? record.view.run!.id} : {}), ...(automaticRetry ? {automaticRetry: {...automaticRetry}} : {}) });
+    record.attempts.push({ clientRequestId, inputDigest, runId: run.id, participantId: participant.id, through: record.view.entries.at(-1)!.sequence, userEntryId, accepted: false, ...(!systemRecovery ? {questionWaits} : {}), ...(continuationOf ? {continuationOf} : {}), ...(automaticRetry ? {automaticRetry: {...automaticRetry}} : {}) });
     const previousRun=record.view.run;if(previousRun){record.runOutcomes??={};record.runOutcomes[previousRun.id]={status:previousRun.status,diagnostic:previousRun.diagnostic,model:previousRun.model,provider:previousRun.provider,contextUsage:previousRun.contextUsage,systemPrompt:previousRun.systemPrompt,generation:previousRun.generation,updatedAt:previousRun.updatedAt};}
     if (!participant.modelAccountId) this.nativeSourceOwners.add(`${workspaceId}/${id}`);
     delete record.interruption;
@@ -2182,10 +2210,23 @@ export class ConversationApplication {
     const state = record.view.titleState?.status;
     // Native executors may publish a model-generated title after the separate
     // automatic request failed or returned unavailable. A real fallback title
-    // is still replaceable; manual names and already-generated titles are not.
+    // is still replaceable; manual names, already-generated titles, and active
+    // or pending-retry independent title work must not be preempted.
+    const independentTitlePending = state === 'generating'
+      || this.titleWork.has(record.view.id)
+      || Boolean(record.view.run?.id && this.pendingTitleRetries.has(record.view.run.id));
+    if (native && independentTitlePending) return false;
+    const activeParticipant = record.view.run
+      ? record.participants.find(item => item.id === record.view.run!.participantId)
+      : record.participants.at(-1);
+    const requireHanNativeTitle = Boolean(
+      activeParticipant && this.options.connections.descriptor(activeParticipant.connectionId)?.runtimeTraits?.requireHanNativeTitle,
+    );
+    if (native && requireHanNativeTitle && (!raw || !/[\p{Script=Han}]/u.test(raw))) {
+      return false;
+    }
     const nativeReplacement = native && record.titleOrigin === 'fallback' && state !== 'manual' && state !== 'generated';
     if (!raw || this.closing || !explicit && state !== 'generating' && !nativeReplacement && !this.titleEligible(record)) return false;
-    if (nativeReplacement) this.titleWork.get(record.view.id)?.abort();
     const title = raw.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, '').replace(/\s+/g, ' ').trim();
     if (!title || [...title].length > 64) return false;
     record.view.title = title; record.titleOrigin = 'generated'; record.view.titleState={status:'generated'}; return true;
@@ -2414,14 +2455,21 @@ export class ConversationApplication {
     let record=this.load(workspaceId,id),run=record.view.run;
     if(!run || !run.accepted || this.closing || (run.generation===this.options.generation && !record.interruption))return;
     if(!record.interruption){
-      // Only an accepted active execution is attributable to an abrupt host loss.
-      if (run.accepted && run.status === 'unknown') {
+      const retiredInterrupted = run.accepted && run.status === 'unknown' && run.resourcesReleased === true &&
+        run.interrupted === true && run.diagnostic === RETIRED_EXECUTION_DIAGNOSTIC &&
+        !run.stopRequested && !this.conversationStopRequested(record, run.id);
+      if (retiredInterrupted) {
+        record.interruption = { runId: run.id, awaitingUser: record.view.requests.some(request => request.runId === run!.id) };
+        this.save(record);
+      } else if (run.accepted && run.status === 'unknown') {
         // Legacy unknown states have no trustworthy system-interruption provenance.
         await this.observe(workspaceId, id); return;
+      } else {
+        // Only an accepted active execution is attributable to an abrupt host loss.
+        if(!run.accepted||!['running','waiting-approval','waiting-question','tools-active'].includes(run.status))return;
+        record.interruption={runId:run.id,awaitingUser:record.view.requests.some(request=>request.runId===run!.id)||['waiting-approval','waiting-question'].includes(run.status)};
+        run.interrupted=true;run.diagnostic='服务重启导致执行中断，正在核对原执行。';this.save(record);
       }
-      if(!run.accepted||!['running','waiting-approval','waiting-question','tools-active'].includes(run.status))return;
-      record.interruption={runId:run.id,awaitingUser:record.view.requests.some(request=>request.runId===run!.id)||run.status!=='running'};
-      run.interrupted=true;run.diagnostic='服务重启导致执行中断，正在核对原执行。';this.save(record);
     }
     const originalId=run.id,marker=record.interruption;
     if(marker.runId!==originalId||marker.cancelled||this.conversationStopRequested(record,run.id)||run.status==='completed'||run.status==='failed'&&marker.reason!=='execution-fault')return;
@@ -2452,7 +2500,8 @@ export class ConversationApplication {
       if(marker.awaitingUser){unavailable('执行未完成：中断前有待确认的问题或授权，请查看原问题后继续。');return;}
       const stopped=run.status==='stopped'&&run.tools.every(tool=>tool.status==='completed');
       const released=run.resourcesReleased===true&&run.tools.every(tool=>tool.status!=='running');
-      if(run.generation!==this.options.generation||!stopped&&!released||record.view.requests.some(request=>request.runId===originalId)){unavailable('执行未完成：正在核对原执行及控制资源，已有操作结果保留，不重复操作。');return;}
+      const ownerSettled=run.generation===this.options.generation||(released&&this.options.generationAlive?.(run.generation)!==true);
+      if(!ownerSettled||!stopped&&!released||record.view.requests.some(request=>request.runId===originalId)){unavailable('执行未完成：正在核对原执行及控制资源，已有操作结果保留，不重复操作。');return;}
       const participant=record.participants.find(value=>value.id===run!.participantId);
       if(!participant?.contextRef)throw new Error('agent_context_binding_mismatch');
       const attempt=record.attempts.find(value=>value.runId===originalId)!;

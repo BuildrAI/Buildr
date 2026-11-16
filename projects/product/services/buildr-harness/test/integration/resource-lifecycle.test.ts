@@ -712,3 +712,61 @@ test('retiring generation preserves post-send background continuation until comp
   assert.equal(service.activity().busy,false);
  }finally{await service.close();fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test('retired execution automatically continues on dead previous generation when autoContinueInterrupted is enabled',async()=>{
+ const f=await fixture();try{
+  let chat=await f.start('uncertain');
+  const original=chat.run!.id;
+  f.forgetExecution();
+  await f.service.releaseRetiredWork();
+  await f.service.close();
+
+  const capabilities={text:true,images:false,approval:false,questions:false,stop:true,resume:true,maxInputBytes:65536};
+  const resumedSends:Array<{text:string;clientRequestId:string}>=[];
+  let resumedExecutionRef:{id:string}|undefined;
+  const successor=createAgentService({
+   dataRoot:f.root,
+   autoContinueInterrupted:true,
+   generationAlive:()=>false,
+   executors:[{
+    descriptor:{id:'local',label:'Local',capabilities},
+    async open(){
+     return {
+      closed:false,bindingIdentity:'resource-fixture',capabilities,
+      inspectAccount:async()=>({status:'ready' as const}),
+      models:async()=>[{id:'model',label:'Model'}],
+      beginLogin:async()=>{},cancelLogin:async()=>{},
+      createContext:async()=>({id:randomUUID()}),
+      resumeContext:async()=>{},
+      readHistory:async()=>[],
+      async send(input){
+       resumedSends.push({text:input.text,clientRequestId:input.clientRequestId});
+       const executionRef={id:input.clientRequestId};
+       resumedExecutionRef=executionRef;
+       input.onEvent({type:'accepted',executionRef});
+       input.onEvent({type:'item',item:{id:'auto-answer',kind:'message',role:'assistant',text:'重启后已自动接续完成。',status:'completed',executionId:executionRef.id}});
+       input.onEvent({type:'completed',status:'completed'});
+      },
+      observe:async()=>resumedExecutionRef?{status:'idle' as const,executionRef:resumedExecutionRef,tools:[],requests:[]}:{status:'idle' as const,tools:[],requests:[]},
+      reply:async()=>{},stop:async()=>({status:'stopped' as const,tools:[]}),close:async()=>{},
+     };
+    },
+   }],
+   modelProviders:[{id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions' as const,inspect:async()=>({status:'ready' as const,models:[{id:'model',label:'Model',images:false,tools:true}]}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>{throw Error('unused');},close:async()=>{}};}}],
+   resolveWorkspace:()=>({rootPath:f.root}),
+   assertTask(){},
+  });
+  try{
+   await successor.conversations.recoverInterrupted();
+   await f.wait(()=>resumedSends.length===1&&successor.conversations.read('workspace',chat.id).run?.status==='completed');
+   const updated=successor.conversations.read('workspace',chat.id);
+   assert.notEqual(updated.run?.id,original);
+   assert.equal(updated.run?.continuedFrom?.runId,original);
+   assert.equal(updated.run?.continuedFrom?.prompt?.text,'uncertain');
+   const notice=updated.entries.find(entry=>entry.runId===updated.run!.id&&entry.kind==='notice');
+   assert.ok(notice,'auto-recovery must persist a continuation notice');
+   assert.deepEqual(notice.continuedFrom,{runId:original,userEntryId:updated.run!.continuedFrom!.userEntryId});
+   assert.match(resumedSends[0]!.text,/系统自动恢复[\s\S]*服务重启[\s\S]*仍可能未知/);
+  }finally{await successor.close();}
+ }finally{await f.close();}
+});

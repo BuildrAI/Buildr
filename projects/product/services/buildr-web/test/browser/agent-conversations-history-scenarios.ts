@@ -1271,11 +1271,30 @@ const historyRuns = {
         run:run('running','codex',{id:'continuation-run',model:'fixture-model',continuedFrom:{runId:'source-run',userEntryId:'continuation-source',prompt:source}}),
       });
       await page.reload();await input().waitFor();
-      const executing=panel().locator('.ac-turn.is-executing');
+      assert.equal(await panel().locator('.ac-turn').count(),1,'同页接续应直接复用原始用户输入所在的单轮容器');
+      let executing=panel().locator('.ac-turn.is-executing');
+      await executing.locator('.ac-turn-prompt').filter({hasText:'这是要继续的原始要求'}).waitFor();
+      assert.equal(await executing.locator('.ac-continuation-prompt-label').count(),0,'原输入已在当前页时不重复展示「继续上次要求」标签');
+      await panel().locator('.ac-stream').evaluate((node:HTMLElement)=>{const turn=node.querySelector<HTMLElement>('.ac-turn.is-executing')!;node.scrollTop+=turn.getBoundingClientRect().top-node.getBoundingClientRect().top+220;});
+      let sticky=await executing.locator('.ac-turn-head').evaluate((node:HTMLElement)=>({position:getComputedStyle(node).position,top:node.getBoundingClientRect().top,stream:node.closest('.ac-stream')!.getBoundingClientRect().top}));
+      assert.equal(sticky.position,'sticky');assert.ok(Math.abs(sticky.top-sticky.stream)<2,JSON.stringify(sticky));
+
+      update({
+        entries:[
+          {id:'continuation-notice',sequence:2,kind:'notice',role:'system',text:'已请求继续上次执行。',runId:'continuation-run',createdAt:at,status:'accepted',continuedFrom:{runId:'source-run',userEntryId:'continuation-source'}},
+          {id:'continuation-progress',sequence:3,kind:'message',role:'assistant',text:Array.from({length:35},(_,i)=>'接续执行过程 '+(i+1)).join('\n\n'),runId:'continuation-run',createdAt:at,status:'running'},
+        ],
+        nextEntryCursor:2,
+        requests:[],
+        run:run('running','codex',{id:'continuation-run',model:'fixture-model',continuedFrom:{runId:'source-run',userEntryId:'continuation-source',prompt:source}}),
+      });
+      await page.reload();await input().waitFor();
+      assert.equal(await panel().locator('.ac-turn').count(),1);
+      executing=panel().locator('.ac-turn.is-executing');
       await executing.locator('.ac-turn-prompt').filter({hasText:'这是要继续的原始要求'}).waitFor();
       assert.equal(await executing.locator('.ac-continuation-prompt-label').innerText(),'继续上次要求');
       await panel().locator('.ac-stream').evaluate((node:HTMLElement)=>{const turn=node.querySelector<HTMLElement>('.ac-turn.is-executing')!;node.scrollTop+=turn.getBoundingClientRect().top-node.getBoundingClientRect().top+220;});
-      const sticky=await executing.locator('.ac-turn-head').evaluate((node:HTMLElement)=>({position:getComputedStyle(node).position,top:node.getBoundingClientRect().top,stream:node.closest('.ac-stream')!.getBoundingClientRect().top}));
+      sticky=await executing.locator('.ac-turn-head').evaluate((node:HTMLElement)=>({position:getComputedStyle(node).position,top:node.getBoundingClientRect().top,stream:node.closest('.ac-stream')!.getBoundingClientRect().top}));
       assert.equal(sticky.position,'sticky');assert.ok(Math.abs(sticky.top-sticky.stream)<2,JSON.stringify(sticky));
       await capture(page,'conversation-continuation-prompt.png');
     }finally{fixture.conversation=previous;await page.reload();await input().waitFor();}

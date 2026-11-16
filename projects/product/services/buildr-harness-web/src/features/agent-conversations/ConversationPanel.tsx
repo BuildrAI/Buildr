@@ -44,7 +44,7 @@ import { ConversationTranscript } from './ConversationTranscript.tsx';
 import { imageSelectionError, conversationDocumentTypes } from './conversation-images.ts';
 import { uploadConversationMaterials } from './conversation-material-upload.ts';
 import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,executionAgentName,executionTargetChanges,nativeConversationChoice,permissionModeLabels,readConversationPermission,resolveNativeExecutionAccountId,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,validConversationChoice,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options.ts';
-import { appendDraftAttachment, canGenerateConversationTitle, conversationConflictNeedsRefresh, conversationTurnBinding, executionLocked, groupConversationStream, conversationStreamTurns, conversationTurnExecution, conversationTurnTiming, conversationTurnExpansionKey, conversationTurnExpanded, conversationProcessExpansionAfterSettle, participantExecutionPairs, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state.ts';
+import { appendDraftAttachment, canGenerateConversationTitle, conversationConflictNeedsRefresh, conversationTurnBinding, executionLocked, groupConversationStream, conversationStreamTurns, conversationTurnExecution, conversationTurnTiming, conversationTurnLatestEntry, conversationTurnExpansionKey, conversationTurnExpanded, conversationProcessExpansionAfterSettle, participantExecutionPairs, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state.ts';
 import { conversationActionKey, conversationInputAttemptAccepted, conversationInputAttemptMatches, createConversationActions, createConversationInputAttempts, reconcileConversationInputAttempt } from './conversation-actions.ts';
 import { useNewConversationImages } from './useNewConversationImages.ts';
 import { useConversationAttachments } from './useConversationAttachments.ts';
@@ -671,13 +671,13 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   };
   const earlier=useEarlierConversationEntries({conversation:chat,selectionKey:`${context.selectionGeneration}:${chat?.workspaceId}:${chat?.id}`,stream,bottom,position:readPosition,
     loadPage:(value,cursor,signal)=>context.api.entries(value.workspaceId,value.id,cursor,signal),
-    prepend:page=>{if(chat)setExpandedToolGroups(previous=>carryExpandedProcessBlocks(visibleConversationEntries(chat.entries),visibleConversationEntries(page.entries),previous,chat.run));context.prependEntries(page);},
+    prepend:page=>{if(chat)setExpandedToolGroups(previous=>carryExpandedProcessBlocks(visibleConversationEntries(chat.entries),visibleConversationEntries(page.entries),previous,chat.run,chat.retainedRuns));context.prependEntries(page);},
   });
   const followBottom=()=>{
     setAtBottom(previous=>previous===bottom.current?previous:bottom.current);
     // Completion must not collapse the live process underneath an upward reader.
     if(!bottom.current)setExpandedToolGroups(previous=>{
-      const keys=turns.filter(turn=>conversationTurnExecution(turn,chat?.run).active||turn.items.some(item=>item.type==='process-block'&&item.active)).map(turn=>'turn:'+(turn.prompt?.runId??turn.items.flatMap(item=>item.type==='process-block'?item.entries:item.type==='entry'?[item.entry]:[]).find(entry=>entry.role==='assistant')?.runId??turn.key));
+      const keys=turns.filter(turn=>conversationTurnExecution(turn,chat?.run).active||turn.items.some(item=>item.type==='process-block'&&item.active)).map(turn=>conversationTurnExpansionKey(turn,chat?.run));
       if(keys.every(key=>previous[key]!==undefined))return previous;
       return {...previous,...Object.fromEntries(keys.filter(key=>previous[key]===undefined).map(key=>[key,true]))};
     });
@@ -830,6 +830,8 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
           {turns.map((turn,index)=>{
             const first=turn.items.find(item=>item.type==='process-block'||item.type==='entry'&&item.entry.role==='assistant');
             const assistant=first?.type==='process-block'?first.entries[0]:first?.entry;
+            const latestEntry=conversationTurnLatestEntry(turn);
+            const latestAssistant=conversationTurnLatestEntry(turn,true);
             const prompt=turn.prompt,shownPrompt=prompt??turn.continuedFrom?.prompt;
             const execution=conversationTurnExecution(turn,run);
             const executing=index===turns.length-1&&execution.active;
@@ -844,11 +846,13 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
             const timing=conversationTurnTiming(turn,turnRuns);
             /* A released run may have ended without a verified outcome; the current
                run keeps its own prominent notice, so only recalled turns need this. */
-            const turnRun=turnRuns.find(value=>value.id===(execution.current?run?.id:assistant?.runId??prompt?.runId));
+            const resolvedRunId=execution.current?run?.id:latestEntry?.runId||assistant?.runId||prompt?.runId;
+            const turnEntryRunIds=new Set([...(prompt?.runId?[prompt.runId]:[]),...turn.items.flatMap(item=>item.type==='entry'?(item.entry.runId?[item.entry.runId]:[]):item.entries.flatMap(entry=>entry.runId?[entry.runId]:[]))]);
+            const turnRun=turnRuns.find(value=>value.id===resolvedRunId)??turnRuns.find(value=>value.status==='unknown'&&!value.supersededBy&&turnEntryRunIds.has(value.id));
             const turnPaused=Boolean(stoppedOutput&&stoppedOutput.workspaceId===chat.workspaceId&&stoppedOutput.conversationId===chat.id&&(stoppedOutput.runIds??[stoppedOutput.runId]).includes(turnRun?.id??''));
             const unverified=Boolean(turnRun&&turnRun.status==='unknown'&&!execution.current&&!turnRun.supersededBy);
-            return <ConversationTurn key={turn.key} id={turn.key} runId={execution.current?run?.id:assistant?.runId||prompt?.runId} prompt={shownPrompt?{id:shownPrompt.id,text:shownPrompt.text,images:shownPrompt.attachments?.length?<ConversationMessageImages conversation={chat} ids={shownPrompt.attachments} read={context.api.readImage}/>:undefined,diagnostic:prompt?(prompt.deliveryDiagnostic?<small className="ac-input-diagnostic" role="status">{prompt.deliveryDiagnostic}</small>:prompt.status==='unknown'&&(execution.current||turnExpanded)?<Tag color={execution.current?'warning':'default'}>{execution.current?'是否送达待确认':'历史送达未确认'}</Tag>:undefined):<small className="ac-continuation-prompt-label">继续上次要求</small>}:undefined}
-              onCollapseProcess={processKeys.some(key=>expandedToolGroups[key]===true)?()=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(processKeys.map(key=>[key,false]))})):undefined} collapseLabel={hasExpandedProcess?'收起处理过程':'收起工具调用'} identity={execution.current?runIdentity:turnIdentity(assistant||prompt)} executing={executing&&!turnPaused} startedAt={timing.startedAt} finishedAt={timing.finishedAt} processExpanded={turnExpanded} onToggleProcess={hasProcess||hasSupplement?()=>setExpandedToolGroups(previous=>({...previous,[turnExpansionKey]:!turnExpanded,...Object.fromEntries(settled.flatMap(item=>item.type==='process-block'?[[processBlockKey(item.entries),!turnExpanded]]:[]))})):undefined}>
+            return <ConversationTurn key={turn.key} id={turn.key} runId={resolvedRunId} prompt={shownPrompt?{id:shownPrompt.id,text:shownPrompt.text,images:shownPrompt.attachments?.length?<ConversationMessageImages conversation={chat} ids={shownPrompt.attachments} read={context.api.readImage}/>:undefined,diagnostic:prompt?(prompt.deliveryDiagnostic?<small className="ac-input-diagnostic" role="status">{prompt.deliveryDiagnostic}</small>:prompt.status==='unknown'&&(execution.current||turnExpanded)?<Tag color={execution.current?'warning':'default'}>{execution.current?'是否送达待确认':'历史送达未确认'}</Tag>:undefined):<small className="ac-continuation-prompt-label">继续上次要求</small>}:undefined}
+              onCollapseProcess={processKeys.some(key=>expandedToolGroups[key]===true)?()=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(processKeys.map(key=>[key,false]))})):undefined} collapseLabel={hasExpandedProcess?'收起处理过程':'收起工具调用'} identity={execution.current?runIdentity:turnIdentity(latestAssistant||assistant||latestEntry||prompt)} executing={executing&&!turnPaused} startedAt={timing.startedAt} finishedAt={timing.finishedAt} processExpanded={turnExpanded} onToggleProcess={hasProcess||hasSupplement?()=>setExpandedToolGroups(previous=>({...previous,[turnExpansionKey]:!turnExpanded,...Object.fromEntries(settled.flatMap(item=>item.type==='process-block'?[[processBlockKey(item.entries),!turnExpanded]]:[]))})):undefined}>
               {executing&&execution.waiting&&<small className="ac-input-diagnostic" role="status">{execution.waiting}</small>}
               {unverified&&turnExpanded&&<small className="ac-input-diagnostic" title={turnRun?.diagnostic}>{turnRun?.attentionSettled?'历史执行提醒已结束；原记录仍保留。':<>历史执行结果未确认，不影响当前对话。原记录保留在可展开的处理过程中。{canSettleRetainedRun(chat,turnRun)&&<Button type="link" size="small" loading={Boolean(chat&&actions.has(actionKey(chat,'settle-retained',turnRun!.id)))} onClick={()=>void settleRetained(turnRun!)} title="仅结束提醒：原执行结果仍未知，不终止可能仍在运行的进程，不会重发原操作。">结束提醒</Button>}</>}</small>}
               {turn.items.map(item=>{

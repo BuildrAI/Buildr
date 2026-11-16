@@ -1357,3 +1357,76 @@ test('antigravity stop clears backgroundWork release proof and cold prepareRelea
     assert.equal(await rtCold.canRelease!({ contextRef: ctx, executionRef: followUpAccepted.executionRef }), true);
   }
 });
+
+test('antigravity generateTitle runs isolated, downgrades orchestrator to lightweight model, returns Simplified Chinese, and enforces tool/language guards', async t => {
+  const models = [
+    { modelId: 'gemini-pro-orchestrator', name: 'Orchestrator (Carbon)' },
+    { modelId: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+  ];
+  const h = await createHarness(
+    t,
+    { createCliSessionArtifacts: true, models },
+    {
+      authenticated: true,
+      methodId: 'oauth-personal',
+      email: 'title-zh@example.com',
+      tier: { id: 'g1-ultra-tier', name: 'Google AI Ultra' },
+      models,
+    },
+  );
+  const rt = await h.openRuntime();
+  const realCtx = await rt.createContext({ cwd: h.cwd, permissionMode: 'full-access' });
+
+  const description = JSON.stringify({ messages: [{ role: 'user', text: '优化重启后自动接续与中文标题' }] });
+  const generated = await rt.generateTitle!({
+    contextRef: realCtx,
+    cwd: h.cwd,
+    model: 'gemini-pro-orchestrator',
+    description,
+    signal: new AbortController().signal,
+  });
+  assert.equal(generated, 'Antigravity 中文智能标题摘要');
+
+  const sessions = await h.readFixtureJsonl('fixture-sessions.jsonl');
+  const titleSession = sessions.findLast(row => row.method === 'session/new' && row.sessionId !== realCtx.id);
+  assert.ok(titleSession, 'generateTitle must create an isolated auxiliary session');
+  assert.notEqual(titleSession.cwd, h.cwd, 'auxiliary title session must use an isolated empty cwd');
+  assert.equal(titleSession.skipPermissions, false, 'auxiliary title session must never enable skipPermissions');
+
+  const configs = await h.readFixtureJsonl('fixture-configs.jsonl');
+  assert.ok(
+    configs.some(row => row.sessionId === titleSession.sessionId && row.configId === 'model' && row.value === 'gemini-2.5-flash'),
+    'orchestrator title request must downgrade to a lightweight non-orchestrator Gemini model',
+  );
+
+  const cliDir = path.join(h.configRoot, 'home', '.gemini', 'antigravity-cli');
+  assert.deepEqual(await readdir(path.join(cliDir, 'conversations')), [
+    `${realCtx.id}.db`,
+    `${realCtx.id}.db-wal`,
+  ]);
+  assert.deepEqual(await readdir(path.join(cliDir, 'brain')), [realCtx.id]);
+
+  await h.setControl({ scenario: 'title-tool-attempt', createCliSessionArtifacts: true, models });
+  await assert.rejects(
+    rt.generateTitle!({
+      contextRef: realCtx,
+      cwd: h.cwd,
+      model: 'gemini-2.5-flash',
+      description,
+      signal: new AbortController().signal,
+    }),
+    /agent_title_tools_forbidden/,
+  );
+
+  await h.setControl({ scenario: 'title-english-only', createCliSessionArtifacts: true, models });
+  await assert.rejects(
+    rt.generateTitle!({
+      contextRef: realCtx,
+      cwd: h.cwd,
+      model: 'gemini-2.5-flash',
+      description,
+      signal: new AbortController().signal,
+    }),
+    /agent_title_output_invalid/,
+  );
+});

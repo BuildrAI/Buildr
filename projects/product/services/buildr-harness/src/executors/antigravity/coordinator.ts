@@ -304,6 +304,7 @@ export class AntigravityCoordinator {
   private readonly conversationProcesses = new Map<string, ConversationProcessHandle>();
   private readonly conversationOpening = new Map<string, Promise<ConversationProcessHandle>>();
   private readonly contextToKey = new Map<string, string>();
+  private readonly auxiliaryClients = new Set<{ owner: unknown; client: AntigravityAcpClient }>();
   private readonly exitedGroups = new Set<number>();
 
   constructor(options: {
@@ -993,6 +994,61 @@ export class AntigravityCoordinator {
     return undefined;
   }
 
+  async openAuxiliaryTitleClient(input: {
+    owner: unknown;
+    cwd: string;
+    onNotification: (method: string, params: Record<string, unknown>) => void;
+    onServerRequest: (request: AntigravityAcpServerRequest) => Promise<unknown>;
+    onExit: (reason: string) => void;
+  }): Promise<{
+    client: AntigravityAcpClient;
+    handshake: AntigravityHandshakeCapabilities;
+    close: (sessionId?: string) => Promise<void>;
+  }> {
+    await this.verifyExecutableUnchanged();
+    const { env } = await this.buildChildEnvironment({ SSH_CONNECTION: '1' });
+    const client = AntigravityAcpClient.open({
+      executable: this.executable,
+      args: ['acp'],
+      cwd: input.cwd,
+      environment: env,
+      diagnostics: this.diagnostics,
+      onNotification: input.onNotification,
+      onServerRequest: input.onServerRequest,
+      onExit: reason => {
+        if (client.pid) this.exitedGroups.add(client.pid);
+        this.auxiliaryClients.delete(entry);
+        input.onExit(reason);
+      },
+    });
+    const entry = { owner: input.owner, client };
+    this.auxiliaryClients.add(entry);
+    let closed = false;
+    const close = async (sessionId?: string) => {
+      if (closed) return;
+      closed = true;
+      this.auxiliaryClients.delete(entry);
+      if (client.pid) this.exitedGroups.add(client.pid);
+      await client.close();
+      await this.cleanupProbeSessionArtifacts(sessionId);
+    };
+    try {
+      const initResult = await client.request(
+        'initialize',
+        { protocolVersion: 1, clientCapabilities: { elicitation: { form: {} } } },
+        15_000,
+      );
+      const handshake = parseHandshakeCapabilities(initResult);
+      if (!initResult?.agentCapabilities?.promptCapabilities && !initResult?.agentCapabilities?.prompt_capabilities) {
+        throw new Error('agent_title_unavailable');
+      }
+      return { client, handshake, close };
+    } catch (error) {
+      await close();
+      throw error;
+    }
+  }
+
   async closeConversationProcess(contextId: string): Promise<void> {
     const key = this.contextToKey.get(contextId);
     this.contextToKey.delete(contextId);
@@ -1016,22 +1072,34 @@ export class AntigravityCoordinator {
       if (handle.client.pid) this.exitedGroups.add(handle.client.pid);
       matched.push(handle);
     }
-    await Promise.allSettled(matched.map(h => h.client.close()));
-    return matched.length > 0 && matched.every(handle => handle.client.exitCode === 0);
+    const auxMatched = [...this.auxiliaryClients].filter(entry => entry.owner === owner);
+    for (const entry of auxMatched) {
+      this.auxiliaryClients.delete(entry);
+      if (entry.client.pid) this.exitedGroups.add(entry.client.pid);
+    }
+    await Promise.allSettled([...matched.map(h => h.client.close()), ...auxMatched.map(entry => entry.client.close())]);
+    return (matched.length > 0 || auxMatched.length > 0)
+      && matched.every(handle => handle.client.exitCode === 0)
+      && auxMatched.every(entry => entry.client.exitCode === 0);
   }
 
   async closeAllConversationProcesses(): Promise<void> {
     const handles = [...this.conversationProcesses.values()];
     this.conversationProcesses.clear();
     this.contextToKey.clear();
+    const aux = [...this.auxiliaryClients];
+    this.auxiliaryClients.clear();
     for (const h of handles) {
       if (h.client.pid) this.exitedGroups.add(h.client.pid);
     }
-    await Promise.allSettled(handles.map(h => h.client.close()));
+    for (const entry of aux) {
+      if (entry.client.pid) this.exitedGroups.add(entry.client.pid);
+    }
+    await Promise.allSettled([...handles.map(h => h.client.close()), ...aux.map(entry => entry.client.close())]);
   }
 
   async canReclaimStorage(): Promise<boolean> {
-    if (this.conversationProcesses.size > 0 || this.conversationOpening.size > 0 || this.activeLogin) {
+    if (this.conversationProcesses.size > 0 || this.conversationOpening.size > 0 || this.auxiliaryClients.size > 0 || this.activeLogin) {
       return false;
     }
     if (process.platform === 'win32') return true;

@@ -297,8 +297,10 @@ test('纯接续执行轮借用准确来源输入，直接输入优先且缺失�
  assert.equal(turns.at(-1).continuedFrom.prompt.id,'source-prompt');
  assert.equal(turns.at(-1).prompt,undefined);
  const historical=conversationStreamTurns(groupConversationStream([source,notice,tool('tail',{runId:'current'})],run),[run]);
- assert.ok(historical.some(turn=>turn.prompt?.id==='source-prompt'));
- assert.equal(historical.at(-1).continuedFrom.prompt.id,'source-prompt');
+ assert.equal(historical.length,1);
+ assert.equal(historical[0].prompt?.id,'source-prompt');
+ assert.equal(historical[0].continuedFrom,undefined);
+ assert.equal(historical[0].items.filter(item=>item.type==='entry'&&item.entry.id==='continue-notice').length,1);
  const direct=conversationStreamTurns(groupConversationStream([message('direct','本轮新要求','current','user'),tool('tail',{runId:'current'})],run),[run]);
  assert.equal(direct.at(-1).prompt.id,'direct');
  assert.equal(direct.at(-1).continuedFrom,undefined);
@@ -373,4 +375,48 @@ test('轮次展开状态按运行活跃、显式选择和结束折叠决策计�
  assert.equal(conversationTurnExpanded(settledTurn,settled,{[settledKey]:false}),false);
  assert.equal(conversationProcessExpansionAfterSettle(conversationTurnExpanded(liveTurn,live,{}),false),true);
  assert.equal(conversationProcessExpansionAfterSettle(conversationTurnExpanded(liveTurn,live,{}),true),false);
+});
+
+test('同页连续重启接续复用原始用户轮次、收拢中途叙述并保持展开键稳定',()=>{
+ const u1={...message('u1','原始任务要求','r1','user'),sequence:1};
+ const a1={...message('a1','第一次执行中途中断的叙述','r1'),sequence:2};
+ const n2={...message('n2','已自动接续上次工作。','r2','system'),kind:'notice',status:'accepted',sequence:3,continuedFrom:{runId:'r1',userEntryId:'u1'}};
+ const a2={...message('a2','第二次执行中途再次重启的叙述','r2'),sequence:4};
+ const n3={...message('n3','已自动接续上次工作。','r3','system'),kind:'notice',status:'accepted',sequence:5,continuedFrom:{runId:'r1',userEntryId:'u1'}};
+ const a3={...message('a3','最终第三次接续交付的完整答复。','r3'),sequence:6};
+ const r1={id:'r1',status:'unknown',executionState:'ended',resourcesReleased:true,supersededBy:'r2',tools:[]};
+ const r2={id:'r2',status:'unknown',executionState:'ended',resourcesReleased:true,supersededBy:'r3',tools:[],continuedFrom:{runId:'r1',userEntryId:'u1',prompt:u1}};
+ const r3Live={id:'r3',status:'running',startedAt:'2026-11-16T08:00:00Z',updatedAt:'2026-11-16T08:00:10Z',continuedFrom:{runId:'r2',userEntryId:'u1',prompt:u1}};
+ const r3Settled={...r3Live,status:'completed',executionState:'ended',tools:[]};
+ const entries=[u1,a1,n2,a2,n3,a3];
+
+ const liveItems=groupConversationStream(entries,r3Live,[r1,r2]);
+ const liveTurns=conversationStreamTurns(liveItems,[r1,r2,r3Live]);
+ assert.equal(liveTurns.length,1);
+ assert.equal(liveTurns[0].prompt.id,'u1');
+ assert.equal(liveTurns[0].continuedFrom,undefined);
+ assert.equal(conversationTurnExpansionKey(liveTurns[0],r3Live),'turn:r3');
+
+ const settledItems=groupConversationStream(entries,r3Settled,[r1,r2]);
+ const settledTurns=conversationStreamTurns(settledItems,[r1,r2,r3Settled]);
+ assert.equal(settledTurns.length,1);
+ assert.equal(settledTurns[0].prompt.id,'u1');
+ assert.equal(conversationTurnExpansionKey(settledTurns[0],r3Settled),'turn:r3');
+ const visibleAssistantReplies=settledTurns[0].items.filter(item=>item.type==='entry'&&item.entry.role==='assistant').map(item=>item.entry.id);
+ assert.deepEqual(visibleAssistantReplies,['a3'],'仅最新一次尝试的最终答复留在外层主线');
+ const processEntryIds=settledTurns[0].items.filter(item=>item.type==='process-block').flatMap(item=>item.entries.map(entry=>entry.id));
+ assert.deepEqual(processEntryIds,['a1','a2'],'中间重启中断的叙述留在可折叠处理过程中');
+
+ // 即使经过后续多轮导致 retainedRuns 轮转清空，仅凭持久化的 entry.continuedFrom 仍复用原轮次。
+ const u2={...message('u2','下一个独立需求','r4','user'),sequence:7};
+ const a4={...message('a4','第二轮完成。','r4'),sequence:8};
+ const historicalTurns=conversationStreamTurns(groupConversationStream([...entries,u2,a4]),[]);
+ assert.deepEqual(historicalTurns.map(turn=>turn.prompt.id),['u1','u2']);
+ assert.deepEqual(historicalTurns[0].items.filter(item=>item.type==='entry'&&item.entry.role==='assistant').map(item=>item.entry.id),['a3']);
+
+ // 原始输入不在当前分页时，同一 userEntryId 的多次接续合并为单一跨页轮次。
+ const offPageTurns=conversationStreamTurns(groupConversationStream([n2,a2,n3,a3],r3Settled,[r2]),[r2,r3Settled]);
+ assert.equal(offPageTurns.length,1);
+ assert.equal(offPageTurns[0].prompt,undefined);
+ assert.equal(offPageTurns[0].continuedFrom.prompt.id,'u1');
 });

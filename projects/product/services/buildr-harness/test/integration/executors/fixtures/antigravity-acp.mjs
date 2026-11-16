@@ -335,6 +335,35 @@ async function runPrompt(id, params) {
     imageCount,
   });
 
+  if (text.includes('{"title":"精短标题"}')) {
+    if (activeScenario === 'title-tool-attempt') {
+      const toolId = `call-${++toolCounter}`;
+      notify('session/update', {
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: toolId,
+          title: 'Read README.md',
+          kind: 'read',
+          rawInput: { file_path: 'README.md' },
+          status: 'pending',
+        },
+      });
+      await new Promise(resolve => setTimeout(resolve, 20));
+      finishActivePrompt({ userMessageId, stopReason: 'end_turn' });
+      return;
+    }
+    const titlePayload = activeScenario === 'title-english-only'
+      ? '{"title":"Buildr English Only Summary"}'
+      : '{"title":"Antigravity 中文智能标题摘要"}';
+    notify('session/update', {
+      sessionId,
+      update: { sessionUpdate: 'agent_message_chunk', messageId: `msg-${randomUUID()}`, content: { type: 'text', text: titlePayload } },
+    });
+    finishActivePrompt({ userMessageId, stopReason: 'end_turn' });
+    return;
+  }
+
   if (text.includes('[[buildr:background-continuation]]')) {
     if (activeScenario === 'continuation-fails') {
       activePrompt = undefined;

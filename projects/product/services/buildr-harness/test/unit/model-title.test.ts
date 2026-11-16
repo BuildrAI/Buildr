@@ -14,6 +14,22 @@ for(const protocol of ['chat-completions','anthropic-messages'] as const)test('m
   assert.equal(title,'新的方向');
 });
 
+test('model title prompt requires Simplified Chinese concise titles across protocols',async()=>{
+  const prompts:string[]=[];
+  for(const protocol of ['chat-completions','anthropic-messages'] as const){
+    await generateModelTitle(input(),'chosen-model',protocol,async init=>{
+      const body=JSON.parse(String(init.body));
+      prompts.push(String(body.messages?.[0]?.content??''));
+      return Response.json(protocol==='chat-completions'?{choices:[{message:{content:'{"title":"分支方向"}'},finish_reason:'stop'}]}:{content:[{type:'text',text:'{"title":"分支方向"}'}],stop_reason:'end_turn'});
+    });
+  }
+  assert.equal(prompts.length,2);
+  for(const prompt of prompts){
+    assert.match(prompt,/简体中文精短标题/);
+    assert.match(prompt,/禁止输出纯英文标题/);
+  }
+});
+
 test('title rejects tools, truncated or malformed output and oversized bodies',async()=>{
   await assert.rejects(generateModelTitle(input(),'m','chat-completions',async()=>Response.json({choices:[{message:{tool_calls:[{}]}}]})),/tools_forbidden/);
   await assert.rejects(generateModelTitle(input(),'m','anthropic-messages',async()=>Response.json({content:[{type:'tool_use'}]})),/tools_forbidden/);

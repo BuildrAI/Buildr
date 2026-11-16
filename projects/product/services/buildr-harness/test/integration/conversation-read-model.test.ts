@@ -151,8 +151,9 @@ test('legacy read headers without continuation facts are repaired instead of fal
  assert.equal(repo.readPage(r.view.id,undefined,undefined,true),undefined,'a legacy header cannot serve continuation provenance from the visible page alone');
  repo.rebuildReadModel(r.view.id);
  const migrated=repo.readPage(r.view.id,undefined,undefined,true)!;
- assert.equal(migrated.continuationVersion,1);
+ assert.equal(migrated.continuationVersion,2);
  assert.equal(migrated.continuations?.current?.prompt?.text,'迁移后仍要保留的原要求');
+ assert.deepEqual(migrated.continuationLinks,{current:{runId:'source',userEntryId:'source-input',noticeEntryId:'continue-notice'}});
 });
 
 test('page reads retrieve a bounded suffix and every original entry remains reachable in order',t=>{
