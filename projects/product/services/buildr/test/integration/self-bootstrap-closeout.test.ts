@@ -892,7 +892,7 @@ test('workspace-owned release Skill changes activate the same retained projectio
   assert.equal(fs.readFileSync(path.join(current.root, 'skills', 'generated', 'SKILL.md'), 'utf8'), 'v2\n');
 });
 
-for (const relative of ['projects/product/services/buildr-web/test/runtime.test.ts', 'projects/product/services/dsh-plugin/plugin/bridge.ts', 'projects/product/services/buildr/docs/runtime.md']) {
+for (const relative of ['projects/product/services/buildr-web/test/runtime.test.ts', 'projects/product/services/buildr-harness-web/test/ui/app.test.mjs', 'projects/product/services/dsh-plugin/plugin/bridge.ts', 'projects/product/services/buildr/docs/runtime.md']) {
   test(`non-runtime ${relative} does not install or restart the development app`, t => {
     const f = fixture(t), file = path.join(f.root, relative);
     fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, 'documentation or independent work\n');
@@ -904,7 +904,7 @@ for (const relative of ['projects/product/services/buildr-web/test/runtime.test.
     assert.equal(calls.some(args => args.includes('restart') || args.includes('--channel')), false);
   });
 }
-for (const relative of ['projects/product/services/buildr-harness/src/index.ts', 'projects/product/services/buildr-harness/package-lock.json', 'projects/product/services/buildr/package-lock.json', 'projects/product/services/buildr-web/vite.config.ts', 'projects/product/services/buildr-web/tsconfig.app.json', 'projects/product/services/buildr/tools/development/prepare-development-web.ts']) {
+for (const relative of ['projects/product/services/buildr-harness/src/index.ts', 'projects/product/services/buildr-harness/package-lock.json', 'projects/product/services/buildr/package-lock.json', 'projects/product/services/buildr-web/vite.config.ts', 'projects/product/services/buildr-web/tsconfig.app.json', 'projects/product/services/buildr-harness-web/src/HarnessApp.tsx', 'projects/product/services/buildr-harness-web/vite.config.ts', 'projects/product/services/buildr-harness-web/tools/build.ts', 'projects/product/services/buildr/tools/development/prepare-development-web.ts']) {
   test(`shared runtime policy restarts for ${relative}`, t => {
     const f = fixture(t), file = path.join(f.root, relative);
     fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, 'runtime input changed\n');

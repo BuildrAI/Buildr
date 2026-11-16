@@ -7,6 +7,7 @@ const product = 'projects/product';
 const service = `${product}/services/buildr`;
 const frontend = `${product}/services/buildr-web`;
 const agent = `${product}/services/buildr-harness`;
+const harnessWeb = `${product}/services/buildr-harness-web`;
 const preparedAgent = `${service}/node_modules/@buildr-ai/buildr-harness`;
 
 // One definition for the running development product and its closeout restart.
@@ -27,10 +28,14 @@ export const DEVELOPMENT_RUNTIME_INPUTS = Object.freeze({
     `${frontend}/package.json`, `${frontend}/package-lock.json`, `${frontend}/index.html`,
     `${frontend}/vite.config.ts`, `${frontend}/tsconfig.json`,
     `${frontend}/tsconfig.app.json`, `${frontend}/tsconfig.node.json`,
+    `${harnessWeb}/package.json`, `${harnessWeb}/package-lock.json`, `${harnessWeb}/index.html`,
+    `${harnessWeb}/mermaid-renderer.html`, `${harnessWeb}/vite.config.ts`, `${harnessWeb}/tsconfig.json`,
+    `${harnessWeb}/tools/build.ts`,
   ]),
   prefixes: Object.freeze([
     `${service}/src/`, `${service}/bin/`, `${service}/web-dist/`,
     `${service}/tools/build/launcher/`, `${frontend}/src/`, `${frontend}/public/`,
+    `${harnessWeb}/src/`,
     `${service}/tools/codegen/contracts/`,
     `${agent}/src/`, `${agent}/build/`, `${preparedAgent}/build/`,
     `${service}/tools/development/programs/`, `${service}/resources/contracts/`, `${service}/resources/installation/launcher/`,

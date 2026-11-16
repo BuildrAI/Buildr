@@ -11,6 +11,7 @@ import { readCurrentInstallationOrigin } from '../../src/modules/installation/in
 const service = 'projects/product/services/buildr';
 const frontend = 'projects/product/services/buildr-web';
 const agent = 'projects/product/services/buildr-harness';
+const harnessWeb = 'projects/product/services/buildr-harness-web';
 function fixture(t: any) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-inputs-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -31,7 +32,7 @@ test('documentation, test and independent plugin commits preserve running develo
   const f = fixture(t);
   const initial = readCurrentInstallationOrigin(f.product);
   const running = { ...initial, installationIdentity: initial.ownershipIdentity };
-  for (const name of ['README.md', `${agent}/README.md`, `${agent}/test/core.test.ts`, `${service}/docs/start.md`, `${service}/tools/verification/package-check/bootstrap.yml`, `${service}/test/example.test.ts`, `${frontend}/test/example.test.ts`, 'projects/product/services/dsh-plugin/plugin/bridge.ts']) {
+  for (const name of ['README.md', `${agent}/README.md`, `${agent}/test/core.test.ts`, `${service}/docs/start.md`, `${service}/tools/verification/package-check/bootstrap.yml`, `${service}/test/example.test.ts`, `${frontend}/test/example.test.ts`, `${harnessWeb}/test/ui/app.test.mjs`, `${harnessWeb}/tools/testing/verification-checks.ts`, 'projects/product/services/dsh-plugin/plugin/bridge.ts']) {
     f.write(name, 'changed\n'); f.commit();
     const current = readCurrentInstallationOrigin(f.product);
     assert.notEqual(current.sourceCommit, initial.sourceCommit);
@@ -42,7 +43,7 @@ test('documentation, test and independent plugin commits preserve running develo
   }
 });
 
-for (const name of [`${service}/src/index.ts`, `${agent}/src/index.ts`, `${agent}/package-lock.json`, `${agent}/build/index.js`, `${service}/node_modules/@buildr-ai/buildr-harness/build/index.js`, `${service}/node_modules/@buildr-ai/buildr-harness/package.json`, `${service}/package-lock.json`, `${frontend}/src/App.tsx`, `${frontend}/vite.config.ts`, `${frontend}/package-lock.json`, `${service}/tools/development/run-development-cli`, `${service}/tools/development/resolve-development-node`, 'projects/product/.node-version', `${service}/tools/codegen/contracts/task-dto.ts`, `${service}/web-dist/index.html`]) {
+for (const name of [`${service}/src/index.ts`, `${agent}/src/index.ts`, `${agent}/package-lock.json`, `${agent}/build/index.js`, `${service}/node_modules/@buildr-ai/buildr-harness/build/index.js`, `${service}/node_modules/@buildr-ai/buildr-harness/package.json`, `${service}/package-lock.json`, `${frontend}/src/App.tsx`, `${frontend}/vite.config.ts`, `${frontend}/package-lock.json`, `${harnessWeb}/src/HarnessApp.tsx`, `${harnessWeb}/index.html`, `${harnessWeb}/vite.config.ts`, `${harnessWeb}/tools/build.ts`, `${service}/tools/development/run-development-cli`, `${service}/tools/development/resolve-development-node`, 'projects/product/.node-version', `${service}/tools/codegen/contracts/task-dto.ts`, `${service}/web-dist/index.html`]) {
   test(`runtime input ${name} changes identity before a commit`, t => {
     const f = fixture(t), initial = f.identity();
     assert.match(initial!, /^sha256-[a-f0-9]{64}$/);
