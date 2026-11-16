@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AgentConversationsClient } from './api/agent-conversations-api.ts';
-import { extractVideoFrames } from './conversation-video.ts';
-import { attachmentMimeType } from './conversation-images.ts';
+import { prepareConversationMaterial } from './conversation-material-upload.ts';
 import type { DraftImage } from './ConversationImageInput.tsx';
 
 const profile = () => document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content') || 'local';
@@ -53,13 +52,13 @@ export function useNewConversationImages(api: AgentConversationsClient, active: 
       const referenced=new Set(value.images.flatMap(image=>image.video?.frames.map(frame=>frame.id)??[]));
       for(const frame of value.images.filter(image=>image.frame&&!referenced.has(image.id))){value=await api.removeDraftImage(id,value.revision,frame.id);apply(value);}
       for (const original of selected) {
-        const mimeType=attachmentMimeType(original),file=original.type===mimeType?original:new File([original],original.name,{type:mimeType});
+        const {file, extractedVideo} = await prepareConversationMaterial(original);
         let video:{duration:number;frames:Array<{id:string;time:number}>}|undefined;
         const staged:string[]=[];
         try {
-        if(mimeType.startsWith('video/')){
-          const extracted=await extractVideoFrames(file);video={duration:extracted.duration,frames:[]};
-          for(const frame of extracted.frames){const before=new Set(value.images.map(image=>image.id));value=await api.uploadDraftImage(id,value.revision,frame.file,{frame:true});apply(value);const saved=value.images.find(image=>!before.has(image.id));if(!saved)throw new Error('视频画面保存结果待核对。');staged.push(saved.id);video.frames.push({id:saved.id,time:frame.time});}
+        if(extractedVideo){
+          video={duration:extractedVideo.duration,frames:[]};
+          for(const frame of extractedVideo.frames){const before=new Set(value.images.map(image=>image.id));value=await api.uploadDraftImage(id,value.revision,frame.file,{frame:true});apply(value);const saved=value.images.find(image=>!before.has(image.id));if(!saved)throw new Error('视频画面保存结果待核对。');staged.push(saved.id);video.frames.push({id:saved.id,time:frame.time});}
         }
         const before = new Set(value.images.map(image => image.id));
         value = await api.uploadDraftImage(id, value.revision, file, {video});

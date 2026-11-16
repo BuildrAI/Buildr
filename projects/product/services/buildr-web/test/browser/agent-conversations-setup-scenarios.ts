@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 
 /** setup 场景使用独立准备的对话现场。 */
+const pngFixture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
+
 export async function runSetupScenarios(fixture:AgentConversationFixture){
   await runPushbackSettingsJourney(fixture);
   await runProgrammaticCredentialEditJourney(fixture);
@@ -444,7 +446,12 @@ await step('收起图标暂看同一对话，输入与下拉不消失，固定�
 
 await step('图片能力按当前执行者显示，不支持时保留附件并提示',async()=>{
       const workspaceName=await page.locator('.workspace-switcher strong').innerText();await chooseOption('新对话工作空间',workspaceName);await input().fill('草稿只保存，不自动执行');
-      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'fixture.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10])});await panel().getByRole('button',{name:'移除图片 fixture.png',exact:true}).waitFor();
+      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'fixture.png',mimeType:'image/png',buffer:pngFixture});await panel().getByRole('button',{name:'移除图片 fixture.png',exact:true}).waitFor();
+      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'broken.jpg',mimeType:'image/jpeg',buffer:Buffer.from([255,216,255,217])});
+      await panel().getByText('“broken.jpg”无法解码，请重新导出或更换图片。',{exact:true}).waitFor();
+      assert.equal(await input().inputValue(),'草稿只保存，不自动执行');
+      assert.equal(await panel().getByRole('button',{name:'移除图片 fixture.png',exact:true}).count(),1);
+      assert.equal(await panel().getByRole('button',{name:'移除图片 broken.jpg',exact:true}).count(),0);
       await chooseAgent('DSH');assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),false);await panel().getByText('当前执行者不支持图片或视频画面。请移除附件或选择支持图片的执行者。',{exact:true}).waitFor();assert.equal(fixture.sends,0);
       await chooseAgent('Codex');await panel().locator('.ac-image-thumbnail[title="fixture.png"]').hover();await panel().getByRole('button',{name:'移除图片 fixture.png',exact:true}).click();assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),false);
     });
@@ -466,7 +473,7 @@ await step('模型设置按真实弹层和滑块交互，切换与恢复默认�
 
 await step('shared image draft survives refresh and workspace clearing without creating a conversation',async()=>{
       const before=fixture.creations,text=await input().inputValue();
-      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'shared.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10])});
+      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'shared.png',mimeType:'image/png',buffer:pngFixture});
       await panel().getByRole('button',{name:'移除图片 shared.png',exact:true}).waitFor();assert.equal(fixture.creations,before);assert.equal(await panel().getAttribute('data-conversation-id'),null);
       const selector=panel().locator('.ac-welcome .ac-location-settings .ant-select');await selector.hover();await selector.locator('.ant-select-clear').click();
       assert.equal(await input().inputValue(),text);assert.equal(await panel().getAttribute('data-conversation-id'),null);

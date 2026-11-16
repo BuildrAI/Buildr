@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 
 /** selection 场景使用独立准备的对话现场。 */
+const pngFixture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
+
 export async function runSelectionScenarios(fixture:AgentConversationFixture){
   const {assertModelSummary,chooseAgent,chooseModel,chooseOption,closeModelSettings,expectedBrowserErrors,input,modelSettings,page,panel,sentInputs,setHighEffort,step,workspaceId}=fixture;
 await step('新对话跨工作空间恢复软件级选择，无关账号变化不造成假冲突且不改写执行模型记忆',async()=>{
@@ -91,7 +93,7 @@ await step('lost first-send reply recovers the accepted conversation after refre
 await step('后台升级明确拒绝首轮后自动核对与接续，保留后来编辑的草稿',async()=>{
       await fixture.startNewConversation();await input().waitFor();await chooseAgent('Codex');
       await input().fill('upgrade preserved original');
-      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'upgrade.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10])});await panel().getByRole('button',{name:'移除图片 upgrade.png',exact:true}).waitFor();
+      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'upgrade.png',mimeType:'image/png',buffer:pngFixture});await panel().getByRole('button',{name:'移除图片 upgrade.png',exact:true}).waitFor();
       const beforeSends=fixture.sends,beforeCreations=fixture.creations,attempts:any[]=[];
       let updating=true;
       const match=/\/agent-(?:service\/conversations|conversations)\/drafts\/[^/]+\/send$/;
@@ -115,7 +117,7 @@ await step('后台升级明确拒绝首轮后自动核对与接续，保留后�
 await step('默认工作空间走应用会话路由，空草稿不列出且首轮模式一致',async()=>{
       await fixture.startNewConversation();await input().waitFor();await chooseOption('新对话工作空间',await page.locator('.workspace-switcher strong').innerText());const workspaceSelect=panel().locator('.ac-location-settings .ant-select');await workspaceSelect.hover();await workspaceSelect.locator('.ant-select-clear').click();await chooseAgent('Codex');
       await chooseModel('Fixture model');await closeModelSettings();await chooseOption('执行权限','完全访问');
-      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'default.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10])});await panel().getByRole('button',{name:'移除图片 default.png',exact:true}).waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),null);
+      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'default.png',mimeType:'image/png',buffer:pngFixture});await panel().getByRole('button',{name:'移除图片 default.png',exact:true}).waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),null);
       const creationsBefore=fixture.creations;await fixture.openHistoryList();await chooseOption('对话列表工作空间','全部工作空间');await panel().locator('.ac-history-list').first().waitFor({state:'attached'});await panel().locator('.ac-history-body>.ant-spin').waitFor({state:'hidden'});assert.equal(fixture.creations,creationsBefore,'adding an image does not create a conversation');
       await fixture.backToConversation();await input().fill('默认空间首轮');const sent=page.waitForRequest((r:any)=>r.method()==='POST'&&r.url().includes('/api/v1/app/agent-service/conversations/drafts/')&&r.url().endsWith('/send'));await panel().getByRole('button',{name:'发送对话',exact:true}).click();await sent;await panel().locator('[data-run-status="running"]').waitFor();assert.equal(sentInputs.at(-1).permissionMode,'full-access');assert.equal(fixture.conversation.workspaceId,'@default');assert.equal(fixture.creations,creationsBefore+1);
       await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();

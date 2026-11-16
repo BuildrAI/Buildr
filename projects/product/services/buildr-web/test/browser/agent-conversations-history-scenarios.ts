@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createAgentConversationFixture,type AgentConversationFixture} from './agent-conversation-fixture.ts';
 
+const pngFixture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
+
 type ConversationScrollSample={conversationId:string|null;at:number;top:number;height:number;viewport:number;visible:boolean;entries:number;listBottom:number|null;streamBottom:number|null;listTop:number|null;streamTop:number|null};
 
 /** history 场景使用独立准备的对话现场。 */
@@ -244,7 +246,7 @@ const historyRuns = {
     const reads=fixture.conversationReads;update({run:run('completed')});await visibility('visible');
     await page.waitForFunction(()=>document.querySelector('[data-run-status="completed"]')!==null);assert.ok(fixture.conversationReads>reads,'恢复先核对当前事实');
     assert.ok(hidden>=before);assert.equal(fixture.sends,beforeSends,'观察不发送工作输入');
-    await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'connection-probe.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64')});
+    await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'connection-probe.png',mimeType:'image/png',buffer:pngFixture});
     await panel().getByRole('button',{name:'移除图片 connection-probe.png',exact:true}).waitFor();
     assert.equal(other.eventStreams,otherHidden,'第二页签保持暂停且前台完成上传');assert.equal(other.sends,otherSends);
     const spans=await page.evaluate(()=>performance.getEntriesByType('measure').filter(e=>e.name.startsWith('buildr.attachment.')).map(e=>({name:e.name,duration:e.duration})));
@@ -1456,7 +1458,7 @@ const historyRuns = {
 
   const previous=structuredClone(fixture.conversation),otherId='file-warning-other';
   const base=fs.realpathSync(path.dirname(workspaceRoot)),imagePath=path.join(base,'验收 截图.png'),missingPath=path.join(base,'恢复图片.png');
-  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
+  const png=pngFixture;
   let delay=false,release:(()=>void)|undefined,started:(()=>void)|undefined;
   const held=new Promise<void>(resolve=>{started=resolve;}),matcher='**/api/v1/workspaces/*/code/repositories*';
   const intercept=async(route:any)=>{if(!delay)return route.fallback();delay=false;started?.();await new Promise<void>(resolve=>{release=resolve;});await route.fulfill({status:503,json:{error:{code:'fixture_unavailable',message:'旧对话迟到的文件读取失败'}}});};
