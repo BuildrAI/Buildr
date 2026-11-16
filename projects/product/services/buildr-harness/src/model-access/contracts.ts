@@ -22,6 +22,8 @@ export interface ModelProviderPresentation {
   quotaLabel?: string;
   apiKeyHint?: string;
   quotaUnavailableNote?: string;
+  /** Compact official usage list with grouped rows and countdown resets. */
+  quotaStyle?: 'usage-ring';
   billing?: { url: string; label: string };
 }
 export interface ModelExecutorCompatibility {
@@ -158,7 +160,6 @@ export interface ModelProvider {
   readonly singleton?: boolean;
   /** Probe for a reusable local login even before the first successful observation. */
   readonly autoInspect?: boolean;
-  readonly replacesSource?: (account: ModelAccountView) => boolean;
   readonly authentication?: ModelProviderAuthentication;
   readonly group?: ModelProviderGroup;
   readonly modeLabel?: string;
@@ -251,6 +252,13 @@ export interface ModelGatewayLease {
   accountLabel: string;
   provider: string;
 }
+/** One-time retirement of account rows whose provider or auto-created source is no longer supported. */
+export interface RetiredModelSource {
+  readonly providerIds?: readonly string[];
+  readonly accountIds?: readonly string[];
+  readonly customBaseUrl?: string;
+  readonly customProtocols?: Readonly<Record<string, ModelProtocol>>;
+}
 export interface ModelAccessOptions {
   root: string;
   providers: ModelProvider[];
@@ -259,6 +267,8 @@ export interface ModelAccessOptions {
   changed?(account: ModelAccountView): void;
   diagnostics?: import('../contracts.ts').ExecutionDiagnosticSink;
   now?(): Date;
+  /** Applied during load, before any provider can expose retired accounts. */
+  retire?: RetiredModelSource;
 }
 export class ModelAccessError extends Error {
   readonly code: string;

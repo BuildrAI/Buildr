@@ -400,6 +400,7 @@ artifacts:
       - agent-service-qoder-source
       - agent-service-antigravity-source
       - antigravity-model-source
+      - antigravity-usage-source
       - openai-api-model-source
       - private-api-key-source
       - agent-service-model-account-http-source
@@ -2150,7 +2151,12 @@ sources:
     title: Google 个人账号模型来源
     kind: code
     path: services/buildr-harness/src/model-access/providers/antigravity.ts
-    summary: 声明仅供 Antigravity 原生使用的托管 Google 个人账号来源，映射登录、档位、模型目录与退出切换操作。
+    summary: 声明仅供 Antigravity 原生使用的托管 Google 个人账号来源，映射登录、档位、模型目录、官方用量窗口与退出切换操作。
+  - id: antigravity-usage-source
+    title: Antigravity 官方用量读取
+    kind: code
+    path: services/buildr-harness/src/executors/antigravity/usage.ts
+    summary: 通过受管 agy 的官方 /usage 命令读取 Gemini 与 Claude / GPT 的每周、5 小时额度与重置时间，未知输出安全降级。
   - id: openai-api-model-source
     title: ChatGPT 官方 API Key 来源
     kind: code

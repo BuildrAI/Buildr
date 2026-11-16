@@ -39,7 +39,6 @@ const modelsAccountsFiles = integrationTests(
   'claude-content.test.ts',
   'claude-gateway-heartbeat.test.ts',
   'connection-native-account-root.test.ts',
-  'google-ai-proxy-lifecycle.test.ts',
   'model-access.test.ts',
   'model-login-completion.test.ts',
   'model-preferences.test.ts',

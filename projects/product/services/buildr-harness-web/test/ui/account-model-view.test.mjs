@@ -148,7 +148,8 @@ test('新模型来源直接消费服务端 presentation 与独占原因，无需
    vendorLabel:'Google',
    sourceLabel:'Google 账号',
    quotaLabel:'Google',
-   quotaUnavailableNote:'Google 暂未在 CLI 公开剩余百分比，请在 Google AI 订阅页核对。',
+   quotaStyle:'usage-ring',
+   quotaUnavailableNote:'本次未能读取 Antigravity 官方额度。',
    billing:{label:'Google One / AI 订阅',url:'https://one.google.com/about/google-ai-plans/'},
   },
   quota:{available:false,planLabel:'Google AI Pro'},
@@ -160,9 +161,10 @@ test('新模型来源直接消费服务端 presentation 与独占原因，无需
  assert.equal(view.vendorLabel,'Google');
  assert.equal(view.planLabel,'Google AI Pro');
  assert.equal(view.exclusiveReason,'仅支持 Antigravity CLI 原生使用');
+ assert.equal(view.quotaStyle,'usage-ring');
  assert.equal(view.billingLabel,'Google One / AI 订阅');
  assert.equal(view.billingUrl,'https://one.google.com/about/google-ai-plans/');
- assert.match(view.quotaNote,/Google 暂未在 CLI 公开剩余百分比/);
+ assert.match(view.quotaNote,/本次未能读取 Antigravity 官方额度/);
  assert.equal(view.program,'ready');
 });
 
@@ -172,7 +174,7 @@ test('Google 个人账号覆盖免费、Pro、Ultra、档位不可读、身份�
   id:'native-antigravity',identity:'agy-epoch:1',provider:'native-antigravity',connectionId:'antigravity',
   label:'Google',accountLabel:'Google 个人账号（本机已登录）',authType:'oauth',modeLabel:'个人账号',revision:'r1',enabled:true,status:'ready',
   sharing:{kind:'executor-exclusive',executors:['antigravity'],reason:'受 Google 官方授权限制，Google 个人账号仅可在 Antigravity 中使用。'},
-  presentation:{vendorLabel:'Google',sourceLabel:'Google 个人账号',quotaLabel:'Google AI',quotaUnavailableNote:'Antigravity CLI 当前未公开订阅剩余额度与登录邮箱。',billing:{label:'查看 Google AI 订阅',url:'https://one.google.com/about/ai-plans'}},
+  presentation:{vendorLabel:'Google',sourceLabel:'Google 个人账号',quotaLabel:'Google AI',quotaUnavailableNote:'本次未能读取 Antigravity 官方额度。',billing:{label:'查看 Google AI 订阅',url:'https://one.google.com/about/ai-plans'}},
   models:[{id:'gemini-2.5-pro',label:'Gemini 2.5 Pro',images:true,tools:true,enabled:true}],
  };
  for(const plan of ['免费账号','Google AI Pro','Google AI Ultra','档位不可读']){

@@ -104,6 +104,22 @@ if (args[0] === 'models') {
   process.exit(0);
 }
 
+if (args[0] === '-p' && args[1] === '/usage') {
+  const auth = currentAuth();
+  appendLog('fixture-launches.jsonl', { subcommand: 'usage', ssh: process.env.SSH_CONNECTION ?? null });
+  if (!auth.authenticated) {
+    process.stderr.write('Error: Please sign in to view usage.\n');
+    process.exit(1);
+  }
+  process.stdout.write([
+    'Gemini Models\tWeekly Limit Remaining\t80%\t2026-11-21T00:25:49Z',
+    'Gemini Models\tFive Hour Limit Remaining\t99%\t2026-11-16T12:03:56Z',
+    'Claude and GPT models\tWeekly Limit Remaining\t68%\t2026-11-20T10:35:31Z',
+    'Claude and GPT models\tFive Hour Limit Remaining\t100%\t2026-11-16T12:06:04Z',
+  ].join('\n') + '\n');
+  process.exit(0);
+}
+
 if (args[0] !== 'acp') {
   process.stderr.write(`Unsupported fixture command: ${args.join(' ')}\n`);
   process.exit(2);

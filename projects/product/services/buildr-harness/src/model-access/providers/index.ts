@@ -1,7 +1,4 @@
-import { cliProxyQuotaReader } from './cliproxy-quota.ts';
-import { createGoogleAiProxyProvider } from './google-ai-proxy.ts';
 import { createHash } from 'node:crypto';
-import path from 'node:path';
 import type { AgentProgramManager, AgentRuntime, ConnectionView } from '../../contracts.ts';
 import { createDeepSeekAccountOwner } from '../../executors/dsh/model-source-owner.ts';
 import { ModelAccessError, type ModelProvider } from '../contracts.ts';
@@ -15,7 +12,6 @@ import { createOpenAIApiModelProvider } from './openai-api.ts';
 import { createQoderAccountModelProvider, createQoderCnModelProvider } from './qoder-cn.ts';
 
 export interface DefaultModelProvidersDependencies {
-  root: string;
   connections: {
     descriptor?(id: string): unknown;
     get(id: string): ConnectionView;
@@ -28,7 +24,7 @@ export interface DefaultModelProvidersDependencies {
 }
 
 export function createDefaultModelProviders(deps: DefaultModelProvidersDependencies): ModelProvider[] {
-  const { root, connections, programManager, readAccountIdentity, now } = deps;
+  const { connections, programManager, readAccountIdentity, now } = deps;
   const owner = (id: string) => ({
     async inspect() {
       return connections.useProgram(id, async () => {
@@ -123,10 +119,9 @@ export function createDefaultModelProviders(deps: DefaultModelProvidersDependenc
     ...linkedProviders,
     ...(hasConnection('antigravity') ? [createAntigravityModelProvider({ connections, now })] : []),
     createCodexModelProvider(),
-    createGoogleAiProxyProvider(path.join(root, '..', 'CLIProxyAPI')),
     createOpenAIApiModelProvider(),
     createAnthropicApiModelProvider(),
-    createCustomModelProvider({ quota: cliProxyQuotaReader(path.join(root, '..', 'CLIProxyAPI')) }),
+    createCustomModelProvider(),
     createDevinModelProvider(),
     createDeepSeekModelProvider({
       ownerFactory: async input => {

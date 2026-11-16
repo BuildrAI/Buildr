@@ -24,6 +24,7 @@ import { AntigravityAcpClient, type AntigravityAcpServerRequest } from './acp.ts
 import { isValidAntigravityContextId } from './content.ts';
 import { createAntigravityOpenerShim, redactAuthUrl } from './opener-shim.ts';
 import { antigravityManagedEnvironment, ensureAntigravityAutoUpdateDisabled } from './program.ts';
+import { readAntigravityUsage, type AntigravityUsageWindow } from './usage.ts';
 
 export interface AntigravityHandshakeCapabilities {
   image: boolean;
@@ -91,6 +92,12 @@ interface ActiveLoginState {
 }
 
 const PROBE_CACHE_TTL_MS = 2_500;
+const QUOTA_CACHE_TTL_MS = 60_000;
+
+interface AntigravityQuotaSnapshot {
+  observedAt: string;
+  windows: AntigravityUsageWindow[];
+}
 const coordinators = new Map<string, AntigravityCoordinator>();
 
 export function parseHandshakeCapabilities(initResult: any): AntigravityHandshakeCapabilities {
@@ -247,7 +254,7 @@ function unavailableQuota(tierLabel?: string, diagnostic?: string): ModelQuotaOb
   };
 }
 
-function extractQuotaFromMeta(meta: Record<string, unknown>, tierLabel?: string): ModelQuotaObservation {
+function extractQuotaFromMeta(meta: Record<string, unknown>, tierLabel?: string): ModelQuotaObservation | undefined {
   const observedAt = new Date().toISOString();
   const rawQuota = meta.quota;
   if (rawQuota && typeof rawQuota === 'object' && !Array.isArray(rawQuota)) {
@@ -263,7 +270,7 @@ function extractQuotaFromMeta(meta: Record<string, unknown>, tierLabel?: string)
       };
     }
   }
-  return unavailableQuota(tierLabel, 'Antigravity CLI 当前未公开订阅剩余额度，模型仍可正常使用。');
+  return undefined;
 }
 
 function isUnauthenticatedError(error: unknown): boolean {
@@ -290,6 +297,8 @@ export class AntigravityCoordinator {
   private probeEpoch = 0;
   private probeCache?: { epoch: number; expiresAt: number; value: AntigravityAccountProbeResult };
   private inflightProbe?: { epoch: number; promise: Promise<AntigravityAccountProbeResult> };
+  private quotaCache?: { expiresAt: number; observedAt: string; windows: AntigravityUsageWindow[] };
+  private quotaInflight?: Promise<AntigravityQuotaSnapshot | undefined>;
   private activeLogin?: ActiveLoginState;
 
   private readonly conversationProcesses = new Map<string, ConversationProcessHandle>();
@@ -345,6 +354,8 @@ export class AntigravityCoordinator {
   invalidateProbeCache(): void {
     this.probeEpoch++;
     this.probeCache = undefined;
+    this.quotaCache = undefined;
+    this.quotaInflight = undefined;
   }
 
   async verifyExecutableUnchanged(): Promise<string> {
@@ -438,7 +449,7 @@ export class AntigravityCoordinator {
       return structuredClone(await this.inflightProbe.promise);
     }
     const epoch = this.probeEpoch;
-    const work = this.executePassiveProbe().then(result => {
+    const work = this.executePassiveProbe(options).then(result => {
       if (this.probeEpoch === epoch) {
         this.probeCache = { epoch, expiresAt: Date.now() + PROBE_CACHE_TTL_MS, value: structuredClone(result) };
       }
@@ -450,7 +461,7 @@ export class AntigravityCoordinator {
     return structuredClone(await work);
   }
 
-  private async executePassiveProbe(): Promise<AntigravityAccountProbeResult> {
+  private async executePassiveProbe(options: { forceFresh?: boolean } = {}): Promise<AntigravityAccountProbeResult> {
     const { env } = await this.buildChildEnvironment({ SSH_CONNECTION: '1' });
     const client = AntigravityAcpClient.open({
       executable: this.executable,
@@ -586,7 +597,7 @@ export class AntigravityCoordinator {
         : `Google 个人账号（agy 未公开邮箱） · ${tier.label}`;
 
       const { models, nativeModelIds } = extractModelsFromSessionPayload(sessionResult, handshake.image);
-      const quota = extractQuotaFromMeta(mergedMeta, tier.label);
+      const quota = await this.observeQuota(tier.label, options.forceFresh === true, extractQuotaFromMeta(mergedMeta, tier.label));
 
       if (!models.length) {
         return {
@@ -617,6 +628,65 @@ export class AntigravityCoordinator {
       await client.close();
       await this.cleanupProbeSessionArtifacts(probeSessionId);
     }
+  }
+
+  private async usageCwd(): Promise<string> {
+    const directory = path.join(this.canonicalConfigRoot, 'tmp', 'usage-probe');
+    await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
+    return directory;
+  }
+
+  private async readQuotaSnapshot(epoch: number): Promise<AntigravityQuotaSnapshot | undefined> {
+    try {
+      const { env } = await this.buildChildEnvironment({ SSH_CONNECTION: '1', LANG: 'C', LC_ALL: 'C' });
+      const windows = await readAntigravityUsage({
+        executable: this.executable,
+        cwd: await this.usageCwd(),
+        environment: env,
+        timeoutMs: 15_000,
+      });
+      if (!windows.length) return undefined;
+      const snapshot = { observedAt: new Date().toISOString(), windows };
+      if (this.probeEpoch === epoch) {
+        this.quotaCache = {
+          expiresAt: Date.now() + QUOTA_CACHE_TTL_MS,
+          observedAt: snapshot.observedAt,
+          windows: structuredClone(windows),
+        };
+      }
+      return snapshot;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async quotaSnapshot(forceFresh: boolean): Promise<AntigravityQuotaSnapshot | undefined> {
+    const now = Date.now();
+    if (!forceFresh && this.quotaCache && this.quotaCache.expiresAt > now) {
+      return { observedAt: this.quotaCache.observedAt, windows: structuredClone(this.quotaCache.windows) };
+    }
+    if (this.quotaInflight) return await this.quotaInflight;
+    const work = this.readQuotaSnapshot(this.probeEpoch);
+    this.quotaInflight = work;
+    try {
+      return await work;
+    } finally {
+      if (this.quotaInflight === work) this.quotaInflight = undefined;
+    }
+  }
+
+  private async observeQuota(tierLabel: string, forceFresh: boolean, metaQuota?: ModelQuotaObservation): Promise<ModelQuotaObservation> {
+    const snapshot = await this.quotaSnapshot(forceFresh);
+    if (snapshot) {
+      return {
+        available: true,
+        observedAt: snapshot.observedAt,
+        ...(tierLabel ? { planLabel: tierLabel } : {}),
+        windows: snapshot.windows.map(window => ({ ...window })),
+      };
+    }
+    if (metaQuota?.available) return metaQuota;
+    return unavailableQuota(tierLabel, 'Antigravity CLI 暂未返回可读取的额度，可在 Antigravity CLI 中运行 /usage 查看。');
   }
 
   /** Remove empty conversation DB/brain artifacts created solely by an ephemeral ACP probe session. */

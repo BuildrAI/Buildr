@@ -80,6 +80,7 @@ const providerPresentation = closed({
   sourceLabel: text,
   quotaLabel: text,
   apiKeyHint: text,
+  quotaStyle: { enum: ['usage-ring'] },
   quotaUnavailableNote: text,
   billing: closed({ url: text, label: text }, ['url', 'label']),
 }, ['vendorLabel']);

@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-16
+retire_capabilities: true
+goal: 移除 Google AI 订阅代理链路，Google AI 仅经原生 Antigravity 官方登录使用，并展示官方每周/5 小时额度与重置时间

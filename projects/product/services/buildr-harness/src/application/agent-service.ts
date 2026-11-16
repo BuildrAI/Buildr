@@ -7,6 +7,7 @@ import { ProgramUpdates } from './program-updates.ts';
 import { presentConnection } from './connection-presentation.ts';
 import { createDefaultModelProviders } from '../model-access/providers/index.ts';
 import { createModelAccess } from '../model-access/application.ts';
+import { readRetiredGoogleAiProxySources } from '../model-access/retire-google-ai-proxy.ts';
 import { executionLog } from '../storage/execution-log.ts';
 import path from 'node:path';
 import process from 'node:process';
@@ -87,7 +88,7 @@ export function createAgentService(options: AgentServiceOptions) {
     return typeof digest === 'string' ? digest : undefined;
   });
   const preparations = new PreparationApplication(connections, programManager, generation, now);
-  const providerList = options.modelProviders ?? createDefaultModelProviders({ root, connections, programManager, readAccountIdentity: accountId => models.accounts.read(accountId).identity, now });
+  const providerList = options.modelProviders ?? createDefaultModelProviders({ connections, programManager, readAccountIdentity: accountId => models.accounts.read(accountId).identity, now });
   const noBackgroundRefreshProviders = new Set<string>();
   const registeredProviderIds = new Set(providerList.map(provider => provider.id));
   for (const provider of providerList) {
@@ -100,6 +101,7 @@ export function createAgentService(options: AgentServiceOptions) {
     executors: () => connections.descriptors(),
     diagnostics: executionLog(root, generation),
     providers: providerList,
+    retire: readRetiredGoogleAiProxySources(root),
     environment: executorEnvironment(options.environment ?? process.env),
     changed: account => {
       const affected = new Set<string>();

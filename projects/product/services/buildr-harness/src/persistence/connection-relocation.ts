@@ -107,7 +107,11 @@ function rebind(record: Record<string, unknown>): void {
     series: data.series,
   };
   const native = sha256(JSON.stringify(provenance));
-  record.bindingData = { ...data, executable, config, dev: info.dev, ino: info.ino };
+  // A copied program has a new inode and mtime even when its content is the
+  // same, so the source instance digest cannot describe this executable. Drop
+  // it; the runtime records the relocated instance on first open.
+  const { executableDigest: _sourceDigest, ...adopted } = data;
+  record.bindingData = { ...adopted, executable, config, dev: info.dev, ino: info.ino };
   record.bindingIdentity = typeof data.gatewayIdentity === 'string'
     ? sha256(JSON.stringify(['buildr-model-gateway/v1', native, data.gatewayIdentity]))
     : native;

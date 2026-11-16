@@ -253,14 +253,9 @@ ChatGPT 订阅与 `ChatGPT API` 是两个独立供应商，可同时启用：Cod
 
 Buildr 自动将已连接的 Codex、DSH 账号发现为共享模型供应商，并将 Qoder 与 Qoder CN 作为「模型」中的独立订阅账号管理。Codex 通过 app-server 取得有效凭据，DSH 同一宿主装配固定上游桥；Qoder 与 Qoder CN 的登录、刷新与模型发现使用本应用私有独立账号配置目录（`model-access/accounts/native-qoder` 与 `native-qoder-cn`），按需通过程序管理器准备原生程序，无需先启用或登录对应智能体接入，当智能体账号未显式接入或处于失活时仍以已就绪独立账号供出。Qoder 与 Qoder CN 套餐模型也可由 Codex、DSH、Claude Code 等消费，工具仍由所选执行方执行；旧对话保留原配置绑定以便读取与迁移续接。
 
-### 独立 Google AI 订阅模型来源
-
-[Google AI 供应商](../../../services/buildr-harness/src/model-access/providers/google-ai-proxy.ts) 由 Agent Service 启动和关闭本机代理。模型账号复用该配置域中已有的 OAuth 登录，按模型选择代理协议，通过现有模型网关供兼容 Harness 使用。模型目录和 Gemini、Claude / GPT 的额度窗口归属于同一个供应商，四个窗口取自同一次 daily 响应。
-
-
 ### Google 个人账号与 Antigravity 协调
 
-[Google 个人账号来源](../../../services/buildr-harness/src/model-access/providers/antigravity.ts)（`native-antigravity`）由 [Antigravity 执行器](../../../services/buildr-harness/src/executors/antigravity/index.ts)托管登录（`oauth-personal`），支持免费账号、Google AI Pro 与 Google AI Ultra。当受管 `agy` 确认 `oauth-personal` 已登录、绑定身份可建立且模型目录非空时，来源状态为 `ready`；原生 `_meta.antigravity.tier` 可识别时展示对应档位，不可识别时展示“档位不可读”但仍可使用；模型目录为空或认证归属不可确认时进入 `failed`（“身份不可确认”或无可用模型）并在发送前拒绝。官方 ACP 未公开额度窗口时如实显示不可读并链接到 Antigravity CLI 的官方 `/usage` 用量说明，不按档位或模型名称推算剩余配额。
+[Google 个人账号来源](../../../services/buildr-harness/src/model-access/providers/antigravity.ts)（`native-antigravity`）由 [Antigravity 执行器](../../../services/buildr-harness/src/executors/antigravity/index.ts)托管登录（`oauth-personal`），支持免费账号、Google AI Pro 与 Google AI Ultra。当受管 `agy` 确认 `oauth-personal` 已登录、绑定身份可建立且模型目录非空时，来源状态为 `ready`；原生 `_meta.antigravity.tier` 可识别时展示对应档位，不可识别时展示“档位不可读”但仍可使用；模型目录为空或认证归属不可确认时进入 `failed`（“身份不可确认”或无可用模型）并在发送前拒绝。额度由 Buildr 通过受管 `agy -p '/usage'` 读取官方返回的 Gemini 与 Claude / GPT 每周、5 小时窗口，按分组显示剩余百分比和重置时间；读取失败时保留上次已观察窗口并标记过期，没有历史观察时显示不可读并链接官方 `/usage` 说明，不按档位、模型列表或历史用量推算。原 CLIProxyAPI Google AI 订阅代理供应商已退役，Google AI 模型只经此原生来源使用；升级时移除代理账号和旧代理自定义来源，磁盘上的代理目录与登录凭据不自动删除。
 
 OAuth 令牌仅保存在系统密钥环 `jetski-standalone-oauth-token`（与本机终端 `agy` 共享，与桌面 IDE 分离），Buildr 不直接读取、写入或删除系统密钥环条目；来源声明 `sharing: executor-exclusive(['antigravity'])` 与 `inference: 'none'`，其他执行方显示不可选原因并拒绝签发网关租约，单次生成与提交说明自动排除该来源。发起登录时，短命登录子进程经专用 `PATH` 打开器替身捕获官方 PKCE 授权地址，地址仅在 `waiting-browser` 期间经 `LoginAttemptView.url` 返回，完成、取消、过期或被替代后清除，日志脱敏且不进入对话事件。
 

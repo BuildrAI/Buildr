@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Empty, Popover, Spin } from 'antd';
 import { ExportOutlined, SettingOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext.tsx';
-import { accountBillingLink, groupQuotaWindows, accountQuotaView, accountQuotaWarning, accountSourceName, quotaOverviewAccounts } from './account-quota-view.ts';
+import { accountBillingLink, groupQuotaWindows, accountQuotaView, accountQuotaWarning, accountSourceName, quotaOverviewAccounts, quotaResetCountdown } from './account-quota-view.ts';
 import type { ModelAccount } from './types.ts';
 import './account-quota-button.css';
 
@@ -52,7 +52,7 @@ export function AccountQuotaButton({ onClick }: Props) {
             {lines.map((line, index) => <div className="ac-account-quota-row" key={index}>
               <span className="ac-account-quota-label">
                 {line.label ?? line.text}
-                {line.resetsAt && <small className="ac-account-quota-reset">重置于 {new Date(line.resetsAt).toLocaleString()}</small>}
+                {line.resetsAt && <small className="ac-account-quota-reset" title={new Date(line.resetsAt).toLocaleString()}>{quotaResetCountdown(line.resetsAt)}</small>}
               </span>
               <span className="ac-account-quota-value">
                 {line.percent === undefined ? line.text : `剩余 ${line.percent}%`}

@@ -61,16 +61,16 @@ registerHooks({
 
 const { ProviderConnectionDrawer } = await import('../../src/features/agent-conversations/ProviderConnectionDrawer.tsx');
 
-test('ProviderConnectionDrawer shows Google AI as OAuth subscription provider with save-and-login action', () => {
+test('ProviderConnectionDrawer shows an OAuth subscription provider with save-and-login action', () => {
   const providers = [
     {
-      id: 'google-ai-subscription',
-      label: 'Google AI',
+      id: 'oauth-subscription',
+      label: 'OAuth 订阅',
       singleton: true,
       authentication: {
         type: 'oauth',
-        label: 'Google AI',
-        description: '登录 Google AI 账号后即可使用订阅模型；首次添加会自动下载并初始化本地代理组件。',
+        label: 'OAuth 订阅',
+        description: '登录后即可使用订阅模型。',
       },
     },
     { id: 'custom', label: '自定义供应商', custom: true },
@@ -78,7 +78,7 @@ test('ProviderConnectionDrawer shows Google AI as OAuth subscription provider wi
   const html = renderToStaticMarkup(
     React.createElement(ProviderConnectionDrawer, {
       open: true,
-      initial: { kind: 'google-ai-subscription', label: 'Google AI' },
+      initial: { kind: 'oauth-subscription', label: 'OAuth 订阅' },
       providers,
       configuredProviders: [],
       onClose() {},
@@ -87,7 +87,7 @@ test('ProviderConnectionDrawer shows Google AI as OAuth subscription provider wi
   );
   assert.ok(html.includes('添加供应商'));
   assert.ok(html.includes('保存并登录'));
-  assert.ok(html.includes('首次添加会自动下载并初始化本地代理组件'));
+  assert.ok(html.includes('登录后即可使用订阅模型'));
 });
 
 test('AgentConnectionSettings saveProvider preserves underlying failure message for the drawer alert', () => {

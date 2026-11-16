@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {accountBillingUrl,accountQuotaView,accountQuotaWarning,accountSourceName,OPENAI_BILLING_URL,quotaOverviewAccounts} from '../../src/features/agent-conversations/account-quota-view.ts';
+import {accountBillingUrl,accountQuotaView,accountQuotaWarning,accountSourceName,OPENAI_BILLING_URL,quotaOverviewAccounts,quotaResetCountdown} from '../../src/features/agent-conversations/account-quota-view.ts';
 import {modelSourceViews} from '../../src/features/agent-conversations/account-model-view.ts';
 const now=Date.parse('2026-10-30T00:00:00Z');
 const account={id:'a',identity:'i',provider:'deepseek',label:'DeepSeek',accountLabel:'已登录账号',revision:'r',enabled:false,status:'ready',models:[],observedAt:new Date(now).toISOString()};
@@ -83,4 +83,13 @@ test('ChatGPT API 概览只提供官方账单地址，不伪造余额，其他�
  assert.equal(accountBillingUrl(api),OPENAI_BILLING_URL);
  assert.equal(accountBillingUrl(account),undefined);
  assert.deepEqual(accountQuotaView(api,now,true).lines.map(line=>[line.kind,line.text]),[['summary','额度暂不可读取']]);
+});
+
+test('额度重置统一显示中文倒计时，绝对时间仅作悬停详情',()=>{
+ const base=Date.parse('2026-11-16T00:00:00Z');
+ assert.equal(quotaResetCountdown('2026-11-21T00:25:49Z',base),'5 天 0 小时后重置');
+ assert.equal(quotaResetCountdown('2026-11-16T04:35:00Z',base),'4 小时 35 分钟后重置');
+ assert.equal(quotaResetCountdown('2026-11-16T00:00:30Z',base),'1 分钟后重置');
+ assert.equal(quotaResetCountdown(undefined,base),undefined);
+ assert.equal(quotaResetCountdown('not-a-date',base),undefined);
 });

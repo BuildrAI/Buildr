@@ -17,8 +17,6 @@ test('linked sources reuse native credentials and query Qoder without starting i
  const qoderAuth=join(root,'agent-service','model-access','accounts','native-qoder','qoder-config','.auth');
  const machine='1234567890123456-machine';
  await mkdir(qoderAuth,{recursive:true});
- await mkdir(join(root,'CLIProxyAPI'),{recursive:true});
- await writeFile(join(root,'CLIProxyAPI','config.yaml'),JSON.stringify({server:{host:'127.0.0.1',port:18317},access:{'api-keys':['fixture-key']},oauth:{'auth-dir':'auth'}}));
  await writeFile(join(qoderAuth,'machine_id'),machine);
  async function login(uid:string) {
    const key=Buffer.from(machine.slice(0,16));

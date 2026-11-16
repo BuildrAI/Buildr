@@ -119,6 +119,8 @@ export class ModelAccessApplication {
         for(const value of Object.values(prefs))if(!value||typeof value.enabled!=='boolean'||value.contextWindow!==undefined&&(!Number.isSafeInteger(value.contextWindow)||value.contextWindow<1||value.contextWindow>10000000))throw new Error('invalid-preference');
         this.preferences.set(view.id,prefs);this.rows.set(view.id, view);
       }
+      // Retire sources this build no longer owns before exposing any account.
+      if (!this.metadataReadOnly && this.retireSources()) migrated = true;
       // Legacy stores could hold several accounts for a source that now owns
       // exactly one credential domain. Keep the most usable one and retire the
       // rest with their private roots; readiness is the stable preference.
@@ -134,6 +136,28 @@ export class ModelAccessApplication {
       writeFileSync(join(this.options.root, 'accounts.json'), content, { mode: 0o600 });
       this.storedDigest = digest(content);
     } catch { /* The in-memory correction still applies; the next save writes it. */ }
+  }
+  /** Removes provider-owned rows and their private roots; conversation history stays with its own store. */
+  private retireSources(): boolean {
+    const retire = this.options.retire;
+    if (!retire) return false;
+    const providerIds = new Set(retire.providerIds ?? []);
+    const accountIds = new Set(retire.accountIds ?? []);
+    let changed = false;
+    for (const row of [...this.rows.values()]) {
+      const byProvider = providerIds.has(row.provider);
+      const expectedProtocol = retire.customProtocols?.[row.id];
+      const custom = row.custom;
+      const byAccount = accountIds.has(row.id) && row.provider === 'custom' && Boolean(retire.customBaseUrl) &&
+        custom !== undefined && custom.baseUrl === retire.customBaseUrl && custom.useApiKey === true &&
+        (!expectedProtocol || custom.protocol === expectedProtocol);
+      if (!byProvider && !byAccount) continue;
+      this.rows.delete(row.id);
+      this.preferences.delete(row.id);
+      this.removeAccountRootSync(row.id);
+      changed = true;
+    }
+    return changed;
   }
   /** Retires accounts that a current singleton source declaration no longer permits. */
   private pruneDuplicateSingletonAccounts(): boolean {
@@ -345,15 +369,10 @@ export class ModelAccessApplication {
     }
     return await this.changed(row);
   }
-  private replacedModelSource(row: ModelAccountView) {
-    if (row.provider !== 'custom') return false;
-    return [...this.rows.values()].some(replacement =>
-      replacement.credentialConfigured === true && this.providers.get(replacement.provider)?.replacesSource?.(row));
-  }
   list(input:{includeDisabled?:boolean}={}) {
     if (this.storageError) throw this.storageError;
     return {
-      accounts: [...this.rows.values()].filter(row=>!this.replacedModelSource(row)&&(input.includeDisabled||row.sourceEnabled!==false)).map(row => this.view(row)),
+      accounts: [...this.rows.values()].filter(row=>(input.includeDisabled||row.sourceEnabled!==false)).map(row => this.view(row)),
       providers: [...this.providers.values()].map(provider => ({
         id: provider.id,
         label: provider.label,
@@ -715,7 +734,7 @@ export class ModelAccessApplication {
     if (this.storageError) throw this.storageError;
     const models: CatalogModel[] = [];
     for (const stored of this.rows.values()) {
-      if (stored.sourceEnabled === false || this.replacedModelSource(stored)) continue;
+      if (stored.sourceEnabled === false) continue;
       const row = this.view(stored);
       for (const model of row.models) {
         models.push({
@@ -770,7 +789,6 @@ export class ModelAccessApplication {
   }
   async createLease(input: ModelLeaseInput): Promise<ModelGatewayLease> {
     await this.ready; const account = this.current(input.accountId);
-    if(this.replacedModelSource(account))throw new ModelAccessError('model_source_migrated','此模型已迁移，请在 Google AI 分组中重新选择。',409);
     if(account.sourceEnabled===false)throw new ModelAccessError('model_source_disabled','所选模型来源已停用，请重新启用或选择其他来源。');
     conflict(account.revision,input.expectedRevision);
     if(input.expectedIdentity!==undefined&&input.expectedIdentity!==account.identity) throw new ModelAccessError('model_account_identity_changed','套餐登录来源已变化，请建立新的执行上下文。');
@@ -877,7 +895,7 @@ export class ModelAccessApplication {
       const token=auth?.startsWith('Bearer ')?auth.slice(7):typeof apiKey==='string'?apiKey:undefined;
       if(!token || (typeof apiKey==='string'&&auth?.startsWith('Bearer ')&&apiKey!==token)) throw new ModelAccessError('model_gateway_unauthorized','模型调用缺少准确本机认证。',401);
       lease = this.leasesByToken.get(digest(token)); if (!lease) throw new ModelAccessError('model_gateway_unauthorized','模型调用的本机凭据已失效。',401);
-      const account = this.current(lease.input.accountId); if (this.replacedModelSource(account)) throw new ModelAccessError('model_source_migrated','此模型已迁移，请在 Google AI 分组中重新选择。',409); if (!account.enabled) throw new ModelAccessError('model_account_unavailable','所选套餐已断开。');
+      const account = this.current(lease.input.accountId); if (!account.enabled) throw new ModelAccessError('model_account_unavailable','所选套餐已断开。');
       if(account.identity!==lease.input.expectedIdentity)throw new ModelAccessError('model_account_identity_changed','供应商登录来源已变化，原调用不可改用新身份。',409);
       const pathname = new URL(req.url ?? '/',this.origin).pathname;
       if (req.method === 'GET' && (pathname === '/v1/models' || pathname === '/models')) { this.json(res,200,{object:'list',data:[{id:lease.view.model,object:'model',owned_by:account.provider}]}); return; }

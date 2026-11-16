@@ -269,8 +269,9 @@ test('5.1: D7 Google personal account status table, default model enablement, ex
   });
   const freeAcc = await h.service.models.accounts.check('native-antigravity');
   assert.equal(freeAcc.status, 'ready');
-  assert.equal(freeAcc.quota?.available, false);
+  assert.equal(freeAcc.quota?.available, true);
   assert.equal(freeAcc.quota?.planLabel, '免费账号');
+  assert.equal(freeAcc.quota?.windows?.length, 4);
   assert.ok(freeAcc.models.length >= 2);
   assert.ok(freeAcc.models.every(m => m.enabled === true), 'discovered models must be enabled by default');
 
@@ -283,6 +284,12 @@ test('5.1: D7 Google personal account status table, default model enablement, ex
   const proAcc = await h.service.models.accounts.check('native-antigravity');
   assert.equal(proAcc.status, 'ready');
   assert.equal(proAcc.quota?.planLabel, 'Google AI Pro');
+  assert.deepEqual(proAcc.quota?.windows?.map(window => [window.id, window.groupLabel, window.label, window.remainingPercent, window.resetsAt]), [
+    ['gemini-weekly', 'Gemini 模型', '每周限额', 80, '2026-11-21T00:25:49Z'],
+    ['gemini-5h', 'Gemini 模型', '5 小时限额', 99, '2026-11-16T12:03:56Z'],
+    ['3p-weekly', 'Claude 与 GPT 模型', '每周限额', 68, '2026-11-20T10:35:31Z'],
+    ['3p-5h', 'Claude 与 GPT 模型', '5 小时限额', 100, '2026-11-16T12:06:04Z'],
+  ]);
 
   // Row 2c: Ultra tier -> ready ("Google AI Ultra")
   await h.setAuth({

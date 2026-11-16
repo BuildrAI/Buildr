@@ -38,7 +38,7 @@ function seed(t: test.TestContext) {
       models: [],
     },
     bindingIdentity: 'old-identity',
-    bindingData: { format: 'buildr-native-binding/v2', provider: 'qoder', executable, config, dev: info.dev, ino: info.ino, series: '1.1', observedVersion: '1.1.75' },
+    bindingData: { format: 'buildr-native-binding/v2', provider: 'qoder', executable, config, dev: info.dev, ino: info.ino, series: '1.1', observedVersion: '1.1.75', executableDigest: 'source-instance-digest' },
   };
   db.prepare('INSERT INTO connections(id,provider,revision,body) VALUES(?,?,?,?)').run('qoder', 'qoder', 'r1', JSON.stringify(body));
   db.prepare('INSERT INTO conversations(id,workspace_id,task_id,hidden,updated_at,revision,body) VALUES(?,?,?,?,?,?,?)').run('source-conversation', 'ws', null, 0, 'now', 'r1', '{}');
@@ -82,6 +82,7 @@ test('连接重定位只读写 connections 表并重建预览内绑定', (t) => 
   const info = fs.statSync(targetConfig);
   assert.equal(record.bindingData.dev, info.dev);
   assert.equal(record.bindingData.ino, info.ino);
+  assert.equal('executableDigest' in record.bindingData, false);
   const provenance = { format: 'buildr-native-binding/v2', provider: 'qoder', executable: fs.realpathSync(targetExecutable), config: fs.realpathSync(targetConfig), dev: info.dev, ino: info.ino, series: '1.1' };
   assert.equal(record.bindingIdentity, createHash('sha256').update(JSON.stringify(provenance)).digest('hex'));
   assert.notEqual(record.bindingIdentity, 'old-identity');

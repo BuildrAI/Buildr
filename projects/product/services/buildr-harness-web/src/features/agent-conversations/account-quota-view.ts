@@ -54,6 +54,16 @@ export function accountBillingUrl(account: Pick<ModelAccount, 'provider' | 'pres
 export function compareSourceNames(left: string, right: string): number {
   return sourceNameOrder.compare(left, right);
 }
+/** Chinese reset countdown shared by the quota overview and the account card. */
+export function quotaResetCountdown(resetsAt?: string, now = Date.now()): string | undefined {
+  if (!resetsAt) return undefined;
+  const target = Date.parse(resetsAt);
+  if (!Number.isFinite(target)) return undefined;
+  const minutes = Math.max(1, Math.ceil((target - now) / 60_000));
+  const days = Math.floor(minutes / 1_440), hours = Math.floor((minutes % 1_440) / 60), remaining = minutes % 60;
+  return days > 0 ? `${days} 天 ${hours} 小时后重置` : hours > 0 ? `${hours} 小时 ${remaining} 分钟后重置` : `${remaining} 分钟后重置`;
+}
+
 /** Platform amounts stay optional so percentage-only windows never show inferred credits. */
 export function quotaWindowCredits(window: Pick<QuotaWindow, 'remainingCredits' | 'totalCredits'>, compact = false): string | undefined {
   if (window.remainingCredits === undefined || window.totalCredits === undefined) return undefined;

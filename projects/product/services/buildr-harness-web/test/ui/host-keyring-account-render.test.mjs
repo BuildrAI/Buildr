@@ -56,7 +56,7 @@ const baseSource = {
   id: 'native-antigravity',
   sourceEnabled: true,
   provider: 'antigravity',
-  providerLabel: 'Google 个人账号',
+  providerLabel: 'Google AI',
   agentLabel: 'Antigravity',
   vendorLabel: 'Google',
   billingLabel: '查看 Google AI 订阅',
@@ -70,8 +70,9 @@ const baseSource = {
   hostKeyringAuth: true,
   status: 'ready',
   models: [{ id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', family: 'Gemini', enabled: true, available: true, images: true, tools: true }],
+  quotaStyle: 'usage-ring',
   windows: [],
-  quotaNote: 'Antigravity CLI 当前未公开订阅剩余额度与登录邮箱。',
+  quotaNote: '本次未能读取 Antigravity 官方额度。',
   observedLabel: '2026-11-14 00:00:00',
 };
 
@@ -103,6 +104,7 @@ function renderManager(sourceOverrides = {}, extraProps = {}) {
 test('6.1: AccountModelManager renders Google personal account plans, unconfirmed identity, and sendGate paused states', () => {
   for (const planLabel of ['免费账号', 'Google AI Pro', 'Google AI Ultra', '档位不可读']) {
     const html = renderManager({ planLabel });
+    assert.ok(html.includes('Google AI'));
     assert.ok(html.includes('Google 个人账号'));
     assert.ok(html.includes(planLabel), `expected plan badge ${planLabel}`);
     assert.ok(html.includes('查看 Google AI 订阅'));
@@ -143,6 +145,27 @@ test('6.1: AccountModelManager renders Google personal account plans, unconfirme
   assert.ok(gateUnconfirmedHtml.includes('重新核对'));
   assert.ok(gateUnconfirmedHtml.includes('切换账号'));
   assert.ok(gateUnconfirmedHtml.includes('重试退出'));
+});
+
+test('6.1.1: AccountModelManager renders only the two official Antigravity usage groups', () => {
+  const html = renderManager({
+    windows: [
+      { id: 'gemini-weekly', label: '每周限额', groupLabel: 'Gemini 模型', remainingPercent: 80, resetsAt: '2026-11-21T00:25:49Z', resetLabel: '2026/11/21 08:25:49 重置' },
+      { id: 'gemini-5h', label: '5 小时限额', groupLabel: 'Gemini 模型', remainingPercent: 99, resetsAt: '2026-11-16T12:03:56Z', resetLabel: '2026/11/16 20:03:56 重置' },
+      { id: '3p-weekly', label: '每周限额', groupLabel: 'Claude 与 GPT 模型', remainingPercent: 68, resetsAt: '2026-11-20T10:35:31Z', resetLabel: '2026/11/20 18:35:31 重置' },
+      { id: '3p-5h', label: '5 小时限额', groupLabel: 'Claude 与 GPT 模型', remainingPercent: 100, resetsAt: '2026-11-16T12:06:04Z', resetLabel: '2026/11/16 20:06:04 重置' },
+    ],
+    quotaNote: undefined,
+  });
+  assert.equal((html.match(/amm-usage-group/g) || []).length, 2);
+  assert.match(html, /Gemini 模型/);
+  assert.match(html, /Claude 与 GPT 模型/);
+  assert.match(html, /每周限额/);
+  assert.match(html, /5 小时限额/);
+  assert.match(html, /剩余 80%/);
+  assert.match(html, /剩余 68%/);
+  assert.match(html, /(?:天|小时|分钟).*后重置/);
+  assert.match(html, /ant-progress-circle/);
 });
 
 test('6.2: ConversationHandoffDrawer surfaces policy-change new session notice and model picker enforces executor exclusivity', () => {

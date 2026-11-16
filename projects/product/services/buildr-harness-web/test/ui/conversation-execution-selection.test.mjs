@@ -26,15 +26,15 @@ test('real execution target changes still organize a handoff',()=>{
   assert.equal(executionSelectionChanged(run,'local',{...choice,serviceTier:'fast'}),true);
 });
 
-test('restoreModelSeriesChoice preserves explicit reasoningEffort from legacy Google AI choices while migrating model ID to series',()=>{
+test('restoreModelSeriesChoice preserves explicit reasoningEffort from legacy gateway choices while migrating model ID to series',()=>{
   const catalog=[{
-    id:'google-ai-subscription:gemini-4-carbon',
-    accountId:'google-ai-subscription',
+    id:'gateway-subscription:gemini-4-carbon',
+    accountId:'gateway-subscription',
     accountIdentity:'acc-1',
     accountRevision:'rev-1',
-    accountLabel:'Google AI',
-    provider:'google-ai-subscription',
-    presentation:{vendorLabel:'Google AI',sourceLabel:'Google AI'},
+    accountLabel:'Gateway AI',
+    provider:'gateway-subscription',
+    presentation:{vendorLabel:'Gateway AI',sourceLabel:'Gateway AI'},
     modelId:'gemini-4-carbon',
     label:'Gemini 4 Carbon',
     available:true,
@@ -47,7 +47,7 @@ test('restoreModelSeriesChoice preserves explicit reasoningEffort from legacy Go
   // Explicit `medium` selected alongside legacy `gemini-4-carbon-high` must NOT be overwritten to `high`.
   const explicitMedium=restoreModelSeriesChoice({
     connectionId:'codex',
-    modelAccountId:'google-ai-subscription',
+    modelAccountId:'gateway-subscription',
     model:'gemini-4-carbon-high',
     reasoningEffort:'medium',
   },catalog);
@@ -57,7 +57,7 @@ test('restoreModelSeriesChoice preserves explicit reasoningEffort from legacy Go
   // Omitted reasoningEffort falls back to the legacy variant suffix.
   const inferredLow=restoreModelSeriesChoice({
     connectionId:'antigravity',
-    modelAccountId:'google-ai-subscription',
+    modelAccountId:'gateway-subscription',
     model:'gemini-4-carbon-low',
   },catalog);
   assert.equal(inferredLow.model,'gemini-4-carbon');
@@ -72,7 +72,7 @@ test('restoreModelSeriesChoice preserves explicit reasoningEffort from legacy Go
     status:'completed',
     accepted:true,
     tools:[],
-    modelAccountId:'google-ai-subscription',
+    modelAccountId:'gateway-subscription',
     model:'gemini-4-carbon-high',
     reasoningEffort:'medium',
     startedAt:'2026-11-14T00:00:00Z',
@@ -80,7 +80,7 @@ test('restoreModelSeriesChoice preserves explicit reasoningEffort from legacy Go
     executionState:'ended',
     canContinue:false,
   },{id:'codex',provider:'codex',label:'Codex',status:'ready',models:[],capabilities:{text:true,images:true,approval:true,questions:true,stop:true,resume:true}},catalog);
-  assert.equal(label,'Codex · Google AI / Gemini 4 Carbon');
+  assert.equal(label,'Codex · Gateway AI / Gemini 4 Carbon');
 });
 
 test('executionTargetChanges normalizes native account IDs, default service tiers, and legacy series IDs',()=>{
