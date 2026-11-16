@@ -19,9 +19,9 @@ export function ConversationWorkspace({portalTarget,defaultWorkspaceId,workspace
  const navigation=useRef({navigate,locationState});navigation.current={navigate,locationState};
  const context=useAgentConversations(),frame=useRef<HTMLIFrameElement>(null),[ready,setReady]=useState(false),[error,setError]=useState(''),[width,setWidth]=useState(()=>Math.min(800,Math.max(560,Number(readOptionalPreference('buildr.agent-conversation-width'))||620)));
  const [anchor,setAnchor]=useState<{x:number;y:number;width:number;height:number}|null>(null);
- const configuration=JSON.stringify(workspaces),lastCommand=useRef(-1),selection=useRef(0),sentSubmissions=useRef(new Set<string>());
+ const configuration=JSON.stringify(workspaces),lastCommand=useRef(-1),selection=useRef(0),selectionRetry=useRef<ReturnType<typeof setTimeout>|null>(null),sentSubmissions=useRef(new Set<string>());
  const contextRef=useRef(context);contextRef.current=context;
- useEffect(()=>{const listener=(event:MessageEvent)=>{
+ useEffect(()=>{let active=true;const clearSelectionRetry=()=>{if(selectionRetry.current!==null){clearTimeout(selectionRetry.current);selectionRetry.current=null;}};const listener=(event:MessageEvent)=>{
    if(event.source!==frame.current?.contentWindow||event.origin!==location.origin)return;
    const data=event.data;if(!data||data.protocol!=='buildr.harness-frame/v1')return;
    if(data.event==='ready')setReady(true);
@@ -40,10 +40,37 @@ export function ConversationWorkspace({portalTarget,defaultWorkspaceId,workspace
    if(data.event==='result'&&typeof data.requestId==='string')contextRef.current.reply(data.requestId,data.result);
    if(data.event==='selection'){
      const generation=++selection.current;
-     if(typeof data.workspaceId==='string'&&typeof data.conversationId==='string')void contextRef.current.api.read(data.workspaceId,data.conversationId).then(value=>{if(generation===selection.current)contextRef.current.setConversation(value);}).catch(error=>setError(error instanceof Error?error.message:'当前对话读取失败。'));
-     else contextRef.current.setConversation(null);
+     clearSelectionRetry();
+     if(typeof data.workspaceId==='string'&&typeof data.conversationId==='string'){
+       const workspaceId=data.workspaceId,conversationId=data.conversationId;
+       const scheduleRetry=()=>{
+         clearSelectionRetry();
+         selectionRetry.current=setTimeout(()=>{
+           selectionRetry.current=null;
+           if(!active||generation!==selection.current)return;
+           if(typeof document==='undefined'||document.visibilityState!=='hidden')loadSelection();
+           else scheduleRetry();
+         },5000);
+       };
+       const loadSelection=()=>{
+         void contextRef.current.api.read(workspaceId,conversationId).then(value=>{
+           if(!active||generation!==selection.current)return;
+           clearSelectionRetry();
+           contextRef.current.setConversation(value);
+           setError('');
+         }).catch(error=>{
+           if(!active||generation!==selection.current)return;
+           setError(error instanceof Error?error.message:'当前对话读取失败。');
+           scheduleRetry();
+         });
+       };
+       loadSelection();
+     }else{
+       contextRef.current.setConversation(null);
+       setError('');
+     }
    }
- };window.addEventListener('message',listener);return()=>window.removeEventListener('message',listener);},[]);
+ };window.addEventListener('message',listener);return()=>{active=false;clearSelectionRetry();window.removeEventListener('message',listener);};},[]);
  useEffect(()=>{if(ready)frame.current?.contentWindow?.postMessage({protocol:'buildr.harness-frame/v1',action:'configure',workspaces:JSON.parse(configuration),full:context.full,defaultWorkspaceId:defaultWorkspaceId??'@default'},location.origin);},[ready,configuration,context.full,defaultWorkspaceId]);
  useEffect(()=>{if(!ready||!context.command||lastCommand.current===context.sequence)return;lastCommand.current=context.sequence;if(context.command.action==='start-text'&&context.command.requestId){if(sentSubmissions.current.has(context.command.requestId))return;sentSubmissions.current.add(context.command.requestId);}frame.current?.contentWindow?.postMessage({protocol:'buildr.harness-frame/v1',...context.command},location.origin);},[ready,context.sequence,context.command]);
  const resize=(next:number)=>{const value=Math.min(800,Math.max(560,next));setWidth(value);writeOptionalPreference('buildr.agent-conversation-width',String(value));};

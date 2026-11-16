@@ -20,10 +20,22 @@ export function useConversationHistoryPage(api: AgentConversationsClient, {works
     const controller = new AbortController();
     const saved=cache.pages.get(key);
     let reading = false, current: ConversationPage | undefined=saved?.page, failedMore = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     if (!enabled) { controls.current = {loadMore: () => {}, retry: () => {}}; return; }
     setState({scope,...saved,error:saved?.error??'',busy:!saved});
+    const scheduleRetry = () => {
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        if (controller.signal.aborted) return;
+        if (typeof document === 'undefined' || document.visibilityState !== 'hidden') void read(false);
+        else scheduleRetry();
+      }, 5000);
+    };
     const read = async (more: boolean) => {
       if (reading || controller.signal.aborted || more && !current?.nextCursor) return;
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
       reading = true; failedMore = more;
       const admitted=cache.pages.get(key);
       setState({scope, page: current, error: '', busy: true});
@@ -38,12 +50,13 @@ export function useConversationHistoryPage(api: AgentConversationsClient, {works
           const error=failure instanceof Error ? failure.message : '无法读取对话列表，保留上次结果。';
           cache.pages.set(key,{page:current,error,stale,version});
           setState({scope, page: current, error, busy: false, stale});
+          if (!more && !stale) scheduleRetry();
         }
       } finally { reading = false; }
     };
     controls.current = {loadMore: () => {void read(true);}, retry: () => {void read(failedMore);}};
-    if(!saved||saved.version!==version)void read(false);
-    return () => { controller.abort(); controls.current = {loadMore: () => {}, retry: () => {}}; };
+    if(!saved||(saved.error&&!saved.stale)||saved.version!==version)void read(false);
+    return () => { clearTimeout(retryTimer); controller.abort(); controls.current = {loadMore: () => {}, retry: () => {}}; };
   }, [api, workspaceId, query, hidden, agent, model, count, enabled, scope, key, cache, version,draftScope]);
   return {page: state.scope === scope ? state.page : undefined, busy: enabled && (state.scope !== scope || state.busy), error: state.scope === scope ? state.error : '', retryLabel: state.scope === scope && state.stale ? '刷新列表' : '重试', loadMore: () => controls.current.loadMore(), retry: () => controls.current.retry()};
 }

@@ -89,21 +89,34 @@ export function AgentConversationsProvider({children, client = agentConversation
   const [activityCounts,setActivityCounts]=useState<ConversationPage['activityCounts']>();
   const [activityStats,setActivityStats]=useState<ConversationPage['stats']>();
   const [activityRows,setActivityRows]=useState<ConversationView[]>([]),[activityTotal,setActivityTotal]=useState(0),[activityCursor,setActivityCursor]=useState<string>(),[activityError,setActivityError]=useState(''),[activityTick,setActivityTick]=useState(0),[historyWorkspaceId,setHistoryWorkspaceId]=useState<string|null|undefined>(undefined);
-  const activityGeneration=useRef(0),activitySignature=useRef('');
+  const activityGeneration=useRef(0),activitySignature=useRef(''),activityFailed=useRef(false);
   const [activityWorkspaceTicks,setActivityWorkspaceTicks]=useState<Record<string,number>|undefined>({});
   const workspaceSignatures=useRef(new Map<string,string>());
   const activityRead=useRef<Promise<void>|null>(null);
-  const readActivity=useCallback(async()=>{if(!client.listAll)return;const generation=++activityGeneration.current;try{const result=client.activitySummary?await client.activitySummary():await client.listAll({activeOnly:true,limit:100});if(generation!==activityGeneration.current)return;if('pending' in result)setPending(current=>retainObservation(current,result.pending as PendingConversation[]));const signature=JSON.stringify([result.nextCursor,result.conversations.map(row=>[row.workspaceId,row.id,row.title,row.hidden,row.run?.id,row.run?.status,row.run?.model,row.run?.provider,row.run?.modelAccountId,row.run?.modelSourceLabel,row.activity?.updatedAt,row.activity?.userInputAt,row.activity?.active,row.activity?.pendingDecisionCount,Boolean(row.activity&&row.activity.version>row.activity.seenThrough)])]);if(signature!==activitySignature.current){
+  const modelCatalogReadyRef=useRef(false),modelCatalogErrorRef=useRef('');
+  const refreshModelCatalogRef=useRef<()=>Promise<void>>(async()=>{});
+  const connectionStateRef=useRef<ConnectionDiscoveryState>({ready:false,loading:false,error:''});
+  const discoveryRef=useRef<ConnectionDiscovery|null>(null);
+  const openConversationRef=useRef<((workspaceId:string,conversationId:string,options?:VisibilityOptions)=>Promise<void>)|null>(null);
+  const readActivity=useCallback(async()=>{if(!client.listAll)return;const generation=++activityGeneration.current;try{const result=client.activitySummary?await client.activitySummary():await client.listAll({activeOnly:true,limit:100});if(generation!==activityGeneration.current)return;const recovered=activityFailed.current;activityFailed.current=false;if('pending' in result)setPending(current=>retainObservation(current,result.pending as PendingConversation[]));const signature=JSON.stringify([result.nextCursor,result.conversations.map(row=>[row.workspaceId,row.id,row.title,row.hidden,row.run?.id,row.run?.status,row.run?.model,row.run?.provider,row.run?.modelAccountId,row.run?.modelSourceLabel,row.activity?.updatedAt,row.activity?.userInputAt,row.activity?.active,row.activity?.pendingDecisionCount,Boolean(row.activity&&row.activity.version>row.activity.seenThrough)])]);const changed=signature!==activitySignature.current;if(changed){
       const next=activityWorkspaceSignatures(result.conversations),previous=workspaceSignatures.current;
       setActivityWorkspaceTicks(current=>{
         if(result.nextCursor)return undefined;
         const ticks={...current};
         for(const id of new Set([...previous.keys(),...next.keys()]))if(previous.get(id)!==next.get(id))ticks[id]=(ticks[id]??0)+1;
+        if(recovered)for(const id of Object.keys(ticks))if(!next.has(id)&&!previous.has(id))ticks[id]=(ticks[id]??0)+1;
         return ticks;
       });
       workspaceSignatures.current=next;
       setActivityRows(result.conversations);setActivityCursor(result.nextCursor);
-    }setActivityCounts(current=>retainObservation(current,result.activityCounts));setActivityStats(current=>retainObservation(current,result.stats));setActivityTotal(result.total??result.conversations.length);setActivityError('');if(signature!==activitySignature.current){activitySignature.current=signature;setActivityTick(value=>value+1);}}catch(error){if(generation===activityGeneration.current)setActivityError(error instanceof Error?error.message:'活动对话尚未更新，保留上次结果。');}},[client]);
+    }else if(recovered){
+      setActivityWorkspaceTicks(current=>{if(!current)return current;const ticks:Record<string,number>={};for(const id of Object.keys(current))ticks[id]=current[id]+1;return ticks;});
+    }setActivityCounts(current=>retainObservation(current,result.activityCounts));setActivityStats(current=>retainObservation(current,result.stats));setActivityTotal(result.total??result.conversations.length);setActivityError('');if(changed){activitySignature.current=signature;}if(changed||recovered){setActivityTick(value=>value+1);}if(recovered){
+      for(const entry of historyCache.pages.values())if(entry.error&&!entry.stale)entry.version=-1;
+      if(!modelCatalogReadyRef.current||modelCatalogErrorRef.current)void refreshModelCatalogRef.current().catch(()=>{});
+      if(!connectionStateRef.current.ready||connectionStateRef.current.error)void discoveryRef.current?.refresh().catch(()=>{});
+      if(scopeRef.current&&!conversationRef.current&&!selectionRead.current)void openConversationRef.current?.(scopeRef.current.workspaceId,scopeRef.current.conversationId,{preserveVisibility:true,preserveHistoryView:true});
+    }}catch(error){if(generation===activityGeneration.current){activityFailed.current=true;setActivityError(error instanceof Error?error.message:'活动对话尚未更新，保留上次结果。');}}},[client,historyCache]);
   const refreshActivity=useCallback(()=>{
     if(activityRead.current)return activityRead.current;
     const request=readActivity().finally(()=>{if(activityRead.current===request)activityRead.current=null;});
@@ -113,12 +126,14 @@ export function AgentConversationsProvider({children, client = agentConversation
   const pageVisible=usePageVisibility();
   const [modelCatalog,setModelCatalog]=useState<CatalogModel[]>([]);
   const [modelCatalogReady,setModelCatalogReady]=useState(false),[modelCatalogError,setModelCatalogError]=useState('');
+  modelCatalogReadyRef.current=modelCatalogReady;modelCatalogErrorRef.current=modelCatalogError;
   const modelReadGeneration=useRef(0);
   const refreshModelCatalog=useCallback(async()=>{
     const generation=++modelReadGeneration.current;
     try{const result=await client.modelCatalog();if(generation===modelReadGeneration.current){setModelCatalog(current=>retainObservation(current,result.models));setModelCatalogReady(result.hasSnapshot??true);setModelCatalogError(result.diagnostic||'');}}
     catch(error){if(generation===modelReadGeneration.current)setModelCatalogError('模型列表读取失败，已保留已有结果。');throw error;}
   },[client]);
+  refreshModelCatalogRef.current=refreshModelCatalog;
   useEffect(()=>{
     if(!open&&!settings)return;
     const timer=setInterval(()=>{if(document.visibilityState==='visible')void refreshModelCatalog().catch(()=>{});},modelCatalogRefreshMs(settings));
@@ -158,6 +173,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   },[]);
   const connectionReadGeneration=useRef(0);
   const [connectionState,setConnectionState]=useState<ConnectionDiscoveryState>({ready:false,loading:false,error:''});
+  connectionStateRef.current=connectionState;
   const discovery=useMemo(()=>{
     let generation=0;
     return new ConnectionDiscovery(async()=>{
@@ -165,6 +181,7 @@ export function AgentConversationsProvider({children, client = agentConversation
       return (await client.connections()).connections;
     },rows=>{if(generation===connectionReadGeneration.current)setConnections(rows);},setConnectionState);
   },[client]);
+  discoveryRef.current=discovery;
   useEffect(()=>{discovery.start();return()=>discovery.stop();},[discovery]);
   const refreshConnections=useCallback(()=>discovery.refresh(),[discovery]);
   const refreshPending = useCallback(async () => { if(client.activitySummary){await refreshActivity();return;} void refreshActivity(); const result = await client.pending(); setPending(current=>retainObservation(current,result.conversations)); }, [client,refreshActivity]);
@@ -201,6 +218,7 @@ export function AgentConversationsProvider({children, client = agentConversation
     const controller=new AbortController();selectionRead.current=controller;
     try { const next = await client.read(workspaceId, conversationId,controller.signal); if (request === serial.current && scopeRef.current?.conversationId === conversationId && scopeRef.current.workspaceId === workspaceId) apply(next, sameConversation ? previous.revision : undefined); } catch (failure) { if (request === serial.current&&!controller.signal.aborted) setError(failure instanceof Error ? failure.message : '无法读取对话。'); } finally { if(selectionRead.current===controller)selectionRead.current=null;if (request === serial.current) setLoading(false); }
   }, [client,advanceSelection,setVisibility,apply]);
+  openConversationRef.current=openConversation;
   const locateParticipation=useCallback(async(workspaceId:string,conversationId:string,runId:string)=>{
     participationNavigation.current?.abort();
     if(scopeRef.current?.workspaceId!==workspaceId||scopeRef.current.conversationId!==conversationId)await openConversation(workspaceId,conversationId,{preserveVisibility:true});

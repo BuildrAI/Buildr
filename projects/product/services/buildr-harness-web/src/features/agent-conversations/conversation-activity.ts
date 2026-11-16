@@ -78,3 +78,8 @@ export function groupConversationWorkspaces<T extends {workspaceId:string}>(item
 export function completeActivitySnapshot(rows:readonly ConversationSummary[],total:number,cursor:string|undefined,counts:ActivityCounts|undefined,error:string):boolean {
   return Boolean(counts&&!error&&!cursor&&rows.length===total&&new Set(rows.map(row=>row.workspaceId+':'+row.id)).size===total);
 }
+
+/** Collapse identical group error messages when multiple reminder pages fail during restart. */
+export function joinReminderErrors(errors:Record<string,string|undefined>):string {
+  return [...new Set(Object.values(errors).map(value=>value?.trim()).filter((value):value is string=>Boolean(value)))].join('；');
+}

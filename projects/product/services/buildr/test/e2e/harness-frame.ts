@@ -12,10 +12,12 @@ const work=path.join(root,'workspace');
 const fixture=createFixture();fixture.initializeWorkspace({targetRoot:work,name:'嵌套网页验收',description:'隔离工程现场',profile:'team',agent:null});
 fixture.createTask(work,{taskId:'frame-task',title:'框内关联任务',intent:'核对工程关联归属',status:'active',projects:[],services:[],changes:[]});
 const runtime=createRuntime(),workspace=runtimeProvide(runtime,WORKSPACE_APPLICATION);
-const app=createLocalWorkspaceServer(runtime,{ensureRegisteredTarget:workspace.ensureRegisteredTarget,resolveRegisteredWorkspace:workspace.resolveRegisteredWorkspace,targetRoot:work,webProfile:{profile:'development'},staticRoot:process.env.BUILDR_BROWSER_WEB_DIST_ROOT??path.resolve(import.meta.dirname,'../../web-dist')});
+const serverOptions={ensureRegisteredTarget:workspace.ensureRegisteredTarget,resolveRegisteredWorkspace:workspace.resolveRegisteredWorkspace,targetRoot:work,webProfile:{profile:'development'},staticRoot:process.env.BUILDR_BROWSER_WEB_DIST_ROOT??path.resolve(import.meta.dirname,'../../web-dist')};
+let activeApp=createLocalWorkspaceServer(runtime,serverOptions);
 const browser=await launchTestBrowser();
 try{
- const {url,initialWorkspaceId}=await app.ready;
+ const {url,initialWorkspaceId}=await activeApp.ready;
+ const port=Number(new URL(url).port);
  const unauthorized=await fetch(url+'/harness/');assert.equal(unauthorized.status,403,'frame entry requires its navigation cookie');
  const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
  await page.goto(url+'/workspaces/'+initialWorkspaceId+'/overview');
@@ -45,5 +47,39 @@ try{
  await page.locator('[data-associated-task="frame-task"]').click();await page.waitForURL('**/tasks/frame-task');
  await page.keyboard.press('Escape');if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_SCREENSHOT_DIR,'development-harness-embedded.png')});
  await frame.locator('.ac-collapsed-rail .ac-account-settings').click();await frame.getByRole('tab',{name:'智能体',exact:true}).waitFor();
- assert.deepEqual(errors,[]);console.log(JSON.stringify({status:'passed',checks:['authenticated-frame','same-complete-web','workspace-selection','embedded-focused-draft-retention','exact-window-message-check','settings-in-frame','development-task-association-and-navigation'],realModelCalls:0}));
-}finally{await browser.close();await app.shutdown();await runtimeProvide(runtime,AGENT_SERVICE_APPLICATION).close();await stopAgentProcess({dataRoot:process.env.BUILDR_APP_DATA_DIR!,mode:'stop-owned'});}
+ await frame.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();
+ await input.waitFor();
+ await input.fill('重启恢复草稿');
+ const oldOuterToken=await page.evaluate(()=>document.querySelector('meta[name="buildr-session"]')?.getAttribute('content'));
+ const oldFrameToken=await frame.locator('meta[name="buildr-session"]').getAttribute('content');
+ assert.ok(oldOuterToken&&oldFrameToken);
+ await activeApp.shutdown();
+ activeApp=createLocalWorkspaceServer(runtime,{...serverOptions,port});
+ const restarted=await activeApp.ready;
+ assert.equal(restarted.url,url);
+ assert.notEqual(restarted.sessionToken,oldOuterToken);
+ const staleFrameRes=await fetch(url+'/harness/',{headers:{cookie:'buildr-frame='+oldFrameToken}});
+ assert.equal(staleFrameRes.status,403,'stale frame cookie remains rejected on direct /harness/ navigation');
+ await frame.locator('.ac-collapsed-rail .ac-all-conversations').click();
+ const recoveredHistoryRead=page.waitForResponse(response=>response.request().method()==='GET'&&response.url().includes('/api/v1/app/agent-service/conversations')&&response.url().includes('query=')&&response.status()===200);
+ await frame.getByRole('textbox',{name:'搜索对话',exact:true}).fill('恢复核验');
+ await recoveredHistoryRead;
+ assert.equal(await frame.getByText(/Buildr Web session 已失效/).count(),0);
+ await page.evaluate(({workspaceId,conversationId})=>(document.querySelector('iframe[title="Buildr Harness"]') as HTMLIFrameElement).contentWindow!.postMessage({protocol:'buildr.harness-frame/v1',action:'open',workspaceId,conversationId},location.origin),{workspaceId:initialWorkspaceId,conversationId:conversation.id});
+ await input.waitFor();
+ assert.equal(await input.inputValue(),'重启恢复草稿');
+ assert.equal(await page.locator('iframe[title="Buildr Harness"]').getAttribute('data-acceptance-identity'),'retained');
+ await page.getByRole('button',{name:'关联任务',exact:true}).click();
+ const patchAfterRestart=page.waitForResponse(response=>response.request().method()==='PATCH'&&response.url().endsWith('/agent-conversations/'+conversation.id)&&response.status()===200);
+ await page.getByRole('button',{name:'解除关联 frame-task',exact:true}).click();
+ await patchAfterRestart;
+ await page.waitForFunction((expected:string)=>{
+   const outer=document.querySelector('meta[name="buildr-session"]')?.getAttribute('content');
+   const iframeDoc=(document.querySelector('iframe[title="Buildr Harness"]') as HTMLIFrameElement|null)?.contentDocument;
+   const inner=iframeDoc?.querySelector('meta[name="buildr-session"]')?.getAttribute('content');
+   return outer===expected&&inner===expected;
+ },restarted.sessionToken);
+ assert.equal(await page.getByText(/Buildr Web session 已失效/).count(),0);
+ assert.equal(await frame.getByText(/Buildr Web session 已失效/).count(),0);
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({status:'passed',checks:['authenticated-frame','same-complete-web','workspace-selection','embedded-focused-draft-retention','exact-window-message-check','settings-in-frame','development-task-association-and-navigation','in-place-restart-session-recovery'],realModelCalls:0}));
+}finally{await browser.close();await activeApp.shutdown();await runtimeProvide(runtime,AGENT_SERVICE_APPLICATION).close();await stopAgentProcess({dataRoot:process.env.BUILDR_APP_DATA_DIR!,mode:'stop-owned'});}

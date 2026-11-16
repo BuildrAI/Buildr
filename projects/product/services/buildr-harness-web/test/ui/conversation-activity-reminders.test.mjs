@@ -5,7 +5,7 @@ import {readFileSync,existsSync} from 'node:fs';
 import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {groupConversationWorkspaces,orderActivityItems,activityBadge,activityReminder,activityState,pendingSendReason,isExecuting,isActiveConversation,conversationMetadata,reminderFallbackRows,completeActivitySnapshot} from '../../src/features/agent-conversations/conversation-activity.ts';
+import {groupConversationWorkspaces,orderActivityItems,activityBadge,activityReminder,activityState,pendingSendReason,isExecuting,isActiveConversation,conversationMetadata,reminderFallbackRows,completeActivitySnapshot,joinReminderErrors} from '../../src/features/agent-conversations/conversation-activity.ts';
 import {conversationTierChoice} from '../../src/features/agent-conversations/conversation-options.ts';
 
 registerHooks({
@@ -187,4 +187,10 @@ test('残余活跃行归为状态待确认，结算入口只放行无在途工�
  assert.equal(canSettleRetainedRun({...conversation,requests:[{id:'q',runId:'old'}]},run),false,'有效问题不可结算');
  assert.equal(canSettleRetainedRun(conversation,conversation.run),false,'当前轮不走保留结算');
  assert.equal(canSettleRetainedRun(null,run),false);
+});
+
+test('对话提醒错误合并去重，不重复拼接相同提示并忽略空白项',()=>{
+ assert.equal(joinReminderErrors({attention:'Buildr Web session 已失效，请刷新页面。',running:'Buildr Web session 已失效，请刷新页面。'}),'Buildr Web session 已失效，请刷新页面。');
+ assert.equal(joinReminderErrors({attention:'读取待处理失败',running:'读取执行中失败'}),'读取待处理失败；读取执行中失败');
+ assert.equal(joinReminderErrors({attention:'',running:undefined}),'');
 });

@@ -17,20 +17,48 @@ test('readSessionTokenFromDocument reads the injected meta token', () => {
   assert.equal(readSessionTokenFromDocument({ querySelector: () => null }), null);
 });
 
-test('refreshSession parses the served page, caches the new token and updates the document meta', async t => {
+test('refreshSession parses the root entry page, caches the new token and updates the document meta', async t => {
   const { meta, doc } = metaStub();
   const fetches = [];
   t.mock.method(globalThis, 'fetch', async url => {
     fetches.push(url);
     return new Response(injectedPage('fresh-token'), { status: 200 });
   });
-  globalThis.window = { location: { href: 'http://127.0.0.1:1234/workspaces/w/tasks/t' } };
-  const adapter = new LocalSessionAdapter(() => 'stale-token', doc);
-  assert.equal(await adapter.refreshSession(), true);
-  assert.deepEqual(fetches, ['http://127.0.0.1:1234/workspaces/w/tasks/t']);
-  assert.equal(meta.content, 'fresh-token');
-  assert.equal(adapter.writeHeaders()['x-buildr-session'], 'fresh-token');
+  for (const href of ['http://127.0.0.1:1234/workspaces/w/tasks/t', 'http://127.0.0.1:1234/harness/']) {
+    globalThis.window = { location: { href } };
+    const adapter = new LocalSessionAdapter(() => 'stale-token', doc);
+    assert.equal(await adapter.refreshSession(), true);
+    assert.equal(meta.content, 'fresh-token');
+    assert.equal(adapter.writeHeaders()['x-buildr-session'], 'fresh-token');
+  }
+  assert.deepEqual(fetches, ['http://127.0.0.1:1234/', 'http://127.0.0.1:1234/']);
   delete globalThis.window;
+});
+
+test('multiple adapters sharing one document adopt newer meta tokens across restarts', async t => {
+  const { meta, doc } = metaStub();
+  meta.content = 'token-1';
+  const previousWindow = globalThis.window;
+  t.after(() => { if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow; });
+  globalThis.window = { location: { href: 'http://127.0.0.1:1234/harness/' } };
+
+  let served = 'token-2';
+  t.mock.method(globalThis, 'fetch', async url => {
+    assert.equal(url, 'http://127.0.0.1:1234/');
+    return new Response(injectedPage(served), { status: 200 });
+  });
+
+  const primary = new LocalSessionAdapter(undefined, doc);
+  const secondary = new LocalSessionAdapter(undefined, doc);
+  assert.equal(await primary.refreshSession(), true);
+  assert.equal(primary.writeHeaders()['x-buildr-session'], 'token-2');
+  assert.equal(secondary.writeHeaders()['x-buildr-session'], 'token-2');
+
+  served = 'token-3';
+  assert.equal(await secondary.refreshSession(), true);
+  assert.equal(meta.content, 'token-3');
+  assert.equal(primary.writeHeaders()['x-buildr-session'], 'token-3');
+  assert.equal(secondary.writeHeaders()['x-buildr-session'], 'token-3');
 });
 
 test('concurrent refreshSession calls share one fetch and failures leave headers untouched', async t => {

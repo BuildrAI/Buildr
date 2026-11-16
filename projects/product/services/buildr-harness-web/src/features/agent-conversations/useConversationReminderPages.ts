@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ConversationPage, AgentConversationsClient } from './api/agent-conversations-api.ts';
+import { joinReminderErrors } from './conversation-activity.ts';
 
 type Client=AgentConversationsClient;
 type Group='attention'|'running';
@@ -11,7 +12,7 @@ export function useConversationReminderPages(api:Client,open:boolean) {
   const generation=useRef(0),sequences=useRef({attention:0,running:0}),loading=useRef(new Set<Group>());
   const [busy,setBusy]=useState(false);
   useEffect(()=>{
-    if(!open)return;
+    if(!open){setErrors(previous=>Object.keys(previous).length?{}:previous);return;}
     const current=++generation.current,controller=new AbortController();abort.current=controller;
     const refresh=async(group:Group)=>{
       if(loading.current.has(group))return;
@@ -40,5 +41,5 @@ export function useConversationReminderPages(api:Client,open:boolean) {
     }));
     if(generation.current===current)setBusy(false);
   };
-  return {pages,error:Object.values(errors).filter(Boolean).join('；'),hasMore:Boolean(pages.attention?.nextCursor||pages.running?.nextCursor),more,busy};
+  return {pages,error:joinReminderErrors(errors),hasMore:Boolean(pages.attention?.nextCursor||pages.running?.nextCursor),more,busy};
 }
