@@ -21,7 +21,7 @@ Buildr 主程序当前直接持有智能体服务（Agent Service），开发更
 
 ### Modified Capabilities
 
-- `agent-runtime-connections`：修改“智能体服务必须独立维护并随现有宿主交付”和“原生进程必须按拥有关系和真实存活状态管理”，区分 Buildr 接入主程序与执行后台生命周期，保留原生退出和未知不重发约束。
+- `agent-runtime-connections`：原两个运行条款已交接至 `split-buildr-harness-product`，由其统一保留进程独立化承诺并扩展双产品边界，本变更不再提供重复增量。
 
 ## Impact
 
@@ -32,3 +32,7 @@ Buildr 主程序当前直接持有智能体服务（Agent Service），开发更
 - `services/buildr-web/`：复用现有页面及服务端事件流（SSE），调整重新连接、兼容性和待更新反馈；不重新设计界面。
 - 当前知识（Current Knowledge）：实施后按最终事实校准 `knowledge/docs/architecture/agent-integration.md`、`agent-boundaries.md`、`agent-integration-generation.md`、`technical.md`、`knowledge/code-map/technical-layers.md` 及准确受影响的运行输入说明；本轮不把未来方案写成当前行为。
 - 已同步 `dev` 的 `conversation-activity` 最新交付，保留其活动、排序、统计、已读、标题和全空间查询语义。
+
+## 规范责任交接（2026-11-16）
+
+两个 `agent-runtime-connections` 需求（“智能体服务必须独立维护并随现有宿主交付”“原生进程必须按拥有关系和真实存活状态管理”）已由 `split-buildr-harness-product` 唯一承接并在该变更中同步。交接以现有实现和最新主规范为依据，保留原先的执行归属、安全控制、凭据开关及真实能力发现承诺，按已确认的 Harness / Development 边界扩展；本变更不再重复写入这些条款，不删除主规范需求，也不撤销既有交付。本变更仍保留 `agent-execution-process` 及其独立验收责任，7.3 的真实供应商和异平台缺口不由本次规范交接代验或归档。

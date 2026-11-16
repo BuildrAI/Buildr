@@ -9,8 +9,8 @@ Buildr 已有独立执行后台和可替换宿主契约，但对话界面、HTTP
 | 变更 | 唯一负责范围 | 独立完成依据 |
 | --- | --- | --- |
 | 本变更 `split-buildr-harness-product` | 目录宿主、通用启动激活、来源授权、唯一 API 与凭据维护 | 不加载 Development 业务即可准备并运行目录工作；Development 通过兼容代理回接 |
-| [extract-harness-web](../archive/2026-11-16-extract-harness-web/proposal.md) | 完整对话功能包、三种承载、独立网页监听与换代 | 独立网页、专注、内嵌共用实现；同源认证及网页交接通过 |
-| [distribute-harness-products](../distribute-harness-products/proposal.md) | 独立安装、两产品启动器、安装身份及发行边界 | 两个真实启动器可独立点击使用；安装共存、升级和卸载保全资料 |
+| [extract-harness-web](../2026-11-16-extract-harness-web/proposal.md) | 完整对话功能包、三种承载、独立网页监听与换代 | 独立网页、专注、内嵌共用实现；同源认证及网页交接通过 |
+| [distribute-harness-products](../2026-11-16-distribute-harness-products/proposal.md) | 独立安装、两产品启动器、安装身份及发行边界 | 两个真实启动器可独立点击使用；安装共存、升级和卸载保全资料 |
 
 三个变更不相互重复写同一规范条款；技术变更完成不代表已获得供应商许可、跨平台支持证明或公开发布授权。
 
@@ -25,7 +25,7 @@ Buildr 已有独立执行后台和可替换宿主契约，但对话界面、HTTP
 - Harness 拥有唯一 HTTP/SSE 映射、协议 Schema 和客户端；Development 经同源认证代理接入，保留现有网页与程序接口。代理不变成通用转发器，不复制业务状态，不把内部后台令牌交给浏览器。
 - 同一 Development 工作空间继续管理、开发和验证两个产品，沿用同一仓库及按职责登记的服务；不因产品拆分强制拆工作空间、复制任务系统或隔离成两套源码。
 - **BREAKING**：多来源授权和可选宿主能力采用新版握手；首个拆分版本同时实现 v1 同来源与 v2 协商，不能只替换契约标识导致旧发现和激活失败。旧用户 URL、原生绑定和数据在声明窗口内保留。运行负载继续随 Development 提供，本变更不要求用户独立安装，也不新增用户网页端口。
-- 完整 UI、可选独立网页和两个启动器由后两项变更交付，不是缩减整体目标。许可事实从本阶段并行核对，产品/发行负责人作使用与分发决定；相关流程见[发行设计](../distribute-harness-products/design.md)。
+- 完整 UI、可选独立网页和两个启动器由后两项变更交付，不是缩减整体目标。许可事实从本阶段并行核对，产品/发行负责人作使用与分发决定；相关流程见[发行设计](../2026-11-16-distribute-harness-products/design.md)。
 
 ## Capabilities
 

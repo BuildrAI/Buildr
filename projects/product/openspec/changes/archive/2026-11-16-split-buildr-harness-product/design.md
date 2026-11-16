@@ -4,13 +4,13 @@
 
 | 当前证据 | 对设计的影响 |
 | --- | --- |
-| [`process/server.ts`](../../../services/buildr-harness/src/process/server.ts) 已有独立后台、兼容并行激活；`operationScopes` 限同来源，`ownsPolicy` 仍由旧来源独占 | 复用运行机制，分离调用者、目标来源和来源策略 |
-| [`activate-runtime.ts`](../../../services/buildr/src/modules/agent-service/application/activate-runtime.ts) 在 Development 编排准备/激活并用 `buildr/@default` 探测 | 底层能力已在公共包，缺的是产品无关的统一启动编排，不能机械搬业务特例 |
-| [`host-channel.ts`](../../../services/buildr-harness/src/process/host-channel.ts) 支持多宿主注册；任务字段及映射仍在核心 | 多连接不是跨来源授权；可选工作对象能力和旧字段必须兼容 |
-| HTTP/SSE、Schema 和 [`programmatic-credentials.ts`](../../../services/buildr/src/modules/agent-service/persistence/programmatic-credentials.ts) 仍在 Development | 迁移闭环所有者，凭据路径继续保留，不只搬路由文件 |
-| [`programmatic-http.ts`](../../../services/buildr/src/modules/agent-service/interfaces/http/programmatic-http.ts) 区分显式发送和 `/messages` 省略模式 | 保留当前主规范与实现，不能照抄活跃旧增量的概括 |
-| [`process/client.ts`](../../../services/buildr-harness/src/process/client.ts) 的 `matches` 与 [`runtime-unit.ts`](../../../services/buildr-harness/src/process/runtime-unit.ts) 精确比较三组 v1 契约 | v2 不能只替换常量；发现、协议协商和运行负载兼容必须分别保留 |
-| [`execution-contracts.ts`](../../../services/buildr-harness/src/execution-contracts.ts) 的旧范围解码依赖 `legacySourceId`，进程启动再把它传入核心 | 历史来源解码必须固定，不得由首先连接的产品决定 |
+| [`process/server.ts`](../../../../services/buildr-harness/src/process/server.ts) 已有独立后台、兼容并行激活；`operationScopes` 限同来源，`ownsPolicy` 仍由旧来源独占 | 复用运行机制，分离调用者、目标来源和来源策略 |
+| [`activate-runtime.ts`](../../../../services/buildr/src/modules/agent-service/application/activate-runtime.ts) 在 Development 编排准备/激活并用 `buildr/@default` 探测 | 底层能力已在公共包，缺的是产品无关的统一启动编排，不能机械搬业务特例 |
+| [`host-channel.ts`](../../../../services/buildr-harness/src/process/host-channel.ts) 支持多宿主注册；任务字段及映射仍在核心 | 多连接不是跨来源授权；可选工作对象能力和旧字段必须兼容 |
+| HTTP/SSE、Schema 和 [`programmatic-credentials.ts`](../../../../services/buildr/src/modules/agent-service/persistence/programmatic-credentials.ts) 仍在 Development | 迁移闭环所有者，凭据路径继续保留，不只搬路由文件 |
+| [`programmatic-http.ts`](../../../../services/buildr/src/modules/agent-service/interfaces/http/programmatic-http.ts) 区分显式发送和 `/messages` 省略模式 | 保留当前主规范与实现，不能照抄活跃旧增量的概括 |
+| [`process/client.ts`](../../../../services/buildr-harness/src/process/client.ts) 的 `matches` 与 [`runtime-unit.ts`](../../../../services/buildr-harness/src/process/runtime-unit.ts) 精确比较三组 v1 契约 | v2 不能只替换常量；发现、协议协商和运行负载兼容必须分别保留 |
+| [`execution-contracts.ts`](../../../../services/buildr-harness/src/execution-contracts.ts) 的旧范围解码依赖 `legacySourceId`，进程启动再把它传入核心 | 历史来源解码必须固定，不得由首先连接的产品决定 |
 
 以下均为拟议设计，不把尚未抽取的包或能力登记成当前事实。
 
@@ -31,7 +31,7 @@
 | Development–Harness 接入 | 当前 `agent-service` 宿主及相关装配，调用双方公开能力，连接工作范围、外部工作对象、单次生成和对话界面 |
 | 独立产品壳与安装 | 本次装配以上能力，交付两个启动器；后续插件宿主的装配不进入通用业务模块 |
 
-当前 [`agent-service/module.ts`](../../../services/buildr/src/modules/agent-service/module.ts) 同时消费 Harness 公共包及工作空间/任务查询能力，已是可收口的接入位置；应用根也有运行单元装配。保留并完善这一边界，不让执行类型、账号配置或后台启动前置扩散到工程领域和持久层。需要执行的功能经接入层调用；无可用执行提供方时只报告该功能不可用，既有任务、知识和仓库等非执行操作仍可使用，不隐式切换执行内核。
+当前 [`agent-service/module.ts`](../../../../services/buildr/src/modules/agent-service/module.ts) 同时消费 Harness 公共包及工作空间/任务查询能力，已是可收口的接入位置；应用根也有运行单元装配。保留并完善这一边界，不让执行类型、账号配置或后台启动前置扩散到工程领域和持久层。需要执行的功能经接入层调用；无可用执行提供方时只报告该功能不可用，既有任务、知识和仓库等非执行操作仍可使用，不隐式切换执行内核。
 
 独立 Development 默认组合 Buildr Harness，是本次发行选择，不是工程业务不可替换的依赖。本次只验证业务可独立装配、当前 Harness 集成完整，以及边界依赖方向；不为尚未实施的第二提供方新造通用 SDK、插件注册中心或动态装载机制，也不额外拆 npm 包来证明解耦。
 
@@ -134,7 +134,7 @@ SSE 保留首片、游标、增量、代次和有界恢复，代理不缓冲成�
 | start/send | 按现有契约 default | 校验连接能力及凭据 `allowFullAccess` |
 | `/messages` 单步续聊 | 继承最近轮次，无最近模式才 default | 按主规范校验显式 full-access |
 
-以[主规范](../../specs/programmatic-agent-access/spec.md)“单步续聊”及当前实现为依据。`allowFullAccess` 开关不是模式选择，也不合并 read/execute/answer/approve。旧活跃变更将全部操作写成省略即 default，应由原负责者在收敛前校准；本变更不越权修改它，也不以“已完整保留”掩盖冲突。
+以[主规范](../../../specs/programmatic-agent-access/spec.md)“单步续聊”及当前实现为依据。`allowFullAccess` 开关不是模式选择，也不合并 read/execute/answer/approve。旧活跃变更将全部操作写成省略即 default，应由原负责者在收敛前校准；本变更不越权修改它，也不以“已完整保留”掩盖冲突。
 
 模型路径、额度、原生恢复、进程持有和未知结果继续引用主规范，只验证抽取后的回归，不创建同义新规则。
 
@@ -171,3 +171,7 @@ SSE 保留首片、游标、增量、代次和有界恢复，代理不缓冲成�
 ## 本轮边界修订
 
 本变更涉及的核心与独立入口统一为 buildr-harness；buildr-harness-web 拥有完整唯一网页，buildr-harness-ui 退役。Development 在自己的 harness-ui 模块嵌套网页并准备工程上下文，不消费对话 React 组件。具体集成约束以同任务 extract-harness-web 的修订规范为准；不改变既有历史数据根、准确执行控制与独立发行批准边界。
+
+## 规范交接结果（2026-11-16）
+
+已核对 `agent-parallel-updates` 和 `programmatic-full-access` 任务均 completed，实际实现分别保留共享配置唯一维护、原轮准确控制、凭据开关及真实权限发现。上述四条需求由本变更唯一写入；旧变更对应 delta 退出重复写入，并保留交接来源及未完成验证责任。“可恢复的公共对话操作”仍由 programmatic-full-access 维护，按最新主规范保留 messages 继承权限和幂等语义，不回退为统一 default。运行规范的替身证据不替代真实供应商或异平台证据。

@@ -4,7 +4,7 @@
 
 ## What Changes
 
-- 消费 [核心与 API](../split-buildr-harness-product/proposal.md) 和 [完整 UI 与网页](../archive/2026-11-16-extract-harness-web/proposal.md)，不再次修改其能力条款。
+- 消费 [核心与 API](../2026-11-16-split-buildr-harness-product/proposal.md) 和 [完整 UI 与网页](../2026-11-16-extract-harness-web/proposal.md)，不再次修改其能力条款。
 - 交付 Buildr Harness 与 Buildr Development 两个可独立点击的启动器；Development 未运行时 Harness 也能启动，反之无需用户先开 Harness。
 - 分离产品 ID、发布/开发渠道、共享数据域和网页入口身份，改造 `webProfileName`、启动器绑定、实例发现及替换规则；不能只新增一个 runtime role 或改显示名。
 - 保留 `@buildr-ai/buildr` / `buildr` 与旧数据路径；新增 Harness 独立包及 CLI。Development 仍内置兼容负载；两安装入口复用同域服务。
@@ -30,3 +30,7 @@
 - 知识、安装帮助、支持矩阵与许可文件。macOS、Windows 分别取得真实点击证据；缺少某平台证据只限制该平台声明，不冒称全平台完成。
 - 本变更负责技术安装交付及发行检查，不执行公开发布，不代替人批准订阅跨工具使用。整体任务的最终验收仍包括两个启动器及 Development 两模式，见[任务说明](@task/harness-product-split-plan)。
 - 不制作 Harness/Development 的 DSH 插件，也不增加依赖/不依赖 Harness 的两套插件发行物。未来 DSH 框架＋Harness＋Development 的完整组合，与 DSH 原生执行＋Development 的组合分别表达；二者复用同一工程业务，不复制产品源码。完整组合还可把 Development 替换为其他专业环境，仍使用 Harness。当前 DSH 原生执行器所需依赖仍按实际选择准备，不等同于要求安装 DSH 插件宿主。
+
+## 最终验收范围（2026-11-16）
+
+用户明确本机不能测 Windows，本轮不做 Windows 实机验证。当前技术交付按 macOS 已取得的两产品包消费与系统入口证据验收；其他平台适配和真实证据不纳入本次变更完成条件，不因归档获得支持或通过声明。公开发布、许可批准和未来 DSH 插件仍不在本次交付范围。

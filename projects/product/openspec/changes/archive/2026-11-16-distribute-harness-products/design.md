@@ -1,8 +1,8 @@
 ## Context
 
-前置分别交付[目录宿主、通用激活与 API](../split-buildr-harness-product/design.md)和[完整 UI、网页发现与换代](../archive/2026-11-16-extract-harness-web/design.md)。本变更交付真实安装与可点击入口，不重复实现前置能力。
+前置分别交付[目录宿主、通用激活与 API](../2026-11-16-split-buildr-harness-product/design.md)和[完整 UI、网页发现与换代](../2026-11-16-extract-harness-web/design.md)。本变更交付真实安装与可点击入口，不重复实现前置能力。
 
-当前 [`web-profile.ts`](../../../services/buildr/src/modules/installation/contracts/web-profile.ts) 只接受 `npm/host` 与 `development/development`，profile 身份混入 runtime role；开发启动器硬编码 4458，实例替换以原产品约定判断。因此“复用启动器”只表示复用构建/安装技术，绝非只改两个显示名。
+当前 [`web-profile.ts`](../../../../services/buildr/src/modules/installation/contracts/web-profile.ts) 只接受 `npm/host` 与 `development/development`，profile 身份混入 runtime role；开发启动器硬编码 4458，实例替换以原产品约定判断。因此“复用启动器”只表示复用构建/安装技术，绝非只改两个显示名。
 
 ## Goals / Non-Goals
 
@@ -40,7 +40,7 @@ macOS 使用两个 `.app` 身份，Windows 使用独立应用/快捷方式绑定
 
 保留 `@buildr-ai/buildr` 和 `buildr`；独立包拟为 `@buildr-ai/buildr-harness`，命令拟为 `buildr-harness`。发布命名前核对名称可用性；内部源码 `buildr-harness` 不为品牌立即改名。
 
-独立产品壳和安装包负责当前组合选择。工程业务本身按第一变更保持独立，完整路线表见[核心设计 D0](../split-buildr-harness-product/design.md#d0-区分产品能力接入装配与交付宿主)。后续 DSH 生态分别提供原生执行＋Development 的组合，以及插件框架＋Harness＋Development 的完整组合；后者由 Harness 统一多执行程序、模型、对话和交互，Development 也可换成营销等专业环境。它们复用产品能力，不复制工程业务代码。本次不交付这些插件版本，也不因未来可替换而撤掉当前 Development 开箱即用的 Harness。独立安装验收不要求 DSH 桌面或插件系统；用户选择 DSH 原生执行器时仍按其实际依赖准备，这与作为 DSH 插件交付不同。
+独立产品壳和安装包负责当前组合选择。工程业务本身按第一变更保持独立，完整路线表见[核心设计 D0](../2026-11-16-split-buildr-harness-product/design.md#d0-区分产品能力接入装配与交付宿主)。后续 DSH 生态分别提供原生执行＋Development 的组合，以及插件框架＋Harness＋Development 的完整组合；后者由 Harness 统一多执行程序、模型、对话和交互，Development 也可换成营销等专业环境。它们复用产品能力，不复制工程业务代码。本次不交付这些插件版本，也不因未来可替换而撤掉当前 Development 开箱即用的 Harness。独立安装验收不要求 DSH 桌面或插件系统；用户选择 DSH 原生执行器时仍按其实际依赖准备，这与作为 DSH 插件交付不同。
 
 | 安装组合 | 预期 |
 | --- | --- |
@@ -51,7 +51,7 @@ macOS 使用两个 `.app` 身份，Windows 使用独立应用/快捷方式绑定
 
 产品版本、API/host/lifecycle 版本、数据兼容版本、运行负载摘要、UI 构建和原生程序版本分开观察。只有明确升级意图才调用公共激活，不能用“包版本大”跳过兼容判断。支持声明需含 API、页面会话及旧静态资源窗口，而不只有 npm major。
 
-包消费与升级测试采用[核心设计](../split-buildr-harness-product/design.md)中的真实 v1/v2 兼容矩阵，并包含 Harness 首先启动已有资料的情形；不能用两份从新源码重建的客户端证明旧版本兼容，也不能让首先安装或启动的产品改变历史来源解码。
+包消费与升级测试采用[核心设计](../2026-11-16-split-buildr-harness-product/design.md)中的真实 v1/v2 兼容矩阵，并包含 Harness 首先启动已有资料的情形；不能用两份从新源码重建的客户端证明旧版本兼容，也不能让首先安装或启动的产品改变历史来源解码。
 
 ### D4. 保留负载、卸载与恢复
 
@@ -93,3 +93,7 @@ Antigravity 的 `credentialScope: host-keyring` 需要核对真实密钥环边�
 ## 本轮边界修订
 
 本变更涉及的核心与独立入口统一为 buildr-harness；buildr-harness-web 拥有完整唯一网页，buildr-harness-ui 退役。Development 在自己的 harness-ui 模块嵌套网页并准备工程上下文，不消费对话 React 组件。具体集成约束以同任务 extract-harness-web 的修订规范为准；不改变既有历史数据根、准确执行控制与独立发行批准边界。
+
+## 最终验收范围（2026-11-16）
+
+用户明确本机不能测 Windows，本轮不做 Windows 实机验证。当前技术交付按 macOS 已取得的两产品包消费与系统入口证据验收；其他平台适配和真实证据不纳入本次变更完成条件，不因归档获得支持或通过声明。公开发布、许可批准和未来 DSH 插件仍不在本次交付范围。

@@ -21,3 +21,7 @@
 
 ## Open Questions
 无。
+
+## 规范责任交接（2026-11-16）
+
+两个 `programmatic-agent-access` 需求（“独立程序凭据与最小授权”“可发现的当前能力”）已由 `split-buildr-harness-product` 唯一承接并在该变更中同步。交接以现有实现和最新主规范为依据，保留原先的执行归属、安全控制、凭据开关及真实能力发现承诺，按已确认的 Harness / Development 边界扩展；本变更不再重复写入这些条款，不删除主规范需求，也不撤销既有交付。本变更仍负责“可恢复的公共对话操作”；其中省略权限模式以当前“单步续聊”主规范及实现为准，start/send 默认 default，`/messages` 继承最近轮次，无最近模式时 default。

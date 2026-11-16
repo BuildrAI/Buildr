@@ -46,4 +46,4 @@ Node 最低要求仍为 `24.15.0`；原生程序管理、真实模型账号和�
 
 清楚的上下层边界允许未来独立提供 Harness 插件、只准备工程现场的 Development 插件，以及两者组合的插件。本轮只保证代码职责可区分，不声称已经实现或发行三套新插件；现有 dsh-plugin 服务仍独立。
 
-文件定位见[代码地图](../../code-map/harness-products.md)。具体承诺见[网页集成变更](../../../openspec/changes/archive/2026-11-16-extract-harness-web/proposal.md)、[核心变更](../../../openspec/changes/split-buildr-harness-product/proposal.md)和[发行变更](../../../openspec/changes/distribute-harness-products/proposal.md)。
+文件定位见[代码地图](../../code-map/harness-products.md)。具体承诺见[网页集成变更](../../../openspec/changes/archive/2026-11-16-extract-harness-web/proposal.md)、[核心变更](../../../openspec/changes/archive/2026-11-16-split-buildr-harness-product/proposal.md)和[发行变更](../../../openspec/changes/archive/2026-11-16-distribute-harness-products/proposal.md)。
