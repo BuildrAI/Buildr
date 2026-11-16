@@ -14,12 +14,14 @@ import type {
   ExecutorDescriptor,
   ExecutorEvent,
   ExecutorImage,
+  ExecutorInputReceipt,
   ExecutorItem,
   ExecutorNativeSource,
   ExecutorObservation,
   ExecutorOpenOptions,
   ExecutorRequest,
   ExecutorSendInput,
+  ExecutorSupplementInput,
   LoginObservation,
   PermissionMode,
 } from '../../contracts.ts';
@@ -86,10 +88,13 @@ const STOP_CANCEL_GRACE_MS = 1_200;
 const MAX_BACKGROUND_CONTINUATIONS = 8;
 const CONTINUATION_OUTPUT_LIMIT = 4_000;
 const CONTINUATION_PROMPT_LIMIT = 8_000;
+/** A steering prompt is held by the native turn until it ends; only an
+ * immediate ACP refusal can prove that this exact input was not admitted. */
+const SUPPLEMENT_ADMISSION_WINDOW_MS = 800;
 
 const capabilities: AgentCapabilities = {
   interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false },
-  supplement: false,
+  supplement: true,
   endQuestionWait: false,
   permissionModes: ['default', 'full-access'],
   text: true,
@@ -143,6 +148,27 @@ interface PendingTurnRequest {
   cancelValue(): unknown;
 }
 
+interface PromptOutcome {
+  stopReason: string;
+  finalText?: string;
+  backgroundActive?: boolean;
+  fromRpc: boolean;
+}
+
+/** Native steering replaces the prompt that owns the running turn: the previous
+ * `session/prompt` returns `end_turn` while the native turn keeps running. Only
+ * the current owner may settle the Buildr turn. */
+interface PromptOwner {
+  requestId: number;
+  admitted: boolean;
+  settled?: PromptOutcome;
+  error?: Error;
+  /** Resolves when this exact native prompt settles for any reason. A steer
+   * resolves the previous owner early; that is the native admission signal. */
+  settledWait: Promise<void>;
+  markSettled(): void;
+}
+
 interface TurnState {
   contextId: string;
   cwd: string;
@@ -163,6 +189,10 @@ interface TurnState {
   textSegment?: { id: string; kind: 'message' | 'thinking'; nativeId?: string };
   segmentCounter: number;
   lastMessage?: { id: string; superseded: boolean };
+  /** Current prompt owner and the deferred that settles the whole turn. A
+   * supplement replaces the owner without creating a new Buildr execution. */
+  promptOwner?: PromptOwner;
+  promptCompletion?: { resolve(outcome: PromptOutcome): void; reject(error: Error): void };
   pending: boolean;
   cancelRequested: boolean;
   stopConfirmed: boolean;
@@ -949,6 +979,118 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     await this.runPromptAttempt(turn, handle, promptParts);
   }
 
+  async supplement(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt> {
+    if (this.closedFlag) throw new ExecutorInputRejected('Antigravity 运行时已关闭。');
+    const parsed = parseReference(
+      String(input.contextRef.data?.native ?? ''),
+      PROVIDER,
+      input.cwd,
+      this.bindingIdentity,
+    );
+    if (parsed.nativeSessionId !== input.contextRef.id || !isValidAntigravityContextId(input.contextRef.id)) {
+      throw new ExecutorInputRejected('agent_context_binding_mismatch');
+    }
+    const turn = this.turns.get(input.contextRef.id);
+    if (!turn || turn.executionId !== input.executionRef.id) {
+      throw new ExecutorInputRejected('agent_supplement_stale: 原执行已变化，追加未发送；输入已保留。');
+    }
+    if (turn.backgroundWork) {
+      throw new ExecutorInputRejected('后台命令仍在运行，原生回合已结束；追加未发送，输入已保留。');
+    }
+    if (!turn.pending || !turn.promptCompletion || !turn.promptOwner || turn.promptOwner.settled || turn.promptOwner.error) {
+      throw new ExecutorInputRejected('当前执行已结束或尚不能接收新消息，追加未发送；输入已保留。');
+    }
+    if (turn.stopConfirmed || turn.cancelRequested) {
+      throw new ExecutorInputRejected('当前执行正在停止，追加未发送；输入已保留。');
+    }
+    if (turn.requests.size > 0) {
+      throw new ExecutorInputRejected('原执行仍有待回答的问题或授权，请先处理；追加内容已保留。');
+    }
+    const handle = this.coordinator.getConversationProcess(input.contextRef.id);
+    if (!handle || handle.client.transportClosed) {
+      throw new ExecutorInputRejected('Antigravity 会话进程未就绪，追加未发送；输入已保留。');
+    }
+    const completion = turn.promptCompletion;
+    const promptParts = await this.preparePromptParts(input.text, input.images, handle.handshake.image);
+    // Reading attachment files is asynchronous; never target a turn or prompt
+    // owner that was superseded while preparing this exact input.
+    if (
+      turn.executionId !== input.executionRef.id
+      || !turn.pending
+      || turn.backgroundWork
+      || turn.promptCompletion !== completion
+      || !turn.promptOwner
+      || turn.promptOwner.settled
+      || turn.promptOwner.error
+      || turn.stopConfirmed
+      || turn.cancelRequested
+      || turn.requests.size > 0
+      || handle.client.transportClosed
+    ) {
+      throw new ExecutorInputRejected('当前执行已变化，追加未发送；输入已保留。');
+    }
+    const dispatched = this.dispatchPrompt(turn, handle, promptParts, completion, { admitted: false });
+    // A steering prompt is held by the native turn until it ends. Only an
+    // immediate ACP refusal proves that this exact input was not admitted.
+    const early = await Promise.race([
+      dispatched.promise.then(
+        () => ({ kind: 'resolved' as const }),
+        (error: unknown) => ({ kind: 'rejected' as const, error }),
+      ),
+      dispatched.previous
+        ? dispatched.previous.settledWait.then(() => ({ kind: 'steered' as const }))
+        : new Promise<never>(() => {}),
+      new Promise<{ kind: 'pending' }>(resolve => {
+        const timer = setTimeout(() => resolve({ kind: 'pending' }), SUPPLEMENT_ADMISSION_WINDOW_MS);
+        timer.unref?.();
+      }),
+    ]);
+    if (early.kind === 'rejected') {
+      if (turn.promptOwner === dispatched.owner) turn.promptOwner = dispatched.previous;
+      const refusal = early.error as { acpCode?: unknown } | undefined;
+      if (typeof refusal?.acpCode !== 'number') {
+        // Transport/protocol loss proves neither admission nor refusal.
+        throw early.error instanceof Error ? early.error : new Error(String(early.error));
+      }
+      // The previous prompt may have ended naturally while the steer was refused.
+      if (dispatched.previous && turn.promptOwner === dispatched.previous) {
+        if (dispatched.previous.settled) completion.resolve(dispatched.previous.settled);
+        else if (dispatched.previous.error) completion.reject(dispatched.previous.error);
+      }
+      throw new ExecutorInputRejected(this.supplementRefusalMessage(early.error));
+    }
+    dispatched.owner.admitted = true;
+    const userItemId = `user:${randomUUID()}`;
+    appendAntigravitySessionRow(this.configRoot, input.contextRef.id, {
+      type: 'user',
+      id: userItemId,
+      clientRequestId: input.clientRequestId,
+      cwd: input.cwd,
+      text: input.text,
+      ...(input.images.length > 0
+        ? { content: input.images.map(img => ({ type: 'image', path: img.path, mimeType: img.mimeType })) }
+        : {}),
+    });
+    turn.items.set(userItemId, {
+      id: userItemId,
+      clientRequestId: input.clientRequestId,
+      kind: 'message',
+      role: 'user',
+      text: input.text,
+      executionId: turn.executionId,
+      status: 'completed',
+    });
+    return { executionRef: turn.executionRef, inputItemId: userItemId };
+  }
+
+  private supplementRefusalMessage(error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error ?? '');
+    if (/permission or question|waiting for/i.test(message)) {
+      return '原执行仍有待回答的问题或授权，请先处理；追加内容已保留。';
+    }
+    return 'Antigravity 拒绝了这条追加，输入已保留，可重试。';
+  }
+
   private async runPromptAttempt(
     turn: TurnState,
     handle: ConversationProcessHandle,
@@ -972,6 +1114,8 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     turn.markSettled = () => settledWait.resolve();
     turn.pending = true;
 
+    const promptCompletion = deferred<PromptOutcome>();
+    turn.promptCompletion = promptCompletion;
     let transportDisconnected = false;
     let ownerClosed = false;
     const fallbackCompletion = deferred<{ stopReason: string; finalText?: string; backgroundActive?: boolean }>();
@@ -1072,15 +1216,10 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     fallbackTimer.unref?.();
 
     try {
-      const rpcPromise = handle.client
-        .request('session/prompt', { sessionId: contextId, prompt: promptParts }, 0)
-        .then(res => ({
-          stopReason: typeof res?.stopReason === 'string' ? res.stopReason : 'end_turn',
-          fromRpc: true,
-        }));
+      this.dispatchPrompt(turn, handle, promptParts, promptCompletion, { admitted: true });
 
       const outcome = await Promise.race([
-        rpcPromise,
+        promptCompletion.promise,
         fallbackCompletion.promise.then(res => ({ ...res, fromRpc: false })),
       ]);
 
@@ -1218,9 +1357,58 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     } finally {
       if (fallbackTimer) clearInterval(fallbackTimer);
       if (fallbackGraceTimer) clearTimeout(fallbackGraceTimer);
+      if (turn.promptCompletion === promptCompletion) {
+        turn.promptCompletion = undefined;
+        turn.promptOwner = undefined;
+      }
       turn.pending = false;
       turn.markSettled();
     }
+  }
+
+  /** Send one `session/prompt` and make it the owner of this native turn.
+   * Native steering resolves the previous owner early, so only the current
+   * owner may settle the Buildr turn. */
+  private dispatchPrompt(
+    turn: TurnState,
+    handle: ConversationProcessHandle,
+    promptParts: Array<Record<string, unknown>>,
+    completion: { resolve(outcome: PromptOutcome): void; reject(error: Error): void },
+    options: { admitted: boolean },
+  ): { requestId: number; promise: Promise<unknown>; owner: PromptOwner; previous?: PromptOwner } {
+    const { requestId, promise } = handle.client.requestWithId(
+      'session/prompt',
+      { sessionId: turn.contextId, prompt: promptParts },
+      0,
+    );
+    const previous = turn.promptOwner;
+    const settledWait = deferred<void>();
+    const owner: PromptOwner = {
+      requestId,
+      admitted: options.admitted,
+      settledWait: settledWait.promise,
+      markSettled: () => settledWait.resolve(),
+    };
+    turn.promptOwner = owner;
+    promise.then(
+      res => {
+        const value = res as { stopReason?: unknown } | undefined;
+        owner.settled = {
+          stopReason: typeof value?.stopReason === 'string' ? value.stopReason : 'end_turn',
+          fromRpc: true,
+        };
+        owner.markSettled();
+        if (turn.promptOwner !== owner) return;
+        completion.resolve(owner.settled);
+      },
+      error => {
+        owner.error = error instanceof Error ? error : new Error(String(error));
+        owner.markSettled();
+        if (turn.promptOwner !== owner || !owner.admitted) return;
+        completion.reject(owner.error);
+      },
+    );
+    return { requestId, promise, owner, previous };
   }
 
   private clearBackgroundTracking(turn: TurnState): void {

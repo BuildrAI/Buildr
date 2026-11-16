@@ -807,6 +807,193 @@ test('3.5: approval excludes persistent grants, preserves request on invalid ans
   assert.deepEqual(elicitations[1]!.elicitation, { action: 'cancel' });
 });
 
+test('Antigravity accepts execution-time supplements and keeps the turn open until the last prompt ends', { timeout: 20_000 }, async t => {
+  const h = await createHarness(t, { autoAllow: true });
+  const rt = await h.openRuntime();
+  assert.equal(h.executor.descriptor!.capabilities.supplement, true);
+  assert.equal(rt.capabilities.supplement, true);
+  const ctx = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+
+  const events: ExecutorEvent[] = [];
+  let resolveAccepted!: (event: Extract<ExecutorEvent, { type: 'accepted' }>) => void;
+  const accepted = new Promise<Extract<ExecutorEvent, { type: 'accepted' }>>(resolve => {
+    resolveAccepted = resolve;
+  });
+  const sending = rt.send({
+    contextRef: ctx,
+    cwd: h.cwd,
+    text: '执行中追加测试 [STEERABLE]',
+    images: [],
+    clientRequestId: 'req-steer-main',
+    onEvent: ev => {
+      events.push(ev);
+      if (ev.type === 'accepted') resolveAccepted(ev);
+    },
+  });
+  const acceptedEvent = await accepted;
+
+  const firstReceipt = await rt.supplement!({
+    contextRef: ctx,
+    cwd: h.cwd,
+    executionRef: acceptedEvent.executionRef,
+    text: '追加一：改用方案 A',
+    images: [],
+    clientRequestId: 'req-steer-1',
+  });
+  assert.equal(firstReceipt.executionRef.id, acceptedEvent.executionRef.id);
+  assert.ok(firstReceipt.inputItemId);
+
+  const secondReceipt = await rt.supplement!({
+    contextRef: ctx,
+    cwd: h.cwd,
+    executionRef: acceptedEvent.executionRef,
+    text: '追加二：再补充验证',
+    images: [],
+    clientRequestId: 'req-steer-2',
+  });
+  assert.equal(secondReceipt.executionRef.id, acceptedEvent.executionRef.id);
+  assert.ok(secondReceipt.inputItemId);
+
+  // The native steering reply resolves the original session/prompt early with
+  // end_turn; that must not complete the Buildr turn.
+  assert.equal(events.some(ev => ev.type === 'completed'), false, 'steering must not complete the turn early');
+  await sending;
+
+  const completed = events.find((ev): ev is Extract<ExecutorEvent, { type: 'completed' }> => ev.type === 'completed');
+  assert.equal(completed?.status, 'completed');
+  const assistant = events
+    .filter((ev): ev is Extract<ExecutorEvent, { type: 'item' }> => ev.type === 'item' && ev.item.kind === 'message' && ev.item.role === 'assistant')
+    .at(-1);
+  assert.match(assistant?.item.text ?? '', /已接收追加：追加一：改用方案 A \/ 追加二：再补充验证/);
+
+  const history = await rt.readHistory({ contextRef: ctx, cwd: h.cwd });
+  assert.ok(history.some(item => item.role === 'user' && item.id === firstReceipt.inputItemId && item.clientRequestId === 'req-steer-1'));
+  assert.ok(history.some(item => item.role === 'user' && item.id === secondReceipt.inputItemId && item.clientRequestId === 'req-steer-2'));
+  assert.equal((await h.readFixtureJsonl('fixture-steers.jsonl')).length, 2);
+});
+
+test('Antigravity refuses a supplement while a native question or approval is pending', { timeout: 15_000 }, async t => {
+  const h = await createHarness(t, { autoAllow: false });
+  const rt = await h.openRuntime();
+  const ctx = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+
+  let acceptedEvent: Extract<ExecutorEvent, { type: 'accepted' }> | undefined;
+  let refusal: Promise<void> | undefined;
+  await rt.send({
+    contextRef: ctx,
+    cwd: h.cwd,
+    text: '执行中追加审批拒绝测试',
+    images: [],
+    clientRequestId: 'req-steer-pending',
+    onEvent: ev => {
+      if (ev.type === 'accepted') acceptedEvent = ev;
+      if (ev.type === 'request' && ev.request.kind === 'approval' && !refusal) {
+        refusal = (async () => {
+          assert.ok(acceptedEvent);
+          await assert.rejects(
+            () => rt.supplement!({
+              contextRef: ctx,
+              cwd: h.cwd,
+              executionRef: acceptedEvent!.executionRef,
+              text: '审批未处理时追加',
+              images: [],
+              clientRequestId: 'req-steer-refused',
+            }),
+            (error: unknown) => error instanceof ExecutorInputRejected && /问题或授权/.test(error.message),
+          );
+          await rt.reply({
+            contextRef: ctx,
+            executionRef: acceptedEvent!.executionRef,
+            requestId: ev.request.id,
+            answer: 'allow_once',
+          });
+        })();
+      }
+    },
+  });
+  await refusal;
+  assert.equal((await h.readFixtureJsonl('fixture-steers.jsonl')).length, 0, 'refused supplement must not reach the native prompt');
+});
+
+test('Antigravity keeps the original prompt owner when the native steer is refused', { timeout: 15_000 }, async t => {
+  const h = await createHarness(t, { scenario: 'steer-rejected', autoAllow: true });
+  const rt = await h.openRuntime();
+  const ctx = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+
+  const events: ExecutorEvent[] = [];
+  let acceptedEvent: Extract<ExecutorEvent, { type: 'accepted' }> | undefined;
+  const sending = rt.send({
+    contextRef: ctx,
+    cwd: h.cwd,
+    text: '原生拒绝追加测试 [STEERABLE]',
+    images: [],
+    clientRequestId: 'req-steer-refusal-main',
+    onEvent: ev => {
+      events.push(ev);
+      if (ev.type === 'accepted') acceptedEvent = ev;
+    },
+  });
+  while (!acceptedEvent) await new Promise(resolve => setTimeout(resolve, 10));
+
+  await assert.rejects(
+    () => rt.supplement!({
+      contextRef: ctx,
+      cwd: h.cwd,
+      executionRef: acceptedEvent!.executionRef,
+      text: '会被原生拒绝的追加',
+      images: [],
+      clientRequestId: 'req-steer-refused-native',
+    }),
+    (error: unknown) => error instanceof ExecutorInputRejected && /拒绝了这条追加/.test(error.message),
+  );
+  await sending;
+
+  const completed = events.find((ev): ev is Extract<ExecutorEvent, { type: 'completed' }> => ev.type === 'completed');
+  assert.equal(completed?.status, 'completed', 'refused steering must not break the original turn');
+  assert.equal((await h.readFixtureJsonl('fixture-steers.jsonl')).length, 0);
+});
+
+test('Antigravity stop after a supplement settles the steered turn without reporting completion', { timeout: 15_000 }, async t => {
+  const h = await createHarness(t, { autoAllow: true });
+  const rt = await h.openRuntime();
+  const ctx = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+
+  const events: ExecutorEvent[] = [];
+  let acceptedEvent: Extract<ExecutorEvent, { type: 'accepted' }> | undefined;
+  let resolveToolStarted!: () => void;
+  const toolStarted = new Promise<void>(resolve => {
+    resolveToolStarted = resolve;
+  });
+  const sending = rt.send({
+    contextRef: ctx,
+    cwd: h.cwd,
+    text: '长命令中追加后停止 [LONG_COMMAND]',
+    images: [],
+    clientRequestId: 'req-steer-stop',
+    onEvent: ev => {
+      events.push(ev);
+      if (ev.type === 'accepted') acceptedEvent = ev;
+      if (ev.type === 'item' && ev.item.kind === 'tool' && ev.item.status === 'running') resolveToolStarted();
+    },
+  });
+  await toolStarted;
+  assert.ok(acceptedEvent);
+
+  await rt.supplement!({
+    contextRef: ctx,
+    cwd: h.cwd,
+    executionRef: acceptedEvent!.executionRef,
+    text: '追加：准备停止',
+    images: [],
+    clientRequestId: 'req-steer-stop-input',
+  });
+  const stopped = await rt.stop({ contextRef: ctx, executionRef: acceptedEvent!.executionRef });
+  await sending;
+
+  assert.equal(stopped.status, 'stopped');
+  assert.equal(events.some(ev => ev.type === 'completed' && ev.status === 'completed'), false);
+});
+
 test('4.1 & 4.2: concurrent per-conversation stop isolation (including cancel timeout), disconnect recovery, cold readHistory deduplication & nativeContent bounds', async t => {
   const h = await createHarness(t, { autoAllow: true });
   const rt = await h.openRuntime();

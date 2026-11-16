@@ -215,6 +215,22 @@ let nextServerRequestId = 900;
 const pendingServerRequests = new Map();
 let activeAuthAttempt = undefined;
 let activePrompt = undefined;
+
+/** A steering prompt takes ownership of the running native turn: the previous
+ * request returns end_turn early while this turn keeps running. */
+function finishActivePrompt(payload) {
+  const turn = activePrompt;
+  if (!turn) return false;
+  activePrompt = undefined;
+  for (const steer of turn.steers ?? []) {
+    notify('session/update', {
+      sessionId: turn.sessionId,
+      update: { sessionUpdate: 'user_message_chunk', messageId: steer.id, content: { type: 'text', text: steer.text } },
+    });
+  }
+  result(turn.ownerId, payload);
+  return true;
+}
 let toolCounter = 0;
 
 function launchBrowserUrl(url) {
@@ -268,7 +284,29 @@ async function runPrompt(id, params) {
   const imageCount = parts.filter(part => part?.type === 'image').length;
   const activeScenario = scenario();
   const userMessageId = `user-msg-${randomUUID()}`;
-  const turnState = { id, sessionId, cancelled: false, children: [] };
+
+  if (activePrompt && activePrompt.sessionId === sessionId && !activePrompt.cancelled) {
+    const turn = activePrompt;
+    if (pendingServerRequests.size > 0) {
+      fail(id, -32000, 'the running prompt is waiting for a permission or question answer; answer it or send session/cancel, then send this prompt again');
+      return;
+    }
+    if (activeScenario === 'steer-rejected') {
+      fail(id, -32000, 'native steering refused');
+      return;
+    }
+    const priorOwner = turn.ownerId;
+    turn.ownerId = id;
+    turn.steers.push({ id: userMessageId, text });
+    session.messages.push({ id: userMessageId, role: 'user', text, imageCount });
+    writeSession(session);
+    appendTranscript(sessionId, { type: 'user', id: userMessageId, cwd: session.cwd, text, imageCount });
+    appendLog('fixture-steers.jsonl', { sessionId, text, userMessageId, priorOwner, owner: id });
+    result(priorOwner, { stopReason: 'end_turn' });
+    return;
+  }
+
+  const turnState = { id, ownerId: id, sessionId, cancelled: false, children: [], steers: [] };
   activePrompt = turnState;
 
   session.messages.push({ id: userMessageId, role: 'user', text, imageCount });
@@ -303,8 +341,7 @@ async function runPrompt(id, params) {
       finalText,
       backgroundActive: false,
     });
-    activePrompt = undefined;
-    result(id, {
+    finishActivePrompt({
       userMessageId,
       stopReason: 'end_turn',
       usage: { inputTokens: 950_000, outputTokens: 1_200, totalTokens: 951_200 },
@@ -371,8 +408,7 @@ async function runPrompt(id, params) {
         resolve(undefined);
       };
     });
-    activePrompt = undefined;
-    result(id, { stopReason: 'cancelled', usage: { inputTokens: 120, outputTokens: 30, totalTokens: 150 } });
+    finishActivePrompt({ stopReason: 'cancelled', usage: { inputTokens: 120, outputTokens: 30, totalTokens: 150 } });
     return;
   }
 
@@ -434,8 +470,7 @@ async function runPrompt(id, params) {
     });
     appendLog('fixture-elicitations.jsonl', { sessionId, elicitation });
     if (turnState.cancelled) {
-      activePrompt = undefined;
-      result(id, { stopReason: 'cancelled' });
+      finishActivePrompt({ stopReason: 'cancelled' });
       return;
     }
   }
@@ -486,8 +521,7 @@ async function runPrompt(id, params) {
     });
     appendLog('fixture-permissions.jsonl', { sessionId, toolCallId: tool1Id, decision });
     if (turnState.cancelled || decision?.cancelled || decision?.outcome?.outcome === 'cancelled') {
-      activePrompt = undefined;
-      result(id, { stopReason: 'cancelled' });
+      finishActivePrompt({ stopReason: 'cancelled' });
       return;
     }
     if (decision?.outcome?.optionId === 'reject_once') {
@@ -575,9 +609,17 @@ async function runPrompt(id, params) {
     });
   }
 
+  if (activeScenario === 'steerable' || text.includes('[STEERABLE]')) {
+    // Keep the native turn open long enough for the client to submit multiple
+    // steering prompts; each returns its own receipt after the admission window.
+    await new Promise(resolve => setTimeout(resolve, 2500));
+  }
+  const steerSummary = turnState.steers.length
+    ? `；已接收追加：${turnState.steers.map(steer => steer.text).join(' / ')}`
+    : '';
   const authoritativeFinal = activeScenario === 'truncated-final-stream'
     ? '部分回复，已由原生记录完整补齐。'
-    : `已完成处理：${text}${imageCount ? `（含 ${imageCount} 张图片）` : ''}`;
+    : `已完成处理：${text}${imageCount ? `（含 ${imageCount} 张图片）` : ''}${steerSummary}`;
   const streamedFinal = activeScenario === 'truncated-final-stream'
     ? '部分回复'
     : activeScenario === 'wholly-lost-final-stream'
@@ -679,8 +721,7 @@ async function runPrompt(id, params) {
         finalText: authoritativeFinal,
         backgroundActive: false,
       });
-      activePrompt = undefined;
-      result(id, {
+      finishActivePrompt({
         userMessageId,
         stopReason: 'end_turn',
         usage: { inputTokens: 950_000, outputTokens: 1_200, totalTokens: 951_200 },
@@ -688,11 +729,11 @@ async function runPrompt(id, params) {
     }, 350);
     return;
   }
-  activePrompt = undefined;
   if (activeScenario === 'missing-terminal-response') {
+    activePrompt = undefined;
     return;
   }
-  result(id, {
+  finishActivePrompt({
     userMessageId,
     stopReason,
     // High billing counters intentionally differ from context window usage_update (4096 / 1048576).
