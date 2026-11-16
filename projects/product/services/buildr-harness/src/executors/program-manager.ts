@@ -332,7 +332,7 @@ export class NativeProgramManager implements AgentProgramManager {
   async install(input: Parameters<AgentProgramManager['install']>[0]): Promise<string> {
     input.signal.throwIfAborted();
     nativeProgramPolicy(input.provider, this.policies);
-    const targetKey = `${input.provider}:${input.version ?? 'latest'}`;
+    const targetKey = `${input.provider}:${input.version ?? 'latest'}:${input.replaceExisting ? 'replace' : 'install'}`;
 
     while (true) {
       const existing = this.activePrepares.get(input.provider);
@@ -383,7 +383,7 @@ export class NativeProgramManager implements AgentProgramManager {
     };
 
     active.work = this.installExclusive(
-      { provider: input.provider, version: input.version, attemptToken },
+      { provider: input.provider, version: input.version, attemptToken, replaceExisting: input.replaceExisting === true },
       sharedController.signal,
       emitProgress,
     ).finally(() => {
@@ -462,7 +462,25 @@ export class NativeProgramManager implements AgentProgramManager {
     env: NodeJS.ProcessEnv,
     signal: AbortSignal,
     allowIndependentBinaryVersion = false,
+    replaceExisting = false,
   ): Promise<void> {
+    if (replaceExisting) {
+      const previous = `${destination}.previous-${randomUUID()}`;
+      let moved = false;
+      try {
+        await fs.rename(destination, previous);
+        moved = true;
+        await fs.rename(staging, destination);
+      } catch (error) {
+        if (moved) {
+          await fs.rm(destination, { recursive: true, force: true }).catch(() => {});
+          await fs.rename(previous, destination).catch(() => {});
+        }
+        throw error;
+      }
+      await fs.rm(previous, { recursive: true, force: true }).catch(() => {});
+      return;
+    }
     try {
       await fs.rename(staging, destination);
       return;
@@ -487,7 +505,7 @@ export class NativeProgramManager implements AgentProgramManager {
   }
 
   private async installExclusive(
-    input: { provider: string; version?: string; attemptToken: string },
+    input: { provider: string; version?: string; attemptToken: string; replaceExisting?: boolean },
     signal: AbortSignal,
     progress: (message: string) => void,
   ): Promise<string> {
@@ -496,6 +514,7 @@ export class NativeProgramManager implements AgentProgramManager {
     if (policy.distribution.kind === 'manifest') {
       return await this.installFromManifest(input, policy, policy.distribution, signal, progress);
     }
+    if (input.replaceExisting) fail('agent_install_replace_unsupported', '当前程序不支持重新安装以恢复身份。');
     return await this.installFromNpm(input, policy, policy.distribution, signal, progress);
   }
 
@@ -520,8 +539,24 @@ export class NativeProgramManager implements AgentProgramManager {
     fail('agent_install_existing_invalid', '已有受管程序需要检查；不会覆盖该目录。');
   }
 
+  /** A recovery reinstall may replace only the managed destination it already owns. */
+  private async assertReplaceableManagedDestination(provider: string, destination: string, executable: string): Promise<void> {
+    const destStat = await fs.lstat(destination);
+    const execStat = await fs.lstat(executable).catch(() => undefined);
+    if (destStat.isSymbolicLink() || !destStat.isDirectory() || !execStat?.isFile() || execStat.isSymbolicLink()) {
+      fail('agent_install_existing_invalid', '独立安装目录不能引用外部程序。');
+    }
+    if (!this.isManaged(provider, await fs.realpath(executable))) {
+      fail('agent_install_existing_invalid', '独立安装目录不能引用外部程序。');
+    }
+    const relative = path.relative(await fs.realpath(destination), await fs.realpath(executable));
+    if (!relative || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
+      fail('agent_install_existing_invalid', '独立安装目录不能引用安装目录外的文件。');
+    }
+  }
+
   private async installFromManifest(
-    input: { provider: string; version?: string; attemptToken: string },
+    input: { provider: string; version?: string; attemptToken: string; replaceExisting?: boolean },
     policy: NativeProgramPolicy,
     distribution: Extract<NativeProgramPolicy['distribution'], { kind: 'manifest' }>,
     signal: AbortSignal,
@@ -538,14 +573,17 @@ export class NativeProgramManager implements AgentProgramManager {
       }
       const existingDest = this.destination(input.provider, input.version);
       if (await fs.lstat(existingDest).then(() => true, () => false)) {
-        return await this.verifyExistingManagedManifest(
-          input.provider,
-          input.version,
-          existingDest,
-          path.join(existingDest, distribution.entry),
-          env,
-          signal,
-        );
+        if (!input.replaceExisting) {
+          return await this.verifyExistingManagedManifest(
+            input.provider,
+            input.version,
+            existingDest,
+            path.join(existingDest, distribution.entry),
+            env,
+            signal,
+          );
+        }
+        await this.assertReplaceableManagedDestination(input.provider, existingDest, path.join(existingDest, distribution.entry));
       }
     }
 
@@ -573,7 +611,10 @@ export class NativeProgramManager implements AgentProgramManager {
     const destination = this.destination(input.provider, releaseVersion);
     const executable = path.join(destination, distribution.entry);
     if (await fs.lstat(destination).then(() => true, () => false)) {
-      return await this.verifyExistingManagedManifest(input.provider, releaseVersion, destination, executable, env, signal);
+      if (!input.replaceExisting) {
+        return await this.verifyExistingManagedManifest(input.provider, releaseVersion, destination, executable, env, signal);
+      }
+      await this.assertReplaceableManagedDestination(input.provider, destination, executable);
     }
 
     signal.throwIfAborted();
@@ -638,9 +679,10 @@ export class NativeProgramManager implements AgentProgramManager {
         fail('agent_install_version_mismatch', '受管程序校验未通过，未启用该程序。');
       }
 
+      if (input.replaceExisting) await this.assertReplaceableManagedDestination(input.provider, destination, executable);
       await this.beforeAtomicSwitch?.({ provider: input.provider, version: releaseVersion, staging, destination });
       signal.throwIfAborted();
-      await this.commitStagedDestination(input.provider, staging, stagedExecutable, destination, executable, releaseVersion, env, signal, false);
+      await this.commitStagedDestination(input.provider, staging, stagedExecutable, destination, executable, releaseVersion, env, signal, false, input.replaceExisting === true);
       await this.retainPrepared(input.provider, releaseVersion, executable);
       return executable;
     } finally {

@@ -5,6 +5,9 @@ import type { NativeProgramPolicy } from '../program-policy.ts';
 
 const antigravityBinaryName = process.platform === 'win32' ? 'antigravity.exe' : 'antigravity';
 
+/** The managed child always runs with the program's own updater disabled. */
+export const antigravityManagedEnvironment = Object.freeze({ AGY_CLI_DISABLE_AUTO_UPDATE: '1' });
+
 async function ensurePrivateDirs(...directories: string[]): Promise<void> {
   for (const directory of directories) {
     if (!path.isAbsolute(directory)) throw new Error('agent_config_path_invalid');
@@ -15,6 +18,12 @@ async function ensurePrivateDirs(...directories: string[]): Promise<void> {
   }
 }
 
+/**
+ * `agy` 1.5.9 does not read an `autoUpdate` key from this settings file; its
+ * updater is controlled by the program's own switch, which Buildr passes as
+ * `AGY_CLI_DISABLE_AUTO_UPDATE` to every managed child. The settings entry is
+ * kept for older releases, but it alone did not prevent a self-update.
+ */
 export async function ensureAntigravityAutoUpdateDisabled(configRoot: string): Promise<string> {
   const home = path.join(configRoot, 'home');
   const temporary = path.join(configRoot, 'tmp');
@@ -57,7 +66,7 @@ export const antigravityProgramPolicy: NativeProgramPolicy = {
   names: process.platform === 'win32' ? ['antigravity.exe', 'agy.exe', 'agy.cmd'] : ['antigravity', 'agy'],
   url: 'https://antigravity.google/docs/getting-started?tab=cli',
   label: 'Antigravity 独立执行程序',
-  guidance: 'Buildr 会从 Google 官方发布清单准备独立的 Antigravity CLI（agy）并关闭自动更新，不执行环境改写或接管外部安装；用户个人全局设置、技能与 MCP 配置不在独立配置内生效。',
+  guidance: 'Buildr 会从 Google 官方发布清单准备独立的 Antigravity CLI（agy），以受管进程关闭更新器并观察程序文件身份；不执行环境改写或接管外部安装，用户个人全局设置、技能与 MCP 配置不在独立配置内生效。',
   managedOnly: true,
   prepareConnectionConfig: async configRoot => {
     await ensureAntigravityAutoUpdateDisabled(configRoot);

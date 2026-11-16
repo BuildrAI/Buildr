@@ -76,7 +76,7 @@ import {
   antigravityPermissionOptions,
   antigravityPermissionOutcome,
 } from './forms.ts';
-import { ensureAntigravityAutoUpdateDisabled } from './program.ts';
+import { antigravityManagedEnvironment, ensureAntigravityAutoUpdateDisabled } from './program.ts';
 import { antigravityStorage } from './storage.ts';
 
 const PROVIDER = 'antigravity';
@@ -348,7 +348,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       options.environment,
       home,
       temporary,
-      { SSH_CONNECTION: '1' },
+      { SSH_CONNECTION: '1', ...antigravityManagedEnvironment },
       options.cacheRoot,
       { credentialScope: 'host-keyring' },
     );

@@ -428,6 +428,8 @@ export interface ProgramUpdateView {
   managed?: boolean;
   upgrade?: ProgramUpgradeView;
   status: 'unchecked' | 'not-connected' | 'available' | 'latest' | 'ahead' | 'unknown' | 'stale';
+  /** Whether the bound managed file still matches the connection's recorded identity. */
+  identityState: 'consistent' | 'changed' | 'unobserved';
   versionKind: 'program' | 'package';
   packageName: string;
   updateUrl: string;
@@ -454,7 +456,7 @@ export interface ProgramCatalog {
 }
 export interface AgentProgramManager {
   discover(input: { provider: string; executable?: string; boundExecutable?: string; signal: AbortSignal }): Promise<ProgramCatalog>;
-  install(input: { provider: string; version?: string; attemptId?: string; signal: AbortSignal; progress(message: string): void }): Promise<string>;
+  install(input: { provider: string; version?: string; attemptId?: string; replaceExisting?: boolean; signal: AbortSignal; progress(message: string): void }): Promise<string>;
   isManaged?(provider: string, executable: string): boolean;
 }
 export type PreparationState = 'discovering' | 'selection-required' | 'installation-required' | 'installing' | 'connecting' | 'waiting-login' | 'ready' | 'failed' | 'cancelled';

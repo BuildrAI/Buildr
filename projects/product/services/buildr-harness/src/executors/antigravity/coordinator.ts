@@ -23,7 +23,7 @@ import {
 import { AntigravityAcpClient, type AntigravityAcpServerRequest } from './acp.ts';
 import { isValidAntigravityContextId } from './content.ts';
 import { createAntigravityOpenerShim, redactAuthUrl } from './opener-shim.ts';
-import { ensureAntigravityAutoUpdateDisabled } from './program.ts';
+import { antigravityManagedEnvironment, ensureAntigravityAutoUpdateDisabled } from './program.ts';
 
 export interface AntigravityHandshakeCapabilities {
   image: boolean;
@@ -369,7 +369,7 @@ export class AntigravityCoordinator {
       this.baseEnvironment,
       home,
       temporary,
-      extra,
+      { ...antigravityManagedEnvironment, ...extra },
       this.cacheRoot,
       { credentialScope: 'host-keyring' },
     );

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { gzipSync } from 'node:zlib';
-import { antigravityProgramPolicy, ensureAntigravityAutoUpdateDisabled } from '../../src/executors/antigravity/program.ts';
+import { antigravityManagedEnvironment, antigravityProgramPolicy, ensureAntigravityAutoUpdateDisabled } from '../../src/executors/antigravity/program.ts';
 import { executableIdentity, isolatedEnvironment } from '../../src/executors/native-process.ts';
 import { NativeProgramManager } from '../../src/executors/program-manager.ts';
 import { isCompatibleProgram, nativeProgramPolicies, resolveManifestPlatform } from '../../src/executors/program-policy.ts';
@@ -52,6 +52,7 @@ test('Task 2.1: Antigravity manifest program policy, autoUpdate:false private se
   assert.equal(antigravityProgramPolicy.compatibility, '1.x.x');
   assert.equal(antigravityProgramPolicy.managedOnly, true);
   assert.equal(antigravityProgramPolicy.versionDisplay, 'program');
+  assert.deepEqual(antigravityManagedEnvironment, { AGY_CLI_DISABLE_AUTO_UPDATE: '1' });
   assert.equal(isCompatibleProgram('antigravity', '1.5.8'), true);
   assert.equal(isCompatibleProgram('antigravity', '1.99.0-rc.1'), true);
   assert.equal(isCompatibleProgram('antigravity', '0.9.0'), false);
@@ -159,6 +160,57 @@ test('Task 2.1: Antigravity manifest program policy, autoUpdate:false private se
   assert.equal(rediscovered.candidates[0]?.compatible, true);
   const identityAfter = await executableIdentity(installedExe);
   assert.equal(identityAfter, identityBefore);
+});
+
+test('Task 2.2: recovery reinstall replaces only the managed destination; normal preparation keeps the existing directory', async t => {
+  const dir = makeTempDir(t);
+  const root = path.join(dir, 'agent-service');
+  const signal = AbortSignal.timeout(30_000);
+  const fixtureSource = fs.readFileSync(
+    path.resolve(import.meta.dirname, '../integration/executors/fixtures/antigravity-acp.mjs'),
+  );
+  const cliPayload = Buffer.concat([
+    Buffer.from(`#!${process.execPath}\n`, 'utf8'),
+    fixtureSource.subarray(fixtureSource.indexOf(0x0a) + 1),
+  ]);
+  const archive = buildSingleMemberTarGz('antigravity', cliPayload);
+  const archiveSha512 = createHash('sha512').update(archive).digest('hex');
+  const fetchImpl: typeof fetch = async input => {
+    const url = new URL(String(input));
+    if (url.hostname === 'antigravity-cli-auto-updater-974169037036.us-central1.run.app') {
+      return new Response(JSON.stringify({
+        version: '1.5.8',
+        url: 'https://storage.googleapis.com/antigravity-cli-releases/1.5.8/antigravity-darwin-arm64.tar.gz',
+        sha512: archiveSha512,
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.hostname === 'storage.googleapis.com') return new Response(new Uint8Array(archive), { status: 200 });
+    throw new Error(`unexpected host ${url.hostname}`);
+  };
+  const manager = new NativeProgramManager(root, { PATH: process.env.PATH ?? '' }, undefined, {
+    fetchImpl, platform: 'darwin', arch: 'arm64',
+  });
+  const installed = await manager.install({ provider: 'antigravity', attemptId: 'agy-recover-install-01', signal, progress: () => {} });
+  const preparedDigest = await executableIdentity(installed);
+  // The program's own updater renames the old binary and writes a new file.
+  fs.renameSync(installed, installed + '.old');
+  fs.writeFileSync(installed, fs.readFileSync(installed + '.old'), { mode: 0o755 });
+  fs.appendFileSync(installed, Buffer.from('\n// externally replaced'));
+  const changedDigest = await executableIdentity(installed);
+  assert.notEqual(changedDigest, preparedDigest);
+
+  // Normal preparation never replaces an existing managed directory.
+  const kept = await manager.install({ provider: 'antigravity', version: '1.5.8', attemptId: 'agy-recover-install-02', signal, progress: () => {} });
+  assert.equal(kept, installed);
+  assert.equal(await executableIdentity(installed), changedDigest);
+
+  const recovered = await manager.install({ provider: 'antigravity', version: '1.5.8', attemptId: 'agy-recover-install-03', replaceExisting: true, signal, progress: () => {} });
+  assert.equal(recovered, installed);
+  assert.notEqual(await executableIdentity(installed), changedDigest);
+  const catalog = await manager.discover({ provider: 'antigravity', boundExecutable: installed, signal });
+  assert.equal(catalog.candidates[0]?.version, '1.5.8');
+  assert.equal(catalog.candidates[0]?.compatible, true);
+  assert.equal(fs.readdirSync(path.dirname(installed)).some(name => name.includes('.previous-')), false);
 });
 
 test('Task 2.2: isolatedEnvironment preserves Linux host-keyring session variables only when credentialScope === "host-keyring" without leaking provider secrets', () => {

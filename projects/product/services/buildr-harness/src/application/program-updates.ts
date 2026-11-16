@@ -2,6 +2,7 @@ import { AgentServiceError } from '../domain/agent-state.ts';
 import type { AgentProgramManager, ConnectionView, ProgramUpdateView } from '../contracts.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../executors/program-policy.ts';
 import { readProgramRelease } from '../executors/program-release.ts';
+import { executableIdentity } from '../executors/native-process.ts';
 
 /** Observations only: never connects, installs or changes a binding. */
 export class ProgramUpdates {
@@ -12,9 +13,12 @@ export class ProgramUpdates {
   private programs: AgentProgramManager;
   private now: () => string;
   private release: typeof readProgramRelease;
+  private bindingDigest: (connectionId: string) => string | undefined;
   constructor(connections: () => ConnectionView[], programs: AgentProgramManager,
-    now = () => new Date().toISOString(), release = readProgramRelease) {
+    now = () => new Date().toISOString(), release = readProgramRelease,
+    bindingDigest: (connectionId: string) => string | undefined = () => undefined) {
     this.connections = connections; this.programs = programs; this.now = now; this.release = release;
+    this.bindingDigest = bindingDigest;
   }
   private empty(connection: ConnectionView): ProgramUpdateView {
     let policy: ReturnType<typeof nativeProgramPolicy> | undefined;
@@ -25,6 +29,7 @@ export class ProgramUpdates {
       : connection.provider;
     return { connectionId: connection.id, revision: connection.revision, label: connection.label,
       provider: connection.provider, executable: connection.executable, managed: Boolean(connection.executable && this.programs.isManaged?.(connection.provider, connection.executable)), status: connection.executable ? 'unchecked' : 'not-connected',
+      identityState: 'unobserved',
       versionKind,
       packageName,
       updateUrl: policy?.url ?? '',
@@ -56,9 +61,19 @@ export class ProgramUpdates {
     this.pending.set(key, task);
     return task;
   }
+  private async observeIdentity(connection: ConnectionView): Promise<ProgramUpdateView['identityState']> {
+    const expected = this.bindingDigest(connection.id);
+    if (!expected || !connection.executable) return 'unobserved';
+    try {
+      return await executableIdentity(connection.executable) === expected ? 'consistent' : 'changed';
+    } catch {
+      return 'unobserved';
+    }
+  }
   private async inspect(connection: ConnectionView): Promise<ProgramUpdateView> {
     const view = this.empty(connection);
     if (!connection.executable) return view;
+    view.identityState = await this.observeIdentity(connection);
     const controller = new AbortController(); this.controllers.add(controller);
     const timer = setTimeout(() => controller.abort(), 22_000); timer.unref();
     try {

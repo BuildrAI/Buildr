@@ -10,9 +10,10 @@ export function agentProgramView(program:Program, connection?:ConnectionView) {
   const completed=job?.state==='completed' && job.installedExecutable===program.executable && (!program.latestVersion || program.latestVersion===job.expectedVersion);
   const failure=Boolean(job && ['failed','interrupted'].includes(job.state));
   const prepared=connection?connection.enabled && Boolean(connection.configPath):Boolean(program.executable);
-  const updateLabel=pending?job!.state==='waiting'?'等待工作结束':job!.state==='restarting'?'正在重启':'正在下载':failure?'更新未完成':completed && program.status!=='latest'?'已更新':labels[program.status];
-  return {pending,completed,failure,prepared,updateLabel,
+  const identityChanged=program.identityState==='changed';
+  const updateLabel=pending?job!.state==='waiting'?'等待工作结束':job!.state==='restarting'?'正在重启':'正在下载':failure?'更新未完成':completed && program.status!=='latest'?'已更新':!completed && identityChanged?'程序文件已变化':labels[program.status];
+  return {pending,completed,failure,prepared,identityChanged,updateLabel,
     version:program.currentVersion ?? (completed?job?.currentVersion:undefined),
-    canUpdate:Boolean(program.latestVersion && program.executable && (program.status==='available' || program.status==='latest' && !program.managed)),
+    canUpdate:Boolean(program.latestVersion && program.executable && (program.status==='available' || identityChanged || program.status==='latest' && !program.managed)),
   };
 }

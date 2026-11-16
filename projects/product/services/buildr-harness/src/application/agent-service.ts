@@ -82,7 +82,10 @@ export function createAgentService(options: AgentServiceOptions) {
   );
   const connections = new ConnectionApplication({ repository, root, executors: executorList, environment: executorEnvironment(options.environment ?? process.env), nativeAccountConfigRoots, present: view => presentConnectionView?.(view) ?? view, generation, now, hasObservedAccount: id => connectionAccountObservers.has(id), observeAccount: (id: string) => { const accountId = connectionAccountObservers.get(id); return accountId ? observeConnectionViaModelAccount(id, accountId) : undefined; }, changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
   const programManager = options.programManager ?? new NativeProgramManager(root, executorEnvironment(options.environment ?? process.env));
-  const programUpdates = new ProgramUpdates(() => connections.list(), programManager, now, options.programRelease);
+  const programUpdates = new ProgramUpdates(() => connections.list(), programManager, now, options.programRelease, id => {
+    const digest = connections.bindingData(id)?.executableDigest;
+    return typeof digest === 'string' ? digest : undefined;
+  });
   const preparations = new PreparationApplication(connections, programManager, generation, now);
   const providerList = options.modelProviders ?? createDefaultModelProviders({ root, connections, programManager, readAccountIdentity: accountId => models.accounts.read(accountId).identity, now });
   const noBackgroundRefreshProviders = new Set<string>();

@@ -30,6 +30,12 @@ test('active upgrades and failures remain explicit without hiding the installed 
   }
   assert.equal(agentProgramView({...program,upgrade:{state:'failed'}}).updateLabel,'更新未完成');
 });
+test('a changed managed program identity offers recovery even when the version is latest',()=>{
+  const changed=agentProgramView({...program,identityState:'changed'},{enabled:true,configPath:'/private/config'});
+  assert.equal(changed.identityChanged,true);assert.equal(changed.canUpdate,true);assert.equal(changed.updateLabel,'程序文件已变化');
+  const consistent=agentProgramView({...program,identityState:'consistent'},{enabled:true,configPath:'/private/config'});
+  assert.equal(consistent.identityChanged,false);assert.equal(consistent.canUpdate,false);assert.equal(consistent.updateLabel,'已是最新');
+});
 test('conversation list uses shared product names, including Qoder CN',()=>{
   for(const [provider,label] of [['codex','Codex'],['dsh','DSH'],['qoder','Qoder'],['qoder-cn','Qoder CN']]){
     assert.equal(conversationMetadata({run:{provider}},'Buildr','Model'),`Buildr · ${label} · Model`);

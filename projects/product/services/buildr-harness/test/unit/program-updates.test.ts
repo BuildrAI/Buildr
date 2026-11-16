@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import { ProgramUpdates, compareVersions } from '../../src/application/program-updates.ts';
+import { executableIdentity } from '../../src/executors/native-process.ts';
 import type { AgentProgramManager, ConnectionView } from '../../src/contracts.ts';
 
 const connection = (id: string, executable: string | undefined = '/fixture/' + id): ConnectionView => ({
@@ -75,3 +79,33 @@ test('an unsupported executor is an independent unknown, not a failure of the wh
   const updates=new ProgramUpdates(()=>[connection('custom'),connection('codex')],manager(),undefined,async provider=>{if(provider==='custom')throw new Error('unsupported');return{latestVersion:'0.163.0',source:'https://registry.npmjs.org/'};});
   const values=(await updates.check()).programs;assert.equal(values[0]!.status,'unknown');assert.equal(values[1]!.status,'latest');
 });
+
+test('managed file identity is observed independently from the release version', async t => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agy-identity-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const executable = path.join(dir, 'antigravity');
+  fs.writeFileSync(executable, 'first', { mode: 0o755 });
+  const boundDigest = await executableIdentity(executable);
+  const view = connection('antigravity', executable);
+  const release = async () => ({ latestVersion: '1.5.9', source: 'https://example.invalid/' });
+  const updates = new ProgramUpdates(() => [view], manager('1.5.9'), undefined, release, () => boundDigest);
+
+  const consistent = (await updates.check()).programs[0]!;
+  assert.equal(consistent.status, 'latest');
+  assert.equal(consistent.identityState, 'consistent');
+
+  fs.writeFileSync(executable, 'second', { mode: 0o755 });
+  const changed = (await updates.check()).programs[0]!;
+  assert.equal(changed.status, 'latest');
+  assert.equal(changed.identityState, 'changed');
+
+  const unbound = new ProgramUpdates(() => [view], manager('1.5.9'), undefined, release, () => undefined);
+  assert.equal((await unbound.check()).programs[0]!.identityState, 'unobserved');
+
+  fs.rmSync(executable);
+  const missing = new ProgramUpdates(() => [view], manager('1.5.9'), undefined, release, () => boundDigest);
+  const missingValue = (await missing.check()).programs[0]!;
+  assert.equal(missingValue.identityState, 'unobserved');
+  assert.equal(missingValue.currentVersion, '1.5.9');
+});
+

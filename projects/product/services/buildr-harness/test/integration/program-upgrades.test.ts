@@ -8,7 +8,7 @@ import { ProgramUpdates } from '../../src/application/program-updates.ts';
 import { ProgramUpgrades } from '../../src/application/program-upgrades.ts';
 import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
 import { consumerBinding } from '../../src/executors/model-gateway.ts';
-import { opaqueReference, parseReference } from '../../src/executors/native-process.ts';
+import { executableIdentity, opaqueReference, parseReference } from '../../src/executors/native-process.ts';
 import type { AgentExecutor, AgentProgramManager, AgentRuntime } from '../../src/contracts.ts';
 
 async function fixture(t: TestContext) {
@@ -16,6 +16,8 @@ async function fixture(t: TestContext) {
   fs.mkdirSync(path.dirname(original),{recursive:true});fs.mkdirSync(path.dirname(installed),{recursive:true});fs.writeFileSync(original,'original');fs.writeFileSync(installed,'new');
   const capabilities={text:true,images:false,approval:false,questions:false,stop:true,resume:true,maxInputBytes:65536};
   let installs=0, sends=0, blocked=false, failure=false, latest='0.164.0', opened=0, closeFailure='', wrongIdentity=false;
+  let identityDigest:string|undefined;
+  const replaceFlags:boolean[]=[];
   const closed:string[]=[];
   const executor:AgentExecutor={descriptor:{id:'codex',label:'Codex',capabilities},async open(options){
     if(options.executable===installed&&failure)throw new Error('fixture_new_program_failed');
@@ -31,12 +33,12 @@ async function fixture(t: TestContext) {
   const repository=new ConversationRepository(root);
   const connections=new ConnectionApplication({root,repository,executors:[executor],environment:{},generation:'fixture',now:()=>new Date().toISOString(),changed:()=>{}});
   await connections.connect('codex',{expectedRevision:'unconfigured',executable:original});
-  const programs:AgentProgramManager={isManaged:(_,file)=>file===installed,async discover(input){const file=input.boundExecutable??input.executable!;return{candidates:[{executable:file,source:'configured',label:'fixture',version:file===installed?'0.164.0':'0.163.0',compatible:true}],installation:{label:'fixture',version:'0.163.0',url:'https://fixture.invalid',canInstall:false}};},async install(input){installs++;assert.equal(input.version,'0.164.0');input.signal.throwIfAborted();return installed;}};
-  const checks=new ProgramUpdates(()=>connections.list(),programs,undefined,async()=>({latestVersion:latest,source:'https://registry.npmjs.org/%40openai%2Fcodex/latest'}));
+  const programs:AgentProgramManager={isManaged:(_,file)=>file===installed,async discover(input){const file=input.boundExecutable??input.executable!;return{candidates:[{executable:file,source:'configured',label:'fixture',version:file===installed?'0.164.0':'0.163.0',compatible:true}],installation:{label:'fixture',version:'0.163.0',url:'https://fixture.invalid',canInstall:false}};},async install(input){installs++;replaceFlags.push(input.replaceExisting===true);assert.equal(input.version,'0.164.0');input.signal.throwIfAborted();return installed;}};
+  const checks=new ProgramUpdates(()=>connections.list(),programs,undefined,async()=>({latestVersion:latest,source:'https://registry.npmjs.org/%40openai%2Fcodex/latest'}),()=>identityDigest);
   const options={root,connections,programs,checks,release:async()=>!blocked,now:()=>new Date().toISOString()};
   const upgrades=new ProgramUpgrades(options);
   t.after(async()=>{await upgrades.close();await connections.close();fs.rmSync(root,{recursive:true,force:true});});
-  return{root,original,installed,connections,repository,checks,upgrades,options,begin:()=>upgrades.begin('codex',{expectedRevision:connections.get('codex').revision,expectedVersion:'0.164.0'}),get installs(){return installs;},get sends(){return sends;},get opened(){return opened;},closed,setCloseFailure:(value:string)=>{closeFailure=value;},setWrongIdentity:()=>{wrongIdentity=true;},setBlocked:(value:boolean)=>{blocked=value;},setFailure:(value:boolean)=>{failure=value;},setLatest:(value:string)=>{latest=value;}};
+  return{root,original,installed,connections,repository,checks,upgrades,options,begin:()=>upgrades.begin('codex',{expectedRevision:connections.get('codex').revision,expectedVersion:'0.164.0'}),get installs(){return installs;},get sends(){return sends;},get opened(){return opened;},closed,replaceFlags,setIdentityDigest:(value:string|undefined)=>{identityDigest=value;},setCloseFailure:(value:string)=>{closeFailure=value;},setWrongIdentity:()=>{wrongIdentity=true;},setBlocked:(value:boolean)=>{blocked=value;},setFailure:(value:boolean)=>{failure=value;},setLatest:(value:string)=>{latest=value;}};
 }
 async function settled(f:Awaited<ReturnType<typeof fixture>>,state:string){for(let n=0;n<400;n++){const value=f.upgrades.read('codex');if(value?.state===state)return value;await new Promise(resolve=>setTimeout(resolve,10));}assert.fail('upgrade did not settle: '+JSON.stringify(f.upgrades.read('codex')));}
 
@@ -101,4 +103,16 @@ test('unconfirmed candidate close blocks reuse instead of reopening the old writ
   f.begin();const result=await settled(f,'failed');assert.match(result.message,/新版程序退出未确认/);
   assert.equal(f.opened,before+1);assert.equal(f.connections.get('codex').executable,f.original);
   await assert.rejects(f.connections.runtime('codex'),{code:'agent_program_recovery_unconfirmed'});
+});
+
+test('same-version reinstall recovers a changed managed identity and stays rejected when the identity is consistent',async t=>{
+  const f=await fixture(t);
+  f.begin();await settled(f,'completed');assert.equal(f.connections.get('codex').executable,f.installed);
+  f.setIdentityDigest('stale-digest');
+  f.begin();const recovered=await settled(f,'completed');
+  assert.equal(recovered.state,'completed');assert.equal(f.replaceFlags.at(-1),true);
+  f.setIdentityDigest(await executableIdentity(f.installed));
+  const installsBefore=f.installs;
+  f.begin();const rejected=await settled(f,'failed');
+  assert.match(rejected.message,/目标版本不高于当前版本/);assert.equal(f.installs,installsBefore);
 });
