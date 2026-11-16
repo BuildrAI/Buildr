@@ -4,11 +4,12 @@ import {registerHooks} from 'node:module';
 
 const core = 'data:text/javascript,' + encodeURIComponent(`
 export let disconnects=0;
+export const enabledPorts=[];
 export const resolveHarnessProfile=()=>({productId:'buildr-harness',profile:'released',dataRoot:'/fixture/profile',domainIdentity:'fixture',entryIdentity:'fixture'});
 export const prepareAgentRuntimeAsync=async()=>{};
 export const activateAgentRuntime=async()=>{};
 export const connectHarnessProcess=async()=>({
-  web:{enable:async()=>({ready:true,origin:'http://127.0.0.1:123'}),login:async()=>({url:'http://127.0.0.1:123/#ticket=must-not-leak'})},
+  web:{status:async()=>({ready:false}),enable:async(input)=>{enabledPorts.push(input.port);return {ready:true,origin:'http://127.0.0.1:123'}},login:async()=>({url:'http://127.0.0.1:123/#ticket=must-not-leak'})},
   lifecycle:{identity:async()=>({runtime:{digest:'fixture'},instanceId:'fixture',generation:'fixture'})},
   disconnect:async()=>{disconnects++;}
 });`);
@@ -32,4 +33,12 @@ test('browser-open failures do not disclose the one-use login ticket and always 
     return true;
   });
   assert.equal((await import(core)).disconnects, 1);
+});
+
+test('CLI按profile使用固定端口且允许显式覆盖',async()=>{
+  const fixture=await import(core),start=fixture.enabledPorts.length;
+  await main(['web','--profile','development','--no-open']);
+  await main(['web','--profile','released','--no-open']);
+  await main(['web','--profile','development','--port','9520','--no-open']);
+  assert.deepEqual(fixture.enabledPorts.slice(start),[9519,9518,9520]);
 });

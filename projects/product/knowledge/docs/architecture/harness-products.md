@@ -47,3 +47,7 @@ Node 最低要求仍为 `24.15.0`；原生程序管理、真实模型账号和�
 清楚的上下层边界允许未来独立提供 Harness 插件、只准备工程现场的 Development 插件，以及两者组合的插件。本轮只保证代码职责可区分，不声称已经实现或发行三套新插件；现有 dsh-plugin 服务仍独立。
 
 文件定位见[代码地图](../../code-map/harness-products.md)。具体承诺见[网页集成变更](../../../openspec/changes/archive/2026-11-16-extract-harness-web/proposal.md)、[核心变更](../../../openspec/changes/archive/2026-11-16-split-buildr-harness-product/proposal.md)和[发行变更](../../../openspec/changes/archive/2026-11-16-distribute-harness-products/proposal.md)。
+
+## 独立网页端口
+
+独立 Harness CLI 和启动器默认按配置域使用固定端口：开发版 `9519`，发布版 `9518`；`web --port <端口>` 可显式覆盖。Development 自身的端口与入口保持不变。已有独立网页地址不同，启动命令通过第一方管理接口核对端点与代次后安全换绑；新端口被占用时保持原地址并报错，不抢占或停止Agent执行。换绑撤销旧页面登录，需从启动器重新打开；账号、历史和执行仍保留原数据域。旧地址下未发送草稿仍留在原浏览器origin，不自动搬迁。

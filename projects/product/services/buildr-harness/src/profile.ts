@@ -21,3 +21,10 @@ export function resolveHarnessProfile(identity:{productId:HarnessProductId;chann
   const domainIdentity=digest({profile,dataRoot});
   return Object.freeze({schemaVersion:'buildr.harness-profile/v1',...identity,profile,dataRoot,domainIdentity,entryIdentity:digest({...identity,domainIdentity}),overridden:!!(options.dataRoot||env.BUILDR_APP_DATA_DIR)});
 }
+
+/** 独立 Harness 网页端口，不参与 Development 宿主的端口选择。 */
+export function harnessWebPort(profile: 'released' | 'development', override?: number): number {
+  const port=override ?? (profile==='development'?9519:9518);
+  if(!Number.isInteger(port)||port<1||port>65535)throw new Error('网页端口无效。');
+  return port;
+}

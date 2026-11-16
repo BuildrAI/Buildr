@@ -56,6 +56,33 @@ export class HarnessWebEndpoint {
       throw new AgentServiceError('agent_web_not_ready',this.diagnostic,409);
     }
   }
+  rebind(input:{expectedEndpointId:string;expectedPort:number;expectedGeneration:string;port:number}):Promise<HarnessWebStatus>{
+    if(this.starting)return Promise.reject(new AgentServiceError('agent_web_endpoint_changed','网页正在交接，请重新观察。',409));
+    const state=this.sessions.read();
+    if(this.closed||!this.options.ownsListener()||input.expectedGeneration!==this.options.generation||state?.endpointId!==input.expectedEndpointId||state.port!==input.expectedPort||!this.status().ready)return Promise.reject(new AgentServiceError('agent_web_endpoint_changed','网页端点或协调代次已变化，未更换端口。',409));
+    if(!Number.isInteger(input.port)||input.port<1||input.port>65535)return Promise.reject(new AgentServiceError('agent_web_port_invalid','网页端口无效。',400));
+    if(input.port===input.expectedPort)return Promise.resolve(this.status());
+    this.starting=this.moveListener(input).finally(()=>{this.starting=undefined;});return this.starting;
+  }
+  private async moveListener(input:{expectedEndpointId:string;expectedPort:number;port:number}):Promise<HarnessWebStatus>{
+    const previous=this.server!;
+    const candidate=createServer((req,res)=>{void this.handle(req,res).catch(error=>this.error(res,error));});
+    candidate.requestTimeout=10*60*1000;candidate.headersTimeout=15000;
+    candidate.on('connection',socket=>{this.sockets.add(socket);socket.once('close',()=>this.sockets.delete(socket));});
+    try {
+      candidate.listen(input.port,'127.0.0.1');await once(candidate,'listening');
+      if(this.closed||!this.options.ownsListener())throw new AgentServiceError('agent_web_not_coordinator','网页监听期间协调身份已变化。',409);
+      this.sessions.rebind(this.identity,input);
+    }catch(error){
+      candidate.close();candidate.closeAllConnections();
+      if(error instanceof AgentServiceError)throw error;
+      throw new AgentServiceError('agent_web_not_ready',(error as {code?:string}).code==='EADDRINUSE'?'目标网页端口被占用，原地址和执行均保留。':'新网页监听未确认，原地址和执行均保留。',409);
+    }
+    this.server=candidate;this.origin=`http://127.0.0.1:${input.port}`;this.diagnostic=undefined;
+    candidate.on('error',()=>{this.diagnostic='网页监听异常，尚未恢复就绪。';candidate.close();});
+    previous.close();previous.closeAllConnections();
+    return this.status();
+  }
   async login():Promise<{url:string;expiresAt:number;endpointId:string}>{
     const status=await this.resume();if(!status.ready||!this.origin||!this.bundle)throw new AgentServiceError('agent_web_not_ready','独立网页尚未就绪。',503);
     const value=this.sessions.issue(this.origin,this.bundle);return {url:this.origin+'/#ticket='+value.ticket,expiresAt:value.expiresAt,endpointId:status.endpointId!};

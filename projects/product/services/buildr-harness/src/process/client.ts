@@ -135,7 +135,7 @@ export interface AgentProcessConnection {
   scopeCatalog(): Promise<{scopes: Array<{key: string; ref: ExecutionScopeRef; authority: 'builtin' | 'registered' | 'offline'}>}>;
   /** First-party local directory registration; never accepts a programmatic bearer token. */
   directories: { preview(input:{conversationId:string;path:string}):Promise<{kind:string;content:string;truncated:boolean}>; list(): Promise<import('../application/directory-host.ts').HarnessDirectory[]>; register(path: string): Promise<import('../application/directory-host.ts').HarnessDirectory> };
-  web:{restart(input:{expectedGeneration:string}):Promise<ReturnType<typeof import('../interfaces/http/runtime-status.ts').agentRuntimeStatus>>;status():Promise<import('./web-endpoint.ts').HarnessWebStatus>;enable(input?:{port?:number}):Promise<import('./web-endpoint.ts').HarnessWebStatus>;login():Promise<{url:string;expiresAt:number;endpointId:string}>};
+  web:{rebind(input:{expectedEndpointId:string;expectedPort:number;expectedGeneration:string;port:number}):Promise<import('./web-endpoint.ts').HarnessWebStatus>;restart(input:{expectedGeneration:string}):Promise<ReturnType<typeof import('../interfaces/http/runtime-status.ts').agentRuntimeStatus>>;status():Promise<import('./web-endpoint.ts').HarnessWebStatus>;enable(input?:{port?:number}):Promise<import('./web-endpoint.ts').HarnessWebStatus>;login():Promise<{url:string;expiresAt:number;endpointId:string}>};
   lifecycle: AgentLifecycleContract;
   /** Runtime unit this client ships; a different running unit is a version-alignment window. */
   runtime: AgentRuntimeUnit;
@@ -382,7 +382,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
     },
     async shutdown(value) { await call('/shutdown', value); },
   };
-  return { operations, lifecycle, web:{restart:input=>call('/web',{operation:'restart',...input}),status:()=>call('/web',{operation:'status'}),enable:(input={})=>call('/web',{operation:'enable',...input}),login:()=>call('/web',{operation:'login'})}, scopeCatalog: () => call('/scope-catalog', {}), sourcePolicy: {
+  return { operations, lifecycle, web:{rebind:input=>call('/web',{operation:'rebind',...input}),restart:input=>call('/web',{operation:'restart',...input}),status:()=>call('/web',{operation:'status'}),enable:(input={})=>call('/web',{operation:'enable',...input}),login:()=>call('/web',{operation:'login'})}, scopeCatalog: () => call('/scope-catalog', {}), sourcePolicy: {
     read: policySource => call('/source-policy', {operation: 'read', policySource}),
     configure: (policySource, value) => call('/source-policy', {operation: 'configure', policySource, ...value}),
   }, directories: {

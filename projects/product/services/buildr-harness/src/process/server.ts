@@ -233,6 +233,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       }
       if(input.operation==='enable'&&!runtimeSupportsHarnessWeb(options.runtime))throw new AgentServiceError('agent_web_runtime_incompatible','此负载未声明受支持的页面会话格式。',409);
       if(input.operation==='enable'&&Object.keys(input).every(key=>['operation','port'].includes(key))){json(res,200,await web.enable(input));return;}
+      if(input.operation==='rebind'&&Object.keys(input).every(key=>['operation','expectedEndpointId','expectedPort','expectedGeneration','port'].includes(key))){json(res,200,await web.rebind(input));return;}
       if(input.operation==='login'&&Object.keys(input).join()==='operation'){json(res,200,await web.login());return;}
       throw new AgentServiceError('agent_process_input_invalid','网页管理操作无效。');
     }

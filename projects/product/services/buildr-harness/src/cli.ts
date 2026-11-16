@@ -1,4 +1,5 @@
 import os from 'node:os';
+import {harnessWebPort} from './profile.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import {execFile} from 'node:child_process';
@@ -9,7 +10,7 @@ import {inspectDistributionEvidence} from './distribution-evidence.ts';
 const execute=promisify(execFile);
 export async function main(args:string[]){
   if(['--help','-h','help'].includes(args[0]??'')){
-    console.log('Buildr Harness\n用法：buildr-harness web|activate|launcher install|status|uninstall|distribution-check\n--profile released|development  --data-root <绝对目录>  --no-open\n普通 web 复用已有后台；activate 才显式采用候选。关闭或卸载入口不删除共享历史与账号。\nlauncher 使用 macOS .app 或 Windows .lnk；支持状态与许可需分别验收。\ndistribution-check --json 只读核对当前安装包，不授予发布或模型使用权。');
+    console.log('Buildr Harness\n用法：buildr-harness web|activate|launcher install|status|uninstall|distribution-check\n--profile released|development  --data-root <绝对目录>  --port <端口>  --no-open\n独立网页默认端口：development 9519，released 9518；Development入口不变。\n普通 web 复用已有后台；activate 才显式采用候选。关闭或卸载入口不删除共享历史与账号。\nlauncher 使用 macOS .app 或 Windows .lnk；支持状态与许可需分别验收。\ndistribution-check --json 只读核对当前安装包，不授予发布或模型使用权。');
     return;
   }
   if(args[0]==='--version'){
@@ -43,9 +44,14 @@ export async function main(args:string[]){
     if(result===undefined)throw new Error('用法：buildr-harness launcher install|status|uninstall [--target <应用路径>]');console.log(JSON.stringify(result));return;
   }
   if(command==='activate'){const runtime=await prepareAgentRuntimeAsync({dataRoot:domain.dataRoot});console.log(JSON.stringify(await activateAgentRuntime({dataRoot:domain.dataRoot,profileId:domain.profile,runtime})));return;}
+  const port=harnessWebPort(profile as 'released'|'development',flags.has('--port')?Number(flags.get('--port')):undefined);
   const connection=await connectHarnessProcess({dataRoot:domain.dataRoot,profileId:domain.profile,sourceId:'harness-local',caller:{kind:'first-party-user',product:'buildr-harness'}});
   try {
-    const ready=await connection.web.enable(flags.has('--port')?{port:Number(flags.get('--port'))}:{});
+    const current=await connection.web.status();
+    const currentPort=current.origin?Number(new URL(current.origin).port):undefined;
+    const ready=current.ready&&current.endpointId&&currentPort&&currentPort!==port
+      ?await connection.web.rebind({expectedEndpointId:current.endpointId,expectedPort:currentPort,expectedGeneration:current.generation,port})
+      :await connection.web.enable({port});
     if(!ready.ready)throw new Error('Harness 独立网页尚未就绪。');
     if(!flags.has('--no-open')&&process.env.BUILDR_LAUNCHER_NO_OPEN!=='1'){
       const login=await connection.web.login();

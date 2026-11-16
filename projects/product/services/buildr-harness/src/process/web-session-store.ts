@@ -39,6 +39,13 @@ export class HarnessWebSessions {
       state.port=port;state.listener={...identity,released:false};
     });
   }
+  rebind(identity:WebListenerIdentity,input:{expectedEndpointId:string;expectedPort:number;port:number}):void {
+    if(!Number.isInteger(input.port)||input.port<1||input.port>65535)fail('agent_web_port_invalid','网页端口无效。',400);
+    this.mutate(state=>{
+      if(state.endpointId!==input.expectedEndpointId||state.port!==input.expectedPort||state.listener?.instanceId!==identity.instanceId||state.listener.generation!==identity.generation||state.listener.released)fail('agent_web_endpoint_changed','网页端点已变化，未更换端口。');
+      state.port=input.port;state.tickets=[];state.sessions=[];
+    });
+  }
   released(identity:WebListenerIdentity):void {this.mutate(state=>{if(state.listener?.instanceId===identity.instanceId&&state.listener.generation===identity.generation)state.listener={...identity,released:true};});}
   cookieName():string {const state=this.read();if(!state?.port)fail('agent_web_not_ready','网页尚未就绪。',503);return 'buildr_harness_'+hash(state!.endpointId+':'+state!.port).slice(0,20);}
   issue(origin:string,bundle:string):{ticket:string;expiresAt:number} {

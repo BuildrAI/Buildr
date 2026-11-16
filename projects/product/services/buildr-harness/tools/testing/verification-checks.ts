@@ -8,7 +8,7 @@ const handoffTests = (...names: string[]) => names.map(name => `test/integration
 const recoveryTests = (...names: string[]) => names.map(name => `test/integration/process/recovery/${name}`);
 const integrationTests = (...names: string[]) => names.map(name => `test/integration/${name}`);
 const executorTests = (...names: string[]) => names.map(name => `test/integration/executors/${name}`);
-const harnessProductFiles = ['harness-product.test.ts', 'harness-protocol.test.ts', 'harness-web.test.ts'].map(name => `test/integration/process/startup/${name}`);
+const harnessProductFiles = ['harness-product.test.ts', 'harness-protocol.test.ts', 'harness-web.test.ts'].map(name => `test/integration/process/startup/${name}`).concat('test/integration/harness-web.test.ts');
 const storageRuntimeFiles = integrationTests(
   'component-sharing.test.ts',
   'conversation-storage.test.ts',
@@ -49,7 +49,7 @@ const modelsAccountsFiles = integrationTests(
   'qoder-upgrade-pair.test.ts',
   'shared-native-models.test.ts',
 );
-const excludedRootTests = new Set(['test/integration/conversations.test.ts', ...storageRuntimeFiles, ...modelsAccountsFiles]);
+const excludedRootTests = new Set(['test/integration/conversations.test.ts', ...storageRuntimeFiles, ...modelsAccountsFiles, ...harnessProductFiles]);
 const rootTests = fs.globSync('test/integration/*.test.ts', { cwd: root }).filter(file => !excludedRootTests.has(file)).sort();
 const nativeRuntimeFiles = executorTests(
   'antigravity.test.ts',
