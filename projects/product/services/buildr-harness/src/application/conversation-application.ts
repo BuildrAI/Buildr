@@ -2690,7 +2690,10 @@ export class ConversationApplication {
           const target = conversationRuns(record.view).find(value => value.id === run.id);
           if (target) {
             if (target.generation !== this.options.generation) this.retireQuestions(record,record.view.requests.filter(request=>request.runId===target.id));
-            if (attempt?.executionRef && observation?.executionRef?.id !== attempt.executionRef.id) {
+            // A run that never dispatched has no execution identity; an observation that still
+            // carries one describes an older execution and must not settle this new run.
+            const observationMatchesRun = attempt?.executionRef ? observation?.executionRef?.id === attempt.executionRef.id : !observation?.executionRef;
+            if (!observationMatchesRun) {
               const retiredGeneration = target.resourcesReleased === true && target.interrupted === true && target.diagnostic === RETIRED_EXECUTION_DIAGNOSTIC && target.generation !== this.options.generation && this.options.generationAlive?.(target.generation) !== true;
               if (!observation?.executionRef && (this.releasingRetired || retiredGeneration)) {
                 target.status = 'unknown';

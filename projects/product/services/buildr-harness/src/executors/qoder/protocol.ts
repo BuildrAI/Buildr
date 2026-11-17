@@ -7,6 +7,29 @@ export function qoderParentTool(message: any): { parentToolId?: string } {
   return typeof message?.parent_tool_use_id === 'string' && message.parent_tool_use_id ? { parentToolId: message.parent_tool_use_id } : {};
 }
 
+/** Resolve supplement delivery uncertainty against authoritative native evidence.
+ * A delivered user echo, or an input the native queue provably dropped (a confirmed
+ * cancelAsyncMessage removal, or a queue that died with its process), both end the
+ * unknown. Anything else stays protected so a possibly-delivered input is never
+ * silently double-sent. */
+export function reconcileUnknownSupplements(unknown: Iterable<string>, evidence: { delivered?: Iterable<string>; discarded?: Iterable<string> }): Set<string> {
+  const remaining = new Set(unknown);
+  for (const id of evidence.delivered ?? []) remaining.delete(id);
+  for (const id of evidence.discarded ?? []) remaining.delete(id);
+  return remaining;
+}
+
+/** Primary-thread user echo UUIDs in a native transcript: the proof an input reached the model. */
+export function qoderUserEchoIds(messages: Iterable<any>): Set<string> {
+  const ids = new Set<string>();
+  for (const message of messages) {
+    if (qoderParentTool(message).parentToolId || message?.type !== 'user' || typeof message.uuid !== 'string') continue;
+    const content = message.message?.content;
+    if (Array.isArray(content) && !content.some((part: any) => part.type === 'tool_result') && content.some((part: any) => part.type === 'image' || part.type === 'text' && part.text?.trim())) ids.add(message.uuid);
+  }
+  return ids;
+}
+
 /** Only native completion facts enrich the existing launch receipt. Never read or guess report files. */
 export function qoderTaskResult(previous: string | undefined, message: any): string | undefined {
   const summary = typeof message.summary === 'string' && message.summary.trim() ? message.summary : undefined;

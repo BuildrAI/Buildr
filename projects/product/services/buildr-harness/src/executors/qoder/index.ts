@@ -281,8 +281,10 @@ class QoderRuntime implements AgentRuntime {
         await Promise.race([this.rpc.call('send', { contextId: input.contextRef.id, cwd: input.cwd, text: input.text, images: input.images, model: input.model, reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode, clientRequestId: input.clientRequestId }, 24 * 60 * 60 * 1000), observationFailed]);
       } catch (error) {
         const code=error instanceof NativeRequestError?error.diagnostic:error instanceof Error?error.message:'';
-        if(['qoder_sdk_worker_removed','qoder_initialization_failed'].includes(code))throw new ExecutorInputRejected(code);
         if (error instanceof Error && error.message === 'agent_native_turn_active') this.executionHandlers.delete(input.clientRequestId);
+        // Admission guards (active turn / duplicate submission) reject before any native input is
+        // pushed; surface them as a clean rejection so the input is retained, not marked delivered.
+        if(['qoder_sdk_worker_removed','qoder_initialization_failed','agent_native_turn_active'].includes(code))throw new ExecutorInputRejected(code);
         if (this.closed) throw new NativeObservationError('qoder_execution_observation_lost', error, this.gateway ? [this.gateway.apiKey] : []);
         throw error;
       } finally {

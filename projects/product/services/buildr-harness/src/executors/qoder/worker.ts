@@ -14,7 +14,7 @@ import { bounded, closeOwnedProcess, visibleText, nativePreview } from '../nativ
 import * as embeddedSdk from '@qoder-ai/qoder-agent-sdk';
 let { query, qodercliAuth, ProcessTransport, getSessionInfo, getSessionMessages, InMemorySessionStore, importSessionToStore, forkSession } = embeddedSdk;
 let shutdownDaemon = embeddedSdk.shutdownDaemon;
-import { qoderHistoryItems, qoderHistoryPage, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation, qoderParentTool, qoderTaskResult, qoderTaskNotificationIds } from './protocol.ts';
+import { qoderHistoryItems, qoderHistoryPage, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation, qoderParentTool, qoderTaskResult, qoderTaskNotificationIds, reconcileUnknownSupplements, qoderUserEchoIds } from './protocol.ts';
 import { qoderBackgroundOutput } from './background-output.ts';
 import { qoderModel } from '../model-options.ts';
 import { resolvePermissionMode } from '../../domain/permission-mode.ts';
@@ -55,7 +55,8 @@ interface LiveQuery {
   echoed?: boolean;
   settling?: boolean;
   ambiguous?: boolean;
-  supplementUnknown?: boolean;
+  unknownSupplements: Set<string>;
+  discardedInputs: Set<string>;
   unownedTasks: Set<string>;
   continuationIds?: Set<string>;
   resolve(): void;
@@ -82,11 +83,33 @@ const fingerprint = (records: any[]) => createHash('sha256').update(JSON.stringi
 /** Terminal native task notifications; `killed` is what the CLI reports for a stopped command. */
 const terminalTaskStatuses = new Set(['completed', 'failed', 'stopped', 'killed']);
 const unresolvedTool = (tool: { status: string; taskPending?: boolean }) => Boolean(tool.taskPending) || tool.status !== 'completed';
-const protectedWork = (state: LiveQuery) => state.ambiguous || state.supplementUnknown || state.pending.size > 0 || state.inputAcks.size > 0 || [...state.tools.values()].some(unresolvedTool);
+const protectedWork = (state: LiveQuery) => state.ambiguous || state.unknownSupplements.size > 0 || state.pending.size > 0 || state.inputAcks.size > 0 || [...state.tools.values()].some(unresolvedTool);
 const canClose = (state: LiveQuery) => Boolean(state.terminal) && !protectedWork(state);
 const settled = (state: LiveQuery) => state.terminal === 'completed' && !state.stopping && canClose(state);
 function assertPrevious(contextId: string, previous?: LiveQuery): void {
   if (live.get(contextId) !== previous || previous && (previous.settling || !previous.terminal && !previous.nativeExited || protectedWork(previous))) throw new Error('agent_native_turn_active');
+}
+/** Only a native queue removal proves a queued input discarded; interrupt alone leaves it alive. */
+async function cancelUnknownSupplements(state: LiveQuery): Promise<void> {
+  await Promise.all([...state.unknownSupplements].map(async id => {
+    try {
+      if (await bounded(state.q.cancelAsyncMessage(id), 5000)) { state.discardedInputs.add(id); state.unknownSupplements.delete(id); }
+    } catch { /* No native proof of removal; keep protection. */ }
+  }));
+}
+/** Unknown supplements must always keep a settlement path. While the native process lives,
+ * only its queue removal proves discard; once it exited, the dead queue can never run and the
+ * on-disk transcript is the authority for delivery. */
+async function settlePreviousSupplements(previous: LiveQuery | undefined, cwd: string): Promise<void> {
+  if (!previous?.unknownSupplements.size) return;
+  if (previous.nativeExited) {
+    let delivered = new Set<string>();
+    try { delivered = qoderUserEchoIds((await transcript(previous.contextId, cwd)).messages); } catch { /* Missing or unreadable session: the dead queue proves nothing delivered. */ }
+    previous.discardedInputs = new Set([...previous.discardedInputs, ...reconcileUnknownSupplements(previous.unknownSupplements, { delivered })]);
+    previous.unknownSupplements = new Set();
+    return;
+  }
+  if (previous.terminal) await cancelUnknownSupplements(previous);
 }
 async function closeConversation(owner: ConversationQuery): Promise<void> {
   if (owner.closing) return owner.closing;
@@ -122,7 +145,7 @@ const emit = (state: LiveQuery, event: ExecutorEvent) => {
   stream.push(withExecutionFault(event));
 };
 const accepted = (state: LiveQuery) => { if (!state.accepted) { state.accepted = true; emit(state, { type: 'accepted', executionRef: { id: state.id }, inputItemId: state.id }); } };
-const observe = (state: LiveQuery): ExecutorObservation => ({ contextCompaction: state.terminal || state.ambiguous || state.nativeExited ? null : state.contextCompaction ?? null, status: state.ambiguous ? 'unknown' : state.pending.size ? 'waiting' : state.nativeExited && !state.terminal ? state.blockedOnExit || [...state.tools.values()].some(tool => unresolvedTool(tool) || tool.taskId) ? 'unknown' : 'stopped' : state.terminal ? [...state.tools.values()].some(tool => tool.status === 'running' || tool.taskPending && tool.status !== 'unknown') ? 'tools-active' : [...state.tools.values()].some(tool => tool.status === 'unknown') ? 'unknown' : state.terminal === 'stopped' ? 'stopped' : 'idle' : state.pending.size ? 'waiting' : 'running', executionRef: { id: state.id }, tools: [...state.tools.values()].map(({ taskId, taskPending, ...tool }) => ({ ...tool, status: tool.status === 'unknown' ? 'unknown' : taskPending ? 'running' : tool.status, canStop: Boolean(taskId) && Boolean(taskPending || tool.status === 'running') })), backgroundWork: state.unownedTasks.size > 0 || [...state.tools.values()].some(tool => Boolean(tool.taskId) && unresolvedTool(tool)), requests: [...state.pending.values()].map(pending => pending.request), ...(state.diagnostic ? { diagnostic: state.diagnostic } : {}) });
+const observe = (state: LiveQuery): ExecutorObservation => ({ contextCompaction: state.terminal || state.ambiguous || state.nativeExited ? null : state.contextCompaction ?? null, status: state.ambiguous ? 'unknown' : state.pending.size ? 'waiting' : state.nativeExited && !state.terminal ? state.blockedOnExit || state.unknownSupplements.size || [...state.tools.values()].some(tool => unresolvedTool(tool) || tool.taskId) ? 'unknown' : 'stopped' : state.terminal ? [...state.tools.values()].some(tool => tool.status === 'running' || tool.taskPending && tool.status !== 'unknown') ? 'tools-active' : [...state.tools.values()].some(tool => tool.status === 'unknown') ? 'unknown' : state.unknownSupplements.size ? 'unknown' : state.terminal === 'stopped' ? 'stopped' : 'idle' : state.pending.size ? 'waiting' : 'running', executionRef: { id: state.id }, tools: [...state.tools.values()].map(({ taskId, taskPending, ...tool }) => ({ ...tool, status: tool.status === 'unknown' ? 'unknown' : taskPending ? 'running' : tool.status, canStop: Boolean(taskId) && Boolean(taskPending || tool.status === 'running') })), backgroundWork: state.unownedTasks.size > 0 || [...state.tools.values()].some(tool => Boolean(tool.taskId) && unresolvedTool(tool)), requests: [...state.pending.values()].map(pending => pending.request), ...(state.diagnostic ? { diagnostic: state.diagnostic } : {}) });
 function gatewayPolicy(context: any, selected?: string, effort?: string) {
   const policy = qoderGatewayPolicy(gateway!, selected, effort);
   assertGatewayModel(context.availableModels);
@@ -277,6 +300,7 @@ async function checkAccount(owner: ConversationQuery, initialized?: any): Promis
 }
 async function execute(params: any, warmOnly = false): Promise<void> {
   const previous = live.get(params.contextId);
+  await settlePreviousSupplements(previous, params.cwd);
   assertPrevious(params.contextId, previous);
   const info = await getSessionInfo(params.contextId, { dir: params.cwd });
   if (info && (info.sessionId !== params.contextId || info.cwd && info.cwd !== params.cwd)) throw new Error('qoder_context_identity_mismatch');
@@ -288,7 +312,7 @@ async function execute(params: any, warmOnly = false): Promise<void> {
   if (owner && (!owner.prepared && !owner.reusable || owner.key !== key || owner.closing || owner.exited)) { await closeConversation(owner); owner = undefined; }
   let resolve!: () => void, reject!: (error: unknown) => void;
   const completion = new Promise<void>((yes, no) => { resolve = yes; reject = no; }); completion.catch(() => {});
-  const state: LiveQuery = { startedAt: Date.now(), id: params.clientRequestId, contextId: params.contextId, permissionMode, q: undefined, ...(warmOnly ? {} : { userText: params.text }), accepted: false, stopping: false, tools: new Map(), pending: new Map(), texts: new Map(), unownedTasks: new Set(), toolDetails: new Map(), completedMessages: new Set(), streamMessages: new Map(), inputAcks: new Map(), resolve, reject };
+  const state: LiveQuery = { startedAt: Date.now(), id: params.clientRequestId, contextId: params.contextId, permissionMode, q: undefined, ...(warmOnly ? {} : { userText: params.text }), accepted: false, stopping: false, tools: new Map(), pending: new Map(), texts: new Map(), unownedTasks: new Set(), unknownSupplements: new Set(), discardedInputs: new Set(), toolDetails: new Map(), completedMessages: new Set(), streamMessages: new Map(), inputAcks: new Map(), resolve, reject };
   const content = warmOnly ? [] : await workContent(params);
   if (owner) {
     // The caller has already re-read native history. An idle query must still prove its exact baseline.
@@ -358,8 +382,11 @@ async function endRound(owner: ConversationQuery, message: any): Promise<void> {
   if (state.stopping) { outcome.status = 'stopped'; outcome.diagnostic = undefined; }
   state.terminal = outcome.status; state.ambiguous = state.unownedTasks.size > 0;
   state.diagnostic = outcome.status === 'failed' || state.unownedTasks.size ? state.diagnostic ?? outcome.diagnostic : outcome.diagnostic;
-  for (const ack of state.inputAcks.values()) { state.supplementUnknown = true; ack.reject(new Error('agent_supplement_unknown')); }
+  const pendingAckIds = [...state.inputAcks.keys()];
+  for (const ack of state.inputAcks.values()) ack.reject(new Error('agent_supplement_unknown'));
   state.inputAcks.clear();
+  // Inputs the native interrupt discarded never reached the model; only the rest stay unknown.
+  state.unknownSupplements = reconcileUnknownSupplements([...state.unknownSupplements, ...pendingAckIds], { discarded: state.discardedInputs });
   for (const [id, pending] of state.pending) {
     if (state.terminal === 'completed' && pending.child) continue;
     pending.resolve({ behavior: 'deny', message: 'Execution ended.' }); emit(state, { type: 'request-resolved', requestId: id }); state.pending.delete(id);
@@ -518,6 +545,7 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
         if (primary && typeof message.uuid === 'string' && Array.isArray(content) && !content.some((part: any) => part.type === 'tool_result') && content.some((part: any) => part.type === 'image' || part.type === 'text' && part.text?.trim())) {
           if (message.uuid === state.id) { state.echoed = true; accepted(state); }
           state.inputAcks.get(message.uuid)?.resolve({ executionRef: { id: state.id }, inputItemId: message.uuid });
+          state.unknownSupplements.delete(message.uuid);
           emit(state, { type: 'item', item: { id: message.uuid, clientRequestId: message.uuid, kind: 'message', role: 'user', text: visibleText(content), executionId: state.id, status: 'completed' } });
         }
         for (const [index, part] of (Array.isArray(content) ? content.filter((part: any) => part.type === 'tool_result') : []).entries()) {
@@ -637,7 +665,7 @@ async function dispatch(method: string, params: any): Promise<any> {
     try {
       state.owner!.input.push({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, uuid: params.clientRequestId, session_id: state.contextId, priority: 'next', shouldQuery: false });
       return await bounded(received, 10000, 'agent_supplement_unknown');
-    } catch (error) { state.supplementUnknown = true; if (state.owner) state.owner.reusable = false; throw error; }
+    } catch (error) { state.unknownSupplements.add(params.clientRequestId); if (state.owner) state.owner.reusable = false; throw error; }
     finally { if (state.inputAcks.get(params.clientRequestId) === ack) state.inputAcks.delete(params.clientRequestId); }
   }
   if (method === 'unaccepted-release-check') {
@@ -680,6 +708,9 @@ async function dispatch(method: string, params: any): Promise<any> {
       const tasks=[...state.tools.values()].filter(tool=>tool.taskId&&unresolvedTool(tool));
       await Promise.all(tasks.map(async tool=>{try{await bounded(state.q.stopTask(tool.taskId!),5000);}catch{if(tool.status!=='completed')tool.status='unknown';}}));
       if (!state.terminal || state.ambiguous || state.pending.size) await bounded(state.q.interrupt(),5000);
+      // Interrupt leaves queued inputs alive by contract (still_queued survives); only a
+      // confirmed native queue removal resolves their delivery unknown.
+      await cancelUnknownSupplements(state);
     }
     return observe(state);
   }
