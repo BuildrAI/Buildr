@@ -20,7 +20,11 @@ function errorCode(error: unknown): string {
  * for a transient bookkeeping or observation failure. */
 function admissionMessage(error: unknown): string {
   if (error instanceof AgentServiceError) return error.message;
-  if (error instanceof ExecutorInputRejected) return '原执行已结束或暂不能接收追加消息；输入已保留，可继续对话。';
+  if (error instanceof ExecutorInputRejected) {
+    // Surface the executor's specific reason when it is a human message (Chinese
+    // per product convention); bare codes from other executors stay generic.
+    return /[一-鿿]/.test(error.message) ? error.message : '原执行已结束或暂不能接收追加消息；输入已保留，可继续对话。';
+  }
   return '未能核对原执行状态，这条追加尚未发送；输入已保留，可重试。';
 }
 

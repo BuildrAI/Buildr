@@ -35,29 +35,35 @@ export function readAntigravityCommandExits(configRoot: string, contextId: strin
   const file = path.join(configRoot, 'home', '.gemini', 'antigravity-cli', 'brain', contextId,
     '.system_generated', 'logs', 'transcript_full.jsonl');
   const rows = (readImmutableJsonlFile(file) ?? []).filter(row => Date.parse(row?.created_at) >= startedAt);
-  const tasks = new Map<string, string>();
+  const tasks = new Map<string, { command: string; createdAt: number }>();
   for (const row of rows) {
     if (row.source !== 'MODEL' || row.type !== 'GENERIC' || typeof row.content !== 'string') continue;
     const task = /^Tool is running as a background task with task id: (.+)\r?$/m.exec(row.content)?.[1];
     const description = /^Task Description: ([\s\S]+?)\r?\nTask logs are available at:/m.exec(row.content)?.[1];
-    if (task?.startsWith(contextId + '/') && /^task-\d+$/.test(task.slice(contextId.length + 1)) && description) tasks.set(task, description);
+    if (task?.startsWith(contextId + '/') && /^task-\d+$/.test(task.slice(contextId.length + 1)) && description) {
+      tasks.set(task, { command: description, createdAt: Date.parse(row.created_at) });
+    }
   }
-  const exits = new Map<string, { command: string; code: number; result: string }>();
+  // Every exit is kept, keyed by its exact native task id. Re-running the same
+  // command produces several tasks with an identical description; the caller
+  // attributes each exit to the tool that spawned it, so discarding non-unique
+  // descriptions here would permanently freeze those turns.
+  const exits = new Map<string, { task: string; command: string; code: number; result: string; taskCreatedAt: number }>();
   for (const row of rows) {
     if (row.source !== 'SYSTEM' || row.type !== 'SYSTEM_MESSAGE' || typeof row.content !== 'string') continue;
     const coded = /^\[Message\] timestamp=\S+ sender=(\S+) priority=\S+ content=Task id "([^"]+)" finished with result:\r?\nCommand exited with code (-?\d+)\./m.exec(row.content);
     if (coded && coded[1] === coded[2]) {
-      const command = tasks.get(coded[1]!);
-      if (command) exits.set(coded[1]!, { command, code: Number(coded[3]), result: row.content.slice(coded.index + coded[0].lastIndexOf('Command exited')).split('\n</SYSTEM_MESSAGE>')[0]!.trim() });
+      const info = tasks.get(coded[1]!);
+      if (info) exits.set(coded[1]!, { task: coded[1]!, command: info.command, code: Number(coded[3]), result: row.content.slice(coded.index + coded[0].lastIndexOf('Command exited')).split('\n</SYSTEM_MESSAGE>')[0]!.trim(), taskCreatedAt: info.createdAt });
       continue;
     }
     // A finished background task can omit the exit code when native output is truncated.
     const finished = /^\[Message\] timestamp=\S+ sender=(\S+) priority=\S+ content=Task id "([^"]+)" finished with result:\r?\n([\s\S]*)$/m.exec(row.content);
     if (!finished || finished[1] !== finished[2]) continue;
-    const command = tasks.get(finished[1]!);
-    if (command) exits.set(finished[1]!, { command, code: 0, result: (finished[3] ?? '').split('\n</SYSTEM_MESSAGE>')[0]!.trim() });
+    const info = tasks.get(finished[1]!);
+    if (info) exits.set(finished[1]!, { task: finished[1]!, command: info.command, code: 0, result: (finished[3] ?? '').split('\n</SYSTEM_MESSAGE>')[0]!.trim(), taskCreatedAt: info.createdAt });
   }
-  return [...exits.values()].filter(exit => [...tasks.values()].filter(command => command === exit.command).length === 1);
+  return [...exits.values()];
 }
 
 export function appendAntigravitySessionRow(

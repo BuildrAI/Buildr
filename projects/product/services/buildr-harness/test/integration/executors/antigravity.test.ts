@@ -711,6 +711,31 @@ test('Antigravity correlates a system exit receipt with the original command and
   assert.equal((await rt.observe({ contextRef })).status, 'idle');
 });
 
+test('Antigravity completes both runs when the identical command is re-run in a turn', { timeout: 15_000 }, async t => {
+  const h = await createHarness(t, { scenario: 'background-rerun-exit', autoAllow: true });
+  const rt = await h.openRuntime();
+  const contextRef = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+  const events: ExecutorEvent[] = [];
+  const finished = Promise.withResolvers<void>();
+  await rt.send({ contextRef, cwd: h.cwd, text: '重复命令退出', images: [], clientRequestId: 'rerun-exit',
+    onEvent: event => { events.push(event); if (event.type === 'completed') finished.resolve(); },
+  });
+  const active = await rt.observe({ contextRef });
+  const running = active.tools.filter(tool => tool.status === 'running');
+  assert.ok(active.backgroundWork);
+  assert.equal(running.length, 2, 'both identical command runs stay running until their own exit');
+  await finished.promise;
+  const ended = await rt.observe({ contextRef });
+  assert.equal(ended.status, 'idle');
+  assert.equal(ended.backgroundWork, false);
+  for (const tool of running) {
+    assert.equal(ended.tools.find(item => item.id === tool.id)?.status, 'completed', `tool ${tool.id} must complete`);
+    assert.ok(events.some(event => event.type === 'item' && event.item.id === tool.id
+      && event.item.status === 'completed' && event.item.text.includes('exited with code 0')));
+  }
+  assert.equal(events.filter(event => event.type === 'completed').length, 1);
+});
+
 test('3.5: approval excludes persistent grants, preserves request on invalid answer, and full-access still waits on business questions', async t => {
   const h = await createHarness(t, { scenario: 'include-persistent-option', autoAllow: false });
   const rt = await h.openRuntime();

@@ -38,7 +38,7 @@ test('truncated background finish without an exit code completes the command', t
     },
   ]);
   assert.deepEqual(readAntigravityCommandExits(root, contextId, Date.parse('2026-11-15T04:00:00.000Z')), [
-    { command, code: 0, result: "The tool's output was truncated due to being too long." },
+    { task, command, code: 0, result: "The tool's output was truncated due to being too long.", taskCreatedAt: Date.parse('2026-11-15T04:06:48.000Z') },
   ]);
 });
 
@@ -58,4 +58,34 @@ test('an explicit native exit code is still reported', t => {
   assert.equal(exits[0]!.command, 'npm test');
   assert.equal(exits[0]!.code, 7);
   assert.match(exits[0]!.result, /^Command exited with code 7\./);
+});
+
+test('re-running the same command keeps both exits, attributed by task id and creation time', t => {
+  const command = 'cd worktree && ./tools/development/run-development-node test/verification/cli.ts e2e --check harness-frame-browser';
+  const first = `${contextId}/task-476`;
+  const second = `${contextId}/task-506`;
+  const firstCreated = '2026-11-15T04:52:05.000Z';
+  const secondCreated = '2026-11-15T04:55:42.000Z';
+  const taskRowAt = (task: string, created: string) => ({
+    created_at: created, source: 'MODEL', type: 'GENERIC',
+    content: `Tool is running as a background task with task id: ${task}\nTask Description: ${command}\nTask logs are available at: file:///fixture/task.log`,
+  });
+  const exitRow = (task: string, created: string, code: number) => ({
+    created_at: created, source: 'SYSTEM', type: 'SYSTEM_MESSAGE',
+    content: `[Message] timestamp=${created} sender=${task} priority=HIGH content=Task id "${task}" finished with result:\nCommand exited with code ${code}.\nCommand output: fixture`,
+  });
+  // The second run finishes first in the transcript; both exits must survive.
+  const root = writeTranscript(t, [
+    taskRowAt(first, firstCreated),
+    taskRowAt(second, secondCreated),
+    exitRow(second, '2026-11-15T04:56:40.000Z', 0),
+    exitRow(first, '2026-11-15T04:53:32.000Z', 0),
+  ]);
+  const exits = readAntigravityCommandExits(root, contextId, Date.parse('2026-11-15T04:00:00.000Z'));
+  assert.equal(exits.length, 2);
+  const byTask = new Map(exits.map(exit => [exit.task, exit]));
+  assert.equal(byTask.get(first)!.taskCreatedAt, Date.parse(firstCreated));
+  assert.equal(byTask.get(second)!.taskCreatedAt, Date.parse(secondCreated));
+  assert.equal(byTask.get(first)!.command, command);
+  assert.equal(byTask.get(second)!.command, command);
 });

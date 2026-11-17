@@ -687,6 +687,7 @@ async function runPrompt(id, params) {
   // Tool 2: edit with diff OR execute command
   const tool2Id = `call-${++toolCounter}`;
   const isDiff = activeScenario === 'diff-tool' || text.includes('[DIFF_TOOL]');
+  const tool2StartedAt = Date.now();
   notify('session/update', {
     sessionId,
     update: {
@@ -700,7 +701,7 @@ async function runPrompt(id, params) {
     },
   });
   const tool2Text = isDiff ? '--- a/src/index.ts\n+++ b/src/index.ts\n@@ -1 +1 @@\n-old\n+new' : 'PASS all checks (12 tests)';
-  if (!['unsettled-tool', 'late-command-result', 'continuation-fails', 'native-background-continuation', 'background-transcript-exit'].includes(activeScenario) && !text.includes('[UNSETTLED_TOOL]')) {
+  if (!['unsettled-tool', 'late-command-result', 'continuation-fails', 'native-background-continuation', 'background-transcript-exit', 'background-rerun-exit'].includes(activeScenario) && !text.includes('[UNSETTLED_TOOL]')) {
     notify('session/update', {
       sessionId,
       update: {
@@ -731,6 +732,33 @@ async function runPrompt(id, params) {
       name: isDiff ? 'file-change' : 'command',
       input: isDiff ? { path: 'src/index.ts' } : { command: 'npm test', path: 'package.json' },
       status: 'running',
+    });
+  }
+
+  // A re-run of the identical command in the same turn: a second running command
+  // tool with the same CommandLine, spaced so its background task is created
+  // after the first tool started. Both exits must complete their own tool.
+  let tool3Id = '';
+  let tool3StartedAt = 0;
+  if (activeScenario === 'background-rerun-exit') {
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    tool3Id = `call-${++toolCounter}`;
+    tool3StartedAt = Date.now();
+    notify('session/update', {
+      sessionId,
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: tool3Id,
+        title: 'Run unit check again',
+        kind: 'execute',
+        rawInput: { CommandLine: 'npm test' },
+        locations: [{ path: 'package.json' }],
+        status: 'in_progress',
+      },
+    });
+    appendTranscript(sessionId, {
+      type: 'tool_call', toolCallId: tool3Id, cwd: session.cwd, kind: 'execute', name: 'command',
+      input: { command: 'npm test', path: 'package.json' }, status: 'running',
     });
   }
 
@@ -801,6 +829,21 @@ async function runPrompt(id, params) {
     writeRow({ source: 'MODEL', type: 'PLANNER_RESPONSE', content: `[Message] timestamp=test sender=${task} priority=HIGH content=Task id "${task}" finished with result:\nCommand exited with code 0.` });
     setTimeout(() => writeRow({ source: 'SYSTEM', type: 'SYSTEM_MESSAGE',
       content: `[Message] timestamp=test sender=${task} priority=HIGH content=Task id "${task}" finished with result:\nCommand exited with code 7.\nCommand output: fixture failure` }), 250);
+  }
+  if (activeScenario === 'background-rerun-exit') {
+    const file = join(cliRoot, 'brain', sessionId, '.system_generated', 'logs', 'transcript_full.jsonl');
+    mkdirSync(dirname(file), { recursive: true });
+    const first = sessionId + '/task-476';
+    const second = sessionId + '/task-506';
+    const writeRow = (row, created) => writeFileSync(file, JSON.stringify({ created_at: new Date(created).toISOString(), ...row }) + '\n', { flag: 'a' });
+    const taskRow = task => ({ source: 'MODEL', type: 'GENERIC', content: `Created At: test\nTool is running as a background task with task id: ${task}\nTask Description: npm test\nTask logs are available at: file:///fixture/task.log` });
+    // Native brain timestamps are second-granular, recorded at the tool's start
+    // second; the two runs are spaced so their task seconds differ.
+    writeRow(taskRow(first), Math.floor(tool2StartedAt / 1000) * 1000);
+    writeRow(taskRow(second), Math.floor(tool3StartedAt / 1000) * 1000);
+    const exitRow = task => ({ source: 'SYSTEM', type: 'SYSTEM_MESSAGE', content: `[Message] timestamp=test sender=${task} priority=HIGH content=Task id "${task}" finished with result:\nCommand exited with code 0.\nCommand output: fixture ok` });
+    // The second run's exit lands first; attribution must still follow task id.
+    setTimeout(() => { writeRow(exitRow(second), Date.now()); writeRow(exitRow(first), Date.now()); }, 250);
   }
   if (activeScenario === 'late-command-result' || activeScenario === 'continuation-fails') {
     setTimeout(() => {

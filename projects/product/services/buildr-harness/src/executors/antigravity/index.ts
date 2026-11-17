@@ -188,6 +188,9 @@ interface TurnState {
   backgroundWork: boolean;
   startedAt: number;
   commandInputs: Map<string, string>;
+  /** First-seen time of each command tool, used to attribute a background exit
+   * to the tool that spawned it when the same command text runs more than once. */
+  commandStartedAt: Map<string, number>;
   continuations: number;
   backgroundTimer?: ReturnType<typeof setInterval>;
   textSegment?: { id: string; kind: 'message' | 'thinking'; nativeId?: string };
@@ -937,6 +940,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       backgroundWork: false,
       startedAt: Math.floor(Date.now() / 1000) * 1000,
       commandInputs: new Map(),
+      commandStartedAt: new Map(),
       continuations: 0,
       segmentCounter: 0,
       pending: true,
@@ -1426,10 +1430,17 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     if (!turn.backgroundWork || turn.cancelRequested || this.closedFlag) return;
     const completed: Array<{ command: string; code: number; result: string }> = [];
     for (const exit of readAntigravityCommandExits(this.configRoot, turn.contextId, turn.startedAt)) {
-      const matches = [...turn.commandInputs].filter(([, command]) => command === exit.command);
-      if (matches.length !== 1) continue;
-      const [id] = matches[0]!;
-      if (turn.tools.get(id)?.status !== 'running') continue;
+      // The same command text may run more than once in a turn. Attribute each
+      // exit to the still-running tool that spawned its task: the latest tool
+      // start at or before the task's creation time. The time guard also keeps
+      // an earlier task's exit from completing a later re-run of the command.
+      // Native task timestamps are second-granular, so allow one second of slack
+      // for a tool processed later in the same second its task was recorded.
+      const candidates = [...turn.commandInputs]
+        .filter(([id, command]) => command === exit.command && turn.tools.get(id)?.status === 'running')
+        .filter(([id]) => { const start = turn.commandStartedAt.get(id); return start === undefined || start <= exit.taskCreatedAt + 1000; });
+      if (candidates.length === 0) continue;
+      const [id] = candidates.reduce((a, b) => (turn.commandStartedAt.get(a[0]) ?? 0) >= (turn.commandStartedAt.get(b[0]) ?? 0) ? a : b);
       this.handleTurnUpdate(turn, handle, {
         sessionUpdate: 'tool_call_update', toolCallId: id, status: exit.code === 0 ? 'completed' : 'failed',
         content: [{ type: 'content', content: { type: 'text', text: exit.result } }],
@@ -1596,7 +1607,10 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       const mergedInput = mergeAntigravityToolInput(update.rawInput, update.locations, priorItem?.input);
 
       const commandLine = mergedInput.objectInput?.CommandLine;
-      if (name === 'command' && typeof commandLine === 'string') turn.commandInputs.set(toolId, commandLine);
+      if (name === 'command' && typeof commandLine === 'string') {
+        turn.commandInputs.set(toolId, commandLine);
+        if (!turn.commandStartedAt.has(toolId)) turn.commandStartedAt.set(toolId, Date.now());
+      }
 
       const rawStatus = typeof update.status === 'string' ? update.status.toLowerCase() : '';
       let itemStatus: NonNullable<ExecutorItem['status']>;

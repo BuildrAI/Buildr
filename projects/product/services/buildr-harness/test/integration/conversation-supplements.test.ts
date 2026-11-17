@@ -10,7 +10,7 @@ import { createAgentService, ExecutorInputRejected, type AgentExecutor, type Age
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=', 'base64');
 function gate() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; }
 async function wait(read: () => boolean) { for (let i = 0; i < 400; i++) { if (read()) return; await new Promise(resolve => setTimeout(resolve, 2)); } assert.fail('state did not settle'); }
-async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: 'rejected' | 'unknown'; supported?: boolean; provider?: string; historyReceipt?: boolean; historyClientId?: string; beforeObserve?: Promise<void>; observeError?: string; endOnReject?: boolean; persistedReceipt?: boolean } = {}) {
+async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: 'rejected' | 'unknown'; supported?: boolean; provider?: string; historyReceipt?: boolean; historyClientId?: string; beforeObserve?: Promise<void>; observeError?: string; endOnReject?: boolean; persistedReceipt?: boolean; rejectMessage?: string } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-supplement-')), ending = gate();
   const calls: ExecutorSupplementInput[] = [], items: ExecutorItem[] = []; let emit: (event: ExecutorEvent) => void = () => {};
   let observation: ExecutorObservation = { status: 'idle', tools: [] };
@@ -27,7 +27,7 @@ async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: '
     },
     async supplement(input) {
       calls.push(input); await options.beforeSupplement;
-      if (options.delivery === 'rejected') { if(options.endOnReject)observation={status:'idle',executionRef:input.executionRef,tools:[]}; throw new ExecutorInputRejected('proven rejection'); }
+      if (options.delivery === 'rejected') { if(options.endOnReject)observation={status:'idle',executionRef:input.executionRef,tools:[]}; throw new ExecutorInputRejected(options.rejectMessage ?? 'proven rejection'); }
       if (options.delivery === 'unknown' && !options.historyReceipt) throw new Error('receipt lost');
       const item: ExecutorItem = { id: 'native-' + input.clientRequestId, clientRequestId: input.clientRequestId, kind: 'message', role: 'user', text: input.text, executionId: input.executionRef.id };
       items.push(item); if(options.historyReceipt){if(options.historyClientId)item.clientRequestId=options.historyClientId;throw new Error('receipt lost');} emit({ type: 'item', item }); return { executionRef: input.executionRef, inputItemId: item.id };
@@ -88,6 +88,18 @@ test('rejection and unknown supplementary delivery preserve the original executi
       }
     } finally { await f.close(); }
   }
+});
+test('a human rejection reason is surfaced while bare codes stay generic', async () => {
+  const reason = '后台命令仍在运行，原生回合已结束；追加未发送，输入已保留。';
+  const f = await fixture({ delivery: 'rejected', rejectMessage: reason }); try {
+    const result = await f.service.conversations.supplement('workspace', f.read().id, f.input('追加'));
+    assert.equal(result.delivery, 'rejected');
+    assert.equal(f.read().entries.at(-1)!.deliveryDiagnostic, reason);
+  } finally { await f.close(); }
+  const g = await fixture({ delivery: 'rejected', rejectMessage: 'agent_supplement_stale' }); try {
+    await g.service.conversations.supplement('workspace', g.read().id, g.input('追加'));
+    assert.match(g.read().entries.at(-1)!.deliveryDiagnostic ?? '', /暂不能接收追加消息/);
+  } finally { await g.close(); }
 });
 test('wrong execution and unavailable capability reject without appending or dispatching input', async () => {
   const f = await fixture({ supported: false }); try {
