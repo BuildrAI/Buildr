@@ -1027,10 +1027,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     if (!turn || turn.executionId !== input.executionRef.id) {
       throw new ExecutorInputRejected('agent_supplement_stale: 原执行已变化，追加未发送；输入已保留。');
     }
-    if (turn.backgroundWork) {
-      throw new ExecutorInputRejected('后台命令仍在运行，原生回合已结束；追加未发送，输入已保留。');
-    }
-    if (!turn.pending || !turn.promptCompletion || !turn.promptOwner || turn.promptOwner.settled || turn.promptOwner.error) {
+    if (!turn.backgroundWork && (!turn.pending || !turn.promptCompletion || !turn.promptOwner || turn.promptOwner.settled || turn.promptOwner.error)) {
       throw new ExecutorInputRejected('当前执行已结束或尚不能接收新消息，追加未发送；输入已保留。');
     }
     if (turn.stopConfirmed || turn.cancelRequested) {
@@ -1043,18 +1040,13 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     if (!handle || handle.client.transportClosed) {
       throw new ExecutorInputRejected('Antigravity 会话进程未就绪，追加未发送；输入已保留。');
     }
-    const completion = turn.promptCompletion;
     const promptParts = await this.preparePromptParts(input.text, input.images, handle.handshake.image);
     // Reading attachment files is asynchronous; never target a turn or prompt
     // owner that was superseded while preparing this exact input.
     if (
       turn.executionId !== input.executionRef.id
-      || !turn.pending
-      || turn.backgroundWork
-      || turn.promptCompletion !== completion
-      || !turn.promptOwner
-      || turn.promptOwner.settled
-      || turn.promptOwner.error
+      || (!turn.backgroundWork && (!turn.pending || !turn.promptCompletion
+        || !turn.promptOwner || turn.promptOwner.settled || turn.promptOwner.error))
       || turn.stopConfirmed
       || turn.cancelRequested
       || turn.requests.size > 0
@@ -1062,7 +1054,22 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     ) {
       throw new ExecutorInputRejected('当前执行已变化，追加未发送；输入已保留。');
     }
-    const dispatched = this.dispatchPrompt(turn, handle, promptParts, completion, { admitted: false });
+    let dispatched!: ReturnType<AntigravityRuntime['dispatchPrompt']>;
+    let backgroundAttempt: Promise<void> | undefined;
+    if (turn.backgroundWork) {
+      // Claim the idle prompt slot synchronously. Timer/native exits can still
+      // complete original tools, but cannot launch a competing continuation.
+      turn.backgroundWork = false;
+      turn.status = 'running';
+      turn.executionRef = handle.client.executionRef(turn.executionId, turn.contextId, this.bindingIdentity, false);
+      backgroundAttempt = this.runPromptAttempt(turn, handle, promptParts, {
+        backgroundSupplement: true,
+        onDispatched: value => { dispatched = value; },
+      }).catch(() => { /* runPromptAttempt publishes the exact unknown state. */ });
+    } else {
+      dispatched = this.dispatchPrompt(turn, handle, promptParts, turn.promptCompletion!, { admitted: false });
+    }
+    const completion = turn.promptCompletion!;
     // A steering prompt is held by the native turn until it ends. Only an
     // immediate ACP refusal proves that this exact input was not admitted.
     const early = await Promise.race([
@@ -1080,6 +1087,10 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     ]);
     if (early.kind === 'rejected') {
       if (turn.promptOwner === dispatched.owner) turn.promptOwner = dispatched.previous;
+      if (backgroundAttempt) {
+        completion.reject(early.error instanceof Error ? early.error : new Error(String(early.error)));
+        await backgroundAttempt;
+      }
       const refusal = early.error as { acpCode?: unknown } | undefined;
       if (typeof refusal?.acpCode !== 'number') {
         // Transport/protocol loss proves neither admission nor refusal.
@@ -1128,7 +1139,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     turn: TurnState,
     handle: ConversationProcessHandle,
     promptParts: Array<Record<string, unknown>>,
-    options: { continuation?: boolean } = {},
+    options: { continuation?: boolean; backgroundSupplement?: boolean; onDispatched?: (value: ReturnType<AntigravityRuntime['dispatchPrompt']>) => void } = {},
   ): Promise<void> {
     const contextId = turn.contextId;
     const executionId = turn.executionId;
@@ -1249,7 +1260,8 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     fallbackTimer.unref?.();
 
     try {
-      this.dispatchPrompt(turn, handle, promptParts, promptCompletion, { admitted: true });
+      const dispatched = this.dispatchPrompt(turn, handle, promptParts, promptCompletion, { admitted: !options.backgroundSupplement });
+      options.onDispatched?.(dispatched);
 
       const outcome = await Promise.race([
         promptCompletion.promise,
@@ -1310,6 +1322,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
         turn.executionRef = handle.client.executionRef(executionId, contextId, this.bindingIdentity, true);
         turn.stream.flush();
         turn.stream.push({ type: 'observation', observation: this.buildObservation(turn) });
+        clearInterval(turn.backgroundTimer);
         if (pendingCommand) {
           turn.backgroundTimer = setInterval(() => this.observeBackgroundCommands(turn, handle), 1000);
           turn.backgroundTimer.unref();
@@ -1379,6 +1392,19 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
         turn.stream.push({ type: 'observation', observation: this.buildObservation(turn) });
         return;
       }
+      if (options.backgroundSupplement && typeof (error as { acpCode?: unknown })?.acpCode === 'number') {
+        // A definitive refusal did not consume the background work. Restore
+        // observation only, never replay the refused user input.
+        turn.pending = false;
+        turn.backgroundWork = true;
+        turn.status = 'running';
+        turn.executionRef = handle.client.executionRef(executionId, contextId, this.bindingIdentity, true);
+        turn.stream.push({ type: 'observation', observation: this.buildObservation(turn) });
+        clearInterval(turn.backgroundTimer);
+        turn.backgroundTimer = setInterval(() => this.observeBackgroundCommands(turn, handle), 1000);
+        turn.backgroundTimer.unref();
+        return;
+      }
       this.closeTextSegment(turn, 'unknown');
       turn.pending = false;
       turn.status = 'unknown';
@@ -1388,6 +1414,10 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       turn.stream.push({ type: 'observation', observation: this.buildObservation(turn) });
       throw error;
     } finally {
+      if (!turn.backgroundWork) {
+        clearInterval(turn.backgroundTimer);
+        turn.backgroundTimer = undefined;
+      }
       if (fallbackTimer) clearInterval(fallbackTimer);
       if (fallbackGraceTimer) clearTimeout(fallbackGraceTimer);
       if (turn.promptCompletion === promptCompletion) {
@@ -1451,7 +1481,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
   }
 
   private observeBackgroundCommands(turn: TurnState, handle: ConversationProcessHandle): void {
-    if (!turn.backgroundWork || turn.cancelRequested || this.closedFlag) return;
+    if ((!turn.backgroundWork && !turn.pending) || turn.cancelRequested || this.closedFlag) return;
     const completed: Array<{ command: string; code: number; result: string }> = [];
     for (const exit of readAntigravityCommandExits(this.configRoot, turn.contextId, turn.startedAt)) {
       // The same command text may run more than once in a turn. Attribute each

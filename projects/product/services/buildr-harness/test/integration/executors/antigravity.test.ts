@@ -1503,3 +1503,101 @@ test('antigravity generateTitle runs isolated, downgrades orchestrator to lightw
     /agent_title_output_invalid/,
   );
 });
+
+for (const withImage of [false, true]) {
+  test(`Antigravity executes a background supplement without replacing its command (image=${withImage})`, { timeout: 10_000 }, async t => {
+    const h = await createHarness(t, { scenario: 'late-command-result', autoAllow: true, backgroundExitDelay: 900 });
+    const rt = await h.openRuntime();
+    const contextRef = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+    const events: ExecutorEvent[] = [];
+    const finished = Promise.withResolvers<void>();
+    await rt.send({ contextRef, cwd: h.cwd, text: '后台原任务', images: [], clientRequestId: 'bg-original',
+      onEvent: event => { events.push(event); if (event.type === 'completed') finished.resolve(); } });
+    const accepted = events.find(event => event.type === 'accepted');
+    assert.ok(accepted);
+    const input = { contextRef, executionRef: accepted.executionRef };
+    const before = await rt.observe(input);
+    assert.equal(before.backgroundWork, true);
+    const command = before.tools.find(tool => tool.status === 'running');
+    assert.ok(command);
+    await h.setControl({ scenario: 'background-supplement' });
+    const image = path.join(h.cwd, 'supplement.png');
+    if (withImage) await writeFile(image, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ1sAAAAASUVORK5CYII=', 'base64'));
+    const receipt = await rt.supplement!({ ...input, cwd: h.cwd, text: '请先报告进度',
+      images: withImage ? [{ id: 'bg-supplement-image', path: image, mimeType: 'image/png' }] : [], clientRequestId: 'bg-supplement' });
+    assert.equal(receipt.executionRef.id, accepted.executionRef.id);
+    await finished.promise;
+    const after = await rt.observe(input);
+    assert.equal(after.status, 'idle');
+    assert.equal(after.tools.find(tool => tool.id === command.id)?.status, 'completed');
+    assert.ok(events.some(event => event.type === 'item' && event.item.role === 'assistant'
+      && event.item.text.includes(`后台追加已执行：请先报告进度（图片 ${withImage ? 1 : 0}）`)));
+    const prompts = await h.readFixtureJsonl('fixture-prompts.jsonl');
+    assert.equal(prompts.filter(row => row.text === '请先报告进度').length, 1);
+    assert.ok(prompts.every(row => row.sessionId === contextRef.id));
+    assert.equal(prompts.filter(row => row.text.includes('[[buildr:background-continuation]]')).length, 1);
+    assert.equal((await h.readFixtureJsonl('fixture-cancels.jsonl')).length, 0);
+    const history = await rt.readHistory({ contextRef, cwd: h.cwd });
+    assert.ok(history.some(item => item.clientRequestId === 'bg-supplement' && item.id === receipt.inputItemId));
+  });
+}
+
+test('Antigravity restores background observation after a definite background supplement refusal', { timeout: 10_000 }, async t => {
+  const h = await createHarness(t, { scenario: 'late-command-result', autoAllow: true, backgroundExitDelay: 900 });
+  const rt = await h.openRuntime();
+  const contextRef = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+  const events: ExecutorEvent[] = [];
+  await rt.send({ contextRef, cwd: h.cwd, text: '后台任务', images: [], clientRequestId: 'bg-refusal-original', onEvent: e => events.push(e) });
+  const accepted = events.find(e => e.type === 'accepted'); assert.ok(accepted);
+  const input = { contextRef, executionRef: accepted.executionRef };
+  await h.setControl({ scenario: 'background-supplement-refused' });
+  await assert.rejects(() => rt.supplement!({ ...input, cwd: h.cwd, text: '原生拒绝', images: [], clientRequestId: 'bg-refused' }), ExecutorInputRejected);
+  assert.equal((await rt.observe(input)).backgroundWork, true);
+  await h.setControl({ scenario: 'background-supplement' });
+  const deadline = Date.now() + 4000;
+  while ((await rt.observe(input)).status !== 'idle' && Date.now() < deadline) await new Promise(r => setTimeout(r, 20));
+  assert.equal((await rt.observe(input)).status, 'idle');
+  assert.equal((await h.readFixtureJsonl('fixture-prompts.jsonl')).filter(row => row.text === '原生拒绝').length, 1);
+});
+
+test('Antigravity serializes a background exit with two supplements and stops the same execution', { timeout: 10_000 }, async t => {
+  const h = await createHarness(t, { scenario: 'late-command-result', autoAllow: true, backgroundExitDelay: 350 });
+  const rt = await h.openRuntime();
+  const contextRef = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+  const events: ExecutorEvent[] = [];
+  await rt.send({ contextRef, cwd: h.cwd, text: '后台任务', images: [], clientRequestId: 'bg-stop-original', onEvent: e => events.push(e) });
+  const accepted = events.find(e => e.type === 'accepted'); assert.ok(accepted);
+  const input = { contextRef, executionRef: accepted.executionRef };
+  await h.setControl({ scenario: 'background-supplement', supplementDelay: 2500 });
+  const first = await rt.supplement!({ ...input, cwd: h.cwd, text: '追加一', images: [], clientRequestId: 'bg-stop-first' });
+  const second = await rt.supplement!({ ...input, cwd: h.cwd, text: '追加二', images: [], clientRequestId: 'bg-stop-second' });
+  assert.equal(first.executionRef.id, second.executionRef.id);
+  assert.equal(events.some(e => e.type === 'completed'), false);
+  const stopped = await rt.stop(input);
+  assert.equal(stopped.status, 'stopped');
+  const prompts = await h.readFixtureJsonl('fixture-prompts.jsonl');
+  assert.equal(prompts.filter(row => row.text.includes('[[buildr:background-continuation]]')).length, 0);
+  assert.equal(prompts.filter(row => row.text === '追加一').length, 1);
+  assert.equal(prompts.filter(row => row.text === '追加二').length, 1);
+  assert.equal(prompts.filter(row => row.text === '后台任务').length, 1);
+});
+
+test('Antigravity handles a background command exit during the new prompt without automatic duplicate prompting', { timeout: 10_000 }, async t => {
+  const h = await createHarness(t, { scenario: 'late-command-result', autoAllow: true, backgroundExitDelay: 300 });
+  const rt = await h.openRuntime();
+  const contextRef = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+  const events: ExecutorEvent[] = [];
+  const finished = Promise.withResolvers<void>();
+  await rt.send({ contextRef, cwd: h.cwd, text: '后台任务', images: [], clientRequestId: 'bg-race-original',
+    onEvent: e => { events.push(e); if (e.type === 'completed') finished.resolve(); } });
+  const accepted = events.find(e => e.type === 'accepted'); assert.ok(accepted);
+  const input = { contextRef, executionRef: accepted.executionRef };
+  const command = (await rt.observe(input)).tools.find(tool => tool.status === 'running'); assert.ok(command);
+  await h.setControl({ scenario: 'background-supplement', supplementDelay: 600 });
+  await rt.supplement!({ ...input, cwd: h.cwd, text: '处理追加', images: [], clientRequestId: 'bg-race-supplement' });
+  await finished.promise;
+  assert.equal((await rt.observe(input)).tools.find(tool => tool.id === command.id)?.status, 'completed');
+  const prompts = await h.readFixtureJsonl('fixture-prompts.jsonl');
+  assert.equal(prompts.length, 2);
+  assert.equal(prompts.filter(row => row.text === '处理追加').length, 1);
+});

@@ -299,6 +299,7 @@ async function runPrompt(id, params) {
   const text = parts.filter(part => part?.type === 'text').map(part => String(part.text ?? '')).join('');
   const imageCount = parts.filter(part => part?.type === 'image').length;
   const activeScenario = scenario();
+  appendLog('fixture-prompts.jsonl', { sessionId, text, imageCount });
   const userMessageId = `user-msg-${randomUUID()}`;
 
   if (activePrompt && activePrompt.sessionId === sessionId && !activePrompt.cancelled) {
@@ -319,6 +320,11 @@ async function runPrompt(id, params) {
     appendTranscript(sessionId, { type: 'user', id: userMessageId, cwd: session.cwd, text, imageCount });
     appendLog('fixture-steers.jsonl', { sessionId, text, userMessageId, priorOwner, owner: id });
     result(priorOwner, { stopReason: 'end_turn' });
+    return;
+  }
+
+  if (activeScenario === 'background-supplement-refused') {
+    fail(id, -32000, 'native background prompt refused');
     return;
   }
 
@@ -360,6 +366,18 @@ async function runPrompt(id, params) {
       sessionId,
       update: { sessionUpdate: 'agent_message_chunk', messageId: `msg-${randomUUID()}`, content: { type: 'text', text: titlePayload } },
     });
+    finishActivePrompt({ userMessageId, stopReason: 'end_turn' });
+    return;
+  }
+
+  if (activeScenario === 'background-supplement' && !text.includes('[[buildr:background-continuation]]')) {
+    if (control().supplementDelay) await new Promise(resolve => setTimeout(resolve, control().supplementDelay));
+    if (turnState.cancelled) return;
+    const finalText = `后台追加已执行：${text}（图片 ${imageCount}）${turnState.steers.map(item => item.text).join(' / ')}`;
+    notify('session/update', { sessionId, update: { sessionUpdate: 'agent_message_chunk',
+      messageId: `msg-${randomUUID()}`, content: { type: 'text', text: finalText } } });
+    appendTranscript(sessionId, { type: 'turn_complete', promptId: userMessageId,
+      cwd: session.cwd, stopReason: 'end_turn', finalText, backgroundActive: false });
     finishActivePrompt({ userMessageId, stopReason: 'end_turn' });
     return;
   }
@@ -861,7 +879,7 @@ async function runPrompt(id, params) {
         status: 'completed',
         output: 'original command exited with code 0',
       });
-    }, 250);
+    }, control().backgroundExitDelay ?? 250);
   }
   if (activeScenario === 'native-background-continuation') {
     setTimeout(() => {
