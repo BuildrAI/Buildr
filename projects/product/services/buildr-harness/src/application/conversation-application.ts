@@ -1451,10 +1451,14 @@ export class ConversationApplication {
         const entry=attempt?record.view.entries.find(item=>item.id===attempt.userEntryId):undefined;
         const participant=attempt?record.participants.find(item=>item.id===attempt.participantId):undefined;
         if(!attempt?.executionRef||!entry||entry.status!=='unknown'&&entry.status!=='sending'||!participant?.contextRef||!participant.bindingIdentity||!entry.text.trim())continue;
+        const descriptor=this.options.connections.descriptor(participant.connectionId);
+        const usesAccountIdentity=Boolean(participant.modelAccountId&&descriptor?.modelPolicy?.native?.binding==='account-identity');
+        const gatewayIdentity=!usesAccountIdentity&&participant.modelAccountId&&participant.modelAccountIdentity&&participant.modelId&&participant.modelConfiguration!==undefined
+          ?modelLeaseIdentity(participant.modelAccountId,participant.modelAccountIdentity,participant.modelId,id,participant.connectionId,participant.modelLeaseConfiguration??participant.modelConfiguration):undefined;
         try{
           const receipt=await this.options.connections.readSupplementReceipt(participant.connectionId,{
             bindingIdentity:participant.bindingIdentity,contextRef:participant.contextRef,executionRef:attempt.executionRef,
-            cwd:record.view.cwd,clientRequestId:attempt.clientRequestId,text:entry.text,createdAt:entry.createdAt,
+            cwd:record.view.cwd,clientRequestId:attempt.clientRequestId,text:entry.text,createdAt:entry.createdAt,gatewayIdentity,
           });
           if(!receipt)continue;
           record=this.load(workspaceId,id);
@@ -1503,7 +1507,7 @@ export class ConversationApplication {
     if (record.sources[source] === '@inherited') return false;
     let entry = record.view.entries.find(value => value.id === record.sources[source]);
     if (!entry && item.role === 'user' && !item.parentToolId) {
-      const candidates = record.attempts.filter(value => value.participantId === participant.id && (value.nativeInputItemId === item.id || value.clientRequestId === item.id || item.clientRequestId && value.clientRequestId === item.clientRequestId));
+      const candidates = record.attempts.filter(value => value.participantId === participant.id && (value.nativeInputItemId === item.id || value.clientRequestId === item.id || item.clientRequestId && value.clientRequestId === item.clientRequestId || this.options.connections.nativeInputItemId(participant.connectionId, value.clientRequestId) === item.id));
       const legacy = record.attempts.filter(value => value.participantId === participant.id && item.executionId && value.executionRef?.id === item.executionId);
       const attempt = candidates.length === 1 ? candidates[0] : candidates.length === 0 && legacy.length === 1 && !legacy[0].supplement ? legacy[0] : undefined;
       if (attempt) {

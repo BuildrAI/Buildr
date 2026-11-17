@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -47,6 +48,49 @@ test('durable reads resolve native account content outside the connection config
     assert.equal(persisted?.nativeAccountConfigRoot, nativeRoot);
     assert.equal(supplement?.configRoot, connectionRoot);
     assert.equal(supplement?.nativeAccountConfigRoot, nativeRoot);
+  } finally {
+    await app.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('gateway-bound durable reads resolve the model binding directory and expose derived input identity', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'connection-binding-root-'));
+  const connectionRoot = path.join(root, 'connections', 'claude-code');
+  const capabilities = { text: true, images: false, approval: false, questions: false, stop: true, resume: true, maxInputBytes: 65536 };
+  let persisted: Parameters<NonNullable<AgentExecutor['readPersistedExecution']>>[0] | undefined;
+  let supplement: Parameters<NonNullable<AgentExecutor['readSupplementReceipt']>>[0] | undefined;
+  const executor: AgentExecutor = {
+    descriptor: { id: 'claude-code', label: 'Claude Code', capabilities },
+    async open() { throw new Error('durable reads must not open a native runtime'); },
+    async readPersistedExecution(input) { persisted = input; },
+    async readSupplementReceipt(input) { supplement = input; },
+    inputItemId: requestId => 'derived-' + requestId,
+  };
+  const repository = new ConversationRepository(root);
+  repository.saveConnection({
+    view: {
+      id: 'claude-code', provider: 'claude-code', label: 'Claude Code', revision: 'one', status: 'ready',
+      enabled: true, executable: path.join(root, 'claude'), configPath: connectionRoot, models: [], capabilities,
+    },
+    bindingIdentity: 'gateway-binding',
+  });
+  const app = new ConnectionApplication({
+    root, repository, executors: [executor], environment: {}, generation: 'fixture',
+    now: () => new Date().toISOString(), changed() {},
+  });
+  try {
+    const contextRef = { id: 'context' }, executionRef = { id: 'execution' }, gatewayIdentity = 'lease-identity';
+    const boundRoot = path.join(connectionRoot, 'model-bindings', createHash('sha256').update(gatewayIdentity).digest('hex'));
+    await app.readPersistedExecution('claude-code', { bindingIdentity: 'gateway-binding', contextRef, executionRef, cwd: root, gatewayIdentity });
+    await app.readSupplementReceipt('claude-code', {
+      bindingIdentity: 'gateway-binding', contextRef, executionRef, cwd: root, gatewayIdentity,
+      clientRequestId: 'request', text: 'supplement', createdAt: new Date().toISOString(),
+    });
+    assert.equal(persisted?.configRoot, boundRoot);
+    assert.equal(supplement?.configRoot, boundRoot);
+    assert.equal(app.nativeInputItemId('claude-code', 'request'), 'derived-request');
+    assert.equal(app.nativeInputItemId('unknown-connection', 'request'), undefined);
   } finally {
     await app.close();
     fs.rmSync(root, { recursive: true, force: true });

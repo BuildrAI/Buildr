@@ -11,7 +11,7 @@ import { checkedGateway, consumerBinding, type ExecutorGateway } from '../model-
 import { findExecutable, inspectVersion, isolatedEnvironment, nativeHome, NativeRpc, opaqueReference, ownedProcessGroupIdle, parseReference, privateDirectories, releasedNativeControl } from '../native-process.ts';
 import { isCompatibleProgram } from '../program-policy.ts';
 import { generateGatewayTitle } from '../model-title.ts';
-import { claudeEffort, claudeGatewayEnvironment } from './protocol.ts';
+import { claudeEffort, claudeGatewayEnvironment, claudeInputId } from './protocol.ts';
 import { claudeNativeContent, readClaudePersistedExecution, readClaudeSupplementReceipt } from './content.ts';
 import { importClaudeFork } from './fork.ts';
 
@@ -40,6 +40,7 @@ export function createClaudeExecutor(): AgentExecutor {
     nativeContent:claudeNativeContent,
     readReleasedControl:input=>releasedNativeControl(provider,input),
     readPersistedExecution:readClaudePersistedExecution,readSupplementReceipt:readClaudeSupplementReceipt,
+    inputItemId:claudeInputId,
     storage:{transientDirectories:[]},
     open:options=>ClaudeRuntime.open(options),
   };
@@ -139,6 +140,7 @@ class ClaudeRuntime implements AgentRuntime {
     if(this.gateway)claudeEffort(this.gateway,input.model,input.reasoningEffort);
     // No model request and no work input is admitted during preparation.
   }
+  inputItemId(clientRequestId:string){return claudeInputId(clientRequestId);}
   async readHistory({contextRef,cwd}:{contextRef:ContextRef;cwd:string}):Promise<ExecutorItem[]>{
     this.reference(contextRef,cwd);
     const items=new Map<string,ExecutorItem>();let offset=0,bytes=0;

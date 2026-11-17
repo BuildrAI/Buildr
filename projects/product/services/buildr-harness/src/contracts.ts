@@ -310,6 +310,8 @@ export interface AgentRuntime {
   forkContext?(input: ExecutorForkInput): Promise<ContextRef>;
   resumeContext(input: { contextRef: ContextRef; cwd: string; permissionMode?: PermissionMode }): Promise<void>;
   readHistory(input: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]>;
+  /** Exact native input identity derived from a Buildr request id, for native formats without a request id field. */
+  inputItemId?(clientRequestId: string): string;
   /** Resolves at terminal observation. Control requests must stay independent. */
   send(input: ExecutorSendInput): Promise<void>;
   /** Must reject/refuse when tools, approvals or background work are active.
@@ -341,10 +343,13 @@ export interface AgentExecutor {
 
   /** Confirm one already-dispatched supplementary input from a durable native user record. */
   readSupplementReceipt?(input: {
-    configRoot: string; nativeAccountConfigRoot?: string; executable: string; programSource?: string;
+    configRoot: string; nativeAccountConfigRoot?: string; executable: string; programSource?: string; gatewayIdentity?: string;
     bindingIdentity: string; contextRef: ContextRef; executionRef: ExecutionRef; cwd: string;
     clientRequestId: string; text: string; createdAt: string;
   }): Promise<{inputItemId:string} | undefined>;
+
+  /** Exact native input identity derived from a Buildr request id, for native formats without a request id field. */
+  inputItemId?(clientRequestId: string): string;
 
   /** Read exact durable terminal evidence without opening a native process or taking its controls. */
   readPersistedExecution?(input: {

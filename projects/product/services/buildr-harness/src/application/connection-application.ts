@@ -472,7 +472,11 @@ export class ConnectionApplication {
     const executor = this.executors.get(id), record = this.stored(id);
     if (!executor?.readSupplementReceipt) return;
     const base = path.join(this.options.root, 'connections', id);
-    return executor.readSupplementReceipt({ ...input, configRoot: base, nativeAccountConfigRoot: this.nativeAccountRoot(id, record), executable: record.view.executable ?? '', programSource: record.programSource });
+    const configRoot = input.gatewayIdentity ? path.join(base, 'model-bindings', createHash('sha256').update(input.gatewayIdentity).digest('hex')) : base;
+    return executor.readSupplementReceipt({ ...input, configRoot, nativeAccountConfigRoot: this.nativeAccountRoot(id, record), executable: record.view.executable ?? '', programSource: record.programSource });
+  }
+  nativeInputItemId(id: string, clientRequestId: string): string | undefined {
+    return this.executors.get(id)?.inputItemId?.(clientRequestId);
   }
   async releaseGatewayRuntime(runtime: AgentRuntime): Promise<void> {
     const owned = [];

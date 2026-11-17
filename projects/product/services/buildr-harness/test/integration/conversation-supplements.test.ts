@@ -10,14 +10,14 @@ import { createAgentService, ExecutorInputRejected, type AgentExecutor, type Age
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=', 'base64');
 function gate() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; }
 async function wait(read: () => boolean) { for (let i = 0; i < 400; i++) { if (read()) return; await new Promise(resolve => setTimeout(resolve, 2)); } assert.fail('state did not settle'); }
-async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: 'rejected' | 'unknown'; supported?: boolean; provider?: string; historyReceipt?: boolean; historyClientId?: string; beforeObserve?: Promise<void>; observeError?: string; endOnReject?: boolean; persistedReceipt?: boolean; rejectMessage?: string } = {}) {
+async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: 'rejected' | 'unknown'; supported?: boolean; provider?: string; historyReceipt?: boolean; historyClientId?: string; beforeObserve?: Promise<void>; observeError?: string; endOnReject?: boolean; persistedReceipt?: boolean; rejectMessage?: string; derivedInputIds?: boolean } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-supplement-')), ending = gate();
   const calls: ExecutorSupplementInput[] = [], items: ExecutorItem[] = []; let emit: (event: ExecutorEvent) => void = () => {};
   let observation: ExecutorObservation = { status: 'idle', tools: [] };
   let observeErrors = options.observeError ? 1 : 0;
   const capabilities = { supplement: options.supported !== false, text: true, images: true, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 65536 };
   const runtime: AgentRuntime = {
-    capabilities, bindingIdentity: 'fixture-binding', async inspectAccount() { return { status: 'ready' }; }, async models() { return [{ id: 'fixture-model', label: 'Fixture model' }]; }, async beginLogin() {}, async cancelLogin() {},
+    capabilities, bindingIdentity: 'fixture-binding', ...(options.derivedInputIds ? { inputItemId: (requestId: string) => 'derived-' + requestId } : {}), async inspectAccount() { return { status: 'ready' }; }, async models() { return [{ id: 'fixture-model', label: 'Fixture model' }]; }, async beginLogin() {}, async cancelLogin() {},
     async createContext() { return { id: 'native-context' }; }, async resumeContext() {}, async readHistory() { return structuredClone(items); },
     async send(input) {
       const notify = input.onEvent; emit = notify; observation = { status: 'running', executionRef: { id: 'native-run' }, tools: [] };
@@ -29,13 +29,14 @@ async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: '
       calls.push(input); await options.beforeSupplement;
       if (options.delivery === 'rejected') { if(options.endOnReject)observation={status:'idle',executionRef:input.executionRef,tools:[]}; throw new ExecutorInputRejected(options.rejectMessage ?? 'proven rejection'); }
       if (options.delivery === 'unknown' && !options.historyReceipt) throw new Error('receipt lost');
-      const item: ExecutorItem = { id: 'native-' + input.clientRequestId, clientRequestId: input.clientRequestId, kind: 'message', role: 'user', text: input.text, executionId: input.executionRef.id };
+      const item: ExecutorItem = { id: (options.derivedInputIds ? 'derived-' : 'native-') + input.clientRequestId, ...(options.derivedInputIds ? {} : { clientRequestId: input.clientRequestId }), kind: 'message', role: 'user', text: input.text, executionId: input.executionRef.id };
       items.push(item); if(options.historyReceipt){if(options.historyClientId)item.clientRequestId=options.historyClientId;throw new Error('receipt lost');} emit({ type: 'item', item }); return { executionRef: input.executionRef, inputItemId: item.id };
     },
     async observe() { await options.beforeObserve; if (observeErrors > 0) { observeErrors--; throw new Error(options.observeError!); } return structuredClone(observation); }, async reply() {}, async stop() { observation = { status: 'stopped', tools: [] }; ending.resolve(); return observation; }, async close() {},
   };
   const executor: AgentExecutor = {
     readSupplementReceipt: options.persistedReceipt ? async input => ({inputItemId:'persisted-'+input.clientRequestId}) : undefined,
+    ...(options.derivedInputIds ? { inputItemId: (requestId: string) => 'derived-' + requestId } : {}),
     descriptor: { id: options.provider ?? 'fixture', label: 'Fixture', capabilities },
     async open() { return { ...runtime }; },
   };
@@ -211,6 +212,38 @@ test('reading a conversation repairs an unknown supplement from a persisted nati
     assert.equal(f.read().entries.at(-1)!.status,'accepted');
     assert.equal(f.read().entries.at(-1)!.deliveryDiagnostic,undefined);
     assert.equal(f.calls.length,1,'repair must never dispatch the input again');
+  }finally{await f.close();}
+});
+
+test('a native format without request ids confirms a lost receipt by the derived input identity',async()=>{
+  const f=await fixture({delivery:'unknown',historyReceipt:true,derivedInputIds:true});try{
+    const input=f.input('derived receipt'),run=f.read().run!.id;
+    assert.equal((await f.service.conversations.supplement('workspace',f.read().id,input)).delivery,'accepted');
+    assert.equal(f.read().run!.id,run);assert.equal(f.calls.length,1);
+    assert.equal(f.read().entries.at(-1)!.status,'accepted');
+  }finally{await f.close();}
+});
+
+test('rechecking a persisted unknown request reconciles a derived native receipt without another dispatch',async()=>{
+  const f=await fixture({delivery:'unknown',derivedInputIds:true});try{
+    const input=f.input('derived receipt arrives later');
+    assert.equal((await f.service.conversations.supplement('workspace',f.read().id,input)).delivery,'unknown');
+    f.historyReceipt({id:'derived-'+input.clientRequestId,kind:'message',role:'user',executionId:'native-run',text:input.text});
+    const result=await f.service.conversations.supplement('workspace',f.read().id,input);
+    assert.equal(result.delivery,'accepted');assert.equal(f.calls.length,1);
+    assert.equal(result.conversation.entries.filter(entry=>entry.text===input.text).length,1);
+  }finally{await f.close();}
+});
+
+test('a derived native user item maps to the retained supplement instead of blocking observation',async()=>{
+  const f=await fixture({delivery:'unknown',derivedInputIds:true});try{
+    const input=f.input('derived live item');
+    assert.equal((await f.service.conversations.supplement('workspace',f.read().id,input)).delivery,'unknown');
+    f.emit({type:'item',item:{id:'derived-'+input.clientRequestId,kind:'message',role:'user',text:input.text,executionId:'native-run'}});
+    await f.service.conversations.observe('workspace',f.read().id);
+    assert.equal(f.read().entries.at(-1)!.status,'accepted');
+    assert.equal(f.read().entries.filter(entry=>entry.text===input.text).length,1);
+    assert.equal(f.calls.length,1);
   }finally{await f.close();}
 });
 

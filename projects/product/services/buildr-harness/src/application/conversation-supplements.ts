@@ -90,7 +90,7 @@ export class ConversationSupplements {
       const participant = record.participants.find(item => item.id === attempt.participantId)!;
       const runtime = await this.ports.runtime(record, participant);
       if (!participant.contextRef || participant.bindingIdentity !== runtime.bindingIdentity) throw new Error('agent_binding_changed');
-      const receipt = (await runtime.readHistory({ contextRef: participant.contextRef, cwd: record.view.cwd })).find(item => item.role === 'user' && item.kind === 'message' && item.status !== 'failed' && !item.parentToolId && item.clientRequestId === requestId);
+      const receipt = (await runtime.readHistory({ contextRef: participant.contextRef, cwd: record.view.cwd })).find(item => item.role === 'user' && item.kind === 'message' && item.status !== 'failed' && !item.parentToolId && (item.clientRequestId === requestId || runtime.inputItemId?.(requestId) === item.id));
       record = this.ports.load(workspaceId, id); attempt = record.attempts.find(item => item.clientRequestId === requestId)!;
       entry = record.view.entries.find(item => item.id === attempt.userEntryId)!;
       if (receipt) {
@@ -176,7 +176,7 @@ export class ConversationSupplements {
       if (dispatched && delivery === 'unknown') {
         // Absence from history proves nothing. Only this exact native user receipt confirms acceptance.
         try {
-          const receipt = (await runtime.readHistory({ contextRef: participant.contextRef!, cwd: record.view.cwd })).find(item => item.role === 'user' && item.kind === 'message' && item.status !== 'failed' && !item.parentToolId && item.clientRequestId === input.clientRequestId);
+          const receipt = (await runtime.readHistory({ contextRef: participant.contextRef!, cwd: record.view.cwd })).find(item => item.role === 'user' && item.kind === 'message' && item.status !== 'failed' && !item.parentToolId && (item.clientRequestId === input.clientRequestId || runtime.inputItemId?.(input.clientRequestId) === item.id));
           if (receipt) { delivery = 'accepted'; nativeId = receipt.id; }
         } catch { /* Keep the original unknown result; do not retry the native input. */ }
       } else if (dispatched && delivery === 'rejected') { try { await observe(); } catch { /* A rejected input stays retained when the old execution cannot be observed. */ } }
