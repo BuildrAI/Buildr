@@ -56,6 +56,7 @@ import {ConversationHandoffDrawer} from './ConversationHandoffDrawer.tsx';
 import { ConversationProcessBlock } from './ConversationProcessBlock.tsx';
 import {modelPreferenceFromChoice,preferredConversationChoice,readConversationModelPreference,readConversationModulePreference,rememberConversationAgent,rememberConversationPermission,rememberedConversationPermission,writeConversationModelPreference,writeConversationModulePreference} from './conversation-preferences.ts';
 import {conversationSystemNoticeText,visibleConversationEntries,conversationModelWarning,conversationActionError,conversationHandoffReceipt,conversationNativeSessionDiagnostic,conversationNativeSessionIssue,conversationNativeSessionSummary,latestVisibleConversationMessage} from './conversation-notices.ts';
+import { findSeenFallbackTarget, isConversationViewVisible } from './seen-activity-refresh.ts';
 import './agent-conversations.css';
 import './conversation-flow.css';
 const statusLabels = {starting:'正在准备执行',running:'正在执行','waiting-approval':'等待授权','waiting-question':'等待你的回复',stopping:'正在停止',stopped:'已确认停止','tools-active':'仍有命令未结束',unknown:'执行状态待确认',completed:'本轮已结束',failed:'本轮执行失败'};
@@ -270,7 +271,8 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   useLayoutEffect(()=>{setError('');setFeedback('');setFileLinkFailure(null);setImageLink(null);setExpandedToolGroups({});const active=activeSend.current;if(!active||!context.isSelectionCurrent(active.selection)){activeSend.current=null;setSending(false);setPreparing(false);setPrepared(null);setSelectedHandoff(null);setPreviewOpen(false);}bottom.current=true;readPosition.current=0;setAtBottom(true);},[context.selectionGeneration,context.scope?.workspaceId,context.scope?.conversationId,context.isSelectionCurrent]);
   useEffect(()=>{setMoreOpen(false);setLocationOpen(false);},[context.selectionGeneration,context.open,context.side,context.full,context.view]);
   useEffect(()=>{earlier.followLayout();setAtBottom(bottom.current);},[chat?.id,chat?.entries.length,chat?.entries.at(-1)?.text,chat?.requests.length,chat?.run?.status,chat?.pendingSend?.id]);
-  useLayoutEffect(()=>{const node=stream.current;if(!node?.getClientRects().length)return;if(bottom.current)earlier.followLayout();else{node.scrollTop=readPosition.current;earlier.remember();}setAtBottom(bottom.current);},[portalTarget,context.view,context.open]);
+  const conversationVisible=isConversationViewVisible(context.open,context.view,focusSplit);
+  useLayoutEffect(()=>{const node=stream.current;if(!node?.getClientRects().length)return;if(bottom.current)earlier.followLayout();else{node.scrollTop=readPosition.current;earlier.remember();}setAtBottom(bottom.current);},[portalTarget,context.view,focusSplit,context.open]);
   const hasMessageList=Boolean(chat?.entries.length)&&!context.loading;
   useEffect(()=>{
     const node=stream.current,list=streamContent.current;
@@ -285,7 +287,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     const mutations=new MutationObserver(()=>{earlier.followLayout();setAtBottom(bottom.current);});
     if(list)mutations.observe(list,{childList:true,subtree:true,characterData:true});
     return()=>{observer.disconnect();mutations.disconnect();};
-  },[chat?.id,hasMessageList,context.view,context.open]);
+  },[chat?.id,hasMessageList,context.view,focusSplit,context.open]);
   const fail=(failure:unknown)=>{setError(failure instanceof Error?failure.message:'操作未完成。');};
   const readPresentedFile=async(path:string,signal:AbortSignal)=>{
     if(!chat||!host.readFile)throw new Error('此入口未提供来源文件读取。');
@@ -728,14 +730,23 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     });
   };
   const scrollToLatest=()=>{earlier.pinLatest();setAtBottom(true);};
+  const expandedGroupsRef=useRef(expandedToolGroups);expandedGroupsRef.current=expandedToolGroups;
   const seenAttempt=useRef('');
   useEffect(()=>{
     const element=stream.current;
-    if(!chat||!element||!context.open||context.view!=='conversation')return;
+    if(!chat||!element||!conversationVisible)return;
     const latest=latestVisibleConversationMessage(chat.entries);
     const check=()=>{
       if(document.visibilityState!=='visible'||!latest||!element.getClientRects().length)return;
-      const message=Array.from(element.querySelectorAll<HTMLElement>('[data-entry-id]')).find(node=>node.dataset.entryId===latest.id);
+      let message=Array.from(element.querySelectorAll<HTMLElement>('[data-entry-id]')).find(node=>node.dataset.entryId===latest.id);
+      if(!message||!message.getClientRects().length){
+        const fallback=findSeenFallbackTarget(latest,visibleEntries,chat.run,chat.retainedRuns,expandedGroupsRef.current);
+        if(fallback?.kind==='entry')message=Array.from(element.querySelectorAll<HTMLElement>('[data-entry-id]')).find(node=>node.dataset.entryId===fallback.id);
+        else if(fallback?.kind==='turn'){
+          const turnNode=Array.from(element.querySelectorAll<HTMLElement>('[data-turn-id]')).find(node=>node.dataset.turnId===fallback.id);
+          message=turnNode?.querySelector<HTMLElement>('.ac-turn-head')??turnNode;
+        }
+      }
       if(!message)return;
       const bounds=element.getBoundingClientRect(),rect=message.getBoundingClientRect();
       if(rect.top>=bounds.bottom||rect.bottom<=bounds.top||rect.width===0)return;
@@ -747,7 +758,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     const observer=new ResizeObserver(check);observer.observe(element);if(streamContent.current)observer.observe(streamContent.current);
     element.addEventListener('scroll',check);document.addEventListener('visibilitychange',check);window.addEventListener('focus',check);
     return()=>{cancelAnimationFrame(frame);observer.disconnect();element.removeEventListener('scroll',check);document.removeEventListener('visibilitychange',check);window.removeEventListener('focus',check);};
-  },[chat,context.open,context.view,context.markSeen]);
+  },[chat,visibleEntries,conversationVisible,context.markSeen]);
   const run=chat?.run;
   const showExecutionNotice=(!outputPaused||!stopping)&&(run?.status==='unknown'||run?.status==='tools-active');
   const noticeHasStop=showExecutionNotice&&!run?.resourcesReleased&&!run?.stopRequested;

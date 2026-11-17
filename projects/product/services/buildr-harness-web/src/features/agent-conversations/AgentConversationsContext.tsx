@@ -1,4 +1,4 @@
-import { createStreamingSeenScheduler, refreshSeenActivity } from './seen-activity-refresh.ts';
+import { createStreamingSeenScheduler, findDisplayedUnseenConversation, refreshSeenActivity } from './seen-activity-refresh.ts';
 import { createVisiblePoller } from '../../lib/visible-poller.ts';
 import { activityPollMs } from './activity-polling.ts';
 import { usePageVisibility } from './usePageVisibility.ts';
@@ -92,6 +92,15 @@ export function AgentConversationsProvider({children, client = agentConversation
   const activityGeneration=useRef(0),activitySignature=useRef(''),activityFailed=useRef(false);
   const [activityWorkspaceTicks,setActivityWorkspaceTicks]=useState<Record<string,number>|undefined>({});
   const workspaceSignatures=useRef(new Map<string,string>());
+  const tickTracker=useRef<{global:number;workspaces:Record<string,number>}>({global:0,workspaces:{}});
+  const bumpGlobalTick=useCallback(()=>{const next=tickTracker.current.global+1;tickTracker.current.global=next;setActivityTick(next);},[]);
+  const bumpWorkspaceTicks=useCallback((ids:Iterable<string>)=>{
+    const list=[...new Set(ids)];if(!list.length)return;
+    const next={...tickTracker.current.workspaces};
+    for(const id of list)next[id]=(next[id]??0)+1;
+    tickTracker.current.workspaces=next;
+    setActivityWorkspaceTicks(current=>current?{...current,...Object.fromEntries(list.map(id=>[id,next[id]]))}:current);
+  },[]);
   const activityRead=useRef<Promise<void>|null>(null);
   const modelCatalogReadyRef=useRef(false),modelCatalogErrorRef=useRef('');
   const refreshModelCatalogRef=useRef<()=>Promise<void>>(async()=>{});
@@ -100,23 +109,23 @@ export function AgentConversationsProvider({children, client = agentConversation
   const openConversationRef=useRef<((workspaceId:string,conversationId:string,options?:VisibilityOptions)=>Promise<void>)|null>(null);
   const readActivity=useCallback(async()=>{if(!client.listAll)return;const generation=++activityGeneration.current;try{const result=client.activitySummary?await client.activitySummary():await client.listAll({activeOnly:true,limit:100});if(generation!==activityGeneration.current)return;const recovered=activityFailed.current;activityFailed.current=false;if('pending' in result)setPending(current=>retainObservation(current,result.pending as PendingConversation[]));const signature=JSON.stringify([result.nextCursor,result.conversations.map(row=>[row.workspaceId,row.id,row.title,row.hidden,row.run?.id,row.run?.status,row.run?.model,row.run?.provider,row.run?.modelAccountId,row.run?.modelSourceLabel,row.activity?.updatedAt,row.activity?.userInputAt,row.activity?.active,row.activity?.pendingDecisionCount,Boolean(row.activity&&row.activity.version>row.activity.seenThrough)])]);const changed=signature!==activitySignature.current;if(changed){
       const next=activityWorkspaceSignatures(result.conversations),previous=workspaceSignatures.current;
-      setActivityWorkspaceTicks(current=>{
-        if(result.nextCursor)return undefined;
-        const ticks={...current};
-        for(const id of new Set([...previous.keys(),...next.keys()]))if(previous.get(id)!==next.get(id))ticks[id]=(ticks[id]??0)+1;
-        if(recovered)for(const id of Object.keys(ticks))if(!next.has(id)&&!previous.has(id))ticks[id]=(ticks[id]??0)+1;
-        return ticks;
-      });
+      if(result.nextCursor){tickTracker.current.workspaces={};setActivityWorkspaceTicks(undefined);}
+      else{
+        const changedIds:string[]=[];
+        for(const id of new Set([...previous.keys(),...next.keys()]))if(previous.get(id)!==next.get(id))changedIds.push(id);
+        if(recovered)for(const id of Object.keys(tickTracker.current.workspaces))if(!next.has(id)&&!previous.has(id))changedIds.push(id);
+        bumpWorkspaceTicks(changedIds);
+      }
       workspaceSignatures.current=next;
       setActivityRows(result.conversations);setActivityCursor(result.nextCursor);
     }else if(recovered){
-      setActivityWorkspaceTicks(current=>{if(!current)return current;const ticks:Record<string,number>={};for(const id of Object.keys(current))ticks[id]=current[id]+1;return ticks;});
-    }setActivityCounts(current=>retainObservation(current,result.activityCounts));setActivityStats(current=>retainObservation(current,result.stats));setActivityTotal(result.total??result.conversations.length);setActivityError('');if(changed){activitySignature.current=signature;}if(changed||recovered){setActivityTick(value=>value+1);}if(recovered){
+      bumpWorkspaceTicks(Object.keys(tickTracker.current.workspaces));
+    }setActivityCounts(current=>retainObservation(current,result.activityCounts));setActivityStats(current=>retainObservation(current,result.stats));setActivityTotal(result.total??result.conversations.length);setActivityError('');if(changed){activitySignature.current=signature;}if(changed||recovered){bumpGlobalTick();}if(recovered){
       for(const entry of historyCache.pages.values())if(entry.error&&!entry.stale)entry.version=-1;
       if(!modelCatalogReadyRef.current||modelCatalogErrorRef.current)void refreshModelCatalogRef.current().catch(()=>{});
       if(!connectionStateRef.current.ready||connectionStateRef.current.error)void discoveryRef.current?.refresh().catch(()=>{});
       if(scopeRef.current&&!conversationRef.current&&!selectionRead.current)void openConversationRef.current?.(scopeRef.current.workspaceId,scopeRef.current.conversationId,{preserveVisibility:true,preserveHistoryView:true});
-    }}catch(error){if(generation===activityGeneration.current){activityFailed.current=true;setActivityError(error instanceof Error?error.message:'活动对话尚未更新，保留上次结果。');}}},[client,historyCache]);
+    }}catch(error){if(generation===activityGeneration.current){activityFailed.current=true;setActivityError(error instanceof Error?error.message:'活动对话尚未更新，保留上次结果。');}}},[client,historyCache,bumpGlobalTick,bumpWorkspaceTicks]);
   const refreshActivity=useCallback(()=>{
     if(activityRead.current)return activityRead.current;
     const request=readActivity().finally(()=>{if(activityRead.current===request)activityRead.current=null;});
@@ -161,8 +170,8 @@ export function AgentConversationsProvider({children, client = agentConversation
     // its completion event, before React commits the corresponding render.
     const merged=mergeConversationView(conversationRef.current,next,observedRevision);
     if(conversationRef.current&&conversationHistorySignature(conversationRef.current)!==conversationHistorySignature(merged)){
-      setActivityTick(value=>value+1);
-      setActivityWorkspaceTicks(current=>current?{...current,[merged.workspaceId]:(current[merged.workspaceId]??0)+1}:current);
+      bumpGlobalTick();
+      bumpWorkspaceTicks([merged.workspaceId]);
     }
     conversationRef.current=merged;setConversation(merged);setError('');
   } }, []);
@@ -414,11 +423,17 @@ export function AgentConversationsProvider({children, client = agentConversation
         const next={...previous,activity:previous.activity&&previous.activity.version>result.activity.version?{...previous.activity,seenThrough:Math.max(previous.activity.seenThrough,result.activity.seenThrough)}:result.activity};
         conversationRef.current=next;setConversation(next);
       }
-      await refreshSeenActivity(value,displayedActivity.current.find(row=>row.id===value.id&&row.workspaceId===value.workspaceId),()=>{
+      const validVersions=new Set<number|string>([tickTracker.current.global,'global:'+tickTracker.current.global,'workspace:'+(tickTracker.current.workspaces[value.workspaceId]??0)]);
+      const beforeGlobal=tickTracker.current.global,beforeWorkspace=tickTracker.current.workspaces[value.workspaceId]??0;
+      const refreshed=await refreshSeenActivity(value,findDisplayedUnseenConversation(value.workspaceId,value.id,displayedActivity.current,historyCache.pages.values(),validVersions),()=>{
         ++activityGeneration.current;activityRead.current=null;
       },refreshActivity);
+      if(refreshed){
+        if(tickTracker.current.global===beforeGlobal)bumpGlobalTick();
+        if((tickTracker.current.workspaces[value.workspaceId]??0)===beforeWorkspace)bumpWorkspaceTicks([value.workspaceId]);
+      }
     }catch(error){setActivityError(error instanceof Error?error.message:'查看状态尚未保存。');}finally{seenInFlight.current.delete(key);}
-  },[client,refreshActivity]);
+  },[client,historyCache,refreshActivity,bumpGlobalTick,bumpWorkspaceTicks]);
   const sendSeenRef=useRef(sendSeen);sendSeenRef.current=sendSeen;
   const seenSchedulerRef=useRef<ReturnType<typeof createStreamingSeenScheduler>|null>(null);
   if(!seenSchedulerRef.current){
