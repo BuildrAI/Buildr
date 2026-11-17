@@ -5,7 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {request as httpRequest,createServer} from 'node:http';
 import {HarnessWebEndpoint} from '../../src/process/web-endpoint.ts';
-import {HarnessWebSessions} from '../../src/process/web-session-store.ts';
+import {HarnessWebSessions,PAGE_SESSION_WINDOW} from '../../src/process/web-session-store.ts';
 import {createAgentService} from '../../src/application/agent-service.ts';
 import {HarnessDirectoryHost} from '../../src/application/directory-host.ts';
 import {executionScopeKey} from '../../src/execution-contracts.ts';
@@ -25,6 +25,31 @@ test('logical page sessions persist; tickets are target-bound, single use, expir
   b.revoke(session.token);assert.equal(a.authenticate(session.token),false);
   assert.throws(()=>b.enable(48001),{code:'agent_web_endpoint_changed'});
   const disk=fs.readFileSync(path.join(dataRoot,'agent-service/harness-web/session-state.json'),'utf8');assert.ok(!disk.includes(session.token)&&!disk.includes(first.ticket));
+});
+
+test('page sessions slide with authenticated activity; expiry, revocation and rebind are never undone by renewal',t=>{
+  const dataRoot=root(t);let now=1_000_000;const store=new HarnessWebSessions(dataRoot,()=>now),identity={instanceId:'a',generation:'g1',pid:process.pid,released:false};
+  store.enable(48010);store.listening(identity,48010);const origin='http://127.0.0.1:48010';
+  const file=path.join(dataRoot,'agent-service/harness-web/session-state.json'),revision=()=>JSON.parse(fs.readFileSync(file,'utf8')).revision;
+  const session=store.exchange(origin,store.issue(origin,'bundle').ticket);
+  assert.equal(session.expiresAt,now+PAGE_SESSION_WINDOW);
+  now+=PAGE_SESSION_WINDOW/4;const before=revision();
+  assert.equal(store.renew(session.token),PAGE_SESSION_WINDOW-PAGE_SESSION_WINDOW/4);
+  assert.equal(revision(),before,'activity above half window does not rewrite state');
+  now+=PAGE_SESSION_WINDOW/2;const extended=revision();
+  assert.equal(store.renew(session.token),PAGE_SESSION_WINDOW,'activity below half window slides to the full window');
+  assert.notEqual(revision(),extended);assert.equal(store.authenticate(session.token),true);
+  const legacy=store.exchange(origin,store.issue(origin,'bundle').ticket);
+  const disk=JSON.parse(fs.readFileSync(file,'utf8'));disk.sessions.at(-1).expiresAt=now+8*60*60*1000;fs.writeFileSync(file,JSON.stringify(disk));
+  assert.equal(store.renew(legacy.token),PAGE_SESSION_WINDOW,'a legacy fixed-8h record joins the sliding window on first activity');
+  now+=PAGE_SESSION_WINDOW+1;
+  assert.equal(store.renew(session.token),undefined);assert.equal(store.authenticate(session.token),false,'inactivity beyond the window expires the session');
+  const revoked=store.exchange(origin,store.issue(origin,'bundle').ticket);store.revoke(revoked.token);
+  assert.equal(store.renew(revoked.token),undefined,'renewal cannot resurrect a revoked session');
+  const rebound=store.exchange(origin,store.issue(origin,'bundle').ticket);
+  store.rebind(identity,{expectedEndpointId:store.read()!.endpointId,expectedPort:48010,port:48011});
+  assert.equal(store.renew(rebound.token),undefined,'renewal cannot resurrect a rebind-revoked session');
+  assert.equal(store.renew('not-a-token'),undefined);assert.equal(store.renew(undefined),undefined);
 });
 
 test('loopback endpoint is explicit, stable across generation handoff, keeps old bundles and rejects false readiness',async t=>{
@@ -47,6 +72,8 @@ test('loopback endpoint is explicit, stable across generation handoff, keeps old
   response=await fetch(origin+'/session/ticket',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({ticket:value})});assert.equal(response.status,200);
   const cookie=response.headers.get('set-cookie')!.split(';')[0]!,token=cookie.slice(cookie.indexOf('=')+1);
   response=await fetch(origin+'/',{headers:{cookie}});assert.equal(response.status,200);const old=await response.text();assert.ok(old.includes(token));const oldBundle=/\/bundles\/([a-f0-9]{64})\/assets\/main.js/.exec(old)![0];
+  const refreshed=response.headers.get('set-cookie');assert.ok(refreshed&&refreshed.startsWith(cookie+';'),'document load refreshes the same session cookie');
+  const maxAge=Number(/Max-Age=(\d+)/.exec(refreshed!)![1]);assert.ok(maxAge>0&&maxAge<=PAGE_SESSION_WINDOW/1000,'cookie lifetime never exceeds the server session window');
   response=await fetch(origin+oldBundle,{headers:{cookie}});assert.match(await response.text(),/"old"/);
   response=await fetch(origin+'/session/ticket',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({ticket:value})});assert.equal(response.status,401);
   response=await fetch(origin+'/api/v1/harness/scopes',{headers:{cookie,origin:'https://foreign.invalid'}});assert.equal(response.status,403);
@@ -60,6 +87,7 @@ test('loopback endpoint is explicit, stable across generation handoff, keeps old
   response=await fetch(origin+oldBundle,{headers:{cookie}});assert.match(await response.text(),/"old"/,'old scripts remain available');
   const read='/api/v1/harness/sources/harness-local/scopes/'+directory.ref.id+'/conversations/'+conversation.id;
   response=await fetch(origin+read,{headers:{cookie}});assert.equal(response.status,200);assert.equal((await response.json()).id,conversation.id);
+  assert.equal(response.headers.get('set-cookie'),null,'API reads renew silently without reissuing cookies');
   const abort=new AbortController();response=await fetch(origin+read+'/events',{headers:{cookie},signal:abort.signal});assert.equal(response.status,200);assert.match(new TextDecoder().decode((await response.body!.getReader().read()).value),/data:/);abort.abort();
   response=await fetch(origin+'/session/revoke',{method:'POST',headers:{cookie,origin,'x-buildr-session':token}});assert.equal(response.status,200);
   response=await fetch(origin+read,{headers:{cookie}});assert.equal(response.status,403);

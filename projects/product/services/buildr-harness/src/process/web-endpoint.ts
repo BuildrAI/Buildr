@@ -153,6 +153,7 @@ export class HarnessWebEndpoint {
   private authorize(req:IncomingMessage,write=false):string {
     this.fence(req);const token=this.cookie(req);
     if(!this.sessions.authenticate(token))throw new AgentServiceError('session_forbidden','Harness 页面会话已失效；草稿保留，请重新从启动器打开。',403);
+    this.sessions.renew(token);
     if(write&&req.headers['x-buildr-session']!==token)throw new AgentServiceError('session_forbidden','Harness 页面写入身份不匹配。',403);
     return token!;
   }
@@ -172,15 +173,17 @@ export class HarnessWebEndpoint {
     if(req.method==='POST'&&url.pathname==='/session/ticket'){
       const input=await body(req,4096);this.fence(req);if(Object.keys(input).join()!=='ticket')throw new AgentServiceError('agent_web_ticket_invalid','票据参数无效。',400);
       const value=this.sessions.exchange(this.origin!,input.ticket);
-      res.setHeader('set-cookie',`${this.sessions.cookieName()}=${value.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800`);json(res,200,{ready:true});return;
+      res.setHeader('set-cookie',`${this.sessions.cookieName()}=${value.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.max(1,Math.floor((value.expiresAt-Date.now())/1000))}`);json(res,200,{ready:true});return;
     }
     if(req.method==='POST'&&url.pathname==='/session/revoke'){const token=this.authorize(req,true);this.sessions.revoke(token);res.setHeader('set-cookie',`${this.sessions.cookieName()}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);json(res,200,{revoked:true});return;}
     if(req.method==='GET'&&(url.pathname==='/'||url.pathname==='/index.html')){
-      const token=this.cookie(req);
-      if(!this.sessions.authenticate(token)){
+      const token=this.cookie(req),remaining=this.sessions.renew(token);
+      if(remaining===undefined){
         const nonce=randomBytes(18).toString('base64');
         this.html(res,`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Buildr Harness</title><p id="status">请从 Buildr Harness 启动器打开；已有草稿仍保留。</p><script nonce="${nonce}">async function redeem(){const value=new URLSearchParams(location.hash.slice(1)).get('ticket');history.replaceState(null,'','/');if(!value)return;try{const response=await fetch('/session/ticket',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ticket:value})});if(response.ok)location.replace('/');else document.getElementById('status').textContent='登录票据已失效，请重新从启动器打开；草稿仍保留。';}catch{document.getElementById('status').textContent='网页连接未确认，请核对启动器状态；草稿仍保留。';}}addEventListener('hashchange',redeem);void redeem();</script></html>`,nonce);return;
       }
+      // Refresh the browser cookie to the server-side remaining lifetime so it never outlives the session.
+      res.setHeader('set-cookie',`${this.sessions.cookieName()}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.max(1,Math.floor(remaining/1000))}`);
       if(this.development){await this.development.handle(req,res,{document:true});return;}
       const html=this.assets.read(this.bundle!,'index.html').bytes.toString('utf8').replaceAll('./assets/',`/bundles/${this.bundle}/assets/`).replace('</head>',`<meta name="buildr-session" content="${token}"><meta name="buildr-web-profile" content="harness-${this.sessions.read()!.endpointId}"></head>`);
       this.html(res,html);return;

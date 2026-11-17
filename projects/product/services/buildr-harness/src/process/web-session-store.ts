@@ -8,6 +8,8 @@ interface Ticket {hash:string;expiresAt:number;origin:string;bundle:string}
 interface Session {hash:string;expiresAt:number;bundle:string}
 interface State {version:1;endpointId:string;revision:string;enabled:boolean;port:number;developmentRoot?:string;listener?:WebListenerIdentity;tickets:Ticket[];sessions:Session[]}
 const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
+/** Inactivity window for page sessions; authenticated activity slides it forward. */
+export const PAGE_SESSION_WINDOW=30*24*60*60*1000;
 const fail=(code:string,message:string,status=409):never=>{throw new AgentServiceError(code,message,status);};
 /** Logical-service sessions survive compatible generations. Only hashes reach disk. */
 export class HarnessWebSessions {
@@ -58,10 +60,20 @@ export class HarnessWebSessions {
       const index=state.tickets.findIndex(value=>value.hash===hash(ticket as string)&&value.origin===origin&&value.expiresAt>this.now());
       if(index<0||origin!==`http://127.0.0.1:${state.port}`)fail('agent_web_ticket_invalid','登录票据无效、已使用或目标不匹配。',401);
       if(state.sessions.length>=1024)fail('agent_web_session_capacity','有效页面会话过多。');
-      const [value]=state.tickets.splice(index,1),token='brhs_'+randomBytes(32).toString('base64url'),expiresAt=this.now()+8*60*60*1000;
+      const [value]=state.tickets.splice(index,1),token='brhs_'+randomBytes(32).toString('base64url'),expiresAt=this.now()+PAGE_SESSION_WINDOW;
       state.sessions.push({hash:hash(token),expiresAt,bundle:value!.bundle});return {token,expiresAt};
     });
   }
   authenticate(token:unknown):boolean{return typeof token==='string'&&/^brhs_[A-Za-z0-9_-]{43}$/.test(token)&&!!this.read()?.sessions.some(value=>value.hash===hash(token)&&value.expiresAt>this.now());}
+  /** Sliding renewal for an already-authenticated session; returns its remaining lifetime.
+   * Disk writes are throttled to at most once per half window. Revoked or rebound-away
+   * sessions never match, so renewal cannot resurrect them. */
+  renew(token:unknown):number|undefined {
+    if(typeof token!=='string'||!/^brhs_[A-Za-z0-9_-]{43}$/.test(token))return undefined;
+    const hashed=hash(token),match=this.read()?.sessions.find(value=>value.hash===hashed&&value.expiresAt>this.now());
+    if(!match)return undefined;
+    if(match.expiresAt-this.now()>PAGE_SESSION_WINDOW/2)return match.expiresAt-this.now();
+    return this.mutate(state=>{const item=state.sessions.find(value=>value.hash===hashed&&value.expiresAt>this.now());if(!item)return undefined;item.expiresAt=this.now()+PAGE_SESSION_WINDOW;return PAGE_SESSION_WINDOW;});
+  }
   revoke(token:string):void {this.mutate(state=>{state.sessions=state.sessions.filter(value=>value.hash!==hash(token));});}
 }
