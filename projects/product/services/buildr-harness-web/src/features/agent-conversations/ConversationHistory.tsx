@@ -1,12 +1,13 @@
-import { useConversationDraftPresence } from './useConversationDraftPresence.ts';
+import { settleConversationDraftIds, shouldShowConversationDraft, workspaceConversationDraftIds } from './conversation-draft-presence.ts';
+import { useConversationDraftPresenceDetail } from './useConversationDraftPresence.ts';
 import { ConversationExecutionSummary } from './ConversationExecutionSummary.tsx';
 import { conversationModelSourceLabel, conversationModelLabel } from './conversation-model-label.ts';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Empty, Input, Select } from 'antd';
 import { ArrowLeftOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext.tsx';
 import { ConversationActivityStatus } from './ConversationActivityStatus.tsx';
-import { activityState,sendActivity, conversationMetadata } from './conversation-activity.ts';
+import { activityState, sendActivity, conversationMetadata, isExecuting } from './conversation-activity.ts';
 import type { ExecutionFilter } from './ConversationExecutionStats.tsx';
 import { CopyButton } from '../../components/CopyButton.tsx';
 import { DEFAULT_HISTORY_GROUP, historyGroupOrder, moveHistoryGroup, writeHistoryGroupPreference } from './conversation-history-groups.ts';
@@ -18,9 +19,38 @@ import { useDebouncedValue } from './useDebouncedValue.ts';
 import './conversation-activity.css';
 export type ConversationWorkspace = {id:string;name:string;rootPath:string};
 type HistoryGroupResult = {total?:number;busy:boolean;error:boolean};
+function DraftStatusBadge({visible,immediateHide}:{visible:boolean;immediateHide:boolean}) {
+  const [leaving,setLeaving]=useState(false);
+  const prevVisible=useRef(visible);
+  useEffect(()=>{
+    const wasVisible=prevVisible.current;
+    prevVisible.current=visible;
+    if(visible){setLeaving(false);return;}
+    if(!wasVisible||immediateHide||(typeof window!=='undefined'&&window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)){
+      setLeaving(false);return;
+    }
+    setLeaving(true);
+    const timer=setTimeout(()=>setLeaving(false),150);
+    return()=>clearTimeout(timer);
+  },[visible,immediateHide]);
+  if(!visible&&!leaving)return null;
+  return <span className={'ac-draft-status'+(leaving&&!visible?' is-leaving':'')} aria-hidden={leaving&&!visible?true:undefined}>有草稿</span>;
+}
 export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWorkspaceId,keepHistoryOpen=false}:{workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;keepHistoryOpen?:boolean}) {
   const context=useAgentConversations();
-  const draftIds=useConversationDraftPresence();
+  const presence=useConversationDraftPresenceDetail();
+  const activeEditingScope=keepHistoryOpen&&context.scope?context.scope:null;
+  const activeEditingId=activeEditingScope?.conversationId??null;
+  const executingIds=useMemo(()=>{
+    const ids=new Set<string>();
+    for(const row of context.activityRows)if(isExecuting(row))ids.add(row.id);
+    if(context.conversation&&isExecuting(context.conversation))ids.add(context.conversation.id);
+    return ids;
+  },[context.activityRows,context.conversation]);
+  const settledRef=useRef<string[]|null>(null);
+  if(settledRef.current===null)settledRef.current=presence.ids.filter(id=>!executingIds.has(id));
+  const settledDraftIds=settleConversationDraftIds({liveIds:presence.ids,previousIds:settledRef.current,activeEditingId,executingIds});
+  settledRef.current=settledDraftIds;
   const initial=context.historyWorkspaceId??'';
   const [workspaceId,setWorkspaceId]=useState(initial),[query,setQuery]=useState(''),[hidden,setHidden]=useState(false),[filter,setFilter]=useState<ExecutionFilter>(null);
   const searchQuery=useDebouncedValue(query,250);
@@ -30,7 +60,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   const [groupResults,setGroupResults]=useState<{scope:string;values:Record<string,HistoryGroupResult>}>({scope:'',values:{}});
   useEffect(()=>{if(context.historyWorkspaceId!==undefined){setWorkspaceId(context.historyWorkspaceId??'');setFilter(null);}},[context.historyWorkspaceId]);
   const agent=filter?.kind==='agent'?filter.value:undefined,model=filter?.kind==='model'?filter.value:undefined;
-  // 统计不受搜索或执行筛选影响，独立于逐键查询读取。
+  // 统计不受搜索、执行筛选或草稿波动影响，独立于逐键查询读取。
   const {page, error, retry}=useConversationHistoryPage(context.api,{workspaceId:workspaceId||undefined,query:'',hidden:false},1,true,context.historyCache,context.activityTick);
   const stats=page?.stats;
   const scopeKey=JSON.stringify([workspaceId,searchQuery,hidden,agent,model]);
@@ -46,7 +76,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   const workspaceName=(id:string)=>id===DEFAULT_HISTORY_GROUP?'默认':workspaces.find(item=>item.id===id)?.name||id;
   const renderRow=(row:ConversationSummary)=><div key={row.workspaceId+':'+row.id} className={'ac-history-row'+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
     <button type="button" className="ac-history-row-main" data-conversation-id={row.id} onClick={()=>void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true,preserveHistoryView:keepHistoryOpen})}>
-      <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/>{draftIds.includes(row.id)&&<span className="ac-draft-status">有草稿</span>}</span>
+      <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/><DraftStatusBadge visible={shouldShowConversationDraft(row,presence.ids,activeEditingId)} immediateHide={isExecuting(row)}/></span>
       {sendActivity(row)?.reason&&<span className="ac-send-reason">{sendActivity(row)?.reason}</span>}
       {row.searchSnippet&&<span className="ac-history-row-snippet" title={row.searchSnippet}>{row.searchSnippet}</span>}
       <small><span className="ac-history-id" title={row.id}>{row.id}</span><span className="ac-history-meta">{conversationMetadata(row,undefined,row.run?.model?conversationModelLabel(row.run.model,context.connections,context.modelCatalog,{modelAccountId:row.run.modelAccountId}):undefined)}</span></small>
@@ -62,7 +92,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
     if(index>=movable.length-1)return;
     reorder(id,movable[index+2]??'end');
   };
-  const sortGroup=(id:string)=><ConversationHistoryGroup key={id+scopeKey} workspaceId={id} name={workspaceName(id)} query={searchQuery} hidden={hidden} agent={agent} model={model} renderRow={renderRow} onResult={reportGroup}
+  const sortGroup=(id:string)=><ConversationHistoryGroup key={id+scopeKey} workspaceId={id} name={workspaceName(id)} query={searchQuery} hidden={hidden} agent={agent} model={model} draftConversationIds={workspaceConversationDraftIds(id,settledDraftIds,presence,activeEditingScope)} renderRow={renderRow} onResult={reportGroup}
     className={'ac-history-group ac-history-workspace'+(draggingGroup===id?' is-dragging':'')+(dropGroup===id&&draggingGroup&&draggingGroup!==id?' is-drop-target'+(dropAfter?' is-drop-after':''):'')}
     onDragOver={event=>{if(!draggingGroup||draggingGroup===id||id===DEFAULT_HISTORY_GROUP)return;event.preventDefault();setDropGroup(id);const header=event.currentTarget.querySelector('h3')?.getBoundingClientRect();setDropAfter(Boolean(header&&event.clientY>header.top+header.height/2));}}
     onDrop={event=>{if(!draggingGroup)return;event.preventDefault();if(id!==DEFAULT_HISTORY_GROUP){const header=event.currentTarget.querySelector('h3')?.getBoundingClientRect();const after=Boolean(header&&event.clientY>header.top+header.height/2);const target=after?order[order.indexOf(id)+1]??'end':id;reorder(draggingGroup,target===DEFAULT_HISTORY_GROUP?'end':target);}setDraggingGroup('');setDropGroup('');}}
