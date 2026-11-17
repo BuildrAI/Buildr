@@ -1,4 +1,4 @@
-import { rememberDiagramSvg, setDiagramSvg } from './markdownDiagramSvg.ts';
+import { rememberBlockDiagramSvg, rememberDiagramSvg, setDiagramSvg } from './markdownDiagramSvg.ts';
 
 type Pending = {
   resolve: (svg: string) => void;
@@ -69,6 +69,7 @@ export function renderMarkdownDiagrams(root: HTMLElement): () => void {
     }).then(svg => {
       if (disposed || !root.isConnected) return;
       setDiagramSvg(graph, svg);
+      rememberBlockDiagramSvg(block, svg);
       rememberDiagramSvg(block.dataset.mermaidSource!, svg);
       graph.hidden = false;
       note.hidden = true;

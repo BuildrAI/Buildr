@@ -618,3 +618,15 @@ export function clampFocusHistoryWidth(width: number, panelWidth?: number): numb
   const max = panelWidth !== undefined ? focusHistoryMaxWidth(panelWidth) : FOCUS_HISTORY_MAX_WIDTH;
   return Math.min(max, Math.max(FOCUS_HISTORY_MIN_WIDTH, Math.round(base)));
 }
+
+/** Focused split keeps its side history list open across conversation creation and switches. */
+export function shouldPreserveFocusHistory(
+  full: boolean,
+  view: 'conversation' | 'history',
+  panelWidth?: number,
+  viewportWidth?: number,
+): boolean {
+  if (!full || view !== 'history') return false;
+  if (panelWidth === undefined) return true;
+  return canSplitFocusHistory(panelWidth, viewportWidth);
+}

@@ -1,7 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { renderMarkdown, type MarkdownRenderOptions } from '../markdown.ts';
+import { bindMarkdownDiagramPreviews, type MarkdownDiagramTarget } from '../lib/markdownDiagramPreviews.ts';
 import { bindMarkdownImagePreviews } from '../lib/markdownImagePreviews.ts';
 import { renderMarkdownDiagrams } from '../lib/markdownDiagrams.ts';
+import { MarkdownDiagramPreview } from './MarkdownDiagramPreview.tsx';
 
 type Props = {
   markdown: string;
@@ -24,6 +26,7 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
   const ref = useRef<HTMLDivElement>(null);
   const optionsRef = useRef(options);
   optionsRef.current = options;
+  const [diagramPreview, setDiagramPreview] = useState<MarkdownDiagramTarget | null>(null);
 
   useEffect(() => {
     const host = ref.current;
@@ -44,10 +47,31 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
         });
     }
     if (currentOptions.onImageClick) bindMarkdownImagePreviews(view, () => optionsRef.current?.onImageClick);
+    bindMarkdownDiagramPreviews(view, () => (diagram) => {
+      if (typeof window !== 'undefined' && window.parent !== window) {
+        window.parent.postMessage(
+          { protocol: 'buildr.harness-frame/v1', event: 'diagram-preview', svg: diagram.svg, source: diagram.source },
+          window.location.origin,
+        );
+        return;
+      }
+      setDiagramPreview(diagram);
+    });
     host.replaceChildren(view);
     if (fragment) requestAnimationFrame(() => scrollMarkdownFragment(view, fragment));
     return renderMarkdownDiagrams(view);
   }, [markdown, className, fragment, renderVersion, options?.taskLinkPathname, JSON.stringify(options?.headingCounts)]);
 
-  return <div ref={ref} />;
+  return (
+    <>
+      <div ref={ref} />
+      {diagramPreview && (
+        <MarkdownDiagramPreview
+          svg={diagramPreview.svg}
+          source={diagramPreview.source}
+          onClose={() => setDiagramPreview(null)}
+        />
+      )}
+    </>
+  );
 }

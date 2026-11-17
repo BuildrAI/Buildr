@@ -937,3 +937,13 @@ test('专注模式分屏宽度优先保护右侧 800px 阅读宽度，窄窗口�
  assert.equal(canSplitFocusHistory(859,911),false);
  assert.equal(canSplitFocusHistory(860,760),false);
 });
+
+test('仅专注模式分屏时跨刷新与切换保持历史列表展开',async()=>{
+ const {shouldPreserveFocusHistory}=await import('../../src/features/agent-conversations/conversation-state.ts');
+ assert.equal(shouldPreserveFocusHistory(true,'history'),true);
+ assert.equal(shouldPreserveFocusHistory(true,'history',1280,1360),true);
+ assert.equal(shouldPreserveFocusHistory(true,'history',859,911),false);
+ assert.equal(shouldPreserveFocusHistory(true,'history',1024,760),false);
+ assert.equal(shouldPreserveFocusHistory(true,'conversation',1280,1360),false);
+ assert.equal(shouldPreserveFocusHistory(false,'history',1280,1360),false);
+});

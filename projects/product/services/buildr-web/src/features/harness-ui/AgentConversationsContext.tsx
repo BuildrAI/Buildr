@@ -7,22 +7,27 @@ export type TextConversationActionResult={status:'started';conversation:Conversa
 export type FrameCommand={action:'new'|'open'|'history'|'settings'|'configure'|'start-text';workspaceId?:string;conversationId?:string;taskId?:string;workspaces?:{id:string;name:string;rootPath:string}[];input?:TextConversationActionInput;requestId?:string};
 function useIntegration(){
  const [open,setOpenState]=useState(()=>readOptionalPreference('buildr.harness-panel-open')==='true');
- const setOpen=useCallback((value:boolean|((current:boolean)=>boolean))=>setOpenState(current=>{const next=typeof value==='function'?value(current):value;writeOptionalPreference('buildr.harness-panel-open',String(next));return next;}),[]);
- const [full,setFull]=useState(false),[view,setView]=useState<'conversation'|'history'>('conversation'),[settings,setSettingsState]=useState(false);
+ const [full,setFullState]=useState(()=>readOptionalPreference('buildr.harness-panel-full')==='true');
+ const fullRef=useRef(full);
+ const [view,setViewState]=useState<'conversation'|'history'>(()=>readOptionalPreference('buildr.harness-panel-full')==='true'&&readOptionalPreference('buildr.harness-panel-view')==='history'?'history':'conversation');
+ const setView=useCallback((value:'conversation'|'history'|((current:'conversation'|'history')=>'conversation'|'history'))=>{setViewState(current=>{const next=typeof value==='function'?value(current):value;writeOptionalPreference('buildr.harness-panel-view',next);return next;});},[]);
+ const setFull=useCallback((value:boolean|((current:boolean)=>boolean))=>{setFullState(current=>{const next=typeof value==='function'?value(current):value;fullRef.current=next;writeOptionalPreference('buildr.harness-panel-full',String(next));if(!next){setViewState('conversation');writeOptionalPreference('buildr.harness-panel-view','conversation');}return next;});},[]);
+ const setOpen=useCallback((value:boolean|((current:boolean)=>boolean))=>setOpenState(current=>{const next=typeof value==='function'?value(current):value;writeOptionalPreference('buildr.harness-panel-open',String(next));if(!next){fullRef.current=false;setFullState(false);writeOptionalPreference('buildr.harness-panel-full','false');setViewState('conversation');writeOptionalPreference('buildr.harness-panel-view','conversation');}return next;}),[]);
+ const [settings,setSettingsState]=useState(false);
  const [conversation,setConversation]=useState<ConversationView|null>(null),[command,setCommand]=useState<FrameCommand|null>(null),[sequence,setSequence]=useState(0);
  const [modelCatalog,setModelCatalog]=useState<CatalogModel[]>([]),[modelCatalogReady,setModelCatalogReady]=useState(false),[modelCatalogError,setModelCatalogError]=useState('');
  const pending=useRef(new Map<string,{resolve:(result:TextConversationActionResult)=>void;timer:ReturnType<typeof setTimeout>}>());
- const issue=useCallback((value:FrameCommand)=>{setCommand(value);setSequence(value=>value+1);setOpen(true);},[]);
+ const issue=useCallback((value:FrameCommand)=>{setCommand(value);setSequence(value=>value+1);setOpen(true);},[setOpen]);
  const refreshModelCatalog=useCallback(async()=>{try{const result=await agentConversationsApi.modelCatalog();setModelCatalog(result.models);setModelCatalogReady(result.hasSnapshot??true);setModelCatalogError(result.diagnostic??'');}catch(error){setModelCatalogError(error instanceof Error?error.message:'模型读取失败。');}},[]);
- const openConversation=useCallback(async(workspaceId:string,conversationId:string,_options?:unknown)=>{setView('conversation');issue({action:'open',workspaceId,conversationId});},[issue]);
- const newConversation=useCallback((options?:{scope?:{workspaceId:string;taskId?:string}|null})=>{setView('conversation');setOpen(true);if(options?.scope?.workspaceId)issue({action:'new',...options.scope});else issue({action:'new'});},[issue]);
+ const openConversation=useCallback(async(workspaceId:string,conversationId:string,_options?:unknown)=>{if(!fullRef.current)setView('conversation');issue({action:'open',workspaceId,conversationId});},[issue,setView]);
+ const newConversation=useCallback((options?:{scope?:{workspaceId:string;taskId?:string}|null})=>{if(!fullRef.current)setView('conversation');setOpen(true);if(options?.scope?.workspaceId)issue({action:'new',...options.scope});else issue({action:'new'});},[issue,setOpen,setView]);
  const startTextConversation=useCallback((input:TextConversationActionInput)=>new Promise<TextConversationActionResult>(resolve=>{
    if(pending.current.size){resolve({status:'busy',message:'原工程操作尚未确认，请勿重复提交。'});return;}
    const requestId=crypto.randomUUID();const timer=setTimeout(()=>{pending.current.delete(requestId);resolve({status:'recovering',reason:'submission-unknown',message:'Harness 的处理结果尚未确认，请到原对话核对，不要重复提交。'});},60000);pending.current.set(requestId,{resolve,timer});issue({action:'start-text',input,requestId});
  }),[issue]);
  const reply=useCallback((id:string,result:TextConversationActionResult)=>{const request=pending.current.get(id);if(!request)return;clearTimeout(request.timer);pending.current.delete(id);request.resolve(result);},[]);
  const apply=useCallback((value:ConversationView,_revision?:string)=>setConversation(current=>current?.id===value.id&&current.workspaceId===value.workspaceId?value:current),[]);
- const openHistory=useCallback((_workspaceId?:string|null)=>{setView('history');issue({action:'history'});},[issue]);
+ const openHistory=useCallback((_workspaceId?:string|null)=>{setView('history');issue({action:'history'});},[issue,setView]);
  return {side:'right' as 'left'|'right',connections:[] as {provider:string;label?:string}[],locateParticipation:async(workspaceId:string,conversationId:string,_runId:string)=>openConversation(workspaceId,conversationId),api:agentConversationsApi,open,setOpen,full,setFull,view,setView,settings,setSettings:(value:boolean)=>{setSettingsState(value);if(value)issue({action:'settings'});},conversation,setConversation,scope:conversation?{workspaceId:conversation.workspaceId,conversationId:conversation.id}:null,command,sequence,issue,reply,newConversation,openConversation,openHistory,openGlobal:()=>{setOpen(true);},toggle:()=>setOpen(value=>!value),toggleView:(next:'conversation'|'history')=>{if(next==='history')openHistory();else{setView(next);setOpen(value=>!value);}},apply,modelCatalog,modelCatalogReady,modelCatalogError,refreshModelCatalog,startTextConversation};
 }
 export type AgentConversationsContextValue=ReturnType<typeof useIntegration>;

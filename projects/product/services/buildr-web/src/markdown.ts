@@ -4,7 +4,7 @@ import { decodeHTML } from 'entities';
 import { markdownDestination } from './lib/markdownDestination.ts';
 import { localFilePath } from './lib/localFileLink.ts';
 import { copyText } from './lib/copyText.ts';
-import { cachedDiagramSvg, setDiagramSvg } from './lib/markdownDiagramSvg.ts';
+import { cachedDiagramSvg, rememberBlockDiagramSvg, setDiagramSvg } from './lib/markdownDiagramSvg.ts';
 /** Failed destinations stay textual across re-renders; a new document load starts with a clean view. */
 
 export type MarkdownRenderOptions = {
@@ -273,6 +273,48 @@ function createSvgElement(doc, tag) {
     : doc.createElement(tag);
 }
 
+const VERTICAL_SCROLL_OVERFLOW = new Set(['auto', 'scroll', 'overlay']);
+
+function canScrollElementVertically(element, deltaY: number): boolean {
+  if (!element || deltaY === 0) return false;
+  const scrollHeight = Number(element.scrollHeight) || 0;
+  const clientHeight = Number(element.clientHeight) || 0;
+  const scrollTop = Number(element.scrollTop) || 0;
+  if (scrollHeight <= clientHeight + 1) return false;
+  return deltaY < 0 ? scrollTop > 0.5 : scrollTop + clientHeight < scrollHeight - 1;
+}
+
+function findVerticalScrollTarget(start, deltaY: number) {
+  const view = start?.ownerDocument?.defaultView ?? globalThis;
+  let node = start?.parentElement ?? null;
+  while (node) {
+    const overflowY = typeof view?.getComputedStyle === 'function'
+      ? view.getComputedStyle(node).overflowY
+      : node.style?.overflowY;
+    if (VERTICAL_SCROLL_OVERFLOW.has(overflowY) && canScrollElementVertically(node, deltaY)) {
+      return node;
+    }
+    node = node.parentElement ?? null;
+  }
+  const root = start?.ownerDocument?.scrollingElement;
+  return root && root !== start && canScrollElementVertically(root, deltaY) ? root : null;
+}
+
+/** Forward vertical wheel gestures past a diagram boundary so the outer transcript keeps scrolling. */
+export function forwardDiagramBoundaryWheel(graph, event) {
+  if (!graph || !event || event.defaultPrevented || event.ctrlKey || event.metaKey || event.shiftKey) return false;
+  const deltaY = Number(event.deltaY) || 0;
+  const deltaX = Number(event.deltaX) || 0;
+  if (!deltaY || Math.abs(deltaY) < Math.abs(deltaX)) return false;
+  if (canScrollElementVertically(graph, deltaY)) return false;
+  const target = findVerticalScrollTarget(graph, deltaY);
+  if (!target) return false;
+  event.preventDefault?.();
+  const factor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? (Number(target.clientHeight) || 400) : 1;
+  target.scrollTop += deltaY * factor;
+  return true;
+}
+
 function createCodeBlock(language, code, doc, sourcePath, complete = true) {
   const block = doc.createElement('div');
   block.className = 'markdown-code-block';
@@ -334,7 +376,11 @@ function createCodeBlock(language, code, doc, sourcePath, complete = true) {
     graph.setAttribute('aria-label', 'Mermaid 图示');
     graph.setAttribute('tabindex', '0');
     graph.hidden = !cached;
-    if (cached) setDiagramSvg(graph, cached);
+    if (cached) {
+      setDiagramSvg(graph, cached);
+      rememberBlockDiagramSvg(block, cached);
+    }
+    graph.addEventListener?.('wheel', event => forwardDiagramBoundaryWheel(graph, event), { passive: false });
     block.append(graph);
     const note = doc.createElement('p');
     note.className = 'markdown-render-note';

@@ -10,7 +10,7 @@ import { createConversationHistoryCache, conversationHistorySignature, activityW
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ConnectionDiscovery, type ConnectionDiscoveryState } from './connection-discovery.ts';
 import { agentConversationsApi, type ConversationPage, type AgentConversationsClient } from './api/agent-conversations-api.ts';
-import { conversationObservationKey, needsConversationObservation, nextConversationPanel, createdConversationVisibility, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, rememberContextReport, sameConversationSelection, type ConversationContextReport, type ConversationSelection } from './conversation-state.ts';
+import { conversationObservationKey, needsConversationObservation, nextConversationPanel, createdConversationVisibility, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, rememberContextReport, sameConversationSelection, shouldPreserveFocusHistory, type ConversationContextReport, type ConversationSelection } from './conversation-state.ts';
 import { readOptionalPreference, writeOptionalPreference } from '../../lib/optional-preferences.ts';
 import type { CatalogModel, ConnectionView, ConversationEvent, ConversationView, PendingConversation } from './types.ts';
 import { conversationProductActionSelection, recoverConversationProductAction, startConversationProductAction } from './conversation-product-action.ts';
@@ -58,26 +58,70 @@ const ShellContext=createContext<ShellValue|null>(null);
 export function AgentConversationsViewProvider({value,children}:{value:AgentConversationsContextValue;children:ReactNode}) {
   return <ShellContext.Provider value={value}><Context.Provider value={value}>{children}</Context.Provider></ShellContext.Provider>;
 }
-const panelStateKey = () => 'buildr.agent-conversation.panel:' + (document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content') || 'local');
-function savedPanel(): {open: boolean; scope: Scope | null} {
-  try { const parsed = JSON.parse(sessionStorage.getItem(panelStateKey()) || 'null'); return {open: parsed?.open === true, scope: typeof parsed?.scope?.workspaceId === 'string' && typeof parsed?.scope?.conversationId === 'string' ? parsed.scope : null}; } catch { return {open:false,scope:null}; }
+const panelProfile = () => (typeof document === 'undefined' ? 'local' : document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content') || 'local');
+const panelStateKey = () => 'buildr.agent-conversation.panel:' + panelProfile();
+const fullPreferenceKey = () => 'buildr.agent-conversation.full:' + panelProfile();
+const focusHistoryPreferenceKey = () => 'buildr.agent-conversation.focus-history:' + panelProfile();
+type SavedPanelState = { open: boolean; full?: boolean; view?: 'conversation' | 'history'; scope: Scope | null };
+function savedPanel(): SavedPanelState {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(panelStateKey()) || 'null');
+    const full = typeof parsed?.full === 'boolean' ? parsed.full : undefined;
+    const view = parsed?.view === 'conversation' || parsed?.view === 'history' ? parsed.view : undefined;
+    return {
+      open: parsed?.open === true,
+      full,
+      view,
+      scope: typeof parsed?.scope?.workspaceId === 'string' && typeof parsed?.scope?.conversationId === 'string' ? parsed.scope : null,
+    };
+  } catch {
+    return { open: false, scope: null };
+  }
 }
-function savePanel(open: boolean, scope: Scope | null) {try {sessionStorage.setItem(panelStateKey(),JSON.stringify({open,scope}));} catch { /* Input remains usable when browser storage is denied. */ }}
+function savePanel(open: boolean, scope: Scope | null, full?: boolean, view?: 'conversation' | 'history') {
+  try {
+    sessionStorage.setItem(panelStateKey(), JSON.stringify({ open, scope, ...(full !== undefined ? { full } : {}), ...(view !== undefined ? { view } : {}) }));
+  } catch { /* Input remains usable when browser storage is denied. */ }
+}
+function currentFocusSplitPreservesHistory(full: boolean, view: 'conversation' | 'history'): boolean {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return shouldPreserveFocusHistory(full, view);
+  const panelWidth = document.getElementById('agent-conversation-panel')?.getBoundingClientRect().width || Math.max(0, window.innerWidth - 52);
+  return shouldPreserveFocusHistory(full, view, panelWidth, window.innerWidth);
+}
 
 export function AgentConversationsProvider({children, client = agentConversationsApi}: {children: ReactNode; client?: AgentConversationsClient}) {
   const [initialPanel] = useState(savedPanel);
+  const initialFull = initialPanel.full ?? (readOptionalPreference(fullPreferenceKey()) === 'true' || readOptionalPreference('buildr.harness-panel-full') === 'true');
+  const initialView: 'conversation' | 'history' = initialFull && (initialPanel.view === 'history' || (initialPanel.view === undefined && (readOptionalPreference(focusHistoryPreferenceKey()) === 'true' || readOptionalPreference('buildr.harness-panel-view') === 'history'))) ? 'history' : 'conversation';
   const historyCache=useMemo(createConversationHistoryCache,[client]);
-  const [open, setOpenState] = useState(initialPanel.open), [full, setFullState] = useState(false), fullRef = useRef(false), [view, setView] = useState<'conversation' | 'history'>('conversation');
+  const [open, setOpenState] = useState(initialPanel.open), [full, setFullState] = useState(initialFull), fullRef = useRef(initialFull), [view, setViewState] = useState<'conversation' | 'history'>(initialView), viewRef = useRef<'conversation' | 'history'>(initialView);
+  const [scope, setScope] = useState<Scope | null>(null);
+  const scopeRef = useRef(scope);
+  const visibility=useRef({open:initialPanel.open,version:0});
+  const setView = useCallback((value: 'conversation' | 'history' | ((current: 'conversation' | 'history') => 'conversation' | 'history')) => {
+    const next = typeof value === 'function' ? value(viewRef.current) : value;
+    viewRef.current = next;
+    setViewState(next);
+    writeOptionalPreference(focusHistoryPreferenceKey(), fullRef.current && next === 'history' ? 'true' : 'false');
+    savePanel(visibility.current.open, scopeRef.current, fullRef.current, next);
+  }, []);
   const setFull = useCallback((value: boolean | ((current: boolean) => boolean)) => {
     const next = typeof value === 'function' ? value(fullRef.current) : value;
     fullRef.current = next;
     setFullState(next);
-    if (!next) setView('conversation');
+    writeOptionalPreference(fullPreferenceKey(), String(next));
+    if (!next) {
+      viewRef.current = 'conversation';
+      setViewState('conversation');
+      writeOptionalPreference(focusHistoryPreferenceKey(), 'false');
+    } else {
+      writeOptionalPreference(focusHistoryPreferenceKey(), viewRef.current === 'history' ? 'true' : 'false');
+    }
+    savePanel(visibility.current.open, scopeRef.current, next, viewRef.current);
   }, []);
-  const visibility=useRef({open:initialPanel.open,version:0});
   const setVisibility=useCallback((value:boolean,explicit=true)=>{visibility.current={open:value,version:visibility.current.version+(explicit?1:0)};setOpenState(value);},[]);
   const [side, setSide] = useState<'left' | 'right'>(() => readOptionalPreference('buildr.agent-conversation-side') === 'left' ? 'left' : 'right');
-  const [settings, setSettings] = useState(false), [scope, setScope] = useState<Scope | null>(null), [draftScope, setDraftScope] = useState<DraftScope | null>(null), [conversation, setConversation] = useState<ConversationView | null>(null);
+  const [settings, setSettings] = useState(false), [draftScope, setDraftScope] = useState<DraftScope | null>(null), [conversation, setConversation] = useState<ConversationView | null>(null);
   const [connections, setConnections] = useState<ConnectionView[]>([]), [pending, setPending] = useState<PendingConversation[]>([]), [loading, setLoading] = useState(false), [error, setError] = useState(''), [streamError, setStreamError] = useState('');
   const [reconnecting,setReconnecting]=useState(false),[recovering,setRecovering]=useState(false);
   const [productActionPending,setProductActionPending]=useState(false),[productActionError,setProductActionError]=useState('');
@@ -150,7 +194,6 @@ export function AgentConversationsProvider({children, client = agentConversation
   },[open,settings,refreshModelCatalog]);
   const previousSettings=useRef(settings);
   useEffect(()=>{if(previousSettings.current===settings)return;previousSettings.current=settings;void refreshModelCatalog().catch(()=>{});},[refreshModelCatalog,settings]);
-  const scopeRef = useRef(scope);
   const conversationRef=useRef(conversation);conversationRef.current=conversation;
   const [contextReport,setContextReport]=useState<ConversationContextReport|null>(null);
   useEffect(()=>{setContextReport(current=>rememberContextReport(current,conversation));},[conversation]);
@@ -220,13 +263,14 @@ export function AgentConversationsProvider({children, client = agentConversation
       setConversation(null);
       eventCursor.current = undefined;
     }
-    if(!options.preserveHistoryView)setView('conversation');
+    const keepHistory = options.preserveHistoryView ?? currentFocusSplitPreservesHistory(fullRef.current, viewRef.current);
+    if (!keepHistory) setView('conversation');
     if(!options.preserveVisibility)setVisibility(true);
     setLoading(true); setError(''); setStreamError('');
-    savePanel(visibility.current.open,nextScope);
+    savePanel(visibility.current.open,nextScope,fullRef.current,viewRef.current);
     const controller=new AbortController();selectionRead.current=controller;
     try { const next = await client.read(workspaceId, conversationId,controller.signal); if (request === serial.current && scopeRef.current?.conversationId === conversationId && scopeRef.current.workspaceId === workspaceId) apply(next, sameConversation ? previous.revision : undefined); } catch (failure) { if (request === serial.current&&!controller.signal.aborted) setError(failure instanceof Error ? failure.message : '无法读取对话。'); } finally { if(selectionRead.current===controller)selectionRead.current=null;if (request === serial.current) setLoading(false); }
-  }, [client,advanceSelection,setVisibility,apply]);
+  }, [client,advanceSelection,setVisibility,setView,apply]);
   openConversationRef.current=openConversation;
   const locateParticipation=useCallback(async(workspaceId:string,conversationId:string,runId:string)=>{
     participationNavigation.current?.abort();
@@ -241,7 +285,7 @@ export function AgentConversationsProvider({children, client = agentConversation
       requestAnimationFrame(()=>{if(controller.signal.aborted||!isSelectionCurrent(selection)||!visibility.current.open)return;const target=[...document.querySelectorAll<HTMLElement>('[data-run-id]')].find(node=>node.dataset.runId===runId);if(target)locateConversationContent(target,false);});
     }catch(failure){if(!controller.signal.aborted&&isSelectionCurrent(selection))setError(failure instanceof Error?failure.message:'原执行定位失败');}
   },[client,openConversation,getSelection,isSelectionCurrent,prependEntries]);
-  useEffect(() => {const saved=initialPanel;if(saved.scope)void openConversation(saved.scope.workspaceId,saved.scope.conversationId,{preserveVisibility:true});},[openConversation]);
+  useEffect(() => {const saved=initialPanel;if(saved.scope)void openConversation(saved.scope.workspaceId,saved.scope.conversationId,{preserveVisibility:true,preserveHistoryView:initialFull&&initialView==='history'});},[openConversation]);
   const refresh = useCallback(async () => { const current = scopeRef.current; if (!current) return; const selection=getSelection(),observed=conversationRef.current?.revision; const result = await client.read(current.workspaceId, current.conversationId); if(!isSelectionCurrent(selection))return; apply(result,observed); setStreamError(''); setObservation(value => value + 1); void refreshPending().catch(() => {}); }, [client, apply, refreshPending,getSelection,isSelectionCurrent]);
   // Reuse global activity discovery instead of polling a finished run. List rows
   // are only a change signal; reread the authoritative conversation by identity.
@@ -363,7 +407,7 @@ export function AgentConversationsProvider({children, client = agentConversation
     };
     void recover();return()=>{active=false;if(timer)clearTimeout(timer);setRecovering(false);};
   },[client,scope?.workspaceId,scope?.conversationId,conversation?.run?.id,conversation?.run?.generation,conversation?.run?.participantId,conversation?.run?.status,apply,getSelection,isSelectionCurrent]);
-  const newConversation = useCallback((options:VisibilityOptions&{scope?:DraftScope|null}={}) => { advanceSelection(); eventCursor.current=undefined; scopeRef.current = null; setScope(null); setDraftScope(options.scope??null); conversationRef.current=null; setConversation(null); setError(''); setStreamError(''); if(!options.preserveHistoryView)setView('conversation'); if(!options.preserveVisibility)setVisibility(true); setLoading(false); savePanel(visibility.current.open,null); }, [advanceSelection,setVisibility]);
+  const newConversation = useCallback((options:VisibilityOptions&{scope?:DraftScope|null}={}) => { advanceSelection(); eventCursor.current=undefined; scopeRef.current = null; setScope(null); setDraftScope(options.scope??null); conversationRef.current=null; setConversation(null); setError(''); setStreamError(''); const keepHistory = options.preserveHistoryView ?? currentFocusSplitPreservesHistory(fullRef.current, viewRef.current); if(!keepHistory)setView('conversation'); if(!options.preserveVisibility)setVisibility(true); setLoading(false); savePanel(visibility.current.open,null,fullRef.current,viewRef.current); }, [advanceSelection,setVisibility,setView]);
   const startTextConversation = useCallback(async (input: TextConversationActionInput): Promise<TextConversationActionResult> => {
     if(productActionBusy.current)return {status:'busy',message:'已有一项操作正在提交，请先等待原操作完成。'};
     productActionBusy.current=true;setProductActionPending(true);setProductActionError('');
@@ -407,10 +451,10 @@ export function AgentConversationsProvider({children, client = agentConversation
     if(!isSelectionCurrent(observed))return result;
     setLoading(false);setError('');
     const nextOpen=createdConversationVisibility(observedVisibility,visibility.current,selection===undefined);
-    eventCursor.current=undefined;scopeRef.current={workspaceId:result.workspaceId,conversationId:result.id};setScope(scopeRef.current);setDraftScope(null);savePanel(nextOpen,scopeRef.current);conversationRef.current=result;setConversation(result);if(!fullRef.current)setView('conversation');setVisibility(nextOpen,false);setStreamError('');return result;
-  },[client,advanceSelection,isSelectionCurrent,setVisibility]);
-  const setOpen = useCallback((value: boolean) => { setVisibility(value); savePanel(value,scopeRef.current); if (!value) setFull(false); }, [setVisibility]);
-  const openHistory=useCallback((workspaceId:string|null=null,options:VisibilityOptions={})=>{setHistoryWorkspaceId(workspaceId);setView('history');if(!options.preserveVisibility)setVisibility(true);savePanel(visibility.current.open,scopeRef.current);},[setVisibility]);
+    eventCursor.current=undefined;scopeRef.current={workspaceId:result.workspaceId,conversationId:result.id};setScope(scopeRef.current);setDraftScope(null);conversationRef.current=result;setConversation(result);if(!currentFocusSplitPreservesHistory(fullRef.current,viewRef.current))setView('conversation');setVisibility(nextOpen,false);savePanel(nextOpen,scopeRef.current,fullRef.current,viewRef.current);setStreamError('');return result;
+  },[client,advanceSelection,isSelectionCurrent,setVisibility,setView]);
+  const setOpen = useCallback((value: boolean) => { setVisibility(value); if (!value) { setFull(false); return; } savePanel(value,scopeRef.current,fullRef.current,viewRef.current); }, [setVisibility,setFull]);
+  const openHistory=useCallback((workspaceId:string|null=null,options:VisibilityOptions={})=>{setHistoryWorkspaceId(workspaceId);if(!options.preserveVisibility)setVisibility(true);setView('history');},[setVisibility,setView]);
   const openGlobal=useCallback(()=>openHistory(null),[openHistory]);
   const seenInFlight=useRef(new Set<string>());
   const displayedActivity=useRef(activityRows);displayedActivity.current=activityRows;
@@ -451,7 +495,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   },[]);
   useEffect(()=>()=>{void seenSchedulerRef.current?.flush();},[scope?.workspaceId,scope?.conversationId]);
   const markSeen=useCallback((value:ConversationView)=>seenSchedulerRef.current!.notify(value),[]);
-  const toggleView=useCallback((target:'conversation'|'history')=>{const next=nextConversationPanel(open,view,target);if(target==='history'&&next.open)setHistoryWorkspaceId(null);setView(next.view);setOpen(next.open);},[open,view,setOpen]);
+  const toggleView=useCallback((target:'conversation'|'history')=>{const next=nextConversationPanel(open,view,target);if(target==='history'&&next.open)setHistoryWorkspaceId(null);setView(next.view);setOpen(next.open);},[open,view,setOpen,setView]);
   const toggle=useCallback(()=>setOpen(!open),[open,setOpen]);
   const shell=useMemo(()=>({open,view,full,pending,openGlobal,toggle,toggleView,setSettings,newConversation}),[open,view,full,pending,openGlobal,toggle,toggleView,newConversation]);
   return <ShellContext.Provider value={shell}><Context.Provider value={{historyCache,activityCounts,activityStats,activityRows,activityTotal,activityCursor,activityError,activityTick,activityWorkspaceTicks,historyWorkspaceId,openHistory,refreshActivity,loadMoreActivity,markSeen,api:client,reconnecting,recovering, modelCatalog,modelCatalogReady,modelCatalogError,refreshModelCatalog,open,side,full,view,scope,draftScope,conversation,contextReport,connections,connectionsReady:connectionState.ready,connectionsLoading:connectionState.loading,connectionsError:connectionState.error,pending,loading,error,streamError,settings,setSettings,setOpen,setFull,setView,move:() => setSide(current => { const next = current === 'right' ? 'left' : 'right'; writeOptionalPreference('buildr.agent-conversation-side',next); return next; }),openGlobal,toggle,toggleView,openConversation,locateParticipation,newConversation,refresh,refreshConnections,refreshPending,apply,prependEntries,updateConnection,create,selectionGeneration,getSelection,isSelectionCurrent,productActionPending,productActionError,firstSubmissionStore,startTextConversation}}>{children}</Context.Provider></ShellContext.Provider>;

@@ -11,8 +11,10 @@ import {launchTestBrowser} from './browser-launch.ts';
 const root=process.env.BUILDR_SMOKE_ROOT;if(!root)throw new Error('isolated_workspace_runner_required');
 const work=path.join(root,'workspace');
 const fixture=createFixture();fixture.initializeWorkspace({targetRoot:work,name:'嵌套网页验收',description:'隔离工程现场',profile:'team',agent:null});
+const workTwo=path.join(root,'workspace-two');fixture.initializeWorkspace({targetRoot:workTwo,name:'切换工作空间验收',description:'第二隔离现场',profile:'team',agent:null});
 fixture.createTask(work,{taskId:'frame-task',title:'框内关联任务',intent:'核对工程关联归属',status:'active',projects:[],services:[],changes:[]});
 const runtime=createRuntime(),workspace=runtimeProvide(runtime,WORKSPACE_APPLICATION);
+workspace.ensureRegisteredTarget(workTwo);
 const staticRoot=process.env.BUILDR_BROWSER_WEB_DIST_ROOT??buildWebDist(path.join(root,'production-web-dist'));
 const serverOptions={ensureRegisteredTarget:workspace.ensureRegisteredTarget,resolveRegisteredWorkspace:workspace.resolveRegisteredWorkspace,targetRoot:work,webProfile:{profile:'development'},staticRoot};
 let activeApp=createLocalWorkspaceServer(runtime,serverOptions);
@@ -86,5 +88,52 @@ try{
  },restarted.sessionToken);
  assert.equal(await page.getByText(/Buildr Web session 已失效/).count(),0);
  assert.equal(await frame.getByText(/Buildr Web session 已失效/).count(),0);
- assert.deepEqual(errors,[]);console.log(JSON.stringify({status:'passed',checks:['authenticated-frame','same-complete-web','workspace-selection','embedded-focused-draft-retention','expanded-and-collapsed-reload-preference','exact-window-message-check','settings-in-frame','development-task-association-and-navigation','in-place-restart-session-recovery'],realModelCalls:0}));
+
+ // Focus mode + open conversation list persists across reload, workspace switching in new conversation keeps it open, and rail button exits history cleanly.
+ await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();
+ await frame.getByText('专注对话',{exact:true}).click();
+ await page.locator('.development-harness-frame.is-full').waitFor();
+ await frame.locator('.ac-collapsed-rail .ac-all-conversations').click();
+ await frame.locator('.ac-focus-history-pane').waitFor({state:'visible'});
+ await page.locator('.development-harness-frame>footer').waitFor({state:'visible'});
+ await page.reload();
+ await page.locator('.development-harness-frame.is-full').waitFor({state:'visible'});
+ await frame.locator('.ac-focus-history-pane').waitFor({state:'visible'});
+ await frame.locator('.ac-collapsed-rail .ac-new-conversation').click();
+ await frame.locator('.ac-welcome .ant-select').filter({has:frame.getByRole('combobox',{name:'新对话工作空间',exact:true})}).click();
+ await frame.locator('.ac-panel-popup .ant-select-item-option').filter({hasText:'切换工作空间验收'}).click();
+ assert.equal(await frame.locator('.ac-focus-history-pane').isVisible(),true,'switching workspace while creating a conversation preserves open history list');
+ await frame.locator('.ac-collapsed-rail .ac-current-conversation').click();
+ await frame.locator('.ac-focus-history-pane').waitFor({state:'hidden'});
+ assert.equal(await page.locator('.development-harness-frame.is-full').isVisible(),true,'clicking current conversation rail exits history view without collapsing focus panel');
+
+ // Rendered Mermaid diagrams open in Development top-level fullscreen modal across iframe boundary.
+ const mermaidRoute=`**/api/v1/workspaces/${initialWorkspaceId}/agent-conversations/${conversation.id}`;
+ await page.route(mermaidRoute,async route=>{
+  if(route.request().method()!=='GET')return route.continue();
+  const response=await route.fetch();
+  const body=await response.json();
+  body.entries=[...(body.entries??[]),{id:'mermaid-preview-entry',kind:'message',role:'assistant',text:'流程图：\n\n```mermaid\ngraph LR\nA[提交] --> B[审核]\n```\n',createdAt:new Date().toISOString()}];
+  await route.fulfill({response,json:body});
+ });
+ await page.evaluate(({workspaceId,conversationId})=>(document.querySelector('iframe[title="Buildr Harness"]') as HTMLIFrameElement).contentWindow!.postMessage({protocol:'buildr.harness-frame/v1',action:'open',workspaceId,conversationId},location.origin),{workspaceId:initialWorkspaceId,conversationId:conversation.id});
+ const zoomDiagram=frame.locator('[data-entry-id="mermaid-preview-entry"] .markdown-diagram[data-mermaid-state="rendered"] button[data-zoom-diagram]');
+ await zoomDiagram.waitFor({timeout:30000});
+ await zoomDiagram.click();
+ const diagramDialog=page.getByRole('dialog',{name:'流程图预览',exact:true});
+ await diagramDialog.waitFor({state:'visible'});
+ const zoomBefore=await diagramDialog.getByLabel('当前缩放比例',{exact:true}).textContent();
+ await diagramDialog.getByRole('button',{name:'放大流程图',exact:true}).click();
+ const zoomAfter=await diagramDialog.getByLabel('当前缩放比例',{exact:true}).textContent();
+ assert.notEqual(zoomAfter,zoomBefore);
+ await diagramDialog.getByRole('button',{name:'导出图片',exact:true}).waitFor({state:'visible'});
+ await diagramDialog.getByRole('button',{name:'复制源码',exact:true}).waitFor({state:'visible'});
+ await page.keyboard.press('Escape');
+ await diagramDialog.waitFor({state:'hidden'});
+ await page.unroute(mermaidRoute);
+ await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();
+ await frame.getByText('恢复分屏',{exact:true}).click();
+ await page.locator('.development-harness-frame.is-full').waitFor({state:'hidden'});
+
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({status:'passed',checks:['authenticated-frame','same-complete-web','workspace-selection','embedded-focused-draft-retention','expanded-and-collapsed-reload-preference','focus-history-reload-persistence','new-conversation-workspace-keeps-history','embedded-rail-exits-history-only','mermaid-top-layer-zoom-preview','exact-window-message-check','settings-in-frame','development-task-association-and-navigation','in-place-restart-session-recovery'],realModelCalls:0}));
 }finally{await browser.close();await activeApp.shutdown();await runtimeProvide(runtime,AGENT_SERVICE_APPLICATION).close();await stopAgentProcess({dataRoot:process.env.BUILDR_APP_DATA_DIR!,mode:'stop-owned'});}

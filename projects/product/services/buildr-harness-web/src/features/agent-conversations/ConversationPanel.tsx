@@ -67,13 +67,6 @@ type Props={workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;po
 export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,embedded=false,accessory,onCreateChild}:Props){
   const context=useAgentConversations(),chat=context.conversation;
   const engineeringAnchor=useRef<HTMLSpanElement>(null);
-  useLayoutEffect(()=>{
-    if(window.parent===window)return;
-    const anchor=engineeringAnchor.current;if(!anchor)return;
-    const report=()=>{const rect=anchor.getBoundingClientRect();window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'context-anchor',x:rect.x,y:rect.y,width:rect.width,height:rect.height},location.origin);};
-    report();const observer=new ResizeObserver(report);observer.observe(anchor);observer.observe(anchor.parentElement!);
-    window.addEventListener('resize',report);return()=>{observer.disconnect();window.removeEventListener('resize',report);};
-  },[chat?.id,chat?.workspaceId,context.draftScope,context.view,context.full,context.open,workspaces]);
   const host=useHarnessDirectoryFiles();
   const panelId=embedded?'agent-child-conversation-panel-'+context.scope?.conversationId:'agent-conversation-panel';
   const focusHistoryWidthKey='buildr.agent-conversation-history-width';
@@ -101,6 +94,13 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const focusSplit=Boolean(context.full&&!embedded&&canSplitFocusHistory(panelWidth,viewportWidth));
   const historyMaxWidth=focusHistoryMaxWidth(panelWidth);
   const effectiveHistoryWidth=clampFocusHistoryWidth(historyWidth,panelWidth);
+  useLayoutEffect(()=>{
+    if(window.parent===window)return;
+    const anchor=engineeringAnchor.current;if(!anchor)return;
+    const report=()=>{const rect=anchor.getBoundingClientRect();window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'context-anchor',x:rect.x,y:rect.y,width:rect.width,height:rect.height},location.origin);};
+    report();const observer=new ResizeObserver(report);observer.observe(anchor);observer.observe(anchor.parentElement!);
+    window.addEventListener('resize',report);return()=>{observer.disconnect();window.removeEventListener('resize',report);};
+  },[chat?.id,chat?.workspaceId,context.draftScope,context.view,context.full,context.open,workspaces,focusSplit,effectiveHistoryWidth]);
   const commitHistoryWidth=useCallback((nextWidth:number)=>{
     const liveWidth=document.getElementById(panelId)?.getBoundingClientRect().width||panelWidth;
     const clamped=clampFocusHistoryWidth(nextWidth,liveWidth);
@@ -324,7 +324,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     setPermissionChoices(previous=>({...previous,[conversationPermissionKey(createdScope,'')]:submitted.input.permissionMode||'default'}));
     setChoices(previous=>({...previous,[result.id]:{connectionId:submitted.input.connectionId,model:submitted.input.model,modelAccountId:submitted.input.modelAccountId,modelAccountIdentity:submitted.input.modelAccountIdentity,serviceTier:submitted.input.serviceTier,reasoningEffort:submitted.input.reasoningEffort}}));
     await newImages.refresh().catch(fail);
-    if(context.isSelectionCurrent(selection))await context.openConversation(result.workspaceId,result.id,{preserveVisibility:true});
+    if(context.isSelectionCurrent(selection))await context.openConversation(result.workspaceId,result.id,{preserveVisibility:true,preserveHistoryView:focusSplit&&context.view==='history'});
     void context.refreshPending().catch(()=>{});
   };
   useEffect(()=>{if(!context.scope)setUnconfirmedFirst(firstSubmissions.read());},[context.selectionGeneration,context.scope,firstSubmissions]);
@@ -768,7 +768,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const workspace=workspaces.find(item=>item.id===chat?.workspaceId);
   const titleStatus=chat?.titleState;
   const titleLabels={pending:'输入受理后会先显示首条消息标题，并同时生成智能标题',generating:'正在并行生成智能标题',generated:'标题已自动生成',fallback:'标题来自首条用户消息，智能标题生成后会自动替换',manual:'标题已手动设置',failed:'智能标题未生成，当前名称已保留',unavailable:'当前执行方无法自动生成标题，可手动命名',unknown:'旧对话未记录标题生成状态'};
-  const settings=<div className="ac-location-settings">{chat&&<><strong>标题</strong><span>{titleLabels[titleStatus?.status??'unknown']}</span>{titleStatus?.reason&&<small>{titleStatus.reason}</small>}{canGenerateConversationTitle(chat)&&<Button size="small" loading={generatingTitle} onClick={()=>void generateTitle()}>生成简短标题</Button>}</>}<strong>工作空间</strong>{chat?<><span>{workspace?.name||(chat.workspaceId==='@default'?'默认工作空间':chat.workspaceId)}</span><code>{chat.cwd}</code></>:<><Select classNames={{popup:{root:'ac-panel-popup'}}} aria-label="新对话工作空间" value={scopeMissing?undefined:draftWorkspaceId} placeholder="选择工作空间" options={workspaces.map(item=>({value:item.id,label:item.name}))} onChange={workspaceId=>{draft.setWorkspace(workspaceId);context.newConversation({preserveVisibility:true,scope:{workspaceId}});setPrepared(null);}}/>{host.chooseWorkspace&&<Button type="text" onClick={host.chooseWorkspace}>添加工作空间</Button>}</>}</div>;
+  const settings=<div className="ac-location-settings">{chat&&<><strong>标题</strong><span>{titleLabels[titleStatus?.status??'unknown']}</span>{titleStatus?.reason&&<small>{titleStatus.reason}</small>}{canGenerateConversationTitle(chat)&&<Button size="small" loading={generatingTitle} onClick={()=>void generateTitle()}>生成简短标题</Button>}</>}<strong>工作空间</strong>{chat?<><span>{workspace?.name||(chat.workspaceId==='@default'?'默认工作空间':chat.workspaceId)}</span><code>{chat.cwd}</code></>:<><Select classNames={{popup:{root:'ac-panel-popup'}}} aria-label="新对话工作空间" value={scopeMissing?undefined:draftWorkspaceId} placeholder="选择工作空间" options={workspaces.map(item=>({value:item.id,label:item.name}))} onChange={workspaceId=>{draft.setWorkspace(workspaceId);context.newConversation({preserveVisibility:true,preserveHistoryView:focusSplit&&context.view==='history',scope:{workspaceId}});setPrepared(null);}}/>{host.chooseWorkspace&&<Button type="text" onClick={host.chooseWorkspace}>添加工作空间</Button>}</>}</div>;
   const transcript=useMemo(()=>groupConversationStream(visibleEntries,chat?.run,chat?.retainedRuns),[visibleEntries,chat?.run,chat?.retainedRuns]);
   const liveToolId=!outputPaused&&chat?.run?.status==='running'?[...visibleEntries].reverse().find(entry=>entry.kind==='tool'&&entry.runId===chat.run!.id)?.id??null:null;
   const modelWarning=conversationModelWarning(context.modelCatalogReady,choice.modelAccountId,selectedSourceModel,!seededChoice&&rawChoice.modelAccountId&&!choice.modelAccountId?{accountId:rawChoice.modelAccountId,accountIdentity:rawChoice.modelAccountIdentity,cleared:true}:undefined,context.modelCatalog);

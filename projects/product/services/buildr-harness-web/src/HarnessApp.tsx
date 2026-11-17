@@ -37,7 +37,7 @@ function Workspace(){
     setScopes(catalog.scopes.map(scope=>{const directory=listed.directories.find(value=>key(value.ref)===scope.key);return {id:scope.key,name:scopeDisplayName({...scope,name:directory?.name??scope.name},directory?.rootPath),rootPath:directory?.rootPath??scope.rootPath??''};}));
     setSelected(previous=>previous&&listed.directories.some(value=>key(value.ref)===previous)?previous:listed.directories[0]?key(listed.directories[0].ref):undefined);
   },[]);
-  useEffect(()=>{if(!embedded)void refresh().catch(failure=>setError(failure instanceof Error?failure.message:'工作范围读取失败。'));context.setOpen(true);context.setFull(true);},[refresh]);
+  useEffect(()=>{if(!embedded)void refresh().catch(failure=>setError(failure instanceof Error?failure.message:'工作范围读取失败。'));context.setOpen(true);if(!embedded)context.setFull(true);},[embedded,refresh]);
   useEffect(()=>{
     if(!embedded)return;
     const listener=(event:MessageEvent)=>{
@@ -71,7 +71,7 @@ function Workspace(){
   };
   const create=async()=>{
     if(!path.trim()||busy)return;setBusy(true);setError('');
-    try{const directory=await request<Directory>('/api/v1/harness/directories',{path,name:name.trim()});await refresh();const scope=key(directory.ref);setSelected(scope);context.newConversation({scope:{workspaceId:scope}});context.setFull(true);setChoosing(false);setPath('');setName('');}
+    try{const directory=await request<Directory>('/api/v1/harness/directories',{path,name:name.trim()});await refresh();const scope=key(directory.ref);setSelected(scope);context.newConversation({scope:{workspaceId:scope},preserveHistoryView:context.view==='history'});context.setFull(true);setChoosing(false);setPath('');setName('');}
     catch(failure){setError(failure instanceof Error?failure.message:'目录未登记，输入已保留。');}finally{setBusy(false);}
   };
   return <div className="harness-shell">{error&&!choosing&&<Alert type="warning" closable onClose={()=>setError('')} message={error}/>}<main className="harness-main"><HarnessDirectoryFilesProvider host={{...files,...(!embedded?{chooseWorkspace:()=>{setPath('');setName('');setError('');setChoosing(true);}}:{})}}><ConversationWorkspace workspaces={scopes} defaultWorkspaceId={selected??null}/></HarnessDirectoryFilesProvider></main><AgentConnectionSettings/><Modal open={choosing} title="添加工作空间" confirmLoading={busy} okButtonProps={{'aria-label':'创建并使用',disabled:!path.trim()}} onOk={()=>void create()} onCancel={()=>{if(!busy)setChoosing(false);}} okText="创建并使用"><p>填写工作空间名称并选择本机目录，创建后直接使用。名称留空时使用目录名。</p>{error&&<Alert type="warning" message={error}/>}<label htmlFor="harness-workspace-name">工作空间名称（可选）</label><Input id="harness-workspace-name" aria-label="工作空间名称" placeholder="留空时使用目录名" maxLength={160} autoFocus disabled={busy} value={name} onChange={event=>setName(event.target.value)} onPressEnter={()=>void create()}/><label>工作空间目录</label><Button aria-label={path?'重新选择目录':'选择本机目录'} onClick={()=>void chooseDirectory()} loading={busy}>{path?'重新选择目录':'选择本机目录'}</Button><div aria-label="已选择的工作空间目录" title={path||undefined}>{path||'尚未选择目录'}</div></Modal></div>;
