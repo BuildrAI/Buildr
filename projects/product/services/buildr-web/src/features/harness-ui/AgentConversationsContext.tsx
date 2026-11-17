@@ -1,10 +1,11 @@
+import type {HarnessConversationCommand} from '../../../../buildr-harness-web/src/conversation';
 import {createContext,useContext,useState,useRef,useCallback,type ReactNode} from 'react';
 import {readOptionalPreference,writeOptionalPreference} from '../../lib/optional-preferences';
 import {agentConversationsApi} from './api/agent-conversations-api';
 import type {CatalogModel,ConversationView} from './types';
 export type TextConversationActionInput={workspaceId:string;cwd:string;text:string};
 export type TextConversationActionResult={status:'started';conversation:ConversationView}|{status:'recovering';reason:'existing-submission'|'submission-unknown';conversation?:ConversationView;message:string}|{status:'unavailable'|'failed'|'busy';message:string};
-export type FrameCommand={action:'new'|'open'|'history'|'settings'|'configure'|'start-text';workspaceId?:string;conversationId?:string;taskId?:string;workspaces?:{id:string;name:string;rootPath:string}[];input?:TextConversationActionInput;requestId?:string};
+export type ConversationCommand=HarnessConversationCommand;
 type PanelView = 'conversation' | 'history';
 type PanelState = { open: boolean; full: boolean; view: PanelView };
 type SessionPanelState = { open?: boolean; full?: boolean; view?: PanelView };
@@ -100,10 +101,10 @@ function useIntegration(){
   persistPanel({open:nextOpen,full:nextFull,view:nextView});
  },[persistPanel]);
  const [settings,setSettingsState]=useState(false);
- const [conversation,setConversation]=useState<ConversationView|null>(null),[command,setCommand]=useState<FrameCommand|null>(null),[sequence,setSequence]=useState(0);
+ const [conversation,setConversation]=useState<ConversationView|null>(null),[command,setCommand]=useState<ConversationCommand|null>(null),[sequence,setSequence]=useState(0);
  const [modelCatalog,setModelCatalog]=useState<CatalogModel[]>([]),[modelCatalogReady,setModelCatalogReady]=useState(false),[modelCatalogError,setModelCatalogError]=useState('');
  const pending=useRef(new Map<string,{resolve:(result:TextConversationActionResult)=>void;timer:ReturnType<typeof setTimeout>}>());
- const issue=useCallback((value:FrameCommand)=>{setCommand(value);setSequence(value=>value+1);setOpen(true);},[setOpen]);
+ const issue=useCallback((value:ConversationCommand)=>{setCommand(value);setSequence(value=>value+1);setOpen(true);},[setOpen]);
  const refreshModelCatalog=useCallback(async()=>{try{const result=await agentConversationsApi.modelCatalog();setModelCatalog(result.models);setModelCatalogReady(result.hasSnapshot??true);setModelCatalogError(result.diagnostic??'');}catch(error){setModelCatalogError(error instanceof Error?error.message:'模型读取失败。');}},[]);
  const openConversation=useCallback(async(workspaceId:string,conversationId:string,_options?:unknown)=>{if(!fullRef.current)setView('conversation');issue({action:'open',workspaceId,conversationId});},[issue,setView]);
  const newConversation=useCallback((options?:{scope?:{workspaceId:string;taskId?:string}|null})=>{if(!fullRef.current)setView('conversation');setOpen(true);if(options?.scope?.workspaceId)issue({action:'new',...options.scope});else issue({action:'new'});},[issue,setOpen,setView]);

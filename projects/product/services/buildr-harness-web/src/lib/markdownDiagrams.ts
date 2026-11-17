@@ -9,7 +9,7 @@ let nextId = 0;
 
 // Each mounted document owns its frame. Unmounting also aborts rendering, not
 // just insertion; stale streamed documents cannot leave an unbounded work queue.
-export function renderMarkdownDiagrams(root: HTMLElement): () => void {
+export function renderMarkdownDiagrams(root: HTMLElement, rendererPath = './mermaid-renderer.html'): () => void {
   const blocks = [...root.querySelectorAll<HTMLElement>('[data-mermaid-source]')];
   if (!blocks.length) return () => {};
   const doc = root.ownerDocument;
@@ -21,7 +21,7 @@ export function renderMarkdownDiagrams(root: HTMLElement): () => void {
   frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
   frame.setAttribute('aria-hidden', 'true');
   frame.tabIndex = -1;
-  frame.src = './mermaid-renderer.html';
+  frame.src = rendererPath;
   const pending = new Map<string, Pending>();
   let disposed = false;
   let start: ReturnType<typeof setTimeout>;

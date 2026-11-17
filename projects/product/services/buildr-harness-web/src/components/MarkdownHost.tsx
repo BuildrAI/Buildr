@@ -1,3 +1,4 @@
+import {useConversationHost} from '../integration/ConversationHost';
 import { useEffect, useRef, useState } from 'react';
 import { renderMarkdown, type MarkdownRenderOptions } from '../markdown.ts';
 import { bindMarkdownDiagramPreviews, type MarkdownDiagramTarget } from '../lib/markdownDiagramPreviews.ts';
@@ -23,6 +24,8 @@ export function scrollMarkdownFragment(root: HTMLElement, fragment: string) {
 }
 
 export function MarkdownHost({ markdown, className, options, fragment, renderVersion }: Props) {
+  const hostActions=useConversationHost();
+  const hostActionsRef=useRef(hostActions);hostActionsRef.current=hostActions;
   const ref = useRef<HTMLDivElement>(null);
   const optionsRef = useRef(options);
   optionsRef.current = options;
@@ -38,7 +41,7 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
     }
     for (const link of view.querySelectorAll<HTMLAnchorElement>('a.markdown-relative-link')) {
         const reference = link.getAttribute('data-markdown-href') || '';
-        if(reference.trim().startsWith('@')){link.classList.remove('markdown-relative-link');if(window.parent!==window&&currentOptions.taskLinkPathname){link.setAttribute('href','#');link.addEventListener('click',event=>{event.preventDefault();window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'work-object',reference,scopePath:currentOptions.taskLinkPathname},location.origin);});}else{link.removeAttribute('href');link.setAttribute('title','工程对象请在 Development 中打开');}continue;}
+        if(reference.trim().startsWith('@')){link.classList.remove('markdown-relative-link');if(hostActionsRef.current.openObject&&currentOptions.taskLinkPathname){link.setAttribute('href','#');link.addEventListener('click',event=>{event.preventDefault();hostActionsRef.current.openObject?.(reference,currentOptions.taskLinkPathname!);});}else if(window.parent!==window&&currentOptions.taskLinkPathname){link.setAttribute('href','#');link.addEventListener('click',event=>{event.preventDefault();window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'work-object',reference,scopePath:currentOptions.taskLinkPathname},location.origin);});}else{link.removeAttribute('href');link.setAttribute('title','此工作对象需要相应工作环境支持');}continue;}
         link.addEventListener('click', (event) => {
           event.preventDefault();
           const href = link.getAttribute('data-markdown-href') || link.getAttribute('href') || '';
@@ -59,7 +62,7 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
     });
     host.replaceChildren(view);
     if (fragment) requestAnimationFrame(() => scrollMarkdownFragment(view, fragment));
-    return renderMarkdownDiagrams(view);
+    return renderMarkdownDiagrams(view, hostActionsRef.current.diagramRendererPath);
   }, [markdown, className, fragment, renderVersion, options?.taskLinkPathname, JSON.stringify(options?.headingCounts)]);
 
   return (

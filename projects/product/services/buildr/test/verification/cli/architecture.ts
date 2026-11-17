@@ -20,7 +20,7 @@ const sourceRoot: any = path.join(productRoot, 'src');
 const entry: any = path.join(productRoot, 'bin', 'buildr.mjs');
 const serviceArchitecture: any = path.join(projectRoot, 'knowledge', 'docs', 'architecture', 'technical.md');
 const problems: any[] = [];
-const trackedFiles: any = execFileSync('git', ['ls-files'], { cwd: repositoryRoot, encoding: 'utf8' }).trim().split('\n').filter(Boolean);
+const trackedFiles: any = execFileSync('git', ['ls-files'], { cwd: repositoryRoot, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).trim().split('\n').filter(Boolean);
 const ignoredProjectRootEntries: any = new Set([
   '.agents', '.claude', '.codebuddy', '.cursor', '.qoder', '.trae', '.buildr', '.git',
 ]);

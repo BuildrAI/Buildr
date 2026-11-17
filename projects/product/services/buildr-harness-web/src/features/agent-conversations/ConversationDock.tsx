@@ -1,3 +1,4 @@
+import {useConversationHost} from '../../integration/ConversationHost';
 import { useEffect, useRef, useState, type HTMLAttributes, type ReactElement, type Ref } from 'react';
 import { createPortal } from 'react-dom';
 import { SplitDivider } from '../../components/SplitDivider.tsx';
@@ -18,6 +19,7 @@ const clampWidth = (width: number) => Math.min(maximumWidth, Math.max(minimumWid
 
 /** Keep the same conversation while it is temporarily shown or fixed beside the work. */
 export function ConversationDock({panel, portalTarget, workspaces}: Props) {
+  const host=useConversationHost();
   const context = useAgentConversations();
   const [width, setWidth] = useState(() => {
     const saved = Number(readOptionalPreference('buildr.agent-conversation-width'));
@@ -59,5 +61,5 @@ export function ConversationDock({panel, portalTarget, workspaces}: Props) {
     onPointerUp={event => finish(event.pointerId)} onPointerCancel={event => finish(event.pointerId)} onLostPointerCapture={event => finish(event.pointerId)} onDoubleClick={() => resize(defaultWidth, true)}>
     <span className="split-divider-header-marker" aria-hidden="true"/>
   </SplitDivider>;
-  return render(<ConversationDockSurface panel={panel} activity={<ConversationActivity workspaces={workspaces}/>} settingsEntry={<AccountQuotaButton/>} open={context.open} view={context.view} onPreviewCurrent={()=>context.setView('conversation')} full={context.full} side={context.side} width={width} onToggle={()=>{if(window.parent!==window){if(context.open&&context.view!=='conversation'){context.setView('conversation');return;}window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'layout',action:'collapse'},location.origin);return;}context.toggleView('conversation');}} onNew={preserve=>context.newConversation({preserveVisibility:preserve,preserveHistoryView:context.full&&context.view==='history'&&typeof window!=='undefined'&&canSplitFocusHistory(document.getElementById('agent-conversation-panel')?.getBoundingClientRect().width||Math.max(0,window.innerWidth-52),window.innerWidth)})} onSettings={()=>context.setSettings(true)} divider={divider}/>);
+  return render(<ConversationDockSurface panel={panel} activity={<ConversationActivity workspaces={workspaces}/>} settingsEntry={<AccountQuotaButton/>} open={context.open} view={context.view} onPreviewCurrent={()=>context.setView('conversation')} full={context.full} side={context.side} width={width} onToggle={()=>{if(host.requestLayout){if(context.open&&context.view!=='conversation'){context.setView('conversation');return;}host.requestLayout('collapse');return;}if(window.parent!==window){if(context.open&&context.view!=='conversation'){context.setView('conversation');return;}window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'layout',action:'collapse'},location.origin);return;}context.toggleView('conversation');}} onNew={preserve=>context.newConversation({preserveVisibility:preserve,preserveHistoryView:context.full&&context.view==='history'&&typeof window!=='undefined'&&canSplitFocusHistory(document.getElementById('agent-conversation-panel')?.getBoundingClientRect().width||Math.max(0,window.innerWidth-52),window.innerWidth)})} onSettings={()=>context.setSettings(true)} divider={divider}/>);
 }

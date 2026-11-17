@@ -2,7 +2,7 @@ import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '../..');
 export const serviceVerificationChecks = [
- {id:'harness-shell-composition',type:'Integration',name:'Optional work environment composition and stable conversation DOM',sourcePaths:['src/shell/**','src/shell.ts','src/HarnessApp.tsx','src/index.ts','src/styles.css'],testFiles:['test/shell/*.test.ts'],command:{file:process.execPath,args:['--test','test/shell/*.test.ts'],cwd:'.'},requirements:['Playwright Chromium; browser component fixture only, not real Development or model acceptance.'],timeoutMs:90000},
+ {id:'harness-shell-composition',type:'Integration',name:'Optional work environment composition and stable conversation DOM',sourcePaths:['src/shell/**','src/integration/**','src/conversation.ts','src/shell.ts','src/HarnessApp.tsx','src/index.ts','src/styles.css'],testFiles:['test/shell/*.test.ts'],command:{file:process.execPath,args:['--test','test/shell/*.test.ts'],cwd:'.'},requirements:['Playwright Chromium; browser component fixture only, not real Development or model acceptance.'],timeoutMs:90000},
  {id:'harness-web-product-boundaries',type:'Static',name:'Complete webpage and frame ownership boundaries',sourcePaths:['src/**','services/buildr-web/src/**'],testFiles:['test/ui/static/*.test.mjs'],command:{file:process.execPath,args:['--test','test/ui/static/*.test.mjs'],cwd:'.'}},
  {id:'harness-web-logic',type:'Unit',name:'Complete Harness conversation behavior',sourcePaths:['src/**'],testFiles:['test/ui/*.test.mjs'],command:{file:process.execPath,args:[path.join(root,'tools/ui/run-logic-tests.mjs')],cwd:'.'}},
   {

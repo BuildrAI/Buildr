@@ -16,13 +16,17 @@ async function bundleFixture() {
 import {createElement as h, useEffect, useState} from ${JSON.stringify(path.join(serviceRoot, 'node_modules/react/index.js'))};
 import {createRoot} from ${JSON.stringify(path.join(serviceRoot, 'node_modules/react-dom/client.js'))};
 import {HarnessShell} from ${JSON.stringify(path.join(serviceRoot, 'src/shell/HarnessShell.tsx'))};
+import {ConversationHostProvider,ConversationContextSlot} from ${JSON.stringify(path.join(serviceRoot, 'src/integration/ConversationHost.tsx'))};
 const stats = {conversationMounts: 0, environmentMounts: 0, stops: 0};
+let breakContext;
 function Conversation() {
+  const [contextBroken,setContextBroken]=useState(false);breakContext=()=>setContextBroken(true);
   const [draft, setDraft] = useState('');
   useEffect(() => {stats.conversationMounts++;}, []);
   return h('main', {'data-conversation-id': 'original-conversation', 'data-cwd': '/original/work'},
     h('textarea', {'aria-label': '对话输入', value: draft, onChange: e => setDraft(e.target.value)}),
     h('button', {onClick: () => stats.stops++}, '停止原执行'),
+    h(ConversationHostProvider,{host:{renderContext:()=>{if(contextBroken)throw new Error('private context error');return '工程上下文';}}},h(ConversationContextSlot,{conversation:{workspaceId:'original',id:'original-conversation'},apply:()=>{}})),
     h('div', {id: 'reading', style: {height: 100, overflow: 'auto'}},
       h('div', {style: {height: 1000}}, '原对话阅读内容')));
 }
@@ -45,7 +49,7 @@ function render(mode, controlledOpen) {
     onEnvironmentOpenChange: controlledOpen === undefined ? undefined : open => render(mode, open),
   }, h(Conversation)));
 }
-window.fixture = {render, stats};
+window.fixture = {render, stats,breakContext:()=>breakContext()};
 render('none');
 `);
   try {
@@ -157,6 +161,16 @@ test('Harness shell composes an optional environment without owning or remountin
     assert.deepEqual(await page.evaluate(() => (window as any).fixture.stats),
       {conversationMounts: 1, environmentMounts: 1, stops: 1});
     assert.deepEqual(errors, [], 'React boundaries must contain both render failures');
+  });
+
+  await t.test('engineering context failure stays local to the slot',async()=>{
+    await page.evaluate(()=>(window as any).fixture.breakContext());
+    await page.getByText('工作上下文暂不可用',{exact:true}).waitFor();
+    assert.equal(await input.evaluate(node=>node===(window as any).originalInput),true);
+    await input.fill('工程上下文失败仍能工作');
+    await page.getByRole('button',{name:'停止原执行',exact:true}).click();
+    assert.deepEqual(errors,[]);
+    await input.fill('环境失败后继续输入');
   });
 
   await t.test('host-controlled opening mounts on external navigation and preserves state on closing', async () => {

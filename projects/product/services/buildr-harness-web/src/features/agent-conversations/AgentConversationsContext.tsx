@@ -89,8 +89,8 @@ function currentFocusSplitPreservesHistory(full: boolean, view: 'conversation' |
   return shouldPreserveFocusHistory(full, view, panelWidth, window.innerWidth);
 }
 
-export function AgentConversationsProvider({children, client = agentConversationsApi}: {children: ReactNode; client?: AgentConversationsClient}) {
-  const [initialPanel] = useState(savedPanel);
+export function AgentConversationsProvider({children, client = agentConversationsApi, initialLayout}: {children: ReactNode; client?: AgentConversationsClient; initialLayout?: {open: boolean; full: boolean; view: 'conversation' | 'history'}}) {
+  const [initialPanel] = useState(() => ({...savedPanel(), ...initialLayout}));
   const initialFull = initialPanel.full ?? (readOptionalPreference(fullPreferenceKey()) === 'true' || readOptionalPreference('buildr.harness-panel-full') === 'true');
   const initialView: 'conversation' | 'history' = initialFull && (initialPanel.view === 'history' || (initialPanel.view === undefined && (readOptionalPreference(focusHistoryPreferenceKey()) === 'true' || readOptionalPreference('buildr.harness-panel-view') === 'history'))) ? 'history' : 'conversation';
   const historyCache=useMemo(createConversationHistoryCache,[client]);
