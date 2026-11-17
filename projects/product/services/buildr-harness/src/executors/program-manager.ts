@@ -679,10 +679,15 @@ export class NativeProgramManager implements AgentProgramManager {
         fail('agent_install_version_mismatch', '受管程序校验未通过，未启用该程序。');
       }
 
-      if (input.replaceExisting) await this.assertReplaceableManagedDestination(input.provider, destination, executable);
+      // A recovery reinstall replaces only a destination that still exists. When the program
+      // changed itself to the release version, that version's directory does not exist yet:
+      // install it normally instead of requiring a directory to replace.
+      const replaceDestination = input.replaceExisting === true
+        && await fs.lstat(destination).then(() => true, () => false);
+      if (replaceDestination) await this.assertReplaceableManagedDestination(input.provider, destination, executable);
       await this.beforeAtomicSwitch?.({ provider: input.provider, version: releaseVersion, staging, destination });
       signal.throwIfAborted();
-      await this.commitStagedDestination(input.provider, staging, stagedExecutable, destination, executable, releaseVersion, env, signal, false, input.replaceExisting === true);
+      await this.commitStagedDestination(input.provider, staging, stagedExecutable, destination, executable, releaseVersion, env, signal, false, replaceDestination);
       await this.retainPrepared(input.provider, releaseVersion, executable);
       return executable;
     } finally {

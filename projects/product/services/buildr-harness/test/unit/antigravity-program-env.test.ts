@@ -213,6 +213,67 @@ test('Task 2.2: recovery reinstall replaces only the managed destination; normal
   assert.equal(fs.readdirSync(path.dirname(installed)).some(name => name.includes('.previous-')), false);
 });
 
+test('Task 2.3: recovery install to a not-yet-created release directory completes as a normal install', async t => {
+  const dir = makeTempDir(t);
+  const root = path.join(dir, 'agent-service');
+  const signal = AbortSignal.timeout(30_000);
+  const fixtureSource = fs.readFileSync(
+    path.resolve(import.meta.dirname, '../integration/executors/fixtures/antigravity-acp.mjs'),
+  );
+  // The program reports its own release, so an externally updated copy reports the newer version.
+  const payloadFor = (version: string) => {
+    const source = Buffer.from(fixtureSource.toString('utf8').replace("control().version || '1.5.8'", `control().version || '${version}'`), 'utf8');
+    return Buffer.concat([Buffer.from(`#!${process.execPath}\n`, 'utf8'), source.subarray(source.indexOf(0x0a) + 1)]);
+  };
+  const releaseFor = (version: string) => {
+    const archive = buildSingleMemberTarGz('antigravity', payloadFor(version));
+    return {
+      body: JSON.stringify({
+        version,
+        url: `https://storage.googleapis.com/antigravity-cli-releases/${version}/antigravity-darwin-arm64.tar.gz`,
+        sha512: createHash('sha512').update(archive).digest('hex'),
+      }),
+      archive,
+    };
+  };
+  let release = releaseFor('1.5.8');
+  const fetchImpl: typeof fetch = async input => {
+    const url = new URL(String(input));
+    if (url.hostname === 'antigravity-cli-auto-updater-974169037036.us-central1.run.app') {
+      return new Response(release.body, { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.hostname === 'storage.googleapis.com') return new Response(new Uint8Array(release.archive), { status: 200 });
+    throw new Error(`unexpected host ${url.hostname}`);
+  };
+  const manager = new NativeProgramManager(root, { PATH: process.env.PATH ?? '' }, undefined, {
+    fetchImpl, platform: 'darwin', arch: 'arm64',
+  });
+  const installed = await manager.install({ provider: 'antigravity', attemptId: 'agy-newer-install-01', signal, progress: () => {} });
+  assert.match(installed, /package-1\.5\.8-darwin-arm64/);
+
+  // The program's own updater replaces the bound binary in place with the next release.
+  fs.renameSync(installed, installed + '.old');
+  fs.writeFileSync(installed, payloadFor('1.5.9'), { mode: 0o755 });
+  release = releaseFor('1.5.9');
+
+  // Recovery targets 1.5.9, whose managed directory does not exist yet: no directory to replace.
+  const recovered = await manager.install({
+    provider: 'antigravity', version: '1.5.9', attemptId: 'agy-newer-install-02', replaceExisting: true, signal, progress: () => {},
+  });
+  assert.notEqual(recovered, installed);
+  assert.match(recovered, /package-1\.5\.9-darwin-arm64/);
+  assert.ok(fs.existsSync(recovered));
+  assert.equal(fs.existsSync(installed), true, 'the previously bound version directory is retained');
+  assert.equal(fs.readdirSync(path.dirname(recovered)).some(name => name.includes('.previous-')), false);
+  const prepared = JSON.parse(fs.readFileSync(path.join(root, 'programs', 'antigravity', 'prepared.json'), 'utf8'));
+  assert.equal(prepared.version, '1.5.9');
+  assert.equal(prepared.executable, recovered);
+  const catalog = await manager.discover({ provider: 'antigravity', boundExecutable: recovered, signal });
+  const candidate = catalog.candidates.find(item => item.executable === recovered);
+  assert.equal(candidate?.version, '1.5.9');
+  assert.equal(candidate?.compatible, true);
+});
+
 test('Task 2.2: isolatedEnvironment preserves Linux host-keyring session variables only when credentialScope === "host-keyring" without leaking provider secrets', () => {
   const inputEnv: NodeJS.ProcessEnv = {
     PATH: '/usr/local/bin:/usr/bin',
