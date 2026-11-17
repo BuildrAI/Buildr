@@ -5,8 +5,10 @@ import type { NativeProgramPolicy } from '../program-policy.ts';
 
 const antigravityBinaryName = process.platform === 'win32' ? 'antigravity.exe' : 'antigravity';
 
-/** The managed child always runs with the program's own updater disabled. */
-export const antigravityManagedEnvironment = Object.freeze({ AGY_CLI_DISABLE_AUTO_UPDATE: '1' });
+/** The managed child always runs with the program's own updater disabled. The
+ * program compares the value literally with `true`; `1` is treated as unset and
+ * it still spawns a background update that replaces its own executable. */
+export const antigravityManagedEnvironment = Object.freeze({ AGY_CLI_DISABLE_AUTO_UPDATE: 'true' });
 
 async function ensurePrivateDirs(...directories: string[]): Promise<void> {
   for (const directory of directories) {

@@ -52,7 +52,8 @@ test('Task 2.1: Antigravity manifest program policy, autoUpdate:false private se
   assert.equal(antigravityProgramPolicy.compatibility, '1.x.x');
   assert.equal(antigravityProgramPolicy.managedOnly, true);
   assert.equal(antigravityProgramPolicy.versionDisplay, 'program');
-  assert.deepEqual(antigravityManagedEnvironment, { AGY_CLI_DISABLE_AUTO_UPDATE: '1' });
+  // The program treats only the literal `true` as disabling its updater.
+  assert.deepEqual(antigravityManagedEnvironment, { AGY_CLI_DISABLE_AUTO_UPDATE: 'true' });
   assert.equal(isCompatibleProgram('antigravity', '1.5.8'), true);
   assert.equal(isCompatibleProgram('antigravity', '1.99.0-rc.1'), true);
   assert.equal(isCompatibleProgram('antigravity', '0.9.0'), false);
