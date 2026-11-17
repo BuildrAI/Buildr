@@ -4,13 +4,14 @@ import { readFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { readQoderIdentity, requestQoderModel, inspectQoderLogin } from '../../model-access/providers/qoder.ts';
 import { AcpClient, type AcpServerRequest } from '../qoder/acp.ts';
+import { qoderBackgroundOutput } from '../qoder/background-output.ts';
 import { createQoderNativeContent } from '../qoder/content.ts';
 import { qoderExecutorDescriptor } from '../qoder/index.ts';
 import { qoderProduct } from '../qoder/product.ts';
 import { qoderStorage } from '../qoder/storage.ts';
 import { qoderForm } from './forms.ts';
 import { readQoderCnUsage } from './usage.ts';
-import { qoderCnFinishedTurns, qoderCnPromptReceipt, qoderCnTerminalReconciliation, readQoderCnPersistedExecution, readQoderCnTranscriptAppend, readQoderCnSupplementReceipt } from './transcript.ts';
+import { qoderCnBackgroundLaunch, qoderCnFinishedTurns, qoderCnPromptReceipt, qoderCnTaskNotification, qoderCnTaskStopReceipt, qoderCnTerminalReconciliation, readQoderCnPersistedExecution, readQoderCnTranscriptAppend, readQoderCnSupplementReceipt, type QoderCnTaskNotification } from './transcript.ts';
 import { nativeContentFiles } from '../native-content.ts';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
@@ -55,7 +56,7 @@ function deferred<T>(): Deferred<T> {
   const promise = new Promise<T>(value => { resolve = value; });
   return { promise, resolve };
 }
-interface NativePromptCompletion { stopReason: string; text?: string; timestamp?: string }
+interface NativePromptCompletion { stopReason: string; text?: string; timestamp?: string; index?: number }
 interface NativePromptWait {
   clientRequestId?: string;
   text: string;
@@ -64,6 +65,15 @@ interface NativePromptWait {
   completion?: NativePromptCompletion;
   terminal: Deferred<NativePromptCompletion>;
 }
+interface BackgroundTaskState {
+  taskId: string;
+  toolId?: string;
+  launchText?: string;
+  outputFile?: string;
+  lastOutput?: string;
+  settled: boolean;
+  status?: 'completed' | 'failed';
+}
 interface TurnState {
   contextId: string;
   executionId: string;
@@ -71,6 +81,15 @@ interface TurnState {
   items: Map<string, ExecutorItem>;
   tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>;
   independentTools: Set<string>;
+  backgroundRequestedTools: Set<string>;
+  backgroundHeldCompletions: Set<string>;
+  backgroundTasks: Map<string, BackgroundTaskState>;
+  toolToTaskId: Map<string, string>;
+  nativeContinuations: Map<string, { id: string; completion?: NativePromptCompletion }>;
+  projectedNativeUuids: Set<string>;
+  acpProjectedToolResults: Set<string>;
+  backgroundWork: boolean;
+  stateWake?: Deferred<void>;
   approvals: Map<string, PendingApproval>;
   approvalPendingTools: Set<string>;
   status: ExecutorObservation['status'];
@@ -169,15 +188,37 @@ class QoderCnRuntime implements AgentRuntime {
     return this.client;
   }
 
+  private wakeTurn(turn: TurnState): void {
+    const wake = turn.stateWake;
+    turn.stateWake = undefined;
+    wake?.resolve();
+  }
+
+  private hasActiveBackgroundWork(turn: TurnState): boolean {
+    for (const task of turn.backgroundTasks.values()) if (!task.settled) return true;
+    for (const id of turn.backgroundRequestedTools) if (turn.tools.get(id)?.status === 'running') return true;
+    for (const continuation of turn.nativeContinuations.values()) if (!continuation.completion) return true;
+    return false;
+  }
+
+  private syncBackgroundState(turn: TurnState): void {
+    const next = turn.pending && !turn.cancelRequested && !turn.stopConfirmed && this.hasActiveBackgroundWork(turn);
+    if (next === turn.backgroundWork) return;
+    turn.backgroundWork = next;
+    try { turn.onEvent({ type: 'observation', observation: this.observation() }); } catch { /* keep turn alive */ }
+  }
+
   private transportLost(): void {
     this.sessionId = undefined; this.sessionContext = undefined;
     const turn = this.turn; if (!turn?.pending) return;
+    turn.backgroundWork = false;
     turn.status = 'unknown';
     turn.diagnostic = 'Qoder CN 连接已中断，本轮执行结果未知；请重新检查后再继续。';
     this.finishText(turn, 'unknown');
     for (const tool of turn.tools.values()) if (tool.status === 'running') tool.status = 'unknown';
     for (const approval of turn.approvals.values()) { approval.settle(approval.request.kind==='question'?{action:'cancel'}:{ outcome: { outcome: 'cancelled' } }); try { turn.onEvent({ type: 'request-resolved', requestId: approval.request.id }); } catch { /* keep transport closed */ } }
     turn.approvals.clear();
+    this.wakeTurn(turn);
     try { turn.onEvent({ type: 'observation', observation: this.observation() }); } catch { /* original transport stays closed */ }
   }
 
@@ -228,14 +269,37 @@ class QoderCnRuntime implements AgentRuntime {
       // ACP execute calls can leave native background tasks outside the control
       // group. Without their own terminal receipt, group exit proves no outcome.
       if(toolCall.kind==='execute'||toolCall.kind==='other')turn.independentTools.add(id);
+      const rawInput = toolCall.rawInput && typeof toolCall.rawInput === 'object' ? toolCall.rawInput as Record<string, unknown> : undefined;
+      if (rawInput?.run_in_background === true) {
+        turn.backgroundRequestedTools.add(id);
+        turn.independentTools.add(id);
+      }
       const label = typeof toolCall.title === 'string' && toolCall.title ? toolCall.title : prior?.name ?? (typeof toolCall.kind === 'string' ? toolCall.kind : '工具');
       const state = toolCall.status;
-      const status: ExecutorItem['status'] = state === 'completed' ? 'completed' : state === 'failed' ? 'failed' : state === undefined ? prior?.status ?? 'running' : 'running';
+      const mappedTaskId = turn.toolToTaskId.get(id);
+      const mappedTask = mappedTaskId ? turn.backgroundTasks.get(mappedTaskId) : undefined;
+      const keepBackgroundRunning = state === 'completed' && (turn.backgroundRequestedTools.has(id) || Boolean(mappedTask && !mappedTask.settled));
+      if (state === 'failed') {
+        turn.backgroundRequestedTools.delete(id);
+        turn.backgroundHeldCompletions.delete(id);
+        turn.acpProjectedToolResults.add(id);
+      } else if (keepBackgroundRunning) {
+        turn.backgroundHeldCompletions.add(id);
+      } else if (state === 'completed') {
+        turn.acpProjectedToolResults.add(id);
+      }
+      const status: ExecutorItem['status'] = keepBackgroundRunning ? 'running' : state === 'completed' ? 'completed' : state === 'failed' ? 'failed' : state === undefined ? prior?.status ?? 'running' : 'running';
       const content = toolCall.content === undefined ? '' : textOf(toolCall.content) || previewOf(toolCall.content);
-      const item: ExecutorItem = { ...prior, id, kind: 'tool', nativeTool: true, role: 'system', name: label, text: content || prior?.text || label, ...(toolCall.rawInput === undefined ? {} : { input: previewOf(toolCall.rawInput) }), executionId: turn.executionId, status };
+      const nextText = content || prior?.text || label;
+      if (mappedTask && content) mappedTask.launchText = content;
+      const item: ExecutorItem = { ...prior, id, kind: 'tool', nativeTool: true, role: 'system', name: label, text: nextText, ...(toolCall.rawInput === undefined ? {} : { input: previewOf(toolCall.rawInput) }), executionId: turn.executionId, status };
       // Failure is an observed end, not a successful result or an unknown live command.
       turn.tools.set(id, { id, label, status: status === 'running' ? 'running' : status === 'completed' || status === 'failed' ? 'completed' : 'unknown' });
       this.item(turn, item);
+      if (keepBackgroundRunning) {
+        turn.backgroundWork = true;
+        try { turn.onEvent({ type: 'observation', observation: this.observation() }); } catch { /* keep turn alive */ }
+      }
       return;
     }
     if (kind === 'plan') {
@@ -275,8 +339,24 @@ class QoderCnRuntime implements AgentRuntime {
     const scan = turn.nativeScan; if (!scan || scan.broken) return;
     const cwd = this.contexts.get(turn.contextId); if (!cwd) return;
     const prompt = [...turn.nativePrompts].reverse().find(value => value.receipt) ?? turn.nativePrompts[0];
-    if (!prompt) return;
+    if (!prompt && !turn.nativeContinuations.size) return;
     const terminalText = (): string | undefined => {
+      if (turn.nativeContinuations.size) {
+        const latest = [...turn.nativeContinuations.values()]
+          .map(value => value.completion)
+          .filter((value): value is NativePromptCompletion => Boolean(value))
+          .sort((left, right) => (left.index ?? -1) - (right.index ?? -1))
+          .at(-1);
+        if (latest?.text) return latest.text;
+        const finished = qoderCnFinishedTurns(scan.rows, turn.contextId, cwd);
+        const recovered = [...turn.nativeContinuations.keys()]
+          .map(id => finished.byNotificationId.get(id))
+          .filter((value): value is NonNullable<typeof value> => Boolean(value))
+          .sort((left, right) => left.index - right.index)
+          .at(-1);
+        if (recovered?.text) return recovered.text;
+      }
+      if (!prompt) return undefined;
       if (prompt.completion?.text) return prompt.completion.text;
       if (!prompt.receipt) return undefined;
       const finished = qoderCnFinishedTurns(scan.rows, turn.contextId, cwd);
@@ -336,13 +416,68 @@ class QoderCnRuntime implements AgentRuntime {
     turn.nativeScan = { ...(file ? { file } : {}), offset, rows: [] };
   }
 
+  private taskDisplayText(parts: Array<string | undefined>): string {
+    return parts.map(value => value?.trim()).filter((value): value is string => Boolean(value)).join('\n\n');
+  }
+
+  private async readTaskOutput(turn: TurnState, task: BackgroundTaskState): Promise<string | undefined> {
+    if (!task.outputFile) return;
+    return await qoderBackgroundOutput(task.outputFile, turn.contextId, task.taskId, {
+      product: 'qoder-cn',
+      tempRoot: this.environments.TMPDIR,
+    }).catch(() => undefined);
+  }
+
+  private async pollBackgroundOutputs(turn: TurnState): Promise<void> {
+    if (!turn.pending || turn.cancelRequested || turn.stopConfirmed || this.turn !== turn) return;
+    for (const task of turn.backgroundTasks.values()) {
+      if (task.settled || !task.outputFile || !task.toolId) continue;
+      const output = await this.readTaskOutput(turn, task);
+      if (!output || output === task.lastOutput || !turn.pending || task.settled || turn.cancelRequested || this.turn !== turn) continue;
+      task.lastOutput = output;
+      const prior = turn.items.get(task.toolId);
+      const label = turn.tools.get(task.toolId)?.label ?? prior?.name ?? '工具';
+      const text = this.taskDisplayText([task.launchText ?? prior?.text, output]) || label;
+      this.item(turn, {
+        ...(prior ?? { id: task.toolId, kind: 'tool', nativeTool: true, role: 'system', name: label, executionId: turn.executionId }),
+        backgroundProgress: true, text, status: 'running',
+      });
+    }
+  }
+
+  private async enrichTaskFinalOutput(turn: TurnState, task: BackgroundTaskState, toolId: string, notif: QoderCnTaskNotification): Promise<void> {
+    const output = await this.readTaskOutput(turn, task);
+    if (!output || this.turn !== turn || turn.cancelRequested || turn.stopConfirmed) return;
+    task.lastOutput = output;
+    const prior = turn.items.get(toolId);
+    const label = turn.tools.get(toolId)?.label ?? prior?.name ?? '工具';
+    const text = this.taskDisplayText([task.launchText, notif.summary, notif.result, output]) || prior?.text || label;
+    if (prior?.text === text) return;
+    this.item(turn, {
+      ...(prior ?? { id: toolId, kind: 'tool', nativeTool: true, role: 'system', name: label, executionId: turn.executionId }),
+      backgroundProgress: undefined, text, status: task.status ?? 'completed',
+    });
+  }
+
+  private descendsFromNotification(byUuid: Map<string, any>, row: any, contextId: string, cwd: string): boolean {
+    let current = row;
+    const seen = new Set<string>();
+    while (current && typeof current.uuid === 'string' && !seen.has(current.uuid)) {
+      seen.add(current.uuid);
+      if (qoderCnTaskNotification(current, contextId, cwd)) return true;
+      if (qoderCnPromptReceipt(current, contextId, cwd)) return false;
+      current = byUuid.get(current.parentUuid);
+    }
+    return false;
+  }
+
   /** Qoder CN 1.1.86 can finish a native turn without sending the ACP
    * `session/prompt` response. Its append-only transcript still records the exact
    * human prompt and terminal stop reason, so use those facts without replaying
    * any input. Exact text plus append offset prevents historical misattribution. */
   private scanNativeTurn(turn: TurnState): void {
     const scan = turn.nativeScan;
-    if (!scan || scan.broken) return;
+    if (!scan || scan.broken || turn.cancelRequested || this.closed || turn.status === 'unknown') return;
     try {
       const file = scan.file ??= this.transcriptFile(turn.contextId);
       if (!file) return;
@@ -352,28 +487,205 @@ class QoderCnRuntime implements AgentRuntime {
       if (!delta.rows.length) return;
       scan.rows.push(...delta.rows);
       const cwd = this.contexts.get(turn.contextId); if (!cwd) return;
+      const byUuid = new Map<string, any>();
+      for (const row of scan.rows) if (typeof row?.uuid === 'string' && row.uuid) byUuid.set(row.uuid, row);
+      let toolsChanged = false;
       for (const row of delta.rows) {
         const receipt = qoderCnPromptReceipt(row, turn.contextId, cwd);
-        if (!receipt) continue;
-        const receiptAt = receipt.timestamp ? Date.parse(receipt.timestamp) : NaN;
-        const prompt = turn.nativePrompts.find(value => !value.receipt && value.text === receipt.text &&
-          Number.isFinite(receiptAt) && receiptAt + 1000 >= value.admittedAt);
-        if (!prompt) continue;
-        prompt.receipt = { id: receipt.id, ...(receipt.promptId ? { promptId: receipt.promptId } : {}), ...(receipt.timestamp ? { timestamp: receipt.timestamp } : {}) };
-        if (!prompt.clientRequestId || turn.durableReceipts.has(prompt.clientRequestId)) continue;
-        turn.durableReceipts.set(prompt.clientRequestId, receipt.id);
-        this.item(turn, { id: receipt.id, clientRequestId: prompt.clientRequestId, kind: 'message', role: 'user', text: prompt.text, executionId: turn.executionId, status: 'completed' });
+        if (receipt) {
+          const receiptAt = receipt.timestamp ? Date.parse(receipt.timestamp) : NaN;
+          const prompt = turn.nativePrompts.find(value => !value.receipt && value.text === receipt.text &&
+            Number.isFinite(receiptAt) && receiptAt + 1000 >= value.admittedAt);
+          if (prompt) {
+            prompt.receipt = { id: receipt.id, ...(receipt.promptId ? { promptId: receipt.promptId } : {}), ...(receipt.timestamp ? { timestamp: receipt.timestamp } : {}) };
+            if (prompt.clientRequestId && !turn.durableReceipts.has(prompt.clientRequestId) && prompt.completion?.stopReason !== 'unknown') {
+              turn.durableReceipts.set(prompt.clientRequestId, receipt.id);
+              this.item(turn, { id: receipt.id, clientRequestId: prompt.clientRequestId, kind: 'message', role: 'user', text: prompt.text, executionId: turn.executionId, status: 'completed' });
+            }
+          }
+          continue;
+        }
+        if (row?.sessionId !== turn.contextId || row.cwd !== cwd || row.isSidechain === true) continue;
+        if (row.type === 'assistant') {
+          const parts = Array.isArray(row.message?.content) ? row.message.content : [];
+          for (const part of parts) {
+            if (part?.type === 'tool_use' && typeof part.id === 'string' && part.input?.run_in_background === true) {
+              turn.backgroundRequestedTools.add(part.id);
+              turn.independentTools.add(part.id);
+            }
+          }
+          if (typeof row.uuid === 'string' && !turn.projectedNativeUuids.has(row.uuid) && this.descendsFromNotification(byUuid, row, turn.contextId, cwd)) {
+            turn.projectedNativeUuids.add(row.uuid);
+            this.finishText(turn);
+            const thinkingText = parts.filter((part: any) => part?.type === 'thinking' && typeof part.thinking === 'string').map((part: any) => part.thinking).join('');
+            if (thinkingText) {
+              if (turn.lastMessage) turn.lastMessage.superseded = true;
+              this.item(turn, { id: `thinking:native:${row.uuid}`, kind: 'thinking', thinking: true, role: 'assistant', text: thinkingText, executionId: turn.executionId, status: 'completed' });
+            }
+            const text = parts.filter((part: any) => part?.type === 'text' && typeof part.text === 'string').map((part: any) => part.text).join('');
+            if (text) {
+              const id = `message:native:${row.uuid}`;
+              turn.lastMessage = { id, superseded: false };
+              this.item(turn, { id, kind: 'message', role: 'assistant', text, executionId: turn.executionId, status: 'completed' });
+            }
+            for (const part of parts) {
+              if (part?.type !== 'tool_use' || typeof part.id !== 'string') continue;
+              if (turn.lastMessage) turn.lastMessage.superseded = true;
+              const name = typeof part.name === 'string' && part.name ? part.name : '工具';
+              const command = typeof part.input?.command === 'string' ? part.input.command : undefined;
+              const label = command && ['Bash', 'PowerShell'].includes(name) ? command : name;
+              if (['Bash', 'PowerShell', 'Monitor'].includes(name) || part.input?.run_in_background === true) turn.independentTools.add(part.id);
+              if (!turn.items.has(part.id)) {
+                turn.tools.set(part.id, { id: part.id, label, status: 'running' });
+                this.item(turn, { id: part.id, kind: 'tool', nativeTool: true, role: 'system', name: label, input: previewOf(part.input), text: label, executionId: turn.executionId, status: 'running' });
+                toolsChanged = true;
+              }
+            }
+          }
+          continue;
+        }
+        if (row.type !== 'user') continue;
+        const notif = qoderCnTaskNotification(row, turn.contextId, cwd);
+        if (notif) {
+          if (!turn.nativeContinuations.has(notif.id)) {
+            this.finishText(turn);
+            if (turn.lastMessage) turn.lastMessage.superseded = true;
+            turn.nativeContinuations.set(notif.id, { id: notif.id });
+            const matchedTask = (notif.taskId ? turn.backgroundTasks.get(notif.taskId) : undefined)
+              ?? (notif.toolUseId && turn.toolToTaskId.get(notif.toolUseId) ? turn.backgroundTasks.get(turn.toolToTaskId.get(notif.toolUseId)!) : undefined);
+            const toolId = matchedTask?.toolId ?? notif.toolUseId;
+            if (matchedTask) {
+              matchedTask.settled = true;
+              matchedTask.status = notif.status === 'failed' ? 'failed' : 'completed';
+              if (notif.outputFile && !matchedTask.outputFile) matchedTask.outputFile = notif.outputFile;
+              if (toolId) {
+                turn.backgroundRequestedTools.delete(toolId);
+                turn.backgroundHeldCompletions.delete(toolId);
+                const prior = turn.items.get(toolId);
+                const label = turn.tools.get(toolId)?.label ?? prior?.name ?? '工具';
+                turn.tools.set(toolId, { id: toolId, label, status: 'completed' });
+                const text = this.taskDisplayText([matchedTask.launchText, notif.summary, notif.result, matchedTask.lastOutput]) || prior?.text || label;
+                this.item(turn, {
+                  ...(prior ?? { id: toolId, kind: 'tool', nativeTool: true, role: 'system', name: label, executionId: turn.executionId }),
+                  backgroundProgress: undefined, text, status: matchedTask.status,
+                });
+                void this.enrichTaskFinalOutput(turn, matchedTask, toolId, notif);
+                toolsChanged = true;
+              }
+            } else if (toolId && turn.tools.has(toolId)) {
+              turn.backgroundRequestedTools.delete(toolId);
+              turn.backgroundHeldCompletions.delete(toolId);
+              const prior = turn.items.get(toolId);
+              const label = turn.tools.get(toolId)?.label ?? prior?.name ?? '工具';
+              const status: 'completed' | 'failed' = notif.status === 'failed' ? 'failed' : 'completed';
+              turn.tools.set(toolId, { id: toolId, label, status: 'completed' });
+              const text = this.taskDisplayText([prior?.text, notif.summary, notif.result]) || label;
+              this.item(turn, {
+                ...(prior ?? { id: toolId, kind: 'tool', nativeTool: true, role: 'system', name: label, executionId: turn.executionId }),
+                backgroundProgress: undefined, text, status,
+              });
+              toolsChanged = true;
+            }
+          }
+          continue;
+        }
+        if (typeof row.uuid === 'string' && turn.projectedNativeUuids.has(row.uuid)) continue;
+        if (typeof row.uuid === 'string') turn.projectedNativeUuids.add(row.uuid);
+        const parts = Array.isArray(row.message?.content) ? row.message.content : [];
+        for (const [index, part] of parts.entries()) {
+          if (part?.type !== 'tool_result' || typeof part.tool_use_id !== 'string') continue;
+          const toolId = part.tool_use_id;
+          const rawReceipt = Array.isArray(row.toolUseResult) ? row.toolUseResult[index] : row.toolUseResult;
+          const launch = qoderCnBackgroundLaunch(rawReceipt);
+          if (launch) {
+            turn.backgroundHeldCompletions.delete(toolId);
+            const existing = turn.backgroundTasks.get(launch.taskId);
+            const prior = turn.items.get(toolId);
+            const launchText = existing?.launchText ?? (prior?.text || undefined);
+            turn.backgroundTasks.set(launch.taskId, {
+              taskId: launch.taskId, toolId, ...(launchText ? { launchText } : {}),
+              ...(launch.outputFile ? { outputFile: launch.outputFile } : existing?.outputFile ? { outputFile: existing.outputFile } : {}),
+              ...(existing?.lastOutput ? { lastOutput: existing.lastOutput } : {}),
+              settled: existing?.settled ?? false, ...(existing?.status ? { status: existing.status } : {}),
+            });
+            turn.toolToTaskId.set(toolId, launch.taskId);
+            turn.independentTools.add(toolId);
+            if (!existing?.settled) {
+              const label = turn.tools.get(toolId)?.label ?? prior?.name ?? '工具';
+              if (turn.tools.get(toolId)?.status !== 'running' || prior?.status !== 'running') {
+                turn.tools.set(toolId, { id: toolId, label, status: 'running' });
+                this.item(turn, {
+                  ...(prior ?? { id: toolId, kind: 'tool', nativeTool: true, role: 'system', name: label, executionId: turn.executionId }),
+                  text: launchText ?? label, status: 'running',
+                });
+                toolsChanged = true;
+              }
+            }
+            continue;
+          }
+          const stopReceipt = qoderCnTaskStopReceipt(rawReceipt);
+          if (stopReceipt?.silent) {
+            const stoppedTask = turn.backgroundTasks.get(stopReceipt.taskId);
+            if (stoppedTask && !stoppedTask.settled) {
+              stoppedTask.settled = true;
+              stoppedTask.status = 'completed';
+              if (stoppedTask.toolId) {
+                turn.backgroundRequestedTools.delete(stoppedTask.toolId);
+                turn.backgroundHeldCompletions.delete(stoppedTask.toolId);
+                const prior = turn.items.get(stoppedTask.toolId);
+                const label = turn.tools.get(stoppedTask.toolId)?.label ?? prior?.name ?? '工具';
+                turn.tools.set(stoppedTask.toolId, { id: stoppedTask.toolId, label, status: 'completed' });
+                this.item(turn, {
+                  ...(prior ?? { id: stoppedTask.toolId, kind: 'tool', nativeTool: true, role: 'system', name: label, executionId: turn.executionId }),
+                  backgroundProgress: undefined, text: this.taskDisplayText([stoppedTask.launchText, rawReceipt.message]) || label, status: 'completed',
+                });
+                toolsChanged = true;
+              }
+            }
+          }
+          const fromContinuation = this.descendsFromNotification(byUuid, row, turn.contextId, cwd);
+          const resolvedHeldBackground = turn.backgroundHeldCompletions.delete(toolId) && !turn.toolToTaskId.has(toolId);
+          if (resolvedHeldBackground || (fromContinuation && !turn.acpProjectedToolResults.has(toolId))) {
+            turn.backgroundRequestedTools.delete(toolId);
+            const prior = turn.items.get(toolId);
+            const label = turn.tools.get(toolId)?.label ?? prior?.name ?? '工具';
+            const nativeResultText = rawReceipt && [rawReceipt.stdout, rawReceipt.stderr].some(value => typeof value === 'string')
+              ? [rawReceipt.stdout, rawReceipt.stderr].filter(value => typeof value === 'string' && value).join('\n')
+              : textOf(part.content) || previewOf(part.content);
+            const status: 'completed' | 'failed' = part.is_error ? 'failed' : 'completed';
+            turn.tools.set(toolId, { id: toolId, label, status: 'completed' });
+            this.item(turn, {
+              ...(prior ?? { id: toolId, kind: 'tool', nativeTool: true, role: 'system', name: label, executionId: turn.executionId }),
+              backgroundProgress: undefined, text: nativeResultText || prior?.text || label, status,
+            });
+            toolsChanged = true;
+          }
+        }
       }
       const finished = qoderCnFinishedTurns(scan.rows, turn.contextId, cwd);
       for (const prompt of turn.nativePrompts) {
-        if (!prompt.receipt || prompt.completion) continue;
+        if (!prompt.receipt) continue;
         const completion = prompt.receipt.promptId
           ? finished.byPromptId.get(prompt.receipt.promptId) ?? finished.byReceiptId.get(prompt.receipt.id)
           : finished.byReceiptId.get(prompt.receipt.id);
         if (!completion) continue;
-        prompt.completion = completion;
-        prompt.terminal.resolve(completion);
+        if (!prompt.completion) {
+          prompt.completion = completion;
+          prompt.terminal.resolve(completion);
+        } else if (prompt.completion.index === undefined && completion.stopReason === prompt.completion.stopReason) {
+          prompt.completion = completion;
+        }
       }
+      for (const [id, continuation] of turn.nativeContinuations) {
+        if (continuation.completion) continue;
+        const completion = finished.byNotificationId.get(id);
+        if (completion) continuation.completion = completion;
+      }
+      this.syncBackgroundState(turn);
+      if (toolsChanged) {
+        try { turn.onEvent({ type: 'observation', observation: this.observation() }); } catch { /* keep turn alive */ }
+      }
+      this.wakeTurn(turn);
     } catch { /* best-effort native evidence; ACP response remains primary */ }
   }
 
@@ -421,17 +733,18 @@ class QoderCnRuntime implements AgentRuntime {
     if (!turn) return { status: 'idle', tools: [] };
     return {
       status: turn.status,
-      executionRef: this.executionRef(turn.executionId),
+      backgroundWork: turn.backgroundWork,
+      executionRef: this.executionRef(turn.executionId, turn.backgroundWork),
       tools: [...turn.tools.values()],
       requests: [...turn.approvals.values()].map(approval => approval.request),
       ...(turn.diagnostic ? { diagnostic: turn.diagnostic } : {}),
     };
   }
 
-  private executionRef(id: string) {
+  private executionRef(id: string, backgroundWork = false) {
     const contextId=this.turn?.contextId??this.sessionId!;
-    const ref=this.client?.executionRef(id,contextId,this.bindingIdentity);
-    return {id,data:{...ref?.data,native:opaqueReference('qoder-cn',id,this.config,this.bindingIdentity),resourceContext:contextId,resourceBinding:this.bindingIdentity}};
+    const ref=this.client?.executionRef(id,contextId,this.bindingIdentity,backgroundWork);
+    return {id,data:{...ref?.data,native:opaqueReference('qoder-cn',id,this.config,this.bindingIdentity),resourceContext:contextId,resourceBinding:this.bindingIdentity,backgroundWork}};
   }
 
   private reference(context: ContextRef, cwd?: string): string {
@@ -442,7 +755,7 @@ class QoderCnRuntime implements AgentRuntime {
   }
 
   private assertQuiescent(): void {
-    if (this.turn && (this.turn.pending || !['idle', 'stopped'].includes(this.turn.status) || [...this.turn.tools.values()].some(tool => tool.status !== 'completed'))) throw new ExecutorInputRejected('qoder_cn_previous_execution_unsettled');
+    if (this.turn && (this.turn.pending || this.turn.backgroundWork || !['idle', 'stopped'].includes(this.turn.status) || [...this.turn.tools.values()].some(tool => tool.status !== 'completed'))) throw new ExecutorInputRejected('qoder_cn_previous_execution_unsettled');
   }
 
   private exactTurn(contextRef: ContextRef, executionRef?: { id: string }): TurnState | undefined {
@@ -638,7 +951,13 @@ class QoderCnRuntime implements AgentRuntime {
     let settle!: () => void;
     const settled = new Promise<void>(resolve => { settle = resolve; });
     const primaryPrompt: NativePromptWait = { text: input.text, admittedAt: Date.now(), terminal: deferred() };
-    const turn: TurnState = { contextId: input.contextRef.id, executionId, onEvent: input.onEvent, items: new Map(), tools: new Map(), independentTools: new Set(), approvals: new Map(), approvalPendingTools: new Set(), status: 'running', segment: 0, pending: true, cancelRequested: false, settled, settle, supplements: new Map(), supplementInputs: new Map(), durableReceipts: new Map(), nativePrompts: [primaryPrompt] };
+    const turn: TurnState = {
+      contextId: input.contextRef.id, executionId, onEvent: input.onEvent, items: new Map(), tools: new Map(),
+      independentTools: new Set(), backgroundRequestedTools: new Set(), backgroundHeldCompletions: new Set(), backgroundTasks: new Map(), toolToTaskId: new Map(),
+      nativeContinuations: new Map(), projectedNativeUuids: new Set(), acpProjectedToolResults: new Set(), backgroundWork: false,
+      approvals: new Map(), approvalPendingTools: new Set(), status: 'running', segment: 0, pending: true, cancelRequested: false,
+      settled, settle, supplements: new Map(), supplementInputs: new Map(), durableReceipts: new Map(), nativePrompts: [primaryPrompt],
+    };
     this.turn = turn;
     this.startNativeScan(turn);
     input.onEvent({ type: 'accepted', executionRef: this.executionRef(executionId), inputItemId: executionId });
@@ -647,7 +966,10 @@ class QoderCnRuntime implements AgentRuntime {
     this.observeUsage(turn);
     const usageTimer=setInterval(()=>{try{this.observeUsage(turn);}catch{/* local observation cannot interrupt work */}},2000);
     usageTimer.unref();
-    const durableTimer=setInterval(()=>{try{this.scanNativeTurn(turn);}catch{/* native evidence is best-effort */}},1000);
+    const durableTimer=setInterval(()=>{
+      try{this.scanNativeTurn(turn);}catch{/* native evidence is best-effort */}
+      void this.pollBackgroundOutputs(turn).catch(()=>{/* output polling is best-effort */});
+    },1000);
     durableTimer.unref();
     try {
       const sessionId = this.sessionId!;
@@ -667,19 +989,61 @@ class QoderCnRuntime implements AgentRuntime {
       if (!primaryPrompt.completion) primaryPrompt.completion = completed;
       turn.stopReason = completed.stopReason;
       this.scanNativeTurn(turn);
-      // Native queued prompts belong to this Buildr execution. The first prompt
-      // ending cannot release their controls or promote an intermediate answer.
-      while (turn.supplements.size) await Promise.allSettled([...turn.supplements.values()]);
-      // Queued supplements are independent native turns too. Wait for their
-      // terminal facts, not only their durable acceptance receipts.
-      for (;;) {
-        const pending = turn.nativePrompts.filter(value => value.clientRequestId && !value.completion);
-        if (!pending.length) break;
-        await Promise.allSettled(pending.map(value => value.terminal.promise));
+      const turnUnknown = (): boolean => (turn as { status: ExecutorObservation['status'] }).status === 'unknown';
+      // If a background launch was requested over ACP, wait briefly for the
+      // native transcript to flush its launch receipt so end_turn cannot race it.
+      if (turn.backgroundRequestedTools.size > 0 && turn.toolToTaskId.size === 0 && !turn.cancelRequested && !this.closed && !turnUnknown()) {
+        const deadline = Date.now() + 1500;
+        while (turn.backgroundRequestedTools.size > 0 && turn.toolToTaskId.size === 0 && !turn.cancelRequested && !this.closed && !turnUnknown() && Date.now() < deadline) {
+          await new Promise<void>(resolve => setTimeout(resolve, 50));
+          this.scanNativeTurn(turn);
+        }
       }
+      // Native queued prompts, active background tasks, and automatic task-notification
+      // continuations all belong to this Buildr execution. An intermediate end_turn
+      // cannot release controls or promote a mid-run message as the final reply.
+      while (!turn.cancelRequested && !this.closed && !turnUnknown()) {
+        if (turn.supplements.size) {
+          await Promise.allSettled([...turn.supplements.values()]);
+          if (turn.cancelRequested || this.closed || turnUnknown()) break;
+        }
+        this.scanNativeTurn(turn);
+        const pendingPrompts = turn.nativePrompts.filter(value => value.clientRequestId && !value.completion);
+        const activeBg = this.hasActiveBackgroundWork(turn);
+        if (!turn.supplements.size && !pendingPrompts.length && !activeBg) {
+          if (turn.backgroundTasks.size > 0 || turn.nativeContinuations.size > 0) {
+            await new Promise<void>(resolve => setTimeout(resolve, 120));
+            this.scanNativeTurn(turn);
+            if (!turn.supplements.size && !turn.nativePrompts.some(value => value.clientRequestId && !value.completion) && !this.hasActiveBackgroundWork(turn)) break;
+            continue;
+          }
+          break;
+        }
+        this.finishText(turn, 'completed');
+        this.syncBackgroundState(turn);
+        await this.pollBackgroundOutputs(turn);
+        if (turn.cancelRequested || this.closed || turnUnknown()) break;
+        const wake = (turn.stateWake ??= deferred()).promise;
+        await Promise.race([
+          wake,
+          ...pendingPrompts.map(value => value.terminal.promise),
+          new Promise<void>(resolve => setTimeout(resolve, 200)),
+        ]);
+      }
+      const completions = [
+        ...turn.nativePrompts.map(value => value.completion),
+        ...[...turn.nativeContinuations.values()].map(value => value.completion),
+      ].filter((value): value is NativePromptCompletion => Boolean(value));
+      const indexedLatest = completions
+        .filter(value => value.index !== undefined)
+        .sort((left, right) => (left.index ?? -1) - (right.index ?? -1))
+        .at(-1);
       const supplementCompletion = turn.nativePrompts.filter(value => value.clientRequestId && value.completion).at(-1)?.completion;
-      const stopReason = supplementCompletion?.stopReason ?? turn.stopReason;
-      const normal = stopReason === 'end_turn';
+      const continuationCompletion = [...turn.nativeContinuations.values()].map(value => value.completion).filter(Boolean).at(-1);
+      const unindexedSupplement = supplementCompletion && supplementCompletion.index === undefined ? supplementCompletion : undefined;
+      const stopReason = unindexedSupplement?.stopReason ?? indexedLatest?.stopReason ?? continuationCompletion?.stopReason ?? supplementCompletion?.stopReason ?? turn.stopReason;
+      turn.backgroundWork = false;
+      const normal = !turn.cancelRequested && !turnUnknown() && !turn.supplementFailed && stopReason === 'end_turn';
       const stopped = turn.cancelRequested || stopReason === 'cancelled' || stopReason === 'refusal' || stopReason === 'max_tokens' || stopReason === 'max_turn_requests';
       this.finishText(turn, normal ? 'completed' : 'unknown');
       await this.reconcileFinalText(turn, normal);
@@ -697,15 +1061,26 @@ class QoderCnRuntime implements AgentRuntime {
         const item = turn.items.get(tool.id);
         if (item) this.item(turn, { ...item, status: 'completed', text: `${item.text ? item.text + '\n' : ''}授权等待已取消，工具未执行。` });
       }
-      for (const tool of turn.tools.values()) if (tool.status === 'running') tool.status = 'unknown';
+      for (const tool of turn.tools.values()) {
+        if (tool.status !== 'running') continue;
+        tool.status = 'unknown';
+        const item = turn.items.get(tool.id);
+        if (item && item.status === 'running') this.item(turn, { ...item, backgroundProgress: undefined, status: 'unknown' });
+      }
       if ([...turn.tools.values()].some(tool => tool.status !== 'completed')) { turn.status = 'unknown'; turn.diagnostic ??= 'Qoder CN 本轮仍有未确认结束的工具，结果未知。'; }
       if (turn.status === 'idle' || turn.status === 'stopped') input.onEvent({ type: 'completed', status: turn.status === 'idle' ? 'completed' : 'stopped', ...(turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) });
     } catch (error) {
       const message = messageOf(error, 'qoder_cn_prompt_failed');
       // The CN gateway reports a missing plan as an HTTP 403 carrying a pricing link.
       const diagnostic = errorDiagnostic(quotaMessage(message)) ?? 'qoder_cn_prompt_failed';
+      turn.backgroundWork = false;
       this.finishText(turn, 'unknown');
-      for (const tool of turn.tools.values()) if (tool.status === 'running') tool.status = 'unknown';
+      for (const tool of turn.tools.values()) {
+        if (tool.status !== 'running') continue;
+        tool.status = 'unknown';
+        const item = turn.items.get(tool.id);
+        if (item && item.status === 'running') this.item(turn, { ...item, backgroundProgress: undefined, status: 'unknown' });
+      }
       if (turn.status !== 'stopped' && this.turn === turn) { turn.status = 'unknown'; turn.diagnostic = diagnostic; }
       throw new Error(diagnostic);
     } finally {
@@ -715,6 +1090,7 @@ class QoderCnRuntime implements AgentRuntime {
       clearInterval(usageTimer);
       clearInterval(durableTimer);
       this.observeUsage(turn);
+      turn.backgroundWork = false;
       turn.pending = false;
       turn.settle();
       try { input.onEvent({ type: 'observation', observation: this.observation() }); } catch { /* preserve original */ }
@@ -758,7 +1134,7 @@ class QoderCnRuntime implements AgentRuntime {
       // terminal response is late or lacks its receipt; the terminal id wins when present.
       if(typeof result?.userMessageId==='string'&&result.userMessageId){
         this.item(turn,{id:result.userMessageId,clientRequestId:input.clientRequestId,kind:'message',role:'user',text:input.text,executionId:turn.executionId,status:'completed'});
-        return {executionRef:this.executionRef(turn.executionId),inputItemId:result.userMessageId};
+        return {executionRef:this.executionRef(turn.executionId,turn.backgroundWork),inputItemId:result.userMessageId};
       }
       // A native receipt may land just after the terminal frame. Observe the
       // exact admitted prompt briefly, but never claim acceptance without it.
@@ -766,7 +1142,7 @@ class QoderCnRuntime implements AgentRuntime {
         await new Promise(resolve=>setTimeout(resolve,delay));
         this.scanNativeTurn(turn);
         const durable=turn.durableReceipts.get(input.clientRequestId);
-        if(durable)return {executionRef:this.executionRef(turn.executionId),inputItemId:durable};
+        if(durable)return {executionRef:this.executionRef(turn.executionId,turn.backgroundWork),inputItemId:durable};
       }
       throw new Error('qoder_cn_supplement_receipt_missing');
     })().catch(error=>{
@@ -788,7 +1164,7 @@ class QoderCnRuntime implements AgentRuntime {
   private supplementReceipt(turn:TurnState,clientRequestId:string):ExecutorInputReceipt {
     const durable=turn.durableReceipts.get(clientRequestId);
     if(!durable)throw new Error('qoder_cn_supplement_receipt_missing');
-    return {executionRef:this.executionRef(turn.executionId),inputItemId:durable};
+    return {executionRef:this.executionRef(turn.executionId,turn.backgroundWork),inputItemId:durable};
   }
 
   async observe(input: { contextRef: ContextRef; executionRef?: { id: string } }): Promise<ExecutorObservation> { this.exactTurn(input.contextRef, input.executionRef); return this.observation(); }
@@ -818,6 +1194,7 @@ class QoderCnRuntime implements AgentRuntime {
     const queued=turn.supplements.size>0;
     if (!turn.cancelRequested) {
       turn.cancelRequested = true;
+      this.wakeTurn(turn);
       // ACP has no atomic cancel-all for its prompt queue. Terminate this exact
       // owned group before resolving decisions can release another queued prompt.
       if (!queued && this.sessionId === turn.contextId) this.client?.notify('session/cancel', { sessionId: turn.contextId });
@@ -832,18 +1209,19 @@ class QoderCnRuntime implements AgentRuntime {
     // A prompt response can precede a queued prompt or leave unresolved tools.
     if(turn.pending&&!queued)await bounded(turn.settled, 5000).catch(() => {});
     const client=this.client;
-    const ref=this.executionRef(turn.executionId);
+    const ended=!turn.pending&&!this.hasActiveBackgroundWork(turn)&&['idle','stopped'].includes(turn.status)&&[...turn.tools.values()].every(tool=>tool.status==='completed');
+    const ref=this.executionRef(turn.executionId,ended?false:turn.backgroundWork);
     if(client){
-      const ended=!turn.pending&&['idle','stopped'].includes(turn.status)&&[...turn.tools.values()].every(tool=>tool.status==='completed');
       const released=!queued&&await client.released(ref,turn.contextId,this.bindingIdentity,ended);
-      if(released){turn.stopConfirmed=true;turn.status='stopped';}
+      if(released){turn.stopConfirmed=true;turn.backgroundWork=false;turn.status='stopped';for(const task of turn.backgroundTasks.values())task.settled=true;}
       else if(await client.stopExecution(ref,turn.contextId,this.bindingIdentity)){
         // The owned group has exited; tool *results* without receipts remain unknown.
         await client.close();
         await bounded(turn.settled,1000).catch(()=>{});
-        turn.stopConfirmed=true;turn.status='stopped';
+        turn.stopConfirmed=true;turn.backgroundWork=false;turn.status='stopped';
+        for(const task of turn.backgroundTasks.values())task.settled=true;
         for(const tool of turn.tools.values())if(tool.status!=='completed')tool.status=turn.independentTools.has(tool.id)?'unknown':'completed';
-        for(const item of turn.items.values())if(item.kind==='tool'&&item.status==='running')this.item(turn,{...item,status:'unknown'});
+        for(const item of turn.items.values())if(item.kind==='tool'&&item.status==='running')this.item(turn,{...item,backgroundProgress:undefined,status:'unknown'});
         turn.diagnostic='本轮所属执行资源已确认退出；缺少完成回执的操作结果仍未知，不会重发。';
       }
     }
@@ -855,8 +1233,8 @@ class QoderCnRuntime implements AgentRuntime {
   }
   async canRelease(input:{contextRef:ContextRef;executionRef:{id:string}}):Promise<boolean|{executionState:'unknown'}> {
     const turn=this.exactTurn(input.contextRef,input.executionRef);
-    if(!turn||turn.pending||!['idle','stopped'].includes(turn.status))return false;
-    const released=await this.client?.released(this.executionRef(turn.executionId),turn.contextId,this.bindingIdentity,true);
+    if(!turn||turn.pending||(!turn.stopConfirmed&&this.hasActiveBackgroundWork(turn))||!['idle','stopped'].includes(turn.status))return false;
+    const released=await this.client?.released(this.executionRef(turn.executionId,false),turn.contextId,this.bindingIdentity,true);
     if(!released)return false;
     return [...turn.tools.values()].every(tool=>tool.status==='completed')?true:{executionState:'unknown'};
   }

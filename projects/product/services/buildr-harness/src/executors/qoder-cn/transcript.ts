@@ -19,6 +19,79 @@ function textOf(content: unknown): string {
   return '';
 }
 
+function unescapeXml(value: string): string {
+  return value
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&#39;', "'")
+    .replaceAll('&amp;', '&');
+}
+
+function xmlTag(raw: string, tag: string): string | undefined {
+  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = raw.match(new RegExp(`<${escaped}(?:\\s[^>]*)?>([\\s\\S]*?)</${escaped}>`));
+  if (match?.[1] === undefined) return;
+  const text = unescapeXml(match[1].trim());
+  return text || undefined;
+}
+
+export interface QoderCnTaskNotification {
+  id: string;
+  taskId?: string;
+  toolUseId?: string;
+  status?: string;
+  summary?: string;
+  outputFile?: string;
+  result?: string;
+  promptId?: string;
+  timestamp?: string;
+}
+
+export function qoderCnTaskNotification(row: any, contextId: string, cwd: string): QoderCnTaskNotification | undefined {
+  if (row?.sessionId !== contextId || row.isSidechain !== false || row.cwd !== cwd || row.type !== 'user' ||
+    row.origin?.kind !== 'task-notification' || typeof row.uuid !== 'string' || !row.uuid) return;
+  const raw = textOf(row.message?.content);
+  const taskId = xmlTag(raw, 'task-id');
+  const toolUseId = xmlTag(raw, 'tool-use-id');
+  const status = xmlTag(raw, 'status');
+  const summary = xmlTag(raw, 'summary');
+  const outputFile = xmlTag(raw, 'output-file');
+  const result = xmlTag(raw, 'result');
+  const promptId = typeof row.promptId === 'string' && row.promptId ? row.promptId : undefined;
+  return {
+    id: row.uuid,
+    ...(taskId ? { taskId } : {}),
+    ...(toolUseId ? { toolUseId } : {}),
+    ...(status ? { status } : {}),
+    ...(summary ? { summary } : {}),
+    ...(outputFile ? { outputFile } : {}),
+    ...(result ? { result } : {}),
+    ...(promptId ? { promptId } : {}),
+    ...(typeof row.timestamp === 'string' ? { timestamp: row.timestamp } : {}),
+  };
+}
+
+export function qoderCnBackgroundLaunch(receipt: any): { taskId: string; outputFile?: string } | undefined {
+  if (!receipt || typeof receipt !== 'object') return;
+  const taskId = receipt.kind === 'backgrounded' ? receipt.taskId : receipt.backgroundTaskId;
+  if (typeof taskId !== 'string' || !taskId.trim()) return;
+  return {
+    taskId: taskId.trim(),
+    ...(typeof receipt.outputFile === 'string' && receipt.outputFile ? { outputFile: receipt.outputFile } : {}),
+  };
+}
+
+export function qoderCnTaskStopReceipt(receipt: any): { taskId: string; silent: boolean } | undefined {
+  if (!receipt || typeof receipt !== 'object') return;
+  if (typeof receipt.task_id !== 'string' || !receipt.task_id.trim()) return;
+  if (typeof receipt.message !== 'string' || !receipt.message.startsWith('Successfully stopped task:')) return;
+  return {
+    taskId: receipt.task_id.trim(),
+    silent: typeof receipt.task_type === 'string' && receipt.task_type !== 'local_bash',
+  };
+}
+
 /** Buildr only prepends managed context or handoff text to the exact user input. */
 function admittedTextMatches(nativeText: string, admittedText: string): boolean {
   if (nativeText === admittedText) return true;
@@ -53,6 +126,8 @@ export interface QoderCnFinishedTurns {
   byPromptId: Map<string, {id:string;stopReason:string;text?:string;timestamp?:string;index:number}>;
   /** Exact native prompt row -> terminal assistant that descends from it. */
   byReceiptId: Map<string, {id:string;stopReason:string;text?:string;timestamp?:string;index:number}>;
+  /** Exact native task-notification row -> terminal assistant that descends from it. */
+  byNotificationId: Map<string, {id:string;stopReason:string;text?:string;timestamp?:string;index:number}>;
 }
 
 /** Decide how the projected terminal message should be reconciled against the
@@ -72,12 +147,15 @@ export function qoderCnFinishedTurns(rows: any[], contextId: string, cwd: string
   const byUuid = new Map<string, any>();
   for (const row of rows) if (typeof row?.uuid === 'string' && row.uuid) byUuid.set(row.uuid, row);
   const receipts = new Map<string, {id:string;promptId?:string;human:boolean}>();
+  const notifications = new Set<string>();
   for (const row of rows) {
     const receipt = qoderCnPromptReceipt(row, contextId, cwd);
     if (receipt) receipts.set(receipt.id, {id:receipt.id, ...(receipt.promptId ? {promptId:receipt.promptId} : {}), human:row.type === 'user'});
+    if (qoderCnTaskNotification(row, contextId, cwd)) notifications.add(row.uuid);
   }
   const byPromptId = new Map<string, {id:string;stopReason:string;text?:string;timestamp?:string;index:number}>();
   const byReceiptId = new Map<string, {id:string;stopReason:string;text?:string;timestamp?:string;index:number}>();
+  const byNotificationId = new Map<string, {id:string;stopReason:string;text?:string;timestamp?:string;index:number}>();
   for (let index = 0; index < rows.length; index++) {
     const row = rows[index];
     if (row?.type !== 'assistant' || row.sessionId !== contextId || row.cwd !== cwd || row.isSidechain === true ||
@@ -94,9 +172,11 @@ export function qoderCnFinishedTurns(rows: any[], contextId: string, cwd: string
     const seen = new Set<string>();
     let promptId: string | undefined;
     const receiptIds: string[] = [];
+    const notificationIds: string[] = [];
     while (current && typeof current.uuid === 'string' && !seen.has(current.uuid)) {
       seen.add(current.uuid);
       promptId ??= typeof current.promptId === 'string' && current.promptId ? current.promptId : undefined;
+      if (notifications.has(current.uuid)) notificationIds.push(current.uuid);
       const receipt = receipts.get(current.uuid);
       if (receipt) {
         receiptIds.push(receipt.id);
@@ -109,8 +189,9 @@ export function qoderCnFinishedTurns(rows: any[], contextId: string, cwd: string
     }
     if (promptId && !byPromptId.has(promptId)) byPromptId.set(promptId, completion);
     for (const receiptId of receiptIds) if (!byReceiptId.has(receiptId)) byReceiptId.set(receiptId, completion);
+    for (const notificationId of notificationIds) if (!byNotificationId.has(notificationId)) byNotificationId.set(notificationId, completion);
   }
-  return {byPromptId, byReceiptId};
+  return {byPromptId, byReceiptId, byNotificationId};
 }
 
 /** Read one immutable native transcript snapshot; partial or changed writes prove nothing. */
@@ -206,7 +287,7 @@ export async function readQoderCnSupplementReceipt(input: ReceiptInput): Promise
 /** Durable completion evidence for a lost ACP terminal frame. The native
  * transcript is append-only and proves both the exact admitted inputs and the
  * final assistant stop reason without opening a process or replaying input. */
-export async function readQoderCnPersistedExecution(input: PersistedInput): Promise<{items:ExecutorItem[];observation:{status:'idle';executionRef:NonNullable<PersistedInput['executionRef']>;tools:Array<{id:string;label:string;status:'completed'}>};endedAt?:string} | undefined> {
+export async function readQoderCnPersistedExecution(input: PersistedInput): Promise<{items:ExecutorItem[];observation:{status:'idle';executionRef:NonNullable<PersistedInput['executionRef']>;tools:Array<{id:string;label:string;status:'completed'}>;backgroundWork:false};endedAt?:string} | undefined> {
   const nativeInputs=typeof input.nativeInputs==='object'&&input.nativeInputs?input.nativeInputs:[];
   if(!nativeInputs.length)return;
   const native = parseReference(String(input.contextRef.data?.native ?? ''), 'qoder-cn', input.cwd, input.bindingIdentity);
@@ -247,13 +328,22 @@ export async function readQoderCnPersistedExecution(input: PersistedInput): Prom
   const finished=qoderCnFinishedTurns(rows,input.contextRef.id,input.cwd);
   const completions=ordered.map(value=>finished.byReceiptId.get(value.prompt.id));
   if(completions.some(value=>!value||value.stopReason!=='end_turn'))return;
-  const final=[...completions].filter((value):value is NonNullable<typeof value>=>Boolean(value))
-    .sort((left,right)=>left.index-right.index).at(-1);
-  if(!final)return;
   const firstIndex=ordered[0]!.prompt.index;
-  if(final.index<firstIndex)return;
+  const notificationCompletions:Array<NonNullable<ReturnType<typeof finished.byNotificationId.get>>>=[];
+  for(const row of rows.slice(firstIndex)){
+    const notif=qoderCnTaskNotification(row,input.contextRef.id,input.cwd);
+    if(!notif)continue;
+    const completion=finished.byNotificationId.get(notif.id);
+    if(!completion||completion.stopReason!=='end_turn')return;
+    notificationCompletions.push(completion);
+  }
+  const final=[...completions,...notificationCompletions].filter((value):value is NonNullable<typeof value>=>Boolean(value))
+    .sort((left,right)=>left.index-right.index).at(-1);
+  if(!final||final.index<firstIndex)return;
+  if(rows.slice(final.index+1).some(row=>row?.sessionId===input.contextRef.id&&row.isSidechain===false&&row.cwd===input.cwd&&(row.type==='user'||row.type==='assistant')))return;
   const scoped=rows.slice(firstIndex,final.index+1).filter(row=>row?.sessionId===input.contextRef.id&&row.isSidechain===false&&row.cwd===input.cwd);
   const calls=new Map<string,{id:string;label:string}>(),results=new Set<string>();
+  const backgroundTasks=new Map<string,boolean>(),toolToTaskId=new Map<string,string>();
   for(const row of scoped){
     const parts=Array.isArray(row.message?.content)?row.message.content:[];
     if(row.type==='assistant')for(const part of parts){
@@ -261,20 +351,42 @@ export async function readQoderCnPersistedExecution(input: PersistedInput): Prom
         calls.set(part.id,{id:part.id,label:typeof part.name==='string'&&part.name?part.name:'工具'});
       }
     }
-    if(row.type==='user')for(const part of parts){
-      if(part?.type==='tool_result'&&typeof part.tool_use_id==='string')results.add(part.tool_use_id);
+    if(row.type==='user'){
+      const notif=qoderCnTaskNotification(row,input.contextRef.id,input.cwd);
+      if(notif){
+        const taskId=notif.taskId??(notif.toolUseId?toolToTaskId.get(notif.toolUseId):undefined);
+        if(taskId&&backgroundTasks.has(taskId))backgroundTasks.set(taskId,true);
+        continue;
+      }
+      for(const [idx,part] of parts.entries()){
+        if(part?.type==='tool_result'&&typeof part.tool_use_id==='string'){
+          results.add(part.tool_use_id);
+          const rawReceipt=Array.isArray(row.toolUseResult)?row.toolUseResult[idx]:row.toolUseResult;
+          const launch=qoderCnBackgroundLaunch(rawReceipt);
+          if(launch){backgroundTasks.set(launch.taskId,false);toolToTaskId.set(part.tool_use_id,launch.taskId);}
+          else{
+            const stop=qoderCnTaskStopReceipt(rawReceipt);
+            if(stop?.silent&&backgroundTasks.has(stop.taskId))backgroundTasks.set(stop.taskId,true);
+          }
+        }
+      }
     }
   }
-  if([...calls.keys()].some(id=>!results.has(id)))return;
+  if([...calls.keys()].some(id=>!results.has(id))||[...backgroundTasks.values()].some(settled=>!settled))return;
   const items:ExecutorItem[]=ordered.map(value=>({
     id:value.prompt.id,clientRequestId:value.input.clientRequestId,kind:'message',role:'user',
     text:value.input.text,executionId:input.executionRef.id,status:'completed',
   }));
+  if(notificationCompletions.length&&final.text){
+    items.push({id:`message:native:${final.id}`,kind:'message',role:'assistant',text:final.text,executionId:input.executionRef.id,status:'completed'});
+  }
+  const settledExecutionRef=input.executionRef.data?{...input.executionRef,data:{...input.executionRef.data,backgroundWork:false}}:input.executionRef;
   return {
     items,
     observation:{
-      status:'idle',executionRef:input.executionRef,
+      status:'idle',executionRef:settledExecutionRef,
       tools:[...calls.values()].map(value=>({...value,status:'completed' as const})),
+      backgroundWork:false,
     },
     ...(final.timestamp&&Number.isFinite(Date.parse(final.timestamp))?{endedAt:final.timestamp}:{}),
   };

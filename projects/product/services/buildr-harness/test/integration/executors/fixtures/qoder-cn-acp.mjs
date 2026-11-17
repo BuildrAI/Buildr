@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Minimal Qoder CN ACP fixture: newline-delimited JSON-RPC over stdio, no network.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import {spawn} from 'node:child_process';
@@ -132,6 +132,35 @@ function handle(message) {
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '检查文件内容' } } });
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text } } });
     const toolId = `tool-${++toolSequence}`, userMessageId=queuedReceiptUuid??randomUUID(),assistantId=randomUUID();
+    if(scenario()==='background-continuation'||scenario()==='background-hang'){
+      const bgToolInput = { command: 'npm test', run_in_background: true };
+      notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'tool_call', toolCallId: toolId, title: 'npm test', kind: 'execute', rawInput: bgToolInput, status: 'running' } });
+      notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: toolId, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'Command running in background with ID: b96zlpj47.' } }] } });
+      notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '正在等待后台测试完成…' } } });
+      const tmpBase = realpathSync(process.env.TMPDIR);
+      const tasksDir = join(tmpBase, `qoder-cli-cn-${process.getuid()}`, 'fixture', params.sessionId, 'tasks');
+      mkdirSync(tasksDir, { recursive: true });
+      const outputFile = join(tasksDir, 'b96zlpj47.output');
+      writeFileSync(outputFile, 'running suite 1/2...\n');
+      const launchResultId = randomUUID(), midAssistantId = randomUUID();
+      appendNative(session, { type: 'user', uuid: userMessageId, promptId: userMessageId, timestamp: new Date().toISOString(), humanInput: { text, mode: 'prompt' }, origin: { kind: 'human' }, message: { content: [{ type: 'text', text }] } });
+      appendNative(session, { type: 'assistant', uuid: assistantId, parentUuid: userMessageId, message: { content: [{ type: 'tool_use', id: toolId, name: 'Bash', input: bgToolInput }], stop_reason: 'tool_use' } });
+      appendNative(session, { type: 'user', uuid: launchResultId, parentUuid: assistantId, promptId: userMessageId, toolUseResult: { kind: 'backgrounded', taskId: 'b96zlpj47', outputFile }, message: { content: [{ type: 'tool_result', tool_use_id: toolId, content: 'Command running in background with ID: b96zlpj47.' }] } });
+      appendNative(session, { type: 'assistant', uuid: midAssistantId, parentUuid: launchResultId, timestamp: new Date().toISOString(), message: { content: [{ type: 'text', text: '正在等待后台测试完成…' }], stop_reason: 'end_turn', usage: { input_tokens: 1800, output_tokens: 30 } } });
+      result(id, { userMessageId, stopReason: 'end_turn' });
+      if (scenario() === 'background-continuation') {
+        setTimeout(() => { writeFileSync(outputFile, 'all 42 tests passed\n', { flag: 'a' }); }, 250);
+        setTimeout(() => {
+          const notifId = randomUUID(), contToolAssistantId = randomUUID(), contToolResultId = randomUUID(), finalContId = randomUUID();
+          const notifXml = `<task-notification>\n<task-id>b96zlpj47</task-id>\n<tool-use-id>${toolId}</tool-use-id>\n<output-file>${outputFile}</output-file>\n<status>completed</status>\n<summary>Background command "npm test" completed (exit code 0)</summary>\n</task-notification>`;
+          appendNative(session, { type: 'user', uuid: notifId, parentUuid: midAssistantId, timestamp: new Date().toISOString(), origin: { kind: 'task-notification' }, message: { role: 'user', content: notifXml } });
+          appendNative(session, { type: 'assistant', uuid: contToolAssistantId, parentUuid: notifId, message: { content: [{ type: 'thinking', thinking: '检查结果并推送' }, { type: 'tool_use', id: 'cont-tool-1', name: 'Bash', input: { command: 'git status' } }], stop_reason: 'tool_use' } });
+          appendNative(session, { type: 'user', uuid: contToolResultId, parentUuid: contToolAssistantId, toolUseResult: { stdout: 'On branch dev, clean', stderr: '' }, message: { content: [{ type: 'tool_result', tool_use_id: 'cont-tool-1', content: 'On branch dev, clean' }] } });
+          appendNative(session, { type: 'assistant', uuid: finalContId, parentUuid: contToolResultId, timestamp: new Date().toISOString(), message: { content: [{ type: 'text', text: '全部验证与交付已完成。' }], stop_reason: 'end_turn', usage: { input_tokens: 3000, output_tokens: 80 } } });
+        }, 650);
+      }
+      return;
+    }
     if(scenario()==='cancel-ignored-child'){const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});log('fixture-owned-child.jsonl',{pid:child.pid});}
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'tool_call', toolCallId: toolId, title: '读取文件', kind: scenario()==='cancel-ignored-execute'?'execute':'read', rawInput: { path: 'fixture.txt' }, status: 'running' } });
     if(!queuedReceipt&&scenario()!=='queue-missing-receipt')appendNative(session,{type:'user',uuid:userMessageId,promptId:userMessageId,timestamp:new Date().toISOString(),humanInput:{text,mode:'prompt'},origin:{kind:'human'},message:{content:[{type:'text',text}]}});

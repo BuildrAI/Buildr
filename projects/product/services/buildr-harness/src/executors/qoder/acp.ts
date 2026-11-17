@@ -51,7 +51,7 @@ export class AcpClient {
 
   get transportClosed(): boolean { return this.closed; }
   get closedReason(): string { return this.exitReason; }
-  executionRef(id:string,contextId:string,binding:string):ExecutionRef { return this.control.executionRef(id,contextId,binding); }
+  executionRef(id:string,contextId:string,binding:string,backgroundWork=false):ExecutionRef { return this.control.executionRef(id,contextId,binding,backgroundWork); }
   async stopExecution(ref:ExecutionRef,contextId:string,binding:string):Promise<boolean> {
     return this.control.stopExecution(ref,contextId,binding);
   }

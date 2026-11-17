@@ -779,3 +779,92 @@ test('Qoder CN rejects title output that calls tools and stops promptly when can
     await assert.rejects(pending, error => (error as Error).name === 'AbortError');
   } finally { await runtime?.close(); await new Promise<void>(resolve => server.close(() => resolve())); await rm(root, { recursive: true, force: true }); }
 });
+
+test('Qoder CN keeps the turn active across a background command and settles after its native task-notification continuation', { timeout: 20000 }, async () => {
+  await withRuntime(async ({ runtime, config, workspace, contextRef }) => {
+    await writeFile(join(config, 'scenario'), 'background-continuation');
+    const events: ExecutorEvent[] = [];
+    const sending = runtime.send({ contextRef, cwd: workspace, text: '运行全量检查并交付', images: [], clientRequestId: 'bg-continuation', onEvent: event => events.push(event) });
+    await eventually(() => events.some(event => event.type === 'item' && event.item.role === 'assistant' && event.item.text.includes('正在等待后台测试完成')));
+    assert.ok(!events.some(event => event.type === 'completed'), 'premature ACP end_turn must not end the Buildr execution while a background command is running');
+    const midObs = await runtime.observe({ contextRef });
+    assert.equal(midObs.status, 'running');
+    assert.equal(midObs.backgroundWork, true);
+    assert.equal(midObs.tools[0]?.status, 'running');
+    assert.equal(await runtime.canRelease!({ contextRef, executionRef: { id: 'bg-continuation' } }), false);
+    await sending;
+    const finalObs = await runtime.observe({ contextRef });
+    assert.equal(finalObs.status, 'idle');
+    assert.equal(finalObs.backgroundWork, false);
+    assert.equal(await runtime.canRelease!({ contextRef, executionRef: { id: 'bg-continuation' } }), true);
+    assert.equal(events.filter(event => event.type === 'completed').length, 1);
+    assert.ok(events.some(event => event.type === 'completed' && event.status === 'completed'));
+    const items = latestItems(events);
+    const bgTool = items.find(item => item.kind === 'tool' && item.name === 'npm test');
+    assert.equal(bgTool?.status, 'completed');
+    assert.match(bgTool?.text ?? '', /all 42 tests passed/);
+    const contTool = items.find(item => item.id === 'cont-tool-1');
+    assert.equal(contTool?.kind, 'tool');
+    assert.equal(contTool?.name, 'git status');
+    assert.equal(contTool?.status, 'completed');
+    assert.match(contTool?.text ?? '', /On branch dev, clean/);
+    const assistantMessages = items.filter(item => item.kind === 'message' && item.role === 'assistant');
+    assert.equal(assistantMessages.at(-1)?.text, '全部验证与交付已完成。');
+    assert.equal(assistantMessages.at(-1)?.status, 'completed');
+  });
+});
+
+test('Qoder CN stop during an active background wait settles control as stopped and marks unfinished background work unknown', { timeout: 20000 }, async () => {
+  await withRuntime(async ({ runtime, config, workspace, contextRef }) => {
+    await writeFile(join(config, 'scenario'), 'background-hang');
+    const events: ExecutorEvent[] = [];
+    const sending = runtime.send({ contextRef, cwd: workspace, text: '后台挂起命令', images: [], clientRequestId: 'bg-stop', onEvent: event => events.push(event) });
+    sending.catch(() => {});
+    await eventually(() => events.some(event => event.type === 'observation' && event.observation.backgroundWork === true));
+    const observed = await runtime.stop({ contextRef, executionRef: { id: 'bg-stop' } });
+    await sending.catch(() => {});
+    assert.equal(observed.status, 'stopped');
+    assert.equal(observed.backgroundWork, false);
+    assert.equal(observed.tools[0]?.status, 'unknown');
+    assert.deepEqual(await runtime.canRelease!({ contextRef, executionRef: { id: 'bg-stop' } }), { executionState: 'unknown' });
+  });
+});
+
+test('Qoder CN cold read refuses an unsettled background launch and recovers once task-notification continuation ends', { timeout: 15000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-cn-bg-cold-'));
+  t.after(async () => { await rm(root, { recursive: true, force: true }); });
+  const workspace = join(root, 'workspace'), configRoot = join(root, 'config'), config = join(configRoot, 'qoder-cn-config');
+  await mkdir(workspace); await mkdir(join(config, 'projects', 'fixture'), { recursive: true });
+  const contextId = randomUUID(), bindingIdentity = 'fixture-binding';
+  const promptId = randomUUID(), userRowId = randomUUID(), launchAssistantId = randomUUID(), launchResultId = randomUUID(), midAssistantId = randomUUID();
+  const baseRows = [
+    { type: 'user', uuid: userRowId, promptId, timestamp: '2026-11-17T06:00:01.000Z', humanInput: { text: '启动后台检查', mode: 'prompt' }, origin: { kind: 'human' }, message: { content: [{ type: 'text', text: '启动后台检查' }] } },
+    { type: 'assistant', uuid: launchAssistantId, parentUuid: userRowId, message: { content: [{ type: 'tool_use', id: 'bg-tool-1', name: 'Bash', input: { command: 'npm test', run_in_background: true } }], stop_reason: 'tool_use' } },
+    { type: 'user', uuid: launchResultId, parentUuid: launchAssistantId, promptId, toolUseResult: { kind: 'backgrounded', taskId: 'b96zlpj47', outputFile: '/tmp/b96zlpj47.output' }, message: { content: [{ type: 'tool_result', tool_use_id: 'bg-tool-1', content: 'backgrounded' }] } },
+    { type: 'assistant', uuid: midAssistantId, parentUuid: launchResultId, timestamp: '2026-11-17T06:00:05.000Z', message: { content: [{ type: 'text', text: '正在等待后台运行。' }], stop_reason: 'end_turn' } },
+  ].map(row => JSON.stringify({ sessionId: contextId, cwd: workspace, isSidechain: false, ...row }));
+  const file = join(config, 'projects', 'fixture', contextId + '.jsonl');
+  await writeFile(file, baseRows.join('\n') + '\n');
+  const contextRef = { id: contextId, data: { cwd: workspace, native: JSON.stringify({ version: 1, provider: 'qoder-cn', nativeSessionId: contextId, cwd: workspace, bindingIdentity }) } };
+  const executionRef = { id: 'execution-bg', data: { resourceContext: contextId, resourceBinding: bindingIdentity, backgroundWork: true } };
+  const input = {
+    configRoot, nativeAccountConfigRoot: configRoot, executable: 'unused', bindingIdentity, contextRef, executionRef, cwd: workspace,
+    nativeInputs: [{ clientRequestId: 'bg-input', text: '启动后台检查', createdAt: '2026-11-17T06:00:00.000Z' }],
+  };
+  assert.equal(await createQoderCnExecutor().readPersistedExecution!(input), undefined, 'unsettled background task must refuse premature idle cold recovery');
+  const notifId = randomUUID(), contAssistantId = randomUUID(), contResultId = randomUUID(), contFinalId = randomUUID();
+  const contRows = [
+    { type: 'user', uuid: notifId, parentUuid: midAssistantId, timestamp: '2026-11-17T06:01:00.000Z', origin: { kind: 'task-notification' }, message: { content: '<task-notification><task-id>b96zlpj47</task-id><tool-use-id>bg-tool-1</tool-use-id><status>completed</status></task-notification>' } },
+    { type: 'assistant', uuid: contAssistantId, parentUuid: notifId, message: { content: [{ type: 'tool_use', id: 'cont-tool-2', name: 'Bash', input: { command: 'git status' } }], stop_reason: 'tool_use' } },
+    { type: 'user', uuid: contResultId, parentUuid: contAssistantId, message: { content: [{ type: 'tool_result', tool_use_id: 'cont-tool-2', content: 'clean' }] } },
+    { type: 'assistant', uuid: contFinalId, parentUuid: contResultId, timestamp: '2026-11-17T06:01:05.000Z', message: { content: [{ type: 'text', text: '后台续跑已完成' }], stop_reason: 'end_turn' } },
+  ].map(row => JSON.stringify({ sessionId: contextId, cwd: workspace, isSidechain: false, ...row }));
+  await writeFile(file, [...baseRows, ...contRows].join('\n') + '\n');
+  const evidence = await createQoderCnExecutor().readPersistedExecution!(input);
+  assert.equal(evidence?.observation.status, 'idle');
+  assert.equal((evidence?.observation as any)?.backgroundWork, false);
+  assert.equal(evidence?.observation.executionRef?.data?.backgroundWork, false);
+  assert.equal(evidence?.endedAt, '2026-11-17T06:01:05.000Z');
+  assert.deepEqual(evidence?.observation.tools.map(tool => [tool.id, tool.status]), [['bg-tool-1', 'completed'], ['cont-tool-2', 'completed']]);
+  assert.equal(evidence?.items.find(item => item.role === 'assistant')?.text, '后台续跑已完成');
+});
