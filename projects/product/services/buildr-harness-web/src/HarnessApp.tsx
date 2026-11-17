@@ -38,13 +38,14 @@ function Workspace(){
     setSelected(previous=>previous&&listed.directories.some(value=>key(value.ref)===previous)?previous:listed.directories[0]?key(listed.directories[0].ref):undefined);
   },[]);
   useEffect(()=>{if(!embedded)void refresh().catch(failure=>setError(failure instanceof Error?failure.message:'工作范围读取失败。'));context.setOpen(true);if(!embedded)context.setFull(true);},[embedded,refresh]);
+  const initialConfigured=useRef(false);
   useEffect(()=>{
     if(!embedded)return;
     const listener=(event:MessageEvent)=>{
       if(event.source!==window.parent||event.origin!==location.origin)return;
       const message=event.data;
       if(!message||message.protocol!=='buildr.harness-frame/v1')return;
-      if(message.action==='configure'&&Array.isArray(message.workspaces)){setScopes(message.workspaces.filter((value:ScopeView)=>typeof value?.id==='string'&&typeof value.name==='string'&&typeof value.rootPath==='string'));context.setFull(message.full===true);if(typeof message.defaultWorkspaceId==='string')setSelected(message.defaultWorkspaceId);}
+      if(message.action==='configure'&&Array.isArray(message.workspaces)){setScopes(message.workspaces.filter((value:ScopeView)=>typeof value?.id==='string'&&typeof value.name==='string'&&typeof value.rootPath==='string'));const nextFull=message.full===true;context.setFull(nextFull);if(!initialConfigured.current){initialConfigured.current=true;context.setView(nextFull&&message.view==='history'?'history':'conversation');}if(typeof message.defaultWorkspaceId==='string')setSelected(message.defaultWorkspaceId);}
       if(message.action==='new')context.newConversation(typeof message.workspaceId==='string'?{scope:{workspaceId:message.workspaceId,...(typeof message.taskId==='string'?{taskId:message.taskId}:{})}}:{});
       if(message.action==='open'&&typeof message.workspaceId==='string'&&typeof message.conversationId==='string')void context.openConversation(message.workspaceId,message.conversationId);
       if(message.action==='history')context.openHistory(null);
@@ -62,7 +63,7 @@ function Workspace(){
   useEffect(()=>{
     if(embedded)window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'selection',workspaceId:context.conversation?.workspaceId??null,conversationId:context.conversation?.id??null},location.origin);
   },[embedded,context.conversation?.workspaceId,context.conversation?.id]);
-  useEffect(()=>{if(embedded)window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'view',view:context.view},location.origin);},[embedded,context.view]);
+  useEffect(()=>{if(embedded&&initialConfigured.current)window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'view',view:context.view},location.origin);},[embedded,context.view]);
   const chooseDirectory=async()=>{
     if(busy)return;setBusy(true);setError('');
     try{const result=await request<{path:string|null}>('/api/v1/harness/directories/choose',{});if(result.path)setPath(result.path);}

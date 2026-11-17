@@ -101,6 +101,13 @@ export function setDiagramSvg(graph: HTMLElement, svg: string) {
     }
     if (node.localName === 'style') node.textContent = rewrite(node.textContent || '');
   }
-  const width = drawing.viewBox.baseVal.width;
-  if (width > 0) { drawing.style.width = `${width}px`; drawing.style.maxWidth = 'none'; }
+  const { width = 0, height = 0 } = drawing.viewBox?.baseVal ?? {};
+  if (width > 0) {
+    if (height > 0) {
+      drawing.setAttribute('width', String(width));
+      drawing.setAttribute('height', String(height));
+    }
+    drawing.style.width = `${width}px`;
+    drawing.style.maxWidth = 'none';
+  }
 }

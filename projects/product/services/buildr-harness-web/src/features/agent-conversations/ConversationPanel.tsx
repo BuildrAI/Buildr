@@ -863,7 +863,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
             {key:'hide',label:chat?.hidden?'恢复到最近对话':canCloseUncertainConversation(chat)?'关闭对话':'从最近对话隐藏',disabled:!chat}
           ].filter(item=>!embedded||!['full','side','hide'].includes(item.key||'')),onClick:({key})=>{
             setMoreOpen(false);
-            if(window.parent!==window&&['collapse','full'].includes(key)){window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'layout',action:key},location.origin);return;}
+            if(window.parent!==window&&['collapse','full'].includes(key)){window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'layout',action:key,...(key==='full'?{full:!context.full}:{})},location.origin);return;}
             if(key==='collapse')context.setOpen(false);
             else if(key==='side')context.move();
             else if(key==='full'){context.setOpen(true);context.setFull(!context.full);}

@@ -89,13 +89,18 @@ try{
  assert.equal(await page.getByText(/Buildr Web session 已失效/).count(),0);
  assert.equal(await frame.getByText(/Buildr Web session 已失效/).count(),0);
 
- // Focus mode + open conversation list persists across reload, workspace switching in new conversation keeps it open, and rail button exits history cleanly.
+ // Focus mode + open conversation list persists across reload (including under saturated localStorage source-control cache), workspace switching in new conversation keeps it open, and rail button exits history cleanly.
+ await page.evaluate(()=>{
+  const chunk='x'.repeat(1_000_000);
+  for(let i=0;i<16;i+=1){try{localStorage.setItem(`buildr:source-control-cache:v1:fill-${i}`,chunk);}catch{break;}}
+ });
  await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();
  await frame.getByText('专注对话',{exact:true}).click();
  await page.locator('.development-harness-frame.is-full').waitFor();
  await frame.locator('.ac-collapsed-rail .ac-all-conversations').click();
  await frame.locator('.ac-focus-history-pane').waitFor({state:'visible'});
  await page.locator('.development-harness-frame>footer').waitFor({state:'visible'});
+ assert.equal(await page.evaluate(()=>localStorage.getItem('buildr.harness-panel-full')),'true');
  await page.reload();
  await page.locator('.development-harness-frame.is-full').waitFor({state:'visible'});
  await frame.locator('.ac-focus-history-pane').waitFor({state:'visible'});
@@ -107,18 +112,20 @@ try{
  await frame.locator('.ac-focus-history-pane').waitFor({state:'hidden'});
  assert.equal(await page.locator('.development-harness-frame.is-full').isVisible(),true,'clicking current conversation rail exits history view without collapsing focus panel');
 
- // Rendered Mermaid diagrams open in Development top-level fullscreen modal across iframe boundary.
+ // Rendered Mermaid diagrams in stream fit proportionally without scrollbars and open in Development top-level fullscreen modal across iframe boundary.
  const mermaidRoute=`**/api/v1/workspaces/${initialWorkspaceId}/agent-conversations/${conversation.id}`;
  await page.route(mermaidRoute,async route=>{
   if(route.request().method()!=='GET')return route.continue();
   const response=await route.fetch();
   const body=await response.json();
-  body.entries=[...(body.entries??[]),{id:'mermaid-preview-entry',kind:'message',role:'assistant',text:'流程图：\n\n```mermaid\ngraph LR\nA[提交] --> B[审核]\n```\n',createdAt:new Date().toISOString()}];
+  body.entries=[...(body.entries??[]),{id:'mermaid-preview-entry',kind:'message',role:'assistant',text:'流程图：\n\n```mermaid\nsequenceDiagram\nparticipant U as 鲜虾小程序终端\nparticipant W as 微信支付通道\nparticipant S as 扫呗聚合收银台\nparticipant B as 鲜虾后端服务系统\nparticipant C as 财务清分中心\nU->>W: 发起聚合下单与支付授权\nW->>S: 推送支付交易结果通知\nS->>B: 向 notify_url 异步通知支付成功\nB->>B: 验签核对金额并落库收款记录\nB-->>S: 返回规定成功应答\nU->>B: 主动轮询查单并刷新履约状态\nB->>C: 写入应收结算待确认账单\n```\n',createdAt:new Date().toISOString()}];
   await route.fulfill({response,json:body});
  });
  await page.evaluate(({workspaceId,conversationId})=>(document.querySelector('iframe[title="Buildr Harness"]') as HTMLIFrameElement).contentWindow!.postMessage({protocol:'buildr.harness-frame/v1',action:'open',workspaceId,conversationId},location.origin),{workspaceId:initialWorkspaceId,conversationId:conversation.id});
  const zoomDiagram=frame.locator('[data-entry-id="mermaid-preview-entry"] .markdown-diagram[data-mermaid-state="rendered"] button[data-zoom-diagram]');
  await zoomDiagram.waitFor({timeout:30000});
+ const streamBoxMetrics=await frame.locator('[data-entry-id="mermaid-preview-entry"] .markdown-diagram-view').evaluate(node=>({clientW:node.clientWidth,scrollW:node.scrollWidth,clientH:node.clientHeight,scrollH:node.scrollHeight}));
+ assert.ok(streamBoxMetrics.scrollW<=streamBoxMetrics.clientW&&streamBoxMetrics.scrollH<=streamBoxMetrics.clientH,`embedded stream Mermaid diagram must fit without scrollbars: ${JSON.stringify(streamBoxMetrics)}`);
  await zoomDiagram.click();
  const diagramDialog=page.getByRole('dialog',{name:'流程图预览',exact:true});
  await diagramDialog.waitFor({state:'visible'});
@@ -131,9 +138,17 @@ try{
  await page.keyboard.press('Escape');
  await diagramDialog.waitFor({state:'hidden'});
  await page.unroute(mermaidRoute);
+ await page.evaluate(()=>{
+  const chunk='y'.repeat(1_000_000);
+  for(let i=0;i<16;i+=1){try{localStorage.setItem(`buildr:source-control-cache:v1:split-${i}`,chunk);}catch{break;}}
+ });
  await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();
  await frame.getByText('恢复分屏',{exact:true}).click();
  await page.locator('.development-harness-frame.is-full').waitFor({state:'hidden'});
+ assert.equal(await page.evaluate(()=>localStorage.getItem('buildr.harness-panel-full')),'false');
+ await page.reload();
+ await page.locator('.development-harness-frame').waitFor({state:'visible'});
+ assert.equal(await page.locator('.development-harness-frame.is-full').isVisible(),false,'split mode must stay active across reload without re-entering focus mode');
 
- assert.deepEqual(errors,[]);console.log(JSON.stringify({status:'passed',checks:['authenticated-frame','same-complete-web','workspace-selection','embedded-focused-draft-retention','expanded-and-collapsed-reload-preference','focus-history-reload-persistence','new-conversation-workspace-keeps-history','embedded-rail-exits-history-only','mermaid-top-layer-zoom-preview','exact-window-message-check','settings-in-frame','development-task-association-and-navigation','in-place-restart-session-recovery'],realModelCalls:0}));
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({status:'passed',checks:['authenticated-frame','same-complete-web','workspace-selection','embedded-focused-draft-retention','expanded-and-collapsed-reload-preference','focus-history-reload-persistence','split-mode-reload-persistence','quota-eviction-preference-persistence','new-conversation-workspace-keeps-history','embedded-rail-exits-history-only','stream-diagram-fit-no-scrollbars','mermaid-top-layer-zoom-preview','exact-window-message-check','settings-in-frame','development-task-association-and-navigation','in-place-restart-session-recovery'],realModelCalls:0}));
 }finally{await browser.close();await activeApp.shutdown();await runtimeProvide(runtime,AGENT_SERVICE_APPLICATION).close();await stopAgentProcess({dataRoot:process.env.BUILDR_APP_DATA_DIR!,mode:'stop-owned'});}

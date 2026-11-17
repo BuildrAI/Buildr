@@ -59,9 +59,9 @@ export async function runTaskMaterialsJourney({ t, page, runtime, materials, wor
     writeBrief(id, ['# 图示阅读', fence(flow), fence(sequence), fence(flow), fence('not-a-real-diagram'), '正文仍可阅读。'].join('\n\n'));
     await open(id);
     const diagrams = body().locator('.markdown-diagram');
-    await diagrams.nth(0).locator('svg').waitFor();
-    await diagrams.nth(1).locator('svg').waitFor();
-    await diagrams.nth(2).locator('svg').waitFor();
+    await diagrams.nth(0).locator('.markdown-diagram-view svg').waitFor();
+    await diagrams.nth(1).locator('.markdown-diagram-view svg').waitFor();
+    await diagrams.nth(2).locator('.markdown-diagram-view svg').waitFor();
     await diagrams.nth(3).locator('[role=status]').filter({ hasText: '当前显示 Mermaid 源码' }).waitFor();
     assert.match(await diagrams.nth(0).locator('.markdown-diagram-view').innerText(), /用户目标/);
     assert.match(await diagrams.nth(1).locator('.markdown-diagram-view').innerText(), /开始工作/);
@@ -80,7 +80,7 @@ export async function runTaskMaterialsJourney({ t, page, runtime, materials, wor
     writeBrief(id, '# 输出中\n\n```mermaid\nflowchart LR\nA -->');
     await refresh();
     await body().locator('[data-mermaid-state=incomplete]').waitFor();
-    assert.equal(await body().locator('svg').count(), 0);
+    assert.equal(await body().locator('.markdown-diagram-view svg').count(), 0);
     await page.setViewportSize({ width: 390, height: 844 });
     writeBrief(id, '# 最新正文\n\n校验页面原有宽度。');
     await refresh();

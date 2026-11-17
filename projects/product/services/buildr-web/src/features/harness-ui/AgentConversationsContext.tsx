@@ -5,14 +5,97 @@ import type {CatalogModel,ConversationView} from './types';
 export type TextConversationActionInput={workspaceId:string;cwd:string;text:string};
 export type TextConversationActionResult={status:'started';conversation:ConversationView}|{status:'recovering';reason:'existing-submission'|'submission-unknown';conversation?:ConversationView;message:string}|{status:'unavailable'|'failed'|'busy';message:string};
 export type FrameCommand={action:'new'|'open'|'history'|'settings'|'configure'|'start-text';workspaceId?:string;conversationId?:string;taskId?:string;workspaces?:{id:string;name:string;rootPath:string}[];input?:TextConversationActionInput;requestId?:string};
+type PanelView = 'conversation' | 'history';
+type PanelState = { open: boolean; full: boolean; view: PanelView };
+type SessionPanelState = { open?: boolean; full?: boolean; view?: PanelView };
+
+const PANEL_OPEN_KEY = 'buildr.harness-panel-open';
+const PANEL_FULL_KEY = 'buildr.harness-panel-full';
+const PANEL_VIEW_KEY = 'buildr.harness-panel-view';
+
+const panelProfile = () => (typeof document === 'undefined' ? 'local' : document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content') || 'local');
+const panelSessionStateKey = () => `buildr.harness-panel-session:${panelProfile()}`;
+
+function readSessionPanelState(): SessionPanelState {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(panelSessionStateKey()) || 'null');
+    if (!parsed || typeof parsed !== 'object') return {};
+    return {
+      ...(typeof parsed.open === 'boolean' ? { open: parsed.open } : {}),
+      ...(typeof parsed.full === 'boolean' ? { full: parsed.full } : {}),
+      ...(parsed.view === 'conversation' || parsed.view === 'history' ? { view: parsed.view } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function writeSessionPanelState(state: PanelState): void {
+  try {
+    sessionStorage.setItem(panelSessionStateKey(), JSON.stringify(state));
+  } catch { /* In-memory state stays intact if sessionStorage is unavailable. */ }
+}
+
+function readInitialPanelState(): PanelState {
+  const session = readSessionPanelState();
+  const profile = panelProfile();
+  const openRaw = readOptionalPreference(PANEL_OPEN_KEY);
+  const fullRaw = readOptionalPreference(PANEL_FULL_KEY);
+  const viewRaw = readOptionalPreference(PANEL_VIEW_KEY);
+  const explicitOpen = session.open ?? (openRaw === 'true' ? true : openRaw === 'false' ? false : undefined);
+  const rawFull = session.full ?? (fullRaw === 'true' ? true : fullRaw === 'false' ? false : readOptionalPreference(`buildr.agent-conversation.full:${profile}`) === 'true');
+  const full = explicitOpen === false ? false : rawFull;
+  const open = explicitOpen ?? full;
+  const candidateView: PanelView = session.view ?? (viewRaw === 'history' || (viewRaw === null && readOptionalPreference(`buildr.agent-conversation.focus-history:${profile}`) === 'true') ? 'history' : 'conversation');
+  return { open, full, view: open && full && candidateView === 'history' ? 'history' : 'conversation' };
+}
+
 function useIntegration(){
- const [open,setOpenState]=useState(()=>readOptionalPreference('buildr.harness-panel-open')==='true');
- const [full,setFullState]=useState(()=>readOptionalPreference('buildr.harness-panel-full')==='true');
+ const initialPanel=useRef<PanelState|null>(null);
+ if(!initialPanel.current)initialPanel.current=readInitialPanelState();
+ const [open,setOpenState]=useState(initialPanel.current.open);
+ const [full,setFullState]=useState(initialPanel.current.full);
+ const [view,setViewState]=useState<PanelView>(initialPanel.current.view);
+ const openRef=useRef(open);
  const fullRef=useRef(full);
- const [view,setViewState]=useState<'conversation'|'history'>(()=>readOptionalPreference('buildr.harness-panel-full')==='true'&&readOptionalPreference('buildr.harness-panel-view')==='history'?'history':'conversation');
- const setView=useCallback((value:'conversation'|'history'|((current:'conversation'|'history')=>'conversation'|'history'))=>{setViewState(current=>{const next=typeof value==='function'?value(current):value;writeOptionalPreference('buildr.harness-panel-view',next);return next;});},[]);
- const setFull=useCallback((value:boolean|((current:boolean)=>boolean))=>{setFullState(current=>{const next=typeof value==='function'?value(current):value;fullRef.current=next;writeOptionalPreference('buildr.harness-panel-full',String(next));if(!next){setViewState('conversation');writeOptionalPreference('buildr.harness-panel-view','conversation');}return next;});},[]);
- const setOpen=useCallback((value:boolean|((current:boolean)=>boolean))=>setOpenState(current=>{const next=typeof value==='function'?value(current):value;writeOptionalPreference('buildr.harness-panel-open',String(next));if(!next){fullRef.current=false;setFullState(false);writeOptionalPreference('buildr.harness-panel-full','false');setViewState('conversation');writeOptionalPreference('buildr.harness-panel-view','conversation');}return next;}),[]);
+ const viewRef=useRef<PanelView>(view);
+ const persistPanel=useCallback((next:PanelState)=>{
+  writeOptionalPreference(PANEL_OPEN_KEY,String(next.open));
+  writeOptionalPreference(PANEL_FULL_KEY,String(next.full));
+  writeOptionalPreference(PANEL_VIEW_KEY,next.view);
+  writeSessionPanelState(next);
+ },[]);
+ const setView=useCallback((value:PanelView|((current:PanelView)=>PanelView))=>{
+  const resolved=typeof value==='function'?value(viewRef.current):value;
+  const next:PanelView=openRef.current&&fullRef.current&&resolved==='history'?'history':'conversation';
+  viewRef.current=next;
+  setViewState(next);
+  persistPanel({open:openRef.current,full:fullRef.current,view:next});
+ },[persistPanel]);
+ const setFull=useCallback((value:boolean|((current:boolean)=>boolean))=>{
+  const nextFull=typeof value==='function'?value(fullRef.current):value;
+  const nextOpen=nextFull?true:openRef.current;
+  const nextView:PanelView=nextFull&&nextOpen?viewRef.current:'conversation';
+  openRef.current=nextOpen;
+  fullRef.current=nextFull;
+  viewRef.current=nextView;
+  setOpenState(nextOpen);
+  setFullState(nextFull);
+  setViewState(nextView);
+  persistPanel({open:nextOpen,full:nextFull,view:nextView});
+ },[persistPanel]);
+ const setOpen=useCallback((value:boolean|((current:boolean)=>boolean))=>{
+  const nextOpen=typeof value==='function'?value(openRef.current):value;
+  const nextFull=nextOpen?fullRef.current:false;
+  const nextView:PanelView=nextOpen&&nextFull?viewRef.current:'conversation';
+  openRef.current=nextOpen;
+  fullRef.current=nextFull;
+  viewRef.current=nextView;
+  setOpenState(nextOpen);
+  setFullState(nextFull);
+  setViewState(nextView);
+  persistPanel({open:nextOpen,full:nextFull,view:nextView});
+ },[persistPanel]);
  const [settings,setSettingsState]=useState(false);
  const [conversation,setConversation]=useState<ConversationView|null>(null),[command,setCommand]=useState<FrameCommand|null>(null),[sequence,setSequence]=useState(0);
  const [modelCatalog,setModelCatalog]=useState<CatalogModel[]>([]),[modelCatalogReady,setModelCatalogReady]=useState(false),[modelCatalogError,setModelCatalogError]=useState('');

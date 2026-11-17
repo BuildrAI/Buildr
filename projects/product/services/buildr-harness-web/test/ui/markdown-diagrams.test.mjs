@@ -291,3 +291,51 @@ test('forwardDiagramBoundaryWheel 在流程图纵向边界或无溢出时继续�
   assert.equal(forwardDiagramBoundaryWheel(graph, makeWheel(25)), true);
   assert.equal(stream.scrollTop, 155);
 });
+
+test('setDiagramSvg 根据正值 viewBox 写入 SVG 固有宽高属性', async () => {
+  const { setDiagramSvg } = await import('../../src/lib/markdownDiagramSvg.ts');
+  const attrs = new Map([['viewBox', '0 0 1100 1500'], ['width', '100%']]);
+  const drawing = {
+    viewBox: { baseVal: { width: 1100, height: 1500 } },
+    style: {},
+    attributes: [],
+    localName: 'svg',
+    setAttribute(name, value) { attrs.set(name, String(value)); },
+  };
+  const graph = {
+    innerHTML: '',
+    querySelector: () => drawing,
+    querySelectorAll: () => [],
+  };
+  setDiagramSvg(graph, '<svg viewBox="0 0 1100 1500" width="100%"></svg>');
+  assert.equal(attrs.get('width'), '1100');
+  assert.equal(attrs.get('height'), '1500');
+  assert.equal(drawing.style.width, '1100px');
+  assert.equal(drawing.style.maxWidth, 'none');
+});
+
+test('writeOptionalPreference 在存储配额不足时先清理源码控件缓存后重试且不删除其他键', async () => {
+  const { writeOptionalPreference, readOptionalPreference } = await import('../../src/lib/optional-preferences.ts');
+  const data = new Map([
+    ['buildr:source-control-cache:v1:repo-a', 'huge-cache-a'],
+    ['buildr:source-control-cache:v1:repo-b', 'huge-cache-b'],
+    ['unrelated.setting', 'keep-me'],
+  ]);
+  const store = {
+    get length() { return data.size; },
+    key(index) { return [...data.keys()][index] ?? null; },
+    getItem(key) { return data.get(key) ?? null; },
+    removeItem(key) { data.delete(key); },
+    setItem(key, value) {
+      if (data.has('buildr:source-control-cache:v1:repo-a') || data.has('buildr:source-control-cache:v1:repo-b')) {
+        throw new Error('QuotaExceededError');
+      }
+      data.set(key, String(value));
+    },
+  };
+  writeOptionalPreference('buildr.harness-panel-full', 'true', () => store);
+  assert.equal(readOptionalPreference('buildr.harness-panel-full', () => store), 'true');
+  assert.equal(data.has('buildr:source-control-cache:v1:repo-a'), false);
+  assert.equal(data.has('buildr:source-control-cache:v1:repo-b'), false);
+  assert.equal(data.get('unrelated.setting'), 'keep-me');
+});
