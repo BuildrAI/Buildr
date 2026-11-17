@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { copyFile, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import type { ExecutorEvent, ExecutorItem, ExecutorRequest } from '../../../src/contracts.ts';
 import { ExecutorInputRejected, ExecutorObservationLost } from '../../../src/contracts.ts';
 import { AgentServiceError } from '../../../src/domain/agent-state.ts';
@@ -72,6 +73,7 @@ async function createHarness(
   async function openRuntime(extra: {
     interactionInstructions?: string;
     binding?: { identity: string; data?: Record<string, unknown>; executable?: string; configRoot?: string };
+    preferredBinding?: { identity: string; data?: Record<string, unknown> };
     nativeSource?: {
       accountId: string;
       accountIdentity: string;
@@ -88,6 +90,7 @@ async function createHarness(
         ? { interaction: { version: 'buildr-interaction/v1', instructions: extra.interactionInstructions } }
         : {}),
       ...(extra.binding ? { binding: extra.binding } : {}),
+      ...(extra.preferredBinding ? { preferredBinding: extra.preferredBinding } : {}),
       ...(extra.nativeSource ? { nativeSource: extra.nativeSource } : {}),
     });
     openedRuntimes.push(rt);
@@ -107,6 +110,51 @@ async function createHarness(
     openRuntime,
   };
 }
+
+test('Antigravity accepts device-only fingerprint drift but still rejects a changed executable', async t => {
+  const h = await createHarness(t);
+  const initial = await h.openRuntime();
+  const info = await stat(h.executable);
+  const priorDev = info.dev + 4096;
+  const provenance: Record<string, unknown> = { ...initial.bindingData!, dev: priorDev };
+  delete provenance.observedVersion;
+  delete provenance.executableDigest;
+  const identity = createHash('sha256').update(JSON.stringify(provenance)).digest('hex');
+  const executableDigest = createHash('sha256').update(JSON.stringify([await realpath(h.executable), priorDev, info.ino, info.size, info.mtimeMs])).digest('hex');
+  const binding = { identity, data: { ...provenance, executableDigest }, executable: h.executable };
+  await initial.close();
+  const reopened = await h.openRuntime({ binding });
+  assert.equal(reopened.bindingIdentity, identity);
+  assert.notEqual(reopened.bindingData!.executableDigest, executableDigest, 'new metadata is observed without changing the native binding');
+  await reopened.close();
+  const marker = path.join(h.root, 'changed-program-ran');
+  const original = await readFile(h.executable, 'utf8');
+  await writeFile(h.executable, original.replace('\n', `\nawait import('node:fs').then(fs => fs.writeFileSync(${JSON.stringify(marker)}, 'ran'));\n`));
+  await assert.rejects(h.openRuntime({ binding }), /agent_context_binding_mismatch/);
+  await assert.rejects(readFile(marker), { code: 'ENOENT' }, 'changed program must be rejected before even --version runs');
+});
+
+test('cold Antigravity runtime preserves a verified participant binding across device drift', async t => {
+  const h = await createHarness(t);
+  const initial = await h.openRuntime();
+  const provenance: Record<string, unknown> = { ...initial.bindingData!, dev: Number(initial.bindingData!.dev) + 4096 };
+  delete provenance.observedVersion;
+  delete provenance.executableDigest;
+  const identity = createHash('sha256').update(JSON.stringify(provenance)).digest('hex');
+  const preferredBinding = { identity, data: provenance };
+  await initial.close();
+  const resumed = await h.openRuntime({
+    binding: { identity: initial.bindingIdentity, data: initial.bindingData },
+    preferredBinding,
+  });
+  assert.equal(resumed.bindingIdentity, identity, 'the participant fingerprint must not be replaced by the connection fingerprint');
+  await resumed.close();
+  const tampered = await h.openRuntime({
+    binding: { identity: initial.bindingIdentity, data: initial.bindingData },
+    preferredBinding: { identity, data: { ...provenance, ino: Number(provenance.ino) + 1 } },
+  });
+  assert.equal(tampered.bindingIdentity, initial.bindingIdentity, 'changed config provenance must never be adopted');
+});
 
 test('2.3: handshake validation, in-place binary tamper detection, per-conversation process groups and storage reclaim', async t => {
   const h = await createHarness(t);

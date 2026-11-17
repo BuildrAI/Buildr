@@ -127,7 +127,6 @@ test('后台变化按内容证据展示，不猜提交或操作者，历史诚�
 test('失败提示不把未确认受理当未送达，也不把未知工具当结束',()=>{
  const accepted={status:'failed',accepted:true,tools:[]};
  assert.match(conversationFailureImpact(accepted),/已受理.*未完成/);
- assert.match(conversationFailureImpact(accepted),/新的要求/);
  const unconfirmed=conversationFailureImpact({...accepted,accepted:false});
  assert.match(unconfirmed,/尚未确认/);assert.doesNotMatch(unconfirmed,/未送达|原操作未执行/);
  for(const status of ['running','unknown']){

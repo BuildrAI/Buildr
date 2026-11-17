@@ -1,7 +1,7 @@
 import { antigravityModelVariant } from '../../domain/antigravity-model.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
-import { readFile, realpath } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import type {
   AccountObservation,
   AgentCapabilities,
@@ -39,6 +39,9 @@ import {
   inspectVersion,
   isolatedEnvironment,
   nativeBinding,
+  nativeBindingProvenance,
+  resolveProvenanceForIdentity,
+  sameVolumeProvenance,
   nativeHome,
   opaqueReference,
   parseReference,
@@ -369,19 +372,40 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
         ? await realpath(options.binding.executable).catch(() => undefined)
         : undefined;
       if ((!priorExe || priorExe === executable) && options.binding.data.executableDigest !== exeDigest) {
-        throw new Error('agent_context_binding_mismatch');
+        // executableIdentity includes st_dev. Prove the original config inode
+        // and source before running even --version; only device drift may be
+        // normalized. Every other executable identity field stays exact.
+        const info = await stat(executable);
+        const provenance = await nativeBindingProvenance(PROVIDER, executable, options.configRoot);
+        const priorDev = options.binding.data.dev;
+        const remounted = typeof priorDev === 'number' && priorDev !== info.dev
+          && info.dev === provenance.dev && sameVolumeProvenance(provenance, options.binding.data)
+          && createHash('sha256').update(JSON.stringify([executable, priorDev, info.ino, info.size, info.mtimeMs])).digest('hex') === options.binding.data.executableDigest;
+        if (!remounted) throw new Error('agent_context_binding_mismatch');
       }
     }
-
     const version = await inspectVersion(executable, env, options.signal);
-    const binding = await nativeBinding(
+    let binding = await nativeBinding(
       PROVIDER,
       executable,
       version,
       options.configRoot,
       options.binding,
       options.programSource,
+      options.volumeDevs,
     );
+    // The connection and an existing participant can carry different, equally
+    // valid pre-remount fingerprints. Keep the participant's exact reference,
+    // but only after proving it against the live program/config provenance.
+    const preferred = options.preferredBinding;
+    if (preferred) {
+      const provenance = await nativeBindingProvenance(PROVIDER, executable, options.configRoot, options.programSource);
+      if (!preferred.data || sameVolumeProvenance(provenance, preferred.data)) {
+        const devs = [...(options.volumeDevs ?? []), ...(typeof preferred.data?.dev === 'number' ? [preferred.data.dev] : [])];
+        const matched = resolveProvenanceForIdentity(provenance, preferred.identity, devs);
+        if (matched) binding = { identity: preferred.identity, data: { ...matched, observedVersion: version } };
+      }
+    }
     const bindingData = { ...binding.data, executableDigest: exeDigest };
 
     const handshake = await AntigravityRuntime.verifyHandshake(executable, options.configRoot, env, options.diagnostics);

@@ -13,7 +13,6 @@ export function ConversationFailureNotice({ run }: Props) {
   return <div className="ac-failure-notice">
     <p className="ac-failure-reason">
       <WarningOutlined aria-hidden="true" />
-      <strong>失败原因</strong>
       <span>{reason.summary}</span>
     </p>
     {reason.action && <p className="ac-failure-action">{reason.action}</p>}

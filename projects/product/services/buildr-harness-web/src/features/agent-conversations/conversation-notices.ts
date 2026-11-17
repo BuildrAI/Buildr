@@ -71,11 +71,12 @@ export function conversationHandoffReceipt(entry:Pick<ConversationEntry,'handoff
 }
 
 /** Receipt and tool outcomes are independent. Failure alone never permits replay. */
-export function conversationFailureImpact(run: Pick<ConversationRun,'status'|'accepted'|'tools'>): string | undefined {
+export function conversationFailureImpact(run: Pick<ConversationRun,'status'|'accepted'|'tools'|'diagnostic'>): string | undefined {
   if(run.status!=='failed')return;
-  const delivery=run.accepted?'本轮已受理，但未完成。':'尚未确认原输入是否受理，请先核对执行记录。';
-  const work=run.tools.some(tool=>tool.status!=='completed')?'仍有工具未结束或结果待确认，请先核对，不要重复执行原操作。':run.accepted?'可以发送新的要求继续；不会自动重发原输入。':'不要直接重复发送可能已经执行的操作。';
-  return `${delivery}对话记录已保留。${work}`;
+  const preflight=/agent_context_binding_mismatch|原生上下文与当前目录或配置身份不匹配|本轮要求未发送|本次.*未发送/.test(run.diagnostic??'');
+  const delivery=run.accepted?'本轮已受理，但未完成。':preflight?'本次要求未送达。':'本次要求是否送达尚未确认。';
+  const work=run.tools.some(tool=>tool.status!=='completed')?'仍有工具结果待确认，不会自动重跑。':'';
+  return `${delivery}${work}`;
 }
 
 /** A released or stop-requested unknown run names its real source; the record and finished work stay. */
@@ -98,6 +99,9 @@ function failureRetrySeconds(diagnostic: string): number | undefined {
 /** 只提炼可公开的原因；原始厂商内容仍留在技术详情中。 */
 export function conversationFailureReason(diagnostic?: string, fault?: Pick<ConversationRun,'fault'>['fault']): ConversationFailureReason {
   const text = diagnostic ?? '';
+  if (/agent_context_binding_mismatch|agent_binding_changed|原生上下文与当前目录或配置身份不匹配|原连接身份不匹配|程序或原配置身份已失配/i.test(text)) {
+    return { summary: '原会话与当前执行环境不匹配，无法继续。' };
+  }
   if (/agent_history_changed|原生记录有新变化|原生用户输入尚不能准确映射/i.test(text)) {
     return { summary: '发送前的原生历史核对未通过，本轮要求未发送。', action: '请核对已保留的原生记录后再继续。' };
   }
@@ -131,7 +135,7 @@ export function conversationFailureReason(diagnostic?: string, fault?: Pick<Conv
   if (fault?.kind === 'transport' || /observation_lost|event_observation|状态观察.*(?:丢失|中断)/i.test(text)) {
     return { summary: '执行状态观察中断，未能确认本轮结束。', action: '请先核对执行记录和已有成果。' };
   }
-  return { summary: '本轮执行因未识别的原因中断。', action: '请展开技术详情核对准确诊断；如持续出现，请保留该信息。' };
+  return { summary: '本轮执行失败，暂时无法确定原因。' };
 }
 
 export function conversationModelWarning(

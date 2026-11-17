@@ -45,16 +45,16 @@ test('常见失败分别给出可理解原因，未知诊断安全回退',()=>{
   assert.match(conversationFailureReason('',{kind:'protocol'}).summary,/工具调用格式异常/);
   assert.match(conversationFailureReason('',{kind:'transport'}).summary,/状态观察中断/);
   const unknown=conversationFailureReason('internal token=secret-value');
-  assert.match(unknown.summary,/未识别/);
+  assert.match(unknown.summary,/无法确定原因/);
   assert.doesNotMatch(unknown.summary,/secret-value/);
-  assert.match(unknown.action,/技术详情/);
+  assert.equal(unknown.action,undefined);
 });
 
 test('失败组件直接显示原因和下一步，技术详情默认折叠',()=>{
   const diagnostic='stream disconnected before completion: 403: {"code":"10605","subCode":"CALL_COUNT_LIMIT","message":"{\\"retryAfterSeconds\\":30}"}';
   const html=renderToStaticMarkup(React.createElement(ConversationFailureNotice,{run:{status:'failed',accepted:true,tools:[],diagnostic}}));
   const summary=html.split('<details')[0];
-  assert.match(summary,/失败原因/);
+  assert.doesNotMatch(summary,/失败原因/);
   assert.match(summary,/模型调用达到当前上限/);
   assert.match(summary,/约 30 秒后重试/);
   assert.match(summary,/已受理，但未完成/);
@@ -64,4 +64,14 @@ test('失败组件直接显示原因和下一步，技术详情默认折叠',()=
 
 test('非失败轮次不渲染失败提示',()=>{
   assert.equal(renderToStaticMarkup(React.createElement(ConversationFailureNotice,{run:{status:'completed',accepted:true,tools:[]}})),'');
+});
+
+test('绑定检查失败只说明情况，不同时警告可能已经执行',()=>{
+  const diagnostic='原生上下文与当前目录或配置身份不匹配，原记录已保留。';
+  const html=renderToStaticMarkup(React.createElement(ConversationFailureNotice,{run:{status:'failed',accepted:false,tools:[],diagnostic}}));
+  const visible=html.split('<details')[0];
+  assert.match(visible,/原会话与当前执行环境不匹配，无法继续/);
+  assert.match(visible,/本次要求未送达/);
+  assert.doesNotMatch(visible,/未识别|请展开|可能已经执行|失败原因/);
+  assert.match(html,/<details[^>]*><summary>技术详情/);
 });
