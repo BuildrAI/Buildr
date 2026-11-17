@@ -63,25 +63,26 @@ export function conversationDraftIds(profile: string, storage: DraftStorage, ove
 
 export function shouldShowConversationDraft(
   row: Pick<ConversationSummary, 'id' | 'run'>,
-  liveDraftIds: readonly string[],
-  activeEditingId: string | null,
+  settledDraftIds: readonly string[],
 ): boolean {
-  if (activeEditingId && row.id === activeEditingId) return false;
   if (isExecuting(row as ConversationSummary)) return false;
-  return liveDraftIds.includes(row.id);
+  return settledDraftIds.includes(row.id);
 }
 
-/** Settle list-ordering draft membership: ignore executing conversations and lock the side-by-side active row until navigation away. */
+/** Settle list draft display and ordering: ignore executing conversations, clear submitted empty drafts, and freeze the side-by-side active row until navigation away. */
 export function settleConversationDraftIds(input: {
   liveIds: readonly string[];
   previousIds: readonly string[];
   activeEditingId: string | null;
   executingIds?: ReadonlySet<string>;
+  pendingSendIds?: ReadonlySet<string>;
+  submittedIds?: ReadonlySet<string>;
 }): string[] {
   const live = new Set(input.liveIds), previous = new Set(input.previousIds);
   const next = new Set<string>();
   for (const id of new Set([...live, ...previous])) {
     if (input.executingIds?.has(id)) continue;
+    if ((input.pendingSendIds?.has(id) || input.submittedIds?.has(id)) && !live.has(id)) continue;
     if (input.activeEditingId && id === input.activeEditingId) {
       if (previous.has(id)) next.add(id);
       continue;
@@ -105,11 +106,42 @@ export function workspaceConversationDraftIds(
 
 // This is an in-memory fallback for the existing storage, not another draft store.
 const overrides = new Map<string, string | null>();
+const submittedClearedIds = new Set<string>();
 const listeners = new Set<() => void>();
+function clearSubmittedMarkForNonEmptyUpdate(key: string, value: string | null): boolean {
+  if (!value || !submittedClearedIds.size) return false;
+  let cleared = false;
+  if (key.startsWith('buildr.agent-conversation.attachments:')) {
+    try {
+      const images = JSON.parse(value);
+      if (images && typeof images === 'object' && !Array.isArray(images)) {
+        for (const [id, items] of Object.entries(images)) if (Array.isArray(items) && items.length && submittedClearedIds.delete(id)) cleared = true;
+      }
+    } catch { /* Ignore malformed attachment payloads. */ }
+    return cleared;
+  }
+  const prefix = 'buildr.agent-conversation.draft:';
+  if (!key.startsWith(prefix)) return false;
+  const parts = key.slice(prefix.length).split(':');
+  if (parts.length !== 3 || parts[1] === 'new' || parts[2] === 'new') return false;
+  try {
+    if (readDraft(key, {getItem: () => value}).text.trim() && submittedClearedIds.delete(decodeURIComponent(parts[2]))) cleared = true;
+  } catch { /* Ignore malformed keys. */ }
+  return cleared;
+}
 export function notifyConversationDraft(key: string, value: string | null) {
-  if (overrides.has(key) && overrides.get(key) === value) return;
+  const clearedSubmitted = clearSubmittedMarkForNonEmptyUpdate(key, value);
+  if (!clearedSubmitted && overrides.has(key) && overrides.get(key) === value) return;
   overrides.set(key, value);
   for (const listener of listeners) listener();
+}
+export function notifyConversationDraftSubmitted(conversationId: string) {
+  if (!conversationId || submittedClearedIds.has(conversationId)) return;
+  submittedClearedIds.add(conversationId);
+  for (const listener of listeners) listener();
+}
+export function conversationDraftSubmittedSnapshot(): string {
+  return JSON.stringify([...submittedClearedIds].sort());
 }
 export function subscribeConversationDrafts(listener: () => void) {
   listeners.add(listener);

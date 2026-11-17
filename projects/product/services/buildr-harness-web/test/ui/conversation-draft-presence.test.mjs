@@ -4,7 +4,9 @@ import {
   conversationDraftIds,
   conversationDraftPresence,
   conversationDraftSnapshot,
+  conversationDraftSubmittedSnapshot,
   notifyConversationDraft,
+  notifyConversationDraftSubmitted,
   settleConversationDraftIds,
   shouldShowConversationDraft,
   subscribeConversationDrafts,
@@ -47,18 +49,17 @@ test('notifications keep a stable membership snapshot through edits and clear af
  notifyConversationDraft(key,null);assert.equal(conversationDraftSnapshot('presence-test'),'[]');
  stop();notifyConversationDraft(key,null);assert.equal(changes,3);
 });
-test('shouldShowConversationDraft hides badge while executing or side-by-side editing',()=>{
- assert.equal(shouldShowConversationDraft({id:'c1',run:{status:'completed'}},['c1'],null),true);
- assert.equal(shouldShowConversationDraft({id:'c1',run:{status:'completed'}},['c1'],'c1'),false);
- assert.equal(shouldShowConversationDraft({id:'c1',run:{status:'completed'}},['c1'],'c2'),true);
+test('shouldShowConversationDraft follows settledDraftIds and hides badge while executing',()=>{
+ assert.equal(shouldShowConversationDraft({id:'c1',run:{status:'completed'}},['c1']),true);
+ assert.equal(shouldShowConversationDraft({id:'c1',run:{status:'completed'}},['c2']),false);
  for (const status of ['starting','running','stopping']) {
-  assert.equal(shouldShowConversationDraft({id:'c1',run:{status}},['c1'],null),false,`${status} hides draft badge`);
+  assert.equal(shouldShowConversationDraft({id:'c1',run:{status}},['c1']),false,`${status} hides draft badge`);
  }
- assert.equal(shouldShowConversationDraft({id:'c1',run:{status:'waiting-question'}},['c1'],null),true);
+ assert.equal(shouldShowConversationDraft({id:'c1',run:{status:'waiting-question'}},['c1']),true);
 });
-test('settleConversationDraftIds keeps side-by-side row stable until navigation away and excludes executing rows',()=>{
+test('settleConversationDraftIds keeps side-by-side row frozen on re-entry and clearing until navigation away, send, or execution',()=>{
  const presence={byWorkspace:{w1:['c1'],w2:['c2']},unscopedIds:[]};
- // 打开普通对话输入→清空→再输入，期间不提前上浮；离开后才进入结算集合。
+ // 原本无草稿：打开对话输入→清空→再输入，期间不提前上浮；离开后才进入结算集合。
  let settled=settleConversationDraftIds({liveIds:['c1'],previousIds:[],activeEditingId:'c1'});
  assert.deepEqual(settled,[]);
  settled=settleConversationDraftIds({liveIds:[],previousIds:settled,activeEditingId:'c1'});
@@ -70,13 +71,32 @@ test('settleConversationDraftIds keeps side-by-side row stable until navigation 
  assert.deepEqual(workspaceConversationDraftIds('w1',settled,presence),['c1']);
  assert.deepEqual(workspaceConversationDraftIds('w2',settled,presence),[]);
 
- // 打开已有草稿对话清空内容期间保持席位锁定（含当前工作空间可见参数），离开后再释放。
+ // 点回已有草稿对话（c1）：徽标与排序席位均保持原样，不因重新选回而消失。
+ settled=settleConversationDraftIds({liveIds:['c1'],previousIds:settled,activeEditingId:'c1'});
+ assert.deepEqual(settled,['c1']);
+ assert.equal(shouldShowConversationDraft({id:'c1',run:{status:'completed'}},settled),true);
+
+ // 停留在已有草稿对话期间清空内容：左侧徽标与席位依然保持锁定，离开后再释放。
  settled=settleConversationDraftIds({liveIds:[],previousIds:settled,activeEditingId:'c1'});
  assert.deepEqual(settled,['c1']);
+ assert.equal(shouldShowConversationDraft({id:'c1',run:{status:'completed'}},settled),true);
  assert.deepEqual(workspaceConversationDraftIds('w1',settled,{byWorkspace:{},unscopedIds:[]},{workspaceId:'w1',conversationId:'c1'}),['c1']);
  assert.deepEqual(workspaceConversationDraftIds('w2',settled,{byWorkspace:{},unscopedIds:[]},{workspaceId:'w1',conversationId:'c1'}),[]);
  settled=settleConversationDraftIds({liveIds:[],previousIds:settled,activeEditingId:null});
  assert.deepEqual(settled,[]);
+
+ // 停留期间直接发送进入待发送（pendingSend）或已受理清空（submittedIds）且实时草稿已空时立即清除“有草稿”。
+ settled=settleConversationDraftIds({liveIds:[],previousIds:['c1'],activeEditingId:'c1',pendingSendIds:new Set(['c1'])});
+ assert.deepEqual(settled,[]);
+ settled=settleConversationDraftIds({liveIds:[],previousIds:['c1'],activeEditingId:'c1',submittedIds:new Set(['c1'])});
+ assert.deepEqual(settled,[]);
+
+ // 验证 submittedClearedIds 通知与再次输入非空文本后的自动撤回。
+ notifyConversationDraftSubmitted('submit-test');
+ assert.equal(conversationDraftSubmittedSnapshot(),'["submit-test"]');
+ notifyConversationDraft(draftKey('presence-test','w','submit-test'),JSON.stringify({text:'next'}));
+ assert.equal(conversationDraftSubmittedSnapshot(),'[]');
+ notifyConversationDraft(draftKey('presence-test','w','submit-test'),null);
 
  // 执行中的对话绝不计入草稿结算，执行结束后恢复正常识别。
  settled=settleConversationDraftIds({liveIds:['c1','c2'],previousIds:['c1'],activeEditingId:null,executingIds:new Set(['c1'])});

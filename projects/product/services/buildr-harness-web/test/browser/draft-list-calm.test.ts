@@ -78,6 +78,13 @@ test('draft list ignores executing conversations and settles calmly on navigatio
 
   const connection = await client.operations.connections.read('first');
   await client.operations.connections.connect('first', { expectedRevision: connection.revision });
+  const addedModel = await client.operations.models.accounts.add({ provider: 'fixture-model' });
+  let modelAccount = await client.operations.models.accounts.check(addedModel.id);
+  modelAccount = await client.operations.models.accounts.preferences(modelAccount.id, {
+    expectedRevision: modelAccount.revision,
+    models: [{ id: 'fixture', enabled: true }],
+  });
+  await client.operations.models.catalog.list({ refresh: true });
   const directory1 = await client.directories.register(work1, '主工作空间');
   const directory2 = await client.directories.register(work2, '其他工作空间');
   const scope1 = executionScopeKey(directory1.ref);
@@ -85,7 +92,15 @@ test('draft list ignores executing conversations and settles calmly on navigatio
 
   const createCompleted = async (scope: string, title: string, prompt: string) => {
     const created = await client.operations.conversations.create(scope, { title });
-    const draft = { expectedRevision: created.revision, connectionId: 'first', text: prompt };
+    const draft = {
+      expectedRevision: created.revision,
+      connectionId: 'first',
+      model: 'fixture',
+      modelAccountId: modelAccount.id,
+      modelAccountRevision: modelAccount.revision,
+      modelAccountIdentity: modelAccount.identity,
+      text: prompt,
+    };
     const preview = await client.operations.conversations.prepareSend(scope, created.id, draft);
     await client.operations.conversations.send(scope, created.id, { ...draft, previewToken: preview.token, clientRequestId: randomUUID() });
     const settled = await until(
@@ -125,11 +140,17 @@ test('draft list ignores executing conversations and settles calmly on navigatio
   assert.equal(response.status, 200);
   const cookie = response.headers.get('set-cookie')!.split(';')[0]!;
   const separator = cookie.indexOf('=');
+  const html = await (await fetch(origin + '/', { headers: { cookie } })).text();
+  const webProfile = /<meta name="buildr-web-profile" content="([^"]+)">/u.exec(html)![1]!;
 
   const browser = await chromium.launch({ headless: true });
   cleanupBrowser = browser;
   const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
   await context.addCookies([{ name: cookie.slice(0, separator), value: cookie.slice(separator + 1), url: origin, httpOnly: true, sameSite: 'Strict' }]);
+  await context.addInitScript(({ profile, account }) => {
+    localStorage.setItem('buildr.agent-conversation.preference:' + encodeURIComponent(profile), JSON.stringify({ version: 1, agent: { connectionId: 'first' }, permission: { mode: 'default' } }));
+    localStorage.setItem('buildr.agent-conversation.model-preference:' + encodeURIComponent(profile), JSON.stringify({ version: 1, connectionId: 'first', model: 'fixture', modelAccountId: account.id, modelAccountIdentity: account.identity }));
+  }, { profile: webProfile, account: { id: modelAccount.id, identity: modelAccount.identity } });
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -246,17 +267,51 @@ test('draft list ignores executing conversations and settles calmly on navigatio
   assert.equal(statsRequests, 0, '草稿结算期间顶部执行中模型统计零重刷');
   assert.equal(otherWorkspaceRequests, 0, '其他工作空间分组不受草稿变化影响');
 
-  // 点回已有草稿对话：标签柔和淡出；删空内容期间离开前席位不跳走；切走后再恢复普通排序。
+  // 1. 点回已有草稿对话：左侧“有草稿”标识和排位保持原样不消失，也不发列表请求。
+  const listBeforeReenter = totalListRequests;
   await rowOlder.click();
+  await until(
+    async () => (await page.locator('#agent-conversation-panel').getAttribute('data-conversation-id')) === convOlder.id,
+    Boolean,
+    're-entered older conversation with settled draft',
+  );
   await input.waitFor({ state: 'visible', timeout: 10000 });
   assert.equal(await input.inputValue(), '离开后再标有草稿');
-  await rowOlder.locator('.ac-draft-status').waitFor({ state: 'detached', timeout: 5000 });
+  await page.waitForTimeout(200);
+  assert.equal(await rowOlder.locator('.ac-draft-status').innerText(), '有草稿', '点回已有草稿对话时有草稿保持不消失');
+  assert.equal(totalListRequests, listBeforeReenter, '点回已有草稿对话不触发草稿列表刷新');
+  assert.ok((await scope1Ids()).indexOf(convOlder.id) < (await scope1Ids()).indexOf(convNewer.id), '点回后原草稿排序席位保持在前');
+
+  // 2. 在已有草稿对话继续编辑后切走：标签仍保持、列表零请求。
+  await input.fill('修改但仍保留草稿');
+  await rowNewer.click();
+  await until(
+    async () => (await page.locator('#agent-conversation-panel').getAttribute('data-conversation-id')) === convNewer.id,
+    Boolean,
+    'navigated to newer conversation after editing non-empty draft',
+  );
+  await page.waitForTimeout(150);
+  assert.equal(await rowOlder.locator('.ac-draft-status').innerText(), '有草稿');
+  assert.equal(totalListRequests, listBeforeReenter, '仍有非空草稿时离开无需重刷列表');
+
+  // 3. 点回已有草稿对话并手工清空：停留期间“有草稿”和席位保持冻结不动且零请求；切走后再恢复普通排序并去除标识。
+  await rowOlder.click();
+  await until(
+    async () => (await page.locator('#agent-conversation-panel').getAttribute('data-conversation-id')) === convOlder.id,
+    Boolean,
+    're-entered older conversation before manual clear',
+  );
+  await input.waitFor({ state: 'visible', timeout: 10000 });
+  assert.equal(await input.inputValue(), '修改但仍保留草稿');
   await input.fill('');
-  await page.waitForTimeout(100);
+  await page.waitForTimeout(200);
+  assert.equal(await rowOlder.locator('.ac-draft-status').innerText(), '有草稿', '停留清空草稿时有草稿标识保持不消失');
+  assert.equal(totalListRequests, listBeforeReenter, '停留清空草稿期间不触发列表刷新');
   const orderWhileCleared = await scope1Ids();
   assert.ok(orderWhileCleared.indexOf(convOlder.id) < orderWhileCleared.indexOf(convNewer.id), '清空已有草稿但尚未离开时保持原席位不乱跳');
 
   await rowNewer.click();
+  await rowOlder.locator('.ac-draft-status').waitFor({ state: 'detached', timeout: 10000 });
   await until(
     async () => {
       const ids = await scope1Ids();
@@ -267,6 +322,50 @@ test('draft list ignores executing conversations and settles calmly on navigatio
   );
   assert.equal(statsRequests, 0, '清空结算期间顶部统计仍零重刷');
   assert.equal(otherWorkspaceRequests, 0, '清空结算期间其他工作空间仍零重刷');
+
+  // 4. 在已有草稿对话中直接发送消息使草稿清空：即使不切换对话也立即清除“有草稿”标识。
+  await rowOlder.click();
+  await until(
+    async () => (await page.locator('#agent-conversation-panel').getAttribute('data-conversation-id')) === convOlder.id,
+    Boolean,
+    'selected older conversation for send test',
+  );
+  await input.waitFor({ state: 'visible', timeout: 10000 });
+  await input.fill('发送后立即清除草稿标识');
+  await rowNewer.click();
+  await rowOlder.locator('.ac-draft-status').waitFor({ state: 'visible', timeout: 10000 });
+
+  await rowOlder.click();
+  await until(
+    async () => (await page.locator('#agent-conversation-panel').getAttribute('data-conversation-id')) === convOlder.id,
+    Boolean,
+    're-entered older conversation before direct send',
+  );
+  assert.equal(await rowOlder.locator('.ac-draft-status').innerText(), '有草稿');
+  await until(
+    async () => (await page.locator('.ac-model-label').innerText()).toLowerCase().includes('fixture'),
+    Boolean,
+    'older conversation model ready',
+  );
+  await until(
+    () => page.getByRole('button', { name: '发送对话', exact: true }).isEnabled(),
+    Boolean,
+    'direct send button enabled',
+  );
+  await page.getByRole('button', { name: '发送对话', exact: true }).click();
+  try {
+    await rowOlder.locator('.ac-draft-status').waitFor({ state: 'detached', timeout: 10000 });
+  } catch (err) {
+    t.diagnostic(await page.locator('#agent-conversation-panel').innerText());
+    throw err;
+  }
+  await until(
+    async () => (await client.operations.conversations.read(scope1, convOlder.id)).run?.status === 'completed',
+    Boolean,
+    'direct send completed on older conversation',
+  );
+  await page.waitForTimeout(150);
+  assert.equal(await rowOlder.locator('.ac-draft-status').count(), 0, '停留在当前对话直接发送后不残余有草稿标识');
 
   assert.deepEqual(errors, []);
   await context.close();

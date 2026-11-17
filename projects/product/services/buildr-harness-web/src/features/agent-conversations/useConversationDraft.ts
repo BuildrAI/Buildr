@@ -1,4 +1,4 @@
-import { notifyConversationDraft } from './conversation-draft-presence.ts';
+import { notifyConversationDraft, notifyConversationDraftSubmitted } from './conversation-draft-presence.ts';
 import type {ConversationTaskLink} from './types.ts';
 import { useEffect, useRef, useState } from 'react';
 import { draftKey, readDraft, transferDraftText, writeDraft } from './conversation-state.ts';
@@ -45,6 +45,7 @@ export function useConversationDraft(workspaceId: string | null, conversationId:
     const target=conversationDraftKey(targetWorkspaceId,targetConversationId);
     if(read(target).text!==submittedText)return;
     const available=save(target,'');
+    notifyConversationDraftSubmitted(targetConversationId);
     setState(previous=>previous.key===target?{key:target,text:'',taskId:undefined,available}:previous);
   };
   const acceptNewSubmitted = (nextWorkspaceId:string,nextConversationId:string,submittedText:string,transferRemainder:boolean) => {

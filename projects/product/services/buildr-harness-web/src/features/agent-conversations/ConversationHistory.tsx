@@ -1,5 +1,5 @@
 import { settleConversationDraftIds, shouldShowConversationDraft, workspaceConversationDraftIds } from './conversation-draft-presence.ts';
-import { useConversationDraftPresenceDetail } from './useConversationDraftPresence.ts';
+import { useConversationDraftPresenceDetail, useConversationDraftSubmittedIds } from './useConversationDraftPresence.ts';
 import { ConversationExecutionSummary } from './ConversationExecutionSummary.tsx';
 import { conversationModelSourceLabel, conversationModelLabel } from './conversation-model-label.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -41,15 +41,23 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   const presence=useConversationDraftPresenceDetail();
   const activeEditingScope=keepHistoryOpen&&context.scope?context.scope:null;
   const activeEditingId=activeEditingScope?.conversationId??null;
-  const executingIds=useMemo(()=>{
-    const ids=new Set<string>();
-    for(const row of context.activityRows)if(isExecuting(row))ids.add(row.id);
-    if(context.conversation&&isExecuting(context.conversation))ids.add(context.conversation.id);
-    return ids;
+  const submittedIds=useConversationDraftSubmittedIds();
+  const submittedSet=useMemo(()=>new Set(submittedIds),[submittedIds]);
+  const {executingIds,pendingSendIds}=useMemo(()=>{
+    const executing=new Set<string>(),pendingSend=new Set<string>();
+    for(const row of context.activityRows){
+      if(isExecuting(row))executing.add(row.id);
+      if(sendActivity(row))pendingSend.add(row.id);
+    }
+    if(context.conversation){
+      if(isExecuting(context.conversation))executing.add(context.conversation.id);
+      if(sendActivity(context.conversation))pendingSend.add(context.conversation.id);
+    }
+    return {executingIds:executing,pendingSendIds:pendingSend};
   },[context.activityRows,context.conversation]);
   const settledRef=useRef<string[]|null>(null);
   if(settledRef.current===null)settledRef.current=presence.ids.filter(id=>!executingIds.has(id));
-  const settledDraftIds=settleConversationDraftIds({liveIds:presence.ids,previousIds:settledRef.current,activeEditingId,executingIds});
+  const settledDraftIds=settleConversationDraftIds({liveIds:presence.ids,previousIds:settledRef.current,activeEditingId,executingIds,pendingSendIds,submittedIds:submittedSet});
   settledRef.current=settledDraftIds;
   const initial=context.historyWorkspaceId??'';
   const [workspaceId,setWorkspaceId]=useState(initial),[query,setQuery]=useState(''),[hidden,setHidden]=useState(false),[filter,setFilter]=useState<ExecutionFilter>(null);
@@ -76,7 +84,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   const workspaceName=(id:string)=>id===DEFAULT_HISTORY_GROUP?'默认':workspaces.find(item=>item.id===id)?.name||id;
   const renderRow=(row:ConversationSummary)=><div key={row.workspaceId+':'+row.id} className={'ac-history-row'+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
     <button type="button" className="ac-history-row-main" data-conversation-id={row.id} onClick={()=>void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true,preserveHistoryView:keepHistoryOpen})}>
-      <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/><DraftStatusBadge visible={shouldShowConversationDraft(row,presence.ids,activeEditingId)} immediateHide={isExecuting(row)}/></span>
+      <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/><DraftStatusBadge visible={shouldShowConversationDraft(row,settledDraftIds)} immediateHide={isExecuting(row)||Boolean(sendActivity(row))}/></span>
       {sendActivity(row)?.reason&&<span className="ac-send-reason">{sendActivity(row)?.reason}</span>}
       {row.searchSnippet&&<span className="ac-history-row-snippet" title={row.searchSnippet}>{row.searchSnippet}</span>}
       <small><span className="ac-history-id" title={row.id}>{row.id}</span><span className="ac-history-meta">{conversationMetadata(row,undefined,row.run?.model?conversationModelLabel(row.run.model,context.connections,context.modelCatalog,{modelAccountId:row.run.modelAccountId}):undefined)}</span></small>
