@@ -29,9 +29,18 @@ const names = {
 export const OPERATION_NAMES: readonly string[] = Object.entries(names).flatMap(([group, methods]) => methods.map(method => group + '.' + method));
 
 const Constructor: any = Ajv2020;
-const ajv = new Constructor({ strict: true, allErrors: true, allowUnionTypes: true });
-const validators = new Map(Object.entries(AGENT_OPERATION_SCHEMAS).map(([name, schema]) => [name, ajv.compile(schema)]));
-const inputs: Record<string, [number, string]> = {
+let ajv: any;
+const validators = new Map<string, (value: unknown) => boolean>();
+function validator(name: keyof typeof AGENT_OPERATION_SCHEMAS): (value: unknown) => boolean {
+  let fn = validators.get(name);
+  if (!fn) {
+    ajv ??= new Constructor({ strict: true, allErrors: true, allowUnionTypes: true });
+    fn = ajv.compile(AGENT_OPERATION_SCHEMAS[name]) as (value: unknown) => boolean;
+    validators.set(name, fn);
+  }
+  return fn;
+}
+const inputs: Record<string, [number, keyof typeof AGENT_OPERATION_SCHEMAS]> = {
   'systemPrompt.save':[0,'systemPromptInput'],
   'pushback.save':[1,'pushbackSettingsInput'], 'pushback.reveal':[1,'revision'], 'pushback.test':[1,'revision'], 'pushback.setCredentialAccess':[1,'pushbackCredentialAccess'], 'pushback.listEvents':[2,'pushbackEventsQuery'], 'pushback.migrateGlobal':[1,'pushbackMigrate'],
   'conversations.participation':[2,'participationQuery'], 'conversations.participationSummary':[1,'participationSummaryQuery'],
@@ -47,10 +56,10 @@ const inputs: Record<string, [number, string]> = {
 export function validateOperation(name: string, args: unknown): asserts args is any[] {
   if (!OPERATION_NAMES.includes(name) || !Array.isArray(args) || args.length > 6) throw new AgentServiceError('agent_process_operation_invalid', '不支持的执行操作。');
   const input = inputs[name];
-  if (input && !validators.get(input[1])!(JSON.parse(JSON.stringify(args[input[0]] ?? (input[1] === 'check' ? {} : null))))) throw new AgentServiceError('agent_process_input_invalid', '执行操作字段无效。');
+  if (input && !validator(input[1])(JSON.parse(JSON.stringify(args[input[0]] ?? (input[1] === 'check' ? {} : null))))) throw new AgentServiceError('agent_process_input_invalid', '执行操作字段无效。');
   if (name === 'conversations.addAttachment' || name === 'conversations.addDraftImage') {
     const value = args[2];
-    if (!value || typeof value.base64 !== 'string' || value.base64.length > (typeof value.mimeType === 'string' && !value.mimeType.startsWith('image/') ? 44 : 12) * 1024 * 1024 || !(name === 'conversations.addDraftImage' ? validators.get('draftImage')!({expectedRevision:value.expectedRevision,name:value.name,mimeType:value.mimeType,frame:value.frame,video:value.video}) : validators.get('attachment')!({ expectedRevision: value.expectedRevision, expectedAttachmentRevision: value.expectedAttachmentRevision, name: value.name, mimeType: value.mimeType, video: value.video }))) throw new AgentServiceError('agent_process_input_invalid', '附件字段无效。');
+    if (!value || typeof value.base64 !== 'string' || value.base64.length > (typeof value.mimeType === 'string' && !value.mimeType.startsWith('image/') ? 44 : 12) * 1024 * 1024 || !(name === 'conversations.addDraftImage' ? validator('draftImage')({expectedRevision:value.expectedRevision,name:value.name,mimeType:value.mimeType,frame:value.frame,video:value.video}) : validator('attachment')({ expectedRevision: value.expectedRevision, expectedAttachmentRevision: value.expectedAttachmentRevision, name: value.name, mimeType: value.mimeType, video: value.video }))) throw new AgentServiceError('agent_process_input_invalid', '附件字段无效。');
   }
 }
 export async function dispatchOperation(service: AgentService, name: string, args: any[]): Promise<unknown> {

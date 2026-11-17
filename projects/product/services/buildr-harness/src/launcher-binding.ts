@@ -14,7 +14,18 @@ export function invalidLauncher(message: string): never {
 export function launcherFileHash(file: string) {
   const stat = fs.lstatSync(file);
   if (!stat.isFile() || stat.isSymbolicLink()) invalidLauncher('启动器依赖文件身份不安全。');
-  return launcherDigest(fs.readFileSync(file));
+  const fd = fs.openSync(file, 'r');
+  try {
+    const opened = fs.fstatSync(fd);
+    if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino) invalidLauncher('启动器依赖文件身份不安全。');
+    const hash = createHash('sha256');
+    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    let read: number;
+    while ((read = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) hash.update(buffer.subarray(0, read));
+    return hash.digest('hex');
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 export function parseLauncherBinding(text: string, target: string): HarnessLauncherBinding {
   const binding = JSON.parse(text) as HarnessLauncherBinding;

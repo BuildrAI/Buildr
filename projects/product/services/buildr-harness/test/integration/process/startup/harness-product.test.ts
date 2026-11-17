@@ -41,6 +41,13 @@ test('Harness alone cold-starts, shares directory authority, executes and restar
   assert.equal(fs.existsSync(path.join(work, '.buildr')), false);
   // Disconnecting both entries does not terminate their shared backend.
   await Promise.all(pair.map(client => client.disconnect()));
+  const materializedBefore = fs.readdirSync(path.join(dataRoot, 'agent-service/process/runtimes')).sort();
+  assert.deepEqual(materializedBefore, [runtime.digest]);
+  // Reconnecting without providing `runtime` reuses the live backend without materializing the source tree.
+  const reusedWithoutRuntime = await connectHarnessProcess({dataRoot, profileId, sourceId: 'harness-local'}); clients.push(reusedWithoutRuntime);
+  assert.equal((await reusedWithoutRuntime.lifecycle.identity()).generation, ready.generation);
+  assert.deepEqual(fs.readdirSync(path.join(dataRoot, 'agent-service/process/runtimes')).sort(), materializedBefore);
+  await reusedWithoutRuntime.disconnect();
   const reopened = await connectHarnessProcess(options); clients.push(reopened);
   assert.equal((await reopened.lifecycle.identity()).generation, ready.generation);
   assert.equal((await reopened.operations.conversations.read(scope, chat.id)).id, chat.id);

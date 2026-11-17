@@ -8,31 +8,44 @@ function schemaIdentity(schema: any): any  {
 
 export function compileJsonSchemaCatalog(schemas: any, options: any = {}): any  {
   if (!Array.isArray(schemas) || schemas.length === 0) throw new Error('JSON Schema catalog must contain at least one schema.');
-  const ajv = new Ajv2020Constructor({
-    strict: true,
-    allErrors: true,
-    coerceTypes: false,
-    useDefaults: false,
-    removeAdditional: false,
-    allowUnionTypes: true,
-    ...options.ajv,
-  });
-  const validators: any = new Map();
+  const definitions = new Map<string, any>();
   for (const schema of schemas) {
     const identity = schemaIdentity(schema);
     if (!identity) throw new Error('Every registered JSON Schema must declare a non-empty $id.');
-    if (validators.has(identity)) throw new Error(`Duplicate JSON Schema identity: ${identity}`);
+    if (definitions.has(identity)) throw new Error(`Duplicate JSON Schema identity: ${identity}`);
+    definitions.set(identity, schema);
+  }
+  let ajv: any;
+  const validators: any = new Map();
+  function validatorFor(identity: any): any {
+    const schema = definitions.get(identity);
+    if (!schema) throw new Error(`JSON Schema is not registered: ${identity}`);
+    let validator = validators.get(identity);
+    if (validator) return validator;
+    if (!ajv) {
+      ajv = new Ajv2020Constructor({
+        strict: true,
+        allErrors: true,
+        coerceTypes: false,
+        useDefaults: false,
+        removeAdditional: false,
+        allowUnionTypes: true,
+        ...options.ajv,
+      });
+      for (const definition of definitions.values()) ajv.addSchema(definition);
+    }
     try {
-      validators.set(identity, ajv.compile(schema));
+      validator = ajv.getSchema(identity) ?? ajv.compile(schema);
+      validators.set(identity, validator);
+      return validator;
     } catch (error: any) {
       throw new Error(`JSON Schema compile failed for ${identity}: ${error.message}`, { cause: error });
     }
   }
   return Object.freeze({
-    schemaIds: Object.freeze([...validators.keys()]),
+    schemaIds: Object.freeze([...definitions.keys()]),
     validate(identity: any, value: any): any  {
-      const validator = validators.get(identity);
-      if (!validator) throw new Error(`JSON Schema is not registered: ${identity}`);
+      const validator = validatorFor(identity);
       const valid = validator(value);
       return Object.freeze({ valid, errors: Object.freeze(valid ? [] : structuredClone(validator.errors || [])) });
     },
