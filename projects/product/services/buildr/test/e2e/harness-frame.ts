@@ -23,10 +23,46 @@ try{
  const {url,initialWorkspaceId}=await activeApp.ready;
  const port=Number(new URL(url).port);
  const unauthorized=await fetch(url+'/harness/');assert.equal(unauthorized.status,403,'frame entry requires its navigation cookie');
+ const landing=await browser.newPage({viewport:{width:1440,height:1000}});
+ try{
+  await landing.goto(url+'/');
+  const landingFrame=landing.frameLocator('iframe[title="Buildr Harness"]');
+  const landingInput=landingFrame.getByRole('textbox',{name:'对话输入',exact:true});
+  await landingInput.waitFor({timeout:30000});
+  assert.equal(await landing.locator('.harness-environment-region').isVisible(),false,'fresh root entry starts with Harness, not the engineering catalog');
+  await landingInput.fill('根入口未发送草稿');
+  await landing.locator('iframe[title="Buildr Harness"]').evaluate(node=>node.setAttribute('data-root-frame','retained'));
+  await landing.getByRole('button',{name:'打开Development',exact:true}).click();
+  await landing.locator('.harness-environment-region .app-shell').waitFor({state:'visible'});
+  assert.equal(await landing.getByRole('button',{name:'添加工作空间',exact:true}).isVisible(),true,'real existing engineering catalog is mounted');
+  const resize=landing.getByRole('separator',{name:'调整对话宽度',exact:true});
+  await resize.focus();await resize.press('ArrowLeft');
+  assert.equal(await resize.getAttribute('aria-valuenow'),'636','existing keyboard resize and preference remain available');
+  assert.equal(Math.round((await landing.locator('.harness-conversation-region').boundingBox())!.width),636);
+  await landing.locator('.harness-environment-region .app-shell').evaluate(node=>node.setAttribute('data-engineering-identity','retained'));
+  if(process.env.BUILDR_SCREENSHOT_DIR)await landing.screenshot({path:path.join(process.env.BUILDR_SCREENSHOT_DIR,'harness-development-mounted.png')});
+  await landing.getByRole('button',{name:'收起Development',exact:true}).click();
+  assert.equal(await landing.locator('.harness-environment-region').isVisible(),false);
+  await landing.getByRole('button',{name:'打开Development',exact:true}).click();
+  assert.equal(await landing.locator('.harness-environment-region .app-shell').getAttribute('data-engineering-identity'),'retained');
+  assert.equal(await landing.locator('iframe[title="Buildr Harness"]').getAttribute('data-root-frame'),'retained');
+  assert.equal(await landingInput.inputValue(),'根入口未发送草稿');
+  await landing.setViewportSize({width:390,height:844});
+  await landing.getByRole('button',{name:'收起Development',exact:true}).click();
+  await landingInput.fill('窄屏根入口草稿');
+  await landing.getByRole('button',{name:'打开Development',exact:true}).click();
+  assert.equal(await landing.locator('.harness-environment-region').isVisible(),true);
+  await landing.evaluate(()=>localStorage.setItem('buildr.harness-panel-full','true'));
+  await landing.goto(url+'/?catalog=1');
+  await landing.locator('.harness-environment-region .app-shell').waitFor({state:'visible'});
+  assert.equal(new URL(landing.url()).searchParams.get('catalog'),'1','explicit engineering catalog is not hidden by a saved conversation focus');
+ }finally{await landing.close();}
  const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
  await page.goto(url+'/workspaces/'+initialWorkspaceId+'/overview');
- await page.getByRole('button',{name:'新建对话',exact:true}).first().click();
+ await page.locator('.harness-environment-region .app-shell').waitFor({state:'visible'});
+ assert.equal(await page.locator('.development-harness-frame').isVisible(),false,'fresh engineering deep link keeps the original full engineering width');
  const frame=page.frameLocator('iframe[title="Buildr Harness"]');
+ await page.locator('.development-harness-rail').getByRole('button',{name:'新建对话',exact:true}).click();
  assert.equal(await page.getByRole('dialog',{name:'选择新对话的工作空间'}).count(),0,'new conversation stays in place');
  assert.equal(await page.locator('.development-harness-frame>header').count(),0,'no duplicate outer toolbar');
  await frame.getByRole('textbox',{name:'对话输入',exact:true}).waitFor({timeout:30000});
@@ -52,6 +88,17 @@ try{
  await page.waitForFunction(async({workspaceId,id})=>{const token=document.querySelector('meta[name="buildr-session"]')!.getAttribute('content')!;const response=await fetch(`/api/v1/workspaces/${workspaceId}/agent-conversations/${id}`,{headers:{'x-buildr-session':token}});const value=await response.json();return value.taskLinks?.some((link:{taskId:string})=>link.taskId==='frame-task');},{workspaceId:initialWorkspaceId,id:conversation.id});
  assert.equal(await frame.getByRole('button',{name:'关联任务',exact:true}).count(),0,'engineering task controls belong to Development, not the embedded product');
  await page.locator('[data-associated-task="frame-task"]').click();await page.waitForURL('**/tasks/frame-task');
+ await page.locator('#task-detail-main[data-task-id="frame-task"]').waitFor({state:'visible'});
+ assert.equal(await page.locator('iframe[title="Buildr Harness"]').getAttribute('data-acceptance-identity'),'retained','engineering navigation never remounts the original conversation');
+ assert.equal(await page.locator('.harness-environment-region').isVisible(),true,'task navigation expands the real engineering environment');
+ assert.equal(await page.locator('.development-harness-frame').getAttribute('data-selected-workspace'),initialWorkspaceId,'browsing task retains the exact original conversation scope');
+ await page.locator('#task-more-actions').click();await page.locator('#task-edit-action').click();
+ await page.locator('#task-edit-title').fill('工作环境隐藏后保留的草稿');
+ await frame.locator('body').evaluate(()=>window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'layout',action:'full'},location.origin));
+ await page.locator('#task-edit-title').waitFor({state:'hidden'});
+ await page.getByRole('button',{name:'打开Development',exact:true}).click();
+ await page.locator('#task-edit-title').waitFor({state:'visible'});
+ assert.equal(await page.locator('#task-edit-title').inputValue(),'工作环境隐藏后保留的草稿');
  await page.keyboard.press('Escape');if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_SCREENSHOT_DIR,'development-harness-embedded.png')});
  await frame.locator('.ac-collapsed-rail .ac-account-settings').click();await frame.getByRole('tab',{name:'智能体',exact:true}).waitFor();
  await frame.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();
@@ -137,7 +184,7 @@ try{
  await diagramDialog.getByRole('button',{name:'复制源码',exact:true}).waitFor({state:'visible'});
  await page.keyboard.press('Escape');
  await diagramDialog.waitFor({state:'hidden'});
- await page.unroute(mermaidRoute);
+ await page.unrouteAll({behavior:'wait'});
  await page.evaluate(()=>{
   const chunk='y'.repeat(1_000_000);
   for(let i=0;i<16;i+=1){try{localStorage.setItem(`buildr:source-control-cache:v1:split-${i}`,chunk);}catch{break;}}

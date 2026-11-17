@@ -42,9 +42,12 @@ function readInitialPanelState(): PanelState {
   const openRaw = readOptionalPreference(PANEL_OPEN_KEY);
   const fullRaw = readOptionalPreference(PANEL_FULL_KEY);
   const viewRaw = readOptionalPreference(PANEL_VIEW_KEY);
+  const catalogEntry = window.location.pathname === '/' && new URLSearchParams(window.location.search).get('catalog') === '1';
+  const conversationEntry = window.location.pathname === '/' && !catalogEntry;
+  const legacyFull = readOptionalPreference(`buildr.agent-conversation.full:${profile}`);
   const explicitOpen = session.open ?? (openRaw === 'true' ? true : openRaw === 'false' ? false : undefined);
-  const rawFull = session.full ?? (fullRaw === 'true' ? true : fullRaw === 'false' ? false : readOptionalPreference(`buildr.agent-conversation.full:${profile}`) === 'true');
-  const full = explicitOpen === false ? false : rawFull;
+  const rawFull = session.full ?? (fullRaw === 'true' ? true : fullRaw === 'false' ? false : legacyFull === null ? conversationEntry : legacyFull === 'true');
+  const full = !catalogEntry && explicitOpen !== false && rawFull;
   const open = explicitOpen ?? full;
   const candidateView: PanelView = session.view ?? (viewRaw === 'history' || (viewRaw === null && readOptionalPreference(`buildr.agent-conversation.focus-history:${profile}`) === 'true') ? 'history' : 'conversation');
   return { open, full, view: open && full && candidateView === 'history' ? 'history' : 'conversation' };

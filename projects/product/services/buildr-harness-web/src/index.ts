@@ -1,4 +1,6 @@
 import './shared.css';
+export {HarnessShell} from './shell/HarnessShell';
+export type {HarnessWorkEnvironment} from './shell/HarnessShell';
 export {HarnessDirectoryFilesProvider,useHarnessDirectoryFiles} from './directory-files.tsx';
 export type {HarnessDirectoryFiles,HarnessFileContent} from './directory-files.tsx';
 export {AgentConversationsProvider,AgentConversationsViewProvider,useAgentConversations,useOptionalAgentConversations,useAgentConversationShell} from './features/agent-conversations/AgentConversationsContext.tsx';

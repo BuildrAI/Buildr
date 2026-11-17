@@ -1,6 +1,8 @@
-import { type ReactNode } from 'react';
+import {useContext, type ReactNode} from 'react';
 import { Button, Drawer } from 'antd';
 import { CloseOutlined } from '@ant-design/icons';
+import {WorkspaceViewActiveContext} from '../app/pageTabs';
+import {WorkEnvironmentVisibleContext} from '../app/work-environment-visibility';
 
 export type DrawerShellProps = {
   active?:boolean;
@@ -55,11 +57,13 @@ export function DrawerShell({
   closeButtonId,
   titleId,
 }: DrawerShellProps) {
-
+  const viewActive = useContext(WorkspaceViewActiveContext);
+  const environmentVisible = useContext(WorkEnvironmentVisibleContext);
+  const surfaceActive = active && viewActive && environmentVisible;
   return (
     <Drawer
       id={id}
-      open={open && active}
+      open={open && surfaceActive}
       placement="right"
       width={width}
       rootClassName={['drawer-shell', rootClassName].filter(Boolean).join(' ')}
@@ -67,10 +71,10 @@ export function DrawerShell({
       maskClosable={maskClosable}
       keyboard={keyboard}
       closable={false}
-      destroyOnClose={!open || active}
+      destroyOnClose={!open || surfaceActive}
       afterOpenChange={visible => {
         // Hiding a cached view is not a domain close and must retain its draft.
-        if (active || !open) afterOpenChange?.(visible);
+        if (surfaceActive || !open) afterOpenChange?.(visible);
       }}
       title={(
         <div className="drawer-shell-heading">
