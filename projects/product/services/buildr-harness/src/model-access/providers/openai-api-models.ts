@@ -12,11 +12,13 @@ interface OpenAIModelProfile {
 
 /**
  * Capabilities published on https://developers.openai.com/api/docs/models/<id>
- * as observed on 2026-11-08. The API model list only returns id/object/created/
+ * as observed on 2026-11-18. The API model list only returns id/object/created/
  * owned_by, so these are the official model-page facts Buildr can rely on.
  * Unknown models stay conservative instead of inheriting a family guess.
  */
 const PROFILES: Record<string, OpenAIModelProfile> = {
+  'gpt-6.2-astra': { label: 'GPT-6.2-Astra', contextWindow: 1_050_000, maxOutputTokens: 128_000, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' },
+  'gpt-6.2-sol': { label: 'GPT-6.2-Sol', contextWindow: 1_050_000, maxOutputTokens: 128_000, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' },
   'gpt-6.1-sol': { label: 'GPT-6.1-Sol', contextWindow: 1_050_000, maxOutputTokens: 128_000, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' },
   'gpt-6.1-terra': { label: 'GPT-6.1-Terra', contextWindow: 1_050_000, maxOutputTokens: 128_000, efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' },
   'gpt-6-astra': { label: 'GPT-6-Astra', contextWindow: 1_050_000, maxOutputTokens: 128_000, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },

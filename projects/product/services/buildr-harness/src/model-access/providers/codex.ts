@@ -1,8 +1,9 @@
 import type { LoginObservation } from '../../contracts.ts';
 import type { ModelProvider, ModelProviderRuntime, ModelProviderObservation, ModelOffering, ProviderInferenceInput, ProtocolJson } from '../contracts.ts';
 import { PrivateAccount, beginPkce, record, string, positive, type CredentialRecord } from './private-account.ts';
+import { CODEX_CLIENT_VERSION, resolveCodexClientVersion } from '../../executors/codex/program.ts';
 
-const AUTH = 'https://auth.openai.com', BASE = 'https://chatgpt.com/backend-api', CLIENT = 'app_EMoamEEZ73f0CkXaXp7hrann', VERSION = '0.163.0';
+const AUTH = 'https://auth.openai.com', BASE = 'https://chatgpt.com/backend-api', CLIENT = 'app_EMoamEEZ73f0CkXaXp7hrann';
 /** Codex's UI calls the speed tier "fast"; the Responses wire uses "priority". */
 function serviceTiers(row:ProtocolJson,efforts:ModelOffering['reasoningEfforts'],defaultEffort:string|undefined):Pick<ModelOffering,'serviceTiers'|'defaultServiceTier'> {
   const tiers=new Map<string,string>();
@@ -19,7 +20,7 @@ function serviceTiers(row:ProtocolJson,efforts:ModelOffering['reasoningEfforts']
     serviceTiers:[{id:'default',label:'标准',reasoningEfforts:efforts,defaultReasoningEffort:defaultEffort},
       ...[...tiers].map(([id,label])=>({id,label:id==='priority'?'快速（用量更高）':label,reasoningEfforts:efforts,defaultReasoningEffort:defaultEffort}))]};
 }
-export interface CodexProviderOptions { owner?: {request(path:string,init?:RequestInit):Promise<Response>;inspect():Promise<import("../../contracts.ts").AccountObservation>;identity():Promise<string>}; fetch?: typeof fetch; callbackPort?: number; loginTimeoutMs?: number; }
+export interface CodexProviderOptions { owner?: {request(path:string,init?:RequestInit):Promise<Response>;inspect():Promise<import("../../contracts.ts").AccountObservation>;identity():Promise<string>}; clientVersion?: () => Promise<string | undefined> | string | undefined; fetch?: typeof fetch; callbackPort?: number; loginTimeoutMs?: number; }
 /** Explicit model-account login. Never reads ~/.codex or the desktop credential store. */
 export function createCodexModelProvider(options: CodexProviderOptions = {}): ModelProvider { return { id: options.owner?'native-codex':'codex', ...(options.owner?{connectionId:'codex'}:{singleton:true}), label: 'Codex / ChatGPT', authentication: { type: 'oauth', label: 'ChatGPT 账号' }, group: { id: 'chatgpt', label: 'ChatGPT' }, modeLabel: '订阅', sharing: { kind: 'gateway' }, inference: 'gateway', presentation: { vendorLabel: 'OpenAI', sourceLabel: 'ChatGPT', quotaLabel: 'ChatGPT' }, async open(input) { return new CodexRuntime(new PrivateAccount(input.configRoot), options); } }; }
 class CodexRuntime implements ModelProviderRuntime {
@@ -28,7 +29,11 @@ class CodexRuntime implements ModelProviderRuntime {
   private lifetime = new AbortController(); private login?: { controller: AbortController; close?(): Promise<void> }; private refreshing?: Promise<CredentialRecord>;
   private catalog = new Map<string, ModelOffering>();
   constructor(account: PrivateAccount, options: CodexProviderOptions) { this.account = account; this.options = options; this.fetch = options.fetch ?? fetch; }
-  private headers(credential: CredentialRecord): Record<string, string> { return { authorization: `Bearer ${credential.accessToken}`, ...(credential.accountId ? { 'chatgpt-account-id': credential.accountId } : {}), originator: 'codex_cli_rs', 'user-agent': `codex_cli_rs/${VERSION}`, 'openai-beta': 'responses=experimental', 'openai-version': VERSION }; }
+  private async clientVersion(): Promise<string> {
+    try { return resolveCodexClientVersion(await this.options.clientVersion?.()); }
+    catch { return CODEX_CLIENT_VERSION; }
+  }
+  private headers(credential: CredentialRecord, version: string): Record<string, string> { return { authorization: `Bearer ${credential.accessToken}`, ...(credential.accountId ? { 'chatgpt-account-id': credential.accountId } : {}), originator: 'codex_cli_rs', 'user-agent': `codex_cli_rs/${version}`, 'openai-beta': 'responses=experimental', 'openai-version': version }; }
   private async credential(force = false): Promise<CredentialRecord | undefined> {
     const current = await this.account.read(); if (!current) return undefined;
     if (!force && (!current.expiresAt || current.expiresAt > Date.now() + 60000)) return current;
@@ -46,7 +51,8 @@ class CodexRuntime implements ModelProviderRuntime {
   private async request(path: string, init: RequestInit = {}, signal?: AbortSignal): Promise<Response> {
     if(this.options.owner)return this.options.owner.request(path,{...init,signal:AbortSignal.any([this.lifetime.signal,signal??AbortSignal.timeout(15000)])});
     const credential = await this.credential(); if (!credential) return Response.json({ error: { code: 'model_login_required' } }, { status: 401 });
-    const send = (value: CredentialRecord) => this.fetch(BASE + path, { ...init, headers: { ...this.headers(value), ...Object.fromEntries(new Headers(init.headers)) }, redirect: 'error', signal: AbortSignal.any([this.lifetime.signal, signal ?? AbortSignal.timeout(15000)]) });
+    const version = await this.clientVersion();
+    const send = (value: CredentialRecord) => this.fetch(BASE + path, { ...init, headers: { ...this.headers(value, version), ...Object.fromEntries(new Headers(init.headers)) }, redirect: 'error', signal: AbortSignal.any([this.lifetime.signal, signal ?? AbortSignal.timeout(15000)]) });
     let response = await send(credential);
     if (response.status === 401 && credential.refreshToken) { await response.body?.cancel(); const fresh = await this.credential(true); if (fresh) response = await send(fresh); }
     return response;
@@ -70,7 +76,8 @@ class CodexRuntime implements ModelProviderRuntime {
       if(this.options.owner){const account=await this.options.owner.inspect();nativeLabel=account.label;if(account.status!=='ready')return{status:account.status,incomplete:account.status==='failed',models:[],label:account.label,diagnostic:account.diagnostic};}
       else {const credential=await this.credential();if(!credential)return{status:'not-authenticated',models:[]};}
       if(this.options.owner)nativeIdentity=await this.options.owner.identity();
-      const [response,quota] = await Promise.all([this.request(`/codex/models?client_version=${VERSION}`),this.observeQuota()]);
+      const version = await this.clientVersion();
+      const [response,quota] = await Promise.all([this.request(`/codex/models?client_version=${version}`),this.observeQuota()]);
       if (response.status === 401) { await response.body?.cancel(); return { status: 'expired', models: [], diagnostic: 'model_codex_login_expired' }; }
       if (!response.ok) { await response.body?.cancel(); throw new Error('model_codex_catalog_failed'); }
       const data = record(await response.json());

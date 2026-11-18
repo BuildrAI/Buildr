@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { AgentProgramManager, AgentRuntime, ConnectionView } from '../../contracts.ts';
+import { resolveCodexClientVersion } from '../../executors/codex/program.ts';
 import { createDeepSeekAccountOwner } from '../../executors/dsh/model-source-owner.ts';
 import { ModelAccessError, type ModelProvider } from '../contracts.ts';
 import { createAnthropicApiModelProvider } from './anthropic-api.ts';
@@ -15,6 +16,7 @@ export interface DefaultModelProvidersDependencies {
   connections: {
     descriptor?(id: string): unknown;
     get(id: string): ConnectionView;
+    bindingData?(id: string): Record<string, unknown> | undefined;
     useProgram<T>(id: string, work: () => Promise<T>): Promise<T>;
     runtime(id: string, gateway?: undefined, accountProbe?: boolean): Promise<AgentRuntime>;
   };
@@ -84,9 +86,14 @@ export function createDefaultModelProviders(deps: DefaultModelProvidersDependenc
       };
     },
   };
+  const codexClientVersion = async () => {
+    const observed = connections.bindingData?.('codex')?.observedVersion;
+    const prepared = await programManager.preparedVersion?.('codex');
+    return resolveCodexClientVersion(typeof observed === 'string' ? observed : undefined, prepared);
+  };
   const hasConnection = (id: string) => !connections.descriptor || connections.descriptor(id) !== undefined;
   const linkedProviders = [
-    createCodexModelProvider({ owner: owner('codex') }),
+    createCodexModelProvider({ owner: owner('codex'), clientVersion: codexClientVersion }),
     nativeDsh,
     createQoderAccountModelProvider(programManager),
     createQoderCnModelProvider(programManager),
@@ -118,7 +125,7 @@ export function createDefaultModelProviders(deps: DefaultModelProvidersDependenc
   return [
     ...linkedProviders,
     ...(hasConnection('antigravity') ? [createAntigravityModelProvider({ connections, now })] : []),
-    createCodexModelProvider(),
+    createCodexModelProvider({ clientVersion: codexClientVersion }),
     createOpenAIApiModelProvider(),
     createAnthropicApiModelProvider(),
     createCustomModelProvider(),

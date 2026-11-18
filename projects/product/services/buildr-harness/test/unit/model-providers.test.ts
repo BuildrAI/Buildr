@@ -5,8 +5,8 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { codexBody } from '../../src/model-access/providers/codex.ts';
-import { createCodexModelProvider } from '../../src/model-access/providers/codex.ts';
+import { codexBody, createCodexModelProvider } from '../../src/model-access/providers/codex.ts';
+import { CODEX_CLIENT_VERSION, isValidCodexClientVersion, resolveCodexClientVersion } from '../../src/executors/codex/program.ts';
 import { createOpenAIApiModelProvider, isOpenAIChatModel, openAIResponsesBody } from '../../src/model-access/providers/openai-api.ts';
 import { createQoderModelProvider } from '../../src/model-access/providers/qoder.ts';
 import { createCustomModelProvider, customProtocolLabel, customProviderIdentity, normalizeCustomProtocol } from '../../src/model-access/providers/custom.ts';
@@ -105,6 +105,8 @@ test('ChatGPT API uses official model-page capabilities, labels and conservative
   const mock: typeof fetch = async url => {
     if (String(url) !== 'https://api.openai.com/v1/models') throw new Error('unexpected_test_network');
     return Response.json({data:[
+      {id:'gpt-6.2-astra'},
+      {id:'gpt-6.2-sol'},
       {id:'gpt-6.1-sol'},
       {id:'gpt-5.4-mini-2026-03-17'},
       {id:'gpt-live-1'},
@@ -117,7 +119,18 @@ test('ChatGPT API uses official model-page capabilities, labels and conservative
   const configure = runtime.configure?.bind(runtime);
   assert.ok(configure);
   const result = await configure({apiKey:'sk-capabilities'});
-  assert.deepEqual(result.models.map(model=>model.id),['gpt-6.1-sol','gpt-5.4-mini-2026-03-17','gpt-future-chat']);
+  assert.deepEqual(result.models.map(model=>model.id),['gpt-6.2-astra','gpt-6.2-sol','gpt-6.1-sol','gpt-5.4-mini-2026-03-17','gpt-future-chat']);
+  for (const [id, label] of [['gpt-6.2-astra', 'GPT-6.2-Astra'], ['gpt-6.2-sol', 'GPT-6.2-Sol']] as const) {
+    const model = result.models.find(item => item.id === id)!;
+    assert.equal(model.label, label);
+    assert.equal(model.family, 'GPT-6.2');
+    assert.equal(model.images, true);
+    assert.equal(model.tools, true);
+    assert.equal(model.contextWindow, 1_050_000);
+    assert.equal(model.maxOutputTokens, 128_000);
+    assert.deepEqual(model.reasoningEfforts?.map(effort => effort.id), ['low', 'medium', 'high', 'xhigh', 'max']);
+    assert.equal(model.defaultReasoningEffort, 'medium');
+  }
   const sol = result.models.find(model=>model.id==='gpt-6.1-sol')!;
   assert.equal(sol.label,'GPT-6.1-Sol');
   assert.equal(sol.family,'GPT-6.1');
@@ -512,4 +525,87 @@ test('custom provider operations validate closed configuration and discovery inp
   assert.throws(() => validateOperation('models.accounts.discoverCustom', [{ baseUrl: 'https://gateway.example.com/v1', protocol: 'chat-completions', modelsPath: 'models', useApiKey: false }]), { code: 'agent_process_input_invalid' });
   assert.throws(() => validateOperation('models.accounts.configureCustom', ['account', { label: 'Gateway', baseUrl: 'https://gateway.example.com/v1', protocol: 'openai-responses', useApiKey: false }]), { code: 'agent_process_input_invalid' });
   assert.throws(() => validateOperation('models.accounts.discoverCustom', [{ baseUrl: 'https://gateway.example.com/v1', protocol: 'chat-completions', useApiKey: false, unexpected: true }]), { code: 'agent_process_input_invalid' });
+});
+
+test('Codex subscription client version stays at or above baseline and unlocks GPT-6.2 catalog entries', { timeout: 10000 }, async t => {
+  assert.equal(CODEX_CLIENT_VERSION, '0.169.1');
+  assert.equal(isValidCodexClientVersion('0.169.1'), true);
+  assert.equal(isValidCodexClientVersion('0.171.0-alpha.12'), true);
+  assert.equal(isValidCodexClientVersion('1.0.0'), false);
+  assert.equal(isValidCodexClientVersion('0.169.1&foo=bar'), false);
+  assert.equal(isValidCodexClientVersion(' 0.170.0'), false);
+  assert.equal(resolveCodexClientVersion('0.163.0', '1.0.0', 'invalid', undefined), '0.169.1');
+  assert.equal(resolveCodexClientVersion('0.169.1', '0.172.0-alpha.1'), '0.172.0-alpha.1');
+  assert.equal(resolveCodexClientVersion('0.172.0-alpha.2', '0.172.0-alpha.10', '0.172.0+build9'), '0.172.0');
+
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-version-'));
+  const account = new (await import('../../src/model-access/providers/private-account.ts')).PrivateAccount(root);
+  await account.save({ accessToken: 'token-1', refreshToken: 'refresh-1', accountId: 'acct-1', expiresAt: Date.now() + 3_600_000 });
+  const observedRequests: Array<{ url: string; userAgent: string | null; openaiVersion: string | null }> = [];
+  let candidateVersion: string | undefined = '0.163.0';
+  let shouldThrow = false;
+  const mock: typeof fetch = async (url, init = {}) => {
+    const target = String(url);
+    const headers = new Headers(init.headers);
+    if (target.includes('/codex/models')) {
+      observedRequests.push({ url: target, userAgent: headers.get('user-agent'), openaiVersion: headers.get('openai-version') });
+      return Response.json({
+        models: [
+          {
+            slug: 'gpt-6.2-astra',
+            display_name: 'GPT-6.2-Astra',
+            context_window: 272000,
+            max_context_window: 872000,
+            input_modalities: ['text', 'image'],
+            default_reasoning_level: 'low',
+            supported_reasoning_levels: [{ effort: 'low', description: 'Low' }, { effort: 'ultra', description: 'Ultra' }],
+            additional_speed_tiers: ['fast'],
+          },
+          {
+            slug: 'gpt-6.2-sol',
+            display_name: 'GPT-6.2-Sol',
+            context_window: 500000,
+            max_context_window: 872000,
+            input_modalities: ['text', 'image'],
+            default_reasoning_level: 'low',
+            supported_reasoning_levels: [{ effort: 'low', description: 'Low' }, { effort: 'ultra', description: 'Ultra' }],
+            service_tiers: [{ id: 'priority', name: 'Fast' }],
+          },
+        ],
+      });
+    }
+    if (target.endsWith('/wham/usage')) return Response.json({});
+    throw new Error('unexpected_test_network');
+  };
+  const runtime = await createCodexModelProvider({
+    fetch: mock,
+    clientVersion: async () => {
+      if (shouldThrow) throw new Error('probe failed');
+      return candidateVersion;
+    },
+  }).open({ accountId: 'codex', configRoot: root, environment: {} });
+  t.after(async () => { await runtime.close(); await rm(root, { recursive: true, force: true }); });
+
+  const baseline = await runtime.inspect();
+  assert.equal(baseline.status, 'ready');
+  assert.deepEqual(baseline.models.map(m => m.id), ['gpt-6.2-astra', 'gpt-6.2-sol']);
+  assert.equal(baseline.models[0]?.reasoningEfforts?.at(-1)?.id, 'ultra');
+  assert.deepEqual(baseline.models[1]?.serviceTiers?.map(t => t.id), ['default', 'priority']);
+  assert.equal(observedRequests[0]?.url, 'https://chatgpt.com/backend-api/codex/models?client_version=0.169.1');
+  assert.equal(observedRequests[0]?.userAgent, 'codex_cli_rs/0.169.1');
+  assert.equal(observedRequests[0]?.openaiVersion, '0.169.1');
+
+  candidateVersion = '0.172.0';
+  await runtime.inspect();
+  assert.equal(observedRequests[1]?.url, 'https://chatgpt.com/backend-api/codex/models?client_version=0.172.0');
+  assert.equal(observedRequests[1]?.userAgent, 'codex_cli_rs/0.172.0');
+  assert.equal(observedRequests[1]?.openaiVersion, '0.172.0');
+
+  candidateVersion = '1.0.0';
+  await runtime.inspect();
+  assert.equal(observedRequests[2]?.url, 'https://chatgpt.com/backend-api/codex/models?client_version=0.169.1');
+
+  shouldThrow = true;
+  await runtime.inspect();
+  assert.equal(observedRequests[3]?.url, 'https://chatgpt.com/backend-api/codex/models?client_version=0.169.1');
 });

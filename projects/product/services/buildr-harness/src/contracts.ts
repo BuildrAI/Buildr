@@ -470,6 +470,7 @@ export interface AgentProgramManager {
   discover(input: { provider: string; executable?: string; boundExecutable?: string; signal: AbortSignal }): Promise<ProgramCatalog>;
   install(input: { provider: string; version?: string; attemptId?: string; replaceExisting?: boolean; signal: AbortSignal; progress(message: string): void }): Promise<string>;
   isManaged?(provider: string, executable: string): boolean;
+  preparedVersion?(provider: string): Promise<string | undefined>;
 }
 export type PreparationState = 'discovering' | 'selection-required' | 'installation-required' | 'installing' | 'connecting' | 'waiting-login' | 'ready' | 'failed' | 'cancelled';
 export interface PreparationView {

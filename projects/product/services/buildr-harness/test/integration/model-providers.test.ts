@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, stat, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, stat, readFile, mkdir, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createDevinModelProvider } from '../../src/model-access/providers/devin.ts';
 import { createCodexModelProvider, codexBody } from '../../src/model-access/providers/codex.ts';
+import { createDefaultModelProviders } from '../../src/model-access/providers/index.ts';
+import { createCodexExecutor } from '../../src/executors/codex/index.ts';
 import { createDeepSeekModelProvider } from '../../src/model-access/providers/deepseek.ts';
 import { fields, allBytes, text, integer, stringField, bytesField, intField, connectFrame, splitFrames } from '../../src/model-access/providers/devin-codec.ts';
 import { PrivateAccount } from '../../src/model-access/providers/private-account.ts';
@@ -296,4 +298,111 @@ test('DeepSeek source delegates native login and raw inference to its sole owner
   const body = { messages: [{ role: 'user', content: 'test' }], max_tokens: 100 }; await runtime.infer(input(body, 'deepseek-test'));
   assert.equal(requests.at(-1)?.url, 'https://api.deepseek.com/anthropic/v1/messages'); assert.deepEqual(JSON.parse(String(requests.at(-1)?.init.body)), { ...body, model: 'deepseek-test' });
   assert.equal(new Headers(requests.at(-1)?.init.headers).has('x-dsh-auth-token'), false); await runtime.close(); assert.equal(closed, true);
+});
+
+test('createDefaultModelProviders and CodexRuntime upgrade subscription catalog client_version from prepared and bound versions', { timeout: 15000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-client-version-integration-'));
+  const binDir = join(root, 'bin');
+  const codexScript = join(binDir, 'codex');
+  await mkdir(binDir, { recursive: true });
+  await writeFile(codexScript, `#!/usr/bin/env node
+import { createInterface } from 'node:readline';
+if (process.argv.includes('--version')) { console.log('codex 0.173.0'); process.exit(0); }
+const rl = createInterface({ input: process.stdin });
+const reply = (id, result) => process.stdout.write(JSON.stringify({ id, result }) + '\\n');
+rl.on('line', line => {
+  const msg = JSON.parse(line);
+  if (msg.method === 'initialize') { reply(msg.id, { userAgent: 'fixture' }); return; }
+  if (msg.method === 'initialized') return;
+  if (msg.method === 'getAuthStatus') { reply(msg.id, { authToken: 'fixture-codex-token' }); return; }
+  reply(msg.id, {});
+});
+`);
+  await chmod(codexScript, 0o755);
+
+  const codexConfigRoot = join(root, 'runtime-config');
+  await mkdir(join(codexConfigRoot, 'codex-home'), { recursive: true });
+  await writeFile(join(codexConfigRoot, 'codex-home', 'auth.json'), JSON.stringify({ tokens: { account_id: 'acct-integration' } }));
+
+  const codexRuntime = await createCodexExecutor().open({
+    connectionId: 'codex',
+    configRoot: codexConfigRoot,
+    executable: codexScript,
+    environment: { PATH: process.env.PATH ?? '' },
+  });
+  t.after(async () => { await codexRuntime.close(); await rm(root, { recursive: true, force: true }); });
+
+  const requestedUrls: Array<{ url: string; userAgent: string | null }> = [];
+  t.mock.method(globalThis, 'fetch', async (url: unknown, init: RequestInit = {}) => {
+    requestedUrls.push({ url: String(url), userAgent: new Headers(init.headers).get('user-agent') });
+    if (String(url).includes('/codex/models')) return Response.json({ models: [{ slug: 'gpt-6.2-astra', display_name: 'GPT-6.2-Astra' }] });
+    if (String(url).endsWith('/wham/usage')) return Response.json({});
+    throw new Error('unexpected_test_network');
+  });
+
+  await assert.rejects(() => codexRuntime.requestModel!('/codex/models?client_version=0.163.0&extra=1'), /codex_model_target_invalid/);
+  await assert.rejects(() => codexRuntime.requestModel!('/codex/models?client_version=1.0.0'), /codex_model_target_invalid/);
+  await assert.rejects(() => codexRuntime.requestModel!('/codex/other'), /codex_model_target_invalid/);
+
+  const upgradedResponse = await codexRuntime.requestModel!('/codex/models?client_version=0.163.0');
+  assert.equal(upgradedResponse.status, 200);
+  assert.equal(requestedUrls.at(-1)?.url, 'https://chatgpt.com/backend-api/codex/models?client_version=0.173.0');
+  assert.equal(requestedUrls.at(-1)?.userAgent, 'codex_cli_rs/0.173.0');
+
+  const requestedPaths: string[] = [];
+  const providers = createDefaultModelProviders({
+    connections: {
+      descriptor: id => id === 'codex' ? { id } : undefined,
+      get: () => ({ id: 'codex', provider: 'codex', label: 'Codex', revision: 'rev', status: 'ready', enabled: true, models: [], capabilities: { text: true, images: true, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 1000 } }),
+      bindingData: id => id === 'codex' ? { observedVersion: '0.171.0' } : undefined,
+      useProgram: async (_id, work) => work(),
+      runtime: async () => ({
+        bindingIdentity: 'codex-fixture',
+        capabilities: { text: true, images: true, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 1000 },
+        inspectAccount: async () => ({ status: 'ready' as const }),
+        models: async () => [],
+        modelIdentity: async () => 'codex:acct-default',
+        requestModel: async path => {
+          requestedPaths.push(path);
+          if (path.startsWith('/codex/models')) return Response.json({ models: [{ slug: 'gpt-6.2-sol' }] });
+          return Response.json({});
+        },
+        beginLogin: async () => {},
+        cancelLogin: async () => {},
+        createContext: async () => ({ id: 'c' }),
+        resumeContext: async () => {},
+        readHistory: async () => [],
+        send: async () => {},
+        observe: async () => ({ status: 'idle' as const, tools: [] }),
+        reply: async () => {},
+        stop: async () => ({ status: 'stopped' as const, tools: [] }),
+        close: async () => {},
+      }),
+    },
+    programManager: {
+      discover: async () => ({ candidates: [], installation: { label: 'Codex', version: '0.174.0', url: 'https://example.invalid', canInstall: false } }),
+      install: async () => '',
+      preparedVersion: async provider => provider === 'codex' ? '0.174.0' : undefined,
+    },
+    readAccountIdentity: () => undefined,
+    now: () => new Date().toISOString(),
+  });
+
+  const nativeProvider = providers.find(p => p.id === 'native-codex')!;
+  const standaloneProvider = providers.find(p => p.id === 'codex')!;
+  const nativeRuntime = await nativeProvider.open({ accountId: 'native-codex', configRoot: join(root, 'native-acc'), environment: {} });
+  const standaloneRuntime = await standaloneProvider.open({ accountId: 'codex', configRoot: join(root, 'standalone-acc'), environment: {} });
+  t.after(async () => { await nativeRuntime.close(); await standaloneRuntime.close(); });
+
+  const nativeObserved = await nativeRuntime.inspect();
+  assert.equal(nativeObserved.status, 'ready');
+  assert.equal(nativeObserved.models[0]?.id, 'gpt-6.2-sol');
+  assert.equal(requestedPaths[0], '/codex/models?client_version=0.174.0');
+
+  const account = new PrivateAccount(join(root, 'standalone-acc'));
+  await account.save({ accessToken: 'tok', refreshToken: 'ref', accountId: 'acct-stand', expiresAt: Date.now() + 3_600_000 });
+  const standaloneObserved = await standaloneRuntime.inspect();
+  assert.equal(standaloneObserved.status, 'ready');
+  assert.equal(standaloneObserved.models[0]?.id, 'gpt-6.2-astra');
+  assert.equal(requestedUrls.find(entry => entry.url.includes('client_version=0.174.0'))?.userAgent, 'codex_cli_rs/0.174.0');
 });

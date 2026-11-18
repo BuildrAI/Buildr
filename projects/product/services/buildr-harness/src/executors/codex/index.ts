@@ -12,6 +12,7 @@ import { interactionPolicy, blocksExecution } from '../../domain/interaction-pol
 import {createHash} from 'node:crypto';
 import { errorDiagnostic, NativeObservationError } from '../../domain/error-diagnostic.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
+import { CODEX_CLIENT_VERSION, isValidCodexClientVersion, resolveCodexClientVersion } from './program.ts';
 import { join, relative, sep, isAbsolute } from 'node:path';
 import { lstat, readFile, writeFile, copyFile, realpath, chmod } from 'node:fs/promises';
 import { constants } from 'node:fs';
@@ -88,6 +89,7 @@ class CodexRuntime implements AgentRuntime {
   private readonly auxiliary = new Set<string>();
   private gateway?: ExecutorGateway;
   private modelConfig?: string;
+  private programVersion = CODEX_CLIENT_VERSION;
   private constructor(bindingIdentity: string, rpc: NativeRpc, titleDirectory: string) { this.bindingIdentity = bindingIdentity; this.rpc = rpc; this.titleDirectory = titleDirectory; rpc.onMessage(message => this.message(message)); }
   static async open(options: ExecutorOpenOptions): Promise<CodexRuntime> {
     options.signal?.throwIfAborted();
@@ -115,7 +117,7 @@ class CodexRuntime implements AgentRuntime {
     runtime.interaction = { ...conversationInteraction, developerInstructions: (options.interaction ?? interactionPolicy).instructions + '\n必要提问使用 request_user_input。\n回复和文档默认使用中文；命令、标识符、路径、错误原文与产品专名保持准确。' };
     runtime.participationInstruction = instructionParticipation('interaction-policy',runtime.interaction.developerInstructions);
     runtime.bindingData = binding.data;
-    runtime.gateway = gateway; runtime.modelConfig = config;
+    runtime.gateway = gateway; runtime.modelConfig = config; runtime.programVersion = version;
     let abortedClose: Promise<void> | undefined; const abort = () => { abortedClose ??= rpc.close({skipStdinGrace:true}); };
     options.signal?.addEventListener('abort', abort, { once: true }); if (options.signal?.aborted) abort();
     try {
@@ -146,12 +148,24 @@ class CodexRuntime implements AgentRuntime {
     return 'codex:'+id;
   }
   async requestModel(path:string, init:RequestInit={},expectedIdentity?:string):Promise<Response> {
-    if(this.gateway || !['/codex/models?client_version=0.163.0','/codex/responses','/wham/usage'].includes(path))throw new Error('codex_model_target_invalid');
+    if(this.gateway)throw new Error('codex_model_target_invalid');
+    let targetPath:string;
+    let clientVersion=resolveCodexClientVersion(this.programVersion);
+    if(path==='/codex/responses'||path==='/wham/usage'){
+      targetPath=path;
+    }else if(path.startsWith('/codex/models?client_version=')){
+      const requested=path.slice('/codex/models?client_version='.length);
+      if(requested.trim()!==requested||!isValidCodexClientVersion(requested))throw new Error('codex_model_target_invalid');
+      clientVersion=resolveCodexClientVersion(requested,this.programVersion);
+      targetPath=`/codex/models?client_version=${clientVersion}`;
+    }else{
+      throw new Error('codex_model_target_invalid');
+    }
     const auth=await this.rpc.call('getAuthStatus',{includeToken:true,refreshToken:true});
     if(typeof auth.authToken!=='string')return new Response(null,{status:401});
     const identity=await this.modelIdentity();
     if(expectedIdentity&&createHash('sha256').update(identity).digest('hex')!==expectedIdentity)throw new Error('model_identity_conflict');
-    return fetch('https://chatgpt.com/backend-api'+path,{...init,headers:{...Object.fromEntries(new Headers(init.headers)),authorization:'Bearer '+auth.authToken,'chatgpt-account-id':identity.slice(6),originator:'codex_cli_rs','user-agent':'codex_cli_rs/0.163.0'},redirect:'error'});
+    return fetch('https://chatgpt.com/backend-api'+targetPath,{...init,headers:{...Object.fromEntries(new Headers(init.headers)),authorization:'Bearer '+auth.authToken,'chatgpt-account-id':identity.slice(6),originator:'codex_cli_rs','user-agent':`codex_cli_rs/${clientVersion}`},redirect:'error'});
   }
   async models() {
     if (this.gateway) return structuredClone(this.gateway.models);
