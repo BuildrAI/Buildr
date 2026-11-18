@@ -962,3 +962,20 @@ test('独立网页桌面宽屏默认展开对话列表，窄屏优先对话且�
  assert.equal(shouldPersistStandaloneHistoryPreference('conversation',448,500),false);
  assert.equal(shouldPersistStandaloneHistoryPreference('history',448,500),true);
 });
+
+test('对话列表与提醒浮窗状态采用无框高辨识度圆点样式且保持静态无闪烁',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const activityCss=readFileSync(new URL('../../src/features/agent-conversations/conversation-activity.css',import.meta.url),'utf8');
+ const conversationCss=readFileSync(new URL('../../src/features/agent-conversations/agent-conversations.css',import.meta.url),'utf8');
+ assert.match(activityCss,/\.ac-activity-status\{[^}]*font-weight:600[^}]*\}/);
+ assert.doesNotMatch(activityCss,/\.ac-activity-status\{[^}]*(?:background|border-radius)\s*:/);
+ assert.match(activityCss,/\.ac-activity-status>i\{[^}]*width:6px;height:6px/);
+ assert.match(activityCss,/\.ac-history-row\.is-selected \.ac-activity-status\.is-running[^}]*color:#14594b/);
+ assert.match(activityCss,/\.ac-history-row\.is-selected \.ac-activity-status\.is-running>i[^}]*background:#127860/);
+ assert.doesNotMatch(activityCss,/\.ac-activity-status[^{]*\{[^}]*animation\s*:/);
+ assert.match(conversationCss,/\.ac-draft-status\{[^}]*font-weight:550/);
+ assert.doesNotMatch(conversationCss,/\.ac-draft-status\{[^}]*border-radius\s*:/);
+ assert.match(conversationCss,/\.ac-draft-status::before\{[^}]*width:6px;height:6px[^}]*border:1\.5px solid #526e60;border-radius:50%/);
+ assert.match(conversationCss,/\.ac-draft-status\{[^}]*animation:ac-draft-status-in/);
+ assert.match(conversationCss,/prefers-reduced-motion:reduce\).*\.ac-draft-status\{animation:none;transition:none\}/);
+});

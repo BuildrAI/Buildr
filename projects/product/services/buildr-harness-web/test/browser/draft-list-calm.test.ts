@@ -192,12 +192,44 @@ test('draft list ignores executing conversations and settles calmly on navigatio
   await page.waitForTimeout(100);
   assert.equal(await rowRunning.locator('.ac-activity-status').innerText(), '执行中');
   assert.equal(await rowRunning.locator('.ac-draft-status').count(), 0, '执行中编辑草稿时不显示有草稿');
+  const runningSelectedStyle = await rowRunning.locator('.ac-activity-status').evaluate(element => {
+    const status = getComputedStyle(element);
+    const dot = getComputedStyle(element.querySelector('i')!);
+    return {
+      color: status.color,
+      fontWeight: Number(status.fontWeight),
+      backgroundColor: status.backgroundColor,
+      animationName: status.animationName,
+      dotWidth: dot.width,
+      dotHeight: dot.height,
+      dotBackgroundColor: dot.backgroundColor,
+      dotAnimationName: dot.animationName,
+    };
+  });
+  assert.equal(runningSelectedStyle.backgroundColor, 'rgba(0, 0, 0, 0)', '执行中保持无底框极简样式');
+  assert.ok(runningSelectedStyle.fontWeight >= 600, '执行中字重应显著高于普通正文');
+  assert.equal(runningSelectedStyle.dotWidth, '6px', '执行中圆点应放大至 6px');
+  assert.equal(runningSelectedStyle.dotHeight, '6px');
+  assert.equal(runningSelectedStyle.animationName, 'none', '活动状态不得闪烁或做动画');
+  assert.equal(runningSelectedStyle.dotAnimationName, 'none', '活动状态圆点保持静态不闪烁');
 
   // 切换到其他对话时，只要还在执行中，依然只展示执行中且不出现有草稿。
   await rowNewer.click();
   await page.waitForTimeout(100);
   assert.equal(await rowRunning.locator('.ac-activity-status').innerText(), '执行中');
   assert.equal(await rowRunning.locator('.ac-draft-status').count(), 0, '离开后仍在执行中也不展示有草稿');
+  const runningIdleStyle = await rowRunning.locator('.ac-activity-status').evaluate(element => {
+    const status = getComputedStyle(element);
+    const dot = getComputedStyle(element.querySelector('i')!);
+    return {
+      color: status.color,
+      backgroundColor: status.backgroundColor,
+      dotBackgroundColor: dot.backgroundColor,
+    };
+  });
+  assert.equal(runningIdleStyle.backgroundColor, 'rgba(0, 0, 0, 0)');
+  assert.notEqual(runningSelectedStyle.color, runningIdleStyle.color, '选中行与未选中行的执行中文字色应有深浅区分');
+  assert.notEqual(runningSelectedStyle.dotBackgroundColor, runningIdleStyle.dotBackgroundColor, '选中行与未选中行的执行中圆点色应有深浅区分');
 
   // 放行执行结束后，convRunning 进入“待查看”（unseen）状态，此时仍不与“有草稿”共存。
   fs.writeFileSync(path.join(dataRoot, 'release-draft-exec'), '1');
@@ -223,6 +255,24 @@ test('draft list ignores executing conversations and settles calmly on navigatio
   await rowRunning.locator('.ac-draft-status').waitFor({ state: 'visible', timeout: 10000 });
   assert.equal(await rowRunning.locator('.ac-draft-status').innerText(), '有草稿');
   assert.equal(await rowRunning.locator('.ac-activity-status').count(), 0);
+  const draftIdleStyle = await rowRunning.locator('.ac-draft-status').evaluate(element => {
+    const status = getComputedStyle(element);
+    const ring = getComputedStyle(element, '::before');
+    return {
+      fontWeight: Number(status.fontWeight),
+      backgroundColor: status.backgroundColor,
+      ringWidth: ring.width,
+      ringHeight: ring.height,
+      ringBorderRadius: ring.borderRadius,
+      ringBorderWidth: parseFloat(ring.borderTopWidth),
+    };
+  });
+  assert.equal(draftIdleStyle.backgroundColor, 'rgba(0, 0, 0, 0)', '有草稿保持无底框极简样式');
+  assert.ok(draftIdleStyle.fontWeight >= 550, '有草稿字重应清晰醒目');
+  assert.equal(draftIdleStyle.ringWidth, '6px', '有草稿应显示 6px 空心圆环标识');
+  assert.equal(draftIdleStyle.ringHeight, '6px');
+  assert.equal(draftIdleStyle.ringBorderRadius, '50%');
+  assert.ok(draftIdleStyle.ringBorderWidth > 0, '有草稿空心圆环应有描边');
 
   // 清空执行后留下的草稿，并切回 convNewer，等全部列表空闲后再开始校验安静编辑与局部刷新。
   await rowRunning.click();
