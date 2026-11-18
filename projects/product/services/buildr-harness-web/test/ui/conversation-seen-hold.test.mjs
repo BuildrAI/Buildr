@@ -298,3 +298,72 @@ test('顶部执行中模型统计签名仅随真实执行态变化，不受纯�
   assert.notEqual(afterNewExec, afterSeen);
   assert.equal(executionStatsSignature(undefined, [], undefined, 4), null);
 });
+
+test('同消息版本已读快照绝不覆盖新增的待决策或状态待确认，且支持实时叠加 activityRows 与清除已取消待发送', () => {
+  // 1) 对话在 version=5 已看过最新消息（seenMap 记录 seenThrough=5, pendingDecisionCount=0, active=true），
+  // 随后智能体不发新消息而是边运行边提问：列表行与当前对话均必须保持 waiting（待决策），不能被旧 seenMap 覆盖为 running。
+  const seenAt5 = recordSeenActivity({}, 'w1', 'c-ask', {
+    version: 5,
+    seenThrough: 5,
+    updatedAt: '2026-11-18T03:00:00.000Z',
+    active: true,
+    pendingDecisionCount: 0,
+  });
+  const runningRowWithAsk = makeRow('c-ask', {
+    updatedAt: '2026-11-18T03:00:10.000Z',
+    run: { id: 'run-ask', participantId: 'p1', provider: 'codex', generation: 'g1', status: 'running', tools: [] },
+    activity: { version: 5, seenThrough: 5, updatedAt: '2026-11-18T03:00:10.000Z', active: true, pendingDecisionCount: 1 },
+  });
+  assert.equal(activityState(applyConfirmedSeenActivity(runningRowWithAsk, seenAt5, null)), 'waiting');
+
+  // 即使列表分页里还停留在 seenThrough=4 的旧行，叠加 activityRows 或 seenMap 也不能把 pendingDecisionCount=1 冲掉。
+  const staleAskRow = makeRow('c-ask', {
+    updatedAt: '2026-11-18T03:00:05.000Z',
+    run: { id: 'run-ask', participantId: 'p1', provider: 'codex', generation: 'g1', status: 'running', tools: [] },
+    activity: { version: 5, seenThrough: 4, updatedAt: '2026-11-18T03:00:05.000Z', active: true, pendingDecisionCount: 1 },
+  });
+  assert.equal(activityState(applyConfirmedSeenActivity(staleAskRow, seenAt5, null)), 'waiting');
+  const staleListBeforeAsk = makeRow('c-ask', {
+    updatedAt: '2026-11-18T02:59:59.000Z',
+    run: { id: 'run-ask', participantId: 'p1', provider: 'codex', generation: 'g1', status: 'running', tools: [] },
+    activity: { version: 5, seenThrough: 5, updatedAt: '2026-11-18T02:59:59.000Z', active: true, pendingDecisionCount: 0 },
+  });
+  assert.equal(activityState(applyConfirmedSeenActivity(staleListBeforeAsk, seenAt5, null, [runningRowWithAsk])), 'waiting');
+
+  // 2) 空闲已读后（active=false），同版本变为状态待确认（active=true）：不得被旧 seenMap 吞成 null。
+  const seenIdle = recordSeenActivity({}, 'w1', 'c-unknown', {
+    version: 5,
+    seenThrough: 5,
+    updatedAt: '2026-11-18T03:00:00.000Z',
+    active: false,
+    pendingDecisionCount: 0,
+  });
+  const becameUnknown = makeRow('c-unknown', {
+    updatedAt: '2026-11-18T03:00:12.000Z',
+    run: { id: 'run-u', participantId: 'p1', provider: 'codex', generation: 'g1', status: 'unknown', tools: [] },
+    activity: { version: 5, seenThrough: 5, updatedAt: '2026-11-18T03:00:12.000Z', active: true, pendingDecisionCount: 0 },
+  });
+  assert.equal(activityState(applyConfirmedSeenActivity(becameUnknown, seenIdle, null)), 'unknown');
+
+  // 3) 当前打开对话已取消或已投递 pendingSend 时，旧列表行上的发送等待/失败提示立即消除。
+  const cachedSendFailed = makeRow('c-send', {
+    updatedAt: '2026-11-18T03:00:00.000Z',
+    activity: {
+      version: 5,
+      seenThrough: 5,
+      updatedAt: '2026-11-18T03:00:00.000Z',
+      active: true,
+      pendingDecisionCount: 0,
+      pendingSend: { state: 'failed', reason: '发送失败', updatedAt: '2026-11-18T03:00:00.000Z' },
+    },
+  });
+  const liveCleared = {
+    ...cachedSendFailed,
+    updatedAt: '2026-11-18T03:00:20.000Z',
+    entries: [],
+    requests: [],
+    pendingSend: undefined,
+    activity: { version: 5, seenThrough: 5, updatedAt: '2026-11-18T03:00:20.000Z', active: false, pendingDecisionCount: 0 },
+  };
+  assert.equal(activityState(applyConfirmedSeenActivity(cachedSendFailed, {}, liveCleared)), null);
+});

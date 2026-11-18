@@ -35,7 +35,7 @@ export function ConversationHistoryGroup({workspaceId, name, query, hidden, agen
   const more = Boolean(page && (page.nextCursor || total > rows.length));
   const pinned=pinHeldConversationRow(rows,holdRef.current);
   if(pinned.displaced&&holdRef.current)holdRef.current={...holdRef.current,refreshedDuringHold:true};
-  const visible = pinned.rows.map(row=>applyConfirmedSeenActivity(row,seenActivities,conversation));
+  const visible = pinned.rows.map(row=>applyConfirmedSeenActivity(row,seenActivities,conversation,activityRows));
   if (page && !total && !error) return null;
   return <section {...section} data-history-workspace={workspaceId} aria-label={name} aria-busy={busy}>
     <h3><button {...headerProps} type="button" className="ac-history-group-toggle" aria-label={name} aria-expanded={expanded} aria-controls={contentId}

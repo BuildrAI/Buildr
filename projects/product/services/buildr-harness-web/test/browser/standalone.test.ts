@@ -259,22 +259,24 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await b.locator('.ac-collapsed-rail .ac-all-conversations').hover();
     const activityButton = b.locator(`.ac-activity-menu [data-activity-id="${conversationId}"]`);
     await activityButton.waitFor({state: 'visible', timeout: 10000});
+    assert.equal(await activityButton.locator('.ac-activity-status').innerText(), '待决策');
     const activityOrder = await activityButton.evaluate((node: HTMLElement) => {
-      const parent = node.parentElement!, copy = parent.querySelector('.ac-activity-row-copy')!, id = node.querySelector('.ac-activity-id')!, meta = node.querySelector('.ac-activity-meta')!;
-      const c = copy.getBoundingClientRect(), i = id.getBoundingClientRect(), m = meta.getBoundingClientRect();
-      return {metaText: meta.textContent?.trim() || '', metaRight: m.right, idLeft: i.left, idRight: i.right, copyLeft: c.left, copyMid: c.top + c.height / 2, idMid: i.top + i.height / 2};
+      const parent = node.parentElement!, copy = parent.querySelector('.ac-activity-row-copy')!, idCount = node.querySelectorAll('.ac-activity-id').length, meta = node.querySelector('.ac-activity-meta')!;
+      const c = copy.getBoundingClientRect(), m = meta.getBoundingClientRect();
+      return {idCount, copyTitle: copy.getAttribute('title') || '', metaText: meta.textContent?.trim() || '', metaRight: m.right, copyLeft: c.left, copyMid: c.top + c.height / 2, metaMid: m.top + m.height / 2};
     });
-    assert.ok(activityOrder.metaText.length > 0 && activityOrder.metaRight <= activityOrder.idLeft && activityOrder.idRight <= activityOrder.copyLeft + 1 && Math.abs(activityOrder.copyMid - activityOrder.idMid) < 4, JSON.stringify(activityOrder));
+    assert.ok(activityOrder.idCount === 0 && activityOrder.copyTitle === `复制对话 ID（${conversationId.slice(0, 8)}）` && activityOrder.metaText.length > 0 && activityOrder.metaRight <= activityOrder.copyLeft + 1 && Math.abs(activityOrder.copyMid - activityOrder.metaMid) < 6, JSON.stringify(activityOrder));
     if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await b.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'activity-popover-order.png')});
     await b.locator('.ac-collapsed-rail .ac-all-conversations').click();
     const historyButton = b.locator(`.ac-history-row-main[data-conversation-id="${conversationId}"]`);
     await historyButton.waitFor({state: 'visible', timeout: 10000});
+    assert.equal(await historyButton.locator('.ac-activity-status').innerText(), '待决策');
     const historyOrder = await historyButton.evaluate((node: HTMLElement) => {
-      const parent = node.parentElement!, copy = parent.querySelector('.ac-history-row-copy')!, id = node.querySelector('.ac-history-id')!, meta = node.querySelector('.ac-history-meta')!;
-      const c = copy.getBoundingClientRect(), i = id.getBoundingClientRect(), m = meta.getBoundingClientRect();
-      return {metaText: meta.textContent?.trim() || '', metaRight: m.right, idLeft: i.left, idRight: i.right, copyLeft: c.left, copyMid: c.top + c.height / 2, idMid: i.top + i.height / 2};
+      const parent = node.parentElement!, copy = parent.querySelector('.ac-history-row-copy')!, idCount = node.querySelectorAll('.ac-history-id').length, meta = node.querySelector('.ac-history-meta')!;
+      const c = copy.getBoundingClientRect(), m = meta.getBoundingClientRect();
+      return {idCount, copyTitle: copy.getAttribute('title') || '', metaText: meta.textContent?.trim() || '', metaRight: m.right, copyLeft: c.left, copyMid: c.top + c.height / 2, metaMid: m.top + m.height / 2};
     });
-    assert.ok(historyOrder.metaText.length > 0 && historyOrder.metaRight <= historyOrder.idLeft && historyOrder.idRight <= historyOrder.copyLeft + 1 && Math.abs(historyOrder.copyMid - historyOrder.idMid) < 4, JSON.stringify(historyOrder));
+    assert.ok(historyOrder.idCount === 0 && historyOrder.copyTitle === `复制对话 ID（${conversationId.slice(0, 8)}）` && historyOrder.metaText.length > 0 && historyOrder.metaRight <= historyOrder.copyLeft + 1 && Math.abs(historyOrder.copyMid - historyOrder.metaMid) < 6, JSON.stringify(historyOrder));
     if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await b.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'history-list-order.png')});
     await historyButton.click();
     await b.getByRole('radio', {name: 'Accepted', exact: true}).waitFor({state: 'visible', timeout: 10000});

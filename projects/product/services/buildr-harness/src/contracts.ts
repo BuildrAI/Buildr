@@ -847,4 +847,4 @@ export interface PushbackSettingsView {
 export interface PushbackSettingsInput { expectedRevision: string; enabled: boolean; url: string; secret?: string; rateLimitHour?: number; rateLimitMinute?: number; progressEnabled?: boolean; stalledEnabled?: boolean }
 export interface PushbackEventPage { events: PushbackEvent[]; nextCursor: string | null; hasMore: boolean }
 export interface ConversationSummaryView { id: string; title: string; runStatus: RunStatus | null; updatedAt: string; active: boolean; pendingDecisionCount: number }
-export interface ConversationActivityCounts { pendingSend?: number; active: number; running: number; waiting: number; unseen: number; unknown: number; attention: number }
+export interface ConversationActivityCounts { pendingSend?: number; sendFailed?: number; active: number; running: number; waiting: number; unseen: number; unknown: number; attention: number }

@@ -376,9 +376,9 @@ await step('全局对话保留草稿与执行位置，左右停靠到一级导�
       const reminderReadsBefore=fixture.reminderReads;
       await railActivity.hover();await activityMenu().locator('button[data-activity-id="attention-other"]').waitFor();
       assert.equal(fixture.reminderReads,reminderReadsBefore,'完整活动快照打开提醒不再额外读取两个分类列表');
-      assert.equal(await activityMenu().locator('button[data-activity-id="attention-other"] .ac-activity-id').innerText(),'attention-other','提醒只显示标识本身，不重复 ID 字样');
-      const activityCopyOrder=await activityMenu().locator('button[data-activity-id="attention-other"]').evaluate((node:HTMLElement)=>{const parent=node.parentElement!,copy=parent.querySelector('.ac-activity-row-copy')!,id=node.querySelector('.ac-activity-id')!;const a=copy.getBoundingClientRect(),b=id.getBoundingClientRect();return{copyLeft:a.left,copyRight:a.right,idLeft:b.left,copyMid:a.top+a.height/2,idMid:b.top+b.height/2};});
-      assert.ok(activityCopyOrder.copyRight<=activityCopyOrder.idLeft&&Math.abs(activityCopyOrder.copyMid-activityCopyOrder.idMid)<4,JSON.stringify(activityCopyOrder));
+      assert.equal(await activityMenu().locator('button[data-activity-id="attention-other"] .ac-activity-id').count(),0,'提醒只保留复制按钮，不常驻显示 ID 文本');
+      const activityCopyOrder=await activityMenu().locator('button[data-activity-id="attention-other"]').evaluate((node:HTMLElement)=>{const parent=node.parentElement!,copy=parent.querySelector('.ac-activity-row-copy')!,meta=node.querySelector('.ac-activity-meta')!;const a=copy.getBoundingClientRect(),b=meta.getBoundingClientRect();return{copyTitle:copy.getAttribute('title')||'',copyLeft:a.left,metaRight:b.right,copyMid:a.top+a.height/2,metaMid:b.top+b.height/2};});
+      assert.ok(activityCopyOrder.copyTitle==='复制对话 ID（attentio）'&&activityCopyOrder.metaRight<=activityCopyOrder.copyLeft+1&&Math.abs(activityCopyOrder.copyMid-activityCopyOrder.metaMid)<6,JSON.stringify(activityCopyOrder));
       assert.equal(await activityMenu().locator('.ac-activity-filters,.ac-stats-groups').count(),0,'浮窗移除分类及重复维度统计');
       await railActivity.focus();const groups=activityMenu().locator('.ac-reminder-section');await groups.waitFor();
       await page.waitForFunction(()=>[...document.querySelectorAll<HTMLElement>('.ac-activity-menu .ac-reminder-section')].filter(node=>node.getClientRects().length).length===1);

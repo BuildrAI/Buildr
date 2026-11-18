@@ -17,41 +17,52 @@ export type WorkspaceSeenHoldState = {
 
 const conversationKey = (workspaceId: string, conversationId: string) => `${workspaceId}:${conversationId}`;
 
-function mergeActivity(base?: SeenActivity, incoming?: SeenActivity): SeenActivity | undefined {
-  if (!incoming) return base;
-  if (!base) return incoming;
-  if (incoming.version > base.version) {
-    return incoming.pendingSend === undefined && base.pendingSend !== undefined
-      ? { ...incoming, pendingSend: base.pendingSend }
-      : incoming;
-  }
-  if (incoming.version < base.version) return base;
-  const seenThrough = Math.max(base.seenThrough, incoming.seenThrough);
-  const active = incoming.seenThrough > base.seenThrough
-    ? incoming.active
-    : base.seenThrough > incoming.seenThrough
-      ? base.active
-      : base.active && incoming.active;
-  const pendingSend = incoming.pendingSend ?? base.pendingSend;
-  const pendingDecisionCount = incoming.pendingDecisionCount ?? base.pendingDecisionCount;
+function mergeLiveActivity(base?: SeenActivity, live?: SeenActivity): SeenActivity | undefined {
+  if (!live) return base;
+  if (!base) return live;
+  if (live.version > base.version) return live;
+  if (live.version < base.version) return base;
+  const seenThrough = Math.max(base.seenThrough, live.seenThrough);
+  const pendingSend = live.pendingSend;
+  const pendingDecisionCount = live.pendingDecisionCount ?? base.pendingDecisionCount;
+  const active = base.seenThrough > live.seenThrough
+    ? Boolean(base.active || (pendingDecisionCount ?? 0) > 0 || pendingSend)
+    : live.active;
   if (
     seenThrough === base.seenThrough
     && active === base.active
     && pendingSend === base.pendingSend
     && pendingDecisionCount === base.pendingDecisionCount
-    && incoming.updatedAt === base.updatedAt
-    && incoming.finalReplyAt === base.finalReplyAt
-    && incoming.userInputAt === base.userInputAt
+    && live.updatedAt === base.updatedAt
+    && live.finalReplyAt === base.finalReplyAt
+    && live.userInputAt === base.userInputAt
   ) {
     return base;
   }
-  return {
+  const merged: SeenActivity = {
     ...base,
-    ...incoming,
+    ...live,
     seenThrough,
     active,
     ...(pendingDecisionCount !== undefined ? { pendingDecisionCount } : {}),
-    ...(pendingSend !== undefined ? { pendingSend } : {}),
+  };
+  if (pendingSend === undefined) delete merged.pendingSend;
+  return merged;
+}
+
+/** Only advance seenThrough from a /seen receipt; never let an earlier receipt overwrite newer decisions or active state. */
+function applySeenSnapshot(base?: SeenActivity, confirmed?: SeenActivity): SeenActivity | undefined {
+  if (!confirmed) return base;
+  if (!base) return confirmed;
+  if (confirmed.version < base.version) return base;
+  if (confirmed.version > base.version) return confirmed;
+  if (confirmed.seenThrough <= base.seenThrough) return base;
+  const active = Boolean(confirmed.active || (base.pendingDecisionCount ?? 0) > 0 || base.pendingSend);
+  if (confirmed.seenThrough === base.seenThrough && active === base.active) return base;
+  return {
+    ...base,
+    seenThrough: confirmed.seenThrough,
+    active,
   };
 }
 
@@ -78,44 +89,74 @@ export function recordSeenActivity(
   return { ...current, [key]: activity };
 }
 
-/** Overlay server-confirmed seen state and live active-conversation state onto cached list rows. */
+function isNewerSummary(candidate: ConversationSummary, baseline: ConversationSummary): boolean {
+  if (!baseline.activity) return true;
+  if (!candidate.activity) return false;
+  if (candidate.activity.version !== baseline.activity.version) {
+    return candidate.activity.version > baseline.activity.version;
+  }
+  if (!baseline.updatedAt || !candidate.updatedAt) return true;
+  return candidate.updatedAt >= baseline.updatedAt;
+}
+
+/** Overlay live activity summaries, active conversation facts, and server-confirmed seen state onto list or reminder rows. */
 export function applyConfirmedSeenActivity(
   row: ConversationSummary,
   seenActivities?: SeenActivityMap,
   activeConversation?: ConversationView | null,
+  activityRows?: readonly ConversationSummary[],
 ): ConversationSummary {
   const key = conversationKey(row.workspaceId, row.id);
+  const activityRow = activityRows?.find(item => item.workspaceId === row.workspaceId && item.id === row.id);
+  let baseRow = row;
+  if (activityRow && activityRow !== row && isNewerSummary(activityRow, row)) {
+    const nextActivity = mergeLiveActivity(row.activity, activityRow.activity);
+    baseRow = {
+      ...row,
+      title: activityRow.title,
+      hidden: activityRow.hidden,
+      run: activityRow.run,
+      retainedRuns: activityRow.retainedRuns,
+      activity: nextActivity,
+    };
+  }
   const live = activeConversation?.workspaceId === row.workspaceId && activeConversation.id === row.id
     ? activeConversation
     : null;
   const confirmed = seenActivities?.[key];
-  const mergedLiveActivity = live ? mergeActivity(row.activity, live.activity) : row.activity;
-  const nextActivity = mergeActivity(mergedLiveActivity, confirmed);
   const canApplyLiveFields = Boolean(
     live && (
-      !row.activity
-      || !live.activity
-      || live.activity.version >= row.activity.version
+      isNewerSummary(live, baseRow)
       || isExecuting(live)
       || Boolean(sendActivity(live))
+      || (Boolean(sendActivity(baseRow)) && live.pendingSend === undefined)
     ),
   );
-  if (!canApplyLiveFields) {
-    return nextActivity === row.activity ? row : { ...row, activity: nextActivity };
+  let mergedLiveActivity = canApplyLiveFields && live
+    ? mergeLiveActivity(baseRow.activity, live.activity)
+    : baseRow.activity;
+  if (canApplyLiveFields && live!.pendingSend === undefined && mergedLiveActivity?.pendingSend !== undefined) {
+    const cleared = { ...mergedLiveActivity };
+    delete cleared.pendingSend;
+    mergedLiveActivity = cleared;
   }
-  const nextPendingSend = live!.pendingSend ?? row.pendingSend;
+  const nextActivity = applySeenSnapshot(mergedLiveActivity, confirmed);
+  if (!canApplyLiveFields) {
+    return nextActivity === baseRow.activity ? baseRow : { ...baseRow, activity: nextActivity };
+  }
+  const nextPendingSend = live!.pendingSend;
   if (
-    nextActivity === row.activity
-    && live!.title === row.title
-    && live!.run === row.run
-    && live!.retainedRuns === row.retainedRuns
-    && live!.requests === row.requests
-    && nextPendingSend === row.pendingSend
+    nextActivity === baseRow.activity
+    && live!.title === baseRow.title
+    && live!.run === baseRow.run
+    && live!.retainedRuns === baseRow.retainedRuns
+    && live!.requests === baseRow.requests
+    && nextPendingSend === baseRow.pendingSend
   ) {
-    return row;
+    return baseRow;
   }
   return {
-    ...row,
+    ...baseRow,
     title: live!.title,
     run: live!.run,
     retainedRuns: live!.retainedRuns,
@@ -146,6 +187,8 @@ export function workspaceOtherActivitySignature(
       row.activity?.userInputAt,
       row.activity?.active,
       row.activity?.pendingDecisionCount,
+      row.activity?.pendingSend?.state,
+      row.activity?.pendingSend?.reason,
       Boolean(row.activity && row.activity.version > row.activity.seenThrough),
     ]);
   return JSON.stringify(entries);

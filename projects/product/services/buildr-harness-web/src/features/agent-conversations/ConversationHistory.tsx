@@ -9,7 +9,7 @@ import { Alert, Button, Empty, Input, Select } from 'antd';
 import { ArrowLeftOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext.tsx';
 import { ConversationActivityStatus } from './ConversationActivityStatus.tsx';
-import { activityState, sendActivity, conversationMetadata } from './conversation-activity.ts';
+import { activityState, sendActivity, conversationMetadata, copyConversationIdTitle } from './conversation-activity.ts';
 import type { ExecutionFilter } from './ConversationExecutionStats.tsx';
 import { CopyButton } from '../../components/CopyButton.tsx';
 import { DEFAULT_HISTORY_GROUP, historyGroupOrder, moveHistoryGroup, writeHistoryGroupPreference } from './conversation-history-groups.ts';
@@ -50,12 +50,12 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   const {activeStatusIds,pendingSendIds}=useMemo(()=>{
     const activeStatus=new Set<string>(),pendingSend=new Set<string>();
     for(const row of context.activityRows){
-      const effective=applyConfirmedSeenActivity(row,context.seenActivities,context.conversation);
+      const effective=applyConfirmedSeenActivity(row,context.seenActivities,context.conversation,context.activityRows);
       if(activityState(effective)!==null)activeStatus.add(row.id);
       if(sendActivity(effective))pendingSend.add(row.id);
     }
     if(context.conversation){
-      const effective=applyConfirmedSeenActivity(context.conversation,context.seenActivities,context.conversation);
+      const effective=applyConfirmedSeenActivity(context.conversation,context.seenActivities,context.conversation,context.activityRows);
       if(activityState(effective)!==null)activeStatus.add(context.conversation.id);
       if(sendActivity(effective))pendingSend.add(context.conversation.id);
     }
@@ -104,9 +104,9 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
         <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/><DraftStatusBadge visible={shouldShowConversationDraft(row,settledDraftIds)} immediateHide={activityState(row)!==null}/></span>
         {sendActivity(row)?.reason&&<span className="ac-send-reason">{sendActivity(row)?.reason}</span>}
         {row.searchSnippet&&<span className="ac-history-row-snippet" title={row.searchSnippet}>{row.searchSnippet}</span>}
-        <small><span className="ac-history-meta" title={meta||undefined}>{meta}</span><span className="ac-history-id" title={row.id}>{row.id}</span></small>
+        {meta&&<small><span className="ac-history-meta" title={meta}>{meta}</span></small>}
       </button>
-      <CopyButton type="text" className="ac-history-row-copy" text={row.id} ariaLabel="复制对话 ID" failureMessage="复制失败，请手动选择对话 ID 复制。"/>
+      <CopyButton type="text" className="ac-history-row-copy" text={row.id} ariaLabel="复制对话 ID" title={copyConversationIdTitle(row.id)} failureMessage="复制失败，请手动选择对话 ID 复制。"/>
     </div>;
   };
   const order=historyGroupOrder([...workspaces.map(item=>item.id),DEFAULT_HISTORY_GROUP],groupOrder);

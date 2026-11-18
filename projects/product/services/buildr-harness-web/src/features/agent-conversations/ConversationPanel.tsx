@@ -23,6 +23,7 @@ import { MarkdownHost } from '../../components/MarkdownHost.tsx';
 import type { MarkdownRenderOptions } from '../../markdown.ts';
 import type { ApiError } from '../../api/index.ts';
 import { CopyButton } from '../../components/CopyButton.tsx';
+import { copyConversationIdTitle } from './conversation-activity.ts';
 import { useAgentConversations } from './AgentConversationsContext.tsx';
 import {useEarlierConversationEntries} from './useEarlierConversationEntries.ts';
 import {conversationImageSource,conversationImageLinkSource} from './conversation-markdown-images.ts';
@@ -864,7 +865,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
         {!embedded&&!context.open&&<Button type="text" icon={<UnorderedListOutlined/>} aria-label="查看对话列表" title="对话列表" onClick={()=>context.openHistory(null,{preserveVisibility:true})}/>}
         <div className="ac-thread-heading">
         {chat?<button type="button" className="ac-thread-title" aria-label="重命名对话" title={chat.title} onClick={()=>{setTitle(chat.title);setRename(true);}}>{chat.title}</button>:<strong className="ac-thread-title ac-thread-title-static">{context.loading?'正在读取对话…':context.scope?'对话':'新对话'}</strong>}
-        {chat&&<div className="ac-thread-identity"><CopyButton type="text" text={chat.id} ariaLabel="复制对话 ID" failureMessage="复制失败，请手动选择对话 ID 复制。"/><span title={chat.id}>{chat.id}</span></div>}
+        {chat&&<div className="ac-thread-identity"><CopyButton type="text" text={chat.id} ariaLabel="复制对话 ID" title={copyConversationIdTitle(chat.id)} failureMessage="复制失败，请手动选择对话 ID 复制。"/></div>}
         </div>
         <div className="ac-thread-actions">
           {accessory}
