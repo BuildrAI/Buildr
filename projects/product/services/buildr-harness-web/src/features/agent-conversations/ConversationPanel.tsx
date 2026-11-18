@@ -99,7 +99,8 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     window.addEventListener('resize',measure);
     return()=>{observer?.disconnect();window.removeEventListener('resize',measure);};
   },[embedded,panelId,context.full,context.open,context.view]);
-  const focusSettings=development&&context.full&&!embedded;
+  const ownsSettings=!embedded&&(standalone||development);
+  const focusSettings=ownsSettings&&context.full;
   const showFocusSettings=focusSettings&&context.settings;
   const focusSplit=Boolean(context.full&&!embedded&&canSplitFocusHistory(panelWidth,viewportWidth));
   const historyMaxWidth=focusHistoryMaxWidth(panelWidth);
@@ -865,7 +866,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
         onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();commitHistoryWidth(event.key==='Home'?FOCUS_HISTORY_MIN_WIDTH:event.key==='End'?historyMaxWidth:effectiveHistoryWidth+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?32:16));}}
         onDoubleClick={()=>commitHistoryWidth(FOCUS_HISTORY_DEFAULT_WIDTH)}/>
     </>}
-    {development&&!embedded&&<AgentConnectionSettings inMain={focusSettings}/>}
+    {ownsSettings&&<AgentConnectionSettings inMain={focusSettings}/>}
     <div className="ac-conversation-view" hidden={showFocusSettings||context.view==='history'&&!focusSplit}>
       <header className="ac-thread-header" data-run-status={run&&['running','completed'].includes(run.status)?run.status:undefined}>
         {!embedded&&!context.open&&<Button type="text" icon={<UnorderedListOutlined/>} aria-label="查看对话列表" title="对话列表" onClick={()=>context.openHistory(null,{preserveVisibility:true})}/>}
