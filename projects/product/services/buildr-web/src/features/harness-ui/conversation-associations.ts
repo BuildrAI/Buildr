@@ -3,6 +3,13 @@ import type {ConversationTaskLink,ConversationView,ConversationSummary} from './
 export type AssociationItem={workspaceId:string;id:string;title:string;error?:string};
 export type AssociationResult={items:AssociationItem[];errors:string[]};
 export const associationKey=(item:{workspaceId:string;id:string})=>JSON.stringify([item.workspaceId,item.id]);
+type AssociationRevision = Pick<ConversationView, 'id' | 'workspaceId' | 'revision'>;
+/** A task-page response may arrive after a fresher Harness observation. */
+export function applyAssociationResult<T extends AssociationRevision>(current: T | null, result: T, observedRevision: string): T | null {
+  if (!current || current.id !== result.id || current.workspaceId !== result.workspaceId) return current;
+  if (current.revision !== observedRevision || current.revision === result.revision) return current;
+  return result;
+}
 export const taskLinkKey=(link:ConversationTaskLink)=>associationKey({workspaceId:link.workspaceId,id:link.taskId});
 export function conversationTaskLinks(view:Pick<ConversationView,'workspaceId'|'taskId'|'taskIds'|'taskLinks'>):ConversationTaskLink[]{
   return view.taskLinks??(view.taskIds??(view.taskId?[view.taskId]:[])).map(taskId=>({workspaceId:view.workspaceId,taskId}));
