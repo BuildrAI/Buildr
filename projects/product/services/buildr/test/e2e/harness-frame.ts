@@ -17,6 +17,8 @@ const workTwo=path.join(root,'workspace-two');fixture.initializeWorkspace({targe
 // A real isolated Git checkout proves file-source resolution; no user checkout is touched.
 execFileSync('git',['init','--initial-branch=dev'],{cwd:work,stdio:'pipe'});
 fs.writeFileSync(path.join(work,'surface-proof.md'),'# same-page file proof\n');
+const proofImage=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=','base64');
+fs.writeFileSync(path.join(work,'surface-proof.png'),proofImage);
 execFileSync('git',['add','--','surface-proof.md'],{cwd:work});
 execFileSync('git',['-c','user.name=Harness fixture','-c','user.email=fixture@example.invalid','commit','-m','fixture'],{cwd:work,stdio:'pipe'});
 fixture.createCatalogRepository(work,{revision:fixture.assetCatalog(work).revision,code:'surface-code',name:'同页文件验收',path:'.'});
@@ -196,7 +198,7 @@ try{
   if(route.request().method()!=='GET')return route.continue();
   const response=await route.fetch();
   const body=await response.json();
-  body.entries=[...(body.entries??[]),{id:'mermaid-preview-entry',kind:'message',role:'assistant',text:'流程图：\n\n```mermaid\nsequenceDiagram\nparticipant U as 鲜虾小程序终端\nparticipant W as 微信支付通道\nparticipant S as 扫呗聚合收银台\nparticipant B as 鲜虾后端服务系统\nparticipant C as 财务清分中心\nU->>W: 发起聚合下单与支付授权\nW->>S: 推送支付交易结果通知\nS->>B: 向 notify_url 异步通知支付成功\nB->>B: 验签核对金额并落库收款记录\nB-->>S: 返回规定成功应答\nU->>B: 主动轮询查单并刷新履约状态\nB->>C: 写入应收结算待确认账单\n```\n',createdAt:new Date().toISOString()}];body.entries.push({id:'surface-links',kind:'message',role:'assistant',text:'[验收文件](surface-proof.md)\n\n[不确定文件](../outside.md)\n\n[工程任务](@task/frame-task)',createdAt:new Date().toISOString()});body.entries.push({id:'reading-retention-entry',kind:'message',role:'assistant',text:Array.from({length:80},(_,index)=>'独立验收段落 '+index).join('\n\n'),createdAt:new Date().toISOString()});
+  body.entries=[...(body.entries??[]),{id:'mermaid-preview-entry',kind:'message',role:'assistant',text:'流程图：\n\n```mermaid\nsequenceDiagram\nparticipant U as 鲜虾小程序终端\nparticipant W as 微信支付通道\nparticipant S as 扫呗聚合收银台\nparticipant B as 鲜虾后端服务系统\nparticipant C as 财务清分中心\nU->>W: 发起聚合下单与支付授权\nW->>S: 推送支付交易结果通知\nS->>B: 向 notify_url 异步通知支付成功\nB->>B: 验签核对金额并落库收款记录\nB-->>S: 返回规定成功应答\nU->>B: 主动轮询查单并刷新履约状态\nB->>C: 写入应收结算待确认账单\n```\n',createdAt:new Date().toISOString()}];body.entries.push({id:'surface-links',kind:'message',role:'assistant',text:'![Development 验收图片](surface-proof.png)\n\n[验收文件](surface-proof.md)\n\n[不确定文件](../outside.md)\n\n[工程任务](@task/frame-task)',createdAt:new Date().toISOString()});body.entries.push({id:'reading-retention-entry',kind:'message',role:'assistant',text:Array.from({length:80},(_,index)=>'独立验收段落 '+index).join('\n\n'),createdAt:new Date().toISOString()});
   await route.fulfill({response,json:body});
  });
  await openConversation(conversation.id);
@@ -215,6 +217,12 @@ try{
  await diagramDialog.getByRole('button',{name:'复制源码',exact:true}).waitFor({state:'visible'});
  await page.keyboard.press('Escape');
  await diagramDialog.waitFor({state:'hidden'});
+ await page.waitForFunction(()=>[...document.images].some(img=>img.alt==='Development 验收图片'&&img.naturalWidth===1));
+ await page.getByRole('button',{name:'查看大图：Development 验收图片',exact:true}).click();
+ const imageDialog=page.getByRole('dialog',{name:'图片预览',exact:true});
+ await imageDialog.waitFor();
+ assert.equal(await imageDialog.locator('img').getAttribute('src'),`data:image/png;base64,${proofImage.toString('base64')}`);
+ await imageDialog.getByRole('button',{name:'关闭预览',exact:true}).click();
  await page.locator('#agent-conversation-panel').getByRole('link',{name:'不确定文件',exact:true}).click();
  await page.getByText('不能确认文件的准确工程来源。',{exact:true}).waitFor();
  const actualFileRead=page.waitForResponse(response=>response.url().includes('/code/file?')&&new URL(response.url()).searchParams.get('filePath')==='surface-proof.md'&&response.status()===200);

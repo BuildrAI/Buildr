@@ -35,7 +35,8 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
     const host = ref.current;
     if (!host) return;
     const currentOptions = optionsRef.current || {};
-    const view = renderMarkdown(markdown, currentOptions);
+    const images = new AbortController();
+    const view = renderMarkdown(markdown, {...currentOptions, imageSignal: images.signal});
     if (className) {
       for (const token of className.split(/\s+/).filter(Boolean)) view.classList.add(token);
     }
@@ -62,8 +63,9 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
     });
     host.replaceChildren(view);
     if (fragment) requestAnimationFrame(() => scrollMarkdownFragment(view, fragment));
-    return renderMarkdownDiagrams(view, hostActionsRef.current.diagramRendererPath);
-  }, [markdown, className, fragment, renderVersion, options?.taskLinkPathname, JSON.stringify(options?.headingCounts)]);
+    const stopDiagrams = renderMarkdownDiagrams(view, hostActionsRef.current.diagramRendererPath);
+    return () => { images.abort(); stopDiagrams(); };
+  }, [markdown, className, fragment, renderVersion, options?.taskLinkPathname, options?.imageResolver, JSON.stringify(options?.headingCounts)]);
 
   return (
     <>

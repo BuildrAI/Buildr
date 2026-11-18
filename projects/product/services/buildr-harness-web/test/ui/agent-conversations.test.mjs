@@ -676,22 +676,22 @@ test('对话 Markdown 图片按可访问来源解析，拒绝脚本与不安全�
   assert.deepEqual(conversationImageSource('/work','data:image/png;base64,AAAA'),{href:'data:image/png;base64,AAAA'});
   assert.deepEqual(conversationImageSource('/work','blob:https://example.org/id'),{href:'blob:https://example.org/id'});
   const absolute=conversationImageSource('/work','/tmp/图 片.PNG?size=1#preview');
-  assert.equal(absolute.href,'/api/v1/conversation-image?path=%2Ftmp%2F%E5%9B%BE%20%E7%89%87.PNG');
+  assert.equal(absolute.path,'/tmp/图 片.PNG');
   const relative=conversationImageSource('/work','images/a.png');
-  assert.equal(relative.href,'/api/v1/conversation-image?path=%2Fwork%2Fimages%2Fa.png');
+  assert.equal(relative.path,'/work/images/a.png');
   assert.equal(conversationImageSource(undefined,'images/a.png'),null);
   for(const href of ['javascript:alert(1)','file:///tmp/a.png','//example.org/a.png','a%zz.png','a\0b.png']) assert.equal(conversationImageSource('/work',href),null,href);
 });
 
 test('本机截图链接复用认证图片来源，普通文件和不支持类型仍交给文件来源定位',()=>{
   for(const value of ['/tmp/验收 截图.PNG','images/photo.webp','<images/a.jpg>','images/a%2Egif?download=1#preview','C:\\temp\\shot.bmp']){
-    assert.deepEqual(conversationImageLinkSource('/work',value),conversationImageSource('/work',value),value);
+    assert.deepEqual(conversationImageLinkSource('/work',value),conversationImageSource('/work',value)?.path,value);
   }
   for(const value of ['/tmp/file.md','/tmp/page.svg','/tmp/shot.png:12','images/a.png%00','javascript:alert(1)','file:///tmp/a.png','//remote/a.png','https://example.org/a.png','data:image/png;base64,AAAA','blob:https://example.org/id','a%zz.png']){
     assert.equal(conversationImageLinkSource('/work',value),null,value);
   }
   assert.equal(conversationImageLinkSource(undefined,'relative.png'),null);
-  assert.deepEqual(conversationImageLinkSource(undefined,'/tmp/shot.png'),conversationImageSource(undefined,'/tmp/shot.png'));
+  assert.deepEqual(conversationImageLinkSource(undefined,'/tmp/shot.png'),'/tmp/shot.png');
 });
 
 

@@ -17,7 +17,7 @@ test('clicking an embedded SVG shows the image without its encoded reference', {
       function Fixture() {
         const [image, setImage] = useState(null);
         return React.createElement(React.Fragment, null,
-          React.createElement(MarkdownHost, {markdown: '![内嵌 SVG](' + src + ') ![普通图片](https://example.test/preview.png)', options: {imageResolver: href => conversationImageSource(undefined, href), onImageClick: setImage}}),
+          React.createElement(MarkdownHost, {markdown: '![内嵌 SVG](' + src + ') ![普通图片](https://example.test/preview.png)', options: {imageResolver: href => { const source = conversationImageSource(undefined, href); return source?.href ? {href:source.href} : null; }, onImageClick: setImage}}),
           image && React.createElement(ConversationImagePreview, {href: image.src, reference: image.reference, onClose: () => setImage(null)}));
       }
       createRoot(document.getElementById('root')).render(React.createElement(Fixture));
@@ -58,7 +58,7 @@ test('clicking an embedded SVG shows the image without its encoded reference', {
     assert.ok(Math.abs(imageBox.x + imageBox.width / 2 - 360) < 3);
     assert.ok(imageBox.height <= 320);
     await dialog.getByRole('button', {name: '实际大小', exact: true}).click();
-    assert.equal((await image.boundingBox())!.width, 1600);
+    await page.waitForFunction(() => document.querySelector<HTMLImageElement>('.ac-linked-image-preview[data-actual-size="true"] img')?.getBoundingClientRect().width === 1600);
     assert.ok(await dialog.locator('.ac-linked-image-preview').evaluate(el => el.scrollWidth > el.clientWidth && el.scrollHeight > el.clientHeight));
     await dialog.getByRole('button', {name: '适应窗口', exact: true}).click();
     assert.doesNotMatch(await dialog.innerText(), /data:image\/svg\+xml/);
