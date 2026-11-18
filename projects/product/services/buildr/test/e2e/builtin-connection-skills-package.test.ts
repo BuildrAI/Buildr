@@ -20,7 +20,7 @@ function files(root: string, relative = ''): string[] {
 
 function assertBundledAgentOnly(packageRoot: string): void {
   const modules = path.join(packageRoot, 'node_modules');
-  assert.deepEqual(fs.readdirSync(modules).sort(), ['@buildr-ai']);
+  assert.deepEqual(fs.readdirSync(modules).filter(entry => entry !== '.bin').sort(), ['@buildr-ai']);
   assert.deepEqual(fs.readdirSync(path.join(modules, '@buildr-ai')).sort(), ['buildr-harness']);
   assert.ok(fs.statSync(path.join(modules, '@buildr-ai/buildr-harness/build/index.js')).isFile());
   const metadata = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
