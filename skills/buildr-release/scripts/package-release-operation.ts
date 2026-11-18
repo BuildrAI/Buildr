@@ -425,7 +425,9 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
       }
       if (run.conclusion !== 'success') {
         if (pointer.retryRequested && Number(run.run_attempt) < 2) return { status: 'publication-retry-unconfirmed', package: name, run };
-        const failure = classifyCandidateFailure(gh(['run', 'view', String(run.id), '--repo', 'BuildrAI/Buildr', '--log-failed']));
+        const log = gh(['run', 'view', String(run.id), '--repo', 'BuildrAI/Buildr', '--log-failed']);
+        const readbackPending = /"status":"publication-pending"[^\r\n]*"code":"registry-propagation-pending"/u.test(log);
+        const failure = readbackPending ? 'transient' : classifyCandidateFailure(log);
         if (failure !== 'transient' || Number(run.run_attempt) >= 2) return { status: 'diagnosis-required', package: name, run, nextActions: ['保留已成立公开事实，诊断原主包发布步骤。'] };
         pointer.retryRequested = true; save();
         const effect = { type: 'publication-failed-jobs-rerun', package: name, runId: run.id, previousAttempt: run.run_attempt, state: 'unknown' };

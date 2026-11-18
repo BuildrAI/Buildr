@@ -19,8 +19,10 @@ for (const [signal, exitCode] of [['SIGINT', 130], ['SIGTERM', 143]] as const) t
 });
 
 test('source flags keep plan-only output, force and portable export explicit', () => {
-  assert.deepEqual(parseSourceArgs([]), { help: false, json: false, force: false, scope: 'all', base: null, output: null, round: null, invalidate: [], selected: [] });
-  assert.deepEqual(parseSourceArgs(['--json', '--force', '--output', '/tmp/source.json']), { help: false, json: true, force: true, scope: 'all', base: null, output: '/tmp/source.json', round: null, invalidate: [], selected: [] });
+  assert.throws(() => parseSourceArgs(['--resume']), /original --round and --output/u);
+  assert.equal(parseSourceArgs(['--resume', '--round', 'same', '--output', 'same.json']).resume, true);
+  assert.deepEqual(parseSourceArgs([]), { help: false, json: false, force: false, resume: false, scope: 'all', base: null, output: null, round: null, invalidate: [], selected: [] });
+  assert.deepEqual(parseSourceArgs(['--json', '--force', '--output', '/tmp/source.json']), { help: false, json: true, force: true, resume: false, scope: 'all', base: null, output: '/tmp/source.json', round: null, invalidate: [], selected: [] });
   assert.equal(parseSourceArgs(['--scope', 'common']).scope, 'common');
   assert.equal(parseSourceArgs(['--scope', 'platform']).scope, 'platform');
   assert.equal(parseSourceArgs(['--base', 'origin/dev']).base, 'origin/dev');

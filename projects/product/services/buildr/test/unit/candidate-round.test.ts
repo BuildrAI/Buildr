@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createCandidateRoundExecution, emptyCandidateRound, roundResult } from '../verification/candidate-round.ts';
+import { assertCandidateResumeScope, createCandidateRoundExecution, emptyCandidateRound, roundResult } from '../verification/candidate-round.ts';
 import { createVerificationReuseIdentity } from '../verification/verification-reuse.ts';
 
 function record(id: string): any {
@@ -14,7 +14,7 @@ test('explicit invalidation executes only the selected steps while retaining oth
   const execution = createCandidateRoundExecution({ runner: 'darwin', steps: [
     { id: 'unit', platformScope: { kind: 'common' } },
     { id: 'native', platformScope: { kind: 'common' } },
-  ] }, { productRoot: process.cwd(), round: { roundId: 'round', imports, invalidStepIds: ['unit'] } });
+  ] }, { productRoot: process.cwd(), round: { roundId: 'round', imports, invalidStepIds: ['unit'] } }, { sourceHead: () => 'source' });
   assert.equal(execution.hits.has('unit'), false);
   assert.equal(execution.hits.has('native'), true);
   assert.deepEqual(execution.explanation.steps.find((step: any) => step.id === 'unit').reasons, ['source-inputs-changed']);
@@ -65,4 +65,49 @@ test('user-selected scope executes selected checks and retains other passed reco
   const log = execution.finish([{ id: 'selected', status: 'passed', exitCode: 0, durationMs: 1, startedAt: '2026-10-20T00:00:00.000Z',
     finishedAt: '2026-10-20T00:00:00.001Z', childOutcome: 'passed', childExitCode: 0, childSignal: null, processCleanup: { status: 'clean' } }], true);
   assert.equal(log.records.find((item: any) => item.identity.stepId === 'retained').result.retainedByUserInstruction, true);
+});
+
+test('an affected group runs only its changed file, then an unchanged continuation runs nothing', async () => {
+  const step = { id: 'group', inputs: ['test/**'], executor: { type: 'node-test', files: ['test/a.ts', 'test/b.ts'] },
+    platformScope: { kind: 'native' }, reuse: { scope: 'repository' } };
+  const plan = { steps: [step] };
+  const prior = emptyCandidateRound('round');
+  const files = step.executor.files.map(file => ({ ...step, id: `${step.id}:${file}`, executor: { ...step.executor, files: [file] } }));
+  const before = { group: 'head-1', 'group:test/a.ts': 'a-1', 'group:test/b.ts': 'b-1' } as Record<string, string>;
+  const after = { ...before, group: 'head-2', 'group:test/b.ts': 'b-2' };
+  const create = (log: any, head: string, keys: Record<string, string>) => createCandidateRoundExecution(plan,
+    { productRoot: process.cwd(), round: { roundId: 'round', imports: log } },
+    { sourceHead: () => head, changedPaths: () => ['projects/product/services/buildr/test/b.ts'],
+      fileSteps: () => files, inputsFor: ({ id }: any) => ({ stepId: id, key: keys[id], contentIdentity: keys[id], recipeIdentity: 'recipe', environmentIdentity: 'env' }) });
+  const invoked: string[][] = [];
+  const executor = async (check: any) => {
+    invoked.push(check.executor.files);
+    return { id: step.id, status: 'passed', exitCode: 0, childSignal: null, processCleanup: { status: 'clean' }, durationMs: 1,
+      stderr: check.executor.files.map((entryFile: string) => '[buildr-integration-progress] ' + JSON.stringify({ entryFile, status: 'passed', durationMs: 1 })).join('\n') };
+  };
+  const first = create(prior, 'head-1', before);
+  const firstLog = first.finish([await first.executeFiles(step, executor, {})], true);
+  const repair = create(firstLog, 'head-2', after);
+  assert.equal(repair.fullRerun, false);
+  assert.deepEqual(repair.explanation.steps[0].files, { reuse: 1, execute: 1 });
+  const repairedLog = repair.finish([await repair.executeFiles(step, executor, {})], true);
+  assert.deepEqual(invoked, [step.executor.files, ['test/b.ts']]);
+  const repeated = create(repairedLog, 'head-2', after);
+  assert.equal(repeated.explanation.estimate.executedCount, 0);
+  assert.ok(repeated.hits.has(step.id));
+});
+
+test('continuation with no usable baseline reports full rerun before starting an executor', async () => {
+  const { executePlan } = await import('../verification/plan-runner.ts');
+  const plan = { steps: [{ id: 'unit' }, { id: 'integration' }] };
+  let called = false;
+  await assert.rejects(executePlan(plan, { productRoot: process.cwd(),
+    executorFactory: () => { called = true; throw new Error('executor must not be created'); },
+    round: { roundId: 'round', resume: true, protectResume: true } }), /candidate-full-rerun-required.*全部 2 项/u);
+  assert.equal(called, false);
+  const options = { productRoot: process.cwd() };
+  assert.doesNotThrow(() => assertCandidateResumeScope(createCandidateRoundExecution(plan,
+    { ...options, round: { roundId: 'first' } }).explanation));
+  assert.doesNotThrow(() => assertCandidateResumeScope(createCandidateRoundExecution(plan,
+    { ...options, force: true, round: { roundId: 'round', resume: true, allowFullRerun: true } }).explanation));
 });

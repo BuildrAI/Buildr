@@ -1,21 +1,12 @@
 import { pluginSourcePhaseFiles, pluginSourcePhaseStep } from '../../../dsh-plugin/tools/source-phase-definition.ts';
-import { collectVerificationReuseSnapshot, createVerificationReuseIdentity } from './verification-reuse.ts';
+import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
-import { createSourceVerificationPlan } from './source.ts';
+import { createSourceVerificationPlan, pinSourceVerificationBase, selectSourceVerificationSubset } from './source.ts';
 import { encodeCandidateSourceImport } from './candidate-source-reuse.ts';
-import { assertCandidateRound, passedRoundRecord, readCandidateRound } from './candidate-round.ts';
+import { assertCandidateRound, createCandidateRoundExecution, passedRoundRecord, readCandidateRound } from './candidate-round.ts';
 import { verificationSteps } from './registry.ts';
-import { createChangedVerificationSourcePathsReader, verificationStepAffectedBy, verificationInputApplicabilityForSourceChange } from './source-change-applicability.ts';
 import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts';
 
-function sourceHead(repo: string): string | null {
-  try { return execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8', timeout: 10_000 }).trim() || null; }
-  catch { return null; }
-}
-
-/** Candidate readiness reads this round's ordinary results, without a global
- * cache or content, recipe and dependency fingerprints. */
 export async function prepareLocalSourceVerification(options: {
   repo: string; sourceFile?: string; base?: string; platform?: string; env?: NodeJS.ProcessEnv; packages?: string[]; roundId: string;
   selectedStepIds?: string[];
@@ -34,63 +25,58 @@ export async function prepareLocalSourceVerification(options: {
     const definition = pluginSourcePhaseStep('unit', pluginSourcePhaseFiles('unit', pluginRoot), options.env);
     return { ...definition, inputs: pluginUnit.inputs, inputExclusions: pluginUnit.inputExclusions, executor: { ...definition.executor, cwd: pluginRoot }, platformScope: { kind: 'common' } };
   }))()] : [])];
-  const head = (dependencies.sourceHead ?? sourceHead)(options.repo);
-  const readChangedPaths = dependencies.changedPaths ?? createChangedVerificationSourcePathsReader(options.repo);
-  const changedBySource = new Map<string, string[] | null>();
-  const changedSince = (source: string) => {
-    if (!changedBySource.has(source)) changedBySource.set(source, readChangedPaths(source, head!));
-    return changedBySource.get(source)!;
-  };
-  let snapshot: any;
-  // The source runner executes under the offline verification policy. Reuse
-  // checks must observe the same environment or the run-mode variable alone
-  // would invalidate every previously passed check.
-  const snapshotEnv: NodeJS.ProcessEnv = enforceOfflineVerification({ ...(options.env ?? process.env) });
-  const inputsFor = (step: any) => {
-    if (dependencies.inputsFor) return dependencies.inputsFor(step);
-    try {
-      snapshot ??= collectVerificationReuseSnapshot({ productRoot: path.join(options.repo, 'projects/product/services/buildr'), steps: required, env: snapshotEnv });
-      return createVerificationReuseIdentity(step, snapshot);
-    } catch { return null; }
-  };
-  const invalidatedStepIds: string[] = [];
-  const retainedStepIds: string[] = [];
-  const outOfScopeStepIds: string[] = [];
-  const selectedStepIds = new Set<string>(options.selectedStepIds ?? []);
-  const missingStepIds = required.filter((step: any) => {
-    if (selectedStepIds.size > 0 && !selectedStepIds.has(step.id)) {
-      outOfScopeStepIds.push(step.id);
-      if (log.records.some((entry: any) => passedRoundRecord(entry, options.roundId, step, plan.runner))) retainedStepIds.push(step.id);
-      return false;
-    }
-    const record = log.records.find((entry: any) => passedRoundRecord(entry, options.roundId, step, plan.runner));
-    if (!record) return true;
-    const recordedSource = record.origin?.sourceCommit;
-    const changed = head && recordedSource && recordedSource !== head ? changedSince(recordedSource) : undefined;
-    const affected = changed === undefined ? undefined : changed === null ? null : verificationStepAffectedBy(step, changed);
-    if (affected === null || affected === true) {
-      invalidatedStepIds.push(step.id); return true;
-    }
-    if (step.reuse && !verificationInputApplicabilityForSourceChange(record.result?.inputIdentity, inputsFor(step), affected).applicable) {
-      invalidatedStepIds.push(step.id); return true;
-    }
-    return false;
-  }).map((step: any) => step.id);
-  const invalidated = [...new Set(invalidatedStepIds)].sort();
-  if (buildrRequired && plan.status !== 'ready') return { status: 'local-verification-required', missingStepIds, invalidatedStepIds: invalidated, diagnostic: plan.diagnostic, nextActions: ['在声明支持的本机平台执行。'] };
   const productRoot = path.join(options.repo, 'projects/product/services/buildr');
+  const selectedStepIds = new Set<string>(options.selectedStepIds ?? []);
+  if (buildrRequired && selectedStepIds.size > 0) {
+    for (const step of selectSourceVerificationSubset(plan, [...selectedStepIds]).steps) selectedStepIds.add(step.id);
+  }
+  const outOfScopeStepIds = required.filter(step => selectedStepIds.size && !selectedStepIds.has(step.id)).map(step => step.id);
+  const retainedStepIds = outOfScopeStepIds.filter(id => log.records.some((record: any) =>
+    passedRoundRecord(record, options.roundId, required.find(step => step.id === id), plan.runner)));
+  const applicable = required.filter(step => !outOfScopeStepIds.includes(step.id));
+  const environment = enforceOfflineVerification({ ...(options.env ?? process.env) });
+  const env = buildrRequired && (options.base || applicable.some(step => step.reuse?.git === 'comparison'))
+    ? pinSourceVerificationBase(productRoot, environment, options.base) : environment;
+  const assessment = createCandidateRoundExecution({ ...plan, steps: applicable }, {
+    productRoot, env, inspectOnly: true, round: { roundId: options.roundId, imports: log,
+      resume: log.records.length === 0 && !!options.sourceFile && fs.existsSync(options.sourceFile),
+      allowFullRerun: outOfScopeStepIds.length > 0 },
+  }, dependencies);
+  const decisions = new Map<string, any>(assessment.explanation.steps.map((step: any) => [step.id, step]));
+  const steps = required.map(step => decisions.get(step.id) ?? { id: step.id, disposition: 'not-run', reasons: ['declared-out-of-scope'] });
+  const missingStepIds = steps.filter(step => step.disposition === 'execute').map(step => step.id);
+  const causes = new Map<string, any>(steps.filter(step => step.disposition === 'execute'
+    && !step.reasons.includes('failed-or-not-run-in-this-round')).map(step => [step.id, step]));
+  const invalidated = [...causes.keys()].sort();
+  if (buildrRequired && plan.status !== 'ready') return { status: 'local-verification-required', missingStepIds, invalidatedStepIds: invalidated, diagnostic: plan.diagnostic, nextActions: ['在声明支持的本机平台执行。'] };
+  const fullRerun = assessment.fullRerun;
+  const fileCounts = assessment.explanation.steps.reduce((counts: { execute: number; reuse: number }, step: any) => ({
+    execute: counts.execute + (step.files?.execute ?? 0), reuse: counts.reuse + (step.files?.reuse ?? 0),
+  }), { execute: 0, reuse: 0 });
+  const byInput = new Map<string, string[]>(), byReason = new Map<string, string[]>();
+  const add = (groups: Map<string, string[]>, key: string, id: string) => {
+    const ids = groups.get(key) ?? []; ids.push(id); groups.set(key, ids);
+  };
+  for (const [id, cause] of causes) {
+    for (const input of cause.changedInputs ?? []) add(byInput, input, id);
+    for (const reason of cause.reasons) add(byReason, reason, id);
+  }
   return { status: missingStepIds.length ? 'local-verification-required' : 'ready', runner: plan.runner,
     roundId: options.roundId, missingStepIds, invalidatedStepIds: invalidated, recordCount: log.records.length, verificationBase: options.base ?? null,
     ...(selectedStepIds.size > 0 ? { selectedStepIds: [...selectedStepIds].sort(), retainedStepIds: [...new Set(retainedStepIds)].sort(), outOfScopeStepIds: [...new Set(outOfScopeStepIds)].sort() } : {}),
-    verificationPlan: { steps: required.map((step: any) => ({ id: step.id, disposition: missingStepIds.includes(step.id) ? 'execute' : outOfScopeStepIds.includes(step.id) ? 'not-run' : 'reuse',
-      reasons: [missingStepIds.includes(step.id) ? (invalidated.includes(step.id) ? 'source-inputs-changed' : selectedStepIds.size > 0 ? 'user-selected-execution' : 'failed-or-not-run-in-this-round')
-        : outOfScopeStepIds.includes(step.id) ? 'declared-out-of-scope'
-          : retainedStepIds.includes(step.id) ? 'retained-by-user-instruction' : 'passed-in-this-round'] })) },
+    ...(fullRerun ? { diagnostic: { code: 'candidate-full-rerun-required', message: '补验需全量，未启动测试；先核对原记录和执行环境。' } } : {}),
+    verificationPlan: { steps, fullRerun, fileCounts, counts: { execute: missingStepIds.length, reuse: steps.length - missingStepIds.length - outOfScopeStepIds.length, notRun: outOfScopeStepIds.length },
+      invalidationsByInput: [...byInput].sort(([a], [b]) => a.localeCompare(b)).map(([input, checkIds]) => ({ input, checkIds, scope: checkIds.length > 1 ? 'shared' : 'single' })),
+      invalidationsByReason: [...byReason].sort(([a], [b]) => a.localeCompare(b)).map(([reason, checkIds]) => ({ reason, checkIds })),
+    },
     ...(missingStepIds.length ? {} : { transport: encodeCandidateSourceImport(log) }),
-    nextActions: missingStepIds.length ? [
-      `在 ${productRoot} 执行 tools/development/run-development-node test/verification/source.ts --round ${options.roundId}${options.base ? ` --base ${options.base}` : ''}${options.sourceFile ? ` --output ${options.sourceFile}` : ''}${invalidated.length ? ` --invalidate ${invalidated.join(',')}` : ''}${selectedStepIds.size > 0 ? ` --selected ${[...selectedStepIds].sort().join(',')}` : ''}；同轮只补失败及未执行项。插件使用同一 --round 和 --output 运行 tools/verify-source.ts${invalidated.includes('dsh-plugin:unit') ? ' --invalidate dsh-plugin:unit' : ''}。`,
-      ...(invalidated.length ? [`源码自记录后发生变化，仅需重跑受影响步骤：${invalidated.join(', ')}。`] : []),
-      ...(selectedStepIds.size > 0 ? [`本轮按用户指定范围验收：${[...selectedStepIds].sort().join(', ')}。`] : []),
+    nextActions: fullRerun ? ['补验需全量，未启动测试。请先核对分组原因、原记录和执行环境；确需全量时显式确认。'] : missingStepIds.length ? [
+      ...(missingStepIds.some((id: string) => id !== 'dsh-plugin:unit') ? [
+        `在 ${productRoot} 执行 tools/development/run-development-node test/verification/source.ts --round ${options.roundId}${options.base ? ` --base ${options.base}` : ''}${options.sourceFile ? ` --output ${options.sourceFile}` : ''}${options.sourceFile && log.records.some((record: any) => record.identity.stepId !== 'dsh-plugin:unit') ? ' --resume' : ''}${selectedStepIds.size > 0 ? ` --selected ${[...selectedStepIds].sort().join(',')}` : ''}；按有效证据补验。`,
+      ] : []),
+      ...(missingStepIds.includes('dsh-plugin:unit') ? [
+        `插件使用同一 --round ${options.roundId}${options.sourceFile ? ` --output ${options.sourceFile}` : ''} 运行 tools/verify-source.ts。`,
+      ] : []),
       ...(outOfScopeStepIds.length ? [`用户声明不执行的检查不计入本轮：${[...new Set(outOfScopeStepIds)].sort().join(', ')}。`] : []),
     ] : [] };
 }

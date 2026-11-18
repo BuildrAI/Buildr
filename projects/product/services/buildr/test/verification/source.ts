@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import { sharedCheckPreparation } from '../../tools/testing/verification-checks.ts';
 import { randomUUID } from 'node:crypto';
-import { createCandidateRoundExecution } from './candidate-round.ts';
+import { assertCandidateResumeScope, createCandidateRoundExecution } from './candidate-round.ts';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -35,14 +35,15 @@ export function sourceVerificationCancellation(signals: Pick<NodeJS.Process, 'on
     dispose: () => { signals.removeListener('SIGINT', interrupt); signals.removeListener('SIGTERM', terminate); } };
 }
 
-export function parseSourceArgs(args: string[]): { help: boolean; json: boolean; force: boolean; scope: SourceVerificationScope; base: string | null; output: string | null; round: string | null; invalidate: string[]; selected: string[] } {
-  const result = { help: false, json: false, force: false, scope: 'all' as SourceVerificationScope, base: null as string | null, output: null as string | null, round: null as string | null, invalidate: [] as string[], selected: [] as string[] };
+export function parseSourceArgs(args: string[]): { help: boolean; json: boolean; force: boolean; resume: boolean; scope: SourceVerificationScope; base: string | null; output: string | null; round: string | null; invalidate: string[]; selected: string[] } {
+  const result = { help: false, json: false, force: false, resume: false, scope: 'all' as SourceVerificationScope, base: null as string | null, output: null as string | null, round: null as string | null, invalidate: [] as string[], selected: [] as string[] };
   let scopeSupplied = false;
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--help' || arg === '-h') result.help = true;
     else if (arg === '--json') result.json = true;
     else if (arg === '--force') result.force = true;
+    else if (arg === '--resume') result.resume = true;
     else if (arg === '--scope') {
       const value = args[++index];
       if (!value || !['all', 'common', 'platform'].includes(value)) throw new Error('--scope requires all, common or platform');
@@ -80,6 +81,7 @@ export function parseSourceArgs(args: string[]): { help: boolean; json: boolean;
     } else throw new Error(`Unknown release source-verification option: ${arg}`);
   }
   if (result.help && args.length !== 1) throw new Error('--help cannot be combined with other arguments');
+  if (result.resume && (!result.round || !result.output)) throw new Error('--resume requires the original --round and --output');
   return result;
 }
 
@@ -191,7 +193,7 @@ export function sourcePreparationCommands(prepared: any): Map<string, Promise<an
 }
 
 function usage(): void {
-  process.stdout.write('Internal release source verification: node test/verification/source.ts [--scope all|common|platform] [--base <ref>] [--json] [--force] [--round <round-id>] [--output <round-log.json>] [--invalidate <step-id,...>] [--selected <step-id,...>]\n');
+  process.stdout.write('Internal release source verification: node test/verification/source.ts [--scope all|common|platform] [--base <ref>] [--json] [--resume] [--force] [--round <round-id>] [--output <round-log.json>] [--invalidate <step-id,...>] [--selected <step-id,...>]\n');
 }
 
 /** A user-selected round executes exactly the selected checks plus the
@@ -225,7 +227,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
       const plan = createSourceVerificationPlan(process.platform, { scope: args.scope });
       const comparisonRequired = plan.steps.some((step: any) => step.reuse?.git === 'comparison');
       const executionPlan = args.selected.length ? selectSourceVerificationSubset(plan, args.selected) : plan;
-      const round = { roundId: args.round ?? process.env.BUILDR_VERIFICATION_ROUND ?? randomUUID(), ...(args.output ? { output: path.resolve(args.output) } : {}), ...(args.invalidate.length ? { invalidStepIds: args.invalidate } : {}), ...(args.selected.length ? { selectedStepIds: executionPlan.selectedStepIds } : {}) };
+      const round = { protectResume: true, resume: args.resume, allowFullRerun: args.force || executionPlan.steps.length < plan.steps.length, roundId: args.round ?? process.env.BUILDR_VERIFICATION_ROUND ?? randomUUID(), ...(args.output ? { output: path.resolve(args.output) } : {}), ...(args.invalidate.length ? { invalidStepIds: args.invalidate } : {}), ...(args.selected.length ? { selectedStepIds: executionPlan.selectedStepIds } : {}) };
       const reuseOptions = { productRoot, projectRoot, round, force: sourceVerificationForce(args.force),
         env: enforceOfflineVerification(comparisonRequired || args.base
           ? pinSourceVerificationBase(productRoot, process.env, args.base) : { ...process.env }) };
@@ -233,10 +235,13 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
         const reuse = createCandidateRoundExecution(executionPlan, { ...reuseOptions, inspectOnly: true }).explanation;
         process.stdout.write(`${JSON.stringify({ ...executionPlan, verificationBase: reuseOptions.env.BUILDR_VERIFICATION_BASE,
           reuse, preparation: sourceVerificationPreparation(executionPlan, reuse) }, null, 2)}\n`);
-        if (plan.status !== 'ready') process.exitCode = 1;
+        if (plan.status !== 'ready' || reuse.fullRerun) process.exitCode = 1;
       } else {
         if (plan.status !== 'ready') throw new Error(plan.diagnostic?.message ?? 'Source verification plan is blocked.');
         assertMinimumNodeVersion(process.versions.node, fs.readFileSync(path.join(projectRoot, '.node-version'), 'utf8').trim());
+        if (args.resume && !round.allowFullRerun && round.output && !fs.existsSync(round.output)) {
+          assertCandidateResumeScope(createCandidateRoundExecution(executionPlan, { ...reuseOptions, inspectOnly: true }).explanation);
+        }
         const startedAt = Date.now();
         const prepared = prepareSourceVerificationEnvironment(executionPlan, reuseOptions);
         let v1CompatibilityRoot: string | null = null;

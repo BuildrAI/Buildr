@@ -1,6 +1,6 @@
 import os from 'node:os';
 import fs from 'node:fs';
-import { createCandidateRoundExecution } from './candidate-round.ts';
+import { assertCandidateResumeScope, createCandidateRoundExecution } from './candidate-round.ts';
 import path from 'node:path';
 import { createTestContextPool } from '../context/runtime.ts';
 import { runVerificationDag } from './dag-scheduler.ts';
@@ -128,8 +128,9 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   if (reuse?.explanation) {
     const estimate = reuse.explanation.estimate;
     options.stream?.write(`[${prefix}] plan: execute=${estimate.executedCount} reuse=${estimate.reusedCount} remaining-work=${estimate.remainingWorkMs}ms dependency-path=${estimate.dependencyCriticalPathMs}ms (history/declared targets; queue/preparation excluded)\n`);
-    for (const item of reuse.explanation.steps) options.stream?.write(`[${prefix}] ${item.disposition}: ${item.id} reason=${item.reasons.join(',')} scope=${item.inputScope}\n`);
+    for (const item of reuse.explanation.steps) options.stream?.write(`[${prefix}] ${item.disposition}: ${item.id} reason=${item.reasons.join(',')} scope=${item.inputScope}${item.files ? ` files-execute=${item.files.execute} files-reuse=${item.files.reuse}` : ''}\n`);
   }
+  if (options.round?.protectResume) assertCandidateResumeScope(reuse?.explanation);
   timings.preparationMs = Date.now() - planStartedAt;
   const contextsStartedAt = Date.now();
   const resourceCoordinator: any = options.resourceCoordinator ?? createVerificationResourceCoordinator({

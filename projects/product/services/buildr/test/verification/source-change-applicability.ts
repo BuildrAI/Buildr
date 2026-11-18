@@ -26,10 +26,10 @@ function normalizedProductPath(value: string): string | null {
  * The repository can advance for unrelated release/bookkeeping commits. */
 export function changedVerificationSourcePaths(repo: string, from: string, to: string): string[] | null {
   try {
-    return execFileSync('git', ['-C', repo, 'diff', '--name-only', from, to, '--',
-      BUILDR_PREFIX, PRODUCT_PREFIX, RELEASE_SKILLS_PREFIX, ...ROOT_SOURCE_INPUTS, ...VERIFICATION_GOVERNED_REPOSITORY_INPUTS,
+    return execFileSync('git', ['-C', repo, 'diff', '--name-only', '--no-renames', '-z', from, to, '--',
+      ...[BUILDR_PREFIX, PRODUCT_PREFIX, RELEASE_SKILLS_PREFIX, ...ROOT_SOURCE_INPUTS, ...VERIFICATION_GOVERNED_REPOSITORY_INPUTS].map(pattern => `:(top)${pattern}`),
     ], { encoding: 'utf8', timeout: 30_000, maxBuffer: 16 * 1024 * 1024 })
-      .split(/\r?\n/u).filter(Boolean);
+      .split('\0').filter(Boolean);
   } catch { return null; }
 }
 
@@ -42,15 +42,20 @@ export function createChangedVerificationSourcePathsReader(repo: string): (from:
   };
 }
 
-export function verificationStepAffectedBy(step: any, changed: string[]): boolean | null {
+export function verificationStepChangedInputs(step: any, changed: string[]): string[] | null {
   let ownership: any;
   try { ownership = Array.isArray(step.inputs) ? step : verificationStepOwnership(step.id, step.executor); }
   catch { return null; }
-  return changed.some(value => {
+  return changed.filter(value => {
     const productPath = normalizedProductPath(value);
     return productPath !== null && ownership.inputs.some((pattern: string) => matchesInput(productPath, pattern))
       && !(ownership.inputExclusions ?? []).some((pattern: string) => matchesInput(productPath, pattern));
   });
+}
+
+export function verificationStepAffectedBy(step: any, changed: string[]): boolean | null {
+  const inputs = verificationStepChangedInputs(step, changed);
+  return inputs === null ? null : inputs.length > 0;
 }
 
 /** `undefined` means the record already belongs to the current source.

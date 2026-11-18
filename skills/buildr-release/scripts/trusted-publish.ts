@@ -54,16 +54,16 @@ export async function publishFrozenArtifact(options: any, dependencies: any = {}
     const before = await read();
     assertRegistryArtifact(before, manifest);
     if (before.published) return { status: 'passed', action: 'reused', registry: before, effects: [], attempted };
+    if (previousAttempt !== 'not-attempted') return {
+      status: options.deferReadback ? 'passed' : 'blocked', action: 'readback-required', registry: before, attempted, effects,
+      diagnostic: { code: 'npm-publication-unconfirmed', message: 'Previous npm write may have occurred; only official registry readback is allowed.' },
+    };
     const distribution = await (dependencies.verifyDistribution ?? inspectArtifactDistribution)(artifact.tarball, manifest.packageName);
     if (distribution.status !== 'eligible' || distribution.publicationApproved !== true) return {
       status: 'blocked', action: 'distribution-review-required', attempted, effects,
       diagnostic: {code: 'distribution-approval-required', message: '准确发行物缺少允许发行的许可或平台支持依据。', findings: distribution.findings},
       nextActions: ['补齐准确版本许可决定、许可证据与平台支持批准后，重新准备准确候选；不执行 npm 写入。'],
     };
-    // The owner already bound this call to the authorized frozen bytes. A
-    // successful Registry 404 permits retry; transport errors still stop below.
-    if (previousAttempt !== 'not-attempted') effects.push({ type: 'npm-publication-retry-authorized', basis: 'official-registry-version-404',
-      package: manifest.packageName, version: manifest.version, integrity: manifest.integrity, previousAttempt, observedAt: new Date().toISOString() });
     const publishEffect = { type: 'npm-published', package: manifest.packageName, version: manifest.version, sourceCommit: manifest.sourceCommit,
       sha256: manifest.sha256, integrity: manifest.integrity, state: 'unknown' };
     effects.push(publishEffect);
@@ -76,6 +76,13 @@ export async function publishFrozenArtifact(options: any, dependencies: any = {}
     if (command.stdout) process.stdout.write(command.stdout);
     if (command.stderr) process.stderr.write(command.stderr);
     process.stdout.write(`[release] npm-publish exitCode=${command.status ?? 'unknown'}\n`);
+    if (command.status === 0) {
+      publishEffect.state = 'accepted';
+      dependencies.onEffects?.(effects);
+    }
+    if (options.deferReadback && (command.status === 0 || !command.diagnostic)) {
+      return { status: 'passed', action: 'readback-required', registry: before, attempted, effects };
+    }
     const now = dependencies.now ?? Date.now;
     const shortFailureReadback = command.status !== 0 && command.diagnostic !== null;
     const waitOptions = shortFailureReadback
@@ -94,7 +101,7 @@ export async function publishFrozenArtifact(options: any, dependencies: any = {}
     const readbackElapsedMs = now() - readbackStartedAt;
     process.stdout.write(`[release] npm-readback attempts=${readbackObservations} elapsedMs=${readbackElapsedMs} confirmed=${after.published ? 'true' : 'false'}\n`);
     if (!after.published) {
-      publishEffect.state = command.status === 0 ? 'unknown' : 'not-confirmed';
+      publishEffect.state = command.status === 0 ? 'accepted' : 'not-confirmed';
       const fallbackDiagnostic = {
         code: 'npm-publication-unconfirmed',
         message: `Official Registry has not confirmed ${manifest.packageName}@${manifest.version} after ${readbackObservations} readback checks (${readbackElapsedMs}ms); npm exit=${command.status ?? 'unknown'}.`,

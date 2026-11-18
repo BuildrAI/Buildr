@@ -56,7 +56,11 @@ export async function verifyPluginSourcePhase(group: 'unit' | 'static' | 'integr
   const { runVerificationStep } = await import(new URL('../../buildr/test/verification/timing/parallel-runner.ts', import.meta.url).href);
   const files = pluginSourcePhaseFiles(group, pluginRoot);
   const definition = pluginSourcePhaseStep(group, files, environment);
-  const step = { ...definition, executor: { ...definition.executor, cwd: pluginRoot }, platformScope: { kind: 'common' } };
+  const { verificationSteps } = await import(new URL('../../buildr/test/verification/registry.ts', import.meta.url).href);
+  const ownership = group === 'unit' ? verificationSteps.find((item: { id: string }) => item.id === 'plugin-unit') : null;
+  if (group === 'unit' && !ownership) throw new Error('The DSH plugin Unit check is not registered.');
+  const step = { ...definition, inputs: ownership?.inputs, inputExclusions: ownership?.inputExclusions,
+    executor: { ...definition.executor, cwd: pluginRoot }, platformScope: { kind: 'common' } };
   const imported = environment.BUILDR_SOURCE_VERIFICATION || environment.BUILDR_SOURCE_VERIFICATION_FILE ? candidateSourceImportFromEnvironment(environment) : undefined;
   const round = group === 'unit' ? options.round ?? (imported ? { roundId: imported.roundId, imports: imported } : undefined) : undefined;
   const execution = createCandidateRoundExecution({ steps: [step] }, { productRoot, round, env: environment });
