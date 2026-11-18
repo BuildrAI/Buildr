@@ -12,6 +12,7 @@ import { parseCandidateDeclaredScope } from '../../../projects/product/services/
 import { verificationSteps, CANDIDATE_CI_HOST_NODE_TUPLES } from '../../../projects/product/services/buildr/test/verification/registry.ts';
 import { assertPublicHandoffData, createPackageHandoff, localPackagePlatform, LOCAL_PACKAGE_MODEL, LOCAL_PLATFORM_POLICY } from './local-package-handoff.ts';
 import { currentVerificationRules, retainVerificationRules } from '../../../projects/product/services/buildr/test/verification/release/verification-rules.ts';
+import { readCandidateRound } from '../../../projects/product/services/buildr/test/verification/candidate-round.ts';
 import { preflightLocalConsumption } from './local-consumption-preflight.ts';
 
 const write = (file: string, value: any) => fs.writeFileSync(file, JSON.stringify(value) + '\n');
@@ -54,6 +55,20 @@ export async function prepareLocalMainPackage(options: {
     packages: ['buildr', ...(options.plan?.requirements.plugin ? ['dsh-plugin'] : [])],
     ...(selectedStepIds ? { selectedStepIds } : {}),
   });
+  const cost: any = { sourceCommit: options.sourceCommit, artifactSha256: null, stages: [], sourceChecks: [], artifactChecks: null, package: null };
+  try {
+    const relevant = new Set<string>(source.verificationPlan?.steps?.map(({ id }: any) => id) ?? []);
+    cost.sourceChecks = readCandidateRound(sourceFile, options.roundId).records.filter((record: any) => relevant.has(record.identity.stepId)).map((record: any) => {
+      const { result, origin, environment } = record;
+      return { id: record.identity.stepId, status: result.status, origin, environment, durationMs: result.durationMs ?? null,
+        queueDurationMs: result.queueDurationMs ?? null, resources: result.resources ?? null,
+        applicability: origin.sourceCommit === options.sourceCommit ? 'same-source-record' : 'earlier-source-record',
+        files: result.roundFiles?.map(({ file, status, durationMs, origin }: any) => ({ file, status, durationMs, origin })) ?? [],
+        phases: result.phases ?? [] };
+    });
+  } catch { cost.sourceChecks = null; }
+  const retain = () => dependencies.onMeasurements?.(structuredClone(cost));
+  retain();
   if (source.status !== 'ready') return { ...source, status: 'local-verification-required' };
   (dependencies.assertCheckout ?? assertFrozenCandidateCheckout)(service, options.sourceCommit);
   const env = { ...process.env, BUILDR_CANDIDATE_SOURCE_SHA: options.sourceCommit,
@@ -74,7 +89,10 @@ export async function prepareLocalMainPackage(options: {
       ];
       for (const args of commands) {
         process.stderr.write(`[release] ${args[0].endsWith('local-package-build.ts') ? 'local-package-build' : 'local-package-environment'} source=${options.sourceCommit}\n`);
+        const started = performance.now();
         const result = execute(process.execPath, args, { cwd: service, env, encoding: 'utf8', timeout: 30 * 60_000, maxBuffer: 64 * 1024 * 1024 });
+        cost.stages.push({ id: args[0].endsWith('local-package-build.ts') ? 'package-build' : 'dependency-preparation', durationMs: Math.round(performance.now() - started), status: result.status === 0 && !result.error ? 'passed' : 'failed' });
+        retain();
         if (result.stdout) process.stdout.write(String(result.stdout));
         if (result.stderr) process.stderr.write(String(result.stderr));
         if (result.error || result.status !== 0) throw new Error('Frozen local package production failed; retain its output and diagnose without repacking.');
@@ -86,13 +104,26 @@ export async function prepareLocalMainPackage(options: {
     && options.previous.sourceCommit === options.sourceCommit && options.previous.artifactSha256 !== artifact.manifest.sha256) {
     throw new Error('Local package bytes differ from their frozen source or previous observation.');
   }
+  cost.artifactSha256 = artifact.manifest.sha256;
+  try {
+    const recorded = JSON.parse(fs.readFileSync(path.join(directory, 'release-package-timing.json'), 'utf8'));
+    if (recorded.sourceCommit === options.sourceCommit && recorded.artifactSha256 === cost.artifactSha256) cost.package = recorded;
+  } catch { /* A retained original can predate measurements. */ }
+  retain();
   dependencies.onArtifactProduced?.({ sourceCommit: options.sourceCommit, artifactSha256: artifact.manifest.sha256, artifactDirectory: packageDirectory });
   process.stderr.write(`[release] local-package-verification source=${options.sourceCommit} sha256=${artifact.manifest.sha256}\n`);
   const consumerDirectory = path.join(directory, 'consumer-env');
+  const verificationStarted = performance.now();
   const verification = execute(process.execPath, [path.join(service, 'test/verification/artifact.ts'),
     '--artifact-dir', packageDirectory, '--output', evidenceDirectory, '--consumer-dir', consumerDirectory], {
     cwd: service, env, encoding: 'utf8', timeout: 30 * 60_000, maxBuffer: 64 * 1024 * 1024,
   });
+  cost.stages.push({ id: 'local-artifact-verification', durationMs: Math.round(performance.now() - verificationStarted), status: verification.status === 0 && !verification.error ? 'passed' : 'failed' });
+  try {
+    const observed = JSON.parse(fs.readFileSync(path.join(evidenceDirectory, 'release-artifact-timing.json'), 'utf8'));
+    if (observed.sourceCommit === options.sourceCommit && observed.artifactSha256 === cost.artifactSha256) cost.artifactChecks = observed;
+  } catch { /* Failed or older runs may not retain a timing record. */ }
+  retain();
   if (verification.stdout) process.stdout.write(String(verification.stdout));
   if (verification.stderr) process.stderr.write(String(verification.stderr));
   if (verification.error || verification.status !== 0) return { status: 'local-artifact-verification-required',
@@ -138,6 +169,8 @@ export async function prepareLocalMainPackage(options: {
   }
   const handoffDirectory = path.join(directory, 'handoff');
   let handoff: any;
+  const handoffStarted = performance.now();
+  let handoffStatus = 'failed';
   try {
     handoff = createPackageHandoff({ output: handoffDirectory, sourceCommit: options.sourceCommit, sourceTree: options.sourceTree,
       platform: options.platform, artifactSha256: artifact.manifest.sha256, files, verificationScope: options.scope, plugin,
@@ -146,8 +179,12 @@ export async function prepareLocalMainPackage(options: {
           directory: path.join(directory, 'consumption-preflight'), handoff: input, artifactDirectory: packageDirectory,
           sourcePacket, artifactPacket, pluginDirectory, expectedPeer: options.plan?.selection.packages.includes('buildr') ? peer : options.peer,
           roundId: options.roundId }, { execute })?.consumption });
+    handoffStatus = 'passed';
   } catch (error: any) {
     return { status: 'local-consumption-preflight-required', nextActions: [`正式消费预演未通过：${error.message}；保留原包和证明，修正读取／契约后接续，不重新制包。`] };
+  } finally {
+    cost.stages.push({ id: 'handoff-and-consumption-preflight', durationMs: Math.round(performance.now() - handoffStarted), status: handoffStatus });
+    retain();
   }
   (dependencies.assertCheckout ?? assertFrozenCandidateCheckout)(service, options.sourceCommit);
   return { status: 'ready', executionModel: LOCAL_PACKAGE_MODEL, sourceCommit: options.sourceCommit, artifactSha256: artifact.manifest.sha256,

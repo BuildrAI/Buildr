@@ -45,8 +45,15 @@ export function readSharedCandidatePackage(env: any = process.env): any  {
 }
 
 export async function createCandidatePackage(productRoot: any, destination: any, options: any = {}): Promise<any>  {
+  const stages: any[] = [];
+  const observe = async (id: string, run: () => any) => {
+    const start = performance.now();
+    try { const result = await run(); stages.push({ id, status: 'passed', durationMs: Math.round(performance.now() - start) }); return result; }
+    catch (error) { stages.push({ id, status: 'failed', durationMs: Math.round(performance.now() - start) }); throw error; }
+    finally { options.observeStages?.(stages); }
+  };
   const {prepareDevelopmentAgent} = await import('../../../projects/product/services/buildr/tools/development/prepare-development-agent.ts');
-  prepareDevelopmentAgent({serviceRoot:productRoot});
+  await observe('prepare-agent', () => prepareDevelopmentAgent({serviceRoot:productRoot}));
   const { buildGeneratedArtifactSet }: any = await import('../../../projects/product/services/buildr/tools/build/artifact-set.ts');
   const npmExecutable: any = options.npmExecutable ?? (process.platform === 'win32' ? 'npm.cmd' : 'npm');
   fs.mkdirSync(destination, { recursive: true });
@@ -57,12 +64,13 @@ export async function createCandidatePackage(productRoot: any, destination: any,
   if (source.status !== 0 || !/^[a-f0-9]{40,64}$/.test(source.stdout.trim())) {
     throw new Error(`candidate source commit is unavailable: ${(source.stderr || source.stdout || '').trim()}`);
   }
-  const generated: any = await buildGeneratedArtifactSet(path.join(destination, 'generated-artifacts'), { sourceIdentity: source.stdout.trim() });
-  const payload: any = await buildApplicationPayload(path.join(destination, 'application-payload'), source.stdout.trim(), {
+  const generated: any = await observe('generated-artifacts', () => buildGeneratedArtifactSet(path.join(destination, 'generated-artifacts'), { sourceIdentity: source.stdout.trim(), observe: (value: any) => { stages.push(value); options.observeStages?.(stages); } }));
+  const payload: any = await observe('backend-payload', () => buildApplicationPayload(path.join(destination, 'application-payload'), source.stdout.trim(), {
     generatedArtifactManifest: generated.manifest,
     webDistRoot: generated.webDistRoot,
-  });
-  const artifact: any = createReleaseArtifact(payload.root, destination, { npmExecutable, testContextRoot: generated.testContextRoot });
+    agentPrepared: true,
+  }));
+  const artifact: any = await observe('package-total', () => createReleaseArtifact(payload.root, destination, { npmExecutable, testContextRoot: generated.testContextRoot, observe: (value: any) => { stages.push(value); options.observeStages?.(stages); } }));
   const metadata: any = parsePackMetadata(artifact.packMetadataPath);
   return {
     tarball: artifact.tarball,
@@ -73,6 +81,7 @@ export async function createCandidatePackage(productRoot: any, destination: any,
     payloadRoot: payload.root,
     payloadManifest: payload.manifest,
     generatedArtifactManifest: generated.manifest,
+    measurements: { stages, package: artifact.packageMeasurements ? { ...artifact.packageMeasurements, backendBundleDependencies: payload.bundledDependencies } : null },
     stdout: '',
     stderr: '',
   };

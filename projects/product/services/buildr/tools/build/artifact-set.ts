@@ -27,7 +27,7 @@ export type GeneratedArtifactSet = {
 
 const sha256File = (file: string): string => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
-export async function buildGeneratedArtifactSet(outputRoot: string, input: { sourceIdentity: string; refreshCheckoutProjection?: boolean }): Promise<GeneratedArtifactSet> {
+export async function buildGeneratedArtifactSet(outputRoot: string, input: { sourceIdentity: string; refreshCheckoutProjection?: boolean; observe?: (entry: { id: string; status: string; durationMs: number }) => void }): Promise<GeneratedArtifactSet> {
   const root = path.resolve(outputRoot);
   if (!input.sourceIdentity.trim()) throw new Error('generated_artifact_source_identity_missing');
   if (fs.existsSync(root)) throw new Error(`generated_artifact_output_exists: ${root}`);
@@ -50,8 +50,14 @@ export async function buildGeneratedArtifactSet(outputRoot: string, input: { sou
       await writeRuntimeSystemDto();
       await writeWorkspaceAgentAssetsDtos();
     }
-    buildTestContext(testContextRoot);
-    buildWebDist(webDistRoot);
+    const measure = (id: string, run: () => unknown) => {
+      const started = performance.now();
+      let status = 'failed';
+      try { run(); status = 'passed'; }
+      finally { input.observe?.({ id, status, durationMs: Math.round(performance.now() - started) }); }
+    };
+    measure('test-context-build', () => buildTestContext(testContextRoot));
+    measure('web-build', () => buildWebDist(webDistRoot));
     const buildrMetadata = JSON.parse(fs.readFileSync(path.join(serviceRoot, 'package.json'), 'utf8')) as { devDependencies?: Record<string, string> };
     const webMetadata = JSON.parse(fs.readFileSync(path.join(productRoot, 'services/buildr-web/package.json'), 'utf8')) as { devDependencies?: Record<string, string> };
     const manifest = createGeneratedArtifactManifest({

@@ -1,7 +1,7 @@
 /** Project composition supplies package production; execution never loads the publisher. */
 export interface CandidatePackageAdapter {
   read(env: NodeJS.ProcessEnv): any;
-  create(productRoot: string, directory: string, options: { npmExecutable: string }): Promise<any>;
+  create(productRoot: string, directory: string, options: { npmExecutable: string; observeStages?: (stages: any[]) => void }): Promise<any>;
   environment: { tarball: string; metadata: string; manifest: string };
 }
 

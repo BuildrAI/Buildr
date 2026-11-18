@@ -8,8 +8,28 @@ import test from 'node:test';
 import { completePublicationEffects, publicationAttemptFromJournal } from '../../../../../../skills/buildr-release/scripts/release-publication.ts';
 import { publishFrozenArtifact } from '../../../../../../skills/buildr-release/scripts/trusted-publish.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
+import { writeReleaseProcessReports } from '../../../../../../skills/buildr-release/scripts/release-process-report.ts';
 import { readReleaseArtifact } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
 import { createVerificationPhaseRecorder, VERIFICATION_PHASE_TIMING_PREFIX } from '../verification/timing/phases.ts';
+
+test('release report retains measured costs and excludes another candidate’s original', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-report-cost-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const attempt = { id: 'one', phase: 'prepare', startedAt: '2026-11-19T00:00:00.000Z', finishedAt: '2026-11-19T00:00:01.000Z', phases: [] };
+  const state = { version: '1.0.0', localPackage: { sourceCommit: 'source', artifactSha256: 'sha' }, localReleaseMeasurements: {
+    sourceCommit: 'source', artifactSha256: 'sha', stages: [{ id: 'npm-pack', status: 'passed', durationMs: 201 }],
+    sourceChecks: [{ id: 'source-check', status: 'passed', durationMs: 102, queueDurationMs: 10, resources: { peakSampledGroupRssBytes: 1048576 } }],
+    package: { package: { compressedBytes: 5, unpackedBytes: 10, fileCount: 1, components: [{ path: 'runtime', bytes: 10, files: 1 }] } },
+  } };
+  const [first] = writeReleaseProcessReports(root, state, attempt, { status: 'ready' });
+  assert.match(fs.readFileSync(first.markdown, 'utf8'), /source-check.*102.*10.*1\.0/u);
+  assert.equal(JSON.parse(fs.readFileSync(first.json, 'utf8')).localMeasurements.package.package.compressedBytes, 5);
+  state.localPackage.artifactSha256 = 'other';
+  const [next] = writeReleaseProcessReports(root, state, { ...attempt, id: 'two' }, { status: 'ready' });
+  const report = JSON.parse(fs.readFileSync(next.json, 'utf8'));
+  assert.equal(report.localMeasurements, null);
+  assert.equal(report.attempts[0].localMeasurements.artifactSha256, 'sha');
+});
 
 // Publication protocol scenarios isolate the legal-review collaborator. Real artifact
 // policy is exercised separately and this fixture is not a distribution approval.

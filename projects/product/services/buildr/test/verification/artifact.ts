@@ -133,7 +133,8 @@ export function runLocalArtifactVerification(options: any, dependencies: any = {
     if (!env.BUILDR_LOCAL_PACKAGE_HANDOFF || !process.env.GITHUB_RUN_ID || key === 'BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT') delete env[key];
   }
   const prepared = new Set<string>();
-  const results: any[] = [];
+  const results: any[] = [], preparation: any[] = [];
+  const started = performance.now();
   type ConsumerCheckout = { roots?: { projectRoot: string; serviceRoot: string; webRoot: string }; entry?: string; cleanup?: () => void };
   let consumerCheckout: ConsumerCheckout | null = null;
   const reusableEvidence = dependencies.reusableEvidence ?? ((node: any): boolean => {
@@ -164,20 +165,23 @@ export function runLocalArtifactVerification(options: any, dependencies: any = {
       const activeServiceRoot = activeRoots?.serviceRoot ?? productRoot;
       const activeEntry = activeConsumer?.entry ?? entry;
       if (!prepared.has(node.preparation)) {
-        (dependencies.prepare ?? prepareCandidateEnvironment)({
+        const prepareStarted = performance.now();
+        const receipt = (dependencies.prepare ?? prepareCandidateEnvironment)({
           profile: node.preparation,
           ...(activeRoots ? { roots: activeRoots } : {}),
           env,
           reusePrepared: true,
           output: path.join(output, `${node.preparation}-preparation.json`),
         });
+        preparation.push({ id: node.preparation, durationMs: Math.round(performance.now() - prepareStarted), operations: receipt?.operations?.map(({id,status,durationMs}: any) => ({id,status,durationMs})) ?? [] });
         prepared.add(node.preparation);
         // Preparing the required controller can restore the exact environment of
         // an earlier success. Recheck the unchanged proof before starting tests.
         if (reusableEvidence(node)) { results.push({ id: node.id, status: 'passed', disposition: 'reused' }); continue; }
       }
+      const nodeStarted = performance.now();
       const result = (dependencies.execute ?? spawnCommandSync)(process.execPath, [activeEntry, node.action, node.id], {
-        cwd: activeServiceRoot, encoding: 'utf8', env: { ...env, BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: evidenceFile },
+        cwd: activeServiceRoot, encoding: 'utf8', env: { ...env, BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: evidenceFile, BUILDR_VERIFICATION_SAMPLE_RESOURCES: '1' },
         // The child also records its own evidence file; its forwarded diagnostics
         // (whole-suite progress lines) can exceed the 1 MiB spawnSync default. A
         // buffer overflow must not misreport an evidence-backed pass as failed.
@@ -186,12 +190,22 @@ export function runLocalArtifactVerification(options: any, dependencies: any = {
       });
       if (result.stdout) process.stdout.write(result.stdout);
       if (result.stderr) process.stderr.write(result.stderr);
-      results.push({ id: node.id, status: result.status === 0 && !result.error ? 'passed' : 'failed', disposition: 'executed' });
+      let checks = null;
+      try {
+        const evidence = JSON.parse(fs.readFileSync(evidenceFile, 'utf8'));
+        if (evidence.artifact?.sha256 === artifact.identity.sha256 && (evidence.verificationSource ?? evidence.sourceCommit) === verificationSource) {
+          checks = evidence.results?.map(({ id, status, disposition, durationMs, queueDurationMs, resources, phases }: any) =>
+            ({ id, status, disposition, durationMs, queueDurationMs, resources, phases })) ?? null;
+        }
+      } catch { /* Diagnostic absence does not change the verification result. */ }
+      results.push({ id: node.id, status: result.status === 0 && !result.error ? 'passed' : 'failed', disposition: 'executed', durationMs: Math.round(performance.now() - nodeStarted), checks });
     }
   } finally {
     consumerCheckout?.cleanup?.();
   }
   assertCheckout(productRoot, verificationSource);
+  fs.writeFileSync(path.join(output, 'release-artifact-timing.json'), JSON.stringify({ sourceCommit: verificationSource,
+    artifactSha256: artifact.identity.sha256 ?? artifact.identity.artifactSha256, durationMs: Math.round(performance.now() - started), preparation, results }) + '\n');
   return { ...plan, artifact: artifact.identity, output, status: results.length === plan.nodes.length && results.every(result => result.status === 'passed') ? 'passed' : 'failed', results };
 }
 

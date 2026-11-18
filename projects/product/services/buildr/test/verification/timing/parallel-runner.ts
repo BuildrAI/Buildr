@@ -247,6 +247,17 @@ export function cleanupTrackedDescendants(rootPid: any, ownedProcesses: any, { p
   };
 }
 
+let resourceSnapshot: { expires: number; rows: number[][] } | undefined;
+function sampleProcessGroup(pgid: number) {
+  if (!resourceSnapshot || resourceSnapshot.expires <= Date.now()) {
+    const result = spawnSync('ps', ['-axo', 'pgid=,rss=,%cpu='], { encoding: 'utf8', timeout: 1000, maxBuffer: 2 * 1024 * 1024 });
+    if (result.status !== 0) return null;
+    resourceSnapshot = { expires: Date.now() + 200, rows: result.stdout.trim().split('\n').map(line => line.trim().split(/\s+/u).map(Number)) };
+  }
+  const rows = resourceSnapshot.rows.filter(row => row.length === 3 && row.every(Number.isFinite) && row[0] === pgid);
+  return rows.length ? { rssBytes: rows.reduce((n, row) => n + row[1]! * 1024, 0), cpuPercent: rows.reduce((n, row) => n + row[2]!, 0), processes: rows.length } : null;
+}
+
 export async function runVerificationStep(step: any, runtime: any = {}): Promise<any>  {
   const startedAt: any = Date.now();
   const platform: any = runtime.platform ?? process.platform;
@@ -270,6 +281,10 @@ export async function runVerificationStep(step: any, runtime: any = {}): Promise
     let abortListener: any = null;
     let exitResult: any = null;
     let childErrorCode: any = null;
+    let resourceTimer: ReturnType<typeof setInterval> | undefined;
+    const measureResources = (step.env ?? process.env).BUILDR_VERIFICATION_SAMPLE_RESOURCES === '1';
+    const resources = { method: 'posix-process-group-ps', intervalMs: 1000, samples: 0,
+      peakSampledGroupRssBytes: null as number | null, peakSampledGroupCpuPercent: null as number | null, peakSampledProcesses: null as number | null };
     const requestedExitCloseGraceMs: any = runtime.exitCloseGraceMs ?? 10_000;
     const exitCloseGraceMs: any = Number.isFinite(requestedExitCloseGraceMs) && requestedExitCloseGraceMs >= 0 ? requestedExitCloseGraceMs : 10_000;
     const scheduleTimeout: any = runtime.setTimeout ?? setTimeout;
@@ -281,6 +296,7 @@ export async function runVerificationStep(step: any, runtime: any = {}): Promise
     const cleanup: any = () => {
       if (cleanupCompleted) return processCleanup;
       cleanupCompleted = true;
+      clearInterval(resourceTimer);
       const lineage: any = lineageTracker?.stop() ?? { ownedPids: [], ownedProcesses: [], sampleError: null };
       const processGroup: any = cleanupOwnedProcessGroup(child?.pid, runtime);
       const descendants: any = cleanupTrackedDescendants(child?.pid, lineage.ownedProcesses ?? lineage.ownedPids, runtime);
@@ -325,6 +341,7 @@ export async function runVerificationStep(step: any, runtime: any = {}): Promise
         childOutcome,
         failureFacts: verificationFailureFacts({ stdout, stderr, failureCode, errorCode: childErrorCode, childOutcome, processCleanup }),
         durationMs,
+        ...(measureResources ? { resources: resources.samples ? resources : null } : {}),
         process: Number.isInteger(child?.pid) ? { pid: child.pid, processGroupId: platform === 'win32' ? null : child.pid } : null,
         stdout,
         stderr,
@@ -346,6 +363,18 @@ export async function runVerificationStep(step: any, runtime: any = {}): Promise
       detached: platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    if (measureResources && platform !== 'win32' && Number.isInteger(child.pid)) {
+      const sample = () => {
+        const observed = sampleProcessGroup(child.pid);
+        if (!observed) return;
+        resources.samples++;
+        resources.peakSampledGroupRssBytes = Math.max(resources.peakSampledGroupRssBytes ?? 0, observed.rssBytes);
+        resources.peakSampledGroupCpuPercent = Math.max(resources.peakSampledGroupCpuPercent ?? 0, observed.cpuPercent);
+        resources.peakSampledProcesses = Math.max(resources.peakSampledProcesses ?? 0, observed.processes);
+      };
+      resourceTimer = setInterval(sample, resources.intervalMs);
+      resourceTimer.unref();
+    }
     lineageTracker = createOwnedDescendantTracker(child.pid, runtime);
     const processGroupId: any = platform === 'win32' ? null : child.pid;
     runtime.onSpawn?.({ pid: child.pid, processGroupId, startedAt });

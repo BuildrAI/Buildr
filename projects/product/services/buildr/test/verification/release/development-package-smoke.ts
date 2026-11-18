@@ -13,7 +13,8 @@ const exact = createExactNodeExecutionEnvironment({ nodeExecutable: process.exec
 const artifactDirectory = path.join(isolatedRoot, 'development-package');
 const started = performance.now();
 const adapter = await loadCandidatePackageAdapter();
-await adapter.create(productRoot, artifactDirectory, { npmExecutable: exact.npmExecutable! });
+const artifact = await adapter.create(productRoot, artifactDirectory, { npmExecutable: exact.npmExecutable!, observeStages: () => {} });
+console.log(JSON.stringify({ developmentPackageMeasurements: artifact.measurements }));
 console.log(`[development-package-smoke] build-and-pack ${Math.round(performance.now() - started)}ms`);
 const report = await runPackageSmoke({ artifactDirectory, output: path.join(isolatedRoot, 'package-smoke.json'), development: true });
 console.log(JSON.stringify(report));

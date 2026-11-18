@@ -52,7 +52,13 @@ export function writeReleaseProcessReports(workspace: string, state: any, attemp
     const failed = failures.length > 0 || result.run?.conclusion === 'failure' || /failed|blocked|diagnosis-required/u.test(result.status);
     if (failed && failures.length === 0) failures.push({ checkName: attempt.phase, errorCode: null, message: result.status });
     const status = failed ? 'failed' : result.status === 'passed' && artifacts.length > 0 && artifacts.every((item: any) => item.publicationConfirmed) ? 'succeeded' : 'unknown';
-    const current = { ...attempt, status, failures, recoveryActions: (result.effects ?? []).filter((effect: any) => /repair|recovery|retry|rerun|reconcil/u.test(effect.type ?? '')) };
+    const measurement = state.localReleaseMeasurements ?? null;
+    const trackedSource = state.candidate?.sourceCommit ?? state.localPackage?.sourceCommit ?? state.localPackageProduction?.sourceCommit;
+    const trackedArtifact = state.localPackage?.artifactSha256 ?? state.localPackageProduction?.artifactSha256;
+    const local = names.includes('buildr') && (state.targets?.versions?.buildr ?? state.version) === version
+      && measurement && (!trackedSource || measurement.sourceCommit === trackedSource)
+      && (!trackedArtifact || !measurement.artifactSha256 || measurement.artifactSha256 === trackedArtifact) ? measurement : null;
+    const current = { ...attempt, status, failures, localMeasurements: local, recoveryActions: (result.effects ?? []).filter((effect: any) => /repair|recovery|retry|rerun|reconcil/u.test(effect.type ?? '')) };
     const attempts = [...(previous?.attempts ?? []).filter((item: any) => item.id !== attempt.id), current];
     const phases = attempts.flatMap((item: any) => item.phases);
     const value = { schemaVersion: 'buildr.release-process-report/v1', version, selectionId, status,
@@ -60,11 +66,23 @@ export function writeReleaseProcessReports(workspace: string, state: any, attemp
       failures: attempts.flatMap((item: any, index: number) => item.failures.map((failure: any) => ({
         ...failure, at: item.finishedAt, recoveryActions: attempts.slice(index).flatMap((later: any) => later.recoveryActions),
       }))),
-      artifacts, cleanup: result.cleanup ?? state.closeout?.cleanup ?? null, attempts,
+      artifacts, localMeasurements: local, cleanup: result.cleanup ?? state.closeout?.cleanup ?? null, attempts,
     };
     const markdown = [`# 发版记录 ${version}`, '', `状态：${status}`, `开始：${value.startedAt}；结束：${value.finishedAt ?? 'unknown'}（UTC）`, '',
       '| 阶段 | 状态 | 耗时（秒） |', '| --- | --- | --- |',
       ...phases.map((item: any) => `| ${item.phase} | ${item.status} | ${item.durationSeconds ?? 'unknown'} |`),
+      '', '## 本机耗时与资源',
+      '不同层级的耗时可能重叠，不相加。源码记录保留原轮次，非本次执行计数；资源为采样下界，未测为 unknown。',
+      '| 检查或阶段 | 状态 | 执行/原始耗时（毫秒） | 排队（毫秒） | 采样内存（MiB） |', '| --- | --- | ---: | ---: | ---: |',
+      ...[...(local?.stages ?? []), ...(local?.package?.stages ?? []), ...(local?.artifactChecks?.preparation ?? []), ...(local?.artifactChecks?.results ?? []).flatMap((node: any) => [node, ...(node.checks ?? [])]), ...(local?.sourceChecks ?? [])].map((item: any) =>
+        `| ${String(item.id).replaceAll('|', '\\|')} | ${[item.status, item.disposition ?? item.applicability].filter(Boolean).join(" / ") || "unknown"} | ${item.durationMs ?? 'unknown'} | ${item.queueDurationMs ?? 'unknown'} | ${item.resources?.peakSampledGroupRssBytes == null ? 'unknown' : (item.resources.peakSampledGroupRssBytes / 1048576).toFixed(1)} |`),
+      '', '## 安装包构成',
+      ...(local?.package?.package ? [
+        `压缩 ${local.package.package.compressedBytes} 字节；解包 ${local.package.package.unpackedBytes} 字节；文件 ${local.package.package.fileCount} 个。`,
+        '| 组件 | 解包字节 | 文件数 |', '| --- | ---: | ---: |',
+        ...local.package.package.components.map((entry: any) => `| ${String(entry.path).replaceAll('|', '\\|')} | ${entry.bytes} | ${entry.files} |`),
+        '实际随包依赖声明、后端各入口内联依赖与字节数、最大文件、测试文件、采样 CPU 与进程数以及远端计时见 JSON。未观察到的磁盘、网络和资源不作推断。',
+      ] : ['unknown：没有匹配原包的构成记录。']),
       '', '## 失败与修复', '```json', JSON.stringify(value.failures, null, 2), '```',
       '', '## 最终产物', '```json', JSON.stringify(artifacts, null, 2), '```',
       '', '## 清理', '```json', JSON.stringify(value.cleanup, null, 2), '```',

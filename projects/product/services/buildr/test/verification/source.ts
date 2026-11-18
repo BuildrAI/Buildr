@@ -276,6 +276,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
           // the verification network policy is offline.
           const executionEnv = {
             ...reuseOptions.env,
+            BUILDR_VERIFICATION_SAMPLE_RESOURCES: '1',
             ...(v1CompatibilityPackage ? { BUILDR_AGENT_V1_PACKAGE: v1CompatibilityPackage } : {}),
             BUILDR_DEVELOPMENT_PREPARE_SKIP: '1',
           };
