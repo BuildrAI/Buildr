@@ -963,15 +963,19 @@ test('独立网页桌面宽屏默认展开对话列表，窄屏优先对话且�
  assert.equal(shouldPersistStandaloneHistoryPreference('history',448,500),true);
 });
 
-test('对话列表与提醒浮窗状态采用无框高辨识度圆点样式且保持静态无闪烁',async()=>{
+test('对话列表与提醒浮窗状态采用无框静态样式，且执行中与待查看具备色彩和形状双重区分',async()=>{
  const {readFileSync}=await import('node:fs');
  const activityCss=readFileSync(new URL('../../src/features/agent-conversations/conversation-activity.css',import.meta.url),'utf8');
  const conversationCss=readFileSync(new URL('../../src/features/agent-conversations/agent-conversations.css',import.meta.url),'utf8');
- assert.match(activityCss,/\.ac-activity-status\{[^}]*font-weight:600[^}]*\}/);
+ assert.match(activityCss,/\.ac-activity-status\{[^}]*color:#156f43[^}]*font-weight:600[^}]*\}/);
  assert.doesNotMatch(activityCss,/\.ac-activity-status\{[^}]*(?:background|border-radius)\s*:/);
- assert.match(activityCss,/\.ac-activity-status>i\{[^}]*width:6px;height:6px/);
- assert.match(activityCss,/\.ac-history-row\.is-selected \.ac-activity-status\.is-running[^}]*color:#14594b/);
- assert.match(activityCss,/\.ac-history-row\.is-selected \.ac-activity-status\.is-running>i[^}]*background:#127860/);
+ assert.match(activityCss,/\.ac-activity-status>i\{[^}]*width:6px;height:6px;border-radius:50%;background:#168a50/);
+ assert.match(activityCss,/\.ac-history-row\.is-selected \.ac-activity-status\.is-running[^}]*color:#0f5935/);
+ assert.match(activityCss,/\.ac-history-row\.is-selected \.ac-activity-status\.is-running>i[^}]*background:#117342/);
+ assert.match(activityCss,/\.ac-activity-status\.is-unseen\{[^}]*color:#274675/);
+ assert.match(activityCss,/\.ac-activity-status\.is-unseen>i\{[^}]*border-radius:1px;background:#355c96;transform:rotate\(45deg\)/);
+ assert.match(activityCss,/\.ac-history-row\.is-selected \.ac-activity-status\.is-unseen[^}]*color:#1e375c/);
+ assert.match(activityCss,/\.ac-history-row\.is-selected \.ac-activity-status\.is-unseen>i[^}]*background:#294a7a/);
  assert.doesNotMatch(activityCss,/\.ac-activity-status[^{]*\{[^}]*animation\s*:/);
  assert.match(conversationCss,/\.ac-draft-status\{[^}]*font-weight:550/);
  assert.doesNotMatch(conversationCss,/\.ac-draft-status\{[^}]*border-radius\s*:/);

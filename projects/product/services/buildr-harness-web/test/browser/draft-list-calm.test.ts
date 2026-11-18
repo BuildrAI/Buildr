@@ -202,7 +202,9 @@ test('draft list ignores executing conversations and settles calmly on navigatio
       animationName: status.animationName,
       dotWidth: dot.width,
       dotHeight: dot.height,
+      dotBorderRadius: dot.borderRadius,
       dotBackgroundColor: dot.backgroundColor,
+      dotTransform: dot.transform,
       dotAnimationName: dot.animationName,
     };
   });
@@ -210,6 +212,8 @@ test('draft list ignores executing conversations and settles calmly on navigatio
   assert.ok(runningSelectedStyle.fontWeight >= 600, '执行中字重应显著高于普通正文');
   assert.equal(runningSelectedStyle.dotWidth, '6px', '执行中圆点应放大至 6px');
   assert.equal(runningSelectedStyle.dotHeight, '6px');
+  assert.equal(runningSelectedStyle.dotBorderRadius, '50%', '执行中保持圆形标识');
+  assert.equal(runningSelectedStyle.dotTransform, 'none');
   assert.equal(runningSelectedStyle.animationName, 'none', '活动状态不得闪烁或做动画');
   assert.equal(runningSelectedStyle.dotAnimationName, 'none', '活动状态圆点保持静态不闪烁');
 
@@ -241,6 +245,30 @@ test('draft list ignores executing conversations and settles calmly on navigatio
   );
   await page.waitForTimeout(150);
   assert.equal(await rowRunning.locator('.ac-draft-status').count(), 0, '待查看状态存在时不同时显示有草稿');
+  const unseenIdleStyle = await rowRunning.locator('.ac-activity-status').evaluate(element => {
+    const status = getComputedStyle(element);
+    const marker = getComputedStyle(element.querySelector('i')!);
+    return {
+      color: status.color,
+      fontWeight: Number(status.fontWeight),
+      backgroundColor: status.backgroundColor,
+      animationName: status.animationName,
+      markerWidth: marker.width,
+      markerHeight: marker.height,
+      markerBorderRadius: marker.borderRadius,
+      markerBackgroundColor: marker.backgroundColor,
+      markerTransform: marker.transform,
+      markerAnimationName: marker.animationName,
+    };
+  });
+  assert.equal(unseenIdleStyle.backgroundColor, 'rgba(0, 0, 0, 0)', '待查看保持无底框极简样式');
+  assert.ok(unseenIdleStyle.fontWeight >= 600, '待查看字重清晰醒目');
+  assert.equal(unseenIdleStyle.animationName, 'none', '待查看保持静态无闪烁');
+  assert.equal(unseenIdleStyle.markerAnimationName, 'none', '待查看标识保持静态无闪烁');
+  assert.notEqual(unseenIdleStyle.color, runningIdleStyle.color, '待查看与执行中文字颜色明显区分');
+  assert.notEqual(unseenIdleStyle.markerBackgroundColor, runningIdleStyle.dotBackgroundColor, '待查看与执行中图形颜色明显区分');
+  assert.equal(unseenIdleStyle.markerBorderRadius, '1px', '待查看采用微圆角菱形而非圆形');
+  assert.notEqual(unseenIdleStyle.markerTransform, 'none', '待查看标识旋转成菱形与执行中圆点区分');
 
   // 并排点开“待查看”消除未读，停留查看期间保持安静，不突兀弹出“有草稿”。
   await rowRunning.click();
