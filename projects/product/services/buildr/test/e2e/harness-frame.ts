@@ -179,8 +179,13 @@ try{
  await frame.locator('.ac-focus-history-pane').waitFor({state:'visible'});
  await frame.locator('.ac-collapsed-rail .ac-new-conversation').click();
  await frame.locator('.ac-welcome .ant-select').filter({has:frame.getByRole('combobox',{name:'新对话工作空间',exact:true})}).click();
+ assert.equal(await frame.locator('.ac-panel-popup .ant-select-item-option').filter({hasText:'默认工作空间'}).count(),0,'workspace selector omits default workspace option');
  await frame.locator('.ac-panel-popup .ant-select-item-option').filter({hasText:'切换工作空间验收'}).click();
  assert.equal(await frame.locator('.ac-focus-history-pane').isVisible(),true,'switching workspace while creating a conversation preserves open history list');
+ await frame.locator('.ac-welcome .ac-workspace-select').hover();
+ await frame.locator('.ac-welcome .ac-workspace-select .ant-select-clear').click();
+ await page.waitForFunction(()=>document.querySelector('[aria-label="对话信息与工作空间"]')?.textContent?.trim()==='默认工作空间');
+ assert.equal(await frame.locator('.ac-focus-history-pane').isVisible(),true,'clearing workspace back to default preserves open history list');
  await frame.locator('.ac-collapsed-rail .ac-current-conversation').click();
  await frame.locator('.ac-focus-history-pane').waitFor({state:'hidden'});
  assert.equal(await page.locator('.development-harness-frame.is-full').isVisible(),true,'clicking current conversation rail exits history view without collapsing focus panel');

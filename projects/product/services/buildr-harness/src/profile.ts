@@ -28,3 +28,13 @@ export function harnessWebPort(profile: 'released' | 'development', override?: n
   if(!Number.isInteger(port)||port<1||port>65535)throw new Error('网页端口无效。');
   return port;
 }
+
+export function defaultHarnessWorkspaceRoot(dataRoot:string,options:{platform?:NodeJS.Platform;env?:NodeJS.ProcessEnv;home?:string}={}):string{
+  const env=options.env??process.env,home=options.home??os.homedir();
+  const resolve=(options.platform??process.platform)==='win32'?path.win32.resolve:path.resolve;
+  const resolvedRoot=resolve(dataRoot);
+  const standardRoots=(['released','development'] as const).map(profile=>resolve(defaultHarnessDataRoot(profile,options)));
+  if(env.BUILDR_APP_DATA_DIR||!standardRoots.includes(resolvedRoot))return resolve(resolvedRoot,'default-workspace');
+  const productRoot=env.BUILDR_PRODUCT_DATA_DIR||path.join(home,'.buildr');
+  return resolve(productRoot,'default-workspace');
+}

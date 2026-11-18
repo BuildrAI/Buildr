@@ -65,14 +65,15 @@ export async function createDevelopmentWeb({root, base = '/', server, authorize,
     async handle(request, response, {document = false, entry = 'index.html', frame = false} = {}) {
       authorize(request);
       if (document) {
+        const allowFrame = frame || entry === 'mermaid-renderer.html';
         const nonce = randomBytes(18).toString('base64');
         const html = await vite.transformIndexHtml(request.url || base, await fs.readFile(path.join(root, entry), 'utf8'));
-        const output = inject(html, request).replaceAll(noncePlaceholder, nonce);
+        const output = (entry === 'index.html' ? inject(html, request) : html).replaceAll(noncePlaceholder, nonce);
         response.writeHead(200, {
           'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
           'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer',
-          'content-security-policy': `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws://127.0.0.1:${new URL('http://' + request.headers.host).port}; object-src 'none'; base-uri 'none'; frame-src 'self'; frame-ancestors ${frame ? "'self'" : "'none'"}`,
-          'x-frame-options': frame ? 'SAMEORIGIN' : 'DENY',
+          'content-security-policy': `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws://127.0.0.1:${new URL('http://' + request.headers.host).port}; object-src 'none'; base-uri 'none'; frame-src 'self'; frame-ancestors ${allowFrame ? "'self'" : "'none'"}`,
+          'x-frame-options': allowFrame ? 'SAMEORIGIN' : 'DENY',
         });
         response.end(output);
         return;
@@ -88,6 +89,9 @@ export async function createDevelopmentWeb({root, base = '/', server, authorize,
         });
       });
     },
-    async close() { await vite.close(); },
+    async close() {
+      await Promise.allSettled(Object.values(vite.environments ?? {}).map(env => env.depsOptimizer?.scanProcessing));
+      await vite.close();
+    },
   };
 }

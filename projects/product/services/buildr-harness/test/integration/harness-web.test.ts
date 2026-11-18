@@ -8,6 +8,8 @@ import {HarnessWebEndpoint} from '../../src/process/web-endpoint.ts';
 import {HarnessWebSessions,PAGE_SESSION_WINDOW} from '../../src/process/web-session-store.ts';
 import {createAgentService} from '../../src/application/agent-service.ts';
 import {HarnessDirectoryHost} from '../../src/application/directory-host.ts';
+import {AgentHostRegistry} from '../../src/process/host-channel.ts';
+import {defaultHarnessWorkspaceRoot} from '../../src/profile.ts';
 import {executionScopeKey} from '../../src/execution-contracts.ts';
 import type {AgentProcessConnection} from '../../src/process/client.ts';
 
@@ -56,6 +58,7 @@ test('loopback endpoint is explicit, stable across generation handoff, keeps old
   const dataRoot=root(t),work=path.join(dataRoot,'work'),staticRoot=path.join(dataRoot,'web');fs.mkdirSync(work);fs.mkdirSync(path.join(staticRoot,'assets'),{recursive:true});
   fs.writeFileSync(path.join(work,'note.md'),'# source checked');
   fs.writeFileSync(path.join(staticRoot,'index.html'),'<!doctype html><html><head><script type="module" src="./assets/main.js"></script></head><body>shared page</body></html>');fs.writeFileSync(path.join(staticRoot,'assets/main.js'),'export const page="old"');
+  fs.writeFileSync(path.join(staticRoot,'mermaid-renderer.html'),'<!doctype html><html><head><script type="module" src="./assets/mermaid.js"></script></head><body></body></html>');fs.writeFileSync(path.join(staticRoot,'assets/mermaid.js'),'export const diagram=1;');
   const directories=new HarnessDirectoryHost(dataRoot),directory=directories.register(work),key=executionScopeKey(directory.ref);
   const service=createAgentService({dataRoot,legacySourceId:'buildr',environment:{HOME:dataRoot},executors:[],modelProviders:[],host:directories});
   const conversation=await service.conversations.create(key,{});
@@ -72,6 +75,13 @@ test('loopback endpoint is explicit, stable across generation handoff, keeps old
   response=await fetch(origin+'/session/ticket',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({ticket:value})});assert.equal(response.status,200);
   const cookie=response.headers.get('set-cookie')!.split(';')[0]!,token=cookie.slice(cookie.indexOf('=')+1);
   response=await fetch(origin+'/',{headers:{cookie}});assert.equal(response.status,200);const old=await response.text();assert.ok(old.includes(token));const oldBundle=/\/bundles\/([a-f0-9]{64})\/assets\/main.js/.exec(old)![0];
+  assert.match(response.headers.get('content-security-policy')||'',/frame-ancestors 'none'/);
+  const mermaidRes=await fetch(origin+'/mermaid-renderer.html',{headers:{cookie}});assert.equal(mermaidRes.status,200);
+  assert.equal(mermaidRes.headers.get('x-frame-options'),'SAMEORIGIN');
+  const mermaidCsp=mermaidRes.headers.get('content-security-policy')||'';
+  for(const directive of ["default-src 'none'","connect-src 'none'","script-src 'self'","frame-ancestors 'self'"])assert.ok(mermaidCsp.includes(directive),mermaidCsp);
+  assert.ok(!mermaidCsp.includes("frame-ancestors 'none'"),mermaidCsp);
+  const mermaidHtml=await mermaidRes.text();assert.match(mermaidHtml,/\/bundles\/[a-f0-9]{64}\/assets\/mermaid\.js/);assert.ok(!mermaidHtml.includes(token));
   const refreshed=response.headers.get('set-cookie');assert.ok(refreshed&&refreshed.startsWith(cookie+';'),'document load refreshes the same session cookie');
   const maxAge=Number(/Max-Age=(\d+)/.exec(refreshed!)![1]);assert.ok(maxAge>0&&maxAge<=PAGE_SESSION_WINDOW/1000,'cookie lifetime never exceeds the server session window');
   response=await fetch(origin+oldBundle,{headers:{cookie}});assert.match(await response.text(),/"old"/);
@@ -122,6 +132,7 @@ test('development source page keeps ticket authentication and never needs an exe
   fs.writeFileSync(path.join(sourceRoot,'package.json'),JSON.stringify({name:'@buildr-ai/buildr-harness-web',type:'module'}));
   fs.writeFileSync(path.join(sourceRoot,'vite.config.ts'),'export default {};');
   fs.writeFileSync(path.join(sourceRoot,'index.html'),'<html><head></head><body><script type="module" src="/src/main.ts"></script></body></html>');
+  fs.writeFileSync(path.join(sourceRoot,'mermaid-renderer.html'),'<html><head></head><body><script type="module" src="/src/main.ts"></script></body></html>');
   fs.writeFileSync(path.join(sourceRoot,'src/main.ts'),'export const value:number=1;');
   fs.symlinkSync(path.resolve(import.meta.dirname,'../../../buildr-harness-web/tools/dev-server.mjs'),path.join(sourceRoot,'tools/dev-server.mjs'));
   let connects=0;
@@ -139,6 +150,9 @@ test('development source page keeps ticket authentication and never needs an exe
   const cookies=await Promise.all([login(),login()]);
   const pages=await Promise.all(cookies.map(async cookie=>{const response=await fetch(origin+'/',{headers:{cookie}});assert.equal(response.status,200);return response.text();}));
   pages.forEach((html,index)=>{assert.match(html,/\/@vite\/client/);assert.ok(html.includes(cookies[index]!.split('=')[1]!));assert.ok(!html.includes(cookies[1-index]!.split('=')[1]!),'one page cannot receive another session');});
+  const liveRoot=await fetch(origin+'/',{headers:{cookie:cookies[0]!}});assert.equal(liveRoot.headers.get('x-frame-options'),'DENY');assert.match(liveRoot.headers.get('content-security-policy')||'',/frame-ancestors 'none'/);
+  const liveMermaid=await fetch(origin+'/mermaid-renderer.html',{headers:{cookie:cookies[0]!}});assert.equal(liveMermaid.status,200);assert.equal(liveMermaid.headers.get('x-frame-options'),'SAMEORIGIN');assert.match(liveMermaid.headers.get('content-security-policy')||'',/frame-ancestors 'self'/);
+  const liveMermaidHtml=await liveMermaid.text();assert.match(liveMermaidHtml,/\/@vite\/client/);assert.ok(!liveMermaidHtml.includes(cookies[0]!.split('=')[1]!),'mermaid sandbox never receives session meta');
   assert.equal((await fetch(origin+'/src/main.ts?t=1',{headers:{cookie:cookies[0]!}})).status,200);
   assert.equal((await fetch(origin+'/src/main.ts',{headers:{cookie:cookies[0]!,origin:'https://foreign.invalid'}})).status,403);
   await endpoint.releaseListener();
@@ -159,4 +173,27 @@ test('development source page keeps ticket authentication and never needs an exe
   assert.equal(connects,0,'frontend activation and handoff do not start or stop model work');
   const released=new HarnessWebEndpoint({...options,dataRoot:path.join(dataRoot,'released'),profileId:'released',instanceId:'released',generation:'r'});
   await assert.rejects(released.enable({developmentRoot:sourceRoot}),{code:'agent_web_development_forbidden'});await released.close();
+});
+
+test('standalone web endpoint serves and creates @default conversations without an attached host peer',async t=>{
+  const dataRoot=root(t),staticRoot=path.join(dataRoot,'web');fs.mkdirSync(path.join(staticRoot,'assets'),{recursive:true});
+  fs.writeFileSync(path.join(staticRoot,'index.html'),'<!doctype html><html><head></head><body>ok</body></html>');
+  const directories=new HarnessDirectoryHost(dataRoot),hosts=new AgentHostRegistry(directories,()=>defaultHarnessWorkspaceRoot(dataRoot));
+  const service=createAgentService({dataRoot,legacySourceId:'buildr',environment:{HOME:dataRoot},executors:[],modelProviders:[],host:hosts});
+  const connection={operations:service,scopeCatalog:async()=>({scopes:[]}),runtime:{digest:'fixture'},directories:{list:async()=>directories.list(),register:async(value:string)=>directories.register(value),preview:async()=>{throw new Error('unused');}}} as unknown as AgentProcessConnection;
+  const endpoint=new HarnessWebEndpoint({dataRoot,staticRoot,instanceId:'default-scope',generation:'g1',ownsListener:()=>true,connect:async()=>connection});
+  t.after(async()=>{await endpoint.close();await service.close();fs.rmSync(dataRoot,{recursive:true,force:true});});
+  const origin=(await endpoint.enable()).origin!;
+  const ticket=new URLSearchParams(new URL((await endpoint.login()).url).hash.slice(1)).get('ticket');
+  const sessionRes=await fetch(origin+'/session/ticket',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({ticket})});
+  const cookie=sessionRes.headers.get('set-cookie')!.split(';')[0]!,token=cookie.slice(cookie.indexOf('=')+1);
+  const expectedRoot=defaultHarnessWorkspaceRoot(dataRoot);
+  const defaultRes=await fetch(origin+'/api/v1/app/agent-service/default-workspace',{headers:{cookie}});
+  assert.equal(defaultRes.status,200);
+  assert.equal((await defaultRes.json()).rootPath,expectedRoot);
+  const createRes=await fetch(origin+'/api/v1/app/agent-service/conversations',{method:'POST',headers:{cookie,origin,'x-buildr-session':token,'content-type':'application/json'},body:'{}'});
+  assert.equal(createRes.status,201);
+  const created=await createRes.json();
+  assert.equal(created.workspaceId,'@default');
+  assert.equal(created.cwd,fs.realpathSync(expectedRoot));
 });

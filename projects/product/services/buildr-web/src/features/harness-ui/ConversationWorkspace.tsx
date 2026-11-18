@@ -28,7 +28,6 @@ export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {default
     current.current.context.setConversation(conversation);
   },[]);
   const files = useMemo<HarnessDirectoryFiles>(() => ({
-    scopeRequired: true,
     async readFile(conversation, path, signal) {
       const observed = await current.current.context.api.read(conversation.workspaceId, conversation.id, signal);
       const catalog = await codeApi.repositories(observed.workspaceId, observed.taskId);

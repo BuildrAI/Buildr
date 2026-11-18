@@ -143,6 +143,14 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await a.reload();
     await a.locator('.ac-panel').waitFor({state:'visible',timeout:10000});
     assert.equal(await a.locator('.ac-focus-history-pane').count(),0,'collapsed history preference persists across reload');
+    const welcomeHeadingBox = await a.locator('.ac-welcome h1').boundingBox();
+    const welcomeWorkspaceBox = await a.locator('.ac-welcome .ac-location-settings').boundingBox();
+    const welcomeSelectBox = await a.locator('.ac-welcome .ac-workspace-select').boundingBox();
+    const welcomeAddBox = await a.getByRole('button', {name: '添加工作空间', exact: true}).boundingBox();
+    assert.ok(welcomeHeadingBox && welcomeWorkspaceBox && welcomeSelectBox && welcomeAddBox);
+    assert.ok(Math.abs(welcomeHeadingBox.x - welcomeWorkspaceBox.x) <= 1, 'welcome workspace card aligns with welcome heading');
+    assert.ok(Math.abs(welcomeSelectBox.y - welcomeAddBox.y) <= 1 && Math.abs(welcomeSelectBox.height - welcomeAddBox.height) <= 1, 'workspace select and add button align on the same row');
+    if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await a.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'welcome-workspace.png')});
     await a.getByRole('combobox', {name:'新对话工作空间'}).locator('..').locator('..').click();
     await a.getByText('work', {exact:true}).last().waitFor({state:'visible'});
     await a.keyboard.press('Escape');
@@ -158,10 +166,16 @@ test('standalone production UI sends through real source HTTP, isolates two draf
 
     assert.equal((await client.directories.list()).length,beforeDirectories);
     const dialog=a.getByRole('dialog',{name:'添加工作空间'});
+    await until(async()=>{
+      const box=await dialog.boundingBox(), viewport=a.viewportSize();
+      return Boolean(box&&viewport&&Math.abs((box.y+box.height/2)-viewport.height/2)<=24&&Math.abs((box.x+box.width/2)-viewport.width/2)<=12);
+    },value=>value,'add-workspace modal is vertically and horizontally centered');
+    if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await a.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'add-workspace-modal-empty.png')});
     assert.equal(await dialog.getByRole('button',{name:'创建并使用',exact:true}).isEnabled(),false);
     choosePath=work;
     await dialog.getByRole('button',{name:'选择本机目录',exact:true}).click();
     await dialog.getByLabel('已选择的工作空间目录').getByText(work,{exact:true}).waitFor();
+    if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await a.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'add-workspace-modal-selected.png')});
     assert.equal(await dialog.getByRole('textbox').count(),1,'only the optional name is editable; no path input');
     assert.equal(await dialog.getByRole('button',{name:'使用路径备用方式'}).count(),0);
     await dialog.getByRole('button',{name:'创建并使用',exact:true}).click();
@@ -178,7 +192,18 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await a.reload();
     await a.getByRole('combobox',{name:'新对话工作空间'}).locator('..').locator('..').click();
     await a.getByText('我的工作空间',{exact:true}).last().waitFor();
+    assert.equal(await a.locator('.ac-panel-popup .ant-select-item-option').filter({hasText:'默认工作空间'}).count(),0,'workspace dropdown hides default workspace option');
     await a.keyboard.press('Escape');
+    await a.locator('.ac-welcome .ac-workspace-select').hover();
+    await a.locator('.ac-welcome .ac-workspace-select .ant-select-clear').click();
+    assert.equal(await a.locator('.ac-welcome .ac-workspace-select .ant-select-selection-placeholder').innerText(),'默认工作空间');
+    await until(async()=>{
+      const meta=a.getByRole('button',{name:'对话信息与工作空间',exact:true});
+      const label=(await meta.innerText()).trim(),title=await meta.getAttribute('title');
+      return label==='默认工作空间'&&Boolean(title?.endsWith('default-workspace'));
+    },value=>value,'clearing workspace selection restores default workspace metadata and cwd');
+    await a.getByRole('combobox',{name:'新对话工作空间'}).locator('..').locator('..').click();
+    await a.locator('.ac-panel-popup .ant-select-item-option').filter({hasText:/^work$/}).click();
 
     const inputA = a.getByRole('textbox', {name: '对话输入', exact: true});
     await until(() => a.locator('.ac-model-label').innerText(), value => value.includes('Fixture'), 'fixture model selection');
@@ -228,8 +253,27 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     assert.ok(conversationId);
     assert.equal(await a.getByRole('button',{name:'系统提示词',exact:true}).count(),0);
     await b.goto(origin);
+    await b.locator('.ac-collapsed-rail .ac-all-conversations').hover();
+    const activityButton = b.locator(`.ac-activity-menu [data-activity-id="${conversationId}"]`);
+    await activityButton.waitFor({state: 'visible', timeout: 10000});
+    const activityOrder = await activityButton.evaluate((node: HTMLElement) => {
+      const parent = node.parentElement!, copy = parent.querySelector('.ac-activity-row-copy')!, id = node.querySelector('.ac-activity-id')!, meta = node.querySelector('.ac-activity-meta')!;
+      const c = copy.getBoundingClientRect(), i = id.getBoundingClientRect(), m = meta.getBoundingClientRect();
+      return {metaText: meta.textContent?.trim() || '', metaRight: m.right, idLeft: i.left, idRight: i.right, copyLeft: c.left, copyMid: c.top + c.height / 2, idMid: i.top + i.height / 2};
+    });
+    assert.ok(activityOrder.metaText.length > 0 && activityOrder.metaRight <= activityOrder.idLeft && activityOrder.idRight <= activityOrder.copyLeft + 1 && Math.abs(activityOrder.copyMid - activityOrder.idMid) < 4, JSON.stringify(activityOrder));
+    if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await b.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'activity-popover-order.png')});
     await b.locator('.ac-collapsed-rail .ac-all-conversations').click();
-    await b.locator(`.ac-history-row-main[data-conversation-id="${conversationId}"]`).click();
+    const historyButton = b.locator(`.ac-history-row-main[data-conversation-id="${conversationId}"]`);
+    await historyButton.waitFor({state: 'visible', timeout: 10000});
+    const historyOrder = await historyButton.evaluate((node: HTMLElement) => {
+      const parent = node.parentElement!, copy = parent.querySelector('.ac-history-row-copy')!, id = node.querySelector('.ac-history-id')!, meta = node.querySelector('.ac-history-meta')!;
+      const c = copy.getBoundingClientRect(), i = id.getBoundingClientRect(), m = meta.getBoundingClientRect();
+      return {metaText: meta.textContent?.trim() || '', metaRight: m.right, idLeft: i.left, idRight: i.right, copyLeft: c.left, copyMid: c.top + c.height / 2, idMid: i.top + i.height / 2};
+    });
+    assert.ok(historyOrder.metaText.length > 0 && historyOrder.metaRight <= historyOrder.idLeft && historyOrder.idRight <= historyOrder.copyLeft + 1 && Math.abs(historyOrder.copyMid - historyOrder.idMid) < 4, JSON.stringify(historyOrder));
+    if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await b.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'history-list-order.png')});
+    await historyButton.click();
     await b.getByRole('radio', {name: 'Accepted', exact: true}).waitFor({state: 'visible', timeout: 10000});
     const inputB = b.getByRole('textbox', {name: '对话输入', exact: true});
     await inputA.fill('窗口 A 未提交草稿');
@@ -294,6 +338,26 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     }
     assert.equal(fs.readFileSync(path.join(dataRoot, 'native-replies.jsonl'), 'utf8').trim().split('\n').length, 2, 'question and approval each consume one native reply');
     assert.equal(fs.readFileSync(path.join(dataRoot, 'native-sends.jsonl'), 'utf8').trim().split('\n').length, 3);
+    const mermaidConversationRoute = `**/api/v1/harness/sources/harness-local/scopes/*/conversations/${conversationId}`;
+    await a.route(mermaidConversationRoute, async route => {
+      if (route.request().method() !== 'GET') return route.continue();
+      const fetched = await route.fetch();
+      const body = await fetched.json();
+      body.entries = [...(body.entries ?? []), {
+        id: 'standalone-mermaid-entry',
+        kind: 'message',
+        role: 'assistant',
+        text: '时序图如下：\n\n```mermaid\nsequenceDiagram\n  actor U as 客户\n  participant C as 鲜虾小程序\n  participant B as 鲜虾后端\n  U->>C: 选择微信支付\n  C->>B: 提交下单内容\n  B-->>C: 返回内部支付流水\n```\n',
+        createdAt: new Date().toISOString(),
+      }];
+      await route.fulfill({response: fetched, json: body});
+    });
+    await a.reload();
+    await a.locator('.markdown-diagram[data-mermaid-state="rendered"] .markdown-diagram-view svg').waitFor({state: 'visible', timeout: 20000});
+    assert.equal(await a.locator('.markdown-diagram .markdown-render-note').isHidden(), true, 'render note hides once Mermaid SVG finishes rendering');
+    if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await a.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'mermaid-rendered.png')});
+    await a.unroute(mermaidConversationRoute);
+    await a.reload();
     const modelTriggerA = a.getByRole('button', {name: '模型与推理强度', exact: true});
     const modelDialogA = a.getByRole('dialog', {name: '模型与推理强度设置', exact: true});
     const modelComboA = modelDialogA.getByRole('combobox', {name: '执行模型', exact: true});

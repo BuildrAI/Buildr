@@ -102,7 +102,8 @@ export function createLocalWorkspaceRequestRouter({
       return;
     }
     if (request.method === 'GET' && !pathname.startsWith('/api/') && developmentWebs()) {
-      await developmentWebs().web.handle(request, response, {document: pathname === '/mermaid-renderer.html', entry: 'mermaid-renderer.html'}); return;
+      const mermaid = pathname === '/mermaid-renderer.html';
+      await developmentWebs().web.handle(request, response, {document: mermaid, entry: mermaid ? 'mermaid-renderer.html' : 'index.html', frame: mermaid}); return;
     }
     if (request.method === 'GET' && !pathname.startsWith('/api/') && await serveDistAsset(response, pathname, staticRoot, request)) return;
     if (request.method === 'GET' && pathname === '/api/v1/development/status' && developmentWebs()) {
