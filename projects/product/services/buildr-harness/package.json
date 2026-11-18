@@ -40,6 +40,15 @@
     "release:check": "node tools/check-distribution.ts"
   },
   "dependencies": {
+    "ajv": "8.18.0",
+    "cacache": "20.0.4",
+    "ws": "8.22.0"
+  },
+  "overrides": {
+    "zod@4.4.3": "4.6.7",
+    "undici@8.11.2": "8.12.2"
+  },
+  "devDependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.322",
     "@deepseek-ai/cordis": "4.0.5",
     "@deepseek-ai/dsh-api-account-controller": "0.2.1-rc.2",
@@ -55,15 +64,6 @@
     "@deepseek-ai/dsh-user-approval": "0.2.1-rc.2",
     "@deepseek-ai/dsh-user-questions": "0.2.1-rc.2",
     "@qoder-ai/qoder-agent-sdk": "1.0.55",
-    "ajv": "8.18.0",
-    "cacache": "20.0.4",
-    "ws": "8.22.0"
-  },
-  "overrides": {
-    "zod@4.4.3": "4.6.7",
-    "undici@8.11.2": "8.12.2"
-  },
-  "devDependencies": {
     "@types/node": "24.13.3",
     "@types/ws": "8.18.1",
     "json-schema-to-typescript": "15.0.4",

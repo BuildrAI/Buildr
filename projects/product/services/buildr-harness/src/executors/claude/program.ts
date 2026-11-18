@@ -21,6 +21,8 @@ export const claudeProgramPolicy: NativeProgramPolicy = {
     kind: 'npm',
     package: `${claudePackage}@2.1.322`,
     entry: claudeEntry,
+    companionPackages: ['@anthropic-ai/claude-agent-sdk@0.3.322'],
+    omitOptionalDependencies: true,
   },
   versionDisplay: 'program',
 };

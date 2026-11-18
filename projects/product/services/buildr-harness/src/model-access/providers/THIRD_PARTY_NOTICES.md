@@ -2,7 +2,7 @@
 
 ## Claude Agent SDK
 
-Claude 执行器直接依赖 `@anthropic-ai/claude-agent-sdk`，不复制其执行循环。该依赖按其软件包自带的 `README.md`、`LICENSE.md` 及 Anthropic Commercial Terms 使用；运行包保留这些文件，不将 SDK 改称 MIT 软件。实际执行程序单独由官方平台包准备；SDK 的可选后备二进制不重复装入每个执行运行单元。SDK 接入不包含未经许可的 claude.ai 登录或订阅权益。
+Claude 执行器在用户准备 `claude-code` 独立接入时，按需将 `@anthropic-ai/claude-agent-sdk` 与平台 `claude` CLI 安装到独立的受管程序目录内使用，不再随 Buildr 产品包分发。该外部依赖按其软件包自带的 `README.md`、`LICENSE.md` 及 Anthropic Commercial Terms 由用户独立启用；SDK 接入不包含未经许可的 claude.ai 登录或订阅权益。
 
 https://github.com/anthropics/claude-agent-sdk-typescript
 

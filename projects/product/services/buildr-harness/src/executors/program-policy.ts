@@ -12,6 +12,8 @@ export type ProgramDistribution =
       kind: 'npm';
       package: string;
       entry: string;
+      companionPackages?: readonly string[] | ((releaseVersion: string) => readonly string[]);
+      omitOptionalDependencies?: boolean;
       installEnv?: Readonly<Record<string, string>>;
       allowIndependentBinaryVersion?: boolean;
     }
@@ -63,6 +65,16 @@ const builtinPolicies = [
 export const nativeProgramPolicies: Readonly<Record<string, NativeProgramPolicy>> = Object.freeze(
   Object.fromEntries(builtinPolicies.map(policy => [policy.id, policy])),
 );
+
+export function resolveCompanionPackages(
+  distribution: Extract<ProgramDistribution, { kind: 'npm' }>,
+  releaseVersion: string,
+): readonly string[] {
+  if (!distribution.companionPackages) return [];
+  return typeof distribution.companionPackages === 'function'
+    ? distribution.companionPackages(releaseVersion)
+    : distribution.companionPackages;
+}
 
 export function nativeProgramPolicy(provider: string, policies: Readonly<Record<string, NativeProgramPolicy>> = nativeProgramPolicies): NativeProgramPolicy {
   if (!Object.hasOwn(policies, provider)) throw new Error('agent_program_provider_unsupported');

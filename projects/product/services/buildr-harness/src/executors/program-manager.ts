@@ -26,6 +26,7 @@ import {
   isSupportedProgramPlatform,
   nativeProgramPolicies,
   nativeProgramPolicy,
+  resolveCompanionPackages,
   type NativeProgramPolicy,
 } from './program-policy.ts';
 import {
@@ -157,6 +158,55 @@ export class NativeProgramManager implements AgentProgramManager {
     return fallback;
   }
 
+  private parseNpmSpec(spec: string): { name: string; version: string } {
+    const split = spec.lastIndexOf('@');
+    if (split <= 0 || split === spec.length - 1) throw new Error('agent_install_spec_invalid');
+    return { name: spec.slice(0, split), version: spec.slice(split + 1) };
+  }
+
+  private async verifyCompanionPackages(destination: string, specs: readonly string[]): Promise<boolean> {
+    if (!specs.length) return true;
+    let resolvedDestination: string;
+    try {
+      const destStat = await fs.lstat(destination);
+      if (destStat.isSymbolicLink() || !destStat.isDirectory()) return false;
+      resolvedDestination = await fs.realpath(destination);
+    } catch {
+      return false;
+    }
+    for (const spec of specs) {
+      try {
+        const { name, version } = this.parseNpmSpec(spec);
+        const metadataPath = path.join(destination, 'node_modules', ...name.split('/'), 'package.json');
+        const stat = await fs.lstat(metadataPath);
+        if (!stat.isFile() || stat.isSymbolicLink()) return false;
+        const resolvedMetadata = await fs.realpath(metadataPath);
+        const relative = path.relative(resolvedDestination, resolvedMetadata);
+        if (!relative || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) return false;
+        const installed = JSON.parse(await fs.readFile(resolvedMetadata, 'utf8'));
+        if (installed.name !== name || installed.version !== version) return false;
+      } catch {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private managedPackageRoot(provider: string, executable: string): { root: string; version?: string } | undefined {
+    try {
+      const providerRoot = realpathSync(path.join(this.root, 'programs', provider));
+      const actual = realpathSync(executable);
+      const relative = path.relative(providerRoot, actual);
+      if (!relative || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) return undefined;
+      const top = relative.split(path.sep)[0];
+      if (!top) return undefined;
+      const match = /^package-(.+)-([^-]+)-([^-]+)$/u.exec(top);
+      return { root: path.join(providerRoot, top), ...(match?.[1] ? { version: match[1] } : {}) };
+    } catch {
+      return undefined;
+    }
+  }
+
   private async preparedExecutable(provider: string): Promise<string | undefined> {
     const marker = path.join(this.root, 'programs', provider, 'prepared.json');
     try {
@@ -165,8 +215,13 @@ export class NativeProgramManager implements AgentProgramManager {
       const prepared = JSON.parse(await fs.readFile(marker, 'utf8'));
       if (typeof prepared.version !== 'string' || !isProgramReleaseVersion(prepared.version) || typeof prepared.executable !== 'string') return undefined;
       const policy = nativeProgramPolicy(provider, this.policies);
-      const expected = path.join(this.destination(provider, prepared.version), policy.entry);
+      const destination = this.destination(provider, prepared.version);
+      const expected = path.join(destination, policy.entry);
       if (path.resolve(prepared.executable) !== path.resolve(expected)) return undefined;
+      if (policy.distribution.kind === 'npm') {
+        const companionSpecs = resolveCompanionPackages(policy.distribution, prepared.version);
+        if (!(await this.verifyCompanionPackages(destination, companionSpecs))) return undefined;
+      }
       const actual = await fs.realpath(expected);
       return this.isManaged(provider, actual) ? actual : undefined;
     } catch {
@@ -256,8 +311,16 @@ export class NativeProgramManager implements AgentProgramManager {
           releaseDiagnostic = `官方最新版本 ${installVersion} 不在兼容范围 ${policy.compatibility} 内，已停止下载；不会回退安装旧版本。`;
           await addFallback();
         } else {
-          paths.push({ executable: path.join(this.destination(input.provider, installVersion), policy.entry), source: 'managed' });
-          if (!await fs.stat(paths[0]!.executable).then(item => item.isFile(), () => false)) await addFallback();
+          const candidateDestination = this.destination(input.provider, installVersion);
+          const candidateExecutable = path.join(candidateDestination, policy.entry);
+          const companionReady = policy.distribution.kind === 'npm'
+            ? await this.verifyCompanionPackages(candidateDestination, resolveCompanionPackages(policy.distribution, installVersion))
+            : true;
+          if (companionReady && await fs.stat(candidateExecutable).then(item => item.isFile(), () => false)) {
+            paths.push({ executable: candidateExecutable, source: 'managed' });
+          } else {
+            await addFallback();
+          }
         }
       } catch (error) {
         input.signal.throwIfAborted();
@@ -302,6 +365,15 @@ export class NativeProgramManager implements AgentProgramManager {
         item.version = await inspectVersion(actual, env, input.signal);
         item.compatible = isCompatibleProgram(input.provider, item.version, this.policies);
         if (!item.compatible) item.diagnostic = `版本 ${item.version} 不在兼容范围 ${policy.compatibility} 内（包含该系列预发布版本）。`;
+        else if (policy.distribution.kind === 'npm' && this.isManaged(input.provider, actual)) {
+          const managedRoot = this.managedPackageRoot(input.provider, actual);
+          const companionSpecs = managedRoot ? resolveCompanionPackages(policy.distribution, managedRoot.version ?? item.version) : [];
+          if (managedRoot && companionSpecs.length > 0 && !(await this.verifyCompanionPackages(managedRoot.root, companionSpecs))) {
+            if (!explicit) continue;
+            item.compatible = false;
+            item.diagnostic = '缺少配套 SDK，请重新准备或更新该独立程序。';
+          }
+        }
       } catch {
         input.signal.throwIfAborted();
         item.diagnostic = exists ? '程序无法运行，或应用身份、签名检查未通过。' : '原指定程序已不存在；不会自动改用其他来源。';
@@ -514,7 +586,6 @@ export class NativeProgramManager implements AgentProgramManager {
     if (policy.distribution.kind === 'manifest') {
       return await this.installFromManifest(input, policy, policy.distribution, signal, progress);
     }
-    if (input.replaceExisting) fail('agent_install_replace_unsupported', '当前程序不支持重新安装以恢复身份。');
     return await this.installFromNpm(input, policy, policy.distribution, signal, progress);
   }
 
@@ -697,7 +768,7 @@ export class NativeProgramManager implements AgentProgramManager {
   }
 
   private async installFromNpm(
-    input: { provider: string; version?: string; attemptToken: string },
+    input: { provider: string; version?: string; attemptToken: string; replaceExisting?: boolean },
     policy: NativeProgramPolicy,
     distribution: Extract<NativeProgramPolicy['distribution'], { kind: 'npm' }>,
     signal: AbortSignal,
@@ -715,26 +786,28 @@ export class NativeProgramManager implements AgentProgramManager {
 
     const packageName = distribution.package.replace(/@[^@]+$/, '');
     const packageSpec = `${packageName}@${releaseVersion}`;
+    const companionSpecs = resolveCompanionPackages(distribution, releaseVersion);
     const destination = this.destination(input.provider, releaseVersion);
     const executable = path.join(destination, distribution.entry);
     const env = await this.probeEnvironment();
 
+    let replaceDestination = false;
     if (await fs.lstat(destination).then(() => true, () => false)) {
-      if ((await fs.lstat(destination)).isSymbolicLink() || !this.isManaged(input.provider, await fs.realpath(executable))) {
-        fail('agent_install_existing_invalid', '独立安装目录不能引用外部程序。');
-      }
+      await this.assertReplaceableManagedDestination(input.provider, destination, executable);
       const installed = JSON.parse(await fs.readFile(path.join(destination, 'node_modules', packageName, 'package.json'), 'utf8'));
       const version = await inspectVersion(executable, env, signal);
-      if (
-        installed.name === packageName
+      const primaryMatches = installed.name === packageName
         && installed.version === releaseVersion
         && isCompatibleProgram(input.provider, version, this.policies)
-        && (Boolean(distribution.allowIndependentBinaryVersion) || version === releaseVersion)
-      ) {
+        && (Boolean(distribution.allowIndependentBinaryVersion) || version === releaseVersion);
+      if (!primaryMatches && input.replaceExisting !== true) {
+        fail('agent_install_existing_invalid', '已有受管程序需要检查；不会覆盖该目录。');
+      }
+      if (primaryMatches && input.replaceExisting !== true && await this.verifyCompanionPackages(destination, companionSpecs)) {
         await this.retainPrepared(input.provider, releaseVersion, executable);
         return executable;
       }
-      fail('agent_install_existing_invalid', '已有受管程序需要检查；不会覆盖该目录。');
+      replaceDestination = true;
     }
 
     signal.throwIfAborted();
@@ -778,7 +851,11 @@ export class NativeProgramManager implements AgentProgramManager {
 
       progress(`正在下载并准备 ${packageSpec}，首次准备可能需要几分钟。`);
       try { recordSharedCacheUse(this.root, Date.now(), ['npm-download']); } catch { /* Optional cache observation. */ }
-      await installPackage(npm, ['install', '--prefix', staging, '--no-audit', '--no-fund', '--save-exact', '--registry=https://registry.npmjs.org/', packageSpec], installEnv, signal);
+      await installPackage(npm, [
+        'install', '--prefix', staging, '--no-audit', '--no-fund', '--save-exact',
+        ...(distribution.omitOptionalDependencies ? ['--omit=optional'] : []),
+        '--registry=https://registry.npmjs.org/', ...companionSpecs, packageSpec,
+      ], installEnv, signal);
       try { recordSharedCacheUse(this.root, Date.now(), ['npm-download']); } catch { /* Optional cache observation. */ }
 
       progress('下载完成，正在检查程序与兼容版本。');
@@ -794,8 +871,9 @@ export class NativeProgramManager implements AgentProgramManager {
         || installed.version !== releaseVersion
         || !isCompatibleProgram(input.provider, version, this.policies)
         || (!distribution.allowIndependentBinaryVersion && version !== releaseVersion)
+        || !(await this.verifyCompanionPackages(staging, companionSpecs))
       ) {
-        fail('agent_install_version_mismatch', '下载软件包或程序版本不匹配或不兼容，未启用该程序。');
+        fail('agent_install_version_mismatch', '下载软件包或配套 SDK 版本不匹配或不兼容，未启用该程序。');
       }
 
       signal.throwIfAborted();
@@ -818,6 +896,7 @@ export class NativeProgramManager implements AgentProgramManager {
         env,
         signal,
         Boolean(distribution.allowIndependentBinaryVersion),
+        replaceDestination,
       );
       await this.retainPrepared(input.provider, releaseVersion, executable);
       return executable;

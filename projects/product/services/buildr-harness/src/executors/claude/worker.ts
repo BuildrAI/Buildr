@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { query, getSessionInfo, getSessionMessages, getSubagentMessages, forkSession, type Query, type SDKUserMessage, type PermissionResult, type SpawnOptions, type SpawnedProcess } from '@anthropic-ai/claude-agent-sdk';
+import type { Query, SDKUserMessage, PermissionResult, SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk';
+type ClaudeSdkModule = typeof import('@anthropic-ai/claude-agent-sdk');
 import type { ExecutorEvent, ExecutorItem, ExecutorObservation, ExecutorRequest } from '../../contracts.ts';
 import { checkedGateway, gatewayModel, type ExecutorGateway } from '../model-gateway.ts';
 import { bounded, nativePreview } from '../native-process.ts';
@@ -18,6 +19,7 @@ console.log = console.info = console.warn = console.error = console.debug = () =
 const write = (message: unknown) => process.stdout.write(JSON.stringify(message) + '\n');
 let executable = '', instructions = '';
 let gateway: ExecutorGateway | undefined;
+let query: ClaudeSdkModule['query'], getSessionInfo: ClaudeSdkModule['getSessionInfo'], getSessionMessages: ClaudeSdkModule['getSessionMessages'], getSubagentMessages: ClaudeSdkModule['getSubagentMessages'], forkSession: ClaudeSdkModule['forkSession'];
 
 class Inputs implements AsyncIterableIterator<SDKUserMessage> {
   private queue: SDKUserMessage[] = [];
@@ -389,7 +391,12 @@ function exact(params:any):Session {
   return session;
 }
 async function dispatch(method:string,params:any):Promise<unknown> {
-  if(method==='initialize'){executable=params.executable;instructions=params.instructions;gateway=checkedGateway(params.gateway,{executorId:'claude-code'});return{};}
+  if(method==='initialize'){
+    const sdk = await import(params.sdkModule??'@anthropic-ai/claude-agent-sdk').catch(()=>{throw new Error('agent_claude_sdk_missing');}) as ClaudeSdkModule;
+    for(const key of ['query','getSessionInfo','getSessionMessages','getSubagentMessages','forkSession'] as const)if(typeof sdk[key]!=='function')throw new Error('agent_claude_sdk_missing');
+    ({query,getSessionInfo,getSessionMessages,getSubagentMessages,forkSession}=sdk);
+    executable=params.executable;instructions=params.instructions;gateway=checkedGateway(params.gateway,{executorId:'claude-code'});return{};
+  }
   if(method==='title'){return (await getSessionInfo(params.contextId,{dir:params.cwd}))?.customTitle;}
   if(method==='probe'){
     const inputs=new Inputs();

@@ -170,13 +170,14 @@ test('missing required Harness launcher or resources preserves the previously pr
   }
 });
 
-test('the compiled public Agent package and vendor clients load away from the development checkout', t => {
+test('the compiled public Agent package loads away from the development checkout without external vendor SDKs', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-harness-package-consumer-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   prepareDevelopmentAgent({ build: false });
   const copied = copyAgentRuntimePackage(serviceRoot, root);
-  const sdkMetadata = JSON.parse(fs.readFileSync(path.join(copied, 'node_modules/@qoder-ai/qoder-agent-sdk/package.json'), 'utf8'));
-  assert.equal(sdkMetadata.scripts, undefined, 'bundled SDK cannot run an installer that downloads another CLI');
+  for (const forbidden of ['@anthropic-ai', '@qoder-ai', '@deepseek-ai']) {
+    assert.equal(fs.existsSync(path.join(copied, 'node_modules', forbidden)), false, `bundled runtime must exclude external SDK scope ${forbidden}`);
+  }
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ type: 'module' }));
   fs.writeFileSync(path.join(root, 'consumer.mjs'), `
     import assert from 'node:assert/strict';
@@ -188,10 +189,8 @@ test('the compiled public Agent package and vendor clients load away from the de
     assert.equal(api.createAgentService, hostApi.createAgentService);
     assert.ok(Object.keys(api).length > 0);
     const require = createRequire(import.meta.resolve('@buildr-ai/buildr-harness'));
-    const sdk = await import(require.resolve('@qoder-ai/qoder-agent-sdk'));
-    assert.equal(typeof sdk.query, 'function');
-    const client = await import(require.resolve('@deepseek-ai/dsh-client-connection/client'));
-    assert.equal(typeof client.installConnection, 'function');
+    const ajv = await import(require.resolve('ajv'));
+    assert.ok(ajv.default);
     assert.throws(() => require.resolve('@buildr-ai/buildr-harness/src/index.ts'), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
     console.log('isolated-agent-runtime-passed');
   `);
@@ -251,13 +250,12 @@ test('the real frozen Buildr npm artifact installs the private runtime without s
     assert.ok(connectionGuide.includes('BUILDR_HOST_HOME'), 'the installed connection guide must explain host tool discovery');
     assert.ok(connectionGuide.includes('PLAYWRIGHT_BROWSERS_PATH'), 'the installed connection guide must explain browser cache reuse');
     const dependencies = JSON.parse(fs.readFileSync(path.join(agentRoot, 'package.json'), 'utf8')).dependencies;
-    const permissionRemote = await import(agentRequire.resolve('@deepseek-ai/dsh-permission-presets/remote'));
-    const sdk = await import(agentRequire.resolve('@qoder-ai/qoder-agent-sdk'));
-    const client = await import(agentRequire.resolve('@deepseek-ai/dsh-client-connection/client'));
-    assert.ok(dependencies['@deepseek-ai/dsh-permission-presets'] === '0.2.1-rc.2'
-      && permissionRemote.default && typeof sdk.query === 'function' && typeof client.installConnection === 'function'
+    for (const forbidden of ['@anthropic-ai', '@qoder-ai', '@deepseek-ai']) {
+      assert.equal(fs.existsSync(path.join(agentRoot, 'node_modules', forbidden)), false, 'offline artifact must exclude external SDK scope ' + forbidden);
+    }
+    assert.ok(Object.keys(dependencies).every(name => !['@anthropic-ai/', '@qoder-ai/', '@deepseek-ai/'].some(prefix => name.startsWith(prefix)))
       && Object.entries(dependencies).every(([name, version]) => JSON.parse(fs.readFileSync(path.join(agentRoot, 'node_modules', name, 'package.json'), 'utf8')).version === version),
-      'offline artifact must include the new permission remote and retain every pinned private runtime dependency');
+      'offline artifact must exclude external vendor SDKs and retain every pinned core runtime dependency');
     console.log('frozen-private-runtime-passed');
   `], { cwd: packageRoot, env: { ...process.env, NODE_PATH: '', NODE_OPTIONS: '' }, encoding: 'utf8', timeout: 20_000 });
   assert.equal(probe.status, 0, probe.stderr);

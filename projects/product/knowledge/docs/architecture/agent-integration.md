@@ -16,11 +16,11 @@ Codex、DSH与Qoder新工具采用v9兼容边界下的原生调用引用。适�
 | --- | --- | --- |
 | Codex | `codex app-server --listen stdio://` | 每套独立配置一个应用服务（App Server），承载多个原生上下文；与桌面共享代码能力不等于复制桌面全部功能 |
 | DSH | `dsh web --no-open --port 0` 与官方客户端（Client） | 启动完整本机网页宿主（Web Host），使用其会话、工具与账号能力；不依赖既有 DSH 桌面插件 |
-| Qoder / Qoder CN | 官方软件开发工具包（SDK）与独立 `qodercli` / `qodercn` | 私有工作进程（Worker）隔离 SDK 环境；相同配置的正常轮次可在历史和未结工作证明完整时复用原生连接，否则按准确原编号冷恢复 |
-| Claude Code | 官方 `@anthropic-ai/claude-agent-sdk` 与独立 `claude` CLI | 不维护原生账号登录（`account: 'source-required'`），只经本机模型网关消费 Anthropic Messages 兼容来源 |
+| Qoder / Qoder CN | 按需安装的官方 SDK（国际版）与独立 `qodercli` / `qodercn` | 私有工作进程（Worker）隔离 SDK 环境；相同配置的正常轮次可在历史和未结工作证明完整时复用原生连接，否则按准确原编号冷恢复 |
+| Claude Code | 按需安装的 `@anthropic-ai/claude-agent-sdk` 与独立 `claude` CLI | 不维护原生账号登录（`account: 'source-required'`），只经本机模型网关消费 Anthropic Messages 兼容来源 |
 | Antigravity | 官方发布清单受管 `agy acp`（ACP 协议） | 连接级协调者配合按对话（会话、权限、账号身份与受管程序摘要）隔离的 `agy acp` 子进程组；私有 `HOME` 下保留 `autoUpdate: false`，受管进程同时以 `AGY_CLI_DISABLE_AUTO_UPDATE` 关闭程序自身的更新器，并持续观察受管文件身份；不接管外部 `agy` 或注入 shell |
 
-原生程序由“准备并连接”发现并核验真实路径、实际版本及来源。软件开发工具包（SDK）和 DSH 客户端随主包携带；缺少原生程序时提供官方安装引导或显式的独立准备动作，不修改全局安装或自动升级。兼容版本与分发策略由各执行方模块在[统一程序策略](../../../services/buildr-harness/src/executors/program-policy.ts)注册，执行适配和准备使用同一策略，缺少一家不阻止其他已就绪接入。
+原生程序及其配套软件开发工具包（SDK）与 DSH 客户端不再随产品包分发，而由“准备并连接”在用户选择启用对应接入时按需安装到各自受管程序目录并核验真实路径、实际版本及来源；缺少原生程序时提供官方安装引导或显式的独立准备动作，不修改全局安装或自动升级。兼容版本与分发策略由各执行方模块在[统一程序策略](../../../services/buildr-harness/src/executors/program-policy.ts)注册，执行适配和准备使用同一策略，缺少一家不阻止其他已就绪接入。
 
 ### 执行方声明、模型路径绑定与兼容边界
 

@@ -73,6 +73,7 @@ test('unapproved frozen distribution cannot reach npm while matching confirmed p
   const artifact = readReleaseArtifact(built.manifestPath), version = artifact.manifest.version;
   let published = false, writes = 0;
   const result = () => publishFrozenArtifact({manifestPath: built.manifestPath, npmTag: version.includes('-') ? 'next' : 'latest'}, {
+    verifyDistribution: () => ({status: 'blocked', publicationApproved: false, findings: [{name: artifact.manifest.packageName, code: 'support-approval-missing', reason: 'fixture unapproved distribution'}]}),
     fetchImpl: async () => published
       ? new Response(JSON.stringify({name: artifact.manifest.packageName, version, dist: {integrity: artifact.manifest.integrity}}), {status: 200})
       : new Response('{}', {status: 404}),

@@ -1,4 +1,3065 @@
 {
   "schemaVersion": 1,
-  "decisions": []
+  "decisions": [
+    {
+      "name": "@ant-design/colors",
+      "version": "7.2.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@ant-design/cssinjs-utils",
+      "version": "1.1.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@ant-design/cssinjs",
+      "version": "1.24.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@ant-design/fast-color",
+      "version": "2.0.6",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@ant-design/icons-svg",
+      "version": "4.5.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@ant-design/icons-svg",
+      "version": "4.6.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@ant-design/icons",
+      "version": "5.6.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@ant-design/react-slick",
+      "version": "1.1.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@antfu/install-pkg",
+      "version": "2.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@babel/runtime",
+      "version": "7.29.14",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@babel/runtime",
+      "version": "7.29.7",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@braintree/sanitize-url",
+      "version": "7.1.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@buildr-ai/buildr-harness-web",
+      "version": "0.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "Buildr 产品自有组件随包分发批准。"
+    },
+    {
+      "name": "@buildr-ai/buildr-harness",
+      "version": "0.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "Buildr 产品自有组件随包分发批准。"
+    },
+    {
+      "name": "@buildr-ai/buildr-web",
+      "version": "0.0.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "Buildr 产品自有组件随包分发批准。"
+    },
+    {
+      "name": "@buildr-ai/buildr",
+      "version": "0.1.0-rc.60",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "Buildr 产品自有组件随包分发批准。"
+    },
+    {
+      "name": "@chevrotain/cst-dts-gen",
+      "version": "13.2.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@chevrotain/gast",
+      "version": "13.2.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@chevrotain/regexp-to-ast",
+      "version": "13.2.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@chevrotain/types",
+      "version": "13.2.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@chevrotain/utils",
+      "version": "13.2.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@codemirror/autocomplete",
+      "version": "6.20.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@codemirror/commands",
+      "version": "6.11.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@codemirror/lang-css",
+      "version": "6.3.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@codemirror/lang-html",
+      "version": "6.4.12",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@codemirror/lang-javascript",
+      "version": "6.2.5",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@codemirror/lang-json",
+      "version": "6.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@codemirror/lang-markdown",
+      "version": "6.5.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@codemirror/lang-sql",
+      "version": "6.10.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@codemirror/lang-yaml",
+      "version": "6.1.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@codemirror/language",
+      "version": "6.13.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@codemirror/lint",
+      "version": "6.9.7",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@codemirror/merge",
+      "version": "6.12.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@codemirror/search",
+      "version": "6.7.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@codemirror/state",
+      "version": "6.7.6",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@codemirror/streamparser",
+      "version": "6.0.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@codemirror/view",
+      "version": "6.43.14",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@emotion/hash",
+      "version": "0.8.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@emotion/unitless",
+      "version": "0.7.5",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@iconify/types",
+      "version": "2.0.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@iconify/utils",
+      "version": "3.1.7",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@lezer/common",
+      "version": "1.5.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@lezer/css",
+      "version": "1.3.9",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@lezer/highlight",
+      "version": "1.2.5",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@lezer/html",
+      "version": "1.3.13",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@lezer/javascript",
+      "version": "1.5.6",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@lezer/json",
+      "version": "1.0.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@lezer/lr",
+      "version": "1.4.11",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@lezer/markdown",
+      "version": "1.8.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@lezer/yaml",
+      "version": "1.0.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@marijn/find-cluster-break",
+      "version": "1.0.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@mermaid-js/parser",
+      "version": "2.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@npmcli/fs",
+      "version": "5.0.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@rc-component/async-validator",
+      "version": "5.1.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@rc-component/color-picker",
+      "version": "2.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@rc-component/context",
+      "version": "1.4.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@rc-component/mini-decimal",
+      "version": "1.1.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@rc-component/mutate-observer",
+      "version": "1.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@rc-component/portal",
+      "version": "1.1.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@rc-component/qrcode",
+      "version": "1.1.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@rc-component/tour",
+      "version": "1.15.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@rc-component/trigger",
+      "version": "2.3.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-array",
+      "version": "3.2.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-axis",
+      "version": "3.0.6",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-brush",
+      "version": "3.0.6",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-chord",
+      "version": "3.0.6",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-color",
+      "version": "3.1.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-contour",
+      "version": "3.0.6",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-delaunay",
+      "version": "6.0.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-dispatch",
+      "version": "3.0.7",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-drag",
+      "version": "3.0.7",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-dsv",
+      "version": "3.0.7",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-ease",
+      "version": "3.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-fetch",
+      "version": "3.0.7",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-force",
+      "version": "3.0.10",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-format",
+      "version": "3.0.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-geo",
+      "version": "3.1.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-hierarchy",
+      "version": "3.1.7",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-interpolate",
+      "version": "3.0.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-path",
+      "version": "3.1.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-polygon",
+      "version": "3.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-quadtree",
+      "version": "3.0.6",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-random",
+      "version": "3.0.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-scale-chromatic",
+      "version": "3.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-scale",
+      "version": "4.0.9",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-selection",
+      "version": "3.0.12",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-shape",
+      "version": "3.2.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-time-format",
+      "version": "4.0.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-time",
+      "version": "3.0.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-timer",
+      "version": "3.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-transition",
+      "version": "3.0.9",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3-zoom",
+      "version": "3.0.9",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/d3",
+      "version": "7.4.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/geojson",
+      "version": "7946.0.16",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/node",
+      "version": "24.13.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/pegjs",
+      "version": "0.10.6",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@types/trusted-types",
+      "version": "2.0.7",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@upsetjs/venn.js",
+      "version": "2.0.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "@vscode/ripgrep-universal",
+      "version": "1.18.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "ajv",
+      "version": "8.18.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "antd",
+      "version": "5.29.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "aws-ssl-profiles",
+      "version": "1.1.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "balanced-match",
+      "version": "4.0.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "big-integer",
+      "version": "1.6.52",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "brace-expansion",
+      "version": "5.0.12",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "cacache",
+      "version": "20.0.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "chevrotain",
+      "version": "13.2.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "classnames",
+      "version": "2.5.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "codemirror",
+      "version": "6.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "commander",
+      "version": "15.0.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "commander",
+      "version": "15.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "commander",
+      "version": "7.2.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "compute-scroll-into-view",
+      "version": "3.1.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "compute-scroll-into-view",
+      "version": "3.2.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "cookie",
+      "version": "1.1.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "copy-to-clipboard",
+      "version": "3.3.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "cose-base",
+      "version": "1.0.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "cose-base",
+      "version": "2.2.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "crelt",
+      "version": "1.0.7",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "csstype",
+      "version": "3.2.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "cytoscape-cose-bilkent",
+      "version": "4.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "cytoscape-fcose",
+      "version": "2.2.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "cytoscape",
+      "version": "3.34.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "cytoscape",
+      "version": "3.35.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-array",
+      "version": "2.12.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-array",
+      "version": "3.2.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-array",
+      "version": "3.2.5",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-axis",
+      "version": "3.0.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-axis",
+      "version": "3.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-brush",
+      "version": "3.0.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-brush",
+      "version": "3.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-chord",
+      "version": "3.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-chord",
+      "version": "3.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-color",
+      "version": "3.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-color",
+      "version": "3.1.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-contour",
+      "version": "4.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-contour",
+      "version": "4.0.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-delaunay",
+      "version": "6.0.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-delaunay",
+      "version": "6.0.6",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-dispatch",
+      "version": "3.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-dispatch",
+      "version": "3.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-drag",
+      "version": "3.0.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-drag",
+      "version": "3.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-dsv",
+      "version": "3.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-dsv",
+      "version": "3.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-ease",
+      "version": "3.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-ease",
+      "version": "3.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-fetch",
+      "version": "3.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-fetch",
+      "version": "3.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-force",
+      "version": "3.0.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-force",
+      "version": "3.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-format",
+      "version": "3.1.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-format",
+      "version": "3.1.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-geo",
+      "version": "3.1.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-geo",
+      "version": "3.1.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-hierarchy",
+      "version": "3.1.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-hierarchy",
+      "version": "3.1.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-interpolate",
+      "version": "3.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-interpolate",
+      "version": "3.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-path",
+      "version": "1.0.9",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-path",
+      "version": "3.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-path",
+      "version": "3.1.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-polygon",
+      "version": "3.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-polygon",
+      "version": "3.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-quadtree",
+      "version": "3.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-quadtree",
+      "version": "3.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-random",
+      "version": "3.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-random",
+      "version": "3.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-sankey",
+      "version": "0.12.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-scale-chromatic",
+      "version": "3.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-scale-chromatic",
+      "version": "3.1.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-scale",
+      "version": "4.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-scale",
+      "version": "4.0.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-selection",
+      "version": "3.0.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-selection",
+      "version": "3.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-shape",
+      "version": "1.3.7",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-shape",
+      "version": "3.2.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-shape",
+      "version": "3.2.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-time-format",
+      "version": "4.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-time-format",
+      "version": "4.1.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-time",
+      "version": "3.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-time",
+      "version": "3.1.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-timer",
+      "version": "3.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-timer",
+      "version": "3.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-transition",
+      "version": "3.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-transition",
+      "version": "3.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-zoom",
+      "version": "3.0.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3-zoom",
+      "version": "3.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3",
+      "version": "7.9.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "d3",
+      "version": "7.9.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "dagre-d3-es",
+      "version": "7.0.14",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "dayjs",
+      "version": "1.11.21",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "dayjs",
+      "version": "1.11.23",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "delaunator",
+      "version": "5.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "dompurify",
+      "version": "3.4.17",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "elkjs",
+      "version": "0.9.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "entities",
+      "version": "7.0.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "es-toolkit",
+      "version": "1.53.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "es-toolkit",
+      "version": "1.53.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "fast-deep-equal",
+      "version": "3.1.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "fast-uri",
+      "version": "3.1.9",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "fs-minipass",
+      "version": "3.0.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "generate-function",
+      "version": "2.3.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "glob",
+      "version": "13.0.7",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "hachure-fill",
+      "version": "0.5.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "iconv-lite",
+      "version": "0.6.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "iconv-lite",
+      "version": "0.7.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "import-meta-resolve",
+      "version": "4.2.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "internmap",
+      "version": "1.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "internmap",
+      "version": "2.0.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "is-property",
+      "version": "1.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "json-schema-traverse",
+      "version": "1.0.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "json2mq",
+      "version": "0.2.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "katex",
+      "version": "0.18.10",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "khroma",
+      "version": "2.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "layout-base",
+      "version": "1.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "layout-base",
+      "version": "2.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "lodash-es",
+      "version": "4.18.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "long",
+      "version": "5.3.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "lru-cache",
+      "version": "11.5.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "lru.min",
+      "version": "1.1.5",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "marked",
+      "version": "16.4.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "mermaid",
+      "version": "12.2.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "minimatch",
+      "version": "10.2.6",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "minipass-collect",
+      "version": "2.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "minipass-flush",
+      "version": "1.0.7",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "minipass-pipeline",
+      "version": "1.2.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "minipass",
+      "version": "3.3.6",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "minipass",
+      "version": "7.1.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "mysql2",
+      "version": "3.24.5",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "named-placeholders",
+      "version": "1.1.6",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "node-sql-parser",
+      "version": "5.4.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "p-map",
+      "version": "7.1.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "package-manager-detector",
+      "version": "1.9.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "path-data-parser",
+      "version": "0.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "path-scurry",
+      "version": "2.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "points-on-curve",
+      "version": "0.2.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "points-on-path",
+      "version": "0.2.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-cascader",
+      "version": "3.34.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-checkbox",
+      "version": "3.5.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-collapse",
+      "version": "3.9.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-dialog",
+      "version": "9.6.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-drawer",
+      "version": "7.3.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-dropdown",
+      "version": "4.2.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-field-form",
+      "version": "2.7.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-image",
+      "version": "7.12.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-input-number",
+      "version": "9.5.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-input",
+      "version": "1.8.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-mentions",
+      "version": "2.20.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-menu",
+      "version": "9.16.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-motion",
+      "version": "2.9.5",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-notification",
+      "version": "5.6.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-overflow",
+      "version": "1.5.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-pagination",
+      "version": "5.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-picker",
+      "version": "4.11.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-progress",
+      "version": "4.0.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-rate",
+      "version": "2.13.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-resize-observer",
+      "version": "1.4.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-segmented",
+      "version": "2.7.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-select",
+      "version": "14.16.8",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-slider",
+      "version": "11.1.9",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-steps",
+      "version": "6.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-switch",
+      "version": "4.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-table",
+      "version": "7.54.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-tabs",
+      "version": "15.7.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-textarea",
+      "version": "1.10.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-tooltip",
+      "version": "6.4.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-tree-select",
+      "version": "5.27.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-tree",
+      "version": "5.13.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-upload",
+      "version": "4.11.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-util",
+      "version": "5.44.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rc-virtual-list",
+      "version": "3.19.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "react-dom",
+      "version": "19.2.8",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "react-dom",
+      "version": "19.3.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "react-is",
+      "version": "18.3.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "react-router-dom",
+      "version": "7.18.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "react-router",
+      "version": "7.18.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "react",
+      "version": "19.2.8",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "react",
+      "version": "19.3.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "require-from-string",
+      "version": "2.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "resize-observer-polyfill",
+      "version": "1.5.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "robust-predicates",
+      "version": "3.0.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "roughjs",
+      "version": "4.6.6",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "rw",
+      "version": "1.3.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "safer-buffer",
+      "version": "2.1.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "scheduler",
+      "version": "0.27.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "scheduler",
+      "version": "0.28.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "scroll-into-view-if-needed",
+      "version": "3.1.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "scroll-into-view-if-needed",
+      "version": "3.2.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "semver",
+      "version": "7.8.5",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "set-cookie-parser",
+      "version": "2.7.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "sql-escaper",
+      "version": "1.5.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "ssri",
+      "version": "13.0.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "string-convert",
+      "version": "0.2.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "style-mod",
+      "version": "4.1.4",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "stylis",
+      "version": "4.4.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "throttle-debounce",
+      "version": "5.0.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "tinyexec",
+      "version": "1.3.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "toggle-selection",
+      "version": "1.0.6",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "ts-dedent",
+      "version": "2.3.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "undici-types",
+      "version": "7.18.2",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "uuid",
+      "version": "14.0.3",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "w3c-keyname",
+      "version": "2.2.8",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "ws",
+      "version": "8.22.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "yallist",
+      "version": "4.0.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "yaml",
+      "version": "2.9.0",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
+      },
+      "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    }
+  ]
 }

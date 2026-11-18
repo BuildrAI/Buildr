@@ -14,6 +14,12 @@ export function collectThirdParty(output=path.join(root,'build/third-party'),pac
       }
       // Some proprietary SDKs explicitly identify their README as the license.
       if(String(metadata.license).includes('README')&&fs.existsSync(path.join(directory,'README.md'))){const bytes=fs.readFileSync(path.join(directory,'README.md')),relative=id.replaceAll('/','_')+'/README.md';fs.mkdirSync(path.dirname(path.join(output,relative)),{recursive:true});fs.writeFileSync(path.join(output,relative),bytes);evidence.push({file:relative,sha256:createHash('sha256').update(bytes).digest('hex')});}
+      if(!evidence.length&&typeof metadata.license==='string'&&metadata.license.trim()&&metadata.license!=='UNKNOWN'){
+        for(const name of ['package.json','README.md']){
+          const source=path.join(directory,name);if(!fs.statSync(source,{throwIfNoEntry:false})?.isFile())continue;
+          const bytes=fs.readFileSync(source),relative=id.replaceAll('/','_')+'/'+name;fs.mkdirSync(path.dirname(path.join(output,relative)),{recursive:true});fs.writeFileSync(path.join(output,relative),bytes);evidence.push({file:relative,sha256:createHash('sha256').update(bytes).digest('hex')});
+        }
+      }
       components.set(id,{name:metadata.name,version:metadata.version,license:typeof metadata.license==='string'?metadata.license:'UNKNOWN',evidence});
     }
     const require=createRequire(path.join(directory,'package.json'));

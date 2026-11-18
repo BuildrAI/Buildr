@@ -249,7 +249,7 @@ export function assertNpmTarballInventory(inventory: any): any  {
     'payload/licenses/dependencies/yaml-LICENSE',
   ];
   for (const requiredPath of required) if (!paths.includes(requiredPath)) throw new Error(`npm tarball inventory is missing: ${requiredPath}`);
-  for (const requiredPath of [`${AGENT_PACKAGE_PATH}/package.json`, `${AGENT_PACKAGE_PATH}/build/index.js`, `${AGENT_PACKAGE_PATH}/node_modules/@qoder-ai/qoder-agent-sdk/dist/index.js`, `${AGENT_PACKAGE_PATH}/node_modules/@deepseek-ai/dsh-client-connection/lib/client.node.js`]) {
+  for (const requiredPath of [`${AGENT_PACKAGE_PATH}/package.json`, `${AGENT_PACKAGE_PATH}/build/index.js`]) {
     if (!paths.includes(requiredPath)) throw new Error(`npm tarball Agent runtime is missing: ${requiredPath}`);
   }
   const forbidden: any = paths.filter((value: any) => {
@@ -263,6 +263,7 @@ export function assertNpmTarballInventory(inventory: any): any  {
     || /(^|\/)buildr-web(\/|$)/iu.test(value)
     || /(^|\/)vite\.config(?:\.|\/|$)/iu.test(value)
     || (!agentRuntime && /(^|\/)node_modules(?:\.|\/|$)/iu.test(value))
+    || /(^|\/)node_modules\/(?:@anthropic-ai|@qoder-ai|@deepseek-ai)(\/|$)/u.test(value)
     || (value.endsWith('.ts') && !value.endsWith('.d.ts'))
   ); });
   if (forbidden.length) throw new Error(`npm tarball inventory contains platform/development content: ${forbidden.join(', ')}`);

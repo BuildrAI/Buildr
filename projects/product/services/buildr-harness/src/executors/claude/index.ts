@@ -14,6 +14,7 @@ import { generateGatewayTitle } from '../model-title.ts';
 import { claudeEffort, claudeGatewayEnvironment, claudeInputId } from './protocol.ts';
 import { claudeNativeContent, readClaudePersistedExecution, readClaudeSupplementReceipt } from './content.ts';
 import { importClaudeFork } from './fork.ts';
+import { claudeSdkPair } from './sdk-pair.ts';
 
 const CLAUDE_TITLE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const provider = 'claude-code';
@@ -103,13 +104,17 @@ class ClaudeRuntime implements AgentRuntime {
     const version=await inspectVersion(executable,env,options.signal);
     if(!isCompatibleProgram(provider,version))throw new Error('agent_claude_version_unsupported');
     const binding=await consumerBinding(provider,executable,version,config,options);
+    const sdkModule=await claudeSdkPair(executable);
+    if(executable.includes('/programs/claude-code/')||executable.includes('\\programs\\claude-code\\')) {
+      if(!sdkModule)throw new Error('agent_claude_sdk_missing');
+    }
     const rpc=new NativeRpc(process.execPath,[fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./worker.ts':'./worker.js',import.meta.url))],{cwd:options.configRoot,env,diagnostics:options.diagnostics});
     const instructions=(options.interaction??interactionPolicy).instructions+'\n必要业务提问使用 AskUserQuestion。完全访问不表示业务问题已获回答。';
     const runtime=new ClaudeRuntime(rpc,binding,gateway,instructions,options.configRoot);
     const abort=()=>{void rpc.close();};
     options.signal?.addEventListener('abort',abort,{once:true});
     try{
-      await rpc.call('initialize',{executable,instructions,...(gateway?{gateway}:{})});
+      await rpc.call('initialize',{executable,...(sdkModule?{sdkModule}:{}),instructions,...(gateway?{gateway}:{})});
       if(!gateway)await rpc.call('probe',{},15000);
       options.signal?.throwIfAborted();return runtime;
     }catch(error){await rpc.close();throw error;}

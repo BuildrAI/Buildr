@@ -1,7 +1,48 @@
 import type { ExecutionDiagnosticSink } from '../../contracts.ts';
 import { diagnosticCode } from '../../storage/execution-log.ts';
 import { type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { realpath } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { OwnedControlResource, bounded, closeOwnedProcess, nativeCommand, type NativeEnvironment } from '../native-process.ts';
+
+function isManagedDshExecutable(file: string): boolean {
+  const normalized = file.split(path.sep).join('/');
+  return normalized.includes('/programs/dsh/');
+}
+
+function managedDshRoot(file: string): string | undefined {
+  const marker = `${path.sep}programs${path.sep}dsh${path.sep}`;
+  const index = file.indexOf(marker);
+  if (index < 0) return undefined;
+  const restStart = index + marker.length;
+  const nextSep = file.indexOf(path.sep, restStart);
+  return nextSep < 0 ? undefined : file.slice(0, nextSep);
+}
+
+async function loadDshModule(specifier: string, executable?: string): Promise<any> {
+  if (executable) {
+    const actual = await realpath(executable).catch(() => path.resolve(executable));
+    const managed = isManagedDshExecutable(actual);
+    try {
+      const resolved = await realpath(createRequire(actual).resolve(specifier));
+      if (managed) {
+        const root = managedDshRoot(actual);
+        if (!root) throw new Error('dsh_client_sdk_missing');
+        const resolvedRoot = await realpath(root);
+        const relative = path.relative(resolvedRoot, resolved);
+        if (!relative || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
+          throw new Error('dsh_client_sdk_missing');
+        }
+      }
+      return await import(pathToFileURL(resolved).href);
+    } catch (error) {
+      if (managed) throw error instanceof Error && error.message === 'dsh_client_sdk_missing' ? error : new Error('dsh_client_sdk_missing');
+    }
+  }
+  return await import(specifier).catch(() => { throw new Error('dsh_client_sdk_missing'); });
+}
 
 export interface DshClient { ctx: any; remote: any; origin: string; close(): Promise<void>; }
 /** Owns the complete native web Host; the authorization URL and cookie stay private. */
@@ -43,7 +84,7 @@ export async function launchDshHost(executable: string, env: NativeEnvironment, 
   signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) abort();
   try {
     const privateUrl = await bounded(ready, 45000, 'dsh_host_startup_timeout');
-    client = await connectDshClient(privateUrl, signal);
+    client = await connectDshClient(privateUrl, signal, executable);
     child.once('exit',()=>{void client?.close().catch(()=>{});});
     signal?.throwIfAborted();
     return { control, child, client, close };
@@ -111,11 +152,14 @@ export async function createDshTransport(privateUrl: string, signal?: AbortSigna
     },
   } };
 }
-export async function connectDshClient(privateUrl: string, signal?: AbortSignal): Promise<DshClient> {
+export async function connectDshClient(privateUrl: string, signal?: AbortSignal, executable?: string): Promise<DshClient> {
   let ctx: any;
   const { origin, transport } = await createDshTransport(privateUrl, signal, () => ctx?.connection.reconnect());
   const [{ Context }, { default: TypertRegistry }, { installConnection }, Gateway] = await Promise.all([
-    import('@deepseek-ai/cordis'), import('@deepseek-ai/dsh-typert-registry'), import('@deepseek-ai/dsh-client-connection/client'), import('@deepseek-ai/dsh-api-gateway/client'),
+    loadDshModule('@deepseek-ai/cordis', executable),
+    loadDshModule('@deepseek-ai/dsh-typert-registry', executable),
+    loadDshModule('@deepseek-ai/dsh-client-connection/client', executable),
+    loadDshModule('@deepseek-ai/dsh-api-gateway/client', executable),
   ]);
   signal?.throwIfAborted();
   ctx = new Context(); new TypertRegistry(ctx);
@@ -123,10 +167,14 @@ export async function connectDshClient(privateUrl: string, signal?: AbortSignal)
   installConnection(ctx, { interactions: 'answer', transport });
   Gateway.apply(ctx);
   const remotes = await Promise.all([
-    import('@deepseek-ai/dsh-api-session-controller/remote'), import('@deepseek-ai/dsh-api-account-controller/remote'),
-    import('@deepseek-ai/dsh-api-settings-controller/remote'), import('@deepseek-ai/dsh-api-workspace-controller/remote'),
-    import('@deepseek-ai/dsh-api-job-controller/remote'),
-    import('@deepseek-ai/dsh-user-questions/remote'), import('@deepseek-ai/dsh-commands/remote'), import('@deepseek-ai/dsh-permission-presets/remote'),
+    loadDshModule('@deepseek-ai/dsh-api-session-controller/remote', executable),
+    loadDshModule('@deepseek-ai/dsh-api-account-controller/remote', executable),
+    loadDshModule('@deepseek-ai/dsh-api-settings-controller/remote', executable),
+    loadDshModule('@deepseek-ai/dsh-api-workspace-controller/remote', executable),
+    loadDshModule('@deepseek-ai/dsh-api-job-controller/remote', executable),
+    loadDshModule('@deepseek-ai/dsh-user-questions/remote', executable),
+    loadDshModule('@deepseek-ai/dsh-commands/remote', executable),
+    loadDshModule('@deepseek-ai/dsh-permission-presets/remote', executable),
   ]);
   try {
     for (const remote of remotes) await ctx.remote.$mount(remote.default);

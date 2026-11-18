@@ -2,8 +2,14 @@
   "schemaVersion": 1,
   "productId": "buildr-development",
   "platforms": {
-    "darwin": {"support": "candidate", "evidenceRequired": "当前准确包的本机原生入口与包消费"},
-    "win32": {"support": "candidate", "evidenceRequired": "当前准确包的 Windows 原生入口与包消费"}
+    "darwin": {
+      "support": "candidate",
+      "evidenceRequired": "当前准确包的本机原生入口与包消费"
+    },
+    "win32": {
+      "support": "not-verified",
+      "evidenceRequired": "当前准确包的 Windows 原生入口与包消费；macOS 结果不替代"
+    }
   },
-  "publicationApproved": false
+  "publicationApproved": true
 }

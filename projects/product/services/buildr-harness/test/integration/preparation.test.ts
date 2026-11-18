@@ -210,15 +210,44 @@ test('cancelling a real installer reaps its owned process group and removes only
 test('exact releases install side by side; Qoder verifies package and program versions separately',async t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-releases-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const bin=path.join(root,'bin');fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(bin,'npm-cli.js'),`const fs=require('node:fs'),path=require('node:path');const args=process.argv.slice(2),spec=args.at(-1),split=spec.lastIndexOf('@'),name=spec.slice(0,split),version=spec.slice(split+1),prefix=args[args.indexOf('--prefix')+1];const entries={'@openai/codex':'bin/codex.js','@deepseek-ai/dsh':'lib/bin.js','@qoder-ai/qoder-agent-sdk':'dist/_bundled/qodercli'};if(!entries[name])process.exit(3);const dir=path.join(prefix,'node_modules',name),file=path.join(dir,entries[name]);fs.mkdirSync(path.dirname(file),{recursive:true});const actual=name==='@qoder-ai/qoder-agent-sdk'?'1.1.76':version==='0.166.0'?'0.165.0':version;fs.writeFileSync(file,(name==='@qoder-ai/qoder-agent-sdk'?'#!/usr/bin/env node\\n':'')+"console.log('program "+actual+"');");fs.chmodSync(file,0o755);fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify({name,version}));`);
+  fs.writeFileSync(path.join(bin,'npm-cli.js'),`const fs=require('node:fs'),path=require('node:path');const args=process.argv.slice(2),prefix=args[args.indexOf('--prefix')+1],specs=args.filter((value,index)=>!value.startsWith('-')&&args[index-1]!=='--prefix'&&value!=='install');const entries={'@openai/codex':'bin/codex.js','@deepseek-ai/dsh':'lib/bin.js','@qoder-ai/qoder-agent-sdk':'dist/_bundled/qodercli'};for(const spec of specs){const split=spec.lastIndexOf('@'),name=spec.slice(0,split),version=spec.slice(split+1),dir=path.join(prefix,'node_modules',name);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify({name,version}));if(entries[name]){const file=path.join(dir,entries[name]);fs.mkdirSync(path.dirname(file),{recursive:true});const actual=name==='@qoder-ai/qoder-agent-sdk'?'1.1.76':version==='0.166.0'?'0.165.0':version;fs.writeFileSync(file,(name==='@qoder-ai/qoder-agent-sdk'?'#!/usr/bin/env node\\n':'')+"console.log('program "+actual+"');");fs.chmodSync(file,0o755);}}if(!specs.some(spec=>entries[spec.slice(0,spec.lastIndexOf('@'))]))process.exit(3);`);
   const profile=path.join(root,'profile'),manager=new NativeProgramManager(profile,{PATH:bin+path.delimiter+path.dirname(process.execPath),HOME:root}),signal=new AbortController().signal;
   const install=(provider:string,version:string)=>manager.install({provider,version,signal,progress:()=>{}});
   const first=await install('codex','0.164.0'),next=await install('codex','0.165.0');assert.notEqual(first,next);assert.ok(fs.existsSync(first));assert.equal(await install('codex','0.164.0'),first);
   const dsh=await install('dsh','0.2.1-rc.3');assert.ok(fs.existsSync(dsh));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(path.dirname(dsh),'..','..','..','..','node_modules/@deepseek-ai/dsh-client-connection/package.json'),'utf8')).version,'0.2.1-rc.3');
   const qoder=await install('qoder','1.0.56');assert.equal((await manager.discover({provider:'qoder',boundExecutable:qoder,signal})).candidates[0].version,'1.1.76');
   await assert.rejects(install('codex','0.166.0'),{code:'agent_install_version_mismatch'});assert.ok(fs.existsSync(first));
   await assert.rejects(install('codex','latest'),{code:'agent_install_version_invalid'});
   assert.equal(fs.readdirSync(path.join(profile,'programs','codex')).some(name=>name.startsWith('.prepare-')||name.startsWith('package-0.166.0')),false);
+});
+
+test('on-demand companion SDKs install with --omit=optional and incomplete managed directories are repaired atomically', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-companion-sdks-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bin = path.join(root, 'bin'); fs.mkdirSync(bin);
+  const invocations: string[][] = [];
+  const claudePkg = `@anthropic-ai/claude-code-${process.platform}-${process.arch}`;
+  fs.writeFileSync(path.join(bin, 'npm-cli.js'), `const fs=require('node:fs'),path=require('node:path');const args=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(path.join(root, 'npm.jsonl'))},JSON.stringify(args)+'\\n');const prefix=args[args.indexOf('--prefix')+1],specs=args.filter((value,index)=>!value.startsWith('-')&&args[index-1]!=='--prefix'&&value!=='install');for(const spec of specs){const split=spec.lastIndexOf('@'),name=spec.slice(0,split),version=spec.slice(split+1),dir=path.join(prefix,'node_modules',name);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify({name,version}));if(name===${JSON.stringify(claudePkg)}){const exe=path.join(dir,process.platform==='win32'?'claude.exe':'claude');fs.writeFileSync(exe,"#!/usr/bin/env node\\nconsole.log('claude 2.1.322');");fs.chmodSync(exe,0o755);}}`);
+  const profile = path.join(root, 'profile');
+  const manager = new NativeProgramManager(profile, { PATH: bin + path.delimiter + path.dirname(process.execPath), HOME: root });
+  const signal = new AbortController().signal;
+  const executable = await manager.install({ provider: 'claude-code', version: '2.1.322', signal, progress: () => {} });
+  assert.ok(fs.existsSync(executable));
+  for (const line of fs.readFileSync(path.join(root, 'npm.jsonl'), 'utf8').trim().split('\n')) invocations.push(JSON.parse(line));
+  assert.equal(invocations.length, 1);
+  assert.ok(invocations[0].includes('--omit=optional'));
+  assert.ok(invocations[0].includes('@anthropic-ai/claude-agent-sdk@0.3.322'));
+  assert.equal(invocations[0].at(-1), `${claudePkg}@2.1.322`);
+  const sdkPkg = path.join(profile, 'programs', 'claude-code', `package-2.1.322-${process.platform}-${process.arch}`, 'node_modules', '@anthropic-ai', 'claude-agent-sdk');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(sdkPkg, 'package.json'), 'utf8')).version, '0.3.322');
+  fs.rmSync(sdkPkg, { recursive: true, force: true });
+  const boundDiscovery = await manager.discover({ provider: 'claude-code', boundExecutable: executable, signal });
+  assert.equal(boundDiscovery.candidates[0]?.compatible, false);
+  assert.match(boundDiscovery.candidates[0]?.diagnostic ?? '', /配套 SDK/u);
+  const repaired = await manager.install({ provider: 'claude-code', version: '2.1.322', signal, progress: () => {} });
+  assert.equal(repaired, executable);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(sdkPkg, 'package.json'), 'utf8')).version, '0.3.322');
 });
 
 test('program installer isolates both npm_config_cache and NPM_CONFIG_CACHE per staging attempt', async t => {

@@ -11,9 +11,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import type { ExecutorEvent, ExecutorItem, ExecutorObservation, ExecutorRequest, PermissionMode } from '../../contracts.ts';
 import { bounded, closeOwnedProcess, visibleText, nativePreview } from '../native-process.ts';
-import * as embeddedSdk from '@qoder-ai/qoder-agent-sdk';
-let { query, qodercliAuth, ProcessTransport, getSessionInfo, getSessionMessages, InMemorySessionStore, importSessionToStore, forkSession } = embeddedSdk;
-let shutdownDaemon = embeddedSdk.shutdownDaemon;
+let query: any, qodercliAuth: any, ProcessTransport: any, getSessionInfo: any, getSessionMessages: any, InMemorySessionStore: any, importSessionToStore: any, forkSession: any, shutdownDaemon: any;
 import { qoderHistoryItems, qoderHistoryPage, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation, qoderParentTool, qoderTaskResult, qoderTaskNotificationIds, reconcileUnknownSupplements, qoderUserEchoIds } from './protocol.ts';
 import { qoderBackgroundOutput } from './background-output.ts';
 import { qoderModel } from '../model-options.ts';
@@ -225,7 +223,7 @@ async function transcript(contextId: string, cwd: string): Promise<{ messages: a
   const info = await getSessionInfo(contextId, { dir: cwd });
   if (!info || info.sessionId !== contextId || info.cwd && info.cwd !== cwd) throw new Error('qoder_context_not_found');
   const store = new InMemorySessionStore(), records: any[] = [], append = store.append.bind(store);
-  store.append = async (key, entries) => { records.push(...entries); await append(key, entries); };
+  store.append = async (key: any, entries: any[]) => { records.push(...entries); await append(key, entries); };
   await importSessionToStore(contextId, store, { dir: cwd, includeSubagents: false });
   const messages: any[] = await getSessionMessages(contextId, { dir: cwd, sessionStore: store, view: 'historical', includeSystemMessages: true, limit: 20000 });
   return { messages, records };
@@ -332,7 +330,7 @@ async function execute(params: any, warmOnly = false): Promise<void> {
   state.owner = owner; if (!warmOnly) live.set(params.contextId, state); conversations.set(params.contextId, owner);
   // Empty load retains the exact local native session; append observes post-commit records only.
   const mirror = new InMemorySessionStore();
-  mirror.append = async (recordKey, entries) => { if (recordKey.sessionId === state.contextId && !recordKey.subpath) owner!.mirror.push(...entries); };
+  mirror.append = async (recordKey: any, entries: any[]) => { if (recordKey.sessionId === state.contextId && !recordKey.subpath) owner!.mirror.push(...entries); };
   const opts = { ...options(params.cwd, state, undefined, owner), sessionStore: mirror, ...(info ? { resume: params.contextId } : { sessionId: params.contextId }), ...(params.model ? { model: params.model } : {}) };
   if (gateway) Object.assign(opts, { model: qoderGatewayPolicy(gateway, params.model, params.reasoningEffort).model, resolveModel: (context: any) => {
     try { return gatewayPolicy(context, params.model, params.reasoningEffort); }
@@ -592,13 +590,11 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
 }
 async function dispatch(method: string, params: any): Promise<any> {
   if (method === 'initialize') {
-    if(params.sdkModule){
-      const sdk=await import(params.sdkModule);
-      for(const key of ['query','qodercliAuth','getSessionInfo','getSessionMessages','InMemorySessionStore','importSessionToStore','forkSession'])if(typeof sdk[key]!=='function')throw new Error('qoder_sdk_pair_mismatch');
-      if(!sdk.ProcessTransport)throw new Error('qoder_sdk_pair_mismatch');
-      ({query,qodercliAuth,ProcessTransport,getSessionInfo,getSessionMessages,InMemorySessionStore,importSessionToStore,forkSession}=sdk);
-      shutdownDaemon=sdk.shutdownDaemon;
-    }
+    const sdk = await import(params.sdkModule ?? '@qoder-ai/qoder-agent-sdk').catch(() => { throw new Error('qoder_sdk_pair_required'); });
+    for (const key of ['query', 'qodercliAuth', 'getSessionInfo', 'getSessionMessages', 'InMemorySessionStore', 'importSessionToStore', 'forkSession']) if (typeof sdk[key] !== 'function') throw new Error('qoder_sdk_pair_mismatch');
+    if (!sdk.ProcessTransport) throw new Error('qoder_sdk_pair_mismatch');
+    ({ query, qodercliAuth, ProcessTransport, getSessionInfo, getSessionMessages, InMemorySessionStore, importSessionToStore, forkSession } = sdk);
+    shutdownDaemon = sdk.shutdownDaemon;
     executable = params.executable; workInstructions = params.interaction?.instructions ?? interactionPolicy.instructions; gateway = checkedGateway(params.gateway, { executorId: 'qoder', nativeBinding: 'gateway-lease' }); return {};
   }
   if (!executable) throw new Error('qoder_worker_not_initialized');
