@@ -52,7 +52,7 @@ test('Qoder CN reports a missing login instead of a generic failure', { timeout:
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-test('Qoder CN appends a Chinese tool-progress instruction to the native system prompt', { timeout: 15000 }, async () => {
+test('Qoder CN appends unified Buildr instructions without executor-specific progress overrides', { timeout: 15000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-cn-language-')); let runtime: AgentRuntime | undefined;
   try {
     runtime = await createQoderCnExecutor().open({ connectionId: 'qoder-cn', configRoot: join(root, 'config'), executable: await program(root), interaction:{version:'buildr-interaction/v1',instructions:'CUSTOM_LITERAL_{{cwd}}'}, environment: { PATH: process.env.PATH ?? '' } });
@@ -66,9 +66,22 @@ test('Qoder CN appends a Chinese tool-progress instruction to the native system 
     assert.deepEqual(JSON.parse(args[settingsAt + 1]!), { language: 'Chinese' });
     const appendedAt = args.indexOf('--append-system-prompt');
     assert.notEqual(appendedAt, -1);
-    assert.match(args[appendedAt + 1]!, /进展说明使用简体中文.*工具返回后.*保留原文/);
-    assert.ok(args[appendedAt + 1]!.startsWith('CUSTOM_LITERAL_{{cwd}}'));
+    assert.equal(args[appendedAt + 1], 'CUSTOM_LITERAL_{{cwd}}');
     assert.ok(!args.includes('--system-prompt'), 'keep the native system prompt');
+
+    await runtime.close();
+    const defaultRoot = await mkdtemp(join(tmpdir(), 'buildr-qoder-cn-default-prompt-'));
+    try {
+      const defaultRuntime = await createQoderCnExecutor().open({ connectionId: 'qoder-cn', configRoot: join(defaultRoot, 'config'), executable: await program(defaultRoot), environment: { PATH: process.env.PATH ?? '' } });
+      await defaultRuntime.inspectAccount();
+      const defaultLaunched = await records(join(defaultRoot, 'config', 'qoder-cn-config', 'fixture-launch.jsonl'));
+      const defaultAcp = defaultLaunched.find(entry => Array.isArray(entry.args) && (entry.args as string[]).includes('--acp'));
+      const defaultArgs = (defaultAcp?.args ?? []) as string[];
+      const defaultAppendedAt = defaultArgs.indexOf('--append-system-prompt');
+      assert.notEqual(defaultAppendedAt, -1);
+      assert.match(defaultArgs[defaultAppendedAt + 1]!, /# Buildr Harness 系统提示词\n[\s\S]*简体中文/);
+      await defaultRuntime.close();
+    } finally { await rm(defaultRoot, { recursive: true, force: true }); }
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });
 

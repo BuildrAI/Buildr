@@ -47,6 +47,11 @@ import {createAntigravityExecutor} from '../../src/executors/antigravity/index.t
 test('the default editable prompt appends without replacing the core or losing completeness requirements',()=>{
   assert.ok(interactionPolicy.instructions.startsWith(coreInteractionPolicy.instructions));
   assert.equal(interactionPolicy.instructions.split(DEFAULT_SYSTEM_PROMPT_TEXT).length,2);
+  assert.match(DEFAULT_SYSTEM_PROMPT_TEXT,/回复、进展和文档默认用简体中文/);
+  assert.match(DEFAULT_SYSTEM_PROMPT_TEXT,/内部排查与推演不发成可见消息/);
+  assert.match(DEFAULT_SYSTEM_PROMPT_TEXT,/阶段变化时简短说明[^。\n]*不逐步播报操作/);
+  assert.match(DEFAULT_SYSTEM_PROMPT_TEXT,/不罗列文件路径[^。\n]*必需的链接与操作信息照常提供[^。\n]*保持准确/);
+  assert.match(DEFAULT_SYSTEM_PROMPT_TEXT,/简洁只约束表达[^。\n]*重要风险、失败、不确定性和待决定事项须如实讲清影响/);
   assert.equal(composeInteractionPolicy(coreInteractionPolicy,{...defaultSystemPrompt,enabled:false}).instructions,coreInteractionPolicy.instructions);
   const literal='Literal {{cwd}} and <instructions> remain user-authored text';
   assert.ok(composeInteractionPolicy(coreInteractionPolicy,{...defaultSystemPrompt,text:literal}).instructions.endsWith(literal));

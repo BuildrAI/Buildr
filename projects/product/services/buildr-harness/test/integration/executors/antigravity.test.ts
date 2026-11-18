@@ -239,7 +239,7 @@ test('3.1 & 3.2: interaction policy injection, policy change handling, model/eff
   const h = await createHarness(t);
   const rt = await h.openRuntime();
 
-  // 1. Create context injects Buildr interaction policy + Chinese progress requirement.
+  // 1. Create context injects unified Buildr interaction policy + system prompt without adapter-specific overrides.
   const ctx = await rt.createContext({ cwd: h.cwd, permissionMode: 'full-access' });
   const sessionsLog1 = await h.readFixtureJsonl('fixture-sessions.jsonl');
   const createdEntry = sessionsLog1.find(row => row.method === 'session/new' && row.sessionId === ctx.id);
@@ -247,6 +247,7 @@ test('3.1 & 3.2: interaction policy injection, policy change handling, model/eff
   assert.equal(createdEntry.skipPermissions, true);
   assert.match(String(createdEntry.appendPrompt), /开始每一段工具执行前/);
   assert.match(String(createdEntry.appendPrompt), /简体中文/);
+  assert.equal(createdEntry.appendPrompt, interactionPolicy.instructions);
 
   // 2. Run first turn in full-access: tool executes WITHOUT approval prompt.
   const fullAccessEvents: ExecutorEvent[] = [];

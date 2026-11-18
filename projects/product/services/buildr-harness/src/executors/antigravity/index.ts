@@ -87,8 +87,6 @@ import { generateAntigravityTitle } from './title.ts';
 const PROVIDER = 'antigravity';
 const NATIVE_SOURCE_ID = 'native-antigravity';
 const EXCLUSIVE_REASON = '受 Google 官方授权限制，Google 个人账号仅可在 Antigravity 中使用。';
-const PROGRESS_LANGUAGE_INSTRUCTION =
-  '面向用户的进展说明使用简体中文，包括调用工具前、工具返回后和连续工具调用之间说明当前进展或下一步。引用命令、代码、路径、标识符、错误消息或工具输出时保留原文。';
 const STOP_CANCEL_GRACE_MS = 1_200;
 const MAX_BACKGROUND_CONTINUATIONS = 8;
 const CONTINUATION_OUTPUT_LIMIT = 4_000;
@@ -138,10 +136,6 @@ export const antigravityExecutorDescriptor: ExecutorDescriptor = {
     requireHanNativeTitle: true,
   },
 };
-
-export function composeAntigravityPolicyInstructions(baseInstructions = interactionPolicy.instructions): string {
-  return `${baseInstructions}\n${PROGRESS_LANGUAGE_INSTRUCTION}`;
-}
 
 export function antigravityPolicyDigest(baseInstructions = interactionPolicy.instructions): string {
   return `sha256-${createHash('sha256').update(baseInstructions).digest('hex')}`;
@@ -436,7 +430,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       configRoot: options.configRoot,
       coordinator,
       nativeSource: options.nativeSource,
-      composedInstructions: composeAntigravityPolicyInstructions(baseInstructions),
+      composedInstructions: baseInstructions,
       policyDigest: antigravityPolicyDigest(baseInstructions),
       supportsSystemPromptAppend: handshake.supportsSystemPromptAppend,
       diagnostics: options.diagnostics,
