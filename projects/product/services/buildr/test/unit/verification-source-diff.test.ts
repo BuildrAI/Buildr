@@ -290,3 +290,19 @@ test('changedVerificationCheckEvidence narrows verification-checks.ts edits to i
   const transformEdited = previous.replace("group => ({ ...group, type: 'Integration' })", "group => ({ ...group, type: 'E2E' })");
   assert.equal(changedVerificationCheckEvidence(path, previous, transformEdited), null);
 });
+
+test('package smoke is a direct development check, not a new full or release check', () => {
+  const check = 'development-package-smoke';
+  const paths = ['bin/buildr.mjs', 'tools/build/artifact-set.ts', 'src/web/http/server.ts', 'src/web/interfaces/cli/web.ts', 'src/web/application/instance-lifecycle.ts', 'skills/buildr-release/scripts/release-artifact.ts'];
+  for (const file of paths) {
+    const selected = createVerificationPlan({ paths: [file], related: true });
+    assert.ok(ids(selected).includes(check), file);
+    assert.ok(ids(budgetRelatedVerificationPlan(selected, { mode: 'related' })).includes(check), file);
+    assert.ok(!ids(createVerificationPlan({ paths: [file] })).includes(check), file);
+  }
+  assert.ok(!ids(createVerificationPlan({ related: true, paths: ['docs/guide.md', '.node-version'] })).includes(check));
+  assert.ok(!ids(createVerificationPlan({ related: true, paths: ['package.json'], versionOnlyPackagePaths: ['package.json'] })).includes(check));
+  assert.ok(!ids(createVerificationPlan({ types: ['E2E', 'Static', 'Unit'] })).includes(check));
+  assert.ok(!ids(createVerificationPlan({ profiles: ['candidate'] })).includes(check));
+  assert.ok(ids(createVerificationPlan({ stepIds: [check] })).includes(check));
+});

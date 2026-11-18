@@ -111,6 +111,7 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   'candidate-tarball': testing(SERVICE_OWNER, 'Delivery / Release', 'E2E', 'One frozen application payload produces the single npm candidate tarball consumed by later verification.', TEST_ENVIRONMENTS.isolatedGitCli),
   'integration-application-payload-source': testing(SERVICE_OWNER, 'Development', 'Integration', 'Source builders produce deterministic payloads, reject unbound generated inputs, and preserve the thin-entry process boundary.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'application-payload-artifact': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 'The exact npm package contains its declared resources and exports its executable and TypeScript Test Context protocol.', TEST_ENVIRONMENTS.repeatedFilesystem),
+  'development-package-smoke': testing(SERVICE_OWNER, 'Development', 'E2E', 'A temporary installed package launches its command, serves Web health, and exits in an isolated workspace.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'application-payload-release': testing(SERVICE_OWNER, 'Delivery / Release', 'E2E', 'The exact installed npm package validates identity, enrolls update authority, and completes public CLI and on-demand Web workflows.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'npm-launcher-candidate': testing(PROJECT_OWNER, 'Delivery / Release', 'Integration', 'The explicit local Launcher binds one verified npm installation without copying Node or Buildr and fails closed on identity drift.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'host-node-contract': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 'The active Host Node satisfies the bounded package engine contract.', TEST_ENVIRONMENTS.sourceReadOnly),
@@ -347,7 +348,7 @@ const RELEASE_NOTES_INDEPENDENT_CHECKS = new Set([...RUNTIME_REUSE_CHECKS,
   'integration-declarations', 'integration-openspec', 'integration-public-json',
   'integration-openspec-audit', 'concurrent-task-acceptance', 'npm-launcher-candidate', 'capability-cli-integration',
   'commands-cli-integration', 'remote-skill-timeout']);
-const NON_REUSABLE_CHECKS = new Set(['dsh-plugin', 'candidate-tarball', 'application-payload-artifact', 'application-payload-release', 'release-tarball-consumption', 'artifact-browser-core', 'cli-package-parity', 'host-node-contract', 'host-node-boundaries']);
+const NON_REUSABLE_CHECKS = new Set(['dsh-plugin', 'development-package-smoke', 'candidate-tarball', 'application-payload-artifact', 'application-payload-release', 'release-tarball-consumption', 'artifact-browser-core', 'cli-package-parity', 'host-node-contract', 'host-node-boundaries']);
 // Lifecycle fixtures create and mutate their own repositories. Only checks that
 // actually observe the retained checkout history bind its Git state.
 const GIT_SOURCE_CHECKS = new Set(['open-source-candidate']);
@@ -867,6 +868,9 @@ const builtInVerificationSteps: any = Object.freeze([
     'test/integration/process-infrastructure.test.ts',
     'test/integration/workspace-sqlite.test.ts',
   ], args: ['--test-concurrency=2', '--test-reporter=dot'] }, profiles: ['host-node'],  concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'development-package-smoke', name: 'changed package installation and owned Web lifecycle', selection: 'related-only',
+    executor: { type: 'node', file: 'tools/development/run-isolated-workspace-check.ts', args: ['--script', 'test/verification/release/development-package-smoke.ts'] },
+    concurrencyClass: 'exclusive', timeoutMs: 360_000 }),
   step({ id: 'candidate-tarball', name: 'frozen application payload and candidate npm tarball', executor: { type: 'candidate-artifact' }, profiles: ['candidate', 'host-node'], groups: ['release'],  }),
   step({ id: 'integration-application-payload-source', name: 'application payload source builders and thin-entry process boundaries',
     executor: { type: 'node-test', files: ['test/integration/application-payload-source.test.ts'], args: ['--test-concurrency=1', '--test-reporter=dot'] },
