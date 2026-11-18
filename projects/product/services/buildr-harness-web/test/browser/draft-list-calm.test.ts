@@ -199,15 +199,30 @@ test('draft list ignores executing conversations and settles calmly on navigatio
   assert.equal(await rowRunning.locator('.ac-activity-status').innerText(), '执行中');
   assert.equal(await rowRunning.locator('.ac-draft-status').count(), 0, '离开后仍在执行中也不展示有草稿');
 
-  // 放行执行结束后，原保留的未发草稿才会按草稿规则显现。
+  // 放行执行结束后，convRunning 进入“待查看”（unseen）状态，此时仍不与“有草稿”共存。
   fs.writeFileSync(path.join(dataRoot, 'release-draft-exec'), '1');
   await until(
-    async () => (await rowRunning.locator('.ac-activity-status', { hasText: '执行中' }).count()) === 0,
+    async () => (await rowRunning.locator('.ac-activity-status').count()) > 0
+      && (await rowRunning.locator('.ac-activity-status').innerText()) === '待查看',
     Boolean,
-    'running status cleared after execution completion',
+    'running status transitions to unseen after background completion',
   );
+  await page.waitForTimeout(150);
+  assert.equal(await rowRunning.locator('.ac-draft-status').count(), 0, '待查看状态存在时不同时显示有草稿');
+
+  // 并排点开“待查看”消除未读，停留查看期间保持安静，不突兀弹出“有草稿”。
+  await rowRunning.click();
+  await input.waitFor({ state: 'visible', timeout: 10000 });
+  assert.equal(await input.inputValue(), '保留到执行结束的草稿');
+  await rowRunning.locator('.ac-activity-status').waitFor({ state: 'detached', timeout: 10000 });
+  await page.waitForTimeout(150);
+  assert.equal(await rowRunning.locator('.ac-draft-status').count(), 0, '点开待查看消除未读并停留时保持安静不闪出有草稿');
+
+  // 保留未发草稿离开后，“有草稿”才按规则显现。
+  await rowNewer.click();
   await rowRunning.locator('.ac-draft-status').waitFor({ state: 'visible', timeout: 10000 });
   assert.equal(await rowRunning.locator('.ac-draft-status').innerText(), '有草稿');
+  assert.equal(await rowRunning.locator('.ac-activity-status').count(), 0);
 
   // 清空执行后留下的草稿，并切回 convNewer，等全部列表空闲后再开始校验安静编辑与局部刷新。
   await rowRunning.click();
@@ -365,6 +380,83 @@ test('draft list ignores executing conversations and settles calmly on navigatio
   );
   await page.waitForTimeout(150);
   assert.equal(await rowOlder.locator('.ac-draft-status').count(), 0, '停留在当前对话直接发送后不残余有草稿标识');
+
+  // 5. “待决策”状态同样不显示“有草稿”且不因草稿变化重刷列表；消除全部活动状态后自然显现“有草稿”。
+  await rowNewer.click();
+  await until(
+    async () => (await page.locator('#agent-conversation-panel').getAttribute('data-conversation-id')) === convNewer.id,
+    Boolean,
+    'selected newer conversation before waiting test',
+  );
+  await input.waitFor({ state: 'visible', timeout: 10000 });
+  await until(
+    async () => (await page.locator('.ac-model-label').innerText()).toLowerCase().includes('fixture'),
+    Boolean,
+    'newer conversation model ready',
+  );
+  await input.fill('question');
+  await until(
+    () => page.getByRole('button', { name: '发送对话', exact: true }).isEnabled(),
+    Boolean,
+    'send button enabled for waiting question',
+  );
+  await page.getByRole('button', { name: '发送对话', exact: true }).click();
+  await until(
+    async () => (await client.operations.conversations.read(scope1, convNewer.id)).run?.status === 'waiting-question',
+    Boolean,
+    'newer conversation entered waiting-question',
+  );
+  await until(
+    async () => (await rowNewer.locator('.ac-activity-status').count()) > 0
+      && (await rowNewer.locator('.ac-activity-status').innerText()) === '待决策',
+    Boolean,
+    'waiting badge visible in history list',
+  );
+  await until(
+    async () => (await focusPane.locator('[data-history-workspace][aria-busy="true"]').count()) === 0,
+    Boolean,
+    'history groups idle before editing waiting draft',
+  );
+  const listBeforeWaitingEdit = totalListRequests;
+  await input.fill('待决策期间保留的草稿');
+  await page.waitForTimeout(120);
+  assert.equal(await rowNewer.locator('.ac-activity-status').innerText(), '待决策');
+  assert.equal(await rowNewer.locator('.ac-draft-status').count(), 0, '待决策期间输入草稿不显示有草稿');
+  await rowOlder.click();
+  await until(
+    async () => (await page.locator('#agent-conversation-panel').getAttribute('data-conversation-id')) === convOlder.id,
+    Boolean,
+    'returned to older conversation from waiting',
+  );
+  await page.waitForTimeout(150);
+  assert.equal(totalListRequests, listBeforeWaitingEdit, '待决策期间输入并离开草稿不触发列表刷新');
+  assert.equal(await rowNewer.locator('.ac-activity-status').innerText(), '待决策');
+  assert.equal(await rowNewer.locator('.ac-draft-status').count(), 0, '待决策状态存在时离开也不显示有草稿');
+
+  const activeWaiting = await client.operations.conversations.read(scope1, convNewer.id);
+  const waitingRun = activeWaiting.run!, pendingQuestion = activeWaiting.requests[0]!;
+  await client.operations.conversations.reply(scope1, convNewer.id, pendingQuestion.id, {
+    expectedRevision: activeWaiting.revision,
+    runId: waitingRun.id,
+    participantId: waitingRun.participantId,
+    generation: waitingRun.generation,
+    answer: { scope: 'ok' },
+  });
+  const completedWaiting = await until(
+    () => client.operations.conversations.read(scope1, convNewer.id),
+    view => view.run?.status === 'completed' && view.requests.length === 0,
+    'waiting conversation completed after reply',
+  );
+  if (completedWaiting.activity?.version) {
+    await client.operations.conversations.markSeen(scope1, convNewer.id, { through: completedWaiting.activity.version });
+  }
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await rowNewer.locator('.ac-activity-status').waitFor({ state: 'detached', timeout: 10000 });
+  await rowNewer.locator('.ac-draft-status').waitFor({ state: 'visible', timeout: 10000 });
+  assert.equal(await rowNewer.locator('.ac-draft-status').innerText(), '有草稿');
+  await rowNewer.click();
+  await input.waitFor({ state: 'visible', timeout: 10000 });
+  assert.equal(await input.inputValue(), '待决策期间保留的草稿');
 
   assert.deepEqual(errors, []);
   await context.close();

@@ -1,6 +1,6 @@
 import { useConversationHost } from '../../integration/ConversationHost.tsx';
 import { settleConversationDraftIds, shouldShowConversationDraft, workspaceConversationDraftIds } from './conversation-draft-presence.ts';
-import { executionStatsSignature } from './conversation-seen-hold.ts';
+import { applyConfirmedSeenActivity, executionStatsSignature } from './conversation-seen-hold.ts';
 import { useConversationDraftPresenceDetail, useConversationDraftSubmittedIds } from './useConversationDraftPresence.ts';
 import { ConversationExecutionSummary } from './ConversationExecutionSummary.tsx';
 import { conversationModelSourceLabel, conversationModelLabel } from './conversation-model-label.ts';
@@ -9,7 +9,7 @@ import { Alert, Button, Empty, Input, Select } from 'antd';
 import { ArrowLeftOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext.tsx';
 import { ConversationActivityStatus } from './ConversationActivityStatus.tsx';
-import { activityState, sendActivity, conversationMetadata, isExecuting } from './conversation-activity.ts';
+import { activityState, sendActivity, conversationMetadata } from './conversation-activity.ts';
 import type { ExecutionFilter } from './ConversationExecutionStats.tsx';
 import { CopyButton } from '../../components/CopyButton.tsx';
 import { DEFAULT_HISTORY_GROUP, historyGroupOrder, moveHistoryGroup, writeHistoryGroupPreference } from './conversation-history-groups.ts';
@@ -47,21 +47,23 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   const activeEditingId=activeEditingScope?.conversationId??null;
   const submittedIds=useConversationDraftSubmittedIds();
   const submittedSet=useMemo(()=>new Set(submittedIds),[submittedIds]);
-  const {executingIds,pendingSendIds}=useMemo(()=>{
-    const executing=new Set<string>(),pendingSend=new Set<string>();
+  const {activeStatusIds,pendingSendIds}=useMemo(()=>{
+    const activeStatus=new Set<string>(),pendingSend=new Set<string>();
     for(const row of context.activityRows){
-      if(isExecuting(row))executing.add(row.id);
-      if(sendActivity(row))pendingSend.add(row.id);
+      const effective=applyConfirmedSeenActivity(row,context.seenActivities,context.conversation);
+      if(activityState(effective)!==null)activeStatus.add(row.id);
+      if(sendActivity(effective))pendingSend.add(row.id);
     }
     if(context.conversation){
-      if(isExecuting(context.conversation))executing.add(context.conversation.id);
-      if(sendActivity(context.conversation))pendingSend.add(context.conversation.id);
+      const effective=applyConfirmedSeenActivity(context.conversation,context.seenActivities,context.conversation);
+      if(activityState(effective)!==null)activeStatus.add(context.conversation.id);
+      if(sendActivity(effective))pendingSend.add(context.conversation.id);
     }
-    return {executingIds:executing,pendingSendIds:pendingSend};
-  },[context.activityRows,context.conversation]);
+    return {activeStatusIds:activeStatus,pendingSendIds:pendingSend};
+  },[context.activityRows,context.conversation,context.seenActivities]);
   const settledRef=useRef<string[]|null>(null);
-  if(settledRef.current===null)settledRef.current=presence.ids.filter(id=>!executingIds.has(id));
-  const settledDraftIds=settleConversationDraftIds({liveIds:presence.ids,previousIds:settledRef.current,activeEditingId,executingIds,pendingSendIds,submittedIds:submittedSet});
+  if(settledRef.current===null)settledRef.current=presence.ids.filter(id=>!activeStatusIds.has(id));
+  const settledDraftIds=settleConversationDraftIds({liveIds:presence.ids,previousIds:settledRef.current,activeEditingId,activeStatusIds,pendingSendIds,submittedIds:submittedSet});
   settledRef.current=settledDraftIds;
   const initial=context.historyWorkspaceId??'';
   const [workspaceId,setWorkspaceId]=useState(initial),[query,setQuery]=useState(''),[hidden,setHidden]=useState(false),[filter,setFilter]=useState<ExecutionFilter>(null);
@@ -99,7 +101,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
     const meta=conversationMetadata(row,undefined,row.run?.model?conversationModelLabel(row.run.model,context.connections,context.modelCatalog,{modelAccountId:row.run.modelAccountId}):undefined);
     return <div key={row.workspaceId+':'+row.id} className={'ac-history-row'+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
       <button type="button" className="ac-history-row-main" data-conversation-id={row.id} onClick={()=>void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true,preserveHistoryView:keepHistoryOpen})}>
-        <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/><DraftStatusBadge visible={shouldShowConversationDraft(row,settledDraftIds)} immediateHide={isExecuting(row)||Boolean(sendActivity(row))}/></span>
+        <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/><DraftStatusBadge visible={shouldShowConversationDraft(row,settledDraftIds)} immediateHide={activityState(row)!==null}/></span>
         {sendActivity(row)?.reason&&<span className="ac-send-reason">{sendActivity(row)?.reason}</span>}
         {row.searchSnippet&&<span className="ac-history-row-snippet" title={row.searchSnippet}>{row.searchSnippet}</span>}
         <small><span className="ac-history-meta" title={meta||undefined}>{meta}</span><span className="ac-history-id" title={row.id}>{row.id}</span></small>
