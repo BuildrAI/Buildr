@@ -243,11 +243,11 @@
 .ac-execution-uncertain-detail{margin:2px 0 0;color:var(--soft-muted)}
 .ac-linked-image-reference{display:flex;align-items:flex-start;gap:8px;margin-bottom:16px}
 .ac-linked-image-reference code{min-width:0;flex:1;overflow-wrap:anywhere;color:var(--soft-muted)}
-.ac-linked-image-preview{display:flex;align-items:center;justify-content:center;min-height:100px;max-height:78vh;overflow:hidden}
-.ac-linked-image-preview .ant-image-img{width:auto;max-width:100%;max-height:78vh;object-fit:contain}
+.ac-linked-image-preview{display:flex;align-items:center;justify-content:center;min-height:100px;max-height:min(78vh, calc(100dvh - 160px));overflow:hidden}
+.ac-linked-image-preview > img{display:block;width:auto;height:auto;max-width:100%;max-height:min(78vh, calc(100dvh - 160px));object-fit:contain}
 /* 原始像素模式按实际尺寸展示并滚动，避免把大图重新缩放成看不清的小字。 */
 .ac-linked-image-preview[data-actual-size="true"]{display:block;overflow:auto}
-.ac-linked-image-preview[data-actual-size="true"] .ant-image-img{max-width:none;max-height:none}
+.ac-linked-image-preview[data-actual-size="true"] > img{max-width:none;max-height:none}
 
 .ac-reply-actions{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
 .ac-user-actions{justify-content:flex-end;margin-top:2px}

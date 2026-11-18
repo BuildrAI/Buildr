@@ -6,12 +6,13 @@ import {createServer} from 'vite';
 
 test('clicking an embedded SVG shows the image without its encoded reference', {timeout: 45000}, async t => {
   const fixture = `
+      import "/src/features/agent-conversations/agent-conversations.css";
       import React, {useState} from 'react';
       import {createRoot} from 'react-dom/client';
       import {MarkdownHost} from '/src/components/MarkdownHost.tsx';
       import {ConversationImagePreview} from '/src/features/agent-conversations/ConversationImagePreview.tsx';
       import {conversationImageSource} from '/src/features/agent-conversations/conversation-markdown-images.ts';
-      const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="120"><rect width="320" height="120"/><!--' + 'a'.repeat(8192) + '--></svg>';
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><rect width="1600" height="900"/><!--' + 'a'.repeat(8192) + '--></svg>';
       const src = 'data:image/svg+xml;base64,' + btoa(svg);
       function Fixture() {
         const [image, setImage] = useState(null);
@@ -37,7 +38,7 @@ test('clicking an embedded SVG shows the image without its encoded reference', {
   assert.ok(address && typeof address !== 'string');
   const browser = await chromium.launch();
   try {
-    const page = await browser.newPage();
+    const page = await browser.newPage({viewport: {width: 720, height: 480}, reducedMotion: "reduce"});
     page.setDefaultTimeout(8000); page.on('pageerror', error => t.diagnostic(String(error)));
     page.on('response', response => {if (response.status() >= 400) t.diagnostic(response.status() + ' ' + response.url());});
     await page.route('https://example.test/preview.png', route => route.fulfill({
@@ -49,7 +50,17 @@ test('clicking an embedded SVG shows the image without its encoded reference', {
     const dialog = page.getByRole('dialog', {name: '图片预览'});
     const image = dialog.getByRole('img', {name: '对话引用的图片'});
     await image.waitFor({state: 'visible'});
-    await page.waitForFunction(() => document.querySelector<HTMLImageElement>('.ac-linked-image-preview img')?.naturalWidth === 320);
+    await page.waitForFunction(() => document.querySelector<HTMLImageElement>('.ac-linked-image-preview img')?.naturalWidth === 1600);
+    const modalBox = (await dialog.boundingBox())!;
+    assert.ok(Math.abs(modalBox.y + modalBox.height / 2 - 240) < 3, JSON.stringify(modalBox));
+    const imageBox = (await image.boundingBox())!;
+    assert.ok(Math.abs(imageBox.width / imageBox.height - 1600 / 900) < 0.02);
+    assert.ok(Math.abs(imageBox.x + imageBox.width / 2 - 360) < 3);
+    assert.ok(imageBox.height <= 320);
+    await dialog.getByRole('button', {name: '实际大小', exact: true}).click();
+    assert.equal((await image.boundingBox())!.width, 1600);
+    assert.ok(await dialog.locator('.ac-linked-image-preview').evaluate(el => el.scrollWidth > el.clientWidth && el.scrollHeight > el.clientHeight));
+    await dialog.getByRole('button', {name: '适应窗口', exact: true}).click();
     assert.doesNotMatch(await dialog.innerText(), /data:image\/svg\+xml/);
     assert.equal(await dialog.getByRole('button', {name: '复制图片路径'}).count(), 0);
     assert.equal(await dialog.getByRole('link', {name: '新窗口打开'}).count(), 0);
