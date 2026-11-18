@@ -292,7 +292,8 @@ test('default repair preparation verifies real package bytes, retains partial pr
   const registryIdentity = candidateCiRegistryIdentity(), descriptors = candidateProofDescriptors();
   const evidence = descriptors.map(check => createCandidateCiEvidence({ kind: check.kind, id: check.id,
     sourceCommit: source, sourceTree: tree, purpose: 'candidate', workflow: { runId: '42', runAttempt: 1 }, registryIdentity,
-    platform: check.runner === 'macos' ? 'darwin' : check.runner === 'windows' ? 'win32' : 'linux', requestedNode: check.requestedNode,
+    platform: check.runner === 'macos' ? 'darwin' : check.runner === 'windows' ? 'win32' : 'linux',
+    nodeVersion: '24.21.0', requestedNode: check.requestedNode,
     primaryStepIds: check.kind === 'shard' ? check.steps.map((step: any) => step.id) : [], status: 'passed', cleanupClean: true,
     startedAt: '2026-01-01T00:00:00Z', finishedAt: '2026-01-01T00:00:01Z', durationMs: 1000,
     artifact: check.requiresArtifact || check.producesArtifact ? artifact : null,

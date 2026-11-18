@@ -81,7 +81,7 @@ export async function runDevelopmentLive(args: string[] = []) {
   }
   async function stopHost() {
     const current = read<Instance>(instanceFile);
-    if (owned && current?.pid !== owned.pid && alive(owned.pid)) throw new Error('development_instance_replaced; original process retained');
+    if (owned && current && current.pid !== owned.pid && alive(owned.pid)) throw new Error('development_instance_replaced; original process retained');
     if (current && alive(current.pid)) {
       // A formal update may have replaced our child. Reauthenticate exact source
       // and record immediately before asking that instance to relinquish the port.
@@ -92,6 +92,11 @@ export async function runDevelopmentLive(args: string[] = []) {
       const deadline = Date.now() + 20_000;
       while (alive(current.pid) && Date.now() < deadline) await delay(100);
       if (alive(current.pid)) throw new Error('development_stop_unconfirmed; no force kill performed');
+    } else if (owned && !current && alive(owned.pid)) {
+      expectedExit = true;
+      const deadline = Date.now() + 10_000;
+      while (alive(owned.pid) && Date.now() < deadline) await delay(100);
+      if (alive(owned.pid)) throw new Error('development_stop_unconfirmed; no force kill performed');
     } else if (child && child.exitCode === null && child.signalCode === null) {
       // Startup did not publish a listener: this is still our exact child handle,
       // not a recovered PID, and has not accepted browser operations.

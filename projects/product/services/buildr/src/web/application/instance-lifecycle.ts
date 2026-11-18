@@ -401,7 +401,7 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
                 console.error('Buildr Web owned resources did not confirm shutdown:', errorDetails(cleanupError).message);
                 process.exit(1);
               }
-              if (previewIdentity) process.exit(0);
+              if (previewIdentity || process.env.BUILDR_DEV_LIVE === '1') process.exit(0);
             },
           });
           ready = await instance.ready;

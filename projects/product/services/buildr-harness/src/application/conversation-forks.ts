@@ -11,6 +11,7 @@ export class ConversationForks {
   private readonly options: {
     repository: ConversationRepository;
     media: ConversationAttachments;
+    legacySourceId?: string;
     now(): string;
     load(scope: string, id: string): StoredConversation;
     candidate(scope: string, input: { cwd: string; taskId?: string }): Promise<StoredConversation>;
@@ -64,7 +65,7 @@ export class ConversationForks {
       through = following.sequence;
     }
     const child = await this.options.candidate(scope, { cwd: source.view.cwd, taskId: source.view.taskId });
-    setConversationWorkObjectLinks(child.view,structuredClone(conversationWorkObjectLinks(source.view)));
+    setConversationWorkObjectLinks(child.view,structuredClone(conversationWorkObjectLinks(source.view,this.options.legacySourceId)),this.options.legacySourceId);
     child.view.id = childId;
     child.view.forkedFrom = { conversationId: id, workspaceId: scope, entryId: entry.id, runId, throughSequence: through, title: source.view.title, forkedAt: this.options.now() };
     child.view.entries = structuredClone(source.view.entries.filter(value => value.sequence <= through));

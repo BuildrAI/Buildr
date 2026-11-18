@@ -139,7 +139,25 @@ export class HarnessWebEndpoint {
     await this.developmentWork.catch(()=>{});
     const server=this.server;
     await this.development?.close();this.development=undefined;
-    if(server?.listening){server.close();server.closeIdleConnections();for(const stream of this.streams)stream.end();this.streams.clear();const deadline=setTimeout(()=>server.closeAllConnections(),1000);deadline.unref();await new Promise<void>(resolve=>setImmediate(resolve));if(server.listening)throw new AgentServiceError('agent_web_release_unknown','原网页监听释放未确认。',409);this.sessions.released(this.identity);}
+    if(server?.listening){
+      const sockets=[...this.sockets];
+      const closed=once(server,'close').catch(()=>{});
+      server.close();
+      for(const stream of this.streams)stream.end();
+      this.streams.clear();
+      // Let ended SSE chunks flush, then close pooled keep-alive sockets before the successor binds.
+      await new Promise<void>(resolve=>setImmediate(resolve));
+      server.closeIdleConnections();
+      const deadline=setTimeout(()=>server.closeAllConnections(),250);
+      deadline.unref();
+      await closed;
+      clearTimeout(deadline);
+      await Promise.race([Promise.all(sockets.map(socket=>socket.closed?Promise.resolve():once(socket,'close').catch(()=>{}))),new Promise<void>(resolve=>setTimeout(resolve,50))]);
+      // Allow loopback HTTP keep-alive pools (e.g. fetch/undici) one I/O poll cycle to observe FIN before successor rebind.
+      await new Promise<void>(resolve=>setTimeout(resolve,5));
+      if(server.listening)throw new AgentServiceError('agent_web_release_unknown','原网页监听释放未确认。',409);
+      this.sessions.released(this.identity);
+    }
     this.server=undefined;
   }
   async close():Promise<void>{this.closed=true;await this.releaseListener();for(const socket of this.sockets)socket.destroy();this.sockets.clear();}

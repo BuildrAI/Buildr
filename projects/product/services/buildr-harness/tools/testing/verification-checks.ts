@@ -138,7 +138,7 @@ export const agentIntegrationChecks = [
   ],
   sourcePaths: ['src/**', 'tools/testing/**', 'test/support/**', 'test/integration/fixtures/**', 'package.json',
     'tools/package-runtime.ts', 'tools/runtime-package-tree.ts'],
-  command: { file: process.execPath, args: [path.resolve(root, 'tools/testing/run-integration.ts'), '--group', group.id], cwd: '.' },
+  command: { file: process.execPath, args: [path.resolve(root, 'tools/testing/run-integration.ts'), '--prebuilt', '--group', group.id], cwd: '.' },
   prepare: [{file:process.execPath,args:[path.resolve(root,'tools/build.ts')],cwd:'.'}], replaces: ['agent-service'],
 }));
 

@@ -252,7 +252,7 @@ test('source refinement binds actual Git and working bytes, never dirty or missi
   assert.equal(contentChangesAtSnapshot(changed, snapshot, options).length, 1);
   const selected = createVerificationPlan({ ...changed, related: true, semantic: true, target: 'source' });
   assert.deepEqual(selected.steps.map((step: any) => step.id).sort(),
-    ['agent-source-boundaries', 'agent-typecheck', 'agent-unit', 'generated-contracts'].sort());
+    ['agent-source-boundaries', 'agent-typecheck', 'agent-unit', 'generated-contracts', 'harness-cli-typecheck'].sort());
   fs.writeFileSync(entry, current + 'startExecution();\n');
   assert.deepEqual(contentChangesAtSnapshot(changed, snapshot, options), [], 'old proof cannot narrow different execution bytes');
   assert.deepEqual(collectChangedProductPaths(options).contentChanges, [], 'dirty execution change invalidates the proof');

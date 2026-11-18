@@ -212,7 +212,7 @@ test('reviewed release-note independence preserves real readers, unknown roots a
 
 test('reviewed source checks keep results for a notes-only repair while binding their actual source and execution inputs', () => {
   const productRoot = path.resolve(import.meta.dirname, '../..'), repositoryRoot = path.resolve(productRoot, '../../../..');
-  const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: repositoryRoot, encoding: 'utf8' }).split('\0').filter(Boolean);
+  const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: repositoryRoot, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }).split('\0').filter(Boolean);
   const content = new Map<string, string>(), entries: string[][] = [];
   const hash = (value: string | Buffer) => crypto.createHash('sha256').update(value).digest('hex');
   for (const file of [...new Set(files)].sort()) {

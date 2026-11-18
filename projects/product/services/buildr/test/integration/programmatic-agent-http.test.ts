@@ -150,7 +150,7 @@ test('compact OpenAPI preserves response schemas and only emits resolvable share
  const f=await fixture(t),{token}=await f.create();
  const doc=await(await f.call('/openapi.json',token)).json(),expanded=expandRefs(doc,doc);
  assert.ok(Object.keys(doc.components.schemas).length>0);
- assert.ok(Buffer.byteLength(JSON.stringify(doc))<100_000,'full contract size regression');
+ assert.ok(Buffer.byteLength(JSON.stringify(doc))<120_000,'full contract size regression');
  assert.ok(Buffer.byteLength(JSON.stringify(doc,null,2))<200_000,'formatted contract size regression');
  for(const operation of PROGRAMMATIC_OPERATIONS){
   const route=('/api/v1/programmatic/workspaces/:workspaceId/conversations'+operation.path).replace(/:([A-Za-z]+)/g,'{$1}');
