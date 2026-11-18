@@ -27,6 +27,7 @@ export type ArtifactRecord = {
   releaseReason: string | null;
   createdAt: string;
   updatedAt: string;
+  automatic?: { trigger: string; snapshot: string };
 };
 
 export type ArtifactError = Error & { code?: string; status?: number; details?: unknown; nextAction?: string };
@@ -91,6 +92,7 @@ export function normalizeArtifactRecord(raw: unknown): ArtifactRecord {
     releaseReason: record.releaseReason ?? null,
     createdAt: requiredText(record.createdAt, 'createdAt'),
     updatedAt: requiredText(record.updatedAt, 'updatedAt'),
+    ...(['use-ended', 'task-closed'].includes(record.automatic?.trigger) && /^[a-f0-9]{64}$/.test(record.automatic?.snapshot) ? { automatic: { trigger: record.automatic.trigger, snapshot: record.automatic.snapshot } } : {}),
   });
 }
 

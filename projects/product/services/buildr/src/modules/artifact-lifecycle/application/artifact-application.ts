@@ -1,3 +1,4 @@
+import { artifactSnapshot, observeArtifactPaths } from '../infrastructure/automatic-artifacts.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -15,6 +16,7 @@ import { directorySize, type DiscoveredArtifact, type DisposalObservation } from
 const FIRST_SEGMENT_DENY = new Set(['.git', '.worktrees', 'node_modules']);
 
 type ArtifactApplicationRuntime = {
+  readTask?(root: string, id: string): { record: { status: string; updatedAt: string } };
   assertCanonicalStructuredWorkspace(targetRoot: string): string;
   toPosixRelative(root: string, file: string): string;
   existsFile(file: string): boolean;
@@ -37,6 +39,7 @@ export type ArtifactItemView = {
   taskId: string | null;
   taskStatus: string | null;
   disposition: string | null;
+  automatic?: boolean;
   reason: string;
 };
 
@@ -84,6 +87,7 @@ function itemView(targetRoot: string, runtime: ArtifactApplicationRuntime, item:
     taskId: record?.taskId ?? null,
     taskStatus: disposal.owner?.status ?? null,
     disposition: record?.disposition ?? null,
+    ...(record?.automatic ? { automatic: true } : {}),
     reason: disposal.reason,
   };
 }
@@ -122,7 +126,7 @@ export function registerArtifactApplication(runtime: ArtifactApplicationRuntime)
   function registerArtifact(targetRoot: string, input: {
     path: string; purpose: string; disposition: string; taskId?: string | null;
     retainReason?: string | null; references?: { summary: string; checkPath?: string | null }[];
-    registeredBy?: string; expectedRecord?: string | null;
+    registeredBy?: string; expectedRecord?: string | null; automatic?: string;
   }) {
     const root = workspaceRoot(targetRoot);
     const target = assertArtifactTarget(root, input.path);
@@ -148,9 +152,14 @@ export function registerArtifactApplication(runtime: ArtifactApplicationRuntime)
       retainReason: input.retainReason ?? existing?.retainReason ?? null,
       references: references.length ? references : existing?.references ?? [],
     });
+    const trigger = input.automatic;
+    if (trigger !== undefined && (!['use-ended', 'task-closed'].includes(trigger) || draft.disposition !== 'ephemeral' || draft.references.length || draft.retainReason || !disposable(draft.path) || (trigger === 'task-closed' && !draft.taskId))) {
+      throw artifactError('artifact_auto_cleanup_invalid', '自动清理只接受专用目录下明确可丢弃、无保留引用的产物。');
+    }
+    const registration = trigger ? { ...draft, automatic: { trigger, snapshot: artifactSnapshot(target.absolutePath) } } : draft;
     const record = normalizeArtifactRecord(existing
-      ? { ...draft, artifactId: existing.artifactId, createdAt: existing.createdAt, state: 'registered', releasedAt: null, releaseReason: null }
-      : draft);
+      ? { ...registration, artifactId: existing.artifactId, createdAt: existing.createdAt, state: 'registered', releasedAt: null, releaseReason: null }
+      : registration);
     const file = runtime.writeArtifactRecord(root, record);
     return {
       status: 'applied', artifactId: record.artifactId, path: record.path, recordDigest: artifactRecordDigest(record),
@@ -237,7 +246,7 @@ export function registerArtifactApplication(runtime: ArtifactApplicationRuntime)
     const assertPath = createMutationPathGuard(root);
     const { views, diagnostics, invalid } = enumerate(root);
     const plan = views.map((view) => {
-      const eligible = (view.state === 'expired' || view.state === 'released') && view.artifactId !== null;
+      const eligible = (view.state === 'expired' || view.state === 'released') && view.artifactId !== null && (!view.automatic || view.state === 'released');
       return { ...view, eligible };
     });
     if (!execute) {
@@ -258,7 +267,7 @@ export function registerArtifactApplication(runtime: ArtifactApplicationRuntime)
         const disposal = runtime.observeDisposal(root, current, {
           path: item.path, absolutePath: path.join(root, item.path), kind: 'scratch', symlink: false, sizeBytes: null, modifiedAt: null,
         });
-        if (disposal.state !== 'expired' && disposal.state !== 'released') {
+        if (disposal.state !== 'released' && (disposal.state !== 'expired' || current.automatic)) {
           results.push({ path: item.path, artifactId: item.artifactId, result: 'retained', reason: `删除前复核状态变为 ${disposal.state}：${disposal.reason}` });
           continue;
         }
@@ -288,6 +297,50 @@ export function registerArtifactApplication(runtime: ArtifactApplicationRuntime)
     };
   }
 
-  Object.assign(runtime, { registerArtifact, listArtifacts, artifactStatus, releaseArtifact, cleanArtifacts });
+  function disposable(relative: string) { return relative.startsWith('.buildr/local/disposable/'); }
+
+  function collectAutomaticArtifacts(targetRoot: string, now = Date.now(), observe = observeArtifactPaths) {
+    const root = workspaceRoot(targetRoot);
+    const guard = createMutationPathGuard(root);
+    const { records, invalid } = runtime.listArtifactRecords(root);
+    const deleted: string[] = [];
+    if (invalid.length) return deleted;
+    const overdue = (record: ArtifactRecord) => {
+      if (!record.automatic || record.state !== 'registered' || record.disposition !== 'ephemeral' || record.references.length || record.retainReason || !disposable(record.path)) return false;
+      let since = Date.parse(record.updatedAt);
+      if (record.taskId) {
+        const task = runtime.readTask?.(root, record.taskId)?.record;
+        if (!task || !['completed', 'abandoned'].includes(task.status)) return false;
+        if (record.automatic.trigger === 'task-closed') since = Math.max(since, Date.parse(task.updatedAt));
+      } else if (record.automatic.trigger !== 'use-ended') return false;
+      return now - since >= 7 * 24 * 60 * 60_000;
+    };
+    let paths: string[] | null | undefined;
+    for (const record of records) {
+      if (deleted.length >= 16) break;
+      try {
+        if (!overdue(record)) continue;
+        const target = assertArtifactTarget(root, record.path);
+        if (target.relativePath !== record.path) continue;
+        const realTarget = fs.realpathSync(target.absolutePath);
+        const under = (file: string) => [target.absolutePath, realTarget].some(base => file === base || file.startsWith(base + path.sep));
+        if (records.some(other => other.artifactId !== record.artifactId && (
+          other.path.startsWith(record.path + '/') || record.path.startsWith(other.path + '/') ||
+          other.references.some(ref => ref.checkPath && under(path.resolve(root, ref.checkPath)))
+        ))) continue;
+        if (paths === undefined) paths = observe();
+        if (!paths || paths.some(under)) continue;
+        const current = runtime.readArtifactRecord(root, record.artifactId);
+        if (!current || artifactRecordDigest(current) !== artifactRecordDigest(record) || !overdue(current)) continue;
+        guard(target.absolutePath);
+        if (artifactSnapshot(target.absolutePath) !== current.automatic?.snapshot) continue;
+        fs.rmSync(target.absolutePath, { recursive: true });
+        deleted.push(record.path);
+      } catch { /* Missing identity, task status or stable contents: keep the target. */ }
+    }
+    return deleted;
+  }
+
+  Object.assign(runtime, { registerArtifact, listArtifacts, artifactStatus, releaseArtifact, cleanArtifacts, collectAutomaticArtifacts });
   return runtime;
 }

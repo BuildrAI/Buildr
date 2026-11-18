@@ -187,3 +187,39 @@ test('Workspace 外路径、符号链接与受保护根被拒绝', (t) => {
   assert.throws(() => runtime.registerArtifact(root, { path: '.git/config', purpose: 'x', disposition: 'ephemeral' }), (error: any) => ['artifact_protected_path', 'artifact_target_missing'].includes(error.code));
   assert.throws(() => runtime.registerArtifact(root, { path: '.buildr/local/artifacts/x', purpose: 'x', disposition: 'ephemeral' }), (error: any) => error.code === 'artifact_protected_path');
 });
+
+test('automatic cleanup only removes unchanged idle opt-in artifacts after seven days', (t) => {
+  const { root, runtime } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const prefix = '.buildr/local/disposable';
+  const deadline = Date.now() + 8 * 24 * 60 * 60_000;
+  for (const name of ['expired', 'changed', 'busy', 'legacy', 'evidence']) {
+    const relative = `${prefix}/${name}`;
+    fs.mkdirSync(path.join(root, relative), { recursive: true });
+    fs.writeFileSync(path.join(root, relative, 'log'), 'original');
+    runtime.registerArtifact(root, { path: relative, purpose: name, disposition: name === 'evidence' ? 'evidence' : 'ephemeral', automatic: ['legacy','evidence'].includes(name) ? undefined : 'use-ended' });
+  }
+  assert.deepEqual(runtime.collectAutomaticArtifacts(root, Date.now() + 6 * 24 * 60 * 60_000, () => []), []);
+  assert.deepEqual(runtime.collectAutomaticArtifacts(root, deadline, () => null), []);
+  fs.writeFileSync(path.join(root, prefix, 'changed/log'), 'changed');
+  assert.deepEqual(runtime.collectAutomaticArtifacts(root, deadline, () => [path.join(root, prefix, 'busy/log')]), [`${prefix}/expired`]);
+  for (const name of ['changed', 'busy', 'legacy', 'evidence']) assert.ok(fs.existsSync(path.join(root, prefix, name)));
+});
+
+test('task attachments wait seven days after closeout and are retained if reopened', (t) => {
+  const { root, runtime } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const relative = '.buildr/local/disposable/task-log';
+  fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+  fs.writeFileSync(path.join(root, relative), 'task output');
+  const day = 24 * 60 * 60_000;
+  const closeout = Date.now() + 2 * day;
+  let status = 'completed';
+  runtime.readTask = () => ({ record: { status, updatedAt: new Date(closeout).toISOString() } });
+  runtime.registerArtifact(root, { path: relative, purpose: '过程附件', disposition: 'ephemeral', taskId: 'task-a', automatic: 'task-closed' });
+  assert.deepEqual(runtime.collectAutomaticArtifacts(root, closeout + 7 * day - 1, () => []), []);
+  status = 'active';
+  assert.deepEqual(runtime.collectAutomaticArtifacts(root, closeout + 7 * day, () => []), []);
+  status = 'completed';
+  assert.deepEqual(runtime.collectAutomaticArtifacts(root, closeout + 7 * day, () => []), [relative]);
+});

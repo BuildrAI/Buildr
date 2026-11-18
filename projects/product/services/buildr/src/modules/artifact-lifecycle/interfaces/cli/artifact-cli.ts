@@ -16,7 +16,7 @@ export type ArtifactCliRuntime = {
 };
 
 const USAGES: Record<ArtifactAction, string> = {
-  register: 'buildr artifact register <path> --purpose <text> --disposition <ephemeral|retained|evidence> [--task <task-id>] [--by <registrant>] [--retain-reason <text>] [--reference <text> ...] [--reference-check <workspace-path> ...] [--expected-record <absent|sha256-digest>] [--target <canonical-workspace>] [--json]',
+  register: 'buildr artifact register <path> --purpose <text> --disposition <ephemeral|retained|evidence> [--auto-clean <use-ended|task-closed>] [--task <task-id>] [--by <registrant>] [--retain-reason <text>] [--reference <text> ...] [--reference-check <workspace-path> ...] [--expected-record <absent|sha256-digest>] [--target <canonical-workspace>] [--json]',
   list: 'buildr artifact list [--task <task-id>] [--state <state>] [--target <canonical-workspace>] [--json]',
   status: 'buildr artifact status [--target <canonical-workspace>] [--json]',
   release: 'buildr artifact release <artifact-id|path> --reason <text> --expected-record <sha256-digest> [--target <canonical-workspace>] [--json]',
@@ -24,7 +24,7 @@ const USAGES: Record<ArtifactAction, string> = {
 };
 
 const ALLOWED: Record<ArtifactAction, Set<string>> = {
-  register: new Set(['--purpose', '--disposition', '--task', '--by', '--retain-reason', '--reference', '--reference-check', '--expected-record', '--target', '--json']),
+  register: new Set(['--auto-clean', '--purpose', '--disposition', '--task', '--by', '--retain-reason', '--reference', '--reference-check', '--expected-record', '--target', '--json']),
   list: new Set(['--task', '--state', '--target', '--json']),
   status: new Set(['--target', '--json']),
   release: new Set(['--reason', '--expected-record', '--target', '--json']),
@@ -119,6 +119,7 @@ export function artifactCommand(runtime: ArtifactCliRuntime, action: ArtifactAct
         const references = parsed.many('--reference').map((summary, index) => ({ summary, checkPath: parsed.many('--reference-check')[index] ?? null }));
         return printResult({ operation: action, ...runtime.registerArtifact(parsed.targetRoot, {
           path: parsed.positions[0],
+          automatic: parsed.one('--auto-clean'),
           purpose: parsed.one('--purpose'),
           disposition: parsed.one('--disposition'),
           taskId: parsed.one('--task') ?? null,

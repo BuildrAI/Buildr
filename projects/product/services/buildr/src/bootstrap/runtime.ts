@@ -39,7 +39,7 @@ import { createSystemInstallationModule, readCurrentProductIdentity, SYSTEM_INST
 import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../modules/diagnostics/module.ts';
 import { createPublicationModule } from '../modules/publication/module.ts';
 import { createOpenSpecModule } from '../modules/openspec/module.ts';
-import { createArtifactLifecycleModule } from '../modules/artifact-lifecycle/module.ts';
+import { ARTIFACT_LIFECYCLE_APPLICATION, createArtifactLifecycleModule } from '../modules/artifact-lifecycle/module.ts';
 import { CHANGE_APPLICATION, createChangeModule } from '../modules/task/change/module.ts';
 import { TASK_COMMITS_MODULE } from '../modules/task/commits/module.ts';
 import { TASK_CHANGED_FILES_MODULE } from '../modules/task/changed-files/module.ts';
@@ -89,7 +89,16 @@ export function createRuntime(options: { agentRuntime?: import('@buildr-ai/build
   registry.install(createParentCoordinationModule(runtime));
   registry.install(createArtifactLifecycleModule(runtime));
   registry.install(createSystemInstallationModule(runtime));
-  registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), agentRuntimeStatus: async () => {
+  registry.install(createWebModule(runtime, { maintainArtifacts: () => {
+    const { workspaces } = registry.provide(WORKSPACE_APPLICATION).listRegisteredWorkspaces();
+    for (const entry of workspaces) {
+      if (entry.registryScope !== 'local' || entry.status !== 'ready') continue;
+      try {
+        const removed = registry.provide(ARTIFACT_LIFECYCLE_APPLICATION).collectAutomaticArtifacts(entry.rootPath);
+        if (removed.length) console.info('已回收到期的本机过程产物：', entry.rootPath, removed);
+      } catch { console.warn('本机过程产物清理未完成：', entry.rootPath); }
+    }
+  }, httpContributions: registry.contributions('http'), agentRuntimeStatus: async () => {
     // Health must stay responsive while the backend activates a pinned runtime;
     // a slow or failing status read reports null instead of blocking readiness.
     try {

@@ -434,7 +434,9 @@ test('ended legacy runtime views migrate to identical objects and unreferenced o
   const object=materializeRuntimeObject(root,path.join(dataRoot,'unused-object')),view=path.join(dataRoot,'temporary-view');fs.linkSync(object,view);age(path.dirname(object));
   assert.equal(runtimeObjectCandidates(root,unused).length,0,'a live view protects even old content');fs.unlinkSync(view);
   const recent=runtimeObjectCandidates(root,unused);assert.equal(recent.length,1);assert.equal(recent[0]!.eligible,false,'recently unlinked objects retain a full grace window despite old content mtime');
-  const candidates=runtimeObjectCandidates(root,unused,Date.now()+31*day);assert.equal(candidates.length,1);assert.equal(candidates[0]!.eligible,true);
+  const releasedAt=fs.statSync(object).ctimeMs;
+  assert.equal(runtimeObjectCandidates(root,unused,releasedAt+day-1)[0]?.eligible,false);
+  const candidates=runtimeObjectCandidates(root,unused,releasedAt+day+1000);assert.equal(candidates.length,1);assert.equal(candidates[0]!.eligible,true);
   assert.equal(removeStorageCandidate(root,candidates[0]!,()=>unused,directory=>runtimeObjectUnreferenced(directory,path.basename(path.dirname(object)))),true);
   assert.ok(fs.existsSync(runtime.node));validateRuntimeContents(dataRoot,runtime);
 });
