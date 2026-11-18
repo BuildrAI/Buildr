@@ -1,0 +1,8 @@
+.ac-focus-settings{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;background:var(--soft-surface);color:var(--soft-ink)}
+.ac-focus-settings-header{display:flex;align-items:center;gap:18px;padding:13px 22px;border-bottom:1px solid var(--soft-line);flex:none}
+.ac-focus-settings-header .ant-btn{color:var(--soft-primary);font-weight:500}
+.ac-focus-settings-header h1{font-size:var(--font-size-heading);margin:0 0 3px}
+.ac-focus-settings-header p{font-size:var(--font-size-secondary);color:var(--soft-muted);margin:0}
+.ac-focus-settings-content{overflow:auto;flex:1;min-height:0;background:var(--soft-bg)}
+.ac-focus-settings-content .ams-setup{margin:0}
+@media(max-width:760px){.ac-focus-settings-header{padding:9px 12px;gap:8px}}

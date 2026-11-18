@@ -120,3 +120,11 @@
 .ac-activity-status.is-send-failed{color:#9e3127}
 .ac-activity-status.is-send-failed>i{background:#c94034}
 .ac-send-reason{display:block;margin-top:4px;font-size:var(--font-size-meta);font-weight:400;color:var(--ant-color-text-secondary,#819087);white-space:normal;overflow-wrap:anywhere}
+
+.ac-history[hidden]{display:none!important}
+.ac-history-group h3.ac-workspace-group-actions{display:flex;align-items:center;gap:3px;margin-right:4px}
+.ac-workspace-group-actions>.ac-history-group-toggle{flex:1;min-width:0;padding-block:8px;padding-inline:6px}
+.ac-workspace-group-actions>.ac-history-group-toggle>small{margin-left:0}
+.ac-workspace-group-actions>.ac-history-group-toggle>.anticon{font-size:var(--icon-size-tiny);color:var(--soft-muted)}
+.ac-workspace-group-actions>.ant-btn{flex:none;width:32px;height:30px;color:var(--soft-muted)}
+.ac-workspace-group-actions>.ant-btn:hover{background:#edf4f0;color:var(--soft-primary)}

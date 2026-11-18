@@ -2,8 +2,10 @@ import {HarnessSystemPromptSettings} from './HarnessSystemPromptSettings.tsx';
 import {ProgrammaticAccessSettings} from './ProgrammaticAccessSettings.tsx';
 import {ModelLoginPages} from './model-login-pages.ts';
 import {AgentProgramUpdates} from './AgentProgramUpdates.tsx';
-import {useCallback,useEffect,useRef,useState} from 'react';
-import {Alert,App} from 'antd';
+import {useCallback,useEffect,useLayoutEffect,useRef,useState} from 'react';
+import {Alert,App,Button} from 'antd';
+import {ArrowLeftOutlined} from '@ant-design/icons';
+import './focus-settings.css';
 import {DrawerShell} from '../../components/DrawerShell.tsx';
 import {useAgentConversations} from './AgentConversationsContext.tsx';
 import {AgentProgramPreparation} from './AgentProgramPreparation.tsx';
@@ -20,12 +22,21 @@ function providerAccount(accounts:ModelAccount[],provider:ModelProviderView){
   :provider.linked?account.id===provider.id||account.provider===provider.id
   :account.provider===provider.id&&!account.connectionId);
 }
-export function AgentConnectionSettings(){
+export function AgentConnectionSettings({inMain=false}: {inMain?:boolean}={}){
  const context=useAgentConversations(),{message}=App.useApp();
  const [programGeneration,setProgramGeneration]=useState(0),[startProgram,setStartProgram]=useState(false);
  const [mode,setMode]=useState<'agents'|'accounts'|'programmatic'|'system-prompt'>('accounts');
  const [showDisabled,setShowDisabled]=useState(false);
  const [accounts,setAccounts]=useState<ModelAccount[]>([]),[providers,setProviders]=useState<ModelProviderView[]>([]),[selection,setSelection]=useState<AccountSelection>({sourceId:'all',tab:'quota'});
+ const handledQuota=useRef(0);
+ const backButton=useRef<HTMLButtonElement>(null);
+ useLayoutEffect(()=>{
+  const request=context.quotaSettingsRequest??0;
+  if(!request||request===handledQuota.current)return;
+  handledQuota.current=request;setMode('accounts');setSelection({sourceId:'all',tab:'quota'});
+ },[context.quotaSettingsRequest]);
+ useEffect(()=>{if(inMain&&context.settings)backButton.current?.focus();},[inMain,context.settings]);
+ const back=()=>{context.setSettings(false);document.getElementById('agent-focus-settings-entry')?.focus();};
  const [providerEditing,setProviderEditing]=useState<ProviderConnectionInitial|null>(null);
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[program,setProgram]=useState<string|null>(null),[pendingLogin,setPendingLogin]=useState<string|null>(null),[preparing,setPreparing]=useState<Record<string,boolean>>({});
  const [refreshingIds,setRefreshingIds]=useState<string[]>([]);
@@ -221,10 +232,14 @@ export function AgentConnectionSettings(){
   const sources=modelSourceViews(accounts,context.connections,true);
   const configuredProviderIds=providers.filter(provider=>Boolean(providerAccount(accounts,provider))).map(provider=>provider.id);
  const setSourceEnabled=(id:string,enabled:boolean)=>{void act(async()=>{await preferenceQueue.current;let current=accountsRef.current.find(a=>a.id===id);if(!current){const provider=newModelSourceProvider(id);if(!provider)throw new Error('供应商已变化，请刷新后重试。');current=await context.api.addModelAccount(provider);}else current=await context.api.modelAccount(id);update(await context.api.modelSourceEnabled(current,enabled));if(!current.connectionId)void context.refreshConnections().catch(()=>{});if(!enabled)setSelection({sourceId:'all',tab:selection.tab});});};
-  return <><DrawerShell open={context.settings} title="智能体与模型" sub="管理智能体、模型与程序接入" onClose={()=>context.setSettings(false)} closeAriaLabel="关闭智能体与模型设置" width="min(800px,100vw)" rootClassName="agent-conversation-settings model-account-settings">
+  const content=<>
  {error&&<Alert type="warning" showIcon message={error} style={{marginBottom:16}}/>}
  <AgentModelSetup systemPromptContent={context.settings&&mode==='system-prompt'?<HarnessSystemPromptSettings/>:undefined} showDisabled={showDisabled} onShowDisabled={setShowDisabled} onSourceEnabled={setSourceEnabled} programmaticContent={context.settings&&mode==='programmatic'?<ProgrammaticAccessSettings/>:undefined} executorContent={<AgentProgramUpdates scope="settings" active={context.settings&&mode==='agents'} connections={context.connections} accounts={accounts} preparationId={program} onPrepare={id=>{setStartProgram(true);setProgramGeneration(value=>value+1);setProgram(id);}} onManageAccount={(accountId,startLogin)=>{setMode('accounts');setSelection({sourceId:accountId,tab:'quota'});if(startLogin)login(accountId);}} onDetails={(id,open)=>{if(open&&program!==id){setStartProgram(false);setProgram(id);}else if(!open&&program===id)setProgram(null);}} renderPreparation={id=>{const item=context.connections.find(item=>item.id===id);return item&&<AgentProgramPreparation key={id+programGeneration} connection={item} onPending={onPending} autoStart={program===id&&startProgram}/>;}}/>} refreshingIds={refreshingIds} mode={mode} onMode={setMode} executors={context.connections.map(item=>({id:item.id,label:item.label,prepared:item.enabled&&!!item.configPath,checking:preparing[item.id]}))} expandedExecutor={program} onPrepareExecutor={id=>{setStartProgram(true);setProgramGeneration(value=>value+1);setProgram(id);}} onToggleExecutor={id=>{setStartProgram(false);setProgram(current=>current===id?null:id);}} renderExecutor={id=>{const item=context.connections.find(item=>item.id===id);return item&&<AgentProgramPreparation key={id+programGeneration} connection={item} onPending={onPending} autoStart={startProgram}/>;}} sources={sources.map(({program:_,...source})=>source)} selection={selection} busy={busy} onSelect={setSelection} onRefresh={check} onLogin={login} onDisconnect={disconnect} onPrepare={id=>{setMode('agents');setStartProgram(false);setProgram(accounts.find(account=>account.id===id)?.connectionId??null);}} onCancelLogin={cancel} onConfigureKey={async(id,key)=>{if(!await configureKey(id,key))throw new Error('API Key 配置未完成。');}} onAddProvider={()=>setProviderEditing({kind:'custom',label:'',baseUrl:'',protocol:'chat-completions',modelsPath:DEFAULT_CUSTOM_MODELS_PATH,useApiKey:false})} onEditProvider={editProvider} onDeleteProvider={deleteProvider} onDeleteUsage={async id=>(await context.api.modelAccountUsage(id)).references} onLogoutManaged={logoutManaged} onSwitchManagedAccount={switchManagedAccount} onManagedAccountImpact={managedAccountImpact} onCustomModels={saveCustomModels} onCustomDiscover={input=>context.api.discoverCustomModels({baseUrl:input.baseUrl,protocol:input.protocol,modelsPath:input.modelsPath,useApiKey:input.useApiKey,...(input.accountId?{accountId:input.accountId}:{}),...(input.apiKey?{apiKey:input.apiKey}:{})})} onEnable={values=>changes(values)} onContext={(sourceId,modelId,contextWindow)=>changes([{sourceId,modelId,contextWindow}])}/>
- </DrawerShell>
+ </>;
+ return <>{inMain ? (context.settings&&<section className="ac-focus-settings agent-conversation-settings model-account-settings" id="agent-focus-settings" aria-labelledby="agent-focus-settings-heading">
+  <header className="ac-focus-settings-header"><Button ref={backButton} type="text" aria-label="返回对话" icon={<ArrowLeftOutlined aria-hidden/>} onClick={back}>返回对话</Button><div><h1 id="agent-focus-settings-heading">智能体与模型</h1><p>管理智能体、模型与程序接入</p></div></header>
+  <div className="ac-focus-settings-content">{content}</div>
+ </section>) : <DrawerShell open={context.settings} title="智能体与模型" sub="管理智能体、模型与程序接入" onClose={()=>context.setSettings(false)} closeAriaLabel="关闭智能体与模型设置" width="min(800px,100vw)" rootClassName="agent-conversation-settings model-account-settings">{content}</DrawerShell>}
  {providerEditing&&<ProviderConnectionDrawer key={providerEditing.accountId??providerEditing.kind} open initial={providerEditing} providers={providers} connections={context.connections} configuredProviders={configuredProviderIds} busy={busy} onClose={()=>setProviderEditing(null)} onSave={saveProvider}/>}
  </>;
 }

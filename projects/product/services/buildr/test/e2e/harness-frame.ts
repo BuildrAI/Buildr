@@ -188,6 +188,26 @@ try{
  await frame.locator('.ac-welcome .ac-workspace-select .ant-select-clear').click();
  await page.waitForFunction(()=>document.querySelector('[aria-label="对话信息与工作空间"]')?.textContent?.trim()==='默认工作空间');
  assert.equal(await frame.locator('.ac-focus-history-pane').isVisible(),true,'clearing workspace back to default preserves open history list');
+ const rail=frame.locator('.ac-collapsed-rail'), settings=frame.getByRole('region',{name:'智能体与模型',exact:true});
+ const gear=rail.getByRole('button',{name:'智能体与模型设置',exact:true}), quota=rail.getByRole('button',{name:'供应商额度',exact:true});
+ const preview=page.getByTestId('account-quota-overview');
+ await input.fill('设置往返保留的草稿');
+ await gear.hover();assert.equal(await preview.isVisible(),false);
+ await gear.click();await settings.waitFor();assert.equal(await frame.locator('.ac-focus-history-pane').isVisible(),true);
+ await settings.getByRole('tab',{name:'智能体',exact:true}).click();
+ await settings.getByRole('button',{name:'返回对话',exact:true}).click();assert.equal(await input.inputValue(),'设置往返保留的草稿');
+ await quota.hover();await preview.waitFor();await quota.click();await settings.waitFor();
+ assert.equal(await settings.getByRole('tab',{name:'模型',exact:true}).getAttribute('aria-selected'),'true');
+ await settings.getByText('账号与额度',{exact:true}).waitFor();
+ await settings.getByRole('button',{name:'返回对话',exact:true}).click();
+ const group=frame.locator('.ac-focus-history-pane [data-history-workspace]').filter({has:page.getByRole('button',{name:'在切换工作空间验收新建对话',exact:true})});
+ await group.locator('.ac-history-group-toggle').click();
+ await group.getByRole('button',{name:'在切换工作空间验收新建对话',exact:true}).click();
+ await page.waitForFunction(()=>document.activeElement?.id==='agent-conversation-input');
+ assert.equal(await frame.getByRole('button',{name:'对话信息与工作空间',exact:true}).innerText(),'切换工作空间验收');
+ assert.equal(await group.locator('.ac-history-group-toggle').getAttribute('aria-expanded'),'false');
+ assert.equal(await frame.locator('#agent-conversation-panel').getAttribute('data-conversation-id'),null);
+
  await frame.locator('.ac-collapsed-rail .ac-current-conversation').click();
  await frame.locator('.ac-focus-history-pane').waitFor({state:'hidden'});
  assert.equal(await page.locator('.development-harness-frame.is-full').isVisible(),true,'clicking current conversation rail exits history view without collapsing focus panel');
