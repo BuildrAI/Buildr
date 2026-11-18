@@ -979,3 +979,45 @@ test('对话列表与提醒浮窗状态采用无框高辨识度圆点样式且�
  assert.match(conversationCss,/\.ac-draft-status\{[^}]*animation:ac-draft-status-in/);
  assert.match(conversationCss,/prefers-reduced-motion:reduce\).*\.ac-draft-status\{animation:none;transition:none\}/);
 });
+
+test('登录尝试终态自动使共享账号与模型目录只读缓存失效', async()=>{
+  const requests=[];
+  let staleAccountsStarted=false;
+  const staleStarted=Promise.withResolvers();
+  const staleAccountsRelease=Promise.withResolvers();
+  const base='/api/v1/app/agent-service';
+  const api=createAgentConversationsClient(async(path)=>{
+    requests.push(path);
+    if(path===base+'/model-catalog')return{models:[{id:'m1'}],revision:'cat-r1'};
+    if(path.startsWith(base+'/model-catalog?revision='))return{revision:'cat-r1',unchanged:true};
+    if(path===base+'/model-accounts'){
+      if(!staleAccountsStarted){staleAccountsStarted=true;staleStarted.resolve();return staleAccountsRelease.promise;}
+      return{accounts:[{id:'native-codex',status:'ready'}],providers:[]};
+    }
+    if(path===base+'/connections/codex/login-attempts/att-1'){
+      return requests.filter(item=>item.includes('login-attempts/att-1')).length===1
+        ?{id:'codex',status:'not-authenticated',loginAttempt:{id:'att-1',state:'checking'}}
+        :{id:'codex',status:'ready',loginAttempt:{id:'att-1',state:'completed'}};
+    }
+    throw new Error('unexpected:'+path);
+  },session);
+
+  assert.equal((await api.modelCatalog()).revision,'cat-r1');
+  const staleRead=api.modelAccounts();
+  await staleStarted.promise;
+  assert.equal((await api.loginAttempt('codex','att-1')).loginAttempt.state,'checking');
+  const sharedRead=api.modelAccounts();
+  await Promise.resolve();
+  assert.equal(requests.filter(item=>item===base+'/model-accounts').length,1,'checking 状态不打断并发中的账号列表共享读取');
+  assert.equal((await api.modelCatalog()).models[0].id,'m1');
+  assert.equal(requests.at(-1),base+'/model-catalog?revision=cat-r1');
+
+  assert.equal((await api.loginAttempt('codex','att-1')).loginAttempt.state,'completed');
+  const freshAccounts=await api.modelAccounts();
+  assert.equal(freshAccounts.accounts[0].status,'ready');
+  assert.equal(requests.filter(item=>item===base+'/model-accounts').length,2);
+  await api.modelCatalog();
+  assert.equal(requests.at(-1),base+'/model-catalog','登录完成后应清掉目录 revision 快照以拉取最新模型');
+  staleAccountsRelease.resolve({accounts:[],providers:[]});
+  await Promise.all([staleRead,sharedRead]);
+});

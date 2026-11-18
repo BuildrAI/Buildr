@@ -180,6 +180,7 @@ export class ConnectionApplication {
     present?(view: ConnectionView): ConnectionView;
     hasObservedAccount?(id: string): boolean;
     observeAccount?(id: string): Promise<Pick<ConnectionView, 'status' | 'models' | 'diagnostic' | 'account'>> | undefined;
+    onLoginChecked?(id: string, connection: ConnectionView): Promise<{ ready: boolean; diagnostic?: string } | undefined> | undefined;
     systemPrompt?(): import('../contracts.ts').HarnessSystemPrompt;
     generation: string;
     now(): string;
@@ -347,11 +348,18 @@ export class ConnectionApplication {
         if (current.bindingIdentity && current.bindingIdentity !== runtime.bindingIdentity) {
           void runtime.close(); fail('agent_binding_changed', '原生程序或独立配置身份已变化，原上下文已保留，请核对兼容来源。', 409);
         }
-        current.bindingIdentity = runtime.bindingIdentity;
-        current.bindingData = runtime.bindingData;
-        current.view.configPath = configRoot;
-        current.view.capabilities = runtime.capabilities;
-        this.save(current);
+        const unchanged =
+          current.bindingIdentity === runtime.bindingIdentity &&
+          JSON.stringify(current.bindingData ?? null) === JSON.stringify(runtime.bindingData ?? null) &&
+          current.view.configPath === configRoot &&
+          JSON.stringify(current.view.capabilities ?? null) === JSON.stringify(runtime.capabilities ?? null);
+        if (!unchanged) {
+          current.bindingIdentity = runtime.bindingIdentity;
+          current.bindingData = runtime.bindingData;
+          current.view.configPath = configRoot;
+          current.view.capabilities = runtime.capabilities;
+          this.save(current);
+        }
         return runtime;
       }).catch(error => {
         if (this.runtimes.get(id) === promise) {
@@ -627,29 +635,91 @@ export class ConnectionApplication {
     const attemptId = randomUUID();
     record.view.loginAttempt = { id: attemptId, generation: this.options.generation, state: 'initializing', updatedAt: this.options.now() };
     this.save(record);
-    const maybeReopenGate = () => {
+    const maybeReopenGate = (checked?: ConnectionView) => {
       if (!options?.reopenGateOnSettled) return;
-      void this.check(id).then(checked => {
+      if (checked) {
         if (checked.status === 'ready' || checked.status === 'not-authenticated') {
+          this.setSendGate(id, { state: 'open' }, false);
+        }
+        return;
+      }
+      void this.check(id).then(observed => {
+        if (observed.status === 'ready' || observed.status === 'not-authenticated') {
           this.setSendGate(id, { state: 'open' }, false);
         }
       }).catch(() => {});
     };
+    let settling = false;
+    const isActiveAttempt = (view: ConnectionView) =>
+      view.loginAttempt?.id === attemptId &&
+      view.loginAttempt.generation === this.options.generation &&
+      !['completed', 'cancelled', 'expired', 'failed'].includes(view.loginAttempt.state);
+    const finalizeCompleted = () => {
+      void (async () => {
+        try {
+          const checked = await this.check(id);
+          const accountResult = await this.options.onLoginChecked?.(id, checked);
+          const preSave = this.stored(id);
+          if (!isActiveAttempt(preSave.view)) return;
+          maybeReopenGate(checked);
+          const latest = this.stored(id);
+          if (!isActiveAttempt(latest.view)) return;
+          if (accountResult && !accountResult.ready) {
+            latest.view.loginAttempt = {
+              id: attemptId,
+              generation: this.options.generation,
+              state: 'failed',
+              diagnostic: accountResult.diagnostic ?? '账号模型与额度同步失败，请重试。',
+              updatedAt: this.options.now(),
+            };
+          } else {
+            latest.view.loginAttempt = {
+              id: attemptId,
+              generation: this.options.generation,
+              state: 'completed',
+              updatedAt: this.options.now(),
+            };
+          }
+          this.save(latest);
+        } catch (error) {
+          const latest = this.stored(id);
+          if (!isActiveAttempt(latest.view)) return;
+          latest.view.loginAttempt = {
+            id: attemptId,
+            generation: this.options.generation,
+            state: 'failed',
+            diagnostic: safeDiagnostic(error),
+            updatedAt: this.options.now(),
+          };
+          this.save(latest);
+        } finally {
+          await this.releaseAccountProbes();
+        }
+      })();
+    };
     const update = (observation: LoginObservation) => {
+      if (settling) return;
       const current = this.stored(id);
-      if (current.view.loginAttempt?.id !== attemptId || current.view.loginAttempt.generation !== this.options.generation || ['completed', 'cancelled', 'expired', 'failed'].includes(current.view.loginAttempt.state)) return;
+      if (!isActiveAttempt(current.view)) return;
       if (observation.state === 'waiting-browser' && observation.url) {
         try { const url = new URL(observation.url); if (url.protocol === 'https:') this.loginUrls.set(id, { attemptId, url: url.href }); }
         catch { /* Invalid navigation is not exposed. */ }
       } else {
         this.loginUrls.delete(id);
       }
+      if (observation.state === 'completed') {
+        settling = true;
+        clearTimeout(this.loginTimers.get(id)); this.loginTimers.delete(id); this.loginUrls.delete(id);
+        current.view.loginAttempt = { id: attemptId, generation: this.options.generation, state: 'checking', diagnostic: observation.diagnostic, updatedAt: this.options.now() };
+        this.save(current);
+        finalizeCompleted();
+        return;
+      }
       current.view.loginAttempt = { id: attemptId, generation: this.options.generation, state: observation.state, diagnostic: observation.diagnostic, updatedAt: this.options.now() };
       this.save(current);
-      if (['completed', 'cancelled', 'expired', 'failed'].includes(observation.state)) {
+      if (['cancelled', 'expired', 'failed'].includes(observation.state)) {
         clearTimeout(this.loginTimers.get(id)); this.loginTimers.delete(id); this.loginUrls.delete(id);
         if (options?.reopenGateOnSettled) maybeReopenGate();
-        else if (observation.state === 'completed') void this.check(id).catch(() => {});
       }
     };
     const timer = setTimeout(() => {

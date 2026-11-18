@@ -406,3 +406,108 @@ rl.on('line', line => {
   assert.equal(standaloneObserved.models[0]?.id, 'gpt-6.2-astra');
   assert.equal(requestedUrls.find(entry => entry.url.includes('client_version=0.174.0'))?.userAgent, 'codex_cli_rs/0.174.0');
 });
+
+test('CodexRuntime avoids unconditional token refresh, serializes concurrent refreshes across runtimes, and adopts fresher disk tokens', { timeout: 15000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-token-sync-'));
+  const fakeJwt = (expSeconds: number, jti: string) => {
+    const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString('base64url');
+    return `${b64({ alg: 'RS256', typ: 'JWT' })}.${b64({ sub: 'user-1', exp: expSeconds, jti })}.sig`;
+  };
+  const nowSec = Math.floor(Date.now() / 1000);
+  const validJwt = fakeJwt(nowSec + 3600, 'valid-1');
+  const expiringJwt = fakeJwt(nowSec + 10, 'expiring-1');
+  const refreshedJwt = fakeJwt(nowSec + 7200, 'refreshed-1');
+  const rotatedDiskJwt = fakeJwt(nowSec + 10800, 'rotated-disk-1');
+
+  const codexScript = join(root, 'fake-codex-sync.mjs');
+  await writeFile(codexScript, `#!/usr/bin/env node
+import { createInterface } from 'node:readline';
+import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { join } from 'node:path';
+if (process.argv.includes('--version')) { console.log('codex 0.173.0'); process.exit(0); }
+const codexHome = process.env.CODEX_HOME;
+const authFile = join(codexHome, 'auth.json');
+const logFile = join(codexHome, 'rpc-log.jsonl');
+const rl = createInterface({ input: process.stdin });
+const reply = (id, result) => process.stdout.write(JSON.stringify({ id, result }) + '\\n');
+rl.on('line', line => {
+  const msg = JSON.parse(line);
+  if (msg.method === 'initialize') { reply(msg.id, { userAgent: 'fixture' }); return; }
+  if (msg.method === 'initialized') return;
+  if (msg.method === 'getAuthStatus') {
+    const refresh = Boolean(msg.params?.refreshToken);
+    appendFileSync(logFile, JSON.stringify({ refreshToken: refresh }) + '\\n');
+    const auth = JSON.parse(readFileSync(authFile, 'utf8'));
+    if (refresh) {
+      setTimeout(() => {
+        auth.tokens.access_token = ${JSON.stringify(refreshedJwt)};
+        writeFileSync(authFile, JSON.stringify(auth));
+        reply(msg.id, { authToken: auth.tokens.access_token });
+      }, 60);
+      return;
+    }
+    reply(msg.id, { authToken: auth.tokens?.access_token ?? null });
+    return;
+  }
+  reply(msg.id, {});
+});
+`);
+  await chmod(codexScript, 0o755);
+
+  const codexConfigRoot = join(root, 'runtime-config');
+  const codexHome = join(codexConfigRoot, 'codex-home');
+  await mkdir(codexHome, { recursive: true });
+  const authFile = join(codexHome, 'auth.json');
+  const logFile = join(codexHome, 'rpc-log.jsonl');
+  await writeFile(authFile, JSON.stringify({ tokens: { account_id: 'acct-sync', access_token: validJwt } }));
+
+  const runtime1 = await createCodexExecutor().open({ connectionId: 'codex', configRoot: codexConfigRoot, executable: codexScript, environment: { PATH: process.env.PATH ?? '' } });
+  const runtime2 = await createCodexExecutor().open({ connectionId: 'codex', configRoot: codexConfigRoot, executable: codexScript, environment: { PATH: process.env.PATH ?? '' } });
+  t.after(async () => { await runtime1.close(); await runtime2.close(); await rm(root, { recursive: true, force: true }); });
+
+  const sentTokens: string[] = [];
+  let rejectToken: string | undefined;
+  t.mock.method(globalThis, 'fetch', async (url: unknown, init: RequestInit = {}) => {
+    const bearer = new Headers(init.headers).get('authorization') ?? '';
+    sentTokens.push(bearer);
+    if (rejectToken && bearer === 'Bearer ' + rejectToken) {
+      await writeFile(authFile, JSON.stringify({ tokens: { account_id: 'acct-sync', access_token: rotatedDiskJwt } }));
+      rejectToken = undefined;
+      return new Response(null, { status: 401 });
+    }
+    if (String(url).includes('/codex/models')) return Response.json({ models: [{ slug: 'gpt-6.2-astra' }] });
+    if (String(url).endsWith('/wham/usage')) return Response.json({});
+    throw new Error('unexpected_test_network');
+  });
+
+  // 1. Valid tokens never trigger refreshToken: true even under concurrent requests
+  await Promise.all([
+    runtime1.requestModel!('/codex/models?client_version=0.173.0'),
+    runtime1.requestModel!('/wham/usage'),
+  ]);
+  const callsAfterValid = (await readFile(logFile, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { refreshToken: boolean });
+  assert.equal(callsAfterValid.filter(c => c.refreshToken).length, 0);
+  assert.deepEqual(sentTokens.slice(-2), [`Bearer ${validJwt}`, `Bearer ${validJwt}`]);
+
+  // 2. Expiring tokens serialize across runtimes via auth.json refresh lock so only one RPC refresh executes
+  await writeFile(logFile, '');
+  await writeFile(authFile, JSON.stringify({ tokens: { account_id: 'acct-sync', access_token: expiringJwt } }));
+  const [res1, res2] = await Promise.all([
+    runtime1.requestModel!('/wham/usage'),
+    runtime2.requestModel!('/wham/usage'),
+  ]);
+  assert.equal(res1.status, 200);
+  assert.equal(res2.status, 200);
+  const callsAfterExpiring = (await readFile(logFile, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { refreshToken: boolean });
+  assert.equal(callsAfterExpiring.filter(c => c.refreshToken).length, 1);
+  assert.deepEqual(sentTokens.slice(-2), [`Bearer ${refreshedJwt}`, `Bearer ${refreshedJwt}`]);
+
+  // 3. On 401 when another process rotated auth.json, runtime adopts fresher disk token and retries without refreshing
+  await writeFile(logFile, '');
+  rejectToken = refreshedJwt;
+  const recovered = await runtime1.requestModel!('/codex/models?client_version=0.173.0');
+  assert.equal(recovered.status, 200);
+  const callsAfterRecovery = (await readFile(logFile, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { refreshToken: boolean });
+  assert.equal(callsAfterRecovery.filter(c => c.refreshToken).length, 0);
+  assert.equal(sentTokens.at(-1), `Bearer ${rotatedDiskJwt}`);
+});
