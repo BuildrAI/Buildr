@@ -9,6 +9,8 @@ export type HarnessConversationHost = {
   /** The assembled host interprets its own objects; ordinary files use HarnessDirectoryFiles. */
   openObject?(reference: string, scopePath: string): void;
   requestLayout?(action: 'collapse' | 'full', full?: boolean): void;
+  /** True when standalone Harness Web owns the viewport without an assembled work environment. */
+  standalone?: boolean;
 };
 
 const Host = createContext<HarnessConversationHost>({});

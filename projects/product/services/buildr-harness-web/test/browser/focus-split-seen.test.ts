@@ -128,11 +128,11 @@ test('focus split and collapsed stopped process clear unseen status immediately 
   page.on('pageerror', error => errors.push(error.message));
 
   await page.goto(origin);
-  await page.locator('.ac-collapsed-rail .ac-all-conversations').click();
   const focusPane = page.locator('.ac-focus-history-pane');
   const detailPane = page.locator('.ac-conversation-view');
   await focusPane.waitFor({ state: 'visible', timeout: 10000 });
   assert.equal(await detailPane.isVisible(), true, 'focus split keeps transcript pane visible');
+  assert.equal(await focusPane.getByRole('button', { name: '返回当前对话', exact: true }).count(), 0, 'desktop side-by-side split omits back arrow');
 
   const railListButton = page.locator('.ac-collapsed-rail .ac-all-conversations');
   await until(

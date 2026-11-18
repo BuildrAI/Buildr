@@ -169,7 +169,6 @@ test('draft list ignores executing conversations and settles calmly on navigatio
   });
 
   await page.goto(origin);
-  await page.locator('.ac-collapsed-rail .ac-all-conversations').click();
   const focusPane = page.locator('.ac-focus-history-pane');
   await focusPane.waitFor({ state: 'visible', timeout: 10000 });
   const group1 = focusPane.locator(`[data-history-workspace="${scope1}"]`);

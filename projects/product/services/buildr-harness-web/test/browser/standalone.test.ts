@@ -127,6 +127,22 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await a.goto(origin);
     assert.equal(await a.locator('.harness-header').count(),0,'no duplicate outer navigation');
     assert.equal(await a.locator('.ac-collapsed-rail').count(),1);
+    assert.equal(await a.locator('.ac-collapsed-rail .ac-current-conversation').count(),0,'standalone rail omits current conversation collapse/expand button');
+    await a.locator('.ac-focus-history-pane').waitFor({state:'visible',timeout:10000});
+    assert.equal(await a.locator('.ac-focus-history-pane').getByRole('button',{name:'返回当前对话',exact:true}).count(),0,'desktop split omits narrow back button');
+    await a.getByRole('button',{name:'更多对话操作',exact:true}).click();
+    await a.locator('.ant-dropdown:visible').waitFor({state:'visible',timeout:10000});
+    for(const label of ['收起对话','专注对话','恢复分屏','对话移到最左侧','对话移到右侧']){
+      assert.equal(await a.getByRole('menuitem',{name:label,exact:true}).count(),0,`standalone menu must omit ${label}`);
+    }
+    await a.getByRole('menuitem',{name:'重命名',exact:true}).waitFor({state:'visible',timeout:10000});
+    await a.keyboard.press('Escape');
+    await a.locator('.ant-dropdown:visible').waitFor({state:'hidden',timeout:10000});
+    await a.locator('.ac-collapsed-rail .ac-all-conversations').click();
+    await a.locator('.ac-focus-history-pane').waitFor({state:'hidden',timeout:10000});
+    await a.reload();
+    await a.locator('.ac-panel').waitFor({state:'visible',timeout:10000});
+    assert.equal(await a.locator('.ac-focus-history-pane').count(),0,'collapsed history preference persists across reload');
     await a.getByRole('combobox', {name:'新对话工作空间'}).locator('..').locator('..').click();
     await a.getByText('work', {exact:true}).last().waitFor({state:'visible'});
     await a.keyboard.press('Escape');
@@ -240,6 +256,7 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     assert.equal(await inputB.inputValue(), '窗口 B 未提交草稿');
     await b.reload();
     await until(() => b.getByRole('textbox', {name: '对话输入', exact: true}).inputValue(), value => value === '窗口 B 未提交草稿', 'window B draft after reload');
+    await b.locator('.ac-focus-history-pane').waitFor({state: 'visible', timeout: 10000});
     await inputA.fill('hold');
     await inputA.press('Enter');
     await a.getByRole('button', {name: '停止对话', exact: true}).waitFor({state: 'visible', timeout: 10000});
@@ -429,5 +446,19 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     assert.equal(await b.locator('.ac-turn .ac-turn-prompt').count(), 1, 'reused turn renders the original user prompt bubble only once');
     assert.equal(await b.locator('.ac-continuation-prompt-label').count(), 0, 'same-page continuation omits the off-page continuation label');
     assert.equal(await b.locator('.ac-turn').getByText('已请求继续上次执行。').count(), 1, 'continuation notice renders inside the reused turn');
+    const narrow = await context.newPage();
+    await narrow.setViewportSize({width: 500, height: 800});
+    await narrow.goto(origin);
+    await narrow.getByRole('textbox', {name: '对话输入', exact: true}).waitFor({state: 'visible', timeout: 10000});
+    assert.equal(await narrow.locator('.ac-history:visible').count(), 0, 'narrow viewport defaults to conversation view even when desktop history preference is open');
+    await narrow.locator('.ac-collapsed-rail .ac-all-conversations').click();
+    await narrow.locator('.ac-history').waitFor({state: 'visible', timeout: 10000});
+    const backToConversation = narrow.getByRole('button', {name: '返回当前对话', exact: true});
+    await backToConversation.waitFor({state: 'visible', timeout: 10000});
+    await backToConversation.click();
+    await narrow.locator('.ac-history').waitFor({state: 'hidden', timeout: 10000});
+    await narrow.getByRole('textbox', {name: '对话输入', exact: true}).waitFor({state: 'visible', timeout: 10000});
+    assert.equal(await narrow.evaluate(() => localStorage.getItem('buildr.harness-standalone.history-open:' + (document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content') || 'local'))), 'true', 'narrow fallback and return never overwrite desktop history preference');
+    await narrow.close();
     await context.close();
 });

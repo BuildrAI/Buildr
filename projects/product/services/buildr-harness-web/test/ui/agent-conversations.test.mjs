@@ -947,3 +947,18 @@ test('仅专注模式分屏时跨刷新与切换保持历史列表展开',async(
  assert.equal(shouldPreserveFocusHistory(true,'conversation',1280,1360),false);
  assert.equal(shouldPreserveFocusHistory(false,'history',1280,1360),false);
 });
+
+test('独立网页桌面宽屏默认展开对话列表，窄屏优先对话且不覆盖桌面偏好',async()=>{
+ const {resolveInitialStandaloneView,shouldPersistStandaloneHistoryPreference}=await import('../../src/features/agent-conversations/conversation-state.ts');
+ assert.equal(resolveInitialStandaloneView(null,1228,1280),'history');
+ assert.equal(resolveInitialStandaloneView(undefined,1228,1280),'history');
+ assert.equal(resolveInitialStandaloneView('true',1228,1280),'history');
+ assert.equal(resolveInitialStandaloneView('false',1228,1280),'conversation');
+ assert.equal(resolveInitialStandaloneView(null,448,500),'conversation');
+ assert.equal(resolveInitialStandaloneView('true',448,500),'conversation');
+ assert.equal(resolveInitialStandaloneView('true',859,911),'conversation');
+ assert.equal(shouldPersistStandaloneHistoryPreference('history',1228,1280),true);
+ assert.equal(shouldPersistStandaloneHistoryPreference('conversation',1228,1280),true);
+ assert.equal(shouldPersistStandaloneHistoryPreference('conversation',448,500),false);
+ assert.equal(shouldPersistStandaloneHistoryPreference('history',448,500),true);
+});

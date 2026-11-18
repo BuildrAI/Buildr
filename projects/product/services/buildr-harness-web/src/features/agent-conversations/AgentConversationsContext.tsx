@@ -10,7 +10,7 @@ import { createConversationHistoryCache, conversationHistorySignature, activityW
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ConnectionDiscovery, type ConnectionDiscoveryState } from './connection-discovery.ts';
 import { agentConversationsApi, type ConversationPage, type AgentConversationsClient } from './api/agent-conversations-api.ts';
-import { conversationObservationKey, needsConversationObservation, nextConversationPanel, createdConversationVisibility, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, rememberContextReport, sameConversationSelection, shouldPreserveFocusHistory, type ConversationContextReport, type ConversationSelection } from './conversation-state.ts';
+import { conversationObservationKey, needsConversationObservation, nextConversationPanel, createdConversationVisibility, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, rememberContextReport, resolveInitialStandaloneView, sameConversationSelection, shouldPersistStandaloneHistoryPreference, shouldPreserveFocusHistory, type ConversationContextReport, type ConversationSelection } from './conversation-state.ts';
 import { readOptionalPreference, writeOptionalPreference } from '../../lib/optional-preferences.ts';
 import type { CatalogModel, ConnectionView, ConversationEvent, ConversationView, PendingConversation } from './types.ts';
 import { conversationProductActionSelection, recoverConversationProductAction, startConversationProductAction } from './conversation-product-action.ts';
@@ -62,6 +62,24 @@ const panelProfile = () => (typeof document === 'undefined' ? 'local' : document
 const panelStateKey = () => 'buildr.agent-conversation.panel:' + panelProfile();
 const fullPreferenceKey = () => 'buildr.agent-conversation.full:' + panelProfile();
 const focusHistoryPreferenceKey = () => 'buildr.agent-conversation.focus-history:' + panelProfile();
+const standaloneHistoryOpenKey = () => 'buildr.harness-standalone.history-open:' + panelProfile();
+const standaloneHistorySessionKey = () => 'buildr.harness-standalone.history-session:' + panelProfile();
+function readStandaloneHistoryPreference(): string | null {
+  const persisted = readOptionalPreference(standaloneHistoryOpenKey());
+  if (persisted === 'true' || persisted === 'false') return persisted;
+  try {
+    const session = sessionStorage.getItem(standaloneHistorySessionKey());
+    if (session === 'true' || session === 'false') return session;
+  } catch { /* Storage unavailable */ }
+  return null;
+}
+function writeStandaloneHistoryPreference(open: boolean): void {
+  const value = String(open);
+  writeOptionalPreference(standaloneHistoryOpenKey(), value);
+  try {
+    sessionStorage.setItem(standaloneHistorySessionKey(), value);
+  } catch { /* Storage unavailable */ }
+}
 type SavedPanelState = { open: boolean; full?: boolean; view?: 'conversation' | 'history'; scope: Scope | null };
 function savedPanel(): SavedPanelState {
   try {
@@ -89,10 +107,23 @@ function currentFocusSplitPreservesHistory(full: boolean, view: 'conversation' |
   return shouldPreserveFocusHistory(full, view, panelWidth, window.innerWidth);
 }
 
-export function AgentConversationsProvider({children, client = agentConversationsApi, initialLayout}: {children: ReactNode; client?: AgentConversationsClient; initialLayout?: {open: boolean; full: boolean; view: 'conversation' | 'history'}}) {
-  const [initialPanel] = useState(() => ({...savedPanel(), ...initialLayout}));
-  const initialFull = initialPanel.full ?? (readOptionalPreference(fullPreferenceKey()) === 'true' || readOptionalPreference('buildr.harness-panel-full') === 'true');
-  const initialView: 'conversation' | 'history' = initialFull && (initialPanel.view === 'history' || (initialPanel.view === undefined && (readOptionalPreference(focusHistoryPreferenceKey()) === 'true' || readOptionalPreference('buildr.harness-panel-view') === 'history'))) ? 'history' : 'conversation';
+export function AgentConversationsProvider({children, client = agentConversationsApi, initialLayout, standalone = false}: {children: ReactNode; client?: AgentConversationsClient; initialLayout?: {open: boolean; full: boolean; view: 'conversation' | 'history'}; standalone?: boolean}) {
+  const [initialPanel] = useState(() => {
+    const saved = {...savedPanel(), ...initialLayout};
+    if (!standalone) return saved;
+    const viewportWidth = typeof window === 'undefined' ? 1280 : window.innerWidth;
+    const panelWidth = Math.max(0, viewportWidth - 52);
+    return {
+      ...saved,
+      open: true,
+      full: true,
+      view: initialLayout?.view ?? resolveInitialStandaloneView(readStandaloneHistoryPreference(), panelWidth, viewportWidth),
+    };
+  });
+  const initialFull = standalone ? true : (initialPanel.full ?? (readOptionalPreference(fullPreferenceKey()) === 'true' || readOptionalPreference('buildr.harness-panel-full') === 'true'));
+  const initialView: 'conversation' | 'history' = standalone
+    ? (initialPanel.view ?? 'history')
+    : (initialFull && (initialPanel.view === 'history' || (initialPanel.view === undefined && (readOptionalPreference(focusHistoryPreferenceKey()) === 'true' || readOptionalPreference('buildr.harness-panel-view') === 'history'))) ? 'history' : 'conversation');
   const historyCache=useMemo(createConversationHistoryCache,[client]);
   const [open, setOpenState] = useState(initialPanel.open), [full, setFullState] = useState(initialFull), fullRef = useRef(initialFull), [view, setViewState] = useState<'conversation' | 'history'>(initialView), viewRef = useRef<'conversation' | 'history'>(initialView);
   const [scope, setScope] = useState<Scope | null>(null);
@@ -102,25 +133,38 @@ export function AgentConversationsProvider({children, client = agentConversation
     const next = typeof value === 'function' ? value(viewRef.current) : value;
     viewRef.current = next;
     setViewState(next);
-    writeOptionalPreference(focusHistoryPreferenceKey(), fullRef.current && next === 'history' ? 'true' : 'false');
+    if (standalone) {
+      const viewportWidth = typeof window === 'undefined' ? 1280 : window.innerWidth;
+      const panelWidth = typeof document === 'undefined'
+        ? Math.max(0, viewportWidth - 52)
+        : document.getElementById('agent-conversation-panel')?.getBoundingClientRect().width || Math.max(0, viewportWidth - 52);
+      if (shouldPersistStandaloneHistoryPreference(next, panelWidth, viewportWidth)) {
+        writeStandaloneHistoryPreference(next === 'history');
+      }
+    } else {
+      writeOptionalPreference(focusHistoryPreferenceKey(), fullRef.current && next === 'history' ? 'true' : 'false');
+    }
     savePanel(visibility.current.open, scopeRef.current, fullRef.current, next);
-  }, []);
+  }, [standalone]);
   const setFull = useCallback((value: boolean | ((current: boolean) => boolean)) => {
     const next = typeof value === 'function' ? value(fullRef.current) : value;
+    if (standalone && !next) return;
     fullRef.current = next;
     setFullState(next);
-    writeOptionalPreference(fullPreferenceKey(), String(next));
-    if (!next) {
-      viewRef.current = 'conversation';
-      setViewState('conversation');
-      writeOptionalPreference(focusHistoryPreferenceKey(), 'false');
-    } else {
-      writeOptionalPreference(focusHistoryPreferenceKey(), viewRef.current === 'history' ? 'true' : 'false');
+    if (!standalone) {
+      writeOptionalPreference(fullPreferenceKey(), String(next));
+      if (!next) {
+        viewRef.current = 'conversation';
+        setViewState('conversation');
+        writeOptionalPreference(focusHistoryPreferenceKey(), 'false');
+      } else {
+        writeOptionalPreference(focusHistoryPreferenceKey(), viewRef.current === 'history' ? 'true' : 'false');
+      }
     }
     savePanel(visibility.current.open, scopeRef.current, next, viewRef.current);
-  }, []);
+  }, [standalone]);
   const setVisibility=useCallback((value:boolean,explicit=true)=>{visibility.current={open:value,version:visibility.current.version+(explicit?1:0)};setOpenState(value);},[]);
-  const [side, setSide] = useState<'left' | 'right'>(() => readOptionalPreference('buildr.agent-conversation-side') === 'left' ? 'left' : 'right');
+  const [side, setSide] = useState<'left' | 'right'>(() => standalone ? 'left' : (readOptionalPreference('buildr.agent-conversation-side') === 'left' ? 'left' : 'right'));
   const [settings, setSettings] = useState(false), [draftScope, setDraftScope] = useState<DraftScope | null>(null), [conversation, setConversation] = useState<ConversationView | null>(null);
   const [connections, setConnections] = useState<ConnectionView[]>([]), [pending, setPending] = useState<PendingConversation[]>([]), [loading, setLoading] = useState(false), [error, setError] = useState(''), [streamError, setStreamError] = useState('');
   const [reconnecting,setReconnecting]=useState(false),[recovering,setRecovering]=useState(false);
@@ -453,7 +497,7 @@ export function AgentConversationsProvider({children, client = agentConversation
     const nextOpen=createdConversationVisibility(observedVisibility,visibility.current,selection===undefined);
     eventCursor.current=undefined;scopeRef.current={workspaceId:result.workspaceId,conversationId:result.id};setScope(scopeRef.current);setDraftScope(null);conversationRef.current=result;setConversation(result);if(!currentFocusSplitPreservesHistory(fullRef.current,viewRef.current))setView('conversation');setVisibility(nextOpen,false);savePanel(nextOpen,scopeRef.current,fullRef.current,viewRef.current);setStreamError('');return result;
   },[client,advanceSelection,isSelectionCurrent,setVisibility,setView]);
-  const setOpen = useCallback((value: boolean) => { setVisibility(value); if (!value) { setFull(false); return; } savePanel(value,scopeRef.current,fullRef.current,viewRef.current); }, [setVisibility,setFull]);
+  const setOpen = useCallback((value: boolean) => { if (standalone && !value) return; setVisibility(value); if (!value) { setFull(false); return; } savePanel(value,scopeRef.current,fullRef.current,viewRef.current); }, [standalone,setVisibility,setFull]);
   const openHistory=useCallback((workspaceId:string|null=null,options:VisibilityOptions={})=>{setHistoryWorkspaceId(workspaceId);if(!options.preserveVisibility)setVisibility(true);setView('history');},[setVisibility,setView]);
   const openGlobal=useCallback(()=>openHistory(null),[openHistory]);
   const seenInFlight=useRef(new Set<string>());
@@ -498,7 +542,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   const toggleView=useCallback((target:'conversation'|'history')=>{const next=nextConversationPanel(open,view,target);if(target==='history'&&next.open)setHistoryWorkspaceId(null);setView(next.view);setOpen(next.open);},[open,view,setOpen,setView]);
   const toggle=useCallback(()=>setOpen(!open),[open,setOpen]);
   const shell=useMemo(()=>({open,view,full,pending,openGlobal,toggle,toggleView,setSettings,newConversation}),[open,view,full,pending,openGlobal,toggle,toggleView,newConversation]);
-  return <ShellContext.Provider value={shell}><Context.Provider value={{historyCache,activityCounts,activityStats,activityRows,activityTotal,activityCursor,activityError,activityTick,activityWorkspaceTicks,historyWorkspaceId,openHistory,refreshActivity,loadMoreActivity,markSeen,api:client,reconnecting,recovering, modelCatalog,modelCatalogReady,modelCatalogError,refreshModelCatalog,open,side,full,view,scope,draftScope,conversation,contextReport,connections,connectionsReady:connectionState.ready,connectionsLoading:connectionState.loading,connectionsError:connectionState.error,pending,loading,error,streamError,settings,setSettings,setOpen,setFull,setView,move:() => setSide(current => { const next = current === 'right' ? 'left' : 'right'; writeOptionalPreference('buildr.agent-conversation-side',next); return next; }),openGlobal,toggle,toggleView,openConversation,locateParticipation,newConversation,refresh,refreshConnections,refreshPending,apply,prependEntries,updateConnection,create,selectionGeneration,getSelection,isSelectionCurrent,productActionPending,productActionError,firstSubmissionStore,startTextConversation}}>{children}</Context.Provider></ShellContext.Provider>;
+  return <ShellContext.Provider value={shell}><Context.Provider value={{historyCache,activityCounts,activityStats,activityRows,activityTotal,activityCursor,activityError,activityTick,activityWorkspaceTicks,historyWorkspaceId,openHistory,refreshActivity,loadMoreActivity,markSeen,api:client,reconnecting,recovering, modelCatalog,modelCatalogReady,modelCatalogError,refreshModelCatalog,open,side,full,view,scope,draftScope,conversation,contextReport,connections,connectionsReady:connectionState.ready,connectionsLoading:connectionState.loading,connectionsError:connectionState.error,pending,loading,error,streamError,settings,setSettings,setOpen,setFull,setView,move:() => { if (standalone) return; setSide(current => { const next = current === 'right' ? 'left' : 'right'; writeOptionalPreference('buildr.agent-conversation-side',next); return next; }); },openGlobal,toggle,toggleView,openConversation,locateParticipation,newConversation,refresh,refreshConnections,refreshPending,apply,prependEntries,updateConnection,create,selectionGeneration,getSelection,isSelectionCurrent,productActionPending,productActionError,firstSubmissionStore,startTextConversation}}>{children}</Context.Provider></ShellContext.Provider>;
 }
 export function useAgentConversations() { const value = useContext(Context); if (!value) throw new Error('AgentConversationsProvider 未提供。'); return value; }
 export function useOptionalAgentConversations() { return useContext(Context); }

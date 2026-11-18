@@ -70,6 +70,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const engineeringAnchor=useRef<HTMLSpanElement>(null);
   const host=useHarnessDirectoryFiles();
   const composition=useConversationHost();
+  const standalone=Boolean(composition.standalone)&&!embedded;
   const panelId=embedded?'agent-child-conversation-panel-'+context.scope?.conversationId:'agent-conversation-panel';
   const focusHistoryWidthKey='buildr.agent-conversation-history-width';
   const focusHistoryPaneId=panelId+'-history';
@@ -856,15 +857,18 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
           {embedded?<Button type="text" icon={<MinusOutlined/>} aria-label="收起子对话" title="收起子对话" onClick={()=>context.setOpen(false)}/>:!context.open&&<Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" title="新建对话" onClick={()=>context.newConversation({preserveVisibility:true})}/>}
           <Dropdown overlayClassName="ac-panel-popup" trigger={['click']} open={moreOpen} onOpenChange={setMoreOpen} menu={{items:[
             ...(onCreateChild?[{key:'create-child',label:'创建子对话',icon:<PlusOutlined aria-hidden/>},{type:'divider' as const}]:[]),
-            {key:'collapse',label:'收起对话'},
-            {key:'full',label:context.full?'恢复分屏':'专注对话'},
-            {key:'side',label:context.side==='right'?'对话移到最左侧':'对话移到右侧'},
-            {type:'divider' as const},
+            ...(!standalone?[
+              {key:'collapse',label:'收起对话'},
+              {key:'full',label:context.full?'恢复分屏':'专注对话'},
+              {key:'side',label:context.side==='right'?'对话移到最左侧':'对话移到右侧'},
+              {type:'divider' as const},
+            ]:[]),
             {key:'generate-title',label:generatingTitle?'正在生成标题…':'生成简短标题',disabled:generatingTitle||!canGenerateConversationTitle(chat)},
             {key:'rename',label:'重命名',disabled:!chat},
             {key:'hide',label:chat?.hidden?'恢复到最近对话':canCloseUncertainConversation(chat)?'关闭对话':'从最近对话隐藏',disabled:!chat}
           ].filter(item=>!embedded||!['full','side','hide'].includes(item.key||'')),onClick:({key})=>{
             setMoreOpen(false);
+            if(standalone&&['collapse','full','side'].includes(key))return;
             if(composition.requestLayout&&(key==='collapse'||key==='full')){composition.requestLayout(key,key==='full'?!context.full:undefined);return;}
             if(window.parent!==window&&['collapse','full'].includes(key)){window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'layout',action:key,...(key==='full'?{full:!context.full}:{})},location.origin);return;}
             if(key==='collapse')context.setOpen(false);

@@ -630,3 +630,22 @@ export function shouldPreserveFocusHistory(
   if (panelWidth === undefined) return true;
   return canSplitFocusHistory(panelWidth, viewportWidth);
 }
+
+/** Standalone desktop viewports default to showing the side history list when no preference is saved. */
+export function resolveInitialStandaloneView(
+  savedPreference: string | null | undefined,
+  panelWidth: number,
+  viewportWidth = panelWidth + 52,
+): 'conversation' | 'history' {
+  if (!canSplitFocusHistory(panelWidth, viewportWidth)) return 'conversation';
+  return savedPreference === 'false' ? 'conversation' : 'history';
+}
+
+/** Narrow standalone viewports fall back to the conversation without overwriting desktop history preferences. */
+export function shouldPersistStandaloneHistoryPreference(
+  nextView: 'conversation' | 'history',
+  panelWidth: number,
+  viewportWidth = panelWidth + 52,
+): boolean {
+  return nextView === 'history' || canSplitFocusHistory(panelWidth, viewportWidth);
+}
