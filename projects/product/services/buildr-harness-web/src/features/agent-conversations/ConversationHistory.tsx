@@ -1,5 +1,6 @@
 import { useConversationHost } from '../../integration/ConversationHost.tsx';
 import { settleConversationDraftIds, shouldShowConversationDraft, workspaceConversationDraftIds } from './conversation-draft-presence.ts';
+import { executionStatsSignature } from './conversation-seen-hold.ts';
 import { useConversationDraftPresenceDetail, useConversationDraftSubmittedIds } from './useConversationDraftPresence.ts';
 import { ConversationExecutionSummary } from './ConversationExecutionSummary.tsx';
 import { conversationModelSourceLabel, conversationModelLabel } from './conversation-model-label.ts';
@@ -71,8 +72,17 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   const [groupResults,setGroupResults]=useState<{scope:string;values:Record<string,HistoryGroupResult>}>({scope:'',values:{}});
   useEffect(()=>{if(context.historyWorkspaceId!==undefined){setWorkspaceId(context.historyWorkspaceId??'');setFilter(null);}},[context.historyWorkspaceId]);
   const agent=filter?.kind==='agent'?filter.value:undefined,model=filter?.kind==='model'?filter.value:undefined;
-  // 统计不受搜索、执行筛选或草稿波动影响，独立于逐键查询读取。
-  const {page, error, retry}=useConversationHistoryPage(context.api,{workspaceId:workspaceId||undefined,query:'',hidden:false},1,true,context.historyCache,context.activityTick);
+  const statsStateRef=useRef<{sig:string|null;tick:number}>({sig:null,tick:context.activityTick});
+  const nextStatsSig=executionStatsSignature(context.activityStats,context.activityRows,context.activityCursor,context.activityTick);
+  if(nextStatsSig===null){
+    statsStateRef.current={sig:null,tick:context.activityTick};
+  }else if(statsStateRef.current.sig===null){
+    statsStateRef.current={sig:nextStatsSig,tick:statsStateRef.current.tick};
+  }else if(statsStateRef.current.sig!==nextStatsSig){
+    statsStateRef.current={sig:nextStatsSig,tick:statsStateRef.current.tick+1};
+  }
+  // 统计不受搜索、执行筛选、草稿或纯已读确认波动影响，独立于逐键查询读取。
+  const {page, error, retry}=useConversationHistoryPage(context.api,{workspaceId:workspaceId||undefined,query:'',hidden:false},1,true,context.historyCache,statsStateRef.current.tick);
   const stats=page?.stats;
   const scopeKey=JSON.stringify([workspaceId,searchQuery,hidden,agent,model]);
   const reportGroup=useCallback((id:string,result:HistoryGroupResult)=>{
@@ -103,7 +113,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
     if(index>=movable.length-1)return;
     reorder(id,movable[index+2]??'end');
   };
-  const sortGroup=(id:string)=><ConversationHistoryGroup key={id+scopeKey} workspaceId={id} name={workspaceName(id)} query={searchQuery} hidden={hidden} agent={agent} model={model} draftConversationIds={workspaceConversationDraftIds(id,settledDraftIds,presence,activeEditingScope)} renderRow={renderRow} onResult={reportGroup}
+  const sortGroup=(id:string)=><ConversationHistoryGroup key={id+scopeKey} workspaceId={id} name={workspaceName(id)} query={searchQuery} hidden={hidden} agent={agent} model={model} draftConversationIds={workspaceConversationDraftIds(id,settledDraftIds,presence,activeEditingScope)} activeViewingId={activeEditingScope?.workspaceId===id?activeEditingScope.conversationId:null} renderRow={renderRow} onResult={reportGroup}
     className={'ac-history-group ac-history-workspace'+(draggingGroup===id?' is-dragging':'')+(dropGroup===id&&draggingGroup&&draggingGroup!==id?' is-drop-target'+(dropAfter?' is-drop-after':''):'')}
     onDragOver={event=>{if(!draggingGroup||draggingGroup===id||id===DEFAULT_HISTORY_GROUP)return;event.preventDefault();setDropGroup(id);const header=event.currentTarget.querySelector('h3')?.getBoundingClientRect();setDropAfter(Boolean(header&&event.clientY>header.top+header.height/2));}}
     onDrop={event=>{if(!draggingGroup)return;event.preventDefault();if(id!==DEFAULT_HISTORY_GROUP){const header=event.currentTarget.querySelector('h3')?.getBoundingClientRect();const after=Boolean(header&&event.clientY>header.top+header.height/2);const target=after?order[order.indexOf(id)+1]??'end':id;reorder(draggingGroup,target===DEFAULT_HISTORY_GROUP?'end':target);}setDraggingGroup('');setDropGroup('');}}
