@@ -47,7 +47,7 @@ export async function prepareVerificationReuse(plan: any, prepare: (steps: any[]
  * Keep worker grants unchanged: they also control actual child concurrency. */
 export function localExecutionStep(step: any, profile: any, concurrency: any): any {
   if (!['local', 'local-auto'].includes(profile?.id)) return step;
-  const agentProcess = step.service === 'buildr-agent'
+  const agentProcess = step.service === 'buildr-harness'
     && step.testing?.executionBoundary === 'Integration' && step.resources?.includes('agent-process-tests');
   if (!agentProcess && !['integration-archify', 'e2e-nested-git'].includes(step.id)) return step;
   const workspaceIo = Number.isInteger(concurrency) ? concurrency : concurrency.capacities?.workspaceIo;
@@ -237,6 +237,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
       execute,
       concurrency,
       schedulingMode: options.schedulingMode,
+      fastFailBoundaries: options.fastFailBoundaries ?? ['Static', 'Unit'],
       ...(concurrency?.resources?.['browser-runtime']
         ? { priorityResources: options.priorityResources ?? ['browser-runtime'] }
         : {}),
@@ -264,6 +265,9 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
         options.onComplete?.(result, step);
       },
     });
+    for (const result of results) {
+      if (coveredBrowserSteps.has(result.id) && !result.coveredBy) result.coveredBy = coveredBrowserSteps.get(result.id);
+    }
   } finally {
     timings.executionMs = Date.now() - executionStartedAt;
     clearInterval(heartbeat);

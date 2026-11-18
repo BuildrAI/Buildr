@@ -1,0 +1,153 @@
+import {ModelAccessError} from '../model-access/contracts.ts';
+import { qoderLoginExpiredMessage } from '../model-access/providers/qoder-auth.ts';
+import { NativeObservationError, NativeRequestError } from './error-diagnostic.ts';
+import type { ConnectionView, ContextRef, ConversationView, ExecutionRef, RunStatus, RunView } from '../contracts.ts';
+import {AgentServiceError} from './service-error.ts';
+export {AgentServiceError} from './service-error.ts';
+
+export function fail(code: string, message: string, status = 400): never { throw new AgentServiceError(code, message, status); }
+export function nonempty(value: unknown, label: string, maximum = 1024): string {
+  if (typeof value !== 'string' || !value.trim() || value.length > maximum) fail('agent_input_invalid', `${label}无效。`);
+  return value.trim();
+}
+export function expected(actual: string, supplied: unknown): void {
+  if (actual !== supplied) fail('agent_revision_conflict', '内容已变化，请刷新后重试。', 409);
+}
+export function safeDiagnostic(error: unknown): string {
+  if(error instanceof Error&&error.message==='qoder_sdk_worker_removed')return 'Qoder 程序与接入库不配套，工作会话启动被拒绝，本次输入尚未送达。请通过配套升级修复接入。';
+  if(error instanceof Error&&error.message==='qoder_initialization_failed')return 'Qoder 工作会话启动失败，本次输入尚未送达，原输入已保留。';
+  // Do not expose raw vendor errors, which can contain headers, URLs or credentials.
+  if (error instanceof AgentServiceError || error instanceof ModelAccessError) return error.message;
+  if (error instanceof NativeRequestError) return error.diagnostic;
+  const code = error instanceof Error ? error.message.split(':')[0] : '';
+  const messages: Record<string, string> = {
+    agent_model_source_authentication_failed:'所选模型来源认证失败，请在模型页核对账号或 API Key；本次请求不会自动重试或切换模型。',
+    agent_model_source_changed:'当前登录账号已变化或身份无法确认，旧对话不会在其他账号下继续执行；请重新选择模型。原输入已保留。',
+    antigravity_model_unavailable:'所选模型不在当前 Antigravity 账号的可用模型中，本次模型调用未发出。请刷新账号模型后重新选择；原输入已保留。',
+    antigravity_reasoning_unavailable:'当前 Antigravity 模型不支持所选思考深度，本次模型调用未发出。请改选已支持的档位；原输入已保留。',
+    antigravity_permission_unavailable:'当前 Antigravity 接入未能应用所选权限模式，本次模型调用未发出；原输入已保留。',
+    antigravity_version_unsupported:'当前接入接受 Antigravity CLI 1.x.x，仍需通过实际连接握手检查。',
+    agent_claude_version_unsupported:'Claude 执行程序版本不在兼容范围（>=2.1.322 <3），请检查独立程序。',
+    agent_claude_execution_failed:'Claude 执行未完成，请查看本轮模型与工具诊断；不会自动更换模型。',
+    agent_claude_observation_lost:'Claude 执行观察已中断，正在核对原执行；不会重发原指令。',
+    agent_claude_stop_outcome_unknown:'Claude 控制连接已关闭，部分输入或独立操作结果仍待核对；不会重发。',
+    agent_claude_request_failed:'Claude 原生接口未能完成本次请求，请核对程序版本与模型兼容性。',
+    agent_claude_input_unknown:'尚未确认 Claude 对本次输入的受理状态，已保留原输入；不会自动重发。',
+    qoder_sdk_pair_mismatch: 'Qoder 程序与配套接入库版本不一致，已保留原接入。',
+    qoder_sdk_pair_required: '当前 Qoder 程序缺少配套接入库，已保留原接入。',
+    qoder_upgrade_conversation_failed: 'Qoder 新版未通过对话验证，已保留旧版接入。',
+    dsh_goal_pause_unconfirmed: '尚未确认旧目标自动续行已暂停，本次新输入未送达，原内容已保留。',
+    qoder_platform_login_required: 'Qoder 程序需要先完成基础平台登录；不要求购买或选择 Qoder 模型套餐。',
+    qoder_platform_login_expired: qoderLoginExpiredMessage,
+    qoder_platform_auth_unavailable: 'Qoder 账号检查未完成，请检查网络或程序连接后重试；当前不能确定登录是否失效。',
+    qoder_gateway_model_unavailable: '当前 Qoder 接入未开放所选外部模型通道，本次模型调用未发出。请改选可用组合；原模型来源与输入已保留。',
+    qoder_native_model_unavailable: '所选模型不在 Qoder 当前原生模型目录中，本次模型调用未发出。请刷新账号模型后核对选择；原输入已保留。',
+    qoder_cn_model_unavailable: '所选模型不在当前 Qoder CN 账号的可用模型中，本次模型调用未发出。请刷新账号模型后重新选择；原输入已保留。',
+    qoder_cn_reasoning_unavailable: '当前 Qoder CN 模型不支持所选推理强度，本次模型调用未发出。请改选已支持的档位；原输入已保留。',
+    qoder_cn_resume_unsupported: '原 Qoder CN 原生会话无法恢复，本次输入尚未送达；请重新发送以建立新的原生会话，此前对话记录已保留。',
+    qoder_cn_model_source_unsupported: '当前 Qoder CN 接入不能使用该模型来源，本次模型调用未发出。请改选 Qoder CN 原生模型；原输入已保留。',
+    agent_gateway_model_mismatch: '所选模型与当前模型网关租约不一致，本次模型调用未发出。请刷新模型选择后重试；原输入已保留。',
+    qoder_native_account_changed: 'Qoder 登录账号已变化，未发送工作指令。请刷新账号后核对原模型来源；原输入已保留。',
+    agent_program_missing: '未找到原生程序，请选择已安装程序的准确绝对路径。',
+    agent_program_unavailable: '受管程序暂时无法启动，未启用该版本；原接入已保留。',
+    agent_program_sharing_failed: '受管程序的本地共享准备未完成，未启用该程序；原接入已保留。',
+    agent_version_unrecognized: '未能确认受管程序的版本，未启用该版本；原接入已保留。',
+    agent_install_unavailable: '未能连接官方发布地址，程序包未准备好；请检查网络后重试，原接入已保留。',
+    codex_version_unsupported: '当前接入接受 Codex 0.x.x，包含有效预发布版本，仍需通过实际连接检查。',
+    dsh_version_unsupported: '当前接入接受 DSH 0.x.x，包含有效预发布版本，仍需通过实际连接检查。',
+    qoder_version_unsupported: '当前接入接受 Qoder CLI 1.x.x，包含有效预发布版本，仍需通过内置 SDK 的实际连接检查。',
+    agent_context_binding_mismatch: '原生上下文与当前目录或配置身份不匹配，原记录已保留。',
+    codex_event_observation_lost: '本机执行记录暂时未能更新，正在核对原执行；不会重发原指令。',
+    codex_execution_observation_lost: 'Codex 执行连接已中断，正在核对原执行；不会重发原指令。',
+    dsh_execution_observation_lost: 'DSH 执行观察已中断，正在恢复原执行的进度；不会重发原指令。',
+    dsh_event_observation_lost: 'DSH 本机执行记录暂时未能更新，正在核对原执行；不会重发原指令。',
+    qoder_execution_observation_lost: 'Qoder 执行连接已中断，正在核对原执行；不会重发原指令。',
+    qoder_event_observation_lost: 'Qoder 本机执行记录暂时未能更新，正在核对原执行；不会重发原指令。',
+    agent_native_process_closed: '原生执行连接已关闭，请核对原执行；不会重发原指令。',
+    agent_native_timeout: '原生程序响应超时，请重新观察；不会自动重发工作指令。',
+    agent_native_request_failed: '原生程序拒绝本次请求，未返回具体原因；原输入已保留。',
+    agent_native_process_failed: '原生执行程序暂时无法启动，原输入已保留。',
+    agent_request_stale: '原生问题或授权已失效，请重新观察。',
+  };
+  const message = messages[code] ?? '原生执行未能完成，原输入与工作记录已保留，请核对程序连接状态后重试。';
+  return error instanceof NativeObservationError && error.diagnostic ? message + ' 原因：' + error.diagnostic : message;
+}
+export const BUSY_STATES: ReadonlySet<RunStatus> = new Set(['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown']);
+/** An old generation closed its native process. The run stays unknown and can still be continued. */
+export const RETIRED_EXECUTION_DIAGNOSTIC = '服务退休中断了本轮执行；已有结果保留，可以继续。';
+
+export const conversationRuns = (view: Pick<ConversationView, 'run' | 'retainedRuns'>): RunView[] => [...(view.run ? [view.run] : []), ...(view.retainedRuns ?? [])];
+export const unfinishedRun = (run: RunView): boolean => BUSY_STATES.has(run.status) || run.tools.some(tool => tool.status !== 'completed');
+
+export interface StoredConnection {
+  programSource?: string;
+  view: ConnectionView;
+  bindingIdentity?: string;
+  bindingData?: Record<string, unknown>;
+}
+export interface StoredParticipant {
+  systemPromptVersion?: Pick<import('../contracts.ts').HarnessSystemPrompt,'revision'|'enabled'|'text'>;
+  historical?: boolean;
+  participationContext?: {id:string; configuredAt:string; instruction:import('../participation-contracts.ts').ParticipationMatch};
+  modelAccountId?: string; modelAccountIdentity?: string; modelId?: string; serviceTier?:string;modelConfiguration?:string;modelLeaseConfiguration?:string;
+  id: string;
+  connectionId: string;
+  provider: string;
+  label: string;
+  bindingIdentity: string;
+  bindingData?: Record<string, unknown>;
+  contextRef?: ContextRef;
+  deliveredThrough: number;
+  /** Persisted native home base for gateway participants (dir containing codex-home/dsh-home); stable once chosen. */
+  nativeHomeRoot?: string;
+}
+export interface StoredConversation {
+  stops?: Array<{
+    id: string;
+    targets: Array<{runId:string;participantId:string;generation:string;requested?:boolean}>;
+    pendingSendId?: string;
+  }>;
+  /** Buildr tool entry IDs whose execution body belongs to the native executor. */
+  nativeTools?: Record<string, true | {parentToolId:string}>;
+  participationTools?: Record<string,import('../participation-contracts.ts').ParticipationObservation & {entryRevision?:string}>;
+  forkRequest?: { digest: string; clientRequestId: string };
+  /** Immutable, visible source records, separate from this conversation's own messages. */
+  inheritedContext?: {
+    entries: import('../contracts.ts').ConversationEntry[];
+    outcomes: NonNullable<StoredConversation['runOutcomes']>;
+    pendingQuestions: string[];
+  };
+  initialDraft?: { id: string; requestId: string; digest: string };
+  view: ConversationView;
+  hostScope?: import('../execution-contracts.ts').ExecutionScope;
+  interruption?: { runId: string; awaitingUser: boolean; reason?: 'transport' | 'execution-fault'; attempted?: boolean; cancelled?: boolean };
+  runOutcomes?: Record<string,Pick<RunView,'status'|'diagnostic'|'model'|'provider'|'contextUsage'|'systemPrompt'|'updatedAt'> & {generation?:string}>;
+  titleOrigin?: 'default' | 'fallback' | 'generated' | 'manual';
+  participants: StoredParticipant[];
+  sources: Record<string, string>;
+  attachments: Record<string, { name?: string; mimeType: string; size: number; createdAt?: string; nativeContent?: import('../native-content-contracts.ts').NativeAttachmentContent; video?: import('../contracts.ts').VideoAttachment }>;
+  attempts: Array<{
+    clientRequestId: string;
+    inputDigest: string;
+    participation?: import('../participation-contracts.ts').ParticipationInput;
+    runId: string;
+    participantId: string;
+    through: number;
+    userEntryId: string;
+    executionRef?: ExecutionRef;
+    /** Exact execution whose durable terminal evidence was reconciled, not model text. */
+    persistedEnd?: string;
+    nativeInputItemId?: string;
+    accepted: boolean;
+    supplement?: boolean;
+    /** Stable independently admitted request after a proven non-delivery to an ended round. */
+    continuedBy?: string;
+    supersededStopRequested?: boolean;
+    /** Service-owned handoff; no provider identifiers cross model prompts. */
+    questionWaits?: Array<{ runId: string; requests: Array<{ id: string; nativeId: string }>; reuse?: boolean }>;
+    questionReleaseRequested?: boolean;
+    automaticRetry?: { rootRunId: string; count: number };
+    continuationOf?: string;
+  }>;
+  requests: Record<string, { nativeId: string; executionRef: ExecutionRef }>;
+}

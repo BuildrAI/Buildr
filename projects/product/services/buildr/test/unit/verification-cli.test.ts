@@ -5,7 +5,7 @@ import { verificationSteps } from '../verification/registry.ts';
 import { checkAvailability, parseVerificationArguments, planVerification, verificationCoverageEntry, withVerificationSignals } from '../verification/cli.ts';
 
 test('automatic related CLI caps final execution but retains deferred candidates; explicit tags bypass the budget', () => {
-  const options = { collectChanged: () => ({ paths: ['services/buildr-agent/src/index.ts'], base: 'fixture-base' }) };
+  const options = { collectChanged: () => ({ paths: ['services/buildr-harness/src/index.ts'], base: 'fixture-base' }) };
   const automatic = planVerification(parseVerificationArguments(['related', '--base', 'fixture-base', '--plan']), options);
   assert.ok(automatic.steps.length <= 10);
   assert.equal(automatic.selection, 'daily-targeted');

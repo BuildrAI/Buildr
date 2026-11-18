@@ -1,0 +1,49 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: agent-executor-capability-policy
+operation: reconcile
+impacts:
+  - type: architecture-document
+    target: knowledge/docs/architecture/agent-integration.md
+    reason: 说明执行方能力声明、两条模型路径绑定契约、模型来源共享范围与推理方式、静态兼容与发送时可用性分离、原生详情注册及官方清单程序分发失败边界
+    status: updated
+    sourceIdentities:
+      - services/buildr-agent/src/contracts.ts
+      - services/buildr-agent/src/domain/model-policy.ts
+      - services/buildr-agent/src/application/conversation-application.ts
+      - services/buildr-agent/src/model-access/contracts.ts
+      - services/buildr-agent/src/model-access/application.ts
+      - services/buildr-agent/src/storage/native-content.ts
+      - services/buildr-agent/src/executors/program-policy.ts
+      - services/buildr-agent/src/executors/program-release.ts
+      - services/buildr-agent/src/executors/program-archive.ts
+      - services/buildr-agent/src/executors/program-manager.ts
+      - services/buildr-web/src/features/agent-conversations/conversation-options.ts
+  - type: code-map
+    target: knowledge/code-map/technical-layers.md
+    reason: 校准原生工具详情注册、模型策略模块与官方清单归档安装在分层中的位置与职责
+    status: updated
+    sourceIdentities:
+      - services/buildr-agent/src/domain/model-policy.ts
+      - services/buildr-agent/src/storage/native-content.ts
+      - services/buildr-agent/src/executors/index.ts
+      - services/buildr-agent/src/executors/program-release.ts
+      - services/buildr-agent/src/executors/program-archive.ts
+  - type: code-map
+    target: knowledge/code-map/system-services-assets.md
+    reason: 校准智能体服务模块清单与多执行方声明式接入描述
+    status: updated
+    sourceIdentities:
+      - services/buildr-agent/src/domain/model-policy.ts
+      - services/buildr-agent/src/storage/native-content.ts
+      - services/buildr-agent/src/executors/program-manager.ts
+      - services/buildr-agent/src/executors/program-release.ts
+      - services/buildr-agent/src/executors/program-archive.ts
+  - type: knowledge-index
+    target: knowledge/index.yml
+    reason: 补充新增核心源码文件来源标识并挂接至智能体接入文档与两份代码地图
+    status: updated
+    sourceIdentities:
+      - knowledge/docs/architecture/agent-integration.md
+      - knowledge/code-map/technical-layers.md
+      - knowledge/code-map/system-services-assets.md
+unresolvedItems: []

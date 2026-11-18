@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { App, Button } from 'antd';
 import { CheckOutlined, CopyOutlined } from '@ant-design/icons';
-import { copyText } from '../lib/copyText';
+import { copyText } from '../lib/copyText.ts';
 
 type Props = {
   text: string;

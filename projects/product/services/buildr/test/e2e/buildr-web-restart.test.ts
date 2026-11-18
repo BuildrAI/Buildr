@@ -7,7 +7,7 @@ import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { stopAgentProcess } from '@buildr-ai/buildr-harness';
 
 import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';

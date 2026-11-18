@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { stopAgentProcess } from '@buildr-ai/buildr-harness';
 import type { Page, Route } from 'playwright-core';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.ts';
 import { launchTestBrowser } from './browser-launch.ts';
@@ -93,6 +93,15 @@ test('真实生产页面重启恢复、已知失败真正重试及未知状态�
     }
   });
   const tokenOf = (target: Page) => target.locator('meta[name="buildr-session"]').getAttribute('content');
+  const openDevelopmentActions = async (target: Page) => {
+    await target.goto(first.url);
+    const openDevelopment = target.getByRole('button', { name: '打开Development', exact: true });
+    await Promise.race([
+      target.locator('#more-actions').waitFor({ state: 'visible' }),
+      openDevelopment.waitFor({ state: 'visible' }).then(() => openDevelopment.click()),
+    ]).catch(() => {});
+    await target.locator('#more-actions').waitFor({ state: 'visible' });
+  };
   const waitForPageRecovery = async (previousToken: string | null) => {
     await page.waitForFunction(token => {
       const current = document.querySelector('meta[name="buildr-session"]')?.getAttribute('content');
@@ -102,8 +111,7 @@ test('真实生产页面重启恢复、已知失败真正重试及未知状态�
   };
 
   await runScenario('独立执行服务真实重启保留Web实例与页面会话', async () => {
-    await page.goto(first.url);
-    await page.locator('#more-actions').waitFor();
+    await openDevelopmentActions(page);
     await page.waitForFunction(async () => {
       const response=await fetch('/api/v1/app/agent-service/runtime',{headers:{'x-buildr-session':document.querySelector('meta[name="buildr-session"]')?.getAttribute('content')??''}});
       return response.ok && !(await response.json()).busy;
@@ -111,7 +119,7 @@ test('真实生产页面重启恢复、已知失败真正重试及未知状态�
     const token=await tokenOf(page);
     const before=await page.evaluate(async () => (await fetch('/api/v1/app/agent-service/runtime',{headers:{'x-buildr-session':document.querySelector('meta[name="buildr-session"]')?.getAttribute('content')??''}})).json());
     await page.locator('#more-actions').hover();
-    await page.locator('#restart-buildr-agent').click();
+    await page.locator('#restart-buildr-harness').click();
     const modal=page.locator('.ant-modal-confirm');
     await Promise.race([modal.waitFor(),page.locator('#restart-buildr-error').waitFor().then(async()=>{throw new Error(await page.locator('#restart-buildr-error').innerText());})]);
     assert.match(await modal.innerText(),/只重启独立执行服务/);
@@ -129,8 +137,7 @@ test('真实生产页面重启恢复、已知失败真正重试及未知状态�
   });
 
   await runScenario('真实点击重启后新进程接管原端口且页面自动恢复', async () => {
-    await page.goto(first.url);
-    await page.locator('#more-actions').waitFor();
+    await openDevelopmentActions(page);
     const previousToken = await tokenOf(page);
     const heldSocket=net.createConnection(Number(new URL(first.url).port),'127.0.0.1');
     heldSocket.on('error',()=>{});t.after(()=>heldSocket.destroy());
@@ -145,8 +152,7 @@ test('真实生产页面重启恢复、已知失败真正重试及未知状态�
   });
 
   await runScenario('注入首个后继失败后展示原因，重新重启发起真实请求并恢复', async () => {
-    await page.goto(first.url);
-    await page.locator('#more-actions').waitFor();
+    await openDevelopmentActions(page);
     const before = await receiptAt(instanceFile);
     const previousToken = await tokenOf(page);
     let simulatedFailure = true, posts = 0;
@@ -183,8 +189,7 @@ test('真实生产页面重启恢复、已知失败真正重试及未知状态�
   });
 
   await runScenario('原地址无法确认时仅继续观察，不冒称仍在重启或再次POST', async () => {
-    await page.goto(first.url);
-    await page.locator('#more-actions').waitFor();
+    await openDevelopmentActions(page);
     let posts = 0;
     await page.clock.install();
     await page.route('**/api/v1/app/restart', async route => { posts += 1; await route.fulfill({ status: 202, contentType: 'application/json', body: '{"status":"restarting"}' }); });
@@ -212,7 +217,12 @@ test('真实生产页面重启恢复、已知失败真正重试及未知状态�
     let observePost: (() => void) | undefined;
     const postObserved = new Promise<void>(resolve => { observePost = resolve; });
     await waitingPage.goto(first.url);
-    await waitingPage.locator('#more-actions').waitFor();
+    const openDevWaiting = waitingPage.getByRole('button', { name: '打开Development', exact: true });
+    await Promise.race([
+      waitingPage.locator('#more-actions').waitFor({ state: 'visible' }),
+      openDevWaiting.waitFor({ state: 'visible' }).then(() => openDevWaiting.click()),
+    ]).catch(() => {});
+    await waitingPage.locator('#more-actions').waitFor({ state: 'visible' });
     await waitingPage.clock.install();
     await waitingPage.route('**/api/v1/app/restart', async route => { posts += 1; held.push(route); observePost?.(); });
     await waitingPage.route('**/api/v1/app/restart-status', route => route.abort());

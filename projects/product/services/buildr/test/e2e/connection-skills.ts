@@ -8,7 +8,7 @@ import { createRuntime, runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
 import { CONNECTION_SKILLS_APPLICATION } from '../../src/modules/connection-skills/module.ts';
 import { AGENT_SERVICE_APPLICATION } from '../../src/modules/agent-service/module.ts';
-import { stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { stopAgentProcess } from '@buildr-ai/buildr-harness';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { launchTestBrowser } from './browser-launch.ts';
 

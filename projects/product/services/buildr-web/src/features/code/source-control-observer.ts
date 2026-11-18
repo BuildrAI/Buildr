@@ -10,6 +10,7 @@ type Options = {
   watch(cursor: string | undefined, signal: AbortSignal): Promise<CodeSourceControlWatchResponse>;
   subscribe?(listener: (notice: SourceControlChangeNotice) => void): () => void;
   cache?: {read(): CodeSourceControlResponse | null; write(data: CodeSourceControlResponse): void};
+  active?: boolean;
   debounceMs?: number; fallbackMs?: number; retryMs?: number; concurrency?: number; initialDelayMs?: number; minimumReconcileMs?: number;
 };
 type Job = {scope: string; repositoryId?: string; catalog: Catalog};
@@ -22,7 +23,8 @@ export function createSourceControlObserver(options: Options) {
   const listeners = new Set<() => void>();
   const debounceMs = options.debounceMs ?? 180, fallbackMs = options.fallbackMs ?? 300000;
   const concurrency = Math.max(1, options.concurrency ?? 2);
-  let started = false, visible = true, disposed = false, cursor: string | undefined;
+  let started = false, visible = true, active = options.active ?? true, disposed = false, cursor: string | undefined;
+  const observing = () => started && visible && active && !disposed;
   let initialNotBefore = 0, lastReconciledAt = -Infinity;
   const minimumReconcileMs = options.minimumReconcileMs ?? 30000;
   const verified = (value: ReturnType<Catalog['snapshot']>) => Boolean(value.selectionReady && value.data && !value.data.coverage.truncated && !value.data.worktreeCoverage.truncated && !value.error && !Object.keys(value.repositoryErrors).length && !value.cachedRepositoryIds?.length);
@@ -61,14 +63,14 @@ export function createSourceControlObserver(options: Options) {
     if (options.cache && snapshot.data !== cachedData && snapshot.selectionReady && !snapshot.cachedRepositoryIds?.length && !cacheTimer) cacheTimer = setTimeout(saveCache, 250);
   });
   function scheduleDrain() {
-    if (started && visible && !scheduled && !disposed) {
+    if (observing() && !scheduled) {
       const delay = defaultCatalog.snapshot().data ? debounceMs : Math.max(debounceMs, initialNotBefore - Date.now());
       scheduled = setTimeout(drain, delay);
     }
   }
   function drain() {
     scheduled = undefined;
-    if (!started || !visible || disposed) return;
+    if (!observing()) return;
     while (true) {
       // A full progressive job can wait on a slow repository while a completed peer needs a
       // new read. Bound full and local jobs separately so two initializing scopes cannot
@@ -106,6 +108,7 @@ export function createSourceControlObserver(options: Options) {
     for (const entry of catalogs.values()) entry.catalog.invalidateRefs(repositoryIds || entry.catalog.snapshot().data?.repositories.map(repository => repository.id) || []);
   }
   function reconcile(taskId?: string, force = false) {
+    if (!active && !force) return;
     if (state.diagnostics.length) invalidateRefs();
     const scope = taskId || '';
     // Focus and retained-view activation can fire repeatedly without a visibility
@@ -115,8 +118,8 @@ export function createSourceControlObserver(options: Options) {
     check(taskId);
   }
   function scheduleFallback() {
-    clearTimeout(fallback);
-    if (!started || !visible || disposed) return;
+    clearTimeout(fallback); fallback = undefined;
+    if (!observing()) return;
     // Ref-only changes may leave the working-tree digest unchanged. The infrequent safety check
     // also invalidates active branch/history readers; ordinary file notices never do this.
     fallback = setTimeout(() => { invalidateRefs(); checkAll(); scheduleFallback(); }, state.diagnostics.length ? Math.min(fallbackMs, 30000) : fallbackMs);
@@ -127,7 +130,7 @@ export function createSourceControlObserver(options: Options) {
   });
   async function watch(signal: AbortSignal) {
     let retry = options.retryMs ?? 1000, reconnect = false;
-    while (!signal.aborted && !disposed && visible) {
+    while (!signal.aborted && observing()) {
       const began = Date.now();
       try {
         const initialHandshake = cursor === undefined;
@@ -151,15 +154,33 @@ export function createSourceControlObserver(options: Options) {
     }
   }
   function resumeWatch() {
-    if (!started || !visible || disposed || watchController) return;
+    if (!observing() || watchController) return;
     const controller = new AbortController(); watchController = controller;
     void watch(controller.signal).finally(() => { if (watchController === controller) watchController = undefined; });
+  }
+  function pause() {
+    watchController?.abort(); watchController = undefined;
+    clearTimeout(scheduled); scheduled = undefined;
+    clearTimeout(fallback); fallback = undefined;
+  }
+  function resume() {
+    if (!observing()) return;
+    reconcile(undefined, true);
+    scheduleDrain();
+    resumeWatch();
+    scheduleFallback();
   }
   function setVisible(next: boolean) {
     if (disposed || visible === next) return;
     visible = next;
-    if (visible) { reconcile(undefined, true); resumeWatch(); scheduleFallback(); }
-    else { watchController?.abort(); watchController = undefined; clearTimeout(scheduled); scheduled = undefined; clearTimeout(fallback); }
+    if (visible) resume();
+    else pause();
+  }
+  function setActive(next: boolean) {
+    if (disposed || active === next) return;
+    active = next;
+    if (active) { initialNotBefore = 0; resume(); }
+    else pause();
   }
   return {
     catalog: getCatalog,
@@ -191,6 +212,7 @@ export function createSourceControlObserver(options: Options) {
       return defaultCatalog.refresh(repositoryId).then(() => { if (!repositoryId) markReconciled(); });
     },
     setVisible,
+    setActive,
     start(initialVisible = true) {
       if (started || disposed) return;
       started = true; visible = initialVisible;
@@ -204,7 +226,7 @@ export function createSourceControlObserver(options: Options) {
         // ordinary filesystem and save notices remain scoped to affected repositories.
         checkAll(notice.repositoryIds && notice.repositoryIds.length > 1 ? undefined : ids);
       });
-      checkAll(); resumeWatch(); scheduleFallback();
+      if (observing()) { checkAll(); resumeWatch(); scheduleFallback(); }
     },
     dispose() {
       disposed = true; watchController?.abort(); unsubscribe?.();

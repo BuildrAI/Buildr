@@ -26,14 +26,20 @@ export class LocalSessionAdapter implements SessionAdapter {
   private readonly getToken: () => string | null;
   private readonly doc: Document | null;
   private refreshedToken: string | null = null;
+  private writtenMetaToken: string | null = null;
   private refreshInFlight: Promise<boolean> | null = null;
 
-  constructor(getToken: () => string | null = readSessionTokenFromDocument, doc: Document | null = typeof document === 'undefined' ? null : document) {
-    this.getToken = getToken;
+  constructor(getToken?: () => string | null, doc: Document | null = typeof document === 'undefined' ? null : document) {
     this.doc = doc;
+    this.getToken = getToken ?? (() => (this.doc ? readSessionTokenFromDocument(this.doc) : null));
   }
 
   writeHeaders(): SessionHeaders {
+    const docToken = this.doc ? readSessionTokenFromDocument(this.doc) : null;
+    if (this.writtenMetaToken !== null && docToken && docToken !== this.writtenMetaToken) {
+      this.refreshedToken = docToken;
+      this.writtenMetaToken = docToken;
+    }
     const token = this.refreshedToken ?? this.getToken();
     if (!token) {
       const error = new Error('Buildr Web session 已失效，请刷新页面。');
@@ -58,10 +64,16 @@ export class LocalSessionAdapter implements SessionAdapter {
 
   private async requestSessionToken(signal?: AbortSignal): Promise<boolean> {
     if (typeof fetch !== 'function' || typeof window === 'undefined') return false;
+    let entryUrl: string;
+    try {
+      entryUrl = new URL('/', window.location.href).href;
+    } catch {
+      return false;
+    }
     let html: string;
     try {
       signal?.throwIfAborted();
-      const response = await fetch(window.location.href, { cache: 'no-store', signal });
+      const response = await fetch(entryUrl, { cache: 'no-store', signal });
       if (!response.ok) return false;
       html = await response.text();
       signal?.throwIfAborted();
@@ -71,7 +83,9 @@ export class LocalSessionAdapter implements SessionAdapter {
     const token = readSessionTokenFromHtml(html);
     if (!token) return false;
     this.refreshedToken = token;
-    this.doc?.querySelector('meta[name="buildr-session"]')?.setAttribute('content', token);
+    const meta = this.doc?.querySelector('meta[name="buildr-session"]');
+    meta?.setAttribute('content', token);
+    this.writtenMetaToken = meta ? token : null;
     return true;
   }
 }

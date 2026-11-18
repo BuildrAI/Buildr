@@ -13,14 +13,28 @@ export const sharedCheckPreparation = [
 ];
 
 export const serviceVerificationChecks = [
+  {id:'development-live-browser',type:'E2E',name:'Stable same-origin source updates, browser HMR and controlled recovery',
+    sourcePaths:['tools/development/dev-*','src/web/http/**','services/buildr-web/vite.config.ts','services/buildr-harness-web/tools/dev-server.mjs','services/buildr-harness/src/process/web-*.ts'],
+    command:node('tools/development/run-isolated-workspace-check.ts','--script',path.join(root,'test/e2e/development-live.ts')),
+    timeoutMs:300000,prepare:sharedCheckPreparation},
+ {id:'harness-frame-browser',type:'E2E',name:'Development composes the complete Harness conversation',sourcePaths:['src/web/http/**','services/buildr-web/src/features/harness-ui/**','services/buildr-harness-web/src/**'],command:{file:process.execPath,args:['tools/development/run-isolated-workspace-check.ts','--script','test/e2e/harness-frame.ts'],cwd:'.'},timeoutMs:180000},
+  {
+    id: 'harness-products-consumption', type: 'E2E', name: 'Real Harness and Development package coexistence and retained restart',
+    sourcePaths: ['src/**', 'services/buildr-harness/**', 'services/buildr-harness/**', 'services/buildr-harness-web/**', 'services/buildr-harness-web/**'],
+    command: node('tools/development/run-isolated-workspace-check.ts', '--script', path.join(root, 'test/e2e/harness-products.ts'), '--', '--active-uninstall'),
+    requiredEnvironment: ['BUILDR_HARNESS_ARTIFACT', 'BUILDR_DEVELOPMENT_ARTIFACT'],
+    selection: 'explicit-only',
+    timeoutMs: 360000,
+    requirements: ['Two exact offline tarballs; active execution uninstall/reinstall uses a native-program fixture, never a paid provider or live account. No publication.'],
+  },
   {
     id: 'test-syntax', type: 'Static', name: 'All service test and helper JavaScript/TypeScript syntax',
-    sourcePaths: ['test/**', 'tools/testing/test-syntax.ts', 'services/buildr-web/test/**', 'services/buildr-agent/test/**', 'services/dsh-plugin/test/**'],
+    sourcePaths: ['test/**', 'tools/testing/test-syntax.ts', 'services/buildr-web/test/**', 'services/buildr-harness-web/test/**', 'services/buildr-harness-web/test/**', 'services/buildr-harness/test/**', 'services/buildr-harness/test/**', 'services/dsh-plugin/test/**'],
     command: node('tools/testing/test-syntax.ts'),
   },
   {
     id: 'test-typecheck', type: 'Static', name: 'Buildr, Web and Agent TypeScript tests and helpers',
-    sourcePaths: ['test/**', 'tools/testing/**', 'tsconfig*.json', 'services/buildr-web/test/**', 'services/buildr-agent/test/**'],
+    sourcePaths: ['test/**', 'tools/testing/**', 'tsconfig*.json', 'services/buildr-web/test/**', 'services/buildr-harness-web/test/**', 'services/buildr-harness/test/**'],
     command: node('tools/testing/run-types.ts', '--project', 'tsconfig.tests.json'), prepare: sharedCheckPreparation,
     requirements: ['Strict TypeScript checking includes test helpers and browser journeys; JavaScript files receive syntax checks.'],
   },
@@ -43,7 +57,7 @@ export const serviceVerificationChecks = [
   },
   {
     id: 'generated-contracts', type: 'Static', name: 'Generated public types match their owning declarations',
-    sourcePaths: ['src/**', 'tools/codegen/**', 'services/buildr-agent/src/index.ts'],
+    sourcePaths: ['src/**', 'tools/codegen/**', 'services/buildr-harness/src/index.ts'],
     command: node('tools/testing/check-generated.ts'), prepare: sharedCheckPreparation,
   },
 ] as const;

@@ -17,6 +17,9 @@ export type ExecutionModelSource = {
   accountRevision: string;
   defaultServiceTier?: string;
   provider?: string;
+  sharing?: {kind: 'gateway'} | {kind: 'executor-exclusive'; executors: string[]; reason: string};
+  inference?: 'gateway' | 'none';
+  presentation?: {vendorLabel: string; sourceLabel?: string; quotaLabel?: string};
   creditFactor?: number;
   reasoningEfforts?: ExecutionReasoningEffort[];
   defaultReasoningEffort?: string;
@@ -34,6 +37,7 @@ export type ExecutionModelOption = {
   serviceTier?: string;
   reasoningEffort?: string;
   provider?: string;
+  sourceLabel?: string;
   accountLabel?: string;
   modelLabel?: string;
   creditFactor?: number;
@@ -46,25 +50,31 @@ export function executionModelKey(accountId: string, modelId: string): string {
   return JSON.stringify([accountId, modelId]);
 }
 
-/** Only models enabled in the model settings are offered; availability stays a separate fact. */
+/** Only gateway-capable models enabled in the model settings are offered; availability stays a separate fact. */
 export function executionModelOptions(models: readonly ExecutionModelSource[]): ExecutionModelOption[] {
-  return models.filter(model => model.enabled !== false).map(model => ({
-    key: executionModelKey(model.accountId, model.modelId),
-    label: model.accountLabel + ' / ' + model.label,
-    available: model.available,
-    accountId: model.accountId,
-    modelId: model.modelId,
-    accountIdentity: model.accountIdentity,
-    accountRevision: model.accountRevision,
-    serviceTier: model.defaultServiceTier,
-    provider: model.provider,
-    accountLabel: model.accountLabel,
-    modelLabel: model.label,
-    creditFactor: model.creditFactor,
-    reasoningEfforts: model.reasoningEfforts,
-    defaultReasoningEffort: model.defaultReasoningEffort,
-    serviceTiers: model.serviceTiers,
-  }));
+  return models
+    .filter(model => model.enabled !== false && model.inference !== 'none' && model.sharing?.kind !== 'executor-exclusive')
+    .map(model => {
+      const sourceLabel = model.presentation?.quotaLabel || model.presentation?.sourceLabel;
+      return {
+        key: executionModelKey(model.accountId, model.modelId),
+        label: model.accountLabel + ' / ' + model.label,
+        available: model.available,
+        accountId: model.accountId,
+        modelId: model.modelId,
+        accountIdentity: model.accountIdentity,
+        accountRevision: model.accountRevision,
+        serviceTier: model.defaultServiceTier,
+        provider: model.provider,
+        ...(sourceLabel ? {sourceLabel} : {}),
+        accountLabel: model.accountLabel,
+        modelLabel: model.label,
+        creditFactor: model.creditFactor,
+        reasoningEfforts: model.reasoningEfforts,
+        defaultReasoningEffort: model.defaultReasoningEffort,
+        serviceTiers: model.serviceTiers,
+      };
+    });
 }
 
 export function selectedExecutionModel(options: readonly ExecutionModelOption[], savedKey: string | null): ExecutionModelOption | null {
@@ -98,7 +108,10 @@ export function executionModelReasoning(model: ExecutionModelOption | null) {
 }
 
 export function executionModelGroups(options: readonly ExecutionModelOption[]) {
-  const sourceName = (option: ExecutionModelOption) => modelSourceName(option.provider ?? option.accountLabel ?? option.accountId);
+  const sourceName = (option: ExecutionModelOption) =>
+    option.provider === 'custom'
+      ? (option.accountLabel || '自定义供应商')
+      : (option.sourceLabel || modelSourceName(option.provider ?? option.accountLabel ?? option.accountId));
   return Array.from(new Set(options.map(item => item.accountId))).map(id => {
     const source = options.find(item => item.accountId === id)!;
     const name = sourceName(source);

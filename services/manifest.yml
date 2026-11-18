@@ -33,14 +33,25 @@ services:
     modulePath: projects/product/services/dsh-plugin
     legacyRefs:
       - product/dsh-plugin
-  buildr-agent:
+  buildr-harness:
     id: 273cb348-2cf5-43ef-bd1a-2abe4d32cfdf
     workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
-    code: buildr-agent
-    name: Buildr 智能体服务
-    description: 独立维护账号接入、统一对话与执行者协调；由Buildr宿主装配并统一交付。
-    type: library
+    code: buildr-harness
+    name: Buildr Harness
+    description: 完整独立 Harness 执行能力、公共协议、CLI、启动器及发行；Development 为其准备工程现场。
+    type: application
     repositoryId: 40394b3d-d44d-5bb2-a59b-932a0dd6a597
-    modulePath: projects/product/services/buildr-agent
+    modulePath: projects/product/services/buildr-harness
     legacyRefs:
-      - product/buildr-agent
+      - product/buildr-harness
+  buildr-harness-web:
+    id: 83e874cd-8f8a-4bed-9f37-d2e722d9f56e
+    workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
+    code: buildr-harness-web
+    name: Buildr Harness Web
+    description: 完整唯一的 Harness 网页；独立打开或由 Development 嵌套，不提供组件装配包。
+    type: application
+    repositoryId: 40394b3d-d44d-5bb2-a59b-932a0dd6a597
+    modulePath: projects/product/services/buildr-harness-web
+    legacyRefs:
+      - product/buildr-harness-web

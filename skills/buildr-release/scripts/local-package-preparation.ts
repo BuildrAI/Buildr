@@ -88,24 +88,13 @@ export async function prepareLocalMainPackage(options: {
   }
   dependencies.onArtifactProduced?.({ sourceCommit: options.sourceCommit, artifactSha256: artifact.manifest.sha256, artifactDirectory: packageDirectory });
   process.stderr.write(`[release] local-package-verification source=${options.sourceCommit} sha256=${artifact.manifest.sha256}\n`);
+  const consumerDirectory = path.join(directory, 'consumer-env');
   const verification = execute(process.execPath, [path.join(service, 'test/verification/artifact.ts'),
-    '--artifact-dir', packageDirectory, '--output', evidenceDirectory], {
+    '--artifact-dir', packageDirectory, '--output', evidenceDirectory, '--consumer-dir', consumerDirectory], {
     cwd: service, env, encoding: 'utf8', timeout: 30 * 60_000, maxBuffer: 64 * 1024 * 1024,
   });
   if (verification.stdout) process.stdout.write(String(verification.stdout));
   if (verification.stderr) process.stderr.write(String(verification.stderr));
-  // Consumer checks intentionally install production-only verifier dependencies.
-  // Restore the owned source environment before adopting its existing proofs or
-  // returning a failure; never rewrite proof identities to hide that transition.
-  const restored = execute(process.execPath, [path.join(service, 'tools/verification/candidate-environment.ts'),
-    'prepare', '--profile', 'base'], {
-    cwd: service, env, encoding: 'utf8', timeout: 15 * 60_000, maxBuffer: 64 * 1024 * 1024,
-  });
-  if (restored.stdout) process.stdout.write(String(restored.stdout));
-  if (restored.stderr) process.stderr.write(String(restored.stderr));
-  if (restored.error || restored.status !== 0) return { status: 'local-source-environment-required',
-    localArtifact: { artifactDirectory: packageDirectory, evidenceDirectory, artifact: artifact.manifest },
-    nextActions: ['恢复本机源码验证依赖环境后接续；保留原包与全部验收结果，不重新制包或改写证明。'] };
   if (verification.error || verification.status !== 0) return { status: 'local-artifact-verification-required',
     localArtifact: { artifactDirectory: packageDirectory, evidenceDirectory, artifact: artifact.manifest },
     nextActions: ['修复本机原包验收失败后继续同一 prepare；现有 artifact.ts 采用有效结果，不重新制包。'] };

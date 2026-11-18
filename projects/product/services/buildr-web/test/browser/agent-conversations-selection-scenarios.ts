@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 
 /** selection 场景使用独立准备的对话现场。 */
+const pngFixture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
+
 export async function runSelectionScenarios(fixture:AgentConversationFixture){
   const {assertModelSummary,chooseAgent,chooseModel,chooseOption,closeModelSettings,expectedBrowserErrors,input,modelSettings,page,panel,sentInputs,setHighEffort,step,workspaceId}=fixture;
 await step('新对话跨工作空间恢复软件级选择，无关账号变化不造成假冲突且不改写执行模型记忆',async()=>{
@@ -26,7 +28,7 @@ await step('新对话跨工作空间恢复软件级选择，无关账号变化�
         const beforeFailure=fixture.creations;await input().fill('冲突原因不应被统一状态文案覆盖');fixture.prepareError={code:'agent_conversation_busy',message:'请先处理当前执行或未知状态；新内容仍可保留为草稿。'};const conflictResponse=page.waitForResponse((response:any)=>response.url().includes('/drafts/')&&response.url().endsWith('/send'));await panel().getByRole('button',{name:'发送对话',exact:true}).click();await conflictResponse;await panel().getByText('请先处理当前执行或未知状态；新内容仍可保留为草稿。',{exact:true}).waitFor();assert.equal(fixture.creations,beforeFailure);assert.equal(await panel().getAttribute('data-conversation-id'),null);assert.equal(await input().inputValue(),'冲突原因不应被统一状态文案覆盖');assert.equal(await panel().locator('[data-pending-send-state]').count(),0,'a rejected first input remains the shared draft, not a queued empty conversation');
         await input().fill('无关账号变化后继续发送');unrelatedSource.accountRevision='devin-r2';unrelatedSource.accountLabel='Devin 套餐 · 已刷新';// Focus metadata refresh coalesces events within one second. Poll the read-only
         // signal until the actual response, rather than racing the previous focus.
-        const catalogRefresh=page.waitForResponse((response:any)=>response.url().endsWith('/model-catalog'));
+        const catalogRefresh=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/model-catalog'));
         const focusTimer=await page.evaluate(()=>window.setInterval(()=>window.dispatchEvent(new Event('focus')),100));
         try{await catalogRefresh;}finally{await page.evaluate((timer:number)=>clearInterval(timer),focusTimer);}await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
         assert.equal(await panel().locator('.ac-provider-select .ant-select-selection-item').innerText(),'Qoder');await assertModelSummary('Qoder / Qoder 共享模型','高');assert.equal(await panel().getByText('对话或套餐状态已变化，已重新读取；套餐登录来源变化时请重新选择模型。草稿保留。',{exact:true}).count(),0);
@@ -51,7 +53,7 @@ await step('不同来源的模型强度独立恢复，能力失效后首次发�
         fixture.sharedModels=[{...first,reasoningEfforts:undefined,defaultReasoningEffort:undefined},second];
         // Focus metadata refresh coalesces events within one second. Poll the read-only
         // signal until the actual response, rather than racing the previous focus.
-        const catalogRefresh=page.waitForResponse((response:any)=>response.url().endsWith('/model-catalog'));
+        const catalogRefresh=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/model-catalog'));
         const focusTimer=await page.evaluate(()=>window.setInterval(()=>window.dispatchEvent(new Event('focus')),100));
         try{await catalogRefresh;}finally{await page.evaluate((timer:number)=>clearInterval(timer),focusTimer);}
         await modelSettings().waitFor({state:'hidden'});await fixture.openModelSettings();await modelSettings().getByText('此模型未提供可调节的推理强度',{exact:true}).waitFor();await closeModelSettings();
@@ -82,16 +84,16 @@ await step('唯一新草稿跨空间、旧对话与刷新恢复，默认空间�
 await step('lost first-send reply recovers the accepted conversation after refresh without replay',async()=>{
       await fixture.startNewConversation();await input().waitFor();await chooseAgent('Codex');await chooseModel('Fixture model');await closeModelSettings();await input().fill('recover the accepted first input');
       const beforeSends=fixture.sends,beforeCreations=fixture.creations;fixture.loseFirstResponse=true;
-      await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByRole('button',{name:'核对并重试原提交',exact:true}).waitFor();
+      await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();
       assert.equal(fixture.sends,beforeSends+1);assert.equal(fixture.creations,beforeCreations+1);const acceptedId=fixture.conversation.id;
       await page.reload();await page.locator('#agent-conversation-panel[data-conversation-id="'+acceptedId+'"]').waitFor();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,beforeSends+1);assert.equal(fixture.creations,beforeCreations+1);
       await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
     });
 
-await step('后台升级明确拒绝首轮后保留提示，刷新和重试沿用原文字与附件',async()=>{
+await step('后台升级明确拒绝首轮后自动核对与接续，保留后来编辑的草稿',async()=>{
       await fixture.startNewConversation();await input().waitFor();await chooseAgent('Codex');
       await input().fill('upgrade preserved original');
-      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'upgrade.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10])});await panel().getByRole('button',{name:'移除图片 upgrade.png',exact:true}).waitFor();
+      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'upgrade.png',mimeType:'image/png',buffer:pngFixture});await panel().getByRole('button',{name:'移除图片 upgrade.png',exact:true}).waitFor();
       const beforeSends=fixture.sends,beforeCreations=fixture.creations,attempts:any[]=[];
       let updating=true;
       const match=/\/agent-(?:service\/conversations|conversations)\/drafts\/[^/]+\/send$/;
@@ -99,14 +101,13 @@ await step('后台升级明确拒绝首轮后保留提示，刷新和重试沿�
       await page.route(match,rejectWhileUpdating);
       try{
         await panel().getByRole('button',{name:'发送对话',exact:true}).click();
-        const retry=()=>panel().getByRole('button',{name:'检查升级并重试原提交',exact:true});await retry().waitFor();
-        assert.match(await panel().locator('.ant-alert-info').innerText(),/上次发送尚未受理.*执行后台正在升级.*新后台尚未就绪/s);
+        const retry=()=>panel().getByRole('button',{name:'检查并重试原提交',exact:true});await retry().waitFor();
+        assert.match(await panel().locator('.ant-alert-info').innerText(),/上次发送尚未受理.*等待可接单的执行后台/s);
         assert.equal(fixture.sends,beforeSends);assert.equal(fixture.creations,beforeCreations);assert.equal(await panel().getAttribute('data-conversation-id'),null);
-        await page.reload();await retry().waitFor();assert.equal(attempts.length,1,'刷新只核对，不自动重发');
         await fixture.capture(page,'agent-conversation-backend-upgrade-notice.png');
-        await input().fill('later edited draft');updating=false;await retry().click();await panel().locator('[data-run-status="running"]').waitFor();
-        assert.equal(fixture.sends,beforeSends+1);assert.equal(fixture.creations,beforeCreations+1);assert.equal(attempts.length,2);
-        assert.equal(attempts[1].clientRequestId,attempts[0].clientRequestId);assert.equal(sentInputs.at(-1).text,'upgrade preserved original');assert.deepEqual(sentInputs.at(-1).attachmentIds,attempts[0].attachmentIds);assert.equal(attempts[0].attachmentIds.length,1);
+        await input().fill('later edited draft');updating=false;await panel().locator('[data-run-status="running"]').waitFor();
+        assert.equal(fixture.sends,beforeSends+1);assert.equal(fixture.creations,beforeCreations+1);assert.ok(attempts.length>=2);
+        assert.ok(attempts.every(attempt=>attempt.clientRequestId===attempts[0].clientRequestId));assert.equal(sentInputs.at(-1).text,'upgrade preserved original');assert.deepEqual(sentInputs.at(-1).attachmentIds,attempts[0].attachmentIds);assert.equal(attempts[0].attachmentIds.length,1);
         assert.equal(await retry().count(),0);
         await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
         await fixture.startNewConversation();await input().waitFor();assert.equal(await input().inputValue(),'later edited draft','后来编辑的文字仍保留在共享新草稿中');
@@ -116,7 +117,7 @@ await step('后台升级明确拒绝首轮后保留提示，刷新和重试沿�
 await step('默认工作空间走应用会话路由，空草稿不列出且首轮模式一致',async()=>{
       await fixture.startNewConversation();await input().waitFor();await chooseOption('新对话工作空间',await page.locator('.workspace-switcher strong').innerText());const workspaceSelect=panel().locator('.ac-location-settings .ant-select');await workspaceSelect.hover();await workspaceSelect.locator('.ant-select-clear').click();await chooseAgent('Codex');
       await chooseModel('Fixture model');await closeModelSettings();await chooseOption('执行权限','完全访问');
-      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'default.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10])});await panel().getByRole('button',{name:'移除图片 default.png',exact:true}).waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),null);
+      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'default.png',mimeType:'image/png',buffer:pngFixture});await panel().getByRole('button',{name:'移除图片 default.png',exact:true}).waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),null);
       const creationsBefore=fixture.creations;await fixture.openHistoryList();await chooseOption('对话列表工作空间','全部工作空间');await panel().locator('.ac-history-list').first().waitFor({state:'attached'});await panel().locator('.ac-history-body>.ant-spin').waitFor({state:'hidden'});assert.equal(fixture.creations,creationsBefore,'adding an image does not create a conversation');
       await fixture.backToConversation();await input().fill('默认空间首轮');const sent=page.waitForRequest((r:any)=>r.method()==='POST'&&r.url().includes('/api/v1/app/agent-service/conversations/drafts/')&&r.url().endsWith('/send'));await panel().getByRole('button',{name:'发送对话',exact:true}).click();await sent;await panel().locator('[data-run-status="running"]').waitFor();assert.equal(sentInputs.at(-1).permissionMode,'full-access');assert.equal(fixture.conversation.workspaceId,'@default');assert.equal(fixture.creations,creationsBefore+1);
       await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();

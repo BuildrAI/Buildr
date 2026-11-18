@@ -45,6 +45,8 @@ export function readSharedCandidatePackage(env: any = process.env): any  {
 }
 
 export async function createCandidatePackage(productRoot: any, destination: any, options: any = {}): Promise<any>  {
+  const {prepareDevelopmentAgent} = await import('../../../projects/product/services/buildr/tools/development/prepare-development-agent.ts');
+  prepareDevelopmentAgent({serviceRoot:productRoot});
   const { buildGeneratedArtifactSet }: any = await import('../../../projects/product/services/buildr/tools/build/artifact-set.ts');
   const npmExecutable: any = options.npmExecutable ?? (process.platform === 'win32' ? 'npm.cmd' : 'npm');
   fs.mkdirSync(destination, { recursive: true });

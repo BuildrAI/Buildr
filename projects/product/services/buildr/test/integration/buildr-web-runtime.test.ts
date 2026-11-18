@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
-import { stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { stopAgentProcess } from '@buildr-ai/buildr-harness';
 
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { createRuntime as createProductionRuntime, runtimeProvide } from '../../src/bootstrap/runtime.ts';
@@ -386,7 +386,10 @@ test('HTTP Host serves the connections workspace route on direct navigation and 
     const response = await fixture.request({ url: `/workspaces/00000000-0000-4000-8000-000000000000/${suffix}` });
     assert.equal(response.status, 200);
     assert.match(response.headers['content-type'], /text\/html/);
-    assert.match(response.headers['set-cookie'], /private-session-token/);
+    const cookies = response.headers['set-cookie'];
+    assert.ok(Array.isArray(cookies), 'image and embedded-page cookies remain separate Set-Cookie values');
+    assert.ok(cookies.some(value => value.startsWith('buildr-image=private-session-token; Path=/api/v1/conversation-image;')));
+    assert.ok(cookies.some(value => value.startsWith('buildr-frame=private-session-token; Path=/harness/;')));
   }
   assert.equal((await fixture.request({ url: '/workspaces/00000000-0000-4000-8000-000000000000/connections-extra' })).status, 404);
 });

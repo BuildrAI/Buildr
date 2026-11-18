@@ -1,5 +1,5 @@
 ---
-id: buildr-agent-more-and-better
+id: buildr-harness-more-and-better
 title: Buildr：让 Agent 越做越多，越做越好
 kind: product-article
 status: published

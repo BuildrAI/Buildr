@@ -1,8 +1,34 @@
 // Only successful, sanitized local-renderer output enters this bounded cache.
 // Synchronous reuse avoids layout shifts when a reading pane is remounted.
 const cache = new Map<string, string>();
+const blockSvgs = new WeakMap<object, string>();
 let characters = 0;
 let instance = 0;
+
+const FORBIDDEN_DIAGRAM_TAGS = new Set([
+  'a',
+  'image',
+  'foreignobject',
+  'script',
+  'iframe',
+  'object',
+  'embed',
+  'link',
+  'meta',
+  'animate',
+  'animatemotion',
+  'animatetransform',
+  'set',
+]);
+const FORBIDDEN_DIAGRAM_ATTRS = new Set(['href', 'xlink:href', 'src', 'formaction']);
+
+function safeDiagramCssValue(value: string): boolean {
+  if (/@import|\\/i.test(value)) return false;
+  for (const match of value.matchAll(/url\s*\([^)]*\)/gi)) {
+    if (!/^url\(\s*['"]?#[\w:.-]+['"]?\s*\)$/i.test(match[0])) return false;
+  }
+  return true;
+}
 
 export function cachedDiagramSvg(source: string): string | undefined {
   return cache.get(source);
@@ -17,6 +43,40 @@ export function rememberDiagramSvg(source: string, svg: string) {
     characters -= key.length + value.length;
     cache.delete(key);
   }
+}
+
+export function rememberBlockDiagramSvg(block: object, svg: string) {
+  blockSvgs.set(block, svg);
+}
+
+export function readBlockDiagramSvg(block: object): string | undefined {
+  return blockSvgs.get(block);
+}
+
+/** Validate serialized SVG markup before placing it in an enlarged preview surface. */
+export function sanitizeDiagramSvg(svg: string): string | null {
+  if (typeof svg !== 'string' || !svg.trim() || typeof DOMParser !== 'function' || typeof XMLSerializer !== 'function') {
+    return null;
+  }
+  const parsed = new DOMParser().parseFromString(svg, 'image/svg+xml');
+  const root = parsed.documentElement;
+  if (!root || parsed.querySelector('parsererror') || root.localName.toLowerCase() !== 'svg') return null;
+  const elements = [root, ...root.querySelectorAll('*')];
+  for (const element of elements) {
+    if (FORBIDDEN_DIAGRAM_TAGS.has(element.localName.toLowerCase())) return null;
+    for (const attribute of element.attributes) {
+      const name = attribute.name.toLowerCase();
+      const localName = attribute.localName.toLowerCase();
+      if (name.startsWith('on') || FORBIDDEN_DIAGRAM_ATTRS.has(name) || FORBIDDEN_DIAGRAM_ATTRS.has(localName)) {
+        return null;
+      }
+      if (!safeDiagramCssValue(attribute.value)) return null;
+    }
+    if (element.localName.toLowerCase() === 'style' && !safeDiagramCssValue(element.textContent || '')) {
+      return null;
+    }
+  }
+  return new XMLSerializer().serializeToString(root);
 }
 
 export function setDiagramSvg(graph: HTMLElement, svg: string) {
@@ -41,6 +101,13 @@ export function setDiagramSvg(graph: HTMLElement, svg: string) {
     }
     if (node.localName === 'style') node.textContent = rewrite(node.textContent || '');
   }
-  const width = drawing.viewBox.baseVal.width;
-  if (width > 0) { drawing.style.width = `${width}px`; drawing.style.maxWidth = 'none'; }
+  const { width = 0, height = 0 } = drawing.viewBox?.baseVal ?? {};
+  if (width > 0) {
+    if (height > 0) {
+      drawing.setAttribute('width', String(width));
+      drawing.setAttribute('height', String(height));
+    }
+    drawing.style.width = `${width}px`;
+    drawing.style.maxWidth = 'none';
+  }
 }

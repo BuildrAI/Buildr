@@ -4,11 +4,12 @@ import { AGENT_ASSETS_SOURCE_MODULE } from '../modules/agent-assets/source/modul
 import { createConnectionSkillsModule, CONNECTION_SKILLS_APPLICATION } from '../modules/connection-skills/module.ts';
 import { SERVICE_RUNTIME_MODULE } from '../modules/service-runtime/module.ts';
 import { createMySqlQueryModule } from '../modules/mysql-query/module.ts';
-import { CODE_MODULE, CODE_GENERATION_APPLICATION, CODE_SOURCE_CONTROL_OBSERVATIONS } from '../modules/code/module.ts';
+import { createCodeModule, CODE_GENERATION_APPLICATION, CODE_SOURCE_CONTROL_OBSERVATIONS } from '../modules/code/module.ts';
 import { AGENT_SERVICE_APPLICATION, createAgentServiceModule } from '../modules/agent-service/module.ts';
 import { WORKBENCH_MODULE } from '../modules/workbench/module.ts';
 import { createKnowledgeModule } from '../modules/knowledge/module.ts';
 import { createRuntimeInfrastructure } from './runtime-infrastructure.ts';
+import { createDevelopmentCliModule } from './cli/dev.ts';
 import {
   AGENT_ASSETS_CAPABILITY_QUERY,
   AGENT_ASSETS_DIAGNOSTICS_BINDER,
@@ -36,7 +37,6 @@ import { createWebModule, WEB_INSTANCE_LIFECYCLE, readLocalBuildrWebInstance } f
 import { createWorkspaceModule, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_APPLICATION, WORKSPACE_QUERY } from '../modules/workspace/module.ts';
 import { createSystemInstallationModule, readCurrentProductIdentity, SYSTEM_INSTALLATION_APPLICATION, SYSTEM_INSTALLATION_WEB_BINDER } from '../modules/installation/module.ts';
 import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../modules/diagnostics/module.ts';
-import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.ts';
 import { createPublicationModule } from '../modules/publication/module.ts';
 import { createOpenSpecModule } from '../modules/openspec/module.ts';
 import { createArtifactLifecycleModule } from '../modules/artifact-lifecycle/module.ts';
@@ -54,9 +54,10 @@ function warnRecoveryFailure(error: unknown): void {
   console.warn('中断执行恢复检查未完成，已有工作记录保留。', ...(code ? [code] : []));
 }
 
-export function createRuntime(options: { agentRuntime?: import('@buildr-ai/buildr-agent').AgentRuntimeUnit } = {}): any  {
+export function createRuntime(options: { agentRuntime?: import('@buildr-ai/buildr-harness').AgentRuntimeUnit } = {}): any  {
   const runtime = createRuntimeInfrastructure();
   const registry = createModuleRegistry();
+  registry.install(createDevelopmentCliModule());
   registry.install(createAgentAssetsRuntimeModule());
   registry.install(createWorkspaceModule(runtime, {
     readProductIdentity: readCurrentProductIdentity,
@@ -65,7 +66,6 @@ export function createRuntime(options: { agentRuntime?: import('@buildr-ai/build
   }));
   registry.install(createAgentAssetsModule(runtime));
   registry.provide(WORKSPACE_AGENT_ASSETS_BINDER).bindAgentAssets(registry.provide(AGENT_ASSETS_INTERNAL));
-  registerProjectGitObserver(runtime);
   registry.install(createKnowledgeModule());
   registry.install(createOpenSpecModule(runtime));
   registry.install(TASK_MODULE);
@@ -78,7 +78,7 @@ export function createRuntime(options: { agentRuntime?: import('@buildr-ai/build
   registry.install(AGENT_ASSETS_SOURCE_MODULE);
   registry.install(createChangeModule(runtime));
   registry.install(createAgentServiceModule({ readLocalInstance: readLocalBuildrWebInstance, readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, ...(options.agentRuntime ? { runtime: options.agentRuntime } : {}) }));
-  registry.install(CODE_MODULE);
+  registry.install(createCodeModule({generateModel: input => registry.provide(AGENT_SERVICE_APPLICATION).generate(input)}));
   registry.install(createConnectionSkillsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
   registry.install(SERVICE_RUNTIME_MODULE);
   registry.install(createMySqlQueryModule());

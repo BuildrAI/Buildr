@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { sourceChangeEvidence } from '../verification/source-diff.ts';
+import { sourceChangeEvidence, changedVerificationCheckEvidence } from '../verification/source-diff.ts';
 import { createVerificationPlan, budgetRelatedVerificationPlan } from '../verification/planner.ts';
 import { semanticTagsForPaths } from '../verification/semantic-tags.ts';
 import { selectBrowserSelectors } from '../verification/browser-selector-dispatcher.ts';
 
-const file = 'services/buildr-agent/src/index.ts';
+const file = 'services/buildr-harness/src/index.ts';
 const before = "export { prepare, validate } from './runtime.ts';\n";
 const after = "export { prepare, validate, digest } from './runtime.ts';\n";
 const ids = (plan: any): string[] => plan.steps.map((step: any) => step.id);
@@ -89,7 +89,7 @@ test('explicit checks, tags, repair and full modes never silently truncate; smal
 
 test('additive existing-module export retains public checks but not behavior journeys', () => {
   const result = plan();
-  assert.deepEqual(ids(result).sort(), ['agent-source-boundaries', 'agent-typecheck', 'agent-unit', 'generated-contracts'].sort());
+  assert.deepEqual(ids(result).sort(), ['agent-source-boundaries', 'agent-typecheck', 'agent-unit', 'generated-contracts', 'harness-cli-typecheck'].sort());
   assert.equal(result.refinements[0].kind, 'additive-exports');
   assert.ok(result.refinements[0].skippedOwnerIds.includes('agent-integration-recovery'));
   assert.deepEqual(result.gaps, []);
@@ -134,7 +134,7 @@ test('byte identity is proved, arbitrary function extraction and digest algorith
   assert.equal(sourceChangeEvidence('runtime-unit.ts', 'const digest = hash(bytes);',
     'function compute() { return hash(bytes); } const digest = compute();'), null);
   assert.equal(sourceChangeEvidence('runtime-unit.ts', "hash('sha256')", "hash('sha512')"), null);
-  const result = plan(['services/buildr-agent/src/process/runtime-unit.ts'], []);
+  const result = plan(['services/buildr-harness/src/process/runtime-unit.ts'], []);
   for (const id of ['agent-integration', 'integration-agent-host',
     'agent-integration-startup', 'agent-integration-handoff', 'agent-integration-recovery', 'agent-integration-recovery-budget']) {
     assert.ok(ids(result).includes(id), id);
@@ -144,17 +144,17 @@ test('byte identity is proved, arbitrary function extraction and digest algorith
 });
 
 test('provider-local behavior selects protocol consumers, while shared and unknown sources stay broad', () => {
-  const local = ids(plan(['services/buildr-agent/src/executors/qoder-cn/forms.ts'], []));
+  const local = ids(plan(['services/buildr-harness/src/executors/qoder-cn/forms.ts'], []));
   for (const id of ['agent-integration', 'agent-integration-native', 'agent-integration-conversations', 'integration-agent-host']) {
     assert.ok(local.includes(id), id);
   }
   assert.ok(!local.some(id => /^agent-integration-(startup|handoff|recovery)/u.test(id)));
   assert.ok(!local.includes('integration'), 'tool orchestration is not a host behavior owner');
   assert.ok(!local.includes('repository-onboarding'), 'ordinary behavior does not change checkout preparation');
-  const hinted = ids(plan(['services/buildr-agent/src/executors/qoder/handoff.ts'], []));
+  const hinted = ids(plan(['services/buildr-harness/src/executors/qoder/handoff.ts'], []));
   assert.ok(!hinted.some(id => /^agent-integration-(startup|handoff|recovery)/u.test(id)), 'name hints cannot override unaffected fixture domains');
-  assert.ok(ids(plan(['services/buildr-agent/src/executors/qoder/handoff.ts'], [], { tags: ['handoff'] })).includes('agent-integration-handoff'));
-  for (const path of ['services/buildr-agent/src/future/unknown.ts', 'services/buildr-agent/src/contracts.ts']) {
+  assert.ok(ids(plan(['services/buildr-harness/src/executors/qoder/handoff.ts'], [], { tags: ['handoff'] })).includes('agent-integration-handoff'));
+  for (const path of ['services/buildr-harness/src/future/unknown.ts', 'services/buildr-harness/src/contracts.ts']) {
     const broad = ids(plan([path], []));
     for (const id of ['agent-integration-native', 'agent-integration-startup', 'agent-integration-handoff', 'agent-integration-recovery']) {
       assert.ok(broad.includes(id), `${path}: ${id}`);
@@ -163,18 +163,18 @@ test('provider-local behavior selects protocol consumers, while shared and unkno
 });
 
 test('Agent test members keep their own owner and preparation changes retain onboarding', () => {
-  const result = ids(plan(['services/buildr-agent/test/integration/executors/qoder-cn.test.ts'], []));
+  const result = ids(plan(['services/buildr-harness/test/integration/executors/qoder-cn.test.ts'], []));
   assert.ok(result.includes('agent-integration-native'));
   assert.ok(!result.includes('integration-agent-host'));
   assert.ok(!result.includes('repository-onboarding'));
-  assert.ok(ids(plan(['services/buildr-agent/package.json'], [])).includes('repository-onboarding'));
-  assert.ok(ids(plan(['services/buildr-agent/tools/build.ts'], [])).includes('repository-onboarding'));
+  assert.ok(ids(plan(['services/buildr-harness/package.json'], [])).includes('repository-onboarding'));
+  assert.ok(ids(plan(['services/buildr-harness/tools/build.ts'], [])).includes('repository-onboarding'));
 });
 
 test('explicit tags, full requests, and other changed paths cannot be canceled by a local proof', () => {
   assert.ok(ids(plan([file], undefined, { tags: ['handoff'] })).includes('agent-integration-handoff'));
   assert.ok(ids(plan([file], undefined, { profiles: ['candidate'] })).includes('agent-integration-recovery'));
-  assert.ok(ids(plan([file, 'services/buildr-agent/src/process/runtime-unit.ts'])).includes('agent-integration-recovery'));
+  assert.ok(ids(plan([file, 'services/buildr-harness/src/process/runtime-unit.ts'])).includes('agent-integration-recovery'));
   assert.ok(ids(plan([file], [])).includes('agent-integration-native'), 'path-only inputs remain conservative');
 });
 
@@ -184,7 +184,7 @@ test('documentation names do not infer behavior; implementation and explicit tag
     assert.deepEqual(semanticTagsForPaths([path]), []);
     assert.ok(!ids(plan([path], [])).some(id => id.startsWith('agent-integration')), path);
   }
-  assert.ok(semanticTagsForPaths(['services/buildr-agent/src/application/conversation-application.ts']).includes('conversation'));
+  assert.ok(semanticTagsForPaths(['services/buildr-harness/src/application/conversation-application.ts']).includes('conversation'));
   assert.ok(semanticTagsForPaths(['resources/workspace/skills/example/scripts/recovery.mjs']).includes('recovery'));
   assert.ok(ids(plan(['knowledge/handoff.md'], [], { tags: ['handoff'] })).includes('agent-integration-handoff'));
 });
@@ -225,7 +225,7 @@ test('mixed plans attribute browser ownership only to the path that caused it', 
 });
 
 test('only inert source ownership metadata can refine service verification declarations', () => {
-  const path = 'services/buildr-agent/tools/testing/verification-checks.ts';
+  const path = 'services/buildr-harness/tools/testing/verification-checks.ts';
   const previous = "export const checks = [{ id: 'native', sourcePaths: ['src/**'], testFiles: ['native.test.ts'], command: {file: 'node'} }];";
   const current = previous.replace("['src/**']", "['src/executors/**']");
   const evidence = sourceChangeEvidence(path, previous, current);
@@ -244,4 +244,49 @@ test('only inert source ownership metadata can refine service verification decla
   ]) assert.equal(sourceChangeEvidence(path, previous, changed), null, changed);
   const unknown = ids(plan([path], []));
   assert.ok(unknown.includes('agent-integration-recovery'), 'recipe or unknown declaration changes remain broad');
+});
+
+test('changedVerificationCheckEvidence narrows verification-checks.ts edits to impacted check IDs', () => {
+  const path = 'services/buildr-harness/tools/testing/verification-checks.ts';
+  const previous = [
+    "import { sharedCheckPreparation } from '../../../buildr/tools/testing/verification-checks.ts';",
+    "const storageRuntimeFiles = ['test/integration/storage-lifecycle.test.ts'];",
+    "const nativeFiles = ['test/integration/executors/codex.test.ts'];",
+    "export const agentIntegrationChecks = [",
+    "  { id: 'agent-integration-storage-runtime', type: 'Integration', testFiles: storageRuntimeFiles, timeoutMs: 180000 },",
+    "  { id: 'agent-integration-conversations', type: 'Integration', testFiles: ['test/integration/conversations.test.ts'], timeoutMs: 90000 },",
+    "  { id: 'agent-integration-native', type: 'Integration', testFiles: nativeFiles, timeoutMs: 120000 },",
+    "].map(group => ({ ...group, type: 'Integration' }));",
+  ].join('\n');
+
+  const timeoutEdited = previous.replace('timeoutMs: 90000', 'timeoutMs: 95000');
+  const testFileEdited = previous.replace('conversations.test.ts', 'conversations-extra.test.ts');
+  for (const after of [timeoutEdited, testFileEdited]) {
+    const ev = changedVerificationCheckEvidence(path, previous, after);
+    assert.deepEqual(ev?.checkIds, ['agent-integration-conversations']);
+    const result = ids(createVerificationPlan({ paths: [path], changedVerificationChecks: [ev], related: true, semantic: true, target: 'source' }));
+    assert.ok(result.includes('agent-integration-conversations'));
+    for (const staticId of ['agent-unit', 'agent-source-boundaries', 'agent-typecheck', 'unit', 'test-syntax', 'test-typecheck']) {
+      assert.ok(result.includes(staticId), `Static/Unit owner ${staticId} must remain retained`);
+    }
+    assert.ok(!result.includes('agent-integration-storage-runtime'));
+    assert.ok(!result.includes('agent-integration-native'));
+    assert.ok(!result.includes('integration-agent-host'));
+    assert.ok(!result.includes('repository-onboarding'));
+  }
+
+  const added = previous.replace(
+    "].map(",
+    "  { id: 'agent-integration-extra', type: 'Integration', testFiles: ['test/integration/extra.test.ts'], timeoutMs: 60000 },\n].map("
+  );
+  assert.deepEqual(changedVerificationCheckEvidence(path, previous, added)?.checkIds, ['agent-integration-extra']);
+
+  const helperEdited = previous.replace('storage-lifecycle.test.ts', 'storage-lifecycle-v2.test.ts');
+  assert.deepEqual(changedVerificationCheckEvidence(path, previous, helperEdited)?.checkIds, ['agent-integration-storage-runtime']);
+
+  const importEdited = previous.replace("sharedCheckPreparation", "sharedCheckPreparation, otherHelper");
+  assert.equal(changedVerificationCheckEvidence(path, previous, importEdited), null);
+
+  const transformEdited = previous.replace("group => ({ ...group, type: 'Integration' })", "group => ({ ...group, type: 'E2E' })");
+  assert.equal(changedVerificationCheckEvidence(path, previous, transformEdited), null);
 });

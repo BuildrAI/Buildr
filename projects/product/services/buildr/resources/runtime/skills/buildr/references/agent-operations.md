@@ -12,6 +12,20 @@
 
 问题使用原生 `AskUserQuestion`，完全访问不代答业务决定。追加输入以准确原生回执确认，不能以写入标准输入成功当作受理。停止沿下方统一控制；CLI 的原子队列取消、后台任务退出和独立命令结果分别核对。原生正文尚未持久化时可保留实时显示，详情缺失不重跑工具；分叉不回滚文件。测试使用本机模型替身、真实程序和真实付费模型时分别报告证明范围。
 
+## Antigravity 原生执行与 Google 个人账号
+
+`antigravity` 执行方在界面显示为 `Antigravity`，由 Buildr 从 Google 官方发布清单下载、SHA-512 校验并解压独立受管 `agy` 二进制（主版本 `1.x.x`），在连接私有 `HOME` 下写入 `autoUpdate: false`，不接管本机 `PATH` 程序、不执行 `agy install` shell 注入。规则与技能使用 `agents-standard`（原生递归 `AGENTS.md` 与 `.agents/skills/<skill-id>/`；宿主单个 `AGENTS.md` 约 24 KB、规则总预算约 20000 词元，超限降级为路径引用）。
+
+模型页的 Google 个人账号通过 `agy` 官方 `oauth-personal` 登录接入，支持免费账号、Google AI Pro 与 Google AI Ultra；`agy` 确认已登录并返回非空模型目录时，档位未公开显示“档位不可读”仍可使用，身份不可确认时拒绝发送。OAuth 凭据仅存于系统密钥环 `jetski-standalone-oauth-token`（与本机终端 `agy` 共享，与桌面 IDE 分离），Buildr 不直接读写或删除系统密钥环，也不经本机网关向其他执行方或单次生成开放该账号。
+
+执行按对话隔离 `agy acp` 进程组；完全访问通过对话进程参数 `--dangerously-skip-permissions` 启用，切回默认权限会重建不带该参数的对话进程并恢复原会话。`agy` 未公开显式账号标识时以连接私有登录世代绑定对话；模型页提供“停用供应商”“切换账号”和“退出登录”：停用只改变 Buildr 内可见性，不触碰系统密钥环；退出与切换经连接级发送闸门（`sendGate`）暂停新发送、先停止运行中轮次再调用原生 `logout`，会影响本机终端 `agy` 登录。终端原位换号且 `agy` 未公开邮箱时，应在模型页执行“切换账号”以隔离旧对话。
+
+## Buildr Harness 系统提示词
+
+在“智能体与模型 → 系统提示词”编辑、启停或恢复当前配置域的默认文案；默认简洁高效表达，但不能省略重要风险、失败和未完成事项。仅影响经 Buildr 管理的工作对话，不替换原生规则或权限，也不控制独立打开的应用。
+
+已有宿主认证调用者可读取 `GET /api/v1/app/agent-service/system-prompt`，修改用 `POST` 同一路径并提交 `{expectedRevision,enabled,text}`；先读当前修订，冲突重新核对，不直接编辑私有配置。文本上限为16000字符，恢复默认使用读取结果的 `defaultText` 并显式保存。配置变化从下一轮应用，已有执行保持原版本和控制；必要时系统重建原生上下文并保留同一对话历史，不重发旧请求。对话头部可查看当前轮 `systemPrompt{revision,enabled,text,delivery}`：`native` 只表示通过原生通道提交，`unsupported` 不冒充已注入；旧轮未采集时不补造。Antigravity 按握手能力判断，不支持时不退化为普通用户消息。
+
 ## 内部对话与持续执行
 
 统一对话的新版私有存储按条目修订单份保存正文，并对稳定的大工具记录无损压缩；查看完整历史、工具详情或搜索不需要发送模型请求，也不意味着原生上下文被归档。格式升级只在原写入后台安全释放后进行，迁移前保留 `conversations.pre-v7-<内容身份>.sqlite` 一致性备份；空间统计须计入该备份和 WAL，不能把正文压缩比例称为实际已回收空间。升级被占用阻止时保留原工作，不为迁移停止执行或手改数据库。新库已有输入后不能用旧备份覆盖回滚；恢复失败先核对数据版本及准确 owner，不降级覆盖、不新建会话重放。备份、原生恢复库、已发交接来源及账号不属于普通编译缓存回收对象。
@@ -54,11 +68,11 @@ Codex、Qoder 和 DSH 使用同一控制资源释放判断，保留各自原生�
 
 对旧对话的“重新读取”应优先恢复准确原生持久结束证据。Qoder 的主链输入、并行工具结果、最终模型响应和结构化结束记录能相互核实时，可以补回结束状态及遗漏答复，不启动模型或重发要求；只看到最终文字或连接释放仍不能证明结束。已释放且无明确活动工作或有效待回答问题的历史疑点，可在原对话“继续工作”核对已有成果后接续，或“关闭对话”结束关注。关闭只撤下提醒并从最近隐藏，保留记录、未知操作和关联任务；可从对话列表“查看隐藏”找回，再发送新要求会恢复到最近。不要把关闭当作停止命令、操作成功或任务完成。
 
-用户想在 Buildr 内使用 Codex、DSH 或 Qoder 时，从全局对话打开“账号与配置”，在“智能体”页准备 Buildr 独立程序，在“模型”页登录账号。新接入仅使用 Buildr 独立安装，不发现或依赖桌面应用内程序；Qoder 由 Buildr 管理配套软件开发工具包（SDK）与执行程序，按同一安装包加载；升级候选通过无工具的真实对话后才切换，失败保留旧组合。已有桌面来源仍可使用，在统一更新或“智能体”页明确点击更新并确认后，才下载独立程序、核验并在工作结束后切换和重启；原桌面应用不变。路径、来源和技术信息在详情中查看。通过官方登录建立独立账号，再核对实际账号及非空模型目录；不把程序安装成功或打开登录页当作接入可用。需要用户本人登录时，只交接当前尝试的官方页面；不要提取桌面令牌（Token）、复制默认账号文件或把秘密写入任务、消息、日志及 Git。当前没有新的 `buildr agent-conversations` 命令，不猜造命令或使用已退役的接入命令。
+用户想在 Buildr 内使用 Codex、DSH、Qoder 或 Antigravity 时，从全局对话打开“账号与配置”，在“智能体”页准备 Buildr 独立程序，在“模型”页登录账号。新接入仅使用 Buildr 独立安装，不发现或依赖桌面应用内程序；Qoder 由 Buildr 管理配套软件开发工具包（SDK）与执行程序，按同一安装包加载；升级候选通过无工具的真实对话后才切换，失败保留旧组合。已有桌面来源仍可使用，在统一更新或“智能体”页明确点击更新并确认后，才下载独立程序、核验并在工作结束后切换和重启；原桌面应用不变。路径、来源和技术信息在详情中查看。通过官方登录建立独立账号，再核对实际账号及非空模型目录；不把程序安装成功或打开登录页当作接入可用。需要用户本人登录时，只交接当前尝试的官方页面；不要提取桌面令牌（Token）、复制默认账号文件或把秘密写入任务、消息、日志及 Git。当前没有新的 `buildr agent-conversations` 命令，不猜造命令或使用已退役的接入命令。
 
-- Codex 使用独立 `codex app-server` 应用服务（App Server）；DSH 使用独立 `dsh web --no-open --port 0` 完整本机网页宿主（Web Host）及官方客户端（Client）；Qoder 使用官方软件开发工具包（SDK）与 `qodercli`。不要求外部桌面应用保持运行，也不等于提供桌面版全部功能。
+- Codex 使用独立 `codex app-server` 应用服务（App Server）；DSH 使用独立 `dsh web --no-open --port 0` 完整本机网页宿主（Web Host）及官方客户端（Client）；Qoder 使用官方软件开发工具包（SDK）与 `qodercli`；Antigravity 使用官方清单受管 `agy acp`。不要求外部桌面应用保持运行，也不等于提供桌面版全部功能。
 - 每家一套本机独立配置，可供多个工作空间（Workspace）使用。配置和统一交互库属于 Buildr 本机运行配置（Profile）的私有数据，不是组织源资产；不自动复制桌面插件、用户级规则（Rule）、技能（Skill）、工具连接或任意第三方模型凭据。缺程序时通过页面显式准备独立安装并核对兼容版本，不静默下载程序或改绑用户默认配置。
-- 准备进度可查询、可取消；切换厂家和关闭面板不取消后台准备，重启后重新观察安装和账号。版本准入按主版本：Codex、DSH 为 `0.x.x`，Qoder CLI 为 `1.x.x`，包含有效预发布版本与构建标记。符合范围只允许继续实际协议、账号和模型检查，不单独代表接入可用；固定下载版本不等于唯一兼容版本；同来源兼容更新保留账号和原生上下文，仍检查实际协议。原程序缺失或版本不兼容时保留账号与历史，不通过切换程序、配置或会话编号冒充恢复。浏览器工具由智能体（Agent）按已有技能（Skill）检查、准备并真实验证；本机浏览器品牌或安装成功都不等于已具备浏览器操作能力。
+- 准备进度可查询、可取消；切换厂家和关闭面板不取消后台准备，重启后重新观察安装和账号。版本准入按主版本：Codex、DSH 为 `0.x.x`，Qoder CLI 与 Antigravity CLI 为 `1.x.x`，包含有效预发布版本与构建标记。符合范围只允许继续实际协议、账号和模型检查，不单独代表接入可用；固定下载版本不等于唯一兼容版本；同来源兼容更新保留账号和原生上下文，仍检查实际协议。原程序缺失或版本不兼容时保留账号与历史，不通过切换程序、配置或会话编号冒充恢复。浏览器工具由智能体（Agent）按已有技能（Skill）检查、准备并真实验证；本机浏览器品牌或安装成功都不等于已具备浏览器操作能力。
 - 普通对话先确认工作空间（Workspace）及真实起始目录（Working Directory）；任务页“打开对话”创建或打开关联该任务（Task）的内部对话。起始目录是原生规则（Rule）、技能（Skill）发现的起点，不是跨目录访问的禁止边界；实际访问仍按原生权限和用户授权。任务关联不自动把任务全文、当前页面或其他工作空间资料注入模型。
 - 发送前核对接入、模型、起始目录及“查看发送内容”。流式回答、工具观察、待答问题、授权与停止在同一对话处理；授权只对应准确本轮请求。不要因历史中有人同意过，就重放原工具或复用旧许可。
 - 权限选择位于当前对话输入区，没有已保存权限选择的新草稿初始选择“完全访问”；工作空间（Workspace）内明确选择过默认权限或完全访问时，新草稿及刷新优先恢复该选择，不清除其他工作空间的记忆。已有对话继续使用自己的实际运行模式或准确选择，旧记录缺失模式时按默认权限解释。完全访问的后续执行按各家原生免逐次工具审批模式工作，同一对话换家时分别应用，不改变外部桌面配置或旧一次生成。业务问题仍需用户回答，未知交互不能自动批准；改回默认时必须逐轮重新应用，不继承上次完全访问。发送预览与实际本轮模式分别核对，不能只凭界面选择推断原生已经生效。
@@ -110,11 +124,13 @@ Buildr 隔离 DSH 的前台 shell 命令超时会真正终止，不会自动转�
 
 对话关键事件按程序接入凭据回推，不再是全局单一目标。人在「智能体与模型 → 程序接入」展开凭据详情配置接收地址、密钥、启停与速率上限，并可发送独立测试通知；管理入口仅网页会话可用，不向 Bearer 或 CLI 开放。原全局「事件通知 / Webhook」已退役，既有 `~/.buildr-webhook.json` / `BUILDR_AGENT_WEBHOOK_CONFIG` 的地址与密钥启动时迁移到 GrokBot 凭据并保持停用，幂等；不保留两份活动配置。不要在命令参数、聊天、日志或源资产中填写真实秘密，不打印响应正文。
 
-只有被该凭据接管（首次经 API 创建/发送/续聊/补充即标记）的对话才回推，且只推五类：decision.requested（问题或审批）、run.completed、run.failed、run.stopped（非该凭据发起的停止）、run.stalled（故障或状态未知持续 5 分钟）。不推工具调用、流式输出、思考、中间消息、starting/running 转换或标题生成。事件含 eventId、type、occurredAt、machine{id,name}、workspaceId、conversationId、title、runId、runStatus、summary（≤500 字符）、detailUrl；decision.requested 另含 request{requestId,kind,title,options}。machine.id 为本机稳定标识、name 为主机名，不用模型或执行器身份替代。不含任何密钥和完整对话内容；问题卡片给准确问题/选项 ID，审批命令、内部思考、原始工具正文不外发，关闭卡片不表示回答或同意。
+只有被该凭据接管（首次经 API 创建/发送/续聊/补充即标记）的对话才回推。业务事件为 decision.requested（问题或审批）、run.progress（新的 assistant 中间消息）、run.completed、run.failed、run.stopped（非该凭据发起的停止）和 run.stalled（当前对话中仍存在且状态为 starting/running/tools-active，并连续 20 分钟没有新记录）。不推工具调用明细、流式 token、思考、starting/running 状态转换或标题生成。每条事件含 eventId、type、occurredAt、machine{id,name}、workspaceId、conversationId、title、runId、runStatus、summary（≤500 字符）、detailUrl、scopes 与 allowFullAccess；scopes/allowFullAccess 为事件生成时的当前凭据权限快照。run.completed、run.failed、run.stopped 另含 finalReply（完整最终 assistant 回复，不截断）与 finalReplyUrl；GET finalReplyUrl 只需 read 权限，返回 {runId,finalReply}。decision.requested 的 request 含 requestId、kind、title、description、runId、participantId、generation、conversationRevision，以及全部 questions/options；description 始终存在，卡片没有说明时为空字符串；GET 对话与 observe 的 requests[] 同样始终含 description；审批卡 options 和问题卡 questions 内选项均使用 optionId、label、description，问题项使用 questionId、question、allowOther、multiple。machine.id 为本机稳定标识、name 为主机名，不用模型或执行器身份替代。不含密钥或接收地址；内部思考、原始工具正文不外发，关闭卡片不表示回答或同意。程序发现入口返回 buildId；/operations 与单操作文档（x-buildr-build-id）及 /help 显示当前构建标识，完整 OpenAPI 正文不写入 buildId，contractVersion 仍只摘要 API 契约内容。`BUILDR_AGENT_PUSHBACK_TEST_STALLED_THRESHOLD_MS`（1000..86400000）与 `BUILDR_AGENT_PUSHBACK_TEST_CHECK_INTERVAL_MS`（250..60000）仅供复测缩短阈值/检查间隔，设置后重启 Agent 后台生效，删除变量并重启恢复产品默认；从 Finder 启动开发版时变量不会自动继承，可先用 launchctl setenv 写入同名变量，卸载时用 launchctl unsetenv 删除。
+
+run.progress 的 progress 含 text（最新中间消息全文）、elapsedMs 与 completedToolCount。只有 status=completed 的中间消息才推送；正文为空或仍在写入（status=running）的消息不推送，也不占用 5 分钟窗口，写完并取到非空正文后再按窗口规则推送。同一 run 相邻推送至少间隔 5 分钟，间隔内只保留最新一条；首次已写完的新中间消息在其间隔满足时立即推送。run.stalled 仅覆盖当前对话仍包含的 starting/running/tools-active 轮次；unknown、waiting-question、waiting-approval、终态以及已不在 run/retainedRuns 中的轮次不产生该事件；单个工具长时间运行且没有新记录同样按空闲计算，观察心跳与工具正文重新投射（native 骨架、按需读取）都不算新记录，计时锚定最后真实记录时间（运行开始或条目创建时间）。缺少可用的 lastActivityAt 时不触发，不按 1970-01-01 计算。stalled 含 idleMs、lastActivityAt，并与其他事件一样含 scopes 与 allowFullAccess；同一空闲期只推一次，去重记录持久化，服务重启不重报；新记录恢复后重新计时，再连续 20 分钟空闲才再推。中间进度与停滞提醒计入现有速率限制，默认开启，可在凭据回推设置中分别关闭；关闭时对应事件不生成。
 
 密钥只保存在本机私有文件（600），界面默认遮罩、主动查看、再次隐藏或关闭后清除明文，日志不输出明文；投递以 Authorization: Bearer 携带密钥，POST JSON、每请求一条事件、不跟随重定向、仅 2xx 确认。速率按凭据计，默认 180/小时、20/分钟，可在界面调整；限额内立即推送，超限按同对话同类型合并（保留最新状态与 mergedCount），配额恢复后补发，decision.requested 优先且永不合并。失败按 10/30/90/270/810 秒退避，最多 5 次后置为 undelivered。响应丢失可能重复到达同一 eventId，不宣称恰好一次；2xx 仅证明接收端确认，不证明后续转发成功。
 
-事件持久保留 7 天、sequence 跨重启连续。程序用 read 权限 GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n} 升序补查（含 undelivered，limit 默认 50、最大 200）；超出保留期被丢弃时发出 events_dropped。CLI 无事件重放命令；完整正文仍用 `buildr agent read <conversation-id> --target <workspace>` 按需拉取，回推只给位置与摘要。测试环境、候选实例与自动化测试一律不得向真实接收地址推送，只用本地假接收端；候选测试不证明共享服务已采用，不得为采用候选自行重启共享服务。
+事件持久保留 7 天、sequence 跨重启连续。程序用 read 权限 GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n} 升序补查（含 undelivered，limit 默认 50、最大 200）；补读与投递共用同一正文，已记录或已送达的历史事件不会因升级、激活或重启被补写 finalReply、stalled、scopes 等字段；超出保留期被丢弃时发出 events_dropped。CLI 无事件重放命令；终态事件已带完整最终回复，需要完整上下文时再用 `buildr agent read <conversation-id> --target <workspace>` 按需拉取。测试环境、候选实例与自动化测试一律不得向真实接收地址推送，只用本地假接收端；候选测试不证明共享服务已采用，不得为采用候选自行重启共享服务。
 
 ## CLI 卡片回答与同对话新轮次
 

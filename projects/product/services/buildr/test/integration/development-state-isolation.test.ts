@@ -228,3 +228,14 @@ console.log(JSON.stringify({root:process.env.BUILDR_TEST_LOCAL_STATE_ROOT,app:pr
   assert.equal(observed.app,state.env.BUILDR_APP_DATA_DIR);
   assert.equal(fs.existsSync(state.root),true,'only the workspace runner owns cleanup');
 });
+
+test('isolated workspace state overrides inherited NPM_CONFIG_CACHE and NODE_COMPILE_CACHE', t => {
+  const state = createIsolatedWorkspaceState({
+    env: { ...process.env, npm_config_cache: '/outer/npm-lower', NPM_CONFIG_CACHE: '/outer/npm-upper', NODE_COMPILE_CACHE: '/outer/node-compile' },
+  });
+  t.after(() => state.cleanup());
+  const expectedNpm = path.join(state.root, 'tool-host', 'npm-cache');
+  assert.equal(state.env.npm_config_cache, expectedNpm);
+  assert.equal(state.env.NPM_CONFIG_CACHE, expectedNpm);
+  assert.equal(state.env.NODE_COMPILE_CACHE, path.join(state.root, 'tool-host', 'node-compile'));
+});

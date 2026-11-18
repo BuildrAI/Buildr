@@ -4,7 +4,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import YAML from 'yaml';
 import { atomicWriteFile, atomicWriteJson } from '../../../infrastructure/filesystem/atomic-files.ts';
-import { withExclusiveFileLock } from '../../../infrastructure/filesystem/exclusive-file-lock.ts';
+import { isHardLinkUnsupportedError, withExclusiveFileLock } from '../../../infrastructure/filesystem/exclusive-file-lock.ts';
 import { assertRevision, diagnostic, failure, identifier, object, type AuthenticationGroup, type ConnectionInstance, type ConnectionScope } from '../domain/instance.ts';
 import { readFieldLabels } from '../domain/field-labels.ts';
 
@@ -261,20 +261,31 @@ export class ConnectionFiles {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const temporary = path.join(path.dirname(file), `.${path.basename(file)}.buildr-tmp-${crypto.randomUUID()}`);
     let installed = false, originalRemoved = false;
+    let publishedIdentity: fs.Stats | null = null;
     const descriptor = fs.openSync(temporary, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0), 0o600);
     const temporaryIdentity = fs.fstatSync(descriptor);
     try {
       fs.writeFileSync(descriptor, content, 'utf8'); fs.fsyncSync(descriptor);
       assertOriginal(); safePath(scope.rootPath, file);
-      try { fs.linkSync(temporary, file); installed = true; }
-      catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw failure('connection_skill_path_occupied', '生成的连接文件路径已被占用；未覆盖原文件或占用文件。');
-        throw failure('connection_skill_file_unavailable', '连接文件无法以不覆盖方式安装；原文件已保留。');
+      try { fs.linkSync(temporary, file); publishedIdentity = temporaryIdentity; }
+      catch (linkError) {
+        if ((linkError as NodeJS.ErrnoException).code === 'EEXIST') throw failure('connection_skill_path_occupied', '生成的连接文件路径已被占用；未覆盖原文件或占用文件。');
+        if (!isHardLinkUnsupportedError(linkError)) throw failure('connection_skill_file_unavailable', '连接文件无法以不覆盖方式安装；原文件已保留。');
+        // Volumes without hard-link support (exFAT/FAT32/ReFS) still get an
+        // exclusive no-replace publication; the content check below proves it.
+        try { fs.copyFileSync(temporary, file, fs.constants.COPYFILE_EXCL); }
+        catch (copyError) {
+          if ((copyError as NodeJS.ErrnoException).code === 'EEXIST') throw failure('connection_skill_path_occupied', '生成的连接文件路径已被占用；未覆盖原文件或占用文件。');
+          throw failure('connection_skill_file_unavailable', '连接文件无法以不覆盖方式安装；原文件已保留。');
+        }
+        publishedIdentity = fs.lstatSync(file, { throwIfNoEntry: false }) || null;
+        try { fs.chmodSync(file, 0o600); } catch {}
       }
-      // The new hard link is the only extra identity expected during this migration.
+      installed = true;
+      // The published file is the only extra identity expected during this migration.
       assertOriginal(this.discoverTeam(scope).filter(source => source.sourcePath !== sourcePath));
-      const installedIdentity = fs.lstatSync(file, { throwIfNoEntry: false });
-      if (!installedIdentity?.isFile() || installedIdentity.dev !== temporaryIdentity.dev || installedIdentity.ino !== temporaryIdentity.ino || read(scope.rootPath, file) !== content) throw failure('connection_skill_revision_conflict', '新连接文件在保存期间发生变化；未清理原文件，请重新读取。');
+      const current = fs.lstatSync(file, { throwIfNoEntry: false });
+      if (!publishedIdentity?.isFile() || publishedIdentity.isSymbolicLink() || !current?.isFile() || current.isSymbolicLink() || current.dev !== publishedIdentity.dev || current.ino !== publishedIdentity.ino || read(scope.rootPath, file) !== content) throw failure('connection_skill_revision_conflict', '新连接文件在保存期间发生变化；未清理原文件，请重新读取。');
       if (before.sourcePath) { safePath(scope.rootPath, path.join(scope.rootPath, before.sourcePath)); fs.unlinkSync(path.join(scope.rootPath, before.sourcePath)); originalRemoved = true; }
     } catch (error) {
       // Roll back only our own destination, and never remove the last preserved copy.
@@ -283,7 +294,7 @@ export class ConnectionFiles {
           const original = before.sourcePath ? fs.lstatSync(path.join(scope.rootPath, before.sourcePath), { throwIfNoEntry: false }) : null;
           const originalStillPresent = !before.sourcePath || original?.isFile() && !original.isSymbolicLink();
           const target = fs.lstatSync(file, { throwIfNoEntry: false });
-          if (originalStillPresent && target?.isFile() && !target.isSymbolicLink() && target.dev === temporaryIdentity.dev && target.ino === temporaryIdentity.ino && read(scope.rootPath, file) === content) fs.unlinkSync(file);
+          if (originalStillPresent && target?.isFile() && !target.isSymbolicLink() && publishedIdentity && target.dev === publishedIdentity.dev && target.ino === publishedIdentity.ino && read(scope.rootPath, file) === content) fs.unlinkSync(file);
         } catch { /* A changed or unreadable destination is preserved for explicit recovery. */ }
       }
       throw error;

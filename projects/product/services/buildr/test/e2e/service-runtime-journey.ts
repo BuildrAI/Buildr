@@ -16,7 +16,7 @@ type Service = { id: string; name: string; code: string };
 type Context = { page: Page; runtime: any; workspaceRoot: string; workspaceUrl: string; expectedBrowserErrors: Set<string>; capture: (page: Page, name: string, options?: { fullPage?: boolean }) => Promise<unknown> };
 const TASK_ID = 'browser-local-runtime';
 const BACKEND_CODE = 'runtime-fixture-backend';
-const FRONTEND_CODE = 'runtime-fixture-web';
+const FRONTEND_CODE = 'runtime-fixture-web-with-a-long-definition-path';
 const REMOTE_URL = 'https://runtime-test.fixture.invalid/api';
 const QUOTED_ARGUMENT = `--fixture-note=two words "quoted" \\literal\\ ${'long-argument/'.repeat(24)}`;
 const SERVER_SOURCE = `import http from 'node:http';
@@ -329,6 +329,18 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     await configurationDrawer.getByRole('button', { name: /取\s*消/ }).click(); await configurationDrawer.waitFor({ state: 'hidden' });
     // Ready internal connections use the existing conversation, but only after explicit confirmation.
     for (const connection of agent.connections) { connection.enabled = true; connection.status = 'ready'; }
+    // The Web client caches discovery. Reload after changing the fixture and
+    // observe the refreshed catalog before making an explicit model choice.
+    const readyConnections = page.waitForResponse((response: any) => new URL(response.url()).pathname === '/api/v1/app/agent-service/connections' && response.ok());
+    await page.reload();
+    const observedConnections = await (await readyConnections).json();
+    assert.ok(observedConnections.connections.some((connection: any) => connection.id === 'codex' && connection.enabled && connection.status === 'ready'));
+    await section().waitFor({ state: 'visible' });
+    await agent.openDesktopConversation();
+    await agent.chooseAgent('Codex');
+    await agent.chooseModel('Fixture model');
+    await agent.closeModelSettings();
+    await agent.closeConversation();
     const createPaused = new Promise<void>(resolve => { agent.createStarted = resolve; });
     agent.holdCreate = true;
     await configuration.getByRole('button', { name: /配置启动与连接$/ }).click();

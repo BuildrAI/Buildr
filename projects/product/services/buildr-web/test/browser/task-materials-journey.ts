@@ -59,9 +59,9 @@ export async function runTaskMaterialsJourney({ t, page, runtime, materials, wor
     writeBrief(id, ['# 图示阅读', fence(flow), fence(sequence), fence(flow), fence('not-a-real-diagram'), '正文仍可阅读。'].join('\n\n'));
     await open(id);
     const diagrams = body().locator('.markdown-diagram');
-    await diagrams.nth(0).locator('svg').waitFor();
-    await diagrams.nth(1).locator('svg').waitFor();
-    await diagrams.nth(2).locator('svg').waitFor();
+    await diagrams.nth(0).locator('.markdown-diagram-view svg').waitFor();
+    await diagrams.nth(1).locator('.markdown-diagram-view svg').waitFor();
+    await diagrams.nth(2).locator('.markdown-diagram-view svg').waitFor();
     await diagrams.nth(3).locator('[role=status]').filter({ hasText: '当前显示 Mermaid 源码' }).waitFor();
     assert.match(await diagrams.nth(0).locator('.markdown-diagram-view').innerText(), /用户目标/);
     assert.match(await diagrams.nth(1).locator('.markdown-diagram-view').innerText(), /开始工作/);
@@ -80,7 +80,7 @@ export async function runTaskMaterialsJourney({ t, page, runtime, materials, wor
     writeBrief(id, '# 输出中\n\n```mermaid\nflowchart LR\nA -->');
     await refresh();
     await body().locator('[data-mermaid-state=incomplete]').waitFor();
-    assert.equal(await body().locator('svg').count(), 0);
+    assert.equal(await body().locator('.markdown-diagram-view svg').count(), 0);
     await page.setViewportSize({ width: 390, height: 844 });
     writeBrief(id, '# 最新正文\n\n校验页面原有宽度。');
     await refresh();
@@ -115,7 +115,7 @@ export async function runTaskMaterialsJourney({ t, page, runtime, materials, wor
       assert.equal(await page.evaluate(() => (window as any).__mermaidInjected), undefined);
     } finally { await page.unroute('**/mermaid.invalid/**', watch); }
     await page.goto(`${workspaceUrl}/tasks`);
-    assert.equal(await page.locator('iframe.markdown-diagram-renderer').count(), 0, '卸载清理绘图环境');
+    await page.locator('iframe.markdown-diagram-renderer').waitFor({ state: 'detached' });
   });
 
   await scenario('交付资料：普通收尾与组合验收同源读取脚本配置图片，归档后仍可读', async () => {
@@ -582,7 +582,11 @@ export async function runTaskMaterialsJourney({ t, page, runtime, materials, wor
     const servicesResponse = await page.request.get(`${workspaceUrl.replace('/workspaces/', '/api/v1/workspaces/')}/projects/attached/services`);
     assert.equal(servicesResponse.status(), 200, `附接项目服务列表返回：${await servicesResponse.text()}`);
     await open('materials-attached-record');
-    await body().getByRole('link', { name: '查看项目资料', exact: true }).click();
+    const [documentResponse] = await Promise.all([
+      page.waitForResponse((response: any) => new URL(response.url()).pathname.includes('/tasks/materials-attached-record/documents/attached/')),
+      body().getByRole('link', { name: '查看项目资料', exact: true }).click(),
+    ]);
+    assert.equal(documentResponse.status(), 200, `外接项目正文返回：${await documentResponse.text()}`);
     await page.locator('.pane-right:visible .resource-reader .markdown-body').filter({ hasText: '通过项目身份读取外接代码库' }).waitFor({ state: 'visible' });
     await page.getByRole('button', { name: '关闭 文档', exact: true }).click();
     await body().locator('[data-task-brief=materials-attached-record]').filter({ hasText: '外接项目任务说明' }).waitFor({ state: 'visible' });

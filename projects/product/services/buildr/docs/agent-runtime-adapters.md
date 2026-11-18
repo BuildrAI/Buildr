@@ -16,7 +16,7 @@ buildr sync <agent> --target <workspace>
 buildr doctor --agent <agent> --target <workspace> --json
 ```
 
-运行时身份 `runtimeId` 与文件适配器（Adapter）身份 `adapterId` 分开：`codex`、`dsh`、`cursor`、`qoder`、`trae`、`trae-work`、`workbuddy` 以及未登记但语法有效的品牌默认采用 `agents-standard`，仍保留真实请求身份，不冒用其他品牌，也不因身份报错。品牌未知时可省略参数。没有显式选择时保留唯一既有受管方式，无既有方式才默认标准；多个不等价方式时写入前要求明确选择。
+运行时身份 `runtimeId` 与文件适配器（Adapter）身份 `adapterId` 分开：`codex`、`dsh`、`antigravity`、`cursor`、`qoder`、`trae`、`trae-work`、`workbuddy` 以及未登记但语法有效的品牌默认采用 `agents-standard`，仍保留真实请求身份，不冒用其他品牌，也不因身份报错。品牌未知时可省略参数。没有显式选择时保留唯一既有受管方式，无既有方式才默认标准；多个不等价方式时写入前要求明确选择。
 
 显式 `--adapter <adapter-id>` 只选择文件约定，必须是已登记的适配器（Adapter）；无效值在写入前报错。已选实现发生冲突、缺失或执行失败时不切换实现，也不退回纯源资产流程。`buildr init` 默认完成标准或既有接入的完整同步；只需源资产时使用 `buildr init --source-only`，不能与运行时或适配器（Adapter）选择混用。
 
@@ -76,6 +76,11 @@ Buildr 当前不定义或维护真实 Agent marker smoke、品牌通过状态或
 
 - DSH 选择同一 `agents-standard`，不是 Codex 别名。当前宿主资料（Host Profile）说明根规则（Rule）与成功文件操作后的嵌套规则（Rule）发现，以及最近 Git 根目录下一层技能（Skill）目录发现。
 - 已知目录观察更新在后续智能体（Agent）步骤生效，不代表已经加载的技能正文会被自动替换。这是宿主机制说明，不是当前会话激活证据，也不要求修改 DSH。
+
+### Antigravity (`runtimeId: antigravity`)
+
+- Antigravity 按 `standard-default` 采用 `agents-standard`，不注册专用文件适配器（Adapter）；原生读取工作区与子目录 `AGENTS.md`，技能（Skill）使用 `.agents/skills/<skill-id>/`。
+- 已知宿主规则预算：单个 `AGENTS.md` 正文约 24 KB，加载规则（Rule）总预算约 20000 词元（Token），超出预算的规则由宿主降级为路径引用供按需读取。文件系统投射成功仍不单独证明当前会话已经加载。
 
 ## 已退役的厂商专用适配器
 

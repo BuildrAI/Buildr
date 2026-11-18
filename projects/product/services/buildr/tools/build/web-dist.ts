@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
@@ -146,8 +147,8 @@ type BuildExecution = (executable: string, args: string[], options: { cwd: strin
 
 /** File descriptors keep verbose successful builds independent of maxBuffer. */
 function executeWebBuild(executable: string, args: string[], options: Parameters<BuildExecution>[2]): ReturnType<BuildExecution> {
-  const candidate = path.resolve(args[args.length - 1]);
-  const captureRoot = path.dirname(candidate);
+  // Compiler output is diagnostic only; keep it out of the source checkout.
+  const captureRoot = fs.mkdtempSync(path.join(os.tmpdir(), `buildr-web-dist-build-${process.pid}-`));
   const stdoutFile = path.join(captureRoot, 'stdout.log');
   const stderrFile = path.join(captureRoot, 'stderr.log');
   const stdout = fs.openSync(stdoutFile, 'wx', 0o600);
@@ -160,6 +161,8 @@ function executeWebBuild(executable: string, args: string[], options: Parameters
   } finally {
     fs.closeSync(stdout);
     if (stderr !== undefined) fs.closeSync(stderr);
+    try { fs.rmSync(captureRoot, { recursive: true, force: true }); }
+    catch { /* Diagnostic capture cleanup must not mask the build result. */ }
   }
 }
 

@@ -1,33 +1,14 @@
-import type { SessionAdapter } from './LocalSessionAdapter';
+import type { SessionAdapter } from './LocalSessionAdapter.ts';
 
 export type ApiError = Error & { code?: string; status?: number; details?: unknown };
 
 export type ApiClient = (resource: string, options?: RequestInit) => Promise<unknown>;
 
-export function createApiClient(options: {
+function createLocalApiClient(options: {
   sessionAdapter: SessionAdapter;
-  getWorkspaceId: () => string | null;
-}): ApiClient {
-  function scopedResource(resource: string): string {
-    const workspaceId = options.getWorkspaceId();
-    if (!workspaceId || !resource.startsWith('/api/v1/')) return resource;
-    if (
-      resource === '/api/v1/workspaces'
-      || resource.startsWith('/api/v1/workspaces/')
-      || resource === '/api/v1/release-awareness'
-      || resource.startsWith('/api/v1/app/')
-      || resource.startsWith('/api/v1/update/')
-      || resource.startsWith('/api/v1/installation/')
-      || resource === '/api/v1/prompts/workspace-create'
-    ) {
-      return resource;
-    }
-    if (resource === '/api/v1/workspace') {
-      return `/api/v1/workspaces/${encodeURIComponent(workspaceId)}`;
-    }
-    return `/api/v1/workspaces/${encodeURIComponent(workspaceId)}${resource.slice('/api/v1'.length)}`;
-  }
+  getWorkspaceId?: () => string | null;
 
+}): ApiClient {
   return async function api(resource: string, init: RequestInit = {}) {
     const send = async () => {
       init.signal?.throwIfAborted();
@@ -40,7 +21,7 @@ export function createApiClient(options: {
       }
       // JSON endpoints already return no-store. Bypass the browser's cache entry
       // lock before sending too, especially for concurrent observation requests.
-      const response = await fetch(scopedResource(resource), { cache: 'no-store', ...init, headers });
+      const response = await fetch(resource, { cache: 'no-store', ...init, headers });
       const body = await response.json() as { error?: { message?: string; code?: string; details?: unknown } };
       if (!response.ok) {
         const requestId = (body.error?.details as {requestId?:unknown}|undefined)?.requestId;
@@ -69,3 +50,25 @@ export function createApiClient(options: {
   };
 }
 export type WorkspaceDocument = { path?: string; name: string; exists: boolean; content: string | null };
+
+  function scopedResource(resource: string, options:{getWorkspaceId:()=>string|null}): string {
+    const workspaceId = options.getWorkspaceId();
+    if (!workspaceId || !resource.startsWith('/api/v1/')) return resource;
+    if (
+      resource === '/api/v1/workspaces'
+      || resource.startsWith('/api/v1/workspaces/')
+      || resource === '/api/v1/release-awareness'
+      || resource.startsWith('/api/v1/app/')
+      || resource.startsWith('/api/v1/update/')
+      || resource.startsWith('/api/v1/installation/')
+      || resource === '/api/v1/prompts/workspace-create'
+    ) {
+      return resource;
+    }
+    if (resource === '/api/v1/workspace') {
+      return `/api/v1/workspaces/${encodeURIComponent(workspaceId)}`;
+    }
+    return `/api/v1/workspaces/${encodeURIComponent(workspaceId)}${resource.slice('/api/v1'.length)}`;
+  }
+
+export function createApiClient(options:{sessionAdapter:SessionAdapter;getWorkspaceId:()=>string|null}){const client=createLocalApiClient(options);return (resource:string,init?:RequestInit)=>client(scopedResource(resource,options),init);}

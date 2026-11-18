@@ -24,6 +24,10 @@ test('Browser dispatcher skips Chrome for HTTP-only Buildr Web changes', () => {
   assert.deepEqual(plan.selectors, []);
   assert.match(plan.reasons[0].reason, /HTTP\/API owner/);
 });
+test('complete Harness webpage has its own browser owner, not component consumers',()=>{
+ const standalone=selectBrowserSelectors(['services/buildr-harness-web/src/HarnessApp.tsx']);assert.deepEqual(standalone.selectors,[]);assert.ok(standalone.reasons.some((value:{reason:string})=>value.reason.includes('完整 Harness 网页')));
+ assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/harness-ui/ConversationWorkspace.tsx']).selectors,['agent-conversations']);
+});
 
 test('Browser dispatcher selects only affected resource selectors', () => {
   const plan: any = selectBrowserSelectors([
@@ -167,26 +171,12 @@ test('conflicting diagnostic input is rejected without changing unrelated checks
  assert.deepEqual(planBrowserCommands(['project'],'/tmp/web-dist',conflict).map(item=>item.id),['browser:project']);
 });
 
-test('internal conversation paths select the executable conversation journey and preserve layout applicability',()=>{
-  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/agent-conversations/ConversationPanel.tsx']).selectors,['agent-conversations']);
-  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/agent-conversations/agent-conversations.css']).selectors,['layout','agent-conversations']);
-  const commands=planBrowserCommands(['agent-conversations'],'/tmp/conversation-web-dist',{});
-  assert.deepEqual(commands.map(item=>item.id),['browser:agent-conversations:worker-1','browser:agent-conversations:worker-2']);
-  for(const command of commands){
-    assert.equal(command.argv.at(-1),'agent-conversations');assert.equal(command.env.BUILDR_BROWSER_WEB_DIST_ROOT,'/tmp/conversation-web-dist');
-    assert.equal(command.env.BUILDR_AGENT_JOURNEY_USES_QUEUE,'');assert.equal(command.env.BUILDR_AGENT_JOURNEY_PART,'');
-    const batch=JSON.parse(command.env.BUILDR_AGENT_JOURNEY_BATCH);assert.ok(batch.length>0);assert.equal(new Set(batch).size,batch.length);
-    assert.match(command.argv[1],/run-isolated-workspace-check\.ts$/);
-  }
-  for(const group of AGENT_CONVERSATION_GROUPS){
-    const focused=planBrowserCommands(['agent-conversations'],'/tmp/conversation-web-dist',{BUILDR_AGENT_JOURNEY_PART:group,BUILDR_AGENT_JOURNEY_BATCH:'stale'});
-    assert.deepEqual(focused.map(item=>item.id),['browser:agent-conversations:'+group]);
-    assert.equal(focused[0].env.BUILDR_AGENT_JOURNEY_PART,group);
-    assert.equal(focused[0].env.BUILDR_AGENT_JOURNEY_BATCH,'');
-    assert.equal(focused[0].env.BUILDR_AGENT_JOURNEY_QUEUE_ROOT,'');
-    assert.equal(focused[0].env.BUILDR_AGENT_JOURNEY_USES_QUEUE,'');
-  }
-  assert.throws(()=>planBrowserCommands(['agent-conversations'],'/tmp/conversation-web-dist',{BUILDR_AGENT_JOURNEY_PART:'typo'}),error=>error instanceof Error && 'code' in error && error.code==='browser_agent_conversation_focus_invalid');
+test('current dialogue browser entry proves complete Harness webpage and Development frame separately',()=>{
+ const commands=planBrowserCommands(['agent-conversations'],'/tmp/conversation-web-dist',{});
+ assert.deepEqual(commands.map(item=>item.id),['browser:agent-conversations:development-frame','browser:agent-conversations:harness-web']);
+ assert.match(commands[0].argv[1],/run-isolated-workspace-check\.ts$/);assert.ok(commands[0].argv.some((value:string)=>value.endsWith('harness-frame.ts')));assert.equal(commands[0].env.BUILDR_BROWSER_WEB_DIST_ROOT,'/tmp/conversation-web-dist');
+ assert.ok(commands[1].argv.some((value:string)=>value.endsWith('standalone.test.ts')));
+ assert.throws(()=>planBrowserCommands(['agent-conversations'],'/tmp/dist',{BUILDR_AGENT_JOURNEY_PART:'history'}),(error:unknown)=>error instanceof Error&&'code' in error&&error.code==='browser_agent_conversation_focus_retired');
 });
 
 test('对话静态批次互斥覆盖所有逻辑组与独立场景，并优先保持时序敏感组同进程',()=>{
@@ -401,14 +391,14 @@ test('test-only changes retain browser ownership without inferring unrelated pro
   assert.equal(ids.some((id:string)=>id.startsWith('agent-integration')),false);
   const explicit=createVerificationPlan({paths:[file],tags:['handoff'],related:true,semantic:true,target:'source'},verificationSteps);
   assert.ok(explicit.steps.some((s:any)=>s.id==='agent-integration-handoff'));
-  const transport=createVerificationPlan({paths:['services/buildr-agent/src/process/transport.ts'],related:true,semantic:true,target:'source'},verificationSteps);
+  const transport=createVerificationPlan({paths:['services/buildr-harness/src/process/transport.ts'],related:true,semantic:true,target:'source'},verificationSteps);
   assert.ok(transport.steps.some((s:any)=>s.id==='agent-integration-handoff'));
   const preparation=createVerificationPlan({paths:['test/verification/web-dist.ts'],related:true,semantic:true,target:'source'},verificationSteps);
   assert.ok(preparation.steps.some((s:any)=>s.id.startsWith('e2e-browser:')));
 });
 
 test('unknown history identity is rejected before browser commands are scheduled',()=>{
-  assert.throws(()=>planBrowserCommands(['agent-conversations'],'/unused',{BUILDR_AGENT_JOURNEY_PART:'history',BUILDR_AGENT_SCENARIO_FOCUS:'history/unknown'}),/未知独立场景/);
+  assert.throws(()=>planBrowserCommands(['agent-conversations'],'/unused',{BUILDR_AGENT_JOURNEY_PART:'history',BUILDR_AGENT_SCENARIO_FOCUS:'history/unknown'}),/旧组件场景选择/);
 });
 
 test('shared framework changes retain contract owners without inferred broad tags', async () => {

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { withAgentDataOffline } from '@buildr-ai/buildr-agent';
+import { withAgentDataOffline } from '@buildr-ai/buildr-harness';
 
 import type { PreviewReuseFacet } from './preview-reuse.ts';
 import { assertWithinRoot, pathExists, replacePreviewDirectory } from './preview-reuse-files.ts';

@@ -20,12 +20,12 @@ function files(root: string, relative = ''): string[] {
 
 function assertBundledAgentOnly(packageRoot: string): void {
   const modules = path.join(packageRoot, 'node_modules');
-  assert.deepEqual(fs.readdirSync(modules).sort(), ['@buildr-ai']);
-  assert.deepEqual(fs.readdirSync(path.join(modules, '@buildr-ai')).sort(), ['buildr-agent']);
-  assert.ok(fs.statSync(path.join(modules, '@buildr-ai/buildr-agent/build/index.js')).isFile());
+  assert.deepEqual(fs.readdirSync(modules).filter(entry => entry !== '.bin').sort(), ['@buildr-ai']);
+  assert.deepEqual(fs.readdirSync(path.join(modules, '@buildr-ai')).sort(), ['buildr-harness']);
+  assert.ok(fs.statSync(path.join(modules, '@buildr-ai/buildr-harness/build/index.js')).isFile());
   const metadata = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
-  assert.deepEqual(Object.keys(metadata.dependencies).sort(), ['@buildr-ai/buildr-agent']);
-  assert.deepEqual(metadata.bundleDependencies, ['@buildr-ai/buildr-agent']);
+  assert.deepEqual(Object.keys(metadata.dependencies).sort(), ['@buildr-ai/buildr-harness']);
+  assert.deepEqual(metadata.bundleDependencies, ['@buildr-ai/buildr-harness']);
 }
 
 test('installed package independently delivers three complete builtin connection skills and its MySQL executable', async t => {
@@ -55,6 +55,7 @@ test('installed package independently delivers three complete builtin connection
     BUILDR_PRODUCT_DATA_DIR: path.join(root, 'installed-product-data'),
     BUILDR_LOCAL_APP_NO_OPEN: '1',
     npm_config_cache: path.join(root, 'npm-cache'),
+    NPM_CONFIG_CACHE: path.join(root, 'npm-cache'),
     npm_config_userconfig: userConfig,
     npm_config_update_notifier: 'false',
     npm_config_audit: 'false',

@@ -239,36 +239,62 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
         assertMinimumNodeVersion(process.versions.node, fs.readFileSync(path.join(projectRoot, '.node-version'), 'utf8').trim());
         const startedAt = Date.now();
         const prepared = prepareSourceVerificationEnvironment(executionPlan, reuseOptions);
-        const environmentPreparationMs = Date.now() - startedAt;
-        enforceOfflineVerification();
-        const { executePlan } = await import('./plan-runner.ts');
-        const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
-        const evidence = createVerificationEvidencePaths('source');
-        const source = collectVerificationSourceIdentity(productRoot, { projectRoot });
-        const sourceObservationMs = Date.now() - startedAt - environmentPreparationMs;
-        const cancellation = sourceVerificationCancellation();
-        // Explicit preparation owns dependency installation. Wrapped development
-        // commands inside checks must not start another implicit install while
-        // the verification network policy is offline.
-        const executionEnv = { ...reuseOptions.env, BUILDR_DEVELOPMENT_PREPARE_SKIP: '1' };
-        let execution: any;
+        let v1CompatibilityRoot: string | null = null;
+        let v1CompatibilityPackage: string | null = null;
         try {
-          execution = await executePlan(executionPlan, {
-            productRoot, projectRoot, env: executionEnv, diagnosticsDirectory: evidence.diagnosticsOutput,
-            stream: process.stdout, errorStream: process.stderr, prefix: 'verify-source',
-            concurrency: executionProfile.limits, executionProfile, runId: evidence.runId,
-            taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? 'source', signal: cancellation.signal,
-            reuse: false, force: reuseOptions.force, round, preparations: sourcePreparationCommands(prepared),
+          if (!reuseOptions.env.BUILDR_AGENT_V1_PACKAGE && prepared.preparation.stepIds.includes('agent-integration-compatibility')) {
+            const v1Stdout = execFileSync(process.execPath, [
+              path.join(projectRoot, 'services/buildr-harness/tools/testing/prepare-v1-compatibility.ts'),
+              '974612e171af0a551cccaa6e8880735944bac717',
+            ], {
+              cwd: projectRoot,
+              env: { ...process.env, npm_config_prefer_offline: 'true', ...(process.env.BUILDR_HOST_HOME ? { HOME: process.env.BUILDR_HOST_HOME } : {}) },
+              encoding: 'utf8',
+              stdio: ['ignore', 'pipe', 'pipe'],
+              timeout: 180_000,
+              maxBuffer: 16 * 1024 * 1024,
+            });
+            const v1Info = JSON.parse(v1Stdout.trim().split('\n').at(-1)!);
+            v1CompatibilityRoot = v1Info.root;
+            v1CompatibilityPackage = v1Info.packageRoot;
+          }
+          const environmentPreparationMs = Date.now() - startedAt;
+          enforceOfflineVerification();
+          const { executePlan } = await import('./plan-runner.ts');
+          const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
+          const evidence = createVerificationEvidencePaths('source');
+          const source = collectVerificationSourceIdentity(productRoot, { projectRoot });
+          const sourceObservationMs = Date.now() - startedAt - environmentPreparationMs;
+          const cancellation = sourceVerificationCancellation();
+          // Explicit preparation owns dependency installation. Wrapped development
+          // commands inside checks must not start another implicit install while
+          // the verification network policy is offline.
+          const executionEnv = {
+            ...reuseOptions.env,
+            ...(v1CompatibilityPackage ? { BUILDR_AGENT_V1_PACKAGE: v1CompatibilityPackage } : {}),
+            BUILDR_DEVELOPMENT_PREPARE_SKIP: '1',
+          };
+          let execution: any;
+          try {
+            execution = await executePlan(executionPlan, {
+              productRoot, projectRoot, env: executionEnv, diagnosticsDirectory: evidence.diagnosticsOutput,
+              stream: process.stdout, errorStream: process.stderr, prefix: 'verify-source',
+              concurrency: executionProfile.limits, executionProfile, runId: evidence.runId,
+              taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? 'source', signal: cancellation.signal,
+              reuse: false, force: reuseOptions.force, round, preparations: sourcePreparationCommands(prepared),
+            });
+          } finally { cancellation.dispose(); }
+          writeVerificationTimingEvidence({
+            ...evidence, kind: 'source', source, status: execution.passed ? 'passed' : 'failed',
+            results: execution.results, timings: { ...execution.timings, environmentPreparationMs, sourceObservationMs, sourceTotalMs: Date.now() - startedAt }, contextLifecycle: execution.contextLifecycle,
+            startedAt, finishedAt: Date.now(), diagnosticsDirectory: evidence.diagnosticsOutput,
+            prefix: 'verify-source', stream: process.stdout, errorStream: process.stderr, executionProfile,
           });
-        } finally { cancellation.dispose(); }
-        writeVerificationTimingEvidence({
-          ...evidence, kind: 'source', source, status: execution.passed ? 'passed' : 'failed',
-          results: execution.results, timings: { ...execution.timings, environmentPreparationMs, sourceObservationMs, sourceTotalMs: Date.now() - startedAt }, contextLifecycle: execution.contextLifecycle,
-          startedAt, finishedAt: Date.now(), diagnosticsDirectory: evidence.diagnosticsOutput,
-          prefix: 'verify-source', stream: process.stdout, errorStream: process.stderr, executionProfile,
-        });
-        if (cancellation.signal.aborted) process.exitCode = cancellation.exitCode();
-        else if (!execution.passed) process.exitCode = 1;
+          if (cancellation.signal.aborted) process.exitCode = cancellation.exitCode();
+          else if (!execution.passed) process.exitCode = 1;
+        } finally {
+          if (v1CompatibilityRoot) fs.rmSync(v1CompatibilityRoot, { recursive: true, force: true });
+        }
       }
     }
   } catch (error: any) {

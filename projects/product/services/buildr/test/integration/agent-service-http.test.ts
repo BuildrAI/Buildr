@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { AGENT_SERVICE_APPLICATION, createAgentServiceModule } from '../../src/modules/agent-service/module.ts';
 import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
 import { TASK_QUERY_APPLICATION } from '../../src/modules/task/module.ts';
-import { prepareAgentRuntime, stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { prepareAgentRuntime, stopAgentProcess } from '@buildr-ai/buildr-harness';
 import { runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -12,7 +12,7 @@ import test from 'node:test';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
-import { AgentServiceError, createAgentService as createService, type AgentRuntime, type ExecutorItem } from '@buildr-ai/buildr-agent';
+import { AgentServiceError, createAgentService as createService, type AgentRuntime, type ExecutorItem } from '@buildr-ai/buildr-harness';
 import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.ts';
 import { taskRecordFixture } from '../helpers/task-record-system-fixture.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
@@ -353,6 +353,11 @@ test('model account HTTP preserves authentication, revisions, source identity an
   for(let i=0;i<20&&!login.loginAttempt?.url;i++){response=await fetch(endpoint+'/'+created.id+'/login-attempts/'+login.loginAttempt.id,{headers});login=await response.json();await new Promise(resolve=>setTimeout(resolve,2));}
   assert.equal(login.loginAttempt.url,'https://login.example.test/authorize');
   response=await fetch(endpoint+'/'+created.id+'/login-attempts/'+login.loginAttempt.id+'/cancel',{method:'POST',headers,body:JSON.stringify({expectedRevision:login.revision})});assert.equal(response.status,200);const cancelled=await response.json();assert.equal(cancelled.loginAttempt.state,'cancelled');
+  response=await fetch(endpoint+'/'+created.id+'/usage',{headers});assert.equal(response.status,200);assert.deepEqual(await response.json(),{references:0});
+  assert.equal((await fetch(endpoint+'/'+created.id,{method:'DELETE',headers,body:JSON.stringify({expectedRevision:'old'})})).status,409);
+  response=await fetch(endpoint+'/'+created.id,{method:'DELETE',headers,body:JSON.stringify({expectedRevision:cancelled.revision})});assert.equal(response.status,200);
+  const remaining=await response.json();assert.equal(remaining.accounts.some((account:{id:string})=>account.id===created.id),false);assert.equal(remaining.providers[0].id,'fixture');
+  assert.equal((await fetch(endpoint+'/'+created.id,{headers})).status,404);
 });
 
 test('model account HTTP configures API-key sources without echoing the secret', {timeout:30000}, async t=>{
@@ -389,6 +394,39 @@ test('model selection HTTP returns the local snapshot without waiting for extern
   const response=await pending;assert.equal(response.status,200);
   assert.equal((await response.json()).models[0].accountRevision,cached.models[0].accountRevision);
   release();
+});
+
+test('model-catalog supports ?revision short-circuiting, validates revision input, and invalidates on account change', {timeout:30000}, async t => {
+  const {base,root}=taskRecordFixture(t,'model-catalog-revision-http');
+  const service=createAgentService({dataRoot:path.join(base,'profile'),executors:[],modelProviders:[{id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[{id:'model',label:'Model',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){return assert.fail('catalog must not infer');},async close(){}};}}],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+  const added=await service.models.accounts.add({provider:'fixture'});await service.models.accounts.check(added.id);
+  const runtime=createRuntime(),contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions}),{url,sessionToken}=await server.ready,headers={'x-buildr-session':sessionToken};
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+
+  const firstResponse=await fetch(url+'/api/v1/app/agent-service/model-catalog',{headers});
+  assert.equal(firstResponse.status,200);
+  const first=await firstResponse.json();
+  assert.match(first.revision,/^[a-f0-9]{64}$/);
+  assert.equal(first.unchanged,undefined);
+  assert.equal(first.models.length,1);
+
+  const unchangedResponse=await fetch(`${url}/api/v1/app/agent-service/model-catalog?revision=${first.revision}`,{headers});
+  assert.equal(unchangedResponse.status,200);
+  const unchanged=await unchangedResponse.json();
+  assert.deepEqual(unchanged,{revision:first.revision,unchanged:true});
+
+  const badResponse=await fetch(`${url}/api/v1/app/agent-service/model-catalog?revision=invalid`,{headers});
+  assert.equal(badResponse.status,400);
+
+  const second=await service.models.accounts.add({provider:'fixture'});await service.models.accounts.check(second.id);
+  const updatedResponse=await fetch(`${url}/api/v1/app/agent-service/model-catalog?revision=${first.revision}`,{headers});
+  assert.equal(updatedResponse.status,200);
+  const updated=await updatedResponse.json();
+  assert.match(updated.revision,/^[a-f0-9]{64}$/);
+  assert.notEqual(updated.revision,first.revision);
+  assert.equal(updated.unchanged,undefined);
+  assert.equal(updated.models.length,2);
 });
 
 test('model preferences enforce authentication, revision and context limits', {timeout:30000},async t=>{
@@ -865,4 +903,32 @@ test('runtime restart authorizes writes, validates the observed generation and r
   assert.deepEqual(await contribution.handleTopLevel(context),{status:200,body:status});assert.equal(writes,1);assert.equal(restarted,1);
   const invalid=await contribution.handleTopLevel({...context,readJsonBody:async()=>({})});
   assert.equal(invalid.status,400);assert.equal(restarted,1);
+});
+
+test('settle-retained-run route is exposed and stop-all forwards observedScope', async t => {
+  const {base,root}=taskRecordFixture(t,'settle-and-stop-all-http'),runtime=createRuntime();
+  const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'app-data');t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+  const id='11111111-1111-4111-8111-111111111111',calls:any[]=[];
+  const view:any={id,workspaceId:'@default',cwd:root,title:'工作',revision:'r2',hidden:false,updatedAt:'now',participants:[],entries:[],requests:[],retainedRuns:[]};
+  const service:any={conversations:{
+    settleRetainedRun:(workspaceId:string,conversationId:string,input:any)=>{calls.push(['settle',workspaceId,conversationId,input]);return {...view,workspaceId};},
+    stopAll:(workspaceId:string,conversationId:string,input:any)=>{calls.push(['stopAll',workspaceId,conversationId,input]);return {...view,workspaceId};},
+  }};
+  const contributions=runtimeContributions(runtime,'http').filter((item:any)=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const instance=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});const {url,sessionToken,initialWorkspaceId}=await instance.ready;
+  t.after(async()=>{instance.server.closeAllConnections();await new Promise<void>(resolve=>instance.server.close(()=>resolve()));});
+  const headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'};
+
+  const settleRes=await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/agent-conversations/${id}/settle-retained-run`,{
+    method:'POST',headers,body:JSON.stringify({expectedRevision:'r1',runId:'run-1',participantId:'lead',generation:'g1'}),
+  });
+  assert.equal(settleRes.status,200);
+  assert.deepEqual(calls[0],['settle',initialWorkspaceId,id,{expectedRevision:'r1',runId:'run-1',participantId:'lead',generation:'g1'}]);
+
+  const observedScope={currentRunId:'run-2',targets:[{runId:'run-2',participantId:'lead',generation:'g2'}],pendingSendId:null};
+  const stopAllRes=await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/agent-conversations/${id}/stop-all`,{
+    method:'POST',headers,body:JSON.stringify({expectedRevision:'r1',clientRequestId:'stop-1',observedScope}),
+  });
+  assert.equal(stopAllRes.status,200);
+  assert.deepEqual(calls[1],['stopAll',initialWorkspaceId,id,{expectedRevision:'r1',clientRequestId:'stop-1',observedScope}]);
 });

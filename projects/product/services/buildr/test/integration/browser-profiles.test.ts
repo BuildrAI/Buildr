@@ -55,6 +55,22 @@ test('one unreadable profile does not hide healthy profiles, replaced data direc
   assert.throws(()=>profiles.reset('good',selected.revision),{code:'browser_authorization_directory_changed'});
   assert.equal(fs.existsSync(directory+'-preserved'),true);
 });
+test('a reboot that reassigns the volume device number does not lock the profile or its recovery paths', t => {
+  if (process.platform === 'win32') return;
+  const profiles = fixture(t), created = profiles.create('work', 'absent');
+  const directory = path.join(profiles.root, created.profile!.directory);
+  fs.writeFileSync(path.join(directory, 'cookie'), 'preserve', { mode: 0o600 });
+  const file = path.join(profiles.state, 'work.json');
+  const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+  // 模拟重启：仅设备号 dev 变化，inode 与目录内容保持不变。
+  stored.directoryIdentity.dev = stored.directoryIdentity.dev + 1;
+  fs.writeFileSync(file, JSON.stringify(stored) + '\n', { mode: 0o600 });
+  const observed = profiles.get('work');
+  assert.equal(observed.profile!.id, 'work');
+  assert.equal(fs.readFileSync(path.join(directory, 'cookie'), 'utf8'), 'preserve');
+  const reset = profiles.reset('work', observed.revision);
+  assert.notEqual(reset.revision, observed.revision);
+});
 test('only a dead local browser lock may be left for Chromium to reclaim; no lock is deleted', async t => {
   if (process.platform === 'win32') return;
   const profiles = fixture(t), selected = profiles.create('work', 'absent'), directory = path.join(profiles.root, selected.profile!.directory);

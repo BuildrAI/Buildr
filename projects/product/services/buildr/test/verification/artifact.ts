@@ -20,7 +20,7 @@ const entry = path.join(productRoot, 'test/verification/candidate-ci.ts');
 
 export function parseArtifactArgs(args: string[]): any {
   const options: any = { scope: 'all', nodeTuple: 'minimum', json: false, help: false };
-  const values: Record<string, string> = { '--scope': 'scope', '--node-tuple': 'nodeTuple', '--artifact-dir': 'artifactDirectory', '--output': 'output' };
+  const values: Record<string, string> = { '--scope': 'scope', '--node-tuple': 'nodeTuple', '--artifact-dir': 'artifactDirectory', '--output': 'output', '--consumer-dir': 'consumerDirectory' };
   const seen = new Set<string>();
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]!;
@@ -39,6 +39,50 @@ export function parseArtifactArgs(args: string[]): any {
   if (options.help && args.length !== 1) throw new Error('--help cannot be combined with other arguments.');
   if (!options.help && (!options.artifactDirectory || !options.output)) throw new Error('Explicit --artifact-dir and --output are required; this entry never produces a package.');
   return options;
+}
+
+function isOmitDevPreparation(profile: string): boolean {
+  return candidateEnvironmentPlan(profile).find(operation => operation.id === 'buildr-dependencies')?.args.includes('--omit=dev') ?? false;
+}
+
+function defaultPrepareConsumerCheckout(sourceProductRoot: string, consumerDirectory: string, sourceCommit: string) {
+  const resolvedConsumer = path.resolve(consumerDirectory);
+  const repoTop = spawnCommandSync('git', ['rev-parse', '--show-toplevel'], { cwd: sourceProductRoot, encoding: 'utf8' });
+  if (repoTop.error || repoTop.status !== 0) {
+    throw new Error(`Unable to resolve Git repository for isolated consumer checkout: ${repoTop.stderr || repoTop.error?.message || 'unknown error'}`);
+  }
+  const repoRoot = fs.realpathSync(repoTop.stdout.trim());
+  const serviceRelative = path.relative(repoRoot, fs.realpathSync(sourceProductRoot));
+  if (!serviceRelative || serviceRelative.startsWith('..') || path.isAbsolute(serviceRelative)) {
+    throw new Error(`Unable to locate service directory inside repository: ${sourceProductRoot}`);
+  }
+  const cleanup = () => {
+    if (fs.existsSync(resolvedConsumer)) {
+      spawnCommandSync('git', ['-C', repoRoot, 'worktree', 'remove', '--force', resolvedConsumer], { encoding: 'utf8' });
+      fs.rmSync(resolvedConsumer, { recursive: true, force: true });
+    }
+    spawnCommandSync('git', ['-C', repoRoot, 'worktree', 'prune'], { encoding: 'utf8' });
+  };
+  cleanup();
+  fs.mkdirSync(path.dirname(resolvedConsumer), { recursive: true });
+  const added = spawnCommandSync('git', ['-C', repoRoot, 'worktree', 'add', '--detach', resolvedConsumer, sourceCommit], { encoding: 'utf8' });
+  if (added.error || added.status !== 0) {
+    cleanup();
+    throw new Error(`Unable to create isolated consumer worktree at ${resolvedConsumer}: ${added.stderr || added.error?.message || 'unknown error'}`);
+  }
+  const consumerRoot = fs.realpathSync(resolvedConsumer);
+  const consumerServiceRoot = path.join(consumerRoot, serviceRelative);
+  return {
+    repoRoot,
+    consumerRoot,
+    roots: {
+      projectRoot: path.resolve(consumerServiceRoot, '../..'),
+      serviceRoot: consumerServiceRoot,
+      webRoot: path.resolve(consumerServiceRoot, '../buildr-web'),
+    },
+    entry: path.join(consumerServiceRoot, 'test/verification/candidate-ci.ts'),
+    cleanup,
+  };
 }
 
 export function createLocalArtifactPlan(platform = process.platform, options: any = {}): any {
@@ -61,8 +105,7 @@ export function createLocalArtifactPlan(platform = process.platform, options: an
   // Source verification leaves a full controller environment. Consume it first,
   // then move once to production-only consumers; never remove development
   // dependencies only to restore them for the next package check.
-  const dependencyMode = (node: any) => candidateEnvironmentPlan(node.preparation)
-    .find(operation => operation.id === 'buildr-dependencies')!.args.includes('--omit=dev') ? 0 : 1;
+  const dependencyMode = (node: any) => isOmitDevPreparation(node.preparation) ? 0 : 1;
   nodes.sort((left, right) => dependencyMode(right) - dependencyMode(left));
   return { schemaVersion: 'buildr.local-artifact-plan/v1', runner, scope, nodeTuple, nodes };
 }
@@ -91,6 +134,8 @@ export function runLocalArtifactVerification(options: any, dependencies: any = {
   }
   const prepared = new Set<string>();
   const results: any[] = [];
+  type ConsumerCheckout = { roots?: { projectRoot: string; serviceRoot: string; webRoot: string }; entry?: string; cleanup?: () => void };
+  let consumerCheckout: ConsumerCheckout | null = null;
   const reusableEvidence = dependencies.reusableEvidence ?? ((node: any): boolean => {
     const evidenceFile = path.join(output, `candidate-ci-evidence-${node.id}.json`);
     if (fs.existsSync(evidenceFile)) {
@@ -106,28 +151,45 @@ export function runLocalArtifactVerification(options: any, dependencies: any = {
     }
     return false;
   });
-  for (const node of plan.nodes) {
-    const evidenceFile = path.join(output, `candidate-ci-evidence-${node.id}.json`);
-    if (reusableEvidence(node)) { results.push({ id: node.id, status: 'passed', disposition: 'reused' }); continue; }
-    if (!prepared.has(node.preparation)) {
-      (dependencies.prepare ?? prepareCandidateEnvironment)({ profile: node.preparation, env, reusePrepared: true,
-        output: path.join(output, `${node.preparation}-preparation.json`) });
-      prepared.add(node.preparation);
-      // Preparing the required controller can restore the exact environment of
-      // an earlier success. Recheck the unchanged proof before starting tests.
+  try {
+    for (const node of plan.nodes) {
+      const evidenceFile = path.join(output, `candidate-ci-evidence-${node.id}.json`);
       if (reusableEvidence(node)) { results.push({ id: node.id, status: 'passed', disposition: 'reused' }); continue; }
+      const omitDev = isOmitDevPreparation(node.preparation);
+      if (omitDev && options.consumerDirectory && !consumerCheckout) {
+        consumerCheckout = (dependencies.prepareConsumerCheckout ?? defaultPrepareConsumerCheckout)(productRoot, path.resolve(options.consumerDirectory), verificationSource);
+      }
+      const activeConsumer = omitDev ? consumerCheckout : null;
+      const activeRoots = activeConsumer?.roots;
+      const activeServiceRoot = activeRoots?.serviceRoot ?? productRoot;
+      const activeEntry = activeConsumer?.entry ?? entry;
+      if (!prepared.has(node.preparation)) {
+        (dependencies.prepare ?? prepareCandidateEnvironment)({
+          profile: node.preparation,
+          ...(activeRoots ? { roots: activeRoots } : {}),
+          env,
+          reusePrepared: true,
+          output: path.join(output, `${node.preparation}-preparation.json`),
+        });
+        prepared.add(node.preparation);
+        // Preparing the required controller can restore the exact environment of
+        // an earlier success. Recheck the unchanged proof before starting tests.
+        if (reusableEvidence(node)) { results.push({ id: node.id, status: 'passed', disposition: 'reused' }); continue; }
+      }
+      const result = (dependencies.execute ?? spawnCommandSync)(process.execPath, [activeEntry, node.action, node.id], {
+        cwd: activeServiceRoot, encoding: 'utf8', env: { ...env, BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: evidenceFile },
+        // The child also records its own evidence file; its forwarded diagnostics
+        // (whole-suite progress lines) can exceed the 1 MiB spawnSync default. A
+        // buffer overflow must not misreport an evidence-backed pass as failed.
+        maxBuffer: 64 * 1024 * 1024,
+        timeout: 600_000,
+      });
+      if (result.stdout) process.stdout.write(result.stdout);
+      if (result.stderr) process.stderr.write(result.stderr);
+      results.push({ id: node.id, status: result.status === 0 && !result.error ? 'passed' : 'failed', disposition: 'executed' });
     }
-    const result = (dependencies.execute ?? spawnCommandSync)(process.execPath, [entry, node.action, node.id], {
-      cwd: productRoot, encoding: 'utf8', env: { ...env, BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: evidenceFile },
-      // The child also records its own evidence file; its forwarded diagnostics
-      // (whole-suite progress lines) can exceed the 1 MiB spawnSync default. A
-      // buffer overflow must not misreport an evidence-backed pass as failed.
-      maxBuffer: 64 * 1024 * 1024,
-      timeout: 600_000,
-    });
-    if (result.stdout) process.stdout.write(result.stdout);
-    if (result.stderr) process.stderr.write(result.stderr);
-    results.push({ id: node.id, status: result.status === 0 && !result.error ? 'passed' : 'failed', disposition: 'executed' });
+  } finally {
+    consumerCheckout?.cleanup?.();
   }
   assertCheckout(productRoot, verificationSource);
   return { ...plan, artifact: artifact.identity, output, status: results.length === plan.nodes.length && results.every(result => result.status === 'passed') ? 'passed' : 'failed', results };
@@ -170,7 +232,7 @@ export function reexecUnderRequiredNode(options: any, dependencies: any = {}): n
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
   try {
     const options = parseArtifactArgs(process.argv.slice(2));
-    if (options.help) process.stdout.write('Usage: artifact.ts --artifact-dir <original-package-directory> --output <evidence-directory> [--scope all|common|platform] [--node-tuple minimum] [--json]\n');
+    if (options.help) process.stdout.write('Usage: artifact.ts --artifact-dir <original-package-directory> --output <evidence-directory> [--consumer-dir <isolated-consumer-directory>] [--scope all|common|platform] [--node-tuple minimum] [--json]\n');
     else {
       const reexec = reexecUnderRequiredNode(options);
       if (reexec !== null) {

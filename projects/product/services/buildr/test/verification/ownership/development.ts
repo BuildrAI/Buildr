@@ -72,12 +72,12 @@ export default {
     "inputExclusions": []
   },
 "integration-agent-host": {
-    "behaviorOnlyInputs": ["services/buildr-agent/src/**", "services/buildr-agent/tools/testing/verification-checks.ts", "tools/testing/verification-checks.ts"],
+    "behaviorOnlyInputs": ["services/buildr-harness/src/**", "services/buildr-harness/tools/testing/verification-checks.ts", "tools/testing/verification-checks.ts"],
     "inputs": [
-      "services/buildr-agent/src/**",
-      "services/buildr-agent/package.json",
-      "services/buildr-agent/package-lock.json",
-      "services/buildr-agent/tools/**",
+      "services/buildr-harness/src/**",
+      "services/buildr-harness/package.json",
+      "services/buildr-harness/package-lock.json",
+      "services/buildr-harness/tools/**",
       "src/modules/agent-service/**",
       "test/helpers/prepared-agent-runtime.ts",
       "tools/build/**",

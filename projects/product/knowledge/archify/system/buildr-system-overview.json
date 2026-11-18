@@ -2,48 +2,261 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Buildr 当前系统与代码责任全景",
+    "title": "Buildr：Harness 执行与 Development 工程现场",
     "locale": "zh-CN",
     "quality_profile": "showcase",
-    "viewBox": [1320, 760],
-    "views": [
-      { "id": "product-path", "label": "产品主路径", "focus": ["humanAgent", "buildrWeb", "webHost", "bootstrap", "capabilityModules"], "note": "入口只负责适配，Bootstrap 通过具名能力装配产品模块。" },
-      { "id": "state-owners", "label": "状态责任", "focus": ["capabilityModules", "workspaceState", "taskState", "agentRuntime"], "note": "源资产、Task SQLite 与 Agent runtime 投射由不同 owner 管理。" },
-      { "id": "engineering", "label": "工程边界", "focus": ["buildrWeb", "webHost", "bootstrap", "infrastructure"], "note": "代码生成、测试、构建和发布工具不进入产品业务模块。" }
-    ]
+    "output": "projects/product/knowledge/archify/system/buildr-system-overview.html",
+    "repository": {
+      "url": "https://github.com/BuildrAI/Buildr.git",
+      "revision": "d165161d636b72d8371983ba401505897bfb5d5f",
+      "link_mode": "local-only"
+    }
   },
   "components": [
-    { "id": "humanAgent", "type": "external", "label": "人和智能体", "sublabel": "目标、判断、授权与执行", "pos": [40, 310], "size": [150, 72] },
-    { "id": "buildrWeb", "type": "frontend", "label": "Buildr Web", "sublabel": "React 功能与只读/受控操作", "pos": [250, 145], "size": [180, 76] },
-    { "id": "cli", "type": "frontend", "label": "Buildr CLI", "sublabel": "薄入口与命令适配", "pos": [250, 475], "size": [180, 76] },
-    { "id": "webHost", "type": "backend", "label": "Web Host", "sublabel": "Session、静态托管与路由分发", "pos": [505, 145], "size": [190, 76] },
-    { "id": "bootstrap", "type": "backend", "label": "Bootstrap", "sublabel": "Composition Root + ModuleRegistry", "pos": [505, 475], "size": [190, 76] },
-    { "id": "capabilityModules", "type": "backend", "label": "产品能力模块", "sublabel": "Workspace、Task、Agent Assets、OpenSpec", "pos": [780, 270], "size": [220, 86] },
-    { "id": "supportModules", "type": "backend", "label": "支撑能力模块", "sublabel": "测试、安装、诊断与文章", "pos": [780, 455], "size": [220, 86] },
-    { "id": "infrastructure", "type": "cloud", "label": "通用基础设施", "sublabel": "filesystem / Git / process / network", "pos": [530, 650], "size": [220, 76] },
-    { "id": "workspaceState", "type": "database", "label": "Workspace 源资产", "sublabel": "YAML、Markdown、OpenSpec", "pos": [1080, 155], "size": [190, 76] },
-    { "id": "taskState", "type": "database", "label": "Task SQLite", "sublabel": "Task、关系与专业结果", "pos": [1080, 345], "size": [190, 76] },
-    { "id": "agentRuntime", "type": "external", "label": "Agent runtime 投射", "sublabel": ".agents / receipts", "pos": [1080, 535], "size": [190, 76] }
-  ],
-  "boundaries": [
-    { "kind": "region", "label": "Buildr 后端 Service", "wraps": ["webHost", "bootstrap", "capabilityModules", "supportModules", "infrastructure", "workspaceState", "taskState", "agentRuntime"] }
+    {
+      "id": "development",
+      "type": "frontend",
+      "label": "Buildr Development",
+      "sublabel": "工程现场 · 网页嵌入模块",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        225,
+        76
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr-web/src/features/harness-ui/ConversationWorkspace.tsx",
+          "line": 1,
+          "end_line": 25
+        }
+      ]
+    },
+    {
+      "id": "standalone",
+      "type": "frontend",
+      "label": "Buildr Harness",
+      "sublabel": "独立 CLI · 启动器",
+      "pos": [
+        40,
+        300
+      ],
+      "size": [
+        225,
+        76
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr-harness/src/cli.ts",
+          "line": 1,
+          "end_line": 25
+        }
+      ]
+    },
+    {
+      "id": "sharedUi",
+      "type": "frontend",
+      "label": "完整唯一 Harness Web",
+      "sublabel": "目录 · 对话 · 设置 · 执行交互",
+      "pos": [
+        380,
+        160
+      ],
+      "size": [
+        225,
+        76
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr-harness-web/src/HarnessApp.tsx",
+          "line": 1,
+          "end_line": 25
+        }
+      ]
+    },
+    {
+      "id": "business",
+      "type": "backend",
+      "label": "Development 工程业务",
+      "sublabel": "工作空间 · 任务 · 知识 · 代码",
+      "pos": [
+        720,
+        40
+      ],
+      "size": [
+        225,
+        76
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/src/modules/agent-service/module.ts",
+          "line": 1,
+          "end_line": 25
+        }
+      ]
+    },
+    {
+      "id": "assets",
+      "type": "database",
+      "label": "工程源资产与任务库",
+      "sublabel": "登记 / Markdown / SQLite",
+      "pos": [
+        1060,
+        40
+      ],
+      "size": [
+        225,
+        76
+      ],
+      "sources": [
+        {
+          "path": "projects/product/knowledge/code-map/system-services-assets.md",
+          "line": 1,
+          "end_line": 25
+        }
+      ]
+    },
+    {
+      "id": "core",
+      "type": "backend",
+      "label": "Buildr Harness 执行核心",
+      "sublabel": "原生接入 · 对话 · 执行恢复",
+      "pos": [
+        720,
+        280
+      ],
+      "size": [
+        225,
+        76
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr-harness/src/application/agent-service.ts",
+          "line": 1,
+          "end_line": 25
+        }
+      ]
+    },
+    {
+      "id": "native",
+      "type": "external",
+      "label": "厂家原生执行程序",
+      "sublabel": "按适配器能力执行 · 非自研循环",
+      "pos": [
+        1060,
+        280
+      ],
+      "size": [
+        225,
+        76
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr-harness/src/executors/index.ts",
+          "line": 1,
+          "end_line": 25
+        }
+      ]
+    },
+    {
+      "id": "privateData",
+      "type": "database",
+      "label": "同配置域的一份私有资料",
+      "sublabel": "账号 · 对话库 · 页面会话",
+      "pos": [
+        720,
+        500
+      ],
+      "size": [
+        225,
+        76
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr-harness/src/persistence/conversation-repository.ts",
+          "line": 1,
+          "end_line": 25
+        }
+      ]
+    }
   ],
   "connections": [
-    { "id": "humanWeb", "from": "humanAgent", "to": "buildrWeb", "label": "查看与受控操作", "variant": "emphasis" },
-    { "id": "humanCli", "from": "humanAgent", "to": "cli", "label": "目标与命令" },
-    { "id": "webHttp", "from": "buildrWeb", "to": "webHost", "label": "loopback HTTP + Session", "labelDy": 69 },
-    { "id": "cliBootstrap", "from": "cli", "to": "bootstrap", "label": "命令贡献分发", "variant": "emphasis" },
-    { "id": "hostBootstrap", "from": "webHost", "to": "bootstrap", "label": "HTTP contributions", "labelDy": 24 },
-    { "id": "bootstrapCapabilities", "from": "bootstrap", "to": "capabilityModules", "label": "具名能力与一次性绑定", "variant": "emphasis", "labelDx": 30 },
-    { "id": "bootstrapSupport", "from": "bootstrap", "to": "supportModules", "label": "具名能力", "labelDy": 56 },
-    { "id": "bootstrapInfra", "from": "bootstrap", "to": "infrastructure", "label": "装配通用技术机制", "fromSide": "bottom", "toSide": "top" },
-    { "id": "sourceAssets", "from": "capabilityModules", "to": "workspaceState", "label": "源资产读写" },
-    { "id": "taskDatabase", "from": "capabilityModules", "to": "taskState", "label": "同步事务与 CAS", "labelAt": [950, 390] },
-    { "id": "runtimeProjection", "from": "capabilityModules", "to": "agentRuntime", "label": "可重建投射 + receipt", "labelAt": [1010, 560] }
+    {
+      "id": "devUi",
+      "from": "development",
+      "to": "sharedUi",
+      "label": "iframe 嵌套网页",
+      "variant": "emphasis"
+    },
+    {
+      "id": "standaloneUi",
+      "from": "standalone",
+      "to": "sharedUi",
+      "label": "打开完整网页",
+      "variant": "emphasis"
+    },
+    {
+      "id": "devBusiness",
+      "from": "development",
+      "to": "business",
+      "label": "准备工程现场"
+    },
+    {
+      "id": "businessAssets",
+      "from": "business",
+      "to": "assets",
+      "label": "各自权威读写"
+    },
+    {
+      "id": "uiCore",
+      "from": "sharedUi",
+      "to": "core",
+      "label": "认证 HTTP / SSE",
+      "variant": "security"
+    },
+    {
+      "id": "coreNative",
+      "from": "core",
+      "to": "native",
+      "label": "隔离接入与控制",
+      "variant": "emphasis"
+    },
+    {
+      "id": "coreData",
+      "from": "core",
+      "to": "privateData",
+      "label": "唯一维护者"
+    }
   ],
   "cards": [
-    { "dot": "cyan", "title": "依赖方向", "items": ["模块通过具名能力协作", "诊断只取得所需读取能力"] },
-    { "dot": "emerald", "title": "状态责任", "items": ["工作空间维护项目与服务登记", "任务和专业结果写入 SQLite"] },
-    { "dot": "orange", "title": "工程边界", "items": ["工程检查位于 tools/verification", "生成类型和测试库输出到 build", "前端构建与托管保留 web-dist"] }
+    {
+      "dot": "cyan",
+      "title": "两个产品，清晰分层",
+      "items": [
+        "Harness 独立负责执行与完整网页",
+        "Development 准备工程现场和上下文",
+        "内嵌与专注切换保持同一 iframe"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "源码与发行边界",
+      "items": [
+        "核心与 CLI 合并为 buildr-harness",
+        "完整网页归 buildr-harness-web，独立 UI 包退役",
+        "Development 的 harness-ui 只拥有工程集成"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "兼容与验证边界",
+      "items": [
+        "包名变化不迁移已有账号和对话数据根",
+        "页面消息核对 origin、窗口与请求身份",
+        "本机验收不等于公开发布或 Windows 实测"
+      ]
+    }
   ]
 }

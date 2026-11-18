@@ -1,0 +1,174 @@
+import { createHash } from 'node:crypto';
+import { AGENT_SERVICE_HTTP_SCHEMAS as schemas } from './agent-service-http-contracts.ts';
+import { PROGRAMMATIC_BASE as base, PROGRAMMATIC_OPERATIONS } from './programmatic-operations.ts';
+
+const previewTokenMapping = 'send 的 previewToken 取自 prepare-send 返回的 token 字段：previewToken = prepareResponse.token；expectedRevision = prepareResponse.revision。prepare-send 不返回名为 previewToken 的字段。';
+const DOCUMENTED_OPERATION_IDS = ['discover', 'events', 'source-events', ...PROGRAMMATIC_OPERATIONS.flatMap(item => [item.id,'source-'+item.id])];
+
+export function programmaticOpenApi(version: string) {
+  const paths: Record<string, any> = {};
+  const error = { type: 'object', required: ['error'], properties: { error: { type: 'object', required: ['code', 'message'], properties: { code: { type: 'string' }, message: { type: 'string' } } } } };
+  const responses = (schema: unknown, accepted = false) => Object.fromEntries([
+    [accepted ? '202' : '200', { description: accepted ? '已受理；使用返回标识观察，不等于工作完成' : '当前结果', content: { 'application/json': { schema } } }],
+    ...['400', '401', '403', '404', '409', '413', '415', '503'].map(code => [code, { description: ({ '400': '参数非法', '401': '无有效凭据或已撤销', '403': '越权或来源不允许', '404': '对象或接口不存在', '409': '修订、身份或请求内容冲突', '413': '请求过大', '415': '需要application/json', '503': '服务未就绪或结果待核对；不盲目重发' } as Record<string, string>)[code], content: { 'application/json': { schema: error } } }]),
+  ]);
+  const discovery = { type: 'object', required: ['schemaVersion', 'apiVersion', 'version', 'buildId', 'status', 'serviceId', 'contractVersion', 'apiUrl', 'capabilities', 'workspaces', 'connections', 'models'], properties: { schemaVersion: { const: 'buildr.programmatic-discovery/v1' }, apiVersion: { const: '1' }, version: { type: 'string' }, buildId: { type: 'string', description: '当前运行的构建标识；开发版取启动器buildId，其他安装取产品构建身份' }, status: { const: 'ready' }, serviceId: { type: 'string' }, contractVersion: { type: 'string', description: '实际API契约内容摘要，可用于文档缓存失效判断；不是对话修订，也不包含buildId' }, operationsUrl: { type: 'string' }, apiUrl: { type: 'string' }, discoveryUrl: { type: 'string' }, documentationUrl: { type: 'string' }, openapiUrl: { type: 'string' }, exampleUrl: { type: 'string' }, credential: { type: 'object' }, capabilities: { type: 'array', items: { type: 'object' } }, workspaces: { type: 'array', items: { type: 'object', required: ['id', 'name'], properties: { id: { type: 'string' }, name: { type: 'string' } } } }, connections: { type: 'array', items: { type: 'object' } }, models: { type: 'array', items: { type: 'object' } } } };
+  paths[base] = { get: { operationId: 'discover', summary: '当前实例与凭据可访问能力；不返回账号秘密', responses: responses(discovery) } };
+  for (const operation of PROGRAMMATIC_OPERATIONS) {
+    const route = `${base}/workspaces/:workspaceId/conversations${operation.path}`.replace(/:([A-Za-z]+)/g, '{$1}');
+    const input: any = structuredClone(schemas[operation.input]);
+    const output: any = structuredClone(schemas[operation.output]);
+    // Source schemas share leaf objects. Clone the annotated leaf, not its aliases.
+    if (operation.id === 'prepare-send') output.properties.token = { ...output.properties.token, description: previewTokenMapping };
+    if (operation.id === 'send') input.properties.previewToken = { ...input.properties.previewToken, description: previewTokenMapping };
+    if (input.properties?.cwd) delete input.properties.cwd;
+    if (input.properties?.clientRequestId) input.properties.clientRequestId = { type: 'string', format: 'uuid', pattern: '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$' };
+    if (input.properties?.permissionMode) input.properties.permissionMode = operation.id === 'messages'
+      ? { enum: ['default', 'full-access'], description: '省略时沿用该对话最近一轮执行的 permissionMode；没有最近轮次时默认 default。full-access 需凭据开启“允许全部授权执行”（allowFullAccess），否则返回 403。' }
+      : { enum: ['default', 'full-access'], default: 'default', description: '省略默认 default。full-access 需凭据开启“允许全部授权执行”（allowFullAccess），否则返回 403；连接须支持该模式。' };
+    const parameters: any[] = [...route.matchAll(/\{([^}]+)\}/g)].map(match => ({ name: match[1], in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }));
+    for (const name of operation.query ?? []) parameters.push({ name, in: 'query', schema: ['before', 'limit'].includes(name) ? { type: 'integer', minimum: name === 'limit' ? 1 : 0 } : name === 'hidden' ? { type: 'boolean' } : { type: 'string' } });
+    (paths[route] ??= {})[operation.method.toLowerCase()] = { operationId: operation.id, summary: operation.summary, description: `需要${operation.scope}权限及路径工作空间授权。${operation.id === 'run-final-reply' ? '只返回指定 run 的最终 assistant 回复全文，不返回完整对话；run 不存在时返回404 agent_run_missing。' : ''}${['prepare-send', 'send'].includes(operation.id) ? previewTokenMapping : ''}${input.properties?.permissionMode ? (operation.id === 'messages' ? 'permissionMode 省略时沿用该对话最近一轮执行的模式；显式 full-access 需凭据开启允许全部授权执行，否则403。' : 'permissionMode 省略默认 default；full-access 需凭据开启允许全部授权执行，否则403。') : ''}${operation.id === 'reply' ? 'approval卡片改需approve权限；问题需answer。' : ''}`, 'x-buildr-scope': operation.scope, parameters, ...(operation.method === 'POST' ? { requestBody: { required: true, content: { 'application/json': { schema: input } } } } : {}), responses: responses(output, ['start', 'send', 'supplement', 'messages'].includes(operation.id)) };
+  }
+  for (const [suffix, type, description] of [['help', 'text/markdown', '中文API帮助'], ['openapi.json', 'application/json', 'OpenAPI 3.1'], ['example.py', 'text/x-python', '可运行发任务/轮询/读结果脚本']]) paths[`${base}/${suffix}`] = { get: { operationId: suffix, summary: description, responses: { '200': { description, content: { [type]: { schema: { type: 'string' } } } }, '401': { description: '需要有效Bearer凭据' } } } };
+  paths[`${base}/workspaces/{workspaceId}/events`] = { get: { operationId: 'events', summary: '分页补读本凭据接管对话的回推事件，含未投递；始终返回可续读游标', description: '需要read权限及路径工作空间授权。after传上一页nextCursor（非负整数序号），非法游标返回400；limit默认50、最大200；事件按sequence升序返回，包含undelivered。事件类型包括decision.requested、run.progress、run.completed、run.failed、run.stopped、run.stalled和events_dropped。每条业务事件含当前凭据的scopes与allowFullAccess；终态事件含完整finalReply与finalReplyUrl；decision.requested含完整问题/审批卡及回答身份，description始终为字符串，无说明时为空字符串；run.progress只含已写完（status=completed）的最新中间消息、运行时长和已完成工具数，正文为空或仍在写入的消息不产生该事件也不占用5分钟窗口；run.stalled仅覆盖当前对话仍存在的starting/running/tools-active，单个长工具运行且没有新记录同样计入空闲，观察心跳与工具正文重新投射不算新记录，计时锚定最后真实记录时间，缺少最后活动时间不触发，含连续空闲时长、最后活动时间和权限快照，同一空闲期只推一次且跨重启去重。发现入口、操作目录、单操作文档与help返回当前buildId；contractVersion仍只摘要API契约内容。nextCursor始终为本页最后一条事件的sequence；空页返回请求中的after；未传after且没有事件时为null。hasMore表示以after=nextCursor再次读取时是否还有更多事件。轮询方应保存nextCursor并用after=nextCursor继续补查。回推总开关停用只停止对外投递，已开启事件仍写入持久流并可补查；中间进度或停滞提醒单独关闭时对应事件不生成。投递与补读共用同一持久事件流；已记录或已送达的历史事件正文保持首次记录原样，不因升级、激活或重启补写字段。', 'x-buildr-scope': 'read', parameters: [{ name: 'workspaceId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }, { name: 'after', in: 'query', schema: { type: 'string', pattern: '^\\d+$' } }, { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200 } }], responses: responses(structuredClone(schemas.pushbackEvents)) } };
+  paths[base + '/operations'] = { get: { operationId: 'operation-index', summary: '轻量操作目录，不含模型和完整Schema', responses: responses({ type: 'object' }) } };
+  paths[base + '/operations/{operationId}'] = { get: { operationId: 'operation-document', summary: '单操作自包含OpenAPI，仅含选中操作与依赖模型', parameters: [{ name: 'operationId', in: 'path', required: true, schema: { type: 'string', enum: DOCUMENTED_OPERATION_IDS } }], responses: responses({ type: 'object' }) } };
+  for(const [route,item] of Object.entries({...paths})){
+    if(!route.startsWith(base+'/workspaces/{workspaceId}/'))continue;
+    const sourceRoute=route.replace('/workspaces/{workspaceId}/','/sources/{sourceId}/scopes/{scopeId}/');
+    const copy=structuredClone(item);
+    for(const operation of Object.values(copy) as any[]){
+      operation.operationId='source-'+operation.operationId;
+      operation.parameters=(operation.parameters??[]).flatMap((parameter:any)=>parameter.in==='path'&&parameter.name==='workspaceId'?
+        [{name:'sourceId',in:'path',required:true,schema:{type:'string'}},{name:'scopeId',in:'path',required:true,schema:{type:'string'}}]:[parameter]);
+      operation.description='需要准确来源化 executionScopes 授权；目录仅接受已登记引用，不接受路径。'+(operation.description??'').replace(/^需要[^。]+权限及路径工作空间授权。/u,'');
+    }
+    paths[sourceRoute]=copy;
+  }
+  return shareSchemas({ openapi: '3.1.0', info: { title: 'Buildr 本机程序接入 API', version, description: '只监听本机，复用现有Agent Service；轮询基线。任何操作超时先查询原提交或观察原执行，禁止另造标识盲目重发。访问令牌不是操作系统沙箱，也不自动授予审批、提交或推送权限。' }, servers: [{ url: '/' }], security: [{ programmaticBearer: [] }], components: { securitySchemes: { programmaticBearer: { type: 'http', scheme: 'bearer', bearerFormat: 'Buildr programmatic access token' } } }, paths });
+}
+
+/** Walk schema positions only: examples/defaults/enums are data, not schemas. */
+function shareSchemas(document: any) {
+  const models: Record<string, any> = {}, known = new Map<string, string>();
+  const sharedResponses: Record<string, any> = {};
+  const maps = new Set(['properties', 'patternProperties', '$defs', 'dependentSchemas']);
+  const arrays = new Set(['allOf', 'anyOf', 'oneOf', 'prefixItems']);
+  const singles = new Set(['items', 'additionalProperties', 'unevaluatedProperties', 'additionalItems', 'unevaluatedItems', 'contains', 'not', 'if', 'then', 'else', 'propertyNames']);
+  function schema(value: any): any {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+    const result: Record<string, any> = {};
+    for (const [key, child] of Object.entries(value)) {
+      // Embedded resource IDs would change the base of our document-local refs.
+      if (key === '$id' || key === '$schema') continue;
+      result[key] = maps.has(key) && child && typeof child === 'object'
+        ? Object.fromEntries(Object.entries(child).map(([name, item]) => [name, schema(item)]))
+        : arrays.has(key) && Array.isArray(child) ? child.map(schema)
+          : singles.has(key) ? schema(child) : child;
+    }
+    const identity = JSON.stringify(result);
+    if (Buffer.byteLength(identity) < 160) return result;
+    let name = known.get(identity);
+    if (!name) {
+      name = 'Schema_' + createHash('sha256').update(identity).digest('hex').slice(0, 16);
+      if (models[name] && JSON.stringify(models[name]) !== identity) throw new Error('OpenAPI schema identity collision');
+      known.set(identity, name); models[name] = result;
+    }
+    return { $ref: '#/components/schemas/' + name };
+  }
+  for (const item of Object.values(document.paths) as any[]) {
+    for (const operation of Object.values(item) as any[]) {
+      for (const parameter of operation.parameters ?? []) if (parameter.schema) parameter.schema = schema(parameter.schema);
+      for (const body of [operation.requestBody, ...Object.values(operation.responses ?? {})] as any[]) {
+        for (const media of Object.values(body?.content ?? {}) as any[]) if (media.schema) media.schema = schema(media.schema);
+      }
+      for (const [status, response] of Object.entries(operation.responses ?? {})) {
+        if (/^2\d\d$/u.test(status)) continue;
+        const identity = JSON.stringify(response);
+        const name = 'Response_' + createHash('sha256').update(identity).digest('hex').slice(0, 16);
+        if (sharedResponses[name] && JSON.stringify(sharedResponses[name]) !== identity) throw new Error('OpenAPI response identity collision');
+        sharedResponses[name] = response;
+        operation.responses[status] = {$ref: '#/components/responses/' + name};
+      }
+    }
+  }
+  const successes = new Map<string, number>();
+  for (const item of Object.values(document.paths) as any[]) for (const operation of Object.values(item) as any[]) {
+    for (const [status, response] of Object.entries(operation.responses ?? {})) if (/^2\d\d$/u.test(status)) {
+      const key = JSON.stringify(response);
+      successes.set(key, (successes.get(key) ?? 0) + 1);
+    }
+  }
+  for (const item of Object.values(document.paths) as any[]) for (const operation of Object.values(item) as any[]) {
+    for (const [status, response] of Object.entries(operation.responses ?? {})) if (/^2\d\d$/u.test(status)) {
+      const key = JSON.stringify(response);
+      if ((successes.get(key) ?? 0) < 2) continue;
+      const name = 'Response_' + createHash('sha256').update(key).digest('hex').slice(0, 16);
+      if (sharedResponses[name] && JSON.stringify(sharedResponses[name]) !== key) throw new Error('OpenAPI response identity collision');
+      sharedResponses[name] = response;
+      operation.responses[status] = {$ref: '#/components/responses/' + name};
+    }
+  }
+  document.components.schemas = models;
+  document.components.responses = sharedResponses;
+  return document;
+}
+
+export function programmaticContractVersion(document: any): string {
+  return 'sha256-' + createHash('sha256').update(JSON.stringify(document)).digest('hex');
+}
+
+function describedOperations(document: any) {
+  const ids = new Set(DOCUMENTED_OPERATION_IDS);
+  return Object.entries(document.paths).flatMap(([path, item]) => Object.entries(item as any)
+    .filter(([, operation]: [string, any]) => ids.has(operation.operationId))
+    .map(([method, operation]: [string, any]) => ({
+      id: operation.operationId as string, method: method.toUpperCase(), path,
+      scope: operation['x-buildr-scope'] ?? 'read', summary: operation.summary as string,
+      documentationUrl: `${base}/operations/${operation.operationId}`,
+    })));
+}
+
+export function programmaticOperationIndex(version: string, buildId?: string | null) {
+  const document = programmaticOpenApi(version);
+  const operations = describedOperations(document);
+  return {
+    schemaVersion: 'buildr.programmatic-operation-index/v1', apiVersion: '1', version,
+    ...(buildId ? { buildId } : {}),
+    contractVersion: programmaticContractVersion(document),
+    documentationUrl: base + '/help', openapiUrl: base + '/openapi.json',
+    // Keep the existing lightweight operation list stable. Source routes are
+    // explicit aliases, not a second copy of every description and document URL.
+    operations: operations.filter(value => !value.id.startsWith('source-')),
+    sourceOperations: operations.filter(value => value.id.startsWith('source-'))
+      .map(value => ({id: value.id, aliasOf: value.id.slice('source-'.length), path: value.path})),
+  };
+}
+
+/** Self-contained OpenAPI fragment: all transitive local refs are included. */
+export function programmaticOperationDocument(version: string, id: string, buildId?: string | null) {
+  const document = programmaticOpenApi(version);
+  const entry = describedOperations(document).find(item => item.id === id);
+  if (!entry) return undefined;
+  const operation = document.paths[entry.path][entry.method.toLowerCase()];
+  const schemas: Record<string, any> = {}, responses: Record<string, any> = {};
+  function include(value: any): void {
+    if (!value || typeof value !== 'object') return;
+    if (typeof value.$ref === 'string') {
+      const match = value.$ref.match(/^#\/components\/(schemas|responses)\/([^/]+)$/u);
+      if (!match || !Object.hasOwn(document.components[match[1]], match[2])) throw new Error('Unresolved OpenAPI reference');
+      const destination = match[1] === 'schemas' ? schemas : responses, name = match[2];
+      if (!Object.hasOwn(destination, name)) { destination[name] = document.components[match[1]][name]; include(destination[name]); }
+    }
+    for (const child of Object.values(value)) include(child);
+  }
+  include(operation);
+  return {
+    ...document, 'x-buildr-contract-version': programmaticContractVersion(document),
+    ...(buildId ? { 'x-buildr-build-id': buildId } : {}),
+    'x-buildr-operation-id': id,
+    paths: { [entry.path]: { [entry.method.toLowerCase()]: operation } },
+    components: { ...document.components, schemas, responses },
+  };
+}

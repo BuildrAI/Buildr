@@ -21,6 +21,7 @@ const runtimeEnv: any = {
   BUILDR_APP_DATA_DIR: appData,
   BUILDR_PRODUCT_DATA_DIR: appData,
   npm_config_cache: npmCache,
+  NPM_CONFIG_CACHE: npmCache,
   npm_config_update_notifier: 'false',
 };
 let web: any = null;

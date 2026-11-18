@@ -8,7 +8,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { stopAgentProcess } from '@buildr-ai/buildr-harness';
 
 import { createUpdateLauncher } from '../../src/modules/installation/application/update-launcher.ts';
 import { createRuntime } from '../helpers/runtime-harness.ts';
@@ -116,7 +116,9 @@ test.beforeEach((t: any) => {
       }
       // Web detachment deliberately retains its isolated backend. The fixture
       // owns this unique profile and must confirm backend release before purge.
-      try { await stopAgentProcess({dataRoot:appData}); } catch(error) { failures.push(error); }
+      if (fs.existsSync(path.join(appData, 'agent-service'))) {
+        try { await stopAgentProcess({dataRoot:appData}); } catch(error) { failures.push(error); }
+      }
       if (failures.length) throw new AggregateError(failures, `Fixture cleanup failed at ${appData}.`);
       fs.rmSync(appData, { recursive: true, force: true });
     } finally {

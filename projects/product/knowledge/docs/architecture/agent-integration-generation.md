@@ -6,7 +6,7 @@
 2. 人从现有模型（Model）目录选择来源。请求固定账号、模型、账号身份及观察版本，经公共客户端（Client）交给独立执行后台（Execution Backend）的统一模型能力执行一次，不提供工具，不创建持久对话。
 3. 模型返回后，业务核对结构、任务尾注、变更、规则与材料版本；界面再核对草稿版本，仍适用才回填。
 
-未选择可用模型时只禁用生成，仍可手写说明并提交。失败不切换账号、不自动重发；取消与 60 秒总预算只影响本次请求，迟到结果不会覆盖草稿。请求将明确选择的 `reasoningEffort` 和 `serviceTier` 传给统一模型调用，推理强度必须受当前模型及服务档位支持；不支持时明确失败，不静默改档。未指定推理强度时，全部选项具有已知排序的模型采用最低档，否则沿用模型默认，不改账号设置。
+代码模块通过 `createCodeModule({generateModel})` 接受单次生成端口，不导入 Harness 接入模块；默认独立产品在装配层将该端口接到公共 Harness 客户端。不装配模型端口时，仅生成请求返回 `code_generation_unavailable`，代码读取与手写提交不依赖 Harness。未选择可用模型时只禁用生成，仍可手写说明并提交。失败不切换账号、不自动重发；取消与 60 秒总预算只影响本次请求，迟到结果不会覆盖草稿。请求将明确选择的 `reasoningEffort` 和 `serviceTier` 传给统一模型调用，推理强度必须受当前模型及服务档位支持；不支持时明确失败，不静默改档。未指定推理强度时，全部选项具有已知排序的模型采用最低档，否则沿用模型默认，不改账号设置。
 
 ## 公共选择界面与独立记忆
 
@@ -20,12 +20,12 @@
 
 - [有界材料与业务校验](../../../services/buildr/src/modules/code/application/code-commit-message-application.ts)：准备材料并在回填前重读真实来源。
 - [生成请求状态与取消](../../../services/buildr/src/modules/code/application/code-generation.ts)：短期内存请求，按工作空间（Workspace）查询和取消，保留超时与失败。
-- [进程接入](../../../services/buildr/src/modules/agent-service/module.ts)与[公共客户端](../../../services/buildr-agent/src/process/client.ts)：跨进程传递有界请求及取消，宿主断连取消其拥有的单次调用，不取消持久对话。
-- [首次准备](../../../services/buildr-agent/src/process/runtime-preparation.ts)：工作线程执行原字节校验与物化，保留存储锁；普通调用只合并在途准备，不缓存验证结论。有取消信号的宿主独立持有准备，协作取消后等线程清理并退出。启动锁覆盖准备到后台确认的整个窗口，避免将冷启动误判成旧版宿主。
+- [进程接入](../../../services/buildr/src/modules/agent-service/module.ts)与[公共客户端](../../../services/buildr-harness/src/process/client.ts)：跨进程传递有界请求及取消，宿主断连取消其拥有的单次调用，不取消持久对话。
+- [首次准备](../../../services/buildr-harness/src/process/runtime-preparation.ts)：工作线程执行原字节校验与物化，保留存储锁；普通调用只合并在途准备，不缓存验证结论。有取消信号的宿主独立持有准备，协作取消后等线程清理并退出。启动锁覆盖准备到后台确认的整个窗口，避免将冷启动误判成旧版宿主。
 - [网页启动](../../../services/buildr/src/bootstrap/runtime.ts)：准备过程不阻塞网页事件循环；正常启动先保全运行单元并确认接入，再交付就绪回执，避免安装更新立即替换尚在读取的包目录。准备失败时保留诊断与其他网页能力，升级保护不会将失败当作已隔离。网页关闭取消未完成初始化并等待释放，不在关闭后迟到启动后台。
-- [统一模型调用](../../../services/buildr-agent/src/model-access/application.ts)：复用现有账号、目录、版本检查和协议转换，释放本次调用绑定。
+- [统一模型调用](../../../services/buildr-harness/src/model-access/application.ts)：复用现有账号、目录、版本检查和协议转换，释放本次调用绑定。
 - [界面草稿保护](../../../services/buildr-web/src/features/code/source-control-actions.ts)：按来源保持草稿，隔离迟到结果与切换页面。
 - [生成入口](../../../services/buildr-web/src/features/code/components/SourceControlCommitPanel.tsx)：独立读取模型目录，选模型、生成、取消及手写提交。
 - [公共模型选择界面](../../../services/buildr-web/src/components/ModelPicker.tsx)与[共享映射](../../../services/buildr-web/src/lib/model-picker.ts)：搜索、来源分组、强度及档位交互，不持有业务上下文或偏好。
 - [执行模型选择](../../../services/buildr-web/src/components/ExecutionModelSelect.tsx)与[执行模型偏好映射](../../../services/buildr-web/src/lib/execution-model.ts)：提交场景独立选择与按账号身份隔离的强度、档位记忆。
-- [对话适配](../../../services/buildr-web/src/features/agent-conversations/ConversationOptions.tsx)：保留对话上下文用量及原有偏好，将模型操作交给同一公共界面。
+- [对话适配](../../../services/buildr-harness-web/src/features/agent-conversations/ConversationOptions.tsx)：保留对话上下文用量及原有偏好，将模型操作交给同一公共界面。

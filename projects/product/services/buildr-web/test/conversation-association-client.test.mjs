@@ -34,7 +34,7 @@ registerHooks({
   },
 });
 
-const {linkedTaskItems}=await import('../src/features/agent-conversations/conversation-association-client.ts');
+const {linkedTaskItems}=await import('../src/features/harness-ui/conversation-association-client.ts');
 
 test('已关联任务按工作空间批量读取标题，不逐条读取完整详情',async()=>{
   calls.length=0;

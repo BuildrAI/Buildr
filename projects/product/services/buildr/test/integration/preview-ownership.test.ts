@@ -16,9 +16,9 @@ import { previewCandidateSourceDigest } from '../../src/web/application/preview-
 // provides an already prepared fake package plus a matching freshness marker so
 // preparation is reused (no real build) and the worker can report its digest.
 function seedPreparedCandidate(productRoot: string): void {
-  const agentPackage = path.join(productRoot, 'node_modules', '@buildr-ai', 'buildr-agent');
+  const agentPackage = path.join(productRoot, 'node_modules', '@buildr-ai', 'buildr-harness');
   fs.mkdirSync(path.join(agentPackage, 'build', 'process'), { recursive: true });
-  fs.writeFileSync(path.join(agentPackage, 'package.json'), '{"name":"@buildr-ai/buildr-agent","version":"0.0.0-fixture"}\n');
+  fs.writeFileSync(path.join(agentPackage, 'package.json'), '{"name":"@buildr-ai/buildr-harness","version":"0.0.0-fixture"}\n');
   fs.writeFileSync(path.join(agentPackage, 'build', 'index.js'), '// fixture public entry\n');
   fs.writeFileSync(path.join(agentPackage, 'build', 'process', 'entry.js'), '// fixture process entry\n');
   fs.mkdirSync(path.join(productRoot, 'web-dist'), { recursive: true });

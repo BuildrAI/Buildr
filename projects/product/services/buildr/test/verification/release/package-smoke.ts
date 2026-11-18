@@ -34,7 +34,7 @@ export async function runPackageSmoke(options: { artifactDirectory: string; outp
   const appData = path.join(root, 'app-data'), prefix = path.join(root, 'prefix');
   const exact = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: process.env, requireNpm: true, minimumVersion: '24.15.0' });
   const env = { ...exact.env, BUILDR_APP_DATA_DIR: appData, BUILDR_PRODUCT_DATA_DIR: appData,
-    npm_config_cache: path.join(root, 'npm-cache'), npm_config_update_notifier: 'false', BUILDR_LOCAL_APP_NO_OPEN: '1' };
+    npm_config_cache: path.join(root, 'npm-cache'), NPM_CONFIG_CACHE: path.join(root, 'npm-cache'), npm_config_update_notifier: 'false', BUILDR_LOCAL_APP_NO_OPEN: '1' };
   const phases: any[] = [];
   const report: any = { schemaVersion: 'buildr.package-smoke/v1', qualification: 'diagnostic-only',
     platform: process.platform, node: process.versions.node, verificationSource: process.env.GITHUB_SHA ?? null, status: 'failed', phases };

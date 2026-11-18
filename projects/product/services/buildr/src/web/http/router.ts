@@ -1,3 +1,4 @@
+import {harnessWebRoot} from '@buildr-ai/buildr-harness';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
@@ -51,6 +52,7 @@ export function createLocalWorkspaceRequestRouter({
   submitTaskRead,
   submitTaskWrite,
   staticRoot,
+  developmentWebs = () => null,
 }: any) {
   const validateRequest = (id: any, value: any) => validateBuildrWebHttp(buildrWebOperation(id).requestSchemaId, value, id);
   const workspaceAppRoute = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/codex|/code(?:/(?:explorer|source-control))?|/overview|/workspace-overview|/connections|/connection-skills|/settings|/knowledge/(?:project|service)/[A-Za-z0-9][A-Za-z0-9._-]*|/skills(?:/[A-Za-z0-9%][A-Za-z0-9%._-]*)?|/repositories(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?|/articles(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/${taskIdPattern})?(?:/edit)?)?|/tasks(?:/${taskIdPattern}(?:/prototypes|/document|/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${taskIdPattern})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?)?/?$`);
@@ -63,6 +65,10 @@ export function createLocalWorkspaceRequestRouter({
       return writeHead.apply(this, args);
     };
     const trustedOrigin = origin();
+    if (!trustedOrigin) {
+      jsonResponse(response, 503, { error: { code: 'app_starting', message: 'Buildr Web 正在启动，请稍后重试。' } });
+      return;
+    }
     assertRequestHost(request, trustedOrigin);
     const requestUrl = new URL(request.url || '/', trustedOrigin);
     const pathname = requestUrl.pathname;
@@ -70,12 +76,43 @@ export function createLocalWorkspaceRequestRouter({
       jsonResponse(response, 503, { error: { code: 'app_shutting_down', message: 'Buildr 正在退出。' } });
       return;
     }
+    if(request.method==='GET'&&pathname.startsWith('/harness/')){
+      const cookie=String(request.headers.cookie||'').split(';').map((value:string)=>value.trim()).find((value:string)=>value.startsWith('buildr-frame='));
+      if(cookie?.slice('buildr-frame='.length)!==sessionToken)throw Object.assign(new Error('Harness 页面会话已失效。'),{code:'session_forbidden',status:403});
+      assertReadRequest({...request,headers:{...request.headers,'x-buildr-session':sessionToken}},trustedOrigin,sessionToken);
+      const development = developmentWebs();
+      if (development) {
+        response.setHeader('set-cookie', imageSessionCookie(sessionToken));
+        await development.harness.handle(request, response, {document: pathname === '/harness/' || pathname === '/harness/index.html' || pathname === '/harness/mermaid-renderer.html',
+          entry: pathname.endsWith('/mermaid-renderer.html') ? 'mermaid-renderer.html' : 'index.html', frame: true});
+        return;
+      }
+      if(pathname==='/harness/'||pathname==='/harness/index.html'){
+        const html=(await readFile(path.join(harnessWebRoot(),'index.html'),'utf8')).replace('</head>',`<meta name="buildr-session" content="${sessionToken}"><meta name="buildr-web-profile" content="development-harness"></head>`);
+        response.setHeader('set-cookie',imageSessionCookie(sessionToken));
+        response.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','content-security-policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'",'x-frame-options':'SAMEORIGIN'});response.end(html);return;
+      }
+      if(await serveDistAsset(response,pathname.slice('/harness'.length),harnessWebRoot(),request))return;
+      jsonResponse(response,404,{error:{code:'harness_asset_missing',message:'Harness 网页资源不存在。'}});return;
+    }
     if (request.method === 'GET' && (pathname === '/' || workspaceAppRoute.test(pathname))) {
-      response.setHeader('set-cookie', imageSessionCookie(sessionToken));
+      response.setHeader('set-cookie', [imageSessionCookie(sessionToken),`buildr-frame=${sessionToken}; Path=/harness/; HttpOnly; SameSite=Strict`]);
+      if (developmentWebs()) { await developmentWebs().web.handle(request, response, {document: true}); return; }
       textResponse(response, 200, injectedIndexHtml(sessionToken, previewIdentity, webProfile, staticRoot), 'text/html; charset=utf-8');
       return;
     }
+    if (request.method === 'GET' && !pathname.startsWith('/api/') && developmentWebs()) {
+      await developmentWebs().web.handle(request, response, {document: pathname === '/mermaid-renderer.html', entry: 'mermaid-renderer.html'}); return;
+    }
     if (request.method === 'GET' && !pathname.startsWith('/api/') && await serveDistAsset(response, pathname, staticRoot, request)) return;
+    if (request.method === 'GET' && pathname === '/api/v1/development/status' && developmentWebs()) {
+      assertReadRequest(request, trustedOrigin, sessionToken);
+      let update: unknown = null;
+      if (process.env.BUILDR_DEV_STATUS_FILE) {
+        try { update = JSON.parse(await readFile(process.env.BUILDR_DEV_STATUS_FILE, 'utf8')); } catch { /* observation may race the next atomic status publish */ }
+      }
+      jsonResponse(response, 200, {mode: 'live', pid: process.pid, hostSnapshot: process.env.BUILDR_DEV_SNAPSHOT_ID ?? null, update}); return;
+    }
     if (request.method === 'GET' && pathname === '/api/v1/health') {
       if (request.headers['x-buildr-instance'] !== healthSecret) {
         jsonResponse(response, 403, { error: { code: 'instance_forbidden', message: 'Buildr instance secret 无效。' } });

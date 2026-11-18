@@ -1,9 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { precompressedAssets } from './tools/precompressed-assets.mjs';
-
 export default defineConfig({
-  plugins: [react(), precompressedAssets()],
+  resolve:{dedupe:['react','react-dom','antd','@ant-design/icons']},
+  plugins: [
+    react(),
+    precompressedAssets(),
+  ],
   build: {
     outDir: '../buildr/web-dist',
     emptyOutDir: true,

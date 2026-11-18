@@ -93,9 +93,19 @@ try {
   run('git', ['remote', 'set-url', 'origin', remote], { cwd: checkout });
   run('git', ['push', '-qu', 'origin', 'main'], { cwd: checkout });
 
+  const hostHome: any = process.env.BUILDR_HOST_HOME || os.homedir();
+  const hostCacache: any = path.join(hostHome, '.npm', '_cacache');
+  const isolatedNpmCache: any = path.join(tempRoot, 'npm-cache');
+  fs.mkdirSync(isolatedNpmCache, { recursive: true });
+  if (process.platform === 'darwin' && fs.existsSync(hostCacache)) {
+    spawnSync('/bin/cp', ['-cR', hostCacache, path.join(isolatedNpmCache, '_cacache')], { stdio: 'ignore', timeout: 30000 });
+  }
   const env: any = {
     ...process.env,
     HOME: tempRoot,
+    npm_config_cache: isolatedNpmCache,
+    NPM_CONFIG_CACHE: isolatedNpmCache,
+    npm_config_update_notifier: 'false',
     BUILDR_CLI_INSTALL_DIR: installBin,
     BUILDR_LAUNCHER_INSTALL_DIR: launcherRoot,
     BUILDR_APP_DATA_DIR: appDataRoot,
@@ -109,12 +119,15 @@ try {
   const pathSentinels: any[] = [path.join(installBin, 'buildr'), path.join(installBin, 'buildr.cmd')];
   for (const sentinel of pathSentinels) fs.writeFileSync(sentinel, `npm-owned sentinel: ${path.basename(sentinel)}\n`);
   const sentinelContents: any = new Map(pathSentinels.map((sentinel: any) => [sentinel, fs.readFileSync(sentinel, 'utf8')]));
-  const copiedAgent = path.join(copiedProduct, 'services/buildr-agent');
-  run(developmentNode, [npmCliForNode(developmentNode), 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: copiedAgent, env });
+  const copiedAgent = path.join(copiedProduct, 'services/buildr-harness');
+  const copiedHarnessWeb = path.join(copiedProduct, 'services/buildr-harness-web');
+  run(developmentNode, [npmCliForNode(developmentNode), 'ci', '--ignore-scripts', '--prefer-offline', '--no-audit', '--no-fund'], { cwd: copiedAgent, env, timeout: 240000 });
+  run(developmentNode, [npmCliForNode(developmentNode), 'ci', '--ignore-scripts', '--prefer-offline', '--no-audit', '--no-fund'], { cwd: copiedHarnessWeb, env, timeout: 240000 });
+  run(developmentNode, [path.join(copiedHarnessWeb, 'tools/build.ts')], { cwd: copiedHarnessWeb, env });
   run(developmentNode, [path.join(copiedAgent, 'tools/build.ts')], { cwd: copiedAgent, env });
-  run(developmentNode, [npmCliForNode(developmentNode), 'ci', '--install-links', '--no-audit', '--no-fund'], { cwd: copiedService, env });
+  run(developmentNode, [npmCliForNode(developmentNode), 'ci', '--install-links', '--prefer-offline', '--no-audit', '--no-fund'], { cwd: copiedService, env, timeout: 240000 });
   const copiedWeb = path.join(copiedProduct, 'services/buildr-web');
-  run(developmentNode, [npmCliForNode(developmentNode), 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: copiedWeb, env });
+  run(developmentNode, [npmCliForNode(developmentNode), 'ci', '--ignore-scripts', '--prefer-offline', '--no-audit', '--no-fund'], { cwd: copiedWeb, env, timeout: 240000 });
   const developmentIdentity: any = JSON.parse(runDevelopment([], {
     env: { ...env, BUILDR_INTERNAL_DEVELOPMENT_CLI_IDENTITY_JSON: '1' },
     capture: true,

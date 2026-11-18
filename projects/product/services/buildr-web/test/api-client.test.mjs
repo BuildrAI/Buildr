@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createApiClient } from '../src/api/client.ts';
+import { LocalSessionAdapter } from '../src/api/LocalSessionAdapter.ts';
 
 test('DELETE without a body still requires the same local write session', async t => {
   const requests = [];
@@ -171,4 +172,31 @@ test('internal HTTP error keeps a safe correlation reference without retrying mu
  t.mock.method(globalThis,'fetch',async()=>{calls++;return new Response(JSON.stringify({error:{code:'internal_error',message:'Buildr Web 处理请求失败。',details:{requestId}}}),{status:500});});
  const client=createApiClient({getWorkspaceId:()=>null,sessionAdapter:{writeHeaders:()=>({})}});
  await assert.rejects(client('/api/v1/app/agent-service/conversations/id/requests/q/reply',{method:'POST',body:'{}'}),error=>error.status===500&&error.message.includes(requestId));assert.equal(calls,1);
+});
+
+test('LocalSessionAdapter refreshes from root entry and synchronizes tokens across instances sharing one document', async t => {
+  const meta = { content: 'token-1', getAttribute(name) { return name === 'content' ? this.content : null; }, setAttribute(name, value) { if (name === 'content') this.content = value; } };
+  const doc = { querySelector(selector) { return selector === 'meta[name="buildr-session"]' ? meta : null; } };
+  const previousWindow = globalThis.window;
+  t.after(() => { if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow; });
+  globalThis.window = { location: { href: 'http://127.0.0.1:1234/workspaces/space-a/overview' } };
+
+  let served = 'token-2';
+  const fetchedUrls = [];
+  t.mock.method(globalThis, 'fetch', async url => {
+    fetchedUrls.push(url);
+    return new Response(`<!doctype html><html><head><meta name="buildr-session" content="${served}" /></head></html>`, { status: 200 });
+  });
+
+  const primary = new LocalSessionAdapter(undefined, doc);
+  const secondary = new LocalSessionAdapter(undefined, doc);
+  assert.equal(await primary.refreshSession(), true);
+  assert.deepEqual(fetchedUrls, ['http://127.0.0.1:1234/']);
+  assert.equal(primary.writeHeaders()['x-buildr-session'], 'token-2');
+  assert.equal(secondary.writeHeaders()['x-buildr-session'], 'token-2');
+
+  served = 'token-3';
+  assert.equal(await secondary.refreshSession(), true);
+  assert.equal(primary.writeHeaders()['x-buildr-session'], 'token-3');
+  assert.equal(secondary.writeHeaders()['x-buildr-session'], 'token-3');
 });

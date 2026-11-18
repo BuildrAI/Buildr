@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from 'antd';
 import { CheckOutlined, CommentOutlined, PlayCircleOutlined, SettingOutlined, StarFilled, StarOutlined, UnorderedListOutlined } from '@ant-design/icons';
-import { useOptionalAgentConversations } from '../../agent-conversations/AgentConversationsContext';
+import { useOptionalAgentConversations } from '../../harness-ui/AgentConversationsContext';
 import { useAppShell } from '../../../app/AppShellContext';
 import { useWorkspacePageTabs } from '../../../app/pageTabs';
 import { WorkspaceStage } from '../../../components/WorkspaceStage';

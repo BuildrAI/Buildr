@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
 import test from 'node:test';
-import { createAgentService as createService } from '@buildr-ai/buildr-agent';
+import { createAgentService as createService } from '@buildr-ai/buildr-harness';
 import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.ts';
 import { taskRecordFixture } from '../helpers/task-record-system-fixture.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
@@ -43,7 +43,14 @@ test('custom provider HTTP configures a BYOK endpoint, discovers candidates and 
   const endpoint = url + '/api/v1/app/agent-service/model-accounts', discoveryEndpoint = url + '/api/v1/app/agent-service/model-custom/discovery';
   const headers = { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' };
   const listed = await (await fetch(endpoint, { headers })).json();
-  assert.deepEqual(listed.providers.find((provider: any) => provider.id === 'custom'), { id: 'custom', label: '自定义供应商', custom: true });
+  assert.deepEqual(listed.providers.find((provider: any) => provider.id === 'custom'), {
+    id: 'custom',
+    label: '自定义供应商',
+    sharing: { kind: 'gateway' },
+    inference: 'gateway',
+    presentation: { vendorLabel: '自定义供应商' },
+    custom: true,
+  });
 
   const discover = (body: unknown) => fetch(discoveryEndpoint, { method: 'POST', headers, body: JSON.stringify(body) });
   let response = await discover({ baseUrl, protocol: 'chat-completions', useApiKey: true });

@@ -1,0 +1,849 @@
+export interface HarnessSystemPrompt { name:string; revision:string; enabled:boolean; text:string; defaultText:string }
+export interface HarnessSystemPromptInput { expectedRevision:string; enabled:boolean; text:string }
+export interface HarnessSystemPromptSnapshot { revision:string; enabled:boolean; text:string; delivery:'native'|'unsupported' }
+export * from './participation-contracts.ts';
+import type { ParticipationObservation } from './participation-contracts.ts';
+import type { ModelProvider } from './model-access/contracts.ts';
+import type { WorkObjectRef, AgentHostCapabilities } from './execution-contracts.ts';
+/** Public executor protocol. Vendor credentials and opaque state never become UI state. */
+export type ProviderId = string;
+export type PermissionMode = 'default' | 'full-access';
+export type ContextRef = { id: string; data?: Record<string, unknown> };
+export type ExecutionRef = { id: string; data?: Record<string, unknown> };
+
+export interface AgentCapabilities {
+  systemPrompt?: { append: boolean };
+  /** Adapter can safely end a question-only wait and reuse its native context. */
+  endQuestionWait?: boolean;
+  /** Supported Buildr contract, not a claim about model compliance. */
+  interaction?: { policy: 'buildr-interaction/v1'; nonBlockingQuestions: boolean };
+  /** Admission into an already active execution; absence means unavailable. */
+  supplement?: boolean;
+  text: boolean;
+  images: boolean;
+  approval: boolean;
+  questions: boolean;
+  stop: boolean;
+  resume: boolean;
+  maxInputBytes: number;
+  maxImageBytes?: number;
+  permissionModes?: PermissionMode[];
+}
+export interface AgentModel {
+  id: string; label: string; isDefault?: boolean;
+  reasoningEfforts?: Array<{ id: string; label: string }>;
+  defaultReasoningEffort?: string;
+}
+export interface AccountObservation {
+  status: 'not-authenticated' | 'ready' | 'expired' | 'failed';
+  label?: string;
+  loginMethod?: string;
+  diagnostic?: string;
+}
+export interface ExecutorPlatformLoginPolicy {
+  mode: 'required-for-sources';
+  expiredCode?: string;
+  expiredMessage?: string;
+  requiredCode?: string;
+  requiredMessage?: string;
+}
+export interface ExecutorNativeModelPolicy {
+  /** Translate a previously persisted variant ID when the source now reports a series. */
+  legacyModelVariant?(modelId: string): { family: string; depth: string } | undefined;
+  /** The requested model is selected per turn on the same native runtime. */
+  useRequestedModelPerTurn?: boolean;
+  sourceProviders: readonly string[];
+  exclusive?: boolean;
+  exclusiveReason?: string;
+  binding: 'gateway-lease' | 'account-identity';
+  defaultSourceAccountId?: string;
+  accountConfigScope?: 'model-account';
+  readySourceSupersedesConnection?: boolean;
+  platformLogin?: 'required-for-sources' | ExecutorPlatformLoginPolicy;
+  /** Optional linked model account whose local check owns connection account observation. */
+  observeViaModelAccount?: string;
+}
+export interface ExecutorModelPolicy {
+  account: 'native' | 'source-required';
+  gateway?: {
+    protocol: 'responses' | 'chat-completions' | 'anthropic-messages';
+    sseKeepalive?: boolean;
+  };
+  native?: ExecutorNativeModelPolicy;
+}
+export interface ConnectionModelPolicyView {
+  account: 'native' | 'source-required';
+  gateway?: { protocol: 'responses' | 'chat-completions' | 'anthropic-messages' };
+  native?: {
+    sourceProviders: string[];
+    exclusive?: boolean;
+    binding: 'gateway-lease' | 'account-identity';
+    defaultSourceAccountId?: string;
+    platformLogin?: 'required-for-sources';
+  };
+}
+export interface ExecutorRuntimeTraits {
+  sharedNativeHome?: boolean;
+  nativeSessionReclamation?: boolean;
+  upgradeVerification?: 'runtime' | 'account-probe';
+  transientAccountProbe?: boolean;
+  configurationIncludesPermission?: readonly string[];
+  isolateInterruptedContinuation?: boolean;
+  /** Native CLI stores login in OS user keyring shared with host CLI invocations; logout/switch coordinates active runs, send gate, and native logout. */
+  hostKeyringAuth?: boolean;
+  /** Native title updates without Han characters are ignored so Simplified Chinese smart titles are not overwritten. */
+  requireHanNativeTitle?: boolean;
+}
+export interface ExecutorDescriptor {
+  id: ProviderId;
+  label: string;
+  capabilities: AgentCapabilities;
+  modelPolicy?: ExecutorModelPolicy;
+  runtimeTraits?: ExecutorRuntimeTraits;
+}
+export interface ExecutorBinding {
+  identity: string;
+  /** Opaque executor-owned provenance, persisted without vendor credentials. */
+  data?: Record<string, unknown>;
+  /** Existing source locations allow an executor to adopt pre-provenance records. */
+  executable?: string;
+  configRoot?: string;
+}
+export interface ModelGatewayConfiguration {
+  identity: string; baseUrl: string; apiKey: string;
+  models: Array<AgentModel & { contextWindow?: number; maxOutputTokens?: number; vision?: boolean; tools?: boolean }>;
+  /** Same-account native execution that retains the source lease binding (gateway-lease). */
+  nativeModel?: { provider: ProviderId; id: string; accountIdentity: string };
+  /** Participant-persisted native home base (the dir containing codex-home/dsh-home). Shared per connection for new participants; the original lease root for pre-existing ones. */
+  nativeHomeRoot?: string;
+}
+export interface ExecutorNativeSource {
+  accountId: string;
+  accountIdentity: string;
+  modelId: string;
+  model: AgentModel & { contextWindow?: number; maxOutputTokens?: number; vision?: boolean; tools?: boolean };
+}
+/** Private lifecycle metadata; implementations must never pass request or credential content. */
+export type ExecutionDiagnosticSink = (event: {event:string;[key:string]:unknown})=>void;
+interface ExecutorOpenBaseOptions {
+  diagnostics?: ExecutionDiagnosticSink;
+  /** Profile-wide tool caches, supplied by default to every provider; never a native session/config HOME. */
+  cacheRoot?: string;
+  /** Service-owned instructions supplied to every executor, including future providers. */
+  interaction?: { version: 'buildr-interaction/v1'; instructions: string };
+  nativeAccountConfigRoot?: string;
+  /** Trusted original source identity, set only by an explicit verified program upgrade. */
+  programSource?: string;
+  connectionId: string;
+  configRoot: string;
+  executable?: string;
+  environment: Readonly<Record<string, string>>;
+  signal?: AbortSignal;
+  binding?: ExecutorBinding;
+  /** Non-throwing participant binding hint used to preserve identity across transient st_dev remount drift when config realpath + inode match. */
+  preferredBinding?: ExecutorBinding;
+  /** Verified historical st_dev values observed for the same mounted volume when legacy records lack bindingData. */
+  volumeDevs?: readonly number[];
+}
+export type ExecutorOpenOptions = ExecutorOpenBaseOptions & (
+  | { gateway?: ModelGatewayConfiguration; nativeSource?: undefined }
+  | { gateway?: undefined; nativeSource?: ExecutorNativeSource }
+);
+export interface LoginObservation {
+  state: 'initializing' | 'waiting-browser' | 'checking' | 'completed' | 'cancelled' | 'expired' | 'failed';
+  url?: string;
+  diagnostic?: string;
+}
+export interface ExecutorImage { id: string; path: string; mimeType: string }
+export interface VideoAttachment { duration: number; frames: Array<{ id: string; time: number }> }
+export interface AttachmentInput { name?: string; expectedRevision?: string; expectedAttachmentRevision?: string; mimeType: string; bytes: Uint8Array; video?: VideoAttachment }
+export interface PresentedFile { path:string; description?:string }
+export interface ExecutorItem {
+  /** The native executor owns this tool body. */
+  nativeTool?: true;
+  /** The native executor matched this progress to an active background task. */
+  backgroundProgress?: true;
+  participation?: ParticipationObservation;
+  id: string;
+  /** Native parent tool identity; absence does not imply an inferred child relationship. */
+  parentToolId?: string;
+  clientRequestId?: string;
+  kind: 'message' | 'tool' | 'notice' | 'thinking';
+  role: 'user' | 'assistant' | 'system';
+  text: string;
+  /** Model thinking fragment: process-only content, never a final reply nor model history. */
+  thinking?: boolean;
+  /** Stable tool-step name when the source provides one (e.g. command, file-change, read). */
+  name?: string;
+  /** Original tool invocation input; retained when a later result replaces text. */
+  input?: string;
+  /** Explicit native file declaration; visible only after successful completion. */
+  presentedFiles?: PresentedFile[];
+  executionId?: string;
+  status?: 'running' | 'completed' | 'failed' | 'unknown';
+}
+export interface ExecutorRequest {
+  id: string;
+  /** Present only when native request and task identity prove its parent tool. */
+  parentToolId?: string;
+  kind: 'approval' | 'question';
+  /** Missing means blocking for compatibility. Approvals always block. */
+  blocking?: boolean;
+  title: string;
+  description?: string;
+  options?: Array<{ id: string; label: string; description?: string }>;
+  questions?: Array<{ id: string; label: string; options?: Array<{ id: string; label: string; description?: string }>; multiple?: boolean; allowOther?: boolean }>;
+}
+export type ExecutionFault = { kind: 'protocol' | 'transport' | 'process' };
+export interface ContextCompaction { id: string; startedAt: string }
+export interface ExecutorObservation {
+  /** Exact native phase snapshot; null explicitly clears, omission is unknown. */
+  contextCompaction?: ContextCompaction | null;
+  fault?: ExecutionFault;
+  /** The native model ended normally; retained commands remain controllable in this context. */
+  canContinue?: boolean;
+  /** Native SDK background work, distinct from missing historical tool results. */
+  backgroundWork?: boolean;
+  status: 'idle' | 'running' | 'waiting' | 'stopped' | 'tools-active' | 'unknown';
+  executionRef?: ExecutionRef;
+  tools: Array<{ id: string; label: string; status: 'running' | 'completed' | 'unknown'; canStop?: boolean }>;
+  /** Complete live-request snapshot for executionRef; omission says nothing about absence. */
+  requests?: ExecutorRequest[];
+  diagnostic?: string;
+}
+export type ExecutorEvent =
+  | { type: 'context-usage'; usedTokens?:number; usedRatio?:number; windowTokens?:number }
+  | { type: 'models'; models: AgentModel[] }
+  | { type: 'title'; title: string }
+  | { type: 'accepted'; executionRef: ExecutionRef; inputItemId?: string }
+  | { type: 'item'; item: ExecutorItem }
+  | { type: 'request'; request: ExecutorRequest }
+  | { type: 'request-resolved'; requestId: string }
+  | { type: 'observation'; observation: ExecutorObservation }
+  | { type: 'completed'; status: 'completed' | 'stopped' | 'failed'; diagnostic?: string; fault?: ExecutionFault }
+  | { type: 'diagnostic'; message: string };
+export interface ExecutorTitleInput { contextRef: ContextRef; cwd: string; description: string; /** Exact user input admitted for the current run, when already known. */ userText?: string; model?: string; reasoningEffort?: string; freshInstruction?: boolean; signal: AbortSignal }
+/** In-process only: the source validates its own binding; the destination owns the new context. */
+export interface ExecutorForkInput {
+  source: AgentRuntime;
+  contextRef: ContextRef;
+  cwd: string;
+  executionRef: ExecutionRef;
+  itemId: string;
+  /** Exact admitted inputs, including supplements, belonging to the selected round. */
+  inputItemIds?: readonly string[];
+  /** Private fork bridge: reseal model-owned reasoning without exposing plaintext. */
+  rebindReasoning?(value: string): Promise<string>;
+  onCreated(contextRef: ContextRef): void;
+}
+export interface ConversationForkInput { expectedRevision: string; entryId: string; clientRequestId: string }
+export interface ConversationForkOrigin {
+  conversationId: string;
+  workspaceId: string;
+  entryId: string;
+  runId: string;
+  throughSequence: number;
+  title: string;
+  forkedAt: string;
+}
+export interface ExecutorSendInput {
+  contextRef: ContextRef;
+  cwd: string;
+  text: string;
+  images: ExecutorImage[];
+  model?: string;
+  reasoningEffort?: string;
+  serviceTier?: string;
+  permissionMode?: PermissionMode;
+  clientRequestId: string;
+  onEvent(event: ExecutorEvent): void;
+}
+export interface ExecutorSupplementInput {
+  contextRef: ContextRef;
+  executionRef: ExecutionRef;
+  cwd: string;
+  text: string;
+  images: ExecutorImage[];
+  clientRequestId: string;
+}
+export interface ExecutorInputReceipt { executionRef: ExecutionRef; inputItemId?: string }
+/** Only a proven pre-admission rejection may leave input safe to send again. */
+export class ExecutorInputRejected extends Error {}
+/** Typed native transport/observation interruption; triggers the shared transport recovery path. */
+export class ExecutorObservationLost extends Error {
+  readonly scope: 'execution' | 'event';
+  constructor(scope: 'execution' | 'event', message = `executor_${scope}_observation_lost`) {
+    super(message);
+    this.name = 'ExecutorObservationLost';
+    this.scope = scope;
+  }
+}
+export interface AgentRuntime {
+  systemPrompt?: HarnessSystemPromptSnapshot;
+  /** Exact adapter configuration metadata; absent means not observed, never inferred. */
+  readonly participationInstruction?: import('./participation-contracts.ts').ParticipationMatch;
+  /** True only after owned native controls have exited; independent command results stay unknown. */
+  canReclaimStorage?(): Promise<boolean>;
+  /** True only when this owned transport is no longer usable; absence is not failure. */
+  readonly closed?: boolean;
+  /** Set only after this runtime's own control processes exit. 0 is a clean exit. */
+  readonly exitCode?: number | null;
+  /** Stable for compatible program updates at the verified source and config. */
+  bindingIdentity: string;
+  bindingData?: Record<string, unknown>;
+  capabilities: AgentCapabilities;
+  inspectAccount(): Promise<AccountObservation>;
+  /** Isolated, tool-free roundtrip before an upgraded binding may be adopted. */
+  verifyUpgrade?(): Promise<void>;
+  models(): Promise<AgentModel[]>;
+  /** Private fixed-upstream model bridge; never exposed over host HTTP. */
+  requestModel?(path: string, init?: RequestInit, expectedIdentity?: string): Promise<Response>;
+  modelIdentity?(): Promise<string>;
+  modelQuota?(): Promise<import('./model-access/contracts.ts').ModelQuotaObservation>;
+  inspectModelSource?(options?: { forceFresh?: boolean }): Promise<ExecutorModelSourceObservation>;
+  logoutAccount?(): Promise<void>;
+  beginLogin(onUpdate: (observation: LoginObservation) => void): Promise<void>;
+  cancelLogin(): Promise<void>;
+  createContext(input: { cwd: string; permissionMode?: PermissionMode }): Promise<ContextRef>;
+  /** Initialize this exact context without admitting work or inference. */
+  prepareContext?(input: { contextRef: ContextRef; cwd: string; model?: string; reasoningEffort?: string; permissionMode?: PermissionMode }): Promise<void>;
+  forkContext?(input: ExecutorForkInput): Promise<ContextRef>;
+  resumeContext(input: { contextRef: ContextRef; cwd: string; permissionMode?: PermissionMode }): Promise<void>;
+  readHistory(input: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]>;
+  /** Exact native input identity derived from a Buildr request id, for native formats without a request id field. */
+  inputItemId?(clientRequestId: string): string;
+  /** Resolves at terminal observation. Control requests must stay independent. */
+  send(input: ExecutorSendInput): Promise<void>;
+  /** Must reject/refuse when tools, approvals or background work are active.
+   * Does not imply permission, success, or cancellation of independent work. */
+  endQuestionWait?(input: { contextRef: ContextRef; executionRef: ExecutionRef; requestIds: string[] }): Promise<ExecutorObservation | undefined>;
+  supplement?(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt>;
+  observe(input: { contextRef: ContextRef; executionRef?: ExecutionRef; knownItems?: readonly ExecutorItem[] }): Promise<ExecutorObservation>;
+  /** Exact backend control-resource proof. true also proves native execution ended; an object can preserve unknown independent commands. Neither asserts successful results. */
+  /** Release exact controls of a settled submission whose acceptance is unknown.
+   * This proves neither non-delivery nor success of independent operations. */
+  releaseUnaccepted?(input: { contextRef: ContextRef; clientRequestId: string }): Promise<false | {executionState:'unknown'}>;
+  canRelease?(input: { contextRef: ContextRef; executionRef: ExecutionRef }): Promise<boolean | {executionState:'ended'|'unknown'}>;
+  /** Logical quiescence only. The owner must close the runtime and still prove physical release. */
+  prepareRelease?(input: { contextRef: ContextRef; executionRef: ExecutionRef }): Promise<boolean>;
+  reply(input: { contextRef: ContextRef; executionRef: ExecutionRef; requestId: string; answer: unknown }): Promise<void>;
+  stop(input: { contextRef: ContextRef; executionRef: ExecutionRef; toolId?: string }): Promise<ExecutorObservation>;
+  /** Native generated/name metadata only; never a first-prompt preview or fallback. */
+  readTitle?(input: { contextRef: ContextRef; cwd: string }): Promise<string | undefined>;
+  /** Independent, bounded auxiliary inference; it must not add input to the work context. */
+  generateTitle?(input: ExecutorTitleInput): Promise<string | undefined>;
+  summarizeHandoff?(input: ExecutorTitleInput): Promise<string | undefined>;
+  close(): Promise<void>;
+}
+export interface AgentExecutor {
+  /** Registered native content roots, safe path boundaries, and on-demand tool detail reader. */
+  nativeContent?: import('./native-content-contracts.ts').ExecutorNativeContent;
+  /** Observe exact abandoned control resources without login, opening a channel, or proving operation success. */
+  readReleasedControl?(input: {bindingIdentity:string;contextRef:ContextRef;executionRef:ExecutionRef;cwd:string}): Promise<boolean>;
+
+  /** Confirm one already-dispatched supplementary input from a durable native user record. */
+  readSupplementReceipt?(input: {
+    configRoot: string; nativeAccountConfigRoot?: string; executable: string; programSource?: string; gatewayIdentity?: string;
+    bindingIdentity: string; contextRef: ContextRef; executionRef: ExecutionRef; cwd: string;
+    clientRequestId: string; text: string; createdAt: string;
+  }): Promise<{inputItemId:string} | undefined>;
+
+  /** Exact native input identity derived from a Buildr request id, for native formats without a request id field. */
+  inputItemId?(clientRequestId: string): string;
+
+  /** Read exact durable terminal evidence without opening a native process or taking its controls. */
+  readPersistedExecution?(input: {
+    configRoot: string; nativeAccountConfigRoot?: string; executable: string; programSource?: string; gatewayIdentity?: string;
+    bindingIdentity: string; bindingData?: Record<string, unknown>; volumeDevs?: readonly number[]; contextRef: ContextRef; executionRef: ExecutionRef; cwd: string;
+    startedAt?: string;
+    /** Exact admitted inputs for this run, used only when the native format has no Buildr request id. */
+    nativeInputs?: ReadonlyArray<{clientRequestId:string;text:string;createdAt:string}>;
+  }): Promise<{ items: ExecutorItem[]; observation: ExecutorObservation; endedAt?: string } | undefined>;
+  /** Adapter-owned cache knowledge, applied by the shared service lifecycle. */
+  storage?: {
+    transientDirectories: readonly string[];
+    /** Adapter verifies creator/completion of old regenerable temporary payloads. */
+    legacyDirectories?(configRoot: string): readonly string[];
+    /** Private diagnostic resources only; the service owns dependency/occupancy checks and deletion. */
+    diagnostics?(configRoot: string): Array<{ relativePath: string; producerPid?: number; contextId?: string; reason?: string;
+      /** Adapter verified a pure diagnostic SQLite family. Its complete config
+       * must have no consumer; the collector retires the whole family together. */
+      quiescentDatabase?: string }>;
+    canReclaim?(configRoot: string, relative: string): boolean;
+    /** Immutable seed copied into private working directories; never a shared native HOME. */
+    snapshots?: ReadonlyArray<{ relative: string; key: string; identity(directory: string): string | undefined }>;
+  };
+  descriptor: ExecutorDescriptor;
+  open(options: ExecutorOpenOptions): Promise<AgentRuntime>;
+}
+
+export interface ExecutorModelSourceObservation {
+  status: 'not-authenticated' | 'ready' | 'expired' | 'failed';
+  accountIdentity?: string;
+  explicitAccountIdentity?: boolean;
+  identityUnconfirmed?: boolean;
+  accountLabel?: string;
+  models: import('./model-access/contracts.ts').ModelOffering[];
+  quota?: import('./model-access/contracts.ts').ModelQuotaObservation;
+  diagnostic?: string;
+}
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'not-authenticated' | 'ready' | 'expired' | 'failed';
+export interface ConnectionSendGate {
+  state: 'open' | 'paused';
+  reason?: 'account-change' | 'account-unconfirmed';
+  diagnostic?: string;
+}
+export interface ConnectionAccountImpact {
+  connectionId: string;
+  hostKeyringAuth: boolean;
+  activeConversations: Array<{
+    conversationId: string;
+    workspaceId: string;
+    title: string;
+    runId: string;
+    status: RunStatus;
+  }>;
+  references: number;
+}
+export interface LoginAttemptView extends LoginObservation { id: string; generation: string; updatedAt: string }
+export interface ConnectionView {
+  id: string;
+  provider: ProviderId;
+  label: string;
+  revision: string;
+  status: ConnectionStatus;
+  enabled: boolean;
+  executable?: string;
+  configPath?: string;
+  account?: { label?: string; loginMethod?: string };
+  diagnostic?: string;
+  models: AgentModel[];
+  capabilities: AgentCapabilities;
+  modelPolicy?: ConnectionModelPolicyView;
+  hostKeyringAuth?: boolean;
+  sendGate?: ConnectionSendGate;
+  loginAttempt?: LoginAttemptView;
+}
+export interface ProgramUpgradeInput { expectedRevision: string; expectedVersion: string }
+export interface ProgramUpgradeView {
+  id: string; connectionId: string; expectedVersion: string; executable: string;
+  state: 'downloading' | 'waiting' | 'restarting' | 'completed' | 'failed' | 'interrupted';
+  message: string; updatedAt: string; installedExecutable?: string; currentVersion?: string;
+}
+
+export interface ProgramUpdateView {
+  connectionId: string;
+  revision: string;
+  provider: string;
+  label: string;
+  executable?: string;
+  managed?: boolean;
+  upgrade?: ProgramUpgradeView;
+  status: 'unchecked' | 'not-connected' | 'available' | 'latest' | 'ahead' | 'unknown' | 'stale';
+  /** Whether the bound managed file still matches the connection's recorded identity. */
+  identityState: 'consistent' | 'changed' | 'unobserved';
+  versionKind: 'program' | 'package';
+  packageName: string;
+  updateUrl: string;
+  currentVersion?: string;
+  currentReleaseVersion?: string;
+  latestVersion?: string;
+  releaseSource?: string;
+  compatible?: boolean;
+  checkedAt?: string;
+  diagnostic?: string;
+}
+
+export interface ProgramCandidate {
+  executable: string;
+  source: 'configured' | 'selected' | 'path' | 'managed' | 'application' | 'sdk';
+  label: string;
+  version?: string;
+  compatible: boolean;
+  diagnostic?: string;
+}
+export interface ProgramCatalog {
+  candidates: ProgramCandidate[];
+  installation: { label: string; version: string; url: string; canInstall: boolean; guidance?: string; diagnostic?: string };
+}
+export interface AgentProgramManager {
+  discover(input: { provider: string; executable?: string; boundExecutable?: string; signal: AbortSignal }): Promise<ProgramCatalog>;
+  install(input: { provider: string; version?: string; attemptId?: string; replaceExisting?: boolean; signal: AbortSignal; progress(message: string): void }): Promise<string>;
+  isManaged?(provider: string, executable: string): boolean;
+}
+export type PreparationState = 'discovering' | 'selection-required' | 'installation-required' | 'installing' | 'connecting' | 'waiting-login' | 'ready' | 'failed' | 'cancelled';
+export interface PreparationView {
+  id: string;
+  connectionId: string;
+  generation: string;
+  state: PreparationState;
+  message: string;
+  updatedAt: string;
+  catalog?: ProgramCatalog;
+  connection: ConnectionView;
+}
+export interface PreparationInput { expectedRevision: string; executable?: string; install?: boolean }
+export type RunStatus = 'starting' | 'running' | 'waiting-approval' | 'waiting-question' | 'stopping' | 'stopped' | 'tools-active' | 'unknown' | 'completed' | 'failed';
+export interface ParticipantView { modelAccountId?: string; model?: string; id: string; provider: ProviderId; connectionId: string; label: string; deliveredThrough: number; contextId: string }
+export interface ConversationEntry {
+  participation?: ParticipationObservation;
+  /** Bounded tool preview; fetch the exact content revision when expanded. */
+  detail?: {revision: string; live?: boolean};
+  /** True when the entry's executor registered on-demand native tool detail support. */
+  nativeDetail?: boolean;
+  id: string;
+  /** Native child output stays attached to its parent tool, retaining its original role. */
+  parentToolId?: string;
+  sequence: number;
+  kind: 'message' | 'tool' | 'notice' | 'handoff' | 'thinking';
+  role: 'user' | 'assistant' | 'system';
+  text: string;
+  /** Model thinking fragment: process-only content, never a final reply nor model history. */
+  thinking?: boolean;
+  /** Stable tool-step name when the source provided one. */
+  name?: string;
+  /** Original tool invocation input; retained when a later result replaces text. */
+  input?: string;
+  /** Explicit native file declaration; visible only after successful completion. */
+  presentedFiles?: PresentedFile[];
+  participantId?: string;
+  provider?: ProviderId;
+  runId?: string;
+  /** Lightweight source pointer for continuation/recovery notices (never duplicates prompt body). */
+  continuedFrom?: { runId: string; userEntryId: string };
+  status?: 'sending' | 'accepted' | 'unknown' | 'running' | 'completed' | 'failed';
+  attachments?: string[];
+  deliveryDiagnostic?: string;
+  handoff?: HandoffMaterial;
+  /** Durable control transfer; native identity is not an execution-choice change. */
+  nativeSession?: {
+    backendChange?: BackendRuntimeChange;
+    reason: 'backend-adoption' | 'session-replacement';
+    description: string;
+    from: { contextId?: string; generation?: string };
+    to: { contextId: string; generation: string };
+  };
+  createdAt: string;
+}
+export interface RunView {
+  systemPrompt?: HarnessSystemPromptSnapshot;
+  /** Read-only prompt provenance for a run admitted from an explicit continuation. */
+  continuedFrom?: {
+    runId: string;
+    userEntryId: string;
+    /** Omitted from list and summary projections to keep those responses bounded. */
+    prompt?: ConversationEntry;
+  };
+  /** Questions are no longer actionable; native controls and tools may still be retained. */
+  questionsEndedBy?: string;
+  /** Replaced by a confirmed new execution; cleanup is system-owned. */
+  supersededBy?:string;
+  /** User cancellation is independent from delivery and resource proof. */
+  stopRequested?:boolean;
+  /** Same-context input is allowed; this does not release command control resources. */
+  canContinue?: boolean;
+  /** Physical execution/resource facts never imply that the user's goal succeeded. */
+  executionState?: 'active' | 'ended' | 'unknown';
+  /** This backend no longer holds the original control resources; independent command outcomes may remain unknown. */
+  resourcesReleased?: boolean;
+  /** User-confirmed attention settlement; never claims completion, releases resources, or erases unknown evidence. */
+  attentionSettled?: boolean;
+  fault?: ExecutionFault;
+  /** Host interruption is unfinished work, distinct from a user stop. */
+  interrupted?: boolean;
+  contextCompaction?: ContextCompaction;
+  contextUsage?: {usedTokens?:number;usedRatio?:number;windowTokens?:number};
+  modelAccountId?: string; modelAccountIdentity?: string; modelSourceLabel?: string;
+  id: string;
+  participantId: string;
+  provider: ProviderId;
+  generation: string;
+  status: RunStatus;
+  accepted: boolean;
+  tools: ExecutorObservation['tools'];
+  model?: string;
+  reasoningEffort?: string;
+  serviceTier?: string;
+  permissionMode?: PermissionMode;
+  diagnostic?: string;
+  startedAt: string;
+  updatedAt: string;
+}
+export interface PendingRequestView extends ExecutorRequest {
+  id: string;
+  /** Always present in public reads; cards without explanatory text use ''. */
+  description: string;
+  conversationId: string;
+  workspaceId: string;
+  participantId: string;
+  runId: string;
+  generation: string;
+}
+export interface ConversationWorkObjectLink extends WorkObjectRef {
+  revision?: string;
+  /** Display only; never authority for verification or execution. */
+  snapshot?: { title?: string };
+}
+export interface ConversationTaskLink {workspaceId:string;taskId:string}
+export interface ConversationStopObservedScope {
+  currentRunId: string | null;
+  targets: Array<{ runId: string; participantId: string; generation: string }>;
+  pendingSendId: string | null;
+}
+export interface ConversationStopInput { expectedRevision: string; clientRequestId: string; observedScope?: ConversationStopObservedScope }
+export interface ConversationStopView {
+  id: string;
+  runIds: string[];
+  createdAt: string;
+  /** A cancelled, submitted input remains readable; it is never automatically resent. */
+  cancelledSend?: { id: string; draft: SendDraft };
+}
+export interface ConversationView {
+  stopRequest?: ConversationStopView;
+  /** Immutable direct-parent provenance, independent of current titles and UI state. */
+  forkedFrom?: ConversationForkOrigin;
+  forkState?: { status: 'creating' | 'ready' | 'failed'; reason?: string };
+  /** Frozen provenance only; it never grants control over the parent execution. */
+  childOf?: {
+    conversationId: string; workspaceId: string; title: string; createdAt: string;
+    sourceRevision: string; throughSequence: number; state?: RunStatus;
+  };
+  pendingSend?: PendingSendView;
+  /** Independent observation version for append-only image admission. */
+  attachmentRevision?: string;
+  activity?: { version: number; seenThrough: number; updatedAt: string; finalReplyAt?: string; active: boolean; userInputAt?: string; pendingDecisionCount?: number; pendingSend?: {state:'waiting'|'failed';reason:string;updatedAt:string} };
+  titleState?: { status: 'pending' | 'generating' | 'generated' | 'fallback' | 'manual' | 'failed' | 'unavailable' | 'unknown'; reason?: string };
+  id: string;
+  workspaceId: string;
+  cwd: string;
+  taskId?: string;
+  /** Compatibility projection for tasks in this conversation’s workspace. */
+  taskIds?: string[];
+  /** Complete cross-workspace association set; legacy fields project local links. */
+  taskLinks?: ConversationTaskLink[];
+  /** Canonical relation set; task fields are compatibility projections. */
+  workObjectLinks?: ConversationWorkObjectLink[];
+  title: string;
+  revision: string;
+  hidden: boolean;
+  updatedAt: string;
+  participants: ParticipantView[];
+  entries: ConversationEntry[];
+  run?: RunView;
+  /** Unfinished prior executions retain their original context and owner. */
+  retainedRuns?: RunView[];
+  requests: PendingRequestView[];
+  nextEntryCursor?: number;
+  /** Bounded excerpt from a matching visible message; list observations only. */
+  searchSnippet?: string;
+}
+export interface HandoffRound {
+  id: string; title: string; from: number; through: number;
+  executionCount?: number; artifactCount?: number;
+  state?: RunStatus; diagnostic?: string; provider?: string; model?: string;
+  userInputs: string[]; assistantNotes: string[];
+  execution: Array<{action:string;result:string;location?:string}>;
+  artifacts: Array<{location:string;description:string}>;
+  finalReply?: string; finalReplyId?:string; sourcePath?: string;
+}
+export interface HandoffMaterial {
+  agent: string; model: string;
+  changes: Array<{kind:'agent'|'model';label:string;before:string;after:string}>;
+  rounds: HandoffRound[]; roundCount?: number; body: string; sourceThrough: number;
+  mode: 'records'|'summary'|'indexed'; sourcePath?: string; sourceId?:string; sourceOnly?:boolean; bodyDigest?:string;
+}
+export interface SendDraft {
+  /** Explicitly end this waiting question round before handing work to a different selection. */
+  waitingHandoff?: {
+    /** Explicitly stop the wait and discuss using the same execution selection. */
+    intent?: 'discussion' | 'new-turn';
+    runId: string; participantId: string; generation: string; requestIds: string[];
+    answers?: Array<{ requestId: string; answer: unknown }>;
+  };
+  /** Explicit recovery of this exact latest run, without a new user message. */
+  continueRunId?: string;
+  skipHandoffSummary?: boolean;
+  modelAccountId?: string; modelAccountIdentity?: string; modelAccountRevision?: string;
+  expectedRevision: string;
+  connectionId: string;
+  text: string;
+  model?: string;
+  reasoningEffort?: string;
+  serviceTier?: string;
+  permissionMode?: PermissionMode;
+  attachmentIds?: string[];
+  /** Explicit user-authored replacement for the selected history range. */
+  handoffSummary?: string;
+}
+export interface PendingSendView {
+  /** Authoritative questions saved before the original native wait is stopped. */
+  waitingQuestions?: PendingRequestView[];
+  id: string;
+  revision: string;
+  state: 'waiting' | 'dispatching' | 'failed';
+  draft: SendDraft;
+  reason: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface StartConversationDraft extends Omit<SendDraft, 'expectedRevision'> {
+  cwd?: string;
+  taskId?: string;
+  taskLinks?: ConversationTaskLink[];
+  /** Canonical relation set; task fields are compatibility projections. */
+  workObjectLinks?: ConversationWorkObjectLink[];
+  expectedDraftRevision: string;
+  clientRequestId: string;
+}
+export interface SupplementInput {
+  /** Reject rather than start a new round if the observed execution ends during admission. */
+  sameRunOnly?: boolean;
+  runId: string;
+  participantId: string;
+  generation: string;
+  clientRequestId: string;
+  text: string;
+  attachmentIds?: string[];
+}
+export interface SupplementResult {
+  conversation: ConversationView;
+  delivery: 'accepted' | 'unknown' | 'rejected' | 'continued';
+}
+export interface SendPreview {
+  handoff?: HandoffMaterial;
+  modelAccountId?: string; modelAccountIdentity?: string; modelAccountRevision?: string; modelSourceLabel?: string;
+  token: string;
+  conversationId: string;
+  revision: string;
+  connectionId: string;
+  model?: string;
+  reasoningEffort?: string;
+  serviceTier?: string;
+  permissionMode: PermissionMode;
+  participantId?: string;
+  cwd: string;
+  taskId?: string;
+  text: string;
+  history: Array<{ sequence: number; role: string; provider?: string; text: string }>;
+  sourceThrough: number;
+  inputBytes: number;
+  maxInputBytes: number;
+  fits: boolean;
+  switching: boolean;
+  diagnostic?: string;
+}
+export interface ServiceEvent {
+  cursor: number;
+  generation: string;
+  type: 'snapshot' | 'conversation' | 'connection';
+  workspaceId?: string;
+  conversationId?: string;
+  revision: string;
+  payload: { conversation?: ConversationView; connection?: ConnectionView };
+}
+export interface BackendRuntimeChange {
+  reason: 'runtime-content-changed' | 'process-restarted';
+  detectedAt: string;
+  fromGeneration: string;
+  fromDigest: string;
+  toDigest: string;
+}
+export interface AgentServiceOptions {
+  /** Process-owned observation; never inferred from user messages or model choice. */
+  backendChange?: BackendRuntimeChange;
+  /** Process-owned local control instructions; never includes authentication secrets. */
+  conversationControl?: (scope:string,id:string)=>string;
+  controlSupersededRun?: (scope:string,id:string,input:{expectedRevision:string;runId:string;participantId:string;generation:string},action:'stop'|'observe'|'release-question-wait')=>Promise<unknown>;
+  /** Other accurately discovered process generations must not be recovered. */
+  generationAlive?: (generation: string) => boolean;
+  /** Exact prior owner completed authenticated shutdown; death alone is insufficient. */
+  generationReleased?: (generation: string) => boolean;
+  /** Trusted host profile only; released installations default to manual continuation. */
+  autoContinueInterrupted?: boolean;
+  /** The owning source decides recovery; the legacy boolean is only a fallback. */
+  continuationPolicy?(scope: string): boolean;
+  modelProviders?: ModelProvider[];
+  dataRoot: string;
+  executors?: AgentExecutor[];
+  environment?: Record<string, string | undefined>;
+  /** Native program discovery/install port; credentials remain in executor-owned configs. */
+  programManager?: AgentProgramManager;
+  programRelease?: (provider: string, executable: string, signal: AbortSignal) => Promise<{latestVersion: string; currentReleaseVersion?: string; source: string}>;
+  /** Product-independent host authority; source identity survives connection replacement. */
+  host?: AgentHostCapabilities;
+  legacySourceId?: string;
+  /** Compatibility for in-memory embedders. New process integrations use host. */
+  resolveWorkspace?(workspaceId: string): Promise<{ rootPath: string }> | { rootPath: string };
+  assertTask?(workspaceId: string, taskId: string): Promise<void> | void;
+  now?: () => Date;
+  /** Injected pushback delivery transport; tests and candidates use a local fake receiver, never a real address. */
+  pushbackTransport?: typeof fetch;
+  pushbackNow?: () => number;
+  /** Test-only bounded pushback timing overrides. Normal runs use 20 minutes and a 30-second check. */
+  testPushbackStalledThresholdMs?: number;
+  testPushbackCheckIntervalMs?: number;
+  /** Bounded host shutdown; chiefly useful for deterministic lifecycle tests. */
+  shutdownTimeoutMs?: number;
+  /** Test-only title timeout override. Production runs use 30 seconds. */
+  titleTimeoutMs?: number;
+}
+
+export type PushbackEventType = 'decision.requested' | 'run.completed' | 'run.failed' | 'run.stopped' | 'run.progress' | 'run.stalled';
+export interface PushbackOption { optionId: string; label: string; description?: string }
+export interface PushbackQuestion { questionId: string; question: string; allowOther: boolean; multiple: boolean; options: PushbackOption[] }
+export interface PushbackRequest {
+  requestId: string;
+  kind: 'approval' | 'question';
+  title: string;
+  description: string;
+  runId: string;
+  participantId: string;
+  generation: string;
+  conversationRevision: string;
+  options?: PushbackOption[];
+  questions?: PushbackQuestion[];
+}
+export interface PushbackProgress { text: string; elapsedMs: number; completedToolCount: number }
+export interface PushbackStall { idleMs: number; lastActivityAt: string }
+export interface PushbackCredentialAccess { scopes: string[]; allowFullAccess: boolean }
+export interface PushbackEvent {
+  eventId: string;
+  type: PushbackEventType | 'events_dropped';
+  occurredAt: string;
+  machine: { id: string; name: string };
+  workspaceId: string;
+  conversationId: string;
+  title: string;
+  runId?: string;
+  runStatus?: RunStatus;
+  request?: PushbackRequest;
+  finalReply?: string;
+  finalReplyUrl?: string;
+  progress?: PushbackProgress;
+  stalled?: PushbackStall;
+  scopes: string[];
+  allowFullAccess: boolean;
+  summary: string;
+  detailUrl: string;
+  sequence: number;
+  mergedCount?: number;
+  droppedCount?: number;
+}
+export interface PushbackDeliveryResult { at: string; success: boolean; status?: number; kind: 'event' | 'test' }
+export interface PushbackSettingsView {
+  credentialId: string;
+  revision: string;
+  state: 'unconfigured' | 'invalid' | 'disabled' | 'enabled';
+  url: string;
+  hasSecret: boolean;
+  rateLimitHour: number;
+  rateLimitMinute: number;
+  progressEnabled: boolean;
+  stalledEnabled: boolean;
+  lastDelivery?: PushbackDeliveryResult;
+  recentDeliveries?: PushbackDeliveryResult[];
+}
+export interface PushbackSettingsInput { expectedRevision: string; enabled: boolean; url: string; secret?: string; rateLimitHour?: number; rateLimitMinute?: number; progressEnabled?: boolean; stalledEnabled?: boolean }
+export interface PushbackEventPage { events: PushbackEvent[]; nextCursor: string | null; hasMore: boolean }
+export interface ConversationSummaryView { id: string; title: string; runStatus: RunStatus | null; updatedAt: string; active: boolean; pendingDecisionCount: number }
+export interface ConversationActivityCounts { pendingSend?: number; active: number; running: number; waiting: number; unseen: number; unknown: number; attention: number }

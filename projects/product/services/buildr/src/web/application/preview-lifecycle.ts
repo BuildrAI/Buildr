@@ -4,7 +4,7 @@ import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
 import { performance } from 'node:perf_hooks';
-import { stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { stopAgentProcess } from '@buildr-ai/buildr-harness';
 
 import { buildrWebDataRoot } from '../../modules/workspace/module.ts';
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.ts';

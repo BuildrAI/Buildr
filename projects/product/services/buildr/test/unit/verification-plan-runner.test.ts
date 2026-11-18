@@ -87,7 +87,8 @@ test('local lifecycle IO isolation admits independent work without expanding wor
   const writer = verificationSteps.find((check:any)=>check.id==='integration');
   assert.equal(localExecutionStep(writer,profile,profile.limits).concurrencyClass,'workspace-heavy');
   const artifactWriter = verificationSteps.find((check:any)=>check.id==='integration-generated-artifacts');
-  assert.equal(localExecutionStep(artifactWriter,profile,profile.limits).concurrencyClass,'exclusive');
+  assert.equal(localExecutionStep(artifactWriter,profile,profile.limits).concurrencyClass,'cpu-heavy');
+  assert.equal(localExecutionStep({ ...artifactWriter, concurrencyClass: 'exclusive' },profile,profile.limits).concurrencyClass,'exclusive');
   assert.equal(localExecutionStep(definitions[0],{id:'ci'},profile.limits),definitions[0]);
   const limited = {...profile.limits,capacities:{...profile.limits.capacities,workspaceIo:1}};
   assert.equal(localExecutionStep(definitions[0],profile,limited).resourceDemand.workspaceIo,1);
@@ -177,8 +178,8 @@ test('independent conversation and storage owners share the existing IO capacity
   assert.equal(result.every((value:any)=>value.status==='passed'),true);assert.equal(overlap,true);
   const [storage,conversations]=definitions;
   assert.equal(storage.resourceDemand.workers+conversations.resourceDemand.workers,3);
-  assert.equal(storage.executor.discoveredFiles.includes('../buildr-agent/test/integration/conversations.test.ts'),false);
-  assert.deepEqual(conversations.executor.discoveredFiles,['../buildr-agent/test/integration/conversations.test.ts']);
+  assert.equal(storage.executor.discoveredFiles.includes('../buildr-harness/test/integration/conversations.test.ts'),false);
+  assert.deepEqual(conversations.executor.discoveredFiles,['../buildr-harness/test/integration/conversations.test.ts']);
 });
 
 

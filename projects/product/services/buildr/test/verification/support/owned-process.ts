@@ -71,11 +71,15 @@ export function createOwnedDescendantTracker(rootPid: any, { intervalMs = 50, pl
     timer = setInterval(sample, intervalMs);
     timer.unref?.();
   }
+  const dispose = () => {
+    if (timer) clearInterval(timer);
+    timer = null;
+  };
   return {
     sample,
+    dispose,
     stop() {
-      if (timer) clearInterval(timer);
-      timer = null;
+      dispose();
       sample();
       return { processes: [...owned.values()], sampleError };
     },
@@ -86,7 +90,7 @@ function alive(pid: any, kill: any) {
   try { kill(pid, 0); return true; } catch (error: any) { return error.code !== 'ESRCH'; }
 }
 
-export async function terminateOwnedProcess({ pid, processes = [], platform = process.platform, kill = process.kill, killTree = spawnSync, wait = (ms: any) => new Promise((resolve: any) => setTimeout(resolve, ms)), graceMs = 2_000, confirmMs = 1_000 }: any = {}) {
+export async function terminateOwnedProcess({ pid, processes = [], platform = process.platform, kill = process.kill, killTree = spawnSync, wait = (ms: any) => new Promise((resolve: any) => setTimeout(resolve, ms)), graceMs = 2_000, confirmMs = 1_000, observe = kill === process.kill && platform !== 'win32' ? listProcesses : undefined }: any = {}) {
   const descendants = processes.filter((item: any) => Number.isInteger(item.pid) && item.pid !== pid);
   const groupTarget = platform === 'win32' ? pid : -pid;
   const signal = (target: any, value: any) => {
@@ -108,13 +112,28 @@ export async function terminateOwnedProcess({ pid, processes = [], platform = pr
     })() : signal(groupTarget, 'SIGKILL');
     if (error) forced.push({ target: groupTarget, error });
   }
-  for (const item of descendants) if (alive(item.pid, kill)) {
+  const ownedDescendants = () => {
+    if (!descendants.length) return [];
+    if (!observe) return descendants.filter((item: { pid: number }) => alive(item.pid, kill));
+    const observed = new Map<number, { startedAt?: string }>(
+      observe().map((row: { pid: number; startedAt?: string }) => [row.pid, row]),
+    );
+    return descendants.filter((item: { pid: number; startedAt?: string }) => {
+      const current = observed.get(item.pid);
+      if (!current) return false;
+      if (!item.startedAt || !current.startedAt) throw new Error(`Cannot confirm process identity for PID ${item.pid}.`);
+      return item.startedAt === current.startedAt;
+    });
+  };
+  for (const item of ownedDescendants()) {
     const error = signal(item.pid, 'SIGKILL');
     if (error) forced.push({ target: item.pid, error });
   }
   const deadline = Date.now() + confirmMs;
-  const targets = [groupTarget, ...descendants.map((item: any) => item.pid)];
-  const remainingTargets = () => targets.filter(target => alive(target, kill));
+  const remainingTargets = () => [
+    ...(alive(groupTarget, kill) ? [groupTarget] : []),
+    ...ownedDescendants().map((item: { pid: number }) => item.pid),
+  ];
   // A detached descendant can outlive an already-exited group. Its SIGKILL
   // also completes asynchronously and needs the same confirmation window.
   while (Date.now() < deadline && remainingTargets().length) await wait(25);

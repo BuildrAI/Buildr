@@ -78,7 +78,7 @@ export function releaseSdkEnvironment(node: string, userConfig: string, globalCo
     CI: 'true', GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: globalConfig,
     GIT_ALLOW_PROTOCOL: 'https', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: dirname(userConfig),
     NPM_CONFIG_USERCONFIG: userConfig, NPM_CONFIG_GLOBALCONFIG: globalConfig, NPM_CONFIG_REGISTRY: 'https://registry.npmjs.org/',
-    NPM_CONFIG_CACHE: join(dirname(userConfig), 'npm-cache'), TMPDIR: join(dirname(userConfig), 'tmp'),
+    npm_config_cache: join(dirname(userConfig), 'npm-cache'), NPM_CONFIG_CACHE: join(dirname(userConfig), 'npm-cache'), TMPDIR: join(dirname(userConfig), 'tmp'),
     HOME: dirname(userConfig),
     ...(process.platform === 'win32' ? { USERPROFILE: dirname(userConfig), TEMP: join(dirname(userConfig), 'tmp'), TMP: join(dirname(userConfig), 'tmp') } : {}),
     XDG_CONFIG_HOME: join(dirname(userConfig), 'config'), XDG_CACHE_HOME: join(dirname(userConfig), 'cache'),

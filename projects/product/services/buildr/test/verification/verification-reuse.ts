@@ -20,6 +20,7 @@ export interface VerificationReuseStep { id: string; executor: Record<string, an
 export interface VerificationReuseEnvironment { platform: string; arch: string; nodeVersion: string; tools: Record<string, string>; variablesIdentity: ReuseDigest }
 export interface VerificationReuseSnapshot {
   productRoot: string; repositoryRoot: string; contentIdentities: Record<VerificationReuseScope, ReuseDigest>;
+  fileIdentities?: Record<string, ReuseDigest>;
   gitIdentity: ReuseDigest; sourceCommit: string; environment: VerificationReuseEnvironment;
   gitInputs?: { head: string; refsIdentity: ReuseDigest; historyIdentity: ReuseDigest };
   gitComparison?: { head: string; baseRef: string; base: string; mergeBase: string } | null;
@@ -178,7 +179,7 @@ export function createVerificationReuseIdentity(step: VerificationReuseStep, sna
   if (requiresFreshExternalVerification(step, snapshot)) return null;
   if (step.reuse.git === 'comparison' && !snapshot.gitComparison) return null;
   const selected = legacy ? null : snapshot.proofInputs?.[step.id];
-  const proof = selected?.selectionIdentity === digest({ executor: step.executor, scope: step.reuse.scope }) ? selected : null;
+  const proof = selected?.selectionIdentity === digest({ executor: portableVerificationExecutor(step.executor, snapshot), scope: step.reuse.scope }) ? selected : null;
   const inputs = proof ?? (step.reuse.inputMode ? snapshot.stepInputs?.[step.id] : null);
   if ((proof || step.reuse.inputMode) && (!inputs || inputs.unavailable)) return null;
   if (!inputs && snapshot.unavailableScopes?.includes(step.reuse.scope)) return null;
@@ -546,9 +547,38 @@ export function createVerificationPlanReuse(plan: any, options: any): any {
     },
     finish(results: any[], cleanupClean: boolean): VerificationReuseBundle {
       const after = collectVerificationReuseSnapshot(snapshotOptions);
+      const beforeFiles = snapshot.fileIdentities ?? {};
+      const afterFiles = after.fileIdentities ?? {};
+      const changedFiles = [...new Set([...Object.keys(beforeFiles), ...Object.keys(afterFiles)])]
+        .filter(file => beforeFiles[file] !== afterFiles[file]).sort();
+      const sourceDrift = {
+        beforeCommit: snapshot.sourceCommit, afterCommit: after.sourceCommit,
+        changedFileCount: changedFiles.length, changedFiles: changedFiles.slice(0, 30),
+      };
+      if (changedFiles.length || snapshot.sourceCommit !== after.sourceCommit) {
+        options.stream?.write(`[verification-reuse] source drift ${JSON.stringify(sourceDrift)}\n`);
+      }
+      const resultsById = new Map(results.map((item: any) => [item.id, item]));
       for (const result of results) {
         const step = steps.find((item: VerificationReuseStep) => item.id === result.id);
         if (!step || result.disposition === 'reused') continue;
+        if (result.coveredBy) {
+          const covering = resultsById.get(result.coveredBy);
+          if (!covering) continue;
+          const coverStart = covering.startedAt ?? result.startedAt ?? new Date().toISOString();
+          const coverFinish = covering.finishedAt ?? coverStart;
+          const coverOrigin: VerificationReuseOrigin = { kind: env.GITHUB_RUN_ID ? 'ci' : 'local', runId: options.runId ?? `verification-${process.pid}`,
+            sourceCommit: snapshot.sourceCommit, startedAt: coverStart, finishedAt: coverFinish,
+            ...(env.GITHUB_RUN_ID ? { workflow: { runId: env.GITHUB_RUN_ID, runAttempt: Number(env.GITHUB_RUN_ATTEMPT || 1) } } : {}) };
+          store.stage(step, {
+            ...covering,
+            id: step.id,
+            fileCoverage: undefined,
+            fileRecords: undefined,
+            durationSource: 'parent-run-upper-bound',
+          }, coverOrigin);
+          continue;
+        }
         const start = result.startedAt ?? new Date().toISOString(), finish = result.finishedAt ?? start;
         const origin: VerificationReuseOrigin = { kind: env.GITHUB_RUN_ID ? 'ci' : 'local', runId: options.runId ?? `verification-${process.pid}`,
           sourceCommit: snapshot.sourceCommit, startedAt: start, finishedAt: finish,
@@ -588,6 +618,7 @@ export function createVerificationPlanReuse(plan: any, options: any): any {
             .filter(field => identity[field] !== current?.[field])
             .map(field => ({ field, before: identity[field] ?? null, after: current?.[field] ?? null }));
           const details = { changes, cleanupClean,
+            ...(changes.some(change => ['contentIdentity','recipeIdentity'].includes(change.field)) ? { sourceDrift } : {}),
             ...(changes.some(change => change.field === 'gitIdentity') ? { git: {
               before: step.reuse.git === 'comparison' ? snapshot.gitComparison : snapshot.gitInputs,
               after: step.reuse.git === 'comparison' ? after.gitComparison : after.gitInputs,

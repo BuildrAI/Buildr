@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { connectAgentProcess, prepareAgentRuntime, stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { connectAgentProcess, prepareAgentRuntime, stopAgentProcess } from '@buildr-ai/buildr-harness';
 import { activateAgentServiceRuntime } from '../../src/modules/agent-service/application/activate-runtime.ts';
 
 const isLive=(pid:number)=>{try{process.kill(pid,0);return true;}catch{return false;}};
@@ -14,13 +14,13 @@ const isLive=(pid:number)=>{try{process.kill(pid,0);return true;}catch{return fa
 test('activation reports the exact ready server, protects busy work and adopts the target upgrade', {timeout:60_000}, async t => {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-activation-')),dataRoot=path.join(root,'profile'),packageRoot=path.join(root,'package'),profileId='activation-integration';
   t.after(async()=>{await stopAgentProcess({dataRoot,profileId,mode:'stop-owned'});fs.rmSync(root,{recursive:true,force:true});});
-  fs.cpSync(path.resolve(import.meta.dirname,'../../node_modules/@buildr-ai/buildr-agent'),packageRoot,{recursive:true,mode:fs.constants.COPYFILE_FICLONE});
+  fs.cpSync(path.resolve(import.meta.dirname,'../../node_modules/@buildr-ai/buildr-harness'),packageRoot,{recursive:true,mode:fs.constants.COPYFILE_FICLONE});
   fs.writeFileSync(path.join(packageRoot,'build/activation-fixture.mjs'),`import fs from 'node:fs';import {startAgentExecutionServer} from './index.js';
 const input=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
 const provider={id:'fixture',label:'fixture',open:async()=>({protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'m',label:'m',images:false,tools:false}]}),beginLogin:async()=>{},cancelLogin:async()=>{},close:async()=>{},infer:async({signal})=>new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(Error('cancelled')),{once:true}))})};
 await startAgentExecutionServer({...input,serviceOptions:{executors:[],modelProviders:[provider]}});\n`);
   const old=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/activation-fixture.mjs'});
-  const legacy=await connectAgentProcess({dataRoot,profileId,runtime:old,sourceId:'local'});
+  const legacy=await connectAgentProcess({dataRoot,profileId,runtime:old,sourceId:'local',legacySourceId:'local'});
   const legacyStatus=await legacy.lifecycle.status();
   const added=await legacy.operations.models.accounts.add({provider:'fixture'});
   const checked=await legacy.operations.models.accounts.check(added.id);
@@ -57,7 +57,7 @@ test('activation refuses an attempted broken target without claiming uncertain s
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-activation-broken-')),
     dataRoot=path.join(root,'profile'),packageRoot=path.join(root,'package'),profileId='activation-broken';
   t.after(async()=>{await stopAgentProcess({dataRoot,profileId,mode:'stop-owned'});fs.rmSync(root,{recursive:true,force:true});});
-  fs.cpSync(path.resolve(import.meta.dirname,'../../node_modules/@buildr-ai/buildr-agent'),packageRoot,{recursive:true,mode:fs.constants.COPYFILE_FICLONE});
+  fs.cpSync(path.resolve(import.meta.dirname,'../../node_modules/@buildr-ai/buildr-harness'),packageRoot,{recursive:true,mode:fs.constants.COPYFILE_FICLONE});
   fs.writeFileSync(path.join(packageRoot,'build/activation-good.mjs'),`import fs from 'node:fs';import {startAgentExecutionServer} from './index.js';const input=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));await startAgentExecutionServer({...input,serviceOptions:{executors:[],modelProviders:[]}});\n`);
   const working=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/activation-good.mjs'});
   const ready=await activateAgentServiceRuntime({dataRoot,profileId,runtime:working});
@@ -67,7 +67,7 @@ test('activation refuses an attempted broken target without claiming uncertain s
   fs.writeFileSync(path.join(packageRoot,'build/activation-broken.mjs'),`import fs from 'node:fs';fs.writeFileSync(${JSON.stringify(attempted)},'attempted');throw Error('fixture startup failure');\n`);
   const broken=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/activation-broken.mjs'});
   await assert.rejects(activateAgentServiceRuntime({dataRoot,profileId,runtime:broken}),(error:any)=>{
-    assert.ok(['agent_process_activation_failed','agent_process_start_unconfirmed'].includes(error.code));
+    assert.ok(['agent_process_activation_failed','agent_process_start_unconfirmed'].includes(error.code), `${error.code}: ${error.message}`);
     assert.equal(error.stage,'connect');assert.ok(error.message.includes(`connect / ${error.code}`));return true;
   });
   assert.equal(fs.readFileSync(attempted,'utf8'),'attempted');
@@ -101,8 +101,8 @@ test('activation retains a busy owner and completes through parallel adoption wh
     for(let attempt=0;attempt<200&&livePids.some(pid=>isLive(pid));attempt++)await new Promise(resolve=>setTimeout(resolve,50));
     fs.rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});
   });
-  fs.cpSync(path.resolve(import.meta.dirname,'../../node_modules/@buildr-ai/buildr-agent'),packageRoot,{recursive:true,mode:fs.constants.COPYFILE_FICLONE});
-  fs.copyFileSync(path.resolve(import.meta.dirname,'../../../buildr-agent/test/integration/fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/activation-fixture.mjs'));
+  fs.cpSync(path.resolve(import.meta.dirname,'../../node_modules/@buildr-ai/buildr-harness'),packageRoot,{recursive:true,mode:fs.constants.COPYFILE_FICLONE});
+  fs.copyFileSync(path.resolve(import.meta.dirname,'../../../buildr-harness/test/integration/fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/activation-fixture.mjs'));
   fs.writeFileSync(path.join(packageRoot,'build/fixture-version.json'),JSON.stringify({version:'old'}));
   const old=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/activation-fixture.mjs'});
   const legacy=await connectAgentProcess({dataRoot,profileId,runtime:old,sourceId:'buildr',legacySourceId:'buildr',host:{

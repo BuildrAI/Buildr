@@ -64,3 +64,14 @@ test('记住的模型按账号和模型身份恢复，停用或已消失的选�
   assert.equal(selectedExecutionModel(options, null), null);
   assert.equal(selectedExecutionModel(executionModelOptions([model({enabled: false})]), JSON.stringify(['account', 'fast'])), null);
 });
+
+test('直接执行模型排除无网关推理与执行器独占来源，并优先使用服务端展示名称', () => {
+  const options = executionModelOptions([
+    model({accountId: 'native-antigravity', provider: 'native-antigravity', modelId: 'gemini-2.5-pro', inference: 'none', sharing: {kind: 'executor-exclusive', executors: ['antigravity'], reason: '独占'}}),
+    model({accountId: 'exclusive-only', provider: 'other', modelId: 'm1', sharing: {kind: 'executor-exclusive', executors: ['other'], reason: '独占'}}),
+    model({accountId: 'gateway-source', provider: 'new-vendor', accountLabel: 'Workspace A', modelId: 'm2', label: 'Model 2', inference: 'gateway', sharing: {kind: 'gateway'}, presentation: {vendorLabel: 'NewVendor', sourceLabel: 'NewVendor Cloud', quotaLabel: 'NewVendor'}}),
+  ]);
+  assert.deepEqual(options.map(option => option.accountId), ['gateway-source']);
+  const groups = executionModelGroups(options);
+  assert.deepEqual(groups.map(group => [group.id, group.label]), [['gateway-source', 'NewVendor']]);
+});

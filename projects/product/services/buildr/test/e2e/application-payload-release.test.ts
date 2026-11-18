@@ -5,6 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { spawn, spawnSync } from 'node:child_process';
+import { stopAgentProcess } from '@buildr-ai/buildr-harness';
 import { useLegacyAssetCatalog } from '../helpers/legacy-asset-catalog.ts';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { createInstallationOrigin } from '../../src/modules/installation/infrastructure/installation-origin.ts';
@@ -22,6 +23,7 @@ test('formal npm entry fails closed before enrollment when receipt and payload i
         ...process.env,
         PATH: [path.dirname(process.execPath), process.env.PATH].filter(Boolean).join(path.delimiter),
         npm_config_cache: path.join(root, 'npm-cache'),
+        NPM_CONFIG_CACHE: path.join(root, 'npm-cache'),
         npm_config_update_notifier: 'false',
       },
     });
@@ -64,6 +66,7 @@ test('npm global postinstall enrolls identity-bound update authority for two pre
           BUILDR_APP_DATA_DIR: appData,
           BUILDR_PRODUCT_DATA_DIR: appData,
           npm_config_cache: npmCache,
+          NPM_CONFIG_CACHE: npmCache,
           npm_config_update_notifier: 'false',
         },
       });
@@ -111,6 +114,7 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
         ...process.env,
         PATH: [path.dirname(process.execPath), process.env.PATH].filter(Boolean).join(path.delimiter),
         npm_config_cache: npmCache,
+        NPM_CONFIG_CACHE: npmCache,
         npm_config_update_notifier: 'false',
       },
     });
@@ -336,8 +340,15 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
         new Promise((resolve: any) => web.once('close', resolve)),
         new Promise((resolve: any) => setTimeout(resolve, 2_000)),
       ]);
-      if (web.exitCode === null) web.kill('SIGKILL');
+      if (web.exitCode === null) {
+        web.kill('SIGKILL');
+        await Promise.race([
+          new Promise((resolve: any) => web.once('close', resolve)),
+          new Promise((resolve: any) => setTimeout(resolve, 2_000)),
+        ]);
+      }
     }
+    await stopAgentProcess({ dataRoot: appData, mode: 'stop-owned' }).catch(() => {});
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

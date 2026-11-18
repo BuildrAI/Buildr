@@ -1,6 +1,6 @@
 {
   "name": "@buildr-ai/buildr",
-  "version": "0.1.0-rc.59",
+  "version": "0.1.0-rc.60",
   "buildrCompatibility": {
     "schemaVersion": "buildr.package-compatibility/v1",
     "provides": [
@@ -80,7 +80,7 @@
     "artifacts:prepare": "npm run agent:prepare && npm run contracts:prepare && npm run test-context:generate",
     "candidate:prepare": "node tools/verification/candidate-environment.ts prepare",
     "typecheck": "node tools/testing/run-types.ts --project tsconfig.json",
-    "build:web": "npm run contracts:prepare && npm run contracts:check && npm run contracts:check:workspace && node tools/build/web-dist.ts",
+    "build:web": "npm run agent:prepare && npm run contracts:prepare && npm run contracts:check && npm run contracts:check:workspace && node tools/build/web-dist.ts",
     "dev:web": "npm --prefix ../buildr-web run dev",
     "benchmark:task-query-million": "node tools/performance/task-query-million.ts",
     "install:development": "./tools/development/install-buildr-development",
@@ -100,7 +100,7 @@
     "node": ">=24.15.0"
   },
   "dependencies": {
-    "@buildr-ai/buildr-agent": "file:../buildr-agent",
+    "@buildr-ai/buildr-harness": "file:../buildr-harness",
     "@vscode/ripgrep-universal": "1.18.0",
     "ajv": "8.18.0",
     "mysql2": "3.24.5",
@@ -113,7 +113,7 @@
     "mysql2",
     "node-sql-parser",
     "yaml",
-    "@buildr-ai/buildr-agent"
+    "@buildr-ai/buildr-harness"
   ],
   "devDependencies": {
     "@fission-ai/openspec": "1.13.0",

@@ -1,5 +1,5 @@
 ---
-id: buildr-agent-work-infrastructure
+id: buildr-harness-work-infrastructure
 title: Buildr：Agent 的工作基础设施
 kind: product-article
 status: published

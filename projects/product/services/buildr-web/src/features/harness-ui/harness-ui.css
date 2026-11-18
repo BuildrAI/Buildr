@@ -1,0 +1,10 @@
+.development-harness-frame{position:relative;display:flex;flex-direction:column;height:100%;min-height:0;min-width:0;flex:none;max-width:calc(100vw - 52px);background:var(--soft-bg,#fff)}
+.development-harness-frame[hidden]{display:none!important}
+.development-harness-frame.is-full{position:fixed;inset:var(--app-header-height,56px) 0 0;z-index:90;width:100%!important;max-width:none;height:auto}
+.development-harness-divider.split-divider{flex:none;margin-inline:-4.5px;z-index:9}
+.development-harness-rail{display:flex;flex-direction:column;align-items:center;flex:none;width:52px;padding:6px 5px 10px;background:#fff;border-left:1px solid var(--soft-line)}
+.development-harness-rail>.ant-btn{width:40px;height:40px;padding:0;border:0;color:var(--soft-muted);font-size:var(--icon-size-navigation);border-radius:8px}
+.development-harness-rail>.development-harness-settings{margin-top:auto}
+@media(max-width:760px){.development-harness-frame{position:fixed;inset:var(--app-header-height,56px) 0 0;z-index:90;width:100%!important;max-width:none;height:auto}.development-harness-rail,.development-harness-divider{display:none}}
+.global-conversations-control{display:none;align-items:center;gap:0}
+@media(max-width:760px){.global-conversations-control{display:flex}}

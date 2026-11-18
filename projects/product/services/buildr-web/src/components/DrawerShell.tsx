@@ -1,9 +1,11 @@
-import { useContext, type ReactNode } from 'react';
+import {useContext, type ReactNode} from 'react';
 import { Button, Drawer } from 'antd';
 import { CloseOutlined } from '@ant-design/icons';
-import { WorkspaceViewActiveContext } from '../app/pageTabs';
+import {WorkspaceViewActiveContext} from '../app/pageTabs';
+import {WorkEnvironmentVisibleContext} from '../app/work-environment-visibility';
 
-type Props = {
+export type DrawerShellProps = {
+  active?:boolean;
   open: boolean;
   /** 标识行（eyebrow），如「AGENT ACTION」「编辑项目」。 */
   eyebrow?: string;
@@ -36,6 +38,7 @@ type Props = {
  */
 export function DrawerShell({
   open,
+  active=true,
   eyebrow,
   title,
   sub,
@@ -53,12 +56,14 @@ export function DrawerShell({
   id,
   closeButtonId,
   titleId,
-}: Props) {
+}: DrawerShellProps) {
   const viewActive = useContext(WorkspaceViewActiveContext);
+  const environmentVisible = useContext(WorkEnvironmentVisibleContext);
+  const surfaceActive = active && viewActive && environmentVisible;
   return (
     <Drawer
       id={id}
-      open={open && viewActive}
+      open={open && surfaceActive}
       placement="right"
       width={width}
       rootClassName={['drawer-shell', rootClassName].filter(Boolean).join(' ')}
@@ -66,10 +71,10 @@ export function DrawerShell({
       maskClosable={maskClosable}
       keyboard={keyboard}
       closable={false}
-      destroyOnClose={!open || viewActive}
+      destroyOnClose={!open || surfaceActive}
       afterOpenChange={visible => {
         // Hiding a cached view is not a domain close and must retain its draft.
-        if (viewActive || !open) afterOpenChange?.(visible);
+        if (surfaceActive || !open) afterOpenChange?.(visible);
       }}
       title={(
         <div className="drawer-shell-heading">

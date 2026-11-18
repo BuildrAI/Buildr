@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { stopAgentProcess } from '@buildr-ai/buildr-harness';
 import { materializeCleanProductSource } from '../../test/helpers/clean-product-source.ts';
 import { createWebStaticFixture } from '../../test/helpers/web-static-fixture.ts';
 
@@ -15,7 +15,7 @@ const controller = materializeCleanProductSource(serviceRoot, path.join(root, 'c
 createWebStaticFixture(path.join(controller.root, 'web-dist'));
 const executable = path.join(dataRoot, 'agent-service/programs/codex/fixture/codex.mjs');
 fs.mkdirSync(path.dirname(executable), {recursive:true});
-fs.copyFileSync(path.resolve(serviceRoot, '../buildr-agent/test/integration/executors/fixtures/codex-cli.mjs'), executable);
+fs.copyFileSync(path.resolve(serviceRoot, '../buildr-harness/test/integration/executors/fixtures/codex-cli.mjs'), executable);
 const children: ChildProcess[] = [];
 let diagnostics = '';
 const wait = (ms = 25) => new Promise<void>(resolve => setTimeout(resolve, ms));

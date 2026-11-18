@@ -52,7 +52,7 @@ concurrency:
 
 jobs:
   contract:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
       version: ${{ steps.contract.outputs.version }}
@@ -142,8 +142,7 @@ jobs:
           retention-days: 90
 
   candidate:
-    needs: contract
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
       run:
@@ -159,10 +158,15 @@ jobs:
         with:
           node-version: "24.15.0"
           package-manager-cache: false
-      - uses: actions/download-artifact@v7
-        with:
-          name: ${{ needs.contract.outputs.artifact }}
-          path: ${{ runner.temp }}/contract
+      - name: Validate the release transaction correlation context
+        env:
+          BUILDR_RELEASE_CONTEXT: ${{ inputs.release_context }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/contract-input" "${RUNNER_TEMP}/contract"
+          node --input-type=module -e 'import fs from "node:fs"; fs.writeFileSync(process.argv[1], `${process.env.BUILDR_RELEASE_CONTEXT}\n`, { mode: 0o600 });' "${RUNNER_TEMP}/contract-input/release-context.json"
+          node ../../../../skills/buildr-release/scripts/release-readiness.ts validate-context \
+            --input "${RUNNER_TEMP}/contract-input/release-context.json" \
+            --output "${RUNNER_TEMP}/contract/release-context.json"
       - name: Download the matching Candidate aggregate
         uses: actions/download-artifact@v7
         with:

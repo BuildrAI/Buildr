@@ -103,14 +103,14 @@ export function createVerificationSourceInputReader(repositoryRoot: string, prod
   const prefix = 'projects/product/services/', backend = `${prefix}buildr/`, web = `${prefix}buildr-web/`, plugin = `${prefix}dsh-plugin/`;
   const common = (file: string) => ['projects/product/.node-version', 'projects/product/buildr', 'projects/product/preparation.yml', 'projects/product/verification.yml'].includes(file)
     || !options.legacyDeclarations && ['.github/workflows/verify.yml', '.github/workflows/verify-package.yml'].includes(file);
-  const inBackend = (file: string) => file.startsWith(backend) || file.startsWith(`${prefix}buildr-agent/`) || file.startsWith('skills/buildr-release/') || common(file);
+  const inBackend = (file: string) => file.startsWith(backend) || file.startsWith(`${prefix}buildr-harness/`) || file.startsWith('skills/buildr-release/') || common(file);
   const selected: Record<VerificationReuseScope, Entry[]> = {
     backend: source.entries.filter(([file]) => inBackend(file!)),
     // Windows boundary fixtures retain the entire backend runtime/materialized
     // source and common declarations, independently of changed-path ownership.
     'platform-backend': source.entries.filter(([file]) => file!.startsWith(backend) || common(file!)),
-    web: source.entries.filter(([file]) => inBackend(file!) || file!.startsWith(web)),
-    plugin: source.entries.filter(([file]) => inBackend(file!) || file!.startsWith(web) || file!.startsWith(plugin) || file!.startsWith('.github/')),
+    web: source.entries.filter(([file]) => inBackend(file!) || (file!.startsWith(web)||file!.startsWith(`${prefix}buildr-harness-web/`)||file!.startsWith(`${prefix}buildr-harness-web/`))),
+    plugin: source.entries.filter(([file]) => inBackend(file!) || (file!.startsWith(web)||file!.startsWith(`${prefix}buildr-harness-web/`)||file!.startsWith(`${prefix}buildr-harness-web/`)) || file!.startsWith(plugin) || file!.startsWith('.github/')),
     product: source.entries.filter(([file]) => file!.startsWith('projects/product/') || file!.startsWith('skills/buildr-release/') || file === 'CHANGELOG.md' || file!.startsWith('.github/')),
     repository: source.entries,
     runtime: source.entries.filter(([file]) => !['knowledge', 'openspec', 'tasks'].some(directory => file!.startsWith(`projects/product/${directory}/`))),
@@ -146,6 +146,7 @@ export function createVerificationSourceInputReader(repositoryRoot: string, prod
   };
   return {
     inputs,
+    fileIdentities: Object.fromEntries(source.entries.map(([file, ...identity]) => [file!, digest(identity)])),
     contentIdentities: Object.fromEntries(Object.entries(selected).map(([scope, entries]) => [scope, digest(entries)])) as Record<VerificationReuseScope, ReuseDigest>,
     unavailableScopes: Object.entries(selected).filter(([, entries]) => entries.some(([file]) => source.unavailable.has(file!))).map(([scope]) => scope as VerificationReuseScope),
   };
@@ -154,7 +155,7 @@ export function createVerificationSourceInputReader(repositoryRoot: string, prod
 export function collectVerificationSourceInputs(repositoryRoot: string, productRoot: string, steps: VerificationReuseStep[], commit?: string, legacyDeclarations = false) {
   const reader = createVerificationSourceInputReader(repositoryRoot, productRoot, commit, undefined, { legacyDeclarations });
   return {
-    contentIdentities: reader.contentIdentities, unavailableScopes: reader.unavailableScopes,
+    contentIdentities: reader.contentIdentities, unavailableScopes: reader.unavailableScopes, fileIdentities: reader.fileIdentities,
     stepInputs: Object.fromEntries(steps.filter(step => step.reuse && step.reuse.inputMode === 'runtime-check').map(step => [step.id, reader.inputs(step, false)])),
     proofInputs: Object.fromEntries(steps.filter(step => step.reuse).map(step => [step.id, { ...reader.inputs(step, true),
       selectionIdentity: digest({ executor: portableVerificationExecutor(step.executor, { repositoryRoot }), scope: step.reuse && step.reuse.scope }) }])),

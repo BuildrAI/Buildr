@@ -11,7 +11,13 @@ import { SOURCE_CONTROL_LIMITS, assertCodeRevision, assertSourceControlPath, cod
 import type { CodeReadMeta, CodeReadDiagnostic, CodeSourceControlInput, CodeSourceControlResponse, CodeSourceControlRepository, CodeSourceControlWorktree, CodeRepositoryCloneStatus, CodeRepositoryCloneResult, CodeHistoryCommit, CodeHistoryResponse, CodeAuthorsResponse, CodeCommitResponse, CodeDiffResponse, CodeSourceFileResponse } from './source-control-model.ts';
 
 type Catalog = { repositories: Array<{ id: string; code: string; name: string; location: string; available: boolean; gitId: string | null }>; selectedRepositoryIds: string[]; scopeReason: string; diagnostics: CodeReadDiagnostic[] };
-type Dependencies = { repositories(root: string, taskId?: string, repositoryId?: string): Catalog; inventory(root:string,taskId?:string):Catalog; source(root: string, input: CodeSourceControlInput): CodeSource;worktrees(root:string,repositoryId:string,registered:Catalog['repositories'][number]):{worktrees:CodeGitWorktree[];source(worktreeId:string):CodeSource;prepareVerification(sources:CodeSource[]):(source:CodeSource)=>void}; taskAssociations?(root:string,repositories:CodeSourceControlRepository[],taskId?:string,deadline?:number):ReturnType<typeof readSourceControlTaskAssociations>; readTask?(root: string, taskId: string): { taskId: string; title: string }; repositoryCloneStatus?(root: string, repositoryId: string): CodeRepositoryCloneStatus; repositoryCloneRequest?(root: string, repositoryId: string): CodeRepositoryCloneResult };
+type WorktreeReading = {
+  worktrees: CodeGitWorktree[];
+  source(worktreeId: string): CodeSource;
+  prepareVerification?(sources: CodeSource[]): (source: CodeSource) => void;
+  prepareVerificationAsync?(sources: CodeSource[]): Promise<(source: CodeSource) => void>;
+};
+type Dependencies = { repositories(root: string, taskId?: string, repositoryId?: string): Catalog; inventory(root:string,taskId?:string):Catalog; source(root: string, input: CodeSourceControlInput): CodeSource;worktrees(root:string,repositoryId:string,registered:Catalog['repositories'][number]):{worktrees:CodeGitWorktree[];source(worktreeId:string):CodeSource;prepareVerification(sources:CodeSource[]):(source:CodeSource)=>void}; worktreesAsync?(root:string,repositoryId:string,registered:Catalog['repositories'][number]):Promise<WorktreeReading>; taskAssociations?(root:string,repositories:CodeSourceControlRepository[],taskId?:string,deadline?:number):ReturnType<typeof readSourceControlTaskAssociations>; readTask?(root: string, taskId: string): { taskId: string; title: string }; repositoryCloneStatus?(root: string, repositoryId: string): CodeRepositoryCloneStatus; repositoryCloneRequest?(root: string, repositoryId: string): CodeRepositoryCloneResult };
 const diagnostic = (error: unknown, repositoryId: string | null,worktreeId?:string): CodeReadDiagnostic => ({ code: (error as { code?: string })?.code || 'code_source_unavailable', message: error instanceof Error ? error.message : '代码来源暂不可读取。', repositoryId,...(worktreeId?{worktreeId}:{}) });
 // The inventory pass and the live worktree read can report one unavailable repository
 // through two layers; the same reason on the same source is one fact and the earlier
@@ -59,50 +65,102 @@ export function createSourceControlApplication(dependencies: Dependencies) {
     accept(value: ReturnType<typeof observeSourceControl>): void;
     fail(error: unknown): void;
   };
+  type PendingVerification = {
+    source: CodeSource;
+    commit(): void;
+    fail(error: unknown): void;
+  };
+  type ScanStep =
+    | { kind: 'open'; registered: Catalog['repositories'][number] }
+    | { kind: 'verify'; reading: WorktreeReading; uncached: StatusRead[]; toVerify: PendingVerification[] };
 
-  type StatusBatch = { reads: StatusRead[]; prepareVerification(sources: CodeSource[]): (source: CodeSource) => void };
+  const WORKER_STATUS_CONCURRENCY = 6;
+
+  function applyVerification(verify: (source: CodeSource) => void, toVerify: PendingVerification[]) {
+    for (const item of toVerify) {
+      try { verify(item.source); item.commit(); }
+      catch (error) { item.fail(error); }
+    }
+  }
+
+  function failAllVerification(error: unknown, toVerify: PendingVerification[]) {
+    for (const item of toVerify) item.fail(error);
+  }
 
   function sourceControl(root: string, input: CodeSourceControlInput = {}, observedWorktrees: CodeSourceControlWorktree[] = []): CodeSourceControlResponse {
-    const scan = scanSourceControl(root, input, observedWorktrees, 1);
-    for (let step = scan.next(); ; step = scan.next()) {
-      if (step.done) return step.value;
-      for (const read of step.value.reads) {
-        try {
-          const observed = observeSourceControl(read.source);
-          step.value.prepareVerification([read.source])(read.source);
-          read.accept(observed);
+    const scan = scanSourceControl(root, input, observedWorktrees);
+    let step = scan.next();
+    while (!step.done) {
+      try {
+        if (step.value.kind === 'open') {
+          step = scan.next(dependencies.worktrees(root, step.value.registered.id, step.value.registered));
+          continue;
         }
-        catch (error) { read.fail(error); }
+        const { reading, uncached, toVerify } = step.value;
+        for (const read of uncached) {
+          try { read.accept(observeSourceControl(read.source)); }
+          catch (error) { read.fail(error); }
+        }
+        if (toVerify.length) {
+          try {
+            const verify = reading.prepareVerification!(toVerify.map(item => item.source));
+            applyVerification(verify, toVerify);
+          } catch (error) {
+            failAllVerification(error, toVerify);
+          }
+        }
+        step = scan.next();
+      } catch (error) {
+        step = scan.throw(error);
       }
     }
+    return step.value;
   }
 
   async function sourceControlInWorker(root: string, input: CodeSourceControlInput = {}, observedWorktrees: CodeSourceControlWorktree[] = []): Promise<CodeSourceControlResponse> {
     // Each Web read worker handles one request at a time. Bound the number
     // of child Git processes even when both workers have cold requests.
-    const scan = scanSourceControl(root, input, observedWorktrees, 3);
-    for (let step = scan.next(); ; step = scan.next()) {
-      if (step.done) return step.value;
-      const { reads, prepareVerification } = step.value;
-      const results = await Promise.allSettled(reads.map(read => observeSourceControlAsync(read.source)));
-      const successful = reads.filter((_, index) => results[index].status === 'fulfilled');
-      let verify: (source: CodeSource) => void = () => {};
-      if (successful.length) {
-        try { verify = prepareVerification(successful.map(read => read.source)); }
-        catch (error) { verify = () => { throw error; }; }
-      }
-      for (const [index, read] of reads.entries()) {
-        const result = results[index];
-        try {
-          if (result.status === 'rejected') throw result.reason;
-          verify(read.source);
-          read.accept(result.value);
-        } catch (error) { read.fail(error); }
+    const scan = scanSourceControl(root, input, observedWorktrees);
+    let step = scan.next();
+    while (!step.done) {
+      try {
+        if (step.value.kind === 'open') {
+          const reading = dependencies.worktreesAsync
+            ? await dependencies.worktreesAsync(root, step.value.registered.id, step.value.registered)
+            : dependencies.worktrees(root, step.value.registered.id, step.value.registered);
+          step = scan.next(reading);
+          continue;
+        }
+        const { reading, uncached, toVerify } = step.value;
+        for (let offset = 0; offset < uncached.length; offset += WORKER_STATUS_CONCURRENCY) {
+          const chunk = uncached.slice(offset, offset + WORKER_STATUS_CONCURRENCY);
+          const settled = await Promise.allSettled(chunk.map(read => observeSourceControlAsync(read.source)));
+          for (const [index, read] of chunk.entries()) {
+            const outcome = settled[index];
+            if (outcome.status === 'fulfilled') read.accept(outcome.value);
+            else read.fail(outcome.reason);
+          }
+        }
+        if (toVerify.length) {
+          try {
+            const sources = toVerify.map(item => item.source);
+            const verify = reading.prepareVerificationAsync
+              ? await reading.prepareVerificationAsync(sources)
+              : reading.prepareVerification!(sources);
+            applyVerification(verify, toVerify);
+          } catch (error) {
+            failAllVerification(error, toVerify);
+          }
+        }
+        step = scan.next();
+      } catch (error) {
+        step = scan.throw(error);
       }
     }
+    return step.value;
   }
 
-  function* scanSourceControl(root: string, input: CodeSourceControlInput, observedWorktrees: CodeSourceControlWorktree[], batchSize: number): Generator<StatusBatch, CodeSourceControlResponse, void> {
+  function* scanSourceControl(root: string, input: CodeSourceControlInput, observedWorktrees: CodeSourceControlWorktree[]): Generator<ScanStep, CodeSourceControlResponse, any> {
     if(input.repositoryId!==undefined&&(typeof input.repositoryId!=='string'||!input.repositoryId))throw codeFailure('code_repository_required','必须选择已登记代码库。');
     const catalog = dependencies.repositories(root,undefined,input.repositoryId), repositories: CodeSourceControlRepository[] = [];
     const diagnostics = [...catalog.diagnostics]; let truncated = false,statusAttempts=0;const deadline=Date.now()+SOURCE_CONTROL_LIMITS.statusReadMs;
@@ -117,8 +175,9 @@ export function createSourceControlApplication(dependencies: Dependencies) {
         continue;
       }
       try {
-        const reading=dependencies.worktrees(root,registered.id,registered),worktrees=reading.worktrees;output.worktreeCount=worktrees.length;output.worktreeCoverage.total=worktrees.length;
-        let batch: StatusRead[] = [];
+        const reading: WorktreeReading = yield { kind: 'open', registered };
+        const worktrees=reading.worktrees;output.worktreeCount=worktrees.length;output.worktreeCoverage.total=worktrees.length;
+        const uncached: StatusRead[] = [], toVerify: PendingVerification[] = [];
         for(const [position,worktree]of worktrees.entries()){
           const checkout={...worktree,available:false,source:null as CodeSource|null,status:'unavailable' as 'complete'|'partial'|'unavailable',upstream:null as string|null,ahead:null as number|null,behind:null as number|null,taskId:null as string|null,taskTitle:null as string|null,taskDiagnostic:null as string|null,fileCount:null as number|null,changes:[] as CodeSourceControlRepository['changes'],observedRevision:null as string|null,readAt:new Date().toISOString(),coverage:{fileLimit:SOURCE_CONTROL_LIMITS.files,truncated:false},diagnostics:[] as CodeReadDiagnostic[]};output.worktrees.push(checkout);
           try{
@@ -131,34 +190,41 @@ export function createSourceControlApplication(dependencies: Dependencies) {
               && value.source?.repositoryId === registered.id && value.status === 'complete' && value.available && !value.diagnostics.length
               && value.branch === worktree.branch && value.head === worktree.head && Date.now() >= Date.parse(value.readAt) && Date.now() - Date.parse(value.readAt) < 10_000);
             if (cached) {
-              reading.prepareVerification([source])(source);
-              Object.assign(checkout, {available:true, source:{...source,version:cached.source!.version}, status:cached.status, branch:cached.branch, head:cached.head,
-                upstream:cached.upstream,ahead:cached.ahead,behind:cached.behind,fileCount:cached.fileCount,changes:cached.changes,
-                observedRevision:cached.observedRevision,coverage:cached.coverage,readAt:cached.readAt});
-              output.worktreeCoverage.read++;
+              toVerify.push({
+                source,
+                commit() {
+                  Object.assign(checkout, {available:true, source:{...source,version:cached.source!.version}, status:cached.status, branch:cached.branch, head:cached.head,
+                    upstream:cached.upstream,ahead:cached.ahead,behind:cached.behind,fileCount:cached.fileCount,changes:cached.changes,
+                    observedRevision:cached.observedRevision,coverage:cached.coverage,readAt:cached.readAt});
+                  output.worktreeCoverage.read++;
+                },
+                fail(error) { checkout.diagnostics.push(diagnostic(error, registered.id, worktree.worktreeId)); },
+              });
               continue;
             }
-            batch.push({
+            uncached.push({
               source,
               accept(observed) {
-                const currentVersion = observed.branch || observed.head;
-                source.version = currentVersion ? currentVersion + ' · 当前文件' : '当前文件';
-                Object.assign(checkout, {available:true,source,status:observed.truncated?'partial':'complete',branch:observed.branch,head:observed.head,upstream:observed.upstream,ahead:observed.ahead,behind:observed.behind,fileCount:observed.fileCount,changes:observed.files,observedRevision:observed.observedRevision,coverage:{fileLimit:SOURCE_CONTROL_LIMITS.files,truncated:observed.truncated}});
-                output.worktreeCoverage.read++;
-                if (observed.truncated) {
-                  truncated = true;
-                  checkout.diagnostics.push({code:'code_changes_truncated',message:'单个检出最多返回1000个路径的变更元信息，已确认数量仍包含其余路径。',repositoryId:registered.id,worktreeId:worktree.worktreeId});
-                }
+                toVerify.push({
+                  source,
+                  commit() {
+                    const currentVersion = observed.branch || observed.head;
+                    source.version = currentVersion ? currentVersion + ' · 当前文件' : '当前文件';
+                    Object.assign(checkout, {available:true,source,status:observed.truncated?'partial':'complete',branch:observed.branch,head:observed.head,upstream:observed.upstream,ahead:observed.ahead,behind:observed.behind,fileCount:observed.fileCount,changes:observed.files,observedRevision:observed.observedRevision,coverage:{fileLimit:SOURCE_CONTROL_LIMITS.files,truncated:observed.truncated}});
+                    output.worktreeCoverage.read++;
+                    if (observed.truncated) {
+                      truncated = true;
+                      checkout.diagnostics.push({code:'code_changes_truncated',message:'单个检出最多返回1000个路径的变更元信息，已确认数量仍包含其余路径。',repositoryId:registered.id,worktreeId:worktree.worktreeId});
+                    }
+                  },
+                  fail(error) { checkout.diagnostics.push(diagnostic(error, registered.id, worktree.worktreeId)); },
+                });
               },
               fail(error) { checkout.diagnostics.push(diagnostic(error, registered.id, worktree.worktreeId)); },
             });
-            if (batch.length === batchSize) {
-              yield { reads: batch, prepareVerification: reading.prepareVerification };
-              batch = [];
-            }
           }catch(error){checkout.diagnostics.push(diagnostic(error,registered.id,worktree.worktreeId));}
         }
-        if (batch.length) yield { reads: batch, prepareVerification: reading.prepareVerification };
+        if (uncached.length || toVerify.length) yield { kind: 'verify', reading, uncached, toVerify };
         for (const checkout of output.worktrees) output.diagnostics.push(...checkout.diagnostics);
         const primary=output.worktrees.find(worktree=>worktree.isRegistered);
         if(primary)Object.assign(output,{source:primary.source,branch:primary.branch,head:primary.head,upstream:primary.upstream,ahead:primary.ahead,behind:primary.behind,changes:primary.changes,observedRevision:primary.observedRevision});

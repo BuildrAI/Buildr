@@ -91,6 +91,15 @@ test('external rename preserves observations and personal authentication, and sa
   assert.equal(fs.existsSync(original), false); assert.equal((await f.run(created.id)).credentialMatches, true);
 });
 
+test('changing the generated filename works when the volume cannot publish hard links', t => {
+  const f = fixture(t), created = f.create();
+  t.mock.method(fs, 'linkSync', () => { throw Object.assign(new Error('operation not supported'), { code: 'ENOTSUP' }); });
+  const changed = f.save(created.id, 'reg');
+  assert.equal(changed.sourcePath, `connections/instances/nacos-reg--${suffix(created.id)}.yml`);
+  assert.equal(YAML.parse(fs.readFileSync(path.join(f.root, changed.sourcePath), 'utf8')).id, created.id);
+  assert.equal(fs.existsSync(path.join(f.root, created.sourcePath)), false, 'the previous source is removed only after the new copy is verified');
+});
+
 test('two identical visible candidates execute only the explicitly selected id, revision, configuration and authentication', async t => {
   const f = fixture(t), first = f.create(), second = f.create('connection-shared-prefix-second', 'qa', 'second');
   assert.equal(first.name, second.name); assert.equal(first.environment, second.environment); assert.equal(first.config.site, second.config.site);

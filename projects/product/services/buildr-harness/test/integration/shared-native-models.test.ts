@@ -1,0 +1,276 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp, mkdir,writeFile,readFile,rm,symlink} from 'node:fs/promises';
+import {tmpdir}from'node:os';import{join}from'node:path';import{createCipheriv}from'node:crypto';
+import{createModelAccess}from'../../src/model-access/application.ts';
+import{createAgentService}from'../../src/index.ts';
+import{createQoderModelProvider,readQoderIdentity,requestQoderModel,unwrapQoderStream}from'../../src/model-access/providers/qoder.ts';
+import{createAntigravityModelProvider}from'../../src/model-access/providers/antigravity.ts';
+import type{AgentExecutor}from'../../src/contracts.ts';
+const offering={id:'model',label:'Model',images:false,tools:true};
+const signal=()=>AbortSignal.timeout(3000);
+function sse(frames:unknown[],done=true){return new Response(frames.map(frame=>'data: '+(typeof frame==='string'?frame:JSON.stringify(frame))+'\n\n').join('')+(done?'data: [DONE]\n\n':''));}
+test('linked sources reuse native credentials and query Qoder without starting its executor',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-linked-'));let account='a',requests=0,closed=0;
+ const executors=['codex','dsh','qoder'].map(id=>({descriptor:{id,label:id,capabilities:{text:true,images:false,stop:true,resume:true,approval:false,questions:false,maxInputBytes:1000},runtimeTraits:{transientAccountProbe:true}},async open(){return{bindingIdentity:id,capabilities:this.descriptor.capabilities,inspectAccount:async()=>({status:'ready' as const}),models:async()=>[{id:'model',label:'Model'}],modelIdentity:async()=>id+':'+account,requestModel:async(path:string)=>{requests++;return Response.json(path.includes('models?')?{models:[{slug:'model'}]}:path==='/models'?id==='dsh'?{data:[{id:'model',api_capabilities:{anthropic_messages:{}}}]}:{chat:[{key:'model',enable:true}]}:{});},beginLogin:async()=>{throw Error('duplicate_login');},cancelLogin:async()=>{},createContext:async()=>({id:'context'}),resumeContext:async()=>{},readHistory:async()=>[],send:async()=>{},observe:async()=>({status:'idle' as const,tools:[]}),reply:async()=>{},stop:async()=>({status:'stopped' as const,tools:[]}),close:async()=>{closed++;}};}})) satisfies AgentExecutor[];
+ let expired=false,qoderRequests=0,qoderOpens=0;
+ const qoderAuth=join(root,'agent-service','model-access','accounts','native-qoder','qoder-config','.auth');
+ const machine='1234567890123456-machine';
+ await mkdir(qoderAuth,{recursive:true});
+ await writeFile(join(qoderAuth,'machine_id'),machine);
+ async function login(uid:string) {
+   const key=Buffer.from(machine.slice(0,16));
+   const cipher=createCipheriv('aes-128-cbc',key,key);
+   await writeFile(join(qoderAuth,'user'),Buffer.concat([cipher.update(JSON.stringify({uid,security_oauth_token:'token-'+uid})),cipher.final()]).toString('base64'));
+ }
+ await login('first');
+ t.mock.method(globalThis,'fetch',async (url:string)=>{
+   qoderRequests++;
+   if (expired) return Response.json({}, {status:401});
+   if (String(url).startsWith('https://center.qoder.sh/')) return Response.json({userType:'teams',userQuota:{total:10,remaining:9}});
+   assert.match(String(url),/^https:\/\/api3\.qoder\.sh\//);
+   return Response.json({chat:[{key:'model',enable:true}]});
+ });
+ const originalQoderOpen=executors[2]!.open;
+ executors[2]!.open=async()=>{qoderOpens++;throw new Error('Qoder executor must not start for a query');};
+ const service=createAgentService({dataRoot:root,executors,resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+ try{
+  await service.models.catalog.list({refresh:true});
+  const initialQoder=await service.models.accounts.check('native-qoder');
+  assert.equal(initialQoder.status,'ready');
+  assert.equal((await service.models.catalog.list()).models.some(m=>m.accountId==='native-qoder'),true,'standalone Qoder discovers models before connecting Qoder agent');
+  assert.equal(qoderOpens,0);
+  for(const id of ['codex','dsh'])await service.connections.connect(id,{expectedRevision:'unconfigured'});
+  const catalog=await service.models.catalog.list({refresh:true});assert.equal(catalog.models.length,3);assert.ok(catalog.models.every(m=>m.enabled===false&&!m.available));
+  const first=(await service.models.accounts.list()).accounts;assert.deepEqual(first.filter(a=>a.connectionId).map(a=>a.connectionId),['codex','dsh']);assert.equal(requests,3);
+  const qoderStandalone=first.find(a=>a.id==='native-qoder');assert.ok(qoderStandalone);assert.equal(qoderStandalone.connectionId,undefined);assert.equal(qoderStandalone.status,'ready');
+  const cn=first.find(a=>a.id==='native-qoder-cn');assert.ok(cn);assert.equal(cn.connectionId,undefined);assert.equal(cn.status,'not-authenticated');assert.deepEqual(cn.models,[]);
+  await service.models.catalog.list();assert.equal(requests,3);
+  assert.equal(closed,4,'Codex and DSH release both connection and supplier probes');
+  assert.ok(qoderRequests>=2);
+  const qoderAccount=service.models.accounts.read('native-qoder');
+  assert.equal(qoderAccount.status,'ready');
+  assert.equal(qoderAccount.quota?.available,true);
+  expired=true;
+  const expiredAccount=await service.models.accounts.check('native-qoder');
+  assert.equal(expiredAccount.status,'expired');
+  assert.equal(expiredAccount.quota,undefined);
+  expired=false;
+  await login('second');
+  const switched=await service.models.accounts.check('native-qoder');
+  assert.equal(switched.status,'ready');
+  assert.notEqual(switched.identity,qoderAccount.identity);
+  assert.equal(switched.quota?.available,true);
+  assert.equal(qoderOpens,0);
+  const nativeRequests = requests;
+  service.models.startRefreshing();
+  // Cached reads remain passive while startup skips cold native accounts.
+  const joined = await service.models.accounts.list();
+  assert.equal(joined.accounts.find(account=>account.id==='native-qoder')?.status,'ready');
+  assert.equal(requests,nativeRequests,'reading cached accounts never starts the native check');
+  await service.models.accounts.check('native-codex');
+  assert.equal(requests,nativeRequests+2,'explicit refresh checks the Codex model and quota');
+  assert.equal(closed,5,'the explicit account check closes its probe');
+  await service.models.accounts.preferences(switched.id,{expectedRevision:switched.revision,models:[{id:'model',enabled:true}]});
+  executors[2]!.open=originalQoderOpen;
+  await service.connections.connect('qoder',{expectedRevision:'unconfigured'});
+  assert.equal((await service.connections.check('qoder')).status,'ready');
+  const qoder=service.connections.read('qoder');await service.connections.disconnect('qoder',{expectedRevision:qoder.revision});
+  const afterDisconnect=await service.models.catalog.list();assert.equal(afterDisconnect.models.some(m=>m.accountId==='native-qoder'&&m.available),true,'disconnecting Qoder agent preserves standalone native-qoder availability');assert.equal(afterDisconnect.diagnostic,undefined,'intentional disconnect is not a background failure');
+  const previous=first.find(a=>a.connectionId==='codex')!.identity;account='b';await service.connections.check('codex',{expectedRevision:service.connections.read('codex').revision});await service.models.catalog.list({refresh:true});assert.notEqual((await service.models.accounts.list()).accounts.find(a=>a.connectionId==='codex')!.identity,previous);
+ }finally{await service.close();await rm(root,{recursive:true,force:true});}
+});
+test('native identity changes and disconnect invalidate scoped leases while old independent accounts survive',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-identity-'));let identity='a';
+ const provider={id:'native-codex',label:'Codex',connectionId:'codex',async open(){return{protocol:'chat-completions' as const,inspect:async()=>({status:'ready' as const,identity,models:[offering]}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>Response.json({}),close:async()=>{}};}};
+ const app=createModelAccess({root,providers:[provider]});try{
+  await app.ensureLinked();await app.ensureLinked();assert.equal(app.accounts.list().accounts.length,1);await assert.rejects(app.accounts.add({provider:provider.id}));await app.accounts.check(provider.id);await assert.rejects(app.accounts.login(provider.id,{expectedRevision:app.accounts.read(provider.id).revision}),/原生登录/);
+  await app.accounts.preferences(provider.id,{expectedRevision:app.accounts.read(provider.id).revision,models:[{id:'model',enabled:true}]});
+  const lease=await app.leases.create({accountId:provider.id,agentId:'dsh',conversationId:'a',runId:'a',modelId:'model'});identity='b';await app.accounts.check(provider.id);
+  assert.equal((await fetch(lease.baseUrl+'/models',{headers:{authorization:'Bearer '+lease.apiKey}})).status,401);
+  const next=await app.leases.create({accountId:provider.id,agentId:'dsh',conversationId:'a',runId:'b',modelId:'model'});app.invalidate(provider.id);assert.equal((await fetch(next.baseUrl+'/models',{headers:{authorization:'Bearer '+next.apiKey}})).status,401);
+ }finally{await app.close();await rm(root,{recursive:true,force:true});}
+});
+test('a credential refresh keeps an in-flight lease but revocation still ends it',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-lease-inflight-'));
+ interface Gate{started:Promise<void>;release:()=>void;abort:()=>void}
+ const gates:Gate[]=[];
+ const next=async(index:number)=>{while(!gates[index])await new Promise(resolve=>setTimeout(resolve,2));return gates[index]!;};
+ const provider=(id:string,connectionId:string)=>({id,connectionId,label:id,async open(){return{protocol:'chat-completions' as const,inspect:async()=>({status:'ready' as const,identity:'same',models:[offering]}),beginLogin:async()=>{},cancelLogin:async()=>{},
+  infer:async({signal}:{signal?:AbortSignal})=>{let mark!:()=>void,release!:()=>void,cancel!:()=>void;const started=new Promise<void>(resolve=>{mark=resolve;});const wait=new Promise<Response>((resolve,reject)=>{release=()=>resolve(Response.json({choices:[{message:{content:'ok'}}]}));cancel=()=>reject(Error('model_request_cancelled'));signal?.addEventListener('abort',cancel,{once:true});});gates.push({started,release:()=>{mark();release();},abort:()=>{mark();cancel();}});mark();return wait;},close:async()=>{}};}});
+ const app=createModelAccess({root,providers:[provider('native-codex','codex'),provider('native-qoder','qoder')]});
+ const ask=(lease:any)=>fetch(lease.baseUrl+'/chat/completions',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+lease.apiKey},body:JSON.stringify({model:lease.model,messages:[{role:'user',content:'hi'}]})});
+ try{
+  await app.ensureLinked();await app.accounts.check('native-codex');await app.accounts.check('native-qoder');
+  for(const id of ['native-codex','native-qoder'])await app.accounts.preferences(id,{expectedRevision:app.accounts.read(id).revision,models:[{id:'model',enabled:true}]});
+  const refreshed=await app.leases.create({accountId:'native-codex',agentId:'codex',conversationId:'a',runId:'a',modelId:'model'});
+  const kept=ask(refreshed);const running=await next(0);await running.started;
+  app.invalidate('native-codex',{abortActive:false});running.release();
+  const keptResponse=await kept;assert.equal(keptResponse.status,200);assert.equal((await keptResponse.text()).includes('ok'),true,'the running request finishes on the key it already holds');
+  assert.equal(app.accounts.read('native-codex').status,'not-authenticated');
+  app.invalidate('native-codex',{abortActive:false});
+  const late=await fetch(refreshed.baseUrl+'/models',{headers:{authorization:'Bearer '+refreshed.apiKey}});
+  assert.equal(late.status,401);assert.match(await late.text(),/模型调用的本机凭据已失效/,'once idle the same lease is released');
+  const revoked=await app.leases.create({accountId:'native-qoder',agentId:'qoder',conversationId:'a',runId:'a',modelId:'model'});
+  const ended=ask(revoked);const revokedRun=await next(1);await revokedRun.started;
+  app.invalidate('native-qoder');revokedRun.abort();
+  assert.notEqual((await ended).status,200,'explicit revocation still ends the in-flight request');
+ }finally{for(const gate of gates)gate.abort();await app.close();await rm(root,{recursive:true,force:true});}
+});
+test('Qoder native private credentials are read only and fixed target signatures do not expose raw tokens',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-qoder-auth-'));await mkdir(join(root,'.auth'));const machine='1234567890123456-machine';const key=Buffer.from(machine.slice(0,16)),cipher=createCipheriv('aes-128-cbc',key,key);const user=Buffer.concat([cipher.update(JSON.stringify({uid:'user',security_oauth_token:'private-access',name:'Name'})),cipher.final()]).toString('base64');
+ await writeFile(join(root,'.auth','user'),user);await writeFile(join(root,'.auth','machine_id'),machine);
+ try{assert.equal((await readQoderIdentity(root)).userID,'user');let observed=false;await requestQoderModel(root,'/chat',{body:'{"messages":[]}'},async(url,init)=>{observed=true;assert.ok(String(url).startsWith('https://api3.qoder.sh/'));const headers=new Headers(init?.headers);assert.ok(headers.get('authorization')?.startsWith('Bearer COSY.'));assert.equal(JSON.stringify(init).includes('private-access'),false);return Response.json({});});assert.ok(observed);await assert.rejects(requestQoderModel(root,'/chat',{body:'{}'},async()=>{throw Error('must_not_send');},'foreign-account'),/identity_conflict/);assert.equal(await readFile(join(root,'.auth','user'),'utf8'),user);await assert.rejects(requestQoderModel(root,'https://foreign.invalid'));await rm(join(root,'.auth','user'));await symlink(join(root,'.auth','machine_id'),join(root,'.auth','user'));await assert.rejects(readQoderIdentity(root),/unsafe/);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('a pending catalog cannot restore a source after its native login was invalidated',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-pending-source-'));let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});let started!:()=>void;const observing=new Promise<void>(resolve=>{started=resolve;});
+ const app=createModelAccess({root,providers:[{id:'native-qoder',connectionId:'qoder',label:'Qoder',async open(){return{protocol:'chat-completions',async inspect(){started();await gate;return{status:'ready',identity:'old',models:[offering]};},beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>Response.json({}),close:async()=>{}};}}]});
+ try{await app.ensureLinked();const checking=app.accounts.check('native-qoder');await observing;app.invalidate('native-qoder');release();await checking;assert.equal(app.accounts.read('native-qoder').status,'not-authenticated');assert.equal(app.catalog.list().models.length,0);}finally{await app.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('Qoder discovers supported context windows separately from the default',async()=>{
+ const runtime=await createQoderModelProvider({inspect:async()=>({status:'ready'}),identity:async()=>'user',request:async()=>Response.json({chat:[{key:'model',enable:true,max_input_tokens:180000,context_config:{small:{token_count:200000,is_default:true},medium:{token_count:400000},large:{token_count:1000000}}}]})}).open({accountId:'native-qoder',configRoot:'unused',environment:{}});
+ const observation=await runtime.inspect();assert.equal(observation.models[0].contextWindow,200000);assert.equal(observation.models[0].reportedContextWindow,1000000);await runtime.close();
+});
+
+test('account refreshes coalesce, but login invalidation starts a new observation and removes old team quota', async () => {
+ const root=await mkdtemp(join(tmpdir(),'buildr-login-refresh-'));
+ let calls=0,account='team',hold=false,release=()=>{};
+ let gate=Promise.resolve();
+ const app=createModelAccess({root,providers:[{id:'native-qoder',connectionId:'qoder',label:'Qoder',async open(){return{
+  protocol:'chat-completions',async inspect(){calls++;const identity=account;const waiting=gate;if(hold)await waiting;return{status:'ready',identity,models:[offering],quota:identity==='team'?{available:true,observedAt:new Date().toISOString(),planLabel:'Teams',remainingPercent:0}:{available:false,observedAt:new Date().toISOString()}};},
+  beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>Response.json({}),close:async()=>{},
+ };}}]});
+ try{
+  await app.ensureLinked();await app.accounts.check('native-qoder');
+  assert.equal(app.accounts.read('native-qoder').quota?.planLabel,'Teams');
+  hold=true;gate=new Promise<void>(resolve=>{release=resolve;});
+  const first=app.accounts.check('native-qoder'),duplicate=app.accounts.check('native-qoder');
+  await new Promise<void>(resolve=>setImmediate(resolve));
+  assert.equal(calls,2,'two simultaneous observers use one upstream check');
+  app.invalidate('native-qoder');
+  assert.equal(app.accounts.read('native-qoder').quota,undefined);
+  account='personal';hold=false;
+  const personal=await app.accounts.check('native-qoder');
+  assert.equal(calls,3,'the new login does not wait for the older observation');
+  assert.equal(personal.status,'ready');assert.equal(personal.quota?.available,false);
+  assert.equal(personal.quota?.planLabel,undefined);
+  release();await Promise.all([first,duplicate]);
+  assert.equal(app.accounts.read('native-qoder').identity,personal.identity);
+  assert.equal(app.accounts.read('native-qoder').quota?.available,false);
+ }finally{release();await app.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('native login completion refreshes its own source while unrelated discovery is still waiting', async () => {
+ const root=await mkdtemp(join(tmpdir(),'buildr-login-source-'));
+ let identity='team',hold=false,release=()=>{},started=()=>{};
+ const gate=new Promise<void>(resolve=>{release=resolve;});
+ const capabilities={text:true,images:false,stop:true,resume:true,approval:false,questions:false,maxInputBytes:1000};
+ const executor:AgentExecutor={descriptor:{id:'qoder',label:'Qoder',capabilities},async open(){return{
+  bindingIdentity:'qoder',capabilities,inspectAccount:async()=>({status:'ready'}),models:async()=>[offering],
+  async beginLogin(update){identity='personal';update({state:'completed'});},cancelLogin:async()=>{},
+  createContext:async()=>({id:'context'}),resumeContext:async()=>{},readHistory:async()=>[],send:async()=>{},observe:async()=>({status:'idle',tools:[]}),reply:async()=>{},stop:async()=>({status:'stopped',tools:[]}),close:async()=>{},
+ };}};
+ const providers=['native-qoder','slow'].map(id=>({id,label:id,...(id==='native-qoder'?{connectionId:'qoder'}:{}),async open(){return{
+  protocol:'chat-completions' as const,async inspect(){if(id==='slow'&&hold){started();await gate;}return{status:'ready' as const,identity:id==='native-qoder'?identity:id,models:[offering]};},
+  beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>Response.json({}),close:async()=>{},
+ };}}));
+ const service=createAgentService({dataRoot:root,executors:[executor],modelProviders:providers,resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+ try{
+  await service.connections.connect('qoder',{expectedRevision:'unconfigured'});
+  await service.models.catalog.list({refresh:true});
+  const initial=service.models.accounts.read('native-qoder');
+  const slow=await service.models.accounts.add({provider:'slow'});await service.models.accounts.check(slow.id);
+  hold=true;const waiting=new Promise<void>(resolve=>{started=resolve;});service.models.startRefreshing();await waiting;
+  service.connections.login('qoder',{expectedRevision:service.connections.read('qoder').revision});
+  let updated=false;
+  for(let i=0;i<200;i++){const account=service.models.accounts.read('native-qoder');if(account.status==='ready'&&account.identity!==initial.identity){updated=true;break;}await new Promise(resolve=>setTimeout(resolve,1));}
+  assert.equal(updated,true,'new login must become visible without releasing the slow unrelated source');
+ }finally{release();await service.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('Qoder reports credits quota and per-model credit factor without blocking the catalog',async()=>{
+ const requests:string[]=[];let usage='{"userId":"u","userType":"teams","usageType":"credits","totalUsagePercentage":0.07,"expiresAt":1793347662000,"userQuota":{"total":3000,"used":206,"remaining":2794,"percentage":0.07,"unit":"credits"},"orgResourcePackage":{"available":false}}';
+ const runtime=await createQoderModelProvider({inspect:async()=>({status:'ready'}),identity:async()=>'user',request:async(path:string)=>{requests.push(path);return path==='/usage'?new Response(usage):Response.json({chat:[{key:'model',enable:true,price_factor:0.5,display_name:'Auto'},{key:'free',enable:true,price_factor:0},{key:'other',enable:true}]});}}).open({accountId:'native-qoder',configRoot:'unused',environment:{}});
+ const observation=await runtime.inspect();assert.deepEqual(requests,['/models','/usage']);
+ assert.equal(observation.models[0].creditFactor,0.5);assert.equal(observation.models[1].creditFactor,0);assert.equal(observation.models[2].creditFactor,undefined);
+ assert.equal(observation.quota?.available,true);assert.equal(observation.quota?.planLabel,'Teams');assert.equal(observation.quota?.resetsAt,'2026-10-30T08:07:42.000Z');assert.equal(observation.quota?.remainingPercent,93.1);assert.equal(observation.quota?.windows?.length,1);assert.ok(observation.quota?.summary?.includes('套餐 2,794 / 3,000'));
+ usage='not-json';const failed=await runtime.inspect();assert.equal(failed.status,'ready');assert.equal(failed.quota?.available,false);await runtime.close();
+});
+
+
+test('background catalog starts once, ticks every 60 seconds, never overlaps, preserves failures and stops on close',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-model-refresh-'));
+ t.mock.timers.enable({apis:['setInterval','Date']});
+ let calls=0,hold=false,failed=false,release:()=>void=()=>{},started:()=>void=()=>{};
+ let gate=Promise.resolve();
+ const provider={id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions' as const,async inspect(){calls++;if(hold){started();await gate;}if(failed)throw Error('private-upstream-secret');return{status:'ready' as const,models:[offering]};},async beginLogin(){},async cancelLogin(){},async infer(){throw Error('catalog must not infer');},async close(){}};}};
+ const create=()=>createAgentService({dataRoot:root,executors:[],modelProviders:[provider],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+ const service=create();
+ try{
+  const empty=await service.models.catalog.list();assert.equal(empty.hasSnapshot,false);assert.equal(empty.diagnostic,undefined);assert.deepEqual(empty.models,[]);assert.equal(calls,0);
+  const added=await service.models.accounts.add({provider:'fixture'});const checked=await service.models.accounts.check(added.id);
+  await service.models.accounts.preferences(added.id,{expectedRevision:checked.revision,models:[{id:offering.id,enabled:true}]});
+  assert.equal(calls,1);await service.models.catalog.list();await service.models.accounts.list();assert.equal(calls,1,'ordinary reads never contact the provider');
+  service.models.startRefreshing();service.models.startRefreshing();await service.models.catalog.list({refresh:true});assert.equal(calls,2,'startup and explicit observers share one check');
+  hold=true;gate=new Promise<void>(resolve=>{release=resolve;});const begun=new Promise<void>(resolve=>{started=resolve;});
+  t.mock.timers.tick(30_000);assert.equal(calls,2,'30 seconds must not trigger an external check');
+  t.mock.timers.tick(30_000);await begun;assert.equal(calls,3);
+  t.mock.timers.tick(60_000);assert.equal(calls,3,'slow refresh cannot overlap the next ticks');
+  const cached=await service.models.catalog.list();assert.equal(cached.models[0]?.available,true,'reads do not wait for the held external check');
+  failed=true;release();const failure=await service.models.catalog.list({refresh:true});
+  assert.equal(failure.models.length,1);assert.equal(failure.models[0]?.available,true);assert.match(failure.diagnostic||'',/核对失败/);assert.ok(!JSON.stringify(failure).includes('private-upstream-secret'));
+  hold=false;failed=false;t.mock.timers.tick(60_000);const restored=await service.models.catalog.list({refresh:true});
+  assert.equal(calls,4);assert.equal(restored.models[0]?.available,true);assert.equal(restored.diagnostic,undefined);
+  await service.close();const after=calls;t.mock.timers.tick(60_000);service.models.startRefreshing();assert.equal(calls,after,'close clears scheduling and forbids restarting');
+  const reopened=create();try{const saved=await reopened.models.catalog.list();assert.equal(saved.models[0]?.available,true);assert.equal(calls,after,'persisted result is immediately readable after restart');}finally{await reopened.close();}
+ }finally{await service.close();t.mock.timers.reset();await rm(root,{recursive:true,force:true});}
+});
+
+test('providers with backgroundRefresh disabled skip startup and 60-second polling while keeping explicit checks',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-no-bg-probe-'));
+ t.mock.timers.enable({apis:['setInterval','Date']});
+ let inspectCalls=0;
+ const executor={descriptor:{id:'agy-like',label:'AgyLike',capabilities:{text:true,images:false,stop:true,resume:true,approval:false,questions:false,maxInputBytes:1000}},async open(){return{bindingIdentity:'agy-like',capabilities:this.descriptor.capabilities,inspectAccount:async()=>({status:'ready' as const}),models:async()=>[offering],beginLogin:async()=>{throw Error('unsupported');},cancelLogin:async()=>{},createContext:async()=>({id:'context'}),resumeContext:async()=>{},readHistory:async()=>[],send:async()=>{},observe:async()=>({status:'idle' as const,tools:[]}),reply:async()=>{},stop:async()=>({status:'stopped' as const,tools:[]}),close:async()=>{}};}} satisfies AgentExecutor;
+ const provider={id:'native-agy-like',label:'Google',connectionId:'agy-like',singleton:true,observesConnection:true,backgroundRefresh:false,async open(){return{protocol:'gemini' as const,async inspect(){inspectCalls++;return{status:'ready' as const,identity:'acct-1',models:[offering]};},beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>{throw Error('unused');},close:async()=>{}};}};
+ const service=createAgentService({dataRoot:root,executors:[executor],modelProviders:[provider],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+ try{
+  const realAntigravity=createAntigravityModelProvider({connections:{get:()=>{throw Error('unused');},useProgram:async(_id,work)=>work(),runtime:async()=>{throw Error('unused');}},now:()=>new Date().toISOString()});
+  assert.equal(realAntigravity.observesConnection,true);
+  assert.equal(realAntigravity.backgroundRefresh,false);
+  await service.connections.connect('agy-like',{expectedRevision:'unconfigured'});
+  assert.equal(inspectCalls,1,'connecting probes once');
+  await service.connections.check('agy-like',{expectedRevision:service.connections.read('agy-like').revision});
+  assert.equal(inspectCalls,2,'explicit connection check still probes');
+  service.models.startRefreshing();
+  t.mock.timers.tick(60_000);
+  t.mock.timers.tick(60_000);
+  assert.equal(inspectCalls,2,'startup and 60s background refresh must skip backgroundRefresh=false providers');
+  await service.models.catalog.list({refresh:true});
+  assert.equal(inspectCalls,3,'explicit catalog refresh still checks the provider');
+  await service.models.accounts.check('native-agy-like');
+  assert.equal(inspectCalls,4,'explicit account check still checks the provider');
+ }finally{await service.close();t.mock.timers.reset();await rm(root,{recursive:true,force:true});}
+});
+
+test('providers opting into refreshOnStart run one startup check without periodic polling',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-start-refresh-'));
+ let inspectCalls=0;
+ const executor={descriptor:{id:'agy-start',label:'AgyStart',capabilities:{text:true,images:false,stop:true,resume:true,approval:false,questions:false,maxInputBytes:1000}},async open(){return{bindingIdentity:'agy-start',capabilities:this.descriptor.capabilities,inspectAccount:async()=>({status:'ready' as const}),models:async()=>[offering],beginLogin:async()=>{throw Error('unsupported');},cancelLogin:async()=>{},createContext:async()=>({id:'context'}),resumeContext:async()=>{},readHistory:async()=>[],send:async()=>{},observe:async()=>({status:'idle' as const,tools:[]}),reply:async()=>{},stop:async()=>({status:'stopped' as const,tools:[]}),close:async()=>{}};}} satisfies AgentExecutor;
+ const provider={id:'native-agy-start',label:'Google',connectionId:'agy-start',singleton:true,observesConnection:true,backgroundRefresh:false,refreshOnStart:true,async open(){return{protocol:'gemini' as const,async inspect(){inspectCalls++;return{status:'ready' as const,identity:'acct-1',models:[offering]};},beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>{throw Error('unused');},close:async()=>{}};}};
+ const service=createAgentService({dataRoot:root,executors:[executor],modelProviders:[provider],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+ try{
+  await service.connections.connect('agy-start',{expectedRevision:'unconfigured'});
+  assert.equal(inspectCalls,1,'connecting probes once');
+  service.models.startRefreshing();
+  for(let attempt=0;attempt<20&&inspectCalls<2;attempt++)await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(inspectCalls,2,'startup refreshes an opted-in provider once');
+  await new Promise(resolve=>setTimeout(resolve,50));
+  assert.equal(inspectCalls,2,'backgroundRefresh=false still skips periodic polling');
+  service.models.startRefreshing();
+  for(let attempt=0;attempt<5;attempt++)await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(inspectCalls,2,'repeated startRefreshing does not repeat the startup check');
+ }finally{await service.close();await rm(root,{recursive:true,force:true});}
+});

@@ -50,7 +50,7 @@ Buildr自身也是受Buildr管理的项目。下面的内部登记、资源调�
 
 ### 第二层：Buildr自身的测试框架
 
-覆盖`buildr`、`buildr-web`、`buildr-agent`、`dsh-plugin`四服务，只使用Static、Unit、Integration、E2E四种证明边界。
+覆盖`buildr`、`buildr-web`、`buildr-harness`、`dsh-plugin`四服务，只使用Static、Unit、Integration、E2E四种证明边界。
 
 | 环节 | 实现与职责 |
 | --- | --- |
@@ -111,7 +111,7 @@ Buildr自身也是受Buildr管理的项目。下面的内部登记、资源调�
 
 | 失败组 | 已知位置和机制 | 尚未证明的事 |
 | --- | --- | --- |
-| `agent-integration` | `buildr-agent/test/integration/storage-lifecycle.test.ts:219`，生产`src/process/ownership.ts:65`发布存储锁rename抛`ENOTEMPTY`。 | 私有用例根内的竞争，不是超时；没有证据把原因归给外层并发或跨组串目录。 |
+| `agent-integration` | `buildr-harness/test/integration/storage-lifecycle.test.ts:219`，生产`src/process/ownership.ts:65`发布存储锁rename抛`ENOTEMPTY`。 | 私有用例根内的竞争，不是超时；没有证据把原因归给外层并发或跨组串目录。 |
 | `e2e-browser:task-materials` | `buildr-web/test/browser/task-materials-journey.ts:496`拦截器`route.fetch`报`ECONNRESET`，父测试结束，后续6场景取消。 | 连接重置根因尚未知；不能用该组提前结束算加速，也不能把取消场景算通过。 |
 | `e2e-browser:agent-conversations` | `history/fill-viewport`在`agent-conversations-history-scenarios.ts:995`等待`fill-161`条目超时。 | 失败诊断在场景恢复后取得，恢复后的DOM不是超时前完整现场；尚不能归为资源或页面算法问题。 |
 

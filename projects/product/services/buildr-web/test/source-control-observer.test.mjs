@@ -326,3 +326,49 @@ test('a newer incomplete read invalidates reuse of an earlier complete observati
     f.observer.reconcile();t.mock.timers.tick(1);assert.equal(f.requests.length,3);
   }finally{f.observer.dispose();}
 });
+
+test('inactive observer neither watches nor scans until activated, while manual refresh still works', async t => {
+  t.mock.timers.enable({apis:['Date','setTimeout'],now:1000});
+  const settle=async()=>{for(let i=0;i<20;i++)await Promise.resolve();};
+  const f=fixture({active:false,initialDelayMs:750,debounceMs:5});
+  try{
+    f.observer.start();
+    f.notice({repositoryId:'a',cause:'file-save'});
+    f.observer.reconcile();
+    f.observer.setVisible(false);
+    f.observer.setVisible(true);
+    t.mock.timers.tick(60000);await settle();
+    assert.equal(f.requests.length,0);
+    assert.equal(f.watches.length,0);
+
+    const manual=f.observer.refresh();
+    assert.equal(f.requests.length,1);
+    f.requests[0].resolve(response(repository('a')));
+    await manual;await settle();
+
+    f.observer.setActive(true);
+    t.mock.timers.tick(5);await settle();
+    assert.equal(f.watches.length,1);
+    assert.equal(f.requests.length,2);
+    assert.equal(f.requests[1].repositoryId,undefined);
+    f.requests[1].resolve(response(repository('a')));
+  }finally{f.observer.dispose();}
+});
+
+test('deactivating an active observer aborts watch and suppresses background notices until reactivated', async () => {
+  const f=await initialized();
+  try{
+    f.observer.setActive(false);
+    assert.equal(f.watches[1].signal.aborted,true);
+    for(let i=0;i<10;i++)f.notice({repositoryId:'a',cause:'file-save'});
+    f.observer.reconcile();
+    await new Promise(resolve=>setTimeout(resolve,15));
+    assert.equal(f.requests.length,1);
+
+    f.observer.setActive(true);
+    await until(()=>f.watches.length===3&&f.requests.length===2);
+    assert.equal(f.watches[2].cursor,'epoch:1');
+    assert.equal(f.requests[1].repositoryId,undefined);
+    f.requests[1].resolve(response(repository('a'),repository('b'),repository('c')));
+  }finally{f.observer.dispose();}
+});

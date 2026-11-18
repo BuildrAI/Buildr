@@ -111,10 +111,10 @@ test('Web and DSH complete entries discover every service-owned test file exactl
 });
 
 test('Agent integration groups conserve discovery and select their real boundaries exactly once', async () => {
-  const { agentIntegrationChecks } = await import('../../../buildr-agent/tools/testing/verification-checks.ts');
+  const { agentIntegrationChecks } = await import('../../../buildr-harness/tools/testing/verification-checks.ts');
   const { createVerificationPlan } = await import('../verification/planner.ts');
   const { CANDIDATE_CI_SHARDS } = await import('../verification/registry.ts');
-  const agentRoot = path.resolve(serviceRoot, '../buildr-agent');
+  const agentRoot = path.resolve(serviceRoot, '../buildr-harness');
   const inventory = resolveNodeTestFiles(agentRoot, ['test/integration/**/*.test.ts']);
   const claims = agentIntegrationChecks.map(check => ({ id: check.id, files: resolveNodeTestFiles(agentRoot, check.testFiles) }));
   assert.deepEqual(auditNodeTestFileOwnership(inventory, claims).findings, []);
@@ -151,12 +151,12 @@ test('Agent test safety ceiling honors smaller outer grants and rejects invalid 
 });
 
 test('real Agent fixture cleanup after failure reaps only its own process and preserves a peer', {timeout: 60_000}, async () => {
-  const fixture = await import('../../../buildr-agent/test/support/process-fixture.ts');
+  const fixture = await import('../../../buildr-harness/test/support/process-fixture.ts');
   const make = async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(),'agent-cleanup-isolation-'));
     const dataRoot=path.join(root,'profile'), workspace=path.join(root,'work'), packageRoot=path.join(root,'package');
     fs.mkdirSync(workspace); fixture.copyPackage(fixture.prepared,packageRoot);
-    const source=path.resolve(serviceRoot,'../buildr-agent/test/integration/fixtures/agent-process-entry.mjs');
+    const source=path.resolve(serviceRoot,'../buildr-harness/test/integration/fixtures/agent-process-entry.mjs');
     fs.copyFileSync(source,path.join(packageRoot,'build/process-fixture.mjs'));
     fs.writeFileSync(path.join(packageRoot,'build/fixture-version.json'),JSON.stringify({version:'cleanup-proof'}));
     const runtime=fixture.prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}), profileId='cleanup-isolation';
@@ -216,7 +216,7 @@ test('peer completes',()=>fs.writeFileSync(new URL('./peer-result',import.meta.u
 
 test('lost fixture shutdown response is settled only after the owned process actually exits', async t => {
   const { fork } = await import('node:child_process');
-  const { shutdownFixtureProcess, isLive } = await import('../../../buildr-agent/test/support/process-fixture.ts');
+  const { shutdownFixtureProcess, isLive } = await import('../../../buildr-harness/test/support/process-fixture.ts');
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-shutdown-receipt-'));
   t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const entry=path.join(root,'server.mjs');
@@ -233,8 +233,8 @@ server.listen(0,'127.0.0.1',()=>process.send({origin:'http://127.0.0.1:'+server.
 
 test('complete Agent entry follows every registered group and explicit checks select only the requested group', async () => {
   const { spawnSync } = await import('node:child_process');
-  const { agentIntegrationChecks } = await import('../../../buildr-agent/tools/testing/verification-checks.ts');
-  const entry=path.resolve(serviceRoot,'../buildr-agent/tools/testing/run-integration.ts');
+  const { agentIntegrationChecks } = await import('../../../buildr-harness/tools/testing/verification-checks.ts');
+  const entry=path.resolve(serviceRoot,'../buildr-harness/tools/testing/run-integration.ts');
   for (const requested of [[],['--check','agent-integration-recovery']]) {
     const result=spawnSync(process.execPath,[entry,...requested,'--json'],{
       env:{...process.env,NODE_TEST_CONTEXT:undefined},encoding:'utf8',timeout:10_000,

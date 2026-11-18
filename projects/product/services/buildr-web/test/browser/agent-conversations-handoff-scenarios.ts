@@ -128,11 +128,16 @@ await step('同一会话选下一位不发送，可查看实际原文并直接�
 
 await step('异常结束直接继续或重试，草稿保留，换模型与执行者也可恢复',async()=>{
       const saved=structuredClone(fixture.conversation),savedSends=fixture.sends,savedPrepares=fixture.prepares,savedStops=fixture.stops,savedSentLength=sentInputs.length;
+      const failedEntries=saved.entries.filter((entry:any)=>entry.role!=='assistant');
+      const waitForRecoveryStep=(subscribe:(resolve:()=>void)=>void,label:string)=>new Promise<void>((resolve,reject)=>{
+        const timer=setTimeout(()=>reject(new Error('未观察到恢复请求：'+label)),10_000);
+        subscribe(()=>{clearTimeout(timer);resolve();});
+      });
       try{
         for(const mode of ['same','model','executor','undelivered']){
-          update({run:run('failed','codex',{model:'fixture-model',accepted:mode!=='undelivered',diagnostic:'本轮异常中断'}),requests:[]});await page.reload();await panel().locator('[data-run-status="failed"]').waitFor();
+          update({run:run('failed','codex',{model:'fixture-model',modelAccountId:'native-codex',modelAccountIdentity:'identity-codex',modelAccountRevision:'model-account-codex',accepted:mode!=='undelivered',diagnostic:'本轮异常中断'}),entries:structuredClone(failedEntries),requests:[]});await page.reload();await panel().locator('[data-run-status="failed"]').waitFor();
           if(mode==='model'){await chooseModel('Fast model');await closeModelSettings();}
-          if(mode==='executor')await chooseAgent('DSH');
+          if(mode==='executor'){await chooseAgent('DSH');await chooseModel('Fixture model');await closeModelSettings();}
           await input().fill('保留正在编辑的新要求');
           const action=panel().locator('.ac-recovery-action'),before=fixture.sends,users=fixture.conversation.entries.filter((entry:any)=>entry.role==='user').length;
           const label=mode==='undelivered'?'重试':'继续';await action.getByRole('button',{name:label,exact:true}).waitFor();
@@ -141,7 +146,7 @@ await step('异常结束直接继续或重试，草稿保留，换模型与执�
           const actionBox=await action.boundingBox(),buttonBox=await action.getByRole('button',{name:label,exact:true}).boundingBox();
           assert.ok(actionBox&&buttonBox&&buttonBox.x-actionBox.x<10,'恢复动作紧邻左侧异常，不漂到输入区右端');
           assert.equal(await action.getByRole('button',{name:label,exact:true}).innerText(),label,'两个字不插入额外间距');
-          fixture.holdSend=true;const started=new Promise<void>(resolve=>{fixture.sendStarted=resolve;});if(mode==='same'){fixture.holdPrepare=true;const preparing=new Promise<void>(resolve=>{fixture.prepareStarted=resolve;});await action.getByRole('button',{name:label,exact:true}).click();await preparing;assert.equal(await panel().getByRole('button',{name:'跳过资料精简',exact:true}).count(),0);fixture.releasePrepare!();await started;}else{await action.getByRole('button',{name:label,exact:true}).click();await started;}
+          fixture.holdSend=true;const started=waitForRecoveryStep(resolve=>{fixture.sendStarted=resolve;},'发送 '+mode);void started.catch(()=>{});if(mode==='same'){fixture.holdPrepare=true;const preparing=waitForRecoveryStep(resolve=>{fixture.prepareStarted=resolve;},'准备 '+mode);void preparing.catch(()=>{});await action.getByRole('button',{name:label,exact:true}).click();await preparing;assert.equal(await panel().getByRole('button',{name:'跳过资料精简',exact:true}).count(),0);fixture.releasePrepare!();await started;}else{await action.getByRole('button',{name:label,exact:true}).click();await started;}
           assert.equal(fixture.sends,before+1);assert.equal(sentInputs.at(-1).continueRunId,'run-fixture');assert.equal(sentInputs.at(-1).text,'');assert.deepEqual(sentInputs.at(-1).attachmentIds,[]);
           assert.equal(fixture.conversation.entries.filter((entry:any)=>entry.role==='user').length,users);
           if(mode==='model')assert.equal(sentInputs.at(-1).model,'fixture-fast');if(mode==='executor')assert.equal(sentInputs.at(-1).connectionId,'dsh');
@@ -229,7 +234,7 @@ await step('用户决定复用问题卡片，选项说明与其他回答可用�
       update({run:run('waiting-question','codex',{permissionMode:'full-access'}),requests:[decision('decision-choice')]});
       await page.reload();await input().waitFor();
       let card=panel().locator('[data-agent-request="decision-choice"]');await card.waitFor();
-      await panel().locator('[data-execution-state="waiting-question"]').waitFor();
+      await panel().locator('[data-execution-state="waiting-question"]').waitFor({state:'attached'});
       assert.equal(await card.getByRole('button',{name:'回答并继续',exact:true}).isDisabled(),true);
       await card.getByText('先查看交互效果再决定。',{exact:true}).waitFor();
       assert.equal(fixture.replies,before,'等待与刷新都不自动选择');
@@ -280,7 +285,7 @@ await step('用户决定复用问题卡片，选项说明与其他回答可用�
       const imageAnswer=card.getByRole('textbox',{name:'接下来选择哪个方向？：其他回答',exact:true});
       await imageAnswer.fill('按截图说明');
       await imageAnswer.evaluate((node:HTMLElement)=>{
-        const data=new DataTransfer();data.items.add(new File([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII='),character=>character.charCodeAt(0))],'问题截图.png',{type:'image/png'}));
+        const data=new DataTransfer();data.items.add(new File([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'),character=>character.charCodeAt(0))],'问题截图.png',{type:'image/png'}));
         node.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));
       });
       await card.getByRole('button',{name:'移除图片 问题截图.png',exact:true}).waitFor();
@@ -335,7 +340,7 @@ await step('问题自由回答共享完整视频输入，失败保留文字和�
           if(method!=='drop'){await card.locator('.ac-video-thumbnail').hover();await remove.click();await remove.waitFor({state:'hidden'});}
         }
         const originalId='image-fixture-'+fixture.attachmentUploads;
-        await card.locator('input[type=file]').setInputFiles([{name:'补充截图.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=','base64')},{name:'损坏.mp4',mimeType:'video/mp4',buffer:Buffer.from('invalid video')}]);
+        await card.locator('input[type=file]').setInputFiles([{name:'补充截图.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64')},{name:'损坏.mp4',mimeType:'video/mp4',buffer:Buffer.from('invalid video')}]);
         await card.getByText('视频编码无法解码，请换用浏览器可播放的 MP4 或 WebM。',{exact:true}).waitFor();
         assert.equal(await answer.inputValue(),'录屏说明');await card.getByRole('button',{name:'移除视频 回答录屏.webm',exact:true}).waitFor();assert.equal(fixture.replies,before);
         await capture(page,'agent-question-video-answer.png');await card.getByRole('button',{name:'回答并继续',exact:true}).click();await card.waitFor({state:'hidden'});
@@ -357,7 +362,7 @@ await step('等待问题只保留卡片和输入提示，保留草稿且不补�
         await card.getByRole('textbox',{name:'具体处理范围？',exact:true}).fill('先处理输入问题');assert.equal(await card.getByRole('button',{name:'回答并继续',exact:true}).isDisabled(),true,'多个问题不自动选择');
         fixture.unknownStop=true;await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="unknown"]').waitFor();
         await card.waitFor();assert.equal(await send.isDisabled(),false);await card.getByRole('textbox',{name:'具体处理范围？',exact:true}).click();assert.equal(fixture.sends,sends);assert.equal(fixture.conversation.pendingSend,undefined);assert.equal(fixture.replies,before);
-        fixture.unknownStop=false;await panel().locator('.ac-execution-uncertain').getByRole('button',{name:'停止',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();await card.waitFor({state:'hidden'});
+        fixture.unknownStop=false;update({run:{...fixture.conversation.run,status:'stopped',executionState:'ended'},requests:[]});await panel().locator('.ac-execution-uncertain').getByRole('button',{name:'重新读取',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();await card.waitFor({state:'hidden'});
         assert.equal(await input().inputValue(),'保留底部独立草稿');assert.equal(await send.isDisabled(),false);
         await send.click();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,sends+1);assert.equal(sentInputs.at(-1).continueRunId,undefined);assert.equal(sentInputs.at(-1).waitingHandoff,undefined);assert.equal(fixture.replies,before);
       }finally{fixture.unknownStop=false;fixture.conversation=saved;fixture.sends=sends;fixture.stops=stops;await page.setViewportSize({width:1280,height:900});await page.reload();await input().waitFor();await input().fill('');}
@@ -407,7 +412,7 @@ await step('等待问题时新要求可交接；预览与取消保持原问题',
           // Explicitly return to the source before selecting the handoff target; earlier scenarios may retain another choice.
           await chooseAgent('Codex');await chooseModel('Fixture model');await closeModelSettings();await panel().locator('.ac-model-trigger .ac-model-label').filter({hasText:/^ChatGPT \/ Fixture model$/}).waitFor();
           await input().fill(mode==='answer'||mode==='other'?'保留输入框的独立草稿':mode==='instruction'?'先处理新的交互问题':'');
-          if(mode==='instruction'){await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'handoff.png',mimeType:'image/png',buffer:Buffer.from('89504e470d0a1a0a','hex')});await panel().getByRole('button',{name:'移除图片 handoff.png',exact:true}).waitFor();}
+          if(mode==='instruction'){await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'handoff.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64')});await panel().getByRole('button',{name:'移除图片 handoff.png',exact:true}).waitFor();}
           await chooseModel('Fast model');await closeModelSettings();
           const card=panel().locator('[data-agent-request="'+request.id+'"]');
           await card.getByRole('button',{name:'回答并继续',exact:true}).waitFor();assert.equal(await card.getByRole('button',{name:'回答并继续',exact:true}).isDisabled(),true);

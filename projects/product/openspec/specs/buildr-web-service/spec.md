@@ -40,17 +40,20 @@ Buildr Product Project MUST 通过工作空间（Workspace）根 `projects/manif
 - **AND** MUST NOT依赖`projects/product/services/buildr-web`、Vite或TypeScript在运行时存在
 
 ### Requirement: buildr-web 必须拥有 Buildr Web React/Vite 源码与构建
-`buildr-web` Service MUST 是 Buildr Web React/Vite/TypeScript 前端源码与前端构建脚本的唯一权威位置。迁移完成后，`product/buildr` Service MUST NOT 继续保留权威的前端源工程根（例如 `web/`）作为第二事实源。
+
+系统 MUST 将 Development 工程网页维护在 buildr-web，以 harness-ui 功能模块准备工程上下文、选择工作空间、嵌入完整 Harness 网页和维护对话任务关联。Development MUST NOT 导入 Harness 对话 React 组件或拥有对话执行状态机。Development 安装包 MUST 携带所需的完整网页产物，不依赖相邻源码或 Vite 服务。
+
+#### Scenario: 安装包独立运行
+- **WHEN** 用户从不含相邻源码的 Development 安装包打开对话
+- **THEN** 内嵌网页 MUST 从安装负载取得完整 Harness 页面，认证与静态资源不依赖源码树
 
 #### Scenario: 前端源码所有权
-- **WHEN** 维护者定位 Buildr Web 前端源码
-- **THEN** 源码 MUST 位于 `projects/product/services/buildr-web`
-- **AND** MUST NOT 要求在 `projects/product/services/buildr/web` 保留并行权威源
+- **WHEN** 维护者定位工程网页及 Harness 对话源码
+- **THEN** Development 工程代码 MUST 位于 buildr-web，完整对话 MUST 位于 buildr-harness-web；Development 的 harness-ui 只拥有网页嵌入与工程集成
 
 #### Scenario: 前端构建产出静态资产
-- **WHEN** 维护者或 CI 在 `buildr-web` 执行正式前端构建
-- **THEN** 构建 MUST 产出可被 `buildr` 消费的静态资产集合
-- **AND** 构建 MUST NOT 要求运行时启动 Vite 开发服务器才能生成可托管产物
+- **WHEN** 构建或安装两个产品
+- **THEN** Harness Web MUST 有独立完整生产静态产物，Development MUST 携带所用准确产物并同源嵌套；运行不依赖 Vite、相邻源码或远程 CDN
 
 ### Requirement: Workspace、Project、Service 前端必须按领域独立组织
 Buildr Web MUST让Workspace、Project、Service分别拥有独立前端Feature。每个Feature MUST拥有本领域路由页面、页面局部组件和确有复杂状态的Hook；公共`pages/`与`components/` MUST NOT继续保存这些领域的第二份页面或局部组件。Workspace、Project、Service客户端 MUST归属各自Feature且每个业务请求只保留一个实现；`src/api/` MUST只提供共享传输、会话与请求上下文。
@@ -90,10 +93,13 @@ Buildr Web MUST将 Publication 页面与能力级 client 归入 `features/public
 - **AND** App 壳 MUST只装配该组件，不得取得 update writer 或第二份安装状态
 
 ### Requirement: 前后端与项目级测试必须按证明对象维护
-Buildr Web Service MUST拥有前端渲染、交互、状态、client 与纯逻辑测试；Buildr Service MUST拥有后端业务、数据、协议、会话、进程、安装及公共宿主测试；真实前后端组合的完整流程 MUST作为 Product 端到端测试由项目验证入口维护。物理测试目录 MAY由最终工程结构决定，但每个测试的断言 owner MUST唯一。
+
+Development MUST 拥有工程页面和网页嵌入集成测试；Harness Web MUST 拥有完整对话渲染、交互、状态与客户端测试；Harness 核心 MUST 拥有执行、数据、公开协议和独立入口测试。跨产品安装与组合 MUST 使用准确产品负载，不复制测试实现或用源码检查代替安装验收。
+
+#### Scenario: 验证独立与嵌入形态
+- **WHEN** 运行本次边界重构验证
+- **THEN** 测试 MUST 分别核对完整 Harness 网页、Development 的 iframe 集成及真实安装包消费
 
 #### Scenario: 运行前端与 Browser 验证
-- **WHEN** 本次迁移运行前端 test/build 与生产托管 浏览器端到端检查（E2E）
-- **THEN** 前端单元断言 MUST从 buildr-web Service 运行
-- **AND** 跨服务 浏览器端到端检查（E2E） MUST使用 buildr 正式托管的 `web-dist`
-- **AND** 同一行为 MUST不因文件名含 `web` 被机械复制为两套测试
+- **WHEN** 对两产品执行网页验证
+- **THEN** 检查 MUST 从真实所属产品入口运行，分别验证完整 Harness 网页及 Development 集成；局部检查不代替跨产品或真实模型验收

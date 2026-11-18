@@ -32,6 +32,10 @@ export function codeGitAsync(root: string, args: string[], maxBuffer: number): P
   });
 }
 export function gitCommonDirectory(root:string) { const value=codeGit(root,['rev-parse','--git-common-dir']).toString().trim(); return fs.realpathSync(path.resolve(root,value)); }
+export async function gitCommonDirectoryAsync(root: string): Promise<string> {
+  const value = (await codeGitAsync(root, ['rev-parse', '--git-common-dir'], 64 * 1024)).toString().trim();
+  return fs.promises.realpath(path.resolve(root, value));
+}
 const metadataLocations=new WeakMap<CodeSource,string>();
 export function localPath(source:CodeSource,relative:string) {
   const root=source.location;

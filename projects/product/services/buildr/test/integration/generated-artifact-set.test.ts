@@ -7,6 +7,11 @@ import { once } from 'node:events';
 import { Worker } from 'node:worker_threads';
 
 import { buildGeneratedArtifactSet, generatedArtifactManifestName } from '../../tools/build/artifact-set.ts';
+import { writeRuntimeSystemDto } from '../../tools/codegen/contracts/runtime-system-dto.ts';
+import { writeTaskProfessionalHttpDto } from '../../tools/codegen/contracts/task-professional-dto.ts';
+import { writeTaskRecordHttpDto } from '../../tools/codegen/contracts/task-dto.ts';
+import { writeWorkbenchDto } from '../../tools/codegen/contracts/workbench-dto.ts';
+import { writeWorkspaceAgentAssetsDtos } from '../../tools/codegen/contracts/workspace-agent-assets-dto.ts';
 import { assertGeneratedArtifactManifest } from '../../tools/build/generated-artifacts.ts';
 import { buildTestContext } from '../../tools/testing/test-context-build.ts';
 
@@ -46,8 +51,18 @@ test('重复生成测试库时，正在读取的模块不会消失或被无谓�
 test('Candidate输入从空暂存生成闭合且可重复的artifact set', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-artifact-set-test-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const first = await buildGeneratedArtifactSet(path.join(root, 'first'), { sourceIdentity: 'source:test' });
-  const second = await buildGeneratedArtifactSet(path.join(root, 'second'), { sourceIdentity: 'source:test' });
+  const webWorkbenchDto = path.resolve(import.meta.dirname, '../../../buildr-web/build/generated/workbench-dto.ts');
+  if (!fs.existsSync(webWorkbenchDto)) {
+    await writeTaskRecordHttpDto();
+    await writeWorkbenchDto();
+    await writeTaskProfessionalHttpDto();
+    await writeRuntimeSystemDto();
+    await writeWorkspaceAgentAssetsDtos();
+  }
+  const beforeMtime = fs.statSync(webWorkbenchDto).mtimeMs;
+  const first = await buildGeneratedArtifactSet(path.join(root, 'first'), { sourceIdentity: 'source:test', refreshCheckoutProjection: false });
+  const second = await buildGeneratedArtifactSet(path.join(root, 'second'), { sourceIdentity: 'source:test', refreshCheckoutProjection: false });
+  assert.equal(fs.statSync(webWorkbenchDto).mtimeMs, beforeMtime, 'refreshCheckoutProjection: false must leave checkout DTOs untouched');
   assert.deepEqual(first.manifest, second.manifest);
   assert.equal(path.basename(first.manifestPath), generatedArtifactManifestName);
   assert.equal(JSON.stringify(first.manifest).includes(root), false);

@@ -24,4 +24,4 @@ Codex 的一次真实恢复请求因完整线程历史超过本机 16 MiB JSON-R
 
 ## Impact
 
-涉及 `services/buildr-agent` 的 Codex、Qoder 适配器，程序发布读取、安装与回收，以及对应集成和单元验证；不删除原生历史、不提高全局传输上限、不自动替换已有连接或账号。
+涉及 `services/buildr-harness` 的 Codex、Qoder 适配器，程序发布读取、安装与回收，以及对应集成和单元验证；不删除原生历史、不提高全局传输上限、不自动替换已有连接或账号。

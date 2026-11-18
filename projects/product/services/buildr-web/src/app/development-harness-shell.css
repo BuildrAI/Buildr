@@ -1,0 +1,19 @@
+.development-work-environment-shell{height:100dvh;min-height:0;min-width:0;overflow:hidden}
+.development-work-environment-shell .harness-shell-body{flex-direction:row-reverse}
+.development-work-environment-shell .harness-environment-region{flex:1;min-width:0;overflow:hidden}
+.development-work-environment-shell .harness-conversation-region{flex:0 0 var(--development-conversation-width);min-width:0;overflow:visible}
+.development-work-environment-shell.is-conversation-focused .harness-conversation-region{flex:1}
+.development-work-environment-shell.is-conversation-collapsed .harness-conversation-region{flex:0 0 52px}
+.development-conversation-slot{position:relative;display:flex;flex:1;min-height:0;min-width:0}
+.development-conversation-slot>.development-harness-divider{position:absolute;left:-4.5px;top:0;bottom:0;margin:0}
+.development-work-environment-shell .harness-environment-region .app-shell{height:100%;min-height:0}
+.development-harness-frame.in-shell,.development-harness-frame.in-shell.is-full{position:relative;inset:auto;flex:1;width:100%!important;max-width:none;height:100%;min-height:0}
+.development-work-environment-shell .development-harness-rail{height:100%}
+@media(max-width:760px){
+  .development-work-environment-shell .harness-shell-body{flex-direction:column}
+  .development-work-environment-shell .harness-conversation-region,.development-work-environment-shell .harness-environment-region{flex:1}
+  .development-conversation-slot>.development-harness-divider{display:none}
+  .development-work-environment-shell .development-harness-rail{display:flex}
+  .development-work-environment-shell.is-conversation-collapsed .development-harness-rail{flex-direction:row;width:100%;height:52px}
+  .development-work-environment-shell .development-harness-rail>.development-harness-settings{margin-top:0;margin-left:auto}
+}

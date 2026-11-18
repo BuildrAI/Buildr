@@ -1,15 +1,14 @@
-import { createProgrammaticHttpContribution } from './interfaces/http/programmatic-http.ts';
+import { createProgrammaticHttpContribution, createAgentServiceHttpContribution, agentRuntimeStatus } from '@buildr-ai/buildr-harness';
 import { createAgentCliContributions } from './interfaces/cli/agent.ts';
 import { createParticipationSourceObserver } from './application/participation-source.ts';
 import { AGENT_ASSETS_SOURCE_QUERY } from '../agent-assets/source/module.ts';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
-import { connectAgentProcess, restartAgentProcess, prepareAgentRuntime, AgentServiceError } from '@buildr-ai/buildr-agent';
-import type { AgentHostCapabilities, AgentProcessConnection, AgentOperations, AgentRuntimeUnit } from '@buildr-ai/buildr-agent';
+import { connectHarnessProcess as connectAgentProcess, restartAgentProcess, prepareAgentRuntime, AgentServiceError } from '@buildr-ai/buildr-harness';
+import type { AgentHostCapabilities, AgentProcessConnection, AgentOperations, AgentRuntimeUnit } from '@buildr-ai/buildr-harness';
 import { WORKSPACE_APPLICATION } from '../workspace/module.ts';
 import { TASK_QUERY_APPLICATION } from '../task/module.ts';
 import { defaultWorkspaceRoot } from './infrastructure/default-workspace.ts';
-import { createAgentServiceHttpContribution } from './interfaces/http/agent-service-http.ts';
 import { GROKBOT_CREDENTIAL_ID, readLegacyGlobalWebhook } from './persistence/legacy-webhook-migration.ts';
 
 export const AGENT_SERVICE_APPLICATION = 'agent-service.application';
@@ -45,7 +44,9 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
           assertSource(ref.sourceId);
           const workspace = ref.id === '@default' ? defaultWorkspace() : requires[WORKSPACE_APPLICATION].resolveRegisteredWorkspace(ref.id);
           const rootPath = fs.realpathSync(workspace.rootPath), info = fs.statSync(rootPath);
-          const revision = digest([ref,rootPath,info.dev,info.ino]);
+          // The observation version identifies the directory, not the mount it sits on:
+          // device numbers change across restarts and must not invalidate stored conversations.
+          const revision = digest([ref,rootPath,info.ino,info.birthtimeMs]);
           if(expectedRevision && revision !== expectedRevision)throw new AgentServiceError('agent_scope_binding_changed','执行环境已变化。',409);
           return { ref, rootPath, revision };
         },
@@ -66,12 +67,23 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
           root(ref){assertSource(ref.sourceId);return (ref.id==='@default'?defaultWorkspace():requires[WORKSPACE_APPLICATION].resolveRegisteredWorkspace(ref.id)).rootPath;},
           query:requires[AGENT_ASSETS_SOURCE_QUERY],identity:options.readProductIdentity,
         }),
-        async listExecutionScopes({ sourceId }) { assertSource(sourceId); const refs=registeredWorkspaceIds().map(id=>({sourceId,id}));return {refs,revision:digest(refs)}; },
+        async listExecutionScopes({ sourceId }) {
+          assertSource(sourceId);
+          const refs=registeredWorkspaceIds().map(id=>({sourceId,id}));
+          const labels:Record<string,string>={'@default':'默认工作空间'};
+          const rootPaths:Record<string,string>={'@default':defaultWorkspace().rootPath};
+          for(const entry of requires[WORKSPACE_APPLICATION].listRegisteredWorkspaces().workspaces){
+            if(!entry.workspace?.id||entry.status==='identity_conflict')continue;
+            if(entry.workspace.name)labels[entry.workspace.id]=entry.workspace.name;
+            rootPaths[entry.workspace.id]=entry.rootPath;
+          }
+          return {refs,labels,rootPaths,revision:digest({refs,labels,rootPaths})};
+        },
       };
       const candidateDigest = readPreviewCandidateDigest();
       let pinnedRuntime: AgentRuntimeUnit | undefined;
       const runtimeOptions = (dataRoot: string): { runtime?: AgentRuntimeUnit; requireRuntime?: boolean } => {
-        if (options.runtime) return { runtime: options.runtime };
+        if (options.runtime) return { runtime: options.runtime, requireRuntime: true };
         if (!candidateDigest) return {};
         pinnedRuntime ??= prepareAgentRuntime({ dataRoot });
         if (pinnedRuntime.digest !== candidateDigest) throw new AgentServiceError('preview_candidate_digest_mismatch', '候选执行运行单元与预览期望不一致，未接管后台。', 409);
@@ -82,7 +94,7 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
         if(closed)throw new AgentServiceError('agent_process_client_closed','本机主程序连接已释放。',503);
         if(!connection){
           const bound=profile();
-          connection=connectAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true,signal:initialization.signal,...runtimeOptions(bound.dataRoot)}).then(value=>{connected=value;return value;}).catch(error=>{connection=undefined;connected=undefined;throw error;});
+          connection=connectAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',caller:{kind:'first-party-user',product:'buildr-development'},legacySourceId:'buildr',host,autoContinueInterrupted:true,signal:initialization.signal,...runtimeOptions(bound.dataRoot)}).then(value=>{connected=value;return value;}).catch(error=>{connection=undefined;connected=undefined;throw error;});
         }
         return connection;
       };
@@ -107,7 +119,7 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
         // callers retry without blocking the web event loop.
         if (!connected) return null;
         const status = await connected.lifecycle.status();
-        return {instanceId:status.identity.instanceId,generation:status.identity.generation,pid:status.identity.pid,currentDigest:status.identity.runtime.digest,pendingDigest:status.pendingRuntime?.digest,busy:status.activity.busy,accepting:status.accepting,reasons:status.activity.reasons,diagnostic:status.diagnostic};
+        return agentRuntimeStatus(status);
       };
       let restarting = false;
       const restartRuntime = async (input: {expectedGeneration:string}) => {
@@ -119,7 +131,7 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
           previous = await connect();
           if (closed) throw new AgentServiceError('agent_process_client_closed', '网页服务正在退出。', 503);
           const bound = profile();
-          const pending = restartAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true,expectedGeneration:input.expectedGeneration,...runtimeOptions(bound.dataRoot)});
+          const pending = restartAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',caller:{kind:'first-party-user',product:'buildr-development'},legacySourceId:'buildr',host,autoContinueInterrupted:true,expectedGeneration:input.expectedGeneration,...runtimeOptions(bound.dataRoot)});
           // Busy/stale refusal leaves the existing host and its active work intact.
           connection = pending.catch(() => previous!);
           connection.then(value => { connected = value; }, () => { connected = undefined; });
@@ -135,10 +147,23 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
         try { await active?.then(value=>value.disconnect()); }
         catch(error) { if(error!==initialization.signal.reason)throw error; }
       };
-      const agentHttp = createAgentServiceHttpContribution(resolve, { defaultWorkspace, registeredWorkspaceIds, runtimeStatus, restartRuntime, runtimeAligning, prepareDefaultWorkspace: () => {fs.mkdirSync(defaultWorkspace().rootPath,{recursive:true});} });
+      const agentHttp = createAgentServiceHttpContribution(resolve, { defaultWorkspace, registeredWorkspaceIds, executionScopeKeys:async()=>{try{return (await (await connect()).scopeCatalog()).scopes.map(value=>value.key);}catch(error){if(error instanceof AgentServiceError&&error.code==='agent_capability_unavailable')return registeredWorkspaceIds();throw error;}}, runtimeStatus, restartRuntime, runtimeAligning, prepareDefaultWorkspace: () => {fs.mkdirSync(defaultWorkspace().rootPath,{recursive:true});} });
       const programmaticHttp = createProgrammaticHttpContribution(resolve, agentHttp, {
         dataRoot: () => profile().dataRoot,
+        scopeKeys:async()=>(await (await connect()).scopeCatalog()).scopes.map(value=>value.key),
         version: () => String((options.readProductIdentity() as {version?:string})?.version ?? 'unknown'),
+        buildId: () => {
+          try {
+            const instance = options.readLocalInstance?.() as { launcherIdentity?: { buildId?: unknown }; productIdentity?: { buildId?: unknown } } | undefined;
+            const local = instance?.launcherIdentity?.buildId ?? instance?.productIdentity?.buildId;
+            if (typeof local === 'string' && local) return local;
+            const identity = options.readProductIdentity() as { buildId?: unknown; sourceCommit?: unknown; applicationPayloadDigest?: unknown };
+            if (typeof identity?.buildId === 'string' && identity.buildId) return identity.buildId;
+            if (typeof identity?.sourceCommit === 'string' && identity.sourceCommit) return identity.sourceCommit.slice(0, 12);
+            if (typeof identity?.applicationPayloadDigest === 'string' && identity.applicationPayloadDigest) return identity.applicationPayloadDigest.replace(/^sha256-/, '').slice(0, 12);
+          } catch { /* A missing local instance keeps discovery usable; buildId stays unknown rather than blocking reads. */ }
+          return 'unknown';
+        },
         workspaces: () => requires[WORKSPACE_APPLICATION].listRegisteredWorkspaces().workspaces
           .filter((entry: any) => entry.workspace?.id && entry.status !== 'identity_conflict')
           .map((entry: any) => ({ id: entry.workspace.id, name: entry.workspace.name ?? entry.workspace.id })),

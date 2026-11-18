@@ -1,0 +1,305 @@
+import { once } from 'node:events';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, writeFile, rm, rename, realpath, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { OwnedControlResource, NativeRpc, closeOwnedProcess, bindingFingerprint, nativeBinding, isolatedEnvironment, opaqueReference, parseReference } from '../../../build/executors/native-process.js';
+import { executorEnvironment as executorEnvForTest } from '../../../build/application/executor-environment.js';
+import { toolEnvironment } from '../../../build/executors/tool-environment.js';
+
+test('native environment isolates credentials while retaining actual proxy settings', () => {
+  const before = { PATH: '/bin', OPENAI_API_KEY: 'secret-a', CODEX_HOME: '/external', QODER_CONFIG_DIR: '/external-qoder', CODEX_APP_SERVER_TOKEN: 'secret-b', HTTPS_PROXY: 'http://127.0.0.1:1234', NODE_OPTIONS: '--require=/external', HOME: '/external-home' };
+  assert.deepEqual(isolatedEnvironment(before, '/owned/home', '/owned/tmp', { CODEX_HOME: '/owned/codex' }), { PATH: '/bin', HTTPS_PROXY: before.HTTPS_PROXY, ...toolEnvironment(before), HOME: '/owned/home', USERPROFILE: '/owned/home', TMPDIR: '/owned/tmp', TMP: '/owned/tmp', TEMP: '/owned/tmp', CODEX_HOME: '/owned/codex' });
+  assert.equal(before.CODEX_HOME, '/external');
+});
+test('browser discovery uses official host caches and preserves explicit hermetic or custom paths', () => {
+  assert.deepEqual(toolEnvironment({ HOME: '/users/person' }, 'darwin'), { BUILDR_HOST_HOME: '/users/person', PLAYWRIGHT_BROWSERS_PATH: '/users/person/Library/Caches/ms-playwright' });
+  assert.equal(toolEnvironment({ HOME: '/users/person' }, 'linux').PLAYWRIGHT_BROWSERS_PATH, '/users/person/.cache/ms-playwright');
+  assert.equal(toolEnvironment({ HOME: '/users/person', XDG_CACHE_HOME: '/shared/cache' }, 'linux').PLAYWRIGHT_BROWSERS_PATH, '/shared/cache/ms-playwright');
+  assert.equal(toolEnvironment({ HOME: '/users/person', XDG_CACHE_HOME: 'relative' }, 'linux').PLAYWRIGHT_BROWSERS_PATH, '/users/person/.cache/ms-playwright');
+  assert.equal(toolEnvironment({ USERPROFILE: 'C:\\Users\\person', LOCALAPPDATA: 'D:\\Local' }, 'win32').PLAYWRIGHT_BROWSERS_PATH, 'D:\\Local\\ms-playwright');
+  assert.equal(toolEnvironment({ USERPROFILE: 'C:\\Users\\person' }, 'win32').PLAYWRIGHT_BROWSERS_PATH, 'C:\\Users\\person\\AppData\\Local\\ms-playwright');
+  for (const value of ['0', '/custom/browsers', './browsers']) assert.equal(toolEnvironment({ HOME: '/users/person', PLAYWRIGHT_BROWSERS_PATH: value }).PLAYWRIGHT_BROWSERS_PATH, value);
+  assert.deepEqual(toolEnvironment({ HOME: 'relative', BUILDR_HOST_HOME: '/spoofed', OPENAI_API_KEY: 'secret' }), {});
+});
+test('three private provider processes can reuse a browser cache across restart without inheriting accounts', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { executorEnvironment } = await import('../../../build/application/executor-environment.js');
+  const root = await mkdtemp(join(tmpdir(), 'buildr-tool-discovery-'));
+  try {
+    const host = join(root, 'host'), browsers = join(root, 'official-browsers'); await mkdir(host); await mkdir(browsers);
+    await writeFile(join(browsers, 'installed'), 'browser');
+    const source = executorEnvironment({ ...process.env, HOME: host, PLAYWRIGHT_BROWSERS_PATH: browsers, OPENAI_API_KEY: 'secret', DSH_TOKEN: 'secret', QODER_CONFIG_DIR: '/external', CODEX_APP_SERVER_TOKEN: 'secret' });
+    for (const [key, name] of [['CODEX_HOME', 'codex'], ['DSH_HOME', 'dsh'], ['QODER_CONFIG_DIR', 'qoder']]) {
+      const home = join(root, name!, 'home'), config = join(root, name!, 'config'); await mkdir(home, { recursive: true });
+      for (let restart = 0; restart < 2; restart++) {
+        const env = isolatedEnvironment(source, home, root, { [key!]: config });
+        const run = spawnSync(process.execPath, ['-e', `const fs=require('node:fs');const e=process.env;console.log(JSON.stringify({home:e.HOME,host:e.BUILDR_HOST_HOME,cache:fs.readFileSync(e.PLAYWRIGHT_BROWSERS_PATH+'/installed','utf8'),config:e[${JSON.stringify(key)}],secret:!!(e.OPENAI_API_KEY||e.DSH_TOKEN||e.CODEX_APP_SERVER_TOKEN)}))`], { env, encoding: 'utf8' });
+        assert.equal(run.status, 0, run.stderr);
+        assert.deepEqual(JSON.parse(run.stdout), { home, host, cache: 'browser', config, secret: false });
+      }
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+test('explicit product location survives private tool environments without changing HOME or copying credentials',()=>{
+  const source={HOME:'/host',BUILDR_PRODUCT_DATA_DIR:'/configured/product',OPENAI_API_KEY:'secret',DSH_TOKEN:'secret'};
+  const input=executorEnvForTest(source);
+  for(const key of ['CODEX_HOME','DSH_HOME','QODER_CONFIG_DIR']){
+    const env=isolatedEnvironment(input,'/private/home','/private/tmp',{[key]:'/private/config'});
+    assert.equal(env.HOME,'/private/home');assert.equal(env.BUILDR_HOST_HOME,'/host');assert.equal(env.BUILDR_PRODUCT_DATA_DIR,'/configured/product');
+    assert.equal(env.OPENAI_API_KEY,undefined);assert.equal(env.DSH_TOKEN,undefined);
+  }
+});
+
+test('native context binding rejects another provider, directory or configuration', () => {
+  const ref = opaqueReference('codex', 'thread-1', '/work/a', 'binding-a');
+  assert.equal(parseReference(ref, 'codex', '/work/a', 'binding-a').nativeSessionId, 'thread-1');
+  for (const args of [['dsh', '/work/a', 'binding-a'], ['codex', '/work/b', 'binding-a'], ['codex', '/work/a', 'binding-b']]) assert.throws(() => parseReference(ref, ...args as [string, string, string]), /binding_mismatch/);
+});
+test('compatible binary replacement preserves each native binding, while other sources and configs cannot adopt it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-native-upgrade-'));
+  try {
+    for (const [provider, before, after] of [['codex','0.163.0-alpha.11.2','0.164.0-alpha.11.1'],['dsh','0.2.1-rc.2','0.3.0-rc.1'],['qoder','1.1.75','1.2.0']]) {
+      const connection = join(root, provider); await mkdir(connection);
+      const config = join(connection,'native-home'); await mkdir(config);
+      const executable = join(root,`${provider}.js`); await writeFile(executable,'old program');
+      const binding = await nativeBinding(provider!,executable,before!,config);
+      const ref = opaqueReference(provider!,'native-session',root,binding.identity);
+      const next = join(root,`${provider}.next`); await writeFile(next,'new compatible program'); await rename(next,executable);
+      const updated = await nativeBinding(provider!,executable,after!,config,binding);
+      assert.equal(updated.identity,binding.identity); assert.equal(updated.data.observedVersion,after);
+      assert.equal(parseReference(ref,provider!,root,updated.identity).nativeSessionId,'native-session');
+      assert.equal((await nativeBinding(provider!,executable,after!,config)).identity,binding.identity);
+      const otherProgram=join(root,`${provider}-other.js`);await writeFile(otherProgram,'another program');
+      await assert.rejects(nativeBinding(provider!,otherProgram,after!,config,binding),/binding_mismatch/);
+      await rename(config,`${config}-old`);await mkdir(config);
+      await assert.rejects(nativeBinding(provider!,executable,after!,config,binding),/binding_mismatch/);
+      await assert.rejects(nativeBinding(provider!,executable,'9.9.9',config,binding),/version_unsupported/);
+    }
+  } finally { await rm(root,{recursive:true,force:true}); }
+});
+test('major admission preserves v2 fingerprints saved under the old minor-series policy', async () => {
+  const root=await mkdtemp(join(tmpdir(),'buildr-native-v2-admission-'));
+  try {
+    for (const [provider,series,before,after] of [['codex','0.163','0.163.0','0.164.0-alpha.11.1'],['dsh','0.2','0.2.1-rc.2','0.3.0'],['qoder','1.1','1.1.75','1.2.0']]) {
+      const executable=join(root,`${provider}.js`);await writeFile(executable,'program');
+      const configRoot=join(root,provider!);await mkdir(configRoot);const config=await realpath(configRoot),info=await stat(config);
+      // Construct the bytes persisted before this change, without the new policy.
+      const provenance={format:'buildr-native-binding/v2',provider,executable:await realpath(executable),config,dev:info.dev,ino:info.ino,series};
+      const identity=createHash('sha256').update(JSON.stringify(provenance)).digest('hex');
+      const prior={identity,data:{...provenance,observedVersion:before}};
+      const reference=opaqueReference(provider!,'existing-native-context',root,identity);
+      const actual=await nativeBinding(provider!,executable,after!,configRoot,prior);
+      assert.equal(actual.identity,identity);assert.equal(actual.data.series,series);
+      assert.equal((await nativeBinding(provider!,executable,after!,configRoot)).identity,identity);
+      assert.equal(parseReference(reference,provider!,root,actual.identity).nativeSessionId,'existing-native-context');
+      await assert.rejects(nativeBinding(provider!,executable,after!,configRoot,{...prior,data:{...prior.data,series:'other'}}),/binding_mismatch/);
+    }
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+test('transient st_dev remount drift preserves v2 bindings at the same realpath and inode while rejecting replaced directories', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-native-dev-drift-'));
+  try {
+    for (const [provider, series, before, after] of [['codex', '0.163', '0.163.0', '0.164.0-alpha.11.1'], ['dsh', '0.2', '0.2.1-rc.2', '0.3.0'], ['qoder', '1.1', '1.1.75', '1.2.0']]) {
+      const executable = join(root, `${provider}.js`); await writeFile(executable, 'program');
+      const configRoot = join(root, provider!); await mkdir(configRoot);
+      const config = await realpath(configRoot), info = await stat(config);
+      const driftedDev = info.dev + 4096;
+      const provenance = { format: 'buildr-native-binding/v2', provider, executable: await realpath(executable), config, dev: driftedDev, ino: info.ino, series };
+      const identity = createHash('sha256').update(JSON.stringify(provenance)).digest('hex');
+      const prior = { identity, data: { ...provenance, observedVersion: before } };
+      const reference = opaqueReference(provider!, 'existing-session-across-reboot', root, identity);
+      const actual = await nativeBinding(provider!, executable, after!, configRoot, prior);
+      assert.equal(actual.identity, identity);
+      assert.equal(actual.data.dev, driftedDev, 'retains recorded provenance dev so identity stays self-consistent across multiple reboots');
+      assert.equal(actual.data.observedVersion, after);
+      assert.equal(parseReference(reference, provider!, root, actual.identity).nativeSessionId, 'existing-session-across-reboot');
+
+      const minorDriftDev = Math.floor(info.dev / 256) * 256 + ((info.dev + 2) % 256);
+      const minorProvenance = { ...provenance, dev: minorDriftDev };
+      const minorIdentity = createHash('sha256').update(JSON.stringify(minorProvenance)).digest('hex');
+      const adoptedWithoutData = await nativeBinding(provider!, executable, after!, configRoot, { identity: minorIdentity });
+      assert.equal(adoptedWithoutData.identity, minorIdentity);
+      assert.equal(adoptedWithoutData.data.dev, minorDriftDev);
+
+      await rename(configRoot, `${configRoot}-replaced`); await mkdir(configRoot);
+      await assert.rejects(nativeBinding(provider!, executable, after!, configRoot, prior), /binding_mismatch/);
+      await assert.rejects(nativeBinding(provider!, executable, after!, configRoot, { identity: minorIdentity }), /binding_mismatch/);
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+test('pre-provenance bindings retain their native identity only at recorded legacy locations', async () => {
+  const root=await mkdtemp(join(tmpdir(),'buildr-native-legacy-'));
+  try {
+    const config=join(root,'dsh-home');await mkdir(config);const executable=join(root,'dsh.js');await writeFile(executable,'rc.2');
+    const identity=await bindingFingerprint('dsh',executable,'0.2.1-rc.2',config);
+    await writeFile(executable,'rc.3 upgraded in place');
+    await assert.rejects(nativeBinding('dsh',executable,'0.2.1-rc.3',config,{identity}),/binding_mismatch/);
+    const adopted=await nativeBinding('dsh',executable,'0.2.1-rc.3',config,{identity,executable,configRoot:root});
+    assert.equal(adopted.identity,identity);assert.equal(adopted.data.series,'0.2');
+    await assert.rejects(nativeBinding('dsh',executable,'0.2.1-rc.3',config,{identity,executable,configRoot:config}),/binding_mismatch/);
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+test('stdio RPC supports independent control, multibyte fragments and private errors', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-executor-rpc-'));
+  const fixture = join(root, 'rpc.mjs');
+  await writeFile(fixture, `import{createInterface}from'node:readline';const r=createInterface({input:process.stdin});r.on('line',l=>{let m=JSON.parse(l);if(m.method==='long')return;if(m.method==='error'){process.stdout.write(JSON.stringify({id:m.id,error:{message:'secret-token-should-not-escape'}})+'\\n');return;}const b=Buffer.from(JSON.stringify({id:m.id,result:'中文完整'})+'\\n');process.stdout.write(b.subarray(0,b.length-7));setTimeout(()=>process.stdout.write(b.subarray(b.length-7)),10);});`);
+  const rpc = new NativeRpc(process.execPath, [fixture], { cwd: root, env: isolatedEnvironment(process.env, root, root) });
+  try {
+    const long = rpc.call('long', {}, 10000); long.catch(() => {});
+    assert.equal(await rpc.call('control', {}, 1000), '中文完整');
+    await assert.rejects(rpc.call('error'), error => !String(error).includes('secret-token'));
+    await rpc.close(); await assert.rejects(long, /process_closed/);
+  } finally { await rpc.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test('a private native directory cannot redirect into a shared profile', async () => {
+  const { privateDirectories, nativePreview } = await import('../../../build/executors/native-process.js');
+  const { mkdir, symlink, stat } = await import('node:fs/promises');
+  const root = await mkdtemp(join(tmpdir(), 'buildr-executor-private-symlink-'));
+  try {
+    const shared = join(root, 'shared'); await mkdir(shared, { mode: 0o755 }); const link = join(root, 'codex-home'); await symlink(shared, link, 'dir');
+    const before = (await stat(shared)).mode;
+    await assert.rejects(privateDirectories(link), /agent_config_symlink_unsupported/); assert.equal((await stat(shared)).mode, before);
+    assert.equal(nativePreview('short'), 'short'); assert.match(nativePreview('a'.repeat(16001)), /内容已截断/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('an explicit RPC rejection preserves a sanitized service cause for recovery classification', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-executor-rejection-'));
+  const fixture = join(root, 'rpc.mjs');
+  await writeFile(fixture, `import{createInterface}from'node:readline';createInterface({input:process.stdin}).on('line',l=>{let m=JSON.parse(l);process.stdout.write(JSON.stringify({id:m.id,error:{message:'Selected model is at capacity. Bearer private-credential opaque-env-secret https://private.invalid/request'}})+'\\n');});`);
+  const rpc = new NativeRpc(process.execPath, [fixture], {cwd: root, env: isolatedEnvironment(process.env, root, root, {BUILDR_MODEL_GATEWAY_KEY:'opaque-env-secret'})});
+  try {
+    await assert.rejects(rpc.call('thread/resume'), (error: any) => {
+      assert.equal(error.message, 'agent_native_request_failed');
+      assert.match(error.diagnostic, /Selected model is at capacity/);
+      assert.doesNotMatch(error.diagnostic, /private-credential|private.invalid|opaque-env-secret/);
+      return true;
+    });
+  } finally { await rpc.close(); await rm(root, {recursive: true, force: true}); }
+});
+
+
+test('owned control groups distinguish an ended controller from a still-live foreground tool', {skip:process.platform==='win32'}, async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-group-proof-'));
+  const code=`const {spawn}=require('node:child_process');const rl=require('node:readline').createInterface({input:process.stdin});let child;rl.on('line',async line=>{const m=JSON.parse(line);let result={};if(m.method==='hold'||m.method==='hold-detached'){child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore',detached:m.method==='hold-detached'});await new Promise(r=>child.once('spawn',r));result={pid:child.pid};}if(m.method==='stop-tool'){const exited=new Promise(r=>child.once('exit',r));child.kill('SIGTERM');await exited;}process.stdout.write(JSON.stringify({id:m.id,result})+'\\n');});rl.on('close',()=>process.exit(0));`;
+  const rpc=new NativeRpc(process.execPath,['-e',code],{cwd:root,env:process.env});
+  let toolPid:number|undefined;
+  try{
+    const ref=rpc.executionRef('run','context','binding');
+    assert.equal(await rpc.canReleaseExecution(ref,'context','binding',false),false,'a quiet controller is not a completed native execution');
+    assert.equal(await rpc.canReleaseExecution(ref,'context','binding',true),true);
+    assert.equal(await rpc.canReleaseExecution(ref,'other-context','binding',true),false);
+    assert.equal(await rpc.canReleaseExecution({...ref,data:{...ref.data,backgroundWork:true}},'context','binding',true),false);
+    assert.equal(await rpc.canReleaseExecution({id:'legacy'},'context','binding',true),false);
+    toolPid=(await rpc.call('hold')).pid;
+    assert.equal(await rpc.canReleaseExecution(ref,'context','binding',true),false,'an inherited foreground tool keeps the session occupied');
+    await rpc.call('stop-tool');toolPid=undefined;
+    assert.equal(await rpc.canReleaseExecution(ref,'context','binding',true),true);
+    toolPid=(await rpc.call('hold-detached')).pid;
+    assert.equal(await rpc.canReleaseExecution(ref,'context','binding',true),true,'a detached command does not keep the original control group alive or prove its own result');
+    await rpc.close();process.kill(toolPid!,0);
+    assert.equal(await rpc.canReleaseExecution(ref,'context','binding',false),true,'actual owned process exit is independent of a missing result');
+  }finally{if(toolPid)try{process.kill(toolPid,'SIGTERM');}catch{}await rpc.close();await rm(root,{recursive:true,force:true});}
+});
+
+
+test('a cold observer with a broken channel must actually exit before release is confirmed',{skip:process.platform==='win32'},async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-cold-release-'));
+ const original=new NativeRpc(process.execPath,['-e','setInterval(()=>{},1000)'],{cwd:root,env:process.env});
+ const observer=new NativeRpc(process.execPath,['-e','process.stdin.resume();setInterval(()=>{},1000)'],{cwd:root,env:process.env});
+ try{
+  const ref=original.executionRef('run','context','binding');await original.close();
+  assert.equal(await observer.canReleaseExecution(ref,'context','binding',false),true);
+  observer.child.stdin.destroy();assert.equal(observer.child.exitCode,null);assert.equal(await observer.canReleaseExecution(ref,'context','binding',false),false);
+  await observer.close();assert.equal(await observer.canReleaseExecution(ref,'context','binding',false),true);
+ }finally{await original.close();await observer.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('cold control proof validates original binding and protects live groups without starting an observer',async()=>{
+ const {spawn}=await import('node:child_process');
+ const {releasedNativeControl}=await import('../../../build/executors/native-process.js');
+ const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'});
+ await new Promise<void>(resolve=>child.once('spawn',resolve));
+ const contextRef={id:'original-context',data:{native:opaqueReference('qoder','original-context','/workspace','original-binding')}};
+ const executionRef={id:'original-run',data:{resourceGroup:child.pid!,resourceContext:contextRef.id,resourceBinding:'original-binding',backgroundWork:false}};
+ const input={contextRef,executionRef,bindingIdentity:'original-binding',cwd:'/workspace'};
+ try{
+  assert.equal(await releasedNativeControl('qoder',input),false);
+  const exited=new Promise<void>(resolve=>child.once('exit',()=>resolve()));child.kill();await exited;
+  assert.equal(await releasedNativeControl('qoder',input),true);
+  for(const changed of [{bindingIdentity:'different'},{cwd:'/other'},{contextRef:{...contextRef,id:'other'}},{executionRef:{...executionRef,data:{...executionRef.data,backgroundWork:true}}},{executionRef:{...executionRef,data:{...executionRef.data,resourceGroup:0}}}])assert.equal(await releasedNativeControl('qoder',{...input,...changed}),false);
+  assert.equal(await releasedNativeControl('codex',input),false);
+ }finally{if(child.exitCode===null&&child.signalCode===null)child.kill();}
+});
+
+
+test('DSH cold control proof releases an exited group despite unknown job receipts, never a live or mismatched group',async()=>{
+ const {spawn}=await import('node:child_process');
+ const {createDshExecutor}=await import('../../../build/executors/dsh/index.js');
+ const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'});
+ await new Promise<void>(resolve=>child.once('spawn',resolve));
+ const contextRef={id:'dsh-original',data:{native:opaqueReference('dsh','dsh-original','/workspace','binding')}};
+ const executionRef={id:'run',data:{resourceGroup:child.pid!,resourceContext:contextRef.id,resourceBinding:'binding',backgroundWork:true}};
+ const input={contextRef,executionRef,bindingIdentity:'binding',cwd:'/workspace'},executor=createDshExecutor();
+ try{
+  assert.equal(await executor.readReleasedControl!(input),false);
+  const exited=new Promise<void>(resolve=>child.once('exit',()=>resolve()));child.kill();await exited;
+  assert.equal(await executor.readReleasedControl!(input),true);
+  for(const changed of [{bindingIdentity:'other'},{cwd:'/other'},{contextRef:{...contextRef,id:'other'}},{executionRef:{...executionRef,id:''}},{executionRef:{...executionRef,data:{...executionRef.data,resourceGroup:0}}}])assert.equal(await executor.readReleasedControl!({...input,...changed}),false);
+  assert.equal(executionRef.data.backgroundWork,true);
+ }finally{if(child.exitCode===null&&child.signalCode===null)child.kill();}
+});
+
+
+test('native lifecycle retains exit signal, controlled stop and exact execution linkage without process content',{skip:process.platform==='win32'},async()=>{
+ const {executionLog}=await import('../../../src/storage/execution-log.ts');
+ const fs=await import('node:fs');
+ const root=await mkdtemp(join(tmpdir(),'buildr-lifecycle-'));
+ try{
+  const log=executionLog(root,'test-generation');
+  const control=new OwnedControlResource(process.execPath,['-e','process.stderr.write("private-secret ERR_TEST_FAILURE\\n");setInterval(()=>{},1000)'],{cwd:root,env:process.env,diagnostics:log});
+  await new Promise<void>(resolve=>control.child.once('spawn',resolve));
+  const ref=control.executionRef('exact-run','exact-context','private-binding');
+  await new Promise<void>(resolve=>control.child.stderr.once('data',()=>resolve()));
+  await control.stopExecution(ref,'exact-context','private-binding');
+  const text=fs.readdirSync(join(root,'diagnostics')).map(name=>fs.readFileSync(join(root,'diagnostics',name),'utf8')).join(''),rows=text.trim().split('\n').map(line=>JSON.parse(line));
+  assert.ok(rows.some(row=>row.event==='native-execution-bind'&&row.executionId==='exact-run'&&row.contextId==='exact-context'));
+  assert.ok(rows.some(row=>row.event==='native-signal'&&row.reason==='stop-execution'&&row.signal==='SIGTERM'));
+  assert.ok(rows.some(row=>row.event==='native-exit'&&row.signal==='SIGTERM'));
+  assert.ok(rows.some(row=>row.event==='native-fatal-diagnostic'&&row.code==='ERR_TEST_FAILURE'));
+  assert.ok(!text.includes('private-secret')&&!text.includes('private-binding')&&!text.includes('setInterval'));
+  assert.ok(rows.every(row=>row.time&&row.generation==='test-generation'&&row.childPid===control.child.pid));
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('owned host gets its full SIGTERM disposal window before escalation', { skip: process.platform === 'win32', timeout: 5000 }, async () => {
+  const events: Array<{ event: string; signal?: string | null }> = [];
+  const childProgram = "process.on('SIGTERM', () => setTimeout(() => process.exit(0), 100)); setInterval(() => {}, 1000); console.log('ready');";
+  const control = new OwnedControlResource(process.execPath, ['-e', childProgram], {
+    cwd: process.cwd(), env: process.env, diagnostics: event => events.push(event),
+  });
+  try {
+    await once(control.child.stdout, 'data');
+    await closeOwnedProcess(control.child, 20, { stdinGraceMs: 0, termGraceMs: 1000 });
+    assert.equal(control.child.exitCode, 0);
+    assert.deepEqual(events.filter(event => event.event === 'native-signal').map(event => event.signal), ['SIGTERM']);
+  } finally {
+    await closeOwnedProcess(control.child, 20);
+  }
+});
+
+test('native RPC allows a longer EOF drain without sending a signal', { timeout: 8000 }, async () => {
+  const events: Array<{ event: string }> = [];
+  const program = "process.stdin.resume(); process.stdin.on('end', () => setTimeout(() => process.exit(0), 1150)); console.log(JSON.stringify({ method: 'ready' }));";
+  const rpc = new NativeRpc(process.execPath, ['-e', program], {
+    cwd: process.cwd(), env: process.env, stdinGraceMs: 5000, diagnostics: event => events.push(event),
+  });
+  await once(rpc.child.stdout, 'data');
+  await rpc.close();
+  assert.equal(rpc.child.exitCode, 0);
+  assert.equal(events.some(event => event.event === 'native-signal'), false);
+});

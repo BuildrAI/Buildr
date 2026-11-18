@@ -1,8 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { renderMarkdown, type MarkdownRenderOptions } from '../markdown';
+import { bindMarkdownDiagramPreviews, type MarkdownDiagramTarget } from '../lib/markdownDiagramPreviews';
 import { bindMarkdownImagePreviews } from '../lib/markdownImagePreviews';
 import { resolveTaskBriefReference, taskBriefHref } from '../lib/taskBriefLinks';
 import { renderMarkdownDiagrams } from '../lib/markdownDiagrams';
+import { MarkdownDiagramPreview } from './MarkdownDiagramPreview';
 
 type Props = {
   markdown: string;
@@ -25,6 +27,7 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
   const ref = useRef<HTMLDivElement>(null);
   const optionsRef = useRef(options);
   optionsRef.current = options;
+  const [diagramPreview, setDiagramPreview] = useState<MarkdownDiagramTarget | null>(null);
 
   useEffect(() => {
     const host = ref.current;
@@ -59,10 +62,22 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
         });
     }
     if (currentOptions.onImageClick) bindMarkdownImagePreviews(view, () => optionsRef.current?.onImageClick);
+    bindMarkdownDiagramPreviews(view, () => (diagram) => setDiagramPreview(diagram));
     host.replaceChildren(view);
     if (fragment) requestAnimationFrame(() => scrollMarkdownFragment(view, fragment));
     return renderMarkdownDiagrams(view);
   }, [markdown, className, fragment, renderVersion, options?.taskLinkPathname, JSON.stringify(options?.headingCounts)]);
 
-  return <div ref={ref} />;
+  return (
+    <>
+      <div ref={ref} />
+      {diagramPreview && (
+        <MarkdownDiagramPreview
+          svg={diagramPreview.svg}
+          source={diagramPreview.source}
+          onClose={() => setDiagramPreview(null)}
+        />
+      )}
+    </>
+  );
 }

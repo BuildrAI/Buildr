@@ -3,7 +3,7 @@ import { Button, App } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../../api';
 import { workspaceHref } from '../../../lib/labels';
-import { useOptionalAgentConversations } from '../../agent-conversations/AgentConversationsContext';
+import { useOptionalAgentConversations } from '../../harness-ui/AgentConversationsContext';
 import { createServiceRuntimeClient, SERVICE_RUNTIME_CHANGED } from '../api/service-runtime-api';
 import { configurationOutcome } from '../configurationOutcome';
 import { useRuntimeConfigurationPending } from '../hooks/useRuntimeConfiguration';

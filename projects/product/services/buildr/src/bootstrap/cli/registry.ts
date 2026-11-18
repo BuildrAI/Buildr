@@ -14,6 +14,7 @@ import { createAgentAssetsCliContributions } from '../../modules/agent-assets/in
 import { WEB_CLI_GROUPS } from '../../web/interfaces/cli/web.ts';
 import { createProjectVerificationCliContributions } from '../../modules/project-testing/module.ts';
 import { createArtifactLifecycleCliContributions } from '../../modules/artifact-lifecycle/module.ts';
+import { createDevCliContributions } from './dev.ts';
 
 const TASK_MODULE_COMMAND_SLOT = Symbol('task-module-command-contributions');
 const WORKSPACE_INIT_COMMAND_SLOT = Symbol('workspace-init-command-contribution');
@@ -63,6 +64,7 @@ const COMMAND_ROUTES: any[] = [
 ];
 
 const COMMAND_GROUPS: any[] = [
+  { key: "dev", surface: "primary", summary: "同时运行四个服务的开发热更新模式；仅用于产品开发 checkout。", help: ["用法：buildr dev [--target <workspace>] [--port <port>] [--web-port <port>] [--harness-web-port <port>] [--no-open]", "", "前端使用 Vite 热更新；后端按改动单独重启；不生成交付证明。"], executable: false },
   { key: "agent", surface: "primary", summary: "通过本机 Agent service 列出、发送、读取、回复、继续和停止对话。", help: ["用法：buildr agent <send|read|stop|list|reply|continue> [参数]", "", "使用 buildr help agent <子命令> 查看参数。"], executable: false },
   {
     key: "task",
@@ -164,6 +166,7 @@ function createCommandCatalog(commandRegistry: any): any  {
 }
 
 export const COMMAND_REGISTRY = createCommandRegistry([
+  ...createDevCliContributions(),
   ...createAgentCliContributions(readLocalBuildrWebInstance),
   ...createWorkspaceCliContributions(),
   ...createAgentAssetsCliContributions(),

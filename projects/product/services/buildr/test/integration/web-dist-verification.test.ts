@@ -223,13 +223,21 @@ test('verbose successful compiler output is not a maxBuffer failure and staging 
   const npm = path.join(root, 'npm-cli.cjs');
   fs.writeFileSync(npm, `const fs=require('node:fs'),path=require('node:path');
     const output=process.argv.at(-1); fs.mkdirSync(path.join(output,'assets'),{recursive:true});
+    const staging=path.dirname(output);
+    if (fs.existsSync(path.join(staging,'stdout.log'))||fs.existsSync(path.join(staging,'stderr.log'))) {
+      process.stderr.write('compiler logs must not be captured beside the staged output'); process.exit(4);
+    }
     fs.writeFileSync(path.join(output,'index.html'),'<div id="root"></div><script type="module" src="/assets/app-verbose12.js"></script><link rel="stylesheet" href="/assets/app-verbose12.css">');
     fs.writeFileSync(path.join(output,'assets/app-verbose12.js'),'export{}');
     fs.writeFileSync(path.join(output,'assets/app-verbose12.css'),'body{}');
     process.stdout.write('x'.repeat(3*1024*1024));process.stderr.write('y'.repeat(2*1024*1024));`);
+  const capturePrefix = `buildr-web-dist-build-${process.pid}-`;
+  const captures = () => fs.readdirSync(os.tmpdir()).filter(name => name.startsWith(capturePrefix));
+  const before = captures();
   assert.equal(buildWebDist(target, frontend, { resolveNpm: () => npm }), target);
   assert.equal(fs.existsSync(path.join(target, 'assets/app-verbose12.js')), true);
   assert.equal(fs.readdirSync(root).some(name => name.startsWith('.buildr-web-dist-')), false);
+  assert.deepEqual(captures(), before, 'compiler log capture directories must be removed after the build');
 });
 
 test('compiler signals remain real failures without deleting the previous output', t => {

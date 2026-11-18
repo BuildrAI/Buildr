@@ -36,12 +36,11 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       update({run:run('unknown','codex',{...current.run,status:'unknown',accepted:false,resourcesReleased:false,stopRequested:true,executionState:'unknown',interrupted:true,diagnostic:'未取得本轮结束记录'}),requests:[],...(current.activity?{activity:{...current.activity,active:false,seenThrough:current.activity.version}}:{})});
       await page.reload();await input().waitFor();
       const state=panel().locator('.ac-execution-uncertain');
-      await state.getByText('停止已请求，结束状态待确认',{exact:true}).waitFor();
+      await state.getByText('已请求停止，但尚未确认结束。',{exact:true}).waitFor();
       assert.equal(await state.getByRole('button',{name:'停止',exact:true}).count(),0);
-      assert.equal(await state.getByRole('button',{name:'结束等待并继续',exact:true}).isEnabled(),true);
+      assert.equal(await state.getByRole('button',{name:'重新读取',exact:true}).count(),0);
+      assert.equal(await state.getByRole('button',{name:'继续原任务',exact:true}).isEnabled(),true);
       assert.equal(await input().getAttribute('placeholder'),'提出问题，或描述想完成的工作');
-      await state.getByRole('button',{name:'重新读取',exact:true}).click();
-      await state.getByText('读取完成：仍无法读取原执行状态，记录已保留。可发送新要求，不会重做原操作。',{exact:true}).waitFor();
       assert.equal(fixture.stops,beforeStops);
       assert.equal(fixture.conversation.run.status,'unknown');
       assert.equal(fixture.conversation.run.stopRequested,true);
@@ -170,6 +169,29 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       fixture.repairSupplementOnRead=false;fixture.supplementaryDelivery='accepted';fixture.conversation=saved;await page.reload();await input().waitFor();
     }
   });
+  await step('追加回执超时后权威读取迟到确认时自动清除告警与保留草稿',async()=>{
+    const saved=structuredClone(fixture.conversation),beforeCalls=fixture.supplementaryCalls,beforeSends=fixture.sends,text='这种情况用新的指令会怎样';
+    try{
+      update({run:run('running','codex',{id:'late-receipt-running',participantId:'participant-codex',generation:'generation-fixture',accepted:true,executionState:'active',resourcesReleased:false}),requests:[],retainedRuns:[]});
+      await page.reload();await input().waitFor();
+      fixture.supplementaryDelivery='unknown';fixture.repairSupplementOnRead=false;
+      await input().fill(text);
+      const response=page.waitForResponse((value:any)=>value.request().method()==='POST'&&value.url().endsWith('/agent-conversations/'+saved.id+'/supplement'));
+      await panel().getByRole('button',{name:'发送对话',exact:true}).click();
+      assert.equal((await response).status(),200);
+      await panel().getByText(/消息是否送达仍待确认/).waitFor();
+      assert.equal(await input().inputValue(),text,'未确认期间草稿保留');
+      fixture.repairSupplementOnRead=true;
+      await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+      await page.waitForFunction(()=>document.querySelector<HTMLTextAreaElement>('textarea[aria-label="对话输入"]')?.value==='');
+      await panel().getByText('上条追加消息已确认接收，无需重复发送。',{exact:true}).waitFor();
+      assert.equal(await panel().getByText(/消息是否送达仍待确认/).count(),0);
+      assert.equal(fixture.supplementaryCalls,beforeCalls+1,'迟到确认不得重发追加');
+      assert.equal(fixture.sends,beforeSends,'迟到确认不得另开会话');
+    }finally{
+      fixture.repairSupplementOnRead=false;fixture.supplementaryDelivery='accepted';fixture.conversation=saved;await page.reload();await input().waitFor();
+    }
+  });
   await step('当前轮已完成且有答复时历史未知轮不再显示停止、继续或状态待确认',async()=>{
     const saved=structuredClone(fixture.conversation);
     try{
@@ -212,15 +234,18 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
     try{
       update({hidden:false,run:{...saved.run,status:'unknown',accepted:true,resourcesReleased:true,executionState:'unknown',tools:[{id:'historical-operation',label:'结果待核对',status:'unknown'}]},requests:[],retainedRuns:[]});
       await page.reload();await input().waitFor();
-      const notice=panel().locator('.ac-execution-uncertain');await notice.getByRole('button',{name:'关闭对话',exact:true}).waitFor();
+      const notice=panel().locator('.ac-execution-uncertain');
+      await notice.getByText('本轮执行中断，结果未能确认。',{exact:true}).waitFor();
+      assert.equal(await notice.getByRole('button',{name:'关闭对话',exact:true}).count(),0);
       await fixture.capture(page,'conversation-released-unknown-actions.png');
-      await notice.getByRole('button',{name:'关闭对话',exact:true}).click();await panel().getByRole('button',{name:'查看隐藏',exact:true}).waitFor();
+      await panel().getByRole('button',{name:'更多对话操作',exact:true}).click();await page.getByRole('menuitem',{name:'关闭对话',exact:true}).click();
+      await panel().getByRole('button',{name:'查看隐藏',exact:true}).waitFor();
       assert.equal(fixture.conversation.hidden,true);assert.equal(fixture.conversation.run.status,'unknown');assert.equal(fixture.conversation.run.tools[0].status,'unknown');
       assert.deepEqual(fixture.conversation.entries,saved.entries);assert.equal(fixture.sends,sends);assert.equal(fixture.stops,stops);
       const summaries=await page.evaluate(async()=>{const token=document.querySelector<HTMLMetaElement>('meta[name="buildr-session"]')!.content;return (await fetch('/api/v1/app/agent-service/conversations?activeOnly=true&limit=100',{headers:{'x-buildr-session':token}})).json();});
       assert.ok(!summaries.conversations.some((row:any)=>row.id===saved.id));assert.equal(summaries.activityCounts.unknown,0);
       await panel().getByRole('button',{name:'查看隐藏',exact:true}).click();await panel().locator(`[data-conversation-id="${saved.id}"]`).click();await input().waitFor();
-      await panel().getByText('对话已关闭，原记录及待确认结果保留',{exact:true}).waitFor();
+      await notice.getByText('本轮执行中断，结果未能确认。',{exact:true}).waitFor();
       await fixture.capture(page,'conversation-closed-history-preserved.png');
       await panel().getByRole('button',{name:'更多对话操作',exact:true}).click();await page.getByRole('menuitem',{name:'恢复到最近对话',exact:true}).click();
       assert.equal(fixture.conversation.hidden,false);assert.equal(fixture.conversation.run.status,'unknown');assert.equal(fixture.sends,sends);assert.equal(fixture.stops,stops);
@@ -231,7 +256,7 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
     try{
       update({run:{...saved.run,status:'unknown',accepted:true,resourcesReleased:true,executionState:'unknown',tools:[]},requests:[],retainedRuns:[run('running','codex',{id:'protected-earlier',resourcesReleased:false,executionState:'active'})]});
       await page.reload();await input().waitFor();const notice=panel().locator('.ac-execution-uncertain');await notice.waitFor();
-      assert.equal(await notice.getByRole('button',{name:'关闭对话',exact:true}).count(),0);assert.equal(await notice.getByRole('button',{name:'继续工作',exact:true}).count(),0);
+      assert.equal(await notice.getByRole('button',{name:'关闭对话',exact:true}).count(),0);assert.equal(await notice.getByRole('button',{name:'继续原任务',exact:true}).count(),0);
     }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
   });
   await step('Qoder 已释放历史可点击继续工作并保留未知结果',async()=>{
@@ -267,7 +292,7 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
           participantId:original.participantId,provider:'qoder',createdAt:at},oldToolEntry]});
         await page.route(sendRoute,handler);
         await page.reload();await input().waitFor();
-        await panel().locator('.ac-execution-uncertain').getByRole('button',{name:'继续工作',exact:true}).click();
+        await panel().locator('.ac-execution-uncertain').getByRole('button',{name:'继续原任务',exact:true}).click();
         await panel().locator('[data-run-status="running"]').waitFor();
         assert.equal(submissions,1);
         assert.deepEqual(fixture.conversation.retainedRuns,[retained,original]);
@@ -283,7 +308,7 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
     const saved=structuredClone(fixture.conversation),sends=fixture.sends;
     try{
       const at=new Date().toISOString();update({run:{...saved.run,status:'unknown',accepted:true,resourcesReleased:true,executionState:'unknown',tools:[]},requests:[],retainedRuns:[],entries:[...saved.entries,{id:'late-confirmed-answer',sequence:saved.entries.length+1,kind:'message',role:'assistant',text:'原目标已正常答复',runId:saved.run.id,createdAt:at,status:'completed'}]});
-      await page.reload();await input().waitFor();const label=saved.run.stopRequested?'结束等待并继续':'继续工作';const button=panel().locator('.ac-execution-uncertain').getByRole('button',{name:label,exact:true});await button.waitFor();
+      await page.reload();await input().waitFor();const button=panel().locator('.ac-execution-uncertain').getByRole('button',{name:'继续原任务',exact:true});await button.waitFor();
       fixture.recoverNextRead=true;await button.click();await panel().getByText(/读取完成：本轮已结束。 可以直接提出新的要求。/).waitFor();
       assert.equal(fixture.sends,sends);assert.equal(fixture.conversation.run.status,'completed');
     }finally{fixture.recoverNextRead=false;fixture.conversation=saved;await page.reload();await input().waitFor();}
@@ -404,23 +429,20 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
   await step('状态未知时自动核对原执行，不重新发送工作',async()=>{
     const beforeSends=fixture.sends,beforeObserves=fixture.observes;fixture.recoverNextObserve=true;update({run:run('unknown')});await page.reload();await panel().locator('[data-run-status="completed"]').waitFor();assert.ok(fixture.observes>beforeObserves);assert.equal(fixture.sends,beforeSends,'自动恢复观察不创建新的执行');
   });
-  await step('已释放的中断回复只显示一行；重新读取没有新结果也明确反馈且不重发',async()=>{
+  await step('已释放的中断只说明原因并保留单一继续动作；仍在运行的未知轮保留停止',async()=>{
     const saved=structuredClone(fixture.conversation),viewport=page.viewportSize(),beforeSends=fixture.sends,beforeStops=fixture.stops;
     try{
       update({run:run('unknown','codex',{resourcesReleased:true,executionState:'unknown',interrupted:true,diagnostic:'未取得本轮结束记录'}),requests:[]});
       await page.reload();await input().waitFor();
       const state=panel().locator('.ac-execution-uncertain');
-      await state.getByText('本轮结束状态待确认，可继续工作或关闭对话',{exact:true}).waitFor();
-      assert.equal(await state.getByRole('button',{name:'停止',exact:true}).count(),0);assert.equal(await state.locator('small,details').count(),0);
-      for(let attempt=0;attempt<2;attempt++){
-        const before=fixture.observes;
-        await state.getByRole('button',{name:/重新读取/}).click();
-        await state.getByText('读取完成：后台连接已释放，但未读到本轮结束记录。可发送新要求继续，不会重做原操作。',{exact:true}).waitFor();
-        assert.ok(fixture.observes>before);assert.equal(fixture.sends,beforeSends);assert.equal(fixture.stops,beforeStops);assert.equal(fixture.conversation.run.status,'unknown');
-        assert.equal(await panel().locator('.ac-compose-wrap>small[role="status"]').count(),0,'反馈保留在同一行');
-      }
+      await state.getByText('本轮执行中断，结果未能确认。',{exact:true}).waitFor();
+      assert.equal(await state.getByRole('button',{name:'停止',exact:true}).count(),0);
+      assert.equal(await state.getByRole('button',{name:'重新读取',exact:true}).count(),0);
+      assert.equal(await state.getByRole('button',{name:'关闭对话',exact:true}).count(),0);
+      assert.equal(await state.getByRole('button',{name:'继续原任务',exact:true}).count(),1);
+      assert.equal(fixture.sends,beforeSends);assert.equal(fixture.stops,beforeStops);assert.equal(fixture.conversation.run.status,'unknown');
       await page.setViewportSize({width:390,height:844});
-      const geometry=await state.evaluate((node:HTMLElement)=>{const row=node.querySelector('.ac-execution-uncertain-summary')!,label=row.querySelector('span')!,actions=row.querySelector('.ac-execution-uncertain-actions')!;return {height:row.getBoundingClientRect().height,overflow:node.scrollWidth-node.clientWidth,label:label.getBoundingClientRect().top,actions:actions.getBoundingClientRect().top};});
+      const geometry=await state.evaluate((node:HTMLElement)=>{const row=node.querySelector('.ac-execution-uncertain-summary')!,reason=row.querySelector('.ac-execution-uncertain-reason')!,actions=row.querySelector('.ac-execution-uncertain-actions')!;return {height:row.getBoundingClientRect().height,overflow:node.scrollWidth-node.clientWidth,reason:reason.getBoundingClientRect().top,actions:actions.getBoundingClientRect().top};});
       assert.ok(geometry.height<=36&&geometry.overflow<=1,JSON.stringify(geometry));
       await fixture.capture(page,'agent-interrupted-reply-one-line.png');
       update({run:run('unknown','codex',{resourcesReleased:false})});await page.reload();await input().waitFor();await state.getByRole('button',{name:'停止',exact:true}).waitFor();

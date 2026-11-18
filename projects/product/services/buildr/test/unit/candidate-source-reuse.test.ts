@@ -17,16 +17,27 @@ const record = (stepId: string, runner = 'macos', passed = true) => ({
 });
 const bundle = (records: any[] = []) => ({ schemaVersion: 'buildr.verification-source-bundle/v1', records });
 
-test('complete reusable local source proof leaves only the other system native boundaries on either machine', () => {
+test('complete reusable source proof retains non-reusable checks and other-system native boundaries', () => {
   for (const local of ['macos', 'windows']) {
     const source = CANDIDATE_CI_SHARDS.filter((shard: any) => !shard.requiresArtifact && !shard.producesArtifact
       && (shard.platformScope.kind === 'common' || shard.runner === local));
     const records = source.flatMap((shard: any) => shard.stepIds.filter((id: string) => verificationStepById(id).reuse).map((id: string) => record(id, local)));
     const plan = planCandidateSourceReuse(CANDIDATE_CI_SHARDS, bundle(records), (item, id, runner) =>
       verificationStepById(id).platformScope.kind === 'common' || item.environment.runner === runner);
-    assert.deepEqual(plan.sourceShards.map((shard: any) => shard.id), [`platform-boundaries-${local === 'macos' ? 'windows' : 'macos'}`]);
-    assert.deepEqual(plan.reusedShards.map(item => item.shard.id), source.map((shard: any) => shard.id));
+    const nonReusable = source.filter((shard: any) => shard.stepIds.some((id: string) => !verificationStepById(id).reuse));
+    assert.deepEqual(plan.sourceShards.map((shard: any) => shard.id).sort(),
+      [...nonReusable.map((shard: any) => shard.id), `platform-boundaries-${local === 'macos' ? 'windows' : 'macos'}`].sort());
+    assert.deepEqual(plan.reusedShards.map(item => item.shard.id),
+      source.filter((shard: any) => !nonReusable.includes(shard)).map((shard: any) => shard.id));
+    assert.ok(nonReusable.some((shard: any) => shard.stepIds.includes('agent-integration-compatibility')),
+      'the explicit frozen-v1 environment cannot be replaced by generic source reuse');
   }
+});
+
+test('service-native checks are scheduled only on their declared real system', () => {
+  const owners = CANDIDATE_CI_SHARDS.filter((shard: any) => shard.stepIds.includes('harness-windows-native'));
+  assert.deepEqual(owners.map((shard: any) => shard.id), ['platform-boundaries-windows']);
+  assert.deepEqual(verificationStepById('harness-windows-native').platformScope, {kind: 'platform', runners: ['windows']});
 });
 
 test('source transport preserves the portable records and rejects modified or oversized input', () => {

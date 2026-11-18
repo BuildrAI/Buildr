@@ -1,0 +1,267 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import test, { type TestContext } from 'node:test';
+import { createAgentService } from '../../src/index.ts';
+import type { AgentExecutor, AgentProgramManager, AgentRuntime, LoginObservation, ProgramCatalog } from '../../src/contracts.ts';
+import { NativeProgramManager } from '../../src/executors/program-manager.ts';
+import { isCompatibleProgram, nativeProgramPolicy } from '../../src/executors/program-policy.ts';
+import { safeDiagnostic } from '../../src/domain/agent-state.ts';
+
+function fixture(t: TestContext) {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-preparation-test-'));
+  const executable=path.join(root,'codex.js');fs.writeFileSync(executable,'');
+  let authenticated=false,opens=0,installs=0,cancelled=0,accountChecks=0,modelChecks=0;
+  let loginUpdate:((value:LoginObservation)=>void)|undefined;
+  let models=[{id:'actual-model',label:'Actual model'}];
+  const capabilities={text:true,images:false,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536};
+  const executor:AgentExecutor={descriptor:{id:'codex',label:'Codex',capabilities},async open(options){opens++;return {
+    bindingIdentity:options.executable??'existing-binding',capabilities,
+    inspectAccount:async()=>{accountChecks++;return {status:authenticated?'ready':'not-authenticated'};},models:async()=>{modelChecks++;return models;},
+    beginLogin:async(update)=>{loginUpdate=update;update({state:'waiting-browser',url:'https://auth.openai.com/test?secret=never-persist'});},
+    cancelLogin:async()=>{cancelled++;loginUpdate?.({state:'cancelled'});},close:async()=>{},
+  } as AgentRuntime;}};
+  const catalog:ProgramCatalog={candidates:[],installation:{label:'Official program',version:'0.163.0',url:'https://learn.chatgpt.com/docs/cli',canInstall:true}};
+  const manager:AgentProgramManager={discover:async()=>structuredClone(catalog),install:async()=>{installs++;return executable;}};
+  const service=createAgentService({dataRoot:path.join(root,'profile'),executors:[executor],programManager:manager,resolveWorkspace:()=>({rootPath:root}),assertTask:()=>{}});
+  const candidate=(program=executable)=>({executable:program,source:'path' as const,label:'Existing CLI',version:'0.163.0',compatible:true});
+  const begin=(input:{executable?:string;install?:boolean}={})=>service.connections.prepare('codex',{expectedRevision:service.connections.read('codex').revision,...input});
+  t.after(async()=>{await service.close();fs.rmSync(root,{recursive:true,force:true});});
+  return {root,executable,service,catalog,manager,candidate,begin,get accountChecks(){return accountChecks;},get modelChecks(){return modelChecks;},get opens(){return opens;},get installs(){return installs;},get cancelled(){return cancelled;},authenticate(){authenticated=true;loginUpdate?.({state:'completed'});},setAuthenticated(){authenticated=true;},noModels(){models=[];}};
+}
+async function settled(service:ReturnType<typeof createAgentService>,id:string,state:string){
+  for(let i=0;i<500;i++){const view=service.connections.preparation('codex',id);if(view.state===state)return view;await new Promise(resolve=>setTimeout(resolve,5));}
+  assert.fail(`preparation did not reach ${state}`);
+}
+
+test('missing programs guide installation without enabling or creating credentials',async t=>{
+  const f=fixture(t),attempt=f.begin();const view=await settled(f.service,attempt.id,'installation-required');
+  assert.equal(view.connection.enabled,false);assert.equal(f.opens,0);assert.equal(f.installs,0);
+  assert.equal(fs.existsSync(path.join(f.root,'profile/agent-service/connections')),false);
+});
+test('program preparation completes without initiating account login',async t=>{
+  const f=fixture(t),second=path.join(f.root,'other.js');fs.writeFileSync(second,'');
+  f.catalog.candidates=[f.candidate(),f.candidate(second)];
+  const first=f.begin();await settled(f.service,first.id,'selection-required');assert.equal(f.opens,0);
+  f.manager.discover=async input=>({...f.catalog,candidates:[f.candidate(input.executable)]});
+  const attempt=f.begin({executable:second});const waiting=await settled(f.service,attempt.id,'ready');
+  assert.equal(waiting.connection.status,'not-authenticated');assert.equal(f.opens,1);assert.equal(f.accountChecks,0);assert.equal(f.modelChecks,0);
+  assert.equal(waiting.connection.loginAttempt,undefined);
+  f.setAuthenticated();const ready=await f.service.connections.check('codex',{expectedRevision:waiting.connection.revision});assert.equal(ready.models[0]?.id,'actual-model');
+  assert.equal(fs.readFileSync(path.join(f.root,'profile/agent-service/conversations.sqlite')).includes(Buffer.from('never-persist')),false);
+  assert.throws(()=>f.begin({executable:f.executable}),{code:'agent_configuration_bound'});
+});
+test('cancel discovery prevents late observation from connecting, and a retry waits for resource release',async t=>{
+  const f=fixture(t);let release!:()=>void;f.catalog.candidates=[f.candidate()];
+  f.manager.discover=async()=>{await new Promise<void>(resolve=>{release=resolve;});return f.catalog;};
+  const attempt=f.begin();const cancelled=await f.service.connections.cancelPreparation('codex',attempt.id);
+  assert.equal(cancelled.state,'cancelled');assert.throws(()=>f.begin(),{code:'agent_preparation_busy'});
+  release();await new Promise(resolve=>setTimeout(resolve,10));assert.equal(f.opens,0);assert.equal(f.service.connections.read('codex').enabled,false);
+});
+test('a stale connection revision cannot be installed or rebound by a late discovery',async t=>{
+  const f=fixture(t);let release!:()=>void;
+  f.manager.discover=async()=>{await new Promise<void>(resolve=>{release=resolve;});return {...f.catalog,candidates:[f.candidate()]};};
+  const attempt=f.begin();await f.service.connections.connect('codex',{expectedRevision:'unconfigured',executable:f.executable});
+  const observed=f.service.connections.read('codex');release();const failed=await settled(f.service,attempt.id,'failed');
+  assert.match(failed.message,/变化/);assert.equal(failed.connection.revision,observed.revision);assert.equal(f.opens,1);
+});
+test('failed installation can retry, successful preparation is reverified and repeated work is merged',async t=>{
+  const f=fixture(t);let failed=true;
+  f.manager.install=async()=>{if(failed)throw new Error('secret=https://registry.example/token');f.catalog.candidates=[f.candidate()];return f.executable;};
+  let attempt=f.begin({install:true});let view=await settled(f.service,attempt.id,'failed');assert.doesNotMatch(view.message,/secret|token|registry\.example/);
+  failed=false;attempt=f.begin({install:true});const duplicate=f.begin({install:true});assert.equal(duplicate.id,attempt.id);
+  view=await settled(f.service,attempt.id,'ready');assert.equal(f.opens,1);assert.equal(view.connection.executable,f.executable);
+  await f.service.connections.cancelPreparation('codex',attempt.id);assert.equal(f.cancelled,0);assert.ok(fs.existsSync(f.executable));
+});
+test('program readiness is independent from an empty model catalog',async t=>{
+  const f=fixture(t);f.setAuthenticated();f.noModels();f.catalog.candidates=[f.candidate()];
+  const attempt=f.begin();const view=await settled(f.service,attempt.id,'ready');assert.equal(view.connection.loginAttempt,undefined);const checked=await f.service.connections.check('codex',{expectedRevision:view.connection.revision});assert.equal(checked.status,'failed');assert.match(checked.diagnostic??'',/模型/);
+});
+test('restarting preparation preserves the exact established program and an invalid explicit path never installs a fallback',async t=>{
+  const f=fixture(t);f.setAuthenticated();f.catalog.candidates=[f.candidate()];
+  const attempt=f.begin();await settled(f.service,attempt.id,'ready');
+  let observed:any;f.manager.discover=async input=>{observed=input;return {...f.catalog,candidates:[]};};
+  const next=f.begin({install:true});await settled(f.service,next.id,'installation-required');
+  assert.equal(observed.boundExecutable,f.executable);assert.equal(f.installs,0);assert.equal(f.service.connections.read('codex').executable,f.executable);
+});
+test('service close cancels installation without starting a native runtime',async t=>{
+  const f=fixture(t);let interrupted=false;
+  f.manager.install=async({signal})=>{await new Promise<void>(resolve=>signal.addEventListener('abort',()=>{interrupted=true;resolve();},{once:true}));signal.throwIfAborted();return f.executable;};
+  const attempt=f.begin({install:true});await settled(f.service,attempt.id,'installing');await f.service.close();assert.equal(interrupted,true);assert.equal(f.opens,0);
+});
+test('new discovery ignores desktop and PATH programs while existing bindings remain inspectable',async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-discovery-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const bin=path.join(root,'bin');fs.mkdirSync(bin);const program=path.join(bin,'codex.js');fs.writeFileSync(program,"console.log('codex-cli 0.163.0-alpha.11.2');\n");fs.symlinkSync(program,path.join(bin,'codex'));
+  const manager=new NativeProgramManager(path.join(root,'private'),{PATH:[bin,bin].join(path.delimiter),HOME:root},async()=>({latestVersion:'0.167.0',source:'fixture'}));
+  const signal=new AbortController().signal;
+  const actual=fs.realpathSync(program);
+  const found=await manager.discover({provider:'codex',signal});assert.equal(found.candidates.length,0);
+  await assert.rejects(manager.discover({provider:'codex',executable:actual,signal}),{code:'agent_program_not_managed'});
+  const existing=await manager.discover({provider:'codex',boundExecutable:actual,signal});assert.equal(existing.candidates[0]?.compatible,true);
+  const missing=await manager.discover({provider:'codex',boundExecutable:path.join(bin,'missing'),signal});assert.equal(missing.candidates.length,1);assert.equal(missing.candidates[0]?.compatible,false);
+  for (const [provider,version] of [['codex','0.164.0-alpha.11.1'],['dsh','0.3.0-rc.1'],['qoder','1.2.0']]) {
+    fs.writeFileSync(program,`console.log('${provider} ${version}');\n`);
+    const updated=await manager.discover({provider,boundExecutable:program,signal});
+    assert.equal(updated.candidates[0]?.compatible,true);assert.equal(updated.candidates[0]?.version,version);
+    assert.equal(updated.candidates[0]?.diagnostic,undefined);
+  }
+  fs.writeFileSync(program,"console.log('codex-cli 9.9.9');\n");const unsupported=await manager.discover({provider:'codex',boundExecutable:program,signal});assert.equal(unsupported.candidates[0]?.compatible,false);
+  assert.equal(isCompatibleProgram('codex','0.163.0-alpha.11.3'),true);
+});
+test('admission follows each major including minor upgrades and prereleases, independently of download pins',()=>{
+  for(const [provider,versions] of Object.entries({codex:['0.0.0','0.162.99','0.163.0','0.164.0-alpha.11.1','0.200.2+build.9'],dsh:['0.1.99','0.2.0','0.2.1-rc.3','0.3.0-beta.1','0.99.99'],qoder:['1.0.0','1.1.75','1.2.0','1.99.99-beta.1+build.9']})){
+    for(const version of versions)assert.equal(isCompatibleProgram(provider,version),true,`${provider} ${version}`);
+  }
+  for(const [provider,versions] of Object.entries({codex:['1.0.0','2.163.0'],dsh:['1.0.0','2.2.0'],qoder:['0.99.99','2.0.0']})){
+    const major=nativeProgramPolicy(provider).major;
+    for(const version of [...versions,'garbage',`${major}.2`,`${major}.2.01`,`${major}.02.1`,`${major}.2.1-rc..3`,`${major}.2.1-01`])assert.equal(isCompatibleProgram(provider,version),false,`${provider} ${version}`);
+    assert.ok(safeDiagnostic(new Error(`${provider}_version_unsupported`)).includes(nativeProgramPolicy(provider).compatibility),'safe runtime diagnostics use the current range');
+    assert.equal(isCompatibleProgram(provider,nativeProgramPolicy(provider).version),true,'pinned downloads remain admitted');
+  }
+});
+test('default package installer uses the official latest release, an isolated prefix and reuses its verified result',async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-install-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const bin=path.join(root,'bin');fs.mkdirSync(bin);const script=path.join(bin,'npm-cli.js');
+  fs.writeFileSync(script,`const fs=require('node:fs'),path=require('node:path');const args=process.argv.slice(2);if(!args.includes('@openai/codex@0.167.0')||!args.includes('--registry=https://registry.npmjs.org/'))process.exit(2);const prefix=args[args.indexOf('--prefix')+1];if(process.env.CODEX_HOME||process.env.OPENAI_API_KEY||!process.env.HOME.startsWith(prefix))process.exit(3);const file=path.join(prefix,'node_modules/@openai/codex/bin/codex.js');fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,"console.log('codex-cli 0.167.0');");fs.writeFileSync(path.join(prefix,'node_modules/@openai/codex/package.json'),JSON.stringify({name:'@openai/codex',version:'0.167.0'}));`);
+  fs.symlinkSync(script,path.join(bin,'npm'));
+  const manager=new NativeProgramManager(path.join(root,'profile'),{PATH:bin,HOME:root,OPENAI_API_KEY:'not-inherited'},async()=>({latestVersion:'0.167.0',source:'fixture'})),signal=new AbortController().signal;
+  const progress:string[]=[];const executable=await manager.install({provider:'codex',signal,progress:message=>progress.push(message)});
+  assert.ok(fs.existsSync(executable));assert.equal(progress.length,2);assert.equal(await manager.install({provider:'codex',signal,progress:()=>assert.fail('must reuse')}),executable);
+  assert.deepEqual(fs.readdirSync(path.dirname(path.dirname(path.dirname(path.dirname(path.dirname(executable)))))).filter(name=>name.startsWith('.prepare-')),[]);
+});
+
+test('latest release lookup failure stops installation and never falls back to the legacy pin',async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-latest-missing-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const manager=new NativeProgramManager(path.join(root,'profile'),{PATH:process.env.PATH??'',HOME:root},async()=>{throw new Error('agent_release_unavailable');}),signal=new AbortController().signal;
+  await assert.rejects(manager.install({provider:'codex',signal,progress:()=>{}}),/agent_release_unavailable/);
+  const catalog=await manager.discover({provider:'dsh',signal});
+  assert.equal(catalog.installation.canInstall,false);
+  assert.equal(catalog.installation.version,nativeProgramPolicy('dsh').version);
+  assert.match(catalog.installation.diagnostic??'',/无法读取官方最新版本/);
+});
+
+test('a prepared managed program remains discoverable when the official latest lookup is unavailable',async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-prepared-offline-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const profile=path.join(root,'profile'),version='0.167.0',directory=path.join(profile,'programs','codex',`package-${version}-${process.platform}-${process.arch}`),executable=path.join(directory,'node_modules/@openai/codex/bin/codex.js');
+  fs.mkdirSync(path.dirname(executable),{recursive:true});fs.writeFileSync(executable,"console.log('codex-cli 0.167.0');\n");
+  fs.writeFileSync(path.join(profile,'programs','codex','prepared.json'),JSON.stringify({version,executable}));
+  const manager=new NativeProgramManager(profile,{PATH:process.env.PATH??'',HOME:root},async()=>{throw new Error('agent_release_unavailable');}),signal=new AbortController().signal;
+  const catalog=await manager.discover({provider:'codex',signal});
+  assert.equal(catalog.installation.canInstall,false);
+  assert.equal(catalog.candidates[0]?.executable,fs.realpathSync(executable));
+  assert.equal(catalog.candidates[0]?.version,version);
+  assert.equal(catalog.candidates[0]?.compatible,true);
+});
+
+test('an incompatible official latest version stops installation without hiding prepared programs',async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-latest-incompatible-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const profile=path.join(root,'profile'),version='0.167.0',directory=path.join(profile,'programs','codex',`package-${version}-${process.platform}-${process.arch}`),executable=path.join(directory,'node_modules/@openai/codex/bin/codex.js');
+  fs.mkdirSync(path.dirname(executable),{recursive:true});fs.writeFileSync(executable,"console.log('codex-cli 0.167.0');\n");
+  fs.writeFileSync(path.join(profile,'programs','codex','prepared.json'),JSON.stringify({version,executable}));
+  const manager=new NativeProgramManager(profile,{PATH:process.env.PATH??'',HOME:root},async()=>({latestVersion:'1.0.0',source:'fixture'})),signal=new AbortController().signal;
+  const catalog=await manager.discover({provider:'codex',signal});
+  assert.equal(catalog.installation.canInstall,false);
+  assert.match(catalog.installation.diagnostic??'',/不在兼容范围/);
+  assert.equal(catalog.candidates[0]?.version,version);
+  await assert.rejects(manager.install({provider:'codex',version:'1.0.0',signal,progress:()=>{}}),{code:'agent_install_version_invalid'});
+});
+
+test('a real installer failure reaches preparation with its last error, redacted credentials and staging cleaned',async t=>{
+  const f=fixture(t),bin=path.join(f.root,'installer-bin');fs.mkdirSync(bin);
+  const script=path.join(bin,'npm-cli.js');
+  fs.writeFileSync(script,`process.stdout.write('[@qoder-ai/qoder-agent-sdk] Downloading: https://download.qoder.com/runtime.tgz\\n');process.stderr.write('npm error request to https://user:password@download.qoder.com/private?token=secret failed: ');setImmediate(()=>{process.stderr.write('ECONNRESET');process.exitCode=7;});`);
+  const profile=path.join(f.root,'installer-profile'),manager=new NativeProgramManager(profile,{PATH:bin,HOME:f.root});
+  f.manager.install=input=>manager.install(input);
+  const attempt=f.begin({install:true}),view=await settled(f.service,attempt.id,'failed');
+  assert.match(view.message,/退出码 7/);assert.match(view.message,/ECONNRESET/);assert.match(view.message,/https:\/\/download\.qoder\.com/);
+  assert.doesNotMatch(view.message,/user:password|private|token=secret/);
+  assert.equal(f.opens,0);assert.equal(view.connection.enabled,false);
+  assert.deepEqual(fs.readdirSync(path.join(profile,'programs/codex')),[]);
+});
+
+test('missing archive tools report the actual operating system error rather than a network guess',async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-unpack-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const bin=path.join(root,'bin');fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin,'npm-cli.js'),`const {spawnSync}=require('node:child_process');const result=spawnSync('buildr-test-missing-unpacker',['--version'],{env:{PATH:process.env.PATH}});if(!result.error)process.exit(99);process.stderr.write('npm error archive extraction failed: '+result.error.message);process.exitCode=3;`);
+  const manager=new NativeProgramManager(path.join(root,'profile'),{PATH:bin,HOME:root},async()=>({latestVersion:'1.0.59',source:'fixture'}));
+  await assert.rejects(manager.install({provider:'qoder',signal:new AbortController().signal,progress:()=>{}}),error=>{
+    assert.equal((error as any).code,'agent_install_failed');
+    assert.match((error as Error).message,/退出码 3/);assert.match((error as Error).message,/解压程序文件/);assert.match((error as Error).message,/buildr-test-missing-unpacker ENOENT/);
+    assert.doesNotMatch((error as Error).message,/请检查网络/);return true;
+  });
+  assert.deepEqual(fs.readdirSync(path.join(root,'profile/programs/qoder')),[]);
+});
+
+test('cancelling a real installer reaps its owned process group and removes only staging', {timeout:10000}, async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-cancel-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const bin=path.join(root,'bin');fs.mkdirSync(bin);const script=path.join(bin,'npm-cli.js'),marker=path.join(root,'child.pid'),outside=path.join(root,'keep');fs.writeFileSync(outside,'preserve');
+  fs.writeFileSync(script,`const fs=require('node:fs'),{spawn}=require('node:child_process');process.on('SIGTERM',()=>{});const child=spawn(process.execPath,['-e','process.on("SIGTERM",()=>{});setInterval(()=>{},1000)'],{stdio:'ignore'});fs.writeFileSync(${JSON.stringify(marker)},String(child.pid));setInterval(()=>{},1000);`);
+  fs.symlinkSync(script,path.join(bin,'npm'));
+  const profile=path.join(root,'profile'),manager=new NativeProgramManager(profile,{PATH:bin,HOME:root},async()=>({latestVersion:'0.167.0',source:'fixture'})),controller=new AbortController();
+  const work=manager.install({provider:'codex',signal:controller.signal,progress:()=>{}});const rejected=assert.rejects(work,{name:'AbortError'});
+  for(let i=0;i<100&&!fs.existsSync(marker);i++)await new Promise(resolve=>setTimeout(resolve,10));
+  assert.ok(fs.existsSync(marker));const pid=Number(fs.readFileSync(marker,'utf8'));controller.abort();await rejected;
+  for(let i=0;i<100;i++){try{process.kill(pid,0);}catch{break;}await new Promise(resolve=>setTimeout(resolve,10));}
+  assert.throws(()=>process.kill(pid,0));assert.equal(fs.readFileSync(outside,'utf8'),'preserve');
+  assert.equal(fs.readdirSync(path.join(profile,'programs/codex')).some(name=>name.startsWith('.prepare-')),false);
+});
+
+test('exact releases install side by side; Qoder verifies package and program versions separately',async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-releases-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const bin=path.join(root,'bin');fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin,'npm-cli.js'),`const fs=require('node:fs'),path=require('node:path');const args=process.argv.slice(2),prefix=args[args.indexOf('--prefix')+1],specs=args.filter((value,index)=>!value.startsWith('-')&&args[index-1]!=='--prefix'&&value!=='install');const entries={'@openai/codex':'bin/codex.js','@deepseek-ai/dsh':'lib/bin.js','@qoder-ai/qoder-agent-sdk':'dist/_bundled/qodercli'};for(const spec of specs){const split=spec.lastIndexOf('@'),name=spec.slice(0,split),version=spec.slice(split+1),dir=path.join(prefix,'node_modules',name);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify({name,version}));if(entries[name]){const file=path.join(dir,entries[name]);fs.mkdirSync(path.dirname(file),{recursive:true});const actual=name==='@qoder-ai/qoder-agent-sdk'?'1.1.76':version==='0.166.0'?'0.165.0':version;fs.writeFileSync(file,(name==='@qoder-ai/qoder-agent-sdk'?'#!/usr/bin/env node\\n':'')+"console.log('program "+actual+"');");fs.chmodSync(file,0o755);}}if(!specs.some(spec=>entries[spec.slice(0,spec.lastIndexOf('@'))]))process.exit(3);`);
+  const profile=path.join(root,'profile'),manager=new NativeProgramManager(profile,{PATH:bin+path.delimiter+path.dirname(process.execPath),HOME:root}),signal=new AbortController().signal;
+  const install=(provider:string,version:string)=>manager.install({provider,version,signal,progress:()=>{}});
+  const first=await install('codex','0.164.0'),next=await install('codex','0.165.0');assert.notEqual(first,next);assert.ok(fs.existsSync(first));assert.equal(await install('codex','0.164.0'),first);
+  const dsh=await install('dsh','0.2.1-rc.3');assert.ok(fs.existsSync(dsh));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(path.dirname(dsh),'..','..','..','..','node_modules/@deepseek-ai/dsh-client-connection/package.json'),'utf8')).version,'0.2.1-rc.3');
+  const qoder=await install('qoder','1.0.56');assert.equal((await manager.discover({provider:'qoder',boundExecutable:qoder,signal})).candidates[0].version,'1.1.76');
+  await assert.rejects(install('codex','0.166.0'),{code:'agent_install_version_mismatch'});assert.ok(fs.existsSync(first));
+  await assert.rejects(install('codex','latest'),{code:'agent_install_version_invalid'});
+  assert.equal(fs.readdirSync(path.join(profile,'programs','codex')).some(name=>name.startsWith('.prepare-')||name.startsWith('package-0.166.0')),false);
+});
+
+test('on-demand companion SDKs install with --omit=optional and incomplete managed directories are repaired atomically', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-companion-sdks-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bin = path.join(root, 'bin'); fs.mkdirSync(bin);
+  const invocations: string[][] = [];
+  const claudePkg = `@anthropic-ai/claude-code-${process.platform}-${process.arch}`;
+  fs.writeFileSync(path.join(bin, 'npm-cli.js'), `const fs=require('node:fs'),path=require('node:path');const args=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(path.join(root, 'npm.jsonl'))},JSON.stringify(args)+'\\n');const prefix=args[args.indexOf('--prefix')+1],specs=args.filter((value,index)=>!value.startsWith('-')&&args[index-1]!=='--prefix'&&value!=='install');for(const spec of specs){const split=spec.lastIndexOf('@'),name=spec.slice(0,split),version=spec.slice(split+1),dir=path.join(prefix,'node_modules',name);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify({name,version}));if(name===${JSON.stringify(claudePkg)}){const exe=path.join(dir,process.platform==='win32'?'claude.exe':'claude');fs.writeFileSync(exe,"#!/usr/bin/env node\\nconsole.log('claude 2.1.322');");fs.chmodSync(exe,0o755);}}`);
+  const profile = path.join(root, 'profile');
+  const manager = new NativeProgramManager(profile, { PATH: bin + path.delimiter + path.dirname(process.execPath), HOME: root });
+  const signal = new AbortController().signal;
+  const executable = await manager.install({ provider: 'claude-code', version: '2.1.322', signal, progress: () => {} });
+  assert.ok(fs.existsSync(executable));
+  for (const line of fs.readFileSync(path.join(root, 'npm.jsonl'), 'utf8').trim().split('\n')) invocations.push(JSON.parse(line));
+  assert.equal(invocations.length, 1);
+  assert.ok(invocations[0].includes('--omit=optional'));
+  assert.ok(invocations[0].includes('@anthropic-ai/claude-agent-sdk@0.3.322'));
+  assert.equal(invocations[0].at(-1), `${claudePkg}@2.1.322`);
+  const sdkPkg = path.join(profile, 'programs', 'claude-code', `package-2.1.322-${process.platform}-${process.arch}`, 'node_modules', '@anthropic-ai', 'claude-agent-sdk');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(sdkPkg, 'package.json'), 'utf8')).version, '0.3.322');
+  fs.rmSync(sdkPkg, { recursive: true, force: true });
+  const boundDiscovery = await manager.discover({ provider: 'claude-code', boundExecutable: executable, signal });
+  assert.equal(boundDiscovery.candidates[0]?.compatible, false);
+  assert.match(boundDiscovery.candidates[0]?.diagnostic ?? '', /配套 SDK/u);
+  const repaired = await manager.install({ provider: 'claude-code', version: '2.1.322', signal, progress: () => {} });
+  assert.equal(repaired, executable);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(sdkPkg, 'package.json'), 'utf8')).version, '0.3.322');
+});
+
+test('program installer isolates both npm_config_cache and NPM_CONFIG_CACHE per staging attempt', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-program-npm-cache-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bin = path.join(root, 'bin'); fs.mkdirSync(bin);
+  const capture = path.join(root, 'npm-env.json');
+  fs.writeFileSync(path.join(bin, 'npm-cli.js'), `const fs=require('node:fs'),path=require('node:path');fs.writeFileSync(${JSON.stringify(capture)},JSON.stringify({lower:process.env.npm_config_cache,upper:process.env.NPM_CONFIG_CACHE}));const args=process.argv.slice(2),prefix=args[args.indexOf('--prefix')+1],dir=path.join(prefix,'node_modules/@openai/codex');fs.mkdirSync(path.join(dir,'bin'),{recursive:true});const exe=path.join(dir,'bin/codex.js');fs.writeFileSync(exe,"console.log('codex-cli 0.165.0');");fs.chmodSync(exe,0o755);fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify({name:'@openai/codex',version:'0.165.0'}));`);
+  const profile = path.join(root, 'profile');
+  const manager = new NativeProgramManager(profile, { PATH: bin + path.delimiter + path.dirname(process.execPath), HOME: root, npm_config_cache: '/outer/npm-lower', NPM_CONFIG_CACHE: '/outer/npm-upper' });
+  await manager.install({ provider: 'codex', version: '0.165.0', signal: new AbortController().signal, progress: () => {} });
+  const observed = JSON.parse(fs.readFileSync(capture, 'utf8'));
+  assert.equal(observed.lower, observed.upper);
+  const normalizeVar = (p: string) => p.replace(/^\/private(?=\/var\/)/, '');
+  assert.ok(normalizeVar(observed.lower).startsWith(path.join(normalizeVar(profile), 'programs/codex/.prepare-')), observed.lower);
+  assert.equal(path.basename(observed.lower), 'npm');
+});

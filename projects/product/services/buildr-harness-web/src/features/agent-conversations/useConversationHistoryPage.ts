@@ -1,0 +1,74 @@
+import { useEffect, useRef, useState } from 'react';
+import { createConversationHistoryCache, readConversationHistoryPage, readConversationHistoryWindow, type ConversationHistoryCache } from './conversation-history-page.ts';
+import type { ConversationPage, AgentConversationsClient } from './api/agent-conversations-api.ts';
+import { HISTORY_GROUP_BATCH } from './conversation-history-groups.ts';
+
+type Scope = {workspaceId?: string; query: string; hidden: boolean; agent?: string; model?: string; draftConversationIds?: readonly string[]};
+/** Initial read plus explicit continuation; activity updates have their own lifecycle. */
+export function useConversationHistoryPage(api: AgentConversationsClient, {workspaceId, query, hidden, agent, model, draftConversationIds}: Scope, count: number, enabled = true, retained?:ConversationHistoryCache, version:number|string=0) {
+  const draftScope=draftConversationIds!==undefined?JSON.stringify(draftConversationIds):null;
+  const localCache=useRef<ConversationHistoryCache|undefined>(undefined);
+  if(!localCache.current)localCache.current=createConversationHistoryCache();
+  const cache=retained??localCache.current;
+  const filterScope = JSON.stringify([workspaceId, query, hidden, agent, model]);
+  const scope = JSON.stringify([workspaceId, query, hidden, agent, model, draftScope]);
+  const key=JSON.stringify([workspaceId,query,hidden,agent,model,count,draftScope]);
+  const retainedByFilter = useRef<{filterScope: string; page?: ConversationPage}>({filterScope});
+  const [state, setState] = useState<{scope: string; filterScope: string; page?: ConversationPage; error: string; busy: boolean; stale?: boolean}>(()=>({scope,filterScope,...cache.pages.get(key),error:cache.pages.get(key)?.error??'',busy:enabled&&!cache.pages.has(key)}));
+  const controls = useRef({loadMore: () => {}, retry: () => {}});
+  useEffect(() => {
+    const controller = new AbortController();
+    const saved=cache.pages.get(key);
+    const sameFilterFallback = !saved?.page && retainedByFilter.current.filterScope === filterScope && retainedByFilter.current.page
+      ? {...retainedByFilter.current.page, nextCursor: undefined}
+      : undefined;
+    let reading = false, current: ConversationPage | undefined=saved?.page ?? sameFilterFallback, failedMore = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    if (!enabled) { controls.current = {loadMore: () => {}, retry: () => {}}; return; }
+    if (saved?.page) retainedByFilter.current = {filterScope, page: saved.page};
+    setState({scope, filterScope, page: current, error: saved?.error ?? '', busy: !saved});
+    const scheduleRetry = () => {
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        if (controller.signal.aborted) return;
+        if (typeof document === 'undefined' || document.visibilityState !== 'hidden') void read(false);
+        else scheduleRetry();
+      }, 5000);
+    };
+    const read = async (more: boolean) => {
+      if (reading || controller.signal.aborted || more && !current?.nextCursor) return;
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+      reading = true; failedMore = more;
+      const admitted=cache.pages.get(key);
+      setState({scope, filterScope, page: current, error: '', busy: true});
+      try {
+        const fetch=(options:{limit:number;cursor?:string;signal:AbortSignal})=>api.listAll({workspaceId,query,hidden,agent,model,...(draftConversationIds!==undefined?{draftConversationIds:[...draftConversationIds]}:{}),...options});
+        const result = more ? await readConversationHistoryPage(fetch,HISTORY_GROUP_BATCH,controller.signal,current) : await readConversationHistoryWindow(fetch,Math.max(count,current?.conversations.length??0),controller.signal);
+        if (!controller.signal.aborted && cache.pages.get(key)===admitted) { current = result; retainedByFilter.current = {filterScope, page: current}; cache.pages.set(key,{page:current,error:'',version});setState({scope, filterScope, page: current, error: '', busy: false}); }
+      } catch (failure) {
+        if (!controller.signal.aborted && cache.pages.get(key)===admitted) {
+          const stale = ['agent_cursor_stale','agent_cursor_invalid'].includes((failure as {code?: string})?.code ?? '');
+          if(stale)failedMore=false;
+          const error=failure instanceof Error ? failure.message : '无法读取对话列表，保留上次结果。';
+          cache.pages.set(key,{page:current,error,stale,version});
+          setState({scope, filterScope, page: current, error, busy: false, stale});
+          if (!more && !stale) scheduleRetry();
+        }
+      } finally { reading = false; }
+    };
+    controls.current = {loadMore: () => {void read(true);}, retry: () => {void read(failedMore);}};
+    if(!saved||(saved.error&&!saved.stale)||saved.version!==version)void read(false);
+    return () => { clearTimeout(retryTimer); controller.abort(); controls.current = {loadMore: () => {}, retry: () => {}}; };
+  }, [api, workspaceId, query, hidden, agent, model, count, enabled, filterScope, scope, key, cache, version, draftScope]);
+  const saved = cache.pages.get(key);
+  const displayPage = state.scope === scope
+    ? state.page
+    : saved?.page ?? (state.filterScope === filterScope && state.page
+      ? {...state.page, nextCursor: undefined}
+      : retainedByFilter.current.filterScope === filterScope && retainedByFilter.current.page
+        ? {...retainedByFilter.current.page, nextCursor: undefined}
+        : undefined);
+  return {page: displayPage, busy: enabled && (state.scope !== scope || state.busy), error: state.scope === scope ? state.error : '', retryLabel: state.scope === scope && state.stale ? '刷新列表' : '重试', loadMore: () => controls.current.loadMore(), retry: () => controls.current.retry()};
+}

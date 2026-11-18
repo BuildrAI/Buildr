@@ -335,7 +335,7 @@ async function nestedGitIsolationScenario(section: 'full' | 'lifecycle' | 'safet
   const inspected = await run(['worktree', 'inspect', taskId]);
   assert.equal(inspected.status, 'ready');
   assert.equal(inspected.repositories.length, 2);
-  const preview = await run(['web', 'preview', 'start', 'nested-preview', '--task', taskId, '--no-open'], 1, false);
+  const preview = await run(['web', 'preview', 'start', 'nested-preview', '--task', taskId, '--reuse', 'none', '--no-open'], 1, false);
   assert.match(`${preview.stdout}${preview.stderr}`, /preview_worktree_scope_missing/);
   completePhase();
   completePhase = startPhase('materials-provenance');

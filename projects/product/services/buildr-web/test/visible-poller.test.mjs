@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createVisiblePoller } from '../src/lib/visible-poller.ts';
-import { activityPollMs } from '../src/features/agent-conversations/activity-polling.ts';
+import { activityPollMs } from '../src/features/harness-ui/activity-polling.ts';
 import { serviceRuntimePollMs } from '../src/features/service-runtime/runtime-polling.ts';
 const flush=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
 function fixture(t,extra={}) {

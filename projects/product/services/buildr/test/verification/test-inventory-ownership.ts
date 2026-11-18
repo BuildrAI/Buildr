@@ -32,7 +32,7 @@ export function auditServiceTestOwnership(serviceRoot: string) {
 }
 
 export function auditProjectTestOwnership(buildrRoot: string) {
-  const services = ['buildr', 'buildr-web', 'buildr-agent', 'dsh-plugin'];
+  const services = ['buildr', 'buildr-web', 'buildr-harness', 'buildr-harness-web', 'dsh-plugin'];
   const findings = services.flatMap(service => auditServiceTestOwnership(path.resolve(buildrRoot, '..', service)).findings.map((finding: any) => ({ service, ...finding })));
   return { ok: findings.length === 0, findings };
 }

@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
-import { connectAgentProcess, stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { connectAgentProcess, stopAgentProcess } from '@buildr-ai/buildr-harness';
 
 import { previewDataRoot, readPreviewOwner, startPreview, stopPreview, type PreviewRuntime } from '../../src/web/application/preview-lifecycle.ts';
 import { computePreviewCandidateDigest, previewCandidateSourceDigest } from '../../src/web/application/preview-candidate.ts';
@@ -16,9 +16,9 @@ function coded(error: unknown, code: string): boolean {
 }
 
 function seedPreparedCandidate(productRoot: string): void {
-  const agentPackage = path.join(productRoot, 'node_modules', '@buildr-ai', 'buildr-agent');
+  const agentPackage = path.join(productRoot, 'node_modules', '@buildr-ai', 'buildr-harness');
   fs.mkdirSync(path.join(agentPackage, 'build', 'process'), { recursive: true });
-  fs.writeFileSync(path.join(agentPackage, 'package.json'), '{"name":"@buildr-ai/buildr-agent","version":"0.0.0-fixture"}\n');
+  fs.writeFileSync(path.join(agentPackage, 'package.json'), '{"name":"@buildr-ai/buildr-harness","version":"0.0.0-fixture"}\n');
   fs.writeFileSync(path.join(agentPackage, 'build', 'index.js'), '// fixture public entry\n');
   fs.writeFileSync(path.join(agentPackage, 'build', 'process', 'entry.js'), '// fixture process entry\n');
   fs.mkdirSync(path.join(productRoot, 'web-dist'), { recursive: true });

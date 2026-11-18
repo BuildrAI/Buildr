@@ -6,6 +6,7 @@ import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { collectChangedProductPaths, resolveVerificationBase, isVerificationWorkflowTriggerOnlyChange, contentChangesAtSnapshot } from '../verification/changed-paths.ts';
+import { changedVerificationCheckEvidence } from '../verification/source-diff.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
 import { serviceVerificationChecks as pluginChecks } from '../../../dsh-plugin/tools/testing/verification-checks.ts';
 import { collectVerificationContentSnapshot } from '../verification/content-snapshot.ts';
@@ -231,7 +232,7 @@ test('source refinement binds actual Git and working bytes, never dirty or missi
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const projectRoot = path.join(root, 'projects/product');
   const productRoot = path.join(projectRoot, 'services/buildr');
-  const agent = path.join(projectRoot, 'services/buildr-agent/src');
+  const agent = path.join(projectRoot, 'services/buildr-harness/src');
   fs.mkdirSync(productRoot, { recursive: true }); fs.mkdirSync(agent, { recursive: true });
   const entry = path.join(agent, 'index.ts');
   const previous = "export { prepare } from './runtime.ts';\n";
@@ -251,7 +252,7 @@ test('source refinement binds actual Git and working bytes, never dirty or missi
   assert.equal(contentChangesAtSnapshot(changed, snapshot, options).length, 1);
   const selected = createVerificationPlan({ ...changed, related: true, semantic: true, target: 'source' });
   assert.deepEqual(selected.steps.map((step: any) => step.id).sort(),
-    ['agent-source-boundaries', 'agent-typecheck', 'agent-unit', 'generated-contracts'].sort());
+    ['agent-source-boundaries', 'agent-typecheck', 'agent-unit', 'generated-contracts', 'harness-cli-typecheck'].sort());
   fs.writeFileSync(entry, current + 'startExecution();\n');
   assert.deepEqual(contentChangesAtSnapshot(changed, snapshot, options), [], 'old proof cannot narrow different execution bytes');
   assert.deepEqual(collectChangedProductPaths(options).contentChanges, [], 'dirty execution change invalidates the proof');
@@ -267,5 +268,53 @@ test('source refinement binds actual Git and working bytes, never dirty or missi
     fs.chmodSync(entry, 0o644);
     fs.rmSync(entry); fs.symlinkSync('runtime.ts', entry);
     assert.ok(!collectChangedProductPaths(options).contentChanges.some((item: any) => item.path.endsWith('index.ts')), 'symlink identity is not a barrel proof');
+  }
+});
+
+test('real verification-checks.ts single-group diff and executor-specific exclusions narrow agent groups accurately', () => {
+  const productRoot = path.resolve(import.meta.dirname, '../..', '../..');
+  const checkRel = 'services/buildr-harness/tools/testing/verification-checks.ts';
+  const beforeText = fs.readFileSync(path.join(productRoot, checkRel), 'utf8');
+  const afterText = beforeText.replace(
+    /id:\s*'agent-integration-conversations'[\s\S]*?timeoutMs:\s*(\d+)/u,
+    (match, timeout) => match.replace(timeout, String(Number(timeout) + 5000)),
+  );
+  const evidence = changedVerificationCheckEvidence(checkRel, beforeText, afterText);
+  assert.ok(evidence);
+  assert.deepEqual(evidence.checkIds, ['agent-integration-conversations']);
+
+  const narrowed = createVerificationPlan({ related: true, semantic: true, target: 'source', paths: [checkRel], changedVerificationChecks: [evidence] });
+  const narrowedIds = narrowed.steps.map((step: any) => step.id);
+  assert.ok(narrowedIds.includes('agent-integration-conversations'));
+  for (const requiredStatic of ['agent-unit', 'agent-source-boundaries', 'agent-typecheck']) {
+    assert.ok(narrowedIds.includes(requiredStatic), `${requiredStatic} must not be skipped on verification-checks.ts edit`);
+  }
+  for (const skippedId of [
+    'agent-integration',
+    'agent-integration-storage-runtime',
+    'agent-integration-models-accounts',
+    'agent-integration-native',
+    'agent-integration-native-runtime',
+    'agent-integration-startup',
+    'agent-integration-handoff',
+    'agent-integration-recovery',
+    'integration-agent-host',
+    'repository-onboarding',
+  ]) {
+    assert.ok(!narrowedIds.includes(skippedId), `${skippedId} should be skipped`);
+  }
+
+  for (const executorPath of [
+    'services/buildr-harness/src/executors/antigravity/probe.ts',
+    'services/buildr-harness/src/executors/claude/probe.ts',
+  ]) {
+    const executorPlan = createVerificationPlan({ related: true, semantic: true, target: 'source', paths: [executorPath] });
+    const executorIds = executorPlan.steps.map((step: any) => step.id);
+    assert.ok(executorIds.includes('agent-integration-native-runtime'), `${executorPath} must run agent-integration-native-runtime`);
+    assert.ok(executorIds.includes('agent-integration'), `${executorPath} must run catch-all/contract checks`);
+    for (const lifecycleId of executorIds.filter((id: string) =>
+      id.startsWith('agent-integration-startup') || id.startsWith('agent-integration-handoff') || id.startsWith('agent-integration-recovery'))) {
+      assert.fail(`${executorPath} must not trigger ${lifecycleId}`);
+    }
   }
 });

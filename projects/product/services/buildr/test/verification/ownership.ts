@@ -16,7 +16,9 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
 export const VERIFICATION_IGNORED_INPUTS: any = Object.freeze([
   "node_modules/**",
   ".buildr/**",
-  ".gitignore"
+  ".gitignore",
+  "services/buildr-harness/.gitignore",
+  "services/buildr-harness-web/.gitignore"
 ]);
 
 export const VERIFICATION_GOVERNED_REPOSITORY_INPUTS: any = Object.freeze([

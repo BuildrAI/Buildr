@@ -1109,7 +1109,7 @@ jobs:
             node "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js" ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --cache "${RUNNER_TEMP}/buildr-cli-dependencies/npm-cache"
       - name: Prepare the private Agent package
         if: ${{ !inputs.repair_candidate_run_id || needs.candidate-plan.outputs.buildr != 'true' }}
-        working-directory: projects/product/services/buildr-agent
+        working-directory: projects/product/services/buildr-harness
         run: |
           node "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js" ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --cache "${RUNNER_TEMP}/buildr-cli-dependencies/npm-cache"
           node tools/build.ts

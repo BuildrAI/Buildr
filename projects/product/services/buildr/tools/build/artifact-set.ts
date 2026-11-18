@@ -27,7 +27,7 @@ export type GeneratedArtifactSet = {
 
 const sha256File = (file: string): string => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
-export async function buildGeneratedArtifactSet(outputRoot: string, input: { sourceIdentity: string }): Promise<GeneratedArtifactSet> {
+export async function buildGeneratedArtifactSet(outputRoot: string, input: { sourceIdentity: string; refreshCheckoutProjection?: boolean }): Promise<GeneratedArtifactSet> {
   const root = path.resolve(outputRoot);
   if (!input.sourceIdentity.trim()) throw new Error('generated_artifact_source_identity_missing');
   if (fs.existsSync(root)) throw new Error(`generated_artifact_output_exists: ${root}`);
@@ -36,18 +36,20 @@ export async function buildGeneratedArtifactSet(outputRoot: string, input: { sou
   const testContextRoot = path.join(root, 'test-context');
   const webDistRoot = path.join(root, 'web-dist');
   try {
-    // 暂存副本用于建立候选产物身份；忽略的本地副本来自同一次模式渲染，
-    // 让 TypeScript 消费方能够从干净检出编译，且不读取陈旧或已跟踪的投射。
+    // 暂存副本用于建立候选产物身份；仅在需要时刷新工作区 DTO 投射，
+    // 测试验证默认只写入独立暂存目录，不争用同一检出目录。
     await writeTaskRecordHttpDto(dtoRoot);
     await writeWorkbenchDto(dtoRoot);
     await writeTaskProfessionalHttpDto(dtoRoot);
     await writeRuntimeSystemDto(dtoRoot);
     await writeWorkspaceAgentAssetsDtos(dtoRoot);
-    await writeTaskRecordHttpDto();
-    await writeWorkbenchDto();
-    await writeTaskProfessionalHttpDto();
-    await writeRuntimeSystemDto();
-    await writeWorkspaceAgentAssetsDtos();
+    if (input.refreshCheckoutProjection !== false) {
+      await writeTaskRecordHttpDto();
+      await writeWorkbenchDto();
+      await writeTaskProfessionalHttpDto();
+      await writeRuntimeSystemDto();
+      await writeWorkspaceAgentAssetsDtos();
+    }
     buildTestContext(testContextRoot);
     buildWebDist(webDistRoot);
     const buildrMetadata = JSON.parse(fs.readFileSync(path.join(serviceRoot, 'package.json'), 'utf8')) as { devDependencies?: Record<string, string> };

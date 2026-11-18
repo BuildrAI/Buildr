@@ -27,17 +27,21 @@ function assertProfile(value: string): CandidateEnvironmentProfile {
 export function candidateEnvironmentPlan(profileValue: string, roots = { serviceRoot, webRoot }): Array<{ id: string; executable: 'npm' | 'node'; args: string[]; cwd: string }> {
   const profile = assertProfile(profileValue);
   const consumesArtifact = profile === 'host' || profile === 'consumer' || profile === 'publisher';
-  const agentRoot = path.resolve(roots.serviceRoot, '../buildr-agent');
+  const agentRoot = path.resolve(roots.serviceRoot, '../buildr-harness');
   // Every profile compiles the private Agent package before the enclosing
   // dependencies install: consumer shards still execute source verification
-  // tools that import node_modules/@buildr-ai/buildr-agent/build/index.js.
+  // tools that import node_modules/@buildr-ai/buildr-harness/build/index.js.
   const plan: Array<{ id: string; executable: 'npm' | 'node'; args: string[]; cwd: string }> = [
-    { id: 'buildr-agent-dependencies', executable: 'npm', args: ['ci', '--ignore-scripts'], cwd: agentRoot },
-    { id: 'buildr-agent-build', executable: 'node', args: ['tools/build.ts'], cwd: agentRoot },
+    { id: 'buildr-harness-dependencies', executable: 'npm', args: ['ci', '--ignore-scripts'], cwd: agentRoot },
+    {id:'harness-web-dependencies',executable:'npm',args:['ci','--ignore-scripts'],cwd:path.resolve(roots.serviceRoot,'../buildr-harness-web')},
+    {id:'harness-web-build',executable:'node',args:['tools/build.ts'],cwd:path.resolve(roots.serviceRoot,'../buildr-harness-web')},
+    { id: 'buildr-harness-build', executable: 'node', args: ['tools/build.ts'], cwd: agentRoot },
   ];
   plan.push({ id: 'buildr-dependencies', executable: 'npm', args: consumesArtifact ? ['ci', '--omit=dev', '--ignore-scripts', '--install-links'] : ['ci', '--install-links'], cwd: roots.serviceRoot });
   if (profile === 'publisher') plan.push({ id: 'publisher-npm', executable: 'npm', args: ['install', '--prefix', path.join(roots.serviceRoot, 'node_modules/.buildr-publisher'), '--ignore-scripts', '--no-save', '--no-package-lock', '--no-audit', '--no-fund', `npm@${PUBLISH_NPM_VERSION}`], cwd: roots.serviceRoot });
   if (consumesArtifact) return plan;
+  plan.push(
+  );
   // Base checks import Web pure modules directly, so a fresh preflight needs
   // the locked Web dependency tree even when no browser build is requested.
   if (profile === 'base' || profile === 'artifact' || profile === 'frontend' || profile === 'source-runtime') {

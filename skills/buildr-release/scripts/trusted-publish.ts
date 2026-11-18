@@ -10,6 +10,7 @@ import { releasePublishAuthority, releasePackageName } from './release-authority
 import { publisherNpmCli } from '../../../projects/product/services/buildr/tools/verification/candidate-environment.ts';
 import { readReleaseArtifact } from './release-artifact.ts';
 import { assertRegistryArtifact, registryVersionState, waitForRegistryPublication } from './registry-version-state.ts';
+import {inspectArtifactDistribution} from '../../../projects/product/services/buildr-harness/tools/inspect-artifact-distribution.ts';
 
 export function authorityFailureDiagnostic(output: any, authority: any = releasePublishAuthority): any  {
   if (!/(?:E401|ENEEDAUTH|E404|OIDC|Trusted Publisher)/i.test(String(output ?? ''))) return null;
@@ -53,6 +54,12 @@ export async function publishFrozenArtifact(options: any, dependencies: any = {}
     const before = await read();
     assertRegistryArtifact(before, manifest);
     if (before.published) return { status: 'passed', action: 'reused', registry: before, effects: [], attempted };
+    const distribution = await (dependencies.verifyDistribution ?? inspectArtifactDistribution)(artifact.tarball, manifest.packageName);
+    if (distribution.status !== 'eligible' || distribution.publicationApproved !== true) return {
+      status: 'blocked', action: 'distribution-review-required', attempted, effects,
+      diagnostic: {code: 'distribution-approval-required', message: '准确发行物缺少允许发行的许可或平台支持依据。', findings: distribution.findings},
+      nextActions: ['补齐准确版本许可决定、许可证据与平台支持批准后，重新准备准确候选；不执行 npm 写入。'],
+    };
     // The owner already bound this call to the authorized frozen bytes. A
     // successful Registry 404 permits retry; transport errors still stop below.
     if (previousAttempt !== 'not-attempted') effects.push({ type: 'npm-publication-retry-authorized', basis: 'official-registry-version-404',
@@ -69,12 +76,42 @@ export async function publishFrozenArtifact(options: any, dependencies: any = {}
     if (command.stdout) process.stdout.write(command.stdout);
     if (command.stderr) process.stderr.write(command.stderr);
     process.stdout.write(`[release] npm-publish exitCode=${command.status ?? 'unknown'}\n`);
+    const now = dependencies.now ?? Date.now;
+    const shortFailureReadback = command.status !== 0 && command.diagnostic !== null;
+    const waitOptions = shortFailureReadback
+      ? { attempts: 3, delayMs: 5_000, ...dependencies.registryWait, sleep: dependencies.sleep, now }
+      : { ...dependencies.registryWait, sleep: dependencies.sleep, now };
+    let readbackObservations = 0;
+    const readbackStartedAt = now();
     const after = await waitForRegistryPublication(async () => {
       const state = await read(); assertRegistryArtifact(state, manifest); return state;
-    }, { ...dependencies.registryWait, sleep: dependencies.sleep, now: dependencies.now });
+    }, {
+      ...waitOptions,
+      onObservation: dependencies.onObservation
+        ? (value: any) => { readbackObservations++; dependencies.onObservation(value); }
+        : (value: any) => { readbackObservations++; process.stdout.write(`[release] registry-readback ${JSON.stringify(value)}\n`); },
+    });
+    const readbackElapsedMs = now() - readbackStartedAt;
+    process.stdout.write(`[release] npm-readback attempts=${readbackObservations} elapsedMs=${readbackElapsedMs} confirmed=${after.published ? 'true' : 'false'}\n`);
     if (!after.published) {
       publishEffect.state = command.status === 0 ? 'unknown' : 'not-confirmed';
-      return { status: 'blocked', action: 'readback-required', attempted, effects, diagnostic: command.diagnostic ?? { code: 'npm-publication-unconfirmed', message: 'Official Registry has not confirmed the publish result.' }, nextActions: ['回读同一版本与integrity后恢复；未知状态下不重复publish。'] };
+      const fallbackDiagnostic = {
+        code: 'npm-publication-unconfirmed',
+        message: `Official Registry has not confirmed ${manifest.packageName}@${manifest.version} after ${readbackObservations} readback checks (${readbackElapsedMs}ms); npm exit=${command.status ?? 'unknown'}.`,
+        attempts: readbackObservations,
+        elapsedMs: readbackElapsedMs,
+        exitCode: command.status ?? null,
+      };
+      return {
+        status: 'blocked',
+        action: 'readback-required',
+        attempted,
+        effects,
+        diagnostic: command.diagnostic ?? fallbackDiagnostic,
+        nextActions: command.status === 0
+          ? ['回读同一版本与integrity后恢复；npm publish已返回成功但官方源尚未可见，未知状态下不重复publish。']
+          : ['回读同一版本与integrity后恢复；未知状态下不重复publish。'],
+      };
     }
     publishEffect.state = 'confirmed';
     dependencies.onEffects?.(effects);

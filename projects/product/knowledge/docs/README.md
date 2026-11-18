@@ -40,7 +40,7 @@ Buildr 提供两个相互连接的阅读入口，重合的正文只维护一份�
 
 ## 开发参考
 
-开发从[产品开发入口](../../README.md)开始。准备与检查以产品目录的 [`preparation.yml`](../../preparation.yml)、[`verification.yml`](../../verification.yml)为准；具体运行和构建命令查所属服务（Service）的入口：[Buildr 主包](../../services/buildr/package.json)、[Buildr Web 前端](../../services/buildr-web/package.json)、[Buildr 智能体服务（Agent Service）](../../services/buildr-agent/package.json)或 [DSH 桌面插件](../../services/dsh-plugin/package.json)。智能体服务（Agent Service）作为私有库随主包统一发行，源码准备顺序见[构建地图](../code-map/system-services-assets.md#构建与消费)；DSH 插件独立构建和发布。避免在多篇说明中抄写命令。
+开发从[产品开发入口](../../README.md)开始。准备与检查以产品目录的 [`preparation.yml`](../../preparation.yml)、[`verification.yml`](../../verification.yml)为准；具体运行和构建命令查所属服务（Service）的入口：[Buildr 主包](../../services/buildr/package.json)、[Buildr Web 前端](../../services/buildr-web/package.json)、[Buildr 智能体服务（Agent Service）](../../services/buildr-harness/package.json)或 [DSH 桌面插件](../../services/dsh-plugin/package.json)。[Harness 与 Development](architecture/harness-products.md)说明共享核心、界面与独立入口；智能体服务（Agent Service）作为私有库纳入两个产品负载，源码准备顺序见[构建地图](../code-map/system-services-assets.md#构建与消费)；DSH 插件独立构建和发布。避免在多篇说明中抄写命令。
 
 专项问题按需查阅：[智能体（Agent）工具支持](../../services/buildr/docs/agent-runtime-adapters.md)、[命令架构](../../services/buildr/docs/cli-architecture.md)、[Archify 自用与旧安装迁移](reference/archify.md)、[OpenSpec 协作](architecture/task-system.md#openspec-变更怎样推进)。
 

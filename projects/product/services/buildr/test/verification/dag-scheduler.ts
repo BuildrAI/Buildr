@@ -82,6 +82,11 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
   if (!Array.isArray(priorityResourceInput) || priorityResourceInput.some((resource: any) => typeof resource !== 'string')) {
     throw new Error('priorityResources must be an array of resource names');
   }
+  const fastFailBoundaryInput: any = options.fastFailBoundaries ?? [];
+  if (!Array.isArray(fastFailBoundaryInput) || fastFailBoundaryInput.some((boundary: any) => typeof boundary !== 'string')) {
+    throw new Error('fastFailBoundaries must be an array of execution boundary names');
+  }
+  const fastFailOrder = new Map<string, number>(fastFailBoundaryInput.map((boundary: string, index: number) => [boundary, index]));
   const priorityResources: string[] = [...new Set<string>(priorityResourceInput)];
   for (const resource of priorityResources) {
     if (!Number.isInteger(limits.resources?.[resource]) || limits.resources[resource] < 1) {
@@ -192,6 +197,11 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
   };
 
   const pendingInSchedulingOrder: any = () => [...pending.values()].sort((left: any, right: any) => {
+    if (fastFailOrder.size > 0) {
+      const leftRank = fastFailOrder.get(left.testing?.executionBoundary ?? left.executionBoundary) ?? fastFailOrder.size;
+      const rightRank = fastFailOrder.get(right.testing?.executionBoundary ?? right.executionBoundary) ?? fastFailOrder.size;
+      if (leftRank !== rightRank) return leftRank - rightRank;
+    }
     // A scarce resource with an idle slot is worth filling before ordinary
     // work. Once every priority slot is occupied, normal ordering applies so
     // unrelated checks keep progressing instead of waiting for a browser turn.

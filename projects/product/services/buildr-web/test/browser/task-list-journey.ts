@@ -439,7 +439,7 @@ export async function runTaskListJourney({antdSelectDisplay, antdSelectOptionTex
       await closeTaskReading(page); await page.locator('[data-task-node=design]').click();
       await page.locator('[data-task-node=design][aria-pressed="true"]').waitFor();
       await page.locator('#task-detail-refresh[aria-busy="false"]').waitFor();
-      const prototypeFailure = page.waitForResponse((response: any) => new URL(response.url()).pathname.endsWith('/tasks/browser-task/ui-prototypes') && response.status() === 500);
+      const prototypeFailure = page.waitForResponse((response: any) => prototypeFailureRoute.test(response.url()));
       await page.locator('#task-detail-refresh').click();
       assert.equal((await prototypeFailure).status(), 500);
       await closeTaskReading(page); await page.locator('[data-task-node=requirements]').click();

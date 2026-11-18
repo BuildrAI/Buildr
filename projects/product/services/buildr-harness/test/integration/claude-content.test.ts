@@ -1,0 +1,87 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
+import { ClaudeReceiptCursor, readClaudePersistedExecution, readClaudeSupplementReceipt, readClaudeTool } from '../../src/executors/claude/content.ts';
+import { importClaudeFork } from '../../src/executors/claude/fork.ts';
+import { claudeInputId } from '../../src/executors/claude/protocol.ts';
+import { opaqueReference } from '../../src/executors/native-process.ts';
+
+function fixture(t:test.TestContext, layout: 'ordinary' | 'bound' | 'ancestor' = 'ordinary'){
+  const root=fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(),'buildr-claude-records-')));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const storage=layout==='ancestor'?path.join(root,'model-bindings','nested'):root;
+  const configRoot=layout==='bound'?path.join(storage,'connections/claude-code/model-bindings','a'.repeat(64)):path.join(storage,'connections/claude-code');
+  const contextId=randomUUID(),cwd=path.join(storage,'work');
+  const file=path.join(configRoot,'claude-config/projects/project',contextId+'.jsonl');
+  fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,'');
+  const append=(value:any)=>fs.appendFileSync(file,JSON.stringify({sessionId:contextId,cwd,isSidechain:false,...value})+'\n');
+  return {root:storage,configRoot,contextId,cwd,file,append};
+}
+test('Claude receipt cursor observes only new exact owned UUIDs and refuses replacement',t=>{
+  const f=fixture(t),old=claudeInputId('old'),current=claudeInputId('current');
+  f.append({type:'user',uuid:old,message:{content:'old'}});
+  const cursor=new ClaudeReceiptCursor(f),expected=new Set([old,current]);
+  assert.deepEqual(cursor.read(expected),[]);
+  f.append({type:'user',uuid:current,cwd:'/another',message:{content:'same session after cd'}});
+  assert.deepEqual(cursor.read(expected),[current],'a shell cwd change keeps the same native session');
+  f.append({type:'user',uuid:old,sessionId:randomUUID(),message:{content:'another session'}});
+  assert.deepEqual(cursor.read(expected),[]);
+  const row=Buffer.from(JSON.stringify({type:'user',uuid:current,sessionId:f.contextId,cwd:f.cwd,isSidechain:false,message:{content:'中文'}})+'\n');
+  fs.appendFileSync(f.file,row.subarray(0,row.length-3));assert.deepEqual(cursor.read(expected),[]);
+  fs.appendFileSync(f.file,row.subarray(row.length-3));assert.deepEqual(cursor.read(expected),[current]);
+  assert.deepEqual(cursor.read(expected),[]);
+  fs.renameSync(f.file,f.file+'.old');fs.writeFileSync(f.file,'');
+  assert.throws(()=>cursor.read(expected),/changed/);
+});
+test('Claude receipt cursor admits a mid-turn queued command by its exact source UUID',t=>{
+  const f=fixture(t),id=claudeInputId('queued');
+  const cursor=new ClaudeReceiptCursor(f),expected=new Set([id]);
+  f.append({type:'attachment',uuid:'rendered-row',attachment:{type:'queued_command',prompt:[{type:'text',text:'mid-turn'}],source_uuid:id,delivery_id:'delivery'}});
+  assert.deepEqual(cursor.read(expected),[id],'the attachment row uuid is a rendering identity; delivery is proven by source_uuid');
+  f.append({type:'attachment',uuid:'other-row',attachment:{type:'queued_command',prompt:[{type:'text',text:'other'}],source_uuid:claudeInputId('other')}});
+  assert.deepEqual(cursor.read(expected),[]);
+});
+test('Claude supplement receipt reads a durable mid-turn queued command attachment',async t=>{
+  const f=fixture(t),clientRequestId='absorbed',id=claudeInputId(clientRequestId),text='那这种情况，我想要使用新的指令，会如何？';
+  const read=()=>readClaudeSupplementReceipt({configRoot:f.configRoot,executable:'/program',cwd:f.cwd,bindingIdentity:'binding',contextRef:{id:f.contextId,data:{native:opaqueReference('claude-code',f.contextId,f.cwd,'binding')}},executionRef:{id:'execution'},clientRequestId,text,createdAt:new Date().toISOString()});
+  f.append({type:'attachment',uuid:'other-row',attachment:{type:'queued_command',prompt:[{type:'text',text:'unrelated'}],source_uuid:claudeInputId('other')}});
+  assert.equal(await read(),undefined,'another admitted input cannot confirm this request');
+  f.append({type:'queue-operation',operation:'remove',reason:'absorbed_mid_turn',commandUuid:id,content:text});
+  f.append({type:'attachment',uuid:'rendered-row',attachment:{type:'queued_command',prompt:[{type:'text',text}],source_uuid:id,delivery_id:'delivery'}});
+  assert.deepEqual(await read(),{inputItemId:id});
+});
+for (const layout of ['ordinary','bound','ancestor'] as const) test('Claude cold terminal observation never treats a background launch as completed work ('+layout+')',async t=>{
+  const f=fixture(t,layout),id=claudeInputId('base');
+  f.append({type:'user',uuid:id,message:{content:'work'}});
+  f.append({type:'assistant',uuid:'call',message:{id:'model-call',content:[{type:'tool_use',id:'job',name:'Bash',input:{command:'server',run_in_background:true}}]}});
+  f.append({type:'user',uuid:'result',message:{content:[{type:'tool_result',tool_use_id:'job',content:'started'}]},toolUseResult:{backgroundTaskId:'native-job'}});
+  f.append({type:'assistant',uuid:'final',message:{id:'model-final',stop_reason:'end_turn',content:[{type:'text',text:'started'}]}});
+  f.append({type:'user',uuid:'internal',isMeta:true,message:{content:[{type:'text',text:'skill metadata'}]}});
+  f.append({type:'user',uuid:'notification',origin:{kind:'task-notification',producer:'session-task'},message:{content:'<task-notification>finished</task-notification>'}});
+  f.append({type:'assistant',uuid:'after-notification',message:{id:'model-after',stop_reason:'end_turn',content:[{type:'text',text:'follow-up after notification'}]}});
+  const result=await readClaudePersistedExecution({configRoot:f.configRoot,executable:'/program',cwd:f.cwd,bindingIdentity:'binding',contextRef:{id:f.contextId,data:{native:opaqueReference('claude-code',f.contextId,f.cwd,'binding')}},executionRef:{id:'execution'},nativeInputs:[{clientRequestId:'base',text:'work',createdAt:new Date().toISOString()}]});
+  assert.equal(result?.observation.status,'unknown');assert.equal(result?.observation.tools[0]?.status,'unknown');
+  assert.deepEqual(result?.items.filter(item=>item.role==='user').map(item=>item.id),[id]);
+  assert.ok(result?.items.some(item=>item.text==='follow-up after notification'));
+  assert.equal(result?.observation.backgroundWork,undefined);
+});
+test('Claude tool detail follows one session across shell cwd changes',t=>{
+  const f=fixture(t),worktree=path.join(f.cwd,'.worktrees','task');
+  f.append({type:'assistant',uuid:'call-row',message:{id:'model-call',stop_reason:'tool_use',content:[{type:'tool_use',id:'call-cd',name:'Bash',input:{command:'cd .worktrees/task && printf ok'}}]}});
+  f.append({type:'user',uuid:'result-row',cwd:worktree,message:{content:[{type:'tool_result',tool_use_id:'call-cd',content:'ok'}]}});
+  const detail=readClaudeTool(f.root,{version:3,provider:'claude-code',contextId:f.contextId,nativeId:'call-cd',entry:{id:'entry',sequence:1,kind:'tool',role:'assistant',text:''} as any,text:[],session:{config:'connections/claude-code',cwd:f.cwd}});
+  assert.equal(detail?.input,JSON.stringify({command:'cd .worktrees/task && printf ok'}));
+  assert.equal(detail?.text,'ok');
+});
+test('Claude fork import keeps native history recorded after a cwd change',async t=>{
+  const f=fixture(t),target=path.join(f.root,'target');
+  fs.mkdirSync(target);
+  f.append({type:'user',uuid:'user-row',cwd:path.join(f.cwd,'.worktrees','task'),message:{content:'work'}});
+  f.append({type:'assistant',uuid:'assistant-row',cwd:path.join(f.cwd,'.worktrees','task'),message:{id:'model-call',stop_reason:'end_turn',content:[{type:'text',text:'done'}]}});
+  await importClaudeFork(f.configRoot,target,f.contextId,f.cwd);
+  const copied=path.join(target,'claude-config/projects/project',f.contextId+'.jsonl');
+  assert.equal(fs.readFileSync(copied,'utf8'),fs.readFileSync(f.file,'utf8'));
+});

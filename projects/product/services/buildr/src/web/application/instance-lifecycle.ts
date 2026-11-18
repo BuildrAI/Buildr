@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import type http from 'node:http';
-import { assertAgentUpgradeIdle } from '@buildr-ai/buildr-agent';
+import { assertAgentUpgradeIdle } from '@buildr-ai/buildr-harness';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 import { assertLauncherWebProfile, resolveWebProfile, sameWebProfile } from '../../modules/installation/contracts/web-profile.ts';
@@ -401,7 +401,7 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
                 console.error('Buildr Web owned resources did not confirm shutdown:', errorDetails(cleanupError).message);
                 process.exit(1);
               }
-              if (previewIdentity) process.exit(0);
+              if (previewIdentity || process.env.BUILDR_DEV_LIVE === '1') process.exit(0);
             },
           });
           ready = await instance.ready;

@@ -12,7 +12,7 @@ import {programmaticOpenApi,programmaticContractVersion,programmaticOperationInd
 function expandRefs(value:any,document:any):any {
  if(!value||typeof value!=='object')return value;
  if(Array.isArray(value))return value.map(item=>expandRefs(item,document));
- if(value.$ref){assert.match(value.$ref,/^#\/components\/schemas\//);const name=value.$ref.slice('#/components/schemas/'.length);assert.ok(document.components.schemas[name],`unresolved ${name}`);return expandRefs(document.components.schemas[name],document);}
+ if(value.$ref){const match=value.$ref.match(/^#\/components\/(schemas|responses)\/([^/]+)$/);assert.ok(match,`unsupported ${value.$ref}`);const kind=match[1],name=match[2];assert.ok(document.components[kind]?.[name],`unresolved ${value.$ref}`);return expandRefs(document.components[kind][name],document);}
  return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,expandRefs(item,document)]));
 }
 function withoutSchemaIds(value:any):any {
@@ -28,7 +28,7 @@ test('Bearer authentication is separate, revocable, persistent and workspace sco
  assert.equal((await f.call('')).status,401);
  assert.equal((await f.call('', 'brp_'+'x'.repeat(43))).status,401);
  let response=await f.call('',token);assert.equal(response.status,200);const discovery=await response.json();
- assert.equal(discovery.version,'test-version');assert.deepEqual(discovery.workspaces,[{id:f.workspaceId,name:'Allowed'}]);assert.equal(discovery.connections[0].id,'fixture');assert.ok(!JSON.stringify(discovery).includes('configPath'));assert.ok(!JSON.stringify(discovery).includes(token));
+ assert.equal(discovery.version,'test-version');assert.equal(discovery.buildId,'test-build');assert.deepEqual(discovery.workspaces,[{id:f.workspaceId,name:'Allowed'}]);assert.equal(discovery.connections[0].id,'fixture');assert.ok(!JSON.stringify(discovery).includes('configPath'));assert.ok(!JSON.stringify(discovery).includes(token));
  assert.equal(new ProgrammaticCredentials(f.appData).authenticate('Bearer '+token).id,credential.id,'new store instance accepts persisted token');
  assert.equal(fs.statSync(path.join(f.appData,'programmatic-access/credentials.sqlite')).mode&0o777,0o600);
  assert.equal(fs.readFileSync(path.join(f.appData,'programmatic-access/credentials.sqlite')).includes(Buffer.from(token)),false);
@@ -82,12 +82,18 @@ test('question answering and sensitive approvals require independent explicit gr
  for(let n=0;n<100&&!f.counts().sends;n++)await new Promise(r=>setTimeout(r,2));
  f.emit({type:'request',request:{id:'approval-native',kind:'approval',title:'Write?',options:[{id:'yes',label:'Yes'}]}});
  const view=f.service.conversations.read(f.workspaceId,created.conversation.id),pending=view.requests[0];assert.ok(pending);
+ const approvalRead=await(await f.call(endpoint+'/'+view.id,token)).json();
+ assert.equal(approvalRead.requests.find((item:any)=>item.id===pending.id).description,'','a card without text still exposes an empty description');
  const reply=endpoint+'/'+view.id+'/requests/'+pending.id+'/reply';const input={expectedRevision:view.revision,runId:pending.runId,participantId:pending.participantId,generation:pending.generation,answer:'yes'};
  assert.equal((await f.call(reply,token,input)).status,403);assert.equal((await f.call(reply,answer,input)).status,403);assert.equal(f.counts().replies,0);
  const response=await f.call(reply,approve,input);assert.equal(response.status,200,await response.clone().text());assert.equal(f.counts().replies,1);
- f.emit({type:'request',request:{id:'question-native',kind:'question',title:'Which scope?'}});
+ f.emit({type:'request',request:{id:'question-native',kind:'question',title:'Which scope?',description:'请选择本轮范围。'}});
  const question=f.service.conversations.read(f.workspaceId,view.id),q=question.requests.find(item=>item.kind==='question')!;
- const qPath=endpoint+'/'+view.id+'/requests/'+q.id+'/reply';const qInput={expectedRevision:question.revision,runId:q.runId,participantId:q.participantId,generation:q.generation,answer:'only the authorized scope'};
+ const questionRead=await(await f.call(endpoint+'/'+view.id,token)).json();
+ assert.equal(questionRead.requests.find((item:any)=>item.id===q.id).description,'请选择本轮范围。');
+ const questionObserve=await(await f.call(endpoint+'/'+view.id+'/observe',token,{})).json();
+ assert.equal(questionObserve.requests.find((item:any)=>item.id===q.id).description,'请选择本轮范围。','observe exposes the same request description');
+ const qPath=endpoint+'/'+view.id+'/requests/'+q.id+'/reply';const qInput={expectedRevision:questionObserve.revision,runId:q.runId,participantId:q.participantId,generation:q.generation,answer:'only the authorized scope'};
  assert.equal((await f.call(qPath,approve,qInput)).status,403);
  assert.equal((await f.call(qPath,answer,qInput)).status,200);assert.equal(f.counts().replies,2);
 });
@@ -107,8 +113,13 @@ test('HTTP help and OpenAPI use the dispatch allowlist and include executable re
  for(const op of PROGRAMMATIC_OPERATIONS){const route=('/api/v1/programmatic/workspaces/:workspaceId/conversations'+op.path).replace(/:([A-Za-z]+)/g,'{$1}');assert.equal(doc.paths[route][op.method.toLowerCase()].operationId,op.id);}
  const help=await f.call('/help',token);assert.equal(help.status,200);assert.match(help.headers.get('content-type')!,/text\/markdown/);
  const guide=await help.text();assert.match(guide,/previewToken = prepareResponse\.token/);
+ assert.match(guide,/构建标识（buildId）：test-build/);
+ assert.match(guide,/只有 status=completed 的中间消息才推送/);
  const route='/api/v1/programmatic/workspaces/{workspaceId}/conversations/{conversationId}';
  const expanded=expandRefs(doc,doc),prepare=expanded.paths[route+'/prepare-send'].post,send=expanded.paths[route+'/send'].post;
+ assert.match(guide,/requests\[\]每项都含description/);
+ const conversationSchema=expanded.paths[route].get.responses['200'].content['application/json'].schema;
+ assert.ok(conversationSchema.properties.requests.items.required.includes('description'),'conversation requests require description in OpenAPI');
  assert.ok(prepare.responses['200'].content['application/json'].schema.properties.token);
  assert.equal(prepare.responses['200'].content['application/json'].schema.properties.previewToken,undefined);
  assert.match(prepare.description,/previewToken = prepareResponse\.token/);
@@ -125,7 +136,7 @@ test('browser session reads shared documentation without Bearer, not anonymously
   const response=await fetch(url,{headers:f.webHeaders});assert.equal(response.status,200);
   const doc=await response.json(),external=await f.call('/'+kind,token);
   assert.equal(typeof doc.content,'string');
-  if(kind==='help'){assert.equal(doc.content,await external.text());assert.equal(doc.mediaType,'text/markdown');}
+  if(kind==='help'){assert.equal(doc.content,await external.text());assert.equal(doc.mediaType,'text/markdown');assert.match(doc.content,/run\.progress/);assert.match(doc.content,/run\.stalled/);assert.match(doc.content,/finalReplyUrl/);assert.match(doc.content,/allowFullAccess/);assert.doesNotMatch(doc.content,/GrokBot默认只授/);}
   else{assert.deepEqual(JSON.parse(doc.content),await external.json());assert.equal(doc.mediaType,'application/json');}
   assert.ok(!JSON.stringify(doc).includes(token));
   assert.equal((await fetch(url,{headers:{...f.webHeaders,origin:'https://foreign.example'}})).status,403);
@@ -139,7 +150,7 @@ test('compact OpenAPI preserves response schemas and only emits resolvable share
  const f=await fixture(t),{token}=await f.create();
  const doc=await(await f.call('/openapi.json',token)).json(),expanded=expandRefs(doc,doc);
  assert.ok(Object.keys(doc.components.schemas).length>0);
- assert.ok(Buffer.byteLength(JSON.stringify(doc))<100_000,'full contract size regression');
+ assert.ok(Buffer.byteLength(JSON.stringify(doc))<120_000,'full contract size regression');
  assert.ok(Buffer.byteLength(JSON.stringify(doc,null,2))<200_000,'formatted contract size regression');
  for(const operation of PROGRAMMATIC_OPERATIONS){
   const route=('/api/v1/programmatic/workspaces/:workspaceId/conversations'+operation.path).replace(/:([A-Za-z]+)/g,'{$1}');
@@ -168,11 +179,23 @@ test('light operation index and self-contained per-operation contracts support s
  assert.equal((await f.call('/operations/start')).status,401);
  const index=await(await f.call('/operations',token)).json(),full=await(await f.call('/openapi.json',token)).json();
  assert.equal(index.contractVersion,programmaticContractVersion(full));assert.ok(Buffer.byteLength(JSON.stringify(index))<8_000);
+ assert.equal(index.buildId,'test-build');
  assert.equal(index.operations.length,PROGRAMMATIC_OPERATIONS.length+2);
  assert.deepEqual(new Set(index.operations.map((item:any)=>item.id)),new Set(['discover','events',...PROGRAMMATIC_OPERATIONS.map(item=>item.id)]));
+ assert.deepEqual(new Set(index.sourceOperations.map((item:any)=>item.id)),new Set(['source-events',...PROGRAMMATIC_OPERATIONS.map(item=>'source-'+item.id)]));
+ for(const alias of index.sourceOperations){
+  assert.ok(index.operations.some((item:any)=>item.id===alias.aliasOf));
+  assert.match(alias.path,/\/sources\/\{sourceId\}\/scopes\/\{scopeId\}/);
+  const sourceDoc=await(await f.call('/operations/'+alias.id,token)).json();
+  assert.equal(sourceDoc['x-buildr-operation-id'],alias.id);
+  assert.deepEqual(Object.keys(sourceDoc.paths),[alias.path]);
+  assert.deepEqual(expandRefs(sourceDoc.paths,sourceDoc),expandRefs({[alias.path]:full.paths[alias.path]},full));
+ }
+ assert.ok(index.operations.some((item:any)=>item.id==='run-final-reply'&&item.scope==='read'));
  for(const item of index.operations){
   const response=await f.call('/operations/'+item.id,token);assert.equal(response.status,200);
   const document=await response.json();assert.equal(document['x-buildr-contract-version'],index.contractVersion);
+  assert.equal(document['x-buildr-build-id'],'test-build');
   assert.equal(document['x-buildr-operation-id'],item.id);
   assert.deepEqual(Object.keys(document.paths),[item.path]);
   assert.deepEqual(Object.keys(document.paths[item.path]),[item.method.toLowerCase()]);
@@ -184,6 +207,7 @@ test('light operation index and self-contained per-operation contracts support s
  assert.equal((await f.call('/operations?unexpected=1',token)).status,400);
  assert.equal((await fetch(f.manager+'/documents/operations/not-an-operation',{headers:f.webHeaders})).status,404);
  assert.equal(programmaticOperationIndex('test-version').contractVersion,index.contractVersion,'content version stable across reads');
+ assert.equal(programmaticOperationIndex('test-version','another-build').contractVersion,index.contractVersion,'buildId does not change the API contract version');
  const changed=programmaticOpenApi('test-version');changed.info.description+=' contract change';
  assert.notEqual(programmaticContractVersion(changed),index.contractVersion,'content version changes without a release version bump');
  assert.deepEqual(f.counts(),{sends:0,stops:0,replies:0});

@@ -441,7 +441,10 @@ test('publish workflow delegates one protected transaction and consumes the Cand
   assert.equal(document.jobs.candidate.steps.filter((step: any) => step.run?.includes('release-consumption.ts verify')).length, 1);
   assert.equal(document.jobs.release.steps.filter((step: any) => step.run?.includes('release-publication.ts')).length, 1);
   assert.equal(document.jobs.release.steps.filter((step: any) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile publisher').length, 1);
-  for (const job of Object.values(document.jobs) as any[]) assert.equal(job['runs-on'], 'macos-latest');
+  assert.equal(document.jobs.contract['runs-on'], 'ubuntu-latest');
+  assert.equal(document.jobs.candidate['runs-on'], 'ubuntu-latest');
+  assert.equal(document.jobs.candidate.needs, undefined);
+  assert.equal(document.jobs.release['runs-on'], 'macos-latest');
   assert.match(document.jobs.contract.steps.find((step: any) => step.name === 'Confirm the frozen dispatch identity').run, /inputs.source_commit.*\^\{tree\}/u);
   assert.equal(document.jobs.contract.steps.find((step: any) => step.name === 'Download the original failed publisher evidence').with['run-id'], '${{ fromJSON(inputs.release_context).executorRecovery.previousRunId }}');
   assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN|NPM_TOKEN|npm publish|npm pack|artifacts:prepare|application-payload.*build/);
@@ -523,13 +526,13 @@ test('CI and publish workflows use the supported Node runtime', async () => {
   }
   // Every environment profile builds the private Agent package before the
   // enclosing install: artifact-consuming shards still run source tools that
-  // import node_modules/@buildr-ai/buildr-agent/build/index.js.
+  // import node_modules/@buildr-ai/buildr-harness/build/index.js.
   const { candidateEnvironmentPlan } = await import('../../tools/verification/candidate-environment.ts');
   for (const profile of ['base', 'artifact', 'frontend', 'browser-artifact', 'source-runtime', 'consumer', 'host', 'publisher']) {
     const ids = candidateEnvironmentPlan(profile).map((step: {id: string}) => step.id);
     const dependencies = ids.indexOf('buildr-dependencies');
-    assert.ok(ids.indexOf('buildr-agent-dependencies') >= 0 && ids.indexOf('buildr-agent-build') >= 0, profile + ' prepares the private agent');
-    assert.ok(ids.indexOf('buildr-agent-build') < dependencies, profile + ' builds the agent before the product install');
+    assert.ok(ids.indexOf('buildr-harness-dependencies') >= 0 && ids.indexOf('buildr-harness-build') >= 0, profile + ' prepares the private agent');
+    assert.ok(ids.indexOf('buildr-harness-build') < dependencies, profile + ' builds the agent before the product install');
   }
   const pluginSourceCandidate: any = verifyDocument.jobs['plugin-source-candidate'];
   const pluginSteps: any[] = pluginSourceCandidate.steps;

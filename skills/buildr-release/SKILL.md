@@ -1,15 +1,25 @@
 ---
 name: buildr-release
-description: 准备、检查、发布或恢复 Buildr 主包、DSH 插件或联合版本时使用；按统一发布流程核对独立版本、共享源码选择、真实包兼容、逐包授权与恢复事实。
+description: 准备、检查、发布或恢复 Buildr Development 主包版本时使用，默认候选版指公开 RC；也承接明确指定的 DSH 插件或联合发布，核对准确原包、授权与恢复事实。
 ---
 
 # Buildr 发布
+
+默认产品是 **Buildr Development**，对应主包 `@buildr-ai/buildr`、发布目标 `buildr`；主包携带所需 Harness，不等于独立发布 Harness。未明确指定时不增加 DSH 插件或联合发布目标；Harness 独立发行暂不在默认发布范围。
+
+用户说“发布候选版”“发布新的 RC”时，目标是**公开发布 RC（Release Candidate，发布候选版）**，不是只完成内部验包。只有“准备候选”“先验包”“暂不公开”等明确要求才停在准备阶段。内部仍按既有 `prepare`、`publish`、`resume` 分阶段执行；术语、完成依据及授权边界见唯一流程正文的“产品与发布动作”。
 
 日常修改涉及初始化、安装、源码包或验证工具时，使用现有受影响入口覆盖相关链路，不等发布才检查。候选运行期间不改源码；同轮先跑完独立检查、汇总失败，取得用户同意后修复；接续只重跑失败项并首次执行未执行项。定位源码检查失败直接使用现有 `test:related -- --check <check-id>`，正常日志保留用例名称和耗时，同轮已通过的真实结果直接采用，不再手写旁路诊断后重复跑一次。原包失败继续使用准确原包的原验包入口，不重新制包。
 
 本技能（Skill）拥有 Buildr 自举工作空间的发布流程与随附发布代码，不作为 npm 内置技能分发。先读唯一流程正文 `projects/product/knowledge/docs/flows/open-source-release.md`：固定候选、跑测试、打包、验包、发布。人决定目标和公开授权；智能体（Agent）按当前事实推进。
 
 ## 执行入口
+
+### 双产品发行限制
+
+主包候选把准确依赖许可文件、摘要、版本决定及平台支持声明纳入不可变负载。正式发布器在新的 npm 写入前读取该原包证据；`distribution-approval-required` 只阻止受影响发行物的写入，不阻止本机开发、独立检查或既有原工作。不得以 SPDX、私有验收包、替身测试或当前源码目录中的另一份批准替代原包证据，也不得替负责人填入允许决定。审批或证据改变属于新候选输入，保留旧原包，不就地补丁修改冻结字节。若官方源已确认同摘要公开包，继续如实采用公开事实，不用新检查否定它或重新写入。
+
+独立 `@buildr-ai/buildr-harness` 当前保留 `private:true`，只提供本机验收包，没有另开正式公开发布旁路。两产品的原包均可通过源码工具 `projects/product/services/buildr-harness/tools/inspect-artifact-distribution.ts <tarball> <准确包名>` 检查。Harness 的安装包另提供 `buildr-harness distribution-check --json` 只读核对本包证据。检查允许不等于人已授权发布或已取得模型/订阅使用权；Windows 候选实现、原生入口验证与支持声明分别保留，不把 macOS 结果代填为 Windows 通过。
 
 ### 本机正式消费预演与冻结规则
 

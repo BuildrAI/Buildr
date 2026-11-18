@@ -1,10 +1,10 @@
 import { InstallationInfoDialog } from '../features/installation/components/InstallationInfoDialog';
 import { WorkspacePreparationNotice } from '../features/workspace/components/WorkspacePreparationNotice';
-import { AgentConversationsProvider, useAgentConversationShell } from '../features/agent-conversations/AgentConversationsContext';
-import { ConversationWorkspace } from '../features/agent-conversations/ConversationWorkspace';
-import { ConversationActivity } from '../features/agent-conversations/ConversationActivity';
+import { AgentConversationsProvider, useAgentConversationShell } from '../features/harness-ui/AgentConversationsContext';
+import { ConversationWorkspace } from '../features/harness-ui/ConversationWorkspace';
+import { DevelopmentHarnessShell } from './DevelopmentHarnessShell';
+import { ConversationActivity } from '../features/harness-ui/ConversationActivity';
 import { CommentOutlined } from '@ant-design/icons';
-import { AgentConnectionSettings } from '../features/agent-conversations/AgentConnectionSettings';
 import { AppPrimaryNavigation } from './AppPrimaryNavigation';
 import { AppShellHeader, AppShellFrame } from './AppShellView';
 import { WorkbenchPreferencesProvider } from '../features/workbench/hooks/useWorkbenchPreferences';
@@ -83,7 +83,6 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
   useFileEditingDraftProtection();
   const conversations = useAgentConversationShell();
   const [mobileActivityOpen,setMobileActivityOpen]=useState(false);
-  const [conversationMount, setConversationMount] = useState<HTMLDivElement | null>(null);
   const params = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -473,9 +472,10 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     <AppShellContext.Provider value={shellValue}>
       {/* 交接的完成观察固定在壳层，离开服务页后仍按原对话与运行定义对齐结果。 */}
       <RuntimeConfigurationOutcome workspaceId={workspaceId} />
-      <WorkspaceSourceControlProvider workspaceId={workspaceId}>
+      <WorkspaceSourceControlProvider workspaceId={workspaceId} active={!isGlobal && area === 'code' && !(conversations.open && conversations.full)}>
       <WorkspaceReadCacheProvider scopeKey={workspaceId || 'global'}>
       <WorkbenchPreferencesProvider workspaceId={workspaceId}>
+      <DevelopmentHarnessShell conversation={<ConversationWorkspace defaultWorkspaceId={workspaceId} workspaces={[{id:'@default',name:'默认工作空间',rootPath:''},...registry.flatMap(entry => entry.workspace ? [{id:entry.workspace.id,name:entry.workspace.name,rootPath:entry.rootPath}] : [])]} />}>
       <div className={"app-shell has-primary-navigation area-" + area + (conversations.open && conversations.full ? " has-full-conversation" : "")}>
         <AppShellHeader primaryNavigation="rail" isGlobal={isGlobal} brandHref={isGlobal ? '/' : workspaceHref('/overview')} development={webProfile === 'development'} workspaceName={isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')} workspaceMenuItems={workspaceMenuItems} area={area} workbenchHref={workspaceHref('/overview')} codeHref={codeEntryPath} workspaceDestination={{to:workspaceDestination.current.path,state:workspaceDestination.current.state}} actions={<>
             {!isGlobal ? <WorkbenchSearch key={workspaceId} /> : null}
@@ -488,7 +488,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
                 { key: 'installation-info', icon: <InfoCircleOutlined />, label: '安装信息', onClick: () => setInstallationInfoOpen(true) },
                 { key: 'check-update', icon: <SyncOutlined />, label: <span id="check-buildr-update">检查更新…</span>, onClick: () => updateEntryRef.current?.check() },
                 { key: 'restart', icon: <PoweroffOutlined />, disabled: Boolean(preview), title: preview ? '托管预览由开发工具重新启动' : undefined, label: <span id="restart-buildr">重启 Buildr Web</span>, onClick: () => { void restart(); } },
-                { key: 'restart-agent', icon: <SyncOutlined />, disabled: Boolean(preview) || agentRestarting, label: <span id="restart-buildr-agent">重启 Agent 执行服务</span>, onClick: () => { void restartAgent(); } },
+                { key: 'restart-agent', icon: <SyncOutlined />, disabled: Boolean(preview) || agentRestarting, label: <span id="restart-buildr-harness">重启 Agent 执行服务</span>, onClick: () => { void restartAgent(); } },
                 { key: 'quit', danger: true, icon: <CloseCircleOutlined />, label: <span id="quit-buildr">退出 Buildr Web</span>, onClick: () => { void quit(); } },
               ] }}
               trigger={['hover']} placement="bottomRight"
@@ -536,7 +536,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
           action={<Button size="small" loading={quitting} onClick={() => void quit(false)}>重试退出</Button>} />}
         {restartError && <Alert id="restart-buildr-error" type="error" showIcon message="未能确认重启请求" description={restartError}
           action={<Button size="small" onClick={() => { setRestartError(''); void restart(); }}>重试重启</Button>} />}
-        <AppShellFrame isGlobal={isGlobal} compactNavigation={compactNavigation} sidebarCollapsed={sidebarCollapsed} sidebarWidth={sidebarWidth} onSidebarResize={resizeSidebar} onToggleSidebar={() => { setSidebarCollapsed(value => !value); writeOptionalPreference('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} navigation={<AppNavigation key={workspaceId} />} navigationRail={workspaceId ? <AppPrimaryNavigation sidebarWidth={sidebarWidth} onSidebarResize={resizeSidebar} workspaceId={workspaceId} area={area} /> : undefined} afterContent={<div className="ac-panel-mount" ref={setConversationMount} style={{display: 'contents'}} /> }>{/* Business content stays in the live adapter. */}<>{workspaceId ? <WorkspaceFileEditingProvider key={workspaceId} workspaceId={workspaceId}><ArticleEditorProvider workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} navigationRequest={pageNavigationRequest} /></ArticleEditorProvider></WorkspaceFileEditingProvider> : <Outlet />}</></AppShellFrame>
+        <AppShellFrame isGlobal={isGlobal} compactNavigation={compactNavigation} sidebarCollapsed={sidebarCollapsed} sidebarWidth={sidebarWidth} onSidebarResize={resizeSidebar} onToggleSidebar={() => { setSidebarCollapsed(value => !value); writeOptionalPreference('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} navigation={<AppNavigation key={workspaceId} />} navigationRail={workspaceId ? <AppPrimaryNavigation sidebarWidth={sidebarWidth} onSidebarResize={resizeSidebar} workspaceId={workspaceId} area={area} /> : undefined}>{/* Business content stays in the live adapter. */}<>{workspaceId ? <WorkspaceFileEditingProvider key={workspaceId} workspaceId={workspaceId}><ArticleEditorProvider workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} navigationRequest={pageNavigationRequest} /></ArticleEditorProvider></WorkspaceFileEditingProvider> : <Outlet />}</></AppShellFrame>
       </div>
 
       {!isGlobal ? <Drawer title="导航" placement="left" width={280} open={navigationOpen}
@@ -570,11 +570,10 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
           ) : null}
         </div>
       </DrawerShell>
-      <AgentConnectionSettings />
       <WorkspaceSettingsDrawer open={settingsOpen} workspaceId={settingsWorkspaceId}
         onClose={() => setSettingsOpen(false)} onSaved={workspaceSettingsSaved} />
+    </DevelopmentHarnessShell>
     </WorkbenchPreferencesProvider>
-    <ConversationWorkspace portalTarget={conversationMount} defaultWorkspaceId={workspaceId} workspaces={[{id:'@default',name:'默认工作空间',rootPath:''},...registry.flatMap(entry => entry.workspace ? [{id:entry.workspace.id,name:entry.workspace.name,rootPath:entry.rootPath}] : [])]} />
     </WorkspaceReadCacheProvider>
     </WorkspaceSourceControlProvider>
     </AppShellContext.Provider>

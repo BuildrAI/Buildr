@@ -109,8 +109,8 @@ function stagingPackageJson(payloadManifest: any, productMetadata: any): any  {
     },
     bin: { buildr: 'bin/buildr.mjs', 'buildr-mysql': 'bin/buildr-mysql.mjs' },
     scripts: { postinstall: 'node scripts/postinstall.mjs' },
-    dependencies: { '@buildr-ai/buildr-agent': payloadManifest.productionDependencies.find((dependency: any) => dependency.name === '@buildr-ai/buildr-agent')?.version ?? (() => { throw new Error('Agent runtime version is absent from the frozen payload.'); })() },
-    bundleDependencies: ['@buildr-ai/buildr-agent'],
+    dependencies: { '@buildr-ai/buildr-harness': payloadManifest.productionDependencies.find((dependency: any) => dependency.name === '@buildr-ai/buildr-harness')?.version ?? (() => { throw new Error('Agent runtime version is absent from the frozen payload.'); })() },
+    bundleDependencies: ['@buildr-ai/buildr-harness'],
     files: [
       'LICENSE',
       'README.md',
@@ -125,7 +125,7 @@ function stagingPackageJson(payloadManifest: any, productMetadata: any): any  {
       'runtime/workspace-cli-router.cjs',
       'runtime/mysql-connection.cjs',
       'payload/',
-      'node_modules/@buildr-ai/buildr-agent/',
+      'node_modules/@buildr-ai/buildr-harness/',
     ],
     engines: { node: payloadManifest.enginesNode },
   };
@@ -249,7 +249,7 @@ export function assertNpmTarballInventory(inventory: any): any  {
     'payload/licenses/dependencies/yaml-LICENSE',
   ];
   for (const requiredPath of required) if (!paths.includes(requiredPath)) throw new Error(`npm tarball inventory is missing: ${requiredPath}`);
-  for (const requiredPath of [`${AGENT_PACKAGE_PATH}/package.json`, `${AGENT_PACKAGE_PATH}/build/index.js`, `${AGENT_PACKAGE_PATH}/node_modules/@qoder-ai/qoder-agent-sdk/dist/index.js`, `${AGENT_PACKAGE_PATH}/node_modules/@deepseek-ai/dsh-client-connection/lib/client.node.js`]) {
+  for (const requiredPath of [`${AGENT_PACKAGE_PATH}/package.json`, `${AGENT_PACKAGE_PATH}/build/index.js`]) {
     if (!paths.includes(requiredPath)) throw new Error(`npm tarball Agent runtime is missing: ${requiredPath}`);
   }
   const forbidden: any = paths.filter((value: any) => {
@@ -263,6 +263,7 @@ export function assertNpmTarballInventory(inventory: any): any  {
     || /(^|\/)buildr-web(\/|$)/iu.test(value)
     || /(^|\/)vite\.config(?:\.|\/|$)/iu.test(value)
     || (!agentRuntime && /(^|\/)node_modules(?:\.|\/|$)/iu.test(value))
+    || /(^|\/)node_modules\/(?:@anthropic-ai|@qoder-ai|@deepseek-ai)(\/|$)/u.test(value)
     || (value.endsWith('.ts') && !value.endsWith('.d.ts'))
   ); });
   if (forbidden.length) throw new Error(`npm tarball inventory contains platform/development content: ${forbidden.join(', ')}`);
@@ -285,6 +286,7 @@ export function createReleaseArtifact(payloadRoot: any, destination: any, option
       env: {
         ...process.env,
         npm_config_cache: path.join(stagingBase, 'npm-cache'),
+        NPM_CONFIG_CACHE: path.join(stagingBase, 'npm-cache'),
         npm_config_update_notifier: 'false',
       },
     });

@@ -20,7 +20,7 @@ import './preview.css';
 const TITLE = 'Buildr：让 Agent 越做越多，越做越好';
 const BODY_MD = `# Buildr：让 Agent 越做越多，越做越好
 
-![工作资产贯穿产品、前端、后端和测试的示意图](assets/buildr-agent-more-and-better.webp)
+![工作资产贯穿产品、前端、后端和测试的示意图](assets/buildr-harness-more-and-better.webp)
 
 过去几年，我们一直在学习怎么把大模型用进工作。模型越来越会理解意图、调用工具、写代码、分析资料，甚至能把一个任务推进很远。
 
@@ -108,7 +108,7 @@ function ToolsAside() {
       <Button block icon={<PlusOutlined />}>上传图片或附件</Button>
       <p className="publication-hint">图片最大 5 MB，附件最大 10 MB。</p>
       <div className="publication-assets-list">
-        <div className="publication-asset"><div className="publication-attachment"><FileImageOutlined /><small>webp</small></div><div className="publication-asset-title"><strong>buildr-agent-more-and-better.webp</strong><Tag>已引用</Tag></div><code>assets/buildr-agent-more-and-better.webp</code><small>105 KB</small><Button size="small" block icon={<PictureOutlined />}>插入引用</Button></div>
+        <div className="publication-asset"><div className="publication-attachment"><FileImageOutlined /><small>webp</small></div><div className="publication-asset-title"><strong>buildr-harness-more-and-better.webp</strong><Tag>已引用</Tag></div><code>assets/buildr-harness-more-and-better.webp</code><small>105 KB</small><Button size="small" block icon={<PictureOutlined />}>插入引用</Button></div>
       </div>
     </section>
     <section className="publication-tools-card publication-edit-methods">

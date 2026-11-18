@@ -81,7 +81,7 @@ export const HISTORY_SCENARIO_CATALOG = [
   },
   {
     "id": "history/focus-mode-drawer",
-    "name": "专注模式列表左侧临时栏不替换对话，分屏模式保持面板内替换"
+    "name": "专注模式列表左侧分屏不遮挡对话，分屏模式保持面板内替换"
   },
   {
     "id": "history/history-pagination",

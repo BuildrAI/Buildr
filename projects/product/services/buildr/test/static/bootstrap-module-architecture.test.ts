@@ -146,6 +146,12 @@ test('Bootstrap 是唯一 composition root，bin 与公共 Host 不直连 Task �
 test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capability、contribution 与 runtime port', () => {
   const runtime: any = createRuntime();
   assert.deepEqual(runtimeModuleSnapshot(runtime), [{
+    id: 'development-cli',
+    requires: [],
+    provides: [],
+    contributions: { cli: ['dev live'], http: [], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
     id: 'agent-assets-runtime',
     requires: [],
     provides: [AGENT_ASSETS_RUNTIME, AGENT_ASSETS_CAPABILITY_QUERY],
@@ -260,7 +266,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'managed',
   }, {
     id: 'code',
-    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, AGENT_SERVICE_APPLICATION, AGENT_ASSETS_SOURCE_READ],
+    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, AGENT_ASSETS_SOURCE_READ],
     provides: [CODE_APPLICATION, CODE_GENERATION_APPLICATION, CODE_SOURCE_CONTROL_OBSERVATIONS],
     contributions: {cli:['code repositories','code directory','code file','code search','code source-control','code source-control-inventory','code discard-context','code commit-context','code sync-context','code branches','code authors','code history','code commit','code diff','code source-file'],http:['code.files.http', 'code.generation.http'],diagnostics:[]},
     lifecycle: 'managed',
@@ -355,7 +361,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }]);
   assert.deepEqual(runtimeContributions(runtime, 'cli').map((item: any) => item.key), [
-    'assets', 'init', 'mutation recover', 'project create', 'service create',
+    'dev live', 'assets', 'init', 'mutation recover', 'project create', 'service create',
     'package check', 'package build', 'runtime list',
     'commands check', 'commands add', 'commands remove',
     'component list', 'component check', 'component record', 'component install', 'component uninstall',
@@ -515,4 +521,18 @@ test('Task 生命周期核心只保留模块内扁平技术层', () => {
 
   const host: any = read('src/web/http/server.ts');
   assert.doesNotMatch(host, /recordParentPlan|reconcileParentPlan|readTaskEnvironmentCurrent|taskDevelopmentMatch|taskVerificationMatch/);
+});
+
+test('engineering business modules do not import Harness assembly or vendor SDKs', () => {
+  const source = path.resolve(import.meta.dirname, '../../src/modules');
+  const violations: string[] = [];
+  for (const domain of ['task', 'knowledge', 'workspace', 'code']) {
+    for (const file of fs.globSync('**/*.ts', {cwd: path.join(source, domain)})) {
+      const filename = path.join(source, domain, file);
+      for (const match of fs.readFileSync(filename, 'utf8').matchAll(/(?:\bfrom\s+|\bimport\s*\(\s*|\bimport\s+)["']([^"']+)["']/gu)) {
+        if (/agent-service|@buildr-ai\/buildr-harness|@anthropic-ai\/|@qoder-ai\/|@deepseek-ai\//u.test(match[1])) violations.push(`${domain}/${file} -> ${match[1]}`);
+      }
+    }
+  }
+  assert.deepEqual(violations, [], 'model execution belongs to a narrow injected port, not engineering business modules');
 });

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button } from 'antd';
-import { MarkdownHost } from './MarkdownHost';
-import type { MarkdownRenderOptions } from '../markdown';
+import { MarkdownHost } from './MarkdownHost.tsx';
+import type { MarkdownRenderOptions } from '../markdown.ts';
 import './markdown-reader.css';
 
 /** Shared read-only Markdown surface: original bytes and the existing safe renderer. */

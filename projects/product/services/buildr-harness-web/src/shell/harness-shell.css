@@ -1,0 +1,10 @@
+.harness-shell{height:100%;display:flex;flex-direction:column;min-height:0;min-width:0}
+.harness-shell-body{display:flex;flex:1;min-height:0;min-width:0;overflow:hidden}
+.harness-conversation-region{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
+.harness-environment-controls{display:flex;justify-content:flex-end;flex-shrink:0;border-bottom:1px solid var(--soft-line)}
+.harness-environment-region{flex:0 0 45%;min-width:0;min-height:0;overflow:auto;border-left:1px solid var(--soft-line);background:var(--soft-bg)}
+.harness-environment-region[hidden]{display:none}
+@media(max-width:760px){
+  .harness-shell-body{flex-direction:column}
+  .harness-environment-region{border-left:0;border-top:1px solid var(--soft-line)}
+}

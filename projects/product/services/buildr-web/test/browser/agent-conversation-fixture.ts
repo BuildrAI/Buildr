@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {canCloseUncertainConversation} from '../../src/features/agent-conversations/conversation-state.ts';
-import {resolveQuestionAnswer,questionAnswerDisplay} from '../../../buildr-agent/src/domain/question-answer.ts';
-import type {ConnectionView} from '../../src/features/agent-conversations/types.ts';
+import {canCloseUncertainConversation} from '../../../buildr-harness-web/src/features/agent-conversations/conversation-state.ts';
+import {resolveQuestionAnswer,questionAnswerDisplay} from '../../../buildr-harness/src/domain/question-answer.ts';
+import type {ConnectionView} from '../../../buildr-harness-web/src/features/agent-conversations/types.ts';
 import {modelSourceName} from '../../src/lib/model-picker.ts';
 
 /** Actual hosted UI; only the new HTTP transport is replaced with explicit fixtures. */
@@ -17,11 +17,27 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   page.on('requestfailed',(request:any)=>{if(taskRequest(request))taskRequests.push({at:Date.now(),event:'failed',failure:request.failure(),url:request.url()});});
   const workspaceId=decodeURIComponent(new URL(workspaceUrl).pathname.split('/').filter(Boolean).at(-1)!);
   const capabilities:ConnectionView['capabilities']={supplement:true,text:true,images:true,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536,permissionModes:['default','full-access']};
-  const connections=(['codex','dsh','qoder'] as const).map((provider):ConnectionView=>({id:provider,provider,label:provider==='dsh'?'DSH':provider==='codex'?'Codex':'Qoder',revision:'connection-1',status:'ready',enabled:true,configPath:'/isolated/'+provider,account:{label:'fixture account'},models:[{id:'fixture-model',label:'Fixture model',isDefault:true,...(provider==='codex'?{reasoningEfforts:[{id:'medium',label:'标准'},{id:'high',label:'深入'}],defaultReasoningEffort:'medium'}:{})},{id:'fixture-fast',label:'Fast model'}],capabilities:{...capabilities,images:provider==='codex'}}));
+  const connections=(['codex','dsh','qoder'] as const).map((provider):ConnectionView=>({id:provider,provider,label:provider==='dsh'?'DSH':provider==='codex'?'Codex':'Qoder',revision:'connection-1',status:'ready',enabled:true,configPath:'/isolated/'+provider,account:{label:'fixture account'},models:[{id:'fixture-model',label:'Fixture model',isDefault:true,...(provider==='codex'?{reasoningEfforts:[{id:'medium',label:'标准'},{id:'high',label:'深入'}],defaultReasoningEffort:'medium'}:{})},{id:'fixture-fast',label:'Fast model'}],capabilities:{...capabilities,images:provider==='codex'},modelPolicy:provider==='qoder'?{account:'native',gateway:{protocol:'chat-completions'},native:{sourceProviders:['qoder','native-qoder'],exclusive:true,binding:'gateway-lease',defaultSourceAccountId:'native-qoder',platformLogin:'required-for-sources'}}:{account:'native',gateway:{protocol:'responses'}}}));
   const disconnectedAccounts=new Set<string>();let nativeLoginPosts=0;
   const preferenceOverrides=new Map<string,Map<string,{enabled?:boolean;contextWindow?:number|null}>>();
   const quotaOverrides=new Map<string,any>();
-  const nativeAccounts=()=>connections.map(connection=>({id:'native-'+connection.id,identity:'identity-'+connection.id,connectionId:connection.id,provider:connection.provider,label:connection.label,accountLabel:'fixture account',revision:'model-account-'+connection.id,enabled:connection.enabled,status:disconnectedAccounts.has(connection.id)?'not-authenticated':connection.status,models:connection.models.map(model=>{const patch=preferenceOverrides.get('native-'+connection.id)?.get(model.id);const override=patch?.contextWindow===undefined?undefined:patch.contextWindow===null?undefined:patch.contextWindow;return {...model,enabled:patch?.enabled??true,contextWindow:override??32000,contextWindowOverride:override,images:connection.capabilities.images,tools:true};}),quota:quotaOverrides.get(connection.id)??{available:false,planLabel:'Fixture套餐',observedAt:'2026-10-25T00:00:00Z'}}));
+  const nativeAccounts=()=>connections.map(connection=>({id:'native-'+connection.id,identity:'identity-'+connection.id,...(connection.id==='qoder'?{}:{connectionId:connection.id}),provider:connection.id==='qoder'?'native-qoder':connection.provider,label:connection.label,accountLabel:'fixture account',revision:'model-account-'+connection.id,enabled:connection.enabled,status:disconnectedAccounts.has(connection.id)?'not-authenticated':connection.status,models:connection.models.map(model=>{const patch=preferenceOverrides.get('native-'+connection.id)?.get(model.id);const override=patch?.contextWindow===undefined?undefined:patch.contextWindow===null?undefined:patch.contextWindow;return {...model,enabled:patch?.enabled??true,contextWindow:override??32000,contextWindowOverride:override,images:connection.capabilities.images,tools:true};}),quota:quotaOverrides.get(connection.id)??{available:false,planLabel:'Fixture套餐',observedAt:'2026-10-25T00:00:00Z'}}));
+  const modelProviders=[
+    {id:'native-codex',label:'Codex / ChatGPT',authentication:{type:'oauth',label:'ChatGPT 账号'},group:{id:'chatgpt',label:'ChatGPT'},modeLabel:'订阅',connectionId:'codex'},
+    {id:'native-dsh',label:'DeepSeek',connectionId:'dsh'},
+    {id:'native-qoder',label:'Qoder',linked:true},
+    {id:'native-qoder-cn',label:'Qoder CN',linked:true},
+    {id:'codex',label:'Codex / ChatGPT',authentication:{type:'oauth',label:'ChatGPT 账号'},group:{id:'chatgpt',label:'ChatGPT'},modeLabel:'订阅'},
+    {id:'openai',label:'ChatGPT API',authentication:{type:'api-key',label:'API Key',placeholder:'sk-...',description:'只保存 API Key，使用 OpenAI 官方 API。'},group:{id:'chatgpt',label:'ChatGPT'},modeLabel:'API Key'},
+    {id:'anthropic',label:'Claude API',authentication:{type:'api-key',label:'API Key',placeholder:'sk-ant-...',description:'使用 Anthropic 官方 API。'},group:{id:'anthropic',label:'Claude'},modeLabel:'API Key'},
+    {id:'custom',label:'自定义供应商',custom:true},
+    {id:'devin',label:'Devin'},
+    {id:'deepseek',label:'DeepSeek'},
+  ];
+  let extraAccounts:any[]=[];
+  const modelAccounts=()=>[...nativeAccounts(),...extraAccounts];
+  const deletedAccounts:string[]=[];
+  const usageByAccount=new Map<string,number>();
   let catalogDiagnostic:string|undefined;
   // The picker consumes the shared catalog, not connection.models. Keep the
   // default HTTP observation consistent with the account observation; explicit
@@ -78,13 +94,19 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     const request=route.request(),url=new URL(request.url()),method=request.method();
     if(url.pathname.startsWith('/api/v1/app/agent-service/program-updates'))return route.fulfill({json:{programs:connections.map(connection=>({connectionId:connection.id,provider:connection.provider,label:connection.label,revision:connection.revision,executable:connection.enabled?'/isolated/'+connection.id:undefined,status:connection.enabled?'unchecked':'not-connected',managed:true,versionKind:'program',packageName:connection.id,updateUrl:'https://fixture.invalid'}))}});
     if(url.pathname==='/api/v1/app/agent-service/model-catalog'){return route.fulfill({json:{models:modelCatalog(),hasSnapshot:true,...(catalogDiagnostic?{diagnostic:catalogDiagnostic}:{})}});}
-    if(url.pathname==='/api/v1/app/agent-service/model-accounts')return route.fulfill({json:{accounts:nativeAccounts(),providers:[]}});
+    if(url.pathname==='/api/v1/app/agent-service/model-accounts')return route.fulfill({json:{accounts:modelAccounts(),providers:modelProviders}});
     if(url.pathname.startsWith('/api/v1/app/agent-service/model-accounts/')){
-      const parts=url.pathname.split('/'),account=nativeAccounts().find(item=>item.id===parts[6]);assert.ok(account,'model action targets an observed native account');
+      const parts=url.pathname.split('/'),account=modelAccounts().find(item=>item.id===parts[6]);assert.ok(account,'model action targets an observed account');
+      if(method==='GET'&&parts[7]==='usage')return route.fulfill({json:{references:usageByAccount.get(account.id)??0}});
+      if(method==='DELETE'){
+        const body=request.postDataJSON();assert.equal(body.expectedRevision,account.revision);
+        const index=extraAccounts.findIndex(item=>item.id===account.id);assert.ok(index>=0,'only independent fixture accounts support deletion');extraAccounts.splice(index,1);deletedAccounts.push(account.id);
+        return route.fulfill({json:{accounts:modelAccounts(),providers:modelProviders}});
+      }
       if(method==='POST'){const body=request.postDataJSON();assert.equal(body.expectedRevision,account.revision);
         if(parts[7]==='preferences'){preferencePosts++;preferenceBodies.push(body);const store=preferenceOverrides.get(account.id)??new Map();preferenceOverrides.set(account.id,store);for(const row of body.models??[])store.set(row.id,{enabled:row.enabled,contextWindow:row.contextWindow});if(holdPreferences){holdPreferences=false;await new Promise<void>(resolve=>{releasePreferences=resolve;preferencesStarted?.();});}}
-        if(parts[7]==='disconnect'){const connection=connections.find(item=>item.id===account.connectionId)!;disconnectedAccounts.add(connection.id);}}
-      return route.fulfill({json:nativeAccounts().find(item=>item.id===account.id)});
+        if(parts[7]==='disconnect'){const connection=connections.find(item=>item.id===(account.connectionId??account.id.replace(/^native-/,'')))!;disconnectedAccounts.add(connection.id);}}
+      return route.fulfill({json:modelAccounts().find(item=>item.id===account.id)});
     }
     if(url.pathname==='/api/v1/app/agent-service/connections'){connectionReads++;const observed=JSON.parse(JSON.stringify(connections));if(holdConnections){holdConnections=false;await new Promise<void>(resolve=>{releaseConnections=resolve;connectionsStarted?.();});}return route.fulfill({json:{connections:observed}});}
     if(['/api/v1/app/agent-service/pending-requests','/api/v1/app/agent-service/pending-summary'].includes(url.pathname)){
@@ -161,7 +183,9 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
         const result={id:'prepare-fixture-'+(++revision),connectionId:connection.id,generation:'fixture-generation',state,message:state==='installation-required'?'尚未发现兼容程序，请安装后重新检查。':state==='selection-required'?'发现多个兼容程序，请选择来源。':state==='waiting-login'?'程序已就绪，请完成官方登录。':state==='installing'?'正在下载并准备独立程序。':'程序已就绪。',updatedAt:new Date().toISOString(),catalog:{candidates,installation:{label:'ChatGPT App',version:'0.163.0',url:'https://learn.chatgpt.com/docs/quickstart?setup=app',canInstall:true}},connection};
         programAttempts[connection.id]=result;return route.fulfill({status:202,json:result});
       }
+      if(method==='GET'&&action==='account-impact')return route.fulfill({json:{connectionId:connection.id,hostKeyringAuth:Boolean(connection.hostKeyringAuth),activeConversations:[],references:usageByAccount.get('native-'+connection.id)??0}});
       if(method==='GET')return route.fulfill({json:connection});
+      if(action==='logout'){assert.equal(request.postDataJSON().expectedRevision,connection.revision);disconnectedAccounts.add(connection.id);if(request.postDataJSON().switchAccount){connection.status='not-authenticated';connection.loginAttempt={id:'login-fixture',generation:'login-generation',state:'waiting-browser',updatedAt:new Date().toISOString(),url:'https://auth.openai.com/fixture-login'};}else{connection.enabled=false;connection.status='disconnected';}connection.revision='connection-'+(++revision);return route.fulfill({json:connection});}
       if(action==='login-attempts'&&!parts[8]){nativeLoginPosts++;disconnectedAccounts.delete(connection.id);connection.status='not-authenticated';connection.loginAttempt={id:'login-fixture',generation:'login-generation',state:'waiting-browser',updatedAt:new Date().toISOString(),url:'https://auth.openai.com/fixture-login'};}
       else if(action==='login-attempts'&&parts.at(-1)==='cancel'){assert.equal(request.postDataJSON().expectedRevision,connection.revision);connection.loginAttempt.state='cancelled';}
       else if(action==='check'||action==='connect'){connection.enabled=true;connection.status='ready';if(connection.loginAttempt)connection.loginAttempt.state='completed';}
@@ -192,14 +216,14 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
         const body=request.postDataJSON(),previous=firstResponses.get(draftId+':'+body.clientRequestId);if(previous)return route.fulfill({json:previous});
         if(prepareError){const error=prepareError;prepareError=undefined;expectedBrowserErrors?.add(request.url());return route.fulfill({status:409,json:{error}});}
         assert.equal(body.expectedDraftRevision,snapshot().revision);creations++;
-        conversation={id:'internal-fixture-'+creations,workspaceId:scoped===appPrefix?'@default':requestedWorkspaceId,cwd:body.cwd||'/isolated/default',taskLinks:body.taskLinks,taskIds:body.taskLinks?.filter((link:any)=>link.workspaceId===requestedWorkspaceId).map((link:any)=>link.taskId)??(body.taskId?[body.taskId]:[]),taskId:body.taskLinks?.find((link:any)=>link.workspaceId===requestedWorkspaceId)?.taskId??body.taskId,title:'浏览器验证对话',revision:'r'+(++revision),hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[]};latestPreview=undefined;
+        conversation={id:crypto.randomUUID(),workspaceId:scoped===appPrefix?'@default':requestedWorkspaceId,cwd:body.cwd||'/isolated/default',taskLinks:body.taskLinks,taskIds:body.taskLinks?.filter((link:any)=>link.workspaceId===requestedWorkspaceId).map((link:any)=>link.taskId)??(body.taskId?[body.taskId]:[]),taskId:body.taskLinks?.find((link:any)=>link.workspaceId===requestedWorkspaceId)?.taskId??body.taskId,title:'浏览器验证对话',revision:'r'+(++revision),hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[]};latestPreview=undefined;
         if(holdCreate){holdCreate=false;await new Promise<void>(resolve=>{releaseCreate=resolve;createStarted?.();});}
         // Continue through the shared send fixture below; there is no separate create HTTP call.
       }else return route.fulfill({status:404,json:{error:{code:'fixture_missing',message:'draft route missing'}}});
     }
     if(url.pathname===scoped){
       if(method==='GET'){if(holdTaskList&&url.searchParams.get('taskId')){holdTaskList=false;await new Promise<void>(resolve=>{releaseTaskList=resolve;taskListStarted?.();});}const rows=[...(conversation&&(conversation.entries.length||conversation.run)?[conversation]:[]),...additionalConversations],taskId=url.searchParams.get('taskId');return route.fulfill({json:{conversations:rows.filter(item=>taskId?(item.taskLinks??(item.taskIds??(item.taskId?[item.taskId]:[])).map((id:string)=>({workspaceId:item.workspaceId,taskId:id}))).some((link:any)=>link.workspaceId===requestedWorkspaceId&&link.taskId===taskId):(scoped===appPrefix||item.workspaceId===requestedWorkspaceId))}});}
-      const body=request.postDataJSON();creations++;conversation={id:'internal-fixture-'+creations,workspaceId:scoped===appPrefix?'@default':requestedWorkspaceId,cwd:body.cwd||'/isolated/default',taskLinks:body.taskLinks,taskIds:body.taskLinks?.filter((link:any)=>link.workspaceId===requestedWorkspaceId).map((link:any)=>link.taskId)??(body.taskId?[body.taskId]:[]),taskId:body.taskLinks?.find((link:any)=>link.workspaceId===requestedWorkspaceId)?.taskId??body.taskId,title:'浏览器验证对话',revision:'r'+(++revision),hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[]};const created=conversation;if(holdCreate){holdCreate=false;await new Promise<void>(resolve=>{releaseCreate=resolve;createStarted?.();});}return route.fulfill({json:created});
+      const body=request.postDataJSON();creations++;conversation={id:crypto.randomUUID(),workspaceId:scoped===appPrefix?'@default':requestedWorkspaceId,cwd:body.cwd||'/isolated/default',taskLinks:body.taskLinks,taskIds:body.taskLinks?.filter((link:any)=>link.workspaceId===requestedWorkspaceId).map((link:any)=>link.taskId)??(body.taskId?[body.taskId]:[]),taskId:body.taskLinks?.find((link:any)=>link.workspaceId===requestedWorkspaceId)?.taskId??body.taskId,title:'浏览器验证对话',revision:'r'+(++revision),hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[]};const created=conversation;if(holdCreate){holdCreate=false;await new Promise<void>(resolve=>{releaseCreate=resolve;createStarted?.();});}return route.fulfill({json:created});
     }
     if(url.pathname.endsWith('/children')&&method==='GET')return route.fulfill({json:{conversations:[]}});
     if(url.pathname.endsWith('/entries')){entryReads++;assert.equal(url.searchParams.has('limit'),false,'历史请求使用服务端按轮默认分页');const value=historyPages.get(Number(url.searchParams.get('before')));assert.ok(value,'observed cursor resolves one fixture page');if(failEntryRead){failEntryRead=false;expectedBrowserErrors?.add(request.url());return route.fulfill({status:503,json:{error:{code:'history_fixture_unavailable',message:'更早记录暂时不可用'}}});}if(holdEntryRead){holdEntryRead=false;await new Promise<void>(resolve=>{releaseEntryRead=resolve;entryReadStarted?.();});}return route.fulfill({json:value});}
@@ -317,7 +341,10 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     if(modelCatalog().filter(model=>model.label===label).length>1){
       const agent=await panel().locator('.ac-provider-select .ant-select-selection-item').innerText();
       const connection=connections.find(item=>item.label===agent);assert.ok(connection,'按当前智能体明确选择同名原生模型来源');
-      await popup.getByRole('textbox',{name:'搜索模型',exact:true}).fill(modelSourceName(connection.provider));
+      const sourceId='native-'+connection.id;
+      await popup.locator(`.ant-select-item-group:has([data-model-source="${sourceId}"]) ~ .ant-select-item-option`).getByText(label,{exact:true}).first().click();
+      await popup.waitFor({state:'hidden'});
+      return;
     }
     await popup.getByText(label,{exact:true}).click();await popup.waitFor({state:'hidden'});
   };
@@ -329,7 +356,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     const label=modelTrigger().locator('.ac-model-label');await label.filter({hasText:expected}).waitFor();assert.equal(await label.innerText(),expected);
     const depth=modelTrigger().locator('.ac-model-effort');if(effort){await depth.filter({hasText:effort}).waitFor();assert.equal(await depth.innerText(),effort);}else assert.equal(await depth.count(),0);
   };
-  const reset=async()=>{await page.goto(workspaceUrl+'/overview');await page.evaluate(()=>sessionStorage.clear());await page.reload();await page.locator('#workbench-overview').waitFor();};
+  const reset=async()=>{extraAccounts=[];deletedAccounts.length=0;usageByAccount.clear();await page.goto(workspaceUrl+'/overview');await page.evaluate(()=>sessionStorage.clear());await page.reload();await page.locator('#workbench-overview').waitFor();};
   // 固定/专注下标题栏不再重复列表与返回入口，统一走导轨（手机为顶栏）；暂看仍用标题栏以保持不固定布局。
   const isPeeking=()=>panel().evaluate((node:HTMLElement)=>node.classList.contains('is-peeking'));
   const openHistoryList=async()=>{if(await isPeeking()){await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();return;}const rail=page.locator('.ac-collapsed-rail');if(await rail.isVisible())await rail.locator('.ac-all-conversations').click();else await page.locator('.global-conversations-control .ac-all-conversations').click();};
@@ -418,6 +445,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     input,
     modelSettings,
     modelTrigger,
+    setNativeAccountDisconnected(connectionId:string){disconnectedAccounts.add(connectionId);},
     get nativeLoginPosts(){return nativeLoginPosts;}, set nativeLoginPosts(value){nativeLoginPosts=value;},
     get observes(){return observes;}, set observes(value){observes=value;},
     openDesktopConversation,
@@ -447,6 +475,9 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     get releaseTaskList(){return releaseTaskList;}, set releaseTaskList(value){releaseTaskList=value;},
     get releaseTitle(){return releaseTitle;}, set releaseTitle(value){releaseTitle=value;},
     get releaseUpload(){return releaseUpload;}, set releaseUpload(value){releaseUpload=value;},
+    get deletedAccounts(){return deletedAccounts;},
+    setExtraAccounts(accounts:any[]){extraAccounts=[...accounts];},
+    setModelAccountUsage(id:string,count:number){usageByAccount.set(id,count);},
     get reminderReads(){return reminderReads;},
     get reminderPaging(){return reminderPaging;}, set reminderPaging(value){reminderPaging=value;},
     get reminderReadFailure(){return reminderReadFailure;}, set reminderReadFailure(value){reminderReadFailure=value;},

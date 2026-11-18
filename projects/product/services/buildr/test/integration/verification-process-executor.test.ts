@@ -134,6 +134,23 @@ test('formal command executor bounds a process that ignores normal completion', 
   assert.equal(result.processCleanup.status, 'clean');
 });
 
+test('formal command executor reaps a detached child holding inherited stdio after its parent exits', { skip: process.platform === 'win32' }, async () => {
+  const script = `
+    const { spawn } = require('node:child_process');
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 6000)'], { detached: true, stdio: 'inherit' });
+    child.unref();
+    console.log(child.pid);
+    setTimeout(() => process.exit(0), 350);
+  `;
+  const result = await executeVerificationCommand({ name: 'open-stdio', command: { argv: [process.execPath, '-e', script], timeoutMs: 4000 } },
+    { exitCloseGraceMs: 100, terminationGraceMs: 20, terminationConfirmMs: 1000 });
+  const pid = Number(result.stdout.trim());
+  assert.ok(Number.isSafeInteger(pid) && pid > 1);
+  assert.equal(result.failureCode, 'process-close-timeout');
+  assert.equal(result.processCleanup.status, 'clean');
+  assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+});
+
 test('Integration progress preserves real Node failure status and reports every fixture file', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-integration-reporter-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

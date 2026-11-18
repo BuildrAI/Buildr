@@ -88,6 +88,7 @@ test('installed Candidate exposes the same Test Context ESM and strict TypeScrip
         ...process.env,
         PATH: [path.dirname(process.execPath), process.env.PATH].filter(Boolean).join(path.delimiter),
         npm_config_cache: path.join(root, 'npm-cache'),
+        NPM_CONFIG_CACHE: path.join(root, 'npm-cache'),
         npm_config_update_notifier: 'false',
       },
     });

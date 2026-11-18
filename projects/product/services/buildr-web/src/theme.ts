@@ -1,5 +1,5 @@
 import type { ThemeConfig } from 'antd';
-import { applyProductTypography, productTypography } from './typography';
+import { applyProductTypography, productTypography } from './typography.ts';
 
 // Theme initialization is shared by the product and existing prototype entries.
 // Keep CSS roles and Ant Design tokens backed by the same numeric authority.

@@ -1,0 +1,14 @@
+import './shared.css';
+export {HarnessShell} from './shell/HarnessShell';
+export type {HarnessWorkEnvironment} from './shell/HarnessShell';
+export {HarnessDirectoryFilesProvider,useHarnessDirectoryFiles} from './directory-files.tsx';
+export type {HarnessDirectoryFiles,HarnessFileContent} from './directory-files.tsx';
+export {AgentConversationsProvider,AgentConversationsViewProvider,useAgentConversations,useOptionalAgentConversations,useAgentConversationShell} from './features/agent-conversations/AgentConversationsContext.tsx';
+export {ConversationWorkspace} from './features/agent-conversations/ConversationWorkspace.tsx';
+export {ConversationPanel} from './features/agent-conversations/ConversationPanel.tsx';
+export {AgentConnectionSettings} from './features/agent-conversations/AgentConnectionSettings.tsx';
+export {ProgrammaticAccessClientProvider} from './features/agent-conversations/ProgrammaticAccessClient.tsx';
+export {createProgrammaticAccessClient} from './features/agent-conversations/api/programmatic-access-api.ts';
+export type {ProgrammaticAccessClient} from './features/agent-conversations/api/programmatic-access-api.ts';
+export {createAgentConversationsClient} from './features/agent-conversations/api/agent-conversations-api.ts';
+export {softProductTheme} from './theme.ts';
