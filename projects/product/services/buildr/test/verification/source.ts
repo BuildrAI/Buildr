@@ -244,11 +244,11 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
         try {
           if (!reuseOptions.env.BUILDR_AGENT_V1_PACKAGE && prepared.preparation.stepIds.includes('agent-integration-compatibility')) {
             const v1Stdout = execFileSync(process.execPath, [
-              path.join(productRoot, 'services/buildr-harness/tools/testing/prepare-v1-compatibility.ts'),
+              path.join(projectRoot, 'services/buildr-harness/tools/testing/prepare-v1-compatibility.ts'),
               '974612e171af0a551cccaa6e8880735944bac717',
             ], {
-              cwd: productRoot,
-              env: { ...process.env, ...(process.env.BUILDR_HOST_HOME ? { HOME: process.env.BUILDR_HOST_HOME } : {}) },
+              cwd: projectRoot,
+              env: { ...process.env, npm_config_prefer_offline: 'true', ...(process.env.BUILDR_HOST_HOME ? { HOME: process.env.BUILDR_HOST_HOME } : {}) },
               encoding: 'utf8',
               stdio: ['ignore', 'pipe', 'pipe'],
               timeout: 180_000,
