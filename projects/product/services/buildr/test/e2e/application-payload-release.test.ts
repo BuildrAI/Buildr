@@ -5,6 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { spawn, spawnSync } from 'node:child_process';
+import { stopAgentProcess } from '@buildr-ai/buildr-harness';
 import { useLegacyAssetCatalog } from '../helpers/legacy-asset-catalog.ts';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { createInstallationOrigin } from '../../src/modules/installation/infrastructure/installation-origin.ts';
@@ -339,8 +340,15 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
         new Promise((resolve: any) => web.once('close', resolve)),
         new Promise((resolve: any) => setTimeout(resolve, 2_000)),
       ]);
-      if (web.exitCode === null) web.kill('SIGKILL');
+      if (web.exitCode === null) {
+        web.kill('SIGKILL');
+        await Promise.race([
+          new Promise((resolve: any) => web.once('close', resolve)),
+          new Promise((resolve: any) => setTimeout(resolve, 2_000)),
+        ]);
+      }
     }
+    await stopAgentProcess({ dataRoot: appData, mode: 'stop-owned' }).catch(() => {});
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
