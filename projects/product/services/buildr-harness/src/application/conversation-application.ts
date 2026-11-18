@@ -221,7 +221,7 @@ export class ConversationApplication {
     this.idleTimer=setInterval(()=>{void this.collectIdle().catch(()=>{});},60_000);this.idleTimer.unref();
     this.media = new ConversationAttachments({ root: options.root, now: options.now, save: record => this.save(record) });
     this.forks = new ConversationForks({
-      repository: options.repository, media: this.media, now: options.now,
+      repository: options.repository, media: this.media, legacySourceId: options.host.legacySourceId, now: options.now,
       load: (scope, id) => this.load(scope, id), candidate: (scope, input) => this.candidate(scope, input),
       runtime: async (record, participant) => (await this.sourceRuntime(record, participant)).runtime,
       rebindReasoning: async (source, target, value) => {
@@ -231,7 +231,7 @@ export class ConversationApplication {
       },
       save: (record, initial) => this.save(record, initial), view: record => this.view(record),
     });
-    this.children = new ConversationChildren({repository:options.repository,media:this.media,now:options.now,
+    this.children = new ConversationChildren({repository:options.repository,media:this.media,legacySourceId:options.host.legacySourceId,now:options.now,
       load:(scope,id)=>this.load(scope,id),candidate:(scope,input)=>this.candidate(scope,input),
       save:record=>this.save(record,true),view:record=>this.view(record)});
     this.drafts = new ConversationDrafts({
@@ -646,7 +646,7 @@ export class ConversationApplication {
     const record = this.options.repository.readConversation(nonempty(id, '对话身份'));
     if (!record || record.view.workspaceId !== workspaceId) fail('agent_conversation_missing', '该工作空间中没有此对话。', 404);
     record.attachments ??= {};
-    setConversationWorkObjectLinks(record.view,conversationWorkObjectLinks(record.view,this.options.host.ref(record.view.workspaceId).sourceId),this.options.host.ref(record.view.workspaceId).sourceId);
+    setConversationWorkObjectLinks(record.view,conversationWorkObjectLinks(record.view,this.options.host.legacySourceId),this.options.host.legacySourceId);
     normalizeQuestionCapabilities(record);
     // Older records may predate the public contract; expose an empty string
     // rather than an absent field so every request reader sees the same shape.
@@ -655,7 +655,7 @@ export class ConversationApplication {
   }
   private readonly legacyPresentedFiles = new Map<string, ReturnType<typeof presentedFilesForEntry>>();
   private view(record: ConversationReadState & Partial<Pick<StoredConversation, 'attempts'>>, before?: number, limit?: number, readLegacyFiles = false, compactTools = true, includeContinuationPrompt = true): ConversationView {
-    setConversationWorkObjectLinks(record.view,conversationWorkObjectLinks(record.view,this.options.host.ref(record.view.workspaceId).sourceId),this.options.host.ref(record.view.workspaceId).sourceId);
+    setConversationWorkObjectLinks(record.view,conversationWorkObjectLinks(record.view,this.options.host.legacySourceId),this.options.host.legacySourceId);
     normalizeQuestionCapabilities(record);
     const entries = before === undefined ? record.view.entries : record.view.entries.filter(entry => entry.sequence < before);
     const count = limit === undefined ? undefined : bounded(limit, PAGE_SIZE, 200);
@@ -925,8 +925,8 @@ export class ConversationApplication {
       id: randomUUID(), workspaceId, cwd, taskId: input.taskId, title: input.title ? nonempty(input.title, '对话标题', 160) : NEUTRAL_TITLE, titleState:{status:input.title?'manual':'pending'},
       revision: randomUUID(), hidden: false, updatedAt: this.options.now(), participants: [], entries: [], requests: [],
     }, hostScope: workspace, titleOrigin: input.title ? 'manual' : 'default', participants: [], sources: {}, attempts: [], requests: {}, attachments: {} };
-    if(objects)setConversationWorkObjectLinks(record.view,objects,this.options.host.ref(workspaceId).sourceId);
-    else setConversationTaskLinks(record.view,links!,this.options.host.ref(workspaceId).sourceId);
+    if(objects)setConversationWorkObjectLinks(record.view,objects,this.options.host.legacySourceId);
+    else setConversationTaskLinks(record.view,links!,this.options.host.legacySourceId);
     return record;
   }
   private async verifyWorkObjectLinks(workspaceId:string, values:unknown, previous:ConversationWorkObjectLink[]=[]):Promise<ConversationWorkObjectLink[]> {
@@ -971,8 +971,8 @@ export class ConversationApplication {
     const title=input.title===undefined?undefined:nonempty(input.title, '对话标题', 160);
     if(input.hidden!==undefined&&typeof input.hidden!=='boolean')fail('agent_input_invalid','隐藏状态无效。');
     let previous:ConversationTaskLink[]|undefined,links:ConversationTaskLink[]|undefined;
-    const sourceId=this.options.host.ref(workspaceId).sourceId;
-    const previousObjects=conversationWorkObjectLinks(record.view,sourceId);
+    const legacySourceId=this.options.host.legacySourceId;
+    const previousObjects=conversationWorkObjectLinks(record.view,legacySourceId);
     const objects=input.workObjectLinks===undefined?undefined:await this.verifyWorkObjectLinks(workspaceId,input.workObjectLinks,previousObjects);
     if(input.taskLinks!==undefined||input.taskIds!==undefined||input.taskId!==undefined){
       await this.options.host.resolve(workspaceId);
@@ -988,10 +988,10 @@ export class ConversationApplication {
     }
     for(let attempt=0;;attempt++){
       const current=this.load(workspaceId,id);
-      if((links||objects)&&JSON.stringify(conversationWorkObjectLinks(current.view,sourceId))!==JSON.stringify(previousObjects))fail('agent_revision_conflict','对话已变化，请重新读取后判断关联。',409);
+      if((links||objects)&&JSON.stringify(conversationWorkObjectLinks(current.view,legacySourceId))!==JSON.stringify(previousObjects))fail('agent_revision_conflict','对话已变化，请重新读取后判断关联。',409);
       if(title!==undefined){current.view.title=title;current.titleOrigin='manual';current.view.titleState={status:'manual'};}
-      if(objects)setConversationWorkObjectLinks(current.view,objects,sourceId);
-      else if(links)setConversationTaskLinks(current.view,links,sourceId);
+      if(objects)setConversationWorkObjectLinks(current.view,objects,legacySourceId);
+      else if(links)setConversationTaskLinks(current.view,links,legacySourceId);
       if(input.hidden!==undefined)current.view.hidden=input.hidden;
       try{this.save(current);return this.view(current);}
       catch(error){if(attempt>=6||!(error instanceof AgentServiceError)||error.code!=='agent_revision_conflict')throw error;}
@@ -1272,7 +1272,7 @@ export class ConversationApplication {
     const ids=[...new Set([...priorImages,...currentImages])];
     const materials = this.media.expand(record, ids);
     const images = materials.images;
-    const context=JSON.stringify({childOf:record.view.childOf,inheritedPendingQuestions:record.inheritedContext?.pendingQuestions,conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,conversationTitle:record.view.title,taskId:record.view.taskId,taskIds:record.view.taskIds,taskLinks:conversationTaskLinks(record.view),workObjectLinks:conversationWorkObjectLinks(record.view,this.options.host.ref(record.view.workspaceId).sourceId),sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',retainedExecutions:conversationRuns(record.view).filter(unfinishedRun).map(run=>({id:run.id,participantId:run.participantId,generation:run.generation,status:run.status,executionState:run.executionState,resourcesReleased:run.resourcesReleased,toolCount:run.tools.filter(tool=>tool.status!=='completed').length})),unansweredRequests:record.view.requests.map(request=>({id:request.id,runId:request.runId,participantId:request.participantId,generation:request.generation,kind:request.kind,title:request.title.slice(0,200)})),sourceIndex:sources?.index,sourceId:sources?.sourceId,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。历史视频只提供带时间点的抽样画面，不含音轨，不能声称连续观看。':undefined});
+    const context=JSON.stringify({childOf:record.view.childOf,inheritedPendingQuestions:record.inheritedContext?.pendingQuestions,conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,conversationTitle:record.view.title,taskId:record.view.taskId,taskIds:record.view.taskIds,taskLinks:conversationTaskLinks(record.view),workObjectLinks:conversationWorkObjectLinks(record.view,this.options.host.legacySourceId),sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',retainedExecutions:conversationRuns(record.view).filter(unfinishedRun).map(run=>({id:run.id,participantId:run.participantId,generation:run.generation,status:run.status,executionState:run.executionState,resourcesReleased:run.resourcesReleased,toolCount:run.tools.filter(tool=>tool.status!=='completed').length})),unansweredRequests:record.view.requests.map(request=>({id:request.id,runId:request.runId,participantId:request.participantId,generation:request.generation,kind:request.kind,title:request.title.slice(0,200)})),sourceIndex:sources?.index,sourceId:sources?.sourceId,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。历史视频只提供带时间点的抽样画面，不含音轨，不能声称连续观看。':undefined});
     const questionEntries = changes.filter(entry=>entry.kind==='notice'&&entry.runId===record.view.run?.id);
     const hasHandoffAnswers = questionEntries.some(entry=>entry.id.startsWith('waiting-handoff-'));
     const unanswered = questionEntries.filter(entry=>entry.role==='system'&&entry.id.startsWith(hasHandoffAnswers?'waiting-handoff-':'waiting-question-')).map(entry=>entry.text);

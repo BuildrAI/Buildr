@@ -935,7 +935,7 @@ const serviceSteps = serviceSets.flatMap(([service, checks]) => checks.map((chec
   const inherited = builtInVerificationSteps.find((step: any) => step.id === check.id);
   const footprints = ['Static', 'Unit'].includes(check.type) ? [] : ['filesystem', 'cli'];
   return Object.freeze({
-    dependsOn: [], groups: [], profiles: inherited?.profiles ?? (service === 'dsh-plugin' ? [] : ['candidate']),
+    dependsOn: [], groups: [], profiles: inherited?.profiles ?? (service === 'dsh-plugin' || check.selection === 'explicit-only' ? [] : ['candidate']),
     contexts: [], resources: check.resources ?? [], developmentRunners: [],
     isolationMode: footprints.length ? 'sandbox' : 'none', resetStrategy: footprints.length ? 'recreate' : 'none',
     parallelSafety: 'worker-safe', concurrencyClass: 'cpu-heavy', resourceDemand: check.resourceDemand ?? inherited?.resourceDemand ?? { workers: 1, processes: 1 },

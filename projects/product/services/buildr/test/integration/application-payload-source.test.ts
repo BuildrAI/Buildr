@@ -123,6 +123,7 @@ test('payload verify runs from a clean tree with no node_modules or esbuild', as
     for (const relative of [
       '../../../../skills/buildr-release/scripts/application-payload.ts',
       '../../../../skills/buildr-release/scripts/package.json',
+      '../buildr-harness/tools/collect-third-party.ts',
       'package.json',
       'tools/build/generated-artifacts.ts',
       'src/infrastructure/product-resources/index.ts',

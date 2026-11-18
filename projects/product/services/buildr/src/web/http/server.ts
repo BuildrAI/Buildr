@@ -84,6 +84,7 @@ export function createLocalWorkspaceServer(runtime: any, {
         server.close(() => { clearTimeout(deadline); resolve(); });
         server.closeIdleConnections();
       });
+      if (ownsReadExecutor) await taskReadExecutor.close();
       if (ownsWriteExecutor) await taskWriteExecutor.close();
       await onShutdown?.(cleanupError);
       if (cleanupError) throw cleanupError;

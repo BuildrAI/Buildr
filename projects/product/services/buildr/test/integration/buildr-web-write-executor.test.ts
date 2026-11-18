@@ -263,7 +263,7 @@ const fs = require('node:fs'); fs.writeFileSync(process.env.MARKER, String(proce
         const release = acquireCodeGitOperation({location: workerData.root});
         const result = await runCodeGitMutation({location: workerData.root}, ['fetch'], {env: workerData.env, timeoutMs: workerData.timeoutMs});
         release(); parentPort.postMessage({id: message.id, ok: true, value: result});
-      });`, { eval: true, env: { ...process.env, BUILDR_GIT_OPERATION_LOG: registry }, workerData: { buildrGitMutationBroker: true, lockModule, mutationModule, root, timeoutMs: expires ? 1_500 : 5_000, env: { PATH: bin, MARKER: marker, FINISH: finish } } });
+      });`, { eval: true, env: { ...process.env, BUILDR_GIT_OPERATION_LOG: registry }, workerData: { buildrGitMutationBroker: true, lockModule, mutationModule, root, timeoutMs: expires ? 3_500 : 10_000, env: { PATH: bin, MARKER: marker, FINISH: finish } } });
     return worker;
   } });
   const lockFile = path.join(root, '.git', 'buildr-operation.lock');

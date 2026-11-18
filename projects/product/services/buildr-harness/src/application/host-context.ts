@@ -6,24 +6,24 @@ import { AgentServiceError } from '../domain/agent-state.ts';
 /** The core consumes authority observations, never a product task or workspace module. */
 export class HostContext {
   readonly capabilities: AgentHostCapabilities;
-  private readonly sourceId: string;
+  readonly legacySourceId: string;
   constructor(options: Pick<AgentServiceOptions, 'host' | 'legacySourceId' | 'resolveWorkspace' | 'assertTask'>) {
-    this.sourceId = options.legacySourceId ?? 'local';
+    this.legacySourceId = options.legacySourceId ?? 'local';
     this.capabilities = options.host ?? {
       resolveExecutionScope: async ({ ref }) => {
-        if (ref.sourceId !== this.sourceId || !options.resolveWorkspace) throw new AgentServiceError('agent_host_unavailable', '执行环境提供方暂时不可用。', 503);
+        if (ref.sourceId !== this.legacySourceId || !options.resolveWorkspace) throw new AgentServiceError('agent_host_unavailable', '执行环境提供方暂时不可用。', 503);
         const resolved = await options.resolveWorkspace(ref.id);
         return { ref, revision: resolved.rootPath, rootPath: resolved.rootPath };
       },
       verifyWorkObject: async ({ ref }) => {
-        if (ref.sourceId !== this.sourceId || !options.assertTask) throw new AgentServiceError('agent_host_unavailable', '工作对象提供方暂时不可用。', 503);
+        if (ref.sourceId !== this.legacySourceId || !options.assertTask) throw new AgentServiceError('agent_host_unavailable', '工作对象提供方暂时不可用。', 503);
         await options.assertTask(ref.scopeId, ref.id);
         return { ref, revision: ref.id };
       },
       listExecutionScopes: async () => { throw new AgentServiceError('agent_host_unavailable', '此宿主未提供范围发现能力。', 503); },
     };
   }
-  ref(key: string): ExecutionScopeRef { return executionScopeRef(key, this.sourceId); }
+  ref(key: string): ExecutionScopeRef { return executionScopeRef(key, this.legacySourceId); }
   async resolve(key: string, expectedRevision?: string): Promise<ExecutionScope> {
     const ref = this.ref(key);
     const value = await this.capabilities.resolveExecutionScope({ ref, ...(expectedRevision ? {expectedRevision} : {}) });

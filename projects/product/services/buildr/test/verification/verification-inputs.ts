@@ -171,7 +171,8 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
     // Child scripts are often passed to spawn via a repository-relative literal,
     // rather than imported into the current test process.
     const catalog = /\/test\/(?:verification|context)\/(?:registry|ownership|journey-suites|profiles|dispositions)\.ts$/u.test(file)
-      || !options.legacyDeclarations && /\/test\/verification\/ownership\/[^/]+\.ts$/u.test(file);
+      || !options.legacyDeclarations && /\/test\/verification\/ownership\/[^/]+\.ts$/u.test(file)
+      || /\/tools\/testing\/(?:entry-)?verification-checks\.ts$/u.test(file);
     const children = executable?.children ?? [...text.matchAll(/['"]((?:test|tools)\/[^'"\n]+\.[cm]?[jt]sx?)['"]/gu)].map(match => match[1]!);
     for (const target of catalog ? [] : children) {
       const child = (!options.legacyDeclarations && agentLocal(file) !== null ? agentPrefix : prefix) + target;

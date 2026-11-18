@@ -11,7 +11,7 @@ export interface CreateChildInput { expectedRevision: string; clientRequestId: s
 /** Background and relation ownership only; creating a child never touches an executor. */
 export class ConversationChildren {
   private readonly options: {
-    repository: ConversationRepository; media: ConversationAttachments; now(): string;
+    repository: ConversationRepository; media: ConversationAttachments; legacySourceId?: string; now(): string;
     load(scope: string,id: string): StoredConversation;
     candidate(scope: string,input: {cwd: string;taskId?: string}): Promise<StoredConversation>;
     save(record: StoredConversation): void;
@@ -43,7 +43,7 @@ export class ConversationChildren {
       ...(parent.view.run?{[parent.view.run.id]:{status:parent.view.run.status,diagnostic:parent.view.run.diagnostic,model:parent.view.run.model,provider:parent.view.run.provider,updatedAt:parent.view.run.updatedAt}}:{})});
     const pendingQuestions=[...(parent.inheritedContext?.pendingQuestions??[]),...parent.view.requests.map(request=>JSON.stringify({kind:request.kind,title:request.title,description:request.description,questions:request.questions,options:request.options}))];
     const candidate=await this.options.candidate(scope,{cwd:parent.view.cwd,taskId:parent.view.taskId});
-    setConversationWorkObjectLinks(candidate.view,structuredClone(conversationWorkObjectLinks(parent.view)));
+    setConversationWorkObjectLinks(candidate.view,structuredClone(conversationWorkObjectLinks(parent.view,this.options.legacySourceId)),this.options.legacySourceId);
     candidate.view.id=id;
     candidate.view.childOf={conversationId:parentId,workspaceId:scope,title:parent.view.title,sourceRevision:parent.view.revision,
       throughSequence:parent.view.entries.at(-1)?.sequence??parent.view.childOf?.throughSequence??0,createdAt:this.options.now(),

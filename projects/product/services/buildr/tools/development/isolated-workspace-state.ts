@@ -29,6 +29,8 @@ export function activateIsolatedWorkspaceState({ reuseInherited = false } = {}) 
 export function createIsolatedWorkspaceState(options: { env?: NodeJS.ProcessEnv; prefix?: string } = {}) {
   const env = options.env ?? process.env;
   const root = fs.mkdtempSync(path.join(env.BUILDR_TEST_LOCAL_STATE_ROOT || os.tmpdir(), options.prefix ?? 'buildr-test-state-'));
+  // Prevent macOS Spotlight from indexing short-lived test directories and blocking cleanup.
+  fs.writeFileSync(path.join(root, '.metadata_never_index'), '');
   const marker = path.join(root, '.buildr-test-state.json');
   const identity = { schemaVersion: 1, root: fs.realpathSync(root), producerPid: process.pid, completed: false };
   fs.writeFileSync(marker, JSON.stringify(identity), { mode: 0o600 });
@@ -71,7 +73,10 @@ export function createIsolatedWorkspaceState(options: { env?: NodeJS.ProcessEnv;
           for (const line of (use.stdout ?? '').split('\n')) {
             if (line.startsWith('p')) pid = line.slice(1);
             if (line.startsWith('c')) command = line.slice(1);
-            if (line.startsWith('n'+actualRoot+path.sep) || line === 'n'+actualRoot) { owners.add(pid); ownerCommands.push(command + ':' + line.slice(1)); }
+            if ((line.startsWith('n'+actualRoot+path.sep) || line === 'n'+actualRoot) && !/^mdworker(?:_shared)?$|^mds(?:_stores)?$/u.test(command)) {
+              owners.add(pid);
+              ownerCommands.push(command + ':' + line.slice(1));
+            }
           }
           for (const owner of owners) settledOwnerPids.add(owner);
           const warning = (use.stderr ?? '').trim();
