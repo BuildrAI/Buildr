@@ -17,12 +17,13 @@ import { conversationModelLabel } from './conversation-model-label.ts';
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, Fragment, type ReactNode } from 'react';
 import { SplitDivider } from '../../components/SplitDivider.tsx';
 import { readOptionalPreference, writeOptionalPreference } from '../../lib/optional-preferences.ts';
-import { Alert, Button, Dropdown, Input, Modal, Popover, Select, Spin, Tag } from 'antd';
+import { Alert, App, Button, Dropdown, Input, Modal, Popover, Select, Spin, Tag } from 'antd';
 import { ArrowDownOutlined, ArrowUpOutlined, CommentOutlined, EllipsisOutlined, MinusOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, StopOutlined, TeamOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { MarkdownHost } from '../../components/MarkdownHost.tsx';
 import type { MarkdownRenderOptions } from '../../markdown.ts';
 import type { ApiError } from '../../api/index.ts';
 import { CopyButton } from '../../components/CopyButton.tsx';
+import { copyText } from '../../lib/copyText.ts';
 import { copyConversationIdTitle } from './conversation-activity.ts';
 import { useAgentConversations } from './AgentConversationsContext.tsx';
 import {useEarlierConversationEntries} from './useEarlierConversationEntries.ts';
@@ -69,6 +70,7 @@ type SendOperation={selection:ConversationSelection;continueRunId?:string};
 type Props={workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;portalTarget?:HTMLElement|null;embedded?:boolean;accessory?:ReactNode;onCreateChild?:()=>void};
 export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,embedded=false,accessory,onCreateChild}:Props){
   const context=useAgentConversations(),chat=context.conversation;
+  const {message:appMessage}=App.useApp();
   const engineeringAnchor=useRef<HTMLSpanElement>(null);
   const host=useHarnessDirectoryFiles();
   const composition=useConversationHost();
@@ -865,7 +867,6 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
         {!embedded&&!context.open&&<Button type="text" icon={<UnorderedListOutlined/>} aria-label="查看对话列表" title="对话列表" onClick={()=>context.openHistory(null,{preserveVisibility:true})}/>}
         <div className="ac-thread-heading">
         {chat?<button type="button" className="ac-thread-title" aria-label="重命名对话" title={chat.title} onClick={()=>{setTitle(chat.title);setRename(true);}}>{chat.title}</button>:<strong className="ac-thread-title ac-thread-title-static">{context.loading?'正在读取对话…':context.scope?'对话':'新对话'}</strong>}
-        {chat&&<div className="ac-thread-identity"><CopyButton type="text" text={chat.id} ariaLabel="复制对话 ID" title={copyConversationIdTitle(chat.id)} failureMessage="复制失败，请手动选择对话 ID 复制。"/></div>}
         </div>
         <div className="ac-thread-actions">
           {accessory}
@@ -883,6 +884,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
             ]:[]),
             {key:'generate-title',label:generatingTitle?'正在生成标题…':'生成简短标题',disabled:generatingTitle||!canGenerateConversationTitle(chat)},
             {key:'rename',label:'重命名',disabled:!chat},
+            {key:'copy-id',label:chat?copyConversationIdTitle(chat.id):'复制对话 ID',disabled:!chat},
             {key:'hide',label:chat?.hidden?'恢复到最近对话':canCloseUncertainConversation(chat)?'关闭对话':'从最近对话隐藏',disabled:!chat}
           ].filter(item=>!embedded||!['full','side','hide'].includes(item.key||'')),onClick:({key})=>{
             setMoreOpen(false);
@@ -895,6 +897,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
             else if(key==='create-child')onCreateChild?.();
             else if(key==='generate-title')void generateTitle();
             else if(key==='rename'&&chat){setTitle(chat.title);setRename(true);}
+            else if(key==='copy-id'&&chat)void copyText(chat.id).then(copied=>copied?appMessage.success('对话 ID 已复制'):appMessage.warning('复制失败，请手动选择对话 ID 复制。'));
             else if(key==='hide'&&chat){if(!chat.hidden&&canCloseUncertainConversation(chat))void closeConversation();else void updateMetadata({hidden:!chat.hidden});}
           }}}><Button type="text" icon={<EllipsisOutlined/>} aria-label="更多对话操作" title="更多"/></Dropdown>
         </div>

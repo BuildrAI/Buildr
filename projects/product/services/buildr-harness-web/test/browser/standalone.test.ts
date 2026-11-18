@@ -260,26 +260,48 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     const activityButton = b.locator(`.ac-activity-menu [data-activity-id="${conversationId}"]`);
     await activityButton.waitFor({state: 'visible', timeout: 10000});
     assert.equal(await activityButton.locator('.ac-activity-status').innerText(), '待决策');
-    const activityOrder = await activityButton.evaluate((node: HTMLElement) => {
+    const activityStyle = (node: HTMLElement) => {
       const parent = node.parentElement!, copy = parent.querySelector('.ac-activity-row-copy')!, idCount = node.querySelectorAll('.ac-activity-id').length, meta = node.querySelector('.ac-activity-meta')!;
-      const c = copy.getBoundingClientRect(), m = meta.getBoundingClientRect();
-      return {idCount, copyTitle: copy.getAttribute('title') || '', metaText: meta.textContent?.trim() || '', metaRight: m.right, copyLeft: c.left, copyMid: c.top + c.height / 2, metaMid: m.top + m.height / 2};
-    });
-    assert.ok(activityOrder.idCount === 0 && activityOrder.copyTitle === `复制对话 ID（${conversationId.slice(0, 8)}）` && activityOrder.metaText.length > 0 && activityOrder.metaRight <= activityOrder.copyLeft + 1 && Math.abs(activityOrder.copyMid - activityOrder.metaMid) < 6, JSON.stringify(activityOrder));
+      const c = copy.getBoundingClientRect(), m = meta.getBoundingClientRect(), style = getComputedStyle(copy);
+      return {idCount, copyTitle: copy.getAttribute('title') || '', opacity: style.opacity, pointerEvents: style.pointerEvents, metaText: meta.textContent?.trim() || '', metaRight: m.right, copyLeft: c.left, copyMid: c.top + c.height / 2, metaMid: m.top + m.height / 2};
+    };
+    const activityHidden = await activityButton.evaluate(activityStyle);
+    assert.ok(activityHidden.idCount === 0 && activityHidden.opacity === '0' && activityHidden.pointerEvents === 'none', JSON.stringify(activityHidden));
+    await activityButton.hover();
+    const activityOrder = await activityButton.evaluate(activityStyle);
+    assert.ok(activityOrder.idCount === 0 && activityOrder.opacity === '1' && activityOrder.pointerEvents === 'auto' && activityOrder.copyTitle === `复制对话 ID（${conversationId.slice(0, 8)}）` && activityOrder.metaText.length > 0 && activityOrder.metaRight <= activityOrder.copyLeft + 1 && Math.abs(activityOrder.copyMid - activityOrder.metaMid) < 6, JSON.stringify(activityOrder));
     if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await b.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'activity-popover-order.png')});
     await b.locator('.ac-collapsed-rail .ac-all-conversations').click();
     const historyButton = b.locator(`.ac-history-row-main[data-conversation-id="${conversationId}"]`);
     await historyButton.waitFor({state: 'visible', timeout: 10000});
     assert.equal(await historyButton.locator('.ac-activity-status').innerText(), '待决策');
-    const historyOrder = await historyButton.evaluate((node: HTMLElement) => {
+    const historyStyle = (node: HTMLElement) => {
       const parent = node.parentElement!, copy = parent.querySelector('.ac-history-row-copy')!, idCount = node.querySelectorAll('.ac-history-id').length, meta = node.querySelector('.ac-history-meta')!;
-      const c = copy.getBoundingClientRect(), m = meta.getBoundingClientRect();
-      return {idCount, copyTitle: copy.getAttribute('title') || '', metaText: meta.textContent?.trim() || '', metaRight: m.right, copyLeft: c.left, copyMid: c.top + c.height / 2, metaMid: m.top + m.height / 2};
-    });
-    assert.ok(historyOrder.idCount === 0 && historyOrder.copyTitle === `复制对话 ID（${conversationId.slice(0, 8)}）` && historyOrder.metaText.length > 0 && historyOrder.metaRight <= historyOrder.copyLeft + 1 && Math.abs(historyOrder.copyMid - historyOrder.metaMid) < 6, JSON.stringify(historyOrder));
+      const c = copy.getBoundingClientRect(), m = meta.getBoundingClientRect(), style = getComputedStyle(copy);
+      return {idCount, copyTitle: copy.getAttribute('title') || '', opacity: style.opacity, pointerEvents: style.pointerEvents, metaText: meta.textContent?.trim() || '', metaRight: m.right, copyLeft: c.left, copyMid: c.top + c.height / 2, metaMid: m.top + m.height / 2};
+    };
+    await b.locator('.ac-history > .ac-thread-header').hover();
+    const historyHidden = await historyButton.evaluate(historyStyle);
+    assert.ok(historyHidden.idCount === 0 && historyHidden.opacity === '0' && historyHidden.pointerEvents === 'none', JSON.stringify(historyHidden));
+    await historyButton.hover();
+    const historyOrder = await historyButton.evaluate(historyStyle);
+    assert.ok(historyOrder.idCount === 0 && historyOrder.opacity === '1' && historyOrder.pointerEvents === 'auto' && historyOrder.copyTitle === `复制对话 ID（${conversationId.slice(0, 8)}）` && historyOrder.metaText.length > 0 && historyOrder.metaRight <= historyOrder.copyLeft + 1 && Math.abs(historyOrder.copyMid - historyOrder.metaMid) < 6, JSON.stringify(historyOrder));
     if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await b.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'history-list-order.png')});
     await historyButton.click();
     await b.getByRole('radio', {name: 'Accepted', exact: true}).waitFor({state: 'visible', timeout: 10000});
+    assert.equal(await b.locator('.ac-thread-identity').count(), 0);
+    await b.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {writeText: async (text: string) => {(window as any).__copiedId = text;}},
+      });
+    });
+    await b.locator('.ac-panel > .ac-conversation-view > .ac-thread-header').getByRole('button', {name: '更多对话操作', exact: true}).click();
+    await b.getByRole('menuitem', {name: `复制对话 ID（${conversationId.slice(0, 8)}）`, exact: true}).click();
+    assert.equal(await b.evaluate(() => (window as any).__copiedId), conversationId);
+    await b.getByText('对话 ID 已复制', {exact: true}).waitFor();
+    assert.equal(await b.locator('.ac-panel').getByText('对话 ID 已复制', {exact: true}).count(), 0);
+    await b.evaluate(() => {delete (navigator as any).clipboard; delete (window as any).__copiedId;});
     const inputB = b.getByRole('textbox', {name: '对话输入', exact: true});
     await inputA.fill('窗口 A 未提交草稿');
     await inputB.fill('窗口 B 未提交草稿');
