@@ -162,6 +162,19 @@ test('HTTP validates closed paged queries, numeric conversion and real observed 
   await assert.rejects(request({page:'1'}),(error:any)=>error.code==='code_file_revision_required');
   await assert.rejects(request({page:'1',expectedRevision:'stale'}),(error:any)=>error.code==='code_file_changed');
 });
+test('current search describes how to install ripgrep when it is absent', async () => {
+  const { searchCode } = await import('../../src/modules/code/infrastructure/code-search.ts');
+  const oldPath = process.env.PATH;
+  try {
+    process.env.PATH = '';
+    assert.throws(() => searchCode({} as Parameters<typeof searchCode>[0], 'needle', 'content'),
+      (error: any) => error.code === 'code_search_engine_unavailable' && /ripgrep.*安装/u.test(error.message));
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
+  }
+});
+
 test('ripgrep finds source beyond old file and byte budgets without mutating the checkout',async t=>{
   const f=fixture(t);fs.mkdirSync(path.join(f.root,'aaaa-source'));fs.mkdirSync(path.join(f.root,'zz-data'));
   for(let i=0;i<3100;i++)fs.writeFileSync(path.join(f.root,'zz-data',i+'.txt'),'unrelated '.repeat(850));

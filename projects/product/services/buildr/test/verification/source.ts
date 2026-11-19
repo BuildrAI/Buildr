@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import { sharedCheckPreparation } from '../../tools/testing/verification-checks.ts';
 import { randomUUID } from 'node:crypto';
-import { assertCandidateResumeScope, createCandidateRoundExecution } from './candidate-round.ts';
+import { assertCandidateResumeScope, createCandidateRoundExecution, assertCandidateRound } from './candidate-round.ts';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -196,6 +196,30 @@ function usage(): void {
   process.stdout.write('Internal release source verification: node test/verification/source.ts [--scope all|common|platform] [--base <ref>] [--json] [--resume] [--force] [--round <round-id>] [--output <round-log.json>] [--invalidate <step-id,...>] [--selected <step-id,...>]\n');
 }
 
+function historicalSourceCosts(output: string | null): Map<string, number> {
+  const costs = new Map<string, number>();
+  if (!output) return costs;
+  const directory = path.dirname(output);
+  let files: fs.Dirent[];
+  try { files = fs.readdirSync(directory, { withFileTypes: true }); }
+  catch { return costs; }
+  for (const name of files.filter(file => file.isFile() && file.name.endsWith('.json'))
+    .sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true })).slice(0, 12)) {
+    try {
+      const file = path.join(directory, name.name);
+      if (fs.statSync(file).size > 64 * 1024 ** 2) continue;
+      const log = JSON.parse(fs.readFileSync(file, 'utf8'));
+      assertCandidateRound(log);
+      for (const { identity, result, environment } of log.records) {
+        if (environment.platform !== process.platform || result.status !== 'passed' || result.disposition === 'reused'
+          || !Number.isFinite(result.durationMs) || result.durationMs <= 0 || costs.has(identity.stepId)) continue;
+        costs.set(identity.stepId, result.durationMs);
+      }
+    } catch { /* Historical costs are optional scheduling hints. */ }
+  }
+  return costs;
+}
+
 /** A user-selected round executes exactly the selected checks plus the
  * dependencies they actually need. Scope-outside checks are not executed and
  * are not claimed; they stay absent from this round instead of failing it. */
@@ -226,7 +250,11 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     else {
       const plan = createSourceVerificationPlan(process.platform, { scope: args.scope });
       const comparisonRequired = plan.steps.some((step: any) => step.reuse?.git === 'comparison');
-      const executionPlan = args.selected.length ? selectSourceVerificationSubset(plan, args.selected) : plan;
+      const selectedPlan = args.selected.length ? selectSourceVerificationSubset(plan, args.selected) : plan;
+      const costs = historicalSourceCosts(args.output);
+      const executionPlan = { ...selectedPlan, steps: selectedPlan.steps.map((step: any) => ({
+        ...step, schedulingCostMs: costs.get(step.id) ?? step.schedulingCostMs,
+      })) };
       const round = { protectResume: true, resume: args.resume, allowFullRerun: args.force || executionPlan.steps.length < plan.steps.length, roundId: args.round ?? process.env.BUILDR_VERIFICATION_ROUND ?? randomUUID(), ...(args.output ? { output: path.resolve(args.output) } : {}), ...(args.invalidate.length ? { invalidStepIds: args.invalidate } : {}), ...(args.selected.length ? { selectedStepIds: executionPlan.selectedStepIds } : {}) };
       const reuseOptions = { productRoot, projectRoot, round, force: sourceVerificationForce(args.force),
         env: enforceOfflineVerification(comparisonRequired || args.base
@@ -285,7 +313,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
             execution = await executePlan(executionPlan, {
               productRoot, projectRoot, env: executionEnv, diagnosticsDirectory: evidence.diagnosticsOutput,
               stream: process.stdout, errorStream: process.stderr, prefix: 'verify-source',
-              concurrency: executionProfile.limits, executionProfile, runId: evidence.runId,
+              concurrency: executionProfile.limits, executionProfile, schedulingMode: 'critical-path', runId: evidence.runId,
               taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? 'source', signal: cancellation.signal,
               reuse: false, force: reuseOptions.force, round, preparations: sourcePreparationCommands(prepared),
             });

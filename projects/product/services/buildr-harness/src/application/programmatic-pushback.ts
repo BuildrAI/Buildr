@@ -1,6 +1,6 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { hostname } from 'node:os';
-import type { ServiceEvent, ConversationView, RunView, PushbackCredentialAccess, PushbackEvent, PushbackEventPage, PushbackDeliveryResult, PushbackSettingsInput, PushbackSettingsView } from '../contracts.ts';
+import type { ServiceEvent, ConversationView, RunView, PushbackCredentialAccess, PushbackEvent, PushbackEventType, PushbackEventPage, PushbackDeliveryResult, PushbackSettingsInput, PushbackSettingsView } from '../contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { ProgrammaticPushbackStore, type PushbackConfig, type PushbackClaim } from '../persistence/programmatic-pushback-store.ts';
 import { pushbackNotifications, timedPushbackNotifications, isLiveRunStatus, type PushbackSnapshot, type PushbackNotification } from '../domain/programmatic-pushback-notifications.ts';
@@ -224,7 +224,7 @@ export class ProgrammaticPushback {
         const appended = this.store.appendEvent({ ...base, held: false, mergeKey: null, build: (s, e) => safe(s, e, 1) });
         if (appended) this.store.recordRate(credentialId, now);
       }
-      else if (type === 'decision.requested') this.store.appendEvent({ ...base, held: true, mergeKey: null, build: (s, e) => safe(s, e, 1) });
+      else if (type === 'decision.requested' || type === 'events_dropped') this.store.appendEvent({ ...base, held: true, mergeKey: null, build: (s, e) => safe(s, e, 1) });
       else {
         const held = this.store.findHeld(credentialId, conversationId, type);
         if (held) this.store.mergeHeld(held.sequence, held.mergedCount + 1, (s, e) => safe(s, e, held.mergedCount + 1), held.eventId);
@@ -312,10 +312,10 @@ export class ProgrammaticPushback {
       if (!secret) continue;
       const machine = this.machine();
       const access = this.store.getCredentialAccess(group.credentialId) ?? emptyAccess;
-      this.enqueue(group.credentialId, config, group.workspaceId, '', 'events_dropped', digest(['dropped', group.workspaceId, now]), secret, config.url, (sequence, eventId) => ({
-        eventId, type: 'events_dropped', occurredAt: new Date(now).toISOString(), machine, workspaceId: group.workspaceId, conversationId: '', title: '',
+      this.enqueue(group.credentialId, config, group.workspaceId, group.conversationId, 'events_dropped', digest(['dropped', group.workspaceId, group.conversationId, group.type, now]), secret, config.url, (sequence, eventId) => ({
+        eventId, type: 'events_dropped', occurredAt: new Date(now).toISOString(), machine, workspaceId: group.workspaceId, conversationId: group.conversationId, title: '',
         scopes: access.scopes, allowFullAccess: access.allowFullAccess, summary: `${group.dropped} 条事件已超出保留期被丢弃`,
-        detailUrl: eventsUrl(group.workspaceId), sequence, droppedCount: group.dropped,
+        detailUrl: eventsUrl(group.workspaceId), sequence, droppedCount: group.dropped, droppedEventType: group.type as PushbackEventType,
       }));
     }
   }

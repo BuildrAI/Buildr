@@ -1,3 +1,4 @@
+import { observePublicationRun } from './publication-run-evidence.ts';
 /** Package projections in the existing release operation. Git and package owners remain authoritative. */
 import fs from 'node:fs';
 import crypto from 'node:crypto';
@@ -391,6 +392,8 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
     recoveredCandidates = recovered.candidates;
   }
   state.packagePublications ??= {};
+  let completedRunEvidence: ReturnType<typeof observePublicationRun> | undefined;
+  let completedRun: any;
   const originalOrder = context.compatibility.publicationOrder;
   for (const name of originalOrder) {
     const pointer = state.packagePublications[name];
@@ -425,17 +428,25 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
       }
       if (run.conclusion !== 'success') {
         if (pointer.retryRequested && Number(run.run_attempt) < 2) return { status: 'publication-retry-unconfirmed', package: name, run };
-        const log = gh(['run', 'view', String(run.id), '--repo', 'BuildrAI/Buildr', '--log-failed']);
+        let log = '';
+        try { log = gh(['run', 'view', String(run.id), '--repo', 'BuildrAI/Buildr', '--attempt', String(run.run_attempt), '--log-failed']); } catch { /* Logs can be unavailable briefly after completion. */ }
+        const publicationEvidence = observePublicationRun(run, gh, log);
+        if (!log && run.conclusion === 'failure' && Number(run.run_attempt) < 2) return { status: 'publication-readback-required', package: name, run, ...publicationEvidence };
         const readbackPending = /"status":"publication-pending"[^\r\n]*"code":"registry-propagation-pending"/u.test(log);
         const failure = readbackPending ? 'transient' : classifyCandidateFailure(log);
-        if (failure !== 'transient' || Number(run.run_attempt) >= 2) return { status: 'diagnosis-required', package: name, run, nextActions: ['保留已成立公开事实，诊断原主包发布步骤。'] };
+        if (failure !== 'transient' || Number(run.run_attempt) >= 2) return { status: 'diagnosis-required', package: name, run, ...publicationEvidence, nextActions: ['保留已成立公开事实，诊断原主包发布步骤。'] };
         pointer.retryRequested = true; save();
         const effect = { type: 'publication-failed-jobs-rerun', package: name, runId: run.id, previousAttempt: run.run_attempt, state: 'unknown' };
-        effects.push(effect); gh(['run', 'rerun', String(run.id), '--failed', '--repo', 'BuildrAI/Buildr']); effect.state = 'confirmed';
-        return { status: 'publication-running', package: name, run };
+        effects.push(effect);
+        try { gh(['run', 'rerun', String(run.id), '--failed', '--repo', 'BuildrAI/Buildr']); }
+        catch { return { status: 'publication-retry-unconfirmed', package: name, run, ...publicationEvidence }; }
+        effect.state = 'confirmed';
+        return { status: 'publication-running', package: name, run, ...publicationEvidence };
       }
       const observed = await (dependencies.inspectHostedReleaseTransaction ?? inspectHostedReleaseTransaction)({ runId: pointer.runId, repository: 'BuildrAI/Buildr', ghCommand: options.ghCommand }, dependencies.evidenceDependencies);
       if (observed.status !== 'passed' || !observed.evidence) return { status: 'publication-readback-required', package: name, nextActions: observed.nextActions ?? [] };
+      completedRun = run;
+      completedRunEvidence = observePublicationRun(run, gh);
       result = { run, ownerEvidence: observed.evidence };
     } else {
       const observed = (dependencies.runPluginHostedOperation ?? runPluginHostedOperation)({ operation: 'publish', authorized: true, repo: state.executionRoot,
@@ -471,7 +482,8 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
   if (!next) {
     const evidence = createPackagePublicationEvidence({ context, publications: Object.fromEntries(originalOrder.map((name: string) => [name, state.packagePublications[name].evidence])) });
     state.publicationEvidence = evidence; save();
-    return closeoutPackageRelease({ ...options, context, evidence }, scope, dependencies);
+    const closeout = await closeoutPackageRelease({ ...options, context, evidence }, scope, dependencies);
+    return { ...closeout, ...(completedRun ? { run: completedRun, ...completedRunEvidence } : {}) };
   }
   if (options.action === 'publish' && options.authorized !== true) return { status: 'authorization-required', nextActions: ['对准确版本与内容明确授权后publish --authorized。'] };
   if (options.action === 'resume' && !state.publicationAuthorization) return { status: 'authorization-required', nextActions: ['原操作尚未取得公开发布授权。'] };

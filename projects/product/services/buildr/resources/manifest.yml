@@ -199,6 +199,15 @@ initialSkillBindings:
     version: 4
     provider: current-knowledge-maintenance
 builtins:
+  commands:
+    - id: ripgrep
+      required: false
+      manifestEntry:
+        name: ripgrep
+        executable: rg
+        purpose: 搜索当前检出目录中的文件名和内容。
+        description: Buildr 代码浏览器使用的可选外部工具。
+        installHint: macOS 可使用 brew install ripgrep，Windows 可使用 winget install BurntSushi.ripgrep.MSVC，Linux 可使用发行版包管理器安装 ripgrep。安装后确保 Buildr 进程的 PATH 能找到 rg。
   skills:
     - id: mysql-connection
       path: resources/workspace/skills/connections/mysql-connection

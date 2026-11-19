@@ -15,17 +15,16 @@ export function resolveExecutionCapacity(base: any, { automatic = false, env = p
   if (!automatic && configured === undefined) return { limits: base, capacityPolicy: 'fixed' };
   if (!Number.isInteger(machine.parallelism) || machine.parallelism < 1 || !Number.isFinite(machine.memoryBytes) || machine.memoryBytes <= 0) throw new Error('Invalid verification machine observation');
   const memoryGiB = machine.memoryBytes / 1024 ** 3;
-  // Four outer groups were observed to starve real browser, native-agent and
-  // handoff checks on a 15-CPU machine (load 12-21). Three is the stable
-  // machine-initial width; explicit larger widths remain possible but carry
-  // the observed contention risk.
-  const initial = Math.max(1, Math.min(3, Math.floor(machine.parallelism / 3), Math.floor(memoryGiB / 4)));
+  // Size the outer worker pool to this host. Independently preserve locks and
+  // limit concurrent workspace-heavy checks, which compete for disk and shared
+  // browser setup even on hosts with spare CPU and RAM.
+  const initial = Math.max(1, Math.min(Math.floor(machine.parallelism / 3), Math.floor(memoryGiB / 4)));
   const width = configured === undefined ? initial : Number(configured);
   // Four simultaneous workspace-heavy groups were observed to starve real
   // browser and process-handoff checks on this machine. Keep the global width
   // for lighter work and two-slot I/O overlap, but admit at most three heavy
   // groups at once.
-  const workspaceHeavy = Math.min(3, width);
+  const workspaceHeavy = Math.max(1, Math.min(width, Math.floor(machine.parallelism / 5), Math.floor(memoryGiB / 6)));
   // Keep two bounded heavy-I/O groups possible once three outer groups are
   // admitted; lower-width machines retain their smaller I/O capacity.
   const workspaceIo = width >= 3 ? Math.max(4, width) : width;

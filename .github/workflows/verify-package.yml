@@ -151,6 +151,8 @@ jobs:
           } >> "$GITHUB_ENV"
       - name: Fetch immutable data objects without checking them out
         run: git fetch --no-tags origin "${BUILDR_LOCAL_PACKAGE_COMMIT}"
+      - uses: ./.github/actions/setup-ripgrep
+        if: inputs.diagnostic_only || !inputs.preserve_only
       - name: Prepare package verifier
         run: node tools/verification/candidate-environment.ts prepare --profile base
       - name: Prepare independent proof verifier dependencies

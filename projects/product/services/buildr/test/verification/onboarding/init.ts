@@ -119,7 +119,8 @@ try {
   assert.equal(fs.existsSync(path.join(sourceOnly, 'AGENTS.md')), false, 'source-only init does not inject root rules');
   assert.equal(skills.workspaceId, workspace.id);
   assert.equal(skills.skills.some((item: any) => item.id === 'task-triage' && item.state === 'installed'), true);
-  assert.deepEqual(commands, { schemaVersion: 'buildr.commands/v1', commands: [] });
+  assert.equal(commands.schemaVersion, 'buildr.commands/v1');
+  assert.deepEqual(commands.commands.map(({ id, required, executable }: any) => ({ id, required, executable })), [{ id: 'ripgrep', required: false, executable: 'rg' }]);
   assert.equal(components.components.some((item: any) => item.id === 'openspec' && item.state === 'installed'), true);
   assert.equal(fs.existsSync(path.join(sourceOnly, '.agents')), false, 'source-only init must not render Agent runtime');
   assert.match(result.stdout, /仅初始化源资产的后续步骤/);

@@ -829,6 +829,7 @@ export interface PushbackEvent {
   sequence: number;
   mergedCount?: number;
   droppedCount?: number;
+  droppedEventType?: PushbackEventType;
 }
 export interface PushbackDeliveryResult { at: string; success: boolean; status?: number; kind: 'event' | 'test' }
 export interface PushbackSettingsView {

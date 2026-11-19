@@ -101,14 +101,12 @@
   },
   "dependencies": {
     "@buildr-ai/buildr-harness": "file:../buildr-harness",
-    "@vscode/ripgrep-universal": "1.18.0",
     "ajv": "8.18.0",
     "mysql2": "3.24.5",
     "node-sql-parser": "5.4.0",
     "yaml": "^2.9.0"
   },
   "bundleDependencies": [
-    "@vscode/ripgrep-universal",
     "ajv",
     "mysql2",
     "node-sql-parser",

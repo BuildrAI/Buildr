@@ -1,0 +1,16 @@
+name: Set up ripgrep for code-search verification
+description: Provide rg on PATH without bundling it in the Buildr application.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        if ! command -v rg >/dev/null; then
+          case "$RUNNER_OS" in
+            macOS) brew install ripgrep ;;
+            Windows) choco install ripgrep --yes --no-progress ;;
+            Linux) sudo apt-get update && sudo apt-get install --yes ripgrep ;;
+            *) echo "Unsupported runner OS: $RUNNER_OS" >&2; exit 1 ;;
+          esac
+        fi
+        rg --version

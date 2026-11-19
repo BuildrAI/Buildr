@@ -338,7 +338,12 @@ test('the periodic check raises run.stalled after continuous inactivity and clea
     const dropped = s.fake.calls.at(-1)!.body;
     assert.equal(dropped.type, 'events_dropped');
     assert.ok(dropped.droppedCount >= 1);
-    assert.equal(dropped.conversationId, '');
+    assert.equal(dropped.conversationId, 'conversation-one');
+    assert.equal(dropped.droppedEventType, 'run.stalled');
+    s.advance(2000);
+    s.pb.tick();
+    await s.flush();
+    assert.equal(s.fake.calls.length, 2, 'expiration of a drop notice does not generate another notice');
   } finally { s.close(); }
 });
 

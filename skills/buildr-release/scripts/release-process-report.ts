@@ -15,6 +15,7 @@ export function releaseReportFailures(value: any, phase: string): any[] {
     });
     for (const key of ['checks', 'steps', 'results', 'failures', 'result', 'ownerResult', 'cleanup', 'localSource', 'localPackage', 'artifactObservation']) visit(item[key]);
   };
+  failures.push(...(value.publicationFailures ?? []));
   visit(value);
   return failures;
 }
@@ -58,19 +59,58 @@ export function writeReleaseProcessReports(workspace: string, state: any, attemp
     const local = names.includes('buildr') && (state.targets?.versions?.buildr ?? state.version) === version
       && measurement && (!trackedSource || measurement.sourceCommit === trackedSource)
       && (!trackedArtifact || !measurement.artifactSha256 || measurement.artifactSha256 === trackedArtifact) ? measurement : null;
-    const current = { ...attempt, status, failures, localMeasurements: local, recoveryActions: (result.effects ?? []).filter((effect: any) => /repair|recovery|retry|rerun|reconcil/u.test(effect.type ?? '')) };
+    const current = { ...attempt, status, failures, operationStatus: result.status, runId: result.run?.id ?? null,
+      waitingForRemote: /^(publication|candidate)-(running|retry-unconfirmed|readback-required)$/u.test(result.status), localMeasurements: local, recoveryActions: (result.effects ?? []).filter((effect: any) => /repair|recovery|retry|rerun|reconcil/u.test(effect.type ?? '')) };
     const attempts = [...(previous?.attempts ?? []).filter((item: any) => item.id !== attempt.id), current];
-    const phases = attempts.flatMap((item: any) => item.phases);
+    const polling = new Map<string, any>();
+    const phases: any[] = [];
+    for (const item of attempts) for (const phase of item.phases) {
+      const observed = item.runId != null && item.waitingForRemote && /^(publication|candidate-verification|preflight)$/u.test(phase.phase);
+      if (!observed) { phases.push(phase); continue; }
+      const key = `${phase.phase}:${item.runId}`;
+      const summary = polling.get(key);
+      if (!summary) {
+        const entry = { ...phase, runId: item.runId, count: 1, operationStatus: item.operationStatus };
+        polling.set(key, entry);
+        phases.push(entry);
+      } else {
+        summary.count++;
+        summary.finishedAt = phase.finishedAt;
+        summary.durationSeconds = summary.durationSeconds == null || phase.durationSeconds == null ? null
+          : Math.round((summary.durationSeconds + phase.durationSeconds) * 1000) / 1000;
+        summary.status = phase.status;
+        summary.operationStatus = item.operationStatus;
+      }
+    }
+    for (const item of attempts) {
+      if (item.waitingForRemote || item.runId == null) continue;
+      for (const phase of ['publication', 'candidate-verification', 'preflight']) {
+        const summary = polling.get(`${phase}:${item.runId}`);
+        if (summary && item.finishedAt >= summary.finishedAt) {
+          summary.operationStatus = item.operationStatus;
+          summary.status = item.status;
+        }
+      }
+    }
+    for (const entry of polling.values()) {
+      const elapsed = Date.parse(entry.finishedAt) - Date.parse(entry.startedAt);
+      entry.elapsedSeconds = Number.isFinite(elapsed) && elapsed >= 0 ? elapsed / 1000 : null;
+    }
+    const remoteRuns = new Map<string, any>();
+    for (const item of attempts) if (item.remoteTiming?.jobs?.length) {
+      const key = `${item.remoteTiming.runId ?? item.runId ?? 'unknown'}:${item.remoteTiming.runAttempt ?? 'unknown'}`;
+      remoteRuns.set(key, item.remoteTiming);
+    }
     const value = { schemaVersion: 'buildr.release-process-report/v1', version, selectionId, status,
       startedAt: attempts[0].startedAt, finishedAt: attempt.finishedAt, timezone: 'UTC', phases,
       failures: attempts.flatMap((item: any, index: number) => item.failures.map((failure: any) => ({
         ...failure, at: item.finishedAt, recoveryActions: attempts.slice(index).flatMap((later: any) => later.recoveryActions),
       }))),
-      artifacts, localMeasurements: local, cleanup: result.cleanup ?? state.closeout?.cleanup ?? null, attempts,
+      artifacts, localMeasurements: local, remoteTiming: [...remoteRuns.values()], cleanup: result.cleanup ?? state.closeout?.cleanup ?? null, attempts,
     };
     const markdown = [`# 发版记录 ${version}`, '', `状态：${status}`, `开始：${value.startedAt}；结束：${value.finishedAt ?? 'unknown'}（UTC）`, '',
-      '| 阶段 | 状态 | 耗时（秒） |', '| --- | --- | --- |',
-      ...phases.map((item: any) => `| ${item.phase} | ${item.status} | ${item.durationSeconds ?? 'unknown'} |`),
+      '| 阶段 | 最终状态 | 次数 | 本机处理总耗时（秒） | 轮询跨度（秒） |', '| --- | --- | ---: | ---: | ---: |',
+      ...phases.map((item: any) => `| ${item.phase} | ${item.operationStatus ?? item.status} | ${item.count ?? 1} | ${item.durationSeconds ?? 'unknown'} | ${item.elapsedSeconds ?? '–'} |`),
       '', '## 本机耗时与资源',
       '不同层级的耗时可能重叠，不相加。源码记录保留原轮次，非本次执行计数；资源为采样下界，未测为 unknown。',
       '| 检查或阶段 | 状态 | 执行/原始耗时（毫秒） | 排队（毫秒） | 采样内存（MiB） |', '| --- | --- | ---: | ---: | ---: |',

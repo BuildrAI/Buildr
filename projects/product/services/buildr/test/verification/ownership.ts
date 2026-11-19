@@ -26,6 +26,7 @@ export const VERIFICATION_GOVERNED_REPOSITORY_INPUTS: any = Object.freeze([
   ".github/workflows/publish-dsh-plugin.yml",
   ".github/workflows/verify.yml",
   ".github/workflows/verify-package.yml",
+  ".github/actions/setup-ripgrep/action.yml",
   "skills/buildr-self-bootstrap-sync/",
   "components/workspace/buildr-self-bootstrap/"
 ]);
@@ -61,7 +62,7 @@ export const VERIFICATION_PRODUCTION_OWNER_ALLOWLIST: any = Object.freeze([
   }
 ].map((item: any) => Object.freeze(item)));
 
-export const VERIFICATION_SELECTION_METADATA_INPUTS: any = Object.freeze(['verification.yml', 'package.json', 'package-lock.json', '.github/workflows/verify.yml', '.github/workflows/verify-package.yml']);
+export const VERIFICATION_SELECTION_METADATA_INPUTS: any = Object.freeze(['verification.yml', 'package.json', 'package-lock.json', '.github/workflows/verify.yml', '.github/workflows/verify-package.yml', '.github/actions/setup-ripgrep/action.yml']);
 
 export function verificationStepOwnership(id: any, executor: any = null): any  {
   const value: any = VERIFICATION_STEP_OWNERSHIP[id];
