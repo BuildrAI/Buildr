@@ -597,9 +597,12 @@ export class ModelAccessApplication {
         if (legacyVariant) {
           for (const model of observation.models) {
             if (Object.hasOwn(prefs, model.id)) continue;
-            const prior = Object.entries(prefs).find(([id, preference]) =>
-              legacyVariant(id)?.family === model.id && preference.enabled && preference.contextWindow !== undefined);
-            if (prior) prefs[model.id] = { enabled: true, contextWindow: prior[1].contextWindow };
+            const priors = Object.entries(prefs).filter(([legacyId]) => legacyVariant(legacyId)?.family === model.id);
+            if (!priors.length) continue;
+            const enabled = priors.some(([, preference]) => preference.enabled);
+            const contextWindow = priors.find(([, preference]) => preference.enabled && preference.contextWindow !== undefined)?.[1].contextWindow
+              ?? priors.find(([, preference]) => preference.contextWindow !== undefined)?.[1].contextWindow;
+            prefs[model.id] = { enabled, ...(contextWindow !== undefined ? { contextWindow } : {}) };
           }
         }
         // A curated custom catalog stays authoritative; inspections only refresh availability.

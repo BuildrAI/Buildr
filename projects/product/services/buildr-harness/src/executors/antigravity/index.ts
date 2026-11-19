@@ -771,21 +771,26 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
   ): Promise<void> {
     if (model) {
       const probe = await this.verifyLiveAccountIdentity();
+      const nativeIds = probe.nativeModelIds ?? [];
       const legacy = antigravityModelVariant(model);
-      const series = probe.models.find(item => item.id === (legacy?.family ?? model));
-      const depth = legacy?.depth ?? reasoningEffort ?? series?.defaultReasoningEffort;
-      const variantId = `${series?.id}-${depth}`;
-      const variant = antigravityModelVariant(variantId) ? variantId : model;
-      if (!series || !probe.nativeModelIds?.includes(variant)) {
+      const series = probe.models.find(item => item.id === model)
+        ?? (legacy ? probe.models.find(item => item.id === legacy.family) : undefined);
+      const parsedLegacy = series && series.id !== model ? legacy : undefined;
+      const depth = parsedLegacy?.depth ?? reasoningEffort ?? series?.defaultReasoningEffort;
+      const hasNativeVariants = Boolean(series && nativeIds.some(id => antigravityModelVariant(id)?.family === series.id));
+      const candidateVariant = series && depth ? `${series.id}-${depth}` : undefined;
+      const isVariantModel = Boolean(hasNativeVariants && candidateVariant && antigravityModelVariant(candidateVariant));
+      const variant = isVariantModel ? candidateVariant! : model;
+      if (!series || !nativeIds.includes(variant)) {
         throw new ExecutorInputRejected(`antigravity_model_unavailable: Antigravity 当前账号不支持模型 ${variant}。`);
       }
       if (findConfigOption(handle.sessionPayload, 'model')?.values.includes(series.id)
-        && (antigravityModelVariant(variant) || !findConfigOption(handle.sessionPayload, 'thought_level')?.values.length || !series.reasoningEfforts?.length)) {
-        await this.applySeriesOptions(handle, sessionId, series.id, antigravityModelVariant(variant) ? depth : undefined);
+        && (isVariantModel || !findConfigOption(handle.sessionPayload, 'thought_level')?.values.length || !series.reasoningEfforts?.length)) {
+        await this.applySeriesOptions(handle, sessionId, series.id, isVariantModel ? depth : undefined);
         return;
       }
       model = variant;
-      if (antigravityModelVariant(variant)) reasoningEffort = undefined;
+      if (isVariantModel) reasoningEffort = undefined;
       if (handle.sessionPayload?.models?.currentModelId !== model) {
         let updated: any;
         try {

@@ -411,6 +411,113 @@ test('Antigravity groups native variants and uses the same series on consecutive
   assert.ok(history.filter(item => item.role === 'assistant' && item.kind === 'message').every(item => item.id.startsWith('message:')));
 });
 
+test('Antigravity generically groups Gemini 4 Neon variants across series-catalog and per-variant model catalogs', async t => {
+  const catalog = [
+    { modelId: 'gemini-4-neon-high', name: 'Gemini 4 Neon (High)' },
+    { modelId: 'gemini-4-neon-xhigh', name: 'Gemini 4 Neon (XHigh)' },
+    { modelId: 'gemini-4-neon-medium', name: 'Gemini 4 Neon (Medium)' },
+    { modelId: 'gemini-4-neon-low', name: 'Gemini 4 Neon (Low)' },
+    { modelId: 'gemini-4-carbon-low', name: 'Gemini 4 Carbon (Low)' },
+    { modelId: 'gemini-4-carbon-medium', name: 'Gemini 4 Carbon (Medium)' },
+    { modelId: 'gemini-pro-orchestrator-neon', name: 'Orchestrator (Neon)' },
+  ];
+
+  // 1. series-catalog mode maps grouped series + reasoningEffort to configOptions (model + thought_level)
+  const hSeries = await createHarness(t, { scenario: 'series-catalog', autoAllow: true, models: catalog });
+  const rtSeries = await hSeries.openRuntime();
+  const groupedModels = await rtSeries.models();
+  const neon = groupedModels.find(model => model.id === 'gemini-4-neon');
+  const carbon = groupedModels.find(model => model.id === 'gemini-4-carbon');
+  const orchestrator = groupedModels.find(model => model.id === 'gemini-pro-orchestrator-neon');
+  assert.deepEqual(neon, {
+    id: 'gemini-4-neon',
+    label: 'Gemini 4 Neon',
+    isDefault: true,
+    reasoningEfforts: [
+      { id: 'low', label: 'Low' },
+      { id: 'medium', label: 'Medium' },
+      { id: 'high', label: 'High' },
+      { id: 'xhigh', label: 'Extra' },
+    ],
+    defaultReasoningEffort: 'high',
+  });
+  assert.deepEqual(carbon, {
+    id: 'gemini-4-carbon',
+    label: 'Gemini 4 Carbon',
+    reasoningEfforts: [
+      { id: 'low', label: 'Low' },
+      { id: 'medium', label: 'Medium' },
+    ],
+    defaultReasoningEffort: 'medium',
+  });
+  assert.deepEqual(orchestrator, {
+    id: 'gemini-pro-orchestrator-neon',
+    label: 'Orchestrator (Neon)',
+  });
+
+  const ctxSeries = await rtSeries.createContext({ cwd: hSeries.cwd, permissionMode: 'default' });
+  for (const [clientRequestId, reasoningEffort] of [['neon-xhigh', 'xhigh'], ['neon-low', 'low']] as const) {
+    const events: ExecutorEvent[] = [];
+    await rtSeries.send({
+      contextRef: ctxSeries,
+      cwd: hSeries.cwd,
+      model: 'gemini-4-neon',
+      reasoningEffort,
+      text: clientRequestId,
+      images: [],
+      clientRequestId,
+      onEvent: event => events.push(event),
+    });
+    assert.ok(events.some(event => event.type === 'completed' && event.status === 'completed'));
+  }
+  await assert.rejects(
+    () => rtSeries.send({
+      contextRef: ctxSeries,
+      cwd: hSeries.cwd,
+      model: 'gemini-4-carbon',
+      reasoningEffort: 'xhigh',
+      text: 'unsupported-depth',
+      images: [],
+      clientRequestId: 'neon-unsupported-depth',
+      onEvent: () => {},
+    }),
+    ExecutorInputRejected,
+  );
+  const seriesConfigs = await hSeries.readFixtureJsonl('fixture-configs.jsonl');
+  assert.deepEqual(
+    seriesConfigs.filter(row => row.configId === 'thought_level').map(row => row.value),
+    ['xhigh', 'low'],
+  );
+
+  // 2. Per-variant catalog mode maps grouped series + reasoningEffort (and legacy variant IDs) to session/set_model
+  const hVariant = await createHarness(t, { autoAllow: true, models: catalog });
+  const rtVariant = await hVariant.openRuntime();
+  const ctxVariant = await rtVariant.createContext({ cwd: hVariant.cwd, permissionMode: 'default' });
+  for (const [clientRequestId, model, reasoningEffort] of [
+    ['variant-xhigh', 'gemini-4-neon', 'xhigh'],
+    ['variant-low', 'gemini-4-neon', 'low'],
+    ['variant-legacy', 'gemini-4-neon-high', undefined],
+  ] as const) {
+    const events: ExecutorEvent[] = [];
+    await rtVariant.send({
+      contextRef: ctxVariant,
+      cwd: hVariant.cwd,
+      model,
+      ...(reasoningEffort ? { reasoningEffort } : {}),
+      text: clientRequestId,
+      images: [],
+      clientRequestId,
+      onEvent: event => events.push(event),
+    });
+    assert.ok(events.some(event => event.type === 'completed' && event.status === 'completed'));
+  }
+  const variantConfigs = await hVariant.readFixtureJsonl('fixture-configs.jsonl');
+  assert.deepEqual(
+    variantConfigs.filter(row => row.method === 'session/set_model').map(row => row.modelId),
+    ['gemini-4-neon-xhigh', 'gemini-4-neon-low', 'gemini-4-neon-high'],
+  );
+});
+
 test('3.3: pre-turn account identity verification rejects terminal account switch and corrupted identity with zero work input', async t => {
   const h = await createHarness(
     t,
