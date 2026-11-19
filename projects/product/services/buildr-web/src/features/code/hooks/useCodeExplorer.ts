@@ -187,11 +187,24 @@ export function useCodeExplorer(workspaceId:string,workspaceRoot:string|null|und
         const member=next.file.checkoutId?value.worktrees.find(item=>item.repositoryId===repositoryId&&item.id===next.file!.checkoutId):possible.length===1?possible[0]:undefined;
         if(!member&&!next.file.checkoutId&&!next.file.commitHash){setCatalogError('任务文件的工作树无法唯一确定，请从目录选择实际来源。');return;}
         if(!value.selectedRepositoryIds.includes(repositoryId))setScope([...value.selectedRepositoryIds,repositoryId]);
-        if(member)setWorktreeScope(member.groupId);
+        if(member)setWorktreeScope(observation?.partial?'checkout:'+member.id:member.groupId);
         if(next.file.commitHash&&(next.file.checkoutId||member?.id)){
           const target={repositoryId,checkoutId:next.file.checkoutId||member!.id};sourceChoice.select('explorer',[target],target);
         }
         open({repositoryId,checkoutId:next.file.checkoutId||member?.id,commitHash:next.file.commitHash},next.file.path,next.file.line,true,undefined,observation?.file);
+        if(observation?.partial){
+          // Give the body and its ancestors the first read slots. Complete the
+          // selectors after commit; this result does not apply a new selection.
+          const group='checkout:'+observation.target.checkoutId;
+          requestAnimationFrame(()=>requestAnimationFrame(()=>{
+            if(version!==epoch.current||catalogRequest!==catalogSequence.current)return;
+            void run(signal=>codeApi.repositories(workspaceId,undefined,signal)).then(full=>{
+              if(version!==epoch.current||catalogRequest!==catalogSequence.current)return;
+              latestCatalog.current=full;
+              setCatalog(previous=>retainCodeSelections(full,previous,current.current.worktreeScope||group));
+            }).catch(error=>{if(version===epoch.current&&catalogRequest===catalogSequence.current)setCatalogError(failure(error));});
+          }));
+        }
       }
     }catch(error){if(version===epoch.current&&entrySequence.current===sequence&&(sourceChoice.getSelection()?.sequence||0)===sharedSequence)setCatalogError(failure(error));}
   },[workspaceId,run,open,publishFilters,sourceChoice.getSelection,sourceChoice.select]);

@@ -1,12 +1,13 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { createCodeDiscardApplication } from './code-discard-application.ts';
 import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
-import { codeFailure, codeGit, gitCommonDirectory, readCodeDirectory, type CodeSource } from '../infrastructure/code-file-reader.ts';
+import { codeFailure, codeGit, gitCommonDirectory, gitCommonDirectoryAsync, readCodeDirectory, type CodeSource } from '../infrastructure/code-file-reader.ts';
 import { readCodeFile } from '../infrastructure/code-file-content.ts';
 import { searchCode } from '../infrastructure/code-search.ts';
 import { taskActionId } from '../../task/application/task-validation.ts';
 import { createGitCommitReader } from '../../task/commits/infrastructure/git-commit-reader.ts';
-import { gitCheckoutReadId } from '../../../infrastructure/git/checkout-read-identity.ts';
+import { gitCheckoutReadId, observeGitCheckoutReadIdentityAsync } from '../../../infrastructure/git/checkout-read-identity.ts';
 import { readCodeWorktreeCatalog, readSourceControlTaskAssociations, type WorktreeCatalogDependencies } from '../infrastructure/code-worktree-catalog.ts';
 import { createSourceControlApplication } from './source-control-application.ts';
 import { createCodeBranchApplication } from './code-branch-application.ts';
@@ -102,7 +103,45 @@ export function createCodeApplication(dependencies:CodeDependencies) {
     }
     return {repositories:items,selectedRepositoryIds:[...selected],scopeReason,diagnostics};
   }
-  function repositories(root:string,taskId?:string) {
+  async function targetRepositories(root:string,target:string) {
+    const unavailable=()=>codeFailure('code_target_unconfirmed','未能唯一确认目标文件的工作树。',404);
+    if(!path.isAbsolute(target)||/[\0\r\n]/.test(target)||target.split(/[\\/]/).some(part=>part==='..'||part.toLowerCase()==='.git'))throw unavailable();
+    const version=dependencies.assetCatalogVersion?.(root);
+    const registered=dependencies.assetCatalog(root).repositories;
+    let identity;
+    try {
+      const checkoutRoot=codeGit(path.dirname(target),['rev-parse','--show-toplevel']).toString().trim();
+      identity=await observeGitCheckoutReadIdentityAsync(checkoutRoot);
+    } catch { throw unavailable(); }
+    // Only common-directory probes run across registrations. No task evidence or
+    // peer checkout inventory is needed to decide this target's repository.
+    const matches:Repository[]=[];
+    for(let from=0;from<registered.length;from+=8){
+      await Promise.all(registered.slice(from,from+8).map(async repo=>{
+        try{
+          const common=await gitCommonDirectoryAsync(dependencies.resolveSourceRoot(root,repo.source));
+          if(sameFilesystemPath(common,identity.commonDirectory))matches.push(repo);
+        }catch{/* An unrelated unavailable source is not a candidate. */}
+      }));
+      if(matches.length>1)throw unavailable();
+    }
+    if(matches.length!==1)throw unavailable();
+    const repositoryId=matches[0].id;
+    const scope=repositoryScope(root,undefined,repositoryId);
+    const repo=scope.repositories[0];
+    if(!repo?.available||!sameFilesystemPath(repositoryCommonDirectories.get(repo)||'',identity.commonDirectory))throw unavailable();
+    const observed=resolveCodeWorktree(repo.location,repo.id,identity.id);
+    if(!sameFilesystemPath(observed.location,identity.root)||version!==dependencies.assetCatalogVersion?.(root))throw unavailable();
+    const groupId=observed.isRegistered?'main':'worktree:'+identity.id;
+    const kind=observed.isRegistered?'main' as const:'worktree' as const;
+    return {...scope,selectedRepositoryIds:[repo.id],selectedWorktreeGroupIds:[groupId],worktreeGroups:[{id:groupId,name:observed.name,kind,taskId:null,repositoryIds:[repo.id]}],worktrees:[{id:identity.id,repositoryId:repo.id,path:identity.root,branch:observed.branch,available:true,isMain:observed.isMain,kind,groupId,taskId:null}]};
+  }
+  function repositories(root:string,taskId?:string):ReturnType<typeof fullRepositories>;
+  function repositories(root:string,taskId:string|undefined,targetPath:string|undefined):ReturnType<typeof fullRepositories>|ReturnType<typeof targetRepositories>;
+  function repositories(root:string,taskId?:string,targetPath?:string) {
+    return targetPath===undefined?fullRepositories(root,taskId):targetRepositories(root,targetPath);
+  }
+  function fullRepositories(root:string,taskId?:string) {
     const scope=repositoryScope(root,taskId);
     const worktreeCatalog=readCodeWorktreeCatalog(root,scope.repositories,{...dependencies,observedCommonDirectory:repository=>repositoryCommonDirectories.get(repository)},taskId);
     return {...scope,...worktreeCatalog,diagnostics:[...scope.diagnostics,...worktreeCatalog.diagnostics]};

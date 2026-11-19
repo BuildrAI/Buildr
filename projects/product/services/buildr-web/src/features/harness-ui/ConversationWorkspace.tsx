@@ -5,13 +5,30 @@ import {resolveTaskBriefReference, taskBriefHref} from '../../lib/taskBriefLinks
 import {readExplorerFile} from '../code/code-file-read';
 import {offerCodeOpen} from '../code/code-open-observation';
 import {codeApi} from '../code/api/code-api';
-import {conversationFileTarget} from './conversation-files';
+import type {ApiError} from '../../api';
+import {conversationAbsoluteFile, conversationFileTarget} from './conversation-files';
 import {useAgentConversations} from './AgentConversationsContext';
 import type {ConversationView} from './types';
 import {ConversationTaskLink} from './ConversationTaskLink';
 import {BuildrParticipation} from './BuildrParticipation';
 import {conversationTaskLinks} from './conversation-associations';
 import './harness-ui.css';
+
+async function locate(workspaceId:string,cwd:string,path:string,taskId:string|undefined,signal:AbortSignal){
+  const absolute=conversationAbsoluteFile(cwd,path);
+  if(!absolute)throw new Error('不能确认文件的准确工程来源。');
+  try {
+    const catalog=await codeApi.targetRepositories(workspaceId,absolute,signal);
+    const target=conversationFileTarget(cwd,path,catalog);
+    if(target)return {target,catalog,partial:true};
+  } catch (error) {
+    if((error as ApiError).code!=='code_target_unconfirmed')throw error;
+  }
+  const catalog=await codeApi.repositories(workspaceId,taskId,signal);
+  const target=conversationFileTarget(cwd,path,catalog);
+  if(!target)throw new Error('不能确认文件的准确工程来源。');
+  return {target,catalog,partial:false};
+}
 
 type Workspace = {id: string; name: string; rootPath: string};
 export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {defaultWorkspaceId: string | null; workspaces: Workspace[]}) {
@@ -29,11 +46,8 @@ export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {default
   const files = useMemo<HarnessDirectoryFiles>(() => ({
     async readFile(conversation, path, signal) {
       const observed = await current.current.context.api.read(conversation.workspaceId, conversation.id, signal);
-      const catalog = await codeApi.repositories(observed.workspaceId, observed.taskId);
-      const file = conversationFileTarget(observed.cwd, path, catalog);
-      if (!file) throw new Error('不能确认文件的准确工程来源。');
-      signal.throwIfAborted();
-      return codeApi.file(observed.workspaceId, file);
+      const {target}=await locate(observed.workspaceId,observed.cwd,path,observed.taskId,signal);
+      return codeApi.explorerFile(observed.workspaceId,target,signal);
     },
     async openFile(conversation, path, literal, linkSignal) {
       opening.current?.abort();
@@ -42,16 +56,14 @@ export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {default
       opening.current = request;
       try {
         const observed = await current.current.context.api.read(conversation.workspaceId, conversation.id, signal);
-        const catalog = await codeApi.repositories(observed.workspaceId, observed.taskId, signal);
         const suffix = literal ? null : path.match(/(?::|#L)([1-9][0-9]*)$/);
-        const target = conversationFileTarget(observed.cwd, suffix ? path.slice(0, suffix.index) : path, catalog);
-        if (!target) throw new Error('不能确认文件的准确工程来源。');
+        const {target,catalog,partial}=await locate(observed.workspaceId,observed.cwd,suffix ? path.slice(0,suffix.index) : path,observed.taskId,signal);
         const line = suffix ? Number(suffix[1]) : undefined;
         if (line !== undefined && !Number.isSafeInteger(line)) throw new Error('文件行号无效。');
         const file = {...target, line};
         const observation = await readExplorerFile(observed.workspaceId, file, signal, {editorFile:codeApi.editorFile,file:codeApi.explorerFile});
         signal.throwIfAborted();
-        const observationId = offerCodeOpen(observed.workspaceId, file, catalog, observation);
+        const observationId = offerCodeOpen(observed.workspaceId, file, catalog, observation, partial);
         const {navigate, location, context} = current.current;
         navigate(`/workspaces/${encodeURIComponent(observed.workspaceId)}/code/explorer`, {state: {codeEntry: {file, observationId, from: {pathname: location.pathname, search: location.search, hash: location.hash, state: location.state}}}});
         context.setFull(false);

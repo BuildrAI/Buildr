@@ -19,7 +19,7 @@ export const CODE_HTTP_REQUESTS=Object.freeze({
   sourceControlWatch:query('CodeSourceControlWatchQuery',{cursor:{type:'string',minLength:1,maxLength:100,pattern:'^[a-f0-9-]{36}:[0-9]+$'}},[]),
   editorFile:{...query('CodeEditorFileQuery',{kind:{enum:['code','project']},repositoryId:text,checkoutId,projectCode:text,filePath:text},['kind','filePath']),oneOf:[{properties:{kind:{const:'code'},repositoryId:text,checkoutId,projectCode:false},required:['repositoryId','checkoutId']},{properties:{kind:{const:'project'},projectCode:text,repositoryId:false,checkoutId:false},required:['projectCode']}]},
   saveFile:schema('CodeSaveFileRequest',{selector:editorSelector,expectedFileId:text,expectedSourceRevision:revision,expectedRevision:revision,content:string}),
-  repositories:query('CodeRepositoriesQuery',{taskId:text},[]),
+  repositories:query('CodeRepositoriesQuery',{taskId:text,targetPath:{type:'string',minLength:1,maxLength:8192}},[]),
   directory:query('CodeDirectoryQuery',{...locationQuery,filePath:string,showIgnored:{enum:['true','false']}},['repositoryId']),
   file:query('CodeFileQuery',{...locationQuery,filePath:text,page:{type:'string',pattern:'^(?:0|[1-9][0-9]*)$'},line:{type:'string',pattern:'^[1-9][0-9]*$'},matchQuery:{type:'string',minLength:1,maxLength:200},expectedRevision:{type:'string',minLength:1,maxLength:200}},['repositoryId','filePath']),
   search:query('CodeSearchQuery',{...locationQuery,query:{type:'string',minLength:1,maxLength:200},mode:{enum:['name','content']},showIgnored:{enum:['true','false']}},['repositoryId','query']),

@@ -37,6 +37,7 @@ const request = <T,>(workspaceId:string,operation:string,input:Record<string,unk
 const explorerRead = (input: CodeReadInput) => input.checkoutId && !input.taskId && !input.commitHash
   ? {...input, worktreeId:input.checkoutId} : input;
 export const codeApi = {
+  targetRepositories:(id:string,targetPath:string,signal?:AbortSignal)=>request<CodeCatalog>(id,'repositories',{targetPath},signal),
   repositories:(id:string,taskId?:string,signal?:AbortSignal)=>request<CodeCatalog>(id,'repositories',{taskId},signal),
   directory:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeDirectory>(id,'directory',explorerRead(input),signal),
   file:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeFile>(id,'file',input,signal),
