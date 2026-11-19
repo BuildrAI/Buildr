@@ -411,8 +411,21 @@ export async function runPublicationJourney({ t, page, runtime, workspaceRoot, w
     await page.goto(`${workspaceUrl}/articles/browser-article`);
     await visible().locator('#publication-title').waitFor({ state: 'visible' });
     assert.equal(await visible().locator('#publication-title').innerText(), '浏览器测试文章');
-    await visible().locator('.publication-body .markdown-diagram-view svg').waitFor();
-    assert.match(await visible().locator('.publication-body .markdown-diagram-view').innerText(), /本地文章图示/);
+    const articleDiagramView = visible().locator('.publication-body .markdown-diagram-view');
+    await articleDiagramView.locator('svg').waitFor();
+    assert.match(await articleDiagramView.innerText(), /本地文章图示/);
+    const articleMetrics = await articleDiagramView.evaluate((node: HTMLElement) => ({
+      clientW: node.clientWidth,
+      scrollW: node.scrollWidth,
+      clientH: node.clientHeight,
+      scrollH: node.scrollHeight,
+    }));
+    assert.ok(articleMetrics.scrollW <= articleMetrics.clientW && articleMetrics.scrollH <= articleMetrics.clientH, `文章内 Mermaid 图示不应产生滚动条: ${JSON.stringify(articleMetrics)}`);
+    await visible().locator('.publication-body .markdown-diagram[data-mermaid-state="rendered"] button[data-zoom-diagram]').click();
+    const articlePreview = page.getByRole('dialog', { name: '流程图预览', exact: true });
+    await articlePreview.waitFor({ state: 'visible' });
+    await page.keyboard.press('Escape');
+    await articlePreview.waitFor({ state: 'hidden' });
     const image = visible().locator('.publication-body img');
     await image.waitFor({ state: 'visible' });
     await page.waitForFunction(() => {

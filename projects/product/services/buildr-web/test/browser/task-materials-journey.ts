@@ -91,10 +91,29 @@ export async function runTaskMaterialsJourney({ t, page, runtime, materials, wor
     await refresh();
     await body().locator('.markdown-diagram-view svg').waitFor();
     try {
-      const metrics = await body().locator('.markdown-diagram-view').evaluate((element: HTMLElement) => ({ width: element.clientWidth, scroll: element.scrollWidth, right: element.getBoundingClientRect().right, viewport: innerWidth }));
-      assert.ok(metrics.scroll > metrics.width, '宽图在图容器内滚动');
+      const metrics = await body().locator('.markdown-diagram-view').evaluate((element: HTMLElement) => {
+        const svg = element.querySelector('svg')!;
+        const rect = svg.getBoundingClientRect();
+        return {
+          clientWidth: element.clientWidth,
+          scrollWidth: element.scrollWidth,
+          clientHeight: element.clientHeight,
+          scrollHeight: element.scrollHeight,
+          right: element.getBoundingClientRect().right,
+          viewport: innerWidth,
+          svgWidth: rect.width,
+          svgHeight: rect.height,
+        };
+      });
+      assert.ok(metrics.scrollWidth <= metrics.clientWidth && metrics.scrollHeight <= metrics.clientHeight, `窄屏文档 Mermaid 图示不应出现滚动条: ${JSON.stringify(metrics)}`);
+      assert.ok(metrics.svgWidth > 0 && metrics.svgWidth <= metrics.clientWidth + 1 && metrics.svgHeight > 0, `窄屏文档 Mermaid 图示应等比适配宽度: ${JSON.stringify(metrics)}`);
       assert.ok(metrics.right <= metrics.viewport + 1);
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth) <= baselineWidth + 1, '宽图不得增加页面横向溢出');
+      await body().locator('.markdown-diagram[data-mermaid-state="rendered"] button[data-zoom-diagram]').click();
+      const previewDialog = page.getByRole('dialog', { name: '流程图预览', exact: true });
+      await previewDialog.waitFor({ state: 'visible' });
+      await page.keyboard.press('Escape');
+      await previewDialog.waitFor({ state: 'hidden' });
       await capture(page, 'mermaid-narrow.png');
     } finally { await page.setViewportSize({ width: 1440, height: 1000 }); }
 

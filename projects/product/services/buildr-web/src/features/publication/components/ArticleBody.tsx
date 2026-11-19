@@ -1,4 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { MarkdownDiagramPreview } from '../../../components/MarkdownDiagramPreview';
+import { bindMarkdownDiagramPreviews, type MarkdownDiagramTarget } from '../../../lib/markdownDiagramPreviews';
 import { renderMarkdown } from '../../../markdown';
 import { renderMarkdownDiagrams } from '../../../lib/markdownDiagrams';
 import { publicationAssetUrl, readingContent } from '../publication-model';
@@ -13,6 +15,7 @@ type Props = {
 export function ArticleBody({ content, workspaceId, projectCode, publicationId, sourceTaskId, onHeadings, onRelativeLink, onScrollToReady }: Props) {
   const ref = useRef<HTMLDivElement>(null), callbacks = useRef({ onHeadings, onRelativeLink, onScrollToReady });
   callbacks.current = { onHeadings, onRelativeLink, onScrollToReady };
+  const [diagramPreview, setDiagramPreview] = useState<MarkdownDiagramTarget | null>(null);
   useEffect(() => {
     if (!ref.current) return;
     const rendered = renderMarkdown(readingContent(content), {
@@ -35,8 +38,20 @@ export function ArticleBody({ content, workspaceId, projectCode, publicationId, 
         link.addEventListener('click', event => { event.preventDefault(); callbacks.current.onRelativeLink?.(raw); });
       }
     }
+    bindMarkdownDiagramPreviews(rendered, () => (diagram) => setDiagramPreview(diagram));
     ref.current.replaceChildren(rendered);
     return renderMarkdownDiagrams(rendered);
   }, [content, workspaceId, projectCode, publicationId, sourceTaskId]);
-  return <div ref={ref} className="publication-body" data-view="rendered" />;
+  return (
+    <>
+      <div ref={ref} className="publication-body" data-view="rendered" />
+      {diagramPreview && (
+        <MarkdownDiagramPreview
+          svg={diagramPreview.svg}
+          source={diagramPreview.source}
+          onClose={() => setDiagramPreview(null)}
+        />
+      )}
+    </>
+  );
 }

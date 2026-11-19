@@ -54,7 +54,7 @@ test('wide diagrams, code and tables scroll locally without widening the convers
   }
 });
 
-test('rendered Mermaid diagrams fit proportionally without scrollbars in message stream while preserving local scroll and boundary wheel chaining in reader', {timeout: 30000}, async () => {
+test('rendered Mermaid diagrams fit proportionally without scrollbars in message stream and fit container width without clipping in document reader', {timeout: 30000}, async () => {
   const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
   const vite = await createViteServer({
     root: serviceRoot,
@@ -118,7 +118,7 @@ test('rendered Mermaid diagrams fit proportionally without scrollbars in message
         </script></body></html>`);
       return;
     }
-    if (req.url === '/__overflow-wheel-test__') {
+    if (req.url === '/__document-width-fit-test__') {
       res.writeHead(200, {'content-type': 'text/html; charset=utf-8'});
       res.end(`<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/src/shared.css">
         <style>
@@ -126,8 +126,7 @@ test('rendered Mermaid diagrams fit proportionally without scrollbars in message
           body{margin:0}
           .knowledge-reader-shell{width:100%;height:720px;display:flex;flex-direction:column}
           .knowledge-reader-body{flex:1;min-height:0;overflow-y:auto;padding:24px}
-          .markdown-diagram-view{max-height:220px}
-          .lead{height:300px}
+          .lead{height:120px}
           .spacer{height:1400px}
         </style></head><body>
         <section class="knowledge-reader-shell"><div class="knowledge-reader-body">
@@ -139,21 +138,35 @@ test('rendered Mermaid diagrams fit proportionally without scrollbars in message
           const mount = document.getElementById('mount');
           const markdown = [
             '\`\`\`mermaid',
-            'graph TD',
-            'A[步骤一] --> B[步骤二]',
+            'sequenceDiagram',
+            'A->>B: 大型时序图',
             '\`\`\`',
             '',
             '\`\`\`mermaid',
             'graph LR',
-            'C[紧凑] --> D[结束]',
+            'C[超宽矮图] --> D[结束]',
+            '\`\`\`',
+            '',
+            '\`\`\`mermaid',
+            'graph TD',
+            'E[窄高图] --> F[结束]',
+            '\`\`\`',
+            '',
+            '\`\`\`mermaid',
+            'graph LR',
+            'G[紧凑] --> H[结束]',
             '\`\`\`',
           ].join('\\n');
           const view = renderMarkdown(markdown);
           mount.replaceChildren(view);
           const blocks = [...mount.querySelectorAll('.markdown-diagram')];
-          const tallSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 920" width="420" height="920"><rect width="420" height="920" fill="#fff"/><text x="20" y="40">高流程图顶部</text><text x="20" y="880">高流程图底部</text></svg>';
-          const compactSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 110" width="320" height="110"><rect width="320" height="110" fill="#fff"/><text x="20" y="55">紧凑流程图</text></svg>';
-          [tallSvg, compactSvg].forEach((svg, index) => {
+          const svgs = [
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 1500" width="100%" style="max-width:1100px"><rect width="1100" height="1500" fill="#fff"/><text x="20" y="40">大型时序图顶部</text><text x="20" y="1460">大型时序图底部</text></svg>',
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 300" width="1600" height="300"><rect width="1600" height="300" fill="#fff"/></svg>',
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 920" width="420" height="920"><rect width="420" height="920" fill="#fff"/><text x="20" y="40">高流程图顶部</text><text x="20" y="880">高流程图底部</text></svg>',
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 110" width="320" height="110"><rect width="320" height="110" fill="#fff"/><text x="20" y="55">紧凑流程图</text></svg>',
+          ];
+          svgs.forEach((svg, index) => {
             const block = blocks[index];
             const graph = block.querySelector('.markdown-diagram-view');
             graph.hidden = false;
@@ -161,7 +174,7 @@ test('rendered Mermaid diagrams fit proportionally without scrollbars in message
             block.setAttribute('data-mermaid-state', 'rendered');
             rememberBlockDiagramSvg(block, svg);
           });
-          window.__overflowReady = true;
+          window.__documentFitReady = true;
         </script></body></html>`);
       return;
     }
@@ -209,66 +222,68 @@ test('rendered Mermaid diagrams fit proportionally without scrollbars in message
     const streamTopAfterWheel = await page.evaluate(() => document.querySelector('.ac-stream')!.scrollTop);
     assert.ok(streamTopAfterWheel > 0, `wheel over fitted stream diagram must scroll .ac-stream directly: ${streamTopAfterWheel}`);
 
-    await page.goto(`http://127.0.0.1:${port}/__overflow-wheel-test__`);
-    await page.waitForFunction(() => Boolean((window as Window & {__overflowReady?: boolean}).__overflowReady));
+    await page.goto(`http://127.0.0.1:${port}/__document-width-fit-test__`);
+    await page.waitForFunction(() => Boolean((window as Window & {__documentFitReady?: boolean}).__documentFitReady));
 
-    const firstRect = await page.locator('.markdown-diagram-view').nth(0).boundingBox();
-    assert.ok(firstRect);
-    await page.mouse.move(firstRect.x + firstRect.width / 2, firstRect.y + firstRect.height / 2);
+    const docMetrics = await page.evaluate(() => {
+      const views = [...document.querySelectorAll('.markdown-diagram-view')];
+      return views.map(view => {
+        const svg = view.querySelector('svg')!;
+        const vb = svg.viewBox.baseVal;
+        const rect = svg.getBoundingClientRect();
+        return {
+          clientW: view.clientWidth,
+          scrollW: view.scrollWidth,
+          clientH: view.clientHeight,
+          scrollH: view.scrollHeight,
+          svgW: rect.width,
+          svgH: rect.height,
+          vbRatio: vb.width / vb.height,
+          rectRatio: rect.width / rect.height,
+        };
+      });
+    });
+    docMetrics.forEach((metric, index) => {
+      assert.ok(metric.scrollW <= metric.clientW, `document diagram #${index} must not scroll horizontally: ${JSON.stringify(metric)}`);
+      assert.ok(metric.scrollH <= metric.clientH, `document diagram #${index} must not scroll vertically: ${JSON.stringify(metric)}`);
+      assert.ok(Math.abs(metric.rectRatio - metric.vbRatio) < 0.03, `document diagram #${index} must preserve aspect ratio: ${JSON.stringify(metric)}`);
+    });
+    assert.ok(docMetrics[0].svgW > 800 && docMetrics[0].svgH > 1100, `large sequence diagram in reader should fill width and expand naturally without height cap: ${JSON.stringify(docMetrics[0])}`);
+    assert.ok(docMetrics[1].svgW > 800 && docMetrics[1].svgH < 200, `ultra-wide short diagram in reader should scale proportionally to fit width: ${JSON.stringify(docMetrics[1])}`);
+    assert.ok(docMetrics[2].svgW >= 419 && docMetrics[2].svgW <= 421 && docMetrics[2].svgH >= 919 && docMetrics[2].svgH <= 921, `narrow tall diagram in reader should keep intrinsic size without clipping or stretching: ${JSON.stringify(docMetrics[2])}`);
+    assert.ok(docMetrics[3].svgW >= 319 && docMetrics[3].svgW <= 321 && docMetrics[3].svgH >= 109 && docMetrics[3].svgH <= 111, `compact diagram in reader should keep intrinsic size without stretching: ${JSON.stringify(docMetrics[3])}`);
 
-    await page.mouse.wheel(0, 120);
+    const firstDocRect = await page.locator('.markdown-diagram-view').nth(0).boundingBox();
+    assert.ok(firstDocRect);
+    const hitY = Math.max(firstDocRect.y + 40, Math.min(firstDocRect.y + firstDocRect.height / 2, 720 - 40));
+    await page.mouse.move(firstDocRect.x + firstDocRect.width / 2, hitY);
+    await page.mouse.wheel(0, 180);
     await page.waitForTimeout(80);
-    const insideScroll = await page.evaluate(() => ({
+    const docDown = await page.evaluate(() => ({
       graphTop: document.querySelectorAll('.markdown-diagram-view')[0]!.scrollTop,
-      streamTop: document.querySelector('.knowledge-reader-body')!.scrollTop,
+      readerTop: document.querySelector('.knowledge-reader-body')!.scrollTop,
     }));
-    assert.ok(insideScroll.graphTop > 0, `expected tall diagram to scroll internally first: ${JSON.stringify(insideScroll)}`);
-    assert.equal(insideScroll.streamTop, 0, JSON.stringify(insideScroll));
+    assert.equal(docDown.graphTop, 0, JSON.stringify(docDown));
+    assert.ok(docDown.readerTop > 0, `wheel down over tall reader diagram must scroll outer reader directly: ${JSON.stringify(docDown)}`);
 
-    for (let step = 0; step < 8; step += 1) {
-      await page.mouse.wheel(0, 180);
-      await page.waitForTimeout(25);
-    }
-    const bottomChain = await page.evaluate(() => {
-      const graph = document.querySelectorAll('.markdown-diagram-view')[0]!;
-      const stream = document.querySelector('.knowledge-reader-body')!;
-      return {
-        graphTop: graph.scrollTop,
-        graphMax: graph.scrollHeight - graph.clientHeight,
-        streamTop: stream.scrollTop,
-      };
-    });
-    assert.ok(bottomChain.graphTop >= bottomChain.graphMax - 2, JSON.stringify(bottomChain));
-    assert.ok(bottomChain.streamTop > 0, `expected wheel past diagram bottom to scroll outer reader: ${JSON.stringify(bottomChain)}`);
+    const rectAfterDown = await page.locator('.markdown-diagram-view').nth(0).boundingBox();
+    assert.ok(rectAfterDown);
+    const upHitY = Math.max(40, Math.min(rectAfterDown.y + 80, 720 - 40));
+    await page.mouse.move(rectAfterDown.x + rectAfterDown.width / 2, upHitY);
+    await page.mouse.wheel(0, -140);
+    await page.waitForTimeout(80);
+    const docUp = await page.evaluate(() => ({
+      graphTop: document.querySelectorAll('.markdown-diagram-view')[0]!.scrollTop,
+      readerTop: document.querySelector('.knowledge-reader-body')!.scrollTop,
+    }));
+    assert.equal(docUp.graphTop, 0, JSON.stringify(docUp));
+    assert.ok(docUp.readerTop < docDown.readerTop, `wheel up over tall reader diagram must scroll outer reader up: ${JSON.stringify(docUp)}`);
 
     await page.evaluate(() => {
-      const stream = document.querySelector('.knowledge-reader-body')!;
-      const graph = document.querySelectorAll('.markdown-diagram-view')[0]!;
-      stream.scrollTop = 280;
-      graph.scrollTop = 120;
-    });
-    const rectAtOffset = await page.locator('.markdown-diagram-view').nth(0).boundingBox();
-    assert.ok(rectAtOffset && rectAtOffset.y >= 0 && rectAtOffset.y + rectAtOffset.height <= 720, JSON.stringify(rectAtOffset));
-    await page.mouse.move(rectAtOffset.x + rectAtOffset.width / 2, rectAtOffset.y + rectAtOffset.height / 2);
-
-    for (let step = 0; step < 6; step += 1) {
-      await page.mouse.wheel(0, -160);
-      await page.waitForTimeout(25);
-    }
-    const topChain = await page.evaluate(() => ({
-      graphTop: document.querySelectorAll('.markdown-diagram-view')[0]!.scrollTop,
-      streamTop: document.querySelector('.knowledge-reader-body')!.scrollTop,
-    }));
-    assert.equal(topChain.graphTop, 0, JSON.stringify(topChain));
-    assert.ok(topChain.streamTop < 280, `expected wheel past diagram top to scroll outer reader up: ${JSON.stringify(topChain)}`);
-
-    await page.evaluate(() => {
-      const stream = document.querySelector('.knowledge-reader-body')!;
-      stream.scrollTop = 0;
-      document.querySelectorAll('.markdown-diagram-view')[1]!.scrollIntoView({block: 'center'});
+      document.querySelectorAll('.markdown-diagram-view')[3]!.scrollIntoView({block: 'center'});
     });
     const beforeCompact = await page.evaluate(() => document.querySelector('.knowledge-reader-body')!.scrollTop);
-    const compactRect = await page.locator('.markdown-diagram-view').nth(1).boundingBox();
+    const compactRect = await page.locator('.markdown-diagram-view').nth(3).boundingBox();
     assert.ok(compactRect);
     await page.mouse.move(compactRect.x + compactRect.width / 2, compactRect.y + compactRect.height / 2);
     await page.mouse.wheel(0, 160);
