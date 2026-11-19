@@ -33,10 +33,14 @@ const request = <T,>(workspaceId:string,operation:string,input:Record<string,unk
   for(const [key,value] of Object.entries(input))if(value!==undefined&&value!==null)query.set(key==='path'?'filePath':key,String(value));
   return api(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/code/${operation}?${query}`,{signal}) as Promise<T>;
 };
+// Exact current Explorer reads need Git membership, not task-group enrichment.
+const explorerRead = (input: CodeReadInput) => input.checkoutId && !input.taskId && !input.commitHash
+  ? {...input, worktreeId:input.checkoutId} : input;
 export const codeApi = {
   repositories:(id:string,taskId?:string,signal?:AbortSignal)=>request<CodeCatalog>(id,'repositories',{taskId},signal),
-  directory:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeDirectory>(id,'directory',input,signal),
+  directory:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeDirectory>(id,'directory',explorerRead(input),signal),
   file:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeFile>(id,'file',input,signal),
+  explorerFile:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeFile>(id,'file',explorerRead(input),signal),
   editorFile:(id:string,selector:EditableFileSelector,signal?:AbortSignal)=>request<EditableFileSnapshot>(id,'editor-file',selector,signal),
   saveFile:async (id:string,input:SaveFileInput):Promise<CodeSaveFileSaveFile> => {
     const result = await api(`/api/v1/workspaces/${encodeURIComponent(id)}/code/save-file`,{method:'POST',body:JSON.stringify(input)}) as CodeSaveFileSaveFile;

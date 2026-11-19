@@ -318,10 +318,22 @@ try{
  await imageDialog.getByRole('button',{name:'关闭预览',exact:true}).click();
  await page.locator('#agent-conversation-panel').getByRole('link',{name:'不确定文件',exact:true}).click();
  await page.getByText('不能确认文件的准确工程来源。',{exact:true}).waitFor();
- const actualFileRead=page.waitForResponse(response=>response.url().includes('/code/file?')&&new URL(response.url()).searchParams.get('filePath')==='surface-proof.md'&&response.status()===200);
- await page.locator('#agent-conversation-panel').getByRole('link',{name:'验收文件',exact:true}).click();
- const fileRead=await actualFileRead;assert.match((await fileRead.json()).content,/same-page file proof/);
- await page.waitForURL('**/code/explorer');
+ const fileReads:string[]=[];
+ const countFileReads=(request:{url():string})=>{const target=new URL(request.url());if(target.pathname.endsWith('/code/repositories')||target.searchParams.get('filePath')==='surface-proof.md')fileReads.push(target.pathname.split('/').at(-1)!);};
+ const editorRoute='**/code/editor-file?*';
+ let releaseFile!:()=>void;
+ const holdFile=new Promise<void>(resolve=>{releaseFile=resolve;});
+ await page.route(editorRoute,async route=>{if(new URL(route.request().url()).searchParams.get('filePath')==='surface-proof.md')await holdFile;await route.fallback();});
+ page.on('request',countFileReads);
+ try{
+  const actualFileRead=page.waitForResponse(response=>response.url().includes('/code/editor-file?')&&new URL(response.url()).searchParams.get('filePath')==='surface-proof.md'&&response.status()===200);
+  await page.locator('#agent-conversation-panel').getByRole('link',{name:'验收文件',exact:true}).click();
+  await page.getByRole('status').filter({hasText:'正在打开文件…'}).waitFor();releaseFile();
+  const fileRead=await actualFileRead;assert.match((await fileRead.json()).content,/same-page file proof/);
+  await page.waitForURL('**/code/explorer');
+  await page.locator('.code-explorer-stage .file-editing-pane').getByText('same-page file proof',{exact:false}).waitFor();
+  assert.deepEqual(fileReads,['repositories','editor-file'],'one catalog and one content request from click to Explorer body');
+ }finally{releaseFile();page.off('request',countFileReads);await page.unroute(editorRoute);}
  assert.equal(await page.locator('.development-harness-frame').getAttribute('data-selected-conversation'),conversation.id,'opening a real file does not retarget conversation');
  await page.getByRole('button',{name:'收起Development',exact:true}).click();
  await page.locator('#agent-conversation-panel').getByRole('link',{name:'工程任务',exact:true}).click();

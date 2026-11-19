@@ -19,7 +19,7 @@ type Catalog={scopes:Array<{key:string;ref:Ref;authority:'builtin'|'registered'|
 type Preview={kind:string;content:string;truncated:boolean};
 const key=(ref:Ref)=>'scope:'+btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify([ref.sourceId,ref.id])))).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
 const directoryLeafName=(value:string)=>value.replace(/[\\/]+$/,'').split(/[\\/]/).filter(Boolean).at(-1)||value;
-const request=<T,>(path:string,input?:unknown)=>api(path,input===undefined?{headers:{'x-buildr-session':''}}:{method:'POST',body:JSON.stringify(input)}) as Promise<T>;
+const request=<T,>(path:string,input?:unknown,signal?:AbortSignal)=>api(path,input===undefined?{headers:{'x-buildr-session':''},signal}:{method:'POST',body:JSON.stringify(input),signal}) as Promise<T>;
 
 export function HarnessApp({environment}:{environment?:HarnessWorkEnvironment}={}){
   const [file,setFile]=useState<{path:string;value:Preview}|null>(null);
@@ -27,7 +27,7 @@ export function HarnessApp({environment}:{environment?:HarnessWorkEnvironment}={
   const composition=useMemo(()=>({standalone}),[standalone]);
   const host=useMemo<HarnessDirectoryFiles>(()=>({
     readFile:(conversation:ConversationView,path:string,signal:AbortSignal)=>window.parent!==window?engineeringFile('read',conversation.workspaceId,conversation.id,path,signal):api('/api/v1/harness/files',{method:'POST',body:JSON.stringify({conversationId:conversation.id,path}),signal}) as Promise<Preview>,
-    async openFile(conversation,path){if(window.parent!==window){await engineeringFile('open',conversation.workspaceId,conversation.id,path);return;}const value=await request<Preview>('/api/v1/harness/files',{conversationId:conversation.id,path});setFile({path,value});},
+    async openFile(conversation,path,_literal,signal){if(window.parent!==window){await engineeringFile('open',conversation.workspaceId,conversation.id,path,signal);return;}const value=await request<Preview>('/api/v1/harness/files',{conversationId:conversation.id,path},signal);signal?.throwIfAborted();setFile({path,value});},
   }),[]);
   return <ConversationHostProvider host={composition}><HarnessDirectoryFilesProvider host={host}><AgentConversationsProvider standalone={standalone}><HarnessShell environment={environment}><Workspace standalone={standalone}/></HarnessShell></AgentConversationsProvider><Modal open={!!file} centered title={file?.path} footer={null} width="min(1000px, 94vw)" onCancel={()=>setFile(null)}>{file&&(file.value.kind==='markdown'?<MarkdownReader content={file.value.content} path={file.path}/>:file.value.kind==='image'?<img src={file.value.content} alt={file.path} style={{maxWidth:'100%'}}/>:<pre className="harness-source">{file.value.content}</pre>)}{file?.value.truncated&&<Alert type="info" message="内容超过预览上限，仅显示前 1 MiB。"/>}</Modal></HarnessDirectoryFilesProvider></ConversationHostProvider>;
 }

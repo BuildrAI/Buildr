@@ -28,7 +28,7 @@ export function CodeExplorerPage() {
   const {workspaceId,workspace,setBreadcrumbParts}=useAppShell();
   const viewActive=useContext(WorkspaceViewActiveContext);
   const location=useLocation(),navigate=useNavigate(),{message}=App.useApp();
-  const state=useCodeExplorer(workspaceId||'',workspace?.rootPath,viewActive,location.state?.codeEntry?location.key:undefined);
+  const state=useCodeExplorer(workspaceId||'',workspace?.rootPath,viewActive,location.state?.codeEntry?location.key:undefined,Boolean(location.state?.codeEntry?.observationId));
   const [host,setHost]=useState<HTMLDivElement|null>(null),[treeHidden,setTreeHidden]=useState(()=>window.innerWidth<680);
   const [processed,setProcessed]=useState(''),[media,setMedia]=useState<Record<string,string>>({});
   const [selection,setSelection]=useState<{key:string;lines:[number,number]|null}>({key:'',lines:null});

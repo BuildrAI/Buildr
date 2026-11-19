@@ -2,6 +2,8 @@ import {useCallback, useMemo, useRef} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {HarnessConversationSurface, type HarnessConversationHost, type HarnessDirectoryFiles} from '../../../../buildr-harness-web/src/conversation';
 import {resolveTaskBriefReference, taskBriefHref} from '../../lib/taskBriefLinks';
+import {readExplorerFile} from '../code/code-file-read';
+import {offerCodeOpen} from '../code/code-open-observation';
 import {codeApi} from '../code/api/code-api';
 import {conversationFileTarget} from './conversation-files';
 import {useAgentConversations} from './AgentConversationsContext';
@@ -17,12 +19,11 @@ export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {default
   const navigate = useNavigate(), location = useLocation();
   const current = useRef({context, navigate, location});
   current.current = {context, navigate, location};
-  // Browse-only engineering navigation must not retarget a pending file open.
-  const selection = useRef(0);
   const selected=useRef<string|null>(null);
+  const opening=useRef<AbortController|null>(null);
   const onConversationChange=useCallback((conversation: ConversationView | null)=>{
     const key=conversation?conversation.workspaceId+':'+conversation.id:null;
-    if(selected.current!==key){selected.current=key;selection.current++;}
+    if(selected.current!==key){selected.current=key;opening.current?.abort();}
     current.current.context.setConversation(conversation);
   },[]);
   const files = useMemo<HarnessDirectoryFiles>(() => ({
@@ -34,17 +35,29 @@ export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {default
       signal.throwIfAborted();
       return codeApi.file(observed.workspaceId, file);
     },
-    async openFile(conversation, path) {
-      const generation = selection.current;
-      const observed = await current.current.context.api.read(conversation.workspaceId, conversation.id);
-      const catalog = await codeApi.repositories(observed.workspaceId, observed.taskId);
-      const file = conversationFileTarget(observed.cwd, path, catalog);
-      if (!file) throw new Error('不能确认文件的准确工程来源。');
-      await codeApi.file(observed.workspaceId, file);
-      if (generation !== selection.current) throw new Error('对话选择已变化，未跳转原文件。');
-      const {navigate, location, context} = current.current;
-      navigate(`/workspaces/${encodeURIComponent(observed.workspaceId)}/code/explorer`, {state: {codeEntry: {file, from: {pathname: location.pathname, search: location.search, hash: location.hash, state: location.state}}}});
-      context.setFull(false);
+    async openFile(conversation, path, literal, linkSignal) {
+      opening.current?.abort();
+      const request = new AbortController();
+      const signal = linkSignal ? AbortSignal.any([request.signal, linkSignal]) : request.signal;
+      opening.current = request;
+      try {
+        const observed = await current.current.context.api.read(conversation.workspaceId, conversation.id, signal);
+        const catalog = await codeApi.repositories(observed.workspaceId, observed.taskId, signal);
+        const suffix = literal ? null : path.match(/(?::|#L)([1-9][0-9]*)$/);
+        const target = conversationFileTarget(observed.cwd, suffix ? path.slice(0, suffix.index) : path, catalog);
+        if (!target) throw new Error('不能确认文件的准确工程来源。');
+        const line = suffix ? Number(suffix[1]) : undefined;
+        if (line !== undefined && !Number.isSafeInteger(line)) throw new Error('文件行号无效。');
+        const file = {...target, line};
+        const observation = await readExplorerFile(observed.workspaceId, file, signal, {editorFile:codeApi.editorFile,file:codeApi.explorerFile});
+        signal.throwIfAborted();
+        const observationId = offerCodeOpen(observed.workspaceId, file, catalog, observation);
+        const {navigate, location, context} = current.current;
+        navigate(`/workspaces/${encodeURIComponent(observed.workspaceId)}/code/explorer`, {state: {codeEntry: {file, observationId, from: {pathname: location.pathname, search: location.search, hash: location.hash, state: location.state}}}});
+        context.setFull(false);
+      } finally {
+        if (opening.current === request) opening.current = null;
+      }
     },
   }), []);
   const host: HarnessConversationHost = {

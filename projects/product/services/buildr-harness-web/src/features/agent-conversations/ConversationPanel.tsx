@@ -185,6 +185,8 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
   const review=reviewOpen?prepared:null;
   const viewedHandoff=selectedHandoff?(chat?.entries.find(entry=>entry.id===selectedHandoff.id)??selectedHandoff):null;
   const [moreOpen,setMoreOpen]=useState(false),[locationOpen,setLocationOpen]=useState(false);
+  const fileOpenRequest=useRef<AbortController|null>(null);
+  const [openingFile,setOpeningFile]=useState<ConversationSelection|null>(null);
   const [fileLinkFailure,setFileLinkFailure]=useState<{selection:ConversationSelection;reference:string;message:string}|null>(null);
   const [imageLink,setImageLink]=useState<{selection:ConversationSelection;reference:string;href?:string;load?:(signal:AbortSignal)=>Promise<string>}|null>(null);
   const [expandedToolGroups,setExpandedToolGroups]=useState<Record<string,boolean>>({});
@@ -281,7 +283,8 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     try{writeConversationPermission(permissionStorageKey,value,sessionStorage);writeConversationPermission(conversationPermissionStorageKey(permissionProfile,null,workspaceId),value,sessionStorage);}catch{/* Same-page selection remains usable. */}
     setPrepared(null);setSelectedHandoff(null);setReviewOpen(false);
   };
-  useLayoutEffect(()=>{setError('');setFeedback('');setFileLinkFailure(null);setImageLink(null);setExpandedToolGroups({});const active=activeSend.current;if(!active||!context.isSelectionCurrent(active.selection)){activeSend.current=null;setSending(false);setPreparing(false);setPrepared(null);setSelectedHandoff(null);setReviewOpen(false);}bottom.current=true;readPosition.current=0;setAtBottom(true);},[context.selectionGeneration,context.scope?.workspaceId,context.scope?.conversationId,context.isSelectionCurrent]);
+  useLayoutEffect(()=>{setError('');setFeedback('');setFileLinkFailure(null);setOpeningFile(null);setImageLink(null);setExpandedToolGroups({});const active=activeSend.current;if(!active||!context.isSelectionCurrent(active.selection)){activeSend.current=null;setSending(false);setPreparing(false);setPrepared(null);setSelectedHandoff(null);setReviewOpen(false);}bottom.current=true;readPosition.current=0;setAtBottom(true);},[context.selectionGeneration,context.scope?.workspaceId,context.scope?.conversationId,context.isSelectionCurrent]);
+  useEffect(()=>()=>fileOpenRequest.current?.abort(),[context.selectionGeneration,context.scope?.workspaceId,context.scope?.conversationId]);
   useEffect(()=>{setMoreOpen(false);setLocationOpen(false);},[context.selectionGeneration,context.open,context.side,context.full,context.view]);
   useEffect(()=>{earlier.followLayout();setAtBottom(bottom.current);},[chat?.id,chat?.entries.length,chat?.entries.at(-1)?.text,chat?.requests.length,chat?.run?.status,chat?.pendingSend?.id]);
   const conversationVisible=isConversationViewVisible(context.open,context.view,focusSplit);
@@ -315,15 +318,20 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
   },[host.readFile,chat?.workspaceId,chat?.id,chat?.cwd]);
   const openProcessFile=async(path:string,literal=false)=>{
     if(!chat)return;
-    const selection=context.getSelection();
+    fileOpenRequest.current?.abort();
+    const selection=context.getSelection(), request=new AbortController();
+    fileOpenRequest.current=request;
+    const stillCurrent=()=>!request.signal.aborted&&fileOpenRequest.current===request&&context.isSelectionCurrent(selection);
+    setFileLinkFailure(null);
     try{
       const image=literal?null:conversationImageLinkSource(chat.cwd,path);
-      if(image){setFileLinkFailure(null);setImageLink({selection,reference:path,load:signal=>loadImage(image,signal)});return;}
+      if(image){setOpeningFile(null);setImageLink({selection,reference:path,load:signal=>loadImage(image,signal)});return;}
       if(!host.openFile)throw new Error('此入口未提供来源文件打开，请复制路径核对。');
-      await host.openFile(chat,path,literal);
-      if(!context.isSelectionCurrent(selection))return;
-      context.setFull(false);setFileLinkFailure(null);
-    }catch(failure){if(context.isSelectionCurrent(selection))setFileLinkFailure({selection,reference:path,message:failure instanceof Error?failure.message:'无法打开来源文件。'});}
+      setOpeningFile(selection);
+      await host.openFile(chat,path,literal,request.signal);
+      if(stillCurrent())context.setFull(false);
+    }catch(failure){if(stillCurrent())setFileLinkFailure({selection,reference:path,message:failure instanceof Error?failure.message:'无法打开来源文件。'});}
+    finally{if(stillCurrent()){fileOpenRequest.current=null;setOpeningFile(null);}}
   };
   const recoverConflict=async(failure:unknown)=>{
     const api=failure as ApiError;if(api?.status!==409)return false;
@@ -948,7 +956,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
         </div>
       </div>
       {!atBottom&&<div className="ac-scroll-latest"><Button className="ac-scroll-latest-button" shape="circle" icon={<ArrowDownOutlined/>} aria-label="向下到底" title="向下到底，回到最新消息" onClick={scrollToLatest}/></div>}
-      <div className="ac-compose-wrap" data-run-status={run?.status==='stopped'?'stopped':undefined}>{fileError}
+      <div className="ac-compose-wrap" data-run-status={run?.status==='stopped'?'stopped':undefined}>{fileError}{openingFile&&context.isSelectionCurrent(openingFile)&&<div role="status" className="ac-input-diagnostic">正在打开文件…</div>}
 
         {showExecutionNotice&&run?.status==='tools-active'&&<ConversationActiveToolsNotice key={run.id} tools={run.tools} resourcesReleased={run.resourcesReleased} stopRequested={run.stopRequested===true} feedback={feedback} diagnostic={run.diagnostic} canContinue={Boolean(chat&&conversationSendRoute(chat,executionChanged)==='send')} observing={observing} stopping={stopping} onObserve={()=>void observe()} onStop={toolId=>void stop(toolId)}/>}
         {showExecutionNotice&&run?.status==='unknown'&&<ConversationExecutionNotice run={run} feedback={feedback} streamError={context.streamError} continuing={sending} continueDisabled={!canSend} onContinue={canContinueConversation(chat)&&!executionChanged?()=>void prepare(false,false,run.id):undefined} observing={observing} stopping={stopping} onObserve={()=>void observe()} onStop={()=>void stop()}/>}{!outputPaused&&<ConversationCompactionNotice run={run}/>}{(!outputPaused||Boolean(actionError))&&run&&locked&&run.status!=='unknown'&&run.status!=='tools-active'&&<div className="ac-execution-statusbar" role="status" data-execution-state={run.status}>{run.stopRequested?<span>停止已请求，等待结束确认</span>:!waitingQuestions.length&&run.status!=='running'&&<span>{statusLabels[run.status]}</span>}</div>}{!chat&&newImages.error&&<Alert type="warning" message={newImages.error} action={<Button size="small" onClick={()=>void newImages.refresh().catch(fail)}>重新读取图片</Button>}/>} {!chat&&unconfirmedFirst&&<ConversationFirstSubmissionNotice submission={unconfirmedFirst} busy={sending} onRetry={()=>void prepare(false,false,undefined,true)}/>}{!outputPaused&&run&&run.status!=='stopped'&&run.status!=='running'&&run.status!=='completed'&&run.status!=='unknown'&&run.status!=='tools-active'&&(!locked||Boolean(run.diagnostic))&&<div className="ac-run-status" role="status" data-run-status={run.status}>{!locked&&<>{run.interrupted?'执行未完成':statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}</>}{run.status==='failed'?<ConversationFailureNotice run={run}/>:run.diagnostic&&<p>{run.diagnostic}</p>}</div>} {connectionWarning}{modelWarning&&<Alert type="warning" showIcon message={modelWarning}/>}{earlier.error&&<Alert type="warning" showIcon message={earlier.error}/>} {actionError&&<Alert type="warning" showIcon message={actionError} closable onClose={()=>{setError('');setReplyFailure(null);setDefaultRootError('');}}/>} {feedback&&run?.status!=='unknown'&&run?.status!=='tools-active'&&<small role="status">{feedback}</small>}{(!draft.available||!attachmentsAvailable)&&<Alert type="warning" message="浏览器存储不可用，刷新后无法恢复未发送草稿。"/>}
