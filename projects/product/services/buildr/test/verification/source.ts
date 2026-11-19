@@ -255,7 +255,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
       const executionPlan = { ...selectedPlan, steps: selectedPlan.steps.map((step: any) => ({
         ...step, schedulingCostMs: costs.get(step.id)?.durationMs ?? step.schedulingCostMs,
       })) };
-      const round = { protectResume: true, resume: args.resume, allowFullRerun: args.force || executionPlan.steps.length < plan.steps.length, roundId: args.round ?? process.env.BUILDR_VERIFICATION_ROUND ?? randomUUID(), ...(args.output ? { output: path.resolve(args.output) } : {}), ...(args.invalidate.length ? { invalidStepIds: args.invalidate } : {}), ...(args.selected.length ? { selectedStepIds: executionPlan.selectedStepIds } : {}) };
+      const round = { protectResume: true, strictInputs: !args.selected.length, resume: args.resume, allowFullRerun: true, roundId: args.round ?? process.env.BUILDR_VERIFICATION_ROUND ?? randomUUID(), ...(args.output ? { output: path.resolve(args.output) } : {}), ...(args.invalidate.length ? { invalidStepIds: args.invalidate } : {}), ...(args.selected.length ? { selectedStepIds: executionPlan.selectedStepIds } : {}) };
       const reuseOptions = { productRoot, projectRoot, round, force: sourceVerificationForce(args.force),
         env: enforceOfflineVerification(comparisonRequired || args.base
           ? pinSourceVerificationBase(productRoot, process.env, args.base) : { ...process.env }) };

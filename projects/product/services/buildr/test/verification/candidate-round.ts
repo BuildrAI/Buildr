@@ -49,6 +49,7 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
   const config = options.round;
   if (!config) return null;
   const roundId = config.roundId;
+  const strict = config.strictInputs === true;
   const invalidStepIds = new Set<string>(config.invalidStepIds ?? []);
   // A user may declare the exact checks that must execute this round. Checks
   // outside that declaration keep the round's passed record without claiming
@@ -106,8 +107,11 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
       continue;
     }
     if (invalidStepIds.has(step.id) || options.force === true) continue;
+    if (strict && (!sourceCommit || !record?.origin?.sourceCommit || !record.result?.inputIdentity?.key
+      || record.environment.platform !== process.platform || record.environment.arch !== process.arch
+      || record.environment.nodeVersion !== process.versions.node)) continue;
     const members = filesByCheck.get(step.id) ?? [];
-    for (const file of members) {
+    for (const file of strict ? [] : members) {
       const matches = record?.result?.roundFiles?.filter((item: any) => item.file === file.executor.files[0]) ?? [];
       const prior = matches.length === 1 ? matches[0] : null;
       const inputKey = fileKey(file, before);
@@ -117,15 +121,26 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
     }
     const { affected, ...change } = changes(record, step);
     const identity = step.reuse && affected !== true && affected !== null
-      ? verificationInputApplicabilityForSourceChange(record?.result?.inputIdentity, inputsFor(step, before), affected) : null;
-    const applicable = affected !== true && affected !== null && identity?.applicable !== false;
+      ? verificationInputApplicabilityForSourceChange(record?.result?.inputIdentity, inputsFor(step, before), strict ? undefined : affected) : null;
+    const applicable = (!strict || identity?.applicable === true) && affected !== true && affected !== null && identity?.applicable !== false;
     if (passedRoundRecord(record, roundId, step, plan.runner ?? process.platform) && !applicable) {
-      causes.set(step.id, change.reasons.length ? change : { reasons: identity!.reasons });
+      causes.set(step.id, change.reasons.length ? change : { reasons: identity?.reasons ?? ['inputs-unavailable'] });
     }
     const completeFiles = affected === false || members.length > 0 && members.every(file => priorFiles.has(file.id))
       && record?.result?.roundFiles?.length === members.length;
     if (applicable && passedRoundRecord(record, roundId, step, plan.runner ?? process.platform)
-      && (!record.result.roundFiles || completeFiles)) hits.set(step.id, record);
+      && (strict || !record.result.roundFiles || completeFiles)) hits.set(step.id, record);
+  }
+  if (strict) {
+    let changed: boolean;
+    do {
+      changed = false;
+      for (const step of plan.steps) {
+        if (!(step.dependsOn ?? []).some((id: string) => !hits.has(id))) continue;
+        if (hits.delete(step.id)) changed = true;
+        for (const file of filesByCheck.get(step.id) ?? []) priorFiles.delete(file.id);
+      }
+    } while (changed);
   }
   const recordAvailable = (step: any) => [...records.values()].some(record => record.identity.stepId === step.id);
   const steps = plan.steps.map((step: any) => {
@@ -175,7 +190,7 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
           const prior = hits.get(result.id);
           if (retained.has(result.id)) continue;
           const current = step?.reuse ? inputsFor(step, after) : null;
-          if (step?.reuse && !verificationInputApplicabilityForSourceChange(prior?.result?.inputIdentity, current, changes(prior, step).affected).applicable) {
+          if (step?.reuse && !verificationInputApplicabilityForSourceChange(prior?.result?.inputIdentity, current, strict ? undefined : changes(prior, step).affected).applicable) {
             Object.assign(result, { status: 'failed', exitCode: 1, failureCode: 'candidate-reused-input-drift' });
           }
           continue;
