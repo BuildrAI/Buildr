@@ -1,5 +1,5 @@
 import {useConversationHost} from '../../integration/ConversationHost';
-import { useEffect, useRef, useState, type HTMLAttributes, type ReactElement, type Ref } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type HTMLAttributes, type ReactElement, type Ref } from 'react';
 import { createPortal } from 'react-dom';
 import { SplitDivider } from '../../components/SplitDivider.tsx';
 import { useAgentConversations } from './AgentConversationsContext.tsx';
@@ -27,6 +27,11 @@ export function ConversationDock({panel, portalTarget, workspaces, focusSettings
   });
   const drag = useRef<{pointerId: number; x: number; width: number; side: 'left'|'right'; element: HTMLButtonElement} | null>(null);
   const latestWidth = useRef(width);
+  const onWidthChangeRef = useRef(host.onWidthChange);
+  onWidthChangeRef.current = host.onWidthChange;
+  useLayoutEffect(() => {
+    onWidthChangeRef.current?.(width);
+  }, [width]);
   const resize = (value: number, persist = false) => {
     latestWidth.current = clampWidth(value);
     setWidth(latestWidth.current);
@@ -61,5 +66,5 @@ export function ConversationDock({panel, portalTarget, workspaces, focusSettings
     onPointerUp={event => finish(event.pointerId)} onPointerCancel={event => finish(event.pointerId)} onLostPointerCapture={event => finish(event.pointerId)} onDoubleClick={() => resize(defaultWidth, true)}>
     <span className="split-divider-header-marker" aria-hidden="true"/>
   </SplitDivider>;
-  return render(<ConversationDockSurface panel={panel} activity={<ConversationActivity workspaces={workspaces}/>} focusSettings={focusSettings} quotaEntry={<AccountQuotaButton dedicated/>} onQuota={context.openQuotaSettings} settingsActive={focusSettings&&context.settings} open={context.open} showCurrentToggle={!host.standalone} view={context.view} onPreviewCurrent={()=>context.setView('conversation')} full={context.full} side={context.side} width={width} onToggle={()=>{if(host.requestLayout){if(context.open&&context.view!=='conversation'){context.setView('conversation');return;}host.requestLayout('collapse');return;}if(window.parent!==window){if(context.open&&context.view!=='conversation'){context.setView('conversation');return;}window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'layout',action:'collapse'},location.origin);return;}context.toggleView('conversation');}} onNew={preserve=>{if(focusSettings)context.setSettings(false);context.newConversation({preserveVisibility:preserve,preserveHistoryView:context.full&&context.view==='history'&&typeof window!=='undefined'&&canSplitFocusHistory(document.getElementById('agent-conversation-panel')?.getBoundingClientRect().width||Math.max(0,window.innerWidth-52),window.innerWidth)});}} onSettings={()=>context.setSettings(focusSettings?!context.settings:true)} divider={divider}/>);
+  return render(<ConversationDockSurface panel={panel} activity={<ConversationActivity workspaces={workspaces}/>} focusSettings={focusSettings} quotaEntry={<AccountQuotaButton dedicated/>} onQuota={()=>{if(!context.open&&!host.standalone)context.setOpen(true);context.openQuotaSettings?.();}} settingsActive={focusSettings&&context.settings} open={context.open} showCurrentToggle={!host.standalone} view={context.view} onPreviewCurrent={()=>context.setView('conversation')} full={context.full} side={context.side} width={width} onToggle={()=>{context.setSettings(false);if(!context.open){context.setView('conversation');context.setOpen(true);return;}if(context.view!=='conversation'){context.setView('conversation');return;}if(host.requestLayout){host.requestLayout('collapse');return;}if(window.parent!==window){window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'layout',action:'collapse'},location.origin);return;}context.toggleView('conversation');}} onNew={preserve=>{context.setSettings(false);context.newConversation({preserveVisibility:preserve,preserveHistoryView:context.full&&context.view==='history'&&typeof window!=='undefined'&&canSplitFocusHistory(document.getElementById('agent-conversation-panel')?.getBoundingClientRect().width||Math.max(0,window.innerWidth-52),window.innerWidth)});}} onSettings={()=>{if(!context.open&&!host.standalone){context.setOpen(true);context.setSettings(true);return;}context.setSettings(focusSettings?!context.settings:true);}} divider={divider}/>);
 }

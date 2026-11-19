@@ -48,7 +48,8 @@ try{
   const resize=landing.getByRole('separator',{name:'调整对话宽度',exact:true});
   await resize.focus();await resize.press('ArrowLeft');
   assert.equal(await resize.getAttribute('aria-valuenow'),'636','existing keyboard resize and preference remain available');
-  assert.equal(Math.round((await landing.locator('.harness-conversation-region').boundingBox())!.width),636);
+  assert.equal(Math.round((await landing.locator('#agent-conversation-panel').boundingBox())!.width),636);
+  assert.equal(Math.round((await landing.locator('.harness-conversation-region').boundingBox())!.width),688);
   await landing.locator('.harness-environment-region .app-shell').evaluate(node=>node.setAttribute('data-engineering-identity','retained'));
   if(process.env.BUILDR_SCREENSHOT_DIR)await landing.screenshot({path:path.join(process.env.BUILDR_SCREENSHOT_DIR,'harness-development-mounted.png')});
   await landing.getByRole('button',{name:'收起Development',exact:true}).click();
@@ -70,7 +71,9 @@ try{
  const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
  await page.goto(url+'/workspaces/'+initialWorkspaceId+'/overview');
  await page.locator('.harness-environment-region .app-shell').waitFor({state:'visible'});
- assert.equal(await page.locator('.development-harness-frame').isVisible(),false,'fresh engineering deep link keeps the original full engineering width');
+ assert.equal(await page.locator('#agent-conversation-panel').isVisible(),false,'fresh engineering deep link keeps the original full engineering width');
+ assert.equal(await page.locator('.development-harness-rail').count(),0);
+ assert.equal(await page.locator('.harness-conversation-region').evaluate(node=>Math.round(node.getBoundingClientRect().width)),52);
  const frame=page;
  const openConversation=async(id:string)=>{
   const target=page.locator('.ac-history-list button[data-conversation-id="'+id+'"]:visible');
@@ -80,12 +83,13 @@ try{
   await target.first().click();
  };
 
- await page.locator('.development-harness-rail').getByRole('button',{name:'新建对话',exact:true}).click();
+ await page.locator('.ac-collapsed-rail').getByRole('button',{name:'新建对话',exact:true}).click();
  assert.equal(await page.getByRole('dialog',{name:'选择新对话的工作空间'}).count(),0,'new conversation stays in place');
  assert.equal(await page.locator('.development-harness-frame>header').count(),0,'no duplicate outer toolbar');
+ assert.equal(await page.getByRole('separator',{name:'调整对话宽度',exact:true}).count(),1,'single split divider owned by Harness');
  await frame.getByRole('textbox',{name:'对话输入',exact:true}).waitFor({timeout:30000});
  await page.reload();
- await page.locator('.development-harness-frame').waitFor({state:'visible'});
+ await page.locator('#agent-conversation-panel').waitFor({state:'visible'});
  await frame.getByRole('textbox',{name:'对话输入',exact:true}).waitFor({timeout:30000});
  assert.equal(await page.locator('iframe[title="Buildr Harness"]').count(),0,'first-party complete conversation is in the same page');
  await page.locator('.harness-conversation-surface').evaluate((node:HTMLElement)=>{node.dataset.acceptanceIdentity='retained';});
@@ -96,15 +100,27 @@ try{
  await page.evaluate(()=>window.postMessage({protocol:'buildr.harness-frame/v1',event:'selection',workspaceId:'forged',conversationId:'forged'},location.origin));
  await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();await frame.getByText('专注对话',{exact:true}).click();await page.locator('.development-harness-frame.is-full').waitFor();if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_SCREENSHOT_DIR,'development-harness-focused.png')});assert.equal(await page.locator('.harness-conversation-surface').getAttribute('data-acceptance-identity'),'retained');assert.equal(await input.inputValue(),'不会发送的验收草稿');
  await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();await frame.getByText('恢复分屏',{exact:true}).click();await page.locator('.development-harness-frame.is-full').waitFor({state:'hidden'});assert.equal(await input.inputValue(),'不会发送的验收草稿');
- await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();await frame.getByText('收起对话',{exact:true}).click();await page.locator('.development-harness-frame').waitFor({state:'hidden'});if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_SCREENSHOT_DIR,'development-harness-collapsed.png')});assert.equal(await page.locator('.development-harness-frame').isVisible(),false);assert.equal(await page.locator('.development-harness-rail').evaluate(node=>node.getBoundingClientRect().width),52);await page.reload();await page.locator('.development-harness-rail').waitFor({state:'visible'});assert.equal(await page.locator('.development-harness-frame').isVisible(),false);await page.locator('.harness-conversation-surface').evaluate((node:HTMLElement)=>{node.dataset.acceptanceIdentity='retained';});
- const collapsedRail=page.locator('.development-harness-rail');
- const collapsedQuota=collapsedRail.getByRole('button',{name:'供应商额度',exact:true}), collapsedSettings=collapsedRail.getByRole('button',{name:'智能体与模型设置',exact:true});
+ await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();await frame.getByText('收起对话',{exact:true}).click();await page.locator('#agent-conversation-panel').waitFor({state:'hidden'});if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_SCREENSHOT_DIR,'development-harness-collapsed.png')});assert.equal(await page.locator('#agent-conversation-panel').isVisible(),false);assert.equal(await page.locator('.development-harness-rail').count(),0);assert.equal(await page.locator('.ac-collapsed-rail').evaluate(node=>Math.round(node.getBoundingClientRect().width)),52);assert.equal(await page.locator('.harness-conversation-region').evaluate(node=>Math.round(node.getBoundingClientRect().width)),52);await page.reload();await page.locator('.ac-collapsed-rail').waitFor({state:'visible'});assert.equal(await page.locator('#agent-conversation-panel').isVisible(),false);assert.equal(await page.locator('.harness-conversation-region').evaluate(node=>Math.round(node.getBoundingClientRect().width)),52);await page.locator('.harness-conversation-surface').evaluate((node:HTMLElement)=>{node.dataset.acceptanceIdentity='retained';});
+ const collapsedRail=page.locator('.ac-collapsed-rail');
+ const collapsedCurrent=collapsedRail.getByRole('button',{name:'展开当前对话',exact:true}), collapsedQuota=collapsedRail.getByRole('button',{name:'供应商额度',exact:true}), collapsedSettings=collapsedRail.getByRole('button',{name:'智能体与模型设置',exact:true});
  const [collapsedQuotaBox, collapsedSettingsBox]=await Promise.all([collapsedQuota.boundingBox(), collapsedSettings.boundingBox()]);
  assert.ok(collapsedQuotaBox&&collapsedSettingsBox&&collapsedQuotaBox.y<collapsedSettingsBox.y,'collapsed rail places dedicated quota entry above settings');
+ await collapsedCurrent.hover();
+ const peekingPanel=page.locator('#agent-conversation-panel.is-peeking');
+ await peekingPanel.waitFor({state:'visible'});
+ const peekBox=await peekingPanel.boundingBox();
+ assert.ok(peekBox&&peekBox.width>=560,'collapsed rail hover opens full-width peek panel');
+ await page.locator('#workbench-overview').hover();
+ await peekingPanel.waitFor({state:'hidden'});
+ const collapsedPreview=page.getByTestId('account-quota-overview');
+ await collapsedQuota.hover();
+ await collapsedPreview.waitFor({state:'visible'});
+ const collapsedPreviewBounds=await collapsedPreview.boundingBox();
+ assert.ok(collapsedPreviewBounds&&collapsedPreviewBounds.x>=0&&collapsedPreviewBounds.x+collapsedPreviewBounds.width<=1440,'collapsed quota overview fits within viewport');
  await collapsedQuota.click();
  const collapsedDrawer=page.getByRole('dialog',{name:/^智能体与模型/});
  await collapsedDrawer.waitFor();
- assert.equal(await page.locator('.development-harness-frame').isVisible(),true,'clicking collapsed quota expands split conversation pane');
+ assert.equal(await page.locator('#agent-conversation-panel').isVisible(),true,'clicking collapsed quota expands split conversation pane');
  assert.equal(await page.locator('.development-harness-frame.is-full').isVisible(),false);
  assert.equal(await collapsedDrawer.getByRole('tab',{name:'模型',exact:true}).getAttribute('aria-selected'),'true');
  await collapsedDrawer.getByText('账号与额度',{exact:true}).waitFor();
@@ -112,8 +128,9 @@ try{
  await collapsedDrawer.waitFor({state:'hidden'});
  assert.equal(await page.locator('.harness-conversation-surface').getAttribute('data-acceptance-identity'),'retained');
  assert.equal(await input.inputValue(),'不会发送的验收草稿');
- await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();await frame.getByText('收起对话',{exact:true}).click();await page.locator('.development-harness-frame').waitFor({state:'hidden'});
- await collapsedRail.getByRole('button',{name:'展开当前对话',exact:true}).click();assert.equal(await input.inputValue(),'不会发送的验收草稿');
+ await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();await frame.getByText('收起对话',{exact:true}).click();await page.locator('#agent-conversation-panel').waitFor({state:'hidden'});
+ await collapsedCurrent.click();await page.locator('#agent-conversation-panel').waitFor({state:'visible'});assert.equal(await input.inputValue(),'不会发送的验收草稿');
+
  const conversation=await page.evaluate(async(workspaceId)=>{const token=document.querySelector('meta[name="buildr-session"]')!.getAttribute('content')!;const response=await fetch(`/api/v1/workspaces/${workspaceId}/agent-conversations`,{method:'POST',headers:{'content-type':'application/json','x-buildr-session':token},body:'{}'});const value=await response.json();if(!response.ok)throw Error(JSON.stringify(value));return value;},initialWorkspaceId);
  // Empty records are deliberately absent from real history. Expose only this
  // controlled setup record in the list fixture; selection/read/PATCH still use real HTTP.
@@ -125,6 +142,25 @@ try{
   if(!body.conversations.some((row:{id:string})=>row.id===conversation.id)){body.conversations.unshift(conversation);body.total=(body.total??0)+1;}
   await route.fulfill({response,json:body});
  });
+
+ // Split-mode conversation list shares single-column back navigation and workspace-group quick new conversation.
+ await frame.locator('.ac-collapsed-rail .ac-all-conversations').click();
+ await frame.locator('.ac-history').waitFor({state:'visible'});
+ await frame.locator('.ac-history').getByRole('button',{name:'返回当前对话',exact:true}).waitFor({state:'visible'});
+ const splitGroup=frame.locator('.ac-history [data-history-workspace]').filter({has:page.getByRole('button',{name:'在切换工作空间验收新建对话',exact:true})});
+ await splitGroup.waitFor({state:'visible'});
+ await splitGroup.locator('.ac-history-group-toggle').click();
+ assert.equal(await splitGroup.locator('.ac-history-group-toggle').getAttribute('aria-expanded'),'false');
+ await splitGroup.getByRole('button',{name:'在切换工作空间验收新建对话',exact:true}).click();
+ await page.waitForFunction(()=>document.activeElement?.id==='agent-conversation-input');
+ assert.equal(await frame.getByRole('button',{name:'对话信息与工作空间',exact:true}).innerText(),'切换工作空间验收');
+ assert.equal(await frame.locator('#agent-conversation-panel').getAttribute('data-conversation-id'),null);
+ await frame.locator('.ac-collapsed-rail .ac-all-conversations').click();
+ assert.equal(await splitGroup.locator('.ac-history-group-toggle').getAttribute('aria-expanded'),'false');
+ await splitGroup.locator('.ac-history-group-toggle').click();
+ assert.equal(await splitGroup.locator('.ac-history-group-toggle').getAttribute('aria-expanded'),'true');
+ await frame.locator('.ac-history').getByRole('button',{name:'返回当前对话',exact:true}).click();
+ await frame.locator('.ac-history').waitFor({state:'hidden'});
  await frame.locator('.ac-collapsed-rail .ac-all-conversations').click();await page.locator('.ac-engineering-context').waitFor({state:'hidden'});
  await openConversation(conversation.id);
  await page.getByRole('button',{name:'关联任务',exact:true}).click();
@@ -161,6 +197,14 @@ try{
  assert.equal(await splitDrawer.getByRole('tab',{name:'模型',exact:true}).getAttribute('aria-selected'),'true');
  await splitDrawer.getByText('账号与额度',{exact:true}).waitFor();
  await splitDrawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();await splitDrawer.waitFor({state:'hidden'});
+ await splitGear.click();
+ await splitDrawer.waitFor();
+ await page.locator('#task-detail-main').getByRole('button',{name:'关联对话'}).evaluate((node:HTMLElement)=>node.click());
+ const externalNewTaskChat=page.getByRole('button',{name:'新建任务对话',exact:true});
+ await externalNewTaskChat.waitFor({state:'visible'});
+ await externalNewTaskChat.evaluate((node:HTMLElement)=>node.click());
+ await splitDrawer.waitFor({state:'hidden'});
+ await openConversation(conversation.id);
  await input.waitFor();
  await input.fill('重启恢复草稿');
  const oldOuterToken=await page.evaluate(()=>document.querySelector('meta[name="buildr-session"]')?.getAttribute('content'));
@@ -302,5 +346,33 @@ try{
  await page.locator('.development-harness-frame').waitFor({state:'visible'});
  assert.equal(await page.locator('.development-harness-frame.is-full').isVisible(),false,'split mode must stay active across reload without re-entering focus mode');
 
- assert.deepEqual(errors,[]);console.log(JSON.stringify({status:'passed',checks:['authenticated-surface','same-complete-component','workspace-selection','embedded-focused-draft-retention','expanded-and-collapsed-reload-preference','focus-history-reload-persistence','split-mode-reload-persistence','quota-eviction-preference-persistence','new-conversation-workspace-keeps-history','embedded-rail-exits-history-only','stream-diagram-fit-no-scrollbars','mermaid-top-layer-zoom-preview','no-window-bridge-execution','settings-in-surface','development-task-association-and-navigation','in-place-restart-session-recovery'],realModelCalls:0}));
+ // Split mode left/right dock changes the real shell order, adapts the unique divider, and persists across reload.
+ await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();
+ await frame.getByText('对话移到最左侧',{exact:true}).click();
+ await page.locator('.development-work-environment-shell.is-conversation-left').waitFor({state:'visible'});
+ const leftConvBox=await page.locator('.harness-conversation-region').boundingBox();
+ const leftEnvBox=await page.locator('.harness-environment-region').boundingBox();
+ assert.ok(leftConvBox&&leftEnvBox&&leftConvBox.x+leftConvBox.width<=leftEnvBox.x+1,'left-docked split conversation precedes engineering environment');
+ const leftResize=page.getByRole('separator',{name:'调整对话宽度',exact:true});
+ const beforeLeftWidth=Number(await leftResize.getAttribute('aria-valuenow'));
+ await leftResize.focus();
+ await leftResize.press('ArrowRight');
+ assert.equal(await leftResize.getAttribute('aria-valuenow'),String(beforeLeftWidth+16));
+ assert.equal(Math.round((await page.locator('#agent-conversation-panel').boundingBox())!.width),beforeLeftWidth+16);
+ assert.equal(Math.round((await page.locator('.harness-conversation-region').boundingBox())!.width),beforeLeftWidth+16+52);
+ await leftResize.dblclick();
+ await page.reload();
+ await page.locator('#agent-conversation-panel').waitFor({state:'visible'});
+ await page.locator('.development-work-environment-shell.is-conversation-left').waitFor({state:'visible'});
+ const reloadedLeftConvBox=await page.locator('.harness-conversation-region').boundingBox();
+ const reloadedLeftEnvBox=await page.locator('.harness-environment-region').boundingBox();
+ assert.ok(reloadedLeftConvBox&&reloadedLeftEnvBox&&reloadedLeftConvBox.x+reloadedLeftConvBox.width<=reloadedLeftEnvBox.x+1,'left-docked split mode persists across reload');
+ await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();
+ await frame.getByText('对话移到右侧',{exact:true}).click();
+ await page.locator('.development-work-environment-shell.is-conversation-left').waitFor({state:'detached'});
+ const rightConvBox=await page.locator('.harness-conversation-region').boundingBox();
+ const rightEnvBox=await page.locator('.harness-environment-region').boundingBox();
+ assert.ok(rightConvBox&&rightEnvBox&&rightEnvBox.x+rightEnvBox.width<=rightConvBox.x+1,'right-docked split conversation follows engineering environment');
+
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({status:'passed',checks:['authenticated-surface','same-complete-component','workspace-selection','embedded-focused-draft-retention','expanded-and-collapsed-reload-preference','focus-history-reload-persistence','split-mode-reload-persistence','quota-eviction-preference-persistence','new-conversation-workspace-keeps-history','embedded-rail-exits-history-only','stream-diagram-fit-no-scrollbars','mermaid-top-layer-zoom-preview','no-window-bridge-execution','settings-in-surface','development-task-association-and-navigation','in-place-restart-session-recovery','collapsed-unique-rail-peek-and-quota','split-history-group-new-and-back','split-drawer-closes-on-external-nav','split-left-right-dock-persistence'],realModelCalls:0}));
 }finally{await browser.close();await activeApp.shutdown();await runtimeProvide(runtime,AGENT_SERVICE_APPLICATION).close();await stopAgentProcess({dataRoot:process.env.BUILDR_APP_DATA_DIR!,mode:'stop-owned'});}

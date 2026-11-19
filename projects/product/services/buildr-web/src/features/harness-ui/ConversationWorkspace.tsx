@@ -1,6 +1,4 @@
 import {useCallback, useMemo, useRef} from 'react';
-import {Button} from 'antd';
-import {CommentOutlined, DashboardOutlined, PlusOutlined, SettingOutlined, UnorderedListOutlined} from '@ant-design/icons';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {HarnessConversationSurface, type HarnessConversationHost, type HarnessDirectoryFiles} from '../../../../buildr-harness-web/src/conversation';
 import {resolveTaskBriefReference, taskBriefHref} from '../../lib/taskBriefLinks';
@@ -67,16 +65,11 @@ export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {default
       }}/><BuildrParticipation workspaceId={conversation.workspaceId} conversationId={conversation.id}/></>;
     },
   };
-  return <><section data-selected-workspace={context.conversation?.workspaceId} data-selected-conversation={context.conversation?.id}
-    className={'development-harness-frame in-shell' + (context.full ? ' is-full' : '')} hidden={!context.open}>
-    <HarnessConversationSurface workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} full={context.full} view={context.view}
+  return <section data-selected-workspace={context.conversation?.workspaceId} data-selected-conversation={context.conversation?.id}
+    className={'development-harness-frame in-shell' + (context.full ? ' is-full' : '') + (!context.open ? ' is-collapsed' : '')}>
+    <HarnessConversationSurface workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} open={context.open} full={context.full} view={context.view}
       command={context.command} sequence={context.sequence} files={files} host={host}
+      onOpenChange={context.setOpen} onSideChange={context.setSide} onWidthChange={context.setWidth}
       onConversationChange={onConversationChange} onViewChange={context.setView} onResult={context.reply}/>
-  </section>{!context.open && <aside className="development-harness-rail" aria-label="当前对话与所有对话">
-    <Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" onClick={() => context.newConversation()}/>
-    <Button type="text" icon={<CommentOutlined/>} aria-label="展开当前对话" onClick={() => context.setOpen(true)}/>
-    <Button type="text" icon={<UnorderedListOutlined/>} aria-label="全部对话" onClick={() => context.openHistory(null)}/>
-    <Button type="text" className="development-harness-quota" icon={<DashboardOutlined/>} aria-label="供应商额度" title="供应商额度" onClick={() => context.openQuotaSettings()}/>
-    <Button type="text" className="development-harness-settings" icon={<SettingOutlined/>} aria-label="智能体与模型设置" title="智能体与模型设置" onClick={() => context.setSettings(true)}/>
-  </aside>}</>;
+  </section>;
 }
