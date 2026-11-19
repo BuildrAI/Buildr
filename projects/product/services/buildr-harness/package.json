@@ -41,7 +41,7 @@
   },
   "dependencies": {
     "ajv": "8.18.0",
-    "cacache": "20.0.4",
+    "cacache": "21.0.2",
     "ws": "8.22.0"
   },
   "overrides": {
