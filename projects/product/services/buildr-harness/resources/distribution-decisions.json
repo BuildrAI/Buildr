@@ -162,6 +162,16 @@
       "reason": "Buildr 产品自有组件随包分发批准。"
     },
     {
+      "name": "@buildr-ai/buildr",
+      "version": "0.1.0-rc.61",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation 63f46bb2-0bd7-4b87-2be5-ab065076e9be (2026-11-19)"
+      },
+      "reason": "Buildr 产品自有组件随包分发批准。"
+    },
+    {
       "name": "@chevrotain/cst-dts-gen",
       "version": "13.2.0",
       "disposition": "approved",
