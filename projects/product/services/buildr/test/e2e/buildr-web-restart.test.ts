@@ -202,10 +202,10 @@ test('真实隔离开发启动器→页面重启→后续源码更新，保留�
   const wrapper = path.join(bundle, 'Contents', 'MacOS', 'Buildr');
   const identityFile = path.join(bundle, 'Contents', 'Resources', 'launcher-identity.json');
   const script = fs.readFileSync(wrapper, 'utf8');
-  assert.equal(script.match(/web --port 4458/g)?.length, 1);
-  // The generated native entry runs unchanged apart from its test-only port.
-  // It never contacts the everyday development application on port 4458.
-  fs.writeFileSync(wrapper, script.replace('web --port 4458', `web --port ${port}`), { mode: 0o755 });
+  assert.equal(script.match(/web --port 4458/g)?.length, 2, 'launchd and nohup must both target the isolated port');
+  // Redirect both the primary and fallback paths away from the everyday instance.
+  assert.notEqual(port, 4458);
+  fs.writeFileSync(wrapper, script.replaceAll('web --port 4458', `web --port ${port}`), { mode: 0o755 });
   const environment = {
     ...process.env, HOME: path.join(base, 'home'), PATH: `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH || ''}`,
     BUILDR_APP_DATA_DIR: appData, BUILDR_PRODUCT_DATA_DIR: productData, BUILDR_NPM_ENTRY_PATH: controller.cli, BUILDR_LAUNCHER_NO_OPEN: '1',

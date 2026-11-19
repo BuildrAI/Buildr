@@ -4,12 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { pathToFileURL } from 'node:url';
 import { launchDetachedProcess, parseLaunchctlPrint } from '../../src/infrastructure/detached-launch.ts';
 import { buildLauncher } from '../../tools/build/launcher/build.ts';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
-const REPO_ROOT = path.resolve(PRODUCT_ROOT, '../../../..');
 
 function parseResourceCoalitionId(launchctlPrintOutput: string): string | null {
   const match = /\tresource coalition = \{\s*\n[^\}]*?\bID = (\d+)/m.exec(launchctlPrintOutput);
@@ -209,8 +207,7 @@ test('runDetachedCloseout 在真实 launchd 模式下独立运行自举 worker �
     `import fs from 'node:fs';export async function runSelfBootstrapCloseoutCommand({ args }) { fs.writeFileSync(${JSON.stringify(workerObserved)}, JSON.stringify({ ppid: process.ppid, args })); return { schemaVersion: 'buildr.self-bootstrap-closeout-result/v1', status: 'passed' }; }\n`,
   );
 
-  const executionScript = pathToFileURL(path.join(REPO_ROOT, 'skills/buildr-self-bootstrap-sync/scripts/detached-execution.mjs')).href;
-  const { runDetachedCloseout } = await import(executionScript);
+  const { runDetachedCloseout } = await import('../../../../../../skills/buildr-self-bootstrap-sync/scripts/detached-execution.mjs');
   process.env.BUILDR_DETACHED_ISOLATION = 'launchd';
   let handoffPid: number | undefined;
   const result = await runDetachedCloseout({
