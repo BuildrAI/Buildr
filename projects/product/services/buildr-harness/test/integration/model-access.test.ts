@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { antigravityModelVariant } from '../../src/domain/antigravity-model.ts';
 import { createCustomModelProvider } from '../../src/model-access/providers/custom.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -753,5 +754,109 @@ test('retirement removes the proxy provider and only its mapped legacy custom so
   } finally {
     await access.close();
     await rm(dataRoot, { recursive: true, force: true });
+  }
+});
+
+test('legacy variant preference migration preserves disabled state, inherits enabled contextWindow, and enables new series by default', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-model-variant-prefs-'));
+  const observedModels: ModelOffering[] = [
+    {
+      id: 'gemini-4-neon',
+      label: 'Gemini 4 Neon',
+      images: true,
+      tools: true,
+      reasoningEfforts: [
+        { id: 'low', label: 'Low' },
+        { id: 'medium', label: 'Medium' },
+        { id: 'high', label: 'High' },
+        { id: 'xhigh', label: 'Extra' },
+      ],
+      defaultReasoningEffort: 'medium',
+    },
+    {
+      id: 'gpt-oss-120b',
+      label: 'GPT-OSS 120B',
+      images: true,
+      tools: true,
+      reasoningEfforts: [{ id: 'medium', label: 'Medium' }],
+      defaultReasoningEffort: 'medium',
+    },
+    {
+      id: 'gemini-5-krypton',
+      label: 'Gemini 5 Krypton',
+      images: true,
+      tools: true,
+      reasoningEfforts: [{ id: 'high', label: 'High' }],
+      defaultReasoningEffort: 'high',
+    },
+  ];
+  const variantProvider: ModelProvider = {
+    id: 'variant-fixture',
+    label: 'Variant Fixture',
+    singleton: true,
+    enableDiscoveredModelsByDefault: true,
+    legacyModelVariant: antigravityModelVariant,
+    async open() {
+      return {
+        protocol: 'gemini',
+        async inspect() {
+          return {
+            status: 'ready',
+            identity: 'variant-identity',
+            label: 'Variant Account',
+            models: observedModels,
+            quota: { available: false, observedAt: new Date().toISOString() },
+          };
+        },
+        async beginLogin() {},
+        async cancelLogin() {},
+        async infer() {
+          return chat({ role: 'assistant', content: 'ok' });
+        },
+        async close() {},
+      };
+    },
+  };
+  await mkdir(root, { recursive: true, mode: 0o700 });
+  await writeFile(
+    join(root, 'accounts.json'),
+    JSON.stringify({
+      version: 1,
+      accounts: [
+        {
+          id: 'variant-fixture',
+          provider: 'variant-fixture',
+          label: 'Variant Fixture',
+          identity: 'variant-identity',
+          revision: 'old',
+          enabled: true,
+          status: 'ready',
+          models: [],
+        },
+      ],
+      preferences: {
+        'variant-fixture': {
+          'gemini-4-neon-high': { enabled: false, contextWindow: 900000 },
+          'gemini-4-neon-low': { enabled: true, contextWindow: 650000 },
+          'gemini-4-neon-medium': { enabled: true, contextWindow: 500000 },
+          'gpt-oss-120b-medium': { enabled: false, contextWindow: 600000 },
+        },
+      },
+    }) + '\n',
+    { mode: 0o600 },
+  );
+  const access = createModelAccess({ root, providers: [variantProvider] });
+  try {
+    const checked = await access.accounts.check('variant-fixture');
+    const byId = Object.fromEntries(checked.models.map(item => [item.id, item]));
+    assert.equal(byId['gemini-4-neon']?.enabled, true);
+    assert.equal(byId['gemini-4-neon']?.contextWindow, 650000);
+    assert.equal(byId['gpt-oss-120b']?.enabled, false);
+    assert.equal(byId['gpt-oss-120b']?.contextWindow, 600000);
+    assert.equal(byId['gemini-5-krypton']?.enabled, true);
+    assert.equal(byId['gemini-5-krypton']?.contextWindow, undefined);
+  } finally {
+    await access.close();
+    await rm(root, { recursive: true, force: true });
   }
 });

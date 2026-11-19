@@ -229,10 +229,10 @@ export class ProgrammaticPushbackStore {
     const chosen = rows.slice(0, limit);
     return { events: chosen.map(row => JSON.parse(row.body) as PushbackEvent), hasMore: rows.length > limit };
   }
-  cleanup(now: number, retentionMs: number): Array<{ credentialId: string; workspaceId: string; dropped: number }> {
+  cleanup(now: number, retentionMs: number): Array<{ credentialId: string; workspaceId: string; conversationId: string; type: string; dropped: number }> {
     const db = this.existing(); if (!db) return [];
     return this.transaction(() => {
-      const groups = db.prepare('SELECT credentialId,workspaceId,count(*) AS dropped FROM events WHERE createdAt<? GROUP BY credentialId,workspaceId').all(now - retentionMs) as Array<{ credentialId: string; workspaceId: string; dropped: number }>;
+      const groups = db.prepare("SELECT credentialId,workspaceId,conversationId,type,count(*) AS dropped FROM events WHERE createdAt<? AND type<>'events_dropped' GROUP BY credentialId,workspaceId,conversationId,type").all(now - retentionMs) as Array<{ credentialId: string; workspaceId: string; conversationId: string; type: string; dropped: number }>;
       db.prepare('DELETE FROM events WHERE createdAt<?').run(now - retentionMs);
       db.prepare('DELETE FROM rate_log WHERE at<=?').run(now - 3600000);
       return groups;

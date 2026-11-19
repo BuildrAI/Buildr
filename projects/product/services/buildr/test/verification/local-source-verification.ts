@@ -38,7 +38,7 @@ export async function prepareLocalSourceVerification(options: {
   const env = buildrRequired && (options.base || applicable.some(step => step.reuse?.git === 'comparison'))
     ? pinSourceVerificationBase(productRoot, environment, options.base) : environment;
   const assessment = createCandidateRoundExecution({ ...plan, steps: applicable }, {
-    productRoot, env, inspectOnly: true, round: { roundId: options.roundId, imports: log,
+    productRoot, env, inspectOnly: true, round: { strictInputs: true, roundId: options.roundId, imports: log,
       resume: log.records.length === 0 && !!options.sourceFile && fs.existsSync(options.sourceFile),
       allowFullRerun: outOfScopeStepIds.length > 0 },
   }, dependencies);

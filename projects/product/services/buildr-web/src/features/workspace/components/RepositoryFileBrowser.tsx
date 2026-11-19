@@ -54,6 +54,7 @@ type Props = {
   onRefreshDirectories?(): void | Promise<void>;
   onDirectoryExpansionChange?(keys:string[]): void;
   onViewCurrent(): void;
+  onOpenFolder?: () => Promise<unknown>;
   onChanges?(path: string): void;
   onScene?(state: string): void;
   sidebarHost?: HTMLElement | null;
@@ -117,10 +118,25 @@ export function RepositoryFileBrowser(props: Props) {
   const [resizing, setResizing] = useState(false);
   const resizeOrigin = useRef<{ x: number; width: number } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [openingFolderKey, setOpeningFolderKey] = useState<string | null>(null);
   const codeRef = useRef<HTMLDivElement>(null);
   const scrolls=useRef(new Map<string,number>());
   const appliedFocus = useRef<string | null>(null);
   const selectionKey=props.selectionKey || props.selectedPath;
+  const openingFolder = openingFolderKey === selectionKey;
+  const openFolder = async () => {
+    if (!props.onOpenFolder || openingFolder) return;
+    const targetKey = selectionKey;
+    setOpeningFolderKey(targetKey);
+    try {
+      await props.onOpenFolder();
+      void message.success('已请求打开文件所在文件夹');
+    } catch (error) {
+      void message.error(error instanceof Error ? error.message : '无法打开文件所在文件夹，请重试。');
+    } finally {
+      setOpeningFolderKey(current => (current === targetKey ? null : current));
+    }
+  };
   const readingKey=selectionKey+':'+(props.readPage?.index??'full');
   const searchQuery = repositorySearchQuery(query);
   const searchTooShort = Boolean(query.trim()) && !searchQuery;
@@ -330,6 +346,7 @@ export function RepositoryFileBrowser(props: Props) {
             {props.onReturnTask && <Button size="small" onClick={props.onReturnTask} data-prototype-position="return-task">返回任务</Button>}
             {file.kind === 'markdown' && !props.readPage && <Segmented size="small" value={raw ? 'raw' : 'read'} options={[{ label: '阅读', value: 'read' }, { label: '原文', value: 'raw' }]} onChange={value => setRaw(value === 'raw')} />}
             {props.historical ? <Button size="small" onClick={props.onViewCurrent} data-prototype-position="current-file">查看当前文件</Button> : props.onChanges && <Button size="small" disabled={!file.status} onClick={() => props.onChanges?.(file.path)} data-prototype-position="file-diff-link">查看改动</Button>}
+            {!props.historical && props.onOpenFolder && <Tooltip title="打开文件所在文件夹"><Button type="text" size="small" aria-label="打开文件夹" icon={<FolderOpenOutlined aria-hidden />} loading={openingFolder} onClick={() => void openFolder()}>打开文件夹</Button></Tooltip>}
             <CopyButton type="text" text={file.path} failureMessage="可在下方选中文字复制。">复制路径</CopyButton>
           </Space>
         </header>}

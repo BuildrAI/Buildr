@@ -9,7 +9,7 @@ import './account-quota-button.css';
 type Props = { onClick?(): void; dedicated?:boolean };
 /** Reads shared account snapshots only; opening this never logs in or checks all providers. */
 export function AccountQuotaButton({ onClick, dedicated=false }: Props) {
-  const { api, settings } = useAgentConversations();
+  const { api, settings, full, side } = useAgentConversations();
   const [open, setOpen] = useState(false), [accounts, setAccounts] = useState<ModelAccount[]>([]);
   const [loaded, setLoaded] = useState(false), [error, setError] = useState('');
   const dismissed = useRef(false), pointerFocus = useRef(false), entry = useRef<HTMLButtonElement>(null);
@@ -72,7 +72,7 @@ export function AccountQuotaButton({ onClick, dedicated=false }: Props) {
       </section>;
     })}
   </div>;
-  return <Popover title="供应商额度" content={content} placement="topLeft" trigger={['hover']} open={previewOpen} mouseEnterDelay={0.2} mouseLeaveDelay={0.5}
+  return <Popover title="供应商额度" content={content} placement={full || side === 'left' ? 'topLeft' : 'topRight'} trigger={['hover']} open={previewOpen} mouseEnterDelay={0.2} mouseLeaveDelay={0.5}
     onOpenChange={next => {
       if (next && (dismissed.current || settings)) return;
       if (!next && document.activeElement === entry.current && !pointerFocus.current) return;

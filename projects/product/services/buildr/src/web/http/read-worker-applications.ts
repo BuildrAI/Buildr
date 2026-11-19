@@ -82,7 +82,8 @@ export async function runApplicationRead(message: any) {
     if (message.operation === 'code-source-control') {
       const {observedWorktrees, ...query} = input;
       value = await application.sourceControlInWorker(message.targetRoot, query, observedWorktrees);
-    } else value=await application[operation.method](message.targetRoot,operation.method==='repositories'?input.taskId:input);
+    } else if(operation.method==='repositories') value=await application.repositories(message.targetRoot,input.taskId,input.targetPath);
+    else value=await application[operation.method](message.targetRoot,input);
   } else value = await application[operation.method](message.targetRoot, message.taskId, ...(operation.fields || []).map(field => message[field]), ...(message.operation === 'file-diff' ? [message.checkoutId] : []));
   return value;
 }

@@ -167,8 +167,7 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     });
     const attached = runWithGit(['service', 'create', 'demo/external', '--attach', external, '--integration-branch', 'main', '--target', workflowWorkspace, '--name', 'External', '--description', 'Installed verification fixture', '--type', 'backend', '--json']);
     assert.equal(attached.status, 0, attached.stderr || attached.stdout);
-    const bundledRg=path.join(packageRoot,'payload/runtime/ripgrep',process.platform+'-'+process.arch,process.platform==='win32'?'rg.exe':'rg');
-    const rgVersion=spawnSync(bundledRg,['--version'],{encoding:'utf8',env:{...runtimeEnv,PATH:''}});assert.equal(rgVersion.status,0,rgVersion.stderr);assert.match(rgVersion.stdout,/ripgrep/);
+    assert.equal(fs.existsSync(path.join(packageRoot, 'payload/runtime/ripgrep')), false);
     const codeCatalog=runWithGit(['code','repositories','--target',workflowWorkspace,'--json']);assert.equal(codeCatalog.status,0,codeCatalog.stderr);
     const codeRepository=JSON.parse(codeCatalog.stdout).repositories.find((repo:any)=>repo.location===fs.realpathSync(external));assert.ok(codeRepository);
     const inventoryCli=runWithGit(['code','source-control-inventory','--target',workflowWorkspace,'--json']);assert.equal(inventoryCli.status,0,inventoryCli.stderr);
@@ -288,7 +287,11 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     assert.equal(identity.runtime.executable, process.execPath);
     assert.equal(identity.applicationPayloadDigest, payloadDigest);
 
-    web = spawn(process.execPath, [cli, 'web', '--target', workflowWorkspace, '--no-open', '--port', '0'], { cwd: root, env: runtimeEnv, stdio: ['ignore', 'pipe', 'pipe'] });
+    // The Web search scenario needs the same host Git and rg as the CLI
+    // search above. The other installed CLI calls retain the narrow PATH.
+    web = spawn(process.execPath, [cli, 'web', '--target', workflowWorkspace, '--no-open', '--port', '0'], {
+      cwd: root, env: { ...runtimeEnv, PATH: process.env.PATH }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
     let stderr: any = '';
     web.stderr.setEncoding('utf8');
     web.stderr.on('data', (chunk: any) => { stderr += chunk; });

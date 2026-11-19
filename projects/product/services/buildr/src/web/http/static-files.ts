@@ -6,6 +6,7 @@ import { resolveProductResource } from '../../infrastructure/product-resources/i
 import { mermaidRendererResponse } from './responses.ts';
 
 const DEFAULT_STATIC_ROOT = resolveProductResource('product/web-dist');
+export const PUBLIC_ICON_PATHS = new Set(['/favicon.ico', '/favicon-32x32.png', '/icon-192.png', '/apple-touch-icon.png']);
 const STATIC_CONTENT_TYPES = new Map([
   ['.html', 'text/html; charset=utf-8'],
   ['.js', 'text/javascript; charset=utf-8'],
@@ -67,7 +68,7 @@ export function acceptedAssetEncodings(value = ''): string[] {
     .filter(item => item.q > 0).sort((a, b) => b.q - a.q).map(item => item.coding);
 }
 
-export async function serveDistAsset(response: any, pathname: any, staticRoot: any = DEFAULT_STATIC_ROOT, request?: { headers: Record<string, string | string[] | undefined> }) {
+export async function serveDistAsset(response: any, pathname: any, staticRoot: any = DEFAULT_STATIC_ROOT, request?: { method?: string; headers: Record<string, string | string[] | undefined> }) {
   const filePath = resolveDistFile(pathname, staticRoot);
   // Compression sidecars are representations, never standalone public resources.
   if (!filePath || /\.(?:br|gz)$/.test(filePath)) return false;
@@ -77,6 +78,7 @@ export async function serveDistAsset(response: any, pathname: any, staticRoot: a
   if (filePath === path.join(path.resolve(staticRoot || DEFAULT_STATIC_ROOT), 'mermaid-renderer.html')) {
     mermaidRendererResponse(response, await readFile(filePath, 'utf8')); return true;
   }
+  const publicIcon = PUBLIC_ICON_PATHS.has(pathname);
   const immutable = /^\/assets\/(?:[^/]+\/)*[^/]+-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/.test(pathname);
   let content: Buffer | undefined, encoding: string | undefined;
   if (immutable) for (const coding of acceptedAssetEncodings(String(request?.headers['accept-encoding'] || ''))) {
@@ -86,7 +88,7 @@ export async function serveDistAsset(response: any, pathname: any, staticRoot: a
   content ??= await readFile(filePath);
   response.writeHead(200, {
     'content-type': contentType,
-    'cache-control': immutable ? 'public, max-age=31536000, immutable' : 'no-store',
+    'cache-control': immutable ? 'public, max-age=31536000, immutable' : publicIcon ? 'public, max-age=3600' : 'no-store',
     'content-length': content.length,
     'x-content-type-options': 'nosniff',
     ...(immutable ? {vary: 'Accept-Encoding'} : {}),
@@ -94,5 +96,5 @@ export async function serveDistAsset(response: any, pathname: any, staticRoot: a
     'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob: https: http://127.0.0.1:* http://localhost:*; media-src 'self' blob:; base-uri 'none'; frame-ancestors 'none'",
     'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY',
   });
-  response.end(content); return true;
+  response.end(request?.method === 'HEAD' ? undefined : content); return true;
 }

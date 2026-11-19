@@ -41,36 +41,85 @@ export function materializeRuntimeObject(root: string, source: string, mode?: nu
 
 /** Hardlink counts are the authoritative view references. Only an unchanged,
  * unlinked, hash-verified service object is eligible, after its retention window. */
-export function runtimeObjectUnreferenced(directory: string, identity: string): boolean {
+export function runtimeObjectUnreferenced(
+  directory: string,
+  identity: string,
+  references?: ReturnType<typeof cloneViewReferences>,
+): boolean {
   try {
-    const references=cloneViewReferences(path.resolve(directory,'../../../..'));
-    if(!references.complete||references.objects.has(identity))return false;
+    const resolvedReferences = references ?? cloneViewReferences(path.resolve(directory, '../../../..'));
+    if (!resolvedReferences.complete || resolvedReferences.objects.has(identity)) return false;
     const match = /^([a-f0-9]{64})-([0-7]{1,3})$/.exec(identity);
     const names = fs.readdirSync(directory);
     if (!match || names.length !== 1 || names[0] !== (process.platform === 'win32' ? 'payload.exe' : 'payload')) return false;
     const file = path.join(directory, names[0]!), stat = fs.lstatSync(file);
     return stat.isFile() && !stat.isSymbolicLink() && (!process.getuid || stat.uid === process.getuid()) && stat.nlink === 1 && !(stat.mode & 0o222) &&
-      (stat.mode & 0o111) === parseInt(match[2]!,8) && runtimeFileHash(file) === match[1];
+      (stat.mode & 0o111) === parseInt(match[2]!, 8) && runtimeFileHash(file) === match[1];
   } catch { return false; }
 }
 const RUNTIME_OBJECT_GRACE_MS = 24 * 60 * 60_000;
 
-export function runtimeObjectCandidates(root: string, use: StorageUse, now=Date.now()): StorageCandidate[] {
+export interface RuntimeObjectScanOptions {
+  targets?: ReadonlySet<string>;
+  maxVerifyItems?: number;
+  maxVerifyBytes?: number;
+}
+
+export function runtimeObjectCandidates(
+  root: string,
+  use: StorageUse,
+  now = Date.now(),
+  options: RuntimeObjectScanOptions = {},
+): StorageCandidate[] {
   const base = path.join(root, 'toolchains/objects'), result: StorageCandidate[] = [];
-  const references=cloneViewReferences(root);if(!references.complete)return result;
-  if (!safeStoragePath(root, base)) return result;
-  for (const prefix of fs.readdirSync(base)) {
+  const references = cloneViewReferences(root);
+  if (!references.complete || !safeStoragePath(root, base)) return result;
+  const payloadName = process.platform === 'win32' ? 'payload.exe' : 'payload';
+  let verifiedItems = 0, verifiedBytes = 0;
+
+  const budgetReached = () => !options.targets && (
+    (options.maxVerifyItems !== undefined && verifiedItems >= options.maxVerifyItems) ||
+    (options.maxVerifyBytes !== undefined && verifiedBytes > 0 && verifiedBytes >= options.maxVerifyBytes)
+  );
+
+  const inspectEntry = (directory: string, identity: string) => {
+    if (references.objects.has(identity) || !safeStoragePath(root, directory)) return;
+    const file = path.join(directory, payloadName);
+    const stat = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (!stat || stat.nlink !== 1) return;
+    if (budgetReached()) return;
+    const item = storageCandidate(root, 'runtime-object', directory, directory, use, now - RUNTIME_OBJECT_GRACE_MS);
+    if (item.eligible && stat.ctimeMs > now - RUNTIME_OBJECT_GRACE_MS) {
+      item.eligible = false;
+      item.reason = 'runtime_object_retention';
+    }
+    if (item.eligible) {
+      verifiedItems++;
+      verifiedBytes += item.sizeBytes;
+      if (!runtimeObjectUnreferenced(directory, identity, references)) {
+        item.eligible = false;
+        item.reason = 'runtime_object_unknown';
+      }
+    }
+    result.push(item);
+  };
+
+  if (options.targets) {
+    for (const target of options.targets) {
+      const relative = path.relative(base, target).split(path.sep);
+      if (relative.length !== 2 || !/^[a-f0-9]{2}$/.test(relative[0]!) || !relative[1]!.startsWith(relative[0]!)) continue;
+      inspectEntry(path.join(base, relative[0]!, relative[1]!), relative[1]!);
+    }
+    return result;
+  }
+
+  for (const prefix of fs.readdirSync(base).sort()) {
     const parent = path.join(base, prefix);
-    if (!/^[a-f0-9]{2}$/.test(prefix) || !safeStoragePath(root,parent)) continue;
-    for (const identity of fs.readdirSync(parent)) {
-      const directory = path.join(parent, identity);
-      if (references.objects.has(identity) || !identity.startsWith(prefix) || !safeStoragePath(root,directory)) continue;
-      const file = path.join(directory,process.platform === 'win32' ? 'payload.exe' : 'payload');
-      if (fs.lstatSync(file,{throwIfNoEntry:false})?.nlink !== 1) continue;
-      const item = storageCandidate(root,'runtime-object',directory,directory,use,now-RUNTIME_OBJECT_GRACE_MS);
-      if (item.eligible && fs.lstatSync(file).ctimeMs>now-RUNTIME_OBJECT_GRACE_MS) { item.eligible=false; item.reason='runtime_object_retention'; }
-      if (item.eligible && !runtimeObjectUnreferenced(directory,identity)) { item.eligible=false; item.reason='runtime_object_unknown'; }
-      result.push(item);
+    if (!/^[a-f0-9]{2}$/.test(prefix) || !safeStoragePath(root, parent)) continue;
+    for (const identity of fs.readdirSync(parent).sort()) {
+      if (!identity.startsWith(prefix)) continue;
+      inspectEntry(path.join(parent, identity), identity);
+      if (budgetReached()) return result;
     }
   }
   return result;

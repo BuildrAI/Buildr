@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { acquirePreparedProcessFixture } from '../../../support/prepared-process-fixture.ts';
+import { createManagedTestTempDir } from '../../../support/managed-temp.ts';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { createRequire } from 'node:module';
@@ -11,7 +11,8 @@ import type { AgentProcessConnection } from '../../../../src/index.ts';
 import { until, actor, connectAgentProcess, cleanupProcessFixture } from '../../../support/process-fixture.ts';
 
 test('packaged execution backend automatically reclaims closed diagnostics while authenticated control remains available', { skip: process.platform !== 'darwin', timeout: 30000 }, async t => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-auto-storage-'))), dataRoot = path.join(root, 'profile'), workspace = path.join(root, 'work');
+  const managed = createManagedTestTempDir();
+  const root = managed.root, dataRoot = path.join(root, 'profile'), workspace = path.join(root, 'work');
   fs.mkdirSync(workspace);
   const runtime = acquirePreparedProcessFixture(dataRoot), profileId = 'storage-test';
   const runId = '2026-11-03T00-00-00-000+08-00-packaged-p2000000000';
@@ -27,7 +28,10 @@ test('packaged execution backend automatically reclaims closed diagnostics while
   const codexLog=path.join(serviceRoot,'connections/codex/codex-home/logs_2.sqlite');fs.mkdirSync(path.dirname(codexLog),{recursive:true});
   const logs=new DatabaseSync(codexLog);logs.exec('CREATE TABLE logs(ts INTEGER,feedback_log_body TEXT,thread_id TEXT,process_uuid TEXT)');logs.close();fs.utimesSync(codexLog,1,1);
   let host: Awaited<ReturnType<typeof actor>> | undefined, observer: AgentProcessConnection | undefined;
-  t.after(() => cleanupProcessFixture({ root, dataRoot, profileId, host, observer }));
+  t.after(async () => {
+    try { await cleanupProcessFixture({ root, dataRoot, profileId, host, observer }); }
+    finally { managed.cleanup(); }
+  });
   host = await actor({ dataRoot, workspace, profileId, runtime });
   // Establish an authoritative empty conversation store. A missing store is
   // deliberately not evidence that native consumers can be discarded.
@@ -39,7 +43,7 @@ test('packaged execution backend automatically reclaims closed diagnostics while
     let maintenance:unknown;
     try{maintenance=JSON.parse(fs.readFileSync(path.join(serviceRoot,'process/storage-observation.json'),'utf8')).npmCaches;}catch{}
     return {qoderGone:!fs.existsSync(directory),npmGone:!fs.existsSync(oldNpm),codexGone:!fs.existsSync(codexLog),maintenance};
-  }, value=>value.qoderGone&&value.npmGone&&value.codexGone);
+  }, value=>value.qoderGone&&value.npmGone&&value.codexGone, 20000);
   assert.equal(fs.readFileSync(transcript, 'utf8'), 'original-native-history');
   assert.equal((await cache.get(path.join(hostNpm,'_cacache'),'offline-package')).data.toString(),'reused without download');
 });

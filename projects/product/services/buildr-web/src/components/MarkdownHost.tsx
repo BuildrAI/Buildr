@@ -12,6 +12,7 @@ type Props = {
   options?: MarkdownRenderOptions;
   fragment?: string;
   renderVersion?: string;
+  onRendered?: (view: HTMLElement) => void | (() => void);
 };
 
 export function scrollMarkdownFragment(root: HTMLElement, fragment: string) {
@@ -23,10 +24,12 @@ export function scrollMarkdownFragment(root: HTMLElement, fragment: string) {
   return true;
 }
 
-export function MarkdownHost({ markdown, className, options, fragment, renderVersion }: Props) {
+export function MarkdownHost({ markdown, className, options, fragment, renderVersion, onRendered }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const optionsRef = useRef(options);
   optionsRef.current = options;
+  const onRenderedRef = useRef(onRendered);
+  onRenderedRef.current = onRendered;
   const [diagramPreview, setDiagramPreview] = useState<MarkdownDiagramTarget | null>(null);
 
   useEffect(() => {
@@ -64,8 +67,10 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
     if (currentOptions.onImageClick) bindMarkdownImagePreviews(view, () => optionsRef.current?.onImageClick);
     bindMarkdownDiagramPreviews(view, () => (diagram) => setDiagramPreview(diagram));
     host.replaceChildren(view);
+    const releaseReading = onRenderedRef.current?.(view);
     if (fragment) requestAnimationFrame(() => scrollMarkdownFragment(view, fragment));
-    return renderMarkdownDiagrams(view);
+    const releaseDiagrams = renderMarkdownDiagrams(view);
+    return () => { releaseReading?.(); releaseDiagrams(); };
   }, [markdown, className, fragment, renderVersion, options?.taskLinkPathname, JSON.stringify(options?.headingCounts)]);
 
   return (

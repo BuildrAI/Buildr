@@ -111,6 +111,27 @@ test('publication waiting returns to the owner on the poll budget for environmen
   assert.equal(observed.waiting.status, 'cancelled');
 });
 
+test('publication waits for the original run to expose its retried attempt without dispatching again', async () => {
+  const observations = [
+    { status: 'publication-running', run: { id: 42 } },
+    { status: 'publication-retry-unconfirmed', run: { id: 42 }, effects: [{ type: 'publication-failed-jobs-rerun' }] },
+    { status: 'publication-retry-unconfirmed', run: { id: 42 } },
+    { status: 'passed', run: { id: 42 } },
+  ];
+  const actions: string[] = [], watches: Array<string | number> = [];
+  const result = await waitForReleaseOperation({ action: 'publish', wait: true, waitIntervalMs: 1, waitTimeoutMs: 10_000 }, {
+    runReleaseOperation: async options => {
+      actions.push(options.action);
+      return observations.shift()!;
+    },
+    watchRun: async request => { watches.push(request.runId); return { status: 'completed', exitCode: 1 }; },
+  });
+  assert.equal(result.status, 'passed');
+  assert.deepEqual(actions, ['publish', 'resume', 'resume', 'resume']);
+  assert.deepEqual(watches, [42, 42]);
+  assert.equal(result.effects?.length, 1);
+});
+
 for (const bucket of ['fail', 'cancel']) test(`protected main reports required ${bucket} without waiting or touching unrelated checks`, async () => {
   const f = protectedMainFixture();
   const result = await waitForReleaseMainPullRequest(f.options, f.dependencies((args: string[]) => ({ status: args[1] === 'checks' ? 1 : 0,

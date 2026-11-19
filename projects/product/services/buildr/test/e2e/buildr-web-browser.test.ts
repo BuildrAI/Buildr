@@ -289,9 +289,22 @@ function createSelectedFixture(root: any): any  {
     createShellFixture(root);
     const source=path.join(root,'projects/demo/services/api');fs.mkdirSync(path.join(source,'src'),{recursive:true});
     fs.writeFileSync(path.join(source,'src/main.ts'),'export const explorerAnswer = 1;\n'+'// readable source line\n'.repeat(120));
-    fs.writeFileSync(path.join(source,'README.md'),'# Explorer document\n\n[Source](src/main.ts)\n\n[同库父级资料](../services/foo)\n\n[代码关联任务说明](@task/browser-task)\n\n![Image](image.png)\n');
+    fs.writeFileSync(path.join(source,'README.md'),'# Explorer document\n\n![Image](image.png)\n\n'+'A paragraph for reading.\n\n'.repeat(40)+'[Source](src/main.ts)\n\n[同库父级资料](../services/foo)\n\n[代码关联任务说明](@task/browser-task)\n\n');
     const parentRelativeFile=path.join(source,'../services/foo');fs.mkdirSync(path.dirname(parentRelativeFile),{recursive:true});fs.writeFileSync(parentRelativeFile,'export const parentRelativeSource = "same checkout";\n');
     fs.writeFileSync(path.join(source,'image.png'),publicationTestPng);
+    fs.writeFileSync(path.join(source,'html-reading-fixture.HTM'), [
+      '<!doctype html><html lang="zh-CN"><head>',
+      '<style>h1{color:rgb(15, 105, 90)} .spacer{height:1000px}</style>',
+      '<meta http-equiv="refresh" content="0;url=/html-preview-unused">',
+      '</head><body>',
+      '<h1>HTML 阅读样例</h1><script>document.title = "script should not run"</script>',
+      '<a href="#ending">跳到结尾</a><a href="/html-preview-unused">外部链接</a>',
+      '<img alt="相对图片" src="/html-preview-unused">',
+      `<img alt="内嵌图片" src="data:image/png;base64,${publicationTestPng.toString('base64')}">`,
+      '<details><summary>展开说明</summary><p>折叠内容</p></details>',
+      '<div class="spacer"></div><h2 id="ending">HTML 文档结尾</h2>',
+      '</body></html>',
+    ].join('\n'));
     fs.writeFileSync(path.join(source,'src/𠮷𠮷.ts'),'export const unicodeSearch = "𠮷𠮷";\n');
     fs.writeFileSync(path.join(source,'large-text.txt'),'large text start\n'+('x'.repeat(80*1024-1)+'\n').repeat(63)+'large text end\n');
     fs.writeFileSync(path.join(source,'zz-segmented-text.txt'),codeSegmentedText('history'));
@@ -699,7 +712,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     runtime.updateTask(workspaceRoot, 'browser-task', { brief: fs.readFileSync(linkedBrief, 'utf8'), expectedRecordDigest: linkedTask.recordDigest });
     const codeFile=path.join(workspaceRoot,'projects/demo/services/api/zz-segmented-text.txt');
     const history=spawnSync('git',['rev-parse','HEAD'],{cwd:workspaceRoot,encoding:'utf8'});assert.equal(history.status,0,history.stderr);
-    if (runCodeExplorer) await runCodeExplorerJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,codeFixture:{...codeWorktreeFixture,current:codeSegmentedText('current'),history:codeSegmentedText('history'),commitHash:history.stdout.trim(),change:()=>fs.writeFileSync(codeFile,'changed segmented text\n'+codeSegmentedText('current')),restore:()=>fs.writeFileSync(codeFile,codeSegmentedText('current'))}});
+    if (runCodeExplorer) await runCodeExplorerJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,codeFixture:{...codeWorktreeFixture,current:codeSegmentedText('current'),history:codeSegmentedText('history'),commitHash:history.stdout.trim(), htmlFixturePath:path.join(workspaceRoot,'projects/demo/services/api/html-reading-fixture.HTM'), change:()=>fs.writeFileSync(codeFile,'changed segmented text\n'+codeSegmentedText('current')),restore:()=>fs.writeFileSync(codeFile,codeSegmentedText('current'))}});
     if (runSourceControl) {
     // This file belongs to the finished explorer fixture. SCM also needs a real clean checkout.
     fs.rmSync(path.join(codeWorktreeFixture.nativeCheckoutLocation,codeWorktreeFixture.nativeWorktree.path));

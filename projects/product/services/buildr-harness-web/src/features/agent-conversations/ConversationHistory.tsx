@@ -1,4 +1,3 @@
-import { useConversationHost } from '../../integration/ConversationHost.tsx';
 import { settleConversationDraftIds, shouldShowConversationDraft, workspaceConversationDraftIds } from './conversation-draft-presence.ts';
 import { applyConfirmedSeenActivity, executionStatsSignature } from './conversation-seen-hold.ts';
 import { useConversationDraftPresenceDetail, useConversationDraftSubmittedIds } from './useConversationDraftPresence.ts';
@@ -38,10 +37,9 @@ function DraftStatusBadge({visible,immediateHide}:{visible:boolean;immediateHide
   if(!visible&&!leaving)return null;
   return <span className={'ac-draft-status'+(leaving&&!visible?' is-leaving':'')} aria-hidden={leaving&&!visible?true:undefined}>有草稿</span>;
 }
-export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWorkspaceId,keepHistoryOpen=false,focusNavigation=false,hiddenBySettings=false}:{workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;keepHistoryOpen?:boolean;focusNavigation?:boolean;hiddenBySettings?:boolean}) {
+export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWorkspaceId,keepHistoryOpen=false,hiddenBySettings=false}:{workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;keepHistoryOpen?:boolean;hiddenBySettings?:boolean}) {
   const context=useAgentConversations();
-  const composition=useConversationHost();
-  const showBackToConversation=!context.open||(Boolean(composition.standalone||focusNavigation)&&!keepHistoryOpen);
+  const showBackToConversation=!keepHistoryOpen;
   const presence=useConversationDraftPresenceDetail();
   const activeEditingScope=keepHistoryOpen&&context.scope?context.scope:null;
   const activeEditingId=activeEditingScope?.conversationId??null;
@@ -100,7 +98,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   const renderRow=(row:ConversationSummary)=>{
     const meta=conversationMetadata(row,undefined,row.run?.model?conversationModelLabel(row.run.model,context.connections,context.modelCatalog,{modelAccountId:row.run.modelAccountId}):undefined);
     return <div key={row.workspaceId+':'+row.id} className={'ac-history-row'+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
-      <button type="button" className="ac-history-row-main" data-conversation-id={row.id} onClick={()=>{if(focusNavigation)context.setSettings(false);void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true,preserveHistoryView:keepHistoryOpen});}}>
+      <button type="button" className="ac-history-row-main" data-conversation-id={row.id} onClick={()=>{context.setSettings(false);void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true,preserveHistoryView:keepHistoryOpen});}}>
         <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/><DraftStatusBadge visible={shouldShowConversationDraft(row,settledDraftIds)} immediateHide={activityState(row)!==null}/></span>
         {sendActivity(row)?.reason&&<span className="ac-send-reason">{sendActivity(row)?.reason}</span>}
         {row.searchSnippet&&<span className="ac-history-row-snippet" title={row.searchSnippet}>{row.searchSnippet}</span>}
@@ -119,7 +117,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
     reorder(id,movable[index+2]??'end');
   };
   const sortGroup=(id:string)=><ConversationHistoryGroup key={id+scopeKey} workspaceId={id} name={workspaceName(id)} query={searchQuery} hidden={hidden} agent={agent} model={model} draftConversationIds={workspaceConversationDraftIds(id,settledDraftIds,presence,activeEditingScope)} activeViewingId={activeEditingScope?.workspaceId===id?activeEditingScope.conversationId:null} renderRow={renderRow} onResult={reportGroup}
-    onNew={focusNavigation&&!hidden?()=>{
+    onNew={!hidden?()=>{
       context.setSettings(false);
       context.newConversation({scope:{workspaceId:id},preserveVisibility:true,preserveHistoryView:keepHistoryOpen});
       requestAnimationFrame(()=>document.getElementById('agent-conversation-input')?.focus());
@@ -139,7 +137,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   });
   const empty=groupsSettled&&visibleGroups.every(id=>groupResults.values[id]?.total===0);
   return <section className="ac-history" aria-label="对话列表" hidden={hiddenBySettings}>
-    <header className="ac-thread-header">{showBackToConversation&&<Button type="text" icon={<ArrowLeftOutlined/>} aria-label="返回当前对话" onClick={()=>context.setView('conversation')}/>}<strong>对话列表</strong>{!context.open&&<Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" onClick={()=>context.newConversation({preserveVisibility:true,preserveHistoryView:keepHistoryOpen})}/>}</header>
+    <header className="ac-thread-header">{showBackToConversation&&<Button type="text" icon={<ArrowLeftOutlined/>} aria-label="返回当前对话" title="返回当前对话" onClick={()=>context.setView('conversation')}/>}<strong>对话列表</strong>{!context.open&&<Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" title="新建对话" onClick={()=>context.newConversation({preserveVisibility:true,preserveHistoryView:keepHistoryOpen})}/>}</header>
     <div className="ac-history-body">
       <div className="ac-history-toolbar"><Input allowClear prefix={<SearchOutlined/>} aria-label="搜索对话" placeholder="搜索对话" value={query} onChange={event=>setQuery(event.target.value)}/><Select aria-label="对话列表工作空间" value={workspaceId} options={[{value:'',label:'全部工作空间'},...workspaces.map(item=>({value:item.id,label:item.name}))]} onChange={value=>{setWorkspaceId(value);setFilter(null);}}/></div>
       

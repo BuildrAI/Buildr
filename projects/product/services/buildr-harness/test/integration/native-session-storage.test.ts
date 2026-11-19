@@ -31,7 +31,7 @@ function writeFile(name: string, contents = 'data') { fs.mkdirSync(path.dirname(
 function age(target: string, timestamp = Date.now() - 3 * day) {
   for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
     const name = path.join(target, entry.name);
-    if (entry.isDirectory()) age(name, timestamp); else if (!entry.isSymbolicLink()) fs.utimesSync(name, timestamp / 1000, timestamp / 1000);
+    if (entry.isDirectory()) age(name, timestamp); else if (entry.isSymbolicLink()) fs.lutimesSync(name, timestamp / 1000, timestamp / 1000); else fs.utimesSync(name, timestamp / 1000, timestamp / 1000);
   }
   fs.utimesSync(target, timestamp / 1000, timestamp / 1000);
 }
@@ -394,4 +394,131 @@ test('claude-code standalone sessions and dead lease homes follow complete refer
   assert.equal(fs.existsSync(deadHome), false);
   assert.equal(fs.existsSync(liveHome), true);
   assert.equal(fs.existsSync(subagentHome), true);
+});
+
+test('dead lease homes allow reclaiming user-owned internal symlinks without following targets while rejecting symlinked home roots', { skip: process.platform !== 'darwin' }, t => {
+  const f = fixture(t);
+  const outsideTarget = path.join(f.dataRoot, 'outside-keep.txt');
+  writeFile(outsideTarget, 'keep-outside-file');
+
+  const deadWithInternalLink = codexHome(f.root, binding('c')).config;
+  writeFile(path.join(deadWithInternalLink, 'codex-home', 'config.toml'), 'model = "x"\n');
+  fs.mkdirSync(path.join(deadWithInternalLink, 'codex-home', 'tmp'), { recursive: true });
+  fs.symlinkSync(outsideTarget, path.join(deadWithInternalLink, 'codex-home', 'tmp', 'apply_patch'));
+  age(deadWithInternalLink);
+
+  const outsideDir = path.join(f.dataRoot, 'outside-dir');
+  writeFile(path.join(outsideDir, 'secret.txt'), 'secret');
+  const symlinkedHome = path.join(f.root, 'connections', 'codex', 'model-bindings', binding('d'));
+  fs.mkdirSync(path.dirname(symlinkedHome), { recursive: true });
+  fs.symlinkSync(outsideDir, symlinkedHome);
+
+  const plan = inspectHomes(f.dataRoot);
+  assert.equal(plan.items.find(item => item.path === deadWithInternalLink)?.eligible, true);
+  assert.equal(plan.items.some(item => item.path === symlinkedHome && item.eligible), false);
+
+  const collected = collectAgentStorage(plan, 128, { confirmNativeSessions: true });
+  assert.equal(collected.results.find(item => item.path === deadWithInternalLink)?.status, 'removed');
+  assert.equal(fs.existsSync(deadWithInternalLink), false);
+  assert.equal(fs.readFileSync(outsideTarget, 'utf8'), 'keep-outside-file');
+  assert.equal(fs.readFileSync(path.join(outsideDir, 'secret.txt'), 'utf8'), 'secret');
+});
+
+test('antigravity native sessions require explicit opt-in and confirmation, respect references and sqlite family occupancy', { skip: process.platform !== 'darwin' }, async t => {
+  const f = fixture(t);
+  const agRoot = path.join(f.root, 'connections', 'antigravity');
+  const liveHeaderId = randomUUID(), liveToolId = randomUUID(), liveHandoffId = randomUUID(), busyDbId = randomUUID(), staleId = randomUUID();
+
+  const populateContext = (id: string, extraBrainFiles = 0) => {
+    const sess = path.join(agRoot, 'antigravity-sessions', `${id}.jsonl`);
+    const brain = path.join(agRoot, 'home', '.gemini', 'antigravity-cli', 'brain', id);
+    const db = path.join(agRoot, 'home', '.gemini', 'antigravity-cli', 'conversations', `${id}.db`);
+    const wal = `${db}-wal`, shm = `${db}-shm`;
+    const ann = path.join(agRoot, 'home', '.gemini', 'antigravity-cli', 'annotations', `${id}.pbtxt`);
+    const transcript = path.join(agRoot, 'home', '.gemini', 'antigravity', 'transcripts', `${id}.jsonl`);
+    writeFile(sess, `{"sessionId":"${id}"}\n`);
+    writeFile(path.join(brain, 'plan.md'), '# plan\n');
+    for (let i = 0; i < extraBrainFiles; i++) writeFile(path.join(brain, 'steps', `${i}.json`), '{}');
+    writeFile(db, 'sqlite'); writeFile(wal, 'wal'); writeFile(shm, 'shm');
+    writeFile(ann, 'note');
+    writeFile(transcript, `{"sessionId":"${id}"}\n`);
+    return [sess, brain, db, wal, shm, ann, transcript];
+  };
+
+  const liveHeaderFiles = populateContext(liveHeaderId);
+  const liveToolFiles = populateContext(liveToolId);
+  const liveHandoffFiles = populateContext(liveHandoffId);
+  const busyDbFiles = populateContext(busyDbId);
+  const staleFiles = populateContext(staleId, 75);
+  const globalConfig = path.join(agRoot, 'home', '.gemini', 'antigravity-cli', 'global-settings.json');
+  writeFile(globalConfig, '{"preserve":true}');
+  age(agRoot);
+
+  // 1. Header reference protects all artifacts for liveHeaderId
+  const repo = new ConversationRepository(f.root), cwd = '/workspace', participantId = randomUUID();
+  repo.saveConversation({
+    view: { id: randomUUID(), workspaceId: 'ws', revision: 'r1', cwd, title: 'ag', updatedAt: 'now', hidden: false, requests: [], participants: [], entries: [] },
+    participants: [{ id: participantId, connectionId: 'antigravity', provider: 'antigravity', label: 'Antigravity',
+      bindingIdentity: 'binding', deliveredThrough: 0,
+      contextRef: { id: liveHeaderId, data: { native: opaqueReference('antigravity', liveHeaderId, cwd, 'binding') } } }],
+    sources: {}, nativeTools: {}, attachments: {}, requests: {},
+    attempts: [{ clientRequestId: randomUUID(), inputDigest: 'digest', runId: randomUUID(), participantId, through: 0, userEntryId: 'user', accepted: true,
+      executionRef: { id: randomUUID(), data: { resourceContext: liveHeaderId } } }],
+  });
+
+  // 2. Durable tool source.path reference protects liveToolId
+  const toolRef: NativeToolContent = { version: 2, provider: 'antigravity', contextId: randomUUID(), entry: toolEntry('ag-tool'),
+    text: [{ source: { path: path.relative(f.root, path.join(liveToolFiles[1]!, 'plan.md')).split(path.sep).join('/'), offset: 0, length: 6, sha256: '0'.repeat(64), codec: 'bytes' }, pointer: [] }] };
+  const toolEncoded = ConversationEntryStore.encodeReference(toolRef);
+  const toolDb = new DatabaseSync(repo.filename);
+  try {
+    toolDb.prepare('INSERT INTO conversation_entry_contents(conversation_id,content_revision,codec,body_bytes,body) VALUES(?,?,?,?,?)')
+      .run('ag-tool-conv', randomUUID(), toolEncoded.codec, Buffer.from(toolEncoded.body as Uint8Array).length, toolEncoded.body);
+  } finally { toolDb.close(); }
+
+  // 3. Handoff source index protects liveHandoffId
+  const handoffRef: NativeToolContent = { version: 3, provider: 'antigravity', contextId: liveHandoffId, entry: toolEntry('ag-handoff-tool'),
+    session: { config: 'connections/antigravity', cwd: '/workspace' }, text: [] };
+  handoffSources(f.root, randomUUID(), [toolEntry('ag-handoff-tool')], [], [], () => handoffRef);
+
+  // 4. Open process on busyDbId's -wal file must keep the entire busyDbId group and context
+  const holder = spawn(process.execPath, ['-e', "require('fs').openSync(process.argv[1],'r');process.stdout.write('ready');setInterval(()=>{},1000)", busyDbFiles[3]!], { stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(async () => {
+    if (holder.exitCode === null && holder.signalCode === null) {
+      const exited = new Promise<void>(resolve => holder.once('exit', () => resolve()));
+      holder.kill();
+      await exited;
+    }
+  });
+  await new Promise<void>(resolve => holder.stdout!.once('data', () => resolve()));
+
+  // Automatic inventory never exposes antigravity native sessions
+  assert.equal(inspectAgentStorage({ dataRoot: f.dataRoot, scanHomes: false }).items.some(item => item.kind === 'native-session'), false);
+
+  const plan = inspect(f.dataRoot);
+  for (const file of [...liveHeaderFiles, ...liveToolFiles, ...liveHandoffFiles]) {
+    assert.equal(plan.items.find(item => item.path === file)?.reason, 'native_session_referenced');
+  }
+  for (const file of busyDbFiles) {
+    assert.equal(plan.items.find(item => item.path === file)?.reason, 'storage_in_use');
+    assert.equal(plan.items.find(item => item.path === file)?.eligible, false);
+  }
+  for (const file of staleFiles) {
+    assert.equal(plan.items.find(item => item.path === file)?.eligible, true);
+  }
+
+  // Unconfirmed execution retains everything
+  const unconfirmed = collectAgentStorage(plan);
+  assert.ok(unconfirmed.results.every(item => item.status === 'retained' && item.reason === 'native_session_confirmation_required'));
+  for (const file of staleFiles) assert.equal(fs.existsSync(file), true);
+
+  // Confirmed execution removes only staleId artifacts and preserves everything else
+  const confirmed = collectAgentStorage(plan, 128, { confirmNativeSessions: true });
+  for (const file of staleFiles) {
+    assert.equal(confirmed.results.find(item => item.path === file)?.status, 'removed');
+    assert.equal(fs.existsSync(file), false);
+  }
+  for (const file of [...liveHeaderFiles, ...liveToolFiles, ...liveHandoffFiles, ...busyDbFiles, globalConfig]) {
+    assert.equal(fs.existsSync(file), true);
+  }
 });

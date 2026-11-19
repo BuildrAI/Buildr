@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises';
 import { spawn } from 'node:child_process';
 import { releasePublishAuthority } from './release-authority.ts';
 import { releaseQueuePolicy } from './github-queue-recovery.ts';
@@ -107,6 +108,18 @@ export async function waitForReleaseOperation(options: ReleaseWaitOptions, depen
     const finish = (status: string, diagnostic?: unknown) => ({ ...value, effects: allEffects,
       waiting: { status, polls, durationMs: now() - startedAt, pollWorkMs, sleepMs, watchMs }, ...(diagnostic ? { diagnostic } : {}) });
     if (!runId) return finish('readback-required');
+    if ((value.effects ?? []).some((effect: any) => effect.type === 'publication-failed-jobs-rerun')) completedWatchRun = undefined;
+    if (completedWatchRun === runId && value.status === 'publication-retry-unconfirmed') {
+      const sleepStartedAt = now();
+      try { await delay(Math.min(timeoutMs - durationMs, intervalMs, 5000), undefined, { signal: dependencies.signal }); }
+      catch (error) {
+        if (dependencies.signal?.aborted) return cancelled(value);
+        throw error;
+      }
+      sleepMs += now() - sleepStartedAt;
+      completedWatchRun = undefined;
+      continue;
+    }
     if (completedWatchRun === runId) return finish('readback-required', { code: 'release-watch-readback-required', message: 'Watch finished but terminal owner evidence is not yet available.' });
     const watch = dependencies.watchRun ?? watchReleaseRun;
     const watchStartedAt = now();
@@ -116,7 +129,7 @@ export async function waitForReleaseOperation(options: ReleaseWaitOptions, depen
     // using the full queue budget would leave the run waiting for minutes.
     const budget = Math.min(timeoutMs - durationMs, releaseQueuePolicy(options).timeoutSeconds * 1000,
       value.status === 'candidate-running' || value.status === 'publication-running' ? intervalMs : Infinity);
-    const watched = await watch({ runId, timeoutMs: budget, intervalSeconds: Math.max(1, Math.ceil(intervalMs / 1000)),
+    const watched = await watch({ runId, timeoutMs: budget, intervalSeconds: Math.max(1, Math.ceil((value.status.startsWith('publication-') ? Math.min(intervalMs, 5000) : intervalMs) / 1000)),
       ghCommand: String(options.ghCommand ?? 'gh'), cwd: typeof options.workspace === 'string' ? options.workspace : undefined, signal: dependencies.signal });
     watchMs += now() - watchStartedAt;
     if (dependencies.signal?.aborted || watched.status === 'cancelled') return cancelled(value);

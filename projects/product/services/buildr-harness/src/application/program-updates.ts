@@ -81,7 +81,11 @@ export class ProgramUpdates {
       const candidate = catalog.candidates[0];
       if (!candidate?.version) throw new Error('program_unavailable');
       view.currentVersion = candidate.version;
-      view.compatible = isCompatibleProgram(connection.provider, candidate.version);
+      view.compatible = candidate.compatible && isCompatibleProgram(connection.provider, candidate.version);
+      if (candidate.repairRequired && view.managed) {
+        view.repairRequired = true;
+        view.diagnostic = candidate.diagnostic;
+      }
       const release = await this.release(connection.provider, connection.executable, controller.signal);
       view.latestVersion = release.latestVersion;
       view.currentReleaseVersion = view.versionKind === 'package' ? release.currentReleaseVersion : candidate.version;
@@ -95,7 +99,8 @@ export class ProgramUpdates {
       }
     } catch {
       view.status = 'unknown';
-      view.diagnostic = controller.signal.aborted ? '检查超时或已取消，请稍后重试。' : view.currentVersion ? '无法读取官方发布版本，请检查网络后重试。' : '无法读取绑定程序版本；请检查原程序路径，不会自动改用其他程序。';
+      const reason = controller.signal.aborted ? '检查超时或已取消，请稍后重试。' : view.currentVersion ? '无法读取官方发布版本，请检查网络后重试。' : '无法读取绑定程序版本；请检查原程序路径，不会自动改用其他程序。';
+      view.diagnostic = view.diagnostic ? `${view.diagnostic} ${reason}` : reason;
     } finally { clearTimeout(timer); this.controllers.delete(controller); }
     view.checkedAt = this.now();
     const current = this.connections().find(item => item.id === connection.id);

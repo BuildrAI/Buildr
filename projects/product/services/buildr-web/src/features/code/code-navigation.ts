@@ -2,6 +2,7 @@ import type { CodeLocation } from './api/code-api';
 export type CodeTaskEntry = {
   origin?: 'project' | 'task' | 'source-control';
   taskId?:string; taskTitle?:string;
+  observationId?:string;
   file?:{gitRepositoryId?:string;repositoryId?:string;checkoutId?:string;path:string;commitHash?:string;line?:number};
   from:{pathname:string;search:string;hash:string;state:unknown};
 };

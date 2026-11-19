@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Alert, App, Button, Empty, Select, Spin, Tag } from 'antd';
 import { InfoCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -15,6 +15,7 @@ import { useEditableFile } from '../hooks/useEditableFile';
 import { useFileEditingContext } from '../../../app/FileEditingContext';
 import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
 import { FileEditingPane } from '../../../components/file-editing/FileEditingPane';
+import type { MarkdownReadingPosition } from '../../../components/file-editing/markdown-reading-position';
 import { codeBrowserKey, codeLocationKey, codeReturnTarget, relativeCodeLink, type CodeTaskEntry } from '../code-navigation';
 import { sourceControlDecorations } from '../source-control-decorations';
 import { codeRepositoryCode, codeRepositoryLabel, codeWorktreeLabel } from '../code-source-labels';
@@ -28,7 +29,7 @@ export function CodeExplorerPage() {
   const {workspaceId,workspace,setBreadcrumbParts}=useAppShell();
   const viewActive=useContext(WorkspaceViewActiveContext);
   const location=useLocation(),navigate=useNavigate(),{message}=App.useApp();
-  const state=useCodeExplorer(workspaceId||'',workspace?.rootPath,viewActive,location.state?.codeEntry?location.key:undefined);
+  const state=useCodeExplorer(workspaceId||'',workspace?.rootPath,viewActive,location.state?.codeEntry?location.key:undefined,Boolean(location.state?.codeEntry?.observationId));
   const [host,setHost]=useState<HTMLDivElement|null>(null),[treeHidden,setTreeHidden]=useState(()=>window.innerWidth<680);
   const [processed,setProcessed]=useState(''),[media,setMedia]=useState<Record<string,string>>({});
   const [selection,setSelection]=useState<{key:string;lines:[number,number]|null}>({key:'',lines:null});
@@ -36,6 +37,11 @@ export function CodeExplorerPage() {
   useEffect(()=>{setBreadcrumbParts(['代码','资源管理器']);},[setBreadcrumbParts]);
   useEffect(()=>{if(processed===location.key)return;setProcessed(location.key);const entry=location.state?.codeEntry as CodeTaskEntry|undefined;if(entry)void state.applyEntry(entry);else state.clearEntry();},[location.key,location.state,processed,state.applyEntry,state.clearEntry]);
   const active=state.active,file=active?state.files[active.key]:undefined;
+  const openActiveFolder = workspaceId && active?.checkoutId && !active.commitHash
+    ? () => codeApi.openFolder(workspaceId, { selector: { kind: 'code', repositoryId: active.repositoryId, checkoutId: active.checkoutId!, path: active.path } })
+    : undefined;
+  // The reader can unmount while the next tab is loading or uses another surface.
+  const tabReadingPositions=useRef(new Map<string,MarkdownReadingPosition>());
   const editing=useFileEditingContext();
   const currentText=Boolean(active?.checkoutId&&!active.commitHash&&file&&!file.page&&!file.truncated&&(file.kind==='markdown'||file.kind==='text')&&!state.fileErrors[active.key]);
   const editable=useEditableFile(workspaceId,currentText&&active?.checkoutId?{kind:'code',repositoryId:active.repositoryId,checkoutId:active.checkoutId,path:active.path}:null,file?.observedAt,file?.editorSnapshot);
@@ -127,7 +133,7 @@ export function CodeExplorerPage() {
     <CodeTreePane hidden={treeHidden} onHost={setHost} storageKey={`buildr.code.tree-width.${workspaceId}`} />
     <div className="code-file-stage">
       <div className="code-file-tabstrip">
-        <ObjectTabStrip panelId={panelId} className="code-open-files" label="打开的文件" tabs={fileTabs} active={active?.key} onActivate={key=>{const tab=state.tabs.find(item=>item.key===key);if(tab)state.activate(tab);}} onClose={state.close} />
+        <ObjectTabStrip panelId={panelId} className="code-open-files" label="打开的文件" tabs={fileTabs} active={active?.key} onActivate={key=>{const tab=state.tabs.find(item=>item.key===key);if(tab)state.activate(tab);}} onClose={key=>{tabReadingPositions.current.delete(key);state.close(key);}} />
         {returnTarget&&<Button size="small" type="text" onClick={returnToSource}>{returnTarget.label}</Button>}
         {(state.tabs.length > 0 || treeHidden) && <ReadingToggle iconOnly className="code-reading-toggle" expanded={treeHidden} onToggle={()=>setTreeHidden(value=>!value)} />}
       </div>
@@ -138,14 +144,16 @@ export function CodeExplorerPage() {
       {state.catalog&&state.catalog.repositories.length>0&&!state.sources.length&&<div className="code-range-outside" role="status">所选代码库与工作树没有共同目录，请调整筛选。</div>}
       <div className="object-tab-panel" id={panelId} role={active ? 'tabpanel' : undefined} aria-labelledby={active ? tabElementId(panelId, active.key) : undefined} tabIndex={active ? 0 : undefined}>
       <RepositoryFileBrowser global readerActive={viewActive} defaultCollapsedTree revealSelectionRequest={state.selectionRequest} sidebarHost={host} treeRepositories={treeRepositories} files={files} repositoryName={selectedRepo?codeRepositoryCode(selectedRepo):undefined} repositoryTitle={selectedRepo?codeRepositoryLabel(selectedRepo):undefined} repositoryId={active?.repositoryId} checkoutId={active?.checkoutId||undefined} observedDigest={currentText?undefined:file?.digest} observedRevision={currentText?editorSession?.file.revision||editable.file?.revision:file?.revision} observedAt={currentText?editorSession?.file.observedAt||editable.file?.observedAt:file?.observedAt} selectedRepositoryId={active?codeBrowserKey(active):undefined} selectedPath={active?.path||''} selectionKey={active?.key}
-        readerSurface={currentText ? editable.file ? <FileEditingPane file={{...editable.file,locationLabel:selectedMember?codeWorktreeLabel(selectedMember,state.catalog?.worktrees).name:editable.file.locationLabel}} editing={editing} active={viewActive} focusLine={active?.line} focusRequest={active?.focusRequest}
+        readerSurface={currentText ? editable.file ? <FileEditingPane file={{...editable.file,locationLabel:selectedMember?codeWorktreeLabel(selectedMember,state.catalog?.worktrees).name:editable.file.locationLabel}} editing={editing} active={viewActive} htmlPreview={editable.file.kind === 'text' && /\.html?$/i.test(editable.file.path)} focusLine={active?.line} focusRequest={active?.focusRequest}
+          onOpenFolder={openActiveFolder}
           toolbarEnd={<Button size="small" type="text" aria-label="刷新当前文件" icon={<ReloadOutlined />} loading={Boolean(active&&state.loading.includes(active.key))} onClick={()=>void state.refreshFile()} />}
           searchQuery={readQuery} onSelectLines={lines=>{if(active)setSelection({key:active.key,lines});}}
-          markdownRevision={Object.keys(media).join(',')} markdownOptions={markdownOptions} /> : editable.error ? <Alert type="error" showIcon message={editable.error} action={<Button onClick={()=>void state.refresh()}>重试</Button>} /> : <div className="repository-reading-empty"><Spin />正在读取文件…</div> : undefined}
+          markdownRevision={Object.keys(media).join(',')} markdownOptions={markdownOptions} markdownReadingPosition={active?{positions:tabReadingPositions.current,key:active.key}:undefined} /> : editable.error ? <Alert type="error" showIcon message={editable.error} action={<Button onClick={()=>void state.refresh()}>重试</Button>} /> : <div className="repository-reading-empty"><Spin />正在读取文件…</div> : undefined}
         readerContent={currentText?editorSession?.content:undefined} readerSelectedLines={selection.key===active?.key?selection.lines:null}
         onSelect={(path,line,matchQuery)=>active&&state.open(active,path,line,false,matchQuery)} onSelectRepositoryFile={openFile} context={context}
         location={file?.source.location||selectedMember?.path||''} version={file?.source.version||active?.commitHash||'当前文件'} historical={Boolean(active?.commitHash)} focusLine={active?.line} focusRequest={active?.focusRequest}
         readLoading={Boolean(active&&state.loading.includes(active.key))} readError={active?state.fileErrors[active.key]:undefined} readMessage={file?.message||undefined} readPage={file?.page} readMatchQuery={file?.observedMatch?.query} sizeBytes={file?.sizeBytes} onReadPage={state.readPage} canModify={Boolean(file&&!file.truncated&&file.kind!=='unsupported'&&!state.fileErrors[active?.key||''])} taskTitle={state.entry?.taskTitle}
+        onOpenFolder={file && !state.fileErrors[active?.key || ''] ? openActiveFolder : undefined}
         onLoadDirectory={state.loadDirectory} onDirectoryExpansionChange={state.setExpandedDirectories} loadedDirectoryKeys={loadedKeys} onSearch={onSearch} onShowIgnored={state.setShowIgnored} searchResults={searchResults} searchLoading={state.searchLoading} searchIncomplete={searchPartial||state.searchErrors.length>0}
         treeNotice={<>
           {(searchPartial||partial)&&<div className="code-tree-coverage" role="status"><InfoCircleOutlined /><span>{searchPartial?'搜索未完整返回。每个工作树最多 100 个文件、200 条匹配行，请缩小关键词或范围。':'目录达到读取上限，显示部分文件。'}</span></div>}

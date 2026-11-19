@@ -24,6 +24,16 @@ function fixture(t:any,overrides:Partial<Parameters<typeof createCodeApplication
 test('task preselection deduplicates services, expands project-only and leaves empty scope at all',async t=>{
   const f=fixture(t);assert.deepEqual(f.app.repositories(f.root,'task').selectedRepositoryIds,['repo-id']);assert.deepEqual(f.app.repositories(f.root,'project').selectedRepositoryIds,['repo-id']);assert.deepEqual(f.app.repositories(f.root,'empty').selectedRepositoryIds,[]);assert.equal(f.app.repositories(f.root,'broken').diagnostics[0].code,'code_task_service_unresolved');assert.ok(f.app.repositories(f.root).repositories[0].gitId?.startsWith('sha256-'));
 });
+test('target catalog confirms a linked checkout without reading unrelated task evidence',async t=>{
+  const f=fixture(t,{gitWorktreeEvidenceDirectories:()=>{throw Error('unrelated task scan');}});
+  const linked=path.join(f.temporary,'linked');f.git('worktree','add','-b','linked',linked);
+  const file=path.join(linked,'src','main.ts');
+  const result=await f.app.repositories(f.root,undefined,file);
+  assert.deepEqual(result.worktrees.map(w=>w.id),[gitCheckoutReadId(linked)]);
+  assert.deepEqual(result.selectedRepositoryIds,[f.input.repositoryId]);
+  assert.equal((await f.app.file(f.root,{...f.input,worktreeId:result.worktrees[0].id,path:'src/main.ts'})).content,'export const answer = 1;\n');
+  await assert.rejects(async()=>f.app.repositories(f.root,undefined,path.join(f.temporary,'outside.md')),(e:any)=>e.code==='code_target_unconfirmed');
+});
 test('exact default reads avoid unrelated task discovery and still reject a replaced checkout',async t=>{
   let associationReads=0;
   const f=fixture(t,{gitWorktreeEvidenceDirectories:()=>{associationReads++;return [];}}),checkoutId=gitCheckoutReadId(f.root);
@@ -162,6 +172,19 @@ test('HTTP validates closed paged queries, numeric conversion and real observed 
   await assert.rejects(request({page:'1'}),(error:any)=>error.code==='code_file_revision_required');
   await assert.rejects(request({page:'1',expectedRevision:'stale'}),(error:any)=>error.code==='code_file_changed');
 });
+test('current search describes how to install ripgrep when it is absent', async () => {
+  const { searchCode } = await import('../../src/modules/code/infrastructure/code-search.ts');
+  const oldPath = process.env.PATH;
+  try {
+    process.env.PATH = '';
+    assert.throws(() => searchCode({} as Parameters<typeof searchCode>[0], 'needle', 'content'),
+      (error: any) => error.code === 'code_search_engine_unavailable' && /ripgrep.*安装/u.test(error.message));
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
+  }
+});
+
 test('ripgrep finds source beyond old file and byte budgets without mutating the checkout',async t=>{
   const f=fixture(t);fs.mkdirSync(path.join(f.root,'aaaa-source'));fs.mkdirSync(path.join(f.root,'zz-data'));
   for(let i=0;i<3100;i++)fs.writeFileSync(path.join(f.root,'zz-data',i+'.txt'),'unrelated '.repeat(850));

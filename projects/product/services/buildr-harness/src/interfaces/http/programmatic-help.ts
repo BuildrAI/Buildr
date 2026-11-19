@@ -67,7 +67,7 @@ run.stalled 仅在当前对话仍包含该 run、其状态为 starting/running/t
 ~~~
 速率按凭据计，默认 180/小时、20/分钟，可在界面调整；run.progress 与 run.stalled 同样计入。限额内立即推送；超限按同对话同类型合并（保留最新状态与 mergedCount），配额恢复后补发；decision.requested 优先且永不合并。投递为 HTTP POST JSON、每请求一条事件、不跟随重定向、仅 2xx 成功；失败按 10/30/90/270/810 秒退避，最多 5 次后置为 undelivered。响应丢失可能重复到达同一 eventId。
 回推总开关停用（state=disabled）只停止对外投递，不停止事件记录：已开启的上述事件仍写入同一持久事件流，可用 events 补查；停用期间已记录的事件不会在重新启用后重放。中间进度或停滞提醒单独关闭时，不生成对应事件。未配置回推的凭据不产生事件。events 补读与实时投递共用同一持久事件正文；已记录或已送达的历史事件不会因升级、激活或重启被补写 finalReply、stalled、scopes 等字段，回读始终是首次记录时的原正文。
-事件持久保留7天、sequence跨重启连续。补读 GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n}（read，limit 默认 50、最大 200），按 sequence 升序返回含 undelivered 的事件；after 必须是上一页 nextCursor 返回的非负整数序号，不是合法游标时返回 400 programmatic_input_invalid。nextCursor 始终返回本页最后一条事件的 sequence（字符串）；本页为空时返回请求中的 after；未传 after 且没有任何事件时为 null。hasMore 表示以 after=nextCursor 再次读取时是否还有更多事件。轮询方应保存 nextCursor，下次用 after=nextCursor 补查，而不是把 null 当作继续游标。超出保留期被丢弃时发出 events_dropped。测试环境、候选实例与自动化测试一律不得向真实接收地址推送，只用本地假接收端。
+事件持久保留7天、sequence跨重启连续。补读 GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n}（read，limit 默认 50、最大 200），按 sequence 升序返回含 undelivered 的事件；after 必须是上一页 nextCursor 返回的非负整数序号，不是合法游标时返回 400 programmatic_input_invalid。nextCursor 始终返回本页最后一条事件的 sequence（字符串）；本页为空时返回请求中的 after；未传 after 且没有任何事件时为 null。hasMore 表示以 after=nextCursor 再次读取时是否还有更多事件。轮询方应保存 nextCursor，下次用 after=nextCursor 补查，而不是把 null 当作继续游标。普通事件超出保留期时按对话和事件类型发出 events_dropped，包含 conversationId、droppedEventType 和 droppedCount。到期的丢失通知不会再次产生通知。测试环境、候选实例与自动化测试一律不得向真实接收地址推送，只用本地假接收端。
 最小闭环：配置回推→收到decision.requested→按detailUrl读对话取得准确卡片身份→由人回答或审批；执行结束后用单步续聊POST /messages发起下一轮。
 
 ### 测试专用时序

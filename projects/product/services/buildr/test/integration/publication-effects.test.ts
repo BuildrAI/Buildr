@@ -8,6 +8,7 @@ import test from 'node:test';
 import { completePublicationEffects, publicationAttemptFromJournal } from '../../../../../../skills/buildr-release/scripts/release-publication.ts';
 import { publishFrozenArtifact } from '../../../../../../skills/buildr-release/scripts/trusted-publish.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
+import { observePublicationRun } from '../../../../../../skills/buildr-release/scripts/publication-run-evidence.ts';
 import { writeReleaseProcessReports } from '../../../../../../skills/buildr-release/scripts/release-process-report.ts';
 import { readReleaseArtifact } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
 import { createVerificationPhaseRecorder, VERIFICATION_PHASE_TIMING_PREFIX } from '../verification/timing/phases.ts';
@@ -29,6 +30,32 @@ test('release report retains measured costs and excludes another candidate’s o
   const report = JSON.parse(fs.readFileSync(next.json, 'utf8'));
   assert.equal(report.localMeasurements, null);
   assert.equal(report.attempts[0].localMeasurements.artifactSha256, 'sha');
+});
+
+test('publication reports group polls and retain failed step evidence for the original attempt', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-report-publication-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const state = { version: '1.0.0' };
+  const first = '2026-11-19T00:00:00.000Z', second = '2026-11-19T00:00:05.000Z';
+  const run = { id: 42, run_attempt: 1, status: 'completed', conclusion: 'failure', created_at: first, run_started_at: second };
+  const evidence = observePublicationRun(run, () => JSON.stringify([{ jobs: [{ id: 13, name: 'publish', conclusion: 'failure',
+    started_at: first, completed_at: second, steps: [{ number: 1, name: 'readback', conclusion: 'failure' }] }] }]),
+  'publish\treadback\t2026-11-19T00:00:05.000Z ##[error]Registry timed out');
+  const record = (id: string, result: any) => writeReleaseProcessReports(root, state, { id, phase: 'publication',
+    startedAt: first, finishedAt: second, remoteTiming: result.remoteTiming ?? null,
+    phases: [{ phase: 'publication', status: 'unknown', startedAt: first, finishedAt: second, durationSeconds: 5 }] }, result)[0];
+  record('one', { status: 'publication-running', run: { id: run.id } });
+  record('two', { status: 'publication-running', run, ...evidence });
+  const output = record('three', { status: 'diagnosis-required', run: { id: run.id, conclusion: 'failure' } });
+  const report = JSON.parse(fs.readFileSync(output.json, 'utf8'));
+  assert.equal(report.phases.length, 2);
+  assert.equal(report.phases[0].count, 2);
+  assert.equal(report.phases[0].durationSeconds, 10);
+  assert.equal(report.phases[0].operationStatus, 'diagnosis-required');
+  assert.equal(report.remoteTiming[0].queueMs, 5000);
+  assert.equal(report.remoteTiming[0].jobs[0].durationMs, 5000);
+  assert.deepEqual(report.failures[0], { checkName: 'readback', jobName: 'publish', stepName: 'readback', runId: 42,
+    runAttempt: 1, errorCode: 'github-job-failed', message: 'Registry timed out', logUrl: null, at: second, recoveryActions: [] });
 });
 
 // Publication protocol scenarios isolate the legal-review collaborator. Real artifact

@@ -12,7 +12,7 @@
 @media(min-width:761px){
   .ac-panel{position:relative}
   .app-frame:has(.ac-collapsed-rail){position:relative}
-  .ac-panel.is-peeking{position:absolute;top:0;bottom:0;right:52px;z-index:11;height:100%;max-width:calc(100% - 88px);box-shadow:-4px 0 18px #273f3220;border:1px solid var(--soft-line);border-block:0;border-radius:8px 0 0 8px}
+  .ac-panel.is-peeking{position:absolute;top:0;bottom:0;right:52px;z-index:20;height:100%;max-width:calc(100vw - 88px);box-shadow:-4px 0 18px #273f3220;border:1px solid var(--soft-line);border-block:0;border-radius:8px 0 0 8px}
   .ac-panel.is-peeking[data-dock=left]{left:52px;right:auto;box-shadow:4px 0 18px #273f3220;border-radius:0 8px 8px 0}
 }
 .ac-boundary-toggle{position:absolute;top:0;right:0;width:36px;height:43px;display:flex;align-items:center;justify-content:center;background:#f4f6f7;border-bottom:1px solid var(--soft-line);z-index:9}

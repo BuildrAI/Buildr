@@ -498,11 +498,11 @@ export const VERIFICATION_RESET_STRATEGIES: any = Object.freeze(['none', 'rollba
 export const VERIFICATION_PARALLEL_SAFETY: any = Object.freeze(['worker-safe', 'bounded', 'exclusive']);
 export const VERIFICATION_RESOURCE_DEMANDS: any = Object.freeze(['workers', 'processes', 'git', 'workspaceIo']);
 
-export function resolveVerificationExecutionProfile(value: any, env: any = process.env): any  {
+export function resolveVerificationExecutionProfile(value: any, env: any = process.env, observations: any[] = []): any  {
   const id: any = value || env.BUILDR_VERIFICATION_PROFILE || (env.CI === 'true' ? 'ci' : 'local-auto');
   const limits: any = VERIFICATION_EXECUTION_PROFILES[id];
   if (!limits) throw new Error(`Unknown verification execution profile: ${id}`);
-  return { id, ...resolveExecutionCapacity(limits, { automatic: id === 'local-auto', env }) };
+  return { id, ...resolveExecutionCapacity(limits, { automatic: id === 'local-auto', env, observations }) };
 }
 
 const integrationSlice: any = (id: any, files: any, options: any = {}) => Object.freeze({
@@ -825,7 +825,7 @@ const builtInVerificationSteps: any = Object.freeze([
     contexts: [...(suite.contexts ?? [])],
     workerDemand: suite.innerConcurrency,
   })),
-  step({ id: 'integration-macos-native', name: 'Native macOS source boundaries', executor: { type: 'node-test', files: ['test/integration/macos-readonly-boundaries.test.ts', 'test/integration/macos-development-entry.test.ts', 'test/integration/macos-launcher-boundaries.test.ts'], args: ['--test-concurrency=1', '--test-reporter=dot'] }, profiles: ['candidate'], developmentRunners: ['macos'], platformScope: platformScope('macos'), platformEvidence: MACOS_PLATFORM_BOUNDARIES.filter(item => item.stepId === 'integration-macos-native'), schedulingCostMs: 8000, timeoutMs: 60_000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'integration-macos-native', name: 'Native macOS source boundaries', executor: { type: 'node-test', files: ['test/integration/macos-readonly-boundaries.test.ts', 'test/integration/macos-development-entry.test.ts', 'test/integration/macos-launcher-boundaries.test.ts', 'test/integration/macos-detached-launch.test.ts'], args: ['--test-concurrency=1', '--test-reporter=dot'] }, profiles: ['candidate'], developmentRunners: ['macos'], platformScope: platformScope('macos'), platformEvidence: MACOS_PLATFORM_BOUNDARIES.filter(item => item.stepId === 'integration-macos-native'), schedulingCostMs: 8000, timeoutMs: 60_000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'integration-windows-native', name: 'Native Windows boundary checks', executor: { type: 'node-test', files: ['test/integration/windows-boundaries.test.ts', 'test/integration/windows-readonly-boundaries.test.ts', 'test/e2e/worktree-create.test.ts'], supportingFiles: ['test/e2e/worktree-create.test.ts'], args: ['--test-concurrency=1', '--test-reporter=dot', '--test-name-pattern=^(?:native |owned process |项目与服务共享实际仓库|Windows )'] }, profiles: ['candidate'], groups: ['windows-npm-preflight'], developmentRunners: ['windows'], platformScope: platformScope('windows'), platformEvidence: WINDOWS_PLATFORM_BOUNDARIES.filter(item => item.stepId === 'integration-windows-native'), schedulingCostMs: 80_000, timeoutMs: 180_000, concurrencyClass: 'workspace-heavy', resources: ['app-runtime'] }),
   step({ id: 'cli-architecture', preparations: sharedCheckPreparation.map(value => ({ ...value, cwd: path.resolve(import.meta.dirname, '../..', value.cwd) })), name: 'CLI modular architecture', executor: { type: 'node', file: 'test/verification/cli/architecture.ts' }, profiles: [], }),
   step({ id: 'openspec-strict', name: 'openspec strict validation', executor: { type: 'openspec', args: ['validate', '--all', '--strict'] }, profiles: [], }),

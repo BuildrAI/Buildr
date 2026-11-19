@@ -1,11 +1,11 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { hostname } from 'node:os';
-import type { ServiceEvent, ConversationView, RunView, PushbackCredentialAccess, PushbackEvent, PushbackEventPage, PushbackDeliveryResult, PushbackSettingsInput, PushbackSettingsView } from '../contracts.ts';
+import type { ServiceEvent, ConversationView, RunView, PushbackCredentialAccess, PushbackEvent, PushbackEventType, PushbackEventPage, PushbackDeliveryResult, PushbackSettingsInput, PushbackSettingsView } from '../contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { ProgrammaticPushbackStore, type PushbackConfig, type PushbackClaim } from '../persistence/programmatic-pushback-store.ts';
 import { pushbackNotifications, timedPushbackNotifications, isLiveRunStatus, type PushbackSnapshot, type PushbackNotification } from '../domain/programmatic-pushback-notifications.ts';
 
-export type PushbackOptions = { root: string; transport?: typeof fetch; now?: () => number; backoffMs?: number[]; checkIntervalMs?: number; concurrency?: number; stalledThresholdMs?: number; progressIntervalMs?: number; retentionMs?: number; readRunLiveness?: (workspaceId: string, conversationId: string) => { runs: RunView[] } | undefined };
+export type PushbackOptions = { root: string; transport?: typeof fetch; now?: () => number; backoffMs?: number[]; checkIntervalMs?: number; concurrency?: number; stalledThresholdMs?: number; progressIntervalMs?: number; retentionMs?: number; ownsMaintenance?: () => boolean; readRunLiveness?: (workspaceId: string, conversationId: string) => { runs: RunView[] } | undefined };
 const DEFAULT_BACKOFF = [10000, 30000, 90000, 270000, 810000];
 const GLOBAL_MIGRATION_KEY = 'global-webhook';
 const HOUR = 3600000, MINUTE = 60000;
@@ -39,6 +39,7 @@ export class ProgrammaticPushback {
   private readonly stalledThresholdMs: number;
   private readonly progressIntervalMs: number;
   private readonly retentionMs: number;
+  private readonly ownsMaintenance: () => boolean;
   private readonly readRunLiveness?: (workspaceId: string, conversationId: string) => { runs: RunView[] } | undefined;
   private readonly owner = randomUUID();
   private readonly active = new Set<AbortController>();
@@ -58,6 +59,7 @@ export class ProgrammaticPushback {
     this.stalledThresholdMs = options.stalledThresholdMs ?? 20 * MINUTE;
     this.progressIntervalMs = options.progressIntervalMs ?? 5 * MINUTE;
     this.retentionMs = options.retentionMs ?? 7 * 24 * HOUR;
+    this.ownsMaintenance = options.ownsMaintenance ?? (() => true);
     this.readRunLiveness = options.readRunLiveness;
     this.interval = setInterval(() => this.tick(), options.checkIntervalMs ?? 30000); this.interval.unref();
   }
@@ -224,7 +226,7 @@ export class ProgrammaticPushback {
         const appended = this.store.appendEvent({ ...base, held: false, mergeKey: null, build: (s, e) => safe(s, e, 1) });
         if (appended) this.store.recordRate(credentialId, now);
       }
-      else if (type === 'decision.requested') this.store.appendEvent({ ...base, held: true, mergeKey: null, build: (s, e) => safe(s, e, 1) });
+      else if (type === 'decision.requested' || type === 'events_dropped') this.store.appendEvent({ ...base, held: true, mergeKey: null, build: (s, e) => safe(s, e, 1) });
       else {
         const held = this.store.findHeld(credentialId, conversationId, type);
         if (held) this.store.mergeHeld(held.sequence, held.mergedCount + 1, (s, e) => safe(s, e, held.mergedCount + 1), held.eventId);
@@ -234,7 +236,11 @@ export class ProgrammaticPushback {
   }
   tick(): void {
     if (this.closed) return;
-    try { this.checkTimedEvents(); this.cleanup(); this.drain(); this.storageFailed = false; }
+    try {
+      if (this.ownsMaintenance()) { this.checkTimedEvents(); this.cleanup(); }
+      this.drain();
+      this.storageFailed = false;
+    }
     catch { this.storageFailure(); }
   }
   /**
@@ -312,10 +318,10 @@ export class ProgrammaticPushback {
       if (!secret) continue;
       const machine = this.machine();
       const access = this.store.getCredentialAccess(group.credentialId) ?? emptyAccess;
-      this.enqueue(group.credentialId, config, group.workspaceId, '', 'events_dropped', digest(['dropped', group.workspaceId, now]), secret, config.url, (sequence, eventId) => ({
-        eventId, type: 'events_dropped', occurredAt: new Date(now).toISOString(), machine, workspaceId: group.workspaceId, conversationId: '', title: '',
+      this.enqueue(group.credentialId, config, group.workspaceId, group.conversationId, 'events_dropped', digest(['dropped', group.workspaceId, group.conversationId, group.type, now]), secret, config.url, (sequence, eventId) => ({
+        eventId, type: 'events_dropped', occurredAt: new Date(now).toISOString(), machine, workspaceId: group.workspaceId, conversationId: group.conversationId, title: '',
         scopes: access.scopes, allowFullAccess: access.allowFullAccess, summary: `${group.dropped} 条事件已超出保留期被丢弃`,
-        detailUrl: eventsUrl(group.workspaceId), sequence, droppedCount: group.dropped,
+        detailUrl: eventsUrl(group.workspaceId), sequence, droppedCount: group.dropped, droppedEventType: group.type as PushbackEventType,
       }));
     }
   }

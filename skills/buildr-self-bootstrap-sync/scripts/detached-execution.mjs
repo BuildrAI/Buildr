@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { launchDetachedProcess, shouldUsePlatformIsolation } from './detached-launch.mjs';
 
 const workerFile = fileURLToPath(import.meta.url);
 const defaultRunner = fileURLToPath(new URL('./closeout.mjs', import.meta.url));
@@ -11,42 +12,87 @@ const defaultRunner = fileURLToPath(new URL('./closeout.mjs', import.meta.url));
  * boundary lets that runner finish after the initiating agent/host disappears.
  * @param {{args:string[],runnerModule?:string,onHandoff?:(evidence:{schemaVersion:string,pid:number|undefined,resultFile:string,logFile:string})=>void}} options
  */
-export async function runDetachedCloseout({ args, runnerModule = defaultRunner, onHandoff = () => {} }) {
+export async function runDetachedCloseout({ args, runnerModule = defaultRunner, onHandoff = () => {}, spawnImpl = spawn }) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-self-bootstrap-execution-'));
   fs.chmodSync(directory, 0o700);
   const requestFile = path.join(directory, 'request.json');
   const resultFile = path.join(directory, 'result.json');
   const logFile = path.join(directory, 'worker.log');
   fs.writeFileSync(requestFile, JSON.stringify({ runnerModule, args }), { mode: 0o600 });
-  const log = fs.openSync(logFile, 'wx', 0o600);
-  let child;
-  try {
-    child = spawn(process.execPath, [workerFile, requestFile], {
-      cwd: process.cwd(), env: process.env,
-      detached: true, windowsHide: true, stdio: ['ignore', log, log],
-    });
-  } finally {
-    fs.closeSync(log);
-  }
-  // A regular child (or inherited stdout pipe) still dies when the old agent
-  // executor shuts down its process group. Do not depend on either lifetime.
-  child.unref();
-  const completed = new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('exit', (code, signal) => resolve({ code, signal }));
-  });
-  // Spawn failure is also reported by the ready promise below; observe both.
-  void completed.catch(() => {});
-  await new Promise((resolve, reject) => {
-    child.once('spawn', resolve);
-    child.once('error', reject);
-  });
-  onHandoff({ schemaVersion: 'buildr.self-bootstrap-execution/v1', pid: child.pid, resultFile, logFile });
-  // Keep only the waiting caller alive; killing it must not affect the worker.
-  const keepWaiting = setInterval(() => {}, 1000);
+  const useIsolated = spawnImpl === spawn && shouldUsePlatformIsolation(process.env) !== 'direct';
   let exit;
-  try { exit = await completed; }
-  finally { clearInterval(keepWaiting); }
+  if (useIsolated) {
+    // Ensure private log permissions before launchd opens the file.
+    fs.closeSync(fs.openSync(logFile, 'wx', 0o600));
+    const handle = launchDetachedProcess({
+      command: process.execPath,
+      args: [workerFile, requestFile],
+      cwd: process.cwd(),
+      env: process.env,
+      labelPrefix: 'self-bootstrap-worker',
+      stateDir: path.join(os.tmpdir(), 'buildr-self-bootstrap-launchd-jobs'),
+      standardOutPath: logFile,
+      standardErrorPath: logFile,
+    });
+    const handedOffPid = handle.pid > 0 ? handle.pid : undefined;
+    onHandoff({ schemaVersion: 'buildr.self-bootstrap-execution/v1', pid: handedOffPid, resultFile, logFile });
+    if (handle.child) {
+      const child = handle.child;
+      const completed = new Promise((resolve, reject) => {
+        child.once('error', reject);
+        child.once('exit', (code, signal) => resolve({ code, signal }));
+      });
+      void completed.catch(() => {});
+      const keepWaiting = setInterval(() => {}, 1000);
+      try { exit = await completed; }
+      finally { clearInterval(keepWaiting); }
+    } else {
+      const keepWaiting = setInterval(() => {}, 1000);
+      try {
+        exit = await new Promise((resolve) => {
+          const poll = setInterval(() => {
+            const status = handle.pollStatus();
+            if (!status.running) {
+              clearInterval(poll);
+              resolve({ code: status.exitCode, signal: status.signal });
+            }
+          }, 50);
+        });
+      } finally {
+        clearInterval(keepWaiting);
+        try { handle.bootout(); } catch { /* Best-effort cleanup after worker exit. */ }
+      }
+    }
+  } else {
+    const log = fs.openSync(logFile, 'wx', 0o600);
+    let child;
+    try {
+      child = spawnImpl(process.execPath, [workerFile, requestFile], {
+        cwd: process.cwd(), env: process.env,
+        detached: true, windowsHide: true, stdio: ['ignore', log, log],
+      });
+    } finally {
+      fs.closeSync(log);
+    }
+    // A regular child (or inherited stdout pipe) still dies when the old agent
+    // executor shuts down its process group. Do not depend on either lifetime.
+    child.unref();
+    const completed = new Promise((resolve, reject) => {
+      child.once('error', reject);
+      child.once('exit', (code, signal) => resolve({ code, signal }));
+    });
+    // Spawn failure is also reported by the ready promise below; observe both.
+    void completed.catch(() => {});
+    await new Promise((resolve, reject) => {
+      child.once('spawn', resolve);
+      child.once('error', reject);
+    });
+    onHandoff({ schemaVersion: 'buildr.self-bootstrap-execution/v1', pid: child.pid, resultFile, logFile });
+    // Keep only the waiting caller alive; killing it must not affect the worker.
+    const keepWaiting = setInterval(() => {}, 1000);
+    try { exit = await completed; }
+    finally { clearInterval(keepWaiting); }
+  }
   if (!fs.existsSync(resultFile)) {
     const error = new Error('独立自举执行器退出但未保存结果；保留日志与原恢复信息，不能认定激活成功。');
     Object.assign(error, { code: 'self-bootstrap-closeout.worker-result-missing', details: { ...exit, resultFile, logFile } });

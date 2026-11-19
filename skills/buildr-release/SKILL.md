@@ -47,7 +47,7 @@ description: 准备、检查、发布或恢复 Buildr Development 主包版本�
 
 发布代码的唯一源是所选源码检出位置的 `skills/buildr-release/scripts/`。从该位置的 `projects/product/services/buildr/` 使用 `tools/development/run-development-node ../../../../skills/buildr-release/scripts/release-orchestration-runner.ts --help` 查看当前参数，再调用 `prepare`、`inspect`、`publish --authorized` 或 `resume`。投射到智能体的技能副本用于发现和指引；不要从投射目录运行绑定源码的脚本。工作流（Workflow）也调用同一源码脚本。
 
-正常准备和接续使用 `--wait`，由阻塞式 `gh run watch` 等待同一远端运行，默认总等待 30 分钟，可用 `--wait-timeout-ms` 调整。禁止智能体在前台使用 `for`/`while` 加 `sleep` 反复查询 GitHub 状态。可直接运行 `gh run watch <run-id> --repo BuildrAI/Buildr --exit-status --interval 30`；合并请求的检查使用 `gh pr checks <pr-url> --repo BuildrAI/Buildr --required --watch --fail-fast`。程序仅在命令结束或有界等待预算到期后回读，以处理排队超时、失败和本机原包交接；取消等待只终止本机watch进程，不取消远端运行。缺少准确runId时返回回读缺项，不以未知结果授权再次派发。默认输出摘要，原始证据可用 `--output <file>`，诊断时使用 `--detail full`。
+正常准备和接续使用 `--wait`，由阻塞式 `gh run watch` 等待同一远端运行，默认总等待 30 分钟，可用 `--wait-timeout-ms` 调整。禁止智能体在前台使用 `for`/`while` 加 `sleep` 反复查询 GitHub 状态。可直接运行 `gh run watch <run-id> --repo BuildrAI/Buildr --exit-status --interval 30`；合并请求的检查使用 `gh pr checks <pr-url> --repo BuildrAI/Buildr --required --watch --fail-fast`。程序仅在命令结束或有界等待预算到期后回读，以处理排队超时、失败和本机原包交接；取消等待只终止本机watch进程，不取消远端运行。缺少准确runId时返回回读缺项，不以未知结果授权再次派发。 公开发布等待以 5 秒为最长 GitHub 状态查询间隔；可重试失败只对同一运行执行一次 failed-jobs rerun，先保存重跑意图。报告保留作业、步骤、可披露的错误与远端计时。默认输出摘要，原始证据可用 `--output <file>`，诊断时使用 `--detail full`。
 
 candidate 与发布作业默认排队 600 秒仍未开始时取消：先确认该运行没有任何作业或步骤启动，再取消并回读 `completed/cancelled`；随后清除当前指针及 journal 引用，保留 runId、取消依据、清理字段和每次重派原因的审计历史，再用完整冻结派发参数创建新运行。默认最多重派两次，可用 `--queue-timeout-seconds <seconds>` 与 `--max-queue-redispatches <count>` 调整。已启动后取消、取消结果未知、缺少原始参数或次数用尽时局部停止，不自动重派、不猜测新参数、不重复未知请求。旧的已授权请求若缺少冻结派发参数，只能从原已校验发布上下文恢复；不能从当前 `dev` 或手写参数重建。
 

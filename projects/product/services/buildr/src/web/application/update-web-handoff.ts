@@ -8,7 +8,20 @@ import {
   assertUpdateHandoffInstanceAddress, buildrWebInstanceObservationDigest, buildrWebInstancePath,
   healthyBuildrWebInstance, readBuildrWebInstance, sameNpmProductIdentity,
 } from '../infrastructure/instance-runtime.ts';
-import { openWebHandoffSuccessorLog, releaseWebHandoffSuccessorLog } from './web-handoff-successor-log.ts';
+import {
+  appendWebHandoffSuccessorLogHeader,
+  clearWebHandoffFailureFile,
+  createWebHandoffFailureFilePath,
+  openWebHandoffSuccessorLog,
+  readWebHandoffFailureFile,
+  releaseWebHandoffSuccessorLog,
+  WEB_HANDOFF_FAILURE_FILE_ENV,
+} from './web-handoff-successor-log.ts';
+import {
+  launchDetachedProcess,
+  shouldUsePlatformIsolation,
+  type DetachedProcessHandle,
+} from '../../infrastructure/detached-launch.ts';
 
 type HandoffDependencies = {
   readNpmUpdateHandoffInstallation(input: NpmWebUpdateInput): any;
@@ -25,7 +38,7 @@ type HandoffDependencies = {
 
 export function updatedWebEnvironment(environment: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env = { ...environment };
-  for (const name of ['BUILDR_INSTALLATION_IDENTITY', 'BUILDR_APPLICATION_PAYLOAD_ROOT', 'BUILDR_NPM_ENTRY_PATH', 'BUILDR_INTERNAL_PRODUCT_REENTRY', 'BUILDR_LOCAL_APP_PREVIEW', 'BUILDR_LAUNCHER_IDENTITY', 'BUILDR_LAUNCHER_NO_OPEN', 'BUILDR_LAUNCHER_NO_NOTIFY', 'BUILDR_WEB_RESTART_ATTEMPT']) delete env[name];
+  for (const name of ['BUILDR_INSTALLATION_IDENTITY', 'BUILDR_APPLICATION_PAYLOAD_ROOT', 'BUILDR_NPM_ENTRY_PATH', 'BUILDR_INTERNAL_PRODUCT_REENTRY', 'BUILDR_LOCAL_APP_PREVIEW', 'BUILDR_LAUNCHER_IDENTITY', 'BUILDR_LAUNCHER_NO_OPEN', 'BUILDR_LAUNCHER_NO_NOTIFY', 'BUILDR_WEB_RESTART_ATTEMPT', WEB_HANDOFF_FAILURE_FILE_ENV]) delete env[name];
   return env;
 }
 
@@ -35,6 +48,8 @@ function handoffError(code: string, message: string) { return Object.assign(new 
 export async function handoffUpdatedBuildrWeb(input: NpmWebUpdateInput, dependencies: HandoffDependencies): Promise<NpmWebUpdateResult> {
   let previousPid: number | undefined;
   let child: ChildProcess | undefined;
+  let isolatedHandle: DetachedProcessHandle | undefined;
+  let failureFile: string | undefined;
   const read = dependencies.readInstance || readBuildrWebInstance;
   const exists = dependencies.instanceRecordExists || (profile => fs.existsSync(buildrWebInstancePath(profile)));
   const healthy = dependencies.healthyInstance || healthyBuildrWebInstance;
@@ -63,30 +78,60 @@ export async function handoffUpdatedBuildrWeb(input: NpmWebUpdateInput, dependen
         args.push('--launcher-binding', observed.launcherIdentity.bindingPath);
       } catch { /* A missing or stale desktop binding does not prevent an owned CLI handoff. */ }
     }
-    const logFd = openWebHandoffSuccessorLog(profile, `update successor argv=web --update-handoff ${args[3]} --no-open --port ${address.port}`, dependencies.openLog);
-    try {
-      child = (dependencies.spawnProcess || spawn)(entry.runtime.executable, args, {
-        cwd: path.dirname(entry.entryPath), env: updatedWebEnvironment(), detached: true,
-        stdio: logFd === null ? ['ignore', 'ignore', 'ignore', 'ipc'] : ['ignore', logFd, logFd, 'ipc'], windowsHide: true,
-      });
-    } catch (error) {
-      if (logFd !== null) try { fs.closeSync(logFd); } catch { /* Best-effort close on synchronous spawn failure. */ }
-      throw error;
-    }
-    releaseWebHandoffSuccessorLog(child, logFd);
+    const label = `update successor argv=web --update-handoff ${args[3]} --no-open --port ${address.port}`;
+    const baseEnv = updatedWebEnvironment();
     const diagnostic: { failure: { code: string; message: string } | null } = { failure: null };
     const throwObservedFailure = () => {
       if (diagnostic.failure) throw handoffError(diagnostic.failure.code, diagnostic.failure.message);
     };
-    child.on('message', (message: any) => {
-      if (message?.type === 'buildr.web-update-handoff-failed' && typeof message.code === 'string' && typeof message.message === 'string') {
-        diagnostic.failure = { code: message.code.slice(0, 200), message: message.message.slice(0, 4096) };
+    const useIsolated = !dependencies.spawnProcess && shouldUsePlatformIsolation(baseEnv) !== 'direct';
+    if (useIsolated) {
+      failureFile = createWebHandoffFailureFilePath(profile);
+      const logPath = appendWebHandoffSuccessorLogHeader(profile, label);
+      isolatedHandle = launchDetachedProcess({
+        command: entry.runtime.executable,
+        args,
+        cwd: path.dirname(entry.entryPath),
+        env: { ...baseEnv, [WEB_HANDOFF_FAILURE_FILE_ENV]: failureFile },
+        labelPrefix: 'web-update-handoff',
+        stateDir: typeof profile?.dataRoot === 'string' && profile.dataRoot ? path.join(profile.dataRoot, 'launchd-jobs') : undefined,
+        standardOutPath: logPath ?? undefined,
+        standardErrorPath: logPath ?? undefined,
+      });
+      child = isolatedHandle.child;
+    } else {
+      const logFd = openWebHandoffSuccessorLog(profile, label, dependencies.openLog);
+      try {
+        child = (dependencies.spawnProcess || spawn)(entry.runtime.executable, args, {
+          cwd: path.dirname(entry.entryPath), env: baseEnv, detached: true,
+          stdio: logFd === null ? ['ignore', 'ignore', 'ignore', 'ipc'] : ['ignore', logFd, logFd, 'ipc'], windowsHide: true,
+        });
+      } catch (error) {
+        if (logFd !== null) try { fs.closeSync(logFd); } catch { /* Best-effort close on synchronous spawn failure. */ }
+        throw error;
       }
-    });
-    child.on('error', error => { diagnostic.failure ||= { code: 'web_update_process_failed', message: error.message }; });
-    child.on('exit', (code, signal) => { diagnostic.failure ||= { code: 'web_update_process_failed', message: `新版进程已退出（${signal || code}）。` }; });
-    child.channel?.unref();
-    child.unref();
+      releaseWebHandoffSuccessorLog(child, logFd);
+      child.on('message', (message: any) => {
+        if (message?.type === 'buildr.web-update-handoff-failed' && typeof message.code === 'string' && typeof message.message === 'string') {
+          diagnostic.failure = { code: message.code.slice(0, 200), message: message.message.slice(0, 4096) };
+        }
+      });
+      child.on('error', error => { diagnostic.failure ||= { code: 'web_update_process_failed', message: error.message }; });
+      child.on('exit', (code, signal) => { diagnostic.failure ||= { code: 'web_update_process_failed', message: `新版进程已退出（${signal || code}）。` }; });
+      child.channel?.unref();
+      child.unref();
+    }
+    const refreshIsolatedState = () => {
+      if (failureFile) diagnostic.failure ||= readWebHandoffFailureFile(failureFile);
+      if (isolatedHandle && !isolatedHandle.child && !diagnostic.failure) {
+        const status = isolatedHandle.pollStatus();
+        if (!status.running) {
+          diagnostic.failure ||= { code: 'web_update_process_failed', message: `新版进程已退出（${status.signal || status.exitCode}）。` };
+        }
+        return status;
+      }
+      return null;
+    };
     const deadline = Date.now() + (dependencies.waitMs ?? 15_000);
     do {
       const current = read(profile);
@@ -96,7 +141,10 @@ export async function handoffUpdatedBuildrWeb(input: NpmWebUpdateInput, dependen
         const ready = await healthy(current, { strictIdentity: true });
         if (ready && sameNpmProductIdentity(ready.productIdentity, identity) && ready.pid === current.pid
             && buildrWebInstanceObservationDigest(ready) === buildrWebInstanceObservationDigest(current)) {
-          const exactChild = ready.pid === child.pid && child.exitCode === null && child.signalCode === null && !child.killed && !diagnostic.failure;
+          const isoStatus = isolatedHandle && !isolatedHandle.child ? isolatedHandle.pollStatus() : null;
+          const exactChild = child
+            ? ready.pid === child.pid && child.exitCode === null && child.signalCode === null && !child.killed && !diagnostic.failure
+            : Boolean(isolatedHandle && isolatedHandle.pid > 0 && ready.pid === isolatedHandle.pid && isoStatus?.running && !diagnostic.failure);
           if (!exactChild) dependencies.assertNpmUpdateHandoffTarget(ready, { productRoot: input.productRoot, productIdentity: identity });
           return { status: 'restarted', version: identity.version, pid: ready.pid, url: ready.url, previousPid };
         }
@@ -104,16 +152,19 @@ export async function handoffUpdatedBuildrWeb(input: NpmWebUpdateInput, dependen
           throw handoffError('web_update_instance_changed', '交接期间实例记录已被其他实例替换，未确认新版就绪。');
         }
       } else if (exists(profile)) throw handoffError('web_update_instance_invalid', '交接期间实例记录无法解析，已保留现场。');
+      refreshIsolatedState();
       throwObservedFailure();
       await new Promise(resolve => setTimeout(resolve, dependencies.intervalMs ?? 100));
     } while (Date.now() < deadline);
     // A diagnostic can arrive during the last wait before its timer resumes.
     // Preserve that observed failure even when the wait crosses the deadline.
+    refreshIsolatedState();
     throwObservedFailure();
     throw handoffError('web_update_readiness_timeout', '软件包已更新，但未在预期时间内确认新版网页就绪；再次运行 buildr update 可恢复交接。');
   } catch (error: any) {
     return { status: 'failed', code: error.code || 'web_update_failed', message: error.message, ...(previousPid ? { previousPid } : {}) };
   } finally {
+    if (failureFile) clearWebHandoffFailureFile(failureFile);
     // The server must outlive an update caller, including one hosted by the old
     // server itself. Disconnect only this diagnostic channel, never the child.
     if (child?.connected) child.disconnect();

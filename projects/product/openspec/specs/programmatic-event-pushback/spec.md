@@ -74,7 +74,7 @@
 - **THEN** 系统 MUST 以原 eventId 按 10/30/90/270/810 秒退避重试最多 5 次，仍失败标记未送达并记录，不重做原业务动作
 
 ### Requirement: 持久化与序号补查
-系统 SHALL 持久保存事件 7 天，服务重启后序号连续。系统 SHALL 提供 `GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n}`（read 权限，limit 默认 50、最大 200），按序号升序返回该凭据可见的事件，含未送达事件。`after` MUST 为上一页 nextCursor 返回的非负整数序号；不是合法游标时 MUST 返回 400 programmatic_input_invalid。`nextCursor` MUST 始终返回本页最后一条事件的 sequence 字符串；本页为空时 MUST 返回请求中的 after；未传 after 且没有任何事件时 MUST 为 null。响应 MUST 包含布尔字段 `hasMore`，表示以 `after=nextCursor` 再次读取时是否还有更多事件。轮询方 MUST 保存 `nextCursor` 并用 `after=nextCursor` 继续补查。事件被丢弃时系统 MUST 补发 `events_dropped`。
+系统 SHALL 持久保存事件 7 天，服务重启后序号连续。系统 SHALL 提供 `GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n}`（read 权限，limit 默认 50、最大 200），按序号升序返回该凭据可见的事件，含未送达事件。`after` MUST 为上一页 nextCursor 返回的非负整数序号；不是合法游标时 MUST 返回 400 programmatic_input_invalid。`nextCursor` MUST 始终返回本页最后一条事件的 sequence 字符串；本页为空时 MUST 返回请求中的 after；未传 after 且没有任何事件时 MUST 为 null。响应 MUST 包含布尔字段 `hasMore`，表示以 `after=nextCursor` 再次读取时是否还有更多事件。轮询方 MUST 保存 `nextCursor` 并用 `after=nextCursor` 继续补查。普通事件到期时系统 MUST 按凭据、工作空间、对话和事件类型补发 `events_dropped`，包含 `conversationId`、`droppedEventType` 和 `droppedCount`。到期的 `events_dropped` MUST NOT 触发新的丢失通知。
 
 #### Scenario: 重启序号连续
 - **WHEN** 服务重启后继续产生事件

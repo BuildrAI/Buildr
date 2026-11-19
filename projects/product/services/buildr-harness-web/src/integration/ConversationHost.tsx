@@ -9,6 +9,7 @@ export type HarnessConversationHost = {
   /** The assembled host interprets its own objects; ordinary files use HarnessDirectoryFiles. */
   openObject?(reference: string, scopePath: string): void;
   requestLayout?(action: 'collapse' | 'full', full?: boolean): void;
+  onWidthChange?(width: number): void;
   /** True when standalone Harness Web owns the viewport without an assembled work environment. */
   standalone?: boolean;
 };

@@ -1,7 +1,7 @@
 import { api } from '../../../api';
 import { createSharedSourceControlWatch } from './shared-source-control-watch.ts';
 import { beginSourceControlFetch, beginSourceControlSync, notifySourceControlChange } from '../source-control-events.ts';
-import type { CodeRepositoriesRepositories, CodeDirectoryDirectory, CodeFileFile, CodeSearchSearch, CodeSourceControlSourceControl, CodeHistoryHistory, CodeCommitCommit, CodeDiffDiff, CodeSourceFileSourceFile, CodeBranchesBranches, CodeAuthorsAuthors, CodeBranchSwitchBranchSwitch, CodeFetchFetch, CodeSyncContextSyncContext, CodeSyncSync, CodeEditorFileEditorFile, CodeSaveFileSaveFile, CodeRepositoryCloneRepositoryClone } from '../../../../build/generated/code-http-dto';
+import type { CodeRepositoriesRepositories, CodeDirectoryDirectory, CodeFileFile, CodeSearchSearch, CodeSourceControlSourceControl, CodeHistoryHistory, CodeCommitCommit, CodeDiffDiff, CodeSourceFileSourceFile, CodeBranchesBranches, CodeAuthorsAuthors, CodeBranchSwitchBranchSwitch, CodeFetchFetch, CodeSyncContextSyncContext, CodeSyncSync, CodeEditorFileEditorFile, CodeSaveFileSaveFile, CodeOpenFolderOpenFolder, CodeRepositoryCloneRepositoryClone } from '../../../../build/generated/code-http-dto';
 export type CodeSourceControlInput = { observation?: 'shared'; repositoryId?: string; worktreeId?: string; taskId?: string; commitHash?: string; path?: string; area?: 'unstaged' | 'staged' | 'untracked' | 'working' | 'commit'; branch?: string; authorEmail?: string; query?: string; limit?: number; cursor?: string; expectedRevision?: string; page?: number; line?: number; matchQuery?: string };
 export type CodeSourceControlResponse = CodeSourceControlSourceControl;
 export type CodeSourceControlWatchResponse = {cursor: string; repositoryIds: string[]; refreshAll: boolean; refsRepositoryIds?: string[]; diagnostics?: string[]};
@@ -27,22 +27,31 @@ export type CodeLocation = {repositoryId:string;checkoutId?:string|null;taskId?:
 export type EditableFileSnapshot = CodeEditorFileEditorFile;
 export type EditableFileSelector = EditableFileSnapshot['selector'];
 export type SaveFileInput = { selector: EditableFileSelector; expectedFileId: string; expectedSourceRevision: string; expectedRevision: string; content: string };
+export type OpenFileFolderInput = { selector: EditableFileSelector };
+export type CodeOpenFolderResponse = CodeOpenFolderOpenFolder;
 export type CodeReadInput = CodeLocation & {path?:string;query?:string;mode?:'name'|'content';showIgnored?:boolean;page?:number;line?:number;matchQuery?:string;expectedRevision?:string};
 const request = <T,>(workspaceId:string,operation:string,input:Record<string,unknown>,signal?:AbortSignal):Promise<T> => {
   const query=new URLSearchParams();
   for(const [key,value] of Object.entries(input))if(value!==undefined&&value!==null)query.set(key==='path'?'filePath':key,String(value));
   return api(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/code/${operation}?${query}`,{signal}) as Promise<T>;
 };
+// Exact current Explorer reads need Git membership, not task-group enrichment.
+const explorerRead = (input: CodeReadInput) => input.checkoutId && !input.taskId && !input.commitHash
+  ? {...input, worktreeId:input.checkoutId} : input;
 export const codeApi = {
+  targetRepositories:(id:string,targetPath:string,signal?:AbortSignal)=>request<CodeCatalog>(id,'repositories',{targetPath},signal),
   repositories:(id:string,taskId?:string,signal?:AbortSignal)=>request<CodeCatalog>(id,'repositories',{taskId},signal),
-  directory:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeDirectory>(id,'directory',input,signal),
+  directory:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeDirectory>(id,'directory',explorerRead(input),signal),
   file:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeFile>(id,'file',input,signal),
+  explorerFile:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeFile>(id,'file',explorerRead(input),signal),
   editorFile:(id:string,selector:EditableFileSelector,signal?:AbortSignal)=>request<EditableFileSnapshot>(id,'editor-file',selector,signal),
   saveFile:async (id:string,input:SaveFileInput):Promise<CodeSaveFileSaveFile> => {
     const result = await api(`/api/v1/workspaces/${encodeURIComponent(id)}/code/save-file`,{method:'POST',body:JSON.stringify(input)}) as CodeSaveFileSaveFile;
     if (input.selector.kind === 'code') notifySourceControlChange({workspaceId:id, repositoryId:input.selector.repositoryId, worktreeId:input.selector.checkoutId, cause:'file-save'});
     return result;
   },
+  openFolder:(id:string,input:OpenFileFolderInput):Promise<CodeOpenFolderResponse> =>
+    api(`/api/v1/workspaces/${encodeURIComponent(id)}/code/open-folder`,{method:'POST',body:JSON.stringify(input)}) as Promise<CodeOpenFolderResponse>,
   search:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeSearch>(id,'search',input,signal),
   sourceControlInventory:(id:string,input:{taskId?:string}={},signal?:AbortSignal)=>request<CodeSourceControlResponse>(id,'source-control-inventory',input,signal),
   repositoryClone:(id:string,repositoryId:string,signal?:AbortSignal):Promise<CodeRepositoryCloneResponse> => api(`/api/v1/workspaces/${encodeURIComponent(id)}/code/repository-clone`,{method:'POST',body:JSON.stringify({repositoryId}),signal}) as Promise<CodeRepositoryCloneResponse>,

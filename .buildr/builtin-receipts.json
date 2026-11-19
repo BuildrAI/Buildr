@@ -2,6 +2,18 @@
   "schemaVersion": "buildr.builtin-receipts/v1",
   "builtins": [
     {
+      "type": "command",
+      "id": "ripgrep",
+      "target": "commands/manifest.yml",
+      "integrity": "sha256-2964ca54b62d370fd5461c76bc523b11d2bebe8595dcac8fc6c8aff647f62fd8",
+      "files": [
+        {
+          "path": "manifest-entry",
+          "integrity": "sha256-ab172105823610ca4dd699abf6a94224de077353a6939481002cabb57721b312"
+        }
+      ]
+    },
+    {
       "type": "skill",
       "id": "agent-first-design",
       "target": "skills/buildr/agent-first-design",

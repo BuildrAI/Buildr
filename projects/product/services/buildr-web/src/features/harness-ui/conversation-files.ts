@@ -11,13 +11,16 @@ function normalizedPath(value:string):string|null {
   }
   return prefix+'/'+parts.join('/');
 }
-/** Resolve the actual checkout containing the invocation target. Never use a
- * task/default checkout as a fallback for a missing or ambiguous source. */
-export function conversationFileTarget(cwd:string,path:string,catalog:Pick<CodeCatalog,'worktrees'>):{repositoryId:string;checkoutId:string;path:string}|null {
+export function conversationAbsoluteFile(cwd:string,path:string):string|null {
   // Parent traversal and home expansion depend on executor-side resolution.
   if(/(^|[\\/])\.\.([\\/]|$)/.test(path)||/^~(?:[\\/]|$)/.test(path))return null;
   if(/^[a-z][a-z\d+.-]*:/i.test(path)&&!(/^[a-z]:[\\/]/i.test(path)))return null;
   const absolute=normalizedPath(/^(?:[\\/]|[a-z]:[\\/])/i.test(path)?path:cwd+'/'+path);
+  return absolute;
+}
+/** Resolve the actual checkout containing the invocation target. */
+export function conversationFileTarget(cwd:string,path:string,catalog:Pick<CodeCatalog,'worktrees'>):{repositoryId:string;checkoutId:string;path:string}|null {
+  const absolute=conversationAbsoluteFile(cwd,path);
   if(!absolute)return null;
   const candidates=catalog.worktrees.flatMap(member=>{
     const root=normalizedPath(member.path)?.replace(/\/$/,'');

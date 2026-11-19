@@ -82,8 +82,15 @@ function imageFallback(doc, alt) {
 }
 
 // Parse syntax once; author content is only ever written as text or safe DOM nodes.
+const HTML_BREAK_TAG = /^<br\s*\/?>$/i;
+const HTML_BREAK_LINE = /^ {0,3}<br[ \t]*\/?>[ \t]*(?:\r?\n|$)/i;
+
+function isHtmlBreak(token) {
+  return token?.type === 'html' && HTML_BREAK_TAG.test(token.text || '');
+}
+
 function inlineText(tokens) {
-  return tokens.map(token => token.tokens ? inlineText(token.tokens) : ['codespan', 'html'].includes(token.type) ? token.text : decodeHTML(token.text || '')).join('');
+  return tokens.map(token => token.tokens ? inlineText(token.tokens) : token.type === 'br' || isHtmlBreak(token) ? '' : ['codespan', 'html'].includes(token.type) ? token.text : decodeHTML(token.text || '')).join('');
 }
 
 function linkFallback(doc, tokens, destination, reason, linkOptions) {
@@ -161,7 +168,7 @@ function appendInline(parent, tokens, doc, linkOptions) {
         link.append(code);
         parent.append(link);
       } else parent.append(code);
-    } else if (token.type === 'br') {
+    } else if (token.type === 'br' || isHtmlBreak(token)) {
       parent.append(doc.createElement('br'));
     } else if (token.tokens) {
       appendInline(parent, token.tokens, doc, linkOptions);
@@ -224,6 +231,10 @@ const markdownParser = new Marked({
     },
   }],
   tokenizer: {
+    html(source: string) {
+      if (HTML_BREAK_LINE.test(source)) return undefined;
+      return false;
+    },
     fences(source: string) {
       const newline = source.indexOf('\n');
       const fence = openingFence(newline < 0 ? source : source.slice(0, newline));

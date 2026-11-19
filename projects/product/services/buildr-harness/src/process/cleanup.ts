@@ -9,7 +9,7 @@ const day = 24 * 60 * 60_000;
 
 /** adopted is an acknowledgement, not a future consumer of an old unit.
  * Missing/unknown states remain protected for compatibility and crash recovery. */
-function pendingRuntime(dataRoot:string):AgentRuntimeUnit|undefined {
+export function pendingRuntime(dataRoot:string):AgentRuntimeUnit|undefined {
   const pending=readPrivate<{runtime?:AgentRuntimeUnit;state?:string}>(path.join(controlRoot(dataRoot),'pending.json'));
   return pending?.state==='adopted'?undefined:pending?.runtime;
 }
@@ -25,7 +25,7 @@ function confirmedStop(dataRoot:string,record:ReturnType<typeof readProcessInsta
   return Boolean(record.stopped&&record.confirmed || recorded);
 }
 
-function currentRuntime(dataRoot:string):AgentRuntimeUnit|undefined {
+export function currentRuntime(dataRoot:string):AgentRuntimeUnit|undefined {
   const current=readProcessRecord(dataRoot);
   if(!current)return;
   const stopped=readPrivate<{instanceId:string;confirmed:boolean;history?:Array<{instanceId:string;confirmed:boolean}>}>(path.join(controlRoot(dataRoot),'last-stop.json'));

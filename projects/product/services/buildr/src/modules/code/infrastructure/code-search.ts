@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { resolveProductResource } from '../../../infrastructure/product-resources/index.ts';
+import { findExecutableOnPath } from '../../../infrastructure/process.ts';
 import { insideFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { CODE_LIMITS, codeFailure, codeGit, fallbackIgnored, gitCommonDirectory, localPath, relativeCodePath, type CodeSource } from './code-file-reader.ts';
 import { codeGitEnvironment } from './code-git-environment.ts';
@@ -10,17 +10,12 @@ type Occurrence = { line:number; excerpt:string };
 type Match = { path:string; line:number|null; excerpt:string; occurrences:Occurrence[] };
 type Diagnostic = { code:string; message:string; repositoryId:string|null };
 
-/** The exact packaged binary also serves CLI and read workers; never discover a tool through PATH. */
-export function codeRipgrepPath() {
-  const binary=process.platform==='win32'?'rg.exe':'rg';
-  const target=process.platform+'-'+process.arch+'/'+binary;
-  return resolveProductResource('runtime/ripgrep/'+target,{developmentFallback:'node_modules/@vscode/ripgrep-universal/bin/'+target});
-}
+const ripgrepHelp = '代码搜索需要 ripgrep（rg）。请按 Buildr 建议工具清单安装，并确保 Buildr 进程的 PATH 可找到 rg 后重试。';
 
 function searchProcess(source:CodeSource,command:string,args:string[]) {
   const env=codeGitEnvironment(); delete env.RIPGREP_CONFIG_PATH;
   const result=spawnSync(command,args,{cwd:source.location,env:{...env,GIT_OPTIONAL_LOCKS:'0'},timeout:CODE_LIMITS.searchMs,killSignal:'SIGKILL',maxBuffer:CODE_LIMITS.searchOutputBytes,stdio:['ignore','pipe','pipe']});
-  if(result.error&&['ENOENT','EACCES','ENOEXEC'].includes((result.error as NodeJS.ErrnoException).code||''))throw codeFailure('code_search_engine_unavailable','产品搜索引擎当前不可用，请修复产品安装后重试。',503);
+  if(result.error&&['ENOENT','EACCES','ENOEXEC'].includes((result.error as NodeJS.ErrnoException).code||''))throw codeFailure('code_search_engine_unavailable',command === 'git' ? '历史代码搜索需要可执行的 Git。请检查 Buildr 进程的 PATH。' : ripgrepHelp,503);
   const diagnostics:Diagnostic[]=[];
   if(result.error||result.signal)diagnostics.push({code:'code_search_limit',message:'搜索超过执行时间或输出上限，仅保留已取得结果。',repositoryId:source.repositoryId});
   else if(result.status!==0&&result.status!==1)diagnostics.push({code:'code_search_incomplete',message:'部分文件未能完成搜索，已取得结果仍保留。',repositoryId:source.repositoryId});
@@ -60,6 +55,10 @@ function matchCollector(query:string) {
 }
 
 function currentSearch(source:CodeSource,query:string,mode:'name'|'content',showIgnored:boolean) {
+  const executable = process.platform === 'win32'
+    ? findExecutableOnPath('rg.exe', { env: { PATH: process.env.PATH ?? process.env.Path } })
+    : findExecutableOnPath('rg');
+  if (!executable) throw codeFailure('code_search_engine_unavailable', ripgrepHelp, 503);
   const args=['--no-config','--hidden','--no-follow','--no-ignore-parent','--no-ignore-global','--iglob','!**/.git','--iglob','!**/.git/**'];
   if(showIgnored)args.push('--no-ignore');
   else for(const directory of fallbackIgnored)args.push('--glob','!**/'+directory+'/**');
@@ -70,7 +69,7 @@ function currentSearch(source:CodeSource,query:string,mode:'name'|'content',show
     args.push('--glob','!/'+excluded+'/**');
   }
   args.push(...(mode==='name'?['--files','--null']:['--json','--stats','--fixed-strings','--ignore-case','-e',query]),'--','.');
-  const result=searchProcess(source,codeRipgrepPath(),args),collector=matchCollector(query);
+  const result=searchProcess(source,path.resolve(executable),args),collector=matchCollector(query);
   let scannedFiles=0,truncated=result.truncated;
   const seen=new Set<string>();
   function add(value:string,line:number|null,excerpt:string) {

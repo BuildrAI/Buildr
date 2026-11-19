@@ -19,6 +19,13 @@ import {defaultHarnessWorkspaceRoot} from '../profile.ts';
 
 export interface HarnessWebStatus {enabled:boolean;ready:boolean;endpointId?:string;origin?:string;generation:string;diagnostic?:string;mode?:'live'|'static'}
 interface Options {dataRoot:string;profileId?:string;generation:string;instanceId:string;staticRoot:string;runtimeDigest?:string;ownsListener():boolean;connect():Promise<AgentProcessConnection>}
+const PUBLIC_ICON_FILES=new Map<string,string>([
+  ['favicon.ico','image/x-icon'],
+  ['favicon-32x32.png','image/png'],
+  ['icon-192.png','image/png'],
+  ['apple-touch-icon.png','image/png'],
+]);
+const BOOTSTRAP_ICON_LINKS='<link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png"><link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">';
 /** A listener owned by the shared core, not a third resident host process. */
 export class HarnessWebEndpoint {
   private readonly options:Options;
@@ -92,7 +99,7 @@ export class HarnessWebEndpoint {
       server.listen(state.port,'127.0.0.1');await once(server,'listening');
       const address=server.address();if(!address||typeof address==='string')throw new Error('listener_address_missing');
       if(this.closed||!this.options.ownsListener())throw new AgentServiceError('agent_web_not_coordinator','网页监听期间协调身份已变化。',409);
-      this.origin=`http://127.0.0.1:${address.port}`;this.sessions.listening(this.identity,address.port);this.diagnostic=sourceDiagnostic;
+      this.origin=`http://127.0.0.1:${address.port}`;this.sessions.listening({...this.identity,...(this.bundle?{bundle:this.bundle}:{})},address.port);this.diagnostic=sourceDiagnostic;
       return this.status();
     }catch(error){
       if(this.server?.listening)this.server.close();this.server=undefined;
@@ -157,7 +164,7 @@ export class HarnessWebEndpoint {
       // Allow loopback HTTP keep-alive pools (e.g. fetch/undici) one I/O poll cycle to observe FIN before successor rebind.
       await new Promise<void>(resolve=>setTimeout(resolve,5));
       if(server.listening)throw new AgentServiceError('agent_web_release_unknown','原网页监听释放未确认。',409);
-      this.sessions.released(this.identity);
+      this.sessions.released({...this.identity,...(this.bundle?{bundle:this.bundle}:{})});
     }
     this.server=undefined;
   }
@@ -188,10 +195,29 @@ export class HarnessWebEndpoint {
     res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','content-security-policy':"default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'none'; font-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",'x-frame-options':'SAMEORIGIN'});res.end(content);
   }
   private async binary(req:IncomingMessage,limit:number):Promise<Buffer>{const chunks:Buffer[]=[];let size=0;for await(const value of req){const chunk=Buffer.from(value);size+=chunk.length;if(size>limit)throw new AgentServiceError('agent_web_input_too_large','材料超过限制。',413);chunks.push(chunk);}return Buffer.concat(chunks);}
+  private readPublicIcon(name:string):{bytes:Buffer;mimeType:string}{
+    const mimeType=PUBLIC_ICON_FILES.get(name);
+    if(!mimeType)throw new AgentServiceError('agent_web_asset_missing','没有此网页资源。',404);
+    if(this.development){
+      const publicRoot=path.join(this.development.root,'public');
+      const candidate=path.join(publicRoot,name);
+      const stat=fs.lstatSync(candidate,{throwIfNoEntry:false});
+      if(stat?.isFile()&&!stat.isSymbolicLink()&&fs.realpathSync(candidate).startsWith(fs.realpathSync(publicRoot)+path.sep)){
+        return {bytes:fs.readFileSync(candidate),mimeType};
+      }
+    }
+    return this.assets.read(this.bundle!,name);
+  }
   private async handle(req:IncomingMessage,res:ServerResponse):Promise<void>{
     this.fence(req);const url=new URL(req.url!,this.origin);
     if(url.search&&!url.pathname.startsWith('/api/')&&(!this.development||url.pathname==='/'||url.pathname==='/index.html'))throw new AgentServiceError('agent_web_query_invalid','网页入口不接受登录 query 或未知查询。',400);
     // API queries are parsed below from the original URL; the public index never accepts secrets in query.
+    const iconName=url.pathname.startsWith('/')?url.pathname.slice(1):'';
+    if((req.method==='GET'||req.method==='HEAD')&&PUBLIC_ICON_FILES.has(iconName)){
+      const file=this.readPublicIcon(iconName);
+      res.writeHead(200,{'content-type':file.mimeType,'content-length':file.bytes.length,'cache-control':'public, max-age=3600','x-content-type-options':'nosniff'});
+      res.end(req.method==='HEAD'?undefined:file.bytes);return;
+    }
     if(req.method==='POST'&&url.pathname==='/session/ticket'){
       const input=await body(req,4096);this.fence(req);if(Object.keys(input).join()!=='ticket')throw new AgentServiceError('agent_web_ticket_invalid','票据参数无效。',400);
       const value=this.sessions.exchange(this.origin!,input.ticket);
@@ -202,7 +228,7 @@ export class HarnessWebEndpoint {
       const token=this.cookie(req),remaining=this.sessions.renew(token);
       if(remaining===undefined){
         const nonce=randomBytes(18).toString('base64');
-        this.html(res,`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Buildr Harness</title><p id="status">请从 Buildr Harness 启动器打开；已有草稿仍保留。</p><script nonce="${nonce}">async function redeem(){const value=new URLSearchParams(location.hash.slice(1)).get('ticket');history.replaceState(null,'','/');if(!value)return;try{const response=await fetch('/session/ticket',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ticket:value})});if(response.ok)location.replace('/');else document.getElementById('status').textContent='登录票据已失效，请重新从启动器打开；草稿仍保留。';}catch{document.getElementById('status').textContent='网页连接未确认，请核对启动器状态；草稿仍保留。';}}addEventListener('hashchange',redeem);void redeem();</script></html>`,nonce);return;
+        this.html(res,`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>Buildr Harness</title>${BOOTSTRAP_ICON_LINKS}</head><body><p id="status">请从 Buildr Harness 启动器打开；已有草稿仍保留。</p><script nonce="${nonce}">async function redeem(){const value=new URLSearchParams(location.hash.slice(1)).get('ticket');history.replaceState(null,'','/');if(!value)return;try{const response=await fetch('/session/ticket',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ticket:value})});if(response.ok)location.replace('/');else document.getElementById('status').textContent='登录票据已失效，请重新从启动器打开；草稿仍保留。';}catch{document.getElementById('status').textContent='网页连接未确认，请核对启动器状态；草稿仍保留。';}}addEventListener('hashchange',redeem);void redeem();</script></body></html>`,nonce);return;
       }
       // Refresh the browser cookie to the server-side remaining lifetime so it never outlives the session.
       res.setHeader('set-cookie',`${this.sessions.cookieName()}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.max(1,Math.floor(remaining/1000))}`);

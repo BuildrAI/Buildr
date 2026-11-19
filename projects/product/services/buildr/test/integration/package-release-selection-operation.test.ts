@@ -71,6 +71,8 @@ function archive(metadata: any): Buffer {
   return gzipSync(Buffer.concat([header, body, Buffer.alloc((512 - body.length % 512) % 512 + 1024)]));
 }
 
+const peerArchiveSeed = archive({ name: '@buildr-ai/buildr', version: mainVersion, buildrCompatibility: mainCompatibility });
+
 function pluginCandidate(sourceCommit: string, sourceTree: string, peer: any): any {
   const bytes = archive({ name: '@buildr-ai/buildr-dsh-plugin', version: pluginVersion, repository: 'https://github.com/BuildrAI/Buildr',
     buildrCompatibility: pluginCompatibility, buildrDshSourceSdk: { upstream: sourceSdk.baseline, sourceManifestSha256: sourceSdk.manifestSha256,
@@ -104,7 +106,7 @@ test('formal repair preserves actual plugin bytes and peer proof without rebuild
   git(repo, ['init', '-b', 'dev']); git(repo, ['config', 'user.name', 'Fixture']); git(repo, ['config', 'user.email', 'fixture@example.com']);
   git(repo, ['add', '.']); git(repo, ['commit', '-m', 'source']);
   const sourceCommit = git(repo, ['rev-parse', 'HEAD']), sourceTree = git(repo, ['rev-parse', 'HEAD^{tree}']);
-  const peerBytes = archive({ name: '@buildr-ai/buildr', version: mainVersion, buildrCompatibility: mainCompatibility });
+  const peerBytes = Buffer.from(peerArchiveSeed);
   const peer = artifactFromTarball(peerBytes, { origin: 'registry', packageName: '@buildr-ai/buildr', version: mainVersion,
     integrity: 'sha512-' + crypto.createHash('sha512').update(peerBytes).digest('base64') });
   const owned = pluginCandidate(sourceCommit, sourceTree, peer);
@@ -136,11 +138,20 @@ test('formal repair preserves actual plugin bytes and peer proof without rebuild
   assert.throws(() => preservePluginSourceCandidate({ repo, temporaryRoot, runId: '42', verificationSource: sourceCommit, workflow: { runId: 52, runAttempt: 1 } }, { call }), /different bytes|invalid|differs/u);
 });
 
-function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boolean; mutateAggregate?: (value: any) => void; localPackage?: boolean } = {}): any {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-package-selection-operation-')));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+const repositorySeeds = new Map<string, string>();
+test.after(() => {
+  for (const dir of repositorySeeds.values()) fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// Only the builder writes the seed. Each fixture copies objects, refs and
+// configuration independently; no links or alternates refer back to it.
+function repositorySeed(changes: { mainRuntime?: boolean; omitSourcePatch?: boolean }): string {
+  const key = JSON.stringify([Boolean(changes.mainRuntime), Boolean(changes.omitSourcePatch)]);
+  const existing = repositorySeeds.get(key);
+  if (existing) return existing;
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-package-selection-seed-')));
+  repositorySeeds.set(key, root);
   const workspace = path.join(root, 'workspace'), remote = path.join(root, 'remote.git');
-  const repo = path.join(workspace, '.worktrees', taskId), providerFile = path.join(workspace, '.git/buildr/task-worktrees', taskId + '.json');
   const write = (file: string, bytes: string | Buffer) => { fs.mkdirSync(path.dirname(path.join(workspace, file)), { recursive: true }); fs.writeFileSync(path.join(workspace, file), bytes); };
   write('projects/product/services/buildr/package.json', JSON.stringify({ name: '@buildr-ai/buildr', version: mainVersion, buildrCompatibility: mainCompatibility }));
   write(PLUGIN_SERVICE_PATH + '/package.json', JSON.stringify({ name: '@buildr-ai/buildr-dsh-plugin', version: '0.1.0-rc.6', buildrCompatibility: pluginCompatibility }));
@@ -150,13 +161,25 @@ function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boo
   write('.github/workflows/verify.yml', 'name: Verify fixture\n'); write('.github/workflows/publish-dsh-plugin.yml', 'name: Plugin fixture\n');
   git(workspace, ['init', '-b', 'dev']); git(workspace, ['config', 'user.name', 'Buildr Test']); git(workspace, ['config', 'user.email', 'buildr@example.com']);
   git(workspace, ['add', '.']); git(workspace, ['commit', '-m', 'base']); git(workspace, ['branch', 'main']);
-  const baseline = git(workspace, ['rev-parse', 'HEAD']);
   write(PLUGIN_SERVICE_PATH + '/package.json', JSON.stringify({ name: '@buildr-ai/buildr-dsh-plugin', version: pluginVersion, buildrCompatibility: pluginCompatibility }));
   if (changes.mainRuntime) write('projects/product/services/buildr/src/runtime-input.ts', 'export const changed = true;\n');
   git(workspace, ['add', '.']); git(workspace, ['commit', '-m', 'selected plugin materials']);
-  const selectedSource = git(workspace, ['rev-parse', 'HEAD']);
   git(workspace, ['init', '--bare', remote]); git(workspace, ['remote', 'add', 'origin', remote]); git(workspace, ['push', '-u', 'origin', 'dev', 'main']);
-  const peerBytes = archive({ name: '@buildr-ai/buildr', version: mainVersion, buildrCompatibility: mainCompatibility });
+  return root;
+}
+
+function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boolean; mutateAggregate?: (value: any) => void; localPackage?: boolean } = {}): any {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-package-selection-operation-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const workspace = path.join(root, 'workspace'), remote = path.join(root, 'remote.git');
+  const repo = path.join(workspace, '.worktrees', taskId), providerFile = path.join(workspace, '.git/buildr/task-worktrees', taskId + '.json');
+  const seed = repositorySeed(changes);
+  fs.cpSync(path.join(seed, 'workspace'), workspace, { recursive: true });
+  fs.cpSync(path.join(seed, 'remote.git'), remote, { recursive: true });
+  git(workspace, ['remote', 'set-url', 'origin', remote]);
+  const baseline = git(workspace, ['rev-parse', 'main']);
+  const selectedSource = git(workspace, ['rev-parse', 'HEAD']);
+  const peerBytes = Buffer.from(peerArchiveSeed);
   const peer = artifactFromTarball(peerBytes, { origin: 'registry', packageName: '@buildr-ai/buildr', version: mainVersion,
     integrity: 'sha512-' + crypto.createHash('sha512').update(peerBytes).digest('base64') });
   const file = path.join(workspace, '.git/buildr/release-operations', selectionId + '.json');

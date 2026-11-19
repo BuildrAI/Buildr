@@ -58,3 +58,11 @@ test('Qoder models from other products are disabled without renaming or explanat
   assert.equal(catalogConversationOption('qoder',{accountId:'devin',provider:'devin',modelId:'model',label:'Model',available:true}).disabled,false,'missing executorCompatibility defers to server validation');
   assert.deepEqual(catalogConversationOption('qoder-cn',{accountId:'cn',provider:'native-qoder-cn',modelId:'model',label:'Model',available:false,creditFactor:1,executorCompatibility:compatibilityFor('native-qoder-cn')}),{value:'shared:cn::model',label:'Model · 1.00x',disabled:true});
 });
+
+test('a missing companion outranks a prior successful installation and permits same-version repair',()=>{
+  const broken=agentProgramView({...program,repairRequired:true,upgrade:{state:'completed',installedExecutable:program.executable,expectedVersion:program.latestVersion}});
+  assert.equal(broken.repairRequired,true);
+  assert.equal(broken.completed,false);
+  assert.equal(broken.canUpdate,true);
+  assert.match(broken.updateLabel,/配套组件/);
+});

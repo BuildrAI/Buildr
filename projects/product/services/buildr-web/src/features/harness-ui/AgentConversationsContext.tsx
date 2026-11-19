@@ -102,6 +102,8 @@ function useIntegration(){
   persistPanel({open:nextOpen,full:nextFull,view:nextView});
  },[persistPanel]);
  const [settings,setSettingsState]=useState(false);
+ const [side,setSide]=useState<'left'|'right'>(()=>readOptionalPreference('buildr.agent-conversation-side')==='left'?'left':'right');
+ const [width,setWidth]=useState<number>(()=>{const saved=Number(readOptionalPreference('buildr.agent-conversation-width'));return Number.isFinite(saved)&&saved>0?Math.min(800,Math.max(560,saved)):620;});
  const [conversation,setConversation]=useState<ConversationView|null>(null),[command,setCommand]=useState<ConversationCommand|null>(null),[sequence,setSequence]=useState(0);
  const [modelCatalog,setModelCatalog]=useState<CatalogModel[]>([]),[modelCatalogReady,setModelCatalogReady]=useState(false),[modelCatalogError,setModelCatalogError]=useState('');
  const pending=useRef(new Map<string,{resolve:(result:TextConversationActionResult)=>void;timer:ReturnType<typeof setTimeout>}>());
@@ -116,7 +118,7 @@ function useIntegration(){
  const reply=useCallback((id:string,result:TextConversationActionResult)=>{const request=pending.current.get(id);if(!request)return;clearTimeout(request.timer);pending.current.delete(id);request.resolve(result);},[]);
  const apply=useCallback((value:ConversationView,observedRevision:string)=>setConversation(current=>applyAssociationResult(current,value,observedRevision)),[]);
  const openHistory=useCallback((_workspaceId?:string|null)=>{setView('history');issue({action:'history'});},[issue,setView]);
- return {side:'right' as 'left'|'right',connections:[] as {provider:string;label?:string}[],locateParticipation:async(workspaceId:string,conversationId:string,_runId:string)=>openConversation(workspaceId,conversationId),api:agentConversationsApi,open,setOpen,full,setFull,view,setView,settings,setSettings:(value:boolean)=>{setSettingsState(value);if(value)issue({action:'settings'});},conversation,setConversation,scope:conversation?{workspaceId:conversation.workspaceId,conversationId:conversation.id}:null,command,sequence,issue,reply,newConversation,openConversation,openHistory,openGlobal:()=>{setOpen(true);},toggle:()=>setOpen(value=>!value),toggleView:(next:'conversation'|'history')=>{if(next==='history')openHistory();else{setView(next);setOpen(value=>!value);}},apply,modelCatalog,modelCatalogReady,modelCatalogError,refreshModelCatalog,startTextConversation};
+ return {side,setSide,width,setWidth,connections:[] as {provider:string;label?:string}[],locateParticipation:async(workspaceId:string,conversationId:string,_runId:string)=>openConversation(workspaceId,conversationId),api:agentConversationsApi,open,setOpen,full,setFull,view,setView,settings,setSettings:(value:boolean)=>{setSettingsState(value);if(value)issue({action:'settings'});},openQuotaSettings:()=>{setSettingsState(true);issue({action:'quota'});},conversation,setConversation,scope:conversation?{workspaceId:conversation.workspaceId,conversationId:conversation.id}:null,command,sequence,issue,reply,newConversation,openConversation,openHistory,openGlobal:()=>{setOpen(true);},toggle:()=>setOpen(value=>!value),toggleView:(next:'conversation'|'history')=>{if(next==='history')openHistory();else{setView(next);setOpen(value=>!value);}},apply,modelCatalog,modelCatalogReady,modelCatalogError,refreshModelCatalog,startTextConversation};
 }
 export type AgentConversationsContextValue=ReturnType<typeof useIntegration>;
 const Context=createContext<AgentConversationsContextValue|null>(null);

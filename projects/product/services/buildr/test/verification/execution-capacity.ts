@@ -7,7 +7,7 @@ export function observeVerificationMachine() {
   return { parallelism: os.availableParallelism(), memoryBytes: constrained > 0 ? Math.min(total, constrained) : total };
 }
 
-export function resolveExecutionCapacity(base: any, { automatic = false, env = process.env, machine = observeVerificationMachine() }: any = {}) {
+export function resolveExecutionCapacity(base: any, { automatic = false, env = process.env, machine = observeVerificationMachine(), observations = [] }: any = {}) {
   const configured = env.BUILDR_VERIFICATION_JOBS;
   if (configured !== undefined && (!/^[1-9]\d*$/.test(configured) || !Number.isSafeInteger(Number(configured) * 2))) {
     throw new Error('BUILDR_VERIFICATION_JOBS must be a safe positive integer');
@@ -15,17 +15,22 @@ export function resolveExecutionCapacity(base: any, { automatic = false, env = p
   if (!automatic && configured === undefined) return { limits: base, capacityPolicy: 'fixed' };
   if (!Number.isInteger(machine.parallelism) || machine.parallelism < 1 || !Number.isFinite(machine.memoryBytes) || machine.memoryBytes <= 0) throw new Error('Invalid verification machine observation');
   const memoryGiB = machine.memoryBytes / 1024 ** 3;
-  // Four outer groups were observed to starve real browser, native-agent and
-  // handoff checks on a 15-CPU machine (load 12-21). Three is the stable
-  // machine-initial width; explicit larger widths remain possible but carry
-  // the observed contention risk.
-  const initial = Math.max(1, Math.min(3, Math.floor(machine.parallelism / 3), Math.floor(memoryGiB / 4)));
+  // Size the outer worker pool to this host. Independently preserve locks and
+  // limit concurrent workspace-heavy checks, which compete for disk and shared
+  // browser setup even on hosts with spare CPU and RAM.
+  // Retain the existing minimum reservation; historic peaks can only make admission more conservative.
+  const usable = observations.filter((item: any) => Number.isFinite(item.samples) && item.samples >= 5
+    && Number.isFinite(item.peakSampledGroupCpuPercent) && item.peakSampledGroupCpuPercent > 0
+    && Number.isFinite(item.peakSampledGroupRssBytes) && item.peakSampledGroupRssBytes > 0);
+  const cpuPerGroup = Math.max(3, ...usable.map((item: any) => Math.ceil(item.peakSampledGroupCpuPercent / 100)));
+  const memoryPerGroup = Math.max(4, ...usable.map((item: any) => item.peakSampledGroupRssBytes / 1024 ** 3));
+  const initial = Math.max(1, Math.min(Math.floor(machine.parallelism / cpuPerGroup), Math.floor(memoryGiB / memoryPerGroup)));
   const width = configured === undefined ? initial : Number(configured);
   // Four simultaneous workspace-heavy groups were observed to starve real
   // browser and process-handoff checks on this machine. Keep the global width
   // for lighter work and two-slot I/O overlap, but admit at most three heavy
   // groups at once.
-  const workspaceHeavy = Math.min(3, width);
+  const workspaceHeavy = Math.max(1, Math.min(width, Math.floor(machine.parallelism / 5), Math.floor(memoryGiB / 6)));
   // Keep two bounded heavy-I/O groups possible once three outer groups are
   // admitted; lower-width machines retain their smaller I/O capacity.
   const workspaceIo = width >= 3 ? Math.max(4, width) : width;
@@ -43,7 +48,7 @@ export function resolveExecutionCapacity(base: any, { automatic = false, env = p
       capacities: { ...base.capacities, workers: Math.max(workers, 2 * width), processes: Math.max(workers, 2 * width), workspaceIo },
     },
     capacityPolicy: configured === undefined ? 'machine-initial' : 'explicit-jobs',
-    capacityObservation: { ...machine, initialWidth: initial, workspaceHeavyLimit: workspaceHeavy,
+    capacityObservation: { ...machine, initialWidth: initial, cpuPerGroup, memoryPerGroup, workspaceHeavyLimit: workspaceHeavy,
       ...(configured === undefined ? {} : { requestedJobs: width }) },
   };
 }

@@ -206,8 +206,12 @@ test('CLI 正文文件支持创建、更新和清空，互斥参数保持当前�
 
 test('HTTP 详情与更新读取同一正文，列表不携带正文，陈旧写入拒绝', async (t) => {
   const { root, base } = taskRecordFixture(t, 'task-brief-http');
+  const previousDataDir = process.env.BUILDR_APP_DATA_DIR;
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
-  t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
+  t.after(() => {
+    if (previousDataDir === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+    else process.env.BUILDR_APP_DATA_DIR = previousDataDir;
+  });
   const runtime = createRuntime();
   const created = runtime.createTask(root, input('brief-http', '# HTTP 说明\n'));
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
@@ -228,4 +232,15 @@ test('HTTP 详情与更新读取同一正文，列表不携带正文，陈旧写
   assert.equal(stale.status, 409);
   const inspected: any = await fetch(`${endpoint}/brief-http`).then(response => response.json());
   assert.equal(inspected.record.brief, updated.record.brief);
+});
+
+test('Application task page stays bounded in a workspace with hundreds of tasks', (t)=>{
+ const {root}=taskRecordFixture(t,'task-list-bounded');const runtime=createRuntime();
+ for(let i=0;i<240;i++)runtime.createTask(root,{taskId:'bounded-'+i,title:'Task '+i,intent:'bounded page',status:'todo',projects:[],services:[],changes:[]});
+ const first=runtime.queryTasks(root, { status: 'open', pageSize: '20' });
+ assert.equal(first.tasks.length,20);assert.equal(first.totalTaskCount,240);assert.equal(first.matchingTaskCount,240);assert.equal(first.hasMore,true);assert.ok(first.nextCursor);
+ assert.ok(first.tasks.every((item:any)=>!('brief' in item.record)));
+ const second=runtime.queryTasks(root, { status: 'open', pageSize: '20', cursor: first.nextCursor! });
+ assert.equal(second.tasks.length,20);assert.equal(second.filterOptions,null);
+ assert.ok(second.tasks.every((item:any)=>!first.tasks.some((old:any)=>old.record.taskId===item.record.taskId)));
 });

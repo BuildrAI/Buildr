@@ -179,6 +179,7 @@ jobs:
           node-version: '24.x'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - uses: ./.github/actions/setup-ripgrep
       - name: Resolve changed verification base
         id: base
         working-directory: .
@@ -477,6 +478,7 @@ jobs:
           node-version: '24.x'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - uses: ./.github/actions/setup-ripgrep
       - name: Verify the closed diagnosis source
         env:
           EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree }}
@@ -665,6 +667,7 @@ jobs:
           node-version: '24.x'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - uses: ./.github/actions/setup-ripgrep
       - name: Read the original Candidate run identity
         shell: bash
         env:
@@ -823,6 +826,7 @@ jobs:
           node-version: '24.x'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - uses: ./.github/actions/setup-ripgrep
       - name: Prepare the current Windows source environment
         run: node tools/verification/candidate-environment.ts prepare --profile ${{ inputs.diagnostic_scope == 'readonly-files-windows' && 'base' || 'source-runtime' }}
       - name: Diagnose only the registered Windows source owner
@@ -861,6 +865,7 @@ jobs:
           node-version: '24.x'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - uses: ./.github/actions/setup-ripgrep
       - name: Prepare Candidate artifact environment
         if: ${{ !inputs.repair_candidate_run_id }}
         env:
@@ -921,6 +926,7 @@ jobs:
           node-version: '24.x'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - uses: ./.github/actions/setup-ripgrep
       - name: Read formal repair plan
         if: inputs.repair_candidate_run_id
         uses: actions/download-artifact@v7
@@ -973,6 +979,7 @@ jobs:
           node-version: '24.15.0'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - uses: ./.github/actions/setup-ripgrep
       - name: Read formal repair plan
         if: inputs.repair_candidate_run_id
         uses: actions/download-artifact@v7

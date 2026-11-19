@@ -3,7 +3,7 @@ import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {claimStorage,readPrivate,writePrivate,live} from './ownership.ts';
 import {AgentServiceError} from '../domain/agent-state.ts';
 
-export interface WebListenerIdentity {instanceId:string;generation:string;pid:number;released:boolean}
+export interface WebListenerIdentity {instanceId:string;generation:string;pid:number;released:boolean;bundle?:string}
 interface Ticket {hash:string;expiresAt:number;origin:string;bundle:string}
 interface Session {hash:string;expiresAt:number;bundle:string}
 interface State {version:1;endpointId:string;revision:string;enabled:boolean;port:number;developmentRoot?:string;listener?:WebListenerIdentity;tickets:Ticket[];sessions:Session[]}

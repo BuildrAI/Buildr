@@ -213,9 +213,16 @@ function extractModelsFromSessionPayload(payload: any, supportsImage: boolean) {
     ids.add(id);
     const variant = antigravityModelVariant(id);
     const key = variant?.family ?? id;
-    const label = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : id;
-    const model: AgentModel & { images: boolean; tools: boolean } = groups.get(key) ?? { id: key, label: variant ? label.replace(/ \((Low|Medium|High|XHigh|Extra)\)$/i, '') : label,
-      images: supportsImage, tools: true };
+    const rawName = typeof item.name === 'string' ? item.name.trim() : '';
+    const label = rawName
+      ? (variant ? rawName.replace(/ \((Low|Medium|High|XHigh|Extra)\)$/i, '') : rawName)
+      : key;
+    const model: AgentModel & { images: boolean; tools: boolean } = groups.get(key) ?? {
+      id: key,
+      label,
+      images: supportsImage,
+      tools: true,
+    };
     if (id === current) model.isDefault = true;
     if (variant) {
       const depth = antigravityReasoningEffort(variant.depth);

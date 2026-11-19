@@ -6,6 +6,8 @@ import {invalidLauncher as invalid, launcherDigest as digest, launcherFileHash a
 import {installWindowsHarnessLauncher, readWindowsHarnessLauncher, uninstallWindowsHarnessLauncher, windowsBindingPath} from './windows-launcher.ts';
 export type {HarnessLauncherBinding} from './launcher-binding.ts';
 const LSREGISTER='/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister';
+const ICON_NAME='BuildrHarness.icns';
+const ICON_SOURCE=path.resolve(import.meta.dirname,'../resources/icons',ICON_NAME);
 const quote=(value:string)=>"'"+value.replaceAll("'","'\\''")+"'";
 const bindingPath=(target:string)=>path.join(target,'Contents/Resources/harness-launcher.json');
 function legacyScript(binding:HarnessLauncherBinding,logging=true){
@@ -54,11 +56,13 @@ export function installHarnessLauncher(input:{target:string;entry:string;node?:s
     const displayName=binding.profile==='development'?'Buildr Harness Dev':'Buildr Harness';
     fs.mkdirSync(path.join(stage,'Contents/MacOS'),{recursive:true});fs.mkdirSync(path.join(stage,'Contents/Resources'),{recursive:true});
     fs.writeFileSync(path.join(stage,'Contents/MacOS/harness'),script(binding),{mode:0o755});fs.writeFileSync(path.join(stage,'Contents/Resources/harness-launcher.json'),JSON.stringify(binding)+'\n',{mode:0o600});
-    fs.writeFileSync(path.join(stage,'Contents/Info.plist'),'<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleName</key><string>'+displayName+'</string><key>CFBundleDisplayName</key><string>'+displayName+'</string><key>CFBundleIdentifier</key><string>ai.buildr.harness.'+binding.profile+'.'+digest(target).slice(0,16)+'</string><key>CFBundleExecutable</key><string>harness</string><key>CFBundlePackageType</key><string>APPL</string><key>LSUIElement</key><true/></dict></plist>');
+    fs.copyFileSync(ICON_SOURCE,path.join(stage,'Contents/Resources',ICON_NAME));
+    fs.writeFileSync(path.join(stage,'Contents/Info.plist'),'<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleName</key><string>'+displayName+'</string><key>CFBundleDisplayName</key><string>'+displayName+'</string><key>CFBundleIdentifier</key><string>ai.buildr.harness.'+binding.profile+'.'+digest(target).slice(0,16)+'</string><key>CFBundleExecutable</key><string>harness</string><key>CFBundleIconFile</key><string>'+ICON_NAME+'</string><key>CFBundlePackageType</key><string>APPL</string><key>LSUIElement</key><true/></dict></plist>');
     const current=readHarnessLauncher(target);if(current?.revision!==previous?.revision)invalid('启动器在准备期间变化，未覆盖。');
     if(previous)fs.renameSync(target,backup);
     try{fs.renameSync(stage,target);}catch(error){if(previous)fs.renameSync(backup,target);throw error;}
     fs.rmSync(backup,{recursive:true,force:true});
+    const now=new Date();fs.utimesSync(target,now,now);
     refreshLaunchServices(target);
     return {status:'installed',binding};
   }finally{fs.rmSync(stage,{recursive:true,force:true});}

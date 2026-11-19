@@ -1,10 +1,15 @@
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
 import { performance } from 'node:perf_hooks';
 import { stopAgentProcess } from '@buildr-ai/buildr-harness';
+import {
+  launchDetachedProcess,
+  pruneExitedLaunchdJobs,
+  type DetachedProcessHandle,
+} from '../../infrastructure/detached-launch.ts';
 
 import { buildrWebDataRoot } from '../../modules/workspace/module.ts';
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.ts';
@@ -338,30 +343,72 @@ function clearOwner(name: string, dataRoot?: string): void {
   fs.rmSync(previewOwnerPath(name, dataRoot), { force: true });
 }
 
-async function waitForPreview(name: string, dataRoot: string, child: ChildProcess, startup: PreviewStartup, timeoutMs: number): Promise<PreviewInstance | null> {
+function inspectDetachedPreviewState(
+  handle: DetachedProcessHandle,
+  startup: PreviewStartup,
+): { exited: boolean; exitCode: number | null; signal: string | null } {
+  if (handle.child) {
+    return {
+      exited: Boolean(startup.spawnError || handle.child.exitCode !== null || handle.child.signalCode !== null),
+      exitCode: handle.child.exitCode,
+      signal: handle.child.signalCode,
+    };
+  }
+  const status = handle.pollStatus();
+  return {
+    exited: !status.running,
+    exitCode: status.exitCode,
+    signal: status.signal,
+  };
+}
+
+async function waitForPreview(name: string, dataRoot: string, handle: DetachedProcessHandle, startup: PreviewStartup, timeoutMs: number): Promise<PreviewInstance | null> {
   const began = performance.now();
   startup.phase = 'instance-missing';
   while (performance.now() - began < timeoutMs) {
-    if (startup.spawnError || child.exitCode !== null || child.signalCode !== null) break;
+    if (inspectDetachedPreviewState(handle, startup).exited) break;
     const instance = readPreviewInstance(name, dataRoot);
-    startup.phase = !instance ? 'instance-missing' : instance.pid !== child.pid ? 'instance-pid-mismatch' : 'health-not-ready';
-    const healthy = instance?.pid === child.pid ? await healthyInstance(instance) : null;
-    if (healthy && !startup.spawnError && child.exitCode === null && child.signalCode === null) return healthy;
+    startup.phase = !instance ? 'instance-missing' : (handle.pid <= 0 || instance.pid !== handle.pid) ? 'instance-pid-mismatch' : 'health-not-ready';
+    const healthy = handle.pid > 0 && instance?.pid === handle.pid ? await healthyInstance(instance) : null;
+    if (healthy && !inspectDetachedPreviewState(handle, startup).exited) return healthy;
     await new Promise<void>((resolve) => setTimeout(resolve, Math.min(50, Math.max(0, timeoutMs - (performance.now() - began)))));
   }
   startup.elapsedMs = Math.round(performance.now() - began);
   return null;
 }
 
-async function reclaimPreviewChild(child: ChildProcess, startup: PreviewStartup): Promise<'already-exited' | 'terminated'> {
-  const exited = (): boolean => Boolean(startup.spawnError || child.exitCode !== null || child.signalCode !== null);
-  if (exited()) return 'already-exited';
-  const signals: NodeJS.Signals[] = ['SIGTERM', 'SIGKILL'];
-  for (const signal of signals) {
-    if (!child.kill(signal) && !exited()) throw new Error(`无法发送 ${signal}：${startup.processError?.message || 'child.kill returned false'}`);
-    const deadline = performance.now() + 1000;
-    while (!exited() && performance.now() < deadline) await new Promise<void>((resolve) => setTimeout(resolve, 25));
-    if (exited()) return 'terminated';
+async function reclaimPreviewChild(handle: DetachedProcessHandle, startup: PreviewStartup): Promise<'already-exited' | 'terminated'> {
+  if (handle.child) {
+    const child = handle.child;
+    const exited = (): boolean => Boolean(startup.spawnError || child.exitCode !== null || child.signalCode !== null);
+    if (exited()) return 'already-exited';
+    const signals: NodeJS.Signals[] = ['SIGTERM', 'SIGKILL'];
+    for (const signal of signals) {
+      if (!child.kill(signal) && !exited()) throw new Error(`无法发送 ${signal}：${startup.processError?.message || 'child.kill returned false'}`);
+      const deadline = performance.now() + 1000;
+      while (!exited() && performance.now() < deadline) await new Promise<void>((resolve) => setTimeout(resolve, 25));
+      if (exited()) return 'terminated';
+    }
+    throw new Error('预览子进程在终止信号后仍未确认退出。');
+  }
+  const isolatedGone = (): boolean => !handle.pollStatus().running && (handle.pid <= 1 || !processAlive(handle.pid));
+  if (isolatedGone()) return 'already-exited';
+  handle.bootout();
+  const bootoutDeadline = performance.now() + 1000;
+  while (!isolatedGone() && performance.now() < bootoutDeadline) await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  if (isolatedGone()) return 'terminated';
+  if (handle.pid > 1) {
+    for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
+      try {
+        process.kill(process.platform === 'win32' ? handle.pid : -handle.pid, signal);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ESRCH') return 'terminated';
+        throw error;
+      }
+      const deadline = performance.now() + 1000;
+      while (!isolatedGone() && performance.now() < deadline) await new Promise<void>((resolve) => setTimeout(resolve, 25));
+      if (isolatedGone()) return 'terminated';
+    }
   }
   throw new Error('预览子进程在终止信号后仍未确认退出。');
 }
@@ -611,41 +658,43 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   const ownedOwner: PreviewOwner = reuse ? { ...owner, reuse } : owner;
   writeOwner(runtime, ownedOwner, dataRoot);
   const logFile = path.join(root, 'preview.log');
-  const logDescriptor = fs.openSync(logFile, 'a');
-  let child: ChildProcess;
-  try {
-    child = spawn(appInvocation.command, [...appInvocation.argsPrefix, 'web', '--target', environmentRoot, '--port', String(desiredPort), '--no-open'], {
-      cwd: environmentRoot,
-      detached: true,
-      stdio: ['ignore', logDescriptor, logDescriptor],
-      env: { ...process.env, BUILDR_APP_DATA_DIR: root, BUILDR_LOCAL_APP_PREVIEW: JSON.stringify(ownedOwner), ...(candidateDigest ? { BUILDR_PREVIEW_AGENT_DIGEST: candidateDigest } : {}) },
-    });
-  } finally { fs.closeSync(logDescriptor); }
+  const handle = launchDetachedProcess({
+    command: appInvocation.command,
+    args: [...appInvocation.argsPrefix, 'web', '--target', environmentRoot, '--port', String(desiredPort), '--no-open'],
+    cwd: environmentRoot,
+    env: { ...process.env, BUILDR_APP_DATA_DIR: root, BUILDR_LOCAL_APP_PREVIEW: JSON.stringify(ownedOwner), ...(candidateDigest ? { BUILDR_PREVIEW_AGENT_DIGEST: candidateDigest } : {}) },
+    labelPrefix: `preview-${instance}`,
+    stateDir: path.join(root, 'launchd-jobs'),
+    standardOutPath: logFile,
+    standardErrorPath: logFile,
+  });
   const startup: PreviewStartup = { spawnError: null, processError: null, phase: 'spawned', elapsedMs: 0 };
-  child.on('error', (error) => {
-    if (!child.pid) startup.spawnError = error;
+  handle.child?.on('error', (error) => {
+    if (!handle.pid) startup.spawnError = error;
     else startup.processError = error;
   });
-  child.unref();
-  const started = await waitForPreview(instance, dataRoot, child, startup, startupTimeoutMs);
+  const started = await waitForPreview(instance, dataRoot, handle, startup, startupTimeoutMs);
   if (!started) {
-    const failed = Boolean(startup.spawnError || child.exitCode !== null || child.signalCode !== null);
+    const exitInfo = inspectDetachedPreviewState(handle, startup);
+    const failed = exitInfo.exited;
     let cleanup: string;
     try {
-      cleanup = await reclaimPreviewChild(child, startup);
+      cleanup = await reclaimPreviewChild(handle, startup);
       const state = readPreviewInstance(instance, dataRoot);
-      if (state?.pid === child.pid) runtime.removePath(previewInstancePath(instance, dataRoot));
+      if (handle.pid > 0 && state?.pid === handle.pid) runtime.removePath(previewInstancePath(instance, dataRoot));
       clearOwner(instance, dataRoot);
     } catch (error) {
       cleanup = errorMessage(error);
-      writeOwner(runtime, { ...ownedOwner, managedProcess: { pid: child.pid || 0, state: 'cleanup-failed' } }, dataRoot);
+      writeOwner(runtime, { ...ownedOwner, managedProcess: { pid: handle.pid || 0, state: 'cleanup-failed' } }, dataRoot);
     }
+    const afterCleanup = inspectDetachedPreviewState(handle, startup);
+    const pidLabel = handle.pid > 0 ? handle.pid : null;
     let diagnostic: string | null = null;
     try { diagnostic = fs.readFileSync(logFile, 'utf8').trim().slice(-4096) || null; } catch {}
     const reason = failed ? '启动进程提前退出或无法创建' : '未在预期时间内就绪';
-    const message = `预览实例 ${instance} ${reason}。pid=${child.pid ?? 'none'} phase=${startup.phase} elapsedMs=${startup.elapsedMs} exitCode=${child.exitCode} signal=${child.signalCode} cleanup=${cleanup}${startup.spawnError ? ` spawnError=${startup.spawnError.message}` : ''}${diagnostic ? `\n${diagnostic}` : ''}`;
+    const message = `预览实例 ${instance} ${reason}。pid=${pidLabel ?? 'none'} phase=${startup.phase} elapsedMs=${startup.elapsedMs} exitCode=${afterCleanup.exitCode} signal=${afterCleanup.signal} cleanup=${cleanup}${startup.spawnError ? ` spawnError=${startup.spawnError.message}` : ''}${diagnostic ? `\n${diagnostic}` : ''}`;
     const code = !['terminated', 'already-exited'].includes(cleanup) ? 'preview_start_cleanup_failed' : failed ? 'preview_start_failed' : 'preview_start_timeout';
-    throw codedError(message, code, { instance, pid: child.pid ?? null, phase: startup.phase, elapsedMs: startup.elapsedMs, exitCode: child.exitCode, signal: child.signalCode, cleanup, logFile, diagnostic });
+    throw codedError(message, code, { instance, pid: pidLabel, phase: startup.phase, elapsedMs: startup.elapsedMs, exitCode: afterCleanup.exitCode, signal: afterCleanup.signal, cleanup, logFile, diagnostic });
   }
   let candidateReady: CandidateAgentReadiness | null = null;
   if (candidateDigest) {
@@ -657,10 +706,10 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
       let cleanup: string;
       try {
         try { await requestInstanceShutdown(started); } catch { /* graceful quit is best effort */ }
-        cleanup = await reclaimPreviewChild(child, startup);
+        cleanup = await reclaimPreviewChild(handle, startup);
         await stopAgentProcess({ dataRoot: root });
         const state = readPreviewInstance(instance, dataRoot);
-        if (state?.pid === child.pid) runtime.removePath(previewInstancePath(instance, dataRoot));
+        if (handle.pid > 0 && state?.pid === handle.pid) runtime.removePath(previewInstancePath(instance, dataRoot));
         clearOwner(instance, dataRoot);
       } catch (error) {
         cleanup = errorMessage(error);
@@ -843,6 +892,11 @@ export async function stopPreview(name: string, options: PreviewStopOptions = {}
     await new Promise<void>((resolve) => setTimeout(resolve, 250));
   }
   if (stopFailure) throw stopFailure;
+  if (process.platform === 'darwin') {
+    for (const dir of [path.join(agentRoot, 'launchd-jobs'), path.join(agentRoot, 'agent-service', 'process', 'launchd-jobs')]) {
+      try { pruneExitedLaunchdJobs(dir); } catch { /* Best-effort prune. */ }
+    }
+  }
   if (options.purge) {
     await assertPreviewStopped(instance, dataRoot);
     const target = assertPurgeTargetSafe(instance, dataRoot);

@@ -37,9 +37,9 @@ Buildr MUST 通过 Commands Domain writer 为默认 Workspace 生成命令行工
 - **WHEN** Agent 执行 `buildr init --target <dir> --name <name>`
 - **THEN** Buildr MUST 在 Workspace 中生成 `commands/manifest.yml` 或等价命令行工具清单入口
 
-#### Scenario: 默认命令行工具清单为空
-- **WHEN** Buildr 当前没有随包提供默认外部命令行工具声明
-- **THEN** Commands Domain writer MUST 初始化空的命令行工具清单
+#### Scenario: 默认命令行工具清单建议安装 ripgrep
+- **WHEN** Buildr 初始化或同步默认命令行工具清单
+- **THEN** Commands Domain writer MUST 登记可选的 ripgrep 和安装提示
 - **AND** 默认清单 MUST NOT 声明 Buildr 自身为 Workspace 命令行工具资产
 
 #### Scenario: package check 校验命令行工具清单入口

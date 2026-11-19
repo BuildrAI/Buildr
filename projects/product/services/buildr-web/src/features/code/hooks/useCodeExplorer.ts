@@ -10,9 +10,10 @@ import { useSourceControlSummary } from './useSourceControl';
 import { visibleCodeDirectoryKeys } from '../code-expanded-directories';
 import { readExplorerFile, type ExplorerCodeFile } from '../code-file-read';
 import { planCodeDirectoryRefresh, removedCodeDirectoryPaths, type CodeDirectoryObservation } from '../code-directory-refresh';
+import { takeCodeOpen } from '../code-open-observation';
 const failure=(error:unknown)=>error instanceof Error?error.message:'当前内容不可读取。';
 type CachedCodeFile=ExplorerCodeFile;
-export function useCodeExplorer(workspaceId:string,workspaceRoot:string|null|undefined,viewActive=true,entryKey?:string) {
+export function useCodeExplorer(workspaceId:string,workspaceRoot:string|null|undefined,viewActive=true,entryKey?:string,hasInitialObservation=false) {
   const sourceChoice=useCodeSourceSelection(workspaceId);
   const appliedSourceSequence=useRef(0),explicitEntry=useRef<string|undefined>(undefined);
   if(entryKey&&entryKey!==explicitEntry.current){appliedSourceSequence.current=sourceChoice.selection?.sequence||0;}
@@ -63,9 +64,11 @@ export function useCodeExplorer(workspaceId:string,workspaceRoot:string|null|und
     const controller=new AbortController();controllers.current.add(controller);
     try{return await operation(controller.signal);}finally{controllers.current.delete(controller);}
   },[]);
+  const initialObservation = useRef(hasInitialObservation);
   useEffect(()=>{
     epoch.current++;const version=epoch.current,sequence=++catalogSequence.current;
-    void run(signal=>codeApi.repositories(workspaceId,undefined,signal)).then(value=>{if(version===epoch.current&&(sequence===catalogSequence.current||!latestCatalog.current)){latestCatalog.current=value;setCatalog(value);setCatalogError('');}}).catch(error=>{if(version===epoch.current&&(sequence===catalogSequence.current||!latestCatalog.current))setCatalogError(failure(error));});
+    if(!initialObservation.current)void run(signal=>codeApi.repositories(workspaceId,undefined,signal)).then(value=>{if(version===epoch.current&&(sequence===catalogSequence.current||!latestCatalog.current)){latestCatalog.current=value;setCatalog(value);setCatalogError('');}}).catch(error=>{if(version===epoch.current&&(sequence===catalogSequence.current||!latestCatalog.current))setCatalogError(failure(error));});
+    initialObservation.current=false;
     return()=>{epoch.current++;controllers.current.forEach(c=>c.abort());controllers.current.clear();pending.current.clear();};
   },[workspaceId,run]);
   const publishFilters=useCallback((value:CodeCatalog|null,ids:string[],group?:string)=>{
@@ -137,7 +140,7 @@ export function useCodeExplorer(workspaceId:string,workspaceRoot:string|null|und
     const version=epoch.current,sequence=(fileSequence.current.get(tab.key)||0)+1;fileSequence.current.set(tab.key,sequence);setLoading(previous=>[...new Set([...previous,tab.key])]);
     const isCurrent=()=>version===epoch.current&&fileSequence.current.get(tab.key)===sequence;
     try{
-      const value:CachedCodeFile=await run(signal=>readExplorerFile(workspaceId,{repositoryId:tab.repositoryId,checkoutId:tab.checkoutId,taskId:tab.taskId,commitHash:tab.commitHash,path:tab.path,page,line:page===undefined?tab.line:undefined,matchQuery:page===undefined&&tab.line?tab.matchQuery:undefined,expectedRevision:!force&&cached?cached.revision:undefined},signal,codeApi));
+      const value:CachedCodeFile=await run(signal=>readExplorerFile(workspaceId,{repositoryId:tab.repositoryId,checkoutId:tab.checkoutId,taskId:tab.taskId,commitHash:tab.commitHash,path:tab.path,page,line:page===undefined?tab.line:undefined,matchQuery:page===undefined&&tab.line?tab.matchQuery:undefined,expectedRevision:!force&&cached?cached.revision:undefined},signal,{editorFile:codeApi.editorFile,file:codeApi.explorerFile}));
       if(page!==undefined&&value.page&&cached?.page&&value.revision===cached.revision){value.page={...value.page,matchOffset:cached.page.matchOffset,matchEndOffset:cached.page.matchEndOffset};value.observedMatch=cached.observedMatch;}
       else if(tab.line&&tab.matchQuery)value.observedMatch={line:tab.line,query:tab.matchQuery};
       if(isCurrent()&&current.current.tabs.some(t=>t.key===tab.key)){setFiles(previous=>Object.fromEntries([...Object.entries(previous).filter(([key])=>key!==tab.key).slice(-7),[tab.key,value]]));setFileErrors(previous=>{const next={...previous};delete next[tab.key];return next;});}
@@ -145,21 +148,28 @@ export function useCodeExplorer(workspaceId:string,workspaceRoot:string|null|und
     catch(error){if(isCurrent()&&!String(error).includes('AbortError'))setFileErrors(previous=>({...previous,[tab.key]:failure(error)}));}
     finally{if(isCurrent())setLoading(previous=>previous.filter(key=>key!==tab.key));}
   },[workspaceId,run]);
-  const open=useCallback((source:CodeLocation,path:string,line?:number,force=false,matchQuery?:string)=>{
+  const open=useCallback((source:CodeLocation,path:string,line?:number,force=false,matchQuery?:string,observed?:CachedCodeFile)=>{
     ++entrySequence.current;++sourceIntentSequence.current;
     source=canonicalCodeLocation(source);
     if(source.checkoutId&&!source.commitHash)sourceChoice.select('explorer',[{repositoryId:source.repositoryId,checkoutId:source.checkoutId}],{repositoryId:source.repositoryId,checkoutId:source.checkoutId});
     const tab={...source,path,line,matchQuery,focusRequest:line?++focusSequence.current:undefined,key:codeFileKey(source,path)};
     setLocations(previous=>codeLocationKey(previous[codeCheckoutKey(source)]||{repositoryId:source.repositoryId,checkoutId:source.checkoutId})===codeLocationKey(source)?previous:{...previous,[codeCheckoutKey(source)]:source});
     setTabs(previous=>{const found=previous.find(t=>t.key===tab.key);return found?previous.map(t=>t.key===tab.key?tab:t):[...previous,tab];});
-    setActiveKey(tab.key);setSelectionRequest(value=>value+1);void loadFile(tab,force);
+    setActiveKey(tab.key);setSelectionRequest(value=>value+1);
+    if(observed){
+      fileSequence.current.set(tab.key,(fileSequence.current.get(tab.key)||0)+1);
+      setFiles(previous=>Object.fromEntries([...Object.entries(previous).filter(([key])=>key!==tab.key).slice(-7),[tab.key,observed]]));
+      setFileErrors(previous=>{const next={...previous};delete next[tab.key];return next;});
+      setLoading(previous=>previous.filter(key=>key!==tab.key));
+    }else void loadFile(tab,force);
     const parents=path.split('/').slice(0,-1),browserId=codeBrowserKey(source);void loadDirectory(browserId,'',false,source);
     parents.forEach((_,index)=>void loadDirectory(browserId,parents.slice(0,index+1).join('/'),false,source));
   },[loadFile,loadDirectory,sourceChoice.select]);
   const applyEntry=useCallback(async(next:CodeTaskEntry)=>{
     ++sourceIntentSequence.current;setEntry(next);setCatalogError('');const version=epoch.current,sequence=++entrySequence.current,catalogRequest=++catalogSequence.current,sharedSequence=sourceChoice.getSelection()?.sequence||0;
     try{
-      const value=await run(signal=>codeApi.repositories(workspaceId,next.taskId,signal));
+      const observation=takeCodeOpen(workspaceId,next);
+      const value=observation?.catalog ?? await run(signal=>codeApi.repositories(workspaceId,next.taskId,signal));
       if(version!==epoch.current)return;
       // A cold entry can be superseded while its default catalog read was already
       // fenced. Keep directory facts available without adopting the old intent.
@@ -177,11 +187,24 @@ export function useCodeExplorer(workspaceId:string,workspaceRoot:string|null|und
         const member=next.file.checkoutId?value.worktrees.find(item=>item.repositoryId===repositoryId&&item.id===next.file!.checkoutId):possible.length===1?possible[0]:undefined;
         if(!member&&!next.file.checkoutId&&!next.file.commitHash){setCatalogError('任务文件的工作树无法唯一确定，请从目录选择实际来源。');return;}
         if(!value.selectedRepositoryIds.includes(repositoryId))setScope([...value.selectedRepositoryIds,repositoryId]);
-        if(member)setWorktreeScope(member.groupId);
+        if(member)setWorktreeScope(observation?.partial?'checkout:'+member.id:member.groupId);
         if(next.file.commitHash&&(next.file.checkoutId||member?.id)){
           const target={repositoryId,checkoutId:next.file.checkoutId||member!.id};sourceChoice.select('explorer',[target],target);
         }
-        open({repositoryId,checkoutId:next.file.checkoutId||member?.id,commitHash:next.file.commitHash},next.file.path,next.file.line,true);
+        open({repositoryId,checkoutId:next.file.checkoutId||member?.id,commitHash:next.file.commitHash},next.file.path,next.file.line,true,undefined,observation?.file);
+        if(observation?.partial){
+          // Give the body and its ancestors the first read slots. Complete the
+          // selectors after commit; this result does not apply a new selection.
+          const group='checkout:'+observation.target.checkoutId;
+          requestAnimationFrame(()=>requestAnimationFrame(()=>{
+            if(version!==epoch.current||catalogRequest!==catalogSequence.current)return;
+            void run(signal=>codeApi.repositories(workspaceId,undefined,signal)).then(full=>{
+              if(version!==epoch.current||catalogRequest!==catalogSequence.current)return;
+              latestCatalog.current=full;
+              setCatalog(previous=>retainCodeSelections(full,previous,current.current.worktreeScope||group));
+            }).catch(error=>{if(version===epoch.current&&catalogRequest===catalogSequence.current)setCatalogError(failure(error));});
+          }));
+        }
       }
     }catch(error){if(version===epoch.current&&entrySequence.current===sequence&&(sourceChoice.getSelection()?.sequence||0)===sharedSequence)setCatalogError(failure(error));}
   },[workspaceId,run,open,publishFilters,sourceChoice.getSelection,sourceChoice.select]);

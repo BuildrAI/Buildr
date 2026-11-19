@@ -6,7 +6,7 @@ import type { CodeBranchSwitchInput } from '../../application/source-control-mod
 import type { CodeFetchInput } from '../../application/code-fetch-application.ts';
 import type { CodeSyncInput } from '../../application/code-sync-application.ts';
 import type { CodeCommitChangesInput, CodePushInput } from '../../application/code-commit-model.ts';
-import type { EditorFileSelector, SaveEditorFileInput } from '../../application/file-editing-application.ts';
+import type { EditorFileSelector, OpenFileFolderInput, SaveEditorFileInput } from '../../application/file-editing-application.ts';
 import { EDITABLE_FILE_JSON_BYTES } from '../../infrastructure/editable-file.ts';
 import type { SourceControlObservations } from '../../application/source-control-observations.ts';
 import type { CodeSourceControlResponse } from '../../application/source-control-model.ts';
@@ -48,6 +48,16 @@ export function createCodeHttpContribution(application:CodeApplication, observat
       const body=await write(root,save.selector.kind === 'code' ? [save.selector.repositoryId] : undefined,() => application.saveFile(root,save));
       if(!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.saveFile.$id,body).valid)throw codeFailure('code_response_invalid','文件保存结果不符合契约。',500);
       return {status:200,body};
+    }
+    if (request.method === 'POST' && suffix === '/code/open-folder') {
+      if (!authorizeWrite || !readJsonBody) throw codeFailure('code_open_folder_unauthorized', '打开文件夹请求缺少本机会话（Session）授权。', 403);
+      authorizeWrite();
+      if (searchParams.size) throw codeFailure('code_query_invalid', '打开文件夹不接受查询参数。');
+      const input = await readJsonBody();
+      if (!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_REQUESTS.openFolder.$id, input).valid) throw codeFailure('code_open_folder_input_invalid', '打开文件夹请求不符合契约。');
+      const body = await application.openFolder(root, input as OpenFileFolderInput);
+      if (!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.openFolder.$id, body).valid) throw codeFailure('code_response_invalid', '打开文件夹结果不符合契约。', 500);
+      return { status: 200, body };
     }
     if (request.method === 'POST' && suffix === '/code/discard-changes') {
       if (!authorizeWrite || !readJsonBody) throw codeFailure('code_write_unauthorized','丢弃请求缺少本机会话（Session）授权。',403);
@@ -135,7 +145,7 @@ export function createCodeHttpContribution(application:CodeApplication, observat
     const observationTicket=operation==='sourceControl'?observations?.beginRead(root):undefined;
     // Registration-only inventory performs no Git reads. Keep it lightweight so
     // the first two real status reads can start their bounded workers together.
-    const body=await(operation==='sourceControlInventory'?application.sourceControlInventory(root,input):submitTaskRead?submitTaskRead('code-'+CODE_HTTP_PATHS[operation],'code-files',{input:JSON.stringify(input)}):operation==='repositories'?application.repositories(root,values.taskId):application[operation](root,input));
+    const body=await(operation==='sourceControlInventory'?application.sourceControlInventory(root,input):submitTaskRead?submitTaskRead('code-'+CODE_HTTP_PATHS[operation],'code-files',{input:JSON.stringify(input)}):operation==='repositories'?application.repositories(root,values.taskId,values.targetPath):application[operation](root,input));
     if(!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS[operation].$id,body).valid)throw codeFailure('code_response_invalid','代码读取结果不符合契约。',500);
     // Watcher discovery must not delay or invalidate a successful authoritative read.
     if(operation==='sourceControl'&&observations&&observationTicket)void observations.observe(root,body as CodeSourceControlResponse,Boolean(values.repositoryId),observationTicket).catch(()=>{});

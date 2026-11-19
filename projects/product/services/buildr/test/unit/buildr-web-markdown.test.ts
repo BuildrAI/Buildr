@@ -656,3 +656,114 @@ test('代码块渲染组件内复制图标按钮并保留纯文本无障碍状�
     else Reflect.deleteProperty(globalThis.document, 'body');
   }
 });
+
+test('renderMarkdown 在表格单元格与正文中渲染无属性 br 换行并维持安全边界', async () => {
+  const { renderMarkdown, markdownHeadingCounts } = await loadRenderer();
+
+  const tableMarkdown = [
+    '| 模块 / 环节<br>子标题 | 当前状态<br/>详情 | 距离交付还缺什么<br />清单 | 大小写<BR>空白<br >测试 |',
+    '| --- | --- | --- | --- |',
+    '| 农牧后端业务服务 | 🟡 **本地代码完成**<br>（工作树 `task/prawn-wechat-payment`，基于 `dev-nm`） | 1. 消费已发布的 `saas-common-api` <br>2. 执行订单库建表脚本（SQL）<br>3. 配置 Nacos 开关与 XXL-JOB<br>4. 合入 `dev-nm` 并部署 QA/Prod<br>5. 真实渠道与并发验证 | 连续<br><br>双换行 |',
+  ].join('\n');
+  const tableRoot = renderMarkdown(tableMarkdown);
+  const headers = tableRoot.querySelectorAll('table th');
+  const cells = tableRoot.querySelectorAll('table td');
+  assert.equal(headers[0].querySelectorAll('br').length, 1);
+  assert.equal(headers[1].querySelectorAll('br').length, 1);
+  assert.equal(headers[2].querySelectorAll('br').length, 1);
+  assert.equal(headers[3].querySelectorAll('br').length, 2);
+  assert.equal(cells[1].querySelectorAll('br').length, 1);
+  assert.equal(cells[2].querySelectorAll('br').length, 4);
+  assert.equal(cells[3].querySelectorAll('br').length, 2);
+  assert.equal(tableRoot.textContent.toLowerCase().includes('<br'), false);
+
+  const inlineRoot = renderMarkdown([
+    '段落<br>换行<br/>自闭合<br />空格<BR>大写',
+    '',
+    '- 列表项<br>第二行',
+    '1. 有序项<br/>第二行',
+    '- [x] 任务项<br />第二行',
+    '',
+    '> 引用<br>换行',
+    '',
+    '## 标题<br>副标题',
+    '## 标题<br>副标题',
+    '',
+    '**加粗<br>强调** *斜体<br>换行* ~~删除<br>线~~ [链接<br>文本](https://example.com)',
+    '',
+    '反斜杠\\',
+    '硬换行  ',
+    '下一行',
+  ].join('\n'));
+  const paragraphs = inlineRoot.querySelectorAll('p');
+  assert.equal(paragraphs[0].querySelectorAll('br').length, 4);
+  assert.equal(paragraphs.at(-1).querySelectorAll('br').length, 2);
+  assert.equal(inlineRoot.querySelectorAll('ul').find((node: any) => !node.className.includes('task-list'))?.querySelector('li')?.querySelectorAll('br').length, 1);
+  assert.equal(inlineRoot.querySelector('ol li')?.querySelectorAll('br').length, 1);
+  assert.equal(inlineRoot.querySelectorAll('li').find((node: any) => node.className === 'task-list-item')?.querySelectorAll('br').length, 1);
+  assert.equal(inlineRoot.querySelector('blockquote')?.querySelectorAll('br').length, 1);
+  assert.equal(inlineRoot.querySelector('strong')?.querySelectorAll('br').length, 1);
+  assert.equal(inlineRoot.querySelector('em')?.querySelectorAll('br').length, 1);
+  assert.equal(inlineRoot.querySelector('del')?.querySelectorAll('br').length, 1);
+  assert.equal(inlineRoot.querySelector('a')?.querySelectorAll('br').length, 1);
+  assert.equal(inlineRoot.textContent.toLowerCase().includes('<br'), false);
+
+  const headingSample = '## 标题<br>副标题\n## 标题<br>副标题';
+  assert.deepEqual(markdownHeadingCounts(headingSample), { '标题副标题': 2 });
+  assert.deepEqual(
+    inlineRoot.querySelectorAll('h2').map((node: any) => node.getAttribute('id')),
+    ['标题副标题', '标题副标题-1'],
+  );
+
+  const imageRoot = renderMarkdown('![封面<br>图](a.png)', {
+    imageResolver: (href: string) => href === 'a.png' ? { href: '/safe/a.png' } : null,
+  });
+  assert.equal(imageRoot.querySelector('img')?.getAttribute('alt'), '封面图');
+  assert.equal(imageRoot.querySelectorAll('br').length, 0);
+
+  const standaloneRoot = renderMarkdown([
+    '第一段',
+    '',
+    '<br>',
+    '',
+    '第二段',
+    '',
+    '<br/>',
+    '<br />',
+    '',
+    '<br>',
+    '**紧随加粗**',
+    '',
+    '<br>',
+    '<script>alert(1)</script>',
+  ].join('\n'));
+  assert.equal(standaloneRoot.querySelectorAll('br').length, 5);
+  assert.equal(standaloneRoot.querySelectorAll('script').length, 0);
+  assert.equal(standaloneRoot.querySelector('strong')?.textContent, '紧随加粗');
+  assert.match(standaloneRoot.textContent, /<script>alert\(1\)<\/script>/);
+  assert.equal(standaloneRoot.textContent.toLowerCase().includes('<br'), false);
+
+  const negativeCases = [
+    '`<br>`',
+    '```md\n<br>\n```',
+    '    <br>',
+    '\\<br> \\<br/> \\<br />',
+    '&lt;br&gt; &lt;br/&gt;',
+    '<br onclick="alert(1)">',
+    '<br class="x"/>',
+    '<br style="color:red">',
+    '<br/onload=alert(1)>',
+    'a</br>b',
+    '<div>\n<br>\n</div>',
+    '<script>alert(1)</script> <b>粗</b> <iframe src="https://evil.invalid"></iframe>',
+  ];
+  for (const input of negativeCases) {
+    const view = renderMarkdown(input);
+    assert.equal(view.querySelectorAll('br').length, 0, input);
+    for (const tag of ['script', 'b', 'iframe']) {
+      assert.equal(view.querySelectorAll(tag).length, 0, `${input} -> ${tag}`);
+    }
+    const unexpectedDivs = view.querySelectorAll('div').filter((node: any) => !node.className.includes('markdown-code-block'));
+    assert.equal(unexpectedDivs.length, 0, `${input} -> div`);
+  }
+});

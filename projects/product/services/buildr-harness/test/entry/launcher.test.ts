@@ -10,27 +10,35 @@ test('Harness app ownership is product-specific; updates and uninstall preserve 
   const foreign=path.join(root,'Buildr.app');fs.mkdirSync(foreign);fs.writeFileSync(path.join(foreign,'owned-by-development'),'do not replace');
   assert.throws(()=>installHarnessLauncher({target:foreign,entry,dataRoot,profile:'released',platform:'darwin'}),{code:'harness_launcher_identity_invalid'});
   const first=installHarnessLauncher({target,entry,dataRoot,profile:'released',platform:'darwin'});assert.equal(first.binding.productId,'buildr-harness');
+  const expectedIcon=fs.readFileSync(path.resolve(import.meta.dirname,'../../resources/icons/BuildrHarness.icns'));
   const plist=fs.readFileSync(path.join(target,'Contents/Info.plist'),'utf8');
   assert.match(plist,/<key>LSUIElement<\/key>\s*<true\/>/u);
   assert.match(plist,/<key>CFBundleDisplayName<\/key>\s*<string>Buildr Harness<\/string>/u);
+  assert.match(plist,/<key>CFBundleIconFile<\/key>\s*<string>BuildrHarness\.icns<\/string>/u);
+  assert.deepEqual(fs.readFileSync(path.join(target,'Contents/Resources/BuildrHarness.icns')),expectedIcon);
   const devTarget=path.join(root,'Buildr Harness Dev.app');
   installHarnessLauncher({target:devTarget,entry,dataRoot,profile:'development',platform:'darwin'});
   const devPlist=fs.readFileSync(path.join(devTarget,'Contents/Info.plist'),'utf8');
   assert.match(devPlist,/<key>LSUIElement<\/key>\s*<true\/>/u);
   assert.match(devPlist,/<key>CFBundleDisplayName<\/key>\s*<string>Buildr Harness Dev<\/string>/u);
+  assert.match(devPlist,/<key>CFBundleIconFile<\/key>\s*<string>BuildrHarness\.icns<\/string>/u);
+  assert.deepEqual(fs.readFileSync(path.join(devTarget,'Contents/Resources/BuildrHarness.icns')),expectedIcon);
   const binding=path.join(target,'Contents/Resources/harness-launcher.json');assert.equal(verifyHarnessLauncherFile(binding,entry).dataRoot,dataRoot);
   const before=readHarnessLauncher(target)!;installHarnessLauncher({target,entry,dataRoot,profile:'released',platform:'darwin'});assert.equal(readHarnessLauncher(target)!.revision,before.revision,'same installation is stable');
-  // Legacy foreground wrapper and plist without LSUIElement remain upgradeable.
+  // Legacy foreground wrapper and plist without LSUIElement or icon remain upgradeable.
   const quote=(value:string)=>"'"+value.replaceAll("'","'\\''")+"'";
   const legacyLog=quote(path.join(target,'Contents/Resources/harness-launcher.log'));
   const legacyWrapper='#!/bin/sh\nset -eu\numask 077\nLOG='+legacyLog+'\nif [ -L "$LOG" ] || { [ -e "$LOG" ] && [ ! -f "$LOG" ]; }; then exit 1; fi\nexec '+quote(first.binding.node)+' '+quote(first.binding.entry)+' web --launcher-binding '+quote(binding)+' >"$LOG" 2>&1\n';
   fs.writeFileSync(path.join(target,'Contents/MacOS/harness'),legacyWrapper,{mode:0o755});
-  fs.writeFileSync(path.join(target,'Contents/Info.plist'),plist.replace('<key>LSUIElement</key><true/>',''));
+  fs.rmSync(path.join(target,'Contents/Resources/BuildrHarness.icns'));
+  fs.writeFileSync(path.join(target,'Contents/Info.plist'),plist.replace('<key>LSUIElement</key><true/>','').replace('<key>CFBundleIconFile</key><string>BuildrHarness.icns</string>',''));
   assert.equal(readHarnessLauncher(target)!.revision,before.revision);
   assert.equal(verifyHarnessLauncherFile(binding,entry).dataRoot,dataRoot);
   installHarnessLauncher({target,entry,dataRoot,profile:'released',platform:'darwin'});
   assert.match(fs.readFileSync(path.join(target,'Contents/MacOS/harness'),'utf8'),/osascript/u);
   assert.match(fs.readFileSync(path.join(target,'Contents/Info.plist'),'utf8'),/<key>LSUIElement<\/key>\s*<true\/>/u);
+  assert.match(fs.readFileSync(path.join(target,'Contents/Info.plist'),'utf8'),/<key>CFBundleIconFile<\/key>\s*<string>BuildrHarness\.icns<\/string>/u);
+  assert.deepEqual(fs.readFileSync(path.join(target,'Contents/Resources/BuildrHarness.icns')),expectedIcon);
   fs.appendFileSync(entry,'\n// updated');assert.throws(()=>verifyHarnessLauncherFile(binding,entry),{code:'harness_launcher_identity_invalid'});
   installHarnessLauncher({target,entry,dataRoot,profile:'released',platform:'darwin'});assert.notEqual(readHarnessLauncher(target)!.revision,before.revision);
   assert.equal(uninstallHarnessLauncher(devTarget).status,'removed');

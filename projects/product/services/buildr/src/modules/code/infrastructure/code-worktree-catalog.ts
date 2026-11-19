@@ -176,11 +176,14 @@ export function readCodeWorktreeCatalog(root: string, repositories: Repository[]
   }
   const taskIds = new Set(taskId ? [taskId] : []);
   let associationUniquenessUnknown = false;
-  if (dependencies.gitWorktreeEvidenceDirectories || dependencies.gitWorktreeEvidencePath) {
+  let readEvidence = (id: string) => dependencies.readGitWorktreeEvidence(root, id, { optional: true });
+  if (dependencies.createGitWorktreeEvidenceReader || dependencies.gitWorktreeEvidenceDirectories || dependencies.gitWorktreeEvidencePath) {
     try {
       // The provider discovers metadata directories; every group record remains provider-validated.
+      const reading = dependencies.createGitWorktreeEvidenceReader?.(root, { requireComplete: true });
+      if (reading) readEvidence = id => reading.read(id, { optional: true });
       let count = 0;
-      for (const directory of evidenceDirectories(root, dependencies)) {
+      for (const directory of reading?.directories || evidenceDirectories(root, dependencies)) {
         if (count > 1000 || Date.now() >= deadline) break;
         if (!fs.existsSync(directory)) continue;
         const handle = fs.opendirSync(directory), files: string[] = [];
@@ -201,7 +204,7 @@ export function readCodeWorktreeCatalog(root: string, repositories: Repository[]
   for (const id of taskIds) {
     if (Date.now() >= deadline) { associationUniquenessUnknown = true; requestedTaskHasEvidence ||= Boolean(taskId); diagnostics.push({ code: 'code_worktree_associations_truncated', message: '任务目录关联达到本次时间上限，不能确定的任务范围不回退到主目录。', repositoryId: null }); break; }
     let evidence;
-    try { evidence = dependencies.readGitWorktreeEvidence(root, id, { optional: true }); } catch {
+    try { evidence = readEvidence(id); } catch {
       associationUniquenessUnknown = true;
       diagnostics.push({ code: 'code_worktree_evidence_unavailable', message: '任务 ' + id + ' 的目录关联当前不可读取。', repositoryId: null });
       if (id === taskId) requestedTaskHasEvidence = true;

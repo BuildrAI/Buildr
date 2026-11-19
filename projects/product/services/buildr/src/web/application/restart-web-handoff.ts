@@ -1,12 +1,22 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import process from 'node:process';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { currentProductInvocation, productInvocationArgs } from '../../infrastructure/product-invocation/index.ts';
 import { buildrWebInstanceObservationDigest } from '../infrastructure/instance-runtime.ts';
 import { updatedWebEnvironment } from './update-web-handoff.ts';
-import { openWebHandoffSuccessorLog, releaseWebHandoffSuccessorLog } from './web-handoff-successor-log.ts';
+import {
+  appendWebHandoffSuccessorLogHeader,
+  clearWebHandoffFailureFile,
+  createWebHandoffFailureFilePath,
+  openWebHandoffSuccessorLog,
+  readWebHandoffFailureFile,
+  releaseWebHandoffSuccessorLog,
+  WEB_HANDOFF_FAILURE_FILE_ENV,
+} from './web-handoff-successor-log.ts';
 import type { WebRestartFailure } from './restart-control.ts';
 import { WEB_RESTART_ATTEMPT_ENV } from '../startup-context.ts';
+import { launchDetachedProcess, shouldUsePlatformIsolation } from '../../infrastructure/detached-launch.ts';
 
 type SpawnSuccessorDependencies = {
   spawnProcess?: typeof spawn;
@@ -28,22 +38,74 @@ type SpawnSuccessorDependencies = {
 export function spawnBuildrWebRestartSuccessor(
   state: { url: string; secret: string; pid: number; productIdentity?: unknown; launcherIdentity?: unknown; webProfile?: unknown },
   dependencies: SpawnSuccessorDependencies = {},
-): ChildProcess {
+): ChildProcess | undefined {
   const observed = buildrWebInstanceObservationDigest(state);
   const port = new URL(state.url).port;
   const [command, argsPrefix] = productInvocationArgs(
     dependencies.buildInvocation ? dependencies.buildInvocation() : currentProductInvocation({ cliPath: process.argv[1] }),
     ['web', '--restart', observed, '--no-open', '--port', port],
   );
-  const logFd = openWebHandoffSuccessorLog(
-    state.webProfile as { dataRoot?: unknown } | null,
-    `restart successor argv=web --restart ${observed} --no-open --port ${port}`,
-    dependencies.openLog,
-  );
+  const webProfile = state.webProfile as { dataRoot?: unknown } | null;
+  const label = `restart successor argv=web --restart ${observed} --no-open --port ${port}`;
+  const env: NodeJS.ProcessEnv = {
+    ...updatedWebEnvironment(dependencies.environment),
+    ...(dependencies.attemptToken ? { [WEB_RESTART_ATTEMPT_ENV]: dependencies.attemptToken } : {}),
+  };
+  const report = (code: string, message: string): void => {
+    console.error(`Buildr Web restart handoff failed: ${message}`, code !== 'web_restart_process_failed' ? `(${code})` : '');
+    dependencies.onFailure?.({ code, message });
+  };
+  const useIsolated = !dependencies.spawnProcess && shouldUsePlatformIsolation(env) !== 'direct';
+  if (useIsolated) {
+    const failureFile = createWebHandoffFailureFilePath(webProfile);
+    const logPath = appendWebHandoffSuccessorLogHeader(webProfile, label);
+    const dataRoot = typeof webProfile?.dataRoot === 'string' && webProfile.dataRoot ? webProfile.dataRoot : null;
+    const handle = launchDetachedProcess({
+      command,
+      args: argsPrefix,
+      env: { ...env, [WEB_HANDOFF_FAILURE_FILE_ENV]: failureFile },
+      labelPrefix: 'web-restart-handoff',
+      stateDir: dataRoot ? path.join(dataRoot, 'launchd-jobs') : undefined,
+      standardOutPath: logPath ?? undefined,
+      standardErrorPath: logPath ?? undefined,
+    });
+    let reported = false;
+    const finishFailure = (timer: NodeJS.Timeout, code: string, message: string, useReport = true) => {
+      if (reported) return;
+      reported = true;
+      clearInterval(timer);
+      clearWebHandoffFailureFile(failureFile);
+      if (useReport) report(code, message);
+      else dependencies.onFailure?.({ code, message });
+    };
+    const deadline = Date.now() + 30_000;
+    const timer = setInterval(() => {
+      const failure = readWebHandoffFailureFile(failureFile);
+      if (failure) {
+        finishFailure(timer, failure.code, failure.message);
+        return;
+      }
+      const status = handle.pollStatus();
+      if (!status.running) {
+        const message = `Buildr Web 重启后继进程已退出（${status.signal || status.exitCode}）。`;
+        finishFailure(timer, 'web_restart_process_failed', message, Boolean((status.exitCode !== null && status.exitCode !== 0) || status.signal));
+        return;
+      }
+      if (Date.now() >= deadline) {
+        clearInterval(timer);
+        clearWebHandoffFailureFile(failureFile);
+      }
+    }, 250);
+    timer.unref();
+    handle.child?.once('error', (error: Error) => finishFailure(timer, 'web_restart_process_failed', error.message));
+    if (handle.child) dependencies.onSpawned?.(handle.child);
+    return handle.child;
+  }
+  const logFd = openWebHandoffSuccessorLog(webProfile, label, dependencies.openLog);
   let child: ChildProcess;
   try {
     child = (dependencies.spawnProcess || spawn)(command, argsPrefix, {
-      env: { ...updatedWebEnvironment(dependencies.environment), ...(dependencies.attemptToken ? { [WEB_RESTART_ATTEMPT_ENV]: dependencies.attemptToken } : {}) },
+      env,
       detached: true,
       stdio: logFd === null ? ['ignore', 'ignore', 'ignore', 'ipc'] : ['ignore', logFd, logFd, 'ipc'],
       windowsHide: true,
@@ -53,10 +115,6 @@ export function spawnBuildrWebRestartSuccessor(
     throw error;
   }
   releaseWebHandoffSuccessorLog(child, logFd);
-  const report = (code: string, message: string): void => {
-    console.error(`Buildr Web restart handoff failed: ${message}`, code !== 'web_restart_process_failed' ? `(${code})` : '');
-    dependencies.onFailure?.({ code, message });
-  };
   child.on('message', (message: any) => {
     if (message?.type === 'buildr.web-update-handoff-failed' && typeof message.message === 'string') {
       report(typeof message.code === 'string' ? message.code : 'web_restart_process_failed', message.message.slice(0, 4096));

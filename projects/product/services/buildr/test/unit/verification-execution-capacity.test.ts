@@ -10,10 +10,11 @@ test('initial admission scales relevant capacities together and preserves correc
   const low = resolveExecutionCapacity(base, { automatic: true, env: {}, machine: machine(2, 4) });
   const high = resolveExecutionCapacity(base, { automatic: true, env: {}, machine: machine(15, 64) });
   assert.equal(low.limits.global, 1);
-  assert.equal(high.limits.global, 3, 'four outer groups starved real browser, native-agent and handoff checks');
+  assert.equal(resolveExecutionCapacity(base, { automatic: true, env: {}, machine: machine(24, 64) }).limits.classes['workspace-heavy'], 4);
+  assert.equal(high.limits.global, 5);
   assert.equal(high.limits.classes['workspace-heavy'], 3, 'four heavy groups starved real browser and handoff checks');
   assert.equal(high.limits.resources['browser-runtime'], 2, 'the conversation journey owns both browser slots');
-  assert.equal(high.limits.capacities.workspaceIo, 4);
+  assert.equal(high.limits.capacities.workspaceIo, 5);
   assert.ok(low.limits.capacities.workers >= 4);
   assert.equal(low.limits.resources['browser-runtime'], 2, 'one existing group needs two browser workers');
   assert.equal(high.limits.resources['app-runtime'], base.resources['app-runtime']);
@@ -21,7 +22,7 @@ test('initial admission scales relevant capacities together and preserves correc
   assert.deepEqual(high.limits.innerConcurrency, base.innerConcurrency);
   assert.equal(high.capacityObservation.parallelism, 15);
   assert.equal(high.capacityObservation.workspaceHeavyLimit, 3);
-  assert.equal(high.capacityObservation.initialWidth, 3);
+  assert.equal(high.capacityObservation.initialWidth, 5);
   assert.equal(base.resources['browser-runtime'], 2, 'base profile is not mutated');
 });
 

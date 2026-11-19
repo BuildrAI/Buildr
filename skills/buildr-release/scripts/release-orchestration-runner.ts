@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { verifySourceBeforeFreeze } from './pre-freeze-source.ts';
+import { observePublicationRun } from './publication-run-evidence.ts';
 import { withdrawLocalCandidate } from './local-candidate-withdrawal.ts';
 import { waitForReleaseOperation } from './release-operation-wait.ts';
 import { continueLocalPackageCandidate } from './local-package-operation.ts';
@@ -687,7 +689,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     let remoteTiming: any = { status: 'unknown' };
     try {
       const pages = JSON.parse(gh(['api', '--paginate', '--slurp', `repos/${releasePublishAuthority.repository}/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`], repo));
-      if (Array.isArray(pages) && pages.every(page => Array.isArray(page.jobs))) remoteTiming = candidateRunTimings(run, pages.flatMap(page => page.jobs));
+      if (Array.isArray(pages) && pages.every(page => Array.isArray(page.jobs))) remoteTiming = { runId: run.id, runAttempt: run.run_attempt, ...candidateRunTimings(run, pages.flatMap(page => page.jobs)) };
     } catch { /* Progress is diagnostic, never a candidate gate. */ }
     if (localPackageMode) return answer('candidate-running', [state.localPackage?.platformPolicy
       ? '本机验收已完成；等待同一原包与证明的轻量保全，不执行对端重型验包。'
@@ -945,18 +947,22 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       if (run.status !== 'completed') return answer('publication-running', ['等待当前发布运行；不重复派发。'], { run });
       if (run.conclusion !== 'success') {
         if (state.publication.retryRequested && Number(run.run_attempt) < 2) return answer('publication-retry-unconfirmed', ['回读同一运行的新attempt；不重复重跑请求。']);
-        const log = gh(['run', 'view', String(run.id), '--repo', releasePublishAuthority.repository, '--log-failed']);
+        let log = '';
+        try { log = gh(['run', 'view', String(run.id), '--repo', releasePublishAuthority.repository, '--attempt', String(run.run_attempt), '--log-failed']); } catch { /* Logs can be unavailable briefly after completion. */ }
+        const publicationEvidence = observePublicationRun(run, gh, log);
+        if (!log && run.conclusion === 'failure' && Number(run.run_attempt) < 2) return answer('publication-readback-required', ['等待读取同一运行的失败日志。'], { run, ...publicationEvidence });
         const readbackPending = /"status":"publication-pending"[^\r\n]*"code":"registry-propagation-pending"/u.test(log);
         const failure = readbackPending ? 'transient' : classifyCandidateFailure(log);
-        if (failure !== 'transient' || Number(run.run_attempt) >= 2) return answer('diagnosis-required', ['读取发布步骤证据并诊断失败；已成立公开事实必须保留。'], { run });
-        if (!readbackPending && !await legacyRetryCompatibility()) return answer('compatibility-blocked', ['原事实保留；新增重跑前需准确候选字节及当前公开对端兼容证据。'], { run });
+        if (failure !== 'transient' || Number(run.run_attempt) >= 2) return answer('diagnosis-required', ['读取发布步骤证据并诊断失败；已成立公开事实必须保留。'], { run, ...publicationEvidence });
+        if (!readbackPending && !await legacyRetryCompatibility()) return answer('compatibility-blocked', ['原事实保留；新增重跑前需准确候选字节及当前公开对端兼容证据。'], { run, ...publicationEvidence });
         const effect = { type: 'publication-failed-jobs-rerun', runId: run.id, previousAttempt: run.run_attempt, state: 'unknown' };
         currentEffects.push(effect);
         state.publication.retryRequested = true;
         writeOperation(file, state);
-        gh(['run', 'rerun', String(run.id), '--failed', '--repo', releasePublishAuthority.repository]);
+        try { gh(['run', 'rerun', String(run.id), '--failed', '--repo', releasePublishAuthority.repository]); }
+        catch { return answer('publication-retry-unconfirmed', ['回读原运行的新 attempt。'], { run, ...publicationEvidence }); }
         effect.state = 'confirmed';
-        return answer('publication-running', ['等待同一运行的新attempt终态。']);
+        return answer('publication-running', ['等待同一运行的新attempt终态。'], { run, ...publicationEvidence });
       }
       changePhase('publication-closeout');
       const closed = await runReleaseOrchestration({ action: 'closeout', version: options.version, releaseTask: `release-${options.version}`, publishRunId: state.publication.runId,
@@ -971,7 +977,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       if (closed.publicationEvidence) state.publicationEvidence = closed.publicationEvidence;
       state.closeout = { status: closed.status, outcomes: closed.outcomes, progress: closed.closeoutProgress };
       writeOperation(file, state);
-      return answer(closed.status, closed.nextActions, { outcomes: closed.outcomes, cleanup: closed.cleanup, result: closed });
+      return answer(closed.status, closed.nextActions, { outcomes: closed.outcomes, cleanup: closed.cleanup, result: closed, ...observePublicationRun(run, gh) });
     }
     if (!scoped && declaresCompatibility) return answer('preparation-required', ['此历史操作需迁移到逐包选择后重新准备；原请求和已成立公开事实继续保留。']);
     // The explicit selection is resolved once. Later dev changes never become
@@ -1084,6 +1090,15 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     if (!completedPreparation) {
       if (unselected.length && selection.status === 'frozen') take(reopenReleaseSelection({ ...selectionArgs, repo, devRef: 'origin/dev', executionBinding: binding(), confirm: true, reason: '纳入已授权并完成相关验证的明确dev修复提交' }));
       for (const source of state.sources) take(selectReleaseCommit({ ...selectionArgs, repo, source, devRef: 'origin/dev', executionBinding: binding() }));
+      selection = inspectReleaseSelection({ ...selectionArgs, repo, devRef: 'origin/dev' });
+      if (selection.status === 'ready' && targets.packages.includes('buildr')) {
+        const scope = localPackageMode ? localPackageVerificationScope(options, state.localPackageScope) : null;
+        changePhase('pre-freeze-source');
+        const localSource = await (dependencies.verifySourceBeforeFreeze ?? verifySourceBeforeFreeze)({
+          repo, workspace, roundId: key, base: selection.devBaseline, head: selection.releaseHead, options, scope,
+        }, { platform: dependencies.platform, prepareSource: dependencies.prepareLocalSourceVerification, signal: dependencies.signal });
+        if (localSource.status !== 'ready') { save(); return answer(localSource.status, localSource.nextActions, { localSource }); }
+      }
       selection = take(freezeReleaseSelection({ ...selectionArgs, repo, devRef: 'origin/dev', executionBinding: binding() }));
     }
     const main = git(['rev-parse', 'origin/main'], repo);
@@ -1456,7 +1471,7 @@ export async function runReleaseOperationUntilSettled(options: any, dependencies
 
 export function compactReleaseOperation(value: any): any {
   const keys = ['schemaVersion', 'action', 'status', 'version', 'selectionId', 'targets', 'sourceCommit', 'contextIdentity',
-    'releaseReports', 'reportDiagnostic', 'package', 'stopAfter', 'outcomes', 'cleanup', 'cleanupPlan', 'diagnostic', 'nextActions', 'effects', 'waiting', 'operationDurationMs', 'remoteTiming', 'artifactObservation', 'plan'];
+    'releaseReports', 'reportDiagnostic', 'package', 'stopAfter', 'outcomes', 'cleanup', 'cleanupPlan', 'diagnostic', 'nextActions', 'effects', 'waiting', 'operationDurationMs', 'remoteTiming', 'publicationFailures', 'artifactObservation', 'plan'];
   const summary = Object.fromEntries(keys.filter(key => value[key] !== undefined).map(key => [key, value[key]]));
   for (const key of ['candidate', 'publication', 'run']) {
     const item = value[key];

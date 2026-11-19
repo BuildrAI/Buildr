@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { runVerificationStep } from '../../../projects/product/services/buildr/test/verification/timing/parallel-runner.ts';
 import { readReleaseArtifact } from './release-artifact.ts';
 import { artifactFromTarball, packageArtifactInputSchema } from './package-artifact-observation.ts';
 import { prepareLocalPlugin, prepareRegistryPlugin } from './local-plugin-preparation.ts';
@@ -73,7 +73,12 @@ export async function prepareLocalMainPackage(options: {
   (dependencies.assertCheckout ?? assertFrozenCandidateCheckout)(service, options.sourceCommit);
   const env = { ...process.env, BUILDR_CANDIDATE_SOURCE_SHA: options.sourceCommit,
     ...(options.scope ? { BUILDR_CANDIDATE_VERIFICATION_SCOPE: JSON.stringify(options.scope) } : {}) };
-  const execute = dependencies.execute ?? ((command: string, args: string[], settings: any) => spawnSync(command, args, settings));
+  const execute = async (command: string, args: string[], settings: any) => {
+    if (dependencies.execute) return dependencies.execute(command, args, settings);
+    const result = await runVerificationStep({ name: path.basename(args[0]), command, args, cwd: settings.cwd,
+      env: { ...settings.env, BUILDR_VERIFICATION_SAMPLE_RESOURCES: '1' }, timeoutMs: settings.timeout });
+    return { ...result, status: result.status === 'passed' ? 0 : result.exitCode || 1 };
+  };
   const read = dependencies.readArtifact ?? readReleaseArtifact;
   let artifact: any;
   const manifestFile = path.join(packageDirectory, 'release-artifact.json');
@@ -90,8 +95,8 @@ export async function prepareLocalMainPackage(options: {
       for (const args of commands) {
         process.stderr.write(`[release] ${args[0].endsWith('local-package-build.ts') ? 'local-package-build' : 'local-package-environment'} source=${options.sourceCommit}\n`);
         const started = performance.now();
-        const result = execute(process.execPath, args, { cwd: service, env, encoding: 'utf8', timeout: 30 * 60_000, maxBuffer: 64 * 1024 * 1024 });
-        cost.stages.push({ id: args[0].endsWith('local-package-build.ts') ? 'package-build' : 'dependency-preparation', durationMs: Math.round(performance.now() - started), status: result.status === 0 && !result.error ? 'passed' : 'failed' });
+        const result = await execute(process.execPath, args, { cwd: service, env, encoding: 'utf8', timeout: 30 * 60_000, maxBuffer: 64 * 1024 * 1024 });
+        cost.stages.push({ id: args[0].endsWith('local-package-build.ts') ? 'package-build' : 'dependency-preparation', durationMs: Math.round(performance.now() - started), status: result.status === 0 && !result.error ? 'passed' : 'failed', resources: result.resources ?? null });
         retain();
         if (result.stdout) process.stdout.write(String(result.stdout));
         if (result.stderr) process.stderr.write(String(result.stderr));
@@ -114,11 +119,11 @@ export async function prepareLocalMainPackage(options: {
   process.stderr.write(`[release] local-package-verification source=${options.sourceCommit} sha256=${artifact.manifest.sha256}\n`);
   const consumerDirectory = path.join(directory, 'consumer-env');
   const verificationStarted = performance.now();
-  const verification = execute(process.execPath, [path.join(service, 'test/verification/artifact.ts'),
+  const verification = await execute(process.execPath, [path.join(service, 'test/verification/artifact.ts'),
     '--artifact-dir', packageDirectory, '--output', evidenceDirectory, '--consumer-dir', consumerDirectory], {
     cwd: service, env, encoding: 'utf8', timeout: 30 * 60_000, maxBuffer: 64 * 1024 * 1024,
   });
-  cost.stages.push({ id: 'local-artifact-verification', durationMs: Math.round(performance.now() - verificationStarted), status: verification.status === 0 && !verification.error ? 'passed' : 'failed' });
+  cost.stages.push({ id: 'local-artifact-verification', durationMs: Math.round(performance.now() - verificationStarted), status: verification.status === 0 && !verification.error ? 'passed' : 'failed', resources: verification.resources ?? null });
   try {
     const observed = JSON.parse(fs.readFileSync(path.join(evidenceDirectory, 'release-artifact-timing.json'), 'utf8'));
     if (observed.sourceCommit === options.sourceCommit && observed.artifactSha256 === cost.artifactSha256) cost.artifactChecks = observed;

@@ -14,7 +14,12 @@ test('Development imports only public composition facades and mounts the complet
   assert.doesNotMatch(facade,/features\/|HarnessApp|AgentConversations/);
   const surface=fs.readFileSync(path.join(dev,'src/features/harness-ui/ConversationWorkspace.tsx'),'utf8');
   assert.match(surface,/<HarnessConversationSurface/);
-  assert.doesNotMatch(surface,/<iframe|postMessage|context-anchor|contentWindow/);
+  assert.doesNotMatch(surface,/<iframe|postMessage|context-anchor|contentWindow|development-harness-rail/);
+  const shell=fs.readFileSync(path.join(dev,'src/app/DevelopmentHarnessShell.tsx'),'utf8');
+  assert.doesNotMatch(shell,/development-harness-divider|SplitDivider/);
+  assert.ok(!fs.existsSync(path.join(dev,'src/features/harness-ui/ConversationActivity.tsx')));
+  const history=fs.readFileSync(path.join(root,'src/features/agent-conversations/ConversationHistory.tsx'),'utf8');
+  assert.doesNotMatch(history,/focusNavigation/);
   assert.match(fs.readFileSync(path.join(root,'src/integration/HarnessConversationSurface.tsx'),'utf8'),/<AgentConversationsProvider/);
   assert.ok(!fs.existsSync(path.resolve(root,'../buildr-harness-ui/package.json')));
 });

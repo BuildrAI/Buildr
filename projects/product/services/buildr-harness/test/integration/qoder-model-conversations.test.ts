@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { createManagedTestTempDir } from '../support/managed-temp.ts';
 import { createAgentService } from '../../src/index.ts';
 import { qoderExecutorDescriptor } from '../../src/executors/qoder/index.ts';
 import { opaqueReference } from '../../src/executors/native-process.ts';
@@ -266,8 +267,9 @@ test('Qoder standalone account shares models with Codex without preparing Qoder 
 });
 
 test('pre-upgrade Qoder conversation keeps reading legacy tool details and smoothly starts a fresh session with handoff', async t => {
-  const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-preupgrade-'));
-  t.after(async () => { await rm(root, { recursive: true, force: true }); });
+  const managed = createManagedTestTempDir();
+  const root = managed.root;
+  t.after(() => { managed.cleanup(); });
   const legacySessionId = '33333333-4444-4555-8666-777777777777';
   const legacyConfig = join(root, 'agent-service/connections/qoder/qoder-config');
   const accountRoot = join(root, 'agent-service/model-access/accounts/native-qoder');
@@ -417,5 +419,5 @@ test('pre-upgrade Qoder conversation keeps reading legacy tool details and smoot
       assert.match(followupSentText, /follow up after upgrade/);
     } finally { await service2.close(); }
   }
-  await rm(root, { recursive: true, force: true });
+  managed.cleanup();
 });

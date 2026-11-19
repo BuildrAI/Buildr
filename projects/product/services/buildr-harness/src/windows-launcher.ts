@@ -6,6 +6,8 @@ import {invalidLauncher, launcherDigest, parseLauncherBinding, type HarnessLaunc
 const directory = (target: string) => target + '.buildr-harness';
 export const windowsBindingPath = (target: string) => path.join(directory(target), 'harness-launcher.json');
 const runnerPath = (target: string) => path.join(directory(target), 'harness-launcher.ps1');
+const WINDOWS_ICON_NAME = 'BuildrHarness.ico';
+const WINDOWS_ICON_SOURCE = path.resolve(import.meta.dirname, '../resources/icons', WINDOWS_ICON_NAME);
 const powershell = () => path.join(process.env.SystemRoot || 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe');
 export function windowsHarnessArguments(runner: string): string {
   if (/["\0\r\n]/u.test(runner)) invalidLauncher('Windows 启动器路径无效。');
@@ -66,11 +68,15 @@ export function installWindowsHarnessLauncher(binding: HarnessLauncherBinding) {
   const backupDirectory = path.join(stage, 'old-binding'), backupShortcut = path.join(stage, 'old-launcher.lnk');
   let movedDirectory = false, movedShortcut = false, committed = false;
   try {
+    const description = binding.profile === 'development' ? 'Buildr Harness Dev' : 'Buildr Harness';
+    const iconLocation = `${path.join(sidecar, WINDOWS_ICON_NAME)},0`;
     fs.mkdirSync(stagedDirectory);
     fs.writeFileSync(path.join(stagedDirectory, 'harness-launcher.json'), JSON.stringify(binding) + '\n', {mode: 0o600});
     fs.writeFileSync(path.join(stagedDirectory, 'harness-launcher.ps1'), windowsHarnessRunner(), 'utf8');
-    shell('$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:BUILDR_HARNESS_SHORTCUT); $s.TargetPath=$env:BUILDR_HARNESS_HOST; $s.Arguments=$env:BUILDR_HARNESS_ARGUMENTS; $s.Description="Buildr Harness"; $s.Save()', {
+    fs.copyFileSync(WINDOWS_ICON_SOURCE, path.join(stagedDirectory, WINDOWS_ICON_NAME));
+    shell('$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:BUILDR_HARNESS_SHORTCUT); $s.TargetPath=$env:BUILDR_HARNESS_HOST; $s.Arguments=$env:BUILDR_HARNESS_ARGUMENTS; $s.IconLocation=$env:BUILDR_HARNESS_ICON; $s.Description=$env:BUILDR_HARNESS_DESCRIPTION; $s.Save()', {
       BUILDR_HARNESS_SHORTCUT: stagedShortcut, BUILDR_HARNESS_HOST: powershell(), BUILDR_HARNESS_ARGUMENTS: windowsHarnessArguments(runnerPath(target)),
+      BUILDR_HARNESS_ICON: iconLocation, BUILDR_HARNESS_DESCRIPTION: description,
     });
     if (readWindowsHarnessLauncher(target)?.revision !== previous?.revision) invalidLauncher('启动器在准备期间变化，未覆盖。');
     try {

@@ -115,5 +115,5 @@ test('Command 与 Component removal 在 Project 反向引用存在时零写入',
   writeRequirements(root, 'demo', []);
   run(['commands', 'remove', 'plain-tool', '--target', root]);
   run(['commands', 'remove', 'orphan-tool', '--target', root]);
-  assert.deepEqual(YAML.parse(fs.readFileSync(commandManifest, 'utf8')).commands, []);
+  assert.deepEqual(YAML.parse(fs.readFileSync(commandManifest, 'utf8')).commands.map(({ id }: any) => id), ['ripgrep']);
 });
