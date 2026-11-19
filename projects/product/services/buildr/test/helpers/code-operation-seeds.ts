@@ -21,6 +21,20 @@ export function copyEmptyCodeRepository(destination: string, format: string, nam
   }
   fs.cpSync(seed, destination, { recursive: true, mode: fs.constants.COPYFILE_FICLONE });
 }
+export function copyCodeBranchBase(destination: string, format: string): string {
+  const key = 'branch-base:' + format;
+  let seed = seeds.get(key);
+  if (!seed) {
+    seed = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-code-branch-seed-')); owned.add(seed);
+    copyEmptyCodeRepository(seed, format, 'Same Name', 'first@example.com');
+    fs.writeFileSync(path.join(seed, 'same.ts'), 'base\n');
+    git(seed, 'add', '--', 'same.ts');
+    git(seed, 'commit', '--author=Same Name <first@example.com>', '-m', 'base');
+    seeds.set(key, seed);
+  }
+  fs.cpSync(seed, destination, { recursive: true, mode: fs.constants.COPYFILE_FICLONE });
+  return fs.readFileSync(path.join(seed, '.git/refs/heads/main'), 'utf8').trim();
+}
 export function copyCodeSyncRepositories(destination: string, format: string): string {
   const key = 'sync:' + format;
   let seed = seeds.get(key);

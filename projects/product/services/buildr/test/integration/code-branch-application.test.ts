@@ -13,14 +13,15 @@ import { createBoundedBuildrWebReadExecutor } from '../../src/web/http/read-exec
 import { assertWriteRequest } from '../../src/web/http/session.ts';
 import { codeGitConfigurationFixture } from '../helpers/code-git-configuration-fixture.ts';
 
-import { copyEmptyCodeRepository } from '../helpers/code-operation-seeds.ts';
+import { copyCodeBranchBase, copyEmptyCodeRepository } from '../helpers/code-operation-seeds.ts';
 
-function fixture(t: test.TestContext, format = 'sha1') {
+function fixture(t: test.TestContext, format = 'sha1', seeded = false) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-branch-operation-')), root = path.join(base, 'repository');
   fs.mkdirSync(root); t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const gitAt = (location: string, ...args: string[]) => execFileSync('git', ['--no-optional-locks', '-C', location, ...args], { encoding: 'utf8', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   const git = (...args: string[]) => gitAt(root, ...args);
-  copyEmptyCodeRepository(root, format, 'Same Name', 'first@example.com');
+  const baseCommit = seeded ? copyCodeBranchBase(root, format) : undefined;
+  if (!seeded) copyEmptyCodeRepository(root, format, 'Same Name', 'first@example.com');
   const write = (file: string, value: string, location = root) => fs.writeFileSync(path.join(location, file), value);
   const commit = (message: string, email = 'first@example.com') => { git('add', '--', '.'); git('commit', '--author=Same Name <' + email + '>', '-m', message); return git('rev-parse', 'HEAD'); };
   let registeredPath = root, catalogRead: (() => void) | undefined;
@@ -34,7 +35,7 @@ function fixture(t: test.TestContext, format = 'sha1') {
     return { branch: gitAt(location, 'symbolic-ref', '--short', 'HEAD'), head: gitAt(location, 'rev-parse', 'HEAD'), status: gitAt(location, 'status', '--porcelain=v2', '-z'), index: fs.existsSync(index) ? crypto.createHash('sha256').update(fs.readFileSync(index)).digest('hex') : '', files: Object.fromEntries(fs.readdirSync(location).filter(file => file !== '.git' && fs.statSync(path.join(location, file)).isFile()).map(file => [file, fs.readFileSync(path.join(location, file), 'utf8')])) };
   };
   const remote = (name: string, branch: string, hash: string) => { if (!git('remote').split('\n').includes(name)) git('remote', 'add', name, path.join(base, name + '.git')); git('update-ref', 'refs/remotes/' + name + '/' + branch, hash); };
-  return { root, base, app, git, gitAt, write, commit, source, input, catalog, request, snapshot, remote, onCatalogRead: (read?: () => void) => { catalogRead = read; }, register: (location: string) => { registeredPath = location; } };
+  return { root, base, baseCommit, app, git, gitAt, write, commit, source, input, catalog, request, snapshot, remote, onCatalogRead: (read?: () => void) => { catalogRead = read; }, register: (location: string) => { registeredPath = location; } };
 }
 const code = (expected: string) => (error: unknown) => (error as { code?: string }).code === expected;
 
@@ -109,12 +110,12 @@ test('remote-only checkout creates tracking branch in one operation without fetc
 });
 
 test('existing local tracking branch keeps its own tip instead of being reset to the remote tip', t => {
-  const f = fixture(t); f.write('same.ts', 'base\n'); const base = f.commit('base'); f.remote('origin', 'topic', base); f.git('switch', '-c', 'topic', '--track', 'origin/topic'); f.write('same.ts', 'local\n'); const local = f.commit('local work'); f.git('switch', 'main');
+  const f = fixture(t, 'sha1', true); const base = f.baseCommit!; f.remote('origin', 'topic', base); f.git('switch', '-c', 'topic', '--track', 'origin/topic'); f.write('same.ts', 'local\n'); const local = f.commit('local work'); f.git('switch', 'main');
   const switched = f.app.switchBranch(f.root, f.request('refs/remotes/origin/topic')); assert.equal(switched.branch, 'topic'); assert.equal(switched.head, local); assert.equal(switched.effects.createdLocalBranch, null); assert.equal(f.git('rev-parse', 'refs/remotes/origin/topic'), base);
 });
 
 test('occupied branches and conflicting local names preserve both checkouts and allow explicit new remote name', t => {
-  const f = fixture(t); f.write('same.ts', 'base\n'); const base = f.commit('base'); f.git('branch', 'topic'); f.remote('origin', 'topic', base);
+  const f = fixture(t, 'sha1', true); const base = f.baseCommit!; f.git('branch', 'topic'); f.remote('origin', 'topic', base);
   const before = f.snapshot(); assert.throws(() => f.app.switchBranch(f.root, f.request('refs/remotes/origin/topic')), code('code_branch_local_name_conflict')); assert.deepEqual(f.snapshot(), before);
   const linked = path.join(f.base, 'linked'); f.git('worktree', 'add', linked, 'topic'); const linkedBefore = f.snapshot(linked);
   assert.throws(() => f.app.switchBranch(f.root, f.request('refs/heads/topic')), (error: unknown) => { const value = error as { code?: string; details?: { worktreeId?: string; effects?: { switched?: boolean } } }; assert.ok(value.details?.worktreeId); assert.equal(value.details?.effects?.switched, false); return value.code === 'code_branch_occupied'; });
@@ -123,7 +124,7 @@ test('occupied branches and conflicting local names preserve both checkouts and 
 });
 
 test('tracked remote occupation is protected and invalid remote-derived local names cannot create refs', t => {
-  const f = fixture(t); f.write('same.ts', 'base\n'); const base = f.commit('base'); f.remote('origin', 'topic', base); f.git('branch', 'topic'); f.git('branch', '--set-upstream-to=origin/topic', 'topic');
+  const f = fixture(t, 'sha1', true); const base = f.baseCommit!; f.remote('origin', 'topic', base); f.git('branch', 'topic'); f.git('branch', '--set-upstream-to=origin/topic', 'topic');
   const linked = path.join(f.base, 'linked'); f.git('worktree', 'add', linked, 'topic'); const before = f.snapshot();
   assert.throws(() => f.app.switchBranch(f.root, f.request('refs/remotes/origin/topic')), code('code_branch_occupied')); assert.deepEqual(f.snapshot(), before);
   for (const localName of ['--force', 'bad..name', 'name\nother', '@{-1}']) assert.throws(() => f.app.switchBranch(f.root, { ...f.request('refs/remotes/origin/topic'), localName }), code('code_branch_local_name_invalid'));
@@ -131,7 +132,7 @@ test('tracked remote occupation is protected and invalid remote-derived local na
 });
 
 test('a low-level branch named dash cannot trigger the previous-checkout alias', t => {
-  const f = fixture(t); f.write('same.ts', 'base\n'); const base = f.commit('base'); f.git('switch', '-c', 'previous'); f.write('same.ts', 'previous\n'); f.commit('previous'); f.git('switch', 'main'); f.git('update-ref', 'refs/heads/-', base); const before = f.snapshot();
+  const f = fixture(t, 'sha1', true); const base = f.baseCommit!; f.git('switch', '-c', 'previous'); f.write('same.ts', 'previous\n'); f.commit('previous'); f.git('switch', 'main'); f.git('update-ref', 'refs/heads/-', base); const before = f.snapshot();
   assert.throws(() => f.app.switchBranch(f.root, f.request('refs/heads/-')), code('code_branch_local_name_invalid')); assert.deepEqual(f.snapshot(), before);
 });
 
@@ -179,7 +180,7 @@ test('branch catalog uses raw metadata and dirty filter paths block switching ev
 });
 
 test('large branch inventory truncates output while retaining exact tracking relationships in linear maps', t => {
-  const f = fixture(t); f.write('same.ts', 'base\n'); const base = f.commit('base'); f.remote('origin', 'seed', base);
+  const f = fixture(t, 'sha1', true); const base = f.baseCommit!; f.remote('origin', 'seed', base);
   const updates = Array.from({ length: 1200 }, (_, index) => 'create refs/heads/local-' + String(index).padStart(4, '0') + ' ' + base + '\ncreate refs/remotes/origin/remote-' + String(index).padStart(4, '0') + ' ' + base + '\n').join('');
   execFileSync('git', ['-C', f.root, 'update-ref', '--stdin'], { input: updates, stdio: ['pipe', 'pipe', 'pipe'] });
   const refsBefore = f.git('for-each-ref', '--format=%(refname) %(objectname)'), observed = f.catalog(); assert.equal(observed.coverage.truncated, true); assert.equal(observed.branches.length, 1000); assert.ok(observed.diagnostics.some(item => item.code === 'code_branches_truncated')); assert.equal(f.git('for-each-ref', '--format=%(refname) %(objectname)'), refsBefore);
@@ -198,7 +199,7 @@ test('failed upstream registration reports the real created branch rather than c
 });
 
 test('HEAD/target/worktree file drift and reused local tip/upstream drift reject stale switch observations', t => {
-  const f = fixture(t); f.write('same.ts', 'base\n'); const base = f.commit('base'); f.remote('origin', 'topic', base); f.git('branch', 'topic'); f.git('branch', '--set-upstream-to=origin/topic', 'topic');
+  const f = fixture(t, 'sha1', true); const base = f.baseCommit!; f.remote('origin', 'topic', base); f.git('branch', 'topic'); f.git('branch', '--set-upstream-to=origin/topic', 'topic');
   let request = f.request('refs/remotes/origin/topic'); f.write('same.ts', 'updated\n'); const current = f.commit('changed HEAD'); let before = f.snapshot(); assert.throws(() => f.app.switchBranch(f.root, request), code('code_source_changed')); assert.deepEqual(f.snapshot(), before);
   request = f.request('refs/remotes/origin/topic'); f.git('update-ref', 'refs/heads/topic', current); before = f.snapshot(); assert.throws(() => f.app.switchBranch(f.root, request), code('code_source_changed')); assert.deepEqual(f.snapshot(), before); assert.equal(f.git('rev-parse', 'refs/remotes/origin/topic'), base);
   request = f.request('refs/remotes/origin/topic'); f.git('branch', '--unset-upstream', 'topic'); before = f.snapshot(); assert.throws(() => f.app.switchBranch(f.root, request), code('code_source_changed')); assert.deepEqual(f.snapshot(), before);
@@ -248,7 +249,7 @@ test('a new occupant before the write rejects the switch and preserves the reque
 
 test('paired branch observations still reject ref and dirty-file changes within a read', t => {
   for (const drift of ['ref', 'file']) {
-    const f = fixture(t); f.write('same.ts', 'base\n'); const base = f.commit('base');
+    const f = fixture(t, 'sha1', true); const base = f.baseCommit!;
     f.git('switch', '-c', 'other'); f.write('same.ts', 'other\n'); const other = f.commit('other'); f.git('switch', 'main'); f.git('branch', 'target', base);
     const input = f.input(); let reads = 0;
     f.onCatalogRead(() => { if (++reads === 2) { if (drift === 'ref') f.git('update-ref', 'refs/heads/target', other); else f.write('same.ts', 'concurrent edit\n'); } });
@@ -260,7 +261,7 @@ test('paired branch observations still reject ref and dirty-file changes within 
 });
 
 test('in-progress operations and conflicted index stay local failures with no branch or file writes', t => {
-  const f = fixture(t); f.write('same.ts', 'base\n'); const base = f.commit('base'); f.git('branch', 'target'); fs.writeFileSync(path.join(f.root, '.git', 'MERGE_HEAD'), base + '\n'); const before = f.snapshot();
+  const f = fixture(t, 'sha1', true); const base = f.baseCommit!; f.git('branch', 'target'); fs.writeFileSync(path.join(f.root, '.git', 'MERGE_HEAD'), base + '\n'); const before = f.snapshot();
   assert.throws(() => f.app.switchBranch(f.root, f.request('refs/heads/target')), code('code_branch_operation_in_progress')); assert.deepEqual(f.snapshot(), before); fs.unlinkSync(path.join(f.root, '.git', 'MERGE_HEAD'));
   f.git('switch', 'target'); f.write('same.ts', 'target\n'); f.commit('target'); f.git('switch', 'main'); f.write('same.ts', 'main\n'); f.commit('main'); assert.throws(() => f.git('merge', 'target'));
   const conflict = f.snapshot(); assert.throws(() => f.app.switchBranch(f.root, f.request('refs/heads/target')), code('code_branch_operation_in_progress')); assert.deepEqual(f.snapshot(), conflict);
@@ -315,7 +316,7 @@ test('authors are independently observed by reachable range; exact email and key
 });
 
 test('author candidates and history honestly report the bounded scan and skipped oversized objects', t => {
-  const f = fixture(t); f.write('same.ts', 'base\n'); const base = f.commit('base');
+  const f = fixture(t, 'sha1', true); const base = f.baseCommit!;
   const stream = Array.from({ length: 2002 }, (_, index) => {
     const message = 'bounded ' + index, email = index === 0 ? 'ancient@example.com' : 'recent@example.com';
     return 'commit refs/heads/main\nauthor Same Name <' + email + '> 1700000000 +0000\ncommitter Same Name <' + email + '> 1700000000 +0000\ndata ' + Buffer.byteLength(message) + '\n' + message + '\n' + (index === 0 ? 'from ' + base + '\n' : '') + '\n';
@@ -332,7 +333,7 @@ test('author candidates and history honestly report the bounded scan and skipped
 });
 
 test('full long ref scopes use one bounded contract consistently and unknown commit expressions are rejected', async t => {
-  const f = fixture(t); f.write('same.ts', 'base\n'); const base = f.commit('base'); const longName = ['x'.repeat(120), 'y'.repeat(120), 'topic'].join('/'); f.remote('origin', longName, base);
+  const f = fixture(t, 'sha1', true); const base = f.baseCommit!; const longName = ['x'.repeat(120), 'y'.repeat(120), 'topic'].join('/'); f.remote('origin', longName, base);
   const scope = 'refs/remotes/origin/' + longName, http = createCodeHttpContribution(f.app), input = f.input();
   for (const operation of ['history', 'authors']) {
     const result = await http.handle({ request: { method: 'GET' }, suffix: '/code/' + operation, searchParams: new URLSearchParams({ ...input, branch: scope }), root: f.root }); assert.equal(result?.status, 200);
@@ -355,5 +356,5 @@ test('read-only CLI and read-worker cannot route branch-switch; POST requires wr
 });
 
 test('SHA-256 refs work for remote checkout and history', t => {
-  const f = fixture(t, 'sha256'); f.write('same.ts', 'base\n'); const base = f.commit('base'); f.remote('origin', 'topic', base); const switched = f.app.switchBranch(f.root, f.request('refs/remotes/origin/topic')); assert.equal(switched.head?.length, 64); assert.equal(f.app.history(f.root, { ...f.input(), branch: 'refs/remotes/origin/topic' }).commits[0].hash, base);
+  const f = fixture(t, 'sha256', true); const base = f.baseCommit!; f.remote('origin', 'topic', base); const switched = f.app.switchBranch(f.root, f.request('refs/remotes/origin/topic')); assert.equal(switched.head?.length, 64); assert.equal(f.app.history(f.root, { ...f.input(), branch: 'refs/remotes/origin/topic' }).commits[0].hash, base);
 });
