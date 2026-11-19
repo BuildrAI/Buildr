@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 
 export interface StorageUse { complete: boolean; paths: readonly string[]; diagnostic?: string }
 export interface StorageCandidate {
-  kind: 'cache' | 'runtime' | 'diagnostic' | 'test-artifact' | 'runtime-share' | 'runtime-object' | 'shared-cache' | 'program-package' | 'native-session' | 'native-home'; path: string; ownerRoot: string;
+  kind: 'cache' | 'runtime' | 'diagnostic' | 'test-artifact' | 'runtime-share' | 'runtime-object' | 'shared-cache' | 'program-package' | 'native-session' | 'native-home' | 'web-bundle'; path: string; ownerRoot: string;
   sizeBytes: number; identity?: string; eligible: boolean; reason: string; boundaryRoot?: string; orphanReclaim?: boolean;
   rootChanged?: number;
   /** Only regenerable cache data with a fresh execution/recovery proof may
@@ -18,7 +18,7 @@ export interface StorageCandidate {
   runtimeDataRoot?: string;
   diagnostic?: { provider: string; producerPid?: number; contextId?: string; config?:string; database?:string };
   /** Exact native session identity read from the provider-owned layout. */
-  nativeSession?: { provider: 'codex' | 'dsh' | 'claude-code'; contextId: string; binding: string };
+  nativeSession?: { provider: 'codex' | 'dsh' | 'claude-code' | 'antigravity'; contextId: string; binding: string; group?: string };
   /** Whole legacy lease home reclaimable only after a complete no-reference proof. */
   nativeHome?: { provider: 'codex' | 'dsh' | 'claude-code' };
 }
@@ -99,18 +99,25 @@ export function ensureStorageDirectory(root: string, target: string): void {
   }
 }
 
-/** Diagnostic files may be individual event segments. Never follow links or remove shared files. */
-export function safeStorageResource(root: string, target: string, maximumNodes=Infinity): boolean {
+/** Diagnostic files may be individual event segments. Never follow links or remove shared files,
+ * except nested user-owned links inside an already verified dead lease home. */
+export function safeStorageResource(
+  root: string,
+  target: string,
+  maximumNodes = Infinity,
+  options?: { allowNestedSymlinks?: boolean },
+): boolean {
   if (!safeStoragePath(root, path.dirname(target))) return false;
-  let nodes=0;
-  const walk = (file: string): boolean => {
-    if(++nodes>maximumNodes)return false;
+  let nodes = 0;
+  const walk = (file: string, isRoot: boolean): boolean => {
+    if (++nodes > maximumNodes) return false;
     const stat = fs.lstatSync(file);
-    if (stat.isSymbolicLink() || process.getuid && stat.uid !== process.getuid()) return false;
-    if (stat.isDirectory()) return fs.readdirSync(file).every(name => walk(path.join(file, name)));
+    if (process.getuid && stat.uid !== process.getuid()) return false;
+    if (stat.isSymbolicLink()) return !isRoot && Boolean(options?.allowNestedSymlinks);
+    if (stat.isDirectory()) return fs.readdirSync(file).every(name => walk(path.join(file, name), false));
     return stat.isFile() && stat.nlink === 1;
   };
-  try { return walk(target); } catch { return false; }
+  try { return walk(target, true); } catch { return false; }
 }
 
 export function storageVersion(directory: string, renamedRootChanged?: number): StorageVersion {
@@ -143,7 +150,11 @@ export function storageCandidate(root: string, kind: StorageCandidate['kind'], d
 /** The caller holds the service storage lock; recheck immediately around the narrow rename. */
 export function removeStorageCandidate(root: string, item: StorageCandidate, observe = observeStorageUse, unreferenced: (directory: string) => boolean = () => true, allowedBoundaries?: ReadonlySet<string>, sharedInodes?: () => ReadonlySet<string> | undefined): boolean {
   const boundary = item.boundaryRoot && allowedBoundaries?.has(item.boundaryRoot) ? item.boundaryRoot : root;
-  const safe = () => item.kind === 'diagnostic' || item.kind === 'native-session' || item.kind === 'native-home' ? safeStorageResource(boundary, item.path) : safeStoragePath(boundary, item.path);
+  const safe = () => item.kind === 'diagnostic' || item.kind === 'native-session'
+    ? safeStorageResource(boundary, item.path)
+    : item.kind === 'native-home'
+      ? safeStorageResource(boundary, item.path, Infinity, { allowNestedSymlinks: true })
+      : safeStoragePath(boundary, item.path);
   if (!item.eligible || !item.identity || !safe() || !unreferenced(item.path) || storageInUse(storageUseRoot(item), observe(), sharedInodes?.())) return false;
   if (storageVersion(item.path).identity !== item.identity) return false;
   const retired = path.join(path.dirname(item.path), '.reclaim-' + randomUUID());
@@ -192,37 +203,142 @@ export function removeNativeSessionBatch(root:string,items:StorageCandidate[],un
   observe=observeStorageUse,deadline=Date.now()+3000):string[]{
   return removeSmallResourceBatch(root,items,unreferenced,observe,deadline,'native-session');
 }
+
+/** Reclaims bounded batches of unreferenced immutable runtime objects while sharing
+ * before/after system occupancy and clone-view observations across the batch. */
+export function removeRuntimeObjectBatch(
+  root: string,
+  items: StorageCandidate[],
+  unreferenced: (item: StorageCandidate, directory: string) => boolean,
+  observe = observeStorageUse,
+  deadline = Date.now() + 3000,
+  beforeAfterBatch?: () => boolean,
+): string[] {
+  const remaining = Math.max(0, deadline - Date.now());
+  if (!remaining || !items.length) return [];
+  const before = observe();
+  if (!before.complete) return [];
+  const renameDeadline = Date.now() + remaining;
+  const payloadName = process.platform === 'win32' ? 'payload.exe' : 'payload';
+  const renamed: Array<{ item: StorageCandidate; retired: string; changed: number }> = [];
+  const removed: string[] = [];
+  const restore = (item: StorageCandidate, retired: string) => {
+    if (fs.existsSync(retired) && !fs.existsSync(item.path)) fs.renameSync(retired, item.path);
+  };
+  try {
+    for (const item of items.slice(0, 256)) {
+      if (Date.now() > renameDeadline) break;
+      try {
+        if (item.kind !== 'runtime-object' || !item.eligible || !item.identity || !safeStoragePath(root, item.path) || storageInUse(item.path, before) || !unreferenced(item, item.path)) continue;
+        if (storageVersion(item.path).identity !== item.identity) continue;
+        const retired = path.join(path.dirname(item.path), '.reclaim-' + randomUUID());
+        fs.renameSync(item.path, retired);
+        renamed.push({ item, retired, changed: fs.lstatSync(retired).ctimeMs });
+      } catch { /* A changed or unavailable object is retained independently. */ }
+    }
+    if (!renamed.length) return removed;
+    const after = observe();
+    const batchValid = after.complete && (beforeAfterBatch ? beforeAfterBatch() : true);
+    for (const { item, retired, changed } of renamed) {
+      try {
+        if (!batchValid) { restore(item, retired); continue; }
+        const version = storageVersion(retired, item.rootChanged);
+        const payload = fs.lstatSync(path.join(retired, payloadName));
+        if (
+          storageInUse(item.path, after) ||
+          storageInUse(retired, after) ||
+          !unreferenced(item, retired) ||
+          version.identity !== item.identity ||
+          version.rootChanged !== changed ||
+          !payload.isFile() ||
+          payload.isSymbolicLink() ||
+          payload.nlink !== 1 ||
+          (payload.mode & 0o222) !== 0
+        ) {
+          restore(item, retired);
+          continue;
+        }
+        fs.rmSync(retired, { recursive: true });
+        removed.push(item.path);
+      } catch {
+        restore(item, retired);
+      }
+    }
+  } finally {
+    for (const { item, retired } of renamed) {
+      try { restore(item, retired); } catch { /* Keep the renamed directory rather than overwrite a replacement. */ }
+    }
+  }
+  return removed;
+}
+
 function removeSmallResourceBatch(root:string,items:StorageCandidate[],unreferenced:(item:StorageCandidate)=>boolean,
   observe:typeof observeStorageUse,deadline:number,kind:'diagnostic'|'cache'|'native-session',database=false):string[]{
   const remaining=Math.max(0,deadline-Date.now());if(!remaining)return [];
   // System observation has its own subprocess timeout. Charge the file-work
   // budget after it completes, so a slow lsof cannot starve every small batch.
   const before=observe(), renameDeadline=Date.now()+remaining;
+  const maxNodes=kind==='cache'?5000:kind==='native-session'?50000:64;
   const renamed:Array<{item:StorageCandidate;retired:string;changed:number}>=[],removed:string[]=[];
   const restore=(item:StorageCandidate,retired:string)=>{if(fs.existsSync(retired)&&!fs.existsSync(item.path))fs.renameSync(retired,item.path);};
+  const restoreGroup=(group:string|undefined)=>{if(!group)return;for(const entry of renamed)if(entry.item.nativeSession?.group===group)try{restore(entry.item,entry.retired);}catch{}};
+  const ordered=[...items.slice(0,256)].sort((a,b)=>{
+    const ga=a.nativeSession?.group??'',gb=b.nativeSession?.group??'';
+    if(ga&&ga===gb)return Number(a.path.endsWith('.db'))-Number(b.path.endsWith('.db'));
+    return 0;
+  });
+  const expectedGroupCounts=new Map<string,number>();
+  for(const item of items){
+    const group=item.nativeSession?.group;
+    if(group)expectedGroupCounts.set(group,(expectedGroupCounts.get(group)??0)+1);
+  }
+  const blockedGroups=new Set<string>();
   try {
-    for(const item of items.slice(0,256)) {
+    for(const item of ordered) {
       if(Date.now()>renameDeadline)break;
+      const group=item.nativeSession?.group;
+      if(group&&blockedGroups.has(group))continue;
       try {
-        if(item.kind!==kind||!item.eligible||!item.identity||!safeStorageResource(root,item.path,kind==='cache'?5000:64)||storageInUse(item.ownerRoot,before)||!unreferenced(item))continue;
+        if(item.kind!==kind||!item.eligible||!item.identity||!safeStorageResource(root,item.path,maxNodes)||storageInUse(item.ownerRoot,before)||!unreferenced(item)){if(group){blockedGroups.add(group);restoreGroup(group);}continue;}
         const info=fs.lstatSync(item.path),version=storageVersion(item.path);
-        if(kind==='native-session'?!info.isFile()&&!info.isDirectory():database?!info.isFile():!info.isFile()&&!info.isDirectory())continue;
+        if(kind==='native-session'?!info.isFile()&&!info.isDirectory():database?!info.isFile():!info.isFile()&&!info.isDirectory()){if(group){blockedGroups.add(group);restoreGroup(group);}continue;}
         if(!database&&kind!=='native-session'&&version.sizeBytes>256*1024)continue;
-        if(version.identity!==item.identity)continue;
+        if(version.identity!==item.identity){if(group){blockedGroups.add(group);restoreGroup(group);}continue;}
         const retired=path.join(path.dirname(item.path),'.reclaim-'+randomUUID());fs.renameSync(item.path,retired);
         const moved={item,retired,changed:0};renamed.push(moved);moved.changed=fs.lstatSync(retired).ctimeMs;
-      }catch{/* A changed or unavailable file is retained independently. */}
+      }catch{if(group){blockedGroups.add(group);restoreGroup(group);}/* A changed or unavailable file is retained independently. */}
     }
-    if(!renamed.length||database&&renamed.length!==items.length)return removed;
+    const activeRenamed=renamed.filter(entry=>!entry.item.nativeSession?.group||!blockedGroups.has(entry.item.nativeSession.group));
+    if(!activeRenamed.length||database&&activeRenamed.length!==items.length)return removed;
     const after=observe();
-    if(database&&!renamed.every(({item,retired,changed})=>{
+    if(database&&!activeRenamed.every(({item,retired,changed})=>{
       const version=storageVersion(retired,item.rootChanged);
       return !storageInUse(item.ownerRoot,after)&&!storageInUse(retired,after)&&unreferenced(item)&&version.identity===item.identity&&version.rootChanged===changed;
     }))return removed;
-    for(const {item,retired,changed} of renamed) {
+    const verifiedGroups=new Map<string,Array<{item:StorageCandidate;retired:string;changed:number}>>();
+    for(const entry of activeRenamed){
+      const group=entry.item.nativeSession?.group;
+      if(!group)continue;
+      const list=verifiedGroups.get(group)??[];list.push(entry);verifiedGroups.set(group,list);
+    }
+    const failedGroups=new Set<string>();
+    for(const [group,entries] of verifiedGroups){
+      const ok=entries.length===expectedGroupCounts.get(group)&&entries.every(({item,retired,changed})=>{
+        try {
+          const version=storageVersion(retired,item.rootChanged);
+          return !storageInUse(item.ownerRoot,after)&&!storageInUse(retired,after)&&unreferenced(item)&&version.identity===item.identity&&version.rootChanged===changed;
+        }catch{return false;}
+      });
+      if(!ok){failedGroups.add(group);restoreGroup(group);}
+    }
+    for(const {item,retired,changed} of activeRenamed) {
+      const group=item.nativeSession?.group;
+      if(group&&failedGroups.has(group))continue;
       try {
-        const version=storageVersion(retired,item.rootChanged);
-        if(storageInUse(item.ownerRoot,after)||storageInUse(retired,after)||!unreferenced(item)||version.identity!==item.identity||version.rootChanged!==changed){restore(item,retired);continue;}
+        if(!group){
+          const version=storageVersion(retired,item.rootChanged);
+          if(storageInUse(item.ownerRoot,after)||storageInUse(retired,after)||!unreferenced(item)||version.identity!==item.identity||version.rootChanged!==changed){restore(item,retired);continue;}
+        }
         fs.rmSync(retired,{recursive:true});removed.push(item.path);
       }catch{restore(item,retired);}
     }

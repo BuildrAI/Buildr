@@ -61,7 +61,11 @@ async function runMaintenance(): Promise<void> {
       if (stat.isFile() && !stat.isSymbolicLink() && stat.size < 1024 * 1024) previous = JSON.parse(fs.readFileSync(observationFile, 'utf8'));
     } catch { /* First observation starts a new cycle. */ }
     stage('cacheObservation');
-    const plan = inspectAgentStorage({ dataRoot, homeCursor: previous?.homeStorage?.cursor });
+    const plan = inspectAgentStorage({
+      dataRoot,
+      homeCursor: previous?.homeStorage?.cursor,
+      runtimeObjectBudget: { maxVerifyItems: 256, maxVerifyBytes: 256 * 1024 * 1024 },
+    });
     stage('inventory');
     // Migration verifies the whole cache before retirement. A shorter fixed
     // deadline could repeatedly restart verification without making progress.

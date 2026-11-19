@@ -13,13 +13,21 @@ export interface NativeSessionReferenceProof {
   homes: ReadonlySet<string>;
 }
 
-const codexSession = /^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/u;
-const dshSession = /^session-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/u;
-const claudeSessionFile = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/u;
-const claudeSessionDir = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/u;
-const providers = ['codex', 'dsh', 'claude-code'] as const;
-type NativeSessionProvider = typeof providers[number];
+const uuidPattern = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const codexSession = new RegExp(`^rollout-\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}-(${uuidPattern})\\.jsonl$`, 'u');
+const dshSession = new RegExp(`^session-(${uuidPattern})$`, 'u');
+const claudeSessionFile = new RegExp(`^(${uuidPattern})\\.jsonl$`, 'u');
+const claudeSessionDir = new RegExp(`^(${uuidPattern})$`, 'u');
+const antigravityJsonl = new RegExp(`^(${uuidPattern})\\.jsonl$`, 'u');
+const antigravityUuid = new RegExp(`^(${uuidPattern})$`, 'u');
+const antigravityDb = new RegExp(`^(${uuidPattern})\\.db(?:-wal|-shm)?$`, 'u');
+const antigravityAnnotation = new RegExp(`^(${uuidPattern})\\.pbtxt$`, 'u');
+const sessionProviders = ['codex', 'dsh', 'claude-code', 'antigravity'] as const;
+const homeProviders = ['codex', 'dsh', 'claude-code'] as const;
+type NativeSessionProvider = typeof sessionProviders[number];
+type NativeHomeProvider = typeof homeProviders[number];
 const maximumEntries = 20000;
+const nativeSessionDirectoryMaxNodes = 50000;
 
 export function nativeSessionRetainedReason(item: StorageCandidate, references: NativeSessionReferenceProof): string | undefined {
   const proof = item.nativeSession;
@@ -31,18 +39,24 @@ export function nativeSessionRetainedReason(item: StorageCandidate, references: 
   return undefined;
 }
 
-/** Individual Codex rollout files, DSH session directories, and standalone
- * Claude Code session files under known model bindings are the only native
- * objects this plan can ever expose. */
+/** Individual Codex rollout files, DSH session directories, standalone
+ * Claude Code session files, and Antigravity per-context session artifacts are
+ * the only native objects this plan can ever expose. */
 export function nativeSessionCandidates(root: string, use: StorageUse, cutoff: number, references: NativeSessionReferenceProof): StorageCandidate[] {
   const items: StorageCandidate[] = [], state = { nodes: 0 };
   let visited = 0;
-  const candidate = (provider: NativeSessionProvider, contextId: string, binding: string, target: string) => {
+  const candidate = (
+    provider: NativeSessionProvider,
+    contextId: string,
+    binding: string,
+    target: string,
+    options?: { maxNodes?: number; group?: string },
+  ) => {
     if (++visited > maximumEntries) return;
     const item: StorageCandidate = { kind: 'native-session', path: target, ownerRoot: target, sizeBytes: 0, eligible: false,
-      reason: 'storage_path_unsafe', nativeSession: { provider, contextId, binding } };
+      reason: 'storage_path_unsafe', nativeSession: { provider, contextId, binding, ...(options?.group ? { group: options.group } : {}) } };
     items.push(item);
-    if (!safeStorageResource(root, target, 64)) return;
+    if (!safeStorageResource(root, target, options?.maxNodes ?? 64)) return;
     try {
       const version = storageVersion(target);
       Object.assign(item, { identity: version.identity, sizeBytes: version.sizeBytes, rootChanged: version.rootChanged });
@@ -53,15 +67,19 @@ export function nativeSessionCandidates(root: string, use: StorageUse, cutoff: n
       item.eligible = item.reason === 'unused_native_session';
     } catch { item.reason = 'storage_observation_failed'; }
   };
-  for (const provider of providers) {
+  for (const provider of sessionProviders) {
     const account = path.join(root, 'connections', provider);
+    const accountRelative = path.relative(root, account).split(path.sep).join('/');
+    if (provider === 'antigravity') {
+      antigravitySessions(account, state, (target, contextId, options) => candidate(provider, contextId, accountRelative, target, options));
+      continue;
+    }
     // The shared per-connection home (gateway + native login) holds sessions too;
     // the same context reference proof, stability window and occupancy apply.
     const sharedHome = path.join(account, provider === 'codex' ? 'codex-home' : provider === 'dsh' ? 'dsh-home' : 'claude-config');
-    const accountRelative = path.relative(root, account).split(path.sep).join('/');
     if (safeStoragePath(root, sharedHome)) {
       if (provider === 'codex') codexSessions(path.join(sharedHome, 'sessions'), state, (file, contextId) => candidate(provider, contextId, accountRelative, file));
-      else if (provider === 'dsh') dshSessions(path.join(sharedHome, 'sessions'), state, (directory, contextId) => candidate(provider, contextId, accountRelative, directory));
+      else if (provider === 'dsh') dshSessions(path.join(sharedHome, 'sessions'), state, (directory, contextId) => candidate(provider, contextId, accountRelative, directory, { maxNodes: nativeSessionDirectoryMaxNodes }));
       else claudeSessions(path.join(sharedHome, 'projects'), state, (file, contextId) => candidate(provider, contextId, accountRelative, file));
     }
     const bindings = path.join(account, 'model-bindings');
@@ -71,11 +89,41 @@ export function nativeSessionCandidates(root: string, use: StorageUse, cutoff: n
       if (!/^[a-f0-9]{64}$/.test(id) || !safeStoragePath(root, binding)) continue;
       const relative = path.relative(root, binding).split(path.sep).join('/');
       if (provider === 'codex') codexSessions(path.join(binding, 'codex-home', 'sessions'), state, (file, contextId) => candidate(provider, contextId, relative, file));
-      else if (provider === 'dsh') dshSessions(path.join(binding, 'dsh-home', 'sessions'), state, (directory, contextId) => candidate(provider, contextId, relative, directory));
+      else if (provider === 'dsh') dshSessions(path.join(binding, 'dsh-home', 'sessions'), state, (directory, contextId) => candidate(provider, contextId, relative, directory, { maxNodes: nativeSessionDirectoryMaxNodes }));
       else claudeSessions(path.join(binding, 'claude-config', 'projects'), state, (file, contextId) => candidate(provider, contextId, relative, file));
     }
   }
+  protectGroupedSessions(items);
   return items;
+}
+
+function protectGroupedSessions(items: StorageCandidate[]): void {
+  const busyContexts = new Set<string>();
+  const dbGroups = new Map<string, StorageCandidate[]>();
+  for (const item of items) {
+    const ns = item.nativeSession;
+    if (ns?.provider !== 'antigravity') continue;
+    if (item.reason === 'storage_in_use') busyContexts.add(ns.contextId);
+    if (ns.group) {
+      const list = dbGroups.get(ns.group) ?? [];
+      list.push(item);
+      dbGroups.set(ns.group, list);
+    }
+  }
+  for (const item of items) {
+    if (item.nativeSession?.provider === 'antigravity' && busyContexts.has(item.nativeSession.contextId)) {
+      item.eligible = false;
+      item.reason = 'storage_in_use';
+    }
+  }
+  for (const members of dbGroups.values()) {
+    const blocking = members.find(member => !member.eligible);
+    if (!blocking) continue;
+    for (const member of members) {
+      member.eligible = false;
+      if (member.reason === 'unused_native_session') member.reason = blocking.reason;
+    }
+  }
 }
 
 /** A whole legacy lease home is retained by the same complete reference proof
@@ -94,7 +142,7 @@ export function nativeHomeRetainedReason(item: StorageCandidate, references: Nat
 /** Belt-and-braces: even when no reference names the home path, a single
  * referenced session inside it retains the whole directory. Walks the actual
  * (possibly already renamed) home so the deletion re-proof stays accurate. */
-export function nativeHomeSessionReferenced(home: string, provider: NativeSessionProvider, references: NativeSessionReferenceProof): boolean {
+export function nativeHomeSessionReferenced(home: string, provider: NativeHomeProvider, references: NativeSessionReferenceProof): boolean {
   const state = { nodes: 0 };
   let referenced = false;
   const check = (contextId: string) => { if (references.contexts.has(provider + ':' + contextId)) referenced = true; };
@@ -109,7 +157,7 @@ export function nativeHomeSessionReferenced(home: string, provider: NativeSessio
  * the stability window and an occupancy check; never migrated or merged. */
 export function nativeHomeCandidates(root: string, use: StorageUse, cutoff: number, references: NativeSessionReferenceProof): StorageCandidate[] {
   const items: StorageCandidate[] = [];
-  for (const provider of providers) {
+  for (const provider of homeProviders) {
     const bindings = path.join(root, 'connections', provider, 'model-bindings');
     if (!safeStoragePath(root, bindings)) continue;
     for (const id of fs.readdirSync(bindings).sort()) {
@@ -119,7 +167,7 @@ export function nativeHomeCandidates(root: string, use: StorageUse, cutoff: numb
       const item: StorageCandidate = { kind: 'native-home', path: home, ownerRoot: home, sizeBytes: 0, eligible: false,
         reason: 'storage_path_unsafe', nativeHome: { provider } };
       items.push(item);
-      if (!safeStorageResource(root, home, 200000)) continue;
+      if (!safeStorageResource(root, home, 200000, { allowNestedSymlinks: true })) continue;
       try {
         const version = storageVersion(home);
         Object.assign(item, { identity: version.identity, sizeBytes: version.sizeBytes, rootChanged: version.rootChanged });
@@ -200,4 +248,36 @@ function claudeSessionEntries(directory: string, state: { nodes: number }, add: 
       }, 1);
     }
   } catch { /* Unreadable session roots retain their sessions by omission. */ }
+}
+
+function scanFlatDir(
+  directory: string,
+  state: { nodes: number },
+  pattern: RegExp,
+  kind: 'file' | 'directory',
+  add: (target: string, contextId: string) => void,
+): void {
+  try {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (++state.nodes > maximumEntries || entry.isSymbolicLink()) continue;
+      const match = pattern.exec(entry.name);
+      if (!match) continue;
+      if (kind === 'directory' ? !entry.isDirectory() : !entry.isFile()) continue;
+      add(path.join(directory, entry.name), match[1]!);
+    }
+  } catch { /* Missing or unreadable roots retain their sessions by omission. */ }
+}
+
+function antigravitySessions(
+  account: string,
+  state: { nodes: number },
+  add: (target: string, contextId: string, options?: { maxNodes?: number; group?: string }) => void,
+): void {
+  scanFlatDir(path.join(account, 'antigravity-sessions'), state, antigravityJsonl, 'file', (file, contextId) => add(file, contextId));
+  const gemini = path.join(account, 'home', '.gemini');
+  scanFlatDir(path.join(gemini, 'antigravity', 'transcripts'), state, antigravityJsonl, 'file', (file, contextId) => add(file, contextId));
+  const cli = path.join(gemini, 'antigravity-cli');
+  scanFlatDir(path.join(cli, 'brain'), state, antigravityUuid, 'directory', (dir, contextId) => add(dir, contextId, { maxNodes: nativeSessionDirectoryMaxNodes }));
+  scanFlatDir(path.join(cli, 'conversations'), state, antigravityDb, 'file', (file, contextId) => add(file, contextId, { group: 'antigravity-db:' + contextId }));
+  scanFlatDir(path.join(cli, 'annotations'), state, antigravityAnnotation, 'file', (file, contextId) => add(file, contextId));
 }

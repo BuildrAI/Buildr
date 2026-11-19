@@ -919,3 +919,165 @@ test('re-anchoring protected runtimes clears XNU hardlink attribution drift so u
   assert.equal(fs.existsSync(liveUnit.directory), true);
   assert.equal(fs.existsSync(rollbackUnit.directory), true);
 });
+
+test('runtime objects respect per-pass verification budgets, batch reclamation and revert modified or busy entries', { skip: process.platform !== 'darwin' }, async t => {
+  const { materializeRuntimeObject } = await import('../../src/storage/runtime-objects.ts');
+  const { removeRuntimeObjectBatch } = await import('../../src/storage/files.ts');
+  const base = fixture(t), dataRoot = path.join(base, 'profile'), root = path.join(dataRoot, 'agent-service');
+  fs.mkdirSync(root, { recursive: true });
+  const objectDirs: string[] = [];
+  for (let i = 0; i < 4; i++) {
+    const source = path.join(base, `src-${i}.bin`);
+    file(source, `object-payload-${i}`);
+    const obj = materializeRuntimeObject(root, source);
+    fs.unlinkSync(source);
+    objectDirs.push(path.dirname(obj));
+  }
+  const futureNow = Date.now() + 2 * day;
+  const budgeted = inspectAgentStorage({ dataRoot, scanHomes: false, tempRoots: [], runtimeObjectBudget: { maxVerifyItems: 2 }, now: futureNow });
+  const planned = budgeted.items.filter(item => item.kind === 'runtime-object');
+  assert.equal(planned.length, 2, 'single pass only verifies up to maxVerifyItems');
+  assert.ok(planned.every(item => item.eligible));
+
+  // Corrupt the second planned object before collection; first succeeds while tampered entry reverts/retains.
+  const tamperedPayload = path.join(planned[1]!.path, process.platform === 'win32' ? 'payload.exe' : 'payload');
+  fs.chmodSync(tamperedPayload, 0o600);
+  fs.writeFileSync(tamperedPayload, 'tampered-bytes');
+  fs.chmodSync(tamperedPayload, 0o400);
+
+  const collected = collectAgentStorage(budgeted, 128, { now: futureNow });
+  assert.equal(collected.results.find(x => x.path === planned[0]!.path)?.status, 'removed');
+  assert.equal(fs.existsSync(planned[0]!.path), false);
+  assert.equal(collected.results.find(x => x.path === planned[1]!.path)?.status, 'retained');
+  assert.equal(fs.existsSync(planned[1]!.path), true);
+
+  // Remaining 2 intact objects are picked up on the next pass; test busy protection in batch helper.
+  const nextPlan = inspectAgentStorage({ dataRoot, scanHomes: false, tempRoots: [], now: futureNow });
+  const remaining = nextPlan.items.filter(item => item.kind === 'runtime-object' && item.eligible);
+  assert.equal(remaining.length, 2);
+  const busyFile = path.join(remaining[1]!.path, process.platform === 'win32' ? 'payload.exe' : 'payload');
+  const holder = spawn(process.execPath, ['-e', "require('fs').openSync(process.argv[1],'r');process.stdout.write('ready');setInterval(()=>{},1000)", busyFile], { stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(async () => { if (holder.exitCode === null && holder.signalCode === null) { const exited = once(holder, 'exit'); holder.kill(); await exited; } });
+  await once(holder.stdout!, 'data');
+
+  const batchRemoved = removeRuntimeObjectBatch(root, remaining, () => true, observeStorageUse, Date.now() + 5000);
+  assert.deepEqual(batchRemoved, [remaining[0]!.path]);
+  assert.equal(fs.existsSync(remaining[0]!.path), false);
+  assert.equal(fs.existsSync(remaining[1]!.path), true);
+});
+
+test('harness web bundles reclaim stale unreferenced payloads and stages while protecting sessions, listeners and runtimes fail-closed', { skip: process.platform !== 'darwin' }, async t => {
+  const { HarnessWebAssets } = await import('../../src/process/web-assets.ts');
+  const { HarnessWebSessions } = await import('../../src/process/web-session-store.ts');
+  const base = fixture(t), dataRoot = path.join(base, 'profile'), root = path.join(dataRoot, 'agent-service');
+  const bundlesDir = path.join(root, 'harness-web', 'bundles');
+  const assets = new HarnessWebAssets(dataRoot);
+  const makeStatic = (name: string, body: string) => {
+    const dir = path.join(base, 'web-' + name);
+    file(path.join(dir, 'index.html'), `<!doctype html><body>${body}</body>`);
+    file(path.join(dir, 'assets/app.js'), `export const tag = ${JSON.stringify(body)};`);
+    return dir;
+  };
+  const sessionBundle = assets.install(makeStatic('session', 'session'));
+  const ticketBundle = assets.install(makeStatic('ticket', 'ticket'));
+  const listenerBundle = assets.install(makeStatic('listener', 'listener'));
+  const staleBundle = assets.install(makeStatic('stale', 'stale'));
+  const recentBundle = assets.install(makeStatic('recent', 'recent'));
+
+  const runtimeStaticDir = makeStatic('runtime', 'runtime');
+  const runtimeBundle = assets.install(runtimeStaticDir);
+  const pkg = path.join(base, 'package'), node = path.join(base, 'fixture-node');
+  file(node, 'node-fixture'); fs.chmodSync(node, 0o700);
+  file(path.join(pkg, 'package.json'), '{"type":"module"}');
+  file(path.join(pkg, 'build/runtime-contracts.json'), JSON.stringify({ contracts: AGENT_EXECUTION_CONTRACTS, storageVersion: 1 }));
+  file(path.join(pkg, 'build/entry.js'), 'export const v = 1;');
+  fs.cpSync(runtimeStaticDir, path.join(pkg, 'build/harness-web-dist'), { recursive: true });
+  const runtime = prepareAgentRuntime({ dataRoot, packageRoot: pkg, entry: 'build/entry.js', node });
+  const generation = randomUUID();
+  writePrivate(path.join(controlRoot(dataRoot), 'instance.json'), {
+    identity: { dataRoot, generation, pid: process.pid, runtime }, origin: 'http://127.0.0.1:1', token: 'fixture',
+  });
+
+  const sessions = new HarnessWebSessions(dataRoot);
+  sessions.enable(48123);
+  sessions.listening({ instanceId: 'inst', generation, pid: process.pid, released: false, bundle: listenerBundle }, 48123);
+  const origin = 'http://127.0.0.1:48123';
+  const sessionTicket = sessions.issue(origin, sessionBundle);
+  sessions.exchange(origin, sessionTicket.ticket);
+  sessions.issue(origin, ticketBundle);
+
+  const stageDir = path.join(bundlesDir, '.stage-stale-123');
+  file(path.join(stageDir, 'index.html'), 'partial');
+  for (const id of [sessionBundle, ticketBundle, listenerBundle, runtimeBundle, staleBundle]) {
+    age(path.join(bundlesDir, id));
+  }
+  age(stageDir, Date.now() - 30 * 60_000);
+
+  const plan = inspectAgentStorage({ dataRoot, scanHomes: false, tempRoots: [] });
+  const bundleItems = plan.items.filter(item => item.kind === 'web-bundle');
+  assert.equal(bundleItems.find(item => item.path === path.join(bundlesDir, staleBundle))?.eligible, true);
+  assert.equal(bundleItems.find(item => item.path === stageDir)?.eligible, true);
+  for (const protectedId of [sessionBundle, ticketBundle, listenerBundle, runtimeBundle]) {
+    assert.equal(bundleItems.find(item => item.path === path.join(bundlesDir, protectedId))?.reason, 'web_bundle_referenced');
+  }
+  assert.equal(bundleItems.find(item => item.path === path.join(bundlesDir, recentBundle))?.reason, 'storage_recent');
+
+  const collected = collectAgentStorage(plan);
+  assert.equal(collected.results.find(x => x.path === path.join(bundlesDir, staleBundle))?.status, 'removed');
+  assert.equal(collected.results.find(x => x.path === stageDir)?.status, 'removed');
+  assert.equal(fs.existsSync(path.join(bundlesDir, staleBundle)), false);
+  assert.equal(fs.existsSync(stageDir), false);
+  for (const keepId of [sessionBundle, ticketBundle, listenerBundle, runtimeBundle, recentBundle]) {
+    assert.equal(fs.existsSync(path.join(bundlesDir, keepId)), true);
+  }
+
+  // Corrupt session state must fail closed and retain all bundles.
+  const newStale = assets.install(makeStatic('stale-corrupt', 'stale-corrupt'));
+  age(path.join(bundlesDir, newStale));
+  fs.writeFileSync(path.join(root, 'harness-web', 'session-state.json'), '{corrupt-json');
+  const corruptPlan = inspectAgentStorage({ dataRoot, scanHomes: false, tempRoots: [] });
+  assert.equal(corruptPlan.items.find(item => item.path === path.join(bundlesDir, newStale))?.reason, 'web_bundle_reference_observation_failed');
+  assert.equal(corruptPlan.items.find(item => item.path === path.join(bundlesDir, newStale))?.eligible, false);
+});
+
+test('numbered transient verification dirs and managed test temp dirs with dead producers are reclaimed', { skip: process.platform !== 'darwin' }, async t => {
+  const { createManagedTestTempDir } = await import('../support/managed-temp.ts');
+  const { testArtifactUnreferenced } = await import('../../src/storage/test-artifacts.ts');
+  const base = fixture(t), dataRoot = path.join(base, 'profile'), root = path.join(dataRoot, 'agent-service');
+  const e2eDir = path.join(root, 'connections', 'antigravity', 'tmp', 'buildr-e2e-evidence-fixture01');
+  file(path.join(e2eDir, 'timing.json'), JSON.stringify({
+    schemaVersion: 'buildr.verification-timing/v1',
+    summaryPath: path.join(e2eDir, 'timing.json'),
+    evidenceLifecycle: {
+      evidenceRetention: 'transient',
+      cleanupAfter: 'consumer-finished',
+      cleanupStatus: 'retained',
+      cleanupReference: e2eDir,
+    },
+  }));
+  age(e2eDir);
+
+  const hostTmp = path.join(base, 'host-tmp');
+  fs.mkdirSync(hostTmp, { recursive: true });
+  const managed = createManagedTestTempDir(hostTmp);
+  t.after(() => managed.cleanup());
+  assert.equal(testArtifactUnreferenced(managed.root), false, 'live process holds its own temp dir');
+  file(path.join(managed.root, '.buildr-test-state.json'), JSON.stringify({
+    schemaVersion: 1,
+    root: managed.root,
+    producerPid: 2_000_000_000,
+    completed: false,
+  }));
+  file(path.join(managed.root, 'payload.txt'), 'abandoned');
+  age(managed.root);
+
+  const plan = inspectAgentStorage({ dataRoot, scanHomes: false, tempRoots: [hostTmp] });
+  assert.equal(plan.items.find(x => x.path === e2eDir)?.eligible, true);
+  assert.equal(plan.items.find(x => x.path === managed.root)?.eligible, true);
+
+  const collected = collectAgentStorage(plan);
+  assert.equal(collected.results.find(x => x.path === e2eDir)?.status, 'removed');
+  assert.equal(collected.results.find(x => x.path === managed.root)?.status, 'removed');
+  assert.equal(fs.existsSync(e2eDir), false);
+  assert.equal(fs.existsSync(managed.root), false);
+});

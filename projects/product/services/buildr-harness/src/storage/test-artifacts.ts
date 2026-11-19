@@ -5,7 +5,7 @@ import { live } from '../process/ownership.ts';
 import { ownStorageDirectory, safeStoragePath, storageCandidate, type StorageCandidate, type StorageUse } from './files.ts';
 
 const testStateName = /^buildr-test-state-[A-Za-z0-9]+$/;
-const transientEvidenceName = /^buildr-[a-z-]+-evidence-[A-Za-z0-9]+$/;
+const transientEvidenceName = /^buildr-[a-z0-9-]+-evidence-[A-Za-z0-9]+$/;
 const maxTimingEvidenceBytes = 32 * 1024 * 1024;
 
 function sameExpectedPath(candidate: unknown, expected: string): boolean {

@@ -99,7 +99,7 @@ export class HarnessWebEndpoint {
       server.listen(state.port,'127.0.0.1');await once(server,'listening');
       const address=server.address();if(!address||typeof address==='string')throw new Error('listener_address_missing');
       if(this.closed||!this.options.ownsListener())throw new AgentServiceError('agent_web_not_coordinator','网页监听期间协调身份已变化。',409);
-      this.origin=`http://127.0.0.1:${address.port}`;this.sessions.listening(this.identity,address.port);this.diagnostic=sourceDiagnostic;
+      this.origin=`http://127.0.0.1:${address.port}`;this.sessions.listening({...this.identity,...(this.bundle?{bundle:this.bundle}:{})},address.port);this.diagnostic=sourceDiagnostic;
       return this.status();
     }catch(error){
       if(this.server?.listening)this.server.close();this.server=undefined;
@@ -164,7 +164,7 @@ export class HarnessWebEndpoint {
       // Allow loopback HTTP keep-alive pools (e.g. fetch/undici) one I/O poll cycle to observe FIN before successor rebind.
       await new Promise<void>(resolve=>setTimeout(resolve,5));
       if(server.listening)throw new AgentServiceError('agent_web_release_unknown','原网页监听释放未确认。',409);
-      this.sessions.released(this.identity);
+      this.sessions.released({...this.identity,...(this.bundle?{bundle:this.bundle}:{})});
     }
     this.server=undefined;
   }

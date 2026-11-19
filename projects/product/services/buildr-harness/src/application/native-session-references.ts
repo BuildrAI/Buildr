@@ -83,7 +83,10 @@ function collect(reference: NativeToolContent, contexts: Set<string>, unresolved
     const file = source.path.split(path.sep).join('/');
     const session = /(?:^|\/)session-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$)/u.exec(file)
       ?? /(?:^|\/)rollout-[^/]+-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/u.exec(file)
-      ?? /(?:^|\/)claude-config\/projects\/[^/]+\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\.jsonl|\/|$)/u.exec(file);
+      ?? /(?:^|\/)claude-config\/projects\/[^/]+\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\.jsonl|\/|$)/u.exec(file)
+      ?? /(?:^|\/)antigravity-sessions\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/u.exec(file)
+      ?? /(?:^|\/)antigravity-cli\/(?:brain|conversations|annotations)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\.db(?:-wal|-shm)?|\.pbtxt|\/|$)/u.exec(file)
+      ?? /(?:^|\/)antigravity\/transcripts\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/u.exec(file);
     if (session) contexts.add(provider + ':' + session[1]!);
   }
   if (conflict) return;

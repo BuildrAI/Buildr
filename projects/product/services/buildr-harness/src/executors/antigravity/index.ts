@@ -131,6 +131,7 @@ export const antigravityExecutorDescriptor: ExecutorDescriptor = {
   },
   runtimeTraits: {
     upgradeVerification: 'runtime',
+    nativeSessionReclamation: true,
     transientAccountProbe: true,
     hostKeyringAuth: true,
     requireHanNativeTitle: true,
