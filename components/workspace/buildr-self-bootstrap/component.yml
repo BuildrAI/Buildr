@@ -10,4 +10,4 @@ members:
   skillContributions: ["components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md"]
 contributions:
   skillFragments: ["task-finish@append=components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md"]
-integrity: ["skills/buildr-self-bootstrap-sync=sha256-44319055a6ff7b52d8c405ebd5fbe458c72f128fc31ab6bcf7bc08c53a71cbd1","components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md=sha256-003d0e04df3aa11159cfe4ea9d479413539203f469957afa459aaa0be31a2f47"]
+integrity: ["skills/buildr-self-bootstrap-sync=sha256-69380d7a3367ceeb20b56825e0f55812872167e2410fcdae4e44afdeed02d4d9","components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md=sha256-003d0e04df3aa11159cfe4ea9d479413539203f469957afa459aaa0be31a2f47"]

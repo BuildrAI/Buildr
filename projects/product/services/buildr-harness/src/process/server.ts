@@ -12,7 +12,6 @@ import { conversationEventEncoder } from '../domain/conversation-transfer.ts';
 import path from 'node:path';
 import { conversationControlInstruction } from './conversation-control.ts';
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { setTimeout as pause } from 'node:timers/promises';
 import { createAgentService } from '../application/agent-service.ts';
@@ -27,6 +26,7 @@ import { claim, claimStorage, clearProcessRecord, controlRoot, readPrivate, writ
 import type { ProcessBootstrap, ProcessRecord } from './ownership.ts';
 import { validateAgentRuntime, canRunParallel, runtimeSupportsHarnessWeb } from './runtime-unit.ts';
 import { launchAgentProcess } from './handoff.ts';
+import { launchDetachedProcess } from './detached-launch.ts';
 import { ConversationRepository } from '../persistence/conversation-repository.ts';
 import { ConversationReadModel } from '../persistence/conversation-read-model.ts';
 import { PendingSends } from './pending-sends.ts';
@@ -710,9 +710,31 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     const handoff = path.join(controlRoot(options.dataRoot), 'handoff-' + instanceId + '.json');
     writePrivate(handoff, { bootstrap: options, expectedInstanceId: instanceId, target });
     // The short-lived successor coordinator owns the handoff after this process exits.
-    const child = spawn(options.runtime.node, [path.join(options.runtime.directory, 'build/process/handoff.js'), handoff], { detached: true, stdio: 'ignore', windowsHide: true });
-    child.once('error', () => { pending = { runtime: target, state: 'failed', diagnostic: '无法启动版本交接程序，旧后台已保留。' }; savePending(pending); accepting = true; });
-    child.once('spawn', () => { pending = { runtime: target, state: 'switching', coordinatorPid: child.pid, handoffFile:handoff }; savePending(pending); child.unref(); void close('runtime-handoff').finally(() => { process.exitCode = 0; }); });
+    try {
+      const coordinator = launchDetachedProcess({
+        command: options.runtime.node,
+        args: [path.join(options.runtime.directory, 'build/process/handoff.js'), handoff],
+        labelPrefix: 'harness-handoff',
+        stateDir: path.join(controlRoot(options.dataRoot), 'launchd-jobs'),
+      });
+      if (!coordinator.pid) {
+        coordinator.bootout();
+        pending = { runtime: target, state: 'failed', diagnostic: '无法启动版本交接程序，旧后台已保留。' };
+        savePending(pending);
+        accepting = true;
+      } else if (coordinator.child) {
+        coordinator.child.once('error', () => { pending = { runtime: target, state: 'failed', diagnostic: '无法启动版本交接程序，旧后台已保留。' }; savePending(pending); accepting = true; });
+        coordinator.child.once('spawn', () => { pending = { runtime: target, state: 'switching', coordinatorPid: coordinator.pid, handoffFile:handoff }; savePending(pending); void close('runtime-handoff').finally(() => { process.exitCode = 0; }); });
+      } else {
+        pending = { runtime: target, state: 'switching', coordinatorPid: coordinator.pid, handoffFile:handoff };
+        savePending(pending);
+        void close('runtime-handoff').finally(() => { process.exitCode = 0; });
+      }
+    } catch {
+      pending = { runtime: target, state: 'failed', diagnostic: '无法启动版本交接程序，旧后台已保留。' };
+      savePending(pending);
+      accepting = true;
+    }
   }, 250);
   timer.unref();
   return { identity, origin: channel.origin, status, close };

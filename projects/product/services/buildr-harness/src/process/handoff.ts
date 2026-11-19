@@ -1,7 +1,6 @@
 import { executionLog,diagnosticCode } from '../storage/execution-log.ts';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import type { AgentRuntimeUnit } from '../execution-contracts.ts';
@@ -10,6 +9,7 @@ import { controlRoot, live, readLock, readPrivate, readProcessRecord, writePriva
 import { request } from './transport.ts';
 import { validateAgentRuntime } from './runtime-unit.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
+import { launchDetachedProcess, type DetachedProcessHandle } from './detached-launch.ts';
 
 /** Resume only the already accepted, retained handoff under the startup lock. */
 export function resumeAgentHandoff(dataRoot: string, filename: string): number {
@@ -18,25 +18,46 @@ export function resumeAgentHandoff(dataRoot: string, filename: string): number {
   const stopped = readPrivate<{instanceId:string;confirmed:boolean}>(path.join(controlRoot(dataRoot),'last-stop.json'));
   if (!input || input.bootstrap.dataRoot !== path.resolve(dataRoot) || stopped?.instanceId !== input.expectedInstanceId || !stopped.confirmed) throw new AgentServiceError('agent_handoff_release_unconfirmed','交接前的准确释放尚未确认，原资料保留。',409);
   validateAgentRuntime(dataRoot,input.bootstrap.runtime); validateAgentRuntime(dataRoot,input.target);
-  const child = spawn(input.bootstrap.runtime.node,[path.join(input.bootstrap.runtime.directory,'build/process/handoff.js'),filename],{detached:true,stdio:'ignore',windowsHide:true});
-  child.once('error',()=>{});child.unref();
-  if (!child.pid) throw new AgentServiceError('agent_handoff_release_unconfirmed','交接进程未确认启动。',503);
-  return child.pid;
+  const handle = launchDetachedProcess({
+    command: input.bootstrap.runtime.node,
+    args: [path.join(input.bootstrap.runtime.directory,'build/process/handoff.js'), filename],
+    labelPrefix: 'harness-handoff',
+    stateDir: path.join(controlRoot(dataRoot), 'launchd-jobs'),
+  });
+  handle.child?.once('error', () => {});
+  if (!handle.pid) {
+    handle.bootout();
+    throw new AgentServiceError('agent_handoff_release_unconfirmed','交接进程未确认启动。',503);
+  }
+  return handle.pid;
 }
 
-export function launchAgentProcess(bootstrap: ProcessBootstrap): number {
+export function launchAgentProcessHandle(bootstrap: ProcessBootstrap): DetachedProcessHandle {
   validateAgentRuntime(bootstrap.dataRoot, bootstrap.runtime);
   const input = path.join(controlRoot(bootstrap.dataRoot), 'launch-' + bootstrap.runtime.digest + '.json');
   writePrivate(input, bootstrap);
-  const log = fs.openSync(path.join(controlRoot(bootstrap.dataRoot), 'startup.log'), 'a', 0o600);
-  try {
-    const child = spawn(bootstrap.runtime.node, [bootstrap.runtime.entry, input], { detached: true, stdio: ['ignore', log, log], windowsHide: true });
-    const diagnostics=executionLog(path.join(bootstrap.dataRoot,'agent-service'),'launcher-'+process.pid);
-    diagnostics({event:'service-launch',childPid:child.pid,runtimeDigest:bootstrap.runtime.digest});
-    child.once('error', error => diagnostics({event:'service-launch-error',childPid:child.pid,code:diagnosticCode(error)}));
-    child.once('exit',(exitCode,signal)=>diagnostics({event:'service-child-exit',childPid:child.pid,exitCode,signal}));child.unref();
-    if (!child.pid) throw new Error('agent_process_start_failed'); return child.pid;
-  } finally { fs.closeSync(log); }
+  const startupLog = path.join(controlRoot(bootstrap.dataRoot), 'startup.log');
+  const diagnostics = executionLog(path.join(bootstrap.dataRoot,'agent-service'),'launcher-'+process.pid);
+  const handle = launchDetachedProcess({
+    command: bootstrap.runtime.node,
+    args: [bootstrap.runtime.entry, input],
+    labelPrefix: 'harness-agent',
+    stateDir: path.join(controlRoot(bootstrap.dataRoot), 'launchd-jobs'),
+    standardOutPath: startupLog,
+    standardErrorPath: startupLog,
+  });
+  diagnostics({event:'service-launch',childPid:handle.pid,isolationMode:handle.isolationMode,runtimeDigest:bootstrap.runtime.digest});
+  handle.child?.once('error', error => diagnostics({event:'service-launch-error',childPid:handle.pid,code:diagnosticCode(error)}));
+  handle.child?.once('exit',(exitCode,signal)=>diagnostics({event:'service-child-exit',childPid:handle.pid,exitCode,signal}));
+  if (!handle.pid) {
+    handle.bootout();
+    throw new Error('agent_process_start_failed');
+  }
+  return handle;
+}
+
+export function launchAgentProcess(bootstrap: ProcessBootstrap): number {
+  return launchAgentProcessHandle(bootstrap).pid;
 }
 function storageVersion(dataRoot: string): number {
   const filename = path.join(dataRoot, 'agent-service/conversations.sqlite');

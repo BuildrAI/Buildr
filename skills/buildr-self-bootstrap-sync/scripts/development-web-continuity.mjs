@@ -6,6 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { launchDetachedProcess, shouldUsePlatformIsolation } from './detached-launch.mjs';
 
 export const DEVELOPMENT_WEB_CONTINUITY_SCHEMA = 'buildr.development-web-continuity/v1';
 export const DEFAULT_DEVELOPMENT_WEB_PORT = 4458;
@@ -475,31 +476,61 @@ export async function restartDevelopmentInstance({
     fs.mkdirSync(dataRoot, { recursive: true });
     const logRoot = path.join(dataRoot, 'logs');
     fs.mkdirSync(logRoot, { recursive: true });
-    const log = fs.openSync(path.join(logRoot, 'self-bootstrap-development-web.log'), 'a');
+    const logFile = path.join(logRoot, 'self-bootstrap-development-web.log');
+    const childEnv = {
+      ...environment,
+      // The spawned app must record itself where continuity observes it, even
+      // when the caller runs under an isolated HOME.
+      BUILDR_APP_DATA_DIR: dataRoot,
+      BUILDR_NODE: nodeExecutable,
+      BUILDR_LAUNCHER_IDENTITY: launcherIdentityPath,
+    };
+    const childCwd = path.resolve(path.dirname(projectBridge), '../..');
     let child;
+    let isolatedHandle = null;
     let childError = null;
     startupStarted = now();
-    try {
-      child = spawnImpl(projectBridge, ['web', '--port', String(port), '--no-open'], {
-        cwd: path.resolve(path.dirname(projectBridge), '../..'),
-        detached: true,
-        stdio: ['ignore', log, log],
-        env: {
-          ...environment,
-          // The spawned app must record itself where continuity observes it, even
-          // when the caller runs under an isolated HOME.
-          BUILDR_APP_DATA_DIR: dataRoot,
-          BUILDR_NODE: nodeExecutable,
-          BUILDR_LAUNCHER_IDENTITY: launcherIdentityPath,
-        },
+    const useIsolated = spawnImpl === spawn && shouldUsePlatformIsolation(environment) !== 'direct';
+    if (useIsolated) {
+      isolatedHandle = launchDetachedProcess({
+        command: projectBridge,
+        args: ['web', '--port', String(port), '--no-open'],
+        cwd: childCwd,
+        env: childEnv,
+        labelPrefix: 'self-bootstrap-web',
+        stateDir: path.join(dataRoot, 'launchd-jobs'),
+        standardOutPath: logFile,
+        standardErrorPath: logFile,
       });
-      child.once?.('error', (error) => { childError = error; });
-      child.unref?.();
-    } finally {
-      fs.closeSync(log);
+      child = isolatedHandle.child;
+      child?.once?.('error', (error) => { childError = error; });
+    } else {
+      const log = fs.openSync(logFile, 'a');
+      try {
+        child = spawnImpl(projectBridge, ['web', '--port', String(port), '--no-open'], {
+          cwd: childCwd,
+          detached: true,
+          stdio: ['ignore', log, log],
+          env: childEnv,
+        });
+        child.once?.('error', (error) => { childError = error; });
+        child.unref?.();
+      } finally {
+        fs.closeSync(log);
+      }
     }
+    const readSpawnError = () => {
+      if (childError) return childError;
+      if (isolatedHandle && !isolatedHandle.child) {
+        const status = isolatedHandle.pollStatus();
+        if (!status.running) {
+          return continuityError('process-exited', `Development Web exited prematurely (${status.signal || status.exitCode}).`);
+        }
+      }
+      return null;
+    };
     try {
-      const { instance, pageVerification } = await waitForRestart({ dataRoot, expected, fetchImpl, timeoutMs, wait, spawnError: () => childError });
+      const { instance, pageVerification } = await waitForRestart({ dataRoot, expected, fetchImpl, timeoutMs, wait, spawnError: readSpawnError });
       return {
         schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA,
         action: 'restart',
@@ -512,16 +543,24 @@ export async function restartDevelopmentInstance({
         cleanup: null,
       };
     } catch (error) {
-      let cleanup = { pid: child?.pid || null, status: 'not-applicable', reason: 'spawn-pid-unavailable' };
+      const launchedPid = child?.pid ?? (isolatedHandle?.pid > 0 ? isolatedHandle.pid : null);
+      let cleanup = { pid: launchedPid, status: 'not-applicable', reason: 'spawn-pid-unavailable' };
       const observed = await inspectDevelopmentInstance({ dataRoot, fetchImpl });
-      if (Number.isInteger(child?.pid) && child.pid > 0 && observed.instance?.pid === child.pid) {
-        cleanup = { pid: child.pid, status: 'preserved', reason: 'authenticated-instance-still-running' };
-      } else if (Number.isInteger(child?.pid) && child.pid > 0) {
+      if (Number.isInteger(launchedPid) && launchedPid > 0 && observed.instance?.pid === launchedPid) {
+        cleanup = { pid: launchedPid, status: 'preserved', reason: 'authenticated-instance-still-running' };
+      } else if (isolatedHandle && isolatedHandle.isolationMode !== 'direct') {
         try {
-          killProcess(child.pid, 'SIGTERM');
-          cleanup = { pid: child.pid, status: 'requested', reason: null };
+          isolatedHandle.bootout();
+          cleanup = { pid: launchedPid, status: 'requested', reason: null };
         } catch (cleanupError) {
-          cleanup = { pid: child.pid, status: cleanupError?.code === 'ESRCH' ? 'already-exited' : 'failed', reason: cleanupError.message };
+          cleanup = { pid: launchedPid, status: 'failed', reason: cleanupError.message };
+        }
+      } else if (Number.isInteger(launchedPid) && launchedPid > 0) {
+        try {
+          killProcess(launchedPid, 'SIGTERM');
+          cleanup = { pid: launchedPid, status: 'requested', reason: null };
+        } catch (cleanupError) {
+          cleanup = { pid: launchedPid, status: cleanupError?.code === 'ESRCH' ? 'already-exited' : 'failed', reason: cleanupError.message };
         }
       }
       error.details = { ...(error.details || {}), cleanup, timings: timings(false, error.details?.pageVerification) };

@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
-import { reportWebHandoffStartupFailure } from '../../src/bootstrap/cli/main.ts';
+import { reportWebHandoffStartupFailure, WEB_HANDOFF_FAILURE_FILE_ENV } from '../../src/bootstrap/cli/main.ts';
 
 test('交接失败只向私有通道上报一次，并保留错误码与有界消息', async () => {
   const messages: any[] = [];
@@ -29,4 +32,27 @@ test('没有错误码时使用统一的进程失败码', async () => {
   const argv = ['node', 'buildr.mjs', 'web', '--update-handoff', 'sha256-' + 'c'.repeat(64), '--no-open', '--port', '4458'];
   assert.equal(await reportWebHandoffStartupFailure(new Error('ENOENT: package resources'), argv, send), true);
   assert.equal(messages[0].code, 'web_update_process_failed');
+});
+
+test('无 IPC 通道时通过 BUILDR_WEB_HANDOFF_FAILURE_FILE 原子写入交接失败诊断', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-handoff-diag-'));
+  const previousEnv = process.env[WEB_HANDOFF_FAILURE_FILE_ENV];
+  t.after(() => {
+    if (previousEnv === undefined) delete process.env[WEB_HANDOFF_FAILURE_FILE_ENV];
+    else process.env[WEB_HANDOFF_FAILURE_FILE_ENV] = previousEnv;
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  const failureFile = path.join(dir, 'nested', 'handoff-failure.json');
+  process.env[WEB_HANDOFF_FAILURE_FILE_ENV] = failureFile;
+  const argv = ['node', 'buildr.mjs', 'web', '--update-handoff', 'sha256-' + 'd'.repeat(64), '--no-open', '--port', '4458'];
+  const failure = Object.assign(new Error('port conflict'), { code: 'web_handoff_port_conflict' });
+  assert.equal(await reportWebHandoffStartupFailure(failure, argv), true);
+  assert.equal(fs.existsSync(failureFile), true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(failureFile, 'utf8')), {
+    type: 'buildr.web-update-handoff-failed',
+    code: 'web_handoff_port_conflict',
+    message: 'port conflict',
+  });
+  const mode = fs.statSync(failureFile).mode & 0o777;
+  assert.equal(mode, 0o600);
 });

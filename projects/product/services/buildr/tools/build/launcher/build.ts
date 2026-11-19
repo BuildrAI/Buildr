@@ -37,6 +37,24 @@ function assertDevelopmentIdentity(identity: any): any  {
   if (!fs.existsSync(identity.developmentRuntime.executable)) throw new Error(`Development host Node runtime not found: ${identity.developmentRuntime.executable}`);
 }
 
+const MAC_LAUNCHD_BOOTSTRAP_SCRIPT: string = [
+  "const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),crypto=require('node:crypto'),{execFileSync}=require('node:child_process');",
+  "const jobsDir=process.env.BUILDR_LAUNCH_JOBS_DIR,logFile=process.env.BUILDR_LAUNCH_LOG,cwd=process.env.BUILDR_LAUNCH_CWD||process.cwd(),progArgs=process.argv.slice(1);",
+  "if(!progArgs.length||!jobsDir||!logFile)process.exit(1);",
+  "const run=(a,t=4000)=>{try{return{status:0,out:execFileSync('/bin/launchctl',a,{encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout:t})};}catch(e){return{status:typeof e.status==='number'?e.status:1,out:''};}};",
+  "const xml=s=>String(s).replace(/[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]/g,'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('\"','&quot;').replaceAll(\"'\",'&apos;');",
+  "const sleep=ms=>Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,ms);",
+  "fs.mkdirSync(jobsDir,{recursive:true,mode:0o700});",
+  "for(const f of fs.readdirSync(jobsDir)){if(!f.endsWith('.json')||f.startsWith('.'))continue;const p=path.join(jobsDir,f);try{const r=JSON.parse(fs.readFileSync(p,'utf8'));const t=r.domain+'/'+r.label;const g=run(['print',t],2000);const st=/^\\tstate = (.+)$/m.exec(g.out)?.[1]?.trim();const pid=/^\\tpid = (\\d+)$/m.exec(g.out)?.[1];let alive=false;if(pid){try{process.kill(Number(pid),0);alive=true;}catch{}}if(g.status!==0||(!alive&&st!=='running'&&st!=='spawn scheduled')){if(g.status===0)run(['bootout',t],2000);fs.rmSync(p,{force:true});}}catch{fs.rmSync(p,{force:true});}}",
+  "const label=`ai.buildr.web-dev.launcher.${process.pid}-${Date.now()}-${crypto.randomUUID().slice(0,8)}`;",
+  "const drop=new Set(['BUILDR_LAUNCH_JOBS_DIR','BUILDR_LAUNCH_LOG','BUILDR_LAUNCH_CWD','NODE_CHANNEL_FD','NODE_CHANNEL_SERIALIZATION_MODE']);",
+  "const envXml=Object.entries(process.env).filter(([k,v])=>typeof v==='string'&&!drop.has(k)).map(([k,v])=>`    <key>${xml(k)}</key>\\n    <string>${xml(v)}</string>`).join('\\n');",
+  "const plist=['<?xml version=\"1.0\" encoding=\"UTF-8\"?>','<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">','<plist version=\"1.0\">','<dict>','  <key>Label</key>',`  <string>${xml(label)}</string>`,'  <key>ProgramArguments</key>','  <array>',...progArgs.map(a=>`    <string>${xml(a)}</string>`),'  </array>','  <key>RunAtLoad</key>','  <true/>','  <key>KeepAlive</key>','  <false/>','  <key>ProcessType</key>','  <string>Interactive</string>','  <key>AbandonProcessGroup</key>','  <true/>','  <key>WorkingDirectory</key>',`  <string>${xml(cwd)}</string>`,'  <key>StandardOutPath</key>',`  <string>${xml(logFile)}</string>`,'  <key>StandardErrorPath</key>',`  <string>${xml(logFile)}</string>`,'  <key>EnvironmentVariables</key>','  <dict>',envXml,'  </dict>','</dict>','</plist>',''].join('\\n');",
+  "const uid=typeof process.getuid==='function'?process.getuid():0,staging=path.join(jobsDir,`.staging-${label}.plist`);",
+  "for(const domain of [`gui/${uid}`,`user/${uid}`]){let b;try{fs.writeFileSync(staging,plist,{mode:0o600});b=run(['bootstrap',domain,staging],5000);}finally{fs.rmSync(staging,{force:true});}if(b.status!==0)continue;const target=`${domain}/${label}`,end=Date.now()+1500;let pid;while(Date.now()<end){const g=run(['print',target],2000);if(g.status===0){const m=/^\\tpid = (\\d+)$/m.exec(g.out);if(m){pid=Number(m[1]);break;}const st=/^\\tstate = (.+)$/m.exec(g.out)?.[1]?.trim();const runs=Number(/^\\truns = (\\d+)$/m.exec(g.out)?.[1]||0);if(st==='not running'&&runs>0)break;}sleep(20);}try{fs.writeFileSync(path.join(jobsDir,`${label}.json`),JSON.stringify({label,domain,pid,createdAtMs:Date.now()})+'\\n',{mode:0o600});}catch{}process.exit(0);}",
+  "process.exit(1);",
+].join('\n');
+
 function buildMac(output: any, identity: any): any  {
   const root: any = path.join(output, 'Buildr Web Dev.app', 'Contents');
   const executableRoot: any = path.join(root, 'MacOS');
@@ -46,7 +64,52 @@ function buildMac(output: any, identity: any): any  {
   fs.copyFileSync(path.join(ASSET_ROOT, 'Buildr.icns'), path.join(resources, 'Buildr.icns'));
   writeIdentity(path.join(resources, 'launcher-identity.json'), identity);
   const cliEntry: any = path.join(identity.sourceRoot, 'bin', 'buildr.mjs');
-  fs.writeFileSync(path.join(executableRoot, 'Buildr'), `#!/bin/sh\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nIDENTITY="$HERE/../Resources/launcher-identity.json"\nLOG_DIR="\${HOME}/Library/Logs/Buildr Dev"\nLOG_FILE="$LOG_DIR/launcher.log"\nSOURCE_ROOT=${shellQuote(identity.sourceRoot)}\nNODE_EXECUTABLE=${shellQuote(identity.developmentRuntime.executable)}\nEXPECTED_NODE_VERSION=${shellQuote(identity.developmentRuntime.version)}\nCLI_ENTRY=${shellQuote(cliEntry)}\nNO_OPEN_ARG=""\n[ "\${BUILDR_LAUNCHER_NO_OPEN-}" = "1" ] && NO_OPEN_ARG="--no-open"\nmkdir -p "$LOG_DIR"\nif [ ! -d "$SOURCE_ROOT" ] || [ ! -f "$CLI_ENTRY" ] || [ ! -f "$SOURCE_ROOT/resources/manifest.yml" ] || [ ! -d "$SOURCE_ROOT/src" ] || [ ! -d "$SOURCE_ROOT/resources" ]; then\n  echo "Buildr Web Dev checkout 不可用：\${SOURCE_ROOT}。请在保留的Buildr checkout中重新运行 npm run install:development。" >&2\n  exit 1\nfi\nif [ ! -x "$NODE_EXECUTABLE" ]; then\n  echo "Buildr Web Dev development host Node 不可用：\${NODE_EXECUTABLE}。请使用 identity 绑定的兼容 Node 重新安装 Launcher。" >&2\n  exit 1\nfi\nACTUAL_NODE_VERSION=$("$NODE_EXECUTABLE" -p 'process.versions.node' 2>&1)\nif [ "$ACTUAL_NODE_VERSION" != "$EXPECTED_NODE_VERSION" ]; then\n  echo "Buildr Web Dev development host Node 版本不匹配：期望 $EXPECTED_NODE_VERSION，实际 \${ACTUAL_NODE_VERSION}。请重新安装 Launcher。" >&2\n  exit 1\nfi\nPATH="$SOURCE_ROOT/tools/development/programs:\${NODE_EXECUTABLE%/*}\${PATH:+:$PATH}"\nexport PATH\nBUILDR_LAUNCHER_IDENTITY="$IDENTITY" /usr/bin/nohup "$NODE_EXECUTABLE" "$CLI_ENTRY" web --port ${DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT} $NO_OPEN_ARG >"$LOG_FILE" 2>&1 &\nexit 0\n`, { mode: 0o755 });
+  const macWrapper = [
+    '#!/bin/sh',
+    'HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)',
+    'IDENTITY="$HERE/../Resources/launcher-identity.json"',
+    'LOG_DIR="${HOME}/Library/Logs/Buildr Dev"',
+    'LOG_FILE="$LOG_DIR/launcher.log"',
+    `SOURCE_ROOT=${shellQuote(identity.sourceRoot)}`,
+    `NODE_EXECUTABLE=${shellQuote(identity.developmentRuntime.executable)}`,
+    `EXPECTED_NODE_VERSION=${shellQuote(identity.developmentRuntime.version)}`,
+    `CLI_ENTRY=${shellQuote(cliEntry)}`,
+    'NO_OPEN_ARG=""',
+    '[ "${BUILDR_LAUNCHER_NO_OPEN-}" = "1" ] && NO_OPEN_ARG="--no-open"',
+    'mkdir -p "$LOG_DIR"',
+    'if [ ! -d "$SOURCE_ROOT" ] || [ ! -f "$CLI_ENTRY" ] || [ ! -f "$SOURCE_ROOT/resources/manifest.yml" ] || [ ! -d "$SOURCE_ROOT/src" ] || [ ! -d "$SOURCE_ROOT/resources" ]; then',
+    '  echo "Buildr Web Dev checkout 不可用：${SOURCE_ROOT}。请在保留的Buildr checkout中重新运行 npm run install:development。" >&2',
+    '  exit 1',
+    'fi',
+    'if [ ! -x "$NODE_EXECUTABLE" ]; then',
+    '  echo "Buildr Web Dev development host Node 不可用：${NODE_EXECUTABLE}。请使用 identity 绑定的兼容 Node 重新安装 Launcher。" >&2',
+    '  exit 1',
+    'fi',
+    'ACTUAL_NODE_VERSION=$("$NODE_EXECUTABLE" -p \'process.versions.node\' 2>&1)',
+    'if [ "$ACTUAL_NODE_VERSION" != "$EXPECTED_NODE_VERSION" ]; then',
+    '  echo "Buildr Web Dev development host Node 版本不匹配：期望 $EXPECTED_NODE_VERSION，实际 ${ACTUAL_NODE_VERSION}。请重新安装 Launcher。" >&2',
+    '  exit 1',
+    'fi',
+    'PATH="$SOURCE_ROOT/tools/development/programs:${NODE_EXECUTABLE%/*}${PATH:+:$PATH}"',
+    'export PATH',
+    'USE_LAUNCHD=1',
+    'if [ "${BUILDR_DETACHED_ISOLATION-}" = "off" ] || [ "${BUILDR_DETACHED_ISOLATION-}" = "direct" ]; then',
+    '  USE_LAUNCHD=0',
+    'elif [ "${BUILDR_DETACHED_ISOLATION-}" != "launchd" ]; then',
+    '  if [ "${BUILDR_TEST_STATE_REQUIRED-}" = "1" ] || [ -n "${NODE_TEST_CONTEXT-}" ]; then',
+    '    USE_LAUNCHD=0',
+    '  fi',
+    'fi',
+    'if [ "$USE_LAUNCHD" = "1" ]; then',
+    `  if BUILDR_LAUNCHER_IDENTITY="$IDENTITY" BUILDR_LAUNCH_CWD="$SOURCE_ROOT" BUILDR_LAUNCH_LOG="$LOG_FILE" BUILDR_LAUNCH_JOBS_DIR="$LOG_DIR/launchd-jobs" "$NODE_EXECUTABLE" -e ${shellQuote(MAC_LAUNCHD_BOOTSTRAP_SCRIPT)} "$NODE_EXECUTABLE" "$CLI_ENTRY" web --port ${DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT} $NO_OPEN_ARG; then`,
+    '    exit 0',
+    '  fi',
+    'fi',
+    `BUILDR_LAUNCHER_IDENTITY="$IDENTITY" /usr/bin/nohup "$NODE_EXECUTABLE" "$CLI_ENTRY" web --port ${DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT} $NO_OPEN_ARG >"$LOG_FILE" 2>&1 &`,
+    'exit 0',
+    '',
+  ].join('\n');
+  fs.writeFileSync(path.join(executableRoot, 'Buildr'), macWrapper, { mode: 0o755 });
   fs.writeFileSync(path.join(root, 'Info.plist'), `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>CFBundleName</key><string>Buildr Web Dev</string><key>CFBundleDisplayName</key><string>Buildr Web Dev</string><key>CFBundleIdentifier</key><string>${DEVELOPMENT_BUNDLE_IDENTIFIER}</string><key>CFBundleShortVersionString</key><string>${identity.version}</string><key>CFBundleVersion</key><string>${identity.buildNumber}</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleExecutable</key><string>Buildr</string><key>CFBundleIconFile</key><string>Buildr.icns</string><key>LSUIElement</key><true/></dict></plist>\n`);
   return path.dirname(root);
 }

@@ -13,7 +13,8 @@ import { claim, controlRoot, live, readLock, readPrivate, readProcessRecord, rea
 import type { ProcessRecord } from './ownership.ts';
 import { canRunParallel, prepareAgentRuntime } from './runtime-unit.ts';
 import { prepareAgentRuntimeAsync } from './runtime-preparation.ts';
-import { launchAgentProcess, resumeAgentHandoff } from './handoff.ts';
+import { launchAgentProcessHandle, resumeAgentHandoff } from './handoff.ts';
+import type { DetachedProcessHandle } from './detached-launch.ts';
 import { request, privateToken } from './transport.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
 import { normalizeSendDraft } from '../domain/send-draft.ts';
@@ -45,15 +46,26 @@ export interface AgentProcessConnectionOptions {
   signal?: AbortSignal;
 }
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
-async function reclaimAbortedLaunch(dataRoot: string, pid: number): Promise<void> {
+async function reclaimAbortedLaunch(dataRoot: string, launched: number | DetachedProcessHandle): Promise<void> {
   // Cancellation can arrive after spawn but before the child publishes its
   // ownership record. There is no record for a later owner to stop, so the
-  // launcher must reap the exact process group it just created.
-  if (!Number.isInteger(pid) || pid <= 1) return;
+  // launcher must reap the exact process group or isolated job it just created.
+  const pid = typeof launched === 'number' ? launched : launched.pid;
+  const handle = typeof launched === 'number' ? null : launched;
+  if (!Number.isInteger(pid) || pid <= 1) {
+    handle?.bootout();
+    return;
+  }
   if (readProcessInstances(dataRoot).some(record => record.identity.pid === pid)) return;
-  try { process.kill(process.platform === 'win32' ? pid : -pid, 'SIGTERM'); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
-  for (let attempt = 0; attempt < 20 && live(pid); attempt++) await pause(50);
+  if (handle && handle.isolationMode !== 'direct') {
+    handle.bootout();
+    for (let attempt = 0; attempt < 20 && live(pid); attempt++) await pause(50);
+  }
+  if (live(pid)) {
+    try { process.kill(process.platform === 'win32' ? pid : -pid, 'SIGTERM'); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+    for (let attempt = 0; attempt < 20 && live(pid); attempt++) await pause(50);
+  }
   if (live(pid)) {
     try { process.kill(process.platform === 'win32' ? pid : -pid, 'SIGKILL'); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
@@ -123,7 +135,7 @@ async function ensure(options: AgentProcessConnectionOptions, resolveRuntime: (s
         let runtime=pending?.runtime&&['waiting','parallel-starting','adopted'].includes(pending.state)?pending.runtime:record?.identity.runtime??await resolveRuntime(options.signal);
         if(retained.some(candidate=>!canRunParallel(candidate.identity.runtime,runtime)))runtime=record?.identity.runtime??retained[0]!.identity.runtime;
         options.signal?.throwIfAborted();
-        const launchedPid = launchAgentProcess({ dataRoot: path.resolve(options.dataRoot), profileId: options.profileId, runtime, token: privateToken(), legacySourceId: options.legacySourceId, autoContinueInterrupted: options.autoContinueInterrupted });
+        const launched = launchAgentProcessHandle({ dataRoot: path.resolve(options.dataRoot), profileId: options.profileId, runtime, token: privateToken(), legacySourceId: options.legacySourceId, autoContinueInterrupted: options.autoContinueInterrupted });
         // Give the successor time to claim before another loop considers launching.
         try {
           for (let attempt = 0; attempt < 200; attempt++) {
@@ -133,7 +145,7 @@ async function ensure(options: AgentProcessConnectionOptions, resolveRuntime: (s
             await pause(100);
           }
         } catch (error) {
-          if (options.signal?.aborted) await reclaimAbortedLaunch(options.dataRoot, launchedPid);
+          if (options.signal?.aborted) await reclaimAbortedLaunch(options.dataRoot, launched);
           throw error;
         }
         break;

@@ -119,6 +119,10 @@ const allowed: any = new Map([
   ['src/modules/browser-authorization/persistence/profiles.ts', new Set(['create', 'reset'])],
   // cleanArtifacts re-reads each registry record and re-observes its live disposal state immediately before removing only that recorded scratch path.
   ['src/modules/artifact-lifecycle/application/artifact-application.ts', new Set(['cleanArtifacts', 'collectAutomaticArtifacts'])],
+  // launchViaLaunchd writes and immediately unlinks only its own 0600 staging plist and job metadata; pruneExitedLaunchdJobs removes only exited/corrupt launchd job metadata inside stateDir.
+  ['src/infrastructure/detached-launch.ts', new Set(['launchViaLaunchd', 'pruneExitedLaunchdJobs'])],
+  // Removes only its own handoff-failure-*.json diagnostic file after handoff settles.
+  ['src/web/application/web-handoff-successor-log.ts', new Set(['clearWebHandoffFailureFile'])],
 ]);
 
 const violations: any[] = [];

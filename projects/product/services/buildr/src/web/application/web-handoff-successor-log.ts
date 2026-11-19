@@ -1,4 +1,6 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type { ChildProcess } from 'node:child_process';
 
@@ -9,9 +11,50 @@ import type { ChildProcess } from 'node:child_process';
  * maintained by the self-bootstrap runner.
  */
 export const WEB_HANDOFF_SUCCESSOR_LOG = 'web-handoff-successor.log';
+export const WEB_HANDOFF_FAILURE_FILE_ENV = 'BUILDR_WEB_HANDOFF_FAILURE_FILE';
 
 export function webHandoffSuccessorLogPath(dataRoot: string): string {
   return path.join(dataRoot, 'logs', WEB_HANDOFF_SUCCESSOR_LOG);
+}
+
+/**
+ * Append a labelled header line to the successor log without holding an open descriptor.
+ * Returns the log file path when dataRoot is available, or null otherwise.
+ */
+export function appendWebHandoffSuccessorLogHeader(
+  webProfile: { dataRoot?: unknown } | null | undefined,
+  label: string,
+): string | null {
+  const dataRoot = webProfile?.dataRoot;
+  if (typeof dataRoot !== 'string' || !dataRoot) return null;
+  const fd = openWebHandoffSuccessorLog(webProfile, label);
+  if (fd !== null) {
+    try { fs.closeSync(fd); } catch { /* Best-effort close. */ }
+  }
+  return webHandoffSuccessorLogPath(dataRoot);
+}
+
+export function createWebHandoffFailureFilePath(webProfile: { dataRoot?: unknown } | null | undefined): string {
+  const dataRoot = typeof webProfile?.dataRoot === 'string' && webProfile.dataRoot ? webProfile.dataRoot : os.tmpdir();
+  return path.join(dataRoot, 'runtime', `handoff-failure-${crypto.randomUUID()}.json`);
+}
+
+export function clearWebHandoffFailureFile(filePath: string): void {
+  const base = path.basename(filePath);
+  if (!base.startsWith('handoff-failure-') || !base.endsWith('.json')) return;
+  fs.rmSync(filePath, { force: true });
+}
+
+export function readWebHandoffFailureFile(filePath: string): { code: string; message: string } | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf8')) as { type?: unknown; code?: unknown; message?: unknown };
+    if (raw?.type === 'buildr.web-update-handoff-failed' && typeof raw.code === 'string' && typeof raw.message === 'string') {
+      return { code: raw.code.slice(0, 200), message: raw.message.slice(0, 4096) };
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**
