@@ -2,9 +2,11 @@ import { ConversationExecutionSummary } from './ConversationExecutionSummary.tsx
 import { conversationModelLabel, conversationModelSourceLabel } from './conversation-model-label.ts';
 import { useAgentConversations } from './AgentConversationsContext.tsx';
 import { ConversationActivityEntry, type ActivityPopupControl } from './ConversationActivityEntry.tsx';
-import { activityState,sendActivity, conversationMetadata, isExecuting, reminderFallbackRows, completeActivitySnapshot } from './conversation-activity.ts';
+import { activityState, sendActivity, conversationMetadata, isActiveConversation, isExecuting, reminderFallbackRows, completeActivitySnapshot } from './conversation-activity.ts';
+import { applyConfirmedSeenActivity } from './conversation-seen-hold.ts';
 import { useConversationReminderPages } from './useConversationReminderPages.ts';
 import type { ConversationWorkspace } from './ConversationHistory.tsx';
+import type { ConversationSummary } from './types.ts';
 
 export function ConversationActivity({workspaces,...popup}:{workspaces:ConversationWorkspace[]}&ActivityPopupControl) {
   const context=useAgentConversations();
@@ -13,7 +15,13 @@ export function ConversationActivity({workspaces,...popup}:{workspaces:Conversat
   const fallback=reminderFallbackRows(context.activityRows);
   const pending=shared?fallback.pending:reminder.pages.attention?.conversations??fallback.pending;
   const running=shared?fallback.running:reminder.pages.running?.conversations??fallback.running;
-  const rows=[...new Map([...pending,...running].map(row=>[row.workspaceId+':'+row.id,row])).values()];
+  const mergedMap=new Map<string,ConversationSummary>();
+  for(const row of [...pending,...running])mergedMap.set(row.workspaceId+':'+row.id,row);
+  if(context.conversation){
+    const key=context.conversation.workspaceId+':'+context.conversation.id;
+    if(!mergedMap.has(key)&&isActiveConversation(context.conversation))mergedMap.set(key,context.conversation);
+  }
+  const rows=[...mergedMap.values()].map(row=>applyConfirmedSeenActivity(row,context.seenActivities,context.conversation,context.activityRows)).filter(isActiveConversation);
   const reminderError=shared?'':reminder.error;
   const focusPanel=()=>requestAnimationFrame(()=>{document.querySelector<HTMLElement>('#agent-conversation-panel .ac-thread-header button')?.focus();});
   // 专注模式的历史是左侧临时栏：入口只切换栏的显隐，不复用分屏“再次点击收起面板”的语义。

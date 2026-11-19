@@ -1,4 +1,4 @@
-import { isExecuting } from './conversation-activity.ts';
+import { activityState } from './conversation-activity.ts';
 import { readDraft } from './conversation-state.ts';
 import type { ConversationSummary } from './types.ts';
 
@@ -62,18 +62,19 @@ export function conversationDraftIds(profile: string, storage: DraftStorage, ove
 }
 
 export function shouldShowConversationDraft(
-  row: Pick<ConversationSummary, 'id' | 'run'>,
+  row: Pick<ConversationSummary, 'id'> & Partial<ConversationSummary>,
   settledDraftIds: readonly string[],
 ): boolean {
-  if (isExecuting(row as ConversationSummary)) return false;
+  if (activityState(row as ConversationSummary) !== null) return false;
   return settledDraftIds.includes(row.id);
 }
 
-/** Settle list draft display and ordering: ignore executing conversations, clear submitted empty drafts, and freeze the side-by-side active row until navigation away. */
+/** Settle list draft display and ordering: ignore active-status conversations, clear submitted empty drafts, and freeze the side-by-side active row until navigation away. */
 export function settleConversationDraftIds(input: {
   liveIds: readonly string[];
   previousIds: readonly string[];
   activeEditingId: string | null;
+  activeStatusIds?: ReadonlySet<string>;
   executingIds?: ReadonlySet<string>;
   pendingSendIds?: ReadonlySet<string>;
   submittedIds?: ReadonlySet<string>;
@@ -81,7 +82,7 @@ export function settleConversationDraftIds(input: {
   const live = new Set(input.liveIds), previous = new Set(input.previousIds);
   const next = new Set<string>();
   for (const id of new Set([...live, ...previous])) {
-    if (input.executingIds?.has(id)) continue;
+    if (input.activeStatusIds?.has(id) || input.executingIds?.has(id)) continue;
     if ((input.pendingSendIds?.has(id) || input.submittedIds?.has(id)) && !live.has(id)) continue;
     if (input.activeEditingId && id === input.activeEditingId) {
       if (previous.has(id)) next.add(id);

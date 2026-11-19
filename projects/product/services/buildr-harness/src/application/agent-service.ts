@@ -74,6 +74,8 @@ export function createAgentService(options: AgentServiceOptions) {
   const now = () => (options.now?.() ?? new Date()).toISOString();
   let linkedChanged: ((connection:ConnectionView)=>void)|undefined;
   let presentConnectionView: ((view: ConnectionView) => ConnectionView) | undefined;
+  let checkLoginModels: ((id: string, connection: ConnectionView) => Promise<{ ready: boolean; diagnostic?: string } | undefined>) | undefined;
+  const loginCheckedAttempts = new Map<string, string>();
   const connectionAccountObservers = new Map<string, string>();
   const nativeAccountConfigRoots = Object.fromEntries(
     executorList.flatMap(executor => {
@@ -83,7 +85,7 @@ export function createAgentService(options: AgentServiceOptions) {
         : [];
     }),
   );
-  const connections = new ConnectionApplication({ systemPrompt: () => systemPrompt.read(), repository, root, executors: executorList, environment: executorEnvironment(options.environment ?? process.env), nativeAccountConfigRoots, present: view => presentConnectionView?.(view) ?? view, generation, now, hasObservedAccount: id => connectionAccountObservers.has(id), observeAccount: (id: string) => { const accountId = connectionAccountObservers.get(id); return accountId ? observeConnectionViaModelAccount(id, accountId) : undefined; }, changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
+  const connections = new ConnectionApplication({ systemPrompt: () => systemPrompt.read(), repository, root, executors: executorList, environment: executorEnvironment(options.environment ?? process.env), nativeAccountConfigRoots, present: view => presentConnectionView?.(view) ?? view, generation, now, hasObservedAccount: id => connectionAccountObservers.has(id), observeAccount: (id: string) => { const accountId = connectionAccountObservers.get(id); return accountId ? observeConnectionViaModelAccount(id, accountId) : undefined; }, onLoginChecked: (id, connection) => checkLoginModels?.(id, connection), changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
   const programManager = options.programManager ?? new NativeProgramManager(root, executorEnvironment(options.environment ?? process.env));
   const programUpdates = new ProgramUpdates(() => connections.list(), programManager, now, options.programRelease, id => {
     const digest = connections.bindingData(id)?.executableDigest;
@@ -201,6 +203,15 @@ export function createAgentService(options: AgentServiceOptions) {
     if(!startupRefreshStarted){startupRefreshStarted=true;void refreshStartupAccounts().catch(()=>{});}
     discoveryTimer=setInterval(refreshInBackground,60_000);discoveryTimer.unref();
   };
+  checkLoginModels = async (id, connection) => {
+    await models.ensureLinked();
+    const account = models.accounts.list().accounts.find(item => item.id === 'native-' + id);
+    if (!account || account.connectionId !== id || connectionAccountObservers.has(id)) return undefined;
+    if (connection.status !== 'ready') return { ready: false, diagnostic: connection.diagnostic };
+    if (connection.loginAttempt?.id) loginCheckedAttempts.set(id, connection.loginAttempt.id);
+    const synced = await checkModelAccount(account.id);
+    return { ready: synced.status === 'ready', diagnostic: synced.diagnostic };
+  };
   linkedChanged=connection=>{
     // Only connection-owned accounts follow program login/disconnect.
     const account = models.accounts.list().accounts.find(account => account.id === 'native-' + connection.id);
@@ -208,6 +219,11 @@ export function createAgentService(options: AgentServiceOptions) {
     const directObserved = connectionAccountObservers.has(connection.id);
     const loginInProgress = ['initializing', 'waiting-browser'].includes(connection.loginAttempt?.state ?? '');
     if (!connection.enabled || loginInProgress || (!directObserved && ['not-authenticated', 'expired'].includes(connection.status))) models.invalidate('native-'+connection.id,{abortActive:false});
+    const checkedAttemptId = connection.loginAttempt?.state === 'completed' ? connection.loginAttempt.id : undefined;
+    if (checkedAttemptId && loginCheckedAttempts.get(connection.id) === checkedAttemptId) {
+      loginCheckedAttempts.delete(connection.id);
+      return;
+    }
     // Login completion must not wait for an unrelated source's discovery.
     if (discoveryTimer && connection.enabled && !directObserved && connection.status === 'ready' &&
         !connection.loginAttempt?.state.match(/^(initializing|waiting-browser|checking)$/))void checkModelAccount('native-'+connection.id).catch(()=>{});

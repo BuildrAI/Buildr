@@ -9,7 +9,7 @@ export const ARTIFACT_LIFECYCLE_MODULE_ID = 'artifact-lifecycle';
 export const ARTIFACT_LIFECYCLE_APPLICATION = 'artifact-lifecycle.application';
 
 const ARTIFACT_METHODS = Object.freeze([
-  'registerArtifact', 'listArtifacts', 'artifactStatus', 'releaseArtifact', 'cleanArtifacts',
+  'registerArtifact', 'listArtifacts', 'artifactStatus', 'releaseArtifact', 'cleanArtifacts', 'collectAutomaticArtifacts',
 ]);
 
 function pick(source: Record<string, unknown>, methods: readonly string[]) {
@@ -45,7 +45,7 @@ export function createArtifactLifecycleCliContributions(application: any = null)
     descriptor('artifact register',
       '在工作区登记一条产物记录：归属任务、用途、处置策略与保留引用；以已观察 recordDigest 条件更新，不静默覆盖。',
       [
-        'Usage: buildr artifact register <path> --purpose <text> --disposition <ephemeral|retained|evidence> [--task <task-id>] [--by <registrant>] [--retain-reason <text>] [--reference <text> ...] [--reference-check <workspace-path> ...] [--expected-record <absent|sha256-digest>] [--target <canonical-workspace>] [--json]',
+        'Usage: buildr artifact register <path> --purpose <text> --disposition <ephemeral|retained|evidence> [--auto-clean <use-ended|task-closed>] [--task <task-id>] [--by <registrant>] [--retain-reason <text>] [--reference <text> ...] [--reference-check <workspace-path> ...] [--expected-record <absent|sha256-digest>] [--target <canonical-workspace>] [--json]',
         '',
         '为工作区内真实存在的路径建立 .buildr/local/artifacts/ 下的产物记录；retained 必须同时提供 --retain-reason 与 --reference。',
         '登记是描述性可选动作：不移动目标、不形成门禁；更新既有记录需提交当前 recordDigest。',

@@ -100,7 +100,7 @@ await step('关联数量浮层零一多、跨空间同码前缀搜索及双向�
   assert.equal(await popup().isVisible(),true);assert.deepEqual(fixture.conversation.taskLinks,[{workspaceId,taskId}]);await page.keyboard.press('Escape');
   await closeConversation();await taskButton().click();await popup().getByText('暂无关联对话。',{exact:true}).waitFor();
   await popup().getByRole('combobox',{name:'搜索对话',exact:true}).fill(fixture.conversation.title);
-  await popup().locator('.ac-association-candidate').filter({hasText:originalId}).click();
+  await popup().locator('.ac-association-candidate').filter({hasText:originalId.slice(0,8)}).click();
   await popup().locator('[data-associated-conversation="'+originalId+'"]').waitFor();assert.equal(await popup().isVisible(),true,'任务侧新增不关闭');
   await popup().locator('[data-associated-conversation="'+originalId+'"]').click();await input().waitFor();
   assert.equal(fixture.conversation.taskLinks.length,2);assert.equal(fixture.sends,sends+1,'两端维护不发送消息');

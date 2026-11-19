@@ -528,23 +528,31 @@ export class ConversationRepository {
       // LIMIT would return short pages even when more matching rows exist.
       // Older stores have no compact summary column; callers retain their
       // in-memory compatibility filter for that read-only case.
-      const pendingActive = options.active && modern
+      const pendingActive = (options.active || options.attention) && modern
         ? new PendingSendRepository(this.directory).activitySummaries(options.taskId ? (options.workspaceIds ?? [workspaceId]) : [workspaceId])
         : [];
+      const pendingByConversation = new Map(pendingActive.map(item => [`${item.scope}:${item.conversationId}`, item]));
       const pendingIds = [...new Set(pendingActive.map(item => item.conversationId))];
+      const failedPendingIds = [...new Set(pendingActive.filter(item => item.state === 'failed').map(item => item.conversationId))];
       if (options.active && modern) {
         where.push(pendingIds.length
           ? `(json_extract(summary,'$.activity.active')=1 OR id IN (${pendingIds.map(() => '?').join(',')}))`
           : "json_extract(summary,'$.activity.active')=1");
         values.push(...pendingIds);
       }
-      if (options.attention && modern) where.push("(coalesce(json_extract(summary,'$.activity.pendingDecisionCount'),0)>0 OR coalesce(json_extract(summary,'$.run.status'),json_extract(read_state,'$.view.run.status')) IN ('failed','unknown'))");
+      if (options.attention && modern) {
+        where.push(failedPendingIds.length
+          ? `(coalesce(json_extract(summary,'$.activity.pendingDecisionCount'),0)>0 OR coalesce(json_extract(summary,'$.run.status'),json_extract(read_state,'$.view.run.status')) IN ('failed','unknown') OR id IN (${failedPendingIds.map(() => '?').join(',')}))`
+          : "(coalesce(json_extract(summary,'$.activity.pendingDecisionCount'),0)>0 OR coalesce(json_extract(summary,'$.run.status'),json_extract(read_state,'$.view.run.status')) IN ('failed','unknown'))");
+        values.push(...failedPendingIds);
+      }
       if (options.before) { where.push('(updated_at || \'/\' || id) < ?'); values.push(options.before); }
       values.push(options.limit);
       return (db.prepare(`SELECT read_state${modern?',summary':''} FROM ${source} WHERE ${where.length?where.join(' AND '):'1'} ORDER BY updated_at DESC,id DESC LIMIT ?`).all(...sourceValues,...values) as {read_state:string;summary?:string}[]).map(row=>{
         const record=JSON.parse(row.read_state) as ConversationReadState;
         if(row.summary)record.view.activity=JSON.parse(row.summary).activity;
-        if(pendingIds.includes(record.view.id))record.view.activity={...(record.view.activity??{version:0,seenThrough:0,updatedAt:record.view.updatedAt}),active:true};
+        const pendingItem = pendingByConversation.get(`${record.view.workspaceId}:${record.view.id}`);
+        if(pendingItem)record.view.activity={...(record.view.activity??{version:0,seenThrough:0,updatedAt:record.view.updatedAt}),active:true,pendingSend:{state:pendingItem.state,reason:pendingItem.reason,updatedAt:pendingItem.updatedAt}};
         return record;
       });
     } finally { db.close(); }
@@ -571,7 +579,7 @@ export class ConversationRepository {
       return (db.prepare(`SELECT body FROM conversations WHERE json_extract(body,'$.interruption.runId')=json_extract(body,'$.view.run.id') OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') ORDER BY updated_at DESC`).all() as {body:string}[]).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation,this.nativeReader));
     } finally { db.close(); }
   }
-  querySummaries(workspaceIds: string[], input: {draftConversationIds?:string[];workspaceId?:string;activeOnly?:boolean;active?:boolean;attention?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;generation?:string;cursor?:string;limit:number}, generationAlive?: (generation:string)=>boolean): {conversations:ConversationView[];nextCursor?:string;total:number;stats:{modelExecutions:Array<{accountId:string;accountLabel:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>;executions:Array<{provider:string;model:string;count:number}>};activityCounts:{pendingSend?:number;active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number}} {
+  querySummaries(workspaceIds: string[], input: {draftConversationIds?:string[];workspaceId?:string;activeOnly?:boolean;active?:boolean;attention?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;generation?:string;cursor?:string;limit:number}, generationAlive?: (generation:string)=>boolean): {conversations:ConversationView[];nextCursor?:string;total:number;stats:{modelExecutions:Array<{accountId:string;accountLabel:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>;executions:Array<{provider:string;model:string;count:number}>};activityCounts:{pendingSend?:number;sendFailed?:number;active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number}} {
     const empty={conversations:[],total:0,stats:{agents:[],models:[],executions:[],modelExecutions:[]},activityCounts:{active:0,running:0,waiting:0,unseen:0,unknown:0,attention:0}};
     const db=this.open(false);if(!db||!workspaceIds.length){db?.close();return empty;}
     try {
@@ -653,8 +661,9 @@ export class ConversationRepository {
           'waiting',coalesce(sum(activity_state='waiting' OR (send_activity IS NOT NULL AND (pending_decision_count>0 OR effective_status IN ('waiting-approval','waiting-question')))),0),
           'unseen',coalesce(sum(activity_state='unseen'),0),
           'unknown',coalesce(sum(activity_state='unknown'),0),
-          'attention',coalesce(sum(pending_decision_count>0 OR run_status IN ('failed','unknown')),0)) FROM scoped) AS counts,
+          'attention',coalesce(sum(pending_decision_count>0 OR run_status IN ('failed','unknown') OR activity_state='send-failed'),0)) FROM scoped) AS counts,
         (SELECT count(*) FROM scoped WHERE send_activity IS NOT NULL) AS send_count,
+        (SELECT count(*) FROM scoped WHERE activity_state='send-failed') AS send_failed_count,
         (SELECT json_group_array(json_object('label',label,'count',n)) FROM (
           SELECT provider AS label,count(*) AS n FROM executing GROUP BY label ORDER BY n DESC,label
         )) AS agents,
@@ -667,8 +676,8 @@ export class ConversationRepository {
         (SELECT json_group_array(json_object('accountId',account_id,'accountLabel',account_label,'model',model,'count',n)) FROM (
           SELECT account_id,coalesce(nullif(max(account_label),''),'供应商未记录') AS account_label,model,count(*) AS n
           FROM executing GROUP BY account_id,model ORDER BY n DESC,account_id,model
-        )) AS model_executions`).get(...statsValues) as {counts:string;send_count:number;agents:string;models:string;executions:string;model_executions:string};
-      const counts = {...JSON.parse(overview.counts),...(overview.send_count?{pendingSend:overview.send_count}:{})} as typeof empty.activityCounts;
+        )) AS model_executions`).get(...statsValues) as {counts:string;send_count:number;send_failed_count:number;agents:string;models:string;executions:string;model_executions:string};
+      const counts = {...JSON.parse(overview.counts),...(overview.send_count?{pendingSend:overview.send_count}:{}),...(overview.send_failed_count?{sendFailed:overview.send_failed_count}:{})} as typeof empty.activityCounts;
       const stats = {
         agents: JSON.parse(overview.agents) as typeof empty.stats.agents,
         models: JSON.parse(overview.models) as typeof empty.stats.models,
@@ -677,12 +686,12 @@ export class ConversationRepository {
       };
       if(input.activityState) {
         if(!['running','waiting','unseen','unknown','attention','send-waiting','send-failed'].includes(input.activityState))fail('agent_activity_state_invalid','活动分类无效。',400);
-        where.push(input.activityState==='attention'?"(activity_state IN ('waiting','unseen','unknown') OR (send_activity IS NOT NULL AND pending_decision_count>0))":input.activityState==='running'?"effective_status IN ('starting','running','stopping')":input.activityState==='waiting'?"(activity_state='waiting' OR (send_activity IS NOT NULL AND (pending_decision_count>0 OR effective_status IN ('waiting-approval','waiting-question'))))":'activity_state=?');
+        where.push(input.activityState==='attention'?"activity_state IN ('waiting','unseen','unknown','send-waiting','send-failed')":input.activityState==='running'?"effective_status IN ('starting','running','stopping')":input.activityState==='waiting'?"(activity_state='waiting' OR (send_activity IS NOT NULL AND (pending_decision_count>0 OR effective_status IN ('waiting-approval','waiting-question'))))":'activity_state=?');
         if(!['attention','running','waiting'].includes(input.activityState))values.push(input.activityState);
       }
       if(input.activeOnly||input.active)where.push('(list_active=1 OR pending_decision_count>0)');
       else {where.push('(list_active=1 OR pending_decision_count>0 OR hidden=?)');values.push(Number(input.hidden===true));}
-      if(input.attention)where.push("(pending_decision_count>0 OR json_extract(summary,'$.run.status') IN ('failed','unknown'))");
+      if(input.attention)where.push("(pending_decision_count>0 OR json_extract(summary,'$.run.status') IN ('failed','unknown') OR activity_state='send-failed')");
       const terms=searchTerms(input.query);
       if(terms.length){where.push(searchClause(terms,"json_extract(summary,'$.title')"));for(const term of terms)values.push(term,term,term);}
       if(input.agent||input.model)where.push("effective_status IN ('starting','running','stopping')");

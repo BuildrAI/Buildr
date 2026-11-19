@@ -11,14 +11,14 @@ import { readOptionalPreference, writeOptionalPreference } from '../../lib/optio
 import { canSplitFocusHistory } from './conversation-state.ts';
 import './conversation-dock.css';
 
-type Props = { panel: ReactElement<HTMLAttributes<HTMLElement> & {ref?: Ref<HTMLElement>}>; portalTarget?: HTMLElement | null; workspaces: ConversationWorkspace[] };
+type Props = { focusSettings?:boolean; panel: ReactElement<HTMLAttributes<HTMLElement> & {ref?: Ref<HTMLElement>}>; portalTarget?: HTMLElement | null; workspaces: ConversationWorkspace[] };
 const minimumWidth = 560;
 const defaultWidth = 620;
 const maximumWidth = 800;
 const clampWidth = (width: number) => Math.min(maximumWidth, Math.max(minimumWidth, width));
 
 /** Keep the same conversation while it is temporarily shown or fixed beside the work. */
-export function ConversationDock({panel, portalTarget, workspaces}: Props) {
+export function ConversationDock({panel, portalTarget, workspaces, focusSettings}: Props) {
   const host=useConversationHost();
   const context = useAgentConversations();
   const [width, setWidth] = useState(() => {
@@ -61,5 +61,5 @@ export function ConversationDock({panel, portalTarget, workspaces}: Props) {
     onPointerUp={event => finish(event.pointerId)} onPointerCancel={event => finish(event.pointerId)} onLostPointerCapture={event => finish(event.pointerId)} onDoubleClick={() => resize(defaultWidth, true)}>
     <span className="split-divider-header-marker" aria-hidden="true"/>
   </SplitDivider>;
-  return render(<ConversationDockSurface panel={panel} activity={<ConversationActivity workspaces={workspaces}/>} settingsEntry={<AccountQuotaButton/>} open={context.open} view={context.view} onPreviewCurrent={()=>context.setView('conversation')} full={context.full} side={context.side} width={width} onToggle={()=>{if(host.requestLayout){if(context.open&&context.view!=='conversation'){context.setView('conversation');return;}host.requestLayout('collapse');return;}if(window.parent!==window){if(context.open&&context.view!=='conversation'){context.setView('conversation');return;}window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'layout',action:'collapse'},location.origin);return;}context.toggleView('conversation');}} onNew={preserve=>context.newConversation({preserveVisibility:preserve,preserveHistoryView:context.full&&context.view==='history'&&typeof window!=='undefined'&&canSplitFocusHistory(document.getElementById('agent-conversation-panel')?.getBoundingClientRect().width||Math.max(0,window.innerWidth-52),window.innerWidth)})} onSettings={()=>context.setSettings(true)} divider={divider}/>);
+  return render(<ConversationDockSurface panel={panel} activity={<ConversationActivity workspaces={workspaces}/>} settingsEntry={!focusSettings?<AccountQuotaButton/>:undefined} quotaEntry={focusSettings?<AccountQuotaButton dedicated/>:undefined} onQuota={context.openQuotaSettings} settingsActive={focusSettings&&context.settings} open={context.open} showCurrentToggle={!host.standalone} view={context.view} onPreviewCurrent={()=>context.setView('conversation')} full={context.full} side={context.side} width={width} onToggle={()=>{if(host.requestLayout){if(context.open&&context.view!=='conversation'){context.setView('conversation');return;}host.requestLayout('collapse');return;}if(window.parent!==window){if(context.open&&context.view!=='conversation'){context.setView('conversation');return;}window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'layout',action:'collapse'},location.origin);return;}context.toggleView('conversation');}} onNew={preserve=>{if(focusSettings)context.setSettings(false);context.newConversation({preserveVisibility:preserve,preserveHistoryView:context.full&&context.view==='history'&&typeof window!=='undefined'&&canSplitFocusHistory(document.getElementById('agent-conversation-panel')?.getBoundingClientRect().width||Math.max(0,window.innerWidth-52),window.innerWidth)});}} onSettings={()=>context.setSettings(focusSettings?!context.settings:true)} divider={divider}/>);
 }

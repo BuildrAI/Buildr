@@ -246,6 +246,19 @@ export default {
       "tools/build/launcher/**"
     ]
   },
+"development-package-smoke": {
+    "inputs": [
+      "skills/buildr-release/scripts/candidate-package.ts",
+      "skills/buildr-release/scripts/application-payload.ts",
+      "skills/buildr-release/scripts/application-payload-entry.ts",
+      "skills/buildr-release/scripts/release-artifact.ts",
+      "tools/build/**", "package/**", "package.json", "package-lock.json", "bin/**",
+      "src/web/http/server.ts", "src/web/http/router.ts", "src/web/http/buildr-web-http-contracts.ts",
+      "src/web/infrastructure/instance-runtime.ts", "src/web/application/instance-lifecycle.ts",
+      "src/web/interfaces/cli/web.ts", "test/verification/release/package-smoke.ts", "test/verification/release/development-package-smoke.ts",
+      "tools/development/run-isolated-workspace-check.ts", "tools/development/isolated-workspace-state.ts"
+    ]
+  },
 "application-payload-release": {
     "inputs": [
       "skills/buildr-release/scripts/application-payload.ts",

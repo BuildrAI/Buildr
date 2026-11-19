@@ -4,7 +4,7 @@ import {ConversationChildWindows,type ConversationChildActions} from './Conversa
 import {useAgentConversations} from './AgentConversationsContext.tsx';
 import type {ConversationWorkspace as Workspace} from './ConversationHistory.tsx';
 
-type Props={workspaces:Workspace[];defaultWorkspaceId:string|null;portalTarget?:HTMLElement|null};
+type Props={workspaces:Workspace[];defaultWorkspaceId:string|null;portalTarget?:HTMLElement|null;development?:boolean};
 /** The main selection stays owned by the shell; child windows get isolated view bindings. */
 export function ConversationWorkspace(props:Props) {
   const context=useAgentConversations(),parent=context.conversation;

@@ -156,11 +156,12 @@ export async function waitForRegistryRelease(contract: any, options: any = {}): 
     } catch (error: any) {
       lastError = error;
       if (!isTransientReleaseError(error)) throw error;
-      if (now() + delayMs >= deadline) break;
-      if (attempt < attempts) await sleep(delayMs);
+      const interval = options.backoff ? Math.min(30_000, delayMs * 2 ** (attempt - 1)) : delayMs;
+      if (now() + interval >= deadline) break;
+      if (attempt < attempts) await sleep(interval);
     }
   }
-  throw new Error(`Official npm registry did not converge after ${attempts} attempts: ${lastError.message}`);
+  throw new ReleaseObservationError(`Official npm registry confirmation remains pending: ${lastError?.message ?? "no observation"}`, "registry-propagation-pending", true);
 }
 
 function parseArgs(argv: any): any  {

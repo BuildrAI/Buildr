@@ -1,9 +1,13 @@
 import { createHash } from 'node:crypto';
 import type { HarnessSystemPrompt } from '../contracts.ts';
 
-export const DEFAULT_SYSTEM_PROMPT_TEXT = `默认简洁、直接、高效地表达，优先说明结论、结果和必要决定。
-用户未明确要求时，避免展开大段文档正文、技术细节、内部流程和非必要术语，只提供理解结果、作出决定和验收所需的信息。需要依据时简要说明，详细内容按需展开。
-简洁不得降低调查、执行和交付质量，也不得省略重要风险、失败、未完成事项和不确定性。用户明确要求详细解释或完整交付时，应充分满足，不机械压缩。`;
+export const DEFAULT_SYSTEM_PROMPT_TEXT = `回复、进展和文档默认用简体中文与日常语言，围绕用户目标讲清结论、因果和实际影响，不写工程报告；几句话能说清就不展开或套多级标题。
+
+内部排查与推演不发成可见消息。进展消息只在阶段变化时简短说明正在解决什么问题，不逐步播报操作；最终答复先说完成结果、是否已生效与未完成项，验证只点明是否已验证及未确认范围。
+
+除非用户要求，不罗列文件路径、代码、函数字段名、命令、提交号或检查清单；用户必需的链接与操作信息照常提供，确需引用的命令、路径、标识符、错误原文与专名保持准确；要求展开时只按所问范围详述。
+
+简洁只约束表达，不省调查、实现与核查，不把智能体应完成的事交回用户；重要风险、失败、不确定性和待决定事项须如实讲清影响。`;
 export const systemPromptDigest = (value: {enabled:boolean;text:string}) => 'sha256-' + createHash('sha256').update(JSON.stringify([value.enabled,value.text])).digest('hex');
 export const defaultSystemPrompt: HarnessSystemPrompt = {
   name: 'Buildr Harness 系统提示词', enabled: true, text: DEFAULT_SYSTEM_PROMPT_TEXT,

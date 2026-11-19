@@ -33,6 +33,7 @@ import { PendingSends } from './pending-sends.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
 import { StorageMaintenance } from './storage-maintenance.ts';
 import { runtimeChange } from './runtime-change.ts';
+import { defaultHarnessWorkspaceRoot } from '../profile.ts';
 
 const RUNTIME_REGISTRATION_WAIT_MS = 30_000;
 const RUNTIME_REGISTRATION_RETRY_MS = 100;
@@ -47,7 +48,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   let cleanupDiagnostics:(()=>void)|undefined;
   try {
   const directories = new HarnessDirectoryHost(options.dataRoot);
-  const hosts = new AgentHostRegistry(directories);
+  const hosts = new AgentHostRegistry(directories, () => defaultHarnessWorkspaceRoot(options.dataRoot));
   const sourcePolicies = new SourceContinuationPolicies(options.dataRoot, options.legacySourceId!, () => options.autoContinueInterrupted ?? false);
   const backendChange = runtimeChange(readProcessRecord(options.dataRoot), options.runtime.digest, new Date().toISOString());
   const retainedOwners=new Map(readProcessInstances(options.dataRoot).map(record=>[record.identity.generation,record.identity]));

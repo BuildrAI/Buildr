@@ -53,6 +53,8 @@ export function runtimeObjectUnreferenced(directory: string, identity: string): 
       (stat.mode & 0o111) === parseInt(match[2]!,8) && runtimeFileHash(file) === match[1];
   } catch { return false; }
 }
+const RUNTIME_OBJECT_GRACE_MS = 24 * 60 * 60_000;
+
 export function runtimeObjectCandidates(root: string, use: StorageUse, now=Date.now()): StorageCandidate[] {
   const base = path.join(root, 'toolchains/objects'), result: StorageCandidate[] = [];
   const references=cloneViewReferences(root);if(!references.complete)return result;
@@ -65,8 +67,8 @@ export function runtimeObjectCandidates(root: string, use: StorageUse, now=Date.
       if (references.objects.has(identity) || !identity.startsWith(prefix) || !safeStoragePath(root,directory)) continue;
       const file = path.join(directory,process.platform === 'win32' ? 'payload.exe' : 'payload');
       if (fs.lstatSync(file,{throwIfNoEntry:false})?.nlink !== 1) continue;
-      const item = storageCandidate(root,'runtime-object',directory,directory,use,now-30*24*60*60_000);
-      if (item.eligible && fs.lstatSync(file).ctimeMs>now-30*24*60*60_000) { item.eligible=false; item.reason='runtime_object_retention'; }
+      const item = storageCandidate(root,'runtime-object',directory,directory,use,now-RUNTIME_OBJECT_GRACE_MS);
+      if (item.eligible && fs.lstatSync(file).ctimeMs>now-RUNTIME_OBJECT_GRACE_MS) { item.eligible=false; item.reason='runtime_object_retention'; }
       if (item.eligible && !runtimeObjectUnreferenced(directory,identity)) { item.eligible=false; item.reason='runtime_object_unknown'; }
       result.push(item);
     }

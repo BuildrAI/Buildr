@@ -42,7 +42,7 @@ export function resumeDevelopmentWorkspaceRefresh(product: {channel?:string}, se
   setImmediate(() => { void refresh().catch((error:Error) => console.warn('工作空间后台刷新未完成：', error.message)); });
 }
 
-export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: { httpContributions?: unknown[]; closeResources?: () => Promise<void>; onReady?:()=>void | Promise<void>; agentRuntimeStatus?: () => Promise<unknown> } = {}) {
+export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: { maintainArtifacts?: () => void; httpContributions?: unknown[]; closeResources?: () => Promise<void>; onReady?:()=>void | Promise<void>; agentRuntimeStatus?: () => Promise<unknown> } = {}) {
   const httpContributions = options.httpContributions || [];
   return Object.freeze({
     id: WEB_MODULE_ID,
@@ -70,13 +70,26 @@ export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: {
         httpContributions,
         closeResources: options.closeResources,
         createLocalWorkspaceServer: (webRuntime, serverOptions) => {
+          let artifactMaintenance: NodeJS.Timeout | undefined;
           let previewWarmup: NodeJS.Timeout | undefined;
           return Reflect.apply(createLocalWorkspaceServer, undefined, [webRuntime, { ...serverOptions, agentRuntimeStatus: options.agentRuntimeStatus, beforeShutdown: async () => {
+            clearTimeout(artifactMaintenance);
             if (previewWarmup) { clearTimeout(previewWarmup); previewWarmup = undefined; }
             await serverOptions.beforeShutdown?.();
           }, onReady: async () => {
           if (!serverOptions.previewIdentity) {
             await options.onReady?.(); resumeUpdate();
+            if (options.maintainArtifacts && !serverOptions.webProfile?.overridden) {
+              const schedule = (delay: number) => {
+                artifactMaintenance = setTimeout(() => {
+                  try { options.maintainArtifacts?.(); }
+                  catch { console.warn('本机过程产物维护未完成。'); }
+                  schedule(24 * 60 * 60_000);
+                }, delay);
+                artifactMaintenance.unref();
+              };
+              schedule(60_000);
+            }
             resumeDevelopmentWorkspaceRefresh(identity.readCurrentProductIdentity!(), serverOptions, workspace.refreshPreparedWorkspaces);
           } else {
             // A preview must publish its authenticated health endpoint before

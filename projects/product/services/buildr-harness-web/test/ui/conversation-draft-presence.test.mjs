@@ -49,15 +49,23 @@ test('notifications keep a stable membership snapshot through edits and clear af
  notifyConversationDraft(key,null);assert.equal(conversationDraftSnapshot('presence-test'),'[]');
  stop();notifyConversationDraft(key,null);assert.equal(changes,3);
 });
-test('shouldShowConversationDraft follows settledDraftIds and hides badge while executing',()=>{
- assert.equal(shouldShowConversationDraft({id:'c1',run:{status:'completed'}},['c1']),true);
+test('shouldShowConversationDraft follows settledDraftIds and hides badge whenever any activity state is present',()=>{
+ assert.equal(shouldShowConversationDraft({id:'c1',run:{status:'completed'},activity:{version:2,seenThrough:2,active:false,updatedAt:''}},['c1']),true);
  assert.equal(shouldShowConversationDraft({id:'c1',run:{status:'completed'}},['c2']),false);
  for (const status of ['starting','running','stopping']) {
-  assert.equal(shouldShowConversationDraft({id:'c1',run:{status}},['c1']),false,`${status} hides draft badge`);
+  assert.equal(shouldShowConversationDraft({id:'c1',run:{status}},['c1']),false,`${status} (running) hides draft badge`);
  }
- assert.equal(shouldShowConversationDraft({id:'c1',run:{status:'waiting-question'}},['c1']),true);
+ for (const status of ['waiting-approval','waiting-question']) {
+  assert.equal(shouldShowConversationDraft({id:'c1',run:{status}},['c1']),false,`${status} (waiting) hides draft badge`);
+ }
+ assert.equal(shouldShowConversationDraft({id:'c1',run:{status:'completed'},activity:{version:1,seenThrough:1,active:false,pendingDecisionCount:1,updatedAt:''}},['c1']),false,'pendingDecisionCount (waiting) hides draft badge');
+ assert.equal(shouldShowConversationDraft({id:'c1',run:{status:'completed'},activity:{version:3,seenThrough:2,active:true,updatedAt:''}},['c1']),false,'unseen hides draft badge');
+ assert.equal(shouldShowConversationDraft({id:'c1',pendingSend:{clientRequestId:'r1',state:'waiting',reason:'等待原执行结束后自动发送',updatedAt:''}},['c1']),false,'send-waiting hides draft badge');
+ assert.equal(shouldShowConversationDraft({id:'c1',pendingSend:{clientRequestId:'r2',state:'failed',reason:'发送失败',updatedAt:''}},['c1']),false,'send-failed hides draft badge');
+ assert.equal(shouldShowConversationDraft({id:'c1',run:{status:'unknown'}},['c1']),false,'unknown run hides draft badge');
+ assert.equal(shouldShowConversationDraft({id:'c1',run:{status:'completed'},activity:{version:2,seenThrough:2,active:true,updatedAt:''}},['c1']),false,'residual active unknown hides draft badge');
 });
-test('settleConversationDraftIds keeps side-by-side row frozen on re-entry and clearing until navigation away, send, or execution',()=>{
+test('settleConversationDraftIds keeps side-by-side row frozen on re-entry and clearing until navigation away, send, or active status',()=>{
  const presence={byWorkspace:{w1:['c1'],w2:['c2']},unscopedIds:[]};
  // 原本无草稿：打开对话输入→清空→再输入，期间不提前上浮；离开后才进入结算集合。
  let settled=settleConversationDraftIds({liveIds:['c1'],previousIds:[],activeEditingId:'c1'});
@@ -98,9 +106,20 @@ test('settleConversationDraftIds keeps side-by-side row frozen on re-entry and c
  assert.equal(conversationDraftSubmittedSnapshot(),'[]');
  notifyConversationDraft(draftKey('presence-test','w','submit-test'),null);
 
- // 执行中的对话绝不计入草稿结算，执行结束后恢复正常识别。
+ // 任何活动状态的对话绝不计入草稿结算，全部活动状态消除后非停留对话立即恢复识别。
+ settled=settleConversationDraftIds({liveIds:['c1','c2'],previousIds:['c1'],activeEditingId:null,activeStatusIds:new Set(['c1'])});
+ assert.deepEqual(settled,['c2']);
+ settled=settleConversationDraftIds({liveIds:['c1','c2'],previousIds:settled,activeEditingId:null,activeStatusIds:new Set()});
+ assert.deepEqual(settled,['c1','c2']);
+ // 兼容仅传 executingIds 的旧调用。
  settled=settleConversationDraftIds({liveIds:['c1','c2'],previousIds:['c1'],activeEditingId:null,executingIds:new Set(['c1'])});
  assert.deepEqual(settled,['c2']);
- settled=settleConversationDraftIds({liveIds:['c1','c2'],previousIds:settled,activeEditingId:null,executingIds:new Set()});
- assert.deepEqual(settled,['c1','c2']);
+
+ // 并排点开带草稿的“待查看”对话并标记已读离开 activeStatusIds：停留期间安静不弹出“有草稿”，离开后才显现。
+ settled=settleConversationDraftIds({liveIds:['c1'],previousIds:[],activeEditingId:'c1',activeStatusIds:new Set(['c1'])});
+ assert.deepEqual(settled,[]);
+ settled=settleConversationDraftIds({liveIds:['c1'],previousIds:settled,activeEditingId:'c1',activeStatusIds:new Set()});
+ assert.deepEqual(settled,[]);
+ settled=settleConversationDraftIds({liveIds:['c1'],previousIds:settled,activeEditingId:'c2',activeStatusIds:new Set()});
+ assert.deepEqual(settled,['c1']);
 });

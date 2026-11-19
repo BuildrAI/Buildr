@@ -19,7 +19,8 @@ export type MarkdownRenderOptions = {
   taskLinkPathname?: string | null;
   /** When true with allowRelativeLinks, relative href may include `..` segments (still sanitized by consumer / API). */
   allowParentRelativeLinks?: boolean;
-  imageResolver?: (href: string) => { href: string } | null | undefined;
+  imageResolver?: (href: string) => { href: string } | { load: (signal: AbortSignal) => Promise<string> } | null | undefined;
+  imageSignal?: AbortSignal;
   /** Hosts that can present the resolved image may offer an enlarged preview. */
   onImageClick?: (image: { src: string; alt: string; reference: string }) => void;
   onRelativeLinkClick?: (href: string, event: MouseEvent) => void;
@@ -128,7 +129,7 @@ function appendInline(parent, tokens, doc, linkOptions) {
       const destination = decodeHTML(token.href);
       const resolved = linkOptions.imageResolver?.(markdownDestination(destination) ?? '');
       const alt = token.tokens ? inlineText(token.tokens) : decodeHTML(token.text);
-      if (!resolved?.href) {
+      if (!resolved?.href && !resolved?.load) {
         parent.append(imageFallback(doc, alt)); continue;
       }
       const image = doc.createElement('img');
@@ -141,7 +142,13 @@ function appendInline(parent, tokens, doc, linkOptions) {
         if (image.parentNode) image.replaceWith(imageFallback(doc, alt));
       });
       parent.append(image);
-      image.setAttribute('src', resolved.href);
+      if (resolved.href) image.setAttribute('src', resolved.href);
+      else if (linkOptions.imageSignal) {
+        const signal = linkOptions.imageSignal;
+        void Promise.resolve().then(() => { signal.throwIfAborted(); return resolved.load(signal); }).then(src => {
+          if (!signal.aborted) image.setAttribute('src', src);
+        }, () => { if (!signal.aborted && image.parentNode) image.replaceWith(imageFallback(doc, alt)); });
+      } else image.replaceWith(imageFallback(doc, alt));
     } else if (token.type === 'codespan') {
       const code = doc.createElement('code');
       code.textContent = token.text;
@@ -520,6 +527,7 @@ export function renderMarkdown(markdown: string, docOrOptions: Document | Markdo
     allowAbsoluteFileLinks: Boolean(options.allowAbsoluteFileLinks),
     allowParentRelativeLinks: Boolean(options.allowParentRelativeLinks),
     imageResolver: options.imageResolver,
+    imageSignal: options.imageSignal,
     headings: new Map(Object.entries(options.headingCounts || {})),
   };
   const root = doc.createElement('div');

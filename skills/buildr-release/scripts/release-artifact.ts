@@ -270,16 +270,47 @@ export function assertNpmTarballInventory(inventory: any): any  {
   return inventory;
 }
 
+/** Inventory uses the exact staged files reported by npm pack, not source dependency estimates. */
+export function packageMeasurements(manifest: any, root: string) {
+  const files: { path: string; size: number }[] = manifest.inventory;
+  const groups = new Map<string, { bytes: number; files: number }>();
+  for (const file of files) {
+    const key = file.path.startsWith('payload/runtime/ripgrep/') ? file.path.split('/').slice(0, 4).join('/')
+      : file.path.startsWith('payload/product/web-dist/') ? 'payload/product/web-dist'
+      : file.path.split('/').slice(0, 2).join('/');
+    const group = groups.get(key) ?? { bytes: 0, files: 0 };
+    group.bytes += file.size; group.files++; groups.set(key, group);
+  }
+  const dependencies = files.filter(file => file.path === 'package.json' || /(?:^|\/)node_modules\/(?:@[^/]+\/)?[^/]+\/package\.json$/u.test(file.path)).map(file => {
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(root, file.path), 'utf8'));
+      return { path: file.path, name: data.name ?? null, version: data.version ?? null,
+        required: data.dependencies ?? {}, optional: data.optionalDependencies ?? {}, peer: data.peerDependencies ?? {}, bundled: data.bundleDependencies ?? data.bundledDependencies ?? [] };
+    } catch { return { path: file.path, unavailable: true }; }
+  });
+  return { sha256: manifest.sha256, compressedBytes: manifest.size, unpackedBytes: files.reduce((sum, file) => sum + file.size, 0), fileCount: files.length,
+    components: [...groups].map(([path, size]) => ({ path, ...size })).sort((a, b) => b.bytes - a.bytes),
+    largestFiles: [...files].sort((a, b) => b.size - a.size).slice(0, 30).map(({ path, size }) => ({ path, size })), dependencies,
+    dependencyScope: 'packed-package-manifests; compiled-in dependencies are not a resolved graph' };
+}
+
 export function createReleaseArtifact(payloadRoot: any, destination: any, options: any = {}): any  {
   const npmExecutable: any = options.npmExecutable ?? (process.platform === 'win32' ? 'npm.cmd' : 'npm');
   fs.mkdirSync(destination, { recursive: true });
   const stagingBase: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-npm-pack-'));
   const stagingRoot: any = path.join(stagingBase, 'package');
+  const measure = (id: string, run: () => any) => {
+    const start = performance.now();
+    let status = 'failed';
+    try { const result = run(); status = 'passed'; return result; }
+    finally { options.observe?.({ id, status, durationMs: Math.round(performance.now() - start) }); }
+  };
   try {
-    const staging: any = createNpmPackStaging(payloadRoot, stagingRoot, { testContextRoot: options.testContextRoot });
+    const staging: any = measure('npm-staging', () => createNpmPackStaging(payloadRoot, stagingRoot, { testContextRoot: options.testContextRoot }));
     // Pack the actual cwd tree: npm's directory-fetcher path form re-packs a
     // normalized manifest and can omit already staged bundled dependencies.
-    const result: any = spawnCommandSync(npmExecutable, ['pack', '--ignore-scripts', '--pack-destination', destination, '--json'], {
+    const result: any = measure('npm-pack', () => {
+      const packed = spawnCommandSync(npmExecutable, ['pack', '--ignore-scripts', '--pack-destination', destination, '--json'], {
       cwd: stagingRoot,
       encoding: 'utf8',
       maxBuffer: RELEASE_ARTIFACT_METADATA_MAX_BYTES,
@@ -289,8 +320,10 @@ export function createReleaseArtifact(payloadRoot: any, destination: any, option
         NPM_CONFIG_CACHE: path.join(stagingBase, 'npm-cache'),
         npm_config_update_notifier: 'false',
       },
+      });
+      if (packed.error || packed.status !== 0) throw new Error(`npm pack failed: ${packed.error?.message || packed.signal || packed.status}: ${(packed.stderr || '').trim()}`);
+      return packed;
     });
-    if (result.error || result.status !== 0) throw new Error(`npm pack failed: ${result.error?.message || result.signal || result.status}: ${(result.stderr || '').trim()}`);
 
     const metadata: any = parsePackResult(result.stdout);
     assertNpmTarballInventory(metadata.files);
@@ -323,7 +356,7 @@ export function createReleaseArtifact(payloadRoot: any, destination: any, option
     const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
     if (Buffer.byteLength(manifestText) > RELEASE_ARTIFACT_METADATA_MAX_BYTES) throw new Error('Release artifact manifest exceeds the supported metadata limit.');
     fs.writeFileSync(manifestPath, manifestText, 'utf8');
-    return { manifest, manifestPath, packMetadataPath, tarball };
+    return { manifest, manifestPath, packMetadataPath, tarball, packageMeasurements: options.observe ? packageMeasurements(manifest, stagingRoot) : null };
   } finally {
     fs.rmSync(stagingBase, { recursive: true, force: true });
   }

@@ -100,6 +100,7 @@ function normalizedSteps(results: any): any  {
     ...(result.blockedAt ? { blockedAt: result.blockedAt } : {}),
     ...(result.queueDurationMs == null ? {} : { queueDurationMs: Number(result.queueDurationMs) }),
     ...(result.scheduling ? { scheduling: result.scheduling } : {}),
+    ...(result.resources !== undefined ? { resources: result.resources } : {}),
     ...(result.resourceCoordination ? { resourceCoordination: result.resourceCoordination } : {}),
     ...(result.failureCode ? { failureCode: result.failureCode } : {}),
     ...(result.childOutcome ? { childExitCode: result.childExitCode, childSignal: result.childSignal, childOutcome: result.childOutcome } : {}),

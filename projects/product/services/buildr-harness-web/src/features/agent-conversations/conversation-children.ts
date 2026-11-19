@@ -1,19 +1,24 @@
-import type {ConversationView} from './types.ts';
+import { activityState } from './conversation-activity.ts';
+import type { ConversationSummary, ConversationView } from './types.ts';
 
 export function mergeChildConversations(previous:ConversationView[],incoming:ConversationView[]):ConversationView[] {
   const rows=new Map(previous.map(row=>[row.id,row]));
   for(const row of incoming)rows.set(row.id,row);
   return [...rows.values()].sort((a,b)=>(a.childOf?.createdAt??a.updatedAt).localeCompare(b.childOf?.createdAt??b.updatedAt)||a.id.localeCompare(b.id));
 }
-export function childConversationStatus(chat:ConversationView):string {
+export function childConversationStatus(chat:ConversationSummary):string {
+  const state=activityState(chat);
+  if(state==='send-failed')return '发送失败';
+  if(state==='send-waiting')return '等待发送';
+  if(state==='waiting')return '待决策';
+  if(state==='unknown')return '状态待确认';
+  if(state==='running')return '执行中';
+  if(state==='unseen')return '待查看';
   const status=chat.run?.status;
-  if(status==='waiting-approval')return '等待授权';
-  if(status==='waiting-question')return '等待回答';
-  if(status==='unknown'||status==='tools-active')return '待核对';
-  if(status==='starting'||status==='running'||status==='stopping')return status==='stopping'?'正在停止':'正在处理';
-  if(chat.activity&&chat.activity.version>chat.activity.seenThrough)return '有新消息';
+  if(status==='tools-active')return '后台作业运行中';
   if(status==='failed')return '执行失败';
-  return status==='completed'?'已答复':status==='stopped'?'已停止':'尚未开始';
+  if(status==='stopped')return '已停止';
+  return status==='completed'?'已答复':'尚未开始';
 }
 export function childCreationStorageKey(parent:Pick<ConversationView,'workspaceId'|'id'>,profile:string):string {
   return 'buildr.child-creation:'+profile+':'+parent.workspaceId+':'+parent.id;

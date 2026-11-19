@@ -4250,7 +4250,7 @@ test('canonical work objects deduplicate full identities and legacy updates pres
 test('Harness system prompt has durable defaults, optimistic concurrency and validated HTTP/IPC settings',async t=>{
   const native=fake(),f=fixture([native.executor]);t.after(()=>f.close());
   const before=f.service.systemPrompt.read();
-  assert.equal(before.enabled,true);assert.match(before.text,/简洁.*高效/);
+  assert.equal(before.enabled,true);assert.ok(before.text.trim(),'the default system prompt is non-empty');
   assert.equal(fs.existsSync(path.join(f.options.dataRoot,'agent-service/system-prompt.json')),false,'reading defaults does not write');
   const saved=f.service.systemPrompt.save({expectedRevision:before.revision,enabled:true,text:'Use concise replies. {{literal}}'});
   assert.notEqual(saved.revision,before.revision);

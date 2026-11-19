@@ -2,25 +2,29 @@ import type { ConversationSummary } from './types.ts';
 import {executionAgentName} from '../../lib/model-picker.ts';
 export type ActivityState = 'running'|'waiting'|'unknown'|'unseen'|'send-waiting'|'send-failed'|null;
 export type ActivityFilter = Exclude<ActivityState,null>|'attention'|null;
-export type ActivityCounts = {pendingSend?:number;active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number};
+export type ActivityCounts = {pendingSend?:number;sendFailed?:number;active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number};
+export const shortConversationId = (id:string):string => id.slice(0,8);
+export const copyConversationIdTitle = (id:string):string => `复制对话 ID（${shortConversationId(id)}）`;
 export function activityBadge(counts:ActivityCounts|undefined) {
   if(!counts)return null;
-  const pending=counts.waiting+counts.unseen;
+  const pending=counts.waiting+counts.unseen+(counts.sendFailed??0);
   return pending>0?{kind:'attention' as const,count:pending,label:'待处理'}:counts.running>0?{kind:'running' as const,count:counts.running,label:'执行中'}:counts.pendingSend?{kind:'active' as const,count:counts.pendingSend,label:'活动中'}:null;
 }
 export function activityReminder(counts:ActivityCounts|undefined,stale=false):string {
   if(!counts)return '对话提醒尚未读取';
-  return `待处理 ${counts.waiting+counts.unseen}（待决策 ${counts.waiting}、待查看 ${counts.unseen}），执行中 ${counts.running}${counts.pendingSend?`，待发送 ${counts.pendingSend}`:''}${counts.unknown?`；${counts.unknown} 个执行状态需确认`:''}${stale?'（未更新，保留上次结果）':''}`;
+  const pending=counts.waiting+counts.unseen+(counts.sendFailed??0);
+  return `待处理 ${pending}（待决策 ${counts.waiting}、待查看 ${counts.unseen}${counts.sendFailed?`、发送失败 ${counts.sendFailed}`:''}），执行中 ${counts.running}${counts.pendingSend?`，待发送 ${counts.pendingSend}`:''}${counts.unknown?`；${counts.unknown} 个执行状态需确认`:''}${stale?'（未更新，保留上次结果）':''}`;
 }
 export const isExecuting = (row:ConversationSummary) => ['starting','running','stopping'].includes(row.run?.status??'');
 function pendingDecisions(row:ConversationSummary):number {
-  if(row.activity?.pendingDecisionCount!==undefined)return row.activity.pendingDecisionCount;
   const runs=[row.run,...row.retainedRuns??[]];
-  return (row.requests??[]).filter(request=>{
+  const fromRequests=(row.requests??[]).filter(request=>{
     const run=runs.find(run=>run&&run.id===request.runId);
     return !run || !run.supersededBy&&!run.resourcesReleased&&!['completed','failed','stopped'].includes(run.status)&&
       (!request.participantId||request.participantId===run.participantId)&&(!request.generation||request.generation===run.generation);
   }).length;
+  if(row.activity?.pendingDecisionCount!==undefined)return Math.max(row.activity.pendingDecisionCount,fromRequests);
+  return fromRequests;
 }
 function unacceptedStopSettled(row:ConversationSummary):boolean {
   const run=row.run;

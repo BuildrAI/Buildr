@@ -1,6 +1,7 @@
 import { DIRECTORY_SOURCE_ID } from '../application/directory-host.ts';
-import { randomUUID } from 'node:crypto';
-import type { AgentHostCapabilities } from '../execution-contracts.ts';
+import fs from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import type { AgentHostCapabilities, ExecutionScopeRef } from '../execution-contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { authorize, body, json, listen, localOrigin, privateToken, request } from './transport.ts';
 
@@ -26,7 +27,8 @@ export async function exposeAgentHost(sourceId: string, host: AgentHostCapabilit
 export class AgentHostRegistry implements AgentHostCapabilities {
   private peers = new Map<string, HostPeer>();
   private readonly directoryHost?: AgentHostCapabilities;
-  constructor(directoryHost?: AgentHostCapabilities) { this.directoryHost = directoryHost; }
+  private readonly defaultWorkspaceRoot?: () => string;
+  constructor(directoryHost?: AgentHostCapabilities, defaultWorkspaceRoot?: () => string) { this.directoryHost = directoryHost; this.defaultWorkspaceRoot = defaultWorkspaceRoot; }
   validatePeer(value: HostPeer): void {
     if (!value || typeof value.sourceId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(value.sourceId) || typeof value.peerId !== 'string' || typeof value.token !== 'string' || value.token.length < 32) throw new AgentServiceError('agent_host_peer_invalid', '宿主连接身份无效。');
     if (this.directoryHost && value.sourceId === DIRECTORY_SOURCE_ID) throw new AgentServiceError('agent_host_source_reserved', '内置目录来源不能由外部回调接管。', 409);
@@ -60,6 +62,17 @@ export class AgentHostRegistry implements AgentHostCapabilities {
         transportFailure = typeof code === 'string' && /^[a-zA-Z0-9_]{1,64}$/.test(code) ? code : 'transport_error';
         // Try another connection of the same authority only. Never expose URLs,
         // credentials or arbitrary response bodies in the failure diagnostic.
+      }
+    }
+    if (peers.length === 0 && this.defaultWorkspaceRoot && method === 'resolveExecutionScope') {
+      const scopeInput = input as { ref?: ExecutionScopeRef; expectedRevision?: string };
+      if (scopeInput?.ref?.sourceId === 'buildr' && scopeInput.ref.id === '@default') {
+        const rawRoot = this.defaultWorkspaceRoot();
+        fs.mkdirSync(rawRoot, { recursive: true });
+        const rootPath = fs.realpathSync(rawRoot), info = fs.statSync(rootPath);
+        const revision = createHash('sha256').update(JSON.stringify([scopeInput.ref, rootPath, info.ino, info.birthtimeMs])).digest('hex');
+        if (scopeInput.expectedRevision && revision !== scopeInput.expectedRevision) throw new AgentServiceError('agent_scope_binding_changed', '执行环境已变化。', 409);
+        return { ref: scopeInput.ref, rootPath, revision };
       }
     }
     throw new AgentServiceError('agent_host_unavailable', `执行环境提供方暂时不可达（${method}；${peers.length ? transportFailure : 'no_registered_peer'}）；原执行和记录已保留。`, 503);

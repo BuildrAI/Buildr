@@ -12,9 +12,73 @@ import { interactionPolicy, blocksExecution } from '../../domain/interaction-pol
 import {createHash} from 'node:crypto';
 import { errorDiagnostic, NativeObservationError } from '../../domain/error-diagnostic.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
+import { CODEX_CLIENT_VERSION, isValidCodexClientVersion, resolveCodexClientVersion } from './program.ts';
 import { join, relative, sep, isAbsolute } from 'node:path';
-import { lstat, readFile, writeFile, copyFile, realpath, chmod } from 'node:fs/promises';
+import { lstat, readFile, writeFile, copyFile, realpath, chmod, open, unlink } from 'node:fs/promises';
 import { constants } from 'node:fs';
+
+function jwtExpiresAtMs(token: string): number | undefined {
+  const parts = token.split('.');
+  if (parts.length !== 3 || !parts[1]) return undefined;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as { exp?: unknown };
+    return typeof payload.exp === 'number' && Number.isFinite(payload.exp) ? payload.exp * 1000 : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function codexTokenExpiringSoon(token: string, skewMs = 60_000): boolean {
+  const expiresAt = jwtExpiresAtMs(token);
+  return expiresAt !== undefined && expiresAt <= Date.now() + skewMs;
+}
+
+async function withCodexAuthRefreshLock<T>(configDir: string, work: () => Promise<T>): Promise<T> {
+  const lockPath = join(configDir, '.buildr-auth-refresh.lock');
+  const token = `${process.pid}:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+  const deadline = Date.now() + 15_000;
+  let acquired = false;
+  while (Date.now() < deadline) {
+    try {
+      const handle = await open(lockPath, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
+      try { await handle.writeFile(token, 'utf8'); } finally { await handle.close(); }
+      acquired = true;
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') throw error;
+      try {
+        const info = await lstat(lockPath);
+        if (info.isSymbolicLink() || info.nlink !== 1) throw new Error('codex_credential_unsafe');
+        if (Date.now() - info.mtimeMs > 30_000) {
+          await unlink(lockPath).catch(() => {});
+          continue;
+        }
+        const owner = await readFile(lockPath, 'utf8').catch(() => '');
+        const ownerPid = Number(owner.split(':', 1)[0]);
+        if (Number.isInteger(ownerPid) && ownerPid > 0) {
+          let alive = true;
+          try { process.kill(ownerPid, 0); } catch (killError) { if ((killError as NodeJS.ErrnoException)?.code === 'ESRCH') alive = false; }
+          if (!alive) {
+            await unlink(lockPath).catch(() => {});
+            continue;
+          }
+        }
+      } catch (statError) {
+        if (statError instanceof Error && statError.message === 'codex_credential_unsafe') throw statError;
+      }
+      await new Promise<void>(resolve => setTimeout(resolve, 40));
+    }
+  }
+  if (!acquired) throw new Error('codex_auth_refresh_lock_timeout');
+  try {
+    return await work();
+  } finally {
+    try {
+      const current = await readFile(lockPath, 'utf8');
+      if (current === token) await unlink(lockPath);
+    } catch { /* Lock already removed cleanly. */ }
+  }
+}
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 import { NativeRpc, nativePreview, nativeBinding, bounded, findExecutable, inspectVersion, accountEnvironment, ownedProcessGroupIdle, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, visibleText, type RpcMessage } from '../native-process.ts';
 import { modelOptions } from '../model-options.ts';
@@ -29,7 +93,7 @@ const capabilities = { systemPrompt: { append: true }, endQuestionWait: true, in
 // Work-thread overrides also apply on resume; auxiliary title/summary threads stay tool-free.
 const conversationInteraction = {
   config: { features: { default_mode_request_user_input: true } },
-  developerInstructions: interactionPolicy.instructions + '\n必要提问使用 request_user_input。收到新要求时按最新指示调整工作；上轮保留的辅助命令仍可接续，需要的继续使用，不再需要的安全关闭并核对结果。不因命令等待输入而要求用户另开对话；不强停结果未知的业务操作，不重放已生效或结果未知的操作。\n回复和文档默认使用中文；命令、标识符、路径、错误原文与产品专名保持准确。',
+  developerInstructions: interactionPolicy.instructions + '\n必要提问使用 request_user_input。',
 };
 function codexEffort(value?: string): string | undefined {
   if (value === 'off') return 'none';
@@ -88,6 +152,8 @@ class CodexRuntime implements AgentRuntime {
   private readonly auxiliary = new Set<string>();
   private gateway?: ExecutorGateway;
   private modelConfig?: string;
+  private programVersion = CODEX_CLIENT_VERSION;
+  private authRefresh?: Promise<string | undefined>;
   private constructor(bindingIdentity: string, rpc: NativeRpc, titleDirectory: string) { this.bindingIdentity = bindingIdentity; this.rpc = rpc; this.titleDirectory = titleDirectory; rpc.onMessage(message => this.message(message)); }
   static async open(options: ExecutorOpenOptions): Promise<CodexRuntime> {
     options.signal?.throwIfAborted();
@@ -112,10 +178,10 @@ class CodexRuntime implements AgentRuntime {
     // Stdio EOF lets app-server drain work and shut down its threads before exit.
     const rpc = new NativeRpc(launch.command, [...launch.prefix, 'app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="file"', ...overrides], { cwd: options.configRoot, env, stdinGraceMs: 6000, diagnostics:options.diagnostics?event=>options.diagnostics!({...event,provider:'codex'}):undefined });
     const runtime = new CodexRuntime(binding.identity, rpc, join(temporary, 'title-requests'));
-    runtime.interaction = { ...conversationInteraction, developerInstructions: (options.interaction ?? interactionPolicy).instructions + '\n必要提问使用 request_user_input。\n回复和文档默认使用中文；命令、标识符、路径、错误原文与产品专名保持准确。' };
+    runtime.interaction = { ...conversationInteraction, developerInstructions: (options.interaction ?? interactionPolicy).instructions + '\n必要提问使用 request_user_input。' };
     runtime.participationInstruction = instructionParticipation('interaction-policy',runtime.interaction.developerInstructions);
     runtime.bindingData = binding.data;
-    runtime.gateway = gateway; runtime.modelConfig = config;
+    runtime.gateway = gateway; runtime.modelConfig = config; runtime.programVersion = version;
     let abortedClose: Promise<void> | undefined; const abort = () => { abortedClose ??= rpc.close({skipStdinGrace:true}); };
     options.signal?.addEventListener('abort', abort, { once: true }); if (options.signal?.aborted) abort();
     try {
@@ -139,19 +205,101 @@ class CodexRuntime implements AgentRuntime {
     if (result.requiresOpenaiAuth === false) return { status: 'ready' as const, label: 'Codex', loginMethod: '自定义模型连接' };
     return result.account ? { status: 'ready' as const, label: result.account.type === 'chatgpt' ? `ChatGPT${result.account.planType ? ' · ' + result.account.planType : ''}` : 'Codex', loginMethod: result.account.type === 'chatgpt' ? 'ChatGPT' : '原生配置' } : { status: 'not-authenticated' as const };
   }
+  private async readAuthFile(): Promise<{ tokens?: { account_id?: unknown; access_token?: unknown } }> {
+    const file = join(this.modelConfig!, 'auth.json');
+    const info = await lstat(file);
+    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) throw new Error('codex_credential_unsafe');
+    return JSON.parse(await readFile(file, 'utf8')) as { tokens?: { account_id?: unknown; access_token?: unknown } };
+  }
+  private async tryReadStoredAccessToken(): Promise<string | undefined> {
+    try {
+      const data = await this.readAuthFile();
+      return typeof data.tokens?.access_token === 'string' && data.tokens.access_token ? data.tokens.access_token : undefined;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return undefined;
+      if (error instanceof Error && error.message === 'codex_credential_unsafe') throw error;
+      return undefined;
+    }
+  }
+  private refreshAuthToken(staleToken?: string): Promise<string | undefined> {
+    if (!this.authRefresh) {
+      const work = withCodexAuthRefreshLock(this.modelConfig!, async () => {
+        const diskToken = await this.tryReadStoredAccessToken();
+        if (diskToken && diskToken !== staleToken && !codexTokenExpiringSoon(diskToken)) return diskToken;
+        const current = await this.rpc.call('getAuthStatus', { includeToken: true, refreshToken: false });
+        if (typeof current.authToken === 'string' && current.authToken && current.authToken !== staleToken && !codexTokenExpiringSoon(current.authToken)) {
+          return current.authToken;
+        }
+        const refreshed = await this.rpc.call('getAuthStatus', { includeToken: true, refreshToken: true });
+        return typeof refreshed.authToken === 'string' && refreshed.authToken ? refreshed.authToken : undefined;
+      }).finally(() => {
+        if (this.authRefresh === work) this.authRefresh = undefined;
+      });
+      this.authRefresh = work;
+    }
+    return this.authRefresh;
+  }
+  private async resolveAccessToken(): Promise<string | undefined> {
+    const diskToken = await this.tryReadStoredAccessToken();
+    const auth = await this.rpc.call('getAuthStatus', { includeToken: true, refreshToken: false });
+    const rpcToken = typeof auth.authToken === 'string' && auth.authToken ? auth.authToken : undefined;
+    if (rpcToken && !codexTokenExpiringSoon(rpcToken)) {
+      if (diskToken && diskToken !== rpcToken && !codexTokenExpiringSoon(diskToken)) {
+        const diskExp = jwtExpiresAtMs(diskToken);
+        const rpcExp = jwtExpiresAtMs(rpcToken);
+        if (diskExp !== undefined && (rpcExp === undefined || diskExp > rpcExp)) return diskToken;
+      }
+      return rpcToken;
+    }
+    if (diskToken && !codexTokenExpiringSoon(diskToken)) return diskToken;
+    return this.refreshAuthToken(rpcToken ?? diskToken);
+  }
   async modelIdentity():Promise<string> {
-    const file=join(this.modelConfig!,'auth.json'),info=await lstat(file);if(!info.isFile()||info.isSymbolicLink()||info.nlink!==1)throw new Error('codex_credential_unsafe');
-    const data=JSON.parse(await readFile(file,'utf8'));
+    const data = await this.readAuthFile();
     const id=data.tokens?.account_id; if(typeof id!=='string'||!id)throw new Error('codex_account_identity_missing');
     return 'codex:'+id;
   }
   async requestModel(path:string, init:RequestInit={},expectedIdentity?:string):Promise<Response> {
-    if(this.gateway || !['/codex/models?client_version=0.163.0','/codex/responses','/wham/usage'].includes(path))throw new Error('codex_model_target_invalid');
-    const auth=await this.rpc.call('getAuthStatus',{includeToken:true,refreshToken:true});
-    if(typeof auth.authToken!=='string')return new Response(null,{status:401});
-    const identity=await this.modelIdentity();
-    if(expectedIdentity&&createHash('sha256').update(identity).digest('hex')!==expectedIdentity)throw new Error('model_identity_conflict');
-    return fetch('https://chatgpt.com/backend-api'+path,{...init,headers:{...Object.fromEntries(new Headers(init.headers)),authorization:'Bearer '+auth.authToken,'chatgpt-account-id':identity.slice(6),originator:'codex_cli_rs','user-agent':'codex_cli_rs/0.163.0'},redirect:'error'});
+    if(this.gateway)throw new Error('codex_model_target_invalid');
+    let targetPath:string;
+    let clientVersion=resolveCodexClientVersion(this.programVersion);
+    if(path==='/codex/responses'||path==='/wham/usage'){
+      targetPath=path;
+    }else if(path.startsWith('/codex/models?client_version=')){
+      const requested=path.slice('/codex/models?client_version='.length);
+      if(requested.trim()!==requested||!isValidCodexClientVersion(requested))throw new Error('codex_model_target_invalid');
+      clientVersion=resolveCodexClientVersion(requested,this.programVersion);
+      targetPath=`/codex/models?client_version=${clientVersion}`;
+    }else{
+      throw new Error('codex_model_target_invalid');
+    }
+    const token = await this.resolveAccessToken();
+    if (!token) return new Response(null, { status: 401 });
+    const buildInit = async (bearer: string): Promise<RequestInit> => {
+      const identity = await this.modelIdentity();
+      if (expectedIdentity && createHash('sha256').update(identity).digest('hex') !== expectedIdentity) {
+        throw new Error('model_identity_conflict');
+      }
+      return {
+        ...init,
+        headers: {
+          ...Object.fromEntries(new Headers(init.headers)),
+          authorization: 'Bearer ' + bearer,
+          'chatgpt-account-id': identity.slice(6),
+          originator: 'codex_cli_rs',
+          'user-agent': `codex_cli_rs/${clientVersion}`,
+        },
+        redirect: 'error',
+      };
+    };
+    const url = 'https://chatgpt.com/backend-api' + targetPath;
+    const response = await fetch(url, await buildInit(token));
+    const canReplayBody = init.body === undefined || init.body === null || typeof init.body === 'string' || init.body instanceof Uint8Array;
+    if (response.status !== 401 || !canReplayBody) return response;
+    const refreshedToken = await this.refreshAuthToken(token);
+    if (!refreshedToken || refreshedToken === token) return response;
+    await response.body?.cancel().catch(() => {});
+    return fetch(url, await buildInit(refreshedToken));
   }
   async models() {
     if (this.gateway) return structuredClone(this.gateway.models);

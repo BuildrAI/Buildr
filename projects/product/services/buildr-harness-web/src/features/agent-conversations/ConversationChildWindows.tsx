@@ -6,7 +6,9 @@ import {AgentConversationsViewProvider,useAgentConversations} from './AgentConve
 import {ConversationPanel} from './ConversationPanel.tsx';
 import type {ConversationWorkspace} from './ConversationHistory.tsx';
 import {useChildConversation} from './useChildConversation.ts';
-import {childConversationStatus,childCreationStorageKey,mergeChildConversations,readChildCreation,type ChildCreation} from './conversation-children.ts';
+import { activityState } from './conversation-activity.ts';
+import { applyConfirmedSeenActivity } from './conversation-seen-hold.ts';
+import { childConversationStatus,childCreationStorageKey,mergeChildConversations,readChildCreation,type ChildCreation } from './conversation-children.ts';
 import type {ConversationView} from './types.ts';
 import type {ApiError} from '../../api/index.ts';
 import './conversation-children.css';
@@ -76,12 +78,14 @@ export function ConversationChildWindows({parent,workspaces,ref}:Props) {
   return <div ref={attach} className="ac-children" aria-label="主对话的子对话">
     <div className="ac-child-entries">
       {rows.map((row,index)=>{
-        const label=(row.title==='新对话'?'子对话 '+(index+1):row.title)+' · '+childConversationStatus(row);
-        const attention=['waiting-approval','waiting-question','unknown','tools-active','failed'].includes(row.run?.status||'');
-        const unread=Boolean(row.activity&&row.activity.version>row.activity.seenThrough);
+        const effective=applyConfirmedSeenActivity(row,host.seenActivities);
+        const state=activityState(effective);
+        const label=(effective.title==='新对话'?'子对话 '+(index+1):effective.title)+' · '+childConversationStatus(effective);
+        const attention=state==='waiting'||state==='unknown'||state==='send-failed'||(state===null&&effective.run?.status==='failed');
+        const showDot=attention||state==='unseen'||state==='send-waiting';
         return <Tooltip key={row.id} title={label} trigger={['hover','focus']}>
           <Button size="small" type={active===row.id?'primary':'text'} className="ac-child-entry"
-            icon={<Badge dot={attention||unread} color={attention?'var(--ac-attention-ink,#796747)':'var(--soft-primary,#397d74)'}><CommentOutlined/></Badge>}
+            icon={<Badge dot={showDot} color={attention?'var(--ac-attention-ink,#796747)':'var(--soft-primary,#397d74)'}><CommentOutlined/></Badge>}
             data-child-entry={row.id} aria-label={label} aria-expanded={active===row.id} aria-controls={'agent-child-conversation-panel-'+row.id} onClick={()=>choose(row.id)}/>
         </Tooltip>;
       })}

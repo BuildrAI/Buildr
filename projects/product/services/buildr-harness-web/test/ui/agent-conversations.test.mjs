@@ -676,22 +676,22 @@ test('对话 Markdown 图片按可访问来源解析，拒绝脚本与不安全�
   assert.deepEqual(conversationImageSource('/work','data:image/png;base64,AAAA'),{href:'data:image/png;base64,AAAA'});
   assert.deepEqual(conversationImageSource('/work','blob:https://example.org/id'),{href:'blob:https://example.org/id'});
   const absolute=conversationImageSource('/work','/tmp/图 片.PNG?size=1#preview');
-  assert.equal(absolute.href,'/api/v1/conversation-image?path=%2Ftmp%2F%E5%9B%BE%20%E7%89%87.PNG');
+  assert.equal(absolute.path,'/tmp/图 片.PNG');
   const relative=conversationImageSource('/work','images/a.png');
-  assert.equal(relative.href,'/api/v1/conversation-image?path=%2Fwork%2Fimages%2Fa.png');
+  assert.equal(relative.path,'/work/images/a.png');
   assert.equal(conversationImageSource(undefined,'images/a.png'),null);
   for(const href of ['javascript:alert(1)','file:///tmp/a.png','//example.org/a.png','a%zz.png','a\0b.png']) assert.equal(conversationImageSource('/work',href),null,href);
 });
 
 test('本机截图链接复用认证图片来源，普通文件和不支持类型仍交给文件来源定位',()=>{
   for(const value of ['/tmp/验收 截图.PNG','images/photo.webp','<images/a.jpg>','images/a%2Egif?download=1#preview','C:\\temp\\shot.bmp']){
-    assert.deepEqual(conversationImageLinkSource('/work',value),conversationImageSource('/work',value),value);
+    assert.deepEqual(conversationImageLinkSource('/work',value),conversationImageSource('/work',value)?.path,value);
   }
   for(const value of ['/tmp/file.md','/tmp/page.svg','/tmp/shot.png:12','images/a.png%00','javascript:alert(1)','file:///tmp/a.png','//remote/a.png','https://example.org/a.png','data:image/png;base64,AAAA','blob:https://example.org/id','a%zz.png']){
     assert.equal(conversationImageLinkSource('/work',value),null,value);
   }
   assert.equal(conversationImageLinkSource(undefined,'relative.png'),null);
-  assert.deepEqual(conversationImageLinkSource(undefined,'/tmp/shot.png'),conversationImageSource(undefined,'/tmp/shot.png'));
+  assert.deepEqual(conversationImageLinkSource(undefined,'/tmp/shot.png'),'/tmp/shot.png');
 });
 
 
@@ -946,4 +946,82 @@ test('仅专注模式分屏时跨刷新与切换保持历史列表展开',async(
  assert.equal(shouldPreserveFocusHistory(true,'history',1024,760),false);
  assert.equal(shouldPreserveFocusHistory(true,'conversation',1280,1360),false);
  assert.equal(shouldPreserveFocusHistory(false,'history',1280,1360),false);
+});
+
+test('独立网页桌面宽屏默认展开对话列表，窄屏优先对话且不覆盖桌面偏好',async()=>{
+ const {resolveInitialStandaloneView,shouldPersistStandaloneHistoryPreference}=await import('../../src/features/agent-conversations/conversation-state.ts');
+ assert.equal(resolveInitialStandaloneView(null,1228,1280),'history');
+ assert.equal(resolveInitialStandaloneView(undefined,1228,1280),'history');
+ assert.equal(resolveInitialStandaloneView('true',1228,1280),'history');
+ assert.equal(resolveInitialStandaloneView('false',1228,1280),'conversation');
+ assert.equal(resolveInitialStandaloneView(null,448,500),'conversation');
+ assert.equal(resolveInitialStandaloneView('true',448,500),'conversation');
+ assert.equal(resolveInitialStandaloneView('true',859,911),'conversation');
+ assert.equal(shouldPersistStandaloneHistoryPreference('history',1228,1280),true);
+ assert.equal(shouldPersistStandaloneHistoryPreference('conversation',1228,1280),true);
+ assert.equal(shouldPersistStandaloneHistoryPreference('conversation',448,500),false);
+ assert.equal(shouldPersistStandaloneHistoryPreference('history',448,500),true);
+});
+
+test('对话列表与提醒浮窗状态采用无框静态样式，且执行中与待查看具备色彩和形状双重区分',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const activityCss=readFileSync(new URL('../../src/features/agent-conversations/conversation-activity.css',import.meta.url),'utf8');
+ const conversationCss=readFileSync(new URL('../../src/features/agent-conversations/agent-conversations.css',import.meta.url),'utf8');
+ assert.match(activityCss,/\.ac-activity-status\{[^}]*color:#156f43[^}]*font-weight:600[^}]*\}/);
+ assert.doesNotMatch(activityCss,/\.ac-activity-status\{[^}]*(?:background|border-radius)\s*:/);
+ assert.match(activityCss,/\.ac-activity-status>i\{[^}]*width:6px;height:6px;border-radius:50%;background:#168a50/);
+ assert.match(activityCss,/\.ac-history-row\.is-selected \.ac-activity-status\.is-running[^}]*color:#0f5935/);
+ assert.match(activityCss,/\.ac-history-row\.is-selected \.ac-activity-status\.is-running>i[^}]*background:#117342/);
+ assert.match(activityCss,/\.ac-activity-status\.is-unseen\{[^}]*color:#274675/);
+ assert.match(activityCss,/\.ac-activity-status\.is-unseen>i\{[^}]*border-radius:1px;background:#355c96;transform:rotate\(45deg\)/);
+ assert.match(activityCss,/\.ac-history-row\.is-selected \.ac-activity-status\.is-unseen[^}]*color:#1e375c/);
+ assert.match(activityCss,/\.ac-history-row\.is-selected \.ac-activity-status\.is-unseen>i[^}]*background:#294a7a/);
+ assert.doesNotMatch(activityCss,/\.ac-activity-status[^{]*\{[^}]*animation\s*:/);
+ assert.match(conversationCss,/\.ac-draft-status\{[^}]*font-weight:550/);
+ assert.doesNotMatch(conversationCss,/\.ac-draft-status\{[^}]*border-radius\s*:/);
+ assert.match(conversationCss,/\.ac-draft-status::before\{[^}]*width:6px;height:6px[^}]*border:1\.5px solid #526e60;border-radius:50%/);
+ assert.match(conversationCss,/\.ac-draft-status\{[^}]*animation:ac-draft-status-in/);
+ assert.match(conversationCss,/prefers-reduced-motion:reduce\).*\.ac-draft-status\{animation:none;transition:none\}/);
+});
+
+test('登录尝试终态自动使共享账号与模型目录只读缓存失效', async()=>{
+  const requests=[];
+  let staleAccountsStarted=false;
+  const staleStarted=Promise.withResolvers();
+  const staleAccountsRelease=Promise.withResolvers();
+  const base='/api/v1/app/agent-service';
+  const api=createAgentConversationsClient(async(path)=>{
+    requests.push(path);
+    if(path===base+'/model-catalog')return{models:[{id:'m1'}],revision:'cat-r1'};
+    if(path.startsWith(base+'/model-catalog?revision='))return{revision:'cat-r1',unchanged:true};
+    if(path===base+'/model-accounts'){
+      if(!staleAccountsStarted){staleAccountsStarted=true;staleStarted.resolve();return staleAccountsRelease.promise;}
+      return{accounts:[{id:'native-codex',status:'ready'}],providers:[]};
+    }
+    if(path===base+'/connections/codex/login-attempts/att-1'){
+      return requests.filter(item=>item.includes('login-attempts/att-1')).length===1
+        ?{id:'codex',status:'not-authenticated',loginAttempt:{id:'att-1',state:'checking'}}
+        :{id:'codex',status:'ready',loginAttempt:{id:'att-1',state:'completed'}};
+    }
+    throw new Error('unexpected:'+path);
+  },session);
+
+  assert.equal((await api.modelCatalog()).revision,'cat-r1');
+  const staleRead=api.modelAccounts();
+  await staleStarted.promise;
+  assert.equal((await api.loginAttempt('codex','att-1')).loginAttempt.state,'checking');
+  const sharedRead=api.modelAccounts();
+  await Promise.resolve();
+  assert.equal(requests.filter(item=>item===base+'/model-accounts').length,1,'checking 状态不打断并发中的账号列表共享读取');
+  assert.equal((await api.modelCatalog()).models[0].id,'m1');
+  assert.equal(requests.at(-1),base+'/model-catalog?revision=cat-r1');
+
+  assert.equal((await api.loginAttempt('codex','att-1')).loginAttempt.state,'completed');
+  const freshAccounts=await api.modelAccounts();
+  assert.equal(freshAccounts.accounts[0].status,'ready');
+  assert.equal(requests.filter(item=>item===base+'/model-accounts').length,2);
+  await api.modelCatalog();
+  assert.equal(requests.at(-1),base+'/model-catalog','登录完成后应清掉目录 revision 快照以拉取最新模型');
+  staleAccountsRelease.resolve({accounts:[],providers:[]});
+  await Promise.all([staleRead,sharedRead]);
 });

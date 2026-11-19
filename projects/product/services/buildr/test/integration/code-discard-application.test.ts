@@ -13,7 +13,9 @@ function fixture(t: test.TestContext, format = 'sha1') {
   fs.mkdirSync(root); t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const gitAt = (location: string, ...args: string[]) => execFileSync('git', ['-C', location, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   const git = (...args: string[]) => gitAt(root, ...args);
-  git('init', '--initial-branch=main', '--object-format=' + format); git('config', 'user.name', 'Commit Fixture'); git('config', 'user.email', 'fixture@example.com'); git('config', 'commit.gpgSign', 'false');
+  git('init', '--initial-branch=main', '--object-format=' + format);
+  // Keep the per-test local config while avoiding three Git subprocesses.
+  fs.appendFileSync(path.join(root, '.git/config'), '\n[user]\n\tname = Commit Fixture\n\temail = fixture@example.com\n[commit]\n\tgpgSign = false\n');
   const write = (file: string, value: string, directory = root) => fs.writeFileSync(path.join(directory, file), value);
   const commit = (message = 'base') => { git('add', '--all'); git('commit', '-qm', message); return git('rev-parse', 'HEAD'); };
   const app = createCodeApplication({ assetCatalog: () => ({ repositories: [{ id: 'repo-one', code: 'repo', name: 'Fixture', source: { type: 'workspace', path: root } }], services: [], projects: [] }), resolveSourceRoot: (_root, source) => source.path, readTaskScope: () => ({ projects: [], services: [] }), readGitWorktreeEvidence: () => null });

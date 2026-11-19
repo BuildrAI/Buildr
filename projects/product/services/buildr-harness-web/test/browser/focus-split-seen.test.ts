@@ -23,11 +23,12 @@ async function until<T>(read: () => T | Promise<T>, accept: (value: T) => boolea
   throw new Error('Focus split browser did not settle: ' + label, { cause: lastError });
 }
 
-test('focus split and collapsed stopped process clear unseen status immediately upon viewing', { timeout: 120000 }, async t => {
+test('focus split and collapsed stopped process clear unseen status immediately upon viewing while holding list order until leaving', { timeout: 120000 }, async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-focus-split-seen-'));
   const dataRoot = path.join(root, 'profile');
   const packageRoot = path.join(root, 'package');
   const work = path.join(root, 'work');
+  const work2 = path.join(root, 'work-2');
   const profileId = 'focus-split-seen';
   let cleanupClient: Awaited<ReturnType<typeof connectHarnessProcess>> | undefined;
   let cleanupBrowser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
@@ -58,6 +59,7 @@ test('focus split and collapsed stopped process clear unseen status immediately 
 
   const coreRoot = path.resolve(import.meta.dirname, '../../../buildr-harness');
   fs.mkdirSync(work);
+  fs.mkdirSync(work2);
   agentRuntimePackageTree(coreRoot).materialize(packageRoot);
   let fixtureSource = fs.readFileSync(path.join(coreRoot, 'test/integration/fixtures/agent-process-entry.mjs'), 'utf8');
   const acceptLine = "input.onEvent({type:'accepted',executionRef});";
@@ -82,8 +84,10 @@ test('focus split and collapsed stopped process clear unseen status immediately 
 
   const connection = await client.operations.connections.read('first');
   await client.operations.connections.connect('first', { expectedRevision: connection.revision });
-  const directory = await client.directories.register(work);
+  const directory = await client.directories.register(work, '主工作空间');
+  const directory2 = await client.directories.register(work2, '其他工作空间');
   const scope = executionScopeKey(directory.ref);
+  const scope2 = executionScopeKey(directory2.ref);
 
   const convCompleted = await client.operations.conversations.create(scope, { title: '专注分屏待查看完成会话' });
   const draftCompleted = { expectedRevision: convCompleted.revision, connectionId: 'first', text: 'focus-split-unseen-check' };
@@ -95,6 +99,7 @@ test('focus split and collapsed stopped process clear unseen status immediately 
     'completed unseen conversation settled',
   );
   assert.ok(settledCompleted.activity && settledCompleted.activity.version > settledCompleted.activity.seenThrough);
+  await new Promise(resolve => setTimeout(resolve, 25));
 
   const convStopped = await client.operations.conversations.create(scope, { title: '专注分屏停止态折叠会话' });
   const draftStopped = { expectedRevision: convStopped.revision, connectionId: 'first', text: 'partial-stop' };
@@ -106,6 +111,33 @@ test('focus split and collapsed stopped process clear unseen status immediately 
     'stopped unseen conversation settled',
   );
   assert.ok(settledStopped.activity && settledStopped.activity.version > settledStopped.activity.seenThrough);
+  await new Promise(resolve => setTimeout(resolve, 25));
+
+  const convRecentSeen = await client.operations.conversations.create(scope, { title: '较新已读普通会话' });
+  const draftRecent = { expectedRevision: convRecentSeen.revision, connectionId: 'first', text: 'recent-seen-check' };
+  const previewRecent = await client.operations.conversations.prepareSend(scope, convRecentSeen.id, draftRecent);
+  await client.operations.conversations.send(scope, convRecentSeen.id, { ...draftRecent, previewToken: previewRecent.token, clientRequestId: randomUUID() });
+  const settledRecent = await until(
+    () => client.operations.conversations.read(scope, convRecentSeen.id),
+    view => view.run?.status === 'completed',
+    'recent seen conversation settled',
+  );
+  if (settledRecent.activity?.version) {
+    await client.operations.conversations.markSeen(scope, convRecentSeen.id, { through: settledRecent.activity.version });
+  }
+
+  const convOtherWs = await client.operations.conversations.create(scope2, { title: '其他空间已读会话' });
+  const draftOther = { expectedRevision: convOtherWs.revision, connectionId: 'first', text: 'other-ws-seen-check' };
+  const previewOther = await client.operations.conversations.prepareSend(scope2, convOtherWs.id, draftOther);
+  await client.operations.conversations.send(scope2, convOtherWs.id, { ...draftOther, previewToken: previewOther.token, clientRequestId: randomUUID() });
+  const settledOther = await until(
+    () => client.operations.conversations.read(scope2, convOtherWs.id),
+    view => view.run?.status === 'completed',
+    'other workspace conversation settled',
+  );
+  if (settledOther.activity?.version) {
+    await client.operations.conversations.markSeen(scope2, convOtherWs.id, { through: settledOther.activity.version });
+  }
 
   const origin = (await client.web.enable()).origin!;
   const login = await client.web.login();
@@ -127,12 +159,25 @@ test('focus split and collapsed stopped process clear unseen status immediately 
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
 
+  let totalListRequests = 0;
+  let statsRequests = 0;
+  let otherWorkspaceRequests = 0;
+  let tracking = false;
+  page.on('request', request => {
+    if (!tracking) return;
+    const url = new URL(request.url());
+    if (!url.pathname.endsWith('/api/v1/app/agent-service/conversations')) return;
+    totalListRequests++;
+    if (url.searchParams.get('limit') === '1') statsRequests++;
+    if (url.searchParams.get('workspaceId') === scope2) otherWorkspaceRequests++;
+  });
+
   await page.goto(origin);
-  await page.locator('.ac-collapsed-rail .ac-all-conversations').click();
   const focusPane = page.locator('.ac-focus-history-pane');
   const detailPane = page.locator('.ac-conversation-view');
   await focusPane.waitFor({ state: 'visible', timeout: 10000 });
   assert.equal(await detailPane.isVisible(), true, 'focus split keeps transcript pane visible');
+  assert.equal(await focusPane.getByRole('button', { name: '返回当前对话', exact: true }).count(), 0, 'desktop side-by-side split omits back arrow');
 
   const railListButton = page.locator('.ac-collapsed-rail .ac-all-conversations');
   await until(
@@ -141,10 +186,26 @@ test('focus split and collapsed stopped process clear unseen status immediately 
     'rail initially reports 2 unseen conversations',
   );
 
-  const rowCompleted = focusPane.locator(`button[data-conversation-id="${convCompleted.id}"]`);
-  const rowStopped = focusPane.locator(`button[data-conversation-id="${convStopped.id}"]`);
+  const group1 = focusPane.locator(`[data-history-workspace="${scope}"]`);
+  const group2 = focusPane.locator(`[data-history-workspace="${scope2}"]`);
+  const rowCompleted = group1.locator(`button[data-conversation-id="${convCompleted.id}"]`);
+  const rowStopped = group1.locator(`button[data-conversation-id="${convStopped.id}"]`);
+  const rowRecentSeen = group1.locator(`button[data-conversation-id="${convRecentSeen.id}"]`);
   await rowCompleted.getByText('待查看', { exact: true }).waitFor({ state: 'visible', timeout: 10000 });
   await rowStopped.getByText('待查看', { exact: true }).waitFor({ state: 'visible', timeout: 10000 });
+  await group2.locator(`button[data-conversation-id="${convOtherWs.id}"]`).waitFor({ state: 'visible', timeout: 10000 });
+
+  await until(
+    async () => (await focusPane.locator('[data-history-workspace][aria-busy="true"]').count()) === 0,
+    Boolean,
+    'history groups idle before seen tracking',
+  );
+
+  const scopeIds = () => group1.locator('[data-conversation-id]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-conversation-id')));
+  assert.deepEqual(await scopeIds(), [convStopped.id, convCompleted.id, convRecentSeen.id]);
+
+  tracking = true;
+  const listBeforeClick = totalListRequests;
 
   const seenCompleted = page.waitForResponse(
     value => value.request().method() === 'POST' && value.url().endsWith('/' + convCompleted.id + '/seen') && value.status() === 200,
@@ -164,6 +225,9 @@ test('focus split and collapsed stopped process clear unseen status immediately 
     view => Boolean(view.activity && view.activity.seenThrough === view.activity.version),
     'completed conversation seenThrough persisted in backend',
   );
+  await page.waitForTimeout(150);
+  assert.equal(totalListRequests, listBeforeClick, '停留在当前已读对话期间不触发左侧列表刷新');
+  assert.deepEqual(await scopeIds(), [convStopped.id, convCompleted.id, convRecentSeen.id], '停留期间保持原有行位不向下跳动');
 
   const seenStopped = page.waitForResponse(
     value => value.request().method() === 'POST' && value.url().endsWith('/' + convStopped.id + '/seen') && value.status() === 200,
@@ -184,7 +248,32 @@ test('focus split and collapsed stopped process clear unseen status immediately 
     view => Boolean(view.activity && view.activity.seenThrough === view.activity.version),
     'stopped collapsed conversation seenThrough persisted in backend',
   );
+  await until(
+    async () => {
+      const ids = await scopeIds();
+      return ids[0] === convStopped.id && ids[1] === convRecentSeen.id && ids[2] === convCompleted.id;
+    },
+    Boolean,
+    'leaving convCompleted settles convCompleted into historical order while holding convStopped',
+  );
+  const listAfterStopped = totalListRequests;
+  await page.waitForTimeout(150);
+  assert.equal(totalListRequests, listAfterStopped, '停留在当前 convStopped 期间不再二次重刷');
+  assert.deepEqual(await scopeIds(), [convStopped.id, convRecentSeen.id, convCompleted.id]);
 
+  // 离开 convStopped（切到普通已读对话 convRecentSeen）后，convStopped 才刷新归位到 convRecentSeen 之后。
+  await rowRecentSeen.click();
+  await until(
+    async () => {
+      const ids = await scopeIds();
+      return ids[0] === convRecentSeen.id && ids[1] === convStopped.id && ids[2] === convCompleted.id;
+    },
+    Boolean,
+    'leaving convStopped refreshes workspace order to settle convStopped after convRecentSeen',
+  );
+
+  assert.equal(statsRequests, 0, '查看与离开结算期间顶部执行中模型统计零重刷');
+  assert.equal(otherWorkspaceRequests, 0, '其他工作空间分组不受当前空间查看与已读刷新影响');
   assert.deepEqual(errors, []);
   await context.close();
 });

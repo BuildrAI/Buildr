@@ -945,9 +945,11 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       if (run.status !== 'completed') return answer('publication-running', ['等待当前发布运行；不重复派发。'], { run });
       if (run.conclusion !== 'success') {
         if (state.publication.retryRequested && Number(run.run_attempt) < 2) return answer('publication-retry-unconfirmed', ['回读同一运行的新attempt；不重复重跑请求。']);
-        const failure = classifyCandidateFailure(gh(['run', 'view', String(run.id), '--repo', releasePublishAuthority.repository, '--log-failed']));
+        const log = gh(['run', 'view', String(run.id), '--repo', releasePublishAuthority.repository, '--log-failed']);
+        const readbackPending = /"status":"publication-pending"[^\r\n]*"code":"registry-propagation-pending"/u.test(log);
+        const failure = readbackPending ? 'transient' : classifyCandidateFailure(log);
         if (failure !== 'transient' || Number(run.run_attempt) >= 2) return answer('diagnosis-required', ['读取发布步骤证据并诊断失败；已成立公开事实必须保留。'], { run });
-        if (!await legacyRetryCompatibility()) return answer('compatibility-blocked', ['原事实保留；新增重跑前需准确候选字节及当前公开对端兼容证据。'], { run });
+        if (!readbackPending && !await legacyRetryCompatibility()) return answer('compatibility-blocked', ['原事实保留；新增重跑前需准确候选字节及当前公开对端兼容证据。'], { run });
         const effect = { type: 'publication-failed-jobs-rerun', runId: run.id, previousAttempt: run.run_attempt, state: 'unknown' };
         currentEffects.push(effect);
         state.publication.retryRequested = true;
@@ -1465,7 +1467,11 @@ export function compactReleaseOperation(value: any): any {
     requests: value.withdrawal.requests };
   if (value.localSource) summary.localSource = { status: value.localSource.status, missingStepIds: value.localSource.missingStepIds,
     selectedStepIds: value.localSource.selectedStepIds, retainedStepIds: value.localSource.retainedStepIds,
-    missingBaselineStepIds: value.localSource.missingBaselineStepIds, nextActions: value.localSource.nextActions };
+    missingBaselineStepIds: value.localSource.missingBaselineStepIds,
+    counts: value.localSource.verificationPlan?.counts, fileCounts: value.localSource.verificationPlan?.fileCounts,
+    fullRerun: value.localSource.verificationPlan?.fullRerun,
+    invalidationsByInput: value.localSource.verificationPlan?.invalidationsByInput?.map(({ input, checkIds, scope }: any) => ({ input, count: checkIds.length, scope })),
+    invalidationsByReason: value.localSource.verificationPlan?.invalidationsByReason?.map(({ reason, checkIds }: any) => ({ reason, count: checkIds.length })), nextActions: value.localSource.nextActions };
   if (value.localArtifact) summary.localArtifact = { artifactDirectory: value.localArtifact.artifactDirectory,
     evidenceDirectory: value.localArtifact.evidenceDirectory, runId: value.localArtifact.runId, artifactId: value.localArtifact.artifactId,
     sha256: value.localArtifact.artifact?.sha256, checks: value.localArtifact.checks, missingEvidenceIds: value.localArtifact.missingEvidenceIds, nextAction: value.localArtifact.nextAction };

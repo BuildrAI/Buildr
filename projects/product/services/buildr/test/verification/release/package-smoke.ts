@@ -23,11 +23,11 @@ export function assertPackageSmokeHealth(health: any, expected: any): void {
   assert.equal(health.productIdentity?.applicationPayloadDigest, expected.payloadDigest);
   assert.equal(health.productIdentity?.installationIdentity, expected.installationIdentity);
   assert.equal(health.productIdentity?.runtime?.role, 'host');
-  assert.equal(health.productIdentity?.runtime?.version, '24.15.0');
+  assert.equal(health.productIdentity?.runtime?.version, expected.nodeVersion ?? '24.15.0');
 }
 
-export async function runPackageSmoke(options: { artifactDirectory: string; output: string }): Promise<any> {
-  assert.equal(process.versions.node, '24.15.0', 'Package smoke requires the actual minimum Node, not a version label');
+export async function runPackageSmoke(options: { artifactDirectory: string; output: string; development?: boolean }): Promise<any> {
+  if (!options.development) assert.equal(process.versions.node, '24.15.0', 'Package smoke requires the actual minimum Node, not a version label');
   assert.ok(process.env.BUILDR_SMOKE_ROOT && process.env.BUILDR_SMOKE_WORKSPACE_ROOT, 'Use the isolated workspace runner');
   const root = path.join(process.env.BUILDR_SMOKE_ROOT, 'package-smoke');
   const workspace = process.env.BUILDR_SMOKE_WORKSPACE_ROOT;
@@ -37,7 +37,8 @@ export async function runPackageSmoke(options: { artifactDirectory: string; outp
     npm_config_cache: path.join(root, 'npm-cache'), NPM_CONFIG_CACHE: path.join(root, 'npm-cache'), npm_config_update_notifier: 'false', BUILDR_LOCAL_APP_NO_OPEN: '1' };
   const phases: any[] = [];
   const report: any = { schemaVersion: 'buildr.package-smoke/v1', qualification: 'diagnostic-only',
-    platform: process.platform, node: process.versions.node, verificationSource: process.env.GITHUB_SHA ?? null, status: 'failed', phases };
+    ...(options.development ? { purpose: 'development', artifactProvenance: 'local-checkout' } : {}),
+    platform: process.platform, node: process.versions.node, verificationSource: options.development ? null : process.env.GITHUB_SHA ?? null, status: 'failed', phases };
   let web: ReturnType<typeof spawn> | undefined;
   let stdout = '', stderr = '', current = '';
   const phase = async (id: string, operation: () => any) => {
@@ -70,21 +71,25 @@ export async function runPackageSmoke(options: { artifactDirectory: string; outp
       assert.equal(bytes.length, manifest.size);
       assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'), manifest.sha256);
       report.artifactSha256 = manifest.sha256;
-      report.sourceCommit = manifest.sourceCommit;
+      if (!options.development) report.sourceCommit = manifest.sourceCommit;
       return file;
     });
     await phase('install', () => run(exact.npmExecutable, ['install', '--offline', '--global', '--prefix', prefix, tarball], 180_000));
     const modules = process.platform === 'win32' ? path.join(prefix, 'node_modules') : path.join(prefix, 'lib/node_modules');
     const entry = path.join(modules, '@buildr-ai/buildr/bin/buildr.mjs');
-    await phase('cli-help', () => assert.match(run(exact.nodeExecutable, [entry, '--help'], 30_000), /Buildr/u));
+    const launcher = process.platform === 'win32' ? path.join(prefix, 'buildr.cmd') : path.join(prefix, 'bin/buildr');
+    const cli = (args: string[]) => options.development
+      ? run(launcher, args, 30_000) : run(exact.nodeExecutable, [entry, ...args], 30_000);
+    await phase('cli-help', () => assert.match(cli(['--help']), /Buildr/u));
     const identity = await phase('cli-identity', () => {
-      const value = JSON.parse(run(exact.nodeExecutable, [entry, 'version', '--json'], 30_000));
+      const value = JSON.parse(cli(['version', '--json']));
       assert.equal(value.channel, 'npm');
       assert.equal(value.applicationPayloadDigest, manifest.applicationPayloadDigest);
       assert.equal(value.runtime?.role, 'host');
-      assert.equal(value.runtime?.version, '24.15.0');
+      assert.equal(value.runtime?.version, process.versions.node);
       return value;
     });
+    let ownedInstance: { origin: string; secret: string } | undefined;
     await phase('web-health', async () => {
       web = spawn(exact.nodeExecutable, [entry, 'web', '--no-open', '--port', '0'], {
         cwd: workspace, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
@@ -110,13 +115,26 @@ export async function runPackageSmoke(options: { artifactDirectory: string; outp
           }); } catch {}
           if (response?.ok) {
             assertPackageSmokeHealth(await response.json(), { pid: web.pid, payloadDigest: manifest.applicationPayloadDigest,
-              installationIdentity: identity.installationIdentity });
+              installationIdentity: identity.installationIdentity, nodeVersion: process.versions.node });
+            ownedInstance = { origin: url.origin, secret: instance.secret };
             return;
           }
         }
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       throw new Error('Web did not become healthy within 45000ms; see the exact startup output, not an inferred package pass.');
+    });
+    if (options.development) await phase('web-exit', async () => {
+      assert.ok(ownedInstance && web);
+      const response = await fetch(`${ownedInstance.origin}/api/v1/app/quit-instance`, {
+        method: 'POST', headers: { 'x-buildr-instance': ownedInstance.secret }, signal: AbortSignal.timeout(5000),
+      });
+      assert.ok(response.ok, `Web quit rejected: ${response.status}`);
+      const deadline = Date.now() + 10_000;
+      while (web.exitCode === null && web.signalCode === null && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      assert.equal(web.exitCode, 0, 'Installed Web must exit gracefully');
     });
     report.status = 'passed';
   } catch (error: any) {

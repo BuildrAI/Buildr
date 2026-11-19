@@ -49,7 +49,7 @@ services:
     workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
     code: buildr-harness-web
     name: Buildr Harness Web
-    description: 完整唯一的 Harness 网页；独立打开或由 Development 嵌套，不提供组件装配包。
+    description: 维护完整唯一的 Harness 对话和独立网页，并提供 Development 同页装配的公开入口。
     type: application
     repositoryId: 40394b3d-d44d-5bb2-a59b-932a0dd6a597
     modulePath: projects/product/services/buildr-harness-web

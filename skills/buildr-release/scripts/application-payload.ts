@@ -154,8 +154,10 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
   }
   const { buildSync, formatMessagesSync }: any = createRequire(path.join(serviceRoot, 'package.json'))('esbuild');
   const { copyAgentRuntimePackage } = await import('../../../projects/product/services/buildr/tools/build/agent-package.ts');
-  const { prepareDevelopmentAgent } = await import('../../../projects/product/services/buildr/tools/development/prepare-development-agent.ts');
-  prepareDevelopmentAgent({ build: false });
+  if (!options.agentPrepared) {
+    const { prepareDevelopmentAgent } = await import('../../../projects/product/services/buildr/tools/development/prepare-development-agent.ts');
+    prepareDevelopmentAgent({ build: false });
+  }
   const destination: any = assertDestination(output);
   if (fs.existsSync(destination)) throw new Error(`application payload output already exists: ${destination}`);
   fs.mkdirSync(path.join(destination, 'runtime'), { recursive: true });
@@ -182,6 +184,8 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
       external: ['node:*', '@buildr-ai/buildr-harness'],
       legalComments: 'none',
       sourcemap: false,
+      // Compact packaged runtime output without identifier renaming or syntax rewrites.
+      minifyWhitespace: true,
       metafile: true,
       charset: 'utf8',
       logLevel: 'silent',
@@ -243,7 +247,17 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
     validateApplicationPayloadManifest(manifest);
     fs.writeFileSync(path.join(destination, APPLICATION_PAYLOAD_MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`, { encoding: 'utf8', mode: 0o644 });
     verifyApplicationPayload(destination, { layout: 'frozen' });
-    return { root: destination, manifest };
+    const bundledDependencies = Object.entries<any>(bundle.metafile.outputs).map(([entry, output]) => {
+      const bytesByPackage = new Map<string, number>();
+      for (const [file, input] of Object.entries<any>(output.inputs)) {
+        const match = [...file.matchAll(/(?:^|\/)node_modules\/((?:@[^/]+\/)?[^/]+)(?=\/)/gu)].at(-1);
+        if (match) bytesByPackage.set(match[1], (bytesByPackage.get(match[1]) ?? 0) + input.bytesInOutput);
+      }
+      return { entry: path.relative(destination, path.resolve(serviceRoot, entry)).split(path.sep).join('/'), outputBytes: output.bytes,
+        packages: [...bytesByPackage].map(([name, bytes]) => ({ name, bytes })).sort((a, b) => b.bytes - a.bytes),
+        external: output.imports.filter((item: any) => item.external && !item.path.startsWith('node:')).map((item: any) => item.path) };
+    });
+    return { root: destination, manifest, bundledDependencies };
   } catch (error: any) {
     fs.rmSync(destination, { recursive: true, force: true });
     throw error;

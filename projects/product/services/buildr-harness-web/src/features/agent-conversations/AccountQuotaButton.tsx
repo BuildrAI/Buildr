@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Empty, Popover, Spin } from 'antd';
-import { ExportOutlined, SettingOutlined } from '@ant-design/icons';
+import { DashboardOutlined, ExportOutlined, SettingOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext.tsx';
 import { accountBillingLink, groupQuotaWindows, accountQuotaView, accountQuotaWarning, accountSourceName, quotaOverviewAccounts, quotaResetCountdown } from './account-quota-view.ts';
 import type { ModelAccount } from './types.ts';
 import './account-quota-button.css';
 
-type Props = { onClick?(): void };
+type Props = { onClick?(): void; dedicated?:boolean };
 /** Reads shared account snapshots only; opening this never logs in or checks all providers. */
-export function AccountQuotaButton({ onClick }: Props) {
+export function AccountQuotaButton({ onClick, dedicated=false }: Props) {
   const { api, settings } = useAgentConversations();
   const [open, setOpen] = useState(false), [accounts, setAccounts] = useState<ModelAccount[]>([]);
   const [loaded, setLoaded] = useState(false), [error, setError] = useState('');
@@ -78,7 +78,7 @@ export function AccountQuotaButton({ onClick }: Props) {
       if (!next && document.activeElement === entry.current && !pointerFocus.current) return;
       setOpen(next);
     }}>
-    <Button ref={entry} type="text" className="ac-conversation-icon ac-account-settings" icon={<SettingOutlined aria-hidden="true"/>} aria-label="智能体与模型设置"
+    <Button ref={entry} type="text" className={'ac-conversation-icon '+(dedicated?'ac-quota-entry':'ac-account-settings')} icon={dedicated?<DashboardOutlined aria-hidden="true"/>:<SettingOutlined aria-hidden="true"/>} aria-label={dedicated?'供应商额度':'智能体与模型设置'}
       onFocus={() => { if (!pointerFocus.current && !dismissed.current && !settings) setOpen(true); }}
       onBlur={() => { pointerFocus.current = false; if (!settings) dismissed.current = false; setOpen(false); }}
       onPointerEnter={() => { if (!pointerFocus.current) dismissed.current = false; }}

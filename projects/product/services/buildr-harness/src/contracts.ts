@@ -470,6 +470,7 @@ export interface AgentProgramManager {
   discover(input: { provider: string; executable?: string; boundExecutable?: string; signal: AbortSignal }): Promise<ProgramCatalog>;
   install(input: { provider: string; version?: string; attemptId?: string; replaceExisting?: boolean; signal: AbortSignal; progress(message: string): void }): Promise<string>;
   isManaged?(provider: string, executable: string): boolean;
+  preparedVersion?(provider: string): Promise<string | undefined>;
 }
 export type PreparationState = 'discovering' | 'selection-required' | 'installation-required' | 'installing' | 'connecting' | 'waiting-login' | 'ready' | 'failed' | 'cancelled';
 export interface PreparationView {
@@ -846,4 +847,4 @@ export interface PushbackSettingsView {
 export interface PushbackSettingsInput { expectedRevision: string; enabled: boolean; url: string; secret?: string; rateLimitHour?: number; rateLimitMinute?: number; progressEnabled?: boolean; stalledEnabled?: boolean }
 export interface PushbackEventPage { events: PushbackEvent[]; nextCursor: string | null; hasMore: boolean }
 export interface ConversationSummaryView { id: string; title: string; runStatus: RunStatus | null; updatedAt: string; active: boolean; pendingDecisionCount: number }
-export interface ConversationActivityCounts { pendingSend?: number; active: number; running: number; waiting: number; unseen: number; unknown: number; attention: number }
+export interface ConversationActivityCounts { pendingSend?: number; sendFailed?: number; active: number; running: number; waiting: number; unseen: number; unknown: number; attention: number }

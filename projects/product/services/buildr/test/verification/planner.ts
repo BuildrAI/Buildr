@@ -321,7 +321,7 @@ export function validateVerificationRegistry(steps: any = verificationSteps): an
     ids.add(item.id);
     if (!item.name) findings.push({ step: item.id, code: 'missing_name' });
     if (!Array.isArray(item.inputs) || item.inputs.length === 0) findings.push({ step: item.id, code: 'missing_inputs' });
-    if (item.selection != null && item.selection !== 'explicit-only') findings.push({ step: item.id, code: 'invalid_selection', value: item.selection });
+    if (item.selection != null && !['explicit-only', 'related-only'].includes(item.selection)) findings.push({ step: item.id, code: 'invalid_selection', value: item.selection });
     if (!Array.isArray(item.developmentRunners)) findings.push({ step: item.id, code: 'invalid_development_runners' });
     else {
       if (new Set(item.developmentRunners).size !== item.developmentRunners.length) findings.push({ step: item.id, code: 'duplicate_development_runner' });
@@ -671,6 +671,7 @@ export function budgetRelatedVerificationPlan(plan: any, request: any): any {
     for (const id of additions) selected.add(id);
     return true;
   };
+  for (const step of ranked.filter((item: any) => item.selection === 'related-only')) admit(step);
   for (const step of ranked.filter((item: any) => priority(item) === 0)) admit(step);
   // Reserve up to two direct behavioral checks, rather than spending all ten
   // slots on broad static checks. This is a small sampling policy, not coverage.
@@ -742,7 +743,7 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
     const inferred = request.semantic ? semanticTagsForPaths(semanticPaths.filter(file =>
       !(step.inputExclusions ?? []).some((pattern: string) => matchesInput(file, pattern)))) : [];
     const matched = [...new Set<string>([...(request.tags ?? []), ...inferred])].filter(tag => step.tags?.includes(tag));
-    if (!matched.length || !eligible(step) || step.selection === 'explicit-only') continue;
+    if (!matched.length || !eligible(step) || step.selection != null) continue;
     selected.add(step.id);
     reasons.set(step.id, matched.map(tag => `semantic tag ${tag}`));
   }
@@ -774,7 +775,7 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
     reasons.set(id, [...(reasons.get(id) ?? []), `step ${id}`]);
   }
   if (types.length && (stepIds.length === 0 || request.completeTypes === true)) {
-    for (const step of steps) if (types.includes(step.testing.executionBoundary) && eligible(step) && step.selection !== 'explicit-only') {
+    for (const step of steps) if (types.includes(step.testing.executionBoundary) && eligible(step) && step.selection == null) {
       selected.add(step.id); reasons.set(step.id, [`complete ${step.testing.executionBoundary} source checks`]);
     }
   }
@@ -820,7 +821,8 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
   const refinements: any[] = [];
   for (const productPath of paths) {
     const selectedBrowsers = browserOwnersByPath.get(productPath) ?? new Set<string>();
-    const direct: any[] = steps.filter((item: any) => matchedStepInput(item, productPath, selectedBrowsers));
+    const direct: any[] = steps.filter((item: any) => (item.selection !== 'related-only' || request.related === true && !selectionOnlyPaths.has(productPath))
+      && matchedStepInput(item, productPath, selectedBrowsers));
     const evidence = contentChanges.get(productPath);
     const checkEvidence = !evidence ? changedVerificationChecks.get(productPath) : undefined;
     // Ownership decides which edges mean behavioral impact. Static/public
@@ -871,7 +873,7 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
     })),
   ];
   if (fullScopeReasons.length > 0) {
-    for (const item of steps) if (eligible(item) && item.selection !== 'explicit-only') {
+    for (const item of steps) if (eligible(item) && item.selection == null) {
       selected.add(item.id);
       reasons.set(item.id, [...(reasons.get(item.id) ?? []), ...fullScopeReasons.map((reason: any) => reason.message)]);
     }

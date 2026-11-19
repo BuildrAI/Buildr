@@ -176,7 +176,7 @@ export const AGENT_OPERATION_SCHEMAS = {
   revision: named('AgentServiceRevisionRequest', closed({ expectedRevision: text })),
   check: named('AgentServiceCheckRequest', closed({ expectedRevision: text }, [])),
   defaultWorkspace: named('AgentDefaultWorkspace', closed({ rootPath: text })),
-  conversations: named('AgentConversationsPage', closed({ conversations: list({anyOf:[conversation,conversationSummary]}), nextCursor: text,total:integer,stats,activityCounts:closed({pendingSend:integer,active:integer,running:integer,waiting:integer,unseen:integer,unknown:integer,attention:integer},['active','running','waiting','unseen','unknown','attention']) }, ['conversations'])),
+  conversations: named('AgentConversationsPage', closed({ conversations: list({anyOf:[conversation,conversationSummary]}), nextCursor: text,total:integer,stats,activityCounts:closed({pendingSend:integer,sendFailed:integer,active:integer,running:integer,waiting:integer,unseen:integer,unknown:integer,attention:integer},['active','running','waiting','unseen','unknown','attention']) }, ['conversations'])),
   conversation: named('AgentConversation', conversation),
   seen: named('AgentConversationSeen',closed({through:integer})),
   seenResult: named('AgentConversationSeenResult',closed({activity})),
@@ -210,7 +210,7 @@ export const AGENT_OPERATION_SCHEMAS = {
   attachmentResult: named('AgentConversationAttachmentResult', closed({ id: text, name: text, mimeType: text, size: integer, revision: text, attachmentRevision: text }, ['id','mimeType','size','revision'])),
   activitySummary: named('AgentActivitySummary', {anyOf:[
     closed({revision:text,unchanged:{const:true}}),
-    closed({revision:text,conversations:list(conversation),pending:list(closed({conversationId:text,workspaceId:text,title:text,status:run.properties.status,count:integer})),nextCursor:text,total:integer,stats,activityCounts:closed({pendingSend:integer,active:integer,running:integer,waiting:integer,unseen:integer,unknown:integer,attention:integer},['active','running','waiting','unseen','unknown','attention'])},['revision','conversations','pending']),
+    closed({revision:text,conversations:list(conversation),pending:list(closed({conversationId:text,workspaceId:text,title:text,status:run.properties.status,count:integer})),nextCursor:text,total:integer,stats,activityCounts:closed({pendingSend:integer,sendFailed:integer,active:integer,running:integer,waiting:integer,unseen:integer,unknown:integer,attention:integer},['active','running','waiting','unseen','unknown','attention'])},['revision','conversations','pending']),
   ]}),
   pendingSummary: named('AgentPendingSummary', closed({conversations:list(closed({conversationId:text,workspaceId:text,title:text,status:run.properties.status,count:integer}))})),
   event: named('AgentConversationEvent', closed({ cursor: integer, generation: text, type: { enum: ['snapshot', 'conversation', 'connection'] }, workspaceId: text, conversationId: text, revision: text, payload: closed({ conversation, connection, patch:conversationPatch, delta:closed({baseCursor:integer,baseRevision:text,conversation:closed(Object.fromEntries(Object.entries(conversation.properties).filter(([key])=>key!=='entries')),conversation.required.filter(key=>key!=='entries')),entryIds:list(text),entries:list(entry)}) }, []) }, ['cursor', 'generation', 'type', 'revision', 'payload'])),

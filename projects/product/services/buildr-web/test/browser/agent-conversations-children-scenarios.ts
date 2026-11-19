@@ -128,13 +128,13 @@ export async function runChildConversationScenarios(fixture:AgentConversationFix
     await step('收起保留真实执行和待回应状态，子对话独立回答和停止',async()=>{
       await window().getByRole('textbox',{name:'子对话输入',exact:true}).fill('需要问我');await window().getByRole('button',{name:'发送对话',exact:true}).click();
       await window().getByText('子对话范围确认',{exact:true}).waitFor();await window().getByRole('button',{name:'收起子对话',exact:true}).click();
-      await childStatus(firstId,'等待回答').waitFor();assert.equal(await childStatus(firstId,'等待回答').locator('.ant-badge-dot').count(),1);assert.equal(await window().count(),0);assert.equal(childReplies,0);
+      await childStatus(firstId,'待决策').waitFor();assert.equal(await childStatus(firstId,'待决策').locator('.ant-badge-dot').count(),1);assert.equal(await window().count(),0);assert.equal(childReplies,0);
       await page.locator('[data-child-entry="'+firstId+'"]').click();await window().getByRole('radio',{name:'仅此支线',exact:true}).check();
       await window().getByRole('button',{name:'回答并继续',exact:true}).click();await window().getByText('子对话范围确认',{exact:true}).waitFor({state:'hidden'});assert.equal(childReplies,1);
       await page.locator('[data-child-entry="'+secondId+'"]').click();assert.equal(await window().getByRole('textbox',{name:'子对话输入',exact:true}).inputValue(),'第二条子对话草稿');
       await window().getByRole('textbox',{name:'子对话输入',exact:true}).fill('持续工作');await window().getByRole('button',{name:'发送对话',exact:true}).click();
       await window().getByRole('button',{name:'停止对话',exact:true}).waitFor();await window().getByRole('button',{name:'收起子对话',exact:true}).click();
-      await childStatus(secondId,'正在处理').waitFor();assert.equal(childStops,0);
+      await childStatus(secondId,'执行中').waitFor();assert.equal(childStops,0);
       await page.locator('[data-child-entry="'+secondId+'"]').click();await window().getByRole('button',{name:'停止对话',exact:true}).click();
       await childStatus(secondId,'已停止').waitFor();assert.equal(childStops,1);assert.equal(fixture.stops,0);assert.equal(fixture.conversation.run.status,'running');
       await page.reload();await input().waitFor();await page.locator('[data-child-entry="'+firstId+'"]').waitFor();await page.locator('[data-child-entry="'+secondId+'"]').waitFor();

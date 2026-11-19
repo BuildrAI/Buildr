@@ -34,7 +34,7 @@ Buildr 产品项目（Project）的规则入口。
 | Buildr 可执行实现 | `services/buildr/` | npm package、CLI、Buildr Web Runtime、`web-dist` 托管与打包、验证及维护脚本的实现根 |
 | Buildr Web 前端源码 | `services/buildr-web/` | Buildr Web Frontend Service 的 React/Vite 权威前端源码与正式构建 |
 | Buildr Harness | `services/buildr-harness/` | 独立配置、统一对话、原生执行、目录宿主、共享 HTTP 与独立网页承载；核心、独立 CLI、启动器与发行装配；不拥有工程业务写入 |
-| Harness 独立网页 | `services/buildr-harness-web/` | 完整唯一对话网页及正式静态构建；独立打开或由 Development 嵌套，不承担工程任务管理 |
+| Harness 独立网页 | `services/buildr-harness-web/` | 完整唯一对话实现及独立网页静态构建；Development 通过公开入口同页装配对话，不承担工程任务管理 |
 | DSH 桌面插件 | `services/dsh-plugin/` | 独立插件包的源码、构建、验证与发布准备；不进入 Buildr 主包 |
 | 兼容入口（Compatibility Bridge） | `buildr` | 委托 `services/buildr/tools/development/run-development-cli` 的稳定开发入口 |
 | 服务登记（Service Registry） | 工作空间（Workspace）根 `services/manifest.yml` | 全局服务（Service）登记；产品项目（Product Project）通过根 `projects/manifest.yml` 的 `serviceIds` 引用 |

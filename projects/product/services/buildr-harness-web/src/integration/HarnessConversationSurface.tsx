@@ -1,7 +1,6 @@
 import {useEffect, useLayoutEffect, useRef} from 'react';
 import {AgentConversationsProvider, useAgentConversations, type TextConversationActionInput, type TextConversationActionResult} from '../features/agent-conversations/AgentConversationsContext';
 import {ConversationWorkspace} from '../features/agent-conversations/ConversationWorkspace';
-import {AgentConnectionSettings} from '../features/agent-conversations/AgentConnectionSettings';
 import type {ConversationWorkspace as Workspace} from '../features/agent-conversations/ConversationHistory';
 import type {ConversationView} from '../features/agent-conversations/types';
 import {HarnessDirectoryFilesProvider, type HarnessDirectoryFiles} from '../directory-files';
@@ -59,6 +58,7 @@ function Surface(props: Props) {
     const command = props.command;
     if (!command || lastCommand.current === props.sequence) return;
     lastCommand.current = props.sequence;
+    if (context.full&&command.action!=='settings'&&command.action!=='start-text') context.setSettings(false);
     if (command.action === 'new') context.newConversation(command.workspaceId ? {scope: {workspaceId: command.workspaceId, ...(command.taskId ? {taskId: command.taskId} : {})}} : {});
     else if (command.action === 'open' && command.workspaceId && command.conversationId) void context.openConversation(command.workspaceId, command.conversationId);
     else if (command.action === 'history') context.openHistory(null);
@@ -72,9 +72,8 @@ function Surface(props: Props) {
         () => current.current.onResult(requestId, {status: 'recovering', reason: 'submission-unknown', message: '原提交结果未确认，请核对原对话。'}),
       );
     }
-  }, [props.command, props.sequence, context.newConversation, context.openConversation, context.openHistory, context.setSettings, context.startTextConversation]);
+  }, [props.command, props.sequence, context.full, context.newConversation, context.openConversation, context.openHistory, context.setSettings, context.startTextConversation]);
   return <div className="harness-conversation-surface">
-    <ConversationWorkspace workspaces={props.workspaces} defaultWorkspaceId={props.defaultWorkspaceId}/>
-    <AgentConnectionSettings/>
+    <ConversationWorkspace development workspaces={props.workspaces} defaultWorkspaceId={props.defaultWorkspaceId}/>
   </div>;
 }

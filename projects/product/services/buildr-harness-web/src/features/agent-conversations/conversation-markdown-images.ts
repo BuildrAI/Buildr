@@ -1,7 +1,7 @@
 const imageMime = /^data:image\/[a-z0-9.+-]+(?:;[^,]*)?,/i;
 
 /** Resolve one authored Markdown image destination for the conversation surface. */
-export function conversationImageSource(cwd: string | undefined, href: string): { href: string } | null {
+export function conversationImageSource(cwd: string | undefined, href: string): { href: string; path?: never } | { path: string; href?: never } | null {
   const authored = String(href ?? '').trim();
   if (!authored) return null;
   const value = authored.startsWith('<') && authored.endsWith('>') ? authored.slice(1, -1).trim() : authored;
@@ -9,7 +9,7 @@ export function conversationImageSource(cwd: string | undefined, href: string): 
   if (/^https?:\/\//i.test(value)) return { href: value };
   if (/^blob:/i.test(value)) return { href: value };
   if (imageMime.test(value)) return { href: value };
-  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return null;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value) && !/^[a-z]:[\\/]/i.test(value)) return null;
   const raw = value.split(/[?#]/u, 1)[0] ?? '';
   if (!raw || /[\0\r\n]/u.test(raw)) return null;
   let path = raw;
@@ -23,13 +23,11 @@ export function conversationImageSource(cwd: string | undefined, href: string): 
     if (!cwd) return null;
     path = `${cwd.replace(/[\\/]+$/u, '')}/${path.replace(/^[\\/]+/u, '')}`;
   }
-  return { href: `/api/v1/conversation-image?path=${encodeURIComponent(path)}` };
+  return { path };
 }
 
 /** Ordinary local image links use the same authenticated reader as inline images. */
-export function conversationImageLinkSource(cwd: string | undefined, href: string): { href: string } | null {
-  const source = conversationImageSource(cwd, href);
-  if (!source?.href.startsWith('/api/v1/conversation-image?')) return null;
-  const path = new URLSearchParams(source.href.split('?')[1]).get('path') ?? '';
-  return /\.(?:png|jpe?g|gif|webp|avif|bmp|ico)$/i.test(path) ? source : null;
+export function conversationImageLinkSource(cwd: string | undefined, href: string): string | null {
+  const path = conversationImageSource(cwd, href)?.path;
+  return path && /\.(?:png|jpe?g|gif|webp|avif|bmp|ico)$/i.test(path) ? path : null;
 }

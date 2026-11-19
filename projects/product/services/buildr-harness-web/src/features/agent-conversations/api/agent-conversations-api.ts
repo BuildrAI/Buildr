@@ -70,9 +70,10 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
   let catalogGeneration=0;
   let catalogSnapshot:(ModelCatalogResult & {revision:string})|undefined;
   let catalogRead:Promise<ModelCatalogResult>|undefined;
+  const invalidateModelReads=()=>{read.invalidate();catalogRead=undefined;catalogSnapshot=undefined;catalogGeneration++;};
   const changeModels=async<T,>(url:string,init:RequestInit={}):Promise<T>=>{
-    catalogRead=undefined;catalogSnapshot=undefined;catalogGeneration++;
-    try{return await request<T>(url,init);}finally{catalogRead=undefined;catalogSnapshot=undefined;catalogGeneration++;}
+    invalidateModelReads();
+    try{return await request<T>(url,init);}finally{invalidateModelReads();}
   };
   const fetchModelCatalog=async(signal?:AbortSignal):Promise<ModelCatalogResult>=>{
     const generation=catalogGeneration,previous=catalogSnapshot;
@@ -127,7 +128,11 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     connectionAccountImpact(id: string, signal?: AbortSignal) { return request<ConnectionAccountImpact>(`${appPath}/connections/${encodeURIComponent(id)}/account-impact`, {signal}); },
     logoutConnection(connection: ConnectionView, switchAccount = false) { return changeModels<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/logout`, post({expectedRevision: connection.revision, ...(switchAccount ? {switchAccount: true} : {})})); },
     login(connection: ConnectionView) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/login-attempts`, post({expectedRevision: connection.revision})); },
-    loginAttempt(connectionId: string, id: string, signal?: AbortSignal) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connectionId)}/login-attempts/${encodeURIComponent(id)}`, {signal}); },
+    async loginAttempt(connectionId: string, id: string, signal?: AbortSignal) {
+      const connection = await request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connectionId)}/login-attempts/${encodeURIComponent(id)}`, {signal});
+      if (!connection.loginAttempt || !['initializing', 'waiting-browser', 'checking'].includes(connection.loginAttempt.state)) invalidateModelReads();
+      return connection;
+    },
     cancelLogin(connection: ConnectionView, id: string) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/login-attempts/${encodeURIComponent(id)}/cancel`, post({expectedRevision:connection.revision})); },
     async activitySummary(signal?:AbortSignal):Promise<ConversationPage & {pending:PendingConversation[]}> {
       const generation=activityReadGeneration,previous=activitySnapshot;

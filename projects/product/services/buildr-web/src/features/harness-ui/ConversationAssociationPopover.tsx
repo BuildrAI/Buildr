@@ -33,13 +33,15 @@ export function ConversationAssociationPopover({kind,count,loading,enabled=true,
 }
 
 export function AssociationRows({items,names,saving,onOpen,onRemove,kind='task'}:{kind?:'task'|'conversation';items:AssociationItem[];names:Record<string,string>;saving:boolean;onOpen:(item:AssociationItem)=>void;onRemove:(item:AssociationItem)=>void}){
+  const displayId=(id:string)=>kind==='conversation'?id.slice(0,8):id;
   return <div className="ac-association-rows">{items.map(item=><div className="ac-association-row" key={associationKey(item)}>
-    <button type="button" className="ac-association-open" data-associated-task={kind==='task'?item.id:undefined} data-associated-conversation={kind==='conversation'?item.id:undefined} data-associated-workspace={item.workspaceId} onClick={()=>onOpen(item)}><strong>{item.title}</strong><small>{names[item.workspaceId]||item.workspaceId} · {item.id}</small>{item.error&&<small role="status">{item.error}</small>}</button>
+    <button type="button" className="ac-association-open" data-associated-task={kind==='task'?item.id:undefined} data-associated-conversation={kind==='conversation'?item.id:undefined} data-associated-workspace={item.workspaceId} onClick={()=>onOpen(item)}><strong>{item.title}</strong><small title={item.id}>{names[item.workspaceId]||item.workspaceId} · {displayId(item.id)}</small>{item.error&&<small role="status">{item.error}</small>}</button>
     <Button type="text" size="small" icon={<DeleteOutlined/>} disabled={saving} aria-label={'解除关联 '+item.id} title="只解除关联，不删除对象" onClick={()=>onRemove(item)}/>
   </div>)}</div>;
 }
 
 export function AssociationSearch({kind,names,selected,saving,search,onAdd}:{kind:'task'|'conversation';names:Record<string,string>;selected:Set<string>;saving:boolean;search:(query:string,signal:AbortSignal)=>Promise<AssociationResult>;onAdd:(item:AssociationItem)=>void}){
+  const displayId=(id:string)=>kind==='conversation'?id.slice(0,8):id;
   const [query,setQuery]=useState(''),[focused,setFocused]=useState(false),[state,setState]=useState<{query:string;result:AssociationResult;loading:boolean}>({query:'',result:{items:[],errors:[]},loading:false});
   const ready=associationQueryReady(query),current=state.query===query;
   const result=current?state.result:{items:[],errors:[]},loading=!current||state.loading;
@@ -51,6 +53,6 @@ export function AssociationSearch({kind,names,selected,saving,search,onAdd}:{kin
     return()=>{controller.abort();clearTimeout(timer);};
   },[query,ready,search]);
   const items=result.items.slice(0,ASSOCIATION_SEARCH_LIMIT);
-  const options=items.map(item=>{const linked=selected.has(associationKey(item));return {value:associationKey(item),disabled:saving||linked,label:<div className="ac-association-candidate"><strong>{item.title}{linked?' · 已关联':''}</strong><small>{names[item.workspaceId]||item.workspaceId} · {item.id}</small></div>};});
+  const options=items.map(item=>{const linked=selected.has(associationKey(item));return {value:associationKey(item),disabled:saving||linked,label:<div className="ac-association-candidate"><strong>{item.title}{linked?' · 已关联':''}</strong><small title={item.id}>{names[item.workspaceId]||item.workspaceId} · {displayId(item.id)}</small></div>};});
   return <section className="ac-association-search"><strong>新增关联</strong><AutoComplete aria-label={kind==='task'?'搜索任务':'搜索对话'} placeholder={kind==='task'?'输入至少 2 个字符，匹配名称或编码前缀':'输入至少 2 个字符，匹配标题或标识前缀'} allowClear value={query} options={options.length?options:[{value:"__empty__",disabled:true,label:<div className="ac-association-search-hint">{result.errors.length?'已读取范围中暂无匹配，部分空间尚未确认。':'没有前缀匹配。'}</div>}]} open={focused&&ready&&!loading} onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)} onChange={value=>{if(!items.some(item=>associationKey(item)===value))setQuery(value);}} onSelect={value=>{const item=items.find(item=>associationKey(item)===value);if(item&&!saving&&!selected.has(value))onAdd(item);}} getPopupContainer={trigger=>trigger.parentElement!} classNames={{popup:{root:'ac-association-options'}}} notFoundContent={<div className="ac-association-search-hint">{result.errors.length?'已读取范围中暂无匹配，部分空间尚未确认。':'没有前缀匹配。'}</div>} popupRender={menu=><>{menu}{result.errors.map((error,index)=><Alert key={index} type="warning" showIcon message={error}/>)}</>}/></section>;
 }

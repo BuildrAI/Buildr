@@ -750,6 +750,9 @@ test('pending send display participates in scoped pagination and activity withou
  pending.finish(claimed,'failed','specific failure');
  const failed=repo.querySummaries(['w1'],{limit:10,activityState:'send-failed'});
  assert.equal(failed.total,1);assert.equal(failed.conversations[0].activity?.pendingSend?.reason,'specific failure');
+ assert.equal(failed.activityCounts.sendFailed,1);
+ assert.equal(failed.activityCounts.attention,1);
+ assert.equal(repo.querySummaries(['w1'],{activeOnly:true,activityState:'attention',limit:10}).total,2);
  a=pending.read('w1','a')!;pending.cancel('w1','a',a.revision);
  assert.equal(repo.querySummaries(['w1'],{activeOnly:true,limit:10}).total,1);
  pending.finish(pending.read('w1','b')!,'delivered','accepted');

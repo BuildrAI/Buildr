@@ -114,7 +114,8 @@ export async function completePublicationEffects(options: any, dependencies: any
   const checkpoint = options.checkpoint ?? (() => {});
   const handlers: Record<ReleaseEffectCheckId, () => unknown> = {
     'registry-state': async () => {
-      values.beforeTags = await registryDistTagsState(artifact.manifest.packageName, dependencies.fetchImpl);
+      values.beforeTags = options.beforeTags ?? await registryDistTagsState(artifact.manifest.packageName, dependencies.fetchImpl);
+      checkpoint({ registryBeforeTags: values.beforeTags });
       const observed = await registryVersionState(artifact.manifest.packageName, version, dependencies.fetchImpl);
       assertRegistryArtifact(observed, artifact.manifest);
       values.registry = observed;
@@ -125,19 +126,19 @@ export async function completePublicationEffects(options: any, dependencies: any
     },
     'github-release-state': () => ensureGitHubRelease(expectedRelease, { token, mode: 'preflight', fetchImpl: dependencies.fetchImpl }),
     'npm-publish': async () => {
-      if (!values.registry?.published) {
+      if (!values.registry?.published && (options.previousAttempt ?? 'not-attempted') === 'not-attempted') {
         values.compatibility = await checkPublicationCompatibility({ context, artifact }, dependencies);
         if (values.compatibility.status !== 'passed') throw Object.assign(new Error('Package compatibility recheck did not pass; inspect the recorded checks and pair diagnostics.'),
           { code: 'release-package-compatibility-blocked', compatibility: values.compatibility });
       }
-      const published = await publishFrozenArtifact({ manifestPath: artifact.manifestPath, npmTag, previousAttempt: options.previousAttempt ?? 'not-attempted' }, { ...dependencies,
+      const published = await publishFrozenArtifact({ manifestPath: artifact.manifestPath, npmTag, deferReadback: true, previousAttempt: options.previousAttempt ?? 'not-attempted' }, { ...dependencies,
         onEffects: (effects: any[]) => checkpoint({ pendingEffects: effects }),
       });
       if (published.registry) values.registry = published.registry;
       return published;
     },
     'registry-readback': async () => {
-      values.registry = await waitForRegistryRelease({ packageName: artifact.manifest.packageName, version, npmTag, integrity: artifact.manifest.integrity, beforeTags: values.beforeTags }, { fetchImpl: dependencies.fetchImpl, ...dependencies.registryWait });
+      values.registry = await waitForRegistryRelease({ packageName: artifact.manifest.packageName, version, npmTag, integrity: artifact.manifest.integrity, beforeTags: values.beforeTags }, { fetchImpl: dependencies.fetchImpl, attempts: 40, delayMs: 5_000, backoff: true, timeoutMs: 15 * 60_000, ...dependencies.registryWait });
     },
     'github-release-write': async () => {
       values.githubRelease = await ensureGitHubRelease(expectedRelease, { token, fetchImpl: dependencies.fetchImpl });
@@ -183,7 +184,7 @@ export async function runReleasePublication(options: any, dependencies: any = {}
   const journal = path.join(options.outputDirectory, 'publication-steps.json');
   const previous = options.previousPublicationDirectory ? readPublicationJournal(options.previousPublicationDirectory)
     : fs.existsSync(journal) ? readPublicationJournal(options.outputDirectory) : null;
-  // Unknown/missing history can be resolved by a current official 404; a known foreign binding cannot.
+  // Missing history permits observation only; a known foreign binding is a conflict.
   const expectedPreviousContext = Number(options.publish?.runAttempt) > 1 || !context.executorRecovery
     ? context.identity : context.executorRecovery.originalContextIdentity;
   if ((previous?.contextIdentity && previous.contextIdentity !== expectedPreviousContext)
@@ -192,14 +193,18 @@ export async function runReleasePublication(options: any, dependencies: any = {}
   }
   const previousAttempt = publicationAttemptFromJournal(previous, context, artifact.manifest, options.publish);
   let npmAttempted: boolean | null = previousAttempt === 'attempted' ? true : previousAttempt === 'not-attempted' ? false : null;
+  let npmUploadAccepted = previousAttempt === 'attempted' && previous?.npmUploadAccepted === true;
+  let registryBeforeTags = previousAttempt === 'attempted' ? previous?.registryBeforeTags : undefined;
   const checkpoint = (value: any) => {
+    if (value.registryBeforeTags) registryBeforeTags = value.registryBeforeTags;
     if (value.pendingEffects) {
       pendingEffects = value.pendingEffects;
       if (pendingEffects.some(effect => effect.type === 'npm-published')) npmAttempted = true;
+      if (pendingEffects.some(effect => effect.type === 'npm-published' && effect.state === 'accepted')) npmUploadAccepted = true;
     }
     else if (value.steps) pendingEffects = [];
     save(journal, { schemaVersion: 'buildr.release-publication-steps/v1', contextIdentity: context.identity, publish: options.publish,
-      artifact: publicationArtifact(artifact.manifest), npmAttempted,
+      artifact: publicationArtifact(artifact.manifest), npmAttempted, npmUploadAccepted, registryBeforeTags,
       steps: [...phases, ...(value.steps || [])], effects: [...effects, ...(value.effects || []), ...pendingEffects] });
   };
   let authority: any;
@@ -229,7 +234,7 @@ export async function runReleasePublication(options: any, dependencies: any = {}
   effects.push(...initial.effects);
   let completed: any = initial;
   if (initial.status === 'passed') {
-    completed = await completePublicationEffects({ context, artifact, repo, token: options.token, checkpoint, previousAttempt }, dependencies);
+    completed = await completePublicationEffects({ context, artifact, repo, token: options.token, checkpoint, previousAttempt, beforeTags: registryBeforeTags }, dependencies);
     phases.push(...completed.steps);
     effects.push(...completed.effects);
   }
@@ -239,19 +244,19 @@ export async function runReleasePublication(options: any, dependencies: any = {}
     tagCommit = observed.observed?.targetCommit ?? null;
   } catch { /* Unknown is not absent and is recorded by the phase result. */ }
   let registry = completed.values?.registry;
-  try { registry = await registryVersionState(artifact.manifest.packageName, artifact.manifest.version); }
+  try { registry = await registryVersionState(artifact.manifest.packageName, artifact.manifest.version, dependencies.fetchImpl); }
   catch { /* Preserve an already confirmed publication, if any. */ }
   const evidence = createReleaseTransactionEvidence({ context, publish: options.publish, outcome: completed.status, publicFacts: {
     version: context.release.version, tagCommit, npmDistTag: context.release.version.includes('-') ? 'next' : 'latest',
     registryPublished: registry?.published === true, registryIntegrity: registry?.published ? registry.integrity : null,
-    registryObservation: registry ? (registry.published ? 'present' : 'absent') : 'unknown',
+    registryObservation: registry ? (registry.published ? 'present' : npmAttempted === false ? 'absent' : 'unknown') : 'unknown',
     githubRelease: completed.values?.githubRelease || effects.some(effect => effect.type === 'github-release-created' && effect.state === 'confirmed') ? `https://github.com/${context.workflow.repository}/releases/tag/v${context.release.version}` : null,
     registrySmoke: completed.values?.registrySmoke?.status === 'passed' ? 'passed' : 'unknown',
     steps: phases, effects,
     conflict: Boolean((tagCommit && tagCommit !== context.convergence.mainCommit) || (registry?.published && registry.integrity !== artifact.manifest.integrity) || completed.failure?.code?.includes('conflict')),
   } });
   save(path.join(options.outputDirectory, 'release-transaction-evidence.json'), evidence);
-  return { status: completed.status, evidence, effects, failure: completed.failure };
+  return { status: completed.failure?.code === 'registry-propagation-pending' ? 'publication-pending' : completed.status, evidence, effects, failure: completed.failure };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

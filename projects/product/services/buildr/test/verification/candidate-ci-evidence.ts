@@ -146,6 +146,7 @@ function resultProjection(results: any): any  {
     ...(item.queuedAt ? { queuedAt: item.queuedAt } : {}),
     ...(item.startedAt ? { startedAt: item.startedAt } : {}),
     ...(item.finishedAt ? { finishedAt: item.finishedAt } : {}),
+    ...(item.resources !== undefined ? { resources: item.resources } : {}),
     ...(item.resourceCoordination ? { resourceCoordination: item.resourceCoordination } : {}),
     phases: item.phases ?? [],
     failureCode: item.failureCode ?? null,

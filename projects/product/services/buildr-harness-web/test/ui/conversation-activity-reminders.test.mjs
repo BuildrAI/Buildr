@@ -170,6 +170,10 @@ test('waiting and failed submissions remain active without pretending to execute
  assert.equal(activityState({...row,activity:{...row.activity,pendingSend:undefined}}),'unknown','残余活跃行保持可解释，不无声置顶');
  assert.equal(activityState({...row,run:{status:'running'},activity:{...row.activity,pendingSend:undefined}}),'running');
  assert.deepEqual(activityBadge({active:1,running:0,waiting:0,unseen:0,unknown:0,attention:0,pendingSend:1}),{kind:'active',count:1,label:'活动中'});
+ assert.deepEqual(activityBadge({active:3,running:2,waiting:0,unseen:0,unknown:0,attention:1,pendingSend:1,sendFailed:1}),{kind:'attention',count:1,label:'待处理'});
+ assert.match(activityReminder({active:3,running:2,waiting:0,unseen:0,unknown:0,attention:1,pendingSend:1,sendFailed:1}),/待处理 1（待决策 0、待查看 0、发送失败 1），执行中 2，待发送 1/);
+ const listHtml=render({items:[{id:'abcdef12-3456-7890-abcd-ef1234567890',workspaceId:'a',title:'条目',state:'waiting',meta:'模型'}],workspaces:[{id:'a',name:'空间'}],counts:{active:1,running:0,waiting:1,unseen:0,unknown:0,attention:1}});
+ assert.doesNotMatch(listHtml,/ac-activity-id|abcdef12-3456-7890/);
 });
 
 test('残余活跃行归为状态待确认，结算入口只放行无在途工作的保留未知轮',async()=>{

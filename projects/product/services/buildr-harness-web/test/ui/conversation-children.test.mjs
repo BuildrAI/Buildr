@@ -8,9 +8,12 @@ test('子对话以创建次序保留全部入口，刷新和分页不重复且�
   assert.deepEqual(rows.map(r=>r.id),['a','b','c']);assert.equal(rows[1].title,'new');
   assert.deepEqual(mergeChildConversations(rows,[b]).map(r=>r.id),['a','b','c']);
 });
-test('浮动入口显示真实工作和待回应状态而不把收起当作停止',()=>{
-  for(const [status,expected] of [['running','正在处理'],['waiting-approval','等待授权'],['waiting-question','等待回答'],['unknown','待核对'],['tools-active','待核对'],['failed','执行失败'],['stopped','已停止']])assert.equal(childConversationStatus(row('a','',{run:{status}})),expected);
-  assert.equal(childConversationStatus(row('a','',{run:{status:'completed'},activity:{version:2,seenThrough:1}})),'有新消息');
+test('浮动入口复用主列表统一状态与文案而不把收起当作停止',()=>{
+  for(const [status,expected] of [['running','执行中'],['waiting-approval','待决策'],['waiting-question','待决策'],['unknown','状态待确认'],['tools-active','后台作业运行中'],['failed','执行失败'],['stopped','已停止']])assert.equal(childConversationStatus(row('a','',{run:{status}})),expected);
+  assert.equal(childConversationStatus(row('a','',{run:{status:'running'},activity:{version:2,seenThrough:2,pendingDecisionCount:1}})),'待决策');
+  assert.equal(childConversationStatus(row('a','',{run:{status:'completed'},activity:{version:2,seenThrough:1}})),'待查看');
+  assert.equal(childConversationStatus(row('a','',{activity:{version:1,seenThrough:1,pendingSend:{state:'waiting',reason:'等待投递',updatedAt:''}}})),'等待发送');
+  assert.equal(childConversationStatus(row('a','',{activity:{version:1,seenThrough:1,pendingSend:{state:'failed',reason:'投递失败',updatedAt:''}}})),'发送失败');
   assert.equal(childConversationStatus(row('a','')),'尚未开始');
 });
 test('未知创建按父对话及配置隔离保存原请求，损坏存储不伪造请求',()=>{

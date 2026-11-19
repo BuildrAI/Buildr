@@ -207,7 +207,7 @@ export class NativeProgramManager implements AgentProgramManager {
     }
   }
 
-  private async preparedExecutable(provider: string): Promise<string | undefined> {
+  private async preparedRecord(provider: string): Promise<{ version: string; executable: string } | undefined> {
     const marker = path.join(this.root, 'programs', provider, 'prepared.json');
     try {
       const info = await fs.lstat(marker);
@@ -223,10 +223,18 @@ export class NativeProgramManager implements AgentProgramManager {
         if (!(await this.verifyCompanionPackages(destination, companionSpecs))) return undefined;
       }
       const actual = await fs.realpath(expected);
-      return this.isManaged(provider, actual) ? actual : undefined;
+      return this.isManaged(provider, actual) ? { version: prepared.version, executable: actual } : undefined;
     } catch {
       return undefined;
     }
+  }
+
+  private async preparedExecutable(provider: string): Promise<string | undefined> {
+    return (await this.preparedRecord(provider))?.executable;
+  }
+
+  async preparedVersion(provider: string): Promise<string | undefined> {
+    return (await this.preparedRecord(provider))?.version;
   }
 
   private async retainPrepared(provider: string, version: string, executable: string): Promise<void> {

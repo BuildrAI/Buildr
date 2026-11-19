@@ -27,7 +27,13 @@ export async function continueLocalPackageCandidate(input: any, dependencies: an
     sourceTree: input.sourceTree, sourceFile: input.options.sourceVerification, base: input.baseline,
     platform: dependencies.platform, scope: state.localPackageScope, plan: input.plan, peer: state.preparationPeer,
     previous: state.localPackage ?? state.localPackageProduction,
-  }, { ...dependencies.preparationDependencies, onArtifactProduced: (receipt: any) => { state.localPackageProduction = receipt; save(); } });
+  }, { ...dependencies.preparationDependencies, onMeasurements: (value: any) => { const prior = state.localReleaseMeasurements;
+    state.localReleaseMeasurements = prior?.sourceCommit === value.sourceCommit && (prior.artifactSha256 === value.artifactSha256 || !value.artifactSha256)
+      ? { ...value, artifactSha256: value.artifactSha256 ?? prior.artifactSha256,
+        package: value.package ?? prior.package, artifactChecks: value.artifactChecks ?? prior.artifactChecks,
+        stages: [...prior.stages.filter((stage: any) => !value.stages.some((item: any) => item.id === stage.id)), ...value.stages] }
+      : value;
+    save(); }, onArtifactProduced: (receipt: any) => { state.localPackageProduction = receipt; save(); } });
   if (prepared.status !== 'ready') return prepared;
   if (state.localPackage?.handoffIdentity && state.localPackage.sourceCommit === input.sourceCommit
     && state.localPackage.handoffIdentity !== prepared.handoffIdentity) throw new Error('Frozen local package or evidence changed after remote dispatch.');

@@ -19,6 +19,7 @@ function fixture(root: string, name = '@buildr-ai/buildr-harness-web') {
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({name, type: 'module'}));
   fs.writeFileSync(path.join(root, 'vite.config.ts'), 'export default {};\n');
   fs.writeFileSync(path.join(root, 'index.html'), '<html><head></head><body><script type="module" src="/src/main.ts"></script></body></html>');
+  fs.writeFileSync(path.join(root, 'mermaid-renderer.html'), '<html><head></head><body><script type="module" src="/src/main.ts"></script></body></html>');
   fs.writeFileSync(path.join(root, 'src/main.ts'), 'export const value=1;\n');
 }
 async function upgrade(url: string, cookie = ''): Promise<boolean> {
@@ -37,8 +38,9 @@ test('two middleware roots share one listener with separate HMR and host authent
   let main: any, harness: any;
   const server = http.createServer((req, res) => {
     const embedded = req.url!.startsWith('/harness/');
-    const document = req.url === '/' || req.url === '/harness/';
-    (embedded ? harness : main).handle(req, res, {document, frame: embedded}).catch((error: any) => {res.writeHead(error.status ?? 500); res.end('denied');});
+    const mermaid = req.url === '/mermaid-renderer.html';
+    const document = req.url === '/' || req.url === '/harness/' || mermaid;
+    (embedded ? harness : main).handle(req, res, {document, ...(mermaid ? {entry: 'mermaid-renderer.html'} : {}), frame: embedded}).catch((error: any) => {res.writeHead(error.status ?? 500); res.end('denied');});
   });
   try {
     const root = path.join(temp, 'main'), harnessRoot = path.join(temp, 'harness');
@@ -57,6 +59,11 @@ test('two middleware roots share one listener with separate HMR and host authent
     assert.match(html, /\/@vite\/client/); assert.match(html, /main-token/);
     assert.match(page.headers.get('content-security-policy')!, /script-src 'self' 'nonce-/);
     assert.doesNotMatch(page.headers.get('content-security-policy')!, /unsafe-eval/);
+    const mermaidPage = await fetch(origin + '/mermaid-renderer.html');
+    assert.equal(mermaidPage.status, 200);
+    assert.equal(mermaidPage.headers.get('x-frame-options'), 'SAMEORIGIN');
+    assert.match(mermaidPage.headers.get('content-security-policy')!, /frame-ancestors 'self'/);
+    assert.doesNotMatch(await mermaidPage.text(), /main-token/);
     assert.equal((await fetch(origin + '/harness/')).status, 403);
     assert.equal((await fetch(origin + '/harness/src/main.ts')).status, 403);
     const frame = await fetch(origin + '/harness/', {headers: {cookie: 'frame=valid'}});

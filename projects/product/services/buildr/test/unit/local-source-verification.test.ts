@@ -48,8 +48,10 @@ test('source changes after a passed record invalidate only steps that own the ch
   });
   assert.deepEqual(changed.missingStepIds, ['integration-connections']);
   assert.deepEqual(changed.invalidatedStepIds, ['integration-connections']);
-  assert.match(changed.nextActions[0], /--invalidate integration-connections/u);
-  assert.deepEqual(changed.nextActions[1], '源码自记录后发生变化，仅需重跑受影响步骤：integration-connections。');
+  assert.deepEqual(changed.verificationPlan.counts, { execute: 1, reuse: 1, notRun: 0 });
+  assert.deepEqual(changed.verificationPlan.invalidationsByInput, [{ input: 'projects/product/services/buildr/src/modules/connection-skills/application/example.ts', checkIds: ['integration-connections'], scope: 'single' }]);
+  assert.doesNotMatch(changed.nextActions[0], /--invalidate/u);
+  assert.deepEqual(changed.verificationPlan.invalidationsByReason, [{ reason: 'declared-input-changed', checkIds: ['integration-connections'] }]);
   const unrelated = await prepareLocalSourceVerification({ repo: '/source', roundId: 'round' }, {
     ...ownedFixture([record('integration-connections'), record('integration-code')]),
     sourceHead: () => 'new', changedPaths: () => ['projects/product/services/buildr/src/modules/code/application/example.ts'],
@@ -106,6 +108,7 @@ test('unaffected source content still rejects recipe changes', async () => {
     }] }),
     readRound: () => ({ ...emptyCandidateRound('round'), records: [record] }),
     sourceHead: () => 'new', changedPaths: () => ['projects/product/services/buildr/src/modules/code/application/example.ts'],
+    fileSteps: () => [],
     inputsFor: () => ({ ...previous, key: 'sha256-new', contentIdentity: 'sha256-new-content', recipeIdentity: 'sha256-new-recipe' }),
   });
   assert.deepEqual(changed.missingStepIds, ['integration-connections']);
@@ -118,7 +121,8 @@ test('plugin source changes invalidate only the plugin step', async () => {
   });
   assert.deepEqual(pluginChanged.missingStepIds, ['dsh-plugin:unit']);
   assert.deepEqual(pluginChanged.invalidatedStepIds, ['dsh-plugin:unit']);
-  assert.match(pluginChanged.nextActions[0], /--invalidate dsh-plugin:unit/u);
+  assert.equal(pluginChanged.diagnostic.code, 'candidate-full-rerun-required');
+  assert.doesNotMatch(pluginChanged.nextActions[0], /--invalidate/u);
   const buildrChanged = await prepareLocalSourceVerification({ repo: '/source', roundId: 'round', packages: ['dsh-plugin'] }, {
     ...fixture([record('dsh-plugin:unit')]),
     sourceHead: () => 'new', changedPaths: () => ['projects/product/services/buildr/src/modules/connection-skills/application/example.ts'],
@@ -133,6 +137,7 @@ test('unprovable source differences invalidate the step instead of reusing its o
   });
   assert.deepEqual(missing.missingStepIds, ['integration-connections', 'integration-code']);
   assert.deepEqual(missing.invalidatedStepIds, ['integration-code', 'integration-connections']);
+  assert.deepEqual(missing.verificationPlan.invalidationsByReason, [{ reason: 'source-diff-unavailable', checkIds: ['integration-connections', 'integration-code'] }]);
 });
 test('release script changes invalidate their owning steps through workspace-relative inputs', async () => {
   const releaseFixture = (records: any[]) => ({
@@ -167,6 +172,7 @@ test('user-selected scope retains passed checks outside the selection without re
     ] }),
     readRound: () => ({ ...emptyCandidateRound('round'), records }),
     sourceHead: () => 'new', changedPaths: () => ['projects/product/services/buildr/src/modules/connection-skills/application/example.ts'],
+    fileSteps: () => [],
     inputsFor: () => ({ ...previous, key: 'sha256-new', contentIdentity: 'sha256-new-content', environmentIdentity: 'sha256-new-environment' }),
   });
   const scoped = await prepareLocalSourceVerification({ repo: '/source', roundId: 'round', selectedStepIds: ['integration-connections'] },
@@ -184,4 +190,25 @@ test('user-selected scope retains passed checks outside the selection without re
   assert.deepEqual(absent.outOfScopeStepIds, ['integration-code']);
   assert.equal(absent.verificationPlan.steps.find((step: any) => step.id === 'integration-code').disposition, 'not-run');
   assert.deepEqual(absent.verificationPlan.steps.find((step: any) => step.id === 'integration-code').reasons, ['declared-out-of-scope']);
+});
+
+test('preparer-only changes and retired failures do not expand the current candidate plan', async () => {
+  const records = [record('integration-connections'), record('integration-code'), record('harness-products-consumption', 'failed')];
+  const ready = await prepareLocalSourceVerification({ repo: '/source', roundId: 'round' }, {
+    ...ownedFixture(records), sourceHead: () => 'new',
+    changedPaths: () => ['projects/product/services/buildr/test/verification/local-source-verification.ts'],
+  });
+  assert.deepEqual(ready.verificationPlan.counts, { execute: 0, reuse: 2, notRun: 0 });
+  assert.ok(!ready.verificationPlan.steps.some((step: any) => step.id === 'harness-products-consumption'));
+  assert.equal(decodeCandidateSourceImport(ready.transport).records.find((entry: any) => entry.identity.stepId === 'harness-products-consumption').result.status, 'failed');
+});
+
+test('one shared input reports all affected checks without counting it as multiple triggers', async () => {
+  const changedPath = 'projects/product/services/buildr/package-lock.json';
+  const result = await prepareLocalSourceVerification({ repo: '/source', roundId: 'round' }, {
+    createSourcePlan: () => ({ status: 'ready', runner: 'macos', steps: ['unit', 'native'].map(id => ({ id, inputs: ['package-lock.json'] })) }),
+    readRound: () => ({ ...emptyCandidateRound('round'), records: [record('unit'), record('native')] }),
+    sourceHead: () => 'new', changedPaths: () => [changedPath],
+  });
+  assert.deepEqual(result.verificationPlan.invalidationsByInput, [{ input: changedPath, checkIds: ['unit', 'native'], scope: 'shared' }]);
 });

@@ -118,7 +118,7 @@ const allowed: any = new Map([
   ['src/modules/browser-authorization/application/browser-authorization-application.ts', new Set(['acquire'])],
   ['src/modules/browser-authorization/persistence/profiles.ts', new Set(['create', 'reset'])],
   // cleanArtifacts re-reads each registry record and re-observes its live disposal state immediately before removing only that recorded scratch path.
-  ['src/modules/artifact-lifecycle/application/artifact-application.ts', new Set(['cleanArtifacts'])],
+  ['src/modules/artifact-lifecycle/application/artifact-application.ts', new Set(['cleanArtifacts', 'collectAutomaticArtifacts'])],
 ]);
 
 const violations: any[] = [];

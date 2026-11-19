@@ -15,6 +15,7 @@ import {createProgrammaticHttpContribution} from '../interfaces/http/programmati
 import {eventStreamResponse} from '../interfaces/http/stream-response.ts';
 import type {AgentProcessConnection} from './client.ts';
 import {chooseHarnessDirectory} from './directory-picker.ts';
+import {defaultHarnessWorkspaceRoot} from '../profile.ts';
 
 export interface HarnessWebStatus {enabled:boolean;ready:boolean;endpointId?:string;origin?:string;generation:string;diagnostic?:string;mode?:'live'|'static'}
 interface Options {dataRoot:string;profileId?:string;generation:string;instanceId:string;staticRoot:string;runtimeDigest?:string;ownsListener():boolean;connect():Promise<AgentProcessConnection>}
@@ -31,7 +32,7 @@ export class HarnessWebEndpoint {
   private bundle?:string;
   private diagnostic?:string;
   private origin?:string;
-  private development?:{root:string;handle(req:IncomingMessage,res:ServerResponse,options?:{document?:boolean;entry?:string}):Promise<void>;close():Promise<void>};
+  private development?:{root:string;handle(req:IncomingMessage,res:ServerResponse,options?:{document?:boolean;entry?:string;frame?:boolean}):Promise<void>;close():Promise<void>};
   private developmentWork:Promise<void>=Promise.resolve();
   private closed=false;
   private readonly identity:WebListenerIdentity;
@@ -183,6 +184,9 @@ export class HarnessWebEndpoint {
   private html(res:ServerResponse,content:string,nonce?:string):void {
     res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','content-security-policy':`default-src 'self'; script-src 'self'${nonce?" 'nonce-"+nonce+"'":''}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'`});res.end(content);
   }
+  private mermaidHtml(res:ServerResponse,content:string):void {
+    res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','content-security-policy':"default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'none'; font-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",'x-frame-options':'SAMEORIGIN'});res.end(content);
+  }
   private async binary(req:IncomingMessage,limit:number):Promise<Buffer>{const chunks:Buffer[]=[];let size=0;for await(const value of req){const chunk=Buffer.from(value);size+=chunk.length;if(size>limit)throw new AgentServiceError('agent_web_input_too_large','材料超过限制。',413);chunks.push(chunk);}return Buffer.concat(chunks);}
   private async handle(req:IncomingMessage,res:ServerResponse):Promise<void>{
     this.fence(req);const url=new URL(req.url!,this.origin);
@@ -210,9 +214,10 @@ export class HarnessWebEndpoint {
     if(req.method==='GET'&&bundle){this.authorize(req);const file=this.assets.read(bundle[1]!,decodeURIComponent(bundle[2]!));res.writeHead(200,{'content-type':file.mimeType,'cache-control':'private, max-age=86400, immutable','x-content-type-options':'nosniff'});res.end(file.bytes);return;}
     if(req.method==='GET'&&!url.pathname.startsWith('/api/')&&this.development){
       this.authorize(req);
-      await this.development.handle(req,res,{document:url.pathname==='/mermaid-renderer.html',entry:'mermaid-renderer.html'});return;
+      const mermaid=url.pathname==='/mermaid-renderer.html';
+      await this.development.handle(req,res,{document:mermaid,entry:mermaid?'mermaid-renderer.html':'index.html',frame:mermaid});return;
     }
-    if(req.method==='GET'&&url.pathname==='/mermaid-renderer.html'){this.authorize(req);const file=this.assets.read(this.bundle!,'mermaid-renderer.html');this.html(res,file.bytes.toString('utf8').replaceAll('./assets/',`/bundles/${this.bundle}/assets/`));return;}
+    if(req.method==='GET'&&url.pathname==='/mermaid-renderer.html'){this.authorize(req);const file=this.assets.read(this.bundle!,'mermaid-renderer.html');this.mermaidHtml(res,file.bytes.toString('utf8').replaceAll('./assets/',`/bundles/${this.bundle}/assets/`));return;}
     const connection=await this.options.connect();
     if(url.pathname==='/api/v1/harness/scopes'&&req.method==='GET'){this.authorize(req);json(res,200,await connection.scopeCatalog());return;}
     if(url.pathname==='/api/v1/harness/directories/choose'&&req.method==='POST'){
@@ -229,8 +234,9 @@ export class HarnessWebEndpoint {
     }
     if(url.pathname==='/api/v1/harness/files'&&req.method==='POST'){this.authorize(req,true);const input=await body(req,16384);this.authorize(req,true);if(Object.keys(input).some(key=>!['conversationId','path'].includes(key)))throw new AgentServiceError('agent_directory_file_invalid','文件请求无效。');json(res,200,await connection.directories.preview(input));return;}
     if(!this.handlers){
-      const common=createAgentServiceHttpContribution(async()=>(await this.options.connect()).operations,{executionScopeKeys:async()=>(await (await this.options.connect()).scopeCatalog()).scopes.map(value=>value.key),runtimeStatus:async()=>agentRuntimeStatus(await (await this.options.connect()).lifecycle.status()),restartRuntime:async input=>(await this.options.connect()).web.restart(input)});
-      const programmatic=createProgrammaticHttpContribution(async()=>(await this.options.connect()).operations,common,{dataRoot:()=>this.options.dataRoot,workspaces:()=>[],scopeKeys:async()=>(await (await this.options.connect()).scopeCatalog()).scopes.map(value=>value.key),version:()=>'harness',buildId:()=>this.options.runtimeDigest??null});
+      const defaultWorkspace=()=>{const rootPath=defaultHarnessWorkspaceRoot(this.options.dataRoot);return {rootPath:fs.existsSync(rootPath)?fs.realpathSync(rootPath):rootPath};};
+      const common=createAgentServiceHttpContribution(async()=>(await this.options.connect()).operations,{defaultWorkspace,prepareDefaultWorkspace:()=>{fs.mkdirSync(defaultWorkspace().rootPath,{recursive:true});},executionScopeKeys:async()=>[...new Set(['@default',...(await (await this.options.connect()).scopeCatalog()).scopes.map(value=>value.key)])],runtimeStatus:async()=>agentRuntimeStatus(await (await this.options.connect()).lifecycle.status()),restartRuntime:async input=>(await this.options.connect()).web.restart(input)});
+      const programmatic=createProgrammaticHttpContribution(async()=>(await this.options.connect()).operations,common,{dataRoot:()=>this.options.dataRoot,workspaces:()=>[],scopeKeys:async()=>[...new Set(['@default',...(await (await this.options.connect()).scopeCatalog()).scopes.map(value=>value.key)])],version:()=>'harness',buildId:()=>this.options.runtimeDigest??null});
       this.handlers={common,programmatic};
     }
     const {common,programmatic}=this.handlers;

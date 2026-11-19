@@ -17,6 +17,8 @@ const workTwo=path.join(root,'workspace-two');fixture.initializeWorkspace({targe
 // A real isolated Git checkout proves file-source resolution; no user checkout is touched.
 execFileSync('git',['init','--initial-branch=dev'],{cwd:work,stdio:'pipe'});
 fs.writeFileSync(path.join(work,'surface-proof.md'),'# same-page file proof\n');
+const proofImage=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=','base64');
+fs.writeFileSync(path.join(work,'surface-proof.png'),proofImage);
 execFileSync('git',['add','--','surface-proof.md'],{cwd:work});
 execFileSync('git',['-c','user.name=Harness fixture','-c','user.email=fixture@example.invalid','commit','-m','fixture'],{cwd:work,stdio:'pipe'});
 fixture.createCatalogRepository(work,{revision:fixture.assetCatalog(work).revision,code:'surface-code',name:'同页文件验收',path:'.'});
@@ -179,8 +181,33 @@ try{
  await frame.locator('.ac-focus-history-pane').waitFor({state:'visible'});
  await frame.locator('.ac-collapsed-rail .ac-new-conversation').click();
  await frame.locator('.ac-welcome .ant-select').filter({has:frame.getByRole('combobox',{name:'新对话工作空间',exact:true})}).click();
+ assert.equal(await frame.locator('.ac-panel-popup .ant-select-item-option').filter({hasText:'默认工作空间'}).count(),0,'workspace selector omits default workspace option');
  await frame.locator('.ac-panel-popup .ant-select-item-option').filter({hasText:'切换工作空间验收'}).click();
  assert.equal(await frame.locator('.ac-focus-history-pane').isVisible(),true,'switching workspace while creating a conversation preserves open history list');
+ await frame.locator('.ac-welcome .ac-workspace-select').hover();
+ await frame.locator('.ac-welcome .ac-workspace-select .ant-select-clear').click();
+ await page.waitForFunction(()=>document.querySelector('[aria-label="对话信息与工作空间"]')?.textContent?.trim()==='默认工作空间');
+ assert.equal(await frame.locator('.ac-focus-history-pane').isVisible(),true,'clearing workspace back to default preserves open history list');
+ const rail=frame.locator('.ac-collapsed-rail'), settings=frame.getByRole('region',{name:'智能体与模型',exact:true});
+ const gear=rail.getByRole('button',{name:'智能体与模型设置',exact:true}), quota=rail.getByRole('button',{name:'供应商额度',exact:true});
+ const preview=page.getByTestId('account-quota-overview');
+ await input.fill('设置往返保留的草稿');
+ await gear.hover();assert.equal(await preview.isVisible(),false);
+ await gear.click();await settings.waitFor();assert.equal(await frame.locator('.ac-focus-history-pane').isVisible(),true);
+ await settings.getByRole('tab',{name:'智能体',exact:true}).click();
+ await settings.getByRole('button',{name:'返回对话',exact:true}).click();assert.equal(await input.inputValue(),'设置往返保留的草稿');
+ await quota.hover();await preview.waitFor();await quota.click();await settings.waitFor();
+ assert.equal(await settings.getByRole('tab',{name:'模型',exact:true}).getAttribute('aria-selected'),'true');
+ await settings.getByText('账号与额度',{exact:true}).waitFor();
+ await settings.getByRole('button',{name:'返回对话',exact:true}).click();
+ const group=frame.locator('.ac-focus-history-pane [data-history-workspace]').filter({has:page.getByRole('button',{name:'在切换工作空间验收新建对话',exact:true})});
+ await group.locator('.ac-history-group-toggle').click();
+ await group.getByRole('button',{name:'在切换工作空间验收新建对话',exact:true}).click();
+ await page.waitForFunction(()=>document.activeElement?.id==='agent-conversation-input');
+ assert.equal(await frame.getByRole('button',{name:'对话信息与工作空间',exact:true}).innerText(),'切换工作空间验收');
+ assert.equal(await group.locator('.ac-history-group-toggle').getAttribute('aria-expanded'),'false');
+ assert.equal(await frame.locator('#agent-conversation-panel').getAttribute('data-conversation-id'),null);
+
  await frame.locator('.ac-collapsed-rail .ac-current-conversation').click();
  await frame.locator('.ac-focus-history-pane').waitFor({state:'hidden'});
  assert.equal(await page.locator('.development-harness-frame.is-full').isVisible(),true,'clicking current conversation rail exits history view without collapsing focus panel');
@@ -191,7 +218,7 @@ try{
   if(route.request().method()!=='GET')return route.continue();
   const response=await route.fetch();
   const body=await response.json();
-  body.entries=[...(body.entries??[]),{id:'mermaid-preview-entry',kind:'message',role:'assistant',text:'流程图：\n\n```mermaid\nsequenceDiagram\nparticipant U as 鲜虾小程序终端\nparticipant W as 微信支付通道\nparticipant S as 扫呗聚合收银台\nparticipant B as 鲜虾后端服务系统\nparticipant C as 财务清分中心\nU->>W: 发起聚合下单与支付授权\nW->>S: 推送支付交易结果通知\nS->>B: 向 notify_url 异步通知支付成功\nB->>B: 验签核对金额并落库收款记录\nB-->>S: 返回规定成功应答\nU->>B: 主动轮询查单并刷新履约状态\nB->>C: 写入应收结算待确认账单\n```\n',createdAt:new Date().toISOString()}];body.entries.push({id:'surface-links',kind:'message',role:'assistant',text:'[验收文件](surface-proof.md)\n\n[不确定文件](../outside.md)\n\n[工程任务](@task/frame-task)',createdAt:new Date().toISOString()});body.entries.push({id:'reading-retention-entry',kind:'message',role:'assistant',text:Array.from({length:80},(_,index)=>'独立验收段落 '+index).join('\n\n'),createdAt:new Date().toISOString()});
+  body.entries=[...(body.entries??[]),{id:'mermaid-preview-entry',kind:'message',role:'assistant',text:'流程图：\n\n```mermaid\nsequenceDiagram\nparticipant U as 鲜虾小程序终端\nparticipant W as 微信支付通道\nparticipant S as 扫呗聚合收银台\nparticipant B as 鲜虾后端服务系统\nparticipant C as 财务清分中心\nU->>W: 发起聚合下单与支付授权\nW->>S: 推送支付交易结果通知\nS->>B: 向 notify_url 异步通知支付成功\nB->>B: 验签核对金额并落库收款记录\nB-->>S: 返回规定成功应答\nU->>B: 主动轮询查单并刷新履约状态\nB->>C: 写入应收结算待确认账单\n```\n',createdAt:new Date().toISOString()}];body.entries.push({id:'surface-links',kind:'message',role:'assistant',text:'![Development 验收图片](surface-proof.png)\n\n[验收文件](surface-proof.md)\n\n[不确定文件](../outside.md)\n\n[工程任务](@task/frame-task)',createdAt:new Date().toISOString()});body.entries.push({id:'reading-retention-entry',kind:'message',role:'assistant',text:Array.from({length:80},(_,index)=>'独立验收段落 '+index).join('\n\n'),createdAt:new Date().toISOString()});
   await route.fulfill({response,json:body});
  });
  await openConversation(conversation.id);
@@ -210,6 +237,12 @@ try{
  await diagramDialog.getByRole('button',{name:'复制源码',exact:true}).waitFor({state:'visible'});
  await page.keyboard.press('Escape');
  await diagramDialog.waitFor({state:'hidden'});
+ await page.waitForFunction(()=>[...document.images].some(img=>img.alt==='Development 验收图片'&&img.naturalWidth===1));
+ await page.getByRole('button',{name:'查看大图：Development 验收图片',exact:true}).click();
+ const imageDialog=page.getByRole('dialog',{name:'图片预览',exact:true});
+ await imageDialog.waitFor();
+ assert.equal(await imageDialog.locator('img').getAttribute('src'),`data:image/png;base64,${proofImage.toString('base64')}`);
+ await imageDialog.getByRole('button',{name:'关闭预览',exact:true}).click();
  await page.locator('#agent-conversation-panel').getByRole('link',{name:'不确定文件',exact:true}).click();
  await page.getByText('不能确认文件的准确工程来源。',{exact:true}).waitFor();
  const actualFileRead=page.waitForResponse(response=>response.url().includes('/code/file?')&&new URL(response.url()).searchParams.get('filePath')==='surface-proof.md'&&response.status()===200);

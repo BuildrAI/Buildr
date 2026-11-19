@@ -3,6 +3,7 @@ import {createContext,useContext,useState,useRef,useCallback,type ReactNode} fro
 import {readOptionalPreference,writeOptionalPreference} from '../../lib/optional-preferences';
 import {agentConversationsApi} from './api/agent-conversations-api';
 import type {CatalogModel,ConversationView} from './types';
+import {applyAssociationResult} from './conversation-associations';
 export type TextConversationActionInput={workspaceId:string;cwd:string;text:string};
 export type TextConversationActionResult={status:'started';conversation:ConversationView}|{status:'recovering';reason:'existing-submission'|'submission-unknown';conversation?:ConversationView;message:string}|{status:'unavailable'|'failed'|'busy';message:string};
 export type ConversationCommand=HarnessConversationCommand;
@@ -113,7 +114,7 @@ function useIntegration(){
    const requestId=crypto.randomUUID();const timer=setTimeout(()=>{pending.current.delete(requestId);resolve({status:'recovering',reason:'submission-unknown',message:'Harness 的处理结果尚未确认，请到原对话核对，不要重复提交。'});},60000);pending.current.set(requestId,{resolve,timer});issue({action:'start-text',input,requestId});
  }),[issue]);
  const reply=useCallback((id:string,result:TextConversationActionResult)=>{const request=pending.current.get(id);if(!request)return;clearTimeout(request.timer);pending.current.delete(id);request.resolve(result);},[]);
- const apply=useCallback((value:ConversationView,_revision?:string)=>setConversation(current=>current?.id===value.id&&current.workspaceId===value.workspaceId?value:current),[]);
+ const apply=useCallback((value:ConversationView,observedRevision:string)=>setConversation(current=>applyAssociationResult(current,value,observedRevision)),[]);
  const openHistory=useCallback((_workspaceId?:string|null)=>{setView('history');issue({action:'history'});},[issue,setView]);
  return {side:'right' as 'left'|'right',connections:[] as {provider:string;label?:string}[],locateParticipation:async(workspaceId:string,conversationId:string,_runId:string)=>openConversation(workspaceId,conversationId),api:agentConversationsApi,open,setOpen,full,setFull,view,setView,settings,setSettings:(value:boolean)=>{setSettingsState(value);if(value)issue({action:'settings'});},conversation,setConversation,scope:conversation?{workspaceId:conversation.workspaceId,conversationId:conversation.id}:null,command,sequence,issue,reply,newConversation,openConversation,openHistory,openGlobal:()=>{setOpen(true);},toggle:()=>setOpen(value=>!value),toggleView:(next:'conversation'|'history')=>{if(next==='history')openHistory();else{setView(next);setOpen(value=>!value);}},apply,modelCatalog,modelCatalogReady,modelCatalogError,refreshModelCatalog,startTextConversation};
 }

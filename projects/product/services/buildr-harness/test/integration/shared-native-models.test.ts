@@ -274,3 +274,93 @@ test('providers opting into refreshOnStart run one startup check without periodi
   assert.equal(inspectCalls,2,'repeated startRefreshing does not repeat the startup check');
  }finally{await service.close();await rm(root,{recursive:true,force:true});}
 });
+
+test('managed connection login stays in checking until native model and quota sync completes', async () => {
+ const root = await mkdtemp(join(tmpdir(), 'buildr-managed-login-sync-'));
+ let authenticated = false, closed = 0, modelCalls = 0, usageCalls = 0;
+ let emitLogin!: (obs: { state: 'waiting-browser' | 'completed'; url?: string }) => void;
+ const releaseModels = Promise.withResolvers<void>();
+ const executor = {
+  descriptor: {
+   id: 'codex',
+   label: 'ChatGPT',
+   capabilities: { text: true, images: false, stop: true, resume: true, approval: true, questions: true, maxInputBytes: 1000 },
+   runtimeTraits: { transientAccountProbe: true },
+  },
+  async open() {
+   return {
+    bindingIdentity: 'codex-fixture',
+    capabilities: this.descriptor.capabilities,
+    inspectAccount: async () => ({ status: authenticated ? 'ready' as const : 'not-authenticated' as const }),
+    models: async () => [{ id: 'gpt-5-codex', label: 'GPT-5 Codex' }],
+    modelIdentity: async () => 'codex:acct-login',
+    requestModel: async (path: string) => {
+     if (path.includes('/codex/models')) {
+      modelCalls++;
+      await releaseModels.promise;
+      return Response.json({ models: [{ slug: 'gpt-5-codex', display_name: 'GPT-5 Codex' }] });
+     }
+     if (path === '/wham/usage') {
+      usageCalls++;
+      return Response.json({ plan_type: 'pro' });
+     }
+     return Response.json({});
+    },
+    beginLogin: async (update) => {
+     emitLogin = update;
+     update({ state: 'waiting-browser', url: 'https://auth.openai.com/oauth/authorize' });
+     await new Promise<void>(resolve => {
+      const check = setInterval(() => {
+       if (authenticated) { clearInterval(check); resolve(); }
+      }, 10);
+      check.unref();
+     });
+    },
+    cancelLogin: async () => {},
+    createContext: async () => ({ id: 'context' }),
+    resumeContext: async () => {},
+    readHistory: async () => [],
+    send: async () => {},
+    observe: async () => ({ status: 'idle' as const, tools: [] }),
+    reply: async () => {},
+    stop: async () => ({ status: 'stopped' as const, tools: [] }),
+    close: async () => { closed++; },
+   };
+  },
+ } satisfies AgentExecutor;
+ const service = createAgentService({ dataRoot: root, executors: [executor], resolveWorkspace: () => ({ rootPath: root }), assertTask() {} });
+ try {
+  await service.connections.connect('codex', { expectedRevision: 'unconfigured' });
+  const started = service.connections.login('codex', { expectedRevision: service.connections.read('codex').revision });
+  const attemptId = started.loginAttempt!.id;
+  for (let i = 0; i < 100 && service.connections.loginAttempt('codex', attemptId).loginAttempt?.state !== 'waiting-browser'; i++) {
+   await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  authenticated = true;
+  emitLogin({ state: 'completed' });
+  for (let i = 0; i < 100 && modelCalls === 0; i++) {
+   await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(modelCalls, 1);
+  assert.equal(service.connections.loginAttempt('codex', attemptId).loginAttempt?.state, 'checking', 'login must stay checking while syncing native-codex models and quota');
+  assert.notEqual(service.models.accounts.read('native-codex').status, 'ready');
+  const closedDuringSync = closed;
+
+  releaseModels.resolve();
+  for (let i = 0; i < 100 && service.connections.loginAttempt('codex', attemptId).loginAttempt?.state !== 'completed'; i++) {
+   await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(service.connections.loginAttempt('codex', attemptId).loginAttempt?.state, 'completed');
+  assert.equal(service.connections.read('codex').status, 'ready');
+  const account = service.models.accounts.read('native-codex');
+  assert.equal(account.status, 'ready');
+  assert.equal(account.models.some(m => m.id === 'gpt-5-codex'), true);
+  assert.equal(modelCalls, 1);
+  assert.equal(usageCalls, 1);
+  assert.ok(closed > closedDuringSync, 'transient probe releases only after check and model sync finish');
+ } finally {
+  releaseModels.resolve();
+  await service.close();
+  await rm(root, { recursive: true, force: true });
+ }
+});
