@@ -42,7 +42,13 @@ export function previewCandidateSourceDigest(serviceRoot: string): string {
   const agentRoot = path.resolve(root, '../buildr-harness');
   const webRoot = path.resolve(root, '../buildr-web');
   const hash = createHash('sha256');
-  for (const directory of [path.join(root, 'src'), path.join(agentRoot, 'src'), path.join(webRoot, 'src')]) {
+  for (const directory of [
+    path.join(root, 'src'),
+    path.join(agentRoot, 'src'),
+    path.join(agentRoot, 'resources'),
+    path.join(webRoot, 'src'),
+    path.join(webRoot, 'public'),
+  ]) {
     hash.update(directory);
     hashTree(hash, directory);
   }

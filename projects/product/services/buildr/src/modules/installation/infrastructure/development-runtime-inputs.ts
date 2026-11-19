@@ -39,9 +39,9 @@ export const DEVELOPMENT_RUNTIME_INPUTS = Object.freeze({
   prefixes: Object.freeze([
     `${service}/src/`, `${service}/bin/`, `${service}/web-dist/`,
     `${service}/tools/build/launcher/`, `${frontend}/src/`, `${frontend}/public/`,
-    `${harnessWeb}/src/`,
+    `${harnessWeb}/src/`, `${harnessWeb}/public/`,
     `${service}/tools/codegen/contracts/`,
-    `${agent}/src/`, `${agent}/build/`, `${preparedAgent}/build/`,
+    `${agent}/src/`, `${agent}/resources/`, `${agent}/build/`, `${preparedAgent}/resources/`, `${preparedAgent}/build/`,
     `${service}/tools/development/programs/`, `${service}/resources/contracts/`, `${service}/resources/installation/launcher/`,
   ]),
 });
@@ -79,6 +79,7 @@ export function readDevelopmentRuntimeIdentity(productRoot: string, gitRoot: str
     };
     visit(web);
     visit(path.join(root, agent, 'build'));
+    visit(path.join(root, preparedAgent, 'resources'));
     visit(path.join(root, preparedAgent, 'build'));
     if (fs.existsSync(path.join(root, preparedAgent, 'package.json'))) names.add(`${preparedAgent}/package.json`);
     const digest = crypto.createHash('sha256');

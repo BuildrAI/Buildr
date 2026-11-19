@@ -59,6 +59,11 @@ test('loopback endpoint is explicit, stable across generation handoff, keeps old
   fs.writeFileSync(path.join(work,'note.md'),'# source checked');
   fs.writeFileSync(path.join(staticRoot,'index.html'),'<!doctype html><html><head><script type="module" src="./assets/main.js"></script></head><body>shared page</body></html>');fs.writeFileSync(path.join(staticRoot,'assets/main.js'),'export const page="old"');
   fs.writeFileSync(path.join(staticRoot,'mermaid-renderer.html'),'<!doctype html><html><head><script type="module" src="./assets/mermaid.js"></script></head><body></body></html>');fs.writeFileSync(path.join(staticRoot,'assets/mermaid.js'),'export const diagram=1;');
+  const iconBytes=Buffer.from('fixture-ico');const pngBytes=Buffer.from('fixture-png');
+  fs.writeFileSync(path.join(staticRoot,'favicon.ico'),iconBytes);
+  fs.writeFileSync(path.join(staticRoot,'favicon-32x32.png'),pngBytes);
+  fs.writeFileSync(path.join(staticRoot,'icon-192.png'),pngBytes);
+  fs.writeFileSync(path.join(staticRoot,'apple-touch-icon.png'),pngBytes);
   const directories=new HarnessDirectoryHost(dataRoot),directory=directories.register(work),key=executionScopeKey(directory.ref);
   const service=createAgentService({dataRoot,legacySourceId:'buildr',environment:{HOME:dataRoot},executors:[],modelProviders:[],host:directories});
   const conversation=await service.conversations.create(key,{});
@@ -72,6 +77,12 @@ test('loopback endpoint is explicit, stable across generation handoff, keeps old
   const ticket=await a.login();assert.ok(ticket.url.startsWith(origin+'/#ticket='));assert.equal(new URL(ticket.url).search,'');
   const value=new URLSearchParams(new URL(ticket.url).hash.slice(1)).get('ticket');
   let response=await fetch(origin+'/');const bootstrap=await response.text();assert.match(bootstrap,/history.replaceState/);assert.ok(!bootstrap.includes(value!));
+  for(const iconHref of ['/favicon.ico','/favicon-32x32.png','/icon-192.png','/apple-touch-icon.png'])assert.ok(bootstrap.includes(iconHref),iconHref);
+  response=await fetch(origin+'/favicon.ico');assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'image/x-icon');assert.equal(response.headers.get('cache-control'),'public, max-age=3600');assert.deepEqual(Buffer.from(await response.arrayBuffer()),iconBytes);
+  response=await fetch(origin+'/icon-192.png');assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'image/png');assert.deepEqual(Buffer.from(await response.arrayBuffer()),pngBytes);
+  response=await fetch(origin+'/favicon.ico',{method:'HEAD'});assert.equal(response.status,200);assert.equal(response.headers.get('content-length'),String(iconBytes.length));assert.equal((await response.arrayBuffer()).byteLength,0);
+  response=await fetch(origin+'/favicon.ico',{headers:{'sec-fetch-site':'cross-site'}});assert.equal(response.status,403);
+  const forgedIconHost=await new Promise<number|undefined>((resolve,reject)=>{const request=httpRequest(origin+'/favicon.ico',{headers:{host:'evil.invalid'}},response=>{response.resume();response.once('end',()=>resolve(response.statusCode));});request.once('error',reject);request.end();});assert.equal(forgedIconHost,403);
   response=await fetch(origin+'/session/ticket',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({ticket:value})});assert.equal(response.status,200);
   const cookie=response.headers.get('set-cookie')!.split(';')[0]!,token=cookie.slice(cookie.indexOf('=')+1);
   response=await fetch(origin+'/',{headers:{cookie}});assert.equal(response.status,200);const old=await response.text();assert.ok(old.includes(token));const oldBundle=/\/bundles\/([a-f0-9]{64})\/assets\/main.js/.exec(old)![0];
@@ -128,12 +139,13 @@ test('loopback endpoint is explicit, stable across generation handoff, keeps old
 test('development source page keeps ticket authentication and never needs an execution connection',async t=>{
   const dataRoot=fs.mkdtempSync(path.join(os.tmpdir(),'harness-live-page-')),staticRoot=path.join(dataRoot,'static'),sourceRoot=path.join(dataRoot,'source');
   fs.mkdirSync(staticRoot);fs.writeFileSync(path.join(staticRoot,'index.html'),'<html><head></head><body>static</body></html>');
-  fs.mkdirSync(path.join(sourceRoot,'src'),{recursive:true});fs.mkdirSync(path.join(sourceRoot,'tools'));
+  fs.mkdirSync(path.join(sourceRoot,'src'),{recursive:true});fs.mkdirSync(path.join(sourceRoot,'tools'));fs.mkdirSync(path.join(sourceRoot,'public'));
   fs.writeFileSync(path.join(sourceRoot,'package.json'),JSON.stringify({name:'@buildr-ai/buildr-harness-web',type:'module'}));
   fs.writeFileSync(path.join(sourceRoot,'vite.config.ts'),'export default {};');
   fs.writeFileSync(path.join(sourceRoot,'index.html'),'<html><head></head><body><script type="module" src="/src/main.ts"></script></body></html>');
   fs.writeFileSync(path.join(sourceRoot,'mermaid-renderer.html'),'<html><head></head><body><script type="module" src="/src/main.ts"></script></body></html>');
   fs.writeFileSync(path.join(sourceRoot,'src/main.ts'),'export const value:number=1;');
+  const liveIcon=Buffer.from('live-favicon');fs.writeFileSync(path.join(sourceRoot,'public/favicon.ico'),liveIcon);
   fs.symlinkSync(path.resolve(import.meta.dirname,'../../../buildr-harness-web/tools/dev-server.mjs'),path.join(sourceRoot,'tools/dev-server.mjs'));
   let connects=0;
   const options={dataRoot,staticRoot,profileId:'development',ownsListener:()=>true,connect:async()=>{connects++;throw new Error('execution must remain untouched');}};
@@ -142,6 +154,7 @@ test('development source page keeps ticket authentication and never needs an exe
   t.after(async()=>{await endpoint.close();await successor?.close();fs.rmSync(dataRoot,{recursive:true,force:true});});
   const enabled=await endpoint.enable({developmentRoot:sourceRoot}),origin=enabled.origin!;
   assert.equal((await fetch(origin+'/src/main.ts')).status,403);
+  const liveFavicon=await fetch(origin+'/favicon.ico');assert.equal(liveFavicon.status,200);assert.equal(liveFavicon.headers.get('content-type'),'image/x-icon');assert.deepEqual(Buffer.from(await liveFavicon.arrayBuffer()),liveIcon);
   const login=async()=>{
     const ticket=await endpoint.login();
     const response=await fetch(origin+'/session/ticket',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({ticket:new URL(ticket.url).hash.slice('#ticket='.length)})});

@@ -6,7 +6,7 @@ import process from 'node:process';
 import { pickWorkspaceDirectory } from '../infrastructure/directory-picker.ts';
 import { binaryResponse, jsonResponse, textResponse, uiPrototypeHtmlResponse, diagramHtmlResponse, eventStreamResponse } from './responses.ts';
 import { assertRequestHost, assertReadRequest, assertWriteRequest, assertMutationRequest, assertImageRequest, imageSessionCookie, readBinaryBody, readAllowedJsonBody, readJsonBody } from './session.ts';
-import { injectedIndexHtml, serveDistAsset } from './static-files.ts';
+import { injectedIndexHtml, PUBLIC_ICON_PATHS, serveDistAsset } from './static-files.ts';
 import {
   BUILDR_WEB_HTTP_OPERATIONS,
   BUILDR_WEB_HTTP_SCHEMAS,
@@ -101,11 +101,11 @@ export function createLocalWorkspaceRequestRouter({
       textResponse(response, 200, injectedIndexHtml(sessionToken, previewIdentity, webProfile, staticRoot), 'text/html; charset=utf-8');
       return;
     }
-    if (request.method === 'GET' && !pathname.startsWith('/api/') && developmentWebs()) {
+    if ((request.method === 'GET' || (request.method === 'HEAD' && PUBLIC_ICON_PATHS.has(pathname))) && !pathname.startsWith('/api/') && developmentWebs()) {
       const mermaid = pathname === '/mermaid-renderer.html';
       await developmentWebs().web.handle(request, response, {document: mermaid, entry: mermaid ? 'mermaid-renderer.html' : 'index.html', frame: mermaid}); return;
     }
-    if (request.method === 'GET' && !pathname.startsWith('/api/') && await serveDistAsset(response, pathname, staticRoot, request)) return;
+    if ((request.method === 'GET' || (request.method === 'HEAD' && PUBLIC_ICON_PATHS.has(pathname))) && !pathname.startsWith('/api/') && await serveDistAsset(response, pathname, staticRoot, request)) return;
     if (request.method === 'GET' && pathname === '/api/v1/development/status' && developmentWebs()) {
       assertReadRequest(request, trustedOrigin, sessionToken);
       let update: unknown = null;
