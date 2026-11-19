@@ -75,3 +75,13 @@ test('绑定检查失败只说明情况，不同时警告可能已经执行',()=
   assert.doesNotMatch(visible,/未识别|请展开|可能已经执行|失败原因/);
   assert.match(html,/<details[^>]*><summary>技术详情/);
 });
+
+test('Claude Code dependency failures identify the local repair and confirm no delivery',()=>{
+  const diagnostic='消息未发送：Claude Code 配套组件缺失或无法加载。原消息已保留。';
+  const html=renderToStaticMarkup(React.createElement(ConversationFailureNotice,{run:{status:'failed',accepted:false,tools:[],diagnostic}}));
+  const visible=html.split('<details')[0];
+  assert.match(visible,/Claude Code 配套组件缺失或无法加载/);
+  assert.match(visible,/本次要求未送达/);
+  assert.match(visible,/检查更新并修复 Claude Code/);
+  assert.doesNotMatch(visible,/尚未确认/);
+});

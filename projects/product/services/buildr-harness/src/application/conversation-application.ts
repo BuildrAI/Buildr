@@ -2094,7 +2094,8 @@ export class ConversationApplication {
       else if (ended?.view.run?.status === 'failed') await this.retryFailure(workspaceId, id, runId, prepared, retries, rootRunId, ended.view.run.diagnostic ?? '', runtime);
       retryEligibleCompletion = ended?.view.run?.status === 'completed';
     } catch (error) {
-      this.diagnostics({event:'run-failed',workspaceId,conversationId:id,runId,code:diagnosticCode(error)});
+      const failureCode = diagnosticCode(error);
+      this.diagnostics({event:'run-failed',workspaceId,conversationId:id,runId,code:failureCode});
       const record = this.currentRun(workspaceId, id, runId);
       if (!record) {
         const detached=this.ownedRun(workspaceId,id,runId);
@@ -2118,7 +2119,10 @@ export class ConversationApplication {
       }
       const attempt = record.attempts.find(value => value.runId === runId);
       const entry = record.view.entries.find(value => value.id === attempt?.userEntryId);
-      if (entry && !run.accepted) entry.status = possiblyDelivered ? 'unknown' : 'failed';
+      if (entry && !run.accepted) {
+        entry.status = possiblyDelivered ? 'unknown' : 'failed';
+        if (!possiblyDelivered && failureCode === 'agent_claude_sdk_missing') entry.deliveryDiagnostic = safeDiagnostic(error);
+      }
       if(!run.accepted)for(const receipt of record.view.entries.filter(e=>e.kind==='handoff'&&e.runId===runId))receipt.status=possiblyDelivered?'unknown':'failed';
       try { this.save(record); } catch { return; /* Preserve existing DB and native state. */ }
       if (record.interruption?.reason === 'transport' && !this.closing) await this.recoverOne(workspaceId, id);

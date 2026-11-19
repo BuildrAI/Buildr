@@ -449,6 +449,7 @@ export interface ProgramUpdateView {
   currentReleaseVersion?: string;
   latestVersion?: string;
   releaseSource?: string;
+  repairRequired?: boolean;
   compatible?: boolean;
   checkedAt?: string;
   diagnostic?: string;
@@ -460,6 +461,7 @@ export interface ProgramCandidate {
   label: string;
   version?: string;
   compatible: boolean;
+  repairRequired?: boolean;
   diagnostic?: string;
 }
 export interface ProgramCatalog {

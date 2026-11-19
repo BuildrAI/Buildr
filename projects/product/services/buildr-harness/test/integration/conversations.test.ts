@@ -4374,3 +4374,19 @@ test('in-flight smart title generation is not aborted by native title events and
     await f.close();
   }
 });
+
+test('Claude SDK startup failure persists a visible reason on the undelivered input', async t => {
+  const native=fake(), open=native.executor.open;
+  native.executor.open=async input=>({...await open(input),async createContext(){throw new Error('agent_claude_sdk_missing');}});
+  const other=fake('other'),f=fixture([native.executor,other.executor]);t.after(()=>f.close());
+  await connected(f.service,'local');await connected(f.service,'other');
+  const chat=await f.service.conversations.create('workspace-one',{});
+  send(f.service,chat.id,'local','keep original message');
+  const failed=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='failed');
+  const entry=failed.entries.find(e=>e.role==='user'&&e.text==='keep original message');
+  assert.equal(failed.run?.accepted,false);assert.equal(native.sends.length,0);assert.equal(entry?.status,'failed');
+  assert.match(entry?.deliveryDiagnostic??'',/消息未发送：Claude Code 配套组件/);
+  send(f.service,chat.id,'other','independent next message');
+  const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+  assert.equal(done.entries.find(e=>e.id===entry?.id)?.deliveryDiagnostic,entry?.deliveryDiagnostic);
+});

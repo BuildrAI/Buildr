@@ -7,13 +7,14 @@ export const programUpgradeRunning = (program:Program) => Boolean(program.upgrad
 /** Preparation and release checks are different observations, never substitute a login status. */
 export function agentProgramView(program:Program, connection?:ConnectionView) {
   const job=program.upgrade, pending=programUpgradeRunning(program);
-  const completed=job?.state==='completed' && job.installedExecutable===program.executable && (!program.latestVersion || program.latestVersion===job.expectedVersion);
+  const completed=!program.repairRequired && job?.state==='completed' && job.installedExecutable===program.executable && (!program.latestVersion || program.latestVersion===job.expectedVersion);
   const failure=Boolean(job && ['failed','interrupted'].includes(job.state));
   const prepared=connection?connection.enabled && Boolean(connection.configPath):Boolean(program.executable);
+  const repairRequired=program.repairRequired===true;
   const identityChanged=program.identityState==='changed';
-  const updateLabel=pending?job!.state==='waiting'?'等待工作结束':job!.state==='restarting'?'正在重启':'正在下载':failure?'更新未完成':completed && program.status!=='latest'?'已更新':!completed && identityChanged?'程序文件已变化':labels[program.status];
-  return {pending,completed,failure,prepared,identityChanged,updateLabel,
+  const updateLabel=pending?job!.state==='waiting'?'等待工作结束':job!.state==='restarting'?'正在重启':'正在下载':failure?'更新未完成':repairRequired?'缺少可用的配套组件':completed && program.status!=='latest'?'已更新':!completed && identityChanged?'程序文件已变化':labels[program.status];
+  return {pending,completed,failure,prepared,identityChanged,repairRequired,updateLabel,
     version:program.currentVersion ?? (completed?job?.currentVersion:undefined),
-    canUpdate:Boolean(program.latestVersion && program.executable && (program.status==='available' || identityChanged || program.status==='latest' && !program.managed)),
+    canUpdate:Boolean(program.latestVersion && program.executable && (program.status==='available' || identityChanged || program.status==='latest' && (repairRequired || !program.managed))),
   };
 }

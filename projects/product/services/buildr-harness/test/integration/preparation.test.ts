@@ -244,6 +244,7 @@ test('on-demand companion SDKs install with --omit=optional and incomplete manag
   fs.rmSync(sdkPkg, { recursive: true, force: true });
   const boundDiscovery = await manager.discover({ provider: 'claude-code', boundExecutable: executable, signal });
   assert.equal(boundDiscovery.candidates[0]?.compatible, false);
+  assert.equal(boundDiscovery.candidates[0]?.repairRequired, true);
   assert.match(boundDiscovery.candidates[0]?.diagnostic ?? '', /配套 SDK/u);
   const repaired = await manager.install({ provider: 'claude-code', version: '2.1.322', signal, progress: () => {} });
   assert.equal(repaired, executable);

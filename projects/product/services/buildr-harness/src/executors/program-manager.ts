@@ -379,7 +379,8 @@ export class NativeProgramManager implements AgentProgramManager {
           if (managedRoot && companionSpecs.length > 0 && !(await this.verifyCompanionPackages(managedRoot.root, companionSpecs))) {
             if (!explicit) continue;
             item.compatible = false;
-            item.diagnostic = '缺少配套 SDK，请重新准备或更新该独立程序。';
+            item.repairRequired = true;
+            item.diagnostic = '配套 SDK 缺失或版本不匹配，请修复该独立程序。';
           }
         }
       } catch {

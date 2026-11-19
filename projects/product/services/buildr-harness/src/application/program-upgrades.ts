@@ -74,14 +74,19 @@ export class ProgramUpgrades {
     const order=previous?compareVersions(previous,view.expectedVersion):null;
     const identityChanged=checked.identityState==='changed';
     if (order!==null && order>0) fail('agent_program_update_not_newer','目标版本不高于当前版本，无需更新。',409);
-    if (order===0 && checked.managed && !identityChanged) fail('agent_program_update_not_newer','目标版本不高于当前版本，无需更新。',409);
-    const executable=await this.options.programs.install({provider:observed.provider,version:view.expectedVersion,attemptId:view.id,replaceExisting:identityChanged,signal,progress:message=>this.update(attempt,'downloading',message)});
-    signal.throwIfAborted();this.stillBound(attempt);
-    const catalog=await this.options.programs.discover({provider:observed.provider,boundExecutable:executable,signal});
-    const candidate=catalog.candidates.find(item=>item.compatible&&item.version);
-    if (!candidate?.version || (compareVersions(candidate.version,checked.currentVersion)??-1)<0) fail('agent_program_update_verification_failed','新版程序校验失败或会降级，未切换原接入。');
-    view.installedExecutable=executable;view.currentVersion=candidate.version;
-    this.update(attempt,'waiting','下载完成，等待当前工作结束后重启。');
+    const repairInPlace = order===0 && checked.managed && checked.repairRequired;
+    if (order===0 && checked.managed && !identityChanged && !repairInPlace) fail('agent_program_update_not_newer','目标版本不高于当前版本，无需更新。',409);
+    const install = async () => {
+      const executable=await this.options.programs.install({provider:observed.provider,version:view.expectedVersion,attemptId:view.id,replaceExisting:identityChanged,signal,progress:message=>this.update(attempt,'downloading',message)});
+      signal.throwIfAborted();this.stillBound(attempt);
+      const catalog=await this.options.programs.discover({provider:observed.provider,boundExecutable:executable,signal});
+      const candidate=catalog.candidates.find(item=>item.compatible&&item.version);
+      if (!candidate?.version || (compareVersions(candidate.version,checked.currentVersion!)??-1)<0) fail('agent_program_update_verification_failed','新版程序校验失败或会降级，未切换原接入。');
+      view.installedExecutable=executable;view.currentVersion=candidate.version;
+      return executable;
+    };
+    const prepared=repairInPlace ? undefined : await install();
+    this.update(attempt,'waiting',repairInPlace?'等待当前工作结束后补齐配套组件。':'下载完成，等待当前工作结束后重启。');
     while (true) {
       signal.throwIfAborted();this.stillBound(attempt);
       const release=this.options.connections.acquireProgramChange(id);
@@ -89,6 +94,7 @@ export class ProgramUpgrades {
         try {
           if (await this.options.release(id)) {
             signal.throwIfAborted();this.stillBound(attempt);
+            const executable=prepared ?? await install();
             this.update(attempt,'restarting','正在切换并重启智能体。');
             await this.options.connections.replaceProgram(id,observed,executable);
             this.update(attempt,'completed','更新完成，下一次执行将使用新版。');
