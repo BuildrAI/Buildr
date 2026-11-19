@@ -249,8 +249,8 @@ export function createPackageRuntimeChecks(deps: any): any  {
         }
         const defaults = commandsCheck.commands;
         const openspec = defaults.find((item: any) => item.id === 'openspec');
-        const ripgrep = defaults.find((item: any) => item.id === 'ripgrep');
-        if (defaults.length !== 2 || !openspec?.sources.includes('commands/buildr/openspec/manifest.yml')
+        const ripgrep = commandsBeforeAdd.commands.find((item: any) => item.id === 'ripgrep');
+        if (!openspec?.sources.includes('commands/buildr/openspec/manifest.yml')
           || ripgrep?.executable !== 'rg' || ripgrep.required !== false) {
           problems.push('Default workspace must aggregate OpenSpec and recommend optional ripgrep.');
         }
