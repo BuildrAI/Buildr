@@ -25,6 +25,7 @@
 .file-editing-notice .ant-alert-description{font-size:var(--font-size-body);line-height:1.6}
 .file-editing-body{flex:1;display:flex;min-height:0;overflow:hidden}
 .file-editing-reading{flex:1;min-width:0;padding:22px 30px;overflow:auto}
+.file-editing-reading.has-reading-anchor{overflow-anchor:none}
 .file-editing-reading .markdown-body,.file-editing-preview .markdown-body{width:100%;max-width:var(--reading-content-width,1200px);margin-inline:auto}
 .file-editing-reading>pre{font:var(--font-size-code)/1.9 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;white-space:pre;overflow:auto;margin:0}
 .file-editing-source{display:flex;flex:1;min-height:0;min-width:0;overflow:hidden;background:var(--ant-color-bg-container,#fff)}

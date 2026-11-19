@@ -11,19 +11,41 @@ export async function runExplorerSearchJourney({assertEditorText, capture, codeE
     await selectSearchMode('内容');await search('explorerAnswer');await matchResult('projects/demo/services/api/src/main.ts',1).click();
     await selectSearchMode('文件名');await search('README.md');const readmeResponse=fileResponse('projects/demo/services/api/README.md');await fileResult('projects/demo/services/api/README.md').click();const readme=await(await readmeResponse).json();await read.markdown('Explorer document');
     await page.locator(codeMarkdown).getByRole('img').waitFor();assert.ok((await page.locator(codeMarkdown).getByRole('img').getAttribute('src')).startsWith('data:image/png;base64,'));
+    // Model a large illustration that is not available immediately on tab return.
+    const illustrationStyle=await page.addStyleTag({content:'.file-editing-reading img[alt="Image"] { height: 960px !important; }'});
     const codeUrl=page.url(),resourceViews=await page.evaluate(()=>history.state?.usr?.resourceViews??null),parentPath='projects/demo/services/services/foo';
     const parentLink=page.getByRole('link',{name:'同库父级资料',exact:true});
     const readingPane=page.locator('.code-explorer-stage .file-editing-reading:visible');
+    const originalTab=page.locator('.code-open-files').getByRole('tab',{name:'README.md',exact:true});
+    const returnWithDelayedImage=async(before:number)=>{
+      const matcher=(url:URL)=>url.pathname.endsWith('/code/file')&&url.searchParams.get('path')==='projects/demo/services/api/image.png';
+      let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+      const delay=async(route:any)=>{await gate;await route.continue();};
+      await page.route(matcher,delay);
+      try{
+        await originalTab.click();await read.markdown('Explorer document');
+        await readingPane.locator('img[alt="Image"]').waitFor({state:'hidden'});
+        const pending=(await parentLink.boundingBox())!.y;
+        assert.ok(Math.abs(pending-before)<=2,`图片未加载时也应停在链接段落（${pending}，原位置 ${before}）`);
+      }finally{release();await page.unroute(matcher,delay);}
+      await readingPane.locator('img[alt="Image"]').waitFor();
+      await page.waitForFunction((expected:number)=>{
+        const link=document.querySelector('.file-editing-reading a[data-markdown-href="../services/foo"]');
+        return link&&Math.abs(link.getBoundingClientRect().y-expected)<=2;
+      },before);
+    };
     await parentLink.scrollIntoViewIfNeeded();
-    const readingTop=await readingPane.evaluate((element:HTMLElement)=>element.scrollTop);
-    assert.ok(readingTop>0,'原文档已滚动到正文链接');
+    assert.ok(await readingPane.evaluate((element:HTMLElement)=>element.scrollTop)>0,'原文档已滚动到正文链接');
+    const linkY=(await parentLink.boundingBox())!.y;
     const parentResponse=fileResponse(parentPath,(url: URL)=>url.searchParams.get('checkoutId')===readme.source.checkoutId);await parentLink.click();const parent=await(await parentResponse).json();
     assert.equal(parent.source.repositoryId,readme.source.repositoryId);assert.equal(parent.source.checkoutId,readme.source.checkoutId);assert.equal(parent.source.commitHash,null);assert.equal(parent.path,parentPath);await read.text('parentRelativeSource = "same checkout"');
     assert.equal(page.url(),codeUrl,'父相对链接仍在同一代码现场');assert.deepEqual(await page.evaluate(()=>history.state?.usr?.resourceViews??null),resourceViews,'正文链接不提交工作空间服务对象选择');assert.equal(await page.locator('.workspace-pane-host .pane-right:visible').count(),0);
-    await page.locator('.code-open-files').getByRole('tab',{name:'README.md',exact:true}).click();await read.markdown('Explorer document');
-    assert.ok(Math.abs(await readingPane.evaluate((element:HTMLElement)=>element.scrollTop)-readingTop)<=1,'切回原页签后应保留正文阅读位置');
-    await page.getByRole('button',{name:'关闭文件 '+parentPath,exact:true}).click();
+    await returnWithDelayedImage(linkY);
     await page.getByRole('link',{name:'Source',exact:true}).click();await read.text('explorerAnswer = 2');
+    await returnWithDelayedImage(linkY);
+    await page.getByRole('button',{name:'关闭文件 '+parentPath,exact:true}).click();
+    await illustrationStyle.evaluate((style:HTMLElement)=>style.remove());
+    await page.locator('.code-open-files').getByRole('tab',{name:'main.ts',exact:true}).click();await read.text('explorerAnswer = 2');
     await page.getByRole('button',{name:'请智能体解释',exact:true}).click();assert.ok((await page.getByRole('textbox',{name:'文件协作指令'}).inputValue()).includes('src/main.ts'));await page.getByRole('button',{name:'返回文件',exact:true}).click();
     await capture(page,'code-explorer-1440.png');
     const largePath='projects/demo/services/api/large-text.txt';await search('large-text.txt');await resultPath(largePath);

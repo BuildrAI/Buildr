@@ -15,6 +15,7 @@ import { useEditableFile } from '../hooks/useEditableFile';
 import { useFileEditingContext } from '../../../app/FileEditingContext';
 import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
 import { FileEditingPane } from '../../../components/file-editing/FileEditingPane';
+import type { MarkdownReadingPosition } from '../../../components/file-editing/markdown-reading-position';
 import { codeBrowserKey, codeLocationKey, codeReturnTarget, relativeCodeLink, type CodeTaskEntry } from '../code-navigation';
 import { sourceControlDecorations } from '../source-control-decorations';
 import { codeRepositoryCode, codeRepositoryLabel, codeWorktreeLabel } from '../code-source-labels';
@@ -37,7 +38,7 @@ export function CodeExplorerPage() {
   useEffect(()=>{if(processed===location.key)return;setProcessed(location.key);const entry=location.state?.codeEntry as CodeTaskEntry|undefined;if(entry)void state.applyEntry(entry);else state.clearEntry();},[location.key,location.state,processed,state.applyEntry,state.clearEntry]);
   const active=state.active,file=active?state.files[active.key]:undefined;
   // The reader can unmount while the next tab is loading or uses another surface.
-  const tabReadingPositions=useRef(new Map<string,number>());
+  const tabReadingPositions=useRef(new Map<string,MarkdownReadingPosition>());
   const editing=useFileEditingContext();
   const currentText=Boolean(active?.checkoutId&&!active.commitHash&&file&&!file.page&&!file.truncated&&(file.kind==='markdown'||file.kind==='text')&&!state.fileErrors[active.key]);
   const editable=useEditableFile(workspaceId,currentText&&active?.checkoutId?{kind:'code',repositoryId:active.repositoryId,checkoutId:active.checkoutId,path:active.path}:null,file?.observedAt,file?.editorSnapshot);

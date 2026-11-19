@@ -289,7 +289,7 @@ function createSelectedFixture(root: any): any  {
     createShellFixture(root);
     const source=path.join(root,'projects/demo/services/api');fs.mkdirSync(path.join(source,'src'),{recursive:true});
     fs.writeFileSync(path.join(source,'src/main.ts'),'export const explorerAnswer = 1;\n'+'// readable source line\n'.repeat(120));
-    fs.writeFileSync(path.join(source,'README.md'),'# Explorer document\n\n'+'A paragraph for reading.\n\n'.repeat(40)+'[Source](src/main.ts)\n\n[同库父级资料](../services/foo)\n\n[代码关联任务说明](@task/browser-task)\n\n![Image](image.png)\n');
+    fs.writeFileSync(path.join(source,'README.md'),'# Explorer document\n\n![Image](image.png)\n\n'+'A paragraph for reading.\n\n'.repeat(40)+'[Source](src/main.ts)\n\n[同库父级资料](../services/foo)\n\n[代码关联任务说明](@task/browser-task)\n\n');
     const parentRelativeFile=path.join(source,'../services/foo');fs.mkdirSync(path.dirname(parentRelativeFile),{recursive:true});fs.writeFileSync(parentRelativeFile,'export const parentRelativeSource = "same checkout";\n');
     fs.writeFileSync(path.join(source,'image.png'),publicationTestPng);
     fs.writeFileSync(path.join(source,'html-reading-fixture.HTM'), [

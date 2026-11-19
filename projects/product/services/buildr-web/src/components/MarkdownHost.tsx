@@ -12,7 +12,7 @@ type Props = {
   options?: MarkdownRenderOptions;
   fragment?: string;
   renderVersion?: string;
-  onRendered?: () => void;
+  onRendered?: (view: HTMLElement) => void | (() => void);
 };
 
 export function scrollMarkdownFragment(root: HTMLElement, fragment: string) {
@@ -67,9 +67,10 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
     if (currentOptions.onImageClick) bindMarkdownImagePreviews(view, () => optionsRef.current?.onImageClick);
     bindMarkdownDiagramPreviews(view, () => (diagram) => setDiagramPreview(diagram));
     host.replaceChildren(view);
-    onRenderedRef.current?.();
+    const releaseReading = onRenderedRef.current?.(view);
     if (fragment) requestAnimationFrame(() => scrollMarkdownFragment(view, fragment));
-    return renderMarkdownDiagrams(view);
+    const releaseDiagrams = renderMarkdownDiagrams(view);
+    return () => { releaseReading?.(); releaseDiagrams(); };
   }, [markdown, className, fragment, renderVersion, options?.taskLinkPathname, JSON.stringify(options?.headingCounts)]);
 
   return (
