@@ -35,7 +35,7 @@ export async function verifySourceBeforeFreeze(input: {
   if (fs.existsSync(sourceFile) && readCandidateRound(sourceFile, roundId).records.length > 0) args.push('--resume');
   const execution = await (dependencies.runStep ?? runVerificationStep)({
     name: 'pre-freeze-source', command: process.execPath, args, cwd, timeoutMs: 30 * 60_000,
-  }, { onStderr: (chunk: string) => process.stderr.write(chunk) });
+  }, { signal: dependencies.signal, onStderr: (chunk: string) => process.stderr.write(chunk) });
   if (execution.status === 'passed') return observe();
   if (execution.stdout) process.stderr.write(execution.stdout);
   return { ...before, status: 'local-verification-required', diagnostic: {

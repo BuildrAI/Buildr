@@ -1096,7 +1096,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         changePhase('pre-freeze-source');
         const localSource = await (dependencies.verifySourceBeforeFreeze ?? verifySourceBeforeFreeze)({
           repo, workspace, roundId: key, base: selection.devBaseline, head: selection.releaseHead, options, scope,
-        }, { platform: dependencies.platform, prepareSource: dependencies.prepareLocalSourceVerification });
+        }, { platform: dependencies.platform, prepareSource: dependencies.prepareLocalSourceVerification, signal: dependencies.signal });
         if (localSource.status !== 'ready') { save(); return answer(localSource.status, localSource.nextActions, { localSource }); }
       }
       selection = take(freezeReleaseSelection({ ...selectionArgs, repo, devRef: 'origin/dev', executionBinding: binding() }));

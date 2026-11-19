@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises';
 import { spawn } from 'node:child_process';
 import { releasePublishAuthority } from './release-authority.ts';
 import { releaseQueuePolicy } from './github-queue-recovery.ts';
@@ -108,6 +109,17 @@ export async function waitForReleaseOperation(options: ReleaseWaitOptions, depen
       waiting: { status, polls, durationMs: now() - startedAt, pollWorkMs, sleepMs, watchMs }, ...(diagnostic ? { diagnostic } : {}) });
     if (!runId) return finish('readback-required');
     if ((value.effects ?? []).some((effect: any) => effect.type === 'publication-failed-jobs-rerun')) completedWatchRun = undefined;
+    if (completedWatchRun === runId && value.status === 'publication-retry-unconfirmed') {
+      const sleepStartedAt = now();
+      try { await delay(Math.min(timeoutMs - durationMs, intervalMs, 5000), undefined, { signal: dependencies.signal }); }
+      catch (error) {
+        if (dependencies.signal?.aborted) return cancelled(value);
+        throw error;
+      }
+      sleepMs += now() - sleepStartedAt;
+      completedWatchRun = undefined;
+      continue;
+    }
     if (completedWatchRun === runId) return finish('readback-required', { code: 'release-watch-readback-required', message: 'Watch finished but terminal owner evidence is not yet available.' });
     const watch = dependencies.watchRun ?? watchReleaseRun;
     const watchStartedAt = now();

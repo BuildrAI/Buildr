@@ -287,7 +287,11 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     assert.equal(identity.runtime.executable, process.execPath);
     assert.equal(identity.applicationPayloadDigest, payloadDigest);
 
-    web = spawn(process.execPath, [cli, 'web', '--target', workflowWorkspace, '--no-open', '--port', '0'], { cwd: root, env: runtimeEnv, stdio: ['ignore', 'pipe', 'pipe'] });
+    // The Web search scenario needs the same host Git and rg as the CLI
+    // search above. The other installed CLI calls retain the narrow PATH.
+    web = spawn(process.execPath, [cli, 'web', '--target', workflowWorkspace, '--no-open', '--port', '0'], {
+      cwd: root, env: { ...runtimeEnv, PATH: process.env.PATH }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
     let stderr: any = '';
     web.stderr.setEncoding('utf8');
     web.stderr.on('data', (chunk: any) => { stderr += chunk; });

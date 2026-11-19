@@ -55,7 +55,9 @@ function matchCollector(query:string) {
 }
 
 function currentSearch(source:CodeSource,query:string,mode:'name'|'content',showIgnored:boolean) {
-  const executable = findExecutableOnPath(process.platform === 'win32' ? 'rg.exe' : 'rg');
+  const executable = process.platform === 'win32'
+    ? findExecutableOnPath('rg.exe', { env: { PATH: process.env.PATH ?? process.env.Path } })
+    : findExecutableOnPath('rg');
   if (!executable) throw codeFailure('code_search_engine_unavailable', ripgrepHelp, 503);
   const args=['--no-config','--hidden','--no-follow','--no-ignore-parent','--no-ignore-global','--iglob','!**/.git','--iglob','!**/.git/**'];
   if(showIgnored)args.push('--no-ignore');
