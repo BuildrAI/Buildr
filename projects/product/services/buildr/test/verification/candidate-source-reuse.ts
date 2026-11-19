@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { assertCandidateRound, passedRoundRecord, ROUND_SCHEMA } from './candidate-round.ts';
+import { assertCandidateRound, passedExactCandidateRecord, passedRoundRecord, ROUND_SCHEMA } from './candidate-round.ts';
 import { brotliCompressSync, brotliDecompressSync, gzipSync, gunzipSync } from 'node:zlib';
 import { createVerificationReuseIdentity, validEnvironment, type VerificationReuseEnvironment, type VerificationReuseSnapshot } from './verification-reuse.ts';
 import { createChangedVerificationSourcePathsReader, sourceChangeAffected, verificationInputApplicabilityForSourceChange } from './source-change-applicability.ts';
@@ -131,7 +131,7 @@ export function validateCandidateSourceRecord(options: {
   // A user-declared scope retains a same-round passed record without claiming
   // a fresh execution in this scope.
   if (record.result?.retainedByUserInstruction === true) return true;
-  if (!step.reuse) return true;
+  if (!step.reuse) return passedExactCandidateRecord(record, selectionId, step, runner, snapshot.sourceCommit);
   try {
     const environment = candidateSourceRecordEnvironment(step, record, runner);
     if (!environment) return false;
