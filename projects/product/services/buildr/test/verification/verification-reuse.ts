@@ -269,7 +269,7 @@ export function validateVerificationReuseRecord(record: unknown, options: Verifi
 
 export function reusedVerificationResult(record: VerificationReuseRecord): any {
   return { ...record.result, durationMs: 0, stdout: '', stderr: '', processCleanup: { status: 'clean', ownership: 'prior-execution' },
-    disposition: 'reused', reusedFrom: { key: record.identity.key, origin: record.origin, environment: record.environment, durationMs: record.result.durationMs, inputFingerprint: record.result.inputIdentity?.key }, sourceRecord: record };
+    disposition: 'reused', reusedFrom: { key: record.identity.key, origin: record.origin, environment: record.environment, durationMs: record.result.durationMs, inputFingerprint: (record.result as { inputIdentity?: { key: string } }).inputIdentity?.key ?? record.identity.key }, sourceRecord: record };
 }
 
 export function resolveVerificationReuseDirectory(options: VerificationReuseOptions): string {
