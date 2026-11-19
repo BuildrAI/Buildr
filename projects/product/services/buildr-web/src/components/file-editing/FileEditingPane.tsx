@@ -1,6 +1,6 @@
 import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Button, Segmented, Space, Spin, Tag, Tooltip } from 'antd';
-import { CheckCircleOutlined, ExclamationCircleOutlined, FolderOpenOutlined, LoadingOutlined } from '@ant-design/icons';
+import { App, Button, Segmented, Space, Spin, Tag, Tooltip } from 'antd';
+import { CheckCircleOutlined, CodeOutlined, ExclamationCircleOutlined, FolderOpenOutlined, LoadingOutlined } from '@ant-design/icons';
 import { LanguageDescription } from '@codemirror/language';
 import { fileEditingLanguages } from './file-editing-language';
 import { MarkdownHost } from '../MarkdownHost';
@@ -26,17 +26,20 @@ export type FileEditingPaneProps = {
   focusRequest?: number;
   searchQuery?: string;
   onSelectLines?(lines: [number, number] | null): void;
+  onOpenFolder?: () => Promise<unknown>;
   onOpenInExplorer?: () => void;
   onViewCurrent?: () => void;
   toolbarEnd?: ReactNode;
 };
 
 /** Shared file identity, editor, autosave feedback and conflict handling for every entry. */
-export function FileEditingPane({ file, editing, active = true, htmlPreview = false, markdownOptions, markdownRevision, markdownReadingPosition, focusLine, focusRequest, searchQuery, onSelectLines, onOpenInExplorer, onViewCurrent, toolbarEnd }: FileEditingPaneProps) {
+export function FileEditingPane({ file, editing, active = true, htmlPreview = false, markdownOptions, markdownRevision, markdownReadingPosition, focusLine, focusRequest, searchQuery, onSelectLines, onOpenFolder, onOpenInExplorer, onViewCurrent, toolbarEnd }: FileEditingPaneProps) {
+  const { message } = App.useApp();
   const transient = useContext(WorkspaceViewTransientContext);
   const session = editing.sessions[file.id];
   const [preview, setPreview] = useState(false);
   const [readOnlyHtmlSource, setReadOnlyHtmlSource] = useState(false);
+  const [openingFolderId, setOpeningFolderId] = useState<string | null>(null);
   const readHost = useRef<HTMLDivElement>(null);
   const scrolls = useRef(new Map<string, number>());
   const focusKey = focusLine ? JSON.stringify([file.id, focusLine, focusRequest]) : '';
@@ -102,6 +105,20 @@ export function FileEditingPane({ file, editing, active = true, htmlPreview = fa
   const lineCount = session.editorState.doc.lines;
   const statusText = session.status === 'conflict' ? '保存已暂停' : session.status === 'error' ? '保存失败' : session.status === 'saving' ? '保存中…' : '已保存';
   const statusIcon = session.status === 'saving' ? <LoadingOutlined /> : session.status === 'saved' ? <CheckCircleOutlined /> : <ExclamationCircleOutlined />;
+  const openingFolder = openingFolderId === file.id;
+  const openFolder = async () => {
+    if (!onOpenFolder || openingFolder) return;
+    const targetId = file.id;
+    setOpeningFolderId(targetId);
+    try {
+      await onOpenFolder();
+      void message.success('已请求打开文件所在文件夹');
+    } catch (error) {
+      void message.error(error instanceof Error ? error.message : '无法打开文件所在文件夹，请重试。');
+    } finally {
+      setOpeningFolderId(current => (current === targetId ? null : current));
+    }
+  };
 
   return <section className={'file-editing-pane' + (showSource ? ' is-editing' : '')} aria-label="文件阅读与编辑" data-file-id={file.id} data-file-status={session.status} data-file-presentation={showSource ? 'source' : 'rendered'}>
     <header className="file-editing-header" data-prototype-position="file-identity">
@@ -110,7 +127,8 @@ export function FileEditingPane({ file, editing, active = true, htmlPreview = fa
         <Space size={6} className="file-editing-header-actions">
           {readingSource && <Button size="small" onClick={() => setDismissedFocus(focusKey)}>返回阅读</Button>}
           {renderable && <span className="file-editing-mode" data-prototype-position="file-mode"><Segmented block size="small" aria-label="文件查看模式" value={explicitSource ? 'edit' : 'read'} options={[{ label: '阅读', value: 'read' }, { label: htmlPreview ? '源码' : '编辑', value: 'edit', disabled: !editable && !htmlPreview }]} onChange={value => { setDismissedFocus(focusKey); if (htmlPreview && !editable) setReadOnlyHtmlSource(value === 'edit'); else editing.setMode(file.id, value as 'read' | 'edit'); }} /></span>}
-          {onOpenInExplorer && <Tooltip title="在资源管理器（Explorer）中打开同一文件"><Button type="text" size="small" aria-label="在资源管理器中打开" icon={<FolderOpenOutlined />} onClick={onOpenInExplorer} /></Tooltip>}
+          {onOpenFolder && <Tooltip title="打开文件所在文件夹"><Button type="text" size="small" aria-label="打开所在文件夹" icon={<FolderOpenOutlined aria-hidden />} loading={openingFolder} onClick={() => void openFolder()} /></Tooltip>}
+          {onOpenInExplorer && <Tooltip title="在资源管理器（Explorer）中打开同一文件"><Button type="text" size="small" aria-label="在资源管理器中打开" icon={<CodeOutlined aria-hidden />} onClick={onOpenInExplorer} /></Tooltip>}
           {onViewCurrent && <Button size="small" onClick={onViewCurrent}>打开当前文件</Button>}
           {toolbarEnd}
         </Space>

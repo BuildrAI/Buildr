@@ -12,11 +12,12 @@ import { createCodeGenerationHttpContribution } from './interfaces/http/code-gen
 import { readCodeCommitGuidance } from './infrastructure/code-commit-guidance.ts';
 import { createCodeCommitMaterialReader } from './infrastructure/code-commit-material.ts';
 import { SourceControlObservations } from './application/source-control-observations.ts';
+import type { openDirectory } from '../../infrastructure/filesystem/open-directory.ts';
 export { reclaimCodeGitOperationFile } from './infrastructure/code-git-operation-lock.ts';
 export const CODE_APPLICATION='code.application';
 export const CODE_GENERATION_APPLICATION='code.generation.application';
 export const CODE_SOURCE_CONTROL_OBSERVATIONS='code.source-control-observations';
-export function createCodeModule(options: {generateModel?: GenerateModel} = {}) {
+export function createCodeModule(options: {generateModel?: GenerateModel; openDirectory?: typeof openDirectory} = {}) {
 return Object.freeze({id:'code',requires:Object.freeze([WORKSPACE_APPLICATION,WORKSPACE_QUERY,TASK_QUERY_APPLICATION,TASK_WORKTREE_PROVIDER,AGENT_ASSETS_SOURCE_READ]),create(requires:Record<string,any>){
   const readTask=requires[TASK_QUERY_APPLICATION].readTask;
   const dependencies = createCodeDependencies(
@@ -24,7 +25,7 @@ return Object.freeze({id:'code',requires:Object.freeze([WORKSPACE_APPLICATION,WO
     readTask, requires[TASK_WORKTREE_PROVIDER],
     requires[AGENT_ASSETS_SOURCE_READ].builtinManagedFiles,
   );
-  const application=createCodeApplication(dependencies);
+  const application=createCodeApplication({...dependencies, ...(options.openDirectory ? { openDirectory: options.openDirectory } : {})});
   const observations=new SourceControlObservations();
   const runs=new CodeGeneration(options.generateModel ?? (async () => {
     throw codeFailure('code_generation_unavailable', '当前未装配模型生成接入，代码操作和手写提交说明仍可使用。', 503);

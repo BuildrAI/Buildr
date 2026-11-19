@@ -139,6 +139,7 @@ function ProjectDocObjectView({ workspaceId, projectCode, objectKey, documentRef
         <p className="page-copy">正在读取…</p>
       ) : editorFile ? (
         <FileEditingPane file={editorFile} editing={editing} active={active} markdownRevision={imageVersion}
+          onOpenFolder={workspaceId ? () => codeApi.openFolder(workspaceId, { selector: fileSnapshot(editorFile).selector }) : undefined}
           onOpenInExplorer={() => void openInExplorer()}
           toolbarEnd={documents.history.length > 1 ? <button type="button" className="back-link project-document-back" onClick={documents.back}>← 返回上一篇</button> : undefined}
           markdownOptions={{ headingOffset: 1, allowRelativeLinks: true, allowParentRelativeLinks: true, onRelativeLinkClick, imageResolver: resolveImage }} />

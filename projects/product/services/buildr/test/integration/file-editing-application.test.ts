@@ -14,7 +14,11 @@ import { gitCheckoutReadId } from '../../src/infrastructure/git/checkout-read-id
 import { defaultTestContextPool } from '../context/node-test.ts';
 import { WORKSPACE_FOUNDATION_CONTEXT_KEY } from '../context/profiles.ts';
 import { createRuntime, runtimeProvide } from '../helpers/runtime-harness.ts';
-import { CODE_APPLICATION } from '../../src/modules/code/module.ts';
+import { CODE_APPLICATION, createCodeModule } from '../../src/modules/code/module.ts';
+import { WORKSPACE_APPLICATION, WORKSPACE_QUERY } from '../../src/modules/workspace/module.ts';
+import { TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER } from '../../src/modules/task/module.ts';
+import { AGENT_ASSETS_SOURCE_READ } from '../../src/modules/agent-assets/module.ts';
+import { createModuleRegistry } from '../../src/bootstrap/module-registry.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { applySkillRenderPlan, buildSkillRenderPlan } from '../../src/modules/agent-assets/infrastructure/runtime/skills/render-plan.ts';
 
@@ -28,14 +32,22 @@ function fixture(t: TestContext) {
   git('add', '.'); git('commit', '-m', 'initial');
   let projectRoot = path.join(root, 'project'), projectSource: unknown = { type: 'workspace', path: 'project' };
   const generated = new Set<string>();
+  const openedDirectories: string[] = [];
+  let openError: Error | null = null;
+  const openDirectory = async (directory: string) => {
+    if (openError) throw openError;
+    openedDirectories.push(directory);
+    return { requested: true as const };
+  };
   const app = createCodeApplication({ assetCatalog: () => ({ repositories: [{ id: 'repo', code: 'repo', name: 'Repo', source: { type: 'git', path: root } }], services: [], projects: [] }), resolveSourceRoot: (_root, source) => source.path, readTaskScope: () => ({ projects: [], services: [] }), readGitWorktreeEvidence: () => null,
     projectDetail: () => ({ project: { id: 'project-id', code: 'product', source: projectSource }, sourceLocation: { path: projectRoot, identity: 'project-source' } }),
     builtinManagedFiles: candidate => candidate === root ? [...generated] : [],
+    openDirectory,
   });
   const code = (relative = 'project/README.md'): EditorFileSelector => ({ kind: 'code', repositoryId: 'repo', checkoutId: gitCheckoutReadId(root), path: relative });
   const project = (): EditorFileSelector => ({ kind: 'project', projectCode: 'product', path: 'README.md' });
   const input = (selector: EditorFileSelector, content: string): SaveEditorFileInput => { const observed = app.editorFile(root, selector); return { selector, content, expectedFileId: observed.fileId, expectedSourceRevision: observed.sourceRevision, expectedRevision: observed.revision }; };
-  return { temporary, root, git, app, code, project, input, generated, rebind: (nextRoot: string, source: unknown = projectSource) => { projectRoot = nextRoot; projectSource = source; } };
+  return { temporary, root, git, app, code, project, input, generated, openedDirectories, setOpenError: (error: Error | null) => { openError = error; }, rebind: (nextRoot: string, source: unknown = projectSource) => { projectRoot = nextRoot; projectSource = source; } };
 }
 const errorCode = (code: string) => (error: unknown) => Boolean(error && typeof error === 'object' && 'code' in error && error.code === code);
 
@@ -292,4 +304,171 @@ test('real HTTP reads through the bounded worker, saves escaped large UTF-8, rep
   const nestedConflict = await json(await save({ ...nestedInput, expectedRevision: nestedSaved.revision, content: '# Nested local edit\n' }), 409);
   assert.equal(nestedConflict.error.code, 'file_revision_conflict'); assert.equal(nestedConflict.error.details.current.content, '# Nested external edit\n');
   assert.equal(fs.readFileSync(nestedFile, 'utf8'), '# Nested external edit\n');
+});
+
+test('openFolder resolves exact containing directories across checkouts, read-only/binary/large files and project documents while enforcing boundaries', async t => {
+  const f = fixture(t);
+  fs.writeFileSync(path.join(f.root, 'root.txt'), 'root\n');
+  fs.mkdirSync(path.join(f.root, 'a', 'b'), { recursive: true });
+  fs.writeFileSync(path.join(f.root, 'a', 'b', 'binary.bin'), Buffer.from([0, 1, 2]));
+  fs.writeFileSync(path.join(f.root, 'a', 'b', 'invalid.txt'), Buffer.from([0xff, 0xfe]));
+  fs.writeFileSync(path.join(f.root, 'a', 'b', 'large.txt'), Buffer.alloc(EDITABLE_FILE_BYTES + 1, 120));
+  fs.writeFileSync(path.join(f.root, 'a', 'b', 'readonly.txt'), 'readonly\n');
+  fs.chmodSync(path.join(f.root, 'a', 'b', 'readonly.txt'), 0o444);
+
+  const nestedProjectRelative = 'docs/guides/nested.md';
+  fs.mkdirSync(path.join(f.root, 'project', 'docs', 'guides'), { recursive: true });
+  fs.writeFileSync(path.join(f.root, 'project', nestedProjectRelative), '# Nested\n');
+
+  const checkout = path.join(f.temporary, 'linked-checkout');
+  f.git('worktree', 'add', '--detach', checkout, 'HEAD');
+  const linkedSelector: EditorFileSelector = { kind: 'code', repositoryId: 'repo', checkoutId: gitCheckoutReadId(checkout), path: 'project/README.md' };
+
+  assert.deepEqual(await f.app.openFolder(f.root, { selector: f.code('root.txt') }), { requested: true });
+  assert.deepEqual(await f.app.openFolder(f.root, { selector: f.code('project/README.md') }), { requested: true });
+  assert.deepEqual(await f.app.openFolder(f.root, { selector: linkedSelector }), { requested: true });
+  for (const file of ['a/b/binary.bin', 'a/b/invalid.txt', 'a/b/large.txt', 'a/b/readonly.txt']) {
+    assert.deepEqual(await f.app.openFolder(f.root, { selector: f.code(file) }), { requested: true });
+  }
+  assert.deepEqual(await f.app.openFolder(f.root, { selector: f.project() }), { requested: true });
+  assert.deepEqual(await f.app.openFolder(f.root, { selector: { kind: 'project', projectCode: 'product', path: nestedProjectRelative } }), { requested: true });
+
+  assert.deepEqual(f.openedDirectories, [
+    fs.realpathSync(f.root),
+    fs.realpathSync(path.join(f.root, 'project')),
+    fs.realpathSync(path.join(checkout, 'project')),
+    fs.realpathSync(path.join(f.root, 'a', 'b')),
+    fs.realpathSync(path.join(f.root, 'a', 'b')),
+    fs.realpathSync(path.join(f.root, 'a', 'b')),
+    fs.realpathSync(path.join(f.root, 'a', 'b')),
+    fs.realpathSync(path.join(f.root, 'project')),
+    fs.realpathSync(path.join(f.root, 'project', 'docs', 'guides')),
+  ]);
+
+  fs.writeFileSync(path.join(f.temporary, 'outside.md'), 'outside\n');
+  fs.symlinkSync(path.join(f.temporary, 'outside.md'), path.join(f.root, 'outside.md'));
+  fs.symlinkSync(path.join(f.temporary, 'outside.md'), path.join(f.root, 'project', 'outside.md'));
+  for (const relative of ['../outside.md', '/etc/hosts', '.git/config', 'outside.md']) {
+    await assert.rejects(() => f.app.openFolder(f.root, { selector: f.code(relative) }));
+  }
+  await assert.rejects(() => f.app.openFolder(f.root, { selector: f.code('a/b') }), errorCode('code_file_expected'));
+  await assert.rejects(() => f.app.openFolder(f.root, { selector: f.code('missing.txt') }), errorCode('code_file_missing'));
+  await assert.rejects(() => f.app.openFolder(f.root, { selector: { kind: 'project', projectCode: 'product', path: 'outside.md' } }), errorCode('file_path_forbidden'));
+  await assert.rejects(() => f.app.openFolder(f.root, { selector: { kind: 'project', projectCode: 'product', path: 'not-md.txt' } }), errorCode('file_project_document_forbidden'));
+
+  f.git('worktree', 'remove', '--force', checkout);
+  await assert.rejects(() => f.app.openFolder(f.root, { selector: linkedSelector }), errorCode('code_worktree_not_registered'));
+
+  f.setOpenError(new Error('目录已不存在，请刷新后重试。'));
+  await assert.rejects(() => f.app.openFolder(f.root, { selector: f.code('root.txt') }), errorCode('code_directory_missing'));
+  f.setOpenError(Object.assign(new Error('No such file or directory'), { code: 'ENOENT' }));
+  await assert.rejects(() => f.app.openFolder(f.root, { selector: f.code('root.txt') }), errorCode('code_directory_missing'));
+  f.setOpenError(null);
+
+  f.rebind(path.join(f.temporary, 'missing-project'), { type: 'workspace', path: 'missing-project' });
+  await assert.rejects(() => f.app.openFolder(f.root, { selector: f.project() }), errorCode('file_source_unavailable'));
+
+  let readCount = 0;
+  const driftingOpened: string[] = [];
+  const driftingApp = createCodeApplication({
+    assetCatalog: () => ({ repositories: [], services: [], projects: [] }),
+    resolveSourceRoot: (_root, source) => source.path,
+    readTaskScope: () => ({ projects: [], services: [] }),
+    readGitWorktreeEvidence: () => null,
+    projectDetail: () => ({
+      project: { id: 'project-id', code: 'product', source: { type: 'workspace', path: 'project' } },
+      sourceLocation: { path: path.join(f.root, 'project'), identity: ++readCount === 1 ? 'v1' : 'v2' },
+    }),
+    openDirectory: async directory => {
+      driftingOpened.push(directory);
+      return { requested: true as const };
+    },
+  });
+  await assert.rejects(() => driftingApp.openFolder(f.root, { selector: f.project() }), errorCode('file_source_changed'));
+  assert.deepEqual(driftingOpened, []);
+});
+
+test('POST /code/open-folder authorizes session before reading body, rejects invalid payloads/queries and opens folder over HTTP', async t => {
+  const f = fixture(t);
+  const http = createCodeHttpContribution(f.app);
+  let parsed = false;
+  const baseRequest = {
+    request: { method: 'POST' },
+    suffix: '/code/open-folder',
+    searchParams: new URLSearchParams(),
+    root: f.root,
+    readJsonBody: async () => { parsed = true; return { selector: f.code('project/README.md') }; },
+  };
+  await assert.rejects(http.handle(baseRequest), errorCode('code_open_folder_unauthorized'));
+  assert.equal(parsed, false);
+  await assert.rejects(http.handle({ ...baseRequest, authorizeWrite: () => { throw Object.assign(new Error('unauthorized'), { code: 'session_test' }); } }), errorCode('session_test'));
+  assert.equal(parsed, false);
+  await assert.rejects(http.handle({ ...baseRequest, searchParams: new URLSearchParams({ extra: '1' }), authorizeWrite: () => {} }), errorCode('code_query_invalid'));
+  assert.equal(parsed, false);
+
+  await assert.rejects(http.handle({
+    ...baseRequest,
+    authorizeWrite: () => {},
+    readJsonBody: async () => ({ selector: { ...f.code('project/README.md'), commitHash: f.git('rev-parse', 'HEAD') } }),
+  }), errorCode('code_open_folder_input_invalid'));
+
+  const ok = await http.handle({ ...baseRequest, authorizeWrite: () => {} });
+  assert.deepEqual(ok, { status: 200, body: { requested: true } });
+  assert.deepEqual(f.openedDirectories, [fs.realpathSync(path.join(f.root, 'project'))]);
+
+  const lease = defaultTestContextPool().acquire(WORKSPACE_FOUNDATION_CONTEXT_KEY, { name: 'open-folder-http' });
+  const workspaceRoot = fs.realpathSync(lease.root);
+  const httpOpened: string[] = [];
+  const runtime = {
+    ensureRegisteredTarget: () => runtimeProvideWorkspaceId,
+    resolveRegisteredWorkspace: () => ({ rootPath: workspaceRoot }),
+  };
+  let runtimeProvideWorkspaceId = '';
+  let instance: ReturnType<typeof createLocalWorkspaceServer> | undefined;
+  t.after(async () => {
+    try { if (instance) await new Promise<void>(resolve => instance!.server.close(() => resolve())); }
+    finally { lease.release(); }
+  });
+  execFileSync('git', ['-C', workspaceRoot, 'init', '--initial-branch=main'], { stdio: 'ignore' });
+  const nested = path.join(workspaceRoot, 'nested', 'dir');
+  fs.mkdirSync(nested, { recursive: true });
+  fs.writeFileSync(path.join(nested, 'sample.txt'), 'hello\n');
+  runtimeProvideWorkspaceId = crypto.randomUUID();
+  const repositoryId = crypto.randomUUID();
+  const registry = createModuleRegistry({
+    capabilities: {
+      [WORKSPACE_APPLICATION]: {
+        assetCatalog: () => ({ repositories: [{ id: repositoryId, code: 'repo', name: 'Repo', source: { type: 'git', path: '.' } }], services: [], projects: [] }),
+      },
+      [WORKSPACE_QUERY]: {
+        resolveSourceRoot: (targetRoot: string, source: { path: string }) => path.resolve(targetRoot, source.path),
+      },
+      [TASK_QUERY_APPLICATION]: { readTask: () => ({ record: { taskId: 't', title: 't', scope: { projects: [], services: [] } } }) },
+      [TASK_WORKTREE_PROVIDER]: { readGitWorktreeEvidence: () => null },
+      [AGENT_ASSETS_SOURCE_READ]: { builtinManagedFiles: () => [] },
+    },
+  });
+  const descriptor = registry.install(createCodeModule({
+    openDirectory: async directory => {
+      httpOpened.push(directory);
+      return { requested: true };
+    },
+  }));
+  t.after(() => descriptor.lifecycle.stop());
+  const codeHttp = descriptor.contributions.http.find((item: { id: string }) => item.id === 'code.files.http');
+  instance = createLocalWorkspaceServer(runtime, {
+    targetRoot: workspaceRoot,
+    httpContributions: [{ taskIdSource: '[a-z0-9-]+' }, codeHttp],
+  });
+  const { url, initialWorkspaceId, sessionToken } = await instance.ready;
+  const endpoint = `${url}/api/v1/workspaces/${initialWorkspaceId}/code/open-folder`;
+  const payload = { selector: { kind: 'code', repositoryId, checkoutId: gitCheckoutReadId(workspaceRoot), path: 'nested/dir/sample.txt' } };
+  const forbidden = await fetch(endpoint, { method: 'POST', headers: { origin: url, 'content-type': 'application/json', 'x-buildr-session': 'wrong' }, body: JSON.stringify(payload) });
+  assert.equal(forbidden.status, 403);
+  assert.deepEqual(httpOpened, []);
+
+  const accepted = await fetch(endpoint, { method: 'POST', headers: { origin: url, 'content-type': 'application/json', 'x-buildr-session': sessionToken }, body: JSON.stringify(payload) });
+  assert.equal(accepted.status, 200);
+  assert.deepEqual(await accepted.json(), { requested: true });
+  assert.deepEqual(httpOpened, [fs.realpathSync(nested)]);
 });

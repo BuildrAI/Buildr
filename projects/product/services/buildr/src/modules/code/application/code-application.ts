@@ -38,6 +38,7 @@ export type CodeDependencies = {
   projectDocumentImageContext?(root:string,code:string,path:string,content:string):MarkdownImageContext|undefined;
   repositoryCloneStatus?(root:string,repositoryId:string):{state:'cloning'|'failed'|null;diagnostic:string|null;startedAt:string|null};
   repositoryCloneRequest?(root:string,repositoryId:string):{status:'started'|'already-running'|'ready'|'unavailable';diagnostic:string|null};
+  openDirectory?: typeof import('../../../infrastructure/filesystem/open-directory.ts').openDirectory;
 };
 export function createCodeApplication(dependencies:CodeDependencies) {
   function assertRepositoryPrepared(root: string, repositoryId: string) {
@@ -288,7 +289,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
   return Object.freeze({
     // Editing already selects an exact live checkout. Task associations enrich
     // catalogs, but must not be rediscovered around each complete file read.
-    ...createFileEditingApplication({codeSource:(root,input)=>source(root,{repositoryId:input.repositoryId,worktreeId:input.checkoutId}),projectSource:dependencies.projectDetail,builtinManagedFiles:dependencies.builtinManagedFiles,projectDocumentImageContext:dependencies.projectDocumentImageContext}),
+    ...createFileEditingApplication({codeSource:(root,input)=>source(root,{repositoryId:input.repositoryId,worktreeId:input.checkoutId}),projectSource:dependencies.projectDetail,builtinManagedFiles:dependencies.builtinManagedFiles,projectDocumentImageContext:dependencies.projectDocumentImageContext,openDirectory:dependencies.openDirectory}),
     ...sourceControlApplication,
     ...createCodeDiscardApplication({ source: (root, input) => source(root, input as CodeInput) }),
     ...createCodeBranchApplication({ source: (root, input) => source(root, input as CodeInput), observation: (root,input) => {

@@ -159,6 +159,94 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
       fs.writeFileSync(codeFixture.htmlFixturePath, original);
     }
   });
+  await t.test('打开文件支持直接打开所在文件夹，覆盖编辑面板与非编辑预览并排除历史版本', async () => {
+    const htmlPath = 'projects/demo/services/api/html-reading-fixture.HTM';
+    const segmentedPath = 'projects/demo/services/api/zz-segmented-text.txt';
+    const requests: Array<{ headers: Record<string, string>; body: unknown }> = [];
+    let failNext = false;
+    await page.route('**/code/open-folder', async (route: any) => {
+      const request = route.request();
+      assert.equal(request.method(), 'POST');
+      const headers = request.headers();
+      assert.ok(headers['x-buildr-session']);
+      requests.push({ headers, body: request.postDataJSON() });
+      if (failNext) {
+        failNext = false;
+        return route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { code: 'code_directory_missing', message: '目录已不存在，请刷新后重试。' } }),
+        });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ requested: true }),
+      });
+    });
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(workspaceUrl + '/code/explorer');
+      const catalog = await readCatalog();
+      const primaryCheckout = catalog.worktrees.find((item: any) => item.repositoryId === codeFixture.primaryRepositoryId && item.groupId === 'main');
+      assert.ok(primaryCheckout);
+
+      await search('html-reading-fixture.HTM');
+      await fileResult(htmlPath).click();
+      const pane = page.locator('.file-editing-pane:visible');
+      await pane.waitFor();
+      const paneOpenResponse = page.waitForResponse((response: any) => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/code/open-folder'));
+      await pane.getByRole('button', { name: '打开所在文件夹', exact: true }).click();
+      assert.equal((await paneOpenResponse).status(), 200);
+      await page.getByText('已请求打开文件所在文件夹', { exact: true }).first().waitFor();
+      assert.deepEqual(requests.at(-1)?.body, {
+        selector: {
+          kind: 'code',
+          repositoryId: codeFixture.primaryRepositoryId,
+          checkoutId: primaryCheckout.id,
+          path: htmlPath,
+        },
+      });
+      assert.equal(await page.getByRole('tab', { name: 'html-reading-fixture.HTM', exact: true }).count(), 1);
+
+      await search('zz-segmented-text.txt');
+      const segResponse = fileResponse(segmentedPath);
+      await fileResult(segmentedPath).click();
+      await (await segResponse).json();
+      const segOpenResponse = page.waitForResponse((response: any) => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/code/open-folder'));
+      await page.getByRole('button', { name: '打开文件夹', exact: true }).click();
+      assert.equal((await segOpenResponse).status(), 200);
+      await page.getByText('已请求打开文件所在文件夹', { exact: true }).first().waitFor();
+      assert.deepEqual(requests.at(-1)?.body, {
+        selector: {
+          kind: 'code',
+          repositoryId: codeFixture.primaryRepositoryId,
+          checkoutId: primaryCheckout.id,
+          path: segmentedPath,
+        },
+      });
+
+      failNext = true;
+      expectedBrowserErrors.add('/code/open-folder');
+      const failOpenResponse = page.waitForResponse((response: any) => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/code/open-folder'));
+      await page.getByRole('button', { name: '打开文件夹', exact: true }).click();
+      assert.equal((await failOpenResponse).status(), 404);
+      await page.getByText('目录已不存在，请刷新后重试。', { exact: true }).first().waitFor();
+      await page.getByRole('region', { name: '大文件分段阅读', exact: true }).waitFor();
+
+      await page.goto(workspaceUrl + '/tasks/browser-task');
+      await page.locator('#task-source-files').waitFor();
+      await page.getByText('改动与提交', { exact: false }).click();
+      await page.locator('.task-rail-commit').filter({ hasText: 'code fixture' }).click();
+      await page.locator('.task-rail-commit-files .task-changed-row').filter({ hasText: 'main.ts' }).click();
+      await page.getByRole('button', { name: '查看完整文件', exact: true }).click();
+      await page.locator(codeEditor + ':visible').waitFor();
+      assert.equal(await page.getByRole('button', { name: '打开所在文件夹', exact: true }).count(), 0);
+      assert.equal(await page.getByRole('button', { name: '打开文件夹', exact: true }).count(), 0);
+    } finally {
+      await page.unroute('**/code/open-folder');
+    }
+  });
   await runExplorerNavigationJourney({assert, capture, clearFilter, codeFixture, codeRepositoryCode, expandRoot, expandedRoots, fileResponse, fileResult, filterGroupIds, filterOptionNames, groupName, navigateCode, noOverflow, page, read, readCatalog, registeredRoots, rootFor, search, selectFilter, selectSearchMode, t, workspaceUrl});
   await runExplorerSearchJourney({assert, assertEditorText, capture, codeEditor, codeFixture, codeMarkdown, editorPosition, editorScroll, expandRoot, fileResponse, fileResult, matchResult, noOverflow, page, read, resultPath, returnToExplorer, search, selectSearchMode, showPrimaryNavigation, t, workspaceUrl});
   await runExplorerSourcesJourney({assert, assertPart, assertVisibleSearchHit, capture, codeEditor, codeFixture, editorPosition, expandRoot, expectedBrowserErrors, fileResponse, fileResult, groupName, matchResult, noOverflow, page, read, readCatalog, registeredFileTab, registeredRoots, resultPath, returnToExplorer, search, selectSearchMode, t, workspaceUrl});
