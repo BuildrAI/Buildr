@@ -9,7 +9,7 @@ import {ConversationHostProvider, type HarnessConversationHost} from './Conversa
 import './conversation-surface.css';
 
 export type HarnessConversationCommand = {
-  action: 'new' | 'open' | 'history' | 'settings' | 'start-text';
+  action: 'new' | 'open' | 'history' | 'settings' | 'quota' | 'start-text';
   workspaceId?: string;
   conversationId?: string;
   taskId?: string;
@@ -58,11 +58,12 @@ function Surface(props: Props) {
     const command = props.command;
     if (!command || lastCommand.current === props.sequence) return;
     lastCommand.current = props.sequence;
-    if (context.full&&command.action!=='settings'&&command.action!=='start-text') context.setSettings(false);
+    if (context.full&&command.action!=='settings'&&command.action!=='quota'&&command.action!=='start-text') context.setSettings(false);
     if (command.action === 'new') context.newConversation(command.workspaceId ? {scope: {workspaceId: command.workspaceId, ...(command.taskId ? {taskId: command.taskId} : {})}} : {});
     else if (command.action === 'open' && command.workspaceId && command.conversationId) void context.openConversation(command.workspaceId, command.conversationId);
     else if (command.action === 'history') context.openHistory(null);
     else if (command.action === 'settings') context.setSettings(true);
+    else if (command.action === 'quota') context.openQuotaSettings?.();
     else if (command.action === 'start-text' && command.input && command.requestId) {
       const {requestId, input} = command;
       const submit = context.startTextConversation;
@@ -72,7 +73,7 @@ function Surface(props: Props) {
         () => current.current.onResult(requestId, {status: 'recovering', reason: 'submission-unknown', message: '原提交结果未确认，请核对原对话。'}),
       );
     }
-  }, [props.command, props.sequence, context.full, context.newConversation, context.openConversation, context.openHistory, context.setSettings, context.startTextConversation]);
+  }, [props.command, props.sequence, context.full, context.newConversation, context.openConversation, context.openHistory, context.openQuotaSettings, context.setSettings, context.startTextConversation]);
   return <div className="harness-conversation-surface">
     <ConversationWorkspace development workspaces={props.workspaces} defaultWorkspaceId={props.defaultWorkspaceId}/>
   </div>;

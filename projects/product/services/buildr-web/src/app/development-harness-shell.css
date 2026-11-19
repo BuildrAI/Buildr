@@ -15,5 +15,7 @@
   .development-conversation-slot>.development-harness-divider{display:none}
   .development-work-environment-shell .development-harness-rail{display:flex}
   .development-work-environment-shell.is-conversation-collapsed .development-harness-rail{flex-direction:row;width:100%;height:52px}
+  .development-work-environment-shell .development-harness-rail>.development-harness-quota{margin-top:0;margin-left:auto}
   .development-work-environment-shell .development-harness-rail>.development-harness-settings{margin-top:0;margin-left:auto}
+  .development-work-environment-shell .development-harness-rail>.development-harness-quota+.development-harness-settings{margin-top:0;margin-left:3px}
 }

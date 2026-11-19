@@ -1,6 +1,6 @@
 import {useCallback, useMemo, useRef} from 'react';
 import {Button} from 'antd';
-import {CommentOutlined, PlusOutlined, SettingOutlined, UnorderedListOutlined} from '@ant-design/icons';
+import {CommentOutlined, DashboardOutlined, PlusOutlined, SettingOutlined, UnorderedListOutlined} from '@ant-design/icons';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {HarnessConversationSurface, type HarnessConversationHost, type HarnessDirectoryFiles} from '../../../../buildr-harness-web/src/conversation';
 import {resolveTaskBriefReference, taskBriefHref} from '../../lib/taskBriefLinks';
@@ -76,6 +76,7 @@ export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {default
     <Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" onClick={() => context.newConversation()}/>
     <Button type="text" icon={<CommentOutlined/>} aria-label="展开当前对话" onClick={() => context.setOpen(true)}/>
     <Button type="text" icon={<UnorderedListOutlined/>} aria-label="全部对话" onClick={() => context.openHistory(null)}/>
-    <Button type="text" className="development-harness-settings" icon={<SettingOutlined/>} aria-label="智能体与模型设置" onClick={() => context.setSettings(true)}/>
+    <Button type="text" className="development-harness-quota" icon={<DashboardOutlined/>} aria-label="供应商额度" title="供应商额度" onClick={() => context.openQuotaSettings()}/>
+    <Button type="text" className="development-harness-settings" icon={<SettingOutlined/>} aria-label="智能体与模型设置" title="智能体与模型设置" onClick={() => context.setSettings(true)}/>
   </aside>}</>;
 }

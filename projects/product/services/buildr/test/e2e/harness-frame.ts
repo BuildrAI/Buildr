@@ -96,7 +96,24 @@ try{
  await page.evaluate(()=>window.postMessage({protocol:'buildr.harness-frame/v1',event:'selection',workspaceId:'forged',conversationId:'forged'},location.origin));
  await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();await frame.getByText('专注对话',{exact:true}).click();await page.locator('.development-harness-frame.is-full').waitFor();if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_SCREENSHOT_DIR,'development-harness-focused.png')});assert.equal(await page.locator('.harness-conversation-surface').getAttribute('data-acceptance-identity'),'retained');assert.equal(await input.inputValue(),'不会发送的验收草稿');
  await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();await frame.getByText('恢复分屏',{exact:true}).click();await page.locator('.development-harness-frame.is-full').waitFor({state:'hidden'});assert.equal(await input.inputValue(),'不会发送的验收草稿');
- await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();await frame.getByText('收起对话',{exact:true}).click();await page.locator('.development-harness-frame').waitFor({state:'hidden'});if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_SCREENSHOT_DIR,'development-harness-collapsed.png')});assert.equal(await page.locator('.development-harness-frame').isVisible(),false);assert.equal(await page.locator('.development-harness-rail').evaluate(node=>node.getBoundingClientRect().width),52);await page.reload();await page.locator('.development-harness-rail').waitFor({state:'visible'});assert.equal(await page.locator('.development-harness-frame').isVisible(),false);await page.locator('.harness-conversation-surface').evaluate((node:HTMLElement)=>{node.dataset.acceptanceIdentity='retained';});await page.locator('.development-harness-rail').getByRole('button',{name:'展开当前对话',exact:true}).click();assert.equal(await input.inputValue(),'不会发送的验收草稿');
+ await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();await frame.getByText('收起对话',{exact:true}).click();await page.locator('.development-harness-frame').waitFor({state:'hidden'});if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_SCREENSHOT_DIR,'development-harness-collapsed.png')});assert.equal(await page.locator('.development-harness-frame').isVisible(),false);assert.equal(await page.locator('.development-harness-rail').evaluate(node=>node.getBoundingClientRect().width),52);await page.reload();await page.locator('.development-harness-rail').waitFor({state:'visible'});assert.equal(await page.locator('.development-harness-frame').isVisible(),false);await page.locator('.harness-conversation-surface').evaluate((node:HTMLElement)=>{node.dataset.acceptanceIdentity='retained';});
+ const collapsedRail=page.locator('.development-harness-rail');
+ const collapsedQuota=collapsedRail.getByRole('button',{name:'供应商额度',exact:true}), collapsedSettings=collapsedRail.getByRole('button',{name:'智能体与模型设置',exact:true});
+ const [collapsedQuotaBox, collapsedSettingsBox]=await Promise.all([collapsedQuota.boundingBox(), collapsedSettings.boundingBox()]);
+ assert.ok(collapsedQuotaBox&&collapsedSettingsBox&&collapsedQuotaBox.y<collapsedSettingsBox.y,'collapsed rail places dedicated quota entry above settings');
+ await collapsedQuota.click();
+ const collapsedDrawer=page.getByRole('dialog',{name:/^智能体与模型/});
+ await collapsedDrawer.waitFor();
+ assert.equal(await page.locator('.development-harness-frame').isVisible(),true,'clicking collapsed quota expands split conversation pane');
+ assert.equal(await page.locator('.development-harness-frame.is-full').isVisible(),false);
+ assert.equal(await collapsedDrawer.getByRole('tab',{name:'模型',exact:true}).getAttribute('aria-selected'),'true');
+ await collapsedDrawer.getByText('账号与额度',{exact:true}).waitFor();
+ await collapsedDrawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();
+ await collapsedDrawer.waitFor({state:'hidden'});
+ assert.equal(await page.locator('.harness-conversation-surface').getAttribute('data-acceptance-identity'),'retained');
+ assert.equal(await input.inputValue(),'不会发送的验收草稿');
+ await frame.getByRole('button',{name:'更多对话操作',exact:true}).click();await frame.getByText('收起对话',{exact:true}).click();await page.locator('.development-harness-frame').waitFor({state:'hidden'});
+ await collapsedRail.getByRole('button',{name:'展开当前对话',exact:true}).click();assert.equal(await input.inputValue(),'不会发送的验收草稿');
  const conversation=await page.evaluate(async(workspaceId)=>{const token=document.querySelector('meta[name="buildr-session"]')!.getAttribute('content')!;const response=await fetch(`/api/v1/workspaces/${workspaceId}/agent-conversations`,{method:'POST',headers:{'content-type':'application/json','x-buildr-session':token},body:'{}'});const value=await response.json();if(!response.ok)throw Error(JSON.stringify(value));return value;},initialWorkspaceId);
  // Empty records are deliberately absent from real history. Expose only this
  // controlled setup record in the list fixture; selection/read/PATCH still use real HTTP.
@@ -130,8 +147,20 @@ try{
  await page.locator('#task-edit-title').waitFor({state:'visible'});
  assert.equal(await page.locator('#task-edit-title').inputValue(),'工作环境隐藏后保留的草稿');
  await page.keyboard.press('Escape');if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_SCREENSHOT_DIR,'development-harness-embedded.png')});
- await frame.locator('.ac-collapsed-rail .ac-account-settings').click();await frame.getByRole('tab',{name:'智能体',exact:true}).waitFor();
- await frame.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();
+ const splitRail=frame.locator('.ac-collapsed-rail'), splitGear=splitRail.getByRole('button',{name:'智能体与模型设置',exact:true}), splitQuota=splitRail.getByRole('button',{name:'供应商额度',exact:true});
+ const splitDrawer=page.getByRole('dialog',{name:/^智能体与模型/}), splitPreview=page.getByTestId('account-quota-overview');
+ const [splitQuotaBox, splitGearBox]=await Promise.all([splitQuota.boundingBox(), splitGear.boundingBox()]);
+ assert.ok(splitQuotaBox&&splitGearBox&&splitQuotaBox.y<splitGearBox.y,'split rail places dedicated quota entry above settings');
+ await splitGear.hover();await page.waitForTimeout(260);assert.equal(await splitPreview.isVisible(),false,'gear does not open quota overview in split mode');
+ await splitGear.click();await splitDrawer.waitFor();await splitDrawer.getByRole('tab',{name:'智能体',exact:true}).click();
+ await splitDrawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();await splitDrawer.waitFor({state:'hidden'});
+ await splitQuota.hover();await splitPreview.waitFor({state:'visible'});
+ const splitPreviewBounds=await splitPreview.boundingBox();
+ assert.ok(splitPreviewBounds&&splitPreviewBounds.x>=0&&splitPreviewBounds.x+splitPreviewBounds.width<=1440,'split quota overview fits within viewport');
+ await splitQuota.click();await splitDrawer.waitFor();await splitPreview.waitFor({state:'hidden'});
+ assert.equal(await splitDrawer.getByRole('tab',{name:'模型',exact:true}).getAttribute('aria-selected'),'true');
+ await splitDrawer.getByText('账号与额度',{exact:true}).waitFor();
+ await splitDrawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();await splitDrawer.waitFor({state:'hidden'});
  await input.waitFor();
  await input.fill('重启恢复草稿');
  const oldOuterToken=await page.evaluate(()=>document.querySelector('meta[name="buildr-session"]')?.getAttribute('content'));
