@@ -5,6 +5,7 @@ import { LanguageDescription } from '@codemirror/language';
 import { fileEditingLanguages } from './file-editing-language';
 import { MarkdownHost } from '../MarkdownHost';
 import type { MarkdownRenderOptions } from '../../markdown';
+import { HtmlFilePreview } from './HtmlFilePreview';
 import { FileCodeEditor } from './FileCodeEditor';
 import { ReadOnlyFileCodeEditor } from './ReadOnlyFileCodeEditor';
 import { FileEditingFeedback } from './FileEditingFeedback';
@@ -16,6 +17,7 @@ export type FileEditingPaneProps = {
   file: FileEditingDocument;
   editing: FileEditingController;
   active?: boolean;
+  htmlPreview?: boolean;
   markdownOptions?: MarkdownRenderOptions;
   markdownRevision?: string;
   focusLine?: number;
@@ -28,10 +30,11 @@ export type FileEditingPaneProps = {
 };
 
 /** Shared file identity, editor, autosave feedback and conflict handling for every entry. */
-export function FileEditingPane({ file, editing, active = true, markdownOptions, markdownRevision, focusLine, focusRequest, searchQuery, onSelectLines, onOpenInExplorer, onViewCurrent, toolbarEnd }: FileEditingPaneProps) {
+export function FileEditingPane({ file, editing, active = true, htmlPreview = false, markdownOptions, markdownRevision, focusLine, focusRequest, searchQuery, onSelectLines, onOpenInExplorer, onViewCurrent, toolbarEnd }: FileEditingPaneProps) {
   const transient = useContext(WorkspaceViewTransientContext);
   const session = editing.sessions[file.id];
   const [preview, setPreview] = useState(false);
+  const [readOnlyHtmlSource, setReadOnlyHtmlSource] = useState(false);
   const readHost = useRef<HTMLDivElement>(null);
   const scrolls = useRef(new Map<string, number>());
   const focusKey = focusLine ? JSON.stringify([file.id, focusLine, focusRequest]) : '';
@@ -49,7 +52,7 @@ export function FileEditingPane({ file, editing, active = true, markdownOptions,
     if(!file.observedAt||Date.now()-Date.parse(file.observedAt)>1000)void editing.refresh(file.id);
     return release;
   }, [file.id, active, editing.watch, editing.refresh]);
-  useEffect(() => { setPreview(false); setSelectedLines(null); }, [file.id]);
+  useEffect(() => { setPreview(false); setReadOnlyHtmlSource(false); setSelectedLines(null); }, [file.id]);
   useEffect(() => { if (session?.mode !== 'edit' || session?.file.readOnlyReason) setPreview(false); }, [session?.mode, session?.file.readOnlyReason]);
   useEffect(() => {
     let cancelled = false;
@@ -58,9 +61,11 @@ export function FileEditingPane({ file, editing, active = true, markdownOptions,
     return () => { cancelled = true; };
   }, [file.id, file.path]);
   const markdown = file.kind === 'markdown';
+  const renderable = markdown || htmlPreview;
   const editingSource = session?.mode === 'edit' && !session.file.readOnlyReason;
-  const readingSource = markdown && !editingSource && Boolean(focusKey) && dismissedFocus !== focusKey;
-  const showSource = !markdown || editingSource || readingSource;
+  const explicitSource = editingSource || (htmlPreview && Boolean(session?.file.readOnlyReason) && readOnlyHtmlSource);
+  const readingSource = renderable && !explicitSource && Boolean(focusKey) && dismissedFocus !== focusKey;
+  const showSource = !renderable || explicitSource || readingSource;
   useEffect(() => {
     if (!showSource && readHost.current) readHost.current.scrollTop = scrolls.current.get(file.id + ':read') || 0;
     if (!showSource) onSelectLines?.(null);
@@ -74,7 +79,8 @@ export function FileEditingPane({ file, editing, active = true, markdownOptions,
 
   if (!session) return <div className="file-editing-loading"><Spin /></div>;
   const editable = !session.file.readOnlyReason;
-  const showPreview = editingSource && markdown && preview;
+  const showPreview = editingSource && renderable && preview;
+  const renderedContent = () => htmlPreview ? <HtmlFilePreview key={file.id} html={session.content} /> : <MarkdownHost markdown={session.content} className="markdown-body" renderVersion={markdownRevision} options={markdownOptions} />;
   const pathParts = file.path.split('/');
   const fileName = pathParts.pop() || file.path;
   const parentPath = pathParts.join('/');
@@ -90,7 +96,7 @@ export function FileEditingPane({ file, editing, active = true, markdownOptions,
         <div className="file-editing-path" title={fullPath} aria-label={'文件路径：' + file.path}>{parentPath && <span>{parentPath} / </span>}<strong>{fileName}</strong></div>
         <Space size={6} className="file-editing-header-actions">
           {readingSource && <Button size="small" onClick={() => setDismissedFocus(focusKey)}>返回阅读</Button>}
-          {markdown && <span className="file-editing-mode" data-prototype-position="file-mode"><Segmented block size="small" aria-label="文件查看模式" value={editingSource ? 'edit' : 'read'} options={[{ label: '阅读', value: 'read' }, { label: '编辑', value: 'edit', disabled: !editable }]} onChange={value => { setDismissedFocus(focusKey); editing.setMode(file.id, value as 'read' | 'edit'); }} /></span>}
+          {renderable && <span className="file-editing-mode" data-prototype-position="file-mode"><Segmented block size="small" aria-label="文件查看模式" value={explicitSource ? 'edit' : 'read'} options={[{ label: '阅读', value: 'read' }, { label: htmlPreview ? '源码' : '编辑', value: 'edit', disabled: !editable && !htmlPreview }]} onChange={value => { setDismissedFocus(focusKey); if (htmlPreview && !editable) setReadOnlyHtmlSource(value === 'edit'); else editing.setMode(file.id, value as 'read' | 'edit'); }} /></span>}
           {onOpenInExplorer && <Tooltip title="在资源管理器（Explorer）中打开同一文件"><Button type="text" size="small" aria-label="在资源管理器中打开" icon={<FolderOpenOutlined />} onClick={onOpenInExplorer} /></Tooltip>}
           {onViewCurrent && <Button size="small" onClick={onViewCurrent}>打开当前文件</Button>}
           {toolbarEnd}
@@ -99,7 +105,7 @@ export function FileEditingPane({ file, editing, active = true, markdownOptions,
       <div className="file-editing-header-meta">
         <span className="file-editing-location" title={file.location} aria-label="文件位置与版本"><FolderOpenOutlined /><span>{file.locationLabel || '当前目录'}</span>{versionLabel && <><span aria-hidden="true">·</span><strong title={versionLabel}>{versionLabel}</strong></>}<span className="file-editing-line-count">· {lineCount} 行</span></span>
         <div className="file-editing-meta-actions">
-          {markdown && <span className="file-editing-preview-action">{editingSource && <Button type={preview ? 'primary' : 'text'} size="small" aria-pressed={preview} onClick={() => setPreview(value => !value)}>预览</Button>}</span>}
+          {renderable && <span className="file-editing-preview-action">{editingSource && <Button type={preview ? 'primary' : 'text'} size="small" aria-pressed={preview} onClick={() => setPreview(value => !value)}>预览</Button>}</span>}
           <div className="file-editing-save" data-prototype-position="save-status" aria-live="polite">{editable ? <><span className="file-editing-save-detail" title={session.savedAt ? '最近保存：' + session.savedAt : '停止输入后自动保存'}>自动保存</span><span className={'file-editing-save-state state-' + session.status}>{statusIcon}{statusText}</span></> : <Tag bordered={false}>只读</Tag>}</div>
         </div>
       </div>
@@ -108,10 +114,10 @@ export function FileEditingPane({ file, editing, active = true, markdownOptions,
     <div className={'file-editing-body' + (showPreview ? ' with-preview' : '')}>
       {readingSource ? <div className="file-editing-source" data-prototype-position="editor-input"><ReadOnlyFileCodeEditor documentId={file.id + ':search'} path={file.path} content={session.content} query={searchQuery} selectedLines={selectedLines} active={active} focusLine={focusLine} focusRequest={focusRequest}
         onSelectLine={(line, extend) => selectLines(extend && selectedLines ? [Math.min(selectedLines[0], line), Math.max(selectedLines[1], line)] : [line, line])} readOnlyReason="源码定位：只读查看，可返回阅读或明确进入编辑。" initialScrollTop={scrolls.current.get(file.id + ':search') || 0} onScroll={top => scrolls.current.set(file.id + ':search', top)} /></div>
-        : showSource ? <div className="file-editing-source" data-prototype-position="editor-input"><FileCodeEditor documentId={file.id} state={session.editorState} onTransactions={transactions => editing.applyTransactions(file.id, transactions)} onComposing={value => editing.setComposing(file.id, value)} onBlur={() => void editing.saveNow(file.id)} active={active} autoFocus={active && !transient && markdown && editingSource} focusLine={focusLine} focusRequest={focusRequest} searchQuery={searchQuery} selectedLines={selectedLines} onSelectLines={selectLines}
+        : showSource ? <div className="file-editing-source" data-prototype-position="editor-input"><FileCodeEditor documentId={file.id} state={session.editorState} onTransactions={transactions => editing.applyTransactions(file.id, transactions)} onComposing={value => editing.setComposing(file.id, value)} onBlur={() => void editing.saveNow(file.id)} active={active} autoFocus={active && !transient && renderable && editingSource} focusLine={focusLine} focusRequest={focusRequest} searchQuery={searchQuery} selectedLines={selectedLines} onSelectLines={selectLines}
           initialScrollTop={scrolls.current.get(file.id + ':source') || 0} onScroll={top => scrolls.current.set(file.id + ':source', top)} /></div>
-        : <div className="file-editing-reading" ref={readHost} data-prototype-position="editor-input" onScroll={event => scrolls.current.set(file.id + ':read', event.currentTarget.scrollTop)}><MarkdownHost markdown={session.content} className="markdown-body" renderVersion={markdownRevision} options={markdownOptions} /></div>}
-      {showPreview && <div className="file-editing-preview"><div className="file-editing-preview-label">Markdown 预览</div><MarkdownHost markdown={session.content} className="markdown-body" renderVersion={markdownRevision} options={markdownOptions} /></div>}
+        : <div className={'file-editing-reading' + (htmlPreview ? ' file-editing-html' : '')} ref={readHost} data-prototype-position="editor-input" onScroll={event => scrolls.current.set(file.id + ':read', event.currentTarget.scrollTop)}>{renderedContent()}</div>}
+      {showPreview && <div className={'file-editing-preview' + (htmlPreview ? ' file-editing-html' : '')}><div className="file-editing-preview-label">{htmlPreview ? 'HTML 静态预览' : 'Markdown 预览'}</div>{renderedContent()}</div>}
     </div>
   </section>;
 }
