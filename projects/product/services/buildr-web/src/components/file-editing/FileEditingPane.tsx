@@ -20,6 +20,7 @@ export type FileEditingPaneProps = {
   htmlPreview?: boolean;
   markdownOptions?: MarkdownRenderOptions;
   markdownRevision?: string;
+  markdownReadingPosition?: { positions: Map<string, number>; key: string };
   focusLine?: number;
   focusRequest?: number;
   searchQuery?: string;
@@ -30,7 +31,7 @@ export type FileEditingPaneProps = {
 };
 
 /** Shared file identity, editor, autosave feedback and conflict handling for every entry. */
-export function FileEditingPane({ file, editing, active = true, htmlPreview = false, markdownOptions, markdownRevision, focusLine, focusRequest, searchQuery, onSelectLines, onOpenInExplorer, onViewCurrent, toolbarEnd }: FileEditingPaneProps) {
+export function FileEditingPane({ file, editing, active = true, htmlPreview = false, markdownOptions, markdownRevision, markdownReadingPosition, focusLine, focusRequest, searchQuery, onSelectLines, onOpenInExplorer, onViewCurrent, toolbarEnd }: FileEditingPaneProps) {
   const transient = useContext(WorkspaceViewTransientContext);
   const session = editing.sessions[file.id];
   const [preview, setPreview] = useState(false);
@@ -66,8 +67,14 @@ export function FileEditingPane({ file, editing, active = true, htmlPreview = fa
   const explicitSource = editingSource || (htmlPreview && Boolean(session?.file.readOnlyReason) && readOnlyHtmlSource);
   const readingSource = renderable && !explicitSource && Boolean(focusKey) && dismissedFocus !== focusKey;
   const showSource = !renderable || explicitSource || readingSource;
+  const readingPosition = markdown && !htmlPreview ? markdownReadingPosition : undefined;
+  const readingPositions = readingPosition?.positions ?? scrolls.current;
+  const readingKey = readingPosition?.key ?? file.id + ':read';
+  const restoreReadingPosition = () => {
+    if (readHost.current) readHost.current.scrollTop = readingPositions.get(readingKey) ?? 0;
+  };
   useEffect(() => {
-    if (!showSource && readHost.current) readHost.current.scrollTop = scrolls.current.get(file.id + ':read') || 0;
+    if (!showSource && !markdown) restoreReadingPosition();
     if (!showSource) onSelectLines?.(null);
   }, [file.id, showSource]);
   useEffect(() => {
@@ -80,7 +87,7 @@ export function FileEditingPane({ file, editing, active = true, htmlPreview = fa
   if (!session) return <div className="file-editing-loading"><Spin /></div>;
   const editable = !session.file.readOnlyReason;
   const showPreview = editingSource && renderable && preview;
-  const renderedContent = () => htmlPreview ? <HtmlFilePreview key={file.id} html={session.content} /> : <MarkdownHost markdown={session.content} className="markdown-body" renderVersion={markdownRevision} options={markdownOptions} />;
+  const renderedContent = (onRendered?: () => void) => htmlPreview ? <HtmlFilePreview key={file.id} html={session.content} /> : <MarkdownHost markdown={session.content} className="markdown-body" renderVersion={markdownRevision} options={markdownOptions} onRendered={onRendered} />;
   const pathParts = file.path.split('/');
   const fileName = pathParts.pop() || file.path;
   const parentPath = pathParts.join('/');
@@ -116,7 +123,7 @@ export function FileEditingPane({ file, editing, active = true, htmlPreview = fa
         onSelectLine={(line, extend) => selectLines(extend && selectedLines ? [Math.min(selectedLines[0], line), Math.max(selectedLines[1], line)] : [line, line])} readOnlyReason="源码定位：只读查看，可返回阅读或明确进入编辑。" initialScrollTop={scrolls.current.get(file.id + ':search') || 0} onScroll={top => scrolls.current.set(file.id + ':search', top)} /></div>
         : showSource ? <div className="file-editing-source" data-prototype-position="editor-input"><FileCodeEditor documentId={file.id} state={session.editorState} onTransactions={transactions => editing.applyTransactions(file.id, transactions)} onComposing={value => editing.setComposing(file.id, value)} onBlur={() => void editing.saveNow(file.id)} active={active} autoFocus={active && !transient && renderable && editingSource} focusLine={focusLine} focusRequest={focusRequest} searchQuery={searchQuery} selectedLines={selectedLines} onSelectLines={selectLines}
           initialScrollTop={scrolls.current.get(file.id + ':source') || 0} onScroll={top => scrolls.current.set(file.id + ':source', top)} /></div>
-        : <div className={'file-editing-reading' + (htmlPreview ? ' file-editing-html' : '')} ref={readHost} data-prototype-position="editor-input" onScroll={event => scrolls.current.set(file.id + ':read', event.currentTarget.scrollTop)}>{renderedContent()}</div>}
+        : <div key={readingKey} className={'file-editing-reading' + (htmlPreview ? ' file-editing-html' : '')} ref={readHost} data-prototype-position="editor-input" onScroll={event => readingPositions.set(readingKey, event.currentTarget.scrollTop)}>{renderedContent(restoreReadingPosition)}</div>}
       {showPreview && <div className={'file-editing-preview' + (htmlPreview ? ' file-editing-html' : '')}><div className="file-editing-preview-label">{htmlPreview ? 'HTML 静态预览' : 'Markdown 预览'}</div>{renderedContent()}</div>}
     </div>
   </section>;
