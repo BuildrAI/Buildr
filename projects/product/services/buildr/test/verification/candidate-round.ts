@@ -37,6 +37,15 @@ export function passedRoundRecord(record: any, roundId: string, step: any, runne
       : record.environment?.platform === (platform ?? process.platform));
 }
 
+// Checks with non-portable fixtures may prove this exact candidate without
+// becoming reusable across source versions or verification rounds.
+export function passedExactCandidateRecord(record: any, roundId: string, step: any, runner: string, sourceCommit: string | null): boolean {
+  return !step.reuse && Boolean(sourceCommit) && record?.origin?.sourceCommit === sourceCommit
+    && passedRoundRecord(record, roundId, step, runner)
+    && record.result.processCleanup?.status === 'clean' && record.result.stateCleanup?.status === 'cleaned'
+    && record.result.childSignal === null;
+}
+
 export function roundResult(result: any, roundId: string, origin: any, environment: any): any {
   // Keep original observations. File recovery carries its own applicable input
   // identities; it never rewrites the original source or successful execution.
@@ -107,6 +116,12 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
       continue;
     }
     if (invalidStepIds.has(step.id) || options.force === true) continue;
+    if (strict && !step.reuse) {
+      if (passedExactCandidateRecord(record, roundId, step, plan.runner ?? process.platform, sourceCommit)
+        && record.environment.platform === process.platform && record.environment.arch === process.arch
+        && record.environment.nodeVersion === process.versions.node) hits.set(step.id, record);
+      continue;
+    }
     if (strict && (!sourceCommit || !record?.origin?.sourceCommit || !record.result?.inputIdentity?.key
       || record.environment.platform !== process.platform || record.environment.arch !== process.arch
       || record.environment.nodeVersion !== process.versions.node)) continue;

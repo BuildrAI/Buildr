@@ -247,3 +247,17 @@ test('one shared input reports all affected checks without counting it as multip
   });
   assert.deepEqual(result.verificationPlan.invalidationsByInput, [{ input: changedPath, checkIds: ['unit', 'native'], scope: 'shared' }]);
 });
+
+test('non-portable compatibility proof is accepted only for the clean exact candidate', async () => {
+  const id = 'compatibility';
+  const proof = record(id);
+  delete proof.result.inputIdentity;
+  Object.assign(proof.result, { processCleanup: { status: 'clean' }, stateCleanup: { status: 'cleaned' }, childSignal: null });
+  const verify = (candidate: any, source = 'original') => prepareLocalSourceVerification({ repo: '/source', roundId: 'round' }, {
+    ...fixture([candidate]), sourceHead: () => source,
+    createSourcePlan: () => plan([{ id, reuse: undefined, platformScope: { kind: 'native' } }]),
+  });
+  assert.equal((await verify(proof)).status, 'ready');
+  assert.equal((await verify(proof, 'other')).status, 'local-verification-required');
+  assert.equal((await verify({ ...proof, result: { ...proof.result, stateCleanup: undefined } })).status, 'local-verification-required');
+});
