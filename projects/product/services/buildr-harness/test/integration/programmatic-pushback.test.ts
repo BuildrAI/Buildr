@@ -347,6 +347,39 @@ test('the periodic check raises run.stalled after continuous inactivity and clea
   } finally { s.close(); }
 });
 
+test('only the maintenance owner expires shared events across a handoff', async () => {
+  const s = setup();
+  let ownsMaintenance = false;
+  const retired = new ProgrammaticPushback({ root: s.dir, transport: s.fake.transport, now: s.now, checkIntervalMs: 3600000, ownsMaintenance: () => ownsMaintenance });
+  const events = () => s.pb.listEvents('cred-one', 'workspace-one', {}).events;
+  const retention = 7 * 24 * 60 * 60 * 1000;
+  try {
+    s.configure();
+    s.pb.markTakeover('workspace-one', 'conversation-one', 'cred-one');
+    retired.publish(conversationEvent(view({ run: run('retained-run', 'completed') })));
+    await s.flush();
+    s.advance(retention);
+    s.pb.tick();
+    assert.deepEqual(events().map(event => event.type), ['run.completed'], 'the event is retained for seven days');
+    s.advance(1);
+    retired.tick();
+    assert.deepEqual(events().map(event => event.type), ['run.completed'], 'a retiring generation cannot expire shared events');
+    s.pb.tick();
+    assert.deepEqual(events().map(({ type, conversationId, droppedEventType, droppedCount }) => ({ type, conversationId, droppedEventType, droppedCount })), [
+      { type: 'events_dropped', conversationId: 'conversation-one', droppedEventType: 'run.completed', droppedCount: 1 },
+    ]);
+    await s.flush();
+    assert.equal(s.fake.calls.filter(call => call.body.type === 'events_dropped').length, 1);
+    s.advance(retention + 1);
+    retired.tick();
+    assert.equal(events().length, 1);
+    ownsMaintenance = true; // A failed adoption can restore the original owner.
+    retired.tick();
+    s.pb.tick();
+    assert.deepEqual(events(), [], 'an expired loss notice cannot generate another notice');
+  } finally { retired.close(); s.close(); }
+});
+
 test('run.stalled carries complete fields and one idle period is announced once across concurrent processes and restarts', async () => {
   const s = setup();
   let restarted: ProgrammaticPushback | undefined;

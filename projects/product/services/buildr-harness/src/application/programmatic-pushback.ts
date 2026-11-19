@@ -5,7 +5,7 @@ import { AgentServiceError } from '../domain/agent-state.ts';
 import { ProgrammaticPushbackStore, type PushbackConfig, type PushbackClaim } from '../persistence/programmatic-pushback-store.ts';
 import { pushbackNotifications, timedPushbackNotifications, isLiveRunStatus, type PushbackSnapshot, type PushbackNotification } from '../domain/programmatic-pushback-notifications.ts';
 
-export type PushbackOptions = { root: string; transport?: typeof fetch; now?: () => number; backoffMs?: number[]; checkIntervalMs?: number; concurrency?: number; stalledThresholdMs?: number; progressIntervalMs?: number; retentionMs?: number; readRunLiveness?: (workspaceId: string, conversationId: string) => { runs: RunView[] } | undefined };
+export type PushbackOptions = { root: string; transport?: typeof fetch; now?: () => number; backoffMs?: number[]; checkIntervalMs?: number; concurrency?: number; stalledThresholdMs?: number; progressIntervalMs?: number; retentionMs?: number; ownsMaintenance?: () => boolean; readRunLiveness?: (workspaceId: string, conversationId: string) => { runs: RunView[] } | undefined };
 const DEFAULT_BACKOFF = [10000, 30000, 90000, 270000, 810000];
 const GLOBAL_MIGRATION_KEY = 'global-webhook';
 const HOUR = 3600000, MINUTE = 60000;
@@ -39,6 +39,7 @@ export class ProgrammaticPushback {
   private readonly stalledThresholdMs: number;
   private readonly progressIntervalMs: number;
   private readonly retentionMs: number;
+  private readonly ownsMaintenance: () => boolean;
   private readonly readRunLiveness?: (workspaceId: string, conversationId: string) => { runs: RunView[] } | undefined;
   private readonly owner = randomUUID();
   private readonly active = new Set<AbortController>();
@@ -58,6 +59,7 @@ export class ProgrammaticPushback {
     this.stalledThresholdMs = options.stalledThresholdMs ?? 20 * MINUTE;
     this.progressIntervalMs = options.progressIntervalMs ?? 5 * MINUTE;
     this.retentionMs = options.retentionMs ?? 7 * 24 * HOUR;
+    this.ownsMaintenance = options.ownsMaintenance ?? (() => true);
     this.readRunLiveness = options.readRunLiveness;
     this.interval = setInterval(() => this.tick(), options.checkIntervalMs ?? 30000); this.interval.unref();
   }
@@ -234,7 +236,11 @@ export class ProgrammaticPushback {
   }
   tick(): void {
     if (this.closed) return;
-    try { this.checkTimedEvents(); this.cleanup(); this.drain(); this.storageFailed = false; }
+    try {
+      if (this.ownsMaintenance()) { this.checkTimedEvents(); this.cleanup(); }
+      this.drain();
+      this.storageFailed = false;
+    }
     catch { this.storageFailure(); }
   }
   /**

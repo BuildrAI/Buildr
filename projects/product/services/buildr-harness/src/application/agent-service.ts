@@ -58,12 +58,16 @@ export function createAgentService(options: AgentServiceOptions) {
   const resolver=new NativeContentResolver(root,id=>repository.readConversation(id),executorList);
   const repository:ConversationRepository = new ConversationRepository(root,(record,entry)=>resolver.tool(record,entry),reference=>readNativeTool(root,reference,executorList),provider=>nativeContentSpec(provider,executorList));
   repository.startReadModels();
+  let metadataFrozen = false;
   let pushbackRunLiveness: ((workspaceId: string, conversationId: string) => { runs: RunView[] } | undefined) | undefined;
   const envTiming = readTestPushbackTiming(process.env);
   const stalledThresholdMs = options.testPushbackStalledThresholdMs ?? envTiming.stalledThresholdMs;
   const checkIntervalMs = options.testPushbackCheckIntervalMs ?? envTiming.checkIntervalMs;
   const pushback = new ProgrammaticPushback({
     root: path.join(root, 'programmatic-pushback'),
+    // Retiring generations still publish their own execution events, but only
+    // the metadata owner may scan and expire the shared event stream.
+    ownsMaintenance: () => !metadataFrozen,
     ...(options.pushbackTransport ? { transport: options.pushbackTransport } : {}),
     ...(options.pushbackNow ? { now: options.pushbackNow } : {}),
     ...(stalledThresholdMs === undefined ? {} : { stalledThresholdMs }),
@@ -137,7 +141,6 @@ export function createAgentService(options: AgentServiceOptions) {
     return presentConnection(view, account, registeredProviderIds.has(accountId));
   };
   let closed = false;
-  let metadataFrozen = false;
   let discovery:Promise<void>|undefined, discoveryDiagnostic:string|undefined;
   let discoveryTimer:ReturnType<typeof setInterval>|undefined;
   let discoverySkippedCold = false;
