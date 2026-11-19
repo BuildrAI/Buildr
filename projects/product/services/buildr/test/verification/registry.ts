@@ -498,11 +498,11 @@ export const VERIFICATION_RESET_STRATEGIES: any = Object.freeze(['none', 'rollba
 export const VERIFICATION_PARALLEL_SAFETY: any = Object.freeze(['worker-safe', 'bounded', 'exclusive']);
 export const VERIFICATION_RESOURCE_DEMANDS: any = Object.freeze(['workers', 'processes', 'git', 'workspaceIo']);
 
-export function resolveVerificationExecutionProfile(value: any, env: any = process.env): any  {
+export function resolveVerificationExecutionProfile(value: any, env: any = process.env, observations: any[] = []): any  {
   const id: any = value || env.BUILDR_VERIFICATION_PROFILE || (env.CI === 'true' ? 'ci' : 'local-auto');
   const limits: any = VERIFICATION_EXECUTION_PROFILES[id];
   if (!limits) throw new Error(`Unknown verification execution profile: ${id}`);
-  return { id, ...resolveExecutionCapacity(limits, { automatic: id === 'local-auto', env }) };
+  return { id, ...resolveExecutionCapacity(limits, { automatic: id === 'local-auto', env, observations }) };
 }
 
 const integrationSlice: any = (id: any, files: any, options: any = {}) => Object.freeze({

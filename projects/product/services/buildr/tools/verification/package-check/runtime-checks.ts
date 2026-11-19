@@ -230,7 +230,9 @@ export function createPackageRuntimeChecks(deps: any): any  {
     }
     if (kind === 'commands') {
     const installedCommandsManifest = path.join(tempRoot, 'commands', 'manifest.yml');
-    if (!existsFile(installedCommandsManifest)) {
+    const commandsBeforeAdd = existsFile(installedCommandsManifest)
+      ? parseCommandsManifestYaml(fs.readFileSync(installedCommandsManifest, 'utf8')) : null;
+    if (!commandsBeforeAdd) {
       problems.push('buildr init did not install commands/manifest.yml.');
     } else {
       const commandsCheckJson = buildrSelf.exec(['commands', 'check', '--target', tempRoot, '--json'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -245,9 +247,12 @@ export function createPackageRuntimeChecks(deps: any): any  {
           || !Array.isArray(commandsCheck.findings)) {
           problems.push('commands check JSON must expose catalog, requirements, effectiveConstraints, observations, and findings layers.');
         }
-        if (commandsCheck.commands.length !== 1 || commandsCheck.commands[0].id !== 'openspec'
-          || !commandsCheck.commands[0].sources.includes('commands/buildr/openspec/manifest.yml')) {
-          problems.push('Default workspace must aggregate the OpenSpec Component command collection.');
+        const defaults = commandsCheck.commands;
+        const openspec = defaults.find((item: any) => item.id === 'openspec');
+        const ripgrep = defaults.find((item: any) => item.id === 'ripgrep');
+        if (defaults.length !== 2 || !openspec?.sources.includes('commands/buildr/openspec/manifest.yml')
+          || ripgrep?.executable !== 'rg' || ripgrep.required !== false) {
+          problems.push('Default workspace must aggregate OpenSpec and recommend optional ripgrep.');
         }
       }
       buildrSelf.exec(['commands', 'add', 'demo-tool', '--purpose', '测试命令行工具维护', '--description', 'package check temporary command', '--install-hint', 'https://example.com/demo-tool', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
@@ -258,8 +263,9 @@ export function createPackageRuntimeChecks(deps: any): any  {
       }
       buildrSelf.exec(['commands', 'remove', 'demo-tool', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
       const commandsAfterRemove = parseCommandsManifestYaml(fs.readFileSync(installedCommandsManifest, 'utf8'));
-      if (!Array.isArray(commandsAfterRemove.commands) || commandsAfterRemove.commands.length !== 0) {
-        problems.push('commands remove must keep an empty commands array.');
+      if (!Array.isArray(commandsAfterRemove.commands) || !commandsBeforeAdd
+        || JSON.stringify(commandsAfterRemove.commands) !== JSON.stringify(commandsBeforeAdd.commands)) {
+        problems.push('commands remove must restore the original workspace command list.');
       }
     }
     if (kind === 'rules') {

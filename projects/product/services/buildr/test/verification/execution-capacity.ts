@@ -7,7 +7,7 @@ export function observeVerificationMachine() {
   return { parallelism: os.availableParallelism(), memoryBytes: constrained > 0 ? Math.min(total, constrained) : total };
 }
 
-export function resolveExecutionCapacity(base: any, { automatic = false, env = process.env, machine = observeVerificationMachine() }: any = {}) {
+export function resolveExecutionCapacity(base: any, { automatic = false, env = process.env, machine = observeVerificationMachine(), observations = [] }: any = {}) {
   const configured = env.BUILDR_VERIFICATION_JOBS;
   if (configured !== undefined && (!/^[1-9]\d*$/.test(configured) || !Number.isSafeInteger(Number(configured) * 2))) {
     throw new Error('BUILDR_VERIFICATION_JOBS must be a safe positive integer');
@@ -18,7 +18,13 @@ export function resolveExecutionCapacity(base: any, { automatic = false, env = p
   // Size the outer worker pool to this host. Independently preserve locks and
   // limit concurrent workspace-heavy checks, which compete for disk and shared
   // browser setup even on hosts with spare CPU and RAM.
-  const initial = Math.max(1, Math.min(Math.floor(machine.parallelism / 3), Math.floor(memoryGiB / 4)));
+  // Retain the existing minimum reservation; historic peaks can only make admission more conservative.
+  const usable = observations.filter((item: any) => Number.isFinite(item.samples) && item.samples >= 5
+    && Number.isFinite(item.peakSampledGroupCpuPercent) && item.peakSampledGroupCpuPercent > 0
+    && Number.isFinite(item.peakSampledGroupRssBytes) && item.peakSampledGroupRssBytes > 0);
+  const cpuPerGroup = Math.max(3, ...usable.map((item: any) => Math.ceil(item.peakSampledGroupCpuPercent / 100)));
+  const memoryPerGroup = Math.max(4, ...usable.map((item: any) => item.peakSampledGroupRssBytes / 1024 ** 3));
+  const initial = Math.max(1, Math.min(Math.floor(machine.parallelism / cpuPerGroup), Math.floor(memoryGiB / memoryPerGroup)));
   const width = configured === undefined ? initial : Number(configured);
   // Four simultaneous workspace-heavy groups were observed to starve real
   // browser and process-handoff checks on this machine. Keep the global width
@@ -42,7 +48,7 @@ export function resolveExecutionCapacity(base: any, { automatic = false, env = p
       capacities: { ...base.capacities, workers: Math.max(workers, 2 * width), processes: Math.max(workers, 2 * width), workspaceIo },
     },
     capacityPolicy: configured === undefined ? 'machine-initial' : 'explicit-jobs',
-    capacityObservation: { ...machine, initialWidth: initial, workspaceHeavyLimit: workspaceHeavy,
+    capacityObservation: { ...machine, initialWidth: initial, cpuPerGroup, memoryPerGroup, workspaceHeavyLimit: workspaceHeavy,
       ...(configured === undefined ? {} : { requestedJobs: width }) },
   };
 }

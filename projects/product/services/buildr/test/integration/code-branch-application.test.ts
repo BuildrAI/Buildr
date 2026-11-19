@@ -13,12 +13,14 @@ import { createBoundedBuildrWebReadExecutor } from '../../src/web/http/read-exec
 import { assertWriteRequest } from '../../src/web/http/session.ts';
 import { codeGitConfigurationFixture } from '../helpers/code-git-configuration-fixture.ts';
 
+import { copyEmptyCodeRepository } from '../helpers/code-operation-seeds.ts';
+
 function fixture(t: test.TestContext, format = 'sha1') {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-branch-operation-')), root = path.join(base, 'repository');
   fs.mkdirSync(root); t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const gitAt = (location: string, ...args: string[]) => execFileSync('git', ['--no-optional-locks', '-C', location, ...args], { encoding: 'utf8', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   const git = (...args: string[]) => gitAt(root, ...args);
-  git('init', '--initial-branch=main', '--object-format=' + format); git('config', 'user.name', 'Same Name'); git('config', 'user.email', 'first@example.com'); git('config', 'commit.gpgSign', 'false');
+  copyEmptyCodeRepository(root, format, 'Same Name', 'first@example.com');
   const write = (file: string, value: string, location = root) => fs.writeFileSync(path.join(location, file), value);
   const commit = (message: string, email = 'first@example.com') => { git('add', '--', '.'); git('commit', '--author=Same Name <' + email + '>', '-m', message); return git('rev-parse', 'HEAD'); };
   let registeredPath = root, catalogRead: (() => void) | undefined;

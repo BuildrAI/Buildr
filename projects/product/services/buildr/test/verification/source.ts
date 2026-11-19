@@ -196,8 +196,8 @@ function usage(): void {
   process.stdout.write('Internal release source verification: node test/verification/source.ts [--scope all|common|platform] [--base <ref>] [--json] [--resume] [--force] [--round <round-id>] [--output <round-log.json>] [--invalidate <step-id,...>] [--selected <step-id,...>]\n');
 }
 
-function historicalSourceCosts(output: string | null): Map<string, number> {
-  const costs = new Map<string, number>();
+function historicalSourceCosts(output: string | null) {
+  const costs = new Map<string, { durationMs: number; resources: any }>();
   if (!output) return costs;
   const directory = path.dirname(output);
   let files: fs.Dirent[];
@@ -213,7 +213,7 @@ function historicalSourceCosts(output: string | null): Map<string, number> {
       for (const { identity, result, environment } of log.records) {
         if (environment.platform !== process.platform || result.status !== 'passed' || result.disposition === 'reused'
           || !Number.isFinite(result.durationMs) || result.durationMs <= 0 || costs.has(identity.stepId)) continue;
-        costs.set(identity.stepId, result.durationMs);
+        costs.set(identity.stepId, { durationMs: result.durationMs, resources: environment.arch === process.arch ? result.resources : undefined });
       }
     } catch { /* Historical costs are optional scheduling hints. */ }
   }
@@ -253,7 +253,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
       const selectedPlan = args.selected.length ? selectSourceVerificationSubset(plan, args.selected) : plan;
       const costs = historicalSourceCosts(args.output);
       const executionPlan = { ...selectedPlan, steps: selectedPlan.steps.map((step: any) => ({
-        ...step, schedulingCostMs: costs.get(step.id) ?? step.schedulingCostMs,
+        ...step, schedulingCostMs: costs.get(step.id)?.durationMs ?? step.schedulingCostMs,
       })) };
       const round = { protectResume: true, resume: args.resume, allowFullRerun: args.force || executionPlan.steps.length < plan.steps.length, roundId: args.round ?? process.env.BUILDR_VERIFICATION_ROUND ?? randomUUID(), ...(args.output ? { output: path.resolve(args.output) } : {}), ...(args.invalidate.length ? { invalidStepIds: args.invalidate } : {}), ...(args.selected.length ? { selectedStepIds: executionPlan.selectedStepIds } : {}) };
       const reuseOptions = { productRoot, projectRoot, round, force: sourceVerificationForce(args.force),
@@ -294,7 +294,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
           const environmentPreparationMs = Date.now() - startedAt;
           enforceOfflineVerification();
           const { executePlan } = await import('./plan-runner.ts');
-          const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
+          const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE, process.env, [...costs.values()].map(item => item.resources).filter(Boolean));
           const evidence = createVerificationEvidencePaths('source');
           const source = collectVerificationSourceIdentity(productRoot, { projectRoot });
           const sourceObservationMs = Date.now() - startedAt - environmentPreparationMs;

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import YAML from 'yaml';
@@ -75,14 +75,25 @@ async function scenario() {
     for (const member of definition.members.skillContributions) assert.equal(fs.existsSync(path.join(workspace, member)), false);
     sources.push(componentMemberSource(workspace, fragment, definition));
     assert.equal(fs.existsSync(path.join(workspace, commandMember)), false);
-    const commands = JSON.parse(run(['commands', 'check', '--target', workspace, '--json']));
+  }
+  const discover = (args: string[]) => new Promise<string>((resolve, reject) => {
+    execFile(process.execPath, [path.join(service, 'bin/buildr.mjs'), ...args], {
+      cwd: service, env: process.env, encoding: 'utf8', timeout: 60_000, maxBuffer: 4 * 1024 * 1024,
+    }, (error, stdout, stderr) => error ? reject(new Error(args.join(' ') + '\n' + stdout + stderr, { cause: error })) : resolve(stdout));
+  });
+  const discoveries = await Promise.allSettled(spaces.map(async workspace => {
+    const definition = read(workspace);
+    const commands = JSON.parse(await discover(['commands', 'check', '--target', workspace, '--json']));
     assert.ok(commands.catalog.definitions.find((item: any) => item.id === 'openspec').sources.includes(commandMember));
     assert.equal(commands.manifests.find((item: any) => item.path === commandMember).source, componentMemberSource(workspace, commandMember, definition));
     assert.match(fs.readFileSync(path.join(workspace, '.agents/skills/openspec-explore/SKILL.md'), 'utf8'), /Buildr Terminology Sidebar/);
-    const check = JSON.parse(run(['component', 'check', 'openspec', '--target', workspace, '--json']));
+    const check = JSON.parse(await discover(['component', 'check', 'openspec', '--target', workspace, '--json']));
     assert.equal(check.ok, true, JSON.stringify(check));
-    const doctor = JSON.parse(run(['doctor', '--agent', 'codex', '--target', workspace, '--json']));
+    const doctor = JSON.parse(await discover(['doctor', '--agent', 'codex', '--target', workspace, '--json']));
     assert.equal(doctor.health.ready, true, JSON.stringify(doctor.findings));
+  }));
+  for (const discovery of discoveries) if (discovery.status === 'rejected') throw discovery.reason;
+  for (const workspace of spaces) {
     const before = fs.readFileSync(definitionPath(workspace));
     run(['sync', 'codex', '--target', workspace]);
     assert.deepEqual(fs.readFileSync(definitionPath(workspace)), before);

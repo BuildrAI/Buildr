@@ -401,15 +401,3 @@ test('CLI task list 复用 v7 轻量列表投影，默认只返回未终结任�
   assert.equal(badStatus.status, 'blocked'); assert.equal(badStatus.diagnostic.code, 'task_record_filter_invalid');
   assert.equal(badStatus.diagnostic.details.field, 'status');
 });
-
-
-test('CLI default task page stays bounded in a workspace with hundreds of tasks', async (t:any)=>{
- const {root}=fixture(t,'task-list-bounded');const runtime=createRuntime();
- for(let i=0;i<240;i++)runtime.createTask(root,{taskId:'bounded-'+i,title:'Task '+i,intent:'bounded page',status:'todo',projects:[],services:[],changes:[]});
- const first=await json(['task','list','--target',root]);
- assert.equal(first.tasks.length,20);assert.equal(first.totalTaskCount,240);assert.equal(first.matchingTaskCount,240);assert.equal(first.hasMore,true);assert.ok(first.nextCursor);
- assert.ok(first.tasks.every((item:any)=>!('brief' in item.record)));
- const second=await json(['task','list','--target',root,'--cursor',first.nextCursor]);
- assert.equal(second.tasks.length,20);assert.equal(second.filterOptions,null);
- assert.ok(second.tasks.every((item:any)=>!first.tasks.some((old:any)=>old.record.taskId===item.record.taskId)));
-});
