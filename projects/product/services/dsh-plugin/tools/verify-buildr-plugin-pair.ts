@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { defaultHarnessDataRoot, stopAgentProcess } from '../../buildr-harness/src/index.ts';
 import { isDeepStrictEqual } from 'node:util';
 import { hash, inspectSmokeScope, OFFICIAL_REGISTRY, packageArchiveFiles, prepareBuildrPeer, readArtifactInput, resolvePeerNpm, smokePeerEnvironment, type PreparedBuildrPeer } from './buildr-peer.ts';
 import { artifactFromTarball } from '../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
@@ -155,8 +156,15 @@ async function consumePair(input: { consumer: ArtifactInput; provider: ArtifactI
     if (features[0].status !== 'passed') features[0].status = 'failed';
   }
   finally {
+    try {
     if (ctx?.fiber) await ctx.fiber.dispose();
     if (web && web.exitCode === null) { web.kill('SIGTERM'); await Promise.race([new Promise(resolve => web!.once('close', resolve)), new Promise(resolve => setTimeout(resolve, 3000))]); if (web.exitCode === null) { web.kill('SIGKILL'); await new Promise(resolve => web!.once('close', resolve)); } }
+    } finally {
+      const dataRoot = defaultHarnessDataRoot('released', { env: environment, home: environment.HOME });
+      const relative = path.relative(scope.root, dataRoot);
+      if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('pair-cleanup-outside-ownership');
+      await stopAgentProcess({ dataRoot, profileId: 'released' });
+    }
   }
   const consumer = identity(frozenConsumer.artifact), provider = identity(peer.artifact);
   const evidence = { consumer, provider, features, contracts, diagnostic }, evidenceSha256 = hash(Buffer.from(JSON.stringify(evidence)));
