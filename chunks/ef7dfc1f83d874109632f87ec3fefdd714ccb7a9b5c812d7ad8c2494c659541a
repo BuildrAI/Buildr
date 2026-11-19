@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "buildr.dsh-plugin-release-candidate/v1",
+  "packageName": "@buildr-ai/buildr-dsh-plugin",
+  "version": "0.1.0-rc.5",
+  "sourceCommit": "b74c45d76791a0bb170ae165615b4bb10ae6628a",
+  "sourceTree": "a8cd584eb6bd7602384a333cd97c76c7d3745e9f",
+  "registry": "https://registry.npmjs.org/",
+  "filename": "buildr-ai-buildr-dsh-plugin-0.1.0-rc.5.tgz",
+  "size": 986386,
+  "sha256": "234942e020f9aebb632dd3085a7358081db69406ccf31f010b2fdb3374b72c3b",
+  "integrity": "sha512-vr5YvlJhBKfEmh6eqpn9GLx3Qjr3P20inIQSP+lZ74XshYD5JdKD3paLDM2ChWt0rlWl2HhNwW1Gp1DNdxXfTg==",
+  "npmTag": "next",
+  "sourceSdk": {
+    "baseline": {
+      "tag": "dsh-v0.2.0-rc.2",
+      "commit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+      "version": "0.2.0-rc.2"
+    },
+    "manifestSha256": "eaf182b3d15ef5552830b939a7e020af7a536d718ef566dac4ba0ed265c87641",
+    "patchSha256": "4e7b3dcba52721577aad27923d5e1a865e24d3b593ef489ec6a1f5b642d2bd7b",
+    "contracts": {
+      "slots": [
+        "conversation.trajectory.column",
+        "conversation.trajectory.inspector.objects"
+      ],
+      "rawEventRefs": true,
+      "recordContext": "TrajectoryRecordContext",
+      "recordContexts": "TrajectorySnapshot.recordContexts",
+      "idEncoding": "JSON.stringify(['trajectory-record', internalRecordId])",
+      "eventSources": {
+        "schemaVersion": "dsh.event-sources/v1",
+        "eventProperty": "data.eventSources",
+        "messageProperty": "message.source.eventSources",
+        "recordProperty": "TrajectoryRecordContext.eventSources"
+      }
+    }
+  },
+  "compatibility": {
+    "schemaVersion": "buildr.package-compatibility/v1",
+    "provides": [],
+    "requires": [
+      {
+        "packageName": "@buildr-ai/buildr",
+        "feature": "entry",
+        "required": true,
+        "versions": {
+          "minInclusive": "0.1.0-rc.38",
+          "maxExclusive": "0.2.0-0",
+          "includePrerelease": true
+        },
+        "contracts": [
+          "buildr.installation-status/v1",
+          "buildr.web-protocol/v1"
+        ]
+      },
+      {
+        "packageName": "@buildr-ai/buildr",
+        "feature": "sourceCapture",
+        "required": false,
+        "versions": {
+          "minInclusive": "0.1.0-rc.38",
+          "maxExclusive": "0.2.0-0",
+          "includePrerelease": true
+        },
+        "contracts": [
+          "buildr.agent-asset-source-observations/v1",
+          "buildr.agent-asset-source-result/v1"
+        ]
+      }
+    ]
+  },
+  "fileCount": 286,
+  "published": false
+}

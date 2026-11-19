@@ -1,0 +1,478 @@
+{
+  "schemaVersion": "buildr.dsh-full-verification/v1",
+  "status": "passed",
+  "sourceCommit": "b74c45d76791a0bb170ae165615b4bb10ae6628a",
+  "verificationSource": {
+    "observedCommit": "b74c45d76791a0bb170ae165615b4bb10ae6628a",
+    "dirty": false,
+    "contentSha256": "d4073ea26f3c23bdc0fbf115607bd967e1590f17f61bb894eb57a827b4fa8473"
+  },
+  "consumer": {
+    "origin": "candidate",
+    "packageName": "@buildr-ai/buildr-dsh-plugin",
+    "version": "0.1.0-rc.5",
+    "integrity": "sha512-vr5YvlJhBKfEmh6eqpn9GLx3Qjr3P20inIQSP+lZ74XshYD5JdKD3paLDM2ChWt0rlWl2HhNwW1Gp1DNdxXfTg==",
+    "artifactSha256": "234942e020f9aebb632dd3085a7358081db69406ccf31f010b2fdb3374b72c3b",
+    "compatibility": {
+      "schemaVersion": "buildr.package-compatibility/v1",
+      "provides": [],
+      "requires": [
+        {
+          "packageName": "@buildr-ai/buildr",
+          "feature": "entry",
+          "required": true,
+          "versions": {
+            "minInclusive": "0.1.0-rc.38",
+            "maxExclusive": "0.2.0-0",
+            "includePrerelease": true
+          },
+          "contracts": [
+            "buildr.installation-status/v1",
+            "buildr.web-protocol/v1"
+          ]
+        },
+        {
+          "packageName": "@buildr-ai/buildr",
+          "feature": "sourceCapture",
+          "required": false,
+          "versions": {
+            "minInclusive": "0.1.0-rc.38",
+            "maxExclusive": "0.2.0-0",
+            "includePrerelease": true
+          },
+          "contracts": [
+            "buildr.agent-asset-source-observations/v1",
+            "buildr.agent-asset-source-result/v1"
+          ]
+        }
+      ]
+    },
+    "sourceCommit": "b74c45d76791a0bb170ae165615b4bb10ae6628a",
+    "sourceTree": "a8cd584eb6bd7602384a333cd97c76c7d3745e9f"
+  },
+  "consumerTreeSha256": "2890d6dc26b2a31357562bf91f1f0e3b3e8f44f291d79084c4bd8aa91e0b083f",
+  "peer": {
+    "packageName": "@buildr-ai/buildr",
+    "version": "0.1.0-rc.63",
+    "integrity": "sha512-JevAwOER+SjrTVDp26Rq3+jX1RAKscVZyB31U9pjc0I6tzyZCyLLn1uoOfhq3GhGCJBpwSZ2rH7wlZCvLwg9RA==",
+    "artifactSha256": "7718c70fa1f2026219d31ec66d822347aa30de30ec40d63c88343e8e04f3630f",
+    "origin": "candidate",
+    "compatibility": {
+      "schemaVersion": "buildr.package-compatibility/v1",
+      "provides": [
+        "buildr.agent-asset-source-observations/v1",
+        "buildr.agent-asset-source-result/v1",
+        "buildr.installation-status/v1",
+        "buildr.web-protocol/v1"
+      ],
+      "requires": []
+    },
+    "sourceCommit": "b74c45d76791a0bb170ae165615b4bb10ae6628a"
+  },
+  "pair": {
+    "schemaVersion": "buildr.dsh-package-pair-verification/v1",
+    "status": "passed",
+    "consumer": {
+      "packageName": "@buildr-ai/buildr-dsh-plugin",
+      "version": "0.1.0-rc.5",
+      "integrity": "sha512-vr5YvlJhBKfEmh6eqpn9GLx3Qjr3P20inIQSP+lZ74XshYD5JdKD3paLDM2ChWt0rlWl2HhNwW1Gp1DNdxXfTg==",
+      "artifactSha256": "234942e020f9aebb632dd3085a7358081db69406ccf31f010b2fdb3374b72c3b"
+    },
+    "provider": {
+      "packageName": "@buildr-ai/buildr",
+      "version": "0.1.0-rc.63",
+      "integrity": "sha512-JevAwOER+SjrTVDp26Rq3+jX1RAKscVZyB31U9pjc0I6tzyZCyLLn1uoOfhq3GhGCJBpwSZ2rH7wlZCvLwg9RA==",
+      "artifactSha256": "7718c70fa1f2026219d31ec66d822347aa30de30ec40d63c88343e8e04f3630f"
+    },
+    "features": [
+      {
+        "feature": "entry",
+        "required": true,
+        "status": "passed"
+      },
+      {
+        "feature": "sourceCapture",
+        "required": false,
+        "status": "passed"
+      }
+    ],
+    "contracts": [
+      "buildr.installation-status/v1",
+      "buildr.web-protocol/v1",
+      "buildr.agent-asset-source-observations/v1",
+      "buildr.agent-asset-source-result/v1"
+    ],
+    "diagnostic": null,
+    "evidenceSha256": "68bb2945475e5f8ddbdc4ec27101068438c559688b9898f4b90f0cc2d8d29f87",
+    "legacyPairEvidence": {
+      "schemaVersion": "buildr.package-pair-evidence/v1",
+      "consumer": {
+        "packageName": "@buildr-ai/buildr-dsh-plugin",
+        "version": "0.1.0-rc.5",
+        "integrity": "sha512-vr5YvlJhBKfEmh6eqpn9GLx3Qjr3P20inIQSP+lZ74XshYD5JdKD3paLDM2ChWt0rlWl2HhNwW1Gp1DNdxXfTg==",
+        "artifactSha256": "234942e020f9aebb632dd3085a7358081db69406ccf31f010b2fdb3374b72c3b"
+      },
+      "provider": {
+        "packageName": "@buildr-ai/buildr",
+        "version": "0.1.0-rc.63",
+        "integrity": "sha512-JevAwOER+SjrTVDp26Rq3+jX1RAKscVZyB31U9pjc0I6tzyZCyLLn1uoOfhq3GhGCJBpwSZ2rH7wlZCvLwg9RA==",
+        "artifactSha256": "7718c70fa1f2026219d31ec66d822347aa30de30ec40d63c88343e8e04f3630f"
+      },
+      "features": [
+        {
+          "feature": "entry",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "feature": "sourceCapture",
+          "required": false,
+          "status": "passed"
+        }
+      ],
+      "evidenceSha256": "68bb2945475e5f8ddbdc4ec27101068438c559688b9898f4b90f0cc2d8d29f87"
+    }
+  },
+  "sourceSdk": {
+    "baseline": {
+      "tag": "dsh-v0.2.0-rc.2",
+      "commit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+      "version": "0.2.0-rc.2"
+    },
+    "manifestSha256": "eaf182b3d15ef5552830b939a7e020af7a536d718ef566dac4ba0ed265c87641",
+    "patchSha256": "4e7b3dcba52721577aad27923d5e1a865e24d3b593ef489ec6a1f5b642d2bd7b",
+    "contracts": {
+      "slots": [
+        "conversation.trajectory.column",
+        "conversation.trajectory.inspector.objects"
+      ],
+      "rawEventRefs": true,
+      "recordContext": "TrajectoryRecordContext",
+      "recordContexts": "TrajectorySnapshot.recordContexts",
+      "idEncoding": "JSON.stringify(['trajectory-record', internalRecordId])",
+      "eventSources": {
+        "schemaVersion": "dsh.event-sources/v1",
+        "eventProperty": "data.eventSources",
+        "messageProperty": "message.source.eventSources",
+        "recordProperty": "TrajectoryRecordContext.eventSources"
+      }
+    }
+  },
+  "sourcePhases": [
+    {
+      "name": "dsh-plugin:static",
+      "status": "passed",
+      "exitCode": 0,
+      "childExitCode": 0,
+      "childSignal": null,
+      "childOutcome": "passed",
+      "failureFacts": [],
+      "durationMs": 112,
+      "process": {
+        "pid": 78132,
+        "processGroupId": 78132
+      },
+      "stdout": "✔ a build-time identity difference is all that separates the released and development entries (1.766875ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 57.15325\n",
+      "stderr": "",
+      "processCleanup": {
+        "status": "clean",
+        "ownership": "runner-observed-lineage",
+        "processGroup": {
+          "status": "clean",
+          "ownership": "pgid-78132",
+          "terminated": false
+        },
+        "descendants": {
+          "status": "clean",
+          "ownership": "observed-lineage-78132",
+          "observed": [],
+          "terminated": [],
+          "alreadyExited": [],
+          "reused": [],
+          "failures": []
+        }
+      },
+      "phases": [],
+      "stdoutPath": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/release-0.1.0-rc.63/projects/product/services/dsh-plugin/build/dsh-plugin-checks-tNUgMv/dsh-plugin-static.stdout.log",
+      "stderrPath": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/release-0.1.0-rc.63/projects/product/services/dsh-plugin/build/dsh-plugin-checks-tNUgMv/dsh-plugin-static.stderr.log",
+      "diagnosticDigests": {
+        "stdout": "sha256-c5498077049e5e91bccfe68fe9c12ef4c12b869e4cd4117a6cec49e1bfb73634",
+        "stderr": "sha256-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "id": "dsh-plugin:static",
+      "disposition": "executed",
+      "startedAt": "2026-11-19T20:19:26.209Z",
+      "finishedAt": "2026-11-19T20:19:26.323Z"
+    },
+    {
+      "name": "dsh-plugin:unit",
+      "status": "passed",
+      "exitCode": 0,
+      "childExitCode": 0,
+      "childSignal": null,
+      "childOutcome": "passed",
+      "failureFacts": [],
+      "durationMs": 0,
+      "process": {
+        "pid": 86430,
+        "processGroupId": 86430
+      },
+      "processCleanup": {
+        "status": "clean",
+        "ownership": "prior-execution"
+      },
+      "phases": [],
+      "stdoutPath": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/release-0.1.0-rc.63/projects/product/services/dsh-plugin/build/dsh-source-2QfuDm/dsh-plugin-unit.stdout.log",
+      "stderrPath": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/release-0.1.0-rc.63/projects/product/services/dsh-plugin/build/dsh-source-2QfuDm/dsh-plugin-unit.stderr.log",
+      "diagnosticDigests": {
+        "stdout": "sha256-ef14f7c37b6bb831666e33835b43fb682ccde0e4bc7718658bf722cb12dcd307",
+        "stderr": "sha256-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "id": "dsh-plugin:unit",
+      "disposition": "reused",
+      "startedAt": "2026-11-19T19:42:40.019Z",
+      "finishedAt": "2026-11-19T19:42:40.720Z",
+      "inputIdentity": {
+        "key": "sha256-bb0bbb8bb6c3795bfd25331c616b03ca7d45bb0ce1a80ef71bd58227950c86ed",
+        "stepId": "dsh-plugin:unit",
+        "contentIdentity": "sha256-020918f7286f417a07d70a6a23013e3a1c1afb8342d7d48675bfba9f409f6699",
+        "recipeIdentity": "sha256-e3f7aa32b948e91e8bdb2015ae4b73ddae714af0b4c81a6f13d5d3208139ec2b",
+        "environmentIdentity": "sha256-7b3dbca66e23e9281d9b01b820c609d110a0bd25a0cb26add07e698f73a3116b"
+      },
+      "inputEnvironment": {
+        "platform": "darwin",
+        "arch": "arm64",
+        "nodeVersion": "24.21.0",
+        "tools": {
+          "git": "2.54.0--Apple-Git-157-",
+          "npm": "11.19.0",
+          "backend-dependencies": "sha256-3583df08442bded644f1d635843cd2f0073e557b19019101e149a1f39b0459fd",
+          "web-dependencies": "sha256-689bf1f79c57256acfef3fb082bc967d8fa05e17a3388a8a553a6e09db793172",
+          "plugin-dependencies": "sha256-ed0ba1caf7f021092bc3ed0c412359d7478dbf809e5085acaca9aaf71a1fe538"
+        },
+        "variablesIdentity": "sha256-fcbbca9f79fde241b236fcb45704d4cdc196765c519dd501f35d070b945c9d39"
+      },
+      "stdout": "",
+      "stderr": "",
+      "reusedFrom": {
+        "key": "0.1.0-rc.63:dsh-plugin:unit",
+        "origin": {
+          "kind": "local",
+          "runId": "round-86354",
+          "sourceCommit": "b74c45d76791a0bb170ae165615b4bb10ae6628a",
+          "startedAt": "2026-11-19T19:42:40.019Z",
+          "finishedAt": "2026-11-19T19:42:40.720Z"
+        },
+        "environment": {
+          "platform": "darwin",
+          "arch": "arm64",
+          "nodeVersion": "24.21.0"
+        },
+        "durationMs": 701,
+        "inputFingerprint": "sha256-bb0bbb8bb6c3795bfd25331c616b03ca7d45bb0ce1a80ef71bd58227950c86ed"
+      },
+      "sourceRecord": {
+        "schemaVersion": "buildr.candidate-round-result/v1",
+        "roundId": "0.1.0-rc.63",
+        "identity": {
+          "stepId": "dsh-plugin:unit",
+          "key": "0.1.0-rc.63:dsh-plugin:unit"
+        },
+        "origin": {
+          "kind": "local",
+          "runId": "round-86354",
+          "sourceCommit": "b74c45d76791a0bb170ae165615b4bb10ae6628a",
+          "startedAt": "2026-11-19T19:42:40.019Z",
+          "finishedAt": "2026-11-19T19:42:40.720Z"
+        },
+        "environment": {
+          "platform": "darwin",
+          "arch": "arm64",
+          "nodeVersion": "24.21.0"
+        },
+        "result": {
+          "name": "dsh-plugin:unit",
+          "status": "passed",
+          "exitCode": 0,
+          "childExitCode": 0,
+          "childSignal": null,
+          "childOutcome": "passed",
+          "failureFacts": [],
+          "durationMs": 701,
+          "process": {
+            "pid": 86430,
+            "processGroupId": 86430
+          },
+          "processCleanup": {
+            "status": "clean",
+            "ownership": "runner-observed-lineage",
+            "processGroup": {
+              "status": "clean",
+              "ownership": "pgid-86430",
+              "terminated": false
+            },
+            "descendants": {
+              "status": "clean",
+              "ownership": "observed-lineage-86430",
+              "observed": [],
+              "terminated": [],
+              "alreadyExited": [],
+              "reused": [],
+              "failures": []
+            }
+          },
+          "phases": [],
+          "stdoutPath": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/release-0.1.0-rc.63/projects/product/services/dsh-plugin/build/dsh-source-2QfuDm/dsh-plugin-unit.stdout.log",
+          "stderrPath": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/release-0.1.0-rc.63/projects/product/services/dsh-plugin/build/dsh-source-2QfuDm/dsh-plugin-unit.stderr.log",
+          "diagnosticDigests": {
+            "stdout": "sha256-ef14f7c37b6bb831666e33835b43fb682ccde0e4bc7718658bf722cb12dcd307",
+            "stderr": "sha256-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "id": "dsh-plugin:unit",
+          "disposition": "executed",
+          "startedAt": "2026-11-19T19:42:40.019Z",
+          "finishedAt": "2026-11-19T19:42:40.720Z",
+          "inputIdentity": {
+            "key": "sha256-bb0bbb8bb6c3795bfd25331c616b03ca7d45bb0ce1a80ef71bd58227950c86ed",
+            "stepId": "dsh-plugin:unit",
+            "contentIdentity": "sha256-020918f7286f417a07d70a6a23013e3a1c1afb8342d7d48675bfba9f409f6699",
+            "recipeIdentity": "sha256-e3f7aa32b948e91e8bdb2015ae4b73ddae714af0b4c81a6f13d5d3208139ec2b",
+            "environmentIdentity": "sha256-7b3dbca66e23e9281d9b01b820c609d110a0bd25a0cb26add07e698f73a3116b"
+          },
+          "inputEnvironment": {
+            "platform": "darwin",
+            "arch": "arm64",
+            "nodeVersion": "24.21.0",
+            "tools": {
+              "git": "2.54.0--Apple-Git-157-",
+              "npm": "11.19.0",
+              "backend-dependencies": "sha256-3583df08442bded644f1d635843cd2f0073e557b19019101e149a1f39b0459fd",
+              "web-dependencies": "sha256-689bf1f79c57256acfef3fb082bc967d8fa05e17a3388a8a553a6e09db793172",
+              "plugin-dependencies": "sha256-ed0ba1caf7f021092bc3ed0c412359d7478dbf809e5085acaca9aaf71a1fe538"
+            },
+            "variablesIdentity": "sha256-fcbbca9f79fde241b236fcb45704d4cdc196765c519dd501f35d070b945c9d39"
+          }
+        }
+      }
+    },
+    {
+      "name": "dsh-plugin:integration",
+      "status": "passed",
+      "exitCode": 0,
+      "childExitCode": 0,
+      "childSignal": null,
+      "childOutcome": "passed",
+      "failureFacts": [],
+      "durationMs": 7452,
+      "process": {
+        "pid": 78288,
+        "processGroupId": 78288
+      },
+      "stdout": "✔ same-domain qualification is exclusive in order @buildr-ai/buildr-dsh-plugin then @buildr-ai/buildr-dsh-plugin-dev (18.816292ms)\n✔ same-domain qualification is exclusive in order @buildr-ai/buildr-dsh-plugin-dev then @buildr-ai/buildr-dsh-plugin (0.611041ms)\n✔ normal owner disposal releases the lease for a surviving plugin recheck (0.927625ms)\n✔ independent service domains each retain their own owner (0.591041ms)\n✔ official ConfigEditor saves and restores only the declared binding through ordinary plugin reload (74.126625ms)\n✔ byte-bound pair proof preserves successful entry with optional unsupported feature (0.933042ms)\n✔ failed or unknown actual entry cannot be reclassified as optional absence or success (0.316459ms)\n✔ another same-version artifact and altered report features cannot reuse pair evidence (0.123625ms)\n✔ isolated child preparation failure retains its stage and npm error while compatibility stays unknown (0.349459ms)\n✔ timeout, missing runtime and cleanup failure retain distinct diagnostics and never accept a partial success (0.274583ms)\n✔ the actual isolated runner preserves a preparation exception after cleaning its owned workspace (728.289208ms)\n✔ real public current npm identity is admitted while absent, stale, other artifact and mismatched instance stay refused (0.294541ms)\n✔ raw peer reads original metadata and refuses name/version/SRI/SHA substitutions before installation (3.741709ms)\n✔ archive links, traversal, duplicates and input symlinks are refused without execution (1.001083ms)\n✔ candidate peer retains a separately frozen source tree without inventing registry metadata (1.1165ms)\n✔ real offline local installation preserves archive files and never runs lifecycle scripts (526.377667ms)\n✔ failed preparation retains bounded child facts without producing a ready manifest or forwarding stdout (12.570375ms)\n✔ owned runtime environment has no inherited account or source selection and supports all platform roots (2.158125ms)\n✔ full verifier requires one explicit peer and supports manifest-only environment inputs (0.168667ms)\n✔ built variants carry their own identity and never each other (5.976209ms)\n▶ native Client metadata resolver advertises exactly one gateway in both supported loader branches\n  ✔ fallback resolves public package metadata (13.862542ms)\n  ✔ internal.resolveSync follows actual main to the inner package (3.218583ms)\n✔ native Client metadata resolver advertises exactly one gateway in both supported loader branches (118.522708ms)\n✔ real Loader and preset registry activate, withdraw, reinstall and share a composition without persistent private refs (203.478875ms)\n✔ real ConfigEditor first save retains original entry identity and updates the actual enhanced fiber (84.19875ms)\n✔ automatic entry migration recovers once and concurrent clicks share discovery and query (5.383625ms)\n✔ an explicit entry never silently rebinds after migration (2.324792ms)\n✔ rediscovery still failing is bounded to one retry per click (2.360375ms)\n✔ query failure does not invalidate a discovered entry (2.558458ms)\n✔ launcher file drift does not rebind the installation entry (1.779125ms)\n✔ disposal cancels pending discovery and a late result cannot query or launch (1.419125ms)\n✔ schema-empty binding can discover after a previously missing installation (1.472625ms)\n✔ portable final evidence retains dirty feedback baseline with exact byte-bound legacy pair (9.743458ms)\n✔ source Candidate adoption validates the actual original run, full proof, peer and protected merge before reuse (25.1525ms)\n✔ remote manifest validation shares full source and pair guards without claiming local archive readback (2.749417ms)\n✔ portable gate refuses missing checks, SDK contract drift, relabelled sources and same-version other bytes (2.5295ms)\n[dsh-sdk] prepare exact source, frozen dependencies and SDK artifacts locally\n[dsh-sdk] prepare exact source, frozen dependencies and SDK artifacts locally\n[dsh-sdk] retained preparation is invalid: Expected values to be strictly equal:\n+ actual - expected\n\n+ 'corrupt output'\n- 'valid output'\n\n[dsh-sdk] prepare exact source, frozen dependencies and SDK artifacts locally\n[dsh-sdk] prepare exact source, frozen dependencies and SDK artifacts locally\n✔ SDK dependency inventory detects same-lock byte drift and refuses external links (2.418417ms)\n✔ SDK preparation key includes tool, recipe, platform and architecture inputs (0.098417ms)\n✔ local SDK reuse validates installed bytes and output; corruption builds a new output without replacing old SDK (243.526542ms)\n✔ release composition and every nested package admit only DSH 0.2.x while retaining exact source identity (19.967917ms)\n✔ development composition and every nested package admit only DSH 0.2.x while retaining exact source identity (4.355042ms)\n✔ the complete composition survives relocation and rejects a missing installed producer (135.370834ms)\n✔ the complete composition rejects an added install hook (77.823959ms)\n[release] npm-publish {\"exitCode\":0}\n[release] registry-readback {\"attempt\":1,\"attempts\":2,\"status\":\"present\",\"elapsedMs\":0}\n[release] npm-publish {\"exitCode\":null}\n[release] registry-readback {\"attempt\":1,\"attempts\":2,\"status\":\"present\",\"elapsedMs\":0}\n[release] npm-publish {\"exitCode\":null}\n[release] registry-readback {\"attempt\":1,\"attempts\":2,\"status\":\"absent\",\"elapsedMs\":0}\n✔ protected adoption preserves original Candidate bytes and tested source while publishing from real main (5.577375ms)\n✔ adoption refuses source relabelling, swapped parents, tree or Candidate drift (0.962833ms)\n✔ release preparation probes the exact prerelease version instead of the latest tag (0.1475ms)\n✔ final Candidate transports the already tested npm archive exactly once and refuses replacement (2.117334ms)\n✔ release source snapshot rejects dirty source and committed changes during preparation (185.919125ms)\n✔ fixed source SDK metadata binds reviewed manifest and patch bytes without an SDK (2.65125ms)\n✔ portable candidate consumes the identical archive after the original directory is gone (1.387666ms)\n✔ candidate compatibility mirror cannot be stripped or invented independently of archive metadata (2.421417ms)\n✔ a real offline npm pack archive satisfies the portable reader without SDK dependencies (208.076208ms)\n✔ candidate refuses name, version, source, registry, paths, byte drift and symlinks (1.719458ms)\n✔ archive identity and forbidden contents are checked without executing package code (6.479208ms)\n✔ hosted identity is bound to the main plugin workflow and forbids local or other package workflows (1.124042ms)\n✔ OIDC claims reject wrong environment, workflow, source and expired identity (0.305583ms)\n✔ OIDC immutable subject accepts only the observed repository IDs bound to independent claims (0.25375ms)\n✔ OIDC immutable subject keeps every issuer, audience, environment, workflow and lifetime restriction (0.169625ms)\n✔ OIDC immutable subject still reaches npm signature exchange and an ID mismatch cannot reach it (1.374292ms)\n✔ the real OIDC exchange protocol uses the plugin endpoint and never retains either token (0.239125ms)\n✔ missing identity, failed exchange and expired exchange cannot authorize publication (0.229583ms)\n✔ npm environment keeps Actions identity but discards all npm authentication and config overrides (0.047042ms)\n✔ published identical bytes are reused; conflict or unknown queries never send a publication (2.725ms)\n✔ a lost publication response is recovered from identical public bytes without resending (1.7375ms)\n[release] registry-readback {\"attempt\":2,\"attempts\":2,\"status\":\"absent\",\"elapsedMs\":0}\n[release] npm-publish {\"exitCode\":1}\n[release] registry-readback {\"attempt\":1,\"attempts\":2,\"status\":\"absent\",\"elapsedMs\":0}\n✔ public success recovery does not require a fresh write authority (3.493167ms)\n✔ even matching candidate and archive cannot forge the committed source SDK identity (0.769917ms)\n[release] registry-readback {\"attempt\":2,\"attempts\":2,\"status\":\"absent\",\"elapsedMs\":0}\n✔ an attempted but absent or unknown version is never published again, including after journal transport (4.317084ms)\n✔ source or archive drift during authorization is rejected before the write (2.764542ms)\n✔ confirmed public bytes remain known through multiple absent and unknown recovery reads (1.918584ms)\n✔ wrong candidate or malformed recovery journal fails before publication (0.74125ms)\n✔ DSH executes the registered CLI with exact arguments and does not inherit another Buildr channel (28.700833ms)\n✔ DSH launches the launcher of the requested channel with no-open scoped to the child (1229.489708ms)\n✔ DSH refuses to launch when no launcher can be resolved (3.414208ms)\n✔ DSH rejects Linux launcher requests before executing either channel (2.587958ms)\n✔ DSH detects CLI drift before execution and sanitizes subprocess parse failure (26.169875ms)\n✔ DSH development wrapper receives explicit Node without mutating parent environment (0.10425ms)\n✔ DSH pointer validation refuses guessed paths and bad digests (2.765959ms)\n✔ registration in Buildr own registry is discovered without user input (2.122375ms)\n✔ DSH launcher roots follow the platform convention without inventing a fallback (0.134875ms)\n✔ DSH disposed bridge never executes a later query (2.421042ms)\n✔ default source adoption reads the actual large committed SDK patch without changing its byte identity (357.202334ms)\n✔ adopt-candidate CLI reads the real large Git blob and still rejects a different source selection (568.064125ms)\n✔ publication reads large committed SDK inputs through its default source state before remote or public effects (270.773084ms)\n[dsh-sdk] mirror download unavailable; retrying frozen install once with official registry\n[dsh-sdk] mirror download unavailable; retrying frozen install once with official registry\n[dsh-sdk] mirror download unavailable; retrying frozen install once with official registry\nfatal: Needed a single revision\n✔ shared store discovery keeps host cache identity but not user credentials or npm configuration (1.674208ms)\n✔ mirror fallback is bounded and never bypasses authentication, integrity, certificate or lock failures (0.479417ms)\n✔ real Git cache serves two independent checkouts without contacting the missing upstream on a hit (306.685833ms)\n✔ release inputs preserve registered rc.2 and reviewed settings manifest identities (0.787084ms)\n✔ runner environment gives installers empty explicit configs and no inherited credentials or selectors (0.219125ms)\n✔ real Git checkout identity refuses nested paths, worktree files, wrong HEAD, remote and package metadata (185.462625ms)\n✔ real patched checkout checks every changed byte and refuses unrelated or symlink changes (229.623667ms)\n✔ preparer fetches only the fixed tag, installs frozen patched dependencies, and returns a new verified output (6.220375ms)\n✔ default input and final validation also run under explicit Node with isolated credentials and config (4.483667ms)\n✔ source mismatch, incompatible tools, failed install and lock drift cannot produce a prepared output (12.160708ms)\n✔ minimum, newer patch, minor and major Node versions retain their actual selected identity (18.124917ms)\n✔ below-minimum, prerelease and malformed Node versions fail before upstream or SDK work (7.612333ms)\n✔ a compatible version cannot authorize another executable than the running preparer (1.084ms)\n✔ failed final verification withdraws only this invocation ready receipt and preserves output diagnosis (5.266ms)\n✔ preparer refuses reused output without removing its prior receipt (4.403667ms)\n✔ output protocol rejects old, escaping, symlink and non-final success records (1.540833ms)\n✔ input paths are passed as files and never shell-expanded (4.689084ms)\n✔ a Client substitution is explicit, bounded and independent of the Host package selection (1.205958ms)\n✔ the settings Client patch leaves every Host owner out of its update (0.16325ms)\n✔ graph-only delivery cannot deactivate or instantiate any original root service (0.087334ms)\n✔ capture trajectory code receives a new module URL when its actual library changes (0.124125ms)\n✔ rc.2 source identity is known while the action default stays rc.1 (0.066959ms)\n✔ receipt JSON constructs typed fields and rejects malformed digest lists before file access (0.261583ms)\n✔ receipt JSON requires actual contributor strings and exact annotation obligations (0.080291ms)\n✔ source metadata refuses a version-only, shortened-hash or different-commit claim (0.116625ms)\n✔ Host compatibility normalizes every DSH peer without changing unrelated package constraints (0.108958ms)\n✔ copying a previously prepared exact-version Host normalizes the packaged closure and keeps SDK attestation bytes intact (11.570541ms)\n✔ all source targets and required declarations are explicit and bounded (0.223792ms)\n✔ a patch manifest must identify both slots, the loaded window and actual raw-event refs (0.091125ms)\n✔ capture v2 admits only selected producers and shared type fields while legacy v1 keeps its boundary (0.236042ms)\n✔ capture manifests refuse arbitrary package selection and changed durable contract locations (0.073583ms)\n✔ capture v2 admits only reviewed persistence documents and selected producer readmes (0.803792ms)\n✔ capture receipts require actual producer entries and their package metadata within one owned closure (0.139958ms)\n✔ producer composition preserves raw root declarations and leaves preset modules under their real owner (0.4895ms)\n✔ an explicitly observed missing Host config remains absent in the replacement declaration (0.076209ms)\n✔ Host config omission requires exact observed presence and never silently invents a default (0.151917ms)\n✔ relative addresses reject traversal, Windows separators and control characters (0.065ms)\n✔ output selection preserves old artifacts and refuses a symlinked build root or ancestor (1.185417ms)\n✔ a patch is applied to the owned SDK directory rather than skipped inside an ancestor repository (30.998459ms)\n✔ workspace dependency links resolve the prepared SDK generated files, not the input clone (3.241875ms)\n✔ a base marker cannot qualify an unprepared SDK, and an unrelated Git checkout is refused (57.759333ms)\n✔ enhanced build and full verification refuse an implicit old SDK before producing artifacts (133.386083ms)\n✔ release preparation requires the same explicit SDK and never falls back to an old positional path (0.198541ms)\n✔ missing or marker-only release inputs are refused before release status or registry operations (215.697333ms)\n✔ producer build shares selected runtime state across entries and preserves package identities (18.059375ms)\n✔ archive source hashes preserve declared CRLF bytes and symlink contents (10.73125ms)\n✔ bundle preparation cannot run a modified script or a package-manager installation command (0.883584ms)\n✔ the actual TypeScript probe distinguishes missing slots and missing recordContexts from supported declarations (963.188292ms)\n✔ explicit development source binding uses an owned command fixture without changing open under isolation (1401.555958ms)\n✔ actual raw version proof captures only owned refs and sends metadata without producer/user bodies (1.2875ms)\n✔ missing actual version, stale version and only-managed content do not confirm participation (0.148ms)\n✔ ambiguous rule rendering has identity but no guessed original body reference (0.105875ms)\n✔ partial numbered read intersects owned raw offsets with Unicode and excludes suffix (0.149166ms)\n✔ reading only the user part of a mixed file does not become a Buildr core-rule action (0.080833ms)\n✔ a truncated rule that delivers only the user prefix does not record a Buildr load (0.06775ms)\n✔ a removal retains previous capture without any current file lookup (0.077959ms)\n✔ ordinary commands avoid installation work; exact custom entry proves capability independently of stdout (2.666375ms)\n✔ a material write captures only its explicit task and exact relative Markdown target (0.304542ms)\n✔ material inspection and manifest recording remain task references rather than inferred document targets (0.33675ms)\n✔ known material and task inspect flags may precede or surround the single task argument (0.626042ms)\n✔ unknown flag arity and multiple task operands cannot invent a task or material reference (0.781459ms)\n✔ ambiguous or forbidden material paths do not invent a document target or erase the bound call (0.691833ms)\n✔ normal channel commands are proven separately from the candidate metadata reader, including explicit same-file links (17.420041ms)\n✔ npm identity accepts its explicit same-file link while excluding development wrappers and runtime Nodes (6.686125ms)\n✔ approved candidate and normal runtime Nodes capture only their exact owned skill-script operand with no body (8.841959ms)\n✔ managed-only, foreign, stale and receipt-mismatched scripts never become Buildr capabilities (16.5125ms)\n✔ script capture is bounded and a script changing during its metadata query cannot retain a confirmed version (7.125625ms)\n✔ concurrent frames do not share cancellation or raw-body cache (22.54075ms)\n✔ shared source capture preserves independent providers and isolates an unavailable fallback (0.238792ms)\n✔ owned development status fixture proves Node/bin prefixes without sibling source (137.879042ms)\n✔ passive source query uses exact CLI/stdin and succeeds without a ready Web instance (101.471375ms)\n✔ passive development read uses only its own reported wrapper and retained Node (676.93275ms)\n✔ missing selected channel never falls back to the available other channel (50.084666ms)\n✔ binding digests and a drift between installation/source reads stop the source command (98.578666ms)\n✔ source failure and invalid JSON do not forward stdout stderr paths or credentials (193.732375ms)\n✔ real stdout and input bounds stop oversized source reads (96.551625ms)\n✔ cancellation reason and real subprocess timeout are sanitized (151.5845ms)\n[release] npm-publish {\"exitCode\":0}\n[release] registry-readback {\"attempt\":1,\"attempts\":12,\"status\":\"absent\",\"elapsedMs\":0}\n[release] registry-readback {\"attempt\":2,\"attempts\":12,\"status\":\"absent\",\"elapsedMs\":10000}\n[release] registry-readback {\"attempt\":3,\"attempts\":12,\"status\":\"absent\",\"elapsedMs\":20000}\n[release] registry-readback {\"attempt\":4,\"attempts\":12,\"status\":\"absent\",\"elapsedMs\":30000}\n[release] registry-readback {\"attempt\":5,\"attempts\":12,\"status\":\"absent\",\"elapsedMs\":40000}\n[release] registry-readback {\"attempt\":6,\"attempts\":12,\"status\":\"absent\",\"elapsedMs\":50000}\n[release] registry-readback {\"attempt\":7,\"attempts\":12,\"status\":\"absent\",\"elapsedMs\":60000}\n[release] registry-readback {\"attempt\":8,\"attempts\":12,\"status\":\"absent\",\"elapsedMs\":70000}\n[release] registry-readback {\"attempt\":9,\"attempts\":12,\"status\":\"present\",\"elapsedMs\":80000}\n[release] npm-publish {\"exitCode\":0}\n[release] registry-readback {\"attempt\":1,\"attempts\":1,\"status\":\"present\",\"elapsedMs\":0}\n[release] npm-publish {\"exitCode\":0}\n[release] registry-readback {\"attempt\":1,\"attempts\":1,\"status\":\"present\",\"elapsedMs\":0}\n[release] npm-publish {\"exitCode\":null}\n[release] registry-readback {\"attempt\":1,\"attempts\":1,\"status\":\"absent\",\"elapsedMs\":0}\n[release] npm-publish {\"exitCode\":0}\n[release] registry-readback {\"attempt\":1,\"attempts\":1,\"status\":\"present\",\"elapsedMs\":0}\n✔ publication uses the shared propagation budget without a second upload and records the numeric outcome (11.621916ms)\n✔ declared candidate requires original prepare evidence before any new npm write (1.742917ms)\n✔ original final bytes, SDK, frozen peer, source binding and pair digest cannot be replaced (2.515291ms)\n✔ post-approval current public bytes are consumed before write while original proof stays unchanged (5.84625ms)\n✔ a newly public incompatible Buildr blocks the write even if the original prepare pair passed (2.545959ms)\n✔ legacy current Buildr uses the unique actual pair and optional unsupported remains local (1.962583ms)\n✔ unavailable public observations and failed or unknown actual capabilities never permit write (7.1075ms)\n✔ matching published fact is reused even if aggregate disappeared or current peer is unknown (1.562ms)\n✔ lost request stays readback-only after aggregate loss; no new authority or pair call (2.852958ms)\n✔ removing manifest compatibility cannot disguise a declared archive as legacy (0.965458ms)\n✔ publisher execution source can advance while original prepared bytes stay frozen (2.327958ms)\n[dsh-source-phase] unit started\n✔ completed verification only reclaims its own staging and preserves usable evidence (2.19375ms)\n✔ manual activation tests report the missing explicit SDK while formal full verification still rejects it (61.934708ms)\n✔ portable unit and fresh SDK/peer phases partition every test file without dropping or repeating coverage (0.615292ms)\n✔ source phase execution binds the real managed worker budget into its reusable recipe (20.133625ms)\n✔ SDK-consuming integration has no reusable identity even with the former SDK source key (0.22825ms)\n[dsh-source-phase] unit retained from this round\n[dsh-source-phase] unit started\n✖ changed input (0.247917ms)\nℹ tests 1\nℹ suites 0\nℹ pass 0\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 51.325292\n\n✖ failing tests:\n\ntest at test/unit/fixture.test.ts:1:31\n✖ changed input (0.247917ms)\n  Error: new failure\n      at TestContext.<anonymous> (file:///private/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-plugin-source-only-uENUZI/projects/product/services/dsh-plugin/test/unit/fixture.test.ts:1:67)\n      at Test.runInAsyncScope (node:async_hooks:227:14)\n      at Test.run (node:internal/test_runner/test:1402:25)\n      at Test.start (node:internal/test_runner/test:1262:17)\n      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17)\n[dsh-source-phase] unit started\n✖ changed input (0.242208ms)\nℹ tests 1\nℹ suites 0\nℹ pass 0\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 32.83275\n\n✖ failing tests:\n\ntest at test/unit/fixture.test.ts:1:31\n✖ changed input (0.242208ms)\n  Error: new failure\n      at TestContext.<anonymous> (file:///private/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-plugin-source-only-uENUZI/projects/product/services/dsh-plugin/test/unit/fixture.test.ts:1:67)\n      at Test.runInAsyncScope (node:async_hooks:227:14)\n      at Test.run (node:internal/test_runner/test:1402:25)\n      at Test.start (node:internal/test_runner/test:1262:17)\n      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17)\n✔ standalone source phase preserves history but invalidates edited inputs in the same and new rounds (1443.012791ms)\n✔ recorded command proof validates one current installation and never executes the original capability (5.215666ms)\n✔ development command proof recognizes the bound Node/bin only under the actual reported source identity (4.222667ms)\n✔ development command proof rejects a bound bin belonging to another source root (3.321875ms)\n✔ development command proof rejects an expected bin symlink escaping its reported source root (3.4185ms)\n✔ same-installation explicit aliases require the approved physical file and reject equal-byte copies or changed links (2.333417ms)\n✔ normal development status approves its own runtime without accepting npm CLI as a development prefix (3.447584ms)\n✔ source query reuses unchanged pinned file digests only within one request and never caches status (2.757333ms)\n✔ source query invalidates digest reuse on same-size content drift even if mtime is restored (1.4515ms)\n✔ a file changing during its digest read fails before either installation or source execution (1.079541ms)\n✔ source request parser matches v1 and preserves only supported fields (0.233833ms)\n✔ source requests have byte, text, item and identity bounds (0.26675ms)\n✔ source result parser handles nullable current content and discards unknown wire extensions (0.062917ms)\n✔ source result rejects write effects, unknown contract, missing or misbound item identities (0.086667ms)\n✔ source output validates object fields, digest and selection without trusting JSON (0.161584ms)\n✔ public item errors expose only sanitized plugin messages (0.057625ms)\n✔ dirty feedback binds only its exact eventual Git tree and preserves observed baseline (255.152709ms)\n✔ service-relative source identity handles deletions and dangling links without following targets (199.260125ms)\nℹ tests 194\nℹ suites 0\nℹ pass 194\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 7408.388042\n",
+      "stderr": "",
+      "processCleanup": {
+        "status": "clean",
+        "ownership": "runner-observed-lineage",
+        "processGroup": {
+          "status": "clean",
+          "ownership": "pgid-78288",
+          "terminated": false
+        },
+        "descendants": {
+          "status": "clean",
+          "ownership": "observed-lineage-78288",
+          "observed": [],
+          "terminated": [],
+          "alreadyExited": [],
+          "reused": [],
+          "failures": []
+        }
+      },
+      "phases": [],
+      "stdoutPath": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/release-0.1.0-rc.63/projects/product/services/dsh-plugin/build/dsh-plugin-checks-tNUgMv/dsh-plugin-integration.stdout.log",
+      "stderrPath": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/release-0.1.0-rc.63/projects/product/services/dsh-plugin/build/dsh-plugin-checks-tNUgMv/dsh-plugin-integration.stderr.log",
+      "diagnosticDigests": {
+        "stdout": "sha256-a07b2abc4b7a29d48371383527a09ef68f2cbd55752bc3d1e078a9b4f598b16f",
+        "stderr": "sha256-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "id": "dsh-plugin:integration",
+      "disposition": "executed",
+      "startedAt": "2026-11-19T20:19:27.561Z",
+      "finishedAt": "2026-11-19T20:19:35.014Z"
+    },
+    {
+      "name": "dsh-plugin:e2e",
+      "status": "passed",
+      "exitCode": 0,
+      "childExitCode": 0,
+      "childSignal": null,
+      "childOutcome": "passed",
+      "failureFacts": [],
+      "durationMs": 164,
+      "process": {
+        "pid": 82386,
+        "processGroupId": 82386
+      },
+      "stdout": "✔ built variants load diagnostics but qualify only one business gateway (67.415166ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 121.322958\n",
+      "stderr": "",
+      "processCleanup": {
+        "status": "clean",
+        "ownership": "runner-observed-lineage",
+        "processGroup": {
+          "status": "clean",
+          "ownership": "pgid-82386",
+          "terminated": false
+        },
+        "descendants": {
+          "status": "clean",
+          "ownership": "observed-lineage-82386",
+          "observed": [],
+          "terminated": [],
+          "alreadyExited": [],
+          "reused": [],
+          "failures": []
+        }
+      },
+      "phases": [],
+      "stdoutPath": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/release-0.1.0-rc.63/projects/product/services/dsh-plugin/build/dsh-plugin-checks-tNUgMv/dsh-plugin-e2e.stdout.log",
+      "stderrPath": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/release-0.1.0-rc.63/projects/product/services/dsh-plugin/build/dsh-plugin-checks-tNUgMv/dsh-plugin-e2e.stderr.log",
+      "diagnosticDigests": {
+        "stdout": "sha256-8c2a3407b97850b5b3e9488639f04f46dd4cdf3e0132b5483d76892f430fc947",
+        "stderr": "sha256-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "id": "dsh-plugin:e2e",
+      "disposition": "executed",
+      "startedAt": "2026-11-19T20:19:35.017Z",
+      "finishedAt": "2026-11-19T20:19:35.181Z"
+    },
+    {
+      "id": "dsh-plugin:peer-gateway",
+      "status": "passed",
+      "disposition": "executed"
+    }
+  ],
+  "candidateBound": true,
+  "sourceTree": "a8cd584eb6bd7602384a333cd97c76c7d3745e9f",
+  "sourceBinding": {
+    "method": "git-tree-content-equivalence",
+    "testedGitHead": "b74c45d76791a0bb170ae165615b4bb10ae6628a",
+    "testedWorkingTreeDirty": false,
+    "verifiedContentSha256": "d4073ea26f3c23bdc0fbf115607bd967e1590f17f61bb894eb57a827b4fa8473",
+    "candidateSourceCommit": "b74c45d76791a0bb170ae165615b4bb10ae6628a",
+    "candidateSourceTree": "a8cd584eb6bd7602384a333cd97c76c7d3745e9f"
+  },
+  "checks": [
+    "unit",
+    "integration",
+    "source-ui",
+    "released-loader",
+    "development-loader",
+    "actual-package-pair"
+  ],
+  "variants": [
+    "released",
+    "development"
+  ],
+  "runtimeActivated": false,
+  "desktopValidated": false
+}
