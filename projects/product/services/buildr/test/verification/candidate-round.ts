@@ -102,7 +102,7 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
   for (const step of plan.steps) {
     const record = records.get(`${step.id}:${process.platform}`)
       ?? [...records.values()].find(record => passedRoundRecord(record, roundId, step, plan.runner ?? process.platform));
-    if (selectedStepIds.size > 0 && !selectedStepIds.has(step.id)) {
+    if (!strict && selectedStepIds.size > 0 && !selectedStepIds.has(step.id)) {
       if (passedRoundRecord(record, roundId, step, plan.runner ?? process.platform)) { hits.set(step.id, record); retained.add(step.id); }
       continue;
     }
