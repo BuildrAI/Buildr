@@ -46,7 +46,7 @@ import { ConversationTurn } from './ConversationTurn.tsx';
 import { ConversationTranscript } from './ConversationTranscript.tsx';
 import { imageSelectionError, conversationDocumentTypes } from './conversation-images.ts';
 import { uploadConversationMaterials } from './conversation-material-upload.ts';
-import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,executionAgentName,executionTargetChanges,nativeConversationChoice,permissionModeLabels,readConversationPermission,resolveNativeExecutionAccountId,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,validConversationChoice,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options.ts';
+import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,executionAgentName,executionTargetChanges,permissionModeLabels,readConversationPermission,resolveNativeExecutionAccountId,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,validConversationChoice,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options.ts';
 import { appendDraftAttachment, canGenerateConversationTitle, conversationConflictNeedsRefresh, conversationTurnBinding, executionLocked, groupConversationStream, conversationStreamTurns, conversationTurnExecution, conversationTurnTiming, conversationTurnLatestEntry, conversationTurnExpansionKey, conversationTurnExpanded, conversationProcessExpansionAfterSettle, participantExecutionPairs, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state.ts';
 import { conversationActionKey, conversationInputAttemptAccepted, conversationInputAttemptMatches, createConversationActions, createConversationInputAttempts, reconcileConversationInputAttempt } from './conversation-actions.ts';
 import { useNewConversationImages } from './useNewConversationImages.ts';
@@ -341,8 +341,9 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     firstSubmissions.clear(submitted.input.clientRequestId);setUnconfirmedFirst(undefined);
     if(submissionIdentity.current.requestId===submitted.input.clientRequestId)submissionIdentity.current.requestId=crypto.randomUUID();
     const createdScope={workspaceId:result.workspaceId,conversationId:result.id};
+    const acceptedRun=result.run;
     setPermissionChoices(previous=>({...previous,[conversationPermissionKey(createdScope,'')]:submitted.input.permissionMode||'default'}));
-    setChoices(previous=>({...previous,[result.id]:{connectionId:submitted.input.connectionId,model:submitted.input.model,modelAccountId:submitted.input.modelAccountId,modelAccountIdentity:submitted.input.modelAccountIdentity,serviceTier:submitted.input.serviceTier,reasoningEffort:submitted.input.reasoningEffort}}));
+    setChoices(previous=>({...previous,[result.id]:{connectionId:submitted.input.connectionId,model:acceptedRun?.model??submitted.input.model,modelAccountId:acceptedRun?.modelAccountId??submitted.input.modelAccountId,modelAccountIdentity:acceptedRun?.modelAccountIdentity??submitted.input.modelAccountIdentity,serviceTier:acceptedRun?.serviceTier??submitted.input.serviceTier,reasoningEffort:acceptedRun?.reasoningEffort??submitted.input.reasoningEffort}}));
     await newImages.refresh().catch(fail);
     if(context.isSelectionCurrent(selection))await context.openConversation(result.workspaceId,result.id,{preserveVisibility:true,preserveHistoryView:focusSplit&&context.view==='history'});
     void context.refreshPending().catch(()=>{});
@@ -350,15 +351,6 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
   useEffect(()=>{if(!context.scope)setUnconfirmedFirst(firstSubmissions.read());},[context.selectionGeneration,context.scope,firstSubmissions]);
   const submissionIdentity=useRef({draftId:'',requestId:crypto.randomUUID()});
   if(submissionIdentity.current.draftId!==newImages.id)submissionIdentity.current={draftId:newImages.id,requestId:crypto.randomUUID()};
-  // 模型目录可能晚于输入到达；首条发送前用最新目录补齐原生账号，避免写入无法归属的执行记录。
-  const firstSendChoice=async()=>{
-    if(choice.modelAccountId)return choice;
-    let catalog=context.modelCatalog;
-    try{catalog=(await context.api.modelCatalog()).models;}catch{/* 读取失败时保留当前观察，继续原有发送行为。 */}
-    const bound=nativeConversationChoice(choice,connection,catalog);
-    if(bound!==choice)setChoices(previous=>({...previous,[choiceKey]:bound}));
-    return bound;
-  };
   const sendFirst=async(operation:SendOperation, isActive = () => true)=>{
     let submitted=firstSubmissions.read();
     const fresh=!submitted;
@@ -390,9 +382,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
       if(!context.isSelectionCurrent(operation.selection))return;
       const expectedIds=images.map(image=>image.id);
       if(JSON.stringify(draftMaterialIds(snapshot.images))!==JSON.stringify(expectedIds))throw new Error('草稿图片已变化，请核对后重新发送。');
-      const bound=await firstSendChoice();
-      if(!context.isSelectionCurrent(operation.selection))return;
-      submitted=firstSubmissions.save({draftId:newImages.id,workspaceId:draftWorkspaceId,input:{connectionId:bound.connectionId,modelAccountId:bound.modelAccountId,modelAccountRevision:bound.modelAccountRevision,modelAccountIdentity:bound.modelAccountIdentity,model:bound.model,serviceTier:bound.serviceTier,reasoningEffort:bound.reasoningEffort,permissionMode,text:draft.text,attachmentIds:expectedIds as NonNullable<SendDraft['attachmentIds']>,expectedDraftRevision:snapshot.revision,clientRequestId:submissionIdentity.current.requestId,...(draftWorkspaceId!=='@default'&&newCwd?{cwd:newCwd.trim()}:{}),...(boundTaskLinks.length?{taskLinks:boundTaskLinks}:{})}});
+      submitted=firstSubmissions.save({draftId:newImages.id,workspaceId:draftWorkspaceId,input:{connectionId:choice.connectionId,modelAccountId:choice.modelAccountId,modelAccountRevision:choice.modelAccountRevision,modelAccountIdentity:choice.modelAccountIdentity,model:choice.model,serviceTier:choice.serviceTier,reasoningEffort:choice.reasoningEffort,permissionMode,text:draft.text,attachmentIds:expectedIds as NonNullable<SendDraft['attachmentIds']>,expectedDraftRevision:snapshot.revision,clientRequestId:submissionIdentity.current.requestId,...(draftWorkspaceId!=='@default'&&newCwd?{cwd:newCwd.trim()}:{}),...(boundTaskLinks.length?{taskLinks:boundTaskLinks}:{})}});
     }
     if(!firstSubmissions.beginDispatch(submitted.input.clientRequestId))return;
     try{
