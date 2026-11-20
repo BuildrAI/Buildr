@@ -19,7 +19,4 @@ export function formatDateTime(value?: string | null): string {
   return new Date(value).toLocaleString('zh-CN');
 }
 
-export function formatShortDateTime(value?: string | null): string {
-  if (!value) return '—';
-  return new Date(value).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' });
-}
+export { formatShortDateTime } from '../../../buildr-harness-web/src/workbench-model.ts';

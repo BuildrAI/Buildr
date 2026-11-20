@@ -311,13 +311,13 @@ artifacts:
     kind: document
     path: knowledge/docs/architecture/harness-products.md
     objects: [agent-integration, system-structure]
-    sources: [agent-service-public-source, harness-directory-host-source, harness-runtime-activation-source, harness-ui-host-source, harness-web-shell-source, harness-cli-source]
+    sources: [agent-service-public-source, harness-directory-host-source, harness-directory-workbench-source, harness-explorer-source, harness-source-control-source, harness-runtime-activation-source, harness-ui-host-source, harness-web-shell-source, harness-cli-source]
   - id: harness-products-map
     title: 双产品代码地图
     kind: code-map
     path: knowledge/code-map/harness-products.md
     objects: [agent-integration, system-structure]
-    sources: [agent-service-public-source, harness-directory-host-source, harness-runtime-activation-source, harness-ui-host-source, harness-web-shell-source, harness-cli-source]
+    sources: [agent-service-public-source, harness-directory-host-source, harness-directory-workbench-source, harness-explorer-source, harness-source-control-source, harness-runtime-activation-source, harness-ui-host-source, harness-web-shell-source, harness-cli-source]
   - id: product-release-flow
     title: Buildr 发布
     kind: document
@@ -2042,6 +2042,21 @@ sources:
     kind: code
     path: services/buildr-harness/src/application/directory-host.ts
     summary: 内置目录登记、稳定来源引用及目录和链接身份复核，不创建工程业务对象。
+  - id: harness-directory-workbench-source
+    title: Harness 目录工作台
+    kind: code
+    path: services/buildr-harness/src/application/directory-workbench.ts
+    summary: 核对独立目录范围，组织共用文件读取与版本保存、Git 观察和明确的本地写入。
+  - id: harness-explorer-source
+    title: Harness 资源管理器公开入口
+    kind: code
+    path: services/buildr-harness-web/src/explorer.ts
+    summary: 独立装配目录树和文件阅读，由宿主提供准确范围和动作。
+  - id: harness-source-control-source
+    title: Harness 源代码管理公开入口
+    kind: code
+    path: services/buildr-harness-web/src/source-control.ts
+    summary: 共享 Git 状态、差异与历史界面，工程操作由宿主提供。
   - id: harness-runtime-activation-source
     title: Harness 通用运行激活
     kind: code

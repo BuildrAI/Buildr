@@ -16,7 +16,7 @@ export type WorkspaceTabsState = {
 };
 export const WorkspaceTabsContext = createContext<WorkspaceTabsState | null>(null);
 /** Cached views stay mounted; their portal surfaces follow the visible page and resource. */
-export const WorkspaceViewActiveContext = createContext(true);
+export { WorkspaceViewActiveContext } from '../../../buildr-harness-web/src/workbench-ui';
 /** Temporary panes remain operable; consumers may suppress automatic focus or routing. */
 export const WorkspaceViewTransientContext = createContext(false);
 export function useWorkspacePageTabs(_workspaceId?: string | null): WorkspaceTabsState {

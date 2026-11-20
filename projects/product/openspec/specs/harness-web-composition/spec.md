@@ -11,7 +11,7 @@
 
 Development 的 harness-ui 模块 MUST 只准备工程现场、选择工作空间、挂载完整对话、维护任务关联和工程导航；任务选择控件 MUST 由 Development 提供并通过语义上下文插槽原位呈现，MUST NOT 依赖跨窗口坐标覆盖。Harness MUST 不管理工程任务状态。Development MUST NOT 在外壳复制第二套收起态对话导轨、窄屏对话入口或分屏宽度分隔条；展开态与收起态导轨、分屏宽度分隔条 MUST 均由 buildr-harness-web 唯一提供并向宿主同步开合、宽度与停靠方位，Harness 通用对话与对话列表能力 MUST NOT 以专注模式或分屏模式作为功能门控。
 
-上下文插槽 MUST 是可选工作上下文区域，而非工程任务专属空位；未提供内容时 MUST NOT 保留固定任务占位。文件能力与工作对象打开 MUST 由产品装配显式接入，Harness MUST NOT 将通用打开入口写死为 Development。当前组合继续使用 Development 已有文件浏览器，不迁移文件能力、不新增通用插件路由或 DSH 适配。
+上下文插槽 MUST 是可选工作上下文区域，而非工程任务专属空位；未提供内容时 MUST NOT 保留固定任务占位。文件能力与工作对象打开 MUST 由产品装配显式接入，Harness MUST NOT 将通用打开入口写死为 Development。通用资源管理器和源代码管理 MUST 由 Harness 提供可分别装配的入口；Development MUST 提供准确工程范围，在原导航与文件深链上复用通用界面，并继续拥有任务、跨库编排与交付。模块 MUST NOT 依赖对话对象、Development 私有状态或未装配的相邻模块；不新增通用插件路由或 DSH 适配。
 
 #### Scenario: 相同网页服务两种产品
 - **WHEN** 用户独立打开 Harness 或在 Development 使用内嵌/专注模式

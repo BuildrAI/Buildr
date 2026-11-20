@@ -4,14 +4,16 @@ import {useHarnessDirectoryFiles} from './directory-files';
 import {engineeringFile} from './engineering-files';
 import {ConversationHostProvider} from './integration/ConversationHost';
 import {HarnessShell, type HarnessWorkEnvironment} from './shell/HarnessShell';
-import {useCallback,useEffect,useMemo,useState,useRef} from 'react';
-import {Alert,Button,Input,Modal} from 'antd';
+import {lazy,Suspense,useCallback,useEffect,useMemo,useState,useRef} from 'react';
+import {Alert,Button,Input,Modal,Spin} from 'antd';
 import {FolderOpenOutlined} from '@ant-design/icons';
 import {AgentConversationsProvider,AgentConnectionSettings,ConversationWorkspace,HarnessDirectoryFilesProvider,useAgentConversations,type HarnessDirectoryFiles} from './index';
 import {MarkdownReader} from './components/MarkdownReader';
 import {api} from './api/index';
 import type {ConversationWorkspace as ScopeView} from './features/agent-conversations/ConversationHistory';
 import type {ConversationView} from './features/agent-conversations/types';
+
+const DirectoryWorkbench=lazy(async()=>({default:(await import('./features/directory-workbench/HarnessDirectoryWorkbench')).HarnessDirectoryWorkbench}));
 
 type Ref={sourceId:string;id:string};
 type Directory={ref:Ref;rootPath:string;revision:string;name?:string};
@@ -25,13 +27,16 @@ export function HarnessApp({environment}:{environment?:HarnessWorkEnvironment}={
   const [file,setFile]=useState<{path:string;value:Preview}|null>(null);
   const standalone=(typeof window==='undefined'||window.parent===window)&&!environment;
   const composition=useMemo(()=>({standalone}),[standalone]);
+  const [directoryVersion,bumpDirectories]=useState(0);
+  const builtin:HarnessWorkEnvironment={id:'harness-local-workbench',title:'目录工作台',render:active=><Suspense fallback={<Spin size="small" />}><DirectoryWorkbench active={active} onDirectoryAdded={()=>bumpDirectories(value=>value+1)}/></Suspense>};
   const host=useMemo<HarnessDirectoryFiles>(()=>({
     readFile:(conversation:ConversationView,path:string,signal:AbortSignal)=>window.parent!==window?engineeringFile('read',conversation.workspaceId,conversation.id,path,signal):api('/api/v1/harness/files',{method:'POST',body:JSON.stringify({conversationId:conversation.id,path}),signal}) as Promise<Preview>,
     async openFile(conversation,path,_literal,signal){if(window.parent!==window){await engineeringFile('open',conversation.workspaceId,conversation.id,path,signal);return;}const value=await request<Preview>('/api/v1/harness/files',{conversationId:conversation.id,path},signal);signal?.throwIfAborted();setFile({path,value});},
   }),[]);
-  return <ConversationHostProvider host={composition}><HarnessDirectoryFilesProvider host={host}><AgentConversationsProvider standalone={standalone}><HarnessShell environment={environment}><Workspace standalone={standalone}/></HarnessShell></AgentConversationsProvider><Modal open={!!file} centered title={file?.path} footer={null} width="min(1000px, 94vw)" onCancel={()=>setFile(null)}>{file&&(file.value.kind==='markdown'?<MarkdownReader content={file.value.content} path={file.path}/>:file.value.kind==='image'?<img src={file.value.content} alt={file.path} style={{maxWidth:'100%'}}/>:<pre className="harness-source">{file.value.content}</pre>)}{file?.value.truncated&&<Alert type="info" message="内容超过预览上限，仅显示前 1 MiB。"/>}</Modal></HarnessDirectoryFilesProvider></ConversationHostProvider>;
+  return <ConversationHostProvider host={composition}><HarnessDirectoryFilesProvider host={host}><AgentConversationsProvider standalone={standalone}><HarnessShell environment={environment??(standalone?builtin:undefined)}>
+    <Workspace standalone={standalone} directoryVersion={directoryVersion}/></HarnessShell></AgentConversationsProvider><Modal open={!!file} centered title={file?.path} footer={null} width="min(1000px, 94vw)" onCancel={()=>setFile(null)}>{file&&(file.value.kind==='markdown'?<MarkdownReader content={file.value.content} path={file.path}/>:file.value.kind==='image'?<img src={file.value.content} alt={file.path} style={{maxWidth:'100%'}}/>:<pre className="harness-source">{file.value.content}</pre>)}{file?.value.truncated&&<Alert type="info" message="内容超过预览上限，仅显示前 1 MiB。"/>}</Modal></HarnessDirectoryFilesProvider></ConversationHostProvider>;
 }
-function Workspace({standalone}:{standalone:boolean}){
+function Workspace({standalone,directoryVersion}:{standalone:boolean;directoryVersion:number}){
   const embedded=window.parent!==window;
   const context=useAgentConversations();
   const files=useHarnessDirectoryFiles();
@@ -42,7 +47,7 @@ function Workspace({standalone}:{standalone:boolean}){
     setScopes(catalog.scopes.map(scope=>{const directory=listed.directories.find(value=>key(value.ref)===scope.key);return {id:scope.key,name:scopeDisplayName({...scope,name:directory?.name??scope.name},directory?.rootPath),rootPath:directory?.rootPath??scope.rootPath??''};}));
     setSelected(previous=>previous&&listed.directories.some(value=>key(value.ref)===previous)?previous:listed.directories[0]?key(listed.directories[0].ref):undefined);
   },[]);
-  useEffect(()=>{if(!embedded)void refresh().catch(failure=>setError(failure instanceof Error?failure.message:'工作范围读取失败。'));if(!standalone){context.setOpen(true);if(!embedded)context.setFull(true);}},[embedded,standalone,refresh]);
+  useEffect(()=>{if(!embedded)void refresh().catch(failure=>setError(failure instanceof Error?failure.message:'工作范围读取失败。'));if(!standalone){context.setOpen(true);if(!embedded)context.setFull(true);}},[embedded,standalone,refresh,directoryVersion]);
   const initialConfigured=useRef(false);
   useEffect(()=>{
     if(!embedded)return;

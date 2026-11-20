@@ -6,8 +6,7 @@ import './harness-shell.css';
 export type HarnessWorkEnvironment = {
   id: string;
   title: string;
-  Workspace: ComponentType;
-};
+} & ({Workspace: ComponentType; render?: never} | {Workspace?: never; render(active: boolean): ReactNode});
 
 type HarnessShellProps = {
   children: ReactNode;
@@ -52,7 +51,7 @@ export function HarnessShell({children, environment, environmentOpen, onEnvironm
       <div className="harness-conversation-region">{children}</div>
       {environment && <section id={panelId} key={environment.id}
         className="harness-environment-region" aria-label={environment.title} hidden={!open}>
-        {mountedId === environment.id && Workspace && <EnvironmentBoundary><Workspace /></EnvironmentBoundary>}
+        {mountedId === environment.id && <EnvironmentBoundary>{environment.render ? environment.render(open) : Workspace && <Workspace />}</EnvironmentBoundary>}
       </section>}
     </div>
   </div>;

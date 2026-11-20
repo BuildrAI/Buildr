@@ -14,6 +14,7 @@ const storageRuntimeFiles = integrationTests(
   'conversation-storage.test.ts',
   'diagnostic-storage.test.ts',
   'directory-host.test.ts',
+  'directory-workbench.test.ts',
   'host-contract.test.ts',
   'native-session-storage.test.ts',
   'native-state-storage.test.ts',

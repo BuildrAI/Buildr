@@ -1,0 +1,218 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import process from 'node:process';
+
+const SCHEMA = 'buildr.exclusive-file-lock/v1';
+const DEFAULT_TIMEOUT_MS = 5_000;
+const DEFAULT_RETRY_DELAY_MS = 25;
+
+/** libuv maps Windows ERROR_INVALID_FUNCTION to EISDIR. CreateHardLinkW returns that
+ * error on volumes without hard-link support (exFAT/FAT32/ReFS and some network
+ * shares), so EISDIR here means "this filesystem cannot publish the lock", not "the
+ * lock path is a directory". ENOTSUP/ENOSYS report the same capability gap directly. */
+export function isHardLinkUnsupportedError(error: any): boolean {
+  if (!error || typeof error.code !== 'string') return false;
+  if (error.code === 'ENOTSUP' || error.code === 'ENOSYS') return true;
+  return process.platform === 'win32' && error.code === 'EISDIR';
+}
+
+function waitSynchronously(milliseconds: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+function lockError(message: string, code: string, file: string, cause: unknown = null): Error & Record<string, any> {
+  const error: Error & Record<string, any> = new Error(message, cause ? { cause } : undefined);
+  error.code = code;
+  error.operation = 'exclusive-file-lock';
+  error.target = file;
+  return error;
+}
+
+function validateRecord(value: any, target: string): any {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (Object.keys(value).sort().join(',') !== 'createdAt,pid,schemaVersion,target,token') return null;
+  if (value.schemaVersion !== SCHEMA || !Number.isInteger(value.pid) || value.pid <= 0
+    || typeof value.token !== 'string' || !/^[a-f0-9]{32}$/.test(value.token)
+    || typeof value.createdAt !== 'string' || !Number.isFinite(Date.parse(value.createdAt))
+    || typeof value.target !== 'string' || path.resolve(value.target) !== target) return null;
+  return value;
+}
+
+function readLock(file: string, target: string, options: any = {}): any {
+  try {
+    const raw = fs.readFileSync(file, 'utf8');
+    let value: any = null;
+    try { value = JSON.parse(raw); } catch {}
+    const legacyPid = options.allowLegacyPid === true && /^[1-9]\d*$/u.test(raw.trim()) ? Number(raw.trim()) : null;
+    const legacyOwner = Number.isSafeInteger(legacyPid) ? { pid: legacyPid, createdAt: 'legacy-pid-format' } : null;
+    return { raw, record: validateRecord(value, target) || legacyOwner };
+  } catch (error: any) {
+    if (error.code === 'ENOENT') return null;
+    throw lockError(`Cannot read exclusive filesystem lock ${file}: ${error.message}`, 'buildr_exclusive_file_lock_read_failed', file, error);
+  }
+}
+
+function ownerAlive(record: any, options: any = {}): boolean {
+  if (options.ownerAlive) return options.ownerAlive(record.pid, record);
+  try { process.kill(record.pid, 0); return true; }
+  catch (error: any) { return error.code !== 'ESRCH'; }
+}
+
+function guardedCleanup(action: () => any, options: any, primaryError: any): any {
+  try {
+    options.assertSafe?.();
+    return action();
+  } catch (cleanupError) {
+    if (options.assertSafe && primaryError) {
+      if (typeof primaryError === 'object') {
+        try { Object.defineProperty(primaryError, 'lockCleanupError', { value: cleanupError, configurable: true }); } catch {}
+      }
+      throw primaryError;
+    }
+    throw cleanupError;
+  }
+}
+
+/** No hard link is available. open(..., 'wx') is still an atomic no-replace claim,
+ * so publish the already-fsynced record through it and prove the published file is
+ * ours before reporting success. A failed claim removes only the file it created. */
+function publishWithoutHardLink(file: string, content: string, record: any, target: string, options: any): boolean {
+  let descriptor: number | null = null;
+  let identity: fs.Stats | null = null;
+  let created = false;
+  let primaryError: any = null;
+  try {
+    descriptor = fs.openSync(file, 'wx', 0o600);
+    created = true;
+    identity = fs.fstatSync(descriptor);
+    fs.writeFileSync(descriptor, content, 'utf8');
+    fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
+    descriptor = null;
+    const observed = readLock(file, target, options);
+    if (!observed?.record || observed.record.token !== record.token) {
+      throw lockError(`Exclusive filesystem lock ${file} could not be verified after publication.`, 'buildr_exclusive_file_lock_publish_unverified', file);
+    }
+    return true;
+  } catch (error: any) {
+    if (error.code === 'EEXIST') return false;
+    if (error?.code?.startsWith?.('buildr_exclusive_file_lock_')) {
+      primaryError = error;
+      throw error;
+    }
+    primaryError = lockError(`Cannot acquire exclusive filesystem lock ${file}: ${error.message}`, 'buildr_exclusive_file_lock_acquire_failed', file, error);
+    throw primaryError;
+  } finally {
+    if (descriptor !== null) { try { fs.closeSync(descriptor); } catch {} }
+    if (primaryError && created) guardedCleanup(() => {
+      const current = fs.lstatSync(file, { throwIfNoEntry: false });
+      // A reclaim may have moved our incomplete claim away; never delete another owner's file.
+      if (identity && (!current || current.dev !== identity.dev || current.ino !== identity.ino)) return;
+      fs.rmSync(file, { force: true });
+    }, options, primaryError);
+  }
+}
+
+function publishCandidate(file: string, record: any, target: string, options: any): boolean {
+  const candidate = `${file}.candidate-${record.pid}-${record.token}`;
+  let primaryError: any = null;
+  try {
+    const content = `${JSON.stringify(record)}\n`;
+    fs.writeFileSync(candidate, content, { flag: 'wx', mode: 0o600 });
+    const descriptor = fs.openSync(candidate, 'r+');
+    try { fs.fsyncSync(descriptor); } finally { fs.closeSync(descriptor); }
+    try { fs.linkSync(candidate, file); return true; }
+    catch (error: any) {
+      if (error.code === 'EEXIST') return false;
+      if (!isHardLinkUnsupportedError(error)) throw error;
+      // A real occupant (including a stale lock from another Buildr version) must be
+      // observed through the normal read/stale path, never mistaken for a volume gap.
+      if (fs.lstatSync(file, { throwIfNoEntry: false })) return false;
+      return publishWithoutHardLink(file, content, record, target, options);
+    }
+  } catch (error: any) {
+    if (error.code === 'EEXIST') return false;
+    primaryError = error?.code?.startsWith?.('buildr_exclusive_file_lock_')
+      ? error
+      : lockError(`Cannot acquire exclusive filesystem lock ${file}: ${error.message}`, 'buildr_exclusive_file_lock_acquire_failed', file, error);
+    throw primaryError;
+  } finally { guardedCleanup(() => fs.rmSync(candidate, { force: true }), options, primaryError); }
+}
+
+function moveAndRemove(file: string, observed: any, operationToken: string): boolean {
+  const quarantine = `${file}.${operationToken}-${crypto.randomUUID()}`;
+  try { fs.renameSync(file, quarantine); }
+  catch (error: any) {
+    if (error.code === 'ENOENT') return false;
+    throw lockError(`Cannot claim exclusive filesystem lock ${file} for ${operationToken}: ${error.message}`, 'buildr_exclusive_file_lock_claim_failed', file, error);
+  }
+  try {
+    const moved = fs.readFileSync(quarantine, 'utf8');
+    if (moved !== observed.raw) {
+      if (!fs.existsSync(file)) fs.renameSync(quarantine, file);
+      throw lockError(`Exclusive filesystem lock ${file} changed while ${operationToken} claimed it.`, 'buildr_exclusive_file_lock_ownership_lost', file);
+    }
+    fs.rmSync(quarantine, { force: true });
+    return true;
+  } catch (error: any) {
+    if (error?.code?.startsWith?.('buildr_exclusive_file_lock_')) throw error;
+    throw lockError(`Cannot remove claimed exclusive filesystem lock ${file}: ${error.message}`, 'buildr_exclusive_file_lock_release_failed', file, error);
+  }
+}
+
+export function acquireExclusiveFileLock(file: string, target: string, options: any = {}): any {
+  const resolvedFile = path.resolve(file);
+  const resolvedTarget = path.resolve(target);
+  const now = options.now || Date.now;
+  const pause = options.wait || waitSynchronously;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || !Number.isFinite(retryDelayMs) || retryDelayMs <= 0) throw new Error('Exclusive filesystem lock timeout and retry delay must be bounded non-negative milliseconds.');
+  if (options.token !== undefined && (typeof options.token !== 'string' || !/^[a-f0-9]{32}$/.test(options.token))) throw new TypeError('Exclusive filesystem lock token must be 32 lowercase hexadecimal characters.');
+  options.assertSafe?.();
+  fs.mkdirSync(path.dirname(resolvedFile), { recursive: true });
+  const startedAt = now();
+  const deadline = startedAt + timeoutMs;
+  const record = Object.freeze({ schemaVersion: SCHEMA, pid: process.pid, token: options.token ?? crypto.randomBytes(16).toString('hex'), createdAt: new Date(startedAt).toISOString(), target: resolvedTarget });
+  while (true) {
+    // A bounded wait may give another process time to replace the directory.
+    options.assertSafe?.();
+    if (publishCandidate(resolvedFile, record, resolvedTarget, options)) return Object.freeze({ owner: true, file: resolvedFile, target: resolvedTarget, record });
+    const observed = readLock(resolvedFile, resolvedTarget, options);
+    if (!observed) continue;
+    if (observed.record && !ownerAlive(observed.record, options)) {
+      options.assertSafe?.();
+      if (moveAndRemove(resolvedFile, observed, 'stale')) continue;
+    }
+    const observedAt = now();
+    if (observedAt >= deadline) {
+      const owner = observed.record ? `pid=${observed.record.pid} createdAt=${observed.record.createdAt}` : 'owner=invalid-or-unknown (the lock record is incomplete or foreign)';
+      throw lockError(`Exclusive filesystem lock wait expired for ${resolvedFile}: ${owner}.`, 'buildr_exclusive_file_lock_timeout', resolvedFile);
+    }
+    pause(Math.min(retryDelayMs, Math.max(1, deadline - observedAt)));
+  }
+}
+
+export function releaseExclusiveFileLock(lock: any): boolean {
+  if (!lock?.owner || typeof lock.file !== 'string' || typeof lock.target !== 'string' || !lock.record) return false;
+  const file = path.resolve(lock.file);
+  const target = path.resolve(lock.target);
+  const expected = validateRecord(lock.record, target);
+  if (!expected) return false;
+  const observed = readLock(file, target);
+  if (!observed?.record || JSON.stringify(observed.record) !== JSON.stringify(expected)) return false;
+  return moveAndRemove(file, observed, 'release');
+}
+
+export function withExclusiveFileLock(file: string, target: string, callback: (lock: any) => any, options: any = {}): any {
+  const lock = acquireExclusiveFileLock(file, target, options);
+  let result: any;
+  let primaryError: any = null;
+  try { options.assertSafe?.(); options.onAcquired?.(lock); result = callback(lock); }
+  catch (error) { primaryError = error; }
+  const released = guardedCleanup(() => releaseExclusiveFileLock(lock), options, primaryError);
+  if (!released) throw lockError(`Exclusive filesystem lock ownership was lost before release: ${lock.file}.`, 'buildr_exclusive_file_lock_ownership_lost', lock.file, primaryError);
+  if (primaryError) throw primaryError;
+  return result;
+}

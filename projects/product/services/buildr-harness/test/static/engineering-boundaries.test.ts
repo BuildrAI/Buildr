@@ -91,7 +91,7 @@ test('the package exposes one compiled public runtime entry and has no separatel
   assert.equal(metadata.private, true);
   assert.equal(metadata.exports['.'].import, './build/index.js');
   assert.equal(metadata.exports['.'].types, './build/index.d.ts');
-  assert.deepEqual(Object.keys(metadata.exports).sort(), ['.', './http-dto', './package.json', './profile']);
+  assert.deepEqual(Object.keys(metadata.exports).sort(), ['.', './http-dto', './package.json', './profile', './workbench']);
   assert.equal(metadata.exports['./profile'].import, './build/profile.js');
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'src/profile.ts'), 'utf8'), /(?:process\/|application\/|model-access\/)/u, 'the pre-version configuration path must remain lightweight');
   assert.ok(!metadata.files.includes('src/'));

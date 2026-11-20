@@ -1,0 +1,16 @@
+export * from './workbench/code-author-identity.ts';
+export * from './workbench/code-file-content.ts';
+export * from './workbench/code-file-reader.ts';
+export * from './workbench/code-git-environment.ts';
+export * from './workbench/code-git-mutation-runner.ts';
+export * from './workbench/code-git-operation-lock.ts';
+export * from './workbench/editable-file.ts';
+export * from './workbench/exclusive-file-lock.ts';
+export * from './workbench/filesystem-path-identity.ts';
+export * from './workbench/git-commit.ts';
+export * from './workbench/source-control-git-reader.ts';
+export * from './workbench/source-control-image-reader.ts';
+export * from './workbench/source-control-read-types.ts';
+export * from './workbench/source-control-reads.ts';
+export * from './workbench/source-control-types.ts';
+export { searchCode } from './workbench/code-search.ts';

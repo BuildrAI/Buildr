@@ -161,7 +161,7 @@ export interface AgentProcessConnection {
   sourcePolicy: { read(sourceId: string): Promise<SourceContinuationPolicy>; configure(sourceId: string, input: {expectedRevision: string; autoContinueInterrupted: boolean}): Promise<SourceContinuationPolicy> };
   scopeCatalog(): Promise<{scopes: Array<{key: string; ref: ExecutionScopeRef; authority: 'builtin' | 'registered' | 'offline';name?:string;rootPath?:string}>}>;
   /** First-party local directory registration; never accepts a programmatic bearer token. */
-  directories: { preview(input:{conversationId:string;path:string}):Promise<{kind:string;content:string;truncated:boolean}>; list(): Promise<import('../application/directory-host.ts').HarnessDirectory[]>; register(path: string, name?: string): Promise<import('../application/directory-host.ts').HarnessDirectory> };
+  directories: { workbench(operation: string, input: Record<string, unknown>): Promise<unknown>; preview(input:{conversationId:string;path:string}):Promise<{kind:string;content:string;truncated:boolean}>; list(): Promise<import('../application/directory-host.ts').HarnessDirectory[]>; register(path: string, name?: string): Promise<import('../application/directory-host.ts').HarnessDirectory> };
   web:{rebind(input:{expectedEndpointId:string;expectedPort:number;expectedGeneration:string;port:number}):Promise<import('./web-endpoint.ts').HarnessWebStatus>;restart(input:{expectedGeneration:string}):Promise<ReturnType<typeof import('../interfaces/http/runtime-status.ts').agentRuntimeStatus>>;status():Promise<import('./web-endpoint.ts').HarnessWebStatus>;enable(input?:{port?:number;developmentRoot?:string|null}):Promise<import('./web-endpoint.ts').HarnessWebStatus>;login():Promise<{url:string;expiresAt:number;endpointId:string}>};
   lifecycle: AgentLifecycleContract;
   /** Runtime unit this client ships; a different running unit is a version-alignment window. */
@@ -432,6 +432,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
     read: policySource => call('/source-policy', {operation: 'read', policySource}),
     configure: (policySource, value) => call('/source-policy', {operation: 'configure', policySource, ...value}),
   }, directories: {
+    workbench:(operation,input)=>call('/directory-workbench',{operation,input}),
     preview:input=>call('/directories',{sourceId:options.sourceId,operation:'preview',...input}),
     async list() {
       if ((await connected()).identity.capabilities?.directoryHost !== 1) throw new AgentServiceError('agent_capability_unavailable', '现有后台尚不支持目录宿主；未另起后台或更换版本。', 409);

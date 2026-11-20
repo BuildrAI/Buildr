@@ -9,6 +9,20 @@
 - 避免混用：目录内的普通文件、依赖和临时内容不会自动成为受治理资产。
 - 来源：[数据设计](architecture/buildr-data-design.md)。
 
+## 资源管理器（Explorer）
+
+- 定义：Harness 提供的目录级文件工作界面，在准确范围浏览、搜索、阅读和编辑文件；不要求是 Git 仓库。
+- 适用范围：独立目录或由 Development 解析的明确工程位置；两边复用界面。
+- 避免混用：不是工程工作资产登记，不选择对话执行目录。
+- 来源：[双产品架构](architecture/harness-products.md)。
+
+## 源代码管理（Source Control）
+
+- 定义：Harness 提供的 Git 工作界面，围绕准确工作树查看状态、差异与历史并执行明确操作。
+- 适用范围：独立 Harness 的已授权 Git 工作树，或 Development 提供的已核对工程范围。
+- 避免混用：不是仓库登记、任务工作树的分配或工程交付；实际内容与历史以 Git 为准。
+- 来源：[双产品架构](architecture/harness-products.md)。
+
 ## 项目（Project）
 
 - 定义：承载业务目标、约束与相关资料，并引用参与实现的服务（Service）。

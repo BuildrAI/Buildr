@@ -3,6 +3,8 @@ import {HarnessWebEndpoint} from './web-endpoint.ts';
 import {connectHarnessProcess} from './client.ts';
 import type {AgentProcessConnection} from './client.ts';
 import { HarnessDirectoryHost, DIRECTORY_SOURCE_ID } from '../application/directory-host.ts';
+import { createDirectoryWorkbench, directoryWorkbenchWrites, workbenchError } from '../application/directory-workbench.ts';
+import { EDITABLE_FILE_JSON_BYTES } from '../workbench/editable-file.ts';
 import { SourceContinuationPolicies } from './source-policies.ts';
 import { HarnessCallerClient } from './caller-client.ts';
 import { HarnessCallerSessions } from './caller-sessions.ts';
@@ -199,12 +201,12 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     const caller = isV2 ? callers.authenticate(req) : undefined;
     if (!caller) authorize(req, options.token);
     const route = isV2 ? req.url!.slice(3) : req.url;
-    if (caller && !['/operations', '/events', '/directories', '/host/attach', '/host/detach', '/scope-catalog', '/source-policy', '/web', '/caller-close', '/generate', '/cancel-generation'].includes(route!)) throw new AgentServiceError('agent_caller_operation_denied', '调用连接没有后台管理权限。', 403);
+    if (caller && !['/operations', '/events', '/directories', '/directory-workbench', '/host/attach', '/host/detach', '/scope-catalog', '/source-policy', '/web', '/caller-close', '/generate', '/cancel-generation'].includes(route!)) throw new AgentServiceError('agent_caller_operation_denied', '调用连接没有后台管理权限。', 403);
     if (req.method === 'GET' && route === '/identity') { json(res, 200, identity); return; }
     if (req.method === 'GET' && route === '/status') { json(res, 200, status()); return; }
     if (req.method !== 'POST') throw new AgentServiceError('agent_process_operation_invalid', '不支持的执行后台入口。', 404);
     const attachmentUpload = route === '/operations' && req.headers['x-buildr-operation'] === 'conversations.addAttachment';
-    const input = await body(req, attachmentUpload ? 46 * 1024 * 1024 : undefined);
+    const input = await body(req, attachmentUpload ? 46 * 1024 * 1024 : route === '/directory-workbench' && caller?.caller.kind === 'first-party-user' && caller.caller.product === 'buildr-harness' ? EDITABLE_FILE_JSON_BYTES : undefined);
     if (attachmentUpload && input.operation !== 'conversations.addAttachment') throw new AgentServiceError('agent_process_operation_invalid', '附件传输操作不匹配。');
     if (route === '/caller/negotiate') {
       // This path remains owner-token-only; caller tokens cannot issue identities.
@@ -278,6 +280,14 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
         return {key, ref, ...(labels.has(executionScopeKey(ref))?{name:labels.get(executionScopeKey(ref))}:{}), ...(rootPaths.has(executionScopeKey(ref))?{rootPath:rootPaths.get(executionScopeKey(ref))}:{}), authority: ref.sourceId === DIRECTORY_SOURCE_ID ? 'builtin' : registered.has(ref.sourceId) ? 'registered' : 'offline'};
       });
       json(res, 200, {scopes}); return;
+    }
+    if (route === '/directory-workbench') {
+      if (!caller || caller.caller.kind!=='first-party-user'||caller.caller.product!=='buildr-harness') throw new AgentServiceError('agent_caller_operation_denied','目录工作台需要本机 Harness 网页身份。',403);
+      if (directoryWorkbenchWrites(input.operation) && (closing || retiring || !accepting)) throw new AgentServiceError('agent_process_switching','当前后台不接受新写入；输入已保留。',503);
+      if (typeof input.operation!=='string'||!input.input||typeof input.input!=='object'||Array.isArray(input.input)||Object.keys(input).some(key=>!['operation','input'].includes(key))) throw new AgentServiceError('agent_directory_workbench_input_invalid','工作台请求无效。',400);
+      try { json(res,200,await createDirectoryWorkbench(directories)(input.operation,input.input)); }
+      catch (error) { workbenchError(error); }
+      return;
     }
     if (route === '/directories') {
       if (input.sourceId !== DIRECTORY_SOURCE_ID) throw new AgentServiceError('agent_host_source_mismatch', '此入口不是目录宿主。', 409);

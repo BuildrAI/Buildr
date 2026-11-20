@@ -4,7 +4,7 @@ import { sameFilesystemPath, insideFilesystemPath } from '../../../infrastructur
 import { openDirectory } from '../../../infrastructure/filesystem/open-directory.ts';
 import { gitCheckoutReadId } from '../../../infrastructure/git/checkout-read-identity.ts';
 import { codeFailure, codeGit, gitCommonDirectory, localPath, relativeCodePath, type CodeSource } from '../infrastructure/code-file-reader.ts';
-import { assertEditableContent, editableSourceRevision, fileEditingFailure, readEditableFile, replaceEditableFile, type EditableFileLocation, type FileReadOnlyPolicy } from '../infrastructure/editable-file.ts';
+import { editableSourceRevision, fileEditingFailure, readEditableFile, saveObservedEditableFile, type EditableFileLocation, type FileReadOnlyPolicy } from '../infrastructure/editable-file.ts';
 import type { MarkdownImageContext } from '../../../infrastructure/filesystem/markdown-images.ts';
 
 export type EditorFileSelector = { kind: 'code'; repositoryId: string; checkoutId: string; path: string } | { kind: 'project'; projectCode: string; path: string };
@@ -67,12 +67,6 @@ export function createFileEditingApplication(dependencies: Dependencies) {
     // Source mapping may change while its text is read; do not return an observation for another source.
     if (location(root, selector).sourceRevision !== source.sourceRevision) throw fileEditingFailure('file_source_changed', '读取期间来源身份已变化，请重新打开文件。', 409);
     return { ...observed, snapshot: { selector, ...observed.snapshot, ...(imageContext ? { imageContext } : {}) } };
-  }
-  function assertObserved(root: string, input: SaveEditorFileInput) {
-    const current = read(root, input.selector);
-    if (current.snapshot.fileId !== input.expectedFileId || current.snapshot.sourceRevision !== input.expectedSourceRevision) throw fileEditingFailure('file_source_changed', '文件来源身份已变化，已保留输入；请重新核对文件位置。', 409);
-    if (current.snapshot.revision !== input.expectedRevision) throw fileEditingFailure('file_revision_conflict', '磁盘文件已变化，已暂停保存并保留输入。', 409, { current: current.snapshot });
-    return current;
   }
   async function openResolvedDirectory(directory: string): Promise<{ requested: true }> {
     const open = dependencies.openDirectory ?? openDirectory;
@@ -152,27 +146,6 @@ export function createFileEditingApplication(dependencies: Dependencies) {
       }
       throw fileEditingFailure('file_source_invalid', '文件来源无法确认。');
     },
-    saveFile: (root: string, input: SaveEditorFileInput) => {
-      const current = assertObserved(root, input);
-      assertEditableContent(current.snapshot, input.content);
-      if (current.snapshot.content !== input.content) {
-        replaceEditableFile(current.file, input.content, current.mode, () => {
-          const latest = assertObserved(root, input);
-          assertEditableContent(latest.snapshot, input.content);
-          if (latest.file !== current.file) throw fileEditingFailure('file_source_changed', '文件实际位置已变化。', 409);
-          // Source and ownership checks can perform Git/receipt reads. Recheck just
-          // the held file bytes immediately before replacement, after those checks.
-          const final = readEditableFile(latest.snapshot).snapshot;
-          if (final.revision !== input.expectedRevision) {
-            const { imageContext: _imageContext, ...snapshot } = latest.snapshot;
-            throw fileEditingFailure('file_revision_conflict', '磁盘文件在保存前再次变化，已保留输入。', 409, { current: { ...snapshot, ...final } });
-          }
-        });
-      }
-      const saved = read(root, input.selector).snapshot;
-      // An external writer can win immediately after rename; never report that our text is saved then.
-      if (saved.content !== input.content) throw fileEditingFailure('file_revision_conflict', '保存后文件再次变化，已保留输入。', 409, { current: saved });
-      return saved;
-    },
+    saveFile: (root: string, input: SaveEditorFileInput) => saveObservedEditableFile(() => read(root, input.selector), input),
   });
 }

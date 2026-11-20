@@ -1,0 +1,13 @@
+.harness-directory-workbench{display:flex;flex:1;flex-direction:column;gap:8px;min-width:0;min-height:0;height:100%;padding:10px}
+.harness-directory-workbench-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;flex-shrink:0}
+.harness-directory-workbench-toolbar .ant-select{min-width:min(220px,100%);max-width:100%}
+.harness-directory-workbench-toolbar code{flex:1 1 100%;font-size:var(--font-size-meta);color:var(--soft-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.harness-directory-workbench>.ant-segmented{align-self:flex-start}
+.harness-directory-workbench-pane,.harness-directory-explorer,.harness-directory-source-control{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
+.harness-directory-workbench-pane[hidden]{display:none}
+.harness-directory-explorer>.repository-file-browser,.harness-directory-source-control>.source-control-workbench{flex:1;min-height:0}
+.harness-directory-file-actions{padding:4px 0;min-width:0}
+.harness-directory-file-actions code{overflow-wrap:anywhere}
+.harness-directory-file-editor{display:flex;flex:1;flex-direction:column;gap:8px;height:100%;min-height:160px;padding:8px}
+.harness-directory-file-editor textarea{flex:1;min-height:100px;resize:none;font-family:ui-monospace,monospace;font-size:var(--font-size-code)}
+.harness-local-commit{display:grid;gap:8px;padding:8px;min-width:0}

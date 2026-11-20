@@ -2,7 +2,19 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { precompressedAssets } from './tools/precompressed-assets.mjs';
 export default defineConfig({
-  resolve:{dedupe:['react','react-dom','antd','@ant-design/icons']},
+  // Harness and Development can mount editors on the same page. Share the
+  // parsers and Tag identities as well as the EditorState and EditorView.
+  resolve: {dedupe: ['react', 'react-dom', 'antd', '@ant-design/icons',
+    '@codemirror/autocomplete', '@codemirror/commands', '@codemirror/lang-css',
+    '@codemirror/lang-html', '@codemirror/lang-javascript', '@codemirror/lang-json',
+    '@codemirror/lang-markdown', '@codemirror/lang-sql', '@codemirror/lang-yaml',
+    '@codemirror/language', '@codemirror/lint', '@codemirror/merge',
+    '@codemirror/search', '@codemirror/state', '@codemirror/streamparser',
+    '@codemirror/view', '@lezer/common', '@lezer/css',
+    '@lezer/highlight', '@lezer/html', '@lezer/javascript',
+    '@lezer/json', '@lezer/lr', '@lezer/markdown',
+    '@lezer/yaml', 'codemirror',
+  ]},
   plugins: [
     react(),
     precompressedAssets(),

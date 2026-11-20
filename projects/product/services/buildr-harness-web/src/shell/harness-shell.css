@@ -8,3 +8,6 @@
   .harness-shell-body{flex-direction:column}
   .harness-environment-region{border-left:0;border-top:1px solid var(--soft-line)}
 }
+
+.harness-shell:has(.harness-directory-workbench) .harness-environment-region{flex-basis:62%}
+@media(max-width:760px){.harness-shell:has(.harness-directory-workbench) .harness-environment-region{flex-basis:70%}}

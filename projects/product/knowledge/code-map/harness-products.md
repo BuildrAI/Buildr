@@ -1,6 +1,6 @@
 # 双产品代码地图
 
-范围：Harness 执行及完整网页，Development 工程现场及网页集成。产品解释见[边界说明](../docs/architecture/harness-products.md)。本地图按源码职责定位，不替代运行或发行验收。
+范围：Harness 执行与目录级工作环境，Development 工程应用及网页组合。产品解释见[边界说明](../docs/architecture/harness-products.md)。本地图按源码职责定位，不替代运行或发行验收。
 
 | 代码位置 | 所属产品与责任 |
 | --- | --- |
@@ -20,6 +20,20 @@
 | `services/buildr-web/src/features/harness-ui/` | Development 的工程范围、同页完整对话装配、任务关联、工程参与与文件/对象打开适配 |
 | `services/buildr/src/modules/agent-service/module.ts` | Development 工程范围权威和公共核心连接装配 |
 | `services/buildr/src/web/http/router.ts` | Development 认证、工程路由及 `/harness/` 网页托管 |
+
+## 目录工作台
+
+- **Harness 后端**（`services/buildr-harness/src/`）
+  - [目录引用](../../services/buildr-harness/src/application/directory-host.ts)：选择来源、记录身份、重新核对准确目录。
+  - [目录工作台](../../services/buildr-harness/src/application/directory-workbench.ts)：用目录标识和观察版本定位文件与 Git 操作，不需要对话标识或业务范围。
+  - [通用入口](../../services/buildr-harness/src/workbench.ts)：文件读取、编辑保护和 Git 观察；供 Development 的工程应用复用，不启动执行后台。
+  - [本地 Git 动作](../../services/buildr-harness/src/workbench/local-git.ts)：明确暂存、取消暂存和版本保护的本地提交，不隐式推送。
+- **Harness 前端**（`services/buildr-harness-web/src/`）
+  - [独立目录装配](../../services/buildr-harness-web/src/features/directory-workbench/HarnessDirectoryWorkbench.tsx)：目录选择、视图切换与打开当前文件，保持文件和 Git 模块独立。
+  - [资源管理器](../../services/buildr-harness-web/src/explorer.ts)与[源代码管理](../../services/buildr-harness-web/src/source-control.ts)：可分别装配的公开视图；由宿主提供观察和动作，不调用 Development API。
+- **Development 复用**（`services/buildr*/src/`）
+  - [工程代码应用](../../services/buildr/src/modules/code/application/code-application.ts)：根据登记与真实检出解析工程范围；文件及 Git 观察调用 Harness 通用实现。
+  - [工程资源管理器](../../services/buildr-web/src/features/code/pages/CodeExplorerPage.tsx)与[工程源代码管理](../../services/buildr-web/src/features/code/pages/CodeSourceControlPage.tsx)：包装通用视图，保留原导航、编辑会话、任务深链和工程操作。
 
 ## 关键调用链
 

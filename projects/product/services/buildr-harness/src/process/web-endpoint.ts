@@ -15,6 +15,7 @@ import {createProgrammaticHttpContribution} from '../interfaces/http/programmati
 import {eventStreamResponse} from '../interfaces/http/stream-response.ts';
 import type {AgentProcessConnection} from './client.ts';
 import {chooseHarnessDirectory} from './directory-picker.ts';
+import {EDITABLE_FILE_JSON_BYTES} from '../workbench/editable-file.ts';
 import {defaultHarnessWorkspaceRoot} from '../profile.ts';
 
 export interface HarnessWebStatus {enabled:boolean;ready:boolean;endpointId?:string;origin?:string;generation:string;diagnostic?:string;mode?:'live'|'static'}
@@ -259,6 +260,14 @@ export class HarnessWebEndpoint {
       if(req.method==='POST'){this.authorize(req,true);const input=await body(req,16384);this.authorize(req,true);if(!Object.hasOwn(input,'path')||Object.keys(input).some(key=>!['path','name'].includes(key)))throw new AgentServiceError('agent_directory_path_invalid','请选择准确目录。');json(res,201,await connection.directories.register(input.path,input.name));return;}
     }
     if(url.pathname==='/api/v1/harness/files'&&req.method==='POST'){this.authorize(req,true);const input=await body(req,16384);this.authorize(req,true);if(Object.keys(input).some(key=>!['conversationId','path'].includes(key)))throw new AgentServiceError('agent_directory_file_invalid','文件请求无效。');json(res,200,await connection.directories.preview(input));return;}
+    const workbench=url.pathname.match(/^\/api\/v1\/harness\/directory-workbench\/([a-z-]+)$/);
+    if(workbench && req.method==='POST') {
+      this.authorize(req,true);
+      const operation=workbench[1], input=await body(req,operation==='save'?EDITABLE_FILE_JSON_BYTES:32768);
+      this.authorize(req,true);
+      json(res,200,await connection.directories.workbench(operation,input));
+      return;
+    }
     if(!this.handlers){
       const defaultWorkspace=()=>{const rootPath=defaultHarnessWorkspaceRoot(this.options.dataRoot);return {rootPath:fs.existsSync(rootPath)?fs.realpathSync(rootPath):rootPath};};
       const common=createAgentServiceHttpContribution(async()=>(await this.options.connect()).operations,{defaultWorkspace,prepareDefaultWorkspace:()=>{fs.mkdirSync(defaultWorkspace().rootPath,{recursive:true});},executionScopeKeys:async()=>[...new Set(['@default',...(await (await this.options.connect()).scopeCatalog()).scopes.map(value=>value.key)])],runtimeStatus:async()=>agentRuntimeStatus(await (await this.options.connect()).lifecycle.status()),restartRuntime:async input=>(await this.options.connect()).web.restart(input)});

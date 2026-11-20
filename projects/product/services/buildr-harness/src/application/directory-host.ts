@@ -101,7 +101,10 @@ export class HarnessDirectoryHost implements AgentHostCapabilities {
   private assertCurrent(entry: HarnessDirectory, current = observe(entry.selectedPath)): void {
     if (current.revision !== entry.revision || current.rootPath !== entry.rootPath) throw new AgentServiceError('agent_scope_binding_changed', '目录或链接身份已变化，未在新对象上继续；原对话及目录登记保留。', 409);
   }
-  async resolveExecutionScope({ ref, expectedRevision }: { ref: ExecutionScopeRef; expectedRevision?: string }): Promise<ExecutionScope> {
+  async resolveExecutionScope(input: { ref: ExecutionScopeRef; expectedRevision?: string }): Promise<ExecutionScope> {
+    return this.resolveDirectory(input);
+  }
+  resolveDirectory({ ref, expectedRevision }: { ref: ExecutionScopeRef; expectedRevision?: string }): HarnessDirectory {
     const entry = this.store().directories.find(entry => entry.ref.sourceId === ref.sourceId && entry.ref.id === ref.id);
     if (!entry) throw new AgentServiceError('agent_directory_missing', '目录引用未登记，不能直接用路径发起工作。', 404);
     this.assertCurrent(entry);
