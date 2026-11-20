@@ -71,11 +71,11 @@ export async function codexFindTurn(rpc: CodexRpc, threadId: string, turnId: str
   throw new Error('codex_history_pagination_invalid');
 }
 
-export async function codexTurnItems(rpc: CodexRpc, threadId: string, turnId: string): Promise<any[]> {
+export async function codexTurnItems(rpc: CodexRpc, threadId: string, turnId: string, preview?: {maxPages:number}): Promise<any[]> {
   const items: any[] = [];
   const seen = new Set<string>();
   let cursor: string | undefined;
-  for (let page = 0; page < MAX_PAGES; page++) {
+  for (let page = 0; page < (preview?.maxPages ?? MAX_PAGES); page++) {
     const response = await rpc.call('thread/items/list', {
       threadId,
       turnId,
@@ -93,5 +93,6 @@ export async function codexTurnItems(rpc: CodexRpc, threadId: string, turnId: st
     seen.add(next);
     cursor = next;
   }
+  if (preview) return items;
   throw new Error('codex_history_pagination_invalid');
 }

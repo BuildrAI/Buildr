@@ -65,6 +65,19 @@ save();
 reply(m.id,{turn:active});
 setTimeout(()=>{event('item/started',{threadId:p.threadId,turnId:id,item:user});
 event('item/agentMessage/delta',{threadId:p.threadId,turnId:id,itemId:'assistant-'+id,delta:'你好'});
+if(workText.includes('[subagent]')){
+const childId='child-'+p.threadId,childTurn={id:'child-turn',status:'completed',items:[{type:'agentMessage',id:'child-final',text:'Only the child says this'}]};
+state[childId]={id:childId,cwd:state[p.threadId].cwd,agentNickname:'Independent review',turns:[childTurn]};
+const dispatch={type:'collabAgentToolCall',id:'spawn',tool:'spawnAgent',senderThreadId:p.threadId,receiverThreadIds:[childId],status:'completed',agentsStates:{[childId]:{status:'running'}},prompt:'Review independently'};
+const wait={...dispatch,id:'wait',tool:'wait',status:'inProgress'};
+active.items.push(dispatch);save();event('item/completed',{threadId:p.threadId,turnId:id,item:dispatch});
+event('item/started',{threadId:p.threadId,turnId:id,item:wait});
+event('item/completed',{threadId:childId,turnId:childTurn.id,item:childTurn.items[0]});
+const returned={...wait,status:'completed',agentsStates:{[childId]:{status:'completed',message:'Review passed'}}};
+active.items.push(returned);event('item/completed',{threadId:p.threadId,turnId:id,item:returned});
+const answer={id:'assistant-'+id,type:'agentMessage',text:'Parent continued'};active.items.push(answer);event('item/completed',{threadId:p.threadId,turnId:id,item:answer});
+active.status='completed';save();event('turn/completed',{threadId:p.threadId,turn:active});return;
+}
 if(workText.includes('[stream-tool-output]')){
 const tool={id:'stream-'+id,type:'commandExecution',command:'synthetic stream',status:'inProgress'};
 active.items.push(tool);event('item/started',{threadId:p.threadId,turnId:id,item:tool});

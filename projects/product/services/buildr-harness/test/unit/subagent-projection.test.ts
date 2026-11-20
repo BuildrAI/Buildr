@@ -1,0 +1,55 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { CodexSubagents } from '../../src/executors/codex/subagents.ts';
+import { claudeReturnedTool, claudeSubagent, claudeWaitingSubagents, isClaudeAgentTool } from '../../src/executors/claude/subagents.ts';
+import type { ExecutorItem } from '../../src/contracts.ts';
+
+test('Codex uses the original spawn, observes explicit waits, and separates child output from the parent result', async () => {
+  const children=new CodexSubagents();
+  const collab={id:'spawn',type:'collabAgentToolCall',tool:'spawnAgent',senderThreadId:'parent',receiverThreadIds:['child'],status:'completed',prompt:'Review',agentsStates:{child:{status:'running'}}};
+  assert.deepEqual(children.observe('other','round',collab,true),[]);
+  const [dispatch]=children.observe('parent','round',collab,true);
+  assert.equal(dispatch.executionId,'round');
+  assert.equal(dispatch.subagent?.status,'running');
+  assert.equal(dispatch.subagent?.prompt,'Review');
+  const wait={...collab,id:'wait',tool:'wait',status:'inProgress',receiverThreadIds:['child','foreign']};
+  children.observe('parent','round',wait,true);
+  assert.deepEqual(children.waiting('parent'),[dispatch.subagent?.key]);
+  assert.equal(children.owner('foreign'),undefined);
+  const [output]=children.project('child',{type:'agentMessage',id:'reply',text:'Review text'},'completed');
+  assert.equal(output.parentToolId,dispatch.subagent?.key);
+  assert.equal(output.executionId,'round');
+  assert.deepEqual(children.project('foreign',{type:'agentMessage',id:'reply',text:'Not ours'},'completed'),[]);
+  const [nested]=children.observe('child','child-round',{...collab,senderThreadId:'child',receiverThreadIds:['nested']},true);
+  assert.equal(nested.parentToolId,dispatch.subagent?.key);
+  assert.equal(nested.executionId,'round');
+  const [returned]=children.observe('parent','later-round',{...wait,status:'completed',agentsStates:{child:{status:'completed',message:'Review complete'}}},true);
+  assert.deepEqual(children.waiting('parent'),[]);
+  assert.equal(returned.executionId,'round');
+  assert.equal(returned.subagent?.returned,true);
+  assert.equal(returned.text,'Review complete');
+  await assert.rejects(children.read({call:async()=>({thread:{id:'foreign',cwd:'/work'}})},'child','/work'),/identity_mismatch/);
+  const history=new CodexSubagents();
+  assert.equal(history.observe('parent','round',collab,false)[0].subagent?.status,'unknown');
+});
+
+test('Claude only projects native delegation and does not equate background or completion with waiting or receipt', () => {
+  const call:ExecutorItem={id:'tool',kind:'tool',role:'assistant',name:'Agent',text:'',input:'{"description":"独立审查"}',executionId:'round'};
+  assert.equal(isClaudeAgentTool({...call,name:'Bash'}),false);
+  const dispatch=claudeSubagent(call);
+  assert.equal(dispatch.subagent?.label,'独立审查');
+  assert.equal(dispatch.subagent?.status,'unknown');
+  const terminal=claudeSubagent(call,dispatch,{status:'completed',result:'结论'});
+  assert.equal(terminal.subagent?.returned,undefined);
+  assert.equal(terminal.text,'结论');
+  const receipt={kind:'task-notification',runId:'native-run'};
+  assert.equal(claudeReturnedTool([{kind:'local_agent',runId:'native-run',toolId:'tool'}],receipt),'tool');
+  assert.equal(claudeReturnedTool([{kind:'local_agent',runId:'another-run',toolId:'tool'}],receipt),undefined);
+  assert.equal(claudeReturnedTool([{kind:'local_bash',runId:'native-run',toolId:'tool'}],receipt),undefined);
+  const active={toolId:'tool',active:true,kind:'local_agent',background:true};
+  assert.deepEqual(claudeWaitingSubagents([active],undefined,true),[]);
+  assert.deepEqual(claudeWaitingSubagents([active],'idle',true),[]);
+  assert.deepEqual(claudeWaitingSubagents([active],'running',false),[]);
+  assert.deepEqual(claudeWaitingSubagents([active,{...active,toolId:'bash',kind:'local_bash'},{...active,toolId:'nested',parentTaskId:'parent'}],'running',true),['tool']);
+  assert.deepEqual(claudeWaitingSubagents([{...active,background:false}],undefined,false),['tool']);
+});

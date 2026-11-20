@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "claude",
+      "title": "Claude Code",
+      "notes": [
+        {
+          "id": "handoff",
+          "title": "从派发处进入",
+          "text": "点击「派发给 独立审查」打开只读对话；返回会定位到原派发位置。",
+          "position": "dispatch"
+        },
+        {
+          "id": "flow",
+          "title": "在同一条信息流阅读",
+          "text": "从派发要求读到进展、折叠的工具、下一层派发和最终答复，不用切页。标题栏的「总览」可以返回名单。",
+          "position": "flow"
+        },
+        {
+          "id": "entry",
+          "title": "子智能体入口",
+          "text": "标题栏的「子智能体」先打开全对话总览，按轮次、派发关系查看做了什么，再选择某个记录。",
+          "position": "entry"
+        }
+      ],
+      "states": [
+        {
+          "id": "returned",
+          "title": "结果回传 · 主流程继续",
+          "notes": [
+            {
+              "id": "continuing",
+              "title": "答复与回传连在一起",
+              "text": "打开已完成的审查，结论出现在进展之后；只有观察到回传才显示「已回传给派发者」。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "主流程结束 · 独立作业",
+          "notes": [
+            {
+              "id": "independent",
+              "title": "只有不阻塞本轮的工作才单列",
+              "text": "主对话已有答复。回归验证仍能单独查看，但不把已答复的主对话标成执行中。",
+              "position": "dispatch"
+            }
+          ]
+        },
+        {
+          "id": "partial",
+          "title": "子智能体状态待确认",
+          "notes": [
+            {
+              "id": "unconfirmed",
+              "title": "信息不全时不猜测",
+              "text": "只有派发记录，没有最新子进度或回传凭据。保留归属和已知信息，不虚构结果、等待关系或停止按钮。",
+              "position": "dispatch"
+            }
+          ]
+        },
+        {
+          "id": "settled",
+          "title": "本轮已折叠 · 查看名单",
+          "notes": [
+            {
+              "id": "collapsed",
+              "title": "收起过程仍可直达",
+              "text": "智能体标题下保留本轮执行过的子智能体；点名字不用展开整轮。",
+              "position": "summary"
+            },
+            {
+              "id": "overview",
+              "title": "跨轮浏览",
+              "text": "点对话标题栏「子智能体」来查看本轮和更早轮次的派发、结果和父子关系。",
+              "position": "overview"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "codex",
+      "title": "Codex",
+      "notes": [
+        {
+          "id": "handoff",
+          "title": "从派发处进入",
+          "text": "点击「派发给 独立审查」打开只读对话；返回会定位到原派发位置。",
+          "position": "dispatch"
+        },
+        {
+          "id": "flow",
+          "title": "在同一条信息流阅读",
+          "text": "从派发要求读到进展、折叠的工具、下一层派发和最终答复，不用切页。标题栏的「总览」可以返回名单。",
+          "position": "flow"
+        },
+        {
+          "id": "entry",
+          "title": "子智能体入口",
+          "text": "标题栏的「子智能体」先打开全对话总览，按轮次、派发关系查看做了什么，再选择某个记录。",
+          "position": "entry"
+        }
+      ],
+      "states": [
+        {
+          "id": "returned",
+          "title": "结果回传 · 主流程继续",
+          "notes": [
+            {
+              "id": "continuing",
+              "title": "答复与回传连在一起",
+              "text": "打开已完成的审查，结论出现在进展之后；只有观察到回传才显示「已回传给派发者」。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "主流程结束 · 独立作业",
+          "notes": [
+            {
+              "id": "independent",
+              "title": "完成和后台运行可同时成立",
+              "text": "主对话已经答复，只有不影响答复的子智能体继续运行。收起面板不会停止它。",
+              "position": "dispatch"
+            }
+          ]
+        },
+        {
+          "id": "partial",
+          "title": "子智能体状态待确认",
+          "notes": [
+            {
+              "id": "unconfirmed",
+              "title": "未读到子线程不等于失败或完成",
+              "text": "保留准确的派发记录。无法核对的状态和结果标为待确认，不发起另一次执行。",
+              "position": "dispatch"
+            }
+          ]
+        },
+        {
+          "id": "settled",
+          "title": "本轮已折叠 · 查看名单",
+          "notes": [
+            {
+              "id": "collapsed",
+              "title": "收起过程仍可直达",
+              "text": "智能体标题下保留本轮执行过的子智能体；点名字不用展开整轮。",
+              "position": "summary"
+            },
+            {
+              "id": "overview",
+              "title": "跨轮浏览",
+              "text": "点对话标题栏「子智能体」来查看本轮和更早轮次的派发、结果和父子关系。",
+              "position": "overview"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -6,6 +6,8 @@ import type { ConversationRun } from './types.ts';
 
 type Props = {
   tools: ConversationRun['tools'];
+  subagents?: number;
+  onOpenSubagents?(): void;
   diagnostic?: string;
   feedback?: string;
   canContinue?: boolean;
@@ -18,14 +20,15 @@ type Props = {
 };
 
 /** Model output ending is not proof that its commands have exited. */
-export function ConversationActiveToolsNotice({tools,diagnostic,feedback,canContinue,resourcesReleased,stopRequested,observing,stopping,onObserve,onStop}: Props) {
+export function ConversationActiveToolsNotice({tools,subagents=0,onOpenSubagents,diagnostic,feedback,canContinue,resourcesReleased,stopRequested,observing,stopping,onObserve,onStop}: Props) {
   const active=tools.filter(tool=>tool.status!=='completed');
-  const uncertain = resourcesReleased || active.length === 0 || active.some(tool => tool.status === 'unknown');
+  const uncertain = resourcesReleased || active.length === 0 && !subagents || active.some(tool => tool.status === 'unknown');
   const [expanded,setExpanded]=useState(false),detailsId=useId();
-  return <section className="ac-active-tools" data-run-status="tools-active" data-uncertain={Boolean(uncertain)} aria-label="尚未结束的命令">
+  return <section className="ac-active-tools" data-run-status="tools-active" data-uncertain={Boolean(uncertain)} aria-label={subagents?'后台工作':'尚未结束的命令'}>
     <div className="ac-active-tools-summary">
-      <span className="ac-active-tools-title" role="status" title={[feedback,diagnostic,resourcesReleased?'后台连接已释放，尚未读到部分命令的结束记录，不会重做原操作。':stopRequested?'停止请求已提交，尚未取得本轮及剩余命令的结束确认；原记录与已有操作结果保留，不会重发。':undefined].filter(Boolean).join('\n')}><ClockCircleOutlined aria-hidden/>{resourcesReleased?`${feedback?'未读到':'尚缺'}${active.length?` ${active.length} 项命令的结束记录`:'结束记录'}`:stopRequested?'停止已请求，等待剩余命令结束':active.length?canContinue?`仍有 ${active.length} 项命令${active.some(tool=>tool.status==='unknown')?'待核对':'运行'}，可继续对话`:`仍有 ${active.length} 项命令未结束`:'命令结束状态待确认'}</span>
+      <span className="ac-active-tools-title" role="status" title={[feedback,diagnostic,resourcesReleased?'后台连接已释放，尚未读到部分命令的结束记录，不会重做原操作。':stopRequested?'停止请求已提交，尚未取得本轮及剩余命令的结束确认；原记录与已有操作结果保留，不会重发。':undefined].filter(Boolean).join('\n')}><ClockCircleOutlined aria-hidden/>{resourcesReleased?`${feedback?'未读到':'尚缺'}${active.length?` ${active.length} 项命令的结束记录`:'结束记录'}`:stopRequested?(subagents?'停止已请求，等待后台工作结束':'停止已请求，等待剩余命令结束'):subagents?`仍有 ${subagents} 个子智能体运行${active.length?`，另有 ${active.length} 项命令未结束`:''}${canContinue?'，可继续对话':''}`:active.length?canContinue?`仍有 ${active.length} 项命令${active.some(tool=>tool.status==='unknown')?'待核对':'运行'}，可继续对话`:`仍有 ${active.length} 项命令未结束`:'命令结束状态待确认'}</span>
       <div className="ac-active-tools-actions">
+        {onOpenSubagents&&<Button type="text" size="small" onClick={onOpenSubagents}>查看子智能体</Button>}
         {active.length>0&&<Button type="text" size="small" aria-expanded={expanded} aria-controls={detailsId} onClick={()=>setExpanded(value=>!value)}>{expanded?'收起命令':'查看命令'}</Button>}
         <Button type="text" size="small" loading={observing} disabled={stopping} onClick={onObserve}>重新读取</Button>
         {!resourcesReleased&&!stopRequested&&<Button type="text" size="small" aria-label="停止剩余执行" loading={stopping} disabled={stopping} onClick={()=>onStop()}>{stopping?'正在停止…':'停止剩余执行'}</Button>}

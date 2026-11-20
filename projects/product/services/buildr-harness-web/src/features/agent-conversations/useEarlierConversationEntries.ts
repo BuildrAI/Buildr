@@ -74,17 +74,17 @@ export function useEarlierConversationEntries(props:Props){
   const first=requestAnimationFrame(()=>{restore();second=requestAnimationFrame(()=>{restore();observer.disconnect();if(anchor.current===a)anchor.current=null;});});
   return()=>{observer.disconnect();cancelAnimationFrame(first);cancelAnimationFrame(second);};
  },[chat?.entries,selectionKey,stream,bottom,position]);
- const load=async(initialFill=false)=>{
+ const load=async(initialFill=false,preserveLatest=false)=>{
   const owner=current.current,{conversation:chat,selectionKey}=owner;
   if(!chat||chat.nextEntryCursor===undefined||active.current)return;
   const operation=new AbortController(),observed=selectionKey;
-  active.current=operation;setLoading(true);setError('');if(!initialFill)bottom.current=false;
+  active.current=operation;setLoading(true);setError('');if(!initialFill&&!preserveLatest)bottom.current=false;
   try{
    const page=await owner.loadPage(chat,chat.nextEntryCursor,operation.signal);
    if(scope.current!==observed||active.current!==operation)return;
    const existing=new Set(chat.entries.map(e=>e.id)),entries=page.entries.filter(e=>!existing.has(e.id)),node=stream.current;
    // The reader may take over while an automatic page is in flight.
-   if(node&&entries.length&&(!initialFill||!fill.current.allowed)){
+   if(node&&entries.length&&(!preserveLatest||!bottom.current)&&(!initialFill||!fill.current.allowed)){
     const rect=node.getBoundingClientRect(),candidates=[...node.querySelectorAll<HTMLElement>('[data-entry-id],[data-entry-group]')];
     const visible=(n:HTMLElement)=>{const box=n.getBoundingClientRect();return !(n.hasAttribute('data-entry-group')&&n.parentElement?.hasAttribute('open'))&&box.height>0&&box.bottom>rect.top+4;};
     // A sticky prompt can stay at the same coordinate while the reading content moves.
@@ -130,7 +130,7 @@ export function useEarlierConversationEntries(props:Props){
   if(node){node.scrollTop=node.scrollHeight;remember();}
  };
  const interrupt=()=>{stopFill();anchor.current=null;};
- return {loading,error,onScroll,pinLatest,remember,followLayout,
+ return {loading,error,onScroll,pinLatest,remember,followLayout,readEarlierFromOverview:()=>{stopFill();void load(false,true);},
   onPointerDown:()=>{pointerActive.current=true;interrupt();},
   onPointerUp:()=>{pointerActive.current=false;},
   onPointerCancel:()=>{pointerActive.current=false;},

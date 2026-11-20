@@ -18,7 +18,7 @@ import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRe
 import { SplitDivider } from '../../components/SplitDivider.tsx';
 import { readOptionalPreference, writeOptionalPreference } from '../../lib/optional-preferences.ts';
 import { Alert, App, Button, Dropdown, Input, Modal, Popover, Select, Spin, Tag } from 'antd';
-import { ArrowDownOutlined, ArrowUpOutlined, CommentOutlined, EllipsisOutlined, MinusOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, StopOutlined, TeamOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { ApartmentOutlined, ArrowDownOutlined, ArrowUpOutlined, CommentOutlined, EllipsisOutlined, MinusOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, StopOutlined, TeamOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { MarkdownHost } from '../../components/MarkdownHost.tsx';
 import type { MarkdownRenderOptions } from '../../markdown.ts';
 import type { ApiError } from '../../api/index.ts';
@@ -57,6 +57,9 @@ import type { ConversationEntry, ConversationRun, ConversationView, SendDraft, S
 import {conversationReplyText} from './conversation-reply.ts';
 import {ConversationHandoffDrawer} from './ConversationHandoffDrawer.tsx';
 import {ConversationHandoffReview} from './ConversationHandoffReview.tsx';
+import { ConversationSubagentOverview, ConversationTurnSubagents } from './ConversationSubagentOverview.tsx';
+import { ConversationSubagentPane, SubagentDispatchCard } from './ConversationSubagents.tsx';
+import { conversationSubagents, subagentWaitingLabel } from './conversation-subagents.ts';
 import { ConversationProcessBlock } from './ConversationProcessBlock.tsx';
 import {modelPreferenceFromChoice,preferredConversationChoice,readConversationModelPreference,readConversationModulePreference,rememberConversationAgent,rememberConversationPermission,rememberedConversationPermission,writeConversationModelPreference,writeConversationModulePreference} from './conversation-preferences.ts';
 import {conversationSystemNoticeText,visibleConversationEntries,conversationModelWarning,conversationActionError,conversationHandoffReceipt,conversationNativeSessionDiagnostic,conversationNativeSessionIssue,conversationNativeSessionSummary,latestVisibleConversationMessage} from './conversation-notices.ts';
@@ -175,7 +178,26 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
   const actionKey=(value:ConversationView,action:string,identity=value.run?.id||'')=>conversationActionKey({workspaceId:value.workspaceId,conversationId:value.id},action,identity);
   const uploadKey=chat?actionKey(chat,'upload',''):conversationActionKey({workspaceId:draftWorkspaceId,conversationId:'new'},'upload');
   const [stoppedOutput,setStoppedOutput]=useState<StoppedConversationOutput|null>(null);
-  const visibleEntries=useMemo(()=>chat?visibleConversationEntries(stoppedConversationEntries(chat,stoppedOutput)):[],[chat,stoppedOutput]);
+  const observedEntries=useMemo(()=>chat?stoppedConversationEntries(chat,stoppedOutput):[],[chat,stoppedOutput]);
+  const subagents=useMemo(()=>conversationSubagents(observedEntries,[...(chat?.retainedRuns??[]),...(chat?.run?[chat.run]:[])]),[observedEntries,chat?.run,chat?.retainedRuns]);
+  const visibleEntries=useMemo(()=>visibleConversationEntries(observedEntries).filter(entry=>!subagents.owned.has(entry.id)),[observedEntries,subagents]);
+  const [subagentView,setSubagentView]=useState<{kind:'overview';focusRunId?:string}|{kind:'detail';id:string}>();
+  const subagentTrigger=useRef<HTMLElement>(null);
+  const subagentMenu=useRef<HTMLButtonElement>(null);
+  const subagentId=subagentView?.kind==='detail'?subagentView.id:undefined;
+  const selectedSubagent=subagents.agents.find(agent=>agent.entry.id===subagentId);
+  const subagentOverviewOpen=subagentView?.kind==='overview';
+  const subagentPaneOpen=subagentOverviewOpen||Boolean(selectedSubagent);
+  useEffect(()=>{setSubagentView(undefined);subagentTrigger.current=null;},[chat?.id,chat?.workspaceId]);
+  function openSubagent(id:string,trigger?:HTMLElement){
+    if(trigger)subagentTrigger.current=trigger;
+    setSubagentView({kind:'detail',id});
+  }
+  function openSubagentOverview(trigger?:HTMLElement,focusRunId?:string){
+    if(trigger)subagentTrigger.current=trigger;
+    setSubagentView({kind:'overview',focusRunId});
+  }
+
   const outputPaused=Boolean(chat&&stoppedOutput&&stoppedOutput.workspaceId===chat.workspaceId&&stoppedOutput.conversationId===chat.id&&(stoppedOutput.runIds??[stoppedOutput.runId]).includes(chat.run?.id??''));
   const stopping=Boolean(chat&&actions.has(actionKey(chat,'stop'))),observing=Boolean(chat&&actions.has(actionKey(chat,'observe'))),uploading=actions.has(uploadKey);
   const stopControl=conversationStopControlState(chat,stopping);
@@ -782,6 +804,8 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     return()=>{cancelAnimationFrame(frame);observer.disconnect();element.removeEventListener('scroll',check);document.removeEventListener('visibilitychange',check);window.removeEventListener('focus',check);};
   },[chat,visibleEntries,conversationVisible,context.markSeen]);
   const run=chat?.run;
+  const backgroundSubagents=run?.status==='tools-active'?subagents.agents.filter(({entry,dispatch})=>entry.runId===run.id&&entry.participantId===run.participantId&&dispatch.status==='running'):[];
+  const backgroundSubagentKeys=new Set(backgroundSubagents.map(agent=>agent.dispatch.key));
   const showExecutionNotice=(!outputPaused||!stopping)&&(run?.status==='unknown'||run?.status==='tools-active');
   const noticeHasStop=showExecutionNotice&&!run?.resourcesReleased&&!run?.stopRequested;
   const runConnection=context.connections.find(item=>item.id===chat?.participants.find(participant=>participant.id===run?.participantId)?.connectionId);
@@ -831,7 +855,23 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
   const forkableReplies = forkableReplyIds(chat);
   const finalReplies = finalReplyIds(chat);
   const loadToolEntry=useCallback((entry:ConversationEntry,signal?:AbortSignal)=>context.api.entry(chat!.workspaceId,chat!.id,entry,signal),[context.api,chat?.workspaceId,chat?.id]);
+  const subagentPaneId=panelId+'-subagents';
+  function closeSubagent(locate=false){
+    const anchorId=selectedSubagent?.entry.id;
+    const trigger=subagentTrigger.current;
+    setSubagentView(undefined);
+    requestAnimationFrame(()=>{
+      const dispatch=locate&&anchorId?stream.current?.querySelector<HTMLButtonElement>(`[data-subagent-dispatch="${CSS.escape(anchorId)}"], [data-subagent-summary="${CSS.escape(anchorId)}"]`):null;
+      if(dispatch){dispatch.scrollIntoView({block:'center'});dispatch.focus({preventScroll:true});}
+      else if(!locate&&trigger?.isConnected)trigger.focus({preventScroll:true});
+      else subagentMenu.current?.focus({preventScroll:true});
+    });
+  }
   const renderEntry=(entry:ConversationEntry)=>{
+    if(entry.subagent){
+      const agent=subagents.agents.find(row=>row.entry.id===entry.id);
+      return agent?<SubagentDispatchCard key={entry.id} agent={agent} active={agent.entry.id===subagentId} onOpen={trigger=>openSubagent(entry.id,trigger)}/>:null;
+    }
     if(entry.kind==='handoff'){
       if(entry.nativeSession){
         const issue=conversationNativeSessionIssue(entry),summary=conversationNativeSessionSummary(entry);
@@ -865,7 +905,8 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
         onDoubleClick={()=>commitHistoryWidth(FOCUS_HISTORY_DEFAULT_WIDTH)}/>
     </>}
     {ownsSettings&&<AgentConnectionSettings inMain={focusSettings}/>}
-    <div className="ac-conversation-view" hidden={showFocusSettings||context.view==='history'&&!focusSplit}>
+    <div className="ac-conversation-split" hidden={showFocusSettings||context.view==='history'&&!focusSplit}>
+    <div className="ac-conversation-view">
       <header className="ac-thread-header" data-run-status={run&&['running','completed'].includes(run.status)?run.status:undefined}>
         {!embedded&&!context.open&&<Button type="text" icon={<UnorderedListOutlined/>} aria-label="查看对话列表" title="对话列表" onClick={()=>context.openHistory(null,{preserveVisibility:true})}/>}
         <div className="ac-thread-heading">
@@ -873,6 +914,10 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
         </div>
         <div className="ac-thread-actions">
           {accessory}
+          {(subagents.agents.length>0||chat?.nextEntryCursor!==undefined)&&<Button ref={subagentMenu} type="text" className="ac-subagent-entry" icon={<ApartmentOutlined aria-hidden="true"/>} title="子智能体总览" aria-label={subagents.agents.length?`子智能体（${subagents.agents.length}）`:'子智能体'} aria-expanded={subagentPaneOpen} aria-controls={subagentPaneOpen?subagentPaneId:undefined} onClick={event=>{
+            if(subagentOverviewOpen)closeSubagent();
+            else openSubagentOverview(event.currentTarget);
+          }}><span className="ac-subagent-entry-label">子智能体</span>{subagents.agents.length>0&&<span className="ac-subagent-entry-count" aria-hidden="true">{subagents.agents.length}{chat?.nextEntryCursor!==undefined?'+':''}</span>}</Button>}
           {participantPairs.length>0&&<Popover rootClassName="ac-panel-popup ac-participant-history" title="参与过此对话" trigger="click" content={<div className="ac-participants" aria-label="参与过此对话的智能体与模型">{participantPairs.map(pair=><span key={pair.key}>{pair.label||context.connections.find(item=>item.id===pair.connectionId)?.label||executionAgentName(pair.provider)} · {pair.modelName}</span>)}</div>}>
             <Button type="text" icon={<TeamOutlined/>} aria-label="参与过此对话的智能体与模型" title="参与过此对话"/>
           </Popover>}
@@ -938,12 +983,14 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
             const turnRun=turnRuns.find(value=>value.id===resolvedRunId)??turnRuns.find(value=>value.status==='unknown'&&!value.supersededBy&&turnEntryRunIds.has(value.id));
             const turnPaused=Boolean(stoppedOutput&&stoppedOutput.workspaceId===chat.workspaceId&&stoppedOutput.conversationId===chat.id&&(stoppedOutput.runIds??[stoppedOutput.runId]).includes(turnRun?.id??''));
             const unverified=Boolean(turnRun&&turnRun.status==='unknown'&&!execution.current&&!turnRun.supersededBy);
+            const turnSubagents=subagents.agents.filter(agent=>agent.entry.runId&&turnEntryRunIds.has(agent.entry.runId));
+            const turnWaiting=subagentWaitingLabel(execution.current?run:undefined,subagents.agents)??(execution.current&&backgroundSubagents.length?'后台子智能体仍在运行':execution.waiting);
             return <ConversationTurn key={turn.key} id={turn.key} runId={resolvedRunId} prompt={shownPrompt?{id:shownPrompt.id,text:shownPrompt.text,images:shownPrompt.attachments?.length?<ConversationMessageImages conversation={chat} ids={shownPrompt.attachments} read={context.api.readImage}/>:undefined,diagnostic:prompt?(prompt.deliveryDiagnostic?<small className="ac-input-diagnostic" role="status">{prompt.deliveryDiagnostic}</small>:prompt.status==='failed'?<small className="ac-input-diagnostic" role="status">未送达</small>:prompt.status==='unknown'&&(execution.current||turnExpanded)?<Tag color={execution.current?'warning':'default'}>{execution.current?'是否送达待确认':'历史送达未确认'}</Tag>:undefined):<small className="ac-continuation-prompt-label">继续上次要求</small>}:undefined}
-              onCollapseProcess={processKeys.some(key=>expandedToolGroups[key]===true)?()=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(processKeys.map(key=>[key,false]))})):undefined} collapseLabel={hasExpandedProcess?'收起处理过程':'收起工具调用'} identity={execution.current?runIdentity:turnIdentity(latestAssistant||assistant||latestEntry||prompt)} executing={executing&&!turnPaused} showExecutionIndicator={Boolean(assistant||hasProcess||executing)} startedAt={timing.startedAt} finishedAt={timing.finishedAt} processExpanded={turnExpanded} onToggleProcess={hasProcess||hasSupplement?()=>setExpandedToolGroups(previous=>({...previous,[turnExpansionKey]:!turnExpanded,...Object.fromEntries(settled.flatMap(item=>item.type==='process-block'?[[processBlockKey(item.entries),!turnExpanded]]:[]))})):undefined}>
-              {executing&&execution.waiting&&<small className="ac-input-diagnostic" role="status">{execution.waiting}</small>}
+              onCollapseProcess={processKeys.some(key=>expandedToolGroups[key]===true)?()=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(processKeys.map(key=>[key,false]))})):undefined} collapseLabel={hasExpandedProcess?'收起处理过程':'收起工具调用'} identity={execution.current?runIdentity:turnIdentity(latestAssistant||assistant||latestEntry||prompt)} executing={executing&&!turnPaused} showExecutionIndicator={Boolean(assistant||hasProcess||executing)} startedAt={timing.startedAt} finishedAt={timing.finishedAt} processExpanded={turnExpanded} summary={!turnExpanded&&turnSubagents.length>0?<ConversationTurnSubagents agents={turnSubagents} onSelect={openSubagent} onOverview={openSubagentOverview}/>:undefined} onToggleProcess={hasProcess||hasSupplement||turnSubagents.length>0?()=>setExpandedToolGroups(previous=>({...previous,[turnExpansionKey]:!turnExpanded,...Object.fromEntries(settled.flatMap(item=>item.type==='process-block'?[[processBlockKey(item.entries),!turnExpanded]]:[]))})):undefined}>
+              {executing&&turnWaiting&&<small className="ac-input-diagnostic" role="status">{turnWaiting}</small>}
               {unverified&&turnExpanded&&<small className="ac-input-diagnostic" title={turnRun?.diagnostic}>{turnRun?.attentionSettled?'历史执行提醒已结束；原记录仍保留。':<>历史执行结果未确认，不影响当前对话。原记录保留在可展开的处理过程中。{canSettleRetainedRun(chat,turnRun)&&<Button type="link" size="small" loading={Boolean(chat&&actions.has(actionKey(chat,'settle-retained',turnRun!.id)))} onClick={()=>void settleRetained(turnRun!)} title="仅结束提醒：原执行结果仍未知，不终止可能仍在运行的进程，不会重发原操作。">结束提醒</Button>}</>}</small>}
               {turn.items.map(item=>{
-                if(item.type==='entry')return item.entry.kind==='message'&&item.entry.role==='user'&&!turnExpanded?null:renderEntry(item.entry);
+                if(item.type==='entry')return !turnExpanded&&(item.entry.subagent||item.entry.kind==='message'&&item.entry.role==='user')?null:renderEntry(item.entry);
                 const key=processBlockKey(item.entries);
                 return <Fragment key={key}><ConversationProcessBlock hidden={!turnExpanded} loadEntry={loadToolEntry} markdownOptions={markdownOptions} headerless groupsOpen={expandedToolGroups} onGroupToggle={(ids,open)=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(ids.map(id=>['tool-group:'+id,open]))}))} toolsOpen={expandedToolGroups} onToolToggle={(id,open)=>setExpandedToolGroups(previous=>({...previous,['tool:'+id]:open}))} blockKey={key} entries={item.entries} active={item.active&&!turnPaused} liveToolId={liveToolId} finishedAt={item.finishedAt} onOpenFile={path=>void openProcessFile(path)} open={turnExpanded} onToggle={(name,open)=>setExpandedToolGroups(previous=>({...previous,[name]:open}))}/><ConversationPresentedFiles key={chat.id+':'+key} entries={item.entries} read={readPresentedFile} onOpen={path=>void openProcessFile(path,true)}/></Fragment>;
               })}
@@ -958,7 +1005,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
       {!atBottom&&<div className="ac-scroll-latest"><Button className="ac-scroll-latest-button" shape="circle" icon={<ArrowDownOutlined/>} aria-label="向下到底" title="向下到底，回到最新消息" onClick={scrollToLatest}/></div>}
       <div className="ac-compose-wrap" data-run-status={run?.status==='stopped'?'stopped':undefined}>{fileError}{openingFile&&context.isSelectionCurrent(openingFile)&&<div role="status" className="ac-input-diagnostic">正在打开文件…</div>}
 
-        {showExecutionNotice&&run?.status==='tools-active'&&<ConversationActiveToolsNotice key={run.id} tools={run.tools} resourcesReleased={run.resourcesReleased} stopRequested={run.stopRequested===true} feedback={feedback} diagnostic={run.diagnostic} canContinue={Boolean(chat&&conversationSendRoute(chat,executionChanged)==='send')} observing={observing} stopping={stopping} onObserve={()=>void observe()} onStop={toolId=>void stop(toolId)}/>}
+        {showExecutionNotice&&run?.status==='tools-active'&&<ConversationActiveToolsNotice key={run.id} tools={run.tools.filter(tool=>!backgroundSubagentKeys.has(tool.id))} subagents={backgroundSubagents.length} onOpenSubagents={backgroundSubagents.length?()=>openSubagent(backgroundSubagents[0].entry.id):undefined} resourcesReleased={run.resourcesReleased} stopRequested={run.stopRequested===true} feedback={feedback} diagnostic={run.diagnostic} canContinue={Boolean(chat&&conversationSendRoute(chat,executionChanged)==='send')} observing={observing} stopping={stopping} onObserve={()=>void observe()} onStop={toolId=>void stop(toolId)}/>}
         {showExecutionNotice&&run?.status==='unknown'&&<ConversationExecutionNotice run={run} feedback={feedback} streamError={context.streamError} continuing={sending} continueDisabled={!canSend} onContinue={canContinueConversation(chat)&&!executionChanged?()=>void prepare(false,false,run.id):undefined} observing={observing} stopping={stopping} onObserve={()=>void observe()} onStop={()=>void stop()}/>}{!outputPaused&&<ConversationCompactionNotice run={run}/>}{(!outputPaused||Boolean(actionError))&&run&&locked&&run.status!=='unknown'&&run.status!=='tools-active'&&<div className="ac-execution-statusbar" role="status" data-execution-state={run.status}>{run.stopRequested?<span>停止已请求，等待结束确认</span>:!waitingQuestions.length&&run.status!=='running'&&<span>{statusLabels[run.status]}</span>}</div>}{!chat&&newImages.error&&<Alert type="warning" message={newImages.error} action={<Button size="small" onClick={()=>void newImages.refresh().catch(fail)}>重新读取图片</Button>}/>} {!chat&&unconfirmedFirst&&<ConversationFirstSubmissionNotice submission={unconfirmedFirst} busy={sending} onRetry={()=>void prepare(false,false,undefined,true)}/>}{!outputPaused&&run&&run.status!=='stopped'&&run.status!=='running'&&run.status!=='completed'&&run.status!=='unknown'&&run.status!=='tools-active'&&(!locked||Boolean(run.diagnostic))&&<div className="ac-run-status" role="status" data-run-status={run.status}>{!locked&&<>{run.interrupted?'执行未完成':statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}</>}{run.status==='failed'?<ConversationFailureNotice run={run}/>:run.diagnostic&&<p>{run.diagnostic}</p>}</div>} {connectionWarning}{modelWarning&&<Alert type="warning" showIcon message={modelWarning}/>}{earlier.error&&<Alert type="warning" showIcon message={earlier.error}/>} {actionError&&<Alert type="warning" showIcon message={actionError} closable onClose={()=>{setError('');setReplyFailure(null);setDefaultRootError('');}}/>} {feedback&&run?.status!=='unknown'&&run?.status!=='tools-active'&&<small role="status">{feedback}</small>}{(!draft.available||!attachmentsAvailable)&&<Alert type="warning" message="浏览器存储不可用，刷新后无法恢复未发送草稿。"/>}
         {recovery&&!chat?.pendingSend&&run?.status!=='unknown'&&run?.status!=='tools-active'&&<div className="ac-recovery-action" data-recovery-kind={recovery.kind}>{!run?.diagnostic&&<span>{recovery.kind==='observe'?'原执行状态仍待核对。':'上次执行未正常答复。'}</span>}<Button type="text" size="small" icon={<ReloadOutlined/>} autoInsertSpace={false} aria-label={recovery.kind==='recover'&&executionChanged?'继续':recovery.label} disabled={Boolean(review)||!canSend||observing} loading={recovery.kind==='observe'?observing:sending} onClick={()=>recovery.kind==='observe'?void observe():void prepare(false,false,chat!.run!.id)}>{recovery.kind==='recover'&&executionChanged?'继续':recovery.label}</Button>{recovery.kind==='recover'&&executionChanged&&!review&&<><span className="ac-recovery-target">{transferNoticeText}</span><Button type="link" size="small" disabled={!canSend} onClick={()=>void prepare(true,false,chat!.run!.id)}>交接内容</Button></>}</div>}
         <ConversationConnectionNotice ready={context.connectionsReady} loading={context.connectionsLoading} error={context.connectionsError} connection={connection} onSettings={()=>context.setSettings(true)}/>
@@ -983,6 +1030,9 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
       </div>
     <ConversationHandoffDrawer loadHistory={chat?(input,signal)=>context.api.historySource(chat.workspaceId,chat.id,input,signal):undefined} loadEntry={chat?(entry,signal)=>context.api.entry(chat.workspaceId,chat.id,entry,signal,viewedHandoff?.handoff?.sourceId):undefined} onOpenFile={path=>void openProcessFile(path)} open={Boolean(viewedHandoff)} side={context.side} material={viewedHandoff?.handoff??null} delivery={viewedHandoff&&viewedHandoff.status!=='accepted'?viewedHandoff.status==='failed'?'failed':'unknown':undefined} received={viewedHandoff?.status==='accepted'} issue={viewedHandoff&&viewedHandoff.status!=='accepted'?'尚未确认接收，请先核对原执行。':undefined} onClose={()=>setSelectedHandoff(null)}/>
     <Modal open={rename} title="重命名对话" centered getContainer={false} styles={{mask:{position:'absolute'},wrapper:{position:'absolute'}}} onCancel={()=>setRename(false)} onOk={()=>void updateMetadata({title:title.trim()})} okButtonProps={{disabled:!title.trim()}} okText="保存" cancelText="取消"><Input aria-label="对话名称" value={title} onChange={event=>setTitle(event.target.value)}/></Modal>
+    </div>
+    {subagentOverviewOpen&&<ConversationSubagentOverview id={subagentPaneId} agents={subagents.agents} currentRunId={run?.id} focusRunId={subagentView.focusRunId} hasEarlier={chat?.nextEntryCursor!==undefined} loading={earlier.loading} error={earlier.error} onLoadEarlier={earlier.readEarlierFromOverview} onSelect={openSubagent} onClose={()=>closeSubagent()}/>}
+    {selectedSubagent&&<ConversationSubagentPane id={subagentPaneId} agents={subagents.agents} agent={selectedSubagent} onSelect={openSubagent} onOverview={()=>openSubagentOverview(undefined,selectedSubagent.entry.runId)} onClose={closeSubagent} onOpenFile={path=>void openProcessFile(path)} loadEntry={loadToolEntry} markdownOptions={markdownOptions}/>}
     </div>
   </section>;
   return <>{embedded?panel:<ConversationDock focusSettings={focusSettings} panel={panel} portalTarget={portalTarget} workspaces={workspaces}/>}

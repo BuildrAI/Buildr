@@ -13,6 +13,7 @@ import { claudeAnswers, claudeEffort, claudeFullAccessSafetyAllow, claudeGateway
 import { ClaudeReceiptCursor, claudeStorageRoot } from './content.ts';
 import { withExecutionFault } from '../../domain/execution-fault.ts';
 import { ClaudeControlInput } from './control.ts';
+import { claudeReturnedTool, claudeSubagent, claudeWaitingSubagents, isClaudeAgentTool } from './subagents.ts';
 import { ExecutorEventStream } from '../event-stream.ts';
 
 console.log = console.info = console.warn = console.error = console.debug = () => {};
@@ -54,12 +55,14 @@ interface Session {
   id: string; cwd: string; q: Query; inputs: Inputs; round?: Round; closed: boolean; initialized: boolean;
   mode: string; effort?: string; fullAccess: boolean;
   nativeContinuation?: boolean;
+  nativePhase?: 'running' | 'idle' | 'requires_action';
+  awaitingChildren?: boolean;
   taskDrainTimer?: ReturnType<typeof setTimeout>;
   child?:ChildProcessWithoutNullStreams;
   cancelQueued?:boolean;
   cancelQueuedSupported?:boolean;
   tools: Map<string, {id:string; label:string; status:'running'|'completed'|'unknown'; taskId?:string}>;
-  tasks: Map<string, {toolId?:string; active:boolean; background?:boolean; runId?:string; kind?:string}>;
+  tasks: Map<string, {toolId?:string; active:boolean; background?:boolean; runId?:string; kind?:string; parentTaskId?:string; ambient?:boolean}>;
   items: Map<string, ExecutorItem>;
   projector:ClaudeItemProjector;
   receipts:ClaudeReceiptCursor;
@@ -93,18 +96,26 @@ function observation(session: Session): ExecutorObservation {
   const backgroundWork = hasActiveTasks(session);
   const questionTools=new Set([...(round?.pending.values()??[])].filter(p=>p.request.kind==='question').map(p=>p.toolId));
   const tools = [...session.tools.values()]
-    .filter(tool => !questionTools.has(tool.id))
+    .filter(tool => {
+      if(questionTools.has(tool.id))return false;
+      const parent=session.items.get(tool.id)?.parentToolId;
+      // An ended child cannot keep its parent run alive solely because a
+      // streamed child command never acquired a terminal receipt.
+      return !parent || ![...session.tasks.values()].some(task=>task.toolId===parent&&task.kind==='local_agent'&&!task.active);
+    })
     .map(({id, label, status, taskId}) => ({id, label, status, canStop: Boolean(taskId)}));
   const active = tools.some(tool=>tool.status!=='completed') || backgroundWork;
   // An SDK result can end one prompt while a native task notification starts
   // another model pass on the same Buildr execution. Use native session activity.
-  const modelRunning = session.nativeContinuation === true;
+  const waitingSubagents = claudeWaitingSubagents(session.tasks.values(), session.nativePhase, session.awaitingChildren === true && !round?.stopping);
+  const modelRunning = session.nativeContinuation === true || waitingSubagents.length > 0;
   return {
     status: session.closed && (!round?.terminal || modelRunning || session.taskDrainTimer || active) ? 'unknown' : round?.pending.size ? 'waiting'
       : modelRunning || session.taskDrainTimer ? 'running'
       : round?.terminal ? active ? 'tools-active' : round.terminal==='stopped' ? 'stopped' : 'idle' : round ? 'running' : 'idle',
     ...(round ? {executionRef:{id:round.id}} : {}), tools, backgroundWork,
     requests: [...(round?.pending.values()??[])].map(p=>p.request),
+    waitingSubagents,
     ...(round?.diagnostic ? {diagnostic:round.diagnostic} : {}),
     canContinue: round?.terminal==='completed' && !modelRunning && !session.taskDrainTimer,
   };
@@ -136,6 +147,11 @@ function item(session: Session, value: ExecutorItem) {
     if (task) next.status = 'running';
   }
   session.items.set(next.id,next); emit(session,{type:'item',item:next});
+  if (isClaudeAgentTool(next)) {
+    const previous = session.items.get(`claude-subagent:${next.id}`);
+    const marker = claudeSubagent(next, previous);
+    if (JSON.stringify(marker) !== JSON.stringify(previous)) item(session, marker);
+  }
 }
 function admit(session: Session, uuid: string) {
   const round = session.round;
@@ -173,6 +189,7 @@ function result(session: Session, message: any) {
   if(message.is_error&&round.outstanding.size===1&&round.outstanding.has(round.inputId)&&!round.acks.size)round.outstanding.delete(round.inputId);
   if (round.acks.size||round.outstanding.size) return; // Supplements can be acknowledged before their own result.
   session.nativeContinuation = false;
+  session.awaitingChildren = !message.is_error && !round.stopping && message.subtype==='success';
   round.terminal = round.stopping ? 'stopped' : message.is_error || message.subtype!=='success' ? 'failed' : 'completed';
   clearInterval(round.receiptTimer);round.receiptTimer=undefined;
   if (message.is_error) round.diagnostic = 'agent_claude_execution_failed';
@@ -185,26 +202,50 @@ async function event(session: Session, message: any) {
   if (message.type==='system' && message.subtype==='init') { session.initialized=true;session.cancelQueuedSupported=message.capabilities?.includes('interrupt_cancel_queued_v1')===true;return; }
   if (!round) return;
   if (message.type==='system' && message.subtype==='session_state_changed') {
-    const continuing = round.terminal === 'completed' && ['running','requires_action'].includes(message.state);
+    if (['idle','running','requires_action'].includes(message.state)) session.nativePhase = message.state;
+    if(message.state==='idle')session.awaitingChildren=false;
+    const continuing = round.terminal === 'completed' && !round.stopping && ['running','requires_action'].includes(message.state);
     if (continuing) {
       clearTimeout(session.taskDrainTimer);
       session.taskDrainTimer = undefined;
     }
     if (session.nativeContinuation !== continuing) {
       session.nativeContinuation = continuing;
-      if (round.terminal) emit(session,{type:'observation',observation:observation(session)});
     }
+    if (round.terminal) emit(session,{type:'observation',observation:observation(session)});
     return;
   }
   if(!message.parent_tool_use_id)for(const uuid of message.user_message_uuids??[message.user_message_uuid])if(typeof uuid==='string')admit(session,uuid);
   if (message.type==='user') {
+    const returnedId=!message.parent_tool_use_id?claudeReturnedTool(session.tasks.values(),message.origin):undefined;
+    if(returnedId){
+      const previous=session.items.get(`claude-subagent:${returnedId}`);
+      if(previous?.subagent&&!previous.subagent.returned)item(session,{...previous,subagent:{...previous.subagent,returned:true}});
+    }
     if (!message.parent_tool_use_id && typeof message.uuid==='string') admit(session,message.uuid);
-    for (const entry of session.projector.items(message,round.id)) item(session,entry);
+    for (const entry of session.projector.items(message,round.id)) {
+      item(session,entry);
+      const call = session.items.get(entry.id);
+      const task = [...session.tasks.values()].find(value=>value.toolId===entry.id && value.kind==='local_agent');
+      if (call && task?.background===false && entry.kind==='tool' && ['completed','failed'].includes(entry.status??'')) {
+        item(session,claudeSubagent(call,session.items.get(`claude-subagent:${call.id}`),{
+          status:entry.status==='failed'?'failed':'completed',result:entry.text,returned:true,
+        }));
+        emit(session,{type:'observation',observation:observation(session)});
+      }
+    }
   } else if (message.type==='assistant') {
     for (const entry of session.projector.items(message,round.id)) item(session,entry);
   } else if (message.type==='stream_event') {
     const source = message.parent_tool_use_id??'main', e = message.event;
-    if (e?.type==='message_start') session.streams.set(source,{messageId:e.message.id,blocks:new Map(),used:usageTokens(e.message?.usage)});
+    if (e?.type==='message_start') {
+      if(source==='main' && session.awaitingChildren && !round.stopping){
+        session.awaitingChildren=false;
+        session.nativeContinuation=true;
+        emit(session,{type:'observation',observation:observation(session)});
+      }
+      session.streams.set(source,{messageId:e.message.id,blocks:new Map(),used:usageTokens(e.message?.usage)});
+    }
     const stream=session.streams.get(source); if (!stream) return;
     if (!message.parent_tool_use_id && ['message_delta','message_stop'].includes(e.type)) {
       // Streamed assistant frames carry non-final usage. The provider's last
@@ -250,10 +291,13 @@ async function event(session: Session, message: any) {
     emit(session,{type:'observation',observation:{...observation(session),contextCompaction:null}});
   } else if (message.type==='system' && ['task_started','task_updated','task_notification'].includes(message.subtype)) {
     const wasBackgroundActive = hasActiveTasks(session);
+    if(typeof message.task_id!=='string'||!message.task_id)return;
     const task=session.tasks.get(message.task_id)??{active:true};
     if(task.runId&&message.run_id&&message.run_id<task.runId)return;
     if(message.run_id)task.runId=message.run_id;
     if(message.task_type)task.kind=message.task_type;
+    if(typeof message.parent_task_id==='string')task.parentTaskId=message.parent_task_id;
+    if(typeof message.ambient==='boolean')task.ambient=message.ambient;
     if (message.tool_use_id) task.toolId=message.tool_use_id;
     if (typeof message.is_backgrounded==='boolean')task.background=message.is_backgrounded;
     if (typeof message.patch?.is_backgrounded==='boolean')task.background=message.patch.is_backgrounded;
@@ -261,23 +305,41 @@ async function event(session: Session, message: any) {
     if(['completed','failed','killed'].includes(message.patch?.status))task.active=false;
     if(['running','pending','paused'].includes(message.patch?.status))task.active=true;
     session.tasks.set(message.task_id,task);
-    if(message.subtype==='task_notification'&&task.kind==='local_agent'&&task.toolId){
-      try{
-        const projector=new ClaudeItemProjector();
-        for(let offset=0;offset<100000;offset+=100){
-          const rows=await getSubagentMessages(session.id,message.task_id,{dir:session.cwd,offset,limit:100});
-          for(const row of rows)for(const entry of projector.items({...row,parent_tool_use_id:row.parent_tool_use_id??task.toolId},round.id))item(session,entry);
-          if(rows.length<100)break;
-        }
-      }catch{
-        emit(session,{type:'diagnostic',message:'agent_claude_child_history_unavailable'});
-      }
+    if(task.kind==='local_agent'&&task.toolId){
+      const call=session.items.get(task.toolId)??{id:task.toolId,kind:'tool',role:'assistant',text:'',executionId:round.id};
+      const previous=session.items.get(`claude-subagent:${task.toolId}`);
+      const nativeStatus=message.subtype==='task_notification'?message.status:message.patch?.status;
+      const status=nativeStatus==='failed'?'failed':nativeStatus==='killed'||nativeStatus==='stopped'?'stopped':nativeStatus==='completed'?'completed':task.active?'running':previous?.subagent?.status??'unknown';
+      item(session,claudeSubagent(call,previous,{label:message.description??message.patch?.description,prompt:message.prompt,parent:task.parentTaskId?session.tasks.get(task.parentTaskId)?.toolId:undefined,status,
+        result:message.subtype==='task_notification'&&typeof message.summary==='string'?message.summary:undefined}));
     }
     if (task.toolId) {
       const tool=session.tools.get(task.toolId);
       if (tool) { tool.taskId=message.task_id; tool.status=task.active?'running':'completed'; }
     }
     publishTaskObservation(session,wasBackgroundActive);
+    if(message.subtype==='task_notification'&&task.kind==='local_agent'&&task.toolId){
+      try{
+        const projector=new ClaudeItemProjector();
+        let lastReply: string | undefined;
+        for(let offset=0;offset<300;offset+=100){
+          const rows=await getSubagentMessages(session.id,message.task_id,{dir:session.cwd,offset,limit:100});
+          if(session.round!==round)return;
+          for(const row of rows)for(const entry of projector.items({...row,parent_tool_use_id:row.parent_tool_use_id??task.toolId},round.id)){
+            item(session,entry);
+            if(entry.parentToolId===task.toolId&&entry.kind==='message'&&entry.role==='assistant'&&entry.text.trim())lastReply=entry.text;
+            if(entry.parentToolId===task.toolId&&entry.kind==='tool')lastReply=undefined;
+          }
+          if(rows.length<100){
+            const previous=session.items.get(`claude-subagent:${task.toolId}`);
+            if(lastReply&&previous?.subagent?.status==='completed')item(session,{...previous,text:nativePreview(lastReply)});
+            break;
+          }
+        }
+      }catch{
+        if(session.round===round)emit(session,{type:'diagnostic',message:'agent_claude_child_history_unavailable'});
+      }
+    }
   } else if(message.type==='system'&&message.subtype==='background_tasks_changed'){
     const wasBackgroundActive = hasActiveTasks(session);
     const active=new Set<string>((message.tasks??[]).map((task:any)=>task.task_id));
@@ -286,7 +348,11 @@ async function event(session: Session, message: any) {
     }
     for(const native of message.tasks??[]){
       const task=session.tasks.get(native.task_id)??{active:true};
-      task.active=true;task.background=true;session.tasks.set(native.task_id,task);
+      task.active=true;task.background=true;
+      if(typeof native.task_type==='string')task.kind=native.task_type;
+      if(typeof native.ambient==='boolean')task.ambient=native.ambient;
+      if(typeof native.parent_task_id==='string')task.parentTaskId=native.parent_task_id;
+      session.tasks.set(native.task_id,task);
     }
     publishTaskObservation(session,wasBackgroundActive);
   } else if (message.type==='system' && ['session_writes_lost','mirror_error'].includes(message.subtype)) {
@@ -409,7 +475,7 @@ async function dispatch(method:string,params:any):Promise<unknown> {
     if(!params.offset){if(historyProjectors.size>=8)historyProjectors.delete(historyProjectors.keys().next().value!);historyProjectors.set(params.contextId,new ClaudeItemProjector());}
     const projector=historyProjectors.get(params.contextId);if(!projector)throw new Error('agent_history_cursor_invalid');
     const rows=await getSessionMessages(params.contextId,{dir:params.cwd,limit:100,offset:params.offset??0,includeSystemMessages:true});
-    return {items:rows.flatMap(row=>projector.items(row)),nextOffset:rows.length===100?(params.offset??0)+100:undefined};
+    return {items:rows.flatMap(row=>projector.items(row).flatMap(entry=>isClaudeAgentTool(entry)?[entry,claudeSubagent(entry)]:[entry])),nextOffset:rows.length===100?(params.offset??0)+100:undefined};
   }
   if(method==='fork'){
     let row;const projector=new ClaudeItemProjector();
@@ -434,7 +500,7 @@ async function dispatch(method:string,params:any):Promise<unknown> {
     // The prior turn is proven quiescent above. Durable native history owns
     // its content; live tool/stream observation belongs only to the new turn.
     session.tools.clear();session.tasks.clear();session.items.clear();session.streams.clear();session.projector=new ClaudeItemProjector();
-    session.round=round;session.inputs.push(input);watchReceipts(session);
+    session.nativePhase=undefined;session.awaitingChildren=false;session.round=round;session.inputs.push(input);watchReceipts(session);
     await round.settled;return{};
   }
   if(method==='supplement'){

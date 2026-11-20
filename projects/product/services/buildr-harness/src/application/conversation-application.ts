@@ -1604,8 +1604,20 @@ export class ConversationApplication {
       if(ownerChanged)entry.runId=nativeOwner!.runId;
       if (entry.parentToolId && item.parentToolId && entry.parentToolId !== item.parentToolId) fail('agent_native_item_identity_changed', '原生条目的父工具来源发生冲突，已保留原记录。', 409);
       const originChanged = ownerChanged || item.parentToolId !== undefined && entry.parentToolId !== item.parentToolId;
-      if (originChanged) entry.parentToolId = item.parentToolId;
+      if (item.parentToolId !== undefined) entry.parentToolId = item.parentToolId;
       if(originChanged&&record.participationTools?.[entry.id])record.participationTools[entry.id]!.entryRevision=createHash('sha256').update(JSON.stringify(entry)).digest('hex');
+      if (item.subagent && entry.subagent && entry.subagent.key !== item.subagent.key) fail('agent_native_item_identity_changed', '原生派发身份发生冲突。', 409);
+      if (item.subagent) {
+        // An on-demand history read can know only the dispatch; do not let it
+        // replace newer native lifecycle and result evidence.
+        const prior = entry.subagent;
+        if (!live && prior && (prior.status !== 'unknown' || !['completed','failed','stopped'].includes(item.subagent.status))) return originChanged;
+        const next = !live && prior ? {...prior,status:item.subagent.status,returned:item.subagent.returned} : item.subagent;
+        const subagentChanged = JSON.stringify(prior) !== JSON.stringify(next) || entry.text !== item.text;
+        entry.subagent = next;
+        entry.text = item.text;
+        return originChanged || subagentChanged;
+      }
       if (entry.role === 'user' || entry.role === 'system' && entry.kind === 'notice') return originChanged;
       const entryRunId = entry.runId;
       const activeBackgroundTool = live && item.backgroundProgress && entry.status === 'completed' &&
@@ -1635,7 +1647,7 @@ export class ConversationApplication {
       if (!nativeBody) entry.text = item.text;
       entry.status = status; if (item.thinking) entry.thinking = true; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; if(filesChanged)entry.presentedFiles=files; if(item.participation&&participation)(record.participationTools??={})[entry.id]={...participation,entryRevision:item.nativeTool?undefined:createHash('sha256').update(JSON.stringify(entry)).digest('hex')}; return true;
     }
-    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, ...(item.thinking?{thinking:true}:{}), ...(item.kind==='tool'?{participation:mergeParticipation(undefined,item.participation,item.name,item.input)}:{}), name: item.name, input: item.input, ...(item.presentedFiles?{presentedFiles:normalizePresentedFiles(item.presentedFiles)}:{}), parentToolId: item.parentToolId, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
+    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, ...(item.thinking?{thinking:true}:{}), ...(item.kind==='tool'?{participation:mergeParticipation(undefined,item.participation,item.name,item.input)}:{}), name: item.name, input: item.input, ...(item.presentedFiles?{presentedFiles:normalizePresentedFiles(item.presentedFiles)}:{}), parentToolId: item.parentToolId, ...(item.subagent?{subagent:item.subagent}:{}), participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
     record.view.entries.push(entry); record.sources[source] = entry.id;
     // A late native projection is known to this participant; intervening foreign
     // work and an input still awaiting acceptance are not. Never skip that gap.
@@ -1671,7 +1683,7 @@ export class ConversationApplication {
     // A late transport failure cannot negate an exact settled execution.
     if(this.hasPersistedEnd(record,run)&&
       ['observation','diagnostic','completed'].includes(event.type))return;
-    if (event.type === 'item' && event.item.kind === 'tool' && event.item.executionId && attempt.executionRef?.id !== event.item.executionId) {
+    if (event.type === 'item' && (event.item.kind === 'tool' || event.item.subagent || event.item.parentToolId) && event.item.executionId && attempt.executionRef?.id !== event.item.executionId) {
       const owner = record.attempts.find(value => value.participantId === participant.id && value.executionRef?.id === event.item.executionId);
       if (owner && this.applyItem(record, participant, event.item, owner.runId, true)) this.save(record);
       return;
@@ -1801,6 +1813,7 @@ export class ConversationApplication {
     }
     run.executionState=['idle','stopped'].includes(observation.status)&&observation.tools.every(tool=>tool.status==='completed')?'ended':['running','waiting','tools-active'].includes(observation.status)?'active':'unknown';
     run.tools = observation.tools;
+    run.waitingSubagents = observation.status === 'running' ? observation.waitingSubagents : undefined;
     if (run.generation === this.options.generation) {
       const liveBackground = Boolean(
         !this.closing

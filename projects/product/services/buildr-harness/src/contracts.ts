@@ -158,7 +158,17 @@ export interface ExecutorImage { id: string; path: string; mimeType: string }
 export interface VideoAttachment { duration: number; frames: Array<{ id: string; time: number }> }
 export interface AttachmentInput { name?: string; expectedRevision?: string; expectedAttachmentRevision?: string; mimeType: string; bytes: Uint8Array; video?: VideoAttachment }
 export interface PresentedFile { path:string; description?:string }
+/** Native delegation marker; key is scoped to its owning participant and run. */
+export interface SubagentDispatch {
+  key: string;
+  label: string;
+  prompt?: string;
+  status: 'running' | 'completed' | 'failed' | 'stopped' | 'unknown';
+  /** A parent-side receipt, not just a child completion. */
+  returned?: boolean;
+}
 export interface ExecutorItem {
+  subagent?: SubagentDispatch;
   /** The native executor owns this tool body. */
   nativeTool?: true;
   /** The native executor matched this progress to an active background task. */
@@ -197,6 +207,7 @@ export interface ExecutorRequest {
 export type ExecutionFault = { kind: 'protocol' | 'transport' | 'process' };
 export interface ContextCompaction { id: string; startedAt: string }
 export interface ExecutorObservation {
+  waitingSubagents?: string[];
   /** Exact native phase snapshot; null explicitly clears, omission is unknown. */
   contextCompaction?: ContextCompaction | null;
   fault?: ExecutionFault;
@@ -489,6 +500,7 @@ export interface PreparationInput { expectedRevision: string; executable?: strin
 export type RunStatus = 'starting' | 'running' | 'waiting-approval' | 'waiting-question' | 'stopping' | 'stopped' | 'tools-active' | 'unknown' | 'completed' | 'failed';
 export interface ParticipantView { modelAccountId?: string; model?: string; id: string; provider: ProviderId; connectionId: string; label: string; deliveredThrough: number; contextId: string }
 export interface ConversationEntry {
+  subagent?: SubagentDispatch;
   participation?: ParticipationObservation;
   /** Bounded tool preview; fetch the exact content revision when expanded. */
   detail?: {revision: string; live?: boolean};
@@ -529,6 +541,7 @@ export interface ConversationEntry {
   createdAt: string;
 }
 export interface RunView {
+  waitingSubagents?: string[];
   systemPrompt?: HarnessSystemPromptSnapshot;
   /** Read-only prompt provenance for a run admitted from an explicit continuation. */
   continuedFrom?: {

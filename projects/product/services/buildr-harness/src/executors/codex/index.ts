@@ -1,5 +1,6 @@
 import { regenerableToolCaches, toolCacheReclaimable } from '../../storage/tool-cache.ts';
 import { codexItem } from './items.ts';
+import { CodexSubagents } from './subagents.ts';
 export { codexItem } from './items.ts';
 import { codexFindTurn, codexLatestTurn, codexThreadMetadata, codexTurnItems, codexTurns } from './pagination.ts';
 import { codexNativeContent } from './content.ts';
@@ -393,8 +394,11 @@ class CodexRuntime implements AgentRuntime {
     this.reference(contextRef, cwd);
     await codexThreadMetadata(this.rpc, contextRef.id, cwd);
     const items: ExecutorItem[] = [];
+    const history = new CodexSubagents();
     for (const turn of await codexTurns(this.rpc, contextRef.id)) {
-      for (const item of await codexTurnItems(this.rpc, contextRef.id, turn.id)) items.push(...codexItem(item, turn.id, turn.status));
+      for (const item of await codexTurnItems(this.rpc, contextRef.id, turn.id)) {
+        items.push(...codexItem(item, turn.id, turn.status),...history.observe(contextRef.id,turn.id,item,false));
+      }
     }
     return items;
   }
@@ -446,6 +450,9 @@ class CodexRuntime implements AgentRuntime {
     if (response.turnId !== turn.id) throw new Error('codex_steer_identity_mismatch');
     return { executionRef: { id: turn.id }, inputItemId: input.clientRequestId };
   }
+  private readonly subagents = new CodexSubagents();
+  private readonly readingSubagents = new Set<string>();
+
   private message(message: RpcMessage): void {
     if (message.method === 'buildr/eventConsumerFailed') {
       for (const turn of this.turns.values()) if (!turn.terminal && (!message.params?.threadId || turn.contextId === message.params.threadId)) turn.reject(new NativeObservationError('codex_event_observation_lost', message.params?.diagnostic));
@@ -463,9 +470,31 @@ class CodexRuntime implements AgentRuntime {
     }
     const contextId = message.params?.threadId;
     if (this.auxiliary.has(contextId)) return;
+    const child = typeof contextId==='string' ? this.subagents.owner(contextId) : undefined;
+    const rootTurn = child && this.turns.get(child.root);
+    if (child && rootTurn?.accepted && message.id === undefined) {
+      const item = message.params?.item;
+      const emit = (value: import('../../contracts.ts').ExecutorItem) => rootTurn.input.onEvent({type:'item',item:value});
+      if (message.method==='item/started'||message.method==='item/completed') {
+        const active=message.method==='item/started';
+        for (const value of this.subagents.observe(contextId,child.executionId,item,true)) emit(value);
+        for (const value of this.subagents.project(contextId,item,active?'inProgress':'completed')) emit(value);
+      }
+      if (message.method==='turn/completed') this.readSubagent(rootTurn,contextId);
+      return;
+    }
     const turn = this.turns.get(contextId);
     if (turn) { if (!turn.accepted) turn.buffered.push(message); else this.turnMessage(turn, message); }
     else if (message.id !== undefined && message.method) this.rpc.write({ id: message.id, error: { code: -32601, message: 'Unsupported or inactive Buildr request' } });
+  }
+  private readSubagent(turn: ActiveTurn, threadId: string): void {
+    if (this.readingSubagents.has(threadId) || this.readingSubagents.size >= 8) return;
+    this.readingSubagents.add(threadId);
+    void this.subagents.read(this.rpc,threadId,turn.input.cwd).then(items=>{
+      // Route late results to their original round, never another thread.
+      const current=this.turns.get(turn.contextId);
+      if (current?.accepted) for (const item of items) current.input.onEvent({type:'item',item});
+    }).catch(()=>{/* An unavailable thread leaves the known dispatch intact. */}).finally(()=>this.readingSubagents.delete(threadId));
   }
   private turnMessage(turn: ActiveTurn, message: RpcMessage): void {
     const p = message.params ?? {}; const emit = (event: import('../../contracts.ts').ExecutorEvent) => turn.input.onEvent(withExecutionFault(event));
@@ -510,7 +539,11 @@ class CodexRuntime implements AgentRuntime {
     }
     if (message.method === 'item/started' || message.method === 'item/completed') {
       const item = p.item;
-      if (item?.type === 'contextCompaction' && typeof item.id === 'string' && !turn.terminal) {
+      for (const value of this.subagents.observe(turn.contextId,turn.id,item,!turn.terminal)) emit({type:'item',item:value});
+      if (item?.type==='collabAgentToolCall' && item.senderThreadId===turn.contextId && message.method==='item/completed' && Array.isArray(item.receiverThreadIds)) {
+        for (const child of item.receiverThreadIds.slice(0,64)) if (this.subagents.owner(child)?.parent===turn.contextId) this.readSubagent(turn,child);
+      }
+      if (item?.type === 'contextCompaction'  && typeof item.id === 'string' && !turn.terminal) {
         if (message.method === 'item/started' && turn.contextCompaction?.id !== item.id) turn.contextCompaction = {id:item.id,startedAt:new Date().toISOString()};
         if (message.method === 'item/completed' && turn.contextCompaction?.id === item.id) delete turn.contextCompaction;
       }
@@ -527,6 +560,7 @@ class CodexRuntime implements AgentRuntime {
       emit({ type: 'observation', observation: this.activeObservation(turn) });
     }
     if (message.method === 'turn/completed') {
+      this.subagents.endWait(turn.contextId);
       turn.terminal = p.turn?.status === 'completed' ? 'completed' : p.turn?.status === 'interrupted' ? 'stopped' : 'failed';
       if (turn.terminal === 'failed') {
         const message = errorDiagnostic(p.turn?.error?.message, this.gateway ? [this.gateway.apiKey] : []) ?? turn.diagnostic;
@@ -544,7 +578,7 @@ class CodexRuntime implements AgentRuntime {
     const tools = [...turn.tools.values()].map(({ processId, executionId, ...tool }) => ({ ...tool, canStop: Boolean(processId) && tool.status === 'running' }));
     const requests = [...turn.pending].flatMap(([id, pending]) => codexRequest(id, pending.method, pending.params) ?? []);
     const canContinue = turn.terminal === 'completed' && !turn.pending.size && tools.some(tool => tool.status === 'running') && [...turn.tools.values()].every(tool => tool.status === 'completed' || tool.status === 'running' && Boolean(tool.processId));
-    return { contextCompaction: turn.terminal ? null : turn.contextCompaction ?? null, canContinue, status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : tools.some(tool => tool.status === 'unknown') ? 'unknown' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : requests.some(blocksExecution) ? 'waiting' : 'running', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity, [...turn.tools.values()].some(tool => Boolean(tool.processId) && tool.status !== 'completed')), tools, requests, ...(turn.terminal === 'failed' && turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
+    return { waitingSubagents:turn.terminal?[]:this.subagents.waiting(turn.contextId), contextCompaction: turn.terminal ? null : turn.contextCompaction ?? null, canContinue, status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : tools.some(tool => tool.status === 'unknown') ? 'unknown' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : requests.some(blocksExecution) ? 'waiting' : 'running', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity, [...turn.tools.values()].some(tool => Boolean(tool.processId) && tool.status !== 'completed')), tools, requests, ...(turn.terminal === 'failed' && turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
   }
   async observe({ contextRef, executionRef, knownItems }: { contextRef: ContextRef; executionRef?: ExecutionRef; knownItems?: readonly ExecutorItem[] }): Promise<ExecutorObservation> {
     this.reference(contextRef);

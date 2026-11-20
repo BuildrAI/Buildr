@@ -50,6 +50,27 @@ test('Codex resume, history, observation and forks use metadata plus bounded pag
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test('Codex projects child collaboration, reads exact bounded child details, and retains the parent wait and receipt',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-codex-subagent-'));let runtime:AgentRuntime|undefined;
+  try{
+    const executable=join(root,'codex.mjs');await writeFile(executable,source);
+    runtime=await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+    const contextRef=await runtime.createContext({cwd:root}),events:ExecutorEvent[]=[];
+    await runtime.send({contextRef,cwd:root,text:'[subagent]',images:[],clientRequestId:'subagent',onEvent:event=>events.push(event)});
+    await eventually(()=>events.some(event=>event.type==='item'&&event.item.subagent?.label==='Independent review'),4000);
+    const markers=events.flatMap(event=>event.type==='item'&&event.item.subagent?[event.item]:[]);
+    const key=markers[0]?.subagent?.key;
+    assert.ok(key);
+    assert.ok(events.some(event=>event.type==='observation'&&event.observation.status==='running'&&event.observation.waitingSubagents?.includes(key)));
+    assert.ok(markers.some(marker=>marker.subagent?.returned&&marker.text==='Review passed'));
+    assert.ok(events.some(event=>event.type==='item'&&event.item.parentToolId===key&&event.item.text==='Only the child says this'));
+    assert.ok(events.some(event=>event.type==='item'&&!event.item.parentToolId&&event.item.text==='Parent continued'));
+    assert.equal((await runtime.observe({contextRef})).status,'idle');
+    const history=await runtime.readHistory({contextRef,cwd:root});
+    assert.ok(history.some(item=>item.subagent?.key===key&&item.subagent.returned));
+  }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
+});
+
 test('whole-round stop terminates the known command even when terminal listing fails',async()=>{
  const root=await mkdtemp(join(tmpdir(),'buildr-codex-stop-observation-'));let runtime:AgentRuntime|undefined;
  try{
