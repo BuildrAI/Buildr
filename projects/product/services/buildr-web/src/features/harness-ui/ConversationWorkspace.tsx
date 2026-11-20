@@ -65,7 +65,7 @@ export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {default
         signal.throwIfAborted();
         const observationId = offerCodeOpen(observed.workspaceId, file, catalog, observation, partial);
         const {navigate, location, context} = current.current;
-        navigate(`/workspaces/${encodeURIComponent(observed.workspaceId)}/code/explorer`, {state: {codeEntry: {file, observationId, from: {pathname: location.pathname, search: location.search, hash: location.hash, state: location.state}}}});
+        navigate(`/workspaces/${encodeURIComponent(observed.workspaceId)}/code/explorer`, {state: {codeEntry: {taskId: observed.taskId, file, observationId, from: {pathname: location.pathname, search: location.search, hash: location.hash, state: location.state}}}});
         context.setFull(false);
       } finally {
         if (opening.current === request) opening.current = null;

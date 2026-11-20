@@ -9,7 +9,7 @@ import { tabElementId } from '../../../lib/tab-navigation';
 import { RepositoryFileBrowser, type RepositoryPreviewFile, type RepositoryTreeScope } from '../../workspace/components/RepositoryFileBrowser';
 import { CodeTreePane } from '../components/CodeTreePane';
 import { CodeExplorerNotices } from '../components/CodeExplorerNotices';
-import { useCodeExplorer } from '../hooks/useCodeExplorer';
+import { useCodeExplorer, type CodeEntryRecoveryReason } from '../hooks/useCodeExplorer';
 import { codeApi } from '../api/code-api';
 import { useEditableFile } from '../hooks/useEditableFile';
 import { useFileEditingContext } from '../../../app/FileEditingContext';
@@ -23,6 +23,16 @@ import { workspaceHref } from '../../../lib/labels';
 import { selectPopupGuard } from '../../../lib/select-popup';
 import type { MarkdownRenderOptions } from '../../../markdown';
 import '../code-explorer.css';
+
+const entryRecoveryMessage=(reason:CodeEntryRecoveryReason)=>reason==='recovered'
+  ? '原文件所在工作树已不存在，历史版本已改用当前工作树读取。'
+  : reason==='replaced'
+    ? '原文件所在工作树已被重建或移除。可在该任务当前工作树中打开同一路径。'
+    : reason==='unconfirmed'
+      ? '暂时无法确认原文件所在工作树（目录读取不完整或工作树关联未确认）。请重试后再判断。'
+      : reason==='ambiguous'
+        ? '原文件所在工作树已被重建或移除，当前无法唯一确认可替代的工作树。请从目录选择实际来源。'
+        : '原文件所在工作树已被重建或移除，当前任务没有可确认的工作树。请从目录选择实际来源。';
 
 export function CodeExplorerPage() {
   const panelId = useId();
@@ -50,6 +60,9 @@ export function CodeExplorerPage() {
   const imageHrefs=useMemo(()=>[...new Set([...markdownContent.matchAll(/!\[[^\]]*\]\(([^\s)]+)(?:\s+[^)]*)?\)/g)].map(match=>match[1]))].slice(0,8),[markdownContent]);
   const selectedRepo=state.catalog?.repositories.find(r=>r.id===active?.repositoryId);
   const selectedMember=state.catalog?.worktrees.find(member=>member.repositoryId===active?.repositoryId&&member.id===active?.checkoutId);
+  const recoverySuccessor=state.entryRecovery?.successor;
+  const recoveryMember=recoverySuccessor?state.catalog?.worktrees.find(member=>member.repositoryId===recoverySuccessor.repositoryId&&member.id===recoverySuccessor.checkoutId):undefined;
+  const recoveryLabel=recoveryMember?codeWorktreeLabel(recoveryMember,state.catalog?.worktrees).name:'';
   const treeRepositories=useMemo<RepositoryTreeScope[]>(()=>state.sources.map(({id,source,member})=>{
     const prefix=state.directoryKey(source,'');
     const directories=Object.entries(state.directories).filter(([key])=>key.startsWith(prefix)).map(([,value])=>value);
@@ -138,6 +151,7 @@ export function CodeExplorerPage() {
         {(state.tabs.length > 0 || treeHidden) && <ReadingToggle iconOnly className="code-reading-toggle" expanded={treeHidden} onToggle={()=>setTreeHidden(value=>!value)} />}
       </div>
       {state.catalogError&&<Alert type="warning" message={state.catalogError} action={<Button onClick={()=>void state.refreshCatalog().catch(error=>message.error(String(error)))}>重试</Button>} />}
+      {state.entryRecovery&&<Alert type="warning" showIcon message={entryRecoveryMessage(state.entryRecovery.reason)} description={state.entryRecovery.path} action={state.entryRecovery.reason==='unconfirmed'&&state.entry?<Button size="small" onClick={()=>void state.applyEntry(state.entry!)}>重试</Button>:recoverySuccessor?<Button size="small" onClick={state.recoverEntry}>{recoveryLabel?'用 '+recoveryLabel+' 打开':'用当前工作树打开'}</Button>:undefined} />}
       {active&&!inScope&&<div className="code-range-outside">当前文件不在筛选范围内。<Button type="link" size="small" onClick={includeActive}>加入范围</Button></div>}
       {!state.catalog&&!state.catalogError&&<div className="repository-reading-empty"><Spin />正在读取代码库…</div>}
       {state.catalog?.repositories.length===0&&<Empty description="工作空间尚未登记代码库" />}
