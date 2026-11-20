@@ -128,3 +128,5 @@
 .ac-workspace-group-actions>.ac-history-group-toggle>.anticon{font-size:var(--icon-size-tiny);color:var(--soft-muted)}
 .ac-workspace-group-actions>.ant-btn{flex:none;width:32px;height:30px;color:var(--soft-muted)}
 .ac-workspace-group-actions>.ant-btn:hover{background:#edf4f0;color:var(--soft-primary)}
+
+.ac-conversation-child-row::before{content:"";position:absolute;inset-block:0;inset-inline-start:0;border-inline-start:2px solid color-mix(in srgb,var(--soft-primary,#397d74) 25%,transparent);pointer-events:none}

@@ -699,7 +699,7 @@ test('standalone nests visible child conversations in reminders and history', {t
   browser = await chromium.launch({headless: true});
   const context = await browser.newContext({viewport: {width: 500, height: 800}});
   // Both results are still unseen. The newer child normally sorts first,
-  // but both rendered lists must place it immediately below its parent.
+  // and the reminder and expanded list group it immediately below its parent.
   const sendLayoutFixture = async (draft: {id: string; revision: string}, text: string) => {
     const input = {expectedRevision: draft.revision, connectionId: 'first', model: 'fixture', modelAccountId: account.id, modelAccountIdentity: account.identity, text};
     const preview = await client.operations.conversations.prepareSend(scope, draft.id, input);
@@ -719,7 +719,8 @@ test('standalone nests visible child conversations in reminders and history', {t
     assert.equal(await parent.evaluate((node, attr) => node.parentElement?.nextElementSibling?.querySelector(`[${attr}]`)?.getAttribute(attr), attribute), layoutChild.id);
     const parentTitle = await parent.locator('strong').boundingBox();
     const childTitle = await child.locator('strong').boundingBox();
-    assert.ok(parentTitle && childTitle && childTitle.x >= parentTitle.x + 11 && childTitle.y > parentTitle.y, 'child title is visibly indented below the parent');
+    assert.ok(parentTitle && childTitle && childTitle.x >= parentTitle.x + 22 && childTitle.y > parentTitle.y, 'child title is visibly indented below the parent');
+    assert.equal(await child.locator('..').evaluate(node => getComputedStyle(node, '::before').borderInlineStartWidth), '2px');
     assert.equal(await child.locator('.ac-activity-status').innerText(), '待查看');
     assert.equal(await child.locator('..').getByRole('button',{name:'复制对话 ID'}).count(), 1);
   };
@@ -728,8 +729,36 @@ test('standalone nests visible child conversations in reminders and history', {t
   assert.equal(listing.conversations?.find((row: {id: string}) => row.id === layoutChild.id)?.childOf?.conversationId, layoutParent.id, JSON.stringify(listing.conversations?.map((row: {id: string; workspaceId: string; childOf?: unknown}) => ({id: row.id, workspaceId: row.workspaceId, childOf: row.childOf})) ?? listing));
   await layoutRail.hover();
   await assertChildLayout('.ac-activity-menu', 'data-activity-id');
+  if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await layoutPage.locator('.ac-activity-menu').screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'child-activity.png')});
   await layoutRail.click();
+  const history = layoutPage.getByRole('region', {name:'对话列表',exact:true});
+  const child = history.locator(`[data-conversation-id="${layoutChild.id}"]`);
+  const toggle = history.locator(`[data-conversation-id="${layoutParent.id}"]`).locator('..').locator('.ac-history-child-toggle');
+  await toggle.waitFor();
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+  assert.equal(await toggle.innerText(), '1');
+  assert.equal(await child.count(), 0);
+  await toggle.press('Enter');
   await assertChildLayout('.ac-history', 'data-conversation-id');
+  if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await layoutPage.locator('.ac-history').screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'child-history.png')});
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+  assert.equal(await layoutPage.locator(`.ac-panel[data-conversation-id="${layoutParent.id}"]`).count(), 0, 'expanding does not open the parent');
+  await toggle.click();
+  assert.equal(await child.count(), 0);
+  const search = history.getByRole('textbox', {name:'搜索对话'});
+  await search.fill(layoutChild.id);
+  await child.waitFor();
+  assert.equal(await toggle.count(), 0, 'search does not add a nonmatching parent');
+  await search.clear();
+  await toggle.waitFor();
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+  await toggle.click();
+  await child.click();
+  await layoutPage.locator(`.ac-panel[data-conversation-id="${layoutChild.id}"]`).waitFor();
+  await layoutRail.click();
+  await child.waitFor();
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+  assert.equal(await toggle.getAttribute('aria-disabled'), 'true', 'current child keeps its ancestors open');
 
   await context.close();
 });

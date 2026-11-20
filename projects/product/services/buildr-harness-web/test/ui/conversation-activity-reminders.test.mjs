@@ -6,7 +6,7 @@ import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {groupConversationWorkspaces,orderActivityItems,activityBadge,activityReminder,activityState,pendingSendReason,isExecuting,isActiveConversation,conversationMetadata,reminderFallbackRows,completeActivitySnapshot,joinReminderErrors} from '../../src/features/agent-conversations/conversation-activity.ts';
-import {nestVisibleConversations} from '../../src/features/agent-conversations/conversation-children.ts';
+import {foldConversationHistory,nestVisibleConversations} from '../../src/features/agent-conversations/conversation-children.ts';
 import {conversationTierChoice} from '../../src/features/agent-conversations/conversation-options.ts';
 
 registerHooks({
@@ -209,4 +209,17 @@ test('可见父子对话按直接关系成组，独立行和同级子对话保�
   assert.deepEqual(layout([orphan]),[['orphan',0]]);
   assert.deepEqual(layout([orphan,row('not-loaded')]),[['not-loaded',0],['orphan',1]]);
   assert.deepEqual(layout([row('a','b'),row('b','a')]),[['a',0],['b',0]]);
+});
+
+test('完整列表仅展开指定分支，并保留选中祖先、搜索命中及没有可见父行的子行',()=>{
+  const row=(id,parent)=>({id,workspaceId:'w',childOf:parent&&{workspaceId:'w',conversationId:parent}});
+  const rows=[row('grandchild','child'),row('child','parent'),row('sibling','parent'),row('parent'),row('other'),row('other-child','other'),row('orphan','absent')];
+  const layout=(open=[],selected,searching)=>foldConversationHistory(rows,new Set(open),selected,searching);
+  const ids=result=>result.map(({row})=>row.id);
+  assert.deepEqual(ids(layout()),['parent','other','orphan']);
+  assert.deepEqual(layout()[0].branch,{count:2,expanded:false,forced:false});
+  assert.deepEqual(ids(layout(['parent'])),['parent','child','sibling','other','orphan']);
+  assert.deepEqual(ids(layout([],'grandchild')),['parent','child','grandchild','sibling','other','orphan']);
+  assert.equal(layout([],'grandchild')[1].branch.forced,true);
+  assert.deepEqual(ids(layout([],undefined,true)),['parent','child','grandchild','sibling','other','other-child','orphan']);
 });

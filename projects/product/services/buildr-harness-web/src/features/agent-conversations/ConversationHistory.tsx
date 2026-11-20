@@ -5,7 +5,7 @@ import { ConversationExecutionSummary } from './ConversationExecutionSummary.tsx
 import { conversationModelSourceLabel, conversationModelLabel } from './conversation-model-label.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Empty, Input, Select } from 'antd';
-import { ArrowLeftOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, PlusOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext.tsx';
 import { ConversationActivityStatus } from './ConversationActivityStatus.tsx';
 import { activityState, sendActivity, conversationMetadata, copyConversationIdTitle } from './conversation-activity.ts';
@@ -14,6 +14,7 @@ import { CopyButton } from '../../components/CopyButton.tsx';
 import { DEFAULT_HISTORY_GROUP, historyGroupOrder, moveHistoryGroup, writeHistoryGroupPreference } from './conversation-history-groups.ts';
 import { useHistoryGroupPreference } from './useHistoryGroupPreference.ts';
 import type { ConversationSummary } from './types.ts';
+import { conversationChildIndent, type ConversationHistoryBranch } from './conversation-children.ts';
 import { ConversationHistoryGroup } from './ConversationHistoryGroup.tsx';
 import { useConversationHistoryPage } from './useConversationHistoryPage.ts';
 import { useDebouncedValue } from './useDebouncedValue.ts';
@@ -95,15 +96,19 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   },[scopeKey]);
   const modelName=(id:string)=>conversationModelLabel(id,context.connections,context.modelCatalog);
   const workspaceName=(id:string)=>id===DEFAULT_HISTORY_GROUP?'默认':workspaces.find(item=>item.id===id)?.name||id;
-  const renderRow=(row:ConversationSummary,depth:number)=>{
+  const renderRow=(row:ConversationSummary,depth:number,branch?:ConversationHistoryBranch,toggle?:()=>void)=>{
     const meta=conversationMetadata(row,undefined,row.run?.model?conversationModelLabel(row.run.model,context.connections,context.modelCatalog,{modelAccountId:row.run.modelAccountId}):undefined);
-    return <div key={row.workspaceId+':'+row.id} className={'ac-history-row'+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
-      <button type="button" className="ac-history-row-main" style={depth?{paddingInlineStart:`calc(11px + min(25%, ${depth*12}px))`}:undefined} data-conversation-id={row.id} onClick={()=>{context.setSettings(false);void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true,preserveHistoryView:keepHistoryOpen});}}>
+    return <div key={row.workspaceId+':'+row.id} style={conversationChildIndent(depth)} className={'ac-history-row'+(depth?' ac-conversation-child-row':'')+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
+      <button type="button" className="ac-history-row-main" data-conversation-id={row.id} onClick={()=>{context.setSettings(false);void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true,preserveHistoryView:keepHistoryOpen});}}>
         <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/><DraftStatusBadge visible={shouldShowConversationDraft(row,settledDraftIds)} immediateHide={activityState(row)!==null}/></span>
         {sendActivity(row)?.reason&&<span className="ac-send-reason">{sendActivity(row)?.reason}</span>}
         {row.searchSnippet&&<span className="ac-history-row-snippet" title={row.searchSnippet}>{row.searchSnippet}</span>}
         {meta&&<small><span className="ac-history-meta" title={meta}>{meta}</span></small>}
       </button>
+      {branch&&<button type="button" className="ac-history-child-toggle" aria-expanded={branch.expanded} aria-disabled={branch.forced||undefined}
+        aria-label={`${branch.expanded?'收起':'展开'}「${row.title}」的 ${branch.count} 个子对话`} title={branch.forced?'为保留当前对话或搜索结果，暂时保持展开':`${branch.count} 个已加载的子对话`} onClick={toggle}>
+        <RightOutlined aria-hidden="true" rotate={branch.expanded?90:0}/><span>{branch.count}</span>
+      </button>}
       <CopyButton type="text" className="ac-history-row-copy" text={row.id} ariaLabel="复制对话 ID" title={copyConversationIdTitle(row.id)} failureMessage="复制失败，请手动选择对话 ID 复制。"/>
     </div>;
   };
@@ -116,7 +121,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
     if(index>=movable.length-1)return;
     reorder(id,movable[index+2]??'end');
   };
-  const sortGroup=(id:string)=><ConversationHistoryGroup key={id+scopeKey} workspaceId={id} name={workspaceName(id)} query={searchQuery} hidden={hidden} agent={agent} model={model} draftConversationIds={workspaceConversationDraftIds(id,settledDraftIds,presence,activeEditingScope)} activeViewingId={activeEditingScope?.workspaceId===id?activeEditingScope.conversationId:null} renderRow={renderRow} onResult={reportGroup}
+  const sortGroup=(id:string)=><ConversationHistoryGroup key={id+scopeKey} workspaceId={id} name={workspaceName(id)} query={searchQuery} hidden={hidden} agent={agent} model={model} draftConversationIds={workspaceConversationDraftIds(id,settledDraftIds,presence,activeEditingScope)} activeViewingId={activeEditingScope?.workspaceId===id?activeEditingScope.conversationId:null} selectedId={context.scope?.workspaceId===id?context.scope.conversationId:undefined} renderRow={renderRow} onResult={reportGroup}
     onNew={!hidden?()=>{
       context.setSettings(false);
       context.newConversation({scope:{workspaceId:id},preserveVisibility:true,preserveHistoryView:keepHistoryOpen});

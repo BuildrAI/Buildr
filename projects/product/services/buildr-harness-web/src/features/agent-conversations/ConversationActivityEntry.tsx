@@ -3,7 +3,7 @@ import { Alert, Button, Popover } from 'antd';
 import { UnorderedListOutlined, ArrowRightOutlined } from '@ant-design/icons';
 import { ConversationActivityStatus } from './ConversationActivityStatus.tsx';
 import { copyConversationIdTitle, groupConversationWorkspaces, orderActivityItems, activityBadge, activityReminder, type ActivityCounts, type ActivityState } from './conversation-activity.ts';
-import { nestVisibleConversations } from './conversation-children.ts';
+import { conversationChildIndent, nestVisibleConversations } from './conversation-children.ts';
 import type { ConversationSummary } from './types.ts';
 import { historyGroupOrder } from './conversation-history-groups.ts';
 import { useHistoryGroupPreference } from './useHistoryGroupPreference.ts';
@@ -23,8 +23,8 @@ export function ConversationActivityEntry(props:Props) {
     const groups=groupConversationWorkspaces(items);
     return historyGroupOrder([...groups.keys()],groupOrder).map(key=>{const rows=groups.get(key)!;const workspaceId=rows[0].workspaceId;return <section className="ac-activity-workspace" key={key} data-activity-workspace={workspaceId} aria-label={props.workspaces.find(row=>row.id===workspaceId)?.name||workspaceId}>
       <h3><span>{props.workspaces.find(row=>row.id===workspaceId)?.name||workspaceId}</span><small>{rows.length}</small></h3>
-      {nestVisibleConversations(rows).map(({row:item,depth})=><div key={item.workspaceId+':'+item.id} className={'ac-activity-row'+(props.selectedId===item.id?' is-selected':'')}>
-        <button type="button" data-activity-id={item.id} className="ac-activity-row-main" style={depth?{paddingInlineStart:`calc(8px + min(25%, ${depth*12}px))`}:undefined} onClick={()=>{dismiss();props.onOpen(item);}}><span className="ac-activity-title"><strong title={item.title}>{item.title}</strong><ConversationActivityStatus state={item.state}/></span>{item.reason&&<span className="ac-send-reason" title={item.reason}>{item.reason}</span>}{item.meta&&<small><span className="ac-activity-meta" title={item.meta}>{item.meta}</span></small>}</button>
+      {nestVisibleConversations(rows).map(({row:item,depth})=><div key={item.workspaceId+':'+item.id} style={conversationChildIndent(depth)} className={'ac-activity-row'+(depth?' ac-conversation-child-row':'')+(props.selectedId===item.id?' is-selected':'')}>
+        <button type="button" data-activity-id={item.id} className="ac-activity-row-main" onClick={()=>{dismiss();props.onOpen(item);}}><span className="ac-activity-title"><strong title={item.title}>{item.title}</strong><ConversationActivityStatus state={item.state}/></span>{item.reason&&<span className="ac-send-reason" title={item.reason}>{item.reason}</span>}{item.meta&&<small><span className="ac-activity-meta" title={item.meta}>{item.meta}</span></small>}</button>
         <CopyButton type="text" className="ac-activity-row-copy" text={item.id} ariaLabel="复制对话 ID" title={copyConversationIdTitle(item.id)} failureMessage="复制失败，请手动选择对话 ID 复制。"/>
       </div>)}
     </section>;});

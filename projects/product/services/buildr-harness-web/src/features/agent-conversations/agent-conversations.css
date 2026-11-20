@@ -128,6 +128,10 @@
 .ac-history-row{position:relative;display:flex;align-items:flex-start;gap:2px;border-radius:7px;margin-bottom:5px}
 .ac-history-row:hover,.ac-history-row.is-selected{background:#edf4ef}
 .ac-history-row-main{display:block;flex:1;min-width:0;overflow:hidden;text-align:left;padding:9px 11px;border:0;background:transparent;border-radius:7px;color:#52685b;cursor:pointer}
+.ac-history-child-toggle{flex:none;display:inline-flex;align-items:center;gap:4px;min-width:35px;min-height:28px;margin:5px 5px 0 0;padding:0 6px;border:0;border-radius:5px;background:transparent;color:#587266;font:inherit;font-size:var(--font-size-meta);cursor:pointer}
+.ac-history-child-toggle:not([aria-disabled]):hover{background:#e1ece5;color:var(--soft-primary)}
+.ac-history-child-toggle[aria-disabled]{cursor:default}
+.ac-history-row:not(:has(>.ac-history-row-main>small)) .ac-history-child-toggle{margin-inline-end:28px}
 .ac-history-row-copy.ant-btn{position:absolute;right:8px;bottom:9px;z-index:1;width:20px;height:18px;padding:0;color:#9aa8a0;opacity:0;pointer-events:none;transition:none}
 .ac-history-row:hover>.ac-history-row-copy.ant-btn,.ac-history-row:has(:focus-visible)>.ac-history-row-copy.ant-btn,.ac-history-row-copy.ant-btn[aria-label="已复制"]{opacity:1;pointer-events:auto}
 .ac-history-row-copy.ant-btn:hover{color:var(--soft-primary)}
