@@ -21,7 +21,7 @@
 .harness-workspace-home button{display:flex;flex-direction:column;align-items:flex-start;gap:12px;min-height:76px;padding:12px;border:1px solid var(--soft-line);border-radius:12px;background:var(--soft-bg);color:var(--soft-ink);font:inherit;cursor:pointer;text-align:left}
 .harness-workspace-home button:hover,.harness-workspace-home button:focus-visible{border-color:var(--soft-primary);color:var(--soft-primary)}
 .harness-open-file-empty{height:100%;justify-content:center;gap:8px;color:var(--soft-muted)}
-.harness-open-file-empty>.anticon{font-size:22px}
+.harness-open-file-empty>.anticon{font-size:var(--icon-size-large)}
 .harness-open-file-empty>strong{color:var(--soft-ink)}
 .harness-directory-explorer .repository-browser-tree{background:var(--soft-surface,#fff)}
 .harness-directory-explorer .repository-file-pane{min-height:0}
@@ -33,5 +33,5 @@
 .harness-workspace-tab.is-active{border-color:var(--soft-line);background:var(--soft-bg);color:var(--soft-ink)}
 .harness-workspace-tab>[role=tab]{display:flex;align-items:center;gap:7px;min-width:100px;padding:4px 9px;border:0;border-radius:6px;background:none;color:inherit;font:inherit;cursor:pointer}
 .harness-workspace-tab>[role=tab]:focus-visible{outline:2px solid var(--soft-primary);outline-offset:-2px}
-.harness-workspace-tab>.ant-btn{color:inherit;font-size:10px;width:22px;min-width:22px}
+.harness-workspace-tab>.ant-btn{color:inherit;font-size:var(--font-size-meta);width:22px;min-width:22px}
 .harness-workspace-home button small{color:var(--soft-muted);font-size:var(--font-size-meta)}
