@@ -8,9 +8,12 @@ export function localFilePath(value: string): string | null {
   const slash = rest.search(/[\\/]/);
   const authority = slash < 0 ? rest : rest.slice(0, slash);
   if (authority && authority.toLowerCase() !== 'localhost') return null;
-  let path = slash < 0 ? '' : rest.slice(slash);
+  const encoded = slash < 0 ? '' : rest.slice(slash);
+  if (!encoded || encoded.includes('?') || /[\0\r\n\\]/.test(encoded)) return null;
+  // A file URL is percent-encoded; preview and source checks read real filesystem paths.
+  let path: string;
+  try { path = decodeURIComponent(encoded); } catch { return null; }
   if (!path || path.includes('?') || /[\0\r\n\\]/.test(path)) return null;
-  try { if(/[\0\r\n\\]/.test(decodeURIComponent(path)))return null; } catch { return null; }
   if (/^\/[a-z]:\//i.test(path)) path = path.slice(1);
   if (!/^(?:\/|[a-z]:\/)/i.test(path)) return null;
   return path;

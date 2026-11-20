@@ -7,10 +7,11 @@ test('Markdown angle delimiters preserve literal spaces and citation locations',
  for(const path of ['<x.md','x.md>','<a<b>','<a\nb>','<>'])assert.equal(markdownDestination(path),null);
 });
 
-test('file URL normalization preserves one downstream decoding and rejects malformed or non-local targets',async()=>{
+test('file URL normalization decodes to the real filesystem path and rejects malformed or non-local targets',async()=>{
  const {localFilePath}=await import('../../src/lib/localFileLink.ts');
- assert.equal(localFilePath('file:///tmp/name%20space.md#L12'),'/tmp/name%20space.md#L12');
+ assert.equal(localFilePath('file:///tmp/name%20space.md#L12'),'/tmp/name space.md#L12');
+ assert.equal(localFilePath('file:///Users/a/Application%20Support/%E5%9B%BE%E7%89%87.png'),'/Users/a/Application Support/图片.png');
  assert.equal(localFilePath('file://localhost/tmp/a.md'),'/tmp/a.md');
  assert.equal(localFilePath('file:///C:/work/a.md'),'C:/work/a.md');
- for(const value of ['file:///tmp/%ZZ.md','file:///tmp/%00secret','file:///tmp/%5csecret','file://server/share/a.md','file:///tmp/a.md?token=x','file:/tmp/a.md'])assert.equal(localFilePath(value),null,value);
+ for(const value of ['file:///tmp/%ZZ.md','file:///tmp/%00secret','file:///tmp/%5csecret','file:///tmp/a%3Fb.md','file://server/share/a.md','file:///tmp/a.md?token=x','file:/tmp/a.md'])assert.equal(localFilePath(value),null,value);
 });

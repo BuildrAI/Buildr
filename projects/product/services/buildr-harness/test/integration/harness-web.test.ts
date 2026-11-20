@@ -101,7 +101,8 @@ test('loopback endpoint is explicit, stable across generation handoff, keeps old
   const forgedHost=await new Promise<number|undefined>((resolve,reject)=>{const request=httpRequest(origin+'/api/v1/harness/scopes',{headers:{cookie,host:'evil.invalid'}},response=>{response.resume();response.once('end',()=>resolve(response.statusCode));});request.once('error',reject);request.end();});assert.equal(forgedHost,403);
   response=await fetch(origin+'/api/v1/harness/directories',{method:'POST',headers:{cookie,origin,'content-type':'application/json'},body:JSON.stringify({path:work})});assert.equal(response.status,403,'cookie without exact write header cannot mutate');
   response=await fetch(origin+'/api/v1/harness/files',{method:'POST',headers:{cookie,origin,'x-buildr-session':token,'content-type':'application/json'},body:JSON.stringify({conversationId:conversation.id,path:path.join(work,'note.md')})});assert.equal(response.status,200);assert.match((await response.json()).content,/source checked/);
-  const externalDir=fs.mkdtempSync(path.join(os.tmpdir(),'harness-external-files-'));t.after(()=>fs.rmSync(externalDir,{recursive:true,force:true}));
+  // A space in the workspace-external path keeps the decoded local file link covered.
+  const externalDir=fs.mkdtempSync(path.join(os.tmpdir(),'harness external files '));t.after(()=>fs.rmSync(externalDir,{recursive:true,force:true}));
   const externalMd=path.join(externalDir,'external.md'),externalHtml=path.join(externalDir,'prototype.html');
   const fullHtml='<!doctype html><html><body><!-- buildr:ui-prototype --><div>'+'p'.repeat(1024*1024+256)+'</div></body></html>';
   fs.writeFileSync(externalMd,'# outside workspace');fs.writeFileSync(externalHtml,fullHtml);
