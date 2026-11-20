@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { AGENT_SERVICE_APPLICATION, createAgentServiceModule } from '../../src/modules/agent-service/module.ts';
 import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
 import { TASK_QUERY_APPLICATION } from '../../src/modules/task/module.ts';
-import { prepareAgentRuntime, stopAgentProcess } from '@buildr-ai/buildr-harness';
+import { connectHarnessProcess, prepareAgentRuntime, stopAgentProcess } from '@buildr-ai/buildr-harness';
 import { runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -26,6 +26,46 @@ import { stopOwnedChildProcess } from '../verification/support/owned-process.ts'
 function createAgentService(options: Parameters<typeof createService>[0]) {
   return createService({ ...options, environment: options.environment ?? { HOME: path.dirname(options.dataRoot) } });
 }
+
+test('standalone Harness discovers the Buildr workspace after a transient host startup failure', {timeout:30_000}, async t => {
+  let instance: ReturnType<ReturnType<typeof createAgentServiceModule>['create']> | undefined;
+  let harness: Awaited<ReturnType<typeof connectHarnessProcess>> | undefined;
+  let dataRoot: string | undefined;
+  t.after(async()=>{
+    try { await instance?.lifecycle.stop(); }
+    finally {
+      await harness?.disconnect();
+      if(dataRoot)await stopAgentProcess({dataRoot});
+    }
+  });
+  const {base,root}=taskRecordFixture(t,'agent-host-startup-recovery');
+  const fixtureRoot=path.join(base,'private-agent'), profileId='fixture', id='recovery-workspace';
+  dataRoot=fixtureRoot;
+  const standalone=await connectHarnessProcess({dataRoot,profileId,sourceId:'harness-local',caller:{kind:'first-party-user',product:'buildr-harness'}});
+  harness=standalone;
+  let attempts=0;
+  const module=createAgentServiceModule({
+    readProductIdentity:()=>({}),
+    resolveWebProfile:()=>{
+      if(++attempts===1)throw new Error('temporary startup failure');
+      return {dataRoot:fixtureRoot,profile:profileId};
+    },
+  });
+  instance=module.create({
+    [WORKSPACE_APPLICATION]:{listRegisteredWorkspaces:()=>({workspaces:[{rootPath:root,workspace:{id,name:'Buildr'}}]})},
+  });
+  const scope=async()=>(await standalone.scopeCatalog()).scopes.find(item=>item.ref.sourceId==='buildr'&&item.ref.id===id);
+  await instance.lifecycle.start();
+  assert.equal(await scope(),undefined);
+  const deadline=Date.now()+15_000;
+  while(Date.now()<deadline && (await scope())?.authority!=='registered'){
+    await new Promise(resolve=>setTimeout(resolve,50));
+  }
+  assert.equal((await scope())?.authority,'registered');
+  assert.equal((await scope())?.rootPath,root);
+  await instance.lifecycle.stop();
+  assert.equal(await scope(),undefined);
+});
 
 test('linked task verification uses the authoritative summary without resolving full task diagnostics', {timeout:30_000}, async t => {
   let instance:any, dataRoot:string;
