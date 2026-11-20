@@ -158,7 +158,9 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       await panel().getByRole('button',{name:'发送对话',exact:true}).click();
       assert.equal((await response).status(),200);
       await page.waitForFunction(()=>document.querySelector<HTMLTextAreaElement>('textarea[aria-label="对话输入"]')?.value==='');
-      await panel().getByText('消息已进入当前执行，并已确认原生接收。',{exact:true}).waitFor();
+      await panel().getByText(text,{exact:true}).waitFor();
+      assert.equal(await panel().getByText('消息已进入当前执行，并已确认原生接收。',{exact:true}).count(),0,'确认送达不得显示成功提示');
+      assert.equal(await panel().getByText('上条追加消息已确认接收，无需重复发送。',{exact:true}).count(),0,'确认送达不得显示成功提示');
       assert.equal(fixture.supplementaryCalls,beforeCalls+1,'原补充请求只派发一次');
       assert.equal(fixture.sends,beforeSends,'回执确认不得另发一轮');
       assert.equal(fixture.conversation.entries.find((entry:any)=>entry.id===fixture.supplementaryInputs.at(-1)?.clientRequestId)?.status,'accepted');
@@ -184,7 +186,9 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       fixture.repairSupplementOnRead=true;
       await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
       await page.waitForFunction(()=>document.querySelector<HTMLTextAreaElement>('textarea[aria-label="对话输入"]')?.value==='');
-      await panel().getByText('上条追加消息已确认接收，无需重复发送。',{exact:true}).waitFor();
+      await panel().getByText(text,{exact:true}).waitFor();
+      assert.equal(await panel().getByText('上条追加消息已确认接收，无需重复发送。',{exact:true}).count(),0,'迟到确认不得显示成功提示');
+      assert.equal(await panel().getByText('消息已进入当前执行，并已确认原生接收。',{exact:true}).count(),0,'迟到确认不得显示成功提示');
       assert.equal(await panel().getByText(/消息是否送达仍待确认/).count(),0);
       assert.equal(fixture.supplementaryCalls,beforeCalls+1,'迟到确认不得重发追加');
       assert.equal(fixture.sends,beforeSends,'迟到确认不得另开会话');

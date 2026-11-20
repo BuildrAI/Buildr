@@ -281,7 +281,6 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     if(entry?.status!=='accepted')return;
     inputAttempts.finish(chat,pending.clientRequestId);
     setError(previous=>previous===unconfirmedSupplementMessage?'':previous);
-    setFeedback('上条追加消息已确认接收，无需重复发送。');
     draft.clearSubmitted(chat.workspaceId,chat.id,pending.text);
     setAttachments(previous=>({...previous,[chat.id]:removeSubmittedAttachments(previous[chat.id]||[],ids)}));
   },[chat?.id,chat?.workspaceId,chat?.entries,inputAttempts,setAttachments]);
@@ -575,7 +574,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
               draft.clearSubmitted(current.workspaceId,current.id,pendingInput.text);
               setAttachments(previous=>({...previous,[current.id]:removeSubmittedAttachments(previous[current.id]||[],pendingInput.images.map(image=>image.id))}));
             }
-            setFeedback('上条追加消息已确认接收，无需重复发送。');return;
+            return;
           }
           throw new Error(unconfirmedSupplementMessage);
         }
@@ -583,7 +582,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
           if(conversationInputAttemptMatches(pendingInput,current,sendText,requestImages)){
             draft.clearSubmitted(current.workspaceId,current.id,pendingInput.text);
             setAttachments(previous=>({...previous,[current.id]:removeSubmittedAttachments(previous[current.id]||[],pendingInput.images.map(image=>image.id))}));
-            setFeedback('上条追加消息已确认接收，无需重复发送。');return;
+            return;
           }
         }
         if(!await refreshLatest())return;
@@ -612,7 +611,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
               if(conversationInputAttemptAccepted(beforeRefresh,current,attempt)){
                 draft.clearSubmitted(current.workspaceId,current.id,sendText);
                 setAttachments(previous=>({...previous,[current.id]:removeSubmittedAttachments(previous[current.id]||[],requestImages.map(item=>item.id))}));
-                setFeedback('消息已进入当前执行，并已确认原生接收。');return;
+                return;
               }
             }
             const refusal='conversation' in result?result.conversation.entries.slice().reverse().find(entry=>entry.runId===attempt.runId&&entry.kind==='message'&&entry.role==='user'&&entry.status==='failed'&&entry.text===sendText)?.deliveryDiagnostic:result.diagnostic;

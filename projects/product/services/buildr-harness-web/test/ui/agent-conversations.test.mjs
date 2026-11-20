@@ -815,6 +815,8 @@ test('输入框支持原生追加，问题卡片始终回复原轮',async()=>{
  assert.ok(source.includes('context.api.send('));
  assert.ok(source.includes('context.api.supplement('),'running input must use native supplement');
  assert.ok(source.includes('sameRunOnly:true'),'native rejection must not silently start a new round');
+ assert.ok(!source.includes('上条追加消息已确认接收，无需重复发送。'),'successful supplement must settle without a notice');
+ assert.ok(!source.includes('消息已进入当前执行，并已确认原生接收。'),'confirmed supplement must settle without a notice');
  const reply=source.slice(source.indexOf('const reply=async'),source.indexOf('const renderQuestion='));
  assert.ok(reply.includes('context.api.reply('));
  assert.ok(!reply.includes('prepare('),'card replies must not switch to a new turn when model selection changes');
