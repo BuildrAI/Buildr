@@ -1,6 +1,42 @@
 import { activityState } from './conversation-activity.ts';
 import type { ConversationSummary, ConversationView } from './types.ts';
 
+type ConversationListRow = {
+  id: string;
+  workspaceId: string;
+  childOf?: Pick<NonNullable<ConversationView['childOf']>, 'workspaceId' | 'conversationId'>;
+};
+
+/** Arrange the visible rows of one workspace without changing the backing page order. */
+export function nestVisibleConversations<T extends ConversationListRow>(rows: readonly T[]) {
+  const ids = new Set(rows.map(row => row.id));
+  const children = new Map<string, T[]>();
+  const roots: T[] = [];
+  for (const row of rows) {
+    const parent = row.childOf;
+    if (!parent || parent.workspaceId !== row.workspaceId || parent.conversationId === row.id || !ids.has(parent.conversationId)) {
+      roots.push(row);
+      continue;
+    }
+    const siblings = children.get(parent.conversationId) ?? [];
+    siblings.push(row);
+    children.set(parent.conversationId, siblings);
+  }
+  const result: {row: T; depth: number}[] = [];
+  const stack = roots.reverse().map(row => ({row, depth: 0}));
+  const shown = new Set<string>();
+  while (stack.length) {
+    const item = stack.pop()!;
+    result.push(item);
+    shown.add(item.row.id);
+    const siblings = children.get(item.row.id) ?? [];
+    for (let i = siblings.length - 1; i >= 0; i--) stack.push({row: siblings[i], depth: item.depth + 1});
+  }
+  // Malformed cyclic relationships must not hide rows or trap traversal.
+  for (const row of rows) if (!shown.has(row.id)) result.push({row, depth: 0});
+  return result;
+}
+
 export function mergeChildConversations(previous:ConversationView[],incoming:ConversationView[]):ConversationView[] {
   const rows=new Map(previous.map(row=>[row.id,row]));
   for(const row of incoming)rows.set(row.id,row);

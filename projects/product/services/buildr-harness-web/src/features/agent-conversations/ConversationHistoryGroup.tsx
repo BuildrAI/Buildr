@@ -6,12 +6,13 @@ import { useConversationHistoryPage } from './useConversationHistoryPage.ts';
 import { HISTORY_GROUP_LIMIT } from './conversation-history-groups.ts';
 import { advanceWorkspaceSeenHold, applyConfirmedSeenActivity, invalidateWorkspaceHistoryCache, pinHeldConversationRow, type WorkspaceSeenHoldState } from './conversation-seen-hold.ts';
 import { collapseConversationHistory, createConversationHistoryCache } from './conversation-history-page.ts';
+import { nestVisibleConversations } from './conversation-children.ts';
 import type { ConversationSummary } from './types.ts';
 
 type Props = {
   workspaceId: string; name: string; query: string; hidden: boolean; agent?: string; model?: string; draftConversationIds?: readonly string[]; activeViewingId?: string | null;
   headerProps?: ButtonHTMLAttributes<HTMLButtonElement>; className: string; onDragOver: HTMLAttributes<HTMLElement>['onDragOver']; onDrop: HTMLAttributes<HTMLElement>['onDrop'];
-  renderRow(row: ConversationSummary): ReactNode;
+  renderRow(row: ConversationSummary, depth: number): ReactNode;
   onNew?():void;
   onResult?(workspaceId:string,result:{total?:number;busy:boolean;error:boolean}):void;
 };
@@ -48,7 +49,7 @@ export function ConversationHistoryGroup({workspaceId, name, query, hidden, agen
       <span className="ac-history-group-name" title={name}>{name}</span><small>{page ? total : '…'}</small>{!onNew&&<RightOutlined aria-hidden="true" rotate={expanded?90:0}/>}
     </button>{onNew&&<Button type="text" size="small" icon={<PlusOutlined aria-hidden/>} aria-label={`在${name}新建对话`} title={`在「${name}」新建对话`} onClick={onNew}/>}</h3>
     {expanded&&<div id={contentId}>
-      <div className="ac-history-list">{visible.map(renderRow)}</div>
+      <div className="ac-history-list">{nestVisibleConversations(visible).map(({row,depth})=>renderRow(row,depth))}</div>
       {error && <Alert type="warning" showIcon message={error} action={<Button size="small" onClick={retry}>{retryLabel}</Button>}/>}
       {busy && !page && <Spin size="small"/>}
       {more&&<div className="ac-history-group-actions"><Button type="text" size="small" className="ac-history-expand" disabled={busy||!page?.nextCursor} loading={busy} onClick={loadMore}>加载更多</Button></div>}

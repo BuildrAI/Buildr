@@ -95,10 +95,10 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   },[scopeKey]);
   const modelName=(id:string)=>conversationModelLabel(id,context.connections,context.modelCatalog);
   const workspaceName=(id:string)=>id===DEFAULT_HISTORY_GROUP?'默认':workspaces.find(item=>item.id===id)?.name||id;
-  const renderRow=(row:ConversationSummary)=>{
+  const renderRow=(row:ConversationSummary,depth:number)=>{
     const meta=conversationMetadata(row,undefined,row.run?.model?conversationModelLabel(row.run.model,context.connections,context.modelCatalog,{modelAccountId:row.run.modelAccountId}):undefined);
     return <div key={row.workspaceId+':'+row.id} className={'ac-history-row'+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
-      <button type="button" className="ac-history-row-main" data-conversation-id={row.id} onClick={()=>{context.setSettings(false);void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true,preserveHistoryView:keepHistoryOpen});}}>
+      <button type="button" className="ac-history-row-main" style={depth?{paddingInlineStart:`calc(11px + min(25%, ${depth*12}px))`}:undefined} data-conversation-id={row.id} onClick={()=>{context.setSettings(false);void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true,preserveHistoryView:keepHistoryOpen});}}>
         <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/><DraftStatusBadge visible={shouldShowConversationDraft(row,settledDraftIds)} immediateHide={activityState(row)!==null}/></span>
         {sendActivity(row)?.reason&&<span className="ac-send-reason">{sendActivity(row)?.reason}</span>}
         {row.searchSnippet&&<span className="ac-history-row-snippet" title={row.searchSnippet}>{row.searchSnippet}</span>}

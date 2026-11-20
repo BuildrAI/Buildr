@@ -6,6 +6,7 @@ import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {groupConversationWorkspaces,orderActivityItems,activityBadge,activityReminder,activityState,pendingSendReason,isExecuting,isActiveConversation,conversationMetadata,reminderFallbackRows,completeActivitySnapshot,joinReminderErrors} from '../../src/features/agent-conversations/conversation-activity.ts';
+import {nestVisibleConversations} from '../../src/features/agent-conversations/conversation-children.ts';
 import {conversationTierChoice} from '../../src/features/agent-conversations/conversation-options.ts';
 
 registerHooks({
@@ -197,4 +198,15 @@ test('对话提醒错误合并去重，不重复拼接相同提示并忽略空�
  assert.equal(joinReminderErrors({attention:'Buildr Web session 已失效，请刷新页面。',running:'Buildr Web session 已失效，请刷新页面。'}),'Buildr Web session 已失效，请刷新页面。');
  assert.equal(joinReminderErrors({attention:'读取待处理失败',running:'读取执行中失败'}),'读取待处理失败；读取执行中失败');
  assert.equal(joinReminderErrors({attention:'',running:undefined}),'');
+});
+
+test('可见父子对话按直接关系成组，独立行和同级子对话保留原有顺序',()=>{
+  const row=(id,parent,workspaceId='w')=>({id,workspaceId,...parent&&{childOf:{conversationId:parent,workspaceId:'w'}}});
+  const orphan=row('orphan','not-loaded'),parent=row('parent');
+  const rows=Object.freeze([row('grandchild','child-b'),row('child-a','parent'),row('other'),orphan,row('child-b','parent'),parent,row('foreign','other','x')]);
+  const layout=items=>nestVisibleConversations(items).map(({row,depth})=>[row.id,depth]);
+  assert.deepEqual(layout(rows),[['other',0],['orphan',0],['parent',0],['child-a',1],['child-b',1],['grandchild',2],['foreign',0]]);
+  assert.deepEqual(layout([orphan]),[['orphan',0]]);
+  assert.deepEqual(layout([orphan,row('not-loaded')]),[['not-loaded',0],['orphan',1]]);
+  assert.deepEqual(layout([row('a','b'),row('b','a')]),[['a',0],['b',0]]);
 });

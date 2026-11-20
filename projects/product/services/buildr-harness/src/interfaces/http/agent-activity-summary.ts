@@ -6,7 +6,7 @@ type Page = {conversations: ConversationView[]; nextCursor?: string; total?: num
 export function agentActivitySummary(page: Page, pending: unknown[], expectedRevision?: string) {
   const conversations = page.conversations.map(view => ({
     id:view.id,workspaceId:view.workspaceId,cwd:view.cwd,title:view.title,revision:view.revision,hidden:view.hidden,updatedAt:view.updatedAt,
-    taskId:view.taskId,taskIds:view.taskIds,taskLinks:view.taskLinks,activity:view.activity,
+    taskId:view.taskId,taskIds:view.taskIds,taskLinks:view.taskLinks,activity:view.activity,childOf:view.childOf,
     participants:[],entries:[],requests:[],
     ...(view.run ? {run:{id:view.run.id,participantId:view.run.participantId,provider:view.run.provider,generation:view.run.generation,
       status:view.run.status,accepted:view.run.accepted,stopRequested:view.run.stopRequested,executionState:view.run.executionState,tools:[],startedAt:view.run.startedAt,updatedAt:view.run.updatedAt,

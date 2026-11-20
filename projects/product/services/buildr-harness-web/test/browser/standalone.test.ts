@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
+import {randomUUID} from 'node:crypto';
 import path from 'node:path';
 import {chromium, type Route} from 'playwright-core';
 import {connectHarnessProcess, prepareAgentRuntime, executionScopeKey, stopAgentProcess} from '../../../buildr-harness/src/index.ts';
@@ -663,4 +664,72 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     assert.equal(await freshInput.inputValue(),'');
 
     await context.close();
+});
+
+test('standalone nests visible child conversations in reminders and history', {timeout: 60000}, async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-child-list-browser-'));
+  const dataRoot = path.join(root, 'profile'), packageRoot = path.join(root, 'package'), work = path.join(root, 'work');
+  const profileId = 'child-list-browser';
+  let cleanupClient: Awaited<ReturnType<typeof connectHarnessProcess>> | undefined;
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+  t.after(async () => {
+    try {
+      await browser?.close();
+    } finally {
+      await cleanupClient?.disconnect();
+      if (cleanupClient) await stopAgentProcess({dataRoot, profileId, mode: 'stop-owned'});
+      fs.rmSync(root, {recursive: true, force: true});
+    }
+  });
+  fs.mkdirSync(work);
+  const coreRoot = path.resolve(import.meta.dirname, '../../../buildr-harness');
+  agentRuntimePackageTree(coreRoot).materialize(packageRoot);
+  fs.copyFileSync(path.join(coreRoot, 'test/integration/fixtures/agent-process-entry.mjs'), path.join(packageRoot, 'build/browser-fixture.mjs'));
+  fs.writeFileSync(path.join(packageRoot, 'build/fixture-version.json'), '{"version":"child-list-browser"}');
+  const runtime = prepareAgentRuntime({dataRoot, packageRoot, entry: 'build/browser-fixture.mjs'});
+  const client = cleanupClient = await connectHarnessProcess({dataRoot, profileId, runtime, sourceId: 'harness-local', caller: {kind: 'first-party-user', product: 'buildr-harness'}});
+  const connection = await client.operations.connections.read('first');
+  await client.operations.connections.connect('first', {expectedRevision: connection.revision});
+  const added = await client.operations.models.accounts.add({provider: 'fixture-model'});
+  const checked = await client.operations.models.accounts.check(added.id);
+  const account = await client.operations.models.accounts.preferences(checked.id, {expectedRevision: checked.revision, models: [{id: 'fixture', enabled: true}]});
+  await client.operations.models.catalog.list({refresh: true});
+  const scope = executionScopeKey((await client.directories.register(work)).ref);
+  await client.web.enable();
+  browser = await chromium.launch({headless: true});
+  const context = await browser.newContext({viewport: {width: 500, height: 800}});
+  // Both results are still unseen. The newer child normally sorts first,
+  // but both rendered lists must place it immediately below its parent.
+  const sendLayoutFixture = async (draft: {id: string; revision: string}, text: string) => {
+    const input = {expectedRevision: draft.revision, connectionId: 'first', model: 'fixture', modelAccountId: account.id, modelAccountIdentity: account.identity, text};
+    const preview = await client.operations.conversations.prepareSend(scope, draft.id, input);
+    await client.operations.conversations.send(scope, draft.id, {...input, previewToken: preview.token, clientRequestId: randomUUID()});
+    return until(() => client.operations.conversations.read(scope, draft.id), view => view.run?.status === 'completed', text);
+  };
+  const layoutParent = await sendLayoutFixture(await client.operations.conversations.create(scope, {title: '层级验证父对话'}), 'layout parent');
+  const layoutChild = await sendLayoutFixture(await client.operations.conversations.createChild(scope, layoutParent.id, {expectedRevision: layoutParent.revision, clientRequestId: randomUUID()}), 'layout child');
+  const layoutPage = await context.newPage();
+  const activityResponse = layoutPage.waitForResponse(response => response.url().includes('/activity-summary') && response.ok());
+  await layoutPage.goto((await client.web.login()).url);
+  const layoutRail = layoutPage.locator('.ac-collapsed-rail .ac-all-conversations');
+  const assertChildLayout = async (region: string, attribute: string) => {
+    const parent = layoutPage.locator(`${region} [${attribute}="${layoutParent.id}"]`);
+    const child = layoutPage.locator(`${region} [${attribute}="${layoutChild.id}"]`);
+    await child.waitFor({state: 'visible'});
+    assert.equal(await parent.evaluate((node, attr) => node.parentElement?.nextElementSibling?.querySelector(`[${attr}]`)?.getAttribute(attr), attribute), layoutChild.id);
+    const parentTitle = await parent.locator('strong').boundingBox();
+    const childTitle = await child.locator('strong').boundingBox();
+    assert.ok(parentTitle && childTitle && childTitle.x >= parentTitle.x + 11 && childTitle.y > parentTitle.y, 'child title is visibly indented below the parent');
+    assert.equal(await child.locator('.ac-activity-status').innerText(), '待查看');
+    assert.equal(await child.locator('..').getByRole('button',{name:'复制对话 ID'}).count(), 1);
+  };
+  assert.equal(layoutChild.childOf?.conversationId, layoutParent.id);
+  const listing = await (await activityResponse).json();
+  assert.equal(listing.conversations?.find((row: {id: string}) => row.id === layoutChild.id)?.childOf?.conversationId, layoutParent.id, JSON.stringify(listing.conversations?.map((row: {id: string; workspaceId: string; childOf?: unknown}) => ({id: row.id, workspaceId: row.workspaceId, childOf: row.childOf})) ?? listing));
+  await layoutRail.hover();
+  await assertChildLayout('.ac-activity-menu', 'data-activity-id');
+  await layoutRail.click();
+  await assertChildLayout('.ac-history', 'data-conversation-id');
+
+  await context.close();
 });
