@@ -24,6 +24,8 @@ export { inspectAgentStorage, collectAgentStorage } from './application/storage-
 export type { AgentStoragePlan } from './application/storage-maintenance.ts';
 export { DIRECTORY_SOURCE_ID } from './application/directory-host.ts';
 export type { HarnessDirectory } from './application/directory-host.ts';
+export { previewLocalFile, readLocalHtmlFile, writeIsolatedLocalHtml, LOCAL_HTML_PREVIEW_CSP } from './application/local-file-preview.ts';
+export type { LocalFilePreview } from './application/local-file-preview.ts';
 
 // One transport implementation is consumed by both product hosts.
 export { createAgentServiceHttpContribution } from './interfaces/http/agent-service-http.ts';

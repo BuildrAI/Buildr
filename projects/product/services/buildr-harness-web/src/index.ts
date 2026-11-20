@@ -3,6 +3,7 @@ export {HarnessShell} from './shell/HarnessShell';
 export type {HarnessWorkEnvironment} from './shell/HarnessShell';
 export {HarnessDirectoryFilesProvider,useHarnessDirectoryFiles} from './directory-files.tsx';
 export type {HarnessDirectoryFiles,HarnessFileContent} from './directory-files.tsx';
+export {LocalFilePreviewModal} from './components/LocalFilePreviewModal.tsx';
 export {AgentConversationsProvider,AgentConversationsViewProvider,useAgentConversations,useOptionalAgentConversations,useAgentConversationShell} from './features/agent-conversations/AgentConversationsContext.tsx';
 export {ConversationWorkspace} from './features/agent-conversations/ConversationWorkspace.tsx';
 export {ConversationPanel} from './features/agent-conversations/ConversationPanel.tsx';

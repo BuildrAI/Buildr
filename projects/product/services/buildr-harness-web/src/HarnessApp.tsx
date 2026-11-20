@@ -7,8 +7,7 @@ import {HarnessShell, type HarnessWorkEnvironment} from './shell/HarnessShell';
 import {lazy,Suspense,useCallback,useEffect,useMemo,useState,useRef} from 'react';
 import {Alert,Button,Input,Modal,Spin} from 'antd';
 import {FolderOpenOutlined} from '@ant-design/icons';
-import {AgentConversationsProvider,AgentConnectionSettings,ConversationWorkspace,HarnessDirectoryFilesProvider,useAgentConversations,type HarnessDirectoryFiles} from './index';
-import {MarkdownReader} from './components/MarkdownReader';
+import {AgentConversationsProvider,AgentConnectionSettings,ConversationWorkspace,HarnessDirectoryFilesProvider,LocalFilePreviewModal,useAgentConversations,type HarnessDirectoryFiles,type HarnessFileContent} from './index';
 import {api} from './api/index';
 import type {ConversationWorkspace as ScopeView} from './features/agent-conversations/ConversationHistory';
 import type {ConversationView} from './features/agent-conversations/types';
@@ -18,23 +17,22 @@ const DirectoryWorkbench=lazy(async()=>({default:(await import('./features/direc
 type Ref={sourceId:string;id:string};
 type Directory={ref:Ref;rootPath:string;revision:string;name?:string};
 type Catalog={scopes:Array<{key:string;ref:Ref;authority:'builtin'|'registered'|'offline';name?:string;rootPath?:string}>};
-type Preview={kind:string;content:string;truncated:boolean};
 const key=(ref:Ref)=>'scope:'+btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify([ref.sourceId,ref.id])))).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
 const directoryLeafName=(value:string)=>value.replace(/[\\/]+$/,'').split(/[\\/]/).filter(Boolean).at(-1)||value;
 const request=<T,>(path:string,input?:unknown,signal?:AbortSignal)=>api(path,input===undefined?{headers:{'x-buildr-session':''},signal}:{method:'POST',body:JSON.stringify(input),signal}) as Promise<T>;
 
 export function HarnessApp({environment}:{environment?:HarnessWorkEnvironment}={}){
-  const [file,setFile]=useState<{path:string;value:Preview}|null>(null);
+  const [file,setFile]=useState<{path:string;value:HarnessFileContent}|null>(null);
   const standalone=(typeof window==='undefined'||window.parent===window)&&!environment;
   const composition=useMemo(()=>({standalone}),[standalone]);
   const [directoryVersion,bumpDirectories]=useState(0);
   const builtin:HarnessWorkEnvironment={id:'harness-local-workbench',title:'目录工作台',render:active=><Suspense fallback={<Spin size="small" />}><DirectoryWorkbench active={active} onDirectoryAdded={()=>bumpDirectories(value=>value+1)}/></Suspense>};
   const host=useMemo<HarnessDirectoryFiles>(()=>({
-    readFile:(conversation:ConversationView,path:string,signal:AbortSignal)=>window.parent!==window?engineeringFile('read',conversation.workspaceId,conversation.id,path,signal):api('/api/v1/harness/files',{method:'POST',body:JSON.stringify({conversationId:conversation.id,path}),signal}) as Promise<Preview>,
-    async openFile(conversation,path,_literal,signal){if(window.parent!==window){await engineeringFile('open',conversation.workspaceId,conversation.id,path,signal);return;}const value=await request<Preview>('/api/v1/harness/files',{conversationId:conversation.id,path},signal);signal?.throwIfAborted();setFile({path,value});},
+    readFile:(conversation:ConversationView,path:string,signal:AbortSignal)=>window.parent!==window?engineeringFile('read',conversation.workspaceId,conversation.id,path,signal):api('/api/v1/harness/files',{method:'POST',body:JSON.stringify({conversationId:conversation.id,path}),signal}) as Promise<HarnessFileContent>,
+    async openFile(conversation,path,_literal,signal){if(window.parent!==window){await engineeringFile('open',conversation.workspaceId,conversation.id,path,signal);return;}const value=await request<HarnessFileContent>('/api/v1/harness/files',{conversationId:conversation.id,path},signal);signal?.throwIfAborted();setFile({path:value.path||path,value});return false;},
   }),[]);
   return <ConversationHostProvider host={composition}><HarnessDirectoryFilesProvider host={host}><AgentConversationsProvider standalone={standalone}><HarnessShell environment={environment??(standalone?builtin:undefined)}>
-    <Workspace standalone={standalone} directoryVersion={directoryVersion}/></HarnessShell></AgentConversationsProvider><Modal open={!!file} centered title={file?.path} footer={null} width="min(1000px, 94vw)" onCancel={()=>setFile(null)}>{file&&(file.value.kind==='markdown'?<MarkdownReader content={file.value.content} path={file.path}/>:file.value.kind==='image'?<img src={file.value.content} alt={file.path} style={{maxWidth:'100%'}}/>:<pre className="harness-source">{file.value.content}</pre>)}{file?.value.truncated&&<Alert type="info" message="内容超过预览上限，仅显示前 1 MiB。"/>}</Modal></HarnessDirectoryFilesProvider></ConversationHostProvider>;
+    <Workspace standalone={standalone} directoryVersion={directoryVersion}/></HarnessShell></AgentConversationsProvider><LocalFilePreviewModal file={file} onClose={()=>setFile(null)}/></HarnessDirectoryFilesProvider></ConversationHostProvider>;
 }
 function Workspace({standalone,directoryVersion}:{standalone:boolean;directoryVersion:number}){
   const embedded=window.parent!==window;

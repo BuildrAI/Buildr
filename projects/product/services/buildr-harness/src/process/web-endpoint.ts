@@ -15,6 +15,7 @@ import {createProgrammaticHttpContribution} from '../interfaces/http/programmati
 import {eventStreamResponse} from '../interfaces/http/stream-response.ts';
 import type {AgentProcessConnection} from './client.ts';
 import {chooseHarnessDirectory} from './directory-picker.ts';
+import {readLocalHtmlFile,writeIsolatedLocalHtml} from '../application/local-file-preview.ts';
 import {EDITABLE_FILE_JSON_BYTES} from '../workbench/editable-file.ts';
 import {defaultHarnessWorkspaceRoot} from '../profile.ts';
 
@@ -259,7 +260,24 @@ export class HarnessWebEndpoint {
       if(req.method==='GET'){this.authorize(req);json(res,200,{directories:await connection.directories.list()});return;}
       if(req.method==='POST'){this.authorize(req,true);const input=await body(req,16384);this.authorize(req,true);if(!Object.hasOwn(input,'path')||Object.keys(input).some(key=>!['path','name'].includes(key)))throw new AgentServiceError('agent_directory_path_invalid','请选择准确目录。');json(res,201,await connection.directories.register(input.path,input.name));return;}
     }
-    if(url.pathname==='/api/v1/harness/files'&&req.method==='POST'){this.authorize(req,true);const input=await body(req,16384);this.authorize(req,true);if(Object.keys(input).some(key=>!['conversationId','path'].includes(key)))throw new AgentServiceError('agent_directory_file_invalid','文件请求无效。');json(res,200,await connection.directories.preview(input));return;}
+    if(url.pathname==='/api/v1/harness/files'&&req.method==='POST'){
+      this.authorize(req,true);const input=await body(req,16384);this.authorize(req,true);
+      if(Object.keys(input).some(key=>!['conversationId','path'].includes(key)))throw new AgentServiceError('agent_directory_file_invalid','文件请求无效。');
+      const preview=await connection.directories.preview(input);
+      const resolvedPath=typeof preview.path==='string'&&preview.path?preview.path:input.path;
+      json(res,200,preview.kind==='html'?{...preview,path:resolvedPath,htmlUrl:`/api/v1/harness/files/html?conversationId=${encodeURIComponent(input.conversationId)}&path=${encodeURIComponent(resolvedPath)}`}:preview);return;
+    }
+    if(url.pathname==='/api/v1/harness/files/html'&&req.method==='GET'){
+      this.authorize(req);
+      const keys=[...url.searchParams.keys()];
+      if(keys.some(key=>!['conversationId','path'].includes(key))||url.searchParams.getAll('conversationId').length!==1||url.searchParams.getAll('path').length!==1)throw new AgentServiceError('agent_directory_file_invalid','文件请求无效。');
+      const conversationId=url.searchParams.get('conversationId')!,filePath=url.searchParams.get('path')!;
+      if(!conversationId||!filePath)throw new AgentServiceError('agent_directory_file_invalid','文件请求无效。');
+      const preview=await connection.directories.preview({conversationId,path:filePath});
+      if(preview.kind!=='html')throw new AgentServiceError('agent_directory_file_unsupported','仅支持预览 HTML 文件。',415);
+      const {html}=await readLocalHtmlFile({path:preview.path||filePath});
+      writeIsolatedLocalHtml(res,html);return;
+    }
     const workbench=url.pathname.match(/^\/api\/v1\/harness\/directory-workbench\/([a-z-]+)$/);
     if(workbench && req.method==='POST') {
       this.authorize(req,true);

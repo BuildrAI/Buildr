@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { AgentHostCapabilities, ExecutionScope, ExecutionScopeRef } from '../execution-contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { claimStorage, readPrivate, writePrivate } from '../process/ownership.ts';
+import { previewLocalFile, type LocalFilePreview } from './local-file-preview.ts';
 
 export const DIRECTORY_SOURCE_ID = 'harness-local';
 export interface HarnessDirectory extends ExecutionScope { selectedPath: string; name?: string }
@@ -73,30 +74,9 @@ export class HarnessDirectoryHost implements AgentHostCapabilities {
       return structuredClone(entry);
     } finally { lock.release(); }
   }
-  async preview(input:{ref:ExecutionScopeRef;expectedRevision:string;path:string}):Promise<{kind:string;content:string;truncated:boolean}> {
+  async preview(input:{ref:ExecutionScopeRef;expectedRevision:string;path:string}):Promise<LocalFilePreview> {
     const scope=await this.resolveExecutionScope(input);
-    if(typeof input.path!=='string'||!input.path||/[\0\r\n]/.test(input.path))throw new AgentServiceError('agent_directory_file_invalid','来源文件路径无效。');
-    const selected=path.resolve(scope.rootPath,input.path);
-    let actual:string,stat:fs.Stats;
-    try{actual=fs.realpathSync(selected);stat=fs.statSync(actual);}catch{throw new AgentServiceError('agent_directory_file_missing','来源文件不存在。',404);}
-    if(!actual!.startsWith(scope.rootPath+path.sep)||!stat!.isFile()||stat!.nlink!==1)throw new AgentServiceError('agent_directory_file_forbidden','文件不在已核验目录内，或身份不能确认。',403);
-    const mime=new Map([['.png','image/png'],['.jpg','image/jpeg'],['.jpeg','image/jpeg'],['.gif','image/gif'],['.webp','image/webp']]).get(path.extname(actual!).toLowerCase());
-    if(!mime&&!/\.(?:md|txt|json|ya?ml|ts|tsx|js|jsx|mjs|cjs|css|html?|xml|sql|py|rs|go|java|sh|toml|ini|log)$/i.test(actual!))return {kind:'unsupported',content:'此类型仅可复制路径，不执行或内嵌打开。',truncated:false};
-    const fd=fs.openSync(actual!,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);
-    try{
-      const opened=fs.fstatSync(fd);
-      if(opened.ino!==stat!.ino||opened.dev!==stat!.dev||!opened.isFile())throw new AgentServiceError('agent_directory_file_changed','来源文件已变化。',409);
-      const limit=1024*1024;
-      if(mime&&opened.size>limit)throw new AgentServiceError('agent_directory_file_too_large','图片超出 1 MiB 预览上限。',413);
-      const bytes=Buffer.alloc(Math.min(opened.size,limit));
-      const length=fs.readSync(fd,bytes,0,bytes.length,0);
-      if(length!==bytes.length)throw new AgentServiceError('agent_directory_file_changed','来源文件已变化。',409);
-      await this.resolveExecutionScope(input);
-      if(fs.realpathSync(selected)!==actual!)throw new AgentServiceError('agent_directory_file_changed','来源路径已变化。',409);
-      if(mime)return {kind:'image',content:`data:${mime};base64,${bytes.toString('base64')}`,truncated:false};
-      let content:string;try{content=new TextDecoder('utf-8',{fatal:true}).decode(bytes,{stream:opened.size>bytes.length});}catch{throw new AgentServiceError('agent_directory_file_encoding','此文件不是可预览的 UTF-8 文本。',415);}
-      return {kind:actual!.toLowerCase().endsWith('.md')?'markdown':'text',content,truncated:opened.size>bytes.length};
-    }finally{fs.closeSync(fd);}
+    return previewLocalFile({path:input.path,cwd:scope.rootPath});
   }
   private assertCurrent(entry: HarnessDirectory, current = observe(entry.selectedPath)): void {
     if (current.revision !== entry.revision || current.rootPath !== entry.rootPath) throw new AgentServiceError('agent_scope_binding_changed', '目录或链接身份已变化，未在新对象上继续；原对话及目录登记保留。', 409);

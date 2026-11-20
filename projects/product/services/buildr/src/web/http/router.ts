@@ -1,11 +1,11 @@
-import {harnessWebRoot} from '@buildr-ai/buildr-harness';
+import {harnessWebRoot, previewLocalFile, readLocalHtmlFile, writeIsolatedLocalHtml} from '@buildr-ai/buildr-harness';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
 import { pickWorkspaceDirectory } from '../infrastructure/directory-picker.ts';
 import { binaryResponse, jsonResponse, textResponse, uiPrototypeHtmlResponse, diagramHtmlResponse, eventStreamResponse } from './responses.ts';
-import { assertRequestHost, assertReadRequest, assertWriteRequest, assertMutationRequest, assertImageRequest, imageSessionCookie, readBinaryBody, readAllowedJsonBody, readJsonBody } from './session.ts';
+import { assertRequestHost, assertReadRequest, assertWriteRequest, assertMutationRequest, assertImageRequest, imageSessionCookie, assertConversationFileRequest, conversationFileCookie, readBinaryBody, readAllowedJsonBody, readJsonBody } from './session.ts';
 import { injectedIndexHtml, PUBLIC_ICON_PATHS, serveDistAsset } from './static-files.ts';
 import {
   BUILDR_WEB_HTTP_OPERATIONS,
@@ -82,21 +82,21 @@ export function createLocalWorkspaceRequestRouter({
       assertReadRequest({...request,headers:{...request.headers,'x-buildr-session':sessionToken}},trustedOrigin,sessionToken);
       const development = developmentWebs();
       if (development) {
-        response.setHeader('set-cookie', imageSessionCookie(sessionToken));
+        response.setHeader('set-cookie', [imageSessionCookie(sessionToken), conversationFileCookie(sessionToken)]);
         await development.harness.handle(request, response, {document: pathname === '/harness/' || pathname === '/harness/index.html' || pathname === '/harness/mermaid-renderer.html',
           entry: pathname.endsWith('/mermaid-renderer.html') ? 'mermaid-renderer.html' : 'index.html', frame: true});
         return;
       }
       if(pathname==='/harness/'||pathname==='/harness/index.html'){
         const html=(await readFile(path.join(harnessWebRoot(),'index.html'),'utf8')).replace('</head>',`<meta name="buildr-session" content="${sessionToken}"><meta name="buildr-web-profile" content="development-harness"></head>`);
-        response.setHeader('set-cookie',imageSessionCookie(sessionToken));
+        response.setHeader('set-cookie',[imageSessionCookie(sessionToken), conversationFileCookie(sessionToken)]);
         response.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','content-security-policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'",'x-frame-options':'SAMEORIGIN'});response.end(html);return;
       }
       if(await serveDistAsset(response,pathname.slice('/harness'.length),harnessWebRoot(),request))return;
       jsonResponse(response,404,{error:{code:'harness_asset_missing',message:'Harness 网页资源不存在。'}});return;
     }
     if (request.method === 'GET' && (pathname === '/' || workspaceAppRoute.test(pathname))) {
-      response.setHeader('set-cookie', [imageSessionCookie(sessionToken),`buildr-frame=${sessionToken}; Path=/harness/; HttpOnly; SameSite=Strict`]);
+      response.setHeader('set-cookie', [imageSessionCookie(sessionToken), conversationFileCookie(sessionToken), `buildr-frame=${sessionToken}; Path=/harness/; HttpOnly; SameSite=Strict`]);
       if (developmentWebs()) { await developmentWebs().web.handle(request, response, {document: true}); return; }
       textResponse(response, 200, injectedIndexHtml(sessionToken, previewIdentity, webProfile, staticRoot), 'text/html; charset=utf-8');
       return;
@@ -158,6 +158,25 @@ export function createLocalWorkspaceRequestRouter({
         else if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') jsonResponse(response, 404, { error: { code: 'conversation_image_missing', message: '图片不存在。' } });
         else jsonResponse(response, 500, { error: { code: 'conversation_image_unavailable', message: '图片读取失败。' } });
       }
+      return;
+    }
+    if (request.method === 'POST' && pathname === '/api/v1/conversation-file') {
+      assertWriteRequest(request, trustedOrigin, sessionToken);
+      const rawInput = await readJsonBody(request, 16384);
+      const input = rawInput && typeof rawInput === 'object' && !Array.isArray(rawInput) ? rawInput as { path?: unknown; cwd?: unknown } : null;
+      if (!input || Object.keys(input).some(key => !['path', 'cwd'].includes(key)) || typeof input.path !== 'string' || (input.cwd !== undefined && typeof input.cwd !== 'string')) {
+        jsonResponse(response, 400, { error: { code: 'conversation_file_invalid', message: '文件请求无效。' } });
+        return;
+      }
+      const preview = await previewLocalFile({ path: input.path, cwd: input.cwd });
+      jsonResponse(response, 200, preview.kind === 'html' ? { ...preview, htmlUrl: `/api/v1/conversation-file/html?path=${encodeURIComponent(preview.path)}` } : preview);
+      return;
+    }
+    if (request.method === 'GET' && pathname === '/api/v1/conversation-file/html') {
+      assertConversationFileRequest(request, trustedOrigin, sessionToken);
+      const filePath = requestUrl.searchParams.get('path') ?? '';
+      const { html } = await readLocalHtmlFile({ path: filePath });
+      writeIsolatedLocalHtml(response, html);
       return;
     }
     for (const contribution of httpContributions) {

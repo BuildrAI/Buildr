@@ -349,8 +349,8 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
       if(image){setOpeningFile(null);setImageLink({selection,reference:path,load:signal=>loadImage(image,signal)});return;}
       if(!host.openFile)throw new Error('此入口未提供来源文件打开，请复制路径核对。');
       setOpeningFile(selection);
-      await host.openFile(chat,path,literal,request.signal);
-      if(stillCurrent())context.setFull(false);
+      const shouldExitFull=await host.openFile(chat,path,literal,request.signal);
+      if(stillCurrent()&&shouldExitFull!==false)context.setFull(false);
     }catch(failure){if(stillCurrent())setFileLinkFailure({selection,reference:path,message:failure instanceof Error?failure.message:'无法打开来源文件。'});}
     finally{if(stillCurrent()){fileOpenRequest.current=null;setOpeningFile(null);}}
   };

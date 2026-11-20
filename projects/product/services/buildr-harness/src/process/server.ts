@@ -3,6 +3,7 @@ import {HarnessWebEndpoint} from './web-endpoint.ts';
 import {connectHarnessProcess} from './client.ts';
 import type {AgentProcessConnection} from './client.ts';
 import { HarnessDirectoryHost, DIRECTORY_SOURCE_ID } from '../application/directory-host.ts';
+import { previewLocalFile } from '../application/local-file-preview.ts';
 import { createDirectoryWorkbench, directoryWorkbenchWrites, workbenchError } from '../application/directory-workbench.ts';
 import { EDITABLE_FILE_JSON_BYTES } from '../workbench/editable-file.ts';
 import { SourceContinuationPolicies } from './source-policies.ts';
@@ -294,8 +295,10 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if (input.operation === 'list') { json(res, 200, directories.list()); return; }
       if(input.operation==='preview'){
         const record=typeof input.conversationId==='string'?repository.readConversation(input.conversationId):undefined;
-        if(!record?.hostScope||executionScopeRef(record.view.workspaceId,'buildr').sourceId!==DIRECTORY_SOURCE_ID)throw new AgentServiceError('agent_directory_file_forbidden','仅能读取准确目录对话的来源文件。',403);
-        json(res,200,await directories.preview({ref:record.hostScope.ref,expectedRevision:record.hostScope.revision,path:input.path}));return;
+        if(!record)throw new AgentServiceError('agent_directory_file_forbidden','仅能读取已存在对话的来源文件。',403);
+        if(caller&&!callers.canRead(caller,record.view.workspaceId))throw new AgentServiceError('agent_caller_scope_denied','此调用连接没有该范围的读取权限。',403);
+        const baseDir=record.view.cwd||record.hostScope?.rootPath;
+        json(res,200,await previewLocalFile({path:input.path,cwd:baseDir}));return;
       }
       if (input.operation !== 'register' || typeof input.path !== 'string') throw new AgentServiceError('agent_process_input_invalid', '目录操作无效。');
       if (closing || retiring || !accepting) throw new AgentServiceError('agent_process_switching', '目录登记暂不可写，输入已保留。', 503);
