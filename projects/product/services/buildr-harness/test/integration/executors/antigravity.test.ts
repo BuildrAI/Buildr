@@ -9,7 +9,7 @@ import type { ExecutorEvent, ExecutorItem, ExecutorRequest } from '../../../src/
 import { ExecutorInputRejected, ExecutorObservationLost } from '../../../src/contracts.ts';
 import { AgentServiceError } from '../../../src/domain/agent-state.ts';
 import { interactionPolicy } from '../../../src/domain/interaction-policy.ts';
-import { readAntigravityTool } from '../../../src/executors/antigravity/content.ts';
+import { appendAntigravitySessionRow, readAntigravityTool } from '../../../src/executors/antigravity/content.ts';
 import { createAntigravityExecutor } from '../../../src/executors/antigravity/index.ts';
 import { ownedProcessGroupIdle } from '../../../src/executors/native-process.ts';
 
@@ -1708,4 +1708,64 @@ test('Antigravity handles a background command exit during the new prompt withou
   const prompts = await h.readFixtureJsonl('fixture-prompts.jsonl');
   assert.equal(prompts.length, 2);
   assert.equal(prompts.filter(row => row.text === '处理追加').length, 1);
+});
+
+test('Antigravity readHistory truncates oversized durable tool output and input previews while preserving full on-demand nativeContent', async t => {
+  const h = await createHarness(t, { autoAllow: true });
+  const rt = await h.openRuntime();
+  const contextRef = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+  const hugeInput = JSON.stringify({ path: 'src/Big.java', content: 'I'.repeat(12_000) });
+  const hugeOutput = 'O'.repeat(1_600 * 1024);
+
+  appendAntigravitySessionRow(h.configRoot, contextRef.id, {
+    type: 'tool_call',
+    toolCallId: 'call-huge-1',
+    cwd: h.cwd,
+    name: 'file-change',
+    fullInput: hugeInput,
+    status: 'running',
+  });
+  appendAntigravitySessionRow(h.configRoot, contextRef.id, {
+    type: 'tool_result',
+    toolCallId: 'call-huge-1',
+    cwd: h.cwd,
+    name: 'file-change',
+    fullInput: hugeInput,
+    status: 'completed',
+    output: hugeOutput,
+  });
+
+  const history = await rt.readHistory({ contextRef, cwd: h.cwd });
+  const toolItem = history.find(item => item.kind === 'tool' && item.id === 'call-huge-1');
+  assert.ok(toolItem, 'expected oversized tool in readHistory');
+  assert.equal(toolItem.nativeTool, true);
+  assert.ok(Buffer.byteLength(toolItem.text, 'utf8') < 64 * 1024);
+  assert.match(toolItem.text, /\[内容已截断/);
+  assert.ok(toolItem.input && Buffer.byteLength(toolItem.input, 'utf8') < 8 * 1024);
+  assert.match(toolItem.input, /\[内容已截断/);
+
+  const fullDetail = readAntigravityTool(h.root, {
+    version: 3,
+    provider: 'antigravity',
+    contextId: contextRef.id,
+    nativeId: 'call-huge-1',
+    text: [],
+    entry: {
+      id: 'entry-huge-1',
+      sequence: 1,
+      kind: 'tool',
+      role: 'assistant',
+      name: 'file-change',
+      status: 'completed',
+      text: '',
+      createdAt: new Date().toISOString(),
+    },
+    session: {
+      config: 'connections/antigravity',
+      cwd: h.cwd,
+    },
+  });
+  assert.ok(fullDetail);
+  assert.equal(fullDetail.input, hugeInput);
+  assert.equal(fullDetail.text, hugeOutput);
 });

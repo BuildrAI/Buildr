@@ -1579,7 +1579,9 @@ export class ConversationApplication {
     return changed;
   }
   private mergeItem(record: StoredConversation, participant: StoredParticipant, item: ExecutorItem, runId?: string, live = false): boolean {
-    if (Buffer.byteLength(item.text) > MAX_ITEM_BYTES) fail('agent_native_item_too_large', '原生条目超出安全展示容量，原记录保留于准确原生会话。', 413);
+    const assertItemTextSize = () => {
+      if (Buffer.byteLength(item.text) > MAX_ITEM_BYTES) fail('agent_native_item_too_large', '原生条目超出安全展示容量，原记录保留于准确原生会话。', 413);
+    };
     const source = `${participant.id}:${item.kind}:${item.id}`;
     if (record.sources[source] === '@inherited') return false;
     let entry = record.view.entries.find(value => value.id === record.sources[source]);
@@ -1612,6 +1614,7 @@ export class ConversationApplication {
         // replace newer native lifecycle and result evidence.
         const prior = entry.subagent;
         if (!live && prior && (prior.status !== 'unknown' || !['completed','failed','stopped'].includes(item.subagent.status))) return originChanged;
+        assertItemTextSize();
         const next = !live && prior ? {...prior,status:item.subagent.status,returned:item.subagent.returned} : item.subagent;
         const subagentChanged = JSON.stringify(prior) !== JSON.stringify(next) || entry.text !== item.text;
         entry.subagent = next;
@@ -1634,6 +1637,7 @@ export class ConversationApplication {
       // would make identical history look new after every save/reload.
       const status = activeBackgroundTool || settledAssistant ? entry.status : item.status;
       const nativeBody = !live && item.nativeTool && Boolean(record.nativeTools?.[entry.id]);
+      if (!nativeBody) assertItemTextSize();
       const priorParticipation=record.participationTools?.[entry.id]??entry.participation;
       const participation = entry.kind==='tool' ? mergeParticipation(item.input!==undefined&&item.input!==entry.input&&priorParticipation?{...priorParticipation,matches:[]}:priorParticipation,item.participation,item.name??entry.name,item.input??entry.input) : undefined;
       const participationChanged=JSON.stringify(participation)!==JSON.stringify(normalizeParticipation(priorParticipation));
@@ -1647,6 +1651,7 @@ export class ConversationApplication {
       if (!nativeBody) entry.text = item.text;
       entry.status = status; if (item.thinking) entry.thinking = true; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; if(filesChanged)entry.presentedFiles=files; if(item.participation&&participation)(record.participationTools??={})[entry.id]={...participation,entryRevision:item.nativeTool?undefined:createHash('sha256').update(JSON.stringify(entry)).digest('hex')}; return true;
     }
+    assertItemTextSize();
     entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, ...(item.thinking?{thinking:true}:{}), ...(item.kind==='tool'?{participation:mergeParticipation(undefined,item.participation,item.name,item.input)}:{}), name: item.name, input: item.input, ...(item.presentedFiles?{presentedFiles:normalizePresentedFiles(item.presentedFiles)}:{}), parentToolId: item.parentToolId, ...(item.subagent?{subagent:item.subagent}:{}), participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
     record.view.entries.push(entry); record.sources[source] = entry.id;
     // A late native projection is known to this participant; intervening foreign

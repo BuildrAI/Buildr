@@ -43,6 +43,7 @@ import {
   resolveProvenanceForIdentity,
   sameVolumeProvenance,
   nativeHome,
+  nativePreview,
   opaqueReference,
   parseReference,
   privateDirectories,
@@ -2161,13 +2162,19 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       } else if ((row.type === 'tool_call' || row.type === 'tool_result') && typeof row.toolCallId === 'string') {
         const prior = items.get(`tool:${row.toolCallId}`);
         const status = row.status === 'failed' ? 'failed' : row.status === 'running' ? 'running' : 'completed';
+        const inputPreview = typeof row.fullInput === 'string'
+          ? nativePreview(row.fullInput, 4000)
+          : prior?.input;
+        const textPreview = typeof row.output === 'string'
+          ? (row.output ? nativePreview(row.output) : '')
+          : prior?.text ?? '';
         items.set(`tool:${row.toolCallId}`, {
           id: row.toolCallId,
           kind: 'tool',
           role: 'assistant',
           name: typeof row.name === 'string' ? row.name : prior?.name ?? '工具',
-          ...(typeof row.fullInput === 'string' ? { input: row.fullInput } : prior?.input ? { input: prior.input } : {}),
-          text: typeof row.output === 'string' ? row.output : prior?.text ?? '',
+          ...(inputPreview !== undefined ? { input: inputPreview } : {}),
+          text: textPreview,
           nativeTool: true,
           status,
         });
