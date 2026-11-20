@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { claim, clearProcessRecord, controlRoot, live, readPrivate, readProcessInstances, readProcessRecord, removeProcessInstance, writePrivate } from './ownership.ts';
-import { validateRuntimeContents } from './runtime-unit.ts';
+import { runtimeNodesRoot, validateRuntimeContents, verifyStableRuntimeNode } from './runtime-unit.ts';
+import { runtimeFileHash } from '../storage/runtime-objects.ts';
 import { observeStorageUse, reanchorSharedDentries, removeStorageCandidate, safeStoragePath, storageCandidate, type StorageCandidate, type StorageUse } from '../storage/files.ts';
 import type { AgentRuntimeUnit } from '../execution-contracts.ts';
 
@@ -95,6 +96,92 @@ export function retainedRuntimeCandidates(dataRoot: string, use: StorageUse, kee
   const rollback = items.filter(item => item.eligible).sort((a,b) => fs.lstatSync(b.path).mtimeMs - fs.lstatSync(a.path).mtimeMs)[0];
   if (!confirmedOnly && rollback) { rollback.eligible = false; rollback.reason = 'runtime_rollback_retained'; }
   return items;
+}
+
+function referencedNodeDigests(dataRoot: string, keep?: AgentRuntimeUnit): { complete: boolean; digests: Set<string> } {
+  const digests = new Set<string>();
+  const hashesByInode = new Map<string, string>();
+  const nodeName = process.platform === 'win32' ? 'node.exe' : 'node';
+  const agentRoot = path.join(path.resolve(dataRoot), 'agent-service');
+
+  const recordNode = (file: string): void => {
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('runtime_node_invalid');
+    const key = `${stat.dev}:${stat.ino}`;
+    let digest = hashesByInode.get(key);
+    if (!digest) {
+      digest = runtimeFileHash(file);
+      hashesByInode.set(key, digest);
+    }
+    digests.add(digest);
+  };
+
+  try {
+    const protectedNodes = new Set<string>();
+    if (keep?.node) protectedNodes.add(keep.node);
+    const current = currentRuntime(dataRoot);
+    if (current?.node) protectedNodes.add(current.node);
+    const pending = pendingRuntime(dataRoot);
+    if (pending?.node) protectedNodes.add(pending.node);
+    for (const record of readProcessInstances(dataRoot)) {
+      if (live(record.identity.pid) && record.identity.runtime.node) protectedNodes.add(record.identity.runtime.node);
+    }
+    for (const nodePath of protectedNodes) recordNode(nodePath);
+
+    const units = path.join(controlRoot(dataRoot), 'runtimes');
+    if (fs.existsSync(units)) {
+      if (!safeStoragePath(agentRoot, units)) return { complete: false, digests };
+      for (const name of fs.readdirSync(units)) {
+        if (!/^[a-f0-9]{64}$/.test(name)) continue;
+        const unitDir = path.join(units, name);
+        if (!safeStoragePath(agentRoot, unitDir)) return { complete: false, digests };
+        recordNode(path.join(unitDir, nodeName));
+      }
+    }
+    return { complete: true, digests };
+  } catch {
+    return { complete: false, digests };
+  }
+}
+
+export function runtimeNodeUnreferenced(dataRoot: string, directory: string, keep?: AgentRuntimeUnit): boolean {
+  const nodeDigest = path.basename(directory);
+  if (!/^[a-f0-9]{64}$/.test(nodeDigest)) return false;
+  const refs = referencedNodeDigests(dataRoot, keep);
+  return refs.complete && !refs.digests.has(nodeDigest);
+}
+
+/** Inventory isolated per-Node-digest directories eligible for safe reclamation after 24h unreferenced grace. */
+export function retainedRuntimeNodeCandidates(dataRoot: string, use: StorageUse, now = Date.now(), keep?: AgentRuntimeUnit): StorageCandidate[] {
+  const root = runtimeNodesRoot(dataRoot);
+  const agentRoot = path.join(path.resolve(dataRoot), 'agent-service');
+  if (!fs.existsSync(root) || !safeStoragePath(agentRoot, root)) return [];
+  const refs = referencedNodeDigests(dataRoot, keep);
+  const nodeName = process.platform === 'win32' ? 'node.exe' : 'node';
+  return fs.readdirSync(root)
+    .filter(name => /^[a-f0-9]{64}$/.test(name))
+    .map(nodeDigest => {
+      const directory = path.join(root, nodeDigest);
+      const item = storageCandidate(agentRoot, 'runtime-node', directory, directory, use, now - day);
+      if (!refs.complete) {
+        item.eligible = false;
+        item.reason = 'runtime_node_references_unknown';
+      } else if (refs.digests.has(nodeDigest)) {
+        item.eligible = false;
+        item.reason = 'runtime_node_retained_reference';
+      } else if (item.eligible) {
+        try {
+          if (!verifyStableRuntimeNode(dataRoot, path.join(directory, nodeName), nodeDigest)) {
+            item.eligible = false;
+            item.reason = 'runtime_node_contents_unknown';
+          }
+        } catch {
+          item.eligible = false;
+          item.reason = 'runtime_node_contents_unknown';
+        }
+      }
+      return item;
+    });
 }
 
 /** Called only after the shared storage lock and fresh system/file observation. */

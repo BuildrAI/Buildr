@@ -4,10 +4,29 @@ import { createHash, randomUUID, type Hash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import type { AgentRuntimeUnit } from '../execution-contracts.ts';
+import { cloneFile } from '../storage/clone-file.ts';
+import { safeStoragePath } from '../storage/files.ts';
 import { materializeRuntimeObject } from '../storage/runtime-objects.ts';
 import { AGENT_EXECUTION_CONTRACTS } from '../execution-contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { claimStorage, controlRoot, privateDirectory, readPackageRecord, readPrivate, writePrivate } from './ownership.ts';
+
+function runtimeNodeName(): string {
+  return process.platform === 'win32' ? 'node.exe' : 'node';
+}
+
+/** Directory retaining independent per-content Node binaries for stable OS permission identity. */
+export function runtimeNodesRoot(dataRoot: string): string {
+  return path.join(controlRoot(dataRoot), 'node-runtimes');
+}
+
+/** Stable executable path keyed only by Node binary digest so code updates keep TCC identity. */
+export function stableRuntimeNodePath(dataRoot: string, nodeDigest: string): string {
+  if (!/^[a-f0-9]{64}$/.test(nodeDigest)) {
+    throw new AgentServiceError('agent_runtime_identity_invalid', '执行运行单元Node摘要无效。', 409);
+  }
+  return path.join(runtimeNodesRoot(dataRoot), nodeDigest, runtimeNodeName());
+}
 
 
 function files(root: string, skipNpmShims=false): string[] {
@@ -60,6 +79,119 @@ export function computeAgentRuntimeDigest(input: { packageRoot: string; entry?: 
   if (!entry.startsWith('build/') || entry.includes('..') || !fs.statSync(path.join(packageRoot, entry), { throwIfNoEntry: false })?.isFile()) throw new AgentServiceError('agent_runtime_entry_missing', '执行运行单元尚未构建。', 409);
   return digestTree(packageRoot, runtimeFileNames(packageRoot), node, entry);
 }
+function computeNodeDigest(file: string): string {
+  const buffer = Buffer.allocUnsafe(1024 * 1024), digest = createHash('sha256');
+  updateFileHash(digest, file, buffer);
+  return digest.digest('hex');
+}
+
+/** Verify an existing stable Node runtime entry is exclusive (nlink===1), read-only, executable and content-matched. */
+export function verifyStableRuntimeNode(dataRoot: string, nodePath: string, expectedDigest: string): boolean {
+  const expectedPath = stableRuntimeNodePath(dataRoot, expectedDigest);
+  if (nodePath !== expectedPath) {
+    throw new AgentServiceError('agent_runtime_identity_invalid', '固定Node运行路径与摘要不匹配。', 409);
+  }
+  const directory = path.dirname(expectedPath);
+  const dirStat = fs.lstatSync(directory, { throwIfNoEntry: false });
+  if (!dirStat) return false;
+  const agentRoot = path.join(path.resolve(dataRoot), 'agent-service');
+  if (!dirStat.isDirectory() || dirStat.isSymbolicLink() || !safeStoragePath(agentRoot, directory)) {
+    throw new AgentServiceError('agent_process_storage_unsafe', '固定Node目录来源不安全。', 409);
+  }
+  const nodeName = runtimeNodeName();
+  const entries = fs.readdirSync(directory);
+  if (entries.length !== 1 || entries[0] !== nodeName) {
+    throw new AgentServiceError('agent_runtime_changed', '固定Node目录包含未登记文件。', 409);
+  }
+  const stat = fs.lstatSync(expectedPath, { throwIfNoEntry: false });
+  if (
+    !stat ||
+    !stat.isFile() ||
+    stat.isSymbolicLink() ||
+    stat.nlink !== 1 ||
+    (process.getuid && stat.uid !== process.getuid()) ||
+    (stat.mode & 0o222) !== 0 ||
+    (process.platform !== 'win32' && (stat.mode & 0o100) === 0)
+  ) {
+    throw new AgentServiceError('agent_runtime_changed', '固定Node运行文件已变化或来源不安全。', 409);
+  }
+  if (computeNodeDigest(expectedPath) !== expectedDigest) {
+    throw new AgentServiceError('agent_runtime_changed', '固定Node运行文件已变化或来源不安全。', 409);
+  }
+  return true;
+}
+
+function materializeStableRuntimeNodeLocked(dataRoot: string, sourceNode: string, nodeDigest: string): string {
+  const expected = stableRuntimeNodePath(dataRoot, nodeDigest);
+  if (verifyStableRuntimeNode(dataRoot, expected, nodeDigest)) {
+    const now = new Date();
+    fs.utimesSync(path.dirname(expected), now, now);
+    return expected;
+  }
+  const sourceStat = fs.lstatSync(sourceNode);
+  if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
+    throw new AgentServiceError('agent_runtime_file_invalid', '执行运行单元Node来源无效。', 409);
+  }
+  const root = runtimeNodesRoot(dataRoot);
+  privateDirectory(root);
+  const stage = path.join(root, '.stage-' + randomUUID());
+  privateDirectory(stage);
+  const stagedNode = path.join(stage, runtimeNodeName());
+  try {
+    if (sourceStat.size >= 1024 * 1024) {
+      try {
+        cloneFile(sourceNode, stagedNode);
+      } catch {
+        fs.copyFileSync(sourceNode, stagedNode, fs.constants.COPYFILE_FICLONE | fs.constants.COPYFILE_EXCL);
+      }
+    } else {
+      fs.copyFileSync(sourceNode, stagedNode, fs.constants.COPYFILE_FICLONE | fs.constants.COPYFILE_EXCL);
+    }
+    fs.chmodSync(stagedNode, 0o500);
+    if (computeNodeDigest(stagedNode) !== nodeDigest) {
+      throw new AgentServiceError('agent_runtime_changed', '固定Node运行文件校验不匹配。', 409);
+    }
+    try {
+      fs.renameSync(stage, path.dirname(expected));
+    } catch (error) {
+      if (!fs.existsSync(path.dirname(expected))) throw error;
+    }
+    if (!verifyStableRuntimeNode(dataRoot, expected, nodeDigest)) {
+      throw new AgentServiceError('agent_runtime_changed', '固定Node运行文件未完成物化。', 409);
+    }
+    return expected;
+  } finally {
+    if (fs.existsSync(stage)) fs.rmSync(stage, { recursive: true });
+  }
+}
+
+/** Resolve and materialize the exclusive per-Node-digest binary for launching processes. */
+export function ensureStableRuntimeNode(dataRoot: string, runtime: AgentRuntimeUnit): string {
+  const expectedDirectory = path.join(controlRoot(dataRoot), 'runtimes', runtime.digest);
+  const expectedRuntimeNode = path.join(expectedDirectory, runtimeNodeName());
+  if (
+    runtime.schemaVersion !== 1 ||
+    !/^[a-f0-9]{64}$/.test(runtime.digest) ||
+    runtime.directory !== expectedDirectory ||
+    runtime.node !== expectedRuntimeNode
+  ) {
+    throw new AgentServiceError('agent_runtime_identity_invalid', '执行运行单元身份不匹配。', 409);
+  }
+  const sourceStat = fs.lstatSync(runtime.node, { throwIfNoEntry: false });
+  if (!sourceStat || !sourceStat.isFile() || sourceStat.isSymbolicLink()) {
+    throw new AgentServiceError('agent_runtime_file_invalid', '执行运行单元Node来源无效。', 409);
+  }
+  const nodeDigest = computeNodeDigest(runtime.node);
+  const stablePath = stableRuntimeNodePath(dataRoot, nodeDigest);
+  if (verifyStableRuntimeNode(dataRoot, stablePath, nodeDigest)) return stablePath;
+  const lock = claimStorage(dataRoot);
+  try {
+    return materializeStableRuntimeNodeLocked(dataRoot, runtime.node, nodeDigest);
+  } finally {
+    lock.release();
+  }
+}
+
 /** Materialize the already prepared private package; no source or global installation fallback. */
 export function prepareAgentRuntime(input: { dataRoot: string; packageRoot?: string; entry?: string; node?: string }, checkCancelled: () => void = () => {}): AgentRuntimeUnit {
   checkCancelled();
@@ -76,8 +208,8 @@ export function prepareAgentRuntime(input: { dataRoot: string; packageRoot?: str
   try {
   const units = path.join(controlRoot(input.dataRoot), 'runtimes'); privateDirectory(units);
   const directory = path.join(units, digest);
-  const descriptor: AgentRuntimeUnit = { schemaVersion: 1, digest, directory, entry: path.join(directory, entry), node: path.join(directory, process.platform === 'win32' ? 'node.exe' : 'node'), ...([1,2,3,4].includes(compatibility?.parallelCompatibility ?? 0) ? { parallelCompatibility: compatibility!.parallelCompatibility } : {}) };
-  if (fs.existsSync(directory)) { validateAgentRuntime(input.dataRoot, descriptor); checkCancelled(); const now = new Date(); fs.utimesSync(directory, now, now); return descriptor; }
+  const descriptor: AgentRuntimeUnit = { schemaVersion: 1, digest, directory, entry: path.join(directory, entry), node: path.join(directory, runtimeNodeName()), ...([1,2,3,4].includes(compatibility?.parallelCompatibility ?? 0) ? { parallelCompatibility: compatibility!.parallelCompatibility } : {}) };
+  if (fs.existsSync(directory)) { validateAgentRuntime(input.dataRoot, descriptor); checkCancelled(); const now = new Date(); fs.utimesSync(directory, now, now); materializeStableRuntimeNodeLocked(input.dataRoot, descriptor.node, computeNodeDigest(descriptor.node)); return descriptor; }
   const stage = path.join(units, '.stage-' + randomUUID()); privateDirectory(stage);
   try {
     for (const name of names) { checkCancelled(); const target = path.join(stage, name); fs.mkdirSync(path.dirname(target), { recursive: true }); if (name === 'build/runtime-contracts.json') fs.copyFileSync(path.join(packageRoot, name), target);
@@ -86,7 +218,10 @@ export function prepareAgentRuntime(input: { dataRoot: string; packageRoot?: str
     checkCancelled();
     writePrivate(path.join(stage, 'runtime.json'), { ...descriptor, files: names });
     try { fs.renameSync(stage, directory); } catch (error) { if (!fs.existsSync(directory)) throw error; }
-    validateAgentRuntime(input.dataRoot, descriptor); return descriptor;
+    validateAgentRuntime(input.dataRoot, descriptor);
+    checkCancelled();
+    materializeStableRuntimeNodeLocked(input.dataRoot, descriptor.node, computeNodeDigest(descriptor.node));
+    return descriptor;
   } finally { if (fs.existsSync(stage)) fs.rmSync(stage, { recursive: true }); }
   } finally { lock.release(); }
 }

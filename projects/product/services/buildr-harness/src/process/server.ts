@@ -27,7 +27,7 @@ import { dispatchOperation, validateOperation } from './operations.ts';
 import { authorize, body, json, listen, request, privateToken, keepEventStreamAlive } from './transport.ts';
 import { claim, claimStorage, clearProcessRecord, controlRoot, readPrivate, writePrivate, readProcessRecord, readProcessInstances, writeProcessInstance, generationAlive, live, readLock } from './ownership.ts';
 import type { ProcessBootstrap, ProcessRecord } from './ownership.ts';
-import { validateAgentRuntime, canRunParallel, runtimeSupportsHarnessWeb } from './runtime-unit.ts';
+import { ensureStableRuntimeNode, validateAgentRuntime, canRunParallel, runtimeSupportsHarnessWeb } from './runtime-unit.ts';
 import { launchAgentProcess } from './handoff.ts';
 import { launchDetachedProcess } from './detached-launch.ts';
 import { ConversationRepository } from '../persistence/conversation-repository.ts';
@@ -46,6 +46,7 @@ interface PendingRuntime { runtime: AgentRuntimeUnit; state: 'waiting' | 'switch
 export async function startAgentExecutionServer(options: ProcessBootstrap & { serviceOptions?: Pick<AgentServiceOptions, 'executors' | 'modelProviders' | 'programManager'> }) {
   options = {...options, legacySourceId: options.legacySourceId ?? 'buildr'};
   validateAgentRuntime(options.dataRoot, options.runtime);
+  const runtimeNode = ensureStableRuntimeNode(options.dataRoot, options.runtime);
   let owner = claim(options.dataRoot, 'owner'), ownsMetadata = true;
   let abortStart: (() => Promise<void>) | undefined;
   let cleanupDiagnostics:(()=>void)|undefined;
@@ -59,7 +60,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     const target=await recipient(scope,id,control.generation);
     if(target)return forward(target,'/operations',{contract:AGENT_EXECUTION_CONTRACTS.operations,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,operation:action==='stop'?'conversations.stop':action==='release-question-wait'?'conversations.releaseQuestionWait':'conversations.observeRun',args:[scope,id,control]});
     return action==='stop'?service.conversations.stop(scope,id,control):action==='release-question-wait'?service.conversations.releaseQuestionWait(scope,id,control):service.conversations.observeRun(scope,id,control);
-  }, conversationControl:(scope,id)=>conversationControlInstruction({dataRoot:options.dataRoot,profileId:options.profileId,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,scope,conversationId:id},options.runtime.node), generationAlive: generation => generationAlive(options.dataRoot, generation), generationReleased:generation=>{
+  }, conversationControl:(scope,id)=>conversationControlInstruction({dataRoot:options.dataRoot,profileId:options.profileId,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,scope,conversationId:id},runtimeNode), generationAlive: generation => generationAlive(options.dataRoot, generation), generationReleased:generation=>{
     const prior=readProcessInstances(options.dataRoot).find(record=>record.identity.generation===generation);
     if(prior)retainedOwners.set(generation,prior.identity);
     const owner=prior?.identity??retainedOwners.get(generation);
@@ -725,7 +726,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     // The short-lived successor coordinator owns the handoff after this process exits.
     try {
       const coordinator = launchDetachedProcess({
-        command: options.runtime.node,
+        command: runtimeNode,
         args: [path.join(options.runtime.directory, 'build/process/handoff.js'), handoff],
         labelPrefix: 'harness-handoff',
         stateDir: path.join(controlRoot(options.dataRoot), 'launchd-jobs'),

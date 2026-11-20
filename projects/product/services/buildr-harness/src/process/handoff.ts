@@ -7,7 +7,7 @@ import type { AgentRuntimeUnit } from '../execution-contracts.ts';
 import type { ProcessBootstrap } from './ownership.ts';
 import { controlRoot, live, readLock, readPrivate, readProcessRecord, writePrivate } from './ownership.ts';
 import { request } from './transport.ts';
-import { validateAgentRuntime } from './runtime-unit.ts';
+import { ensureStableRuntimeNode, validateAgentRuntime } from './runtime-unit.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { launchDetachedProcess, type DetachedProcessHandle } from './detached-launch.ts';
 
@@ -18,8 +18,9 @@ export function resumeAgentHandoff(dataRoot: string, filename: string): number {
   const stopped = readPrivate<{instanceId:string;confirmed:boolean}>(path.join(controlRoot(dataRoot),'last-stop.json'));
   if (!input || input.bootstrap.dataRoot !== path.resolve(dataRoot) || stopped?.instanceId !== input.expectedInstanceId || !stopped.confirmed) throw new AgentServiceError('agent_handoff_release_unconfirmed','交接前的准确释放尚未确认，原资料保留。',409);
   validateAgentRuntime(dataRoot,input.bootstrap.runtime); validateAgentRuntime(dataRoot,input.target);
+  const runtimeNode = ensureStableRuntimeNode(dataRoot, input.bootstrap.runtime);
   const handle = launchDetachedProcess({
-    command: input.bootstrap.runtime.node,
+    command: runtimeNode,
     args: [path.join(input.bootstrap.runtime.directory,'build/process/handoff.js'), filename],
     labelPrefix: 'harness-handoff',
     stateDir: path.join(controlRoot(dataRoot), 'launchd-jobs'),
@@ -34,12 +35,13 @@ export function resumeAgentHandoff(dataRoot: string, filename: string): number {
 
 export function launchAgentProcessHandle(bootstrap: ProcessBootstrap): DetachedProcessHandle {
   validateAgentRuntime(bootstrap.dataRoot, bootstrap.runtime);
+  const runtimeNode = ensureStableRuntimeNode(bootstrap.dataRoot, bootstrap.runtime);
   const input = path.join(controlRoot(bootstrap.dataRoot), 'launch-' + bootstrap.runtime.digest + '.json');
   writePrivate(input, bootstrap);
   const startupLog = path.join(controlRoot(bootstrap.dataRoot), 'startup.log');
   const diagnostics = executionLog(path.join(bootstrap.dataRoot,'agent-service'),'launcher-'+process.pid);
   const handle = launchDetachedProcess({
-    command: bootstrap.runtime.node,
+    command: runtimeNode,
     args: [bootstrap.runtime.entry, input],
     labelPrefix: 'harness-agent',
     stateDir: path.join(controlRoot(bootstrap.dataRoot), 'launchd-jobs'),

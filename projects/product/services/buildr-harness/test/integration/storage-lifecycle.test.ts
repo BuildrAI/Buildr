@@ -3,7 +3,7 @@ import { ConversationRepository } from '../../src/persistence/conversation-repos
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import test from 'node:test';
@@ -11,7 +11,7 @@ import { createNativeExecutors } from '../../src/executors/index.ts';
 import { ExecutorStorage, executorCacheCandidates } from '../../src/application/executor-storage.ts';
 import { isolatedEnvironment } from '../../src/executors/native-process.ts';
 import { observeStorageUse, removeStorageCandidate, storageCandidate } from '../../src/storage/files.ts';
-import { prepareAgentRuntime } from '../../src/process/runtime-unit.ts';
+import { ensureStableRuntimeNode, prepareAgentRuntime, stableRuntimeNodePath, verifyStableRuntimeNode } from '../../src/process/runtime-unit.ts';
 import { retainedRuntimeCandidates, runtimeUnreferenced, retireRuntimeRecords } from '../../src/process/cleanup.ts';
 import { claim, controlRoot, readLock, writePrivate } from '../../src/process/ownership.ts';
 import { AGENT_EXECUTION_CONTRACTS } from '../../src/execution-contracts.ts';
@@ -1080,4 +1080,92 @@ test('numbered transient verification dirs and managed test temp dirs with dead 
   assert.equal(collected.results.find(x => x.path === managed.root)?.status, 'removed');
   assert.equal(fs.existsSync(e2eDir), false);
   assert.equal(fs.existsSync(managed.root), false);
+});
+
+test('stable runtime Node paths isolate exclusive inodes across builds, fail closed on tampering, and reclaim unreferenced old Node binaries', { skip: process.platform === 'win32' }, async t => {
+  const base = fixture(t), dataRoot = path.join(base, 'profile'), pkg = path.join(base, 'package');
+  file(path.join(pkg, 'package.json'), '{"type":"module"}');
+  file(path.join(pkg, 'build/runtime-contracts.json'), JSON.stringify({ contracts: AGENT_EXECUTION_CONTRACTS, storageVersion: 1 }));
+  const nodeBytesV1 = 'node-binary-v1';
+  const nodeBytesV2 = 'node-binary-v2';
+  const nodeBytesV3 = 'node-binary-v3';
+  const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
+  const nodeV1 = path.join(base, 'node-v1'); file(nodeV1, nodeBytesV1); fs.chmodSync(nodeV1, 0o700);
+  const nodeV2 = path.join(base, 'node-v2'); file(nodeV2, nodeBytesV2); fs.chmodSync(nodeV2, 0o700);
+  const nodeV3 = path.join(base, 'node-v3'); file(nodeV3, nodeBytesV3); fs.chmodSync(nodeV3, 0o700);
+
+  file(path.join(pkg, 'build/entry.js'), 'export const version = 1;');
+  const first = prepareAgentRuntime({ dataRoot, packageRoot: pkg, entry: 'build/entry.js', node: nodeV1 });
+  file(path.join(pkg, 'build/entry.js'), 'export const version = 2;');
+  const second = prepareAgentRuntime({ dataRoot, packageRoot: pkg, entry: 'build/entry.js', node: nodeV1 });
+
+  assert.notEqual(first.digest, second.digest);
+  assert.notEqual(first.node, second.node);
+  const digestV1 = sha256(nodeBytesV1);
+  const stableV1 = ensureStableRuntimeNode(dataRoot, first);
+  assert.equal(stableV1, stableRuntimeNodePath(dataRoot, digestV1));
+  assert.equal(ensureStableRuntimeNode(dataRoot, second), stableV1);
+  const stableStat = fs.lstatSync(stableV1);
+  assert.equal(stableStat.nlink, 1, 'stable Node must keep an exclusive inode to avoid XNU hardlink path drift');
+  assert.notEqual(stableStat.ino, fs.statSync(first.node).ino);
+  assert.equal(stableStat.mode & 0o222, 0);
+  assert.notEqual(stableStat.mode & 0o100, 0);
+  assert.equal(verifyStableRuntimeNode(dataRoot, stableV1, digestV1), true);
+
+  // Fail closed when writable, hardlinked, or content-tampered.
+  fs.chmodSync(stableV1, 0o700);
+  assert.throws(() => verifyStableRuntimeNode(dataRoot, stableV1, digestV1), { code: 'agent_runtime_changed' });
+  fs.writeFileSync(stableV1, 'tampered');
+  fs.chmodSync(stableV1, 0o500);
+  assert.throws(() => verifyStableRuntimeNode(dataRoot, stableV1, digestV1), { code: 'agent_runtime_changed' });
+  assert.throws(() => ensureStableRuntimeNode(dataRoot, first), { code: 'agent_runtime_changed' });
+  fs.rmSync(path.dirname(stableV1), { recursive: true, force: true });
+  assert.equal(ensureStableRuntimeNode(dataRoot, first), stableV1);
+  const extraLink = path.join(base, 'hardlink-node');
+  fs.linkSync(stableV1, extraLink);
+  assert.throws(() => verifyStableRuntimeNode(dataRoot, stableV1, digestV1), { code: 'agent_runtime_changed' });
+  fs.unlinkSync(extraLink);
+  assert.equal(verifyStableRuntimeNode(dataRoot, stableV1, digestV1), true);
+
+  // Switch to Node v2 and v3; retain v1 while its runtime dir exists, then reclaim after retirement and 24h grace.
+  const third = prepareAgentRuntime({ dataRoot, packageRoot: pkg, entry: 'build/entry.js', node: nodeV2 });
+  const fourth = prepareAgentRuntime({ dataRoot, packageRoot: pkg, entry: 'build/entry.js', node: nodeV3 });
+  const stableV2 = ensureStableRuntimeNode(dataRoot, third);
+  const stableV3 = ensureStableRuntimeNode(dataRoot, fourth);
+  assert.notEqual(stableV1, stableV2);
+  assert.notEqual(stableV2, stableV3);
+
+  // Protect v1 while first/second runtime units still reference Node v1.
+  age(path.dirname(stableV1));
+  age(path.dirname(stableV2));
+  age(path.dirname(stableV3));
+  let plan = inspectAgentStorage({ dataRoot, scanHomes: false, tempRoots: [] });
+  assert.equal(plan.items.find(item => item.path === path.dirname(stableV1))?.reason, 'runtime_node_retained_reference');
+  assert.equal(plan.items.find(item => item.path === path.dirname(stableV1))?.eligible, false);
+
+  // Remove v1 and v2 runtime units; hold v2 open by a live process so only unreferenced & unused v1 reclaims.
+  fs.rmSync(first.directory, { recursive: true, force: true });
+  fs.rmSync(second.directory, { recursive: true, force: true });
+  fs.rmSync(third.directory, { recursive: true, force: true });
+  const holder = spawn(process.execPath, ['-e', "require('fs').openSync(process.argv[1],'r');process.stdout.write('ready');setInterval(()=>{},1000)", stableV2], { stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(async () => { if (holder.exitCode === null && holder.signalCode === null) { const exited = once(holder, 'exit'); holder.kill(); await exited; } });
+  await once(holder.stdout!, 'data');
+
+  // Within 24h grace period, v1 stays protected as storage_recent.
+  const recentPlan = inspectAgentStorage({ dataRoot, scanHomes: false, tempRoots: [], now: fs.statSync(path.dirname(stableV1)).mtimeMs + day - 1000 });
+  assert.equal(recentPlan.items.find(item => item.path === path.dirname(stableV1))?.reason, 'storage_recent');
+  assert.equal(recentPlan.items.find(item => item.path === path.dirname(stableV1))?.eligible, false);
+
+  // After 24h grace period, unreferenced v1 reclaims while live-held v2 and referenced v3 stay protected.
+  plan = inspectAgentStorage({ dataRoot, scanHomes: false, tempRoots: [] });
+  assert.equal(plan.items.find(item => item.path === path.dirname(stableV1))?.eligible, true);
+  assert.equal(plan.items.find(item => item.path === path.dirname(stableV2))?.reason, 'storage_in_use');
+  assert.equal(plan.items.find(item => item.path === path.dirname(stableV2))?.eligible, false);
+  assert.equal(plan.items.find(item => item.path === path.dirname(stableV3))?.reason, 'runtime_node_retained_reference');
+
+  const collected = collectAgentStorage(plan);
+  assert.equal(collected.results.find(item => item.path === path.dirname(stableV1))?.status, 'removed');
+  assert.equal(fs.existsSync(path.dirname(stableV1)), false);
+  assert.equal(fs.existsSync(stableV2), true);
+  assert.equal(fs.existsSync(stableV3), true);
 });
