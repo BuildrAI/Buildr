@@ -7,7 +7,11 @@ test('Development imports only public composition facades and mounts the complet
     const text=fs.readFileSync(path.join(dev,file),'utf8');
     assert.doesNotMatch(text,/@buildr-ai\/buildr-harness-(?:ui|web)/);
     for(const match of text.matchAll(/(?:from\s+|import\s*\(\s*|import\s*)['"]([^'"]+)['"]/g)){
-      if(match[1].includes('buildr-harness-web/'))assert.ok(['../../../buildr-harness-web/src/shell','../../../../buildr-harness-web/src/conversation'].includes(match[1]),file);
+      if(match[1].includes('buildr-harness-web/')) {
+        const target=path.resolve(dev,path.dirname(file),match[1]);
+        const facades=['shell','conversation','explorer','source-control','workbench-ui','workbench-editor','workbench-model','workbench-editor-model','workbench-hooks'];
+        assert.ok(facades.some(name=>[name,name+'.ts'].some(entry=>target===path.join(root,'src',entry))),file);
+      }
     }
   }
   const facade=fs.readFileSync(path.join(root,'src/shell.ts'),'utf8');

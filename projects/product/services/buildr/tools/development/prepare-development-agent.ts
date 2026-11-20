@@ -3,7 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { agentRuntimePackageTree } from '../../../buildr-harness/tools/package-runtime.ts';
-import { withExclusiveFileLock } from '../../../buildr-harness/src/workbench-lock.ts';
+import { withExclusiveFileLock } from '../../src/infrastructure/filesystem/exclusive-file-lock.ts';
 
 const buildrRoot = path.resolve(import.meta.dirname, '../..');
 

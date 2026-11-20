@@ -20,7 +20,7 @@ test('directory files are independent of Git and stale writes cannot replace con
   const scope=host.register(dir);
   const run=createDirectoryWorkbench(host);
   const call=async(operation:string,input={})=>await run(operation,{scopeId:scope.ref.id,scopeRevision:scope.revision,...input}) as any;
-  assert.ok((await call('directory')).entries.some(item=>item.path==='note.md'));
+  assert.ok((await call('directory')).entries.some((item:{path:string})=>item.path==='note.md'));
   await assert.rejects(call('status'),{code:'code_checkout_unavailable'});
   await assert.rejects(call('directory',{rootPath:root}),{code:'agent_directory_workbench_input_invalid'});
   await assert.rejects(call('file',{path:'../outside.txt'}),{code:'code_path_forbidden'});

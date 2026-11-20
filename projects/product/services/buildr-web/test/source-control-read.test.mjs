@@ -4,14 +4,14 @@ import { registerHooks } from 'node:module';
 
 registerHooks({
   resolve(specifier, context, next) {
-    if (specifier === 'react' && context.parentURL?.endsWith('/hooks/useSourceControlRead.ts')) {
+    if (specifier === 'react' && context.parentURL?.endsWith('/workbench/source-control/useSourceControlRead.ts')) {
       const source = ['useCallback', 'useEffect', 'useRef', 'useState'].map(name => `export const ${name} = (...args) => globalThis.__sourceControlHookHarness.${name}(...args);`).join('\n');
       return {url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true};
     }
     return next(specifier, context);
   },
 });
-const { useSourceControlRead } = await import('../src/features/code/hooks/useSourceControlRead.ts');
+const { useSourceControlRead } = await import('../../buildr-harness-web/src/workbench/source-control/useSourceControlRead.ts');
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return {promise, resolve, reject}; };
 const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
 

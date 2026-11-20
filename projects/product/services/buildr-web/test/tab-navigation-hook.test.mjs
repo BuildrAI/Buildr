@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {registerHooks} from 'node:module';
 registerHooks({resolve(specifier,context,next){
-  if(context.parentURL?.endsWith('/lib/useTabNavigation.ts')){
+  if(context.parentURL?.endsWith('/workbench/ui/useTabNavigation.ts')){
     if(specifier==='react')return {url:'data:text/javascript,'+encodeURIComponent(['useLayoutEffect','useRef','useState'].map(name=>`export const ${name}=(...args)=>globalThis.__tabHarness.${name}(...args);`).join('\n')),shortCircuit:true};
     if(specifier==='./tab-navigation')return next(specifier+'.ts',context);
   }
   return next(specifier,context);
 }});
-const {useTabNavigation}=await import('../src/lib/useTabNavigation.ts');
+const {useTabNavigation}=await import('../../buildr-harness-web/src/workbench/ui/useTabNavigation.ts');
 function harness(enabled=true,sharedCloseFocus){
   const slots=[],effects=[];let cursor=0;
   const same=(a,b)=>a&&b&&a.length===b.length&&a.every((v,i)=>Object.is(v,b[i]));

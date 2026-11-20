@@ -192,7 +192,7 @@ export function selectBrowserSelectors(changedPaths: any): any  {
       continue;
     }
     if(originalValue.includes('/features/harness-ui/')){add(plan,'agent-conversations',originalValue,'Development 工程网页嵌入与上下文集成发生变化。');if(originalValue.endsWith('.css'))add(plan,'layout',originalValue,'工程嵌入布局发生变化。');continue;}
-    if (/^services\/buildr-harness-web\/src\/(?:workbench\/|explorer\.ts$|source-control\.ts$|workbench-(?:ui|editor|model)\.ts$)/.test(originalValue)) {
+    if (/^services\/buildr-harness-web\/src\/(?:workbench\/|explorer\.ts$|source-control\.ts$|workbench-(?:ui|editor(?:-model)?|model|hooks)\.ts$)/.test(originalValue)) {
       for (const selector of ['code-explorer', 'code']) add(plan, selector, originalValue, 'Harness 通用目录与 Git 视图由 Development 装配，需核对工程入口。');
       continue;
     }

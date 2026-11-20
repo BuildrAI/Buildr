@@ -43,7 +43,8 @@ test('frontend real leaf obeys one- and two-worker grants without dropping eithe
     const backendRoot = path.join(root, 'buildr');
     const webRoot = path.join(root, 'buildr-web');
     fs.mkdirSync(backendRoot);
-    fs.mkdirSync(path.join(webRoot, 'tools'), { recursive: true });
+    fs.mkdirSync(path.join(webRoot, 'tools/testing'), { recursive: true });
+    fs.copyFileSync(path.join(serviceRoot, '../buildr-web/tools/testing/shared-ui-test-dependencies.mjs'), path.join(webRoot, 'tools/testing/shared-ui-test-dependencies.mjs'));
     fs.mkdirSync(path.join(webRoot, 'test'));
     fs.copyFileSync(path.join(serviceRoot, '../buildr-web/tools/run-logic-tests.mjs'), path.join(webRoot, 'tools/run-logic-tests.mjs'));
     for (const file of ['first', 'second']) {
