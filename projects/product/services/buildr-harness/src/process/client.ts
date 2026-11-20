@@ -14,7 +14,7 @@ import type { ProcessRecord } from './ownership.ts';
 import { canRunParallel, prepareAgentRuntime } from './runtime-unit.ts';
 import { prepareAgentRuntimeAsync } from './runtime-preparation.ts';
 import { launchAgentProcessHandle, resumeAgentHandoff } from './handoff.ts';
-import type { DetachedProcessHandle } from './detached-launch.ts';
+import { pruneExitedLaunchdJobs, type DetachedProcessHandle } from './detached-launch.ts';
 import { request, privateToken } from './transport.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
 import { normalizeSendDraft } from '../domain/send-draft.ts';
@@ -455,6 +455,15 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
   } };
 }
 
+async function waitAndPruneLaunchdJobs(dataRoot: string, pids: readonly number[]): Promise<void> {
+  if (process.platform !== 'darwin') return;
+  const livePids = pids.filter(pid => Number.isInteger(pid) && pid > 1);
+  for (let attempt = 0; attempt < 40 && livePids.some(live); attempt++) await pause(25);
+  try {
+    pruneExitedLaunchdJobs(path.join(controlRoot(dataRoot), 'launchd-jobs'));
+  } catch { /* Best-effort launchd job cleanup. */ }
+}
+
 /** Lifecycle owners such as previews can stop an existing backend without starting one. */
 export async function stopAgentProcess(input: { dataRoot: string; profileId?: string; mode?: 'if-idle' | 'stop-owned' }): Promise<void> {
   let startup: ReturnType<typeof claim> | undefined;
@@ -471,6 +480,7 @@ async function stopAllProcesses(input: { dataRoot: string; profileId?: string; m
     const owner = readLock(input.dataRoot, 'owner');
     if (owner && live(owner.pid)) throw new AgentServiceError('agent_process_stop_unconfirmed', '执行后台仍在运行，不能确认停止。', 409);
     if (readPrivate<{confirmed:boolean}>(path.join(controlRoot(input.dataRoot), 'last-stop.json'))?.confirmed === false) throw new AgentServiceError('agent_process_stop_unconfirmed', '原执行或工具释放尚未确认，数据保留。', 409);
+    await waitAndPruneLaunchdJobs(input.dataRoot, []);
     return;
   }
   for (const record of records) {
@@ -498,6 +508,7 @@ async function stopAllProcesses(input: { dataRoot: string; profileId?: string; m
   }));
   const failure=results.find((result):result is PromiseRejectedResult=>result.status==='rejected');
   if (failure) throw failure.reason;
+  await waitAndPruneLaunchdJobs(input.dataRoot, records.map(record => record.identity.pid));
 }
 
 /** Explicit idle restart of the observed profile. Historical dead generations
@@ -532,6 +543,7 @@ export async function restartAgentProcess(input: AgentProcessConnectionOptions &
     }));
     const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
     if (failure) throw failure.reason;
+    await waitAndPruneLaunchdJobs(options.dataRoot, records.map(record => record.identity.pid));
   } finally { startup.release(); }
   const connection = await connectAgentProcess(options);
   try {

@@ -54,7 +54,7 @@ try {
     process.stderr.write(`[publication-surfaces] checking ${surface} ordinary Web entry\n`);
     const directory = path.join(root, surface), workspace = path.join(directory, 'workspace');
     const appData = path.join(directory, 'app-data');
-    const env = { ...installationEnv, BUILDR_APP_DATA_DIR: appData, BUILDR_PRODUCT_DATA_DIR: path.join(directory, 'product-data'), BUILDR_LOCAL_APP_NO_OPEN: '1' };
+    const env = { ...installationEnv, BUILDR_APP_DATA_DIR: appData, BUILDR_PRODUCT_DATA_DIR: path.join(directory, 'product-data'), BUILDR_LOCAL_APP_NO_OPEN: '1', BUILDR_DETACHED_ISOLATION: 'off' };
     fs.mkdirSync(workspace, { recursive: true });
     const cli = (args: string[], json = false) => {
       const output = run(process.execPath, [entry, ...args, '--target', workspace, ...(json ? ['--json'] : [])], workspace, env);

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { stopAgentProcess } from '@buildr-ai/buildr-harness';
 import { launchDetachedProcess, parseLaunchctlPrint } from '../../src/infrastructure/detached-launch.ts';
 import { buildLauncher } from '../../tools/build/launcher/build.ts';
 
@@ -224,4 +225,44 @@ test('runDetachedCloseout 在真实 launchd 模式下独立运行自举 worker �
   const observed = JSON.parse(fs.readFileSync(workerObserved, 'utf8'));
   assert.equal(observed.ppid, 1);
   assert.deepEqual(observed.args, ['--check', 'yes']);
+});
+
+test('stopAgentProcess 在真实 macOS 停服后自动注销并清理已退出的 launchd 作业', { skip: process.platform !== 'darwin' }, async (t) => {
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-macos-stop-prune-'));
+  const jobsDir = path.join(dataRoot, 'agent-service', 'process', 'launchd-jobs');
+  let handle: ReturnType<typeof launchDetachedProcess> | null = null;
+  t.after(() => {
+    try { handle?.bootout(); } catch { /* Best-effort cleanup. */ }
+    fs.rmSync(dataRoot, { recursive: true, force: true });
+  });
+
+  handle = launchDetachedProcess({
+    command: process.execPath,
+    args: ['-e', 'process.exit(0)'],
+    cwd: dataRoot,
+    labelPrefix: 'it-stop-prune',
+    stateDir: jobsDir,
+  }, {
+    env: { ...process.env, BUILDR_DETACHED_ISOLATION: 'launchd' },
+  });
+
+  assert.equal(handle.isolationMode, 'launchd');
+  assert.ok(handle.jobLabel);
+  assert.ok(handle.domainTarget);
+
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline && handle.pollStatus().running) {
+    await new Promise(r => setTimeout(r, 25));
+  }
+  assert.equal(handle.pollStatus().running, false);
+  const beforePrint = spawnSync('/bin/launchctl', ['print', `${handle.domainTarget}/${handle.jobLabel}`], { encoding: 'utf8' });
+  assert.equal(beforePrint.status, 0, 'exited launchd job remains registered until pruned');
+  assert.deepEqual(fs.readdirSync(jobsDir), [`${handle.jobLabel}.json`]);
+
+  await stopAgentProcess({ dataRoot });
+
+  const afterPrint = spawnSync('/bin/launchctl', ['print', `${handle.domainTarget}/${handle.jobLabel}`], { encoding: 'utf8' });
+  assert.notEqual(afterPrint.status, 0, 'stopAgentProcess must boot out exited launchd jobs');
+  assert.deepEqual(fs.readdirSync(jobsDir), []);
+  handle = null;
 });
