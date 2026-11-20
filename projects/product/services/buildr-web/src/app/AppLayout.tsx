@@ -70,7 +70,7 @@ function readWebProfile(): WebProfile | null {
 }
 
 function productTitle(webProfile: WebProfile | null): string {
-  return webProfile === 'development' ? 'Buildr Web Dev' : 'Buildr Web';
+  return webProfile === 'development' ? 'Buildr Development Dev' : 'Buildr Development';
 }
 
 export function AppLayout(props: { renderResource: (item: ResourcePreview) => ReactNode }) {
@@ -264,8 +264,8 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     quitPending.current = true;
     try {
       const ok = !ask || await confirmModal({
-        title: '退出 Buildr Web？',
-        content: '退出 Buildr Web 后，本机服务将停止。确定退出吗？',
+        title: '退出 Buildr Development？',
+        content: '退出 Buildr Development 后，本机服务将停止。确定退出吗？',
         okText: '退出',
         okButtonProps: { danger: true },
       });
@@ -325,7 +325,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     let controller: AbortController | null = null;
     try {
       const ok = await confirmModal({
-        title: '重启 Buildr Web？',
+        title: '重启 Buildr Development？',
         content: '重启会短暂断开网页连接，网页服务中的验证可能中断；独立智能体（Agent）执行服务不会被强制停止。确定重启吗？',
         okText: '重启',
         okButtonProps: { danger: true },
@@ -429,9 +429,9 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
   if (exited) {
     return (
       <div className="exit-screen">
-        <Typography.Title level={2}>Buildr Web 已退出</Typography.Title>
+        <Typography.Title level={2}>Buildr Development 已退出</Typography.Title>
         <Typography.Paragraph type="secondary">
-          你可以关闭此页面；再次点击 Buildr Web 图标即可重新打开。
+          你可以关闭此页面；再次点击 Buildr Development 图标即可重新打开。
         </Typography.Paragraph>
       </div>
     );
@@ -440,13 +440,13 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
   if (restartPhase) {
     return (
       <div className="exit-screen" id="restart-screen">
-        <Typography.Title level={2}>{restartPhase === 'watching' ? '正在重启 Buildr Web…' : restartPhase === 'failed' ? 'Buildr Web 重启失败' : '尚未确认重启完成'}</Typography.Title>
+        <Typography.Title level={2}>{restartPhase === 'watching' ? '正在重启 Buildr Development…' : restartPhase === 'failed' ? 'Buildr Development 重启失败' : '尚未确认重启完成'}</Typography.Title>
         <Typography.Paragraph type="secondary">
           {restartPhase === 'watching'
             ? '页面将在新实例就绪后自动刷新，请稍候。'
             : restartPhase === 'failed'
               ? '原服务仍可访问。你可以重新发起重启，或返回页面继续工作。'
-              : '尚未从原地址检测到新页面。你可以继续连接；也可以重新打开 Buildr Web 应用，由应用查找当前服务地址。'}
+              : '尚未从原地址检测到新页面。你可以继续连接；也可以重新打开 Buildr Development 应用，由应用查找当前服务地址。'}
         </Typography.Paragraph>
         {restartPhase === 'failed' ? (
           <>
@@ -483,9 +483,9 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
               menu={{ items: [
                 { key: 'installation-info', icon: <InfoCircleOutlined />, label: '安装信息', onClick: () => setInstallationInfoOpen(true) },
                 { key: 'check-update', icon: <SyncOutlined />, label: <span id="check-buildr-update">检查更新…</span>, onClick: () => updateEntryRef.current?.check() },
-                { key: 'restart', icon: <PoweroffOutlined />, disabled: Boolean(preview), title: preview ? '托管预览由开发工具重新启动' : undefined, label: <span id="restart-buildr">重启 Buildr Web</span>, onClick: () => { void restart(); } },
+                { key: 'restart', icon: <PoweroffOutlined />, disabled: Boolean(preview), title: preview ? '托管预览由开发工具重新启动' : undefined, label: <span id="restart-buildr">重启 Buildr Development</span>, onClick: () => { void restart(); } },
                 { key: 'restart-agent', icon: <SyncOutlined />, disabled: Boolean(preview) || agentRestarting, label: <span id="restart-buildr-harness">重启 Agent 执行服务</span>, onClick: () => { void restartAgent(); } },
-                { key: 'quit', danger: true, icon: <CloseCircleOutlined />, label: <span id="quit-buildr">退出 Buildr Web</span>, onClick: () => { void quit(); } },
+                { key: 'quit', danger: true, icon: <CloseCircleOutlined />, label: <span id="quit-buildr">退出 Buildr Development</span>, onClick: () => { void quit(); } },
               ] }}
               trigger={['hover']} placement="bottomRight"
             >
@@ -528,7 +528,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
             ) : null}
 </>} />
         {workspaceId&&!preview&&<WorkspacePreparationNotice key={workspaceId} workspaceId={workspaceId}/>}
-        {quitError && <Alert id="quit-buildr-error" type="error" showIcon message="Buildr Web 尚未退出" description={quitError}
+        {quitError && <Alert id="quit-buildr-error" type="error" showIcon message="Buildr Development 尚未退出" description={quitError}
           action={<Button size="small" loading={quitting} onClick={() => void quit(false)}>重试退出</Button>} />}
         {restartError && <Alert id="restart-buildr-error" type="error" showIcon message="未能确认重启请求" description={restartError}
           action={<Button size="small" onClick={() => { setRestartError(''); void restart(); }}>重试重启</Button>} />}

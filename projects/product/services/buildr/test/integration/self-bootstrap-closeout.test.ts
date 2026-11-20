@@ -242,7 +242,7 @@ function executor(root: any, options: any = {}): any  {
           channel: 'development',
           installed: true,
           platform: process.platform,
-          target: path.join(canonicalRoot, 'Buildr Web Dev.app'),
+          target: path.join(canonicalRoot, 'Buildr Development Dev.app'),
           identity: {
             schemaVersion: 'buildr.launcher-identity/v1',
             channel: 'development',

@@ -25,14 +25,14 @@ export function AppShellHeader({isGlobal,primaryNavigation='top',brandHref,devel
             to={brandHref}
             aria-label="当前工作空间概览"
           >
-            <span className="brand-mark">B</span>
-            <strong>Buildr Web</strong>
+            <span className="brand-mark">D</span>
+            <strong>Buildr Development</strong>
           </Link>
           {development ? (
             <span
               id="development-environment-badge"
               className="development-environment-badge"
-              title="当前运行的是 Buildr Web 开发版"
+              title="当前运行的是 Buildr Development 开发版"
             >
               开发版
             </span>

@@ -14,7 +14,7 @@ import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesyste
 import { buildrWebDataRoot, parseWorkspaceManifest, readWorkspaceRegistryFile } from '../../workspace/module.ts';
 import { resolveApplicationPayloadRoot } from '../../../infrastructure/product-resources/index.ts';
 import { npmLauncherStatus } from '../infrastructure/npm-launcher.ts';
-import { defaultWebDataRoot, oppositeWebProfile, resolveWebProfile } from '../contracts/web-profile.ts';
+import { defaultWebDataRoot, oppositeWebProfile, resolveDevelopmentLauncherRoot, resolveWebProfile } from '../contracts/web-profile.ts';
 
 function readJson(file: any) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
@@ -52,9 +52,7 @@ function registeredChannel(observed: any, channel: any) {
 }
 
 function developmentLauncherIdentity(options: any = {}) {
-  const target = options.developmentLauncherRoot || (process.platform === 'darwin'
-    ? '/Applications/Buildr Web Dev.app'
-    : path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Programs', 'Buildr Web Dev'));
+  const target = options.developmentLauncherRoot || resolveDevelopmentLauncherRoot(process.platform);
   const file = process.platform === 'darwin'
     ? path.join(target, 'Contents', 'Resources', 'launcher-identity.json')
     : path.join(target, 'launcher-identity.json');

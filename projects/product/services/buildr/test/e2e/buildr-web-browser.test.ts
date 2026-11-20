@@ -951,7 +951,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     await page.goto(`${workspaceUrl}/tasks`);
     await page.locator('#development-environment-badge').waitFor({ state: 'visible' });
     assert.equal((await page.locator('#development-environment-badge').innerText()).trim(), '开发版');
-    assert.equal(await page.title(), `${fixtureProfile === 'core' ? 'browser-e2e-core' : 'browser-e2e'} · Buildr Web Dev`);
+    assert.equal(await page.title(), `${fixtureProfile === 'core' ? 'browser-e2e-core' : 'browser-e2e'} · Buildr Development Dev`);
     await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
     assert.ok(await page.locator('#task-table-body tr.ant-table-row').count() > 0, '核心 smoke 必须存在可进入的 Task');
     await page.locator('#task-table-body tr.ant-table-row').first().click();
@@ -1072,11 +1072,11 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   });
 
   if (selected('shell')) await t.test('全局首页展示多个工作空间并进入选定上下文', async () => {
-    await page.goto(url);
+    await page.goto(`${url}/?catalog=1`);
     await page.locator('#workspace-grid .workspace-card').first().waitFor({ state: 'visible' });
-    assert.equal(await page.title(), 'Buildr Web Dev');
+    assert.equal(await page.title(), 'Buildr Development Dev');
     assert.equal(await page.locator('#preview-identity').isHidden(), true);
-    await page.goto(previewUrl);
+    await page.goto(`${previewUrl}/?catalog=1`);
     await page.locator('#preview-identity').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#preview-identity').isHidden(), false, '托管预览展示组件级来源身份条');
     assert.match(await page.locator('#preview-identity').getAttribute('data-preview') || '', /开发预览：browser-preview · preview-branch · 0123456789ab · 有未提交修改/);
@@ -1090,7 +1090,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     // Navigation preserves the pointer position; leave the trigger so the
     // next page cannot reopen its hover menu before the closed-state check.
     await page.mouse.move(0, 0);
-    await page.goto(url);
+    await page.goto(`${url}/?catalog=1`);
     assert.equal(await page.locator('#more-actions').isVisible(), true, '默认实例通过更多操作菜单提供重启和退出');
     assert.equal(await page.locator('#quit-buildr').count(), 0, '退出入口收进下拉菜单，未展开时不存在');
     await page.locator('#workspace-grid .workspace-card').first().waitFor({ state: 'visible' });
@@ -1101,7 +1101,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     await page.waitForURL(`${workspaceUrl}/overview`);
     await page.locator('#workbench-overview').waitFor({ state: 'visible' });
     assert.equal((await page.locator('#shell-workspace-name').innerText()).trim(), 'browser-e2e');
-    assert.equal(await page.title(), 'browser-e2e · Buildr Web Dev');
+    assert.equal(await page.title(), 'browser-e2e · Buildr Development Dev');
     await showPrimaryNavigation(page, 'workbench');
     assert.equal(await page.getByLabel('工作台二级导航',{exact:true}).locator('[data-nav="overview"]').evaluate((item: any) => item.classList.contains('active')), true);
     const expectedProjectCount: any = selected('articles') ? 3 : 2;
@@ -1131,7 +1131,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     assert.match(await page.locator('#action-prompt-output').inputValue(), /项目：另一项目（other）/);
     await page.getByRole('button', { name: '关闭', exact: true }).click();
     await page.setViewportSize({ width: 1024, height: 720 });
-    await page.goto(url);
+    await page.goto(`${url}/?catalog=1`);
     await page.locator('#workspace-grid .workspace-card').first().waitFor({ state: 'visible' });
     assert.equal(await page.locator('#workspace-grid').evaluate((grid: any) => getComputedStyle(grid).gridTemplateColumns.split(' ').length), 2);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
@@ -1153,7 +1153,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     assert.equal(runtime.listRegisteredWorkspaces().workspaces.some((entry: any) => entry.rootPath === firstRoot), false);
     current = runtime.listRegisteredWorkspaces();
     for (const entry of [...current.workspaces]) current = runtime.removeRegisteredWorkspace({ rootPath: entry.rootPath, revision: current.revision });
-    await page.goto(url);
+    await page.goto(`${url}/?catalog=1`);
     await page.locator('#workspace-empty').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#empty-add-workspace').count(), 1);
     assert.equal(await page.locator('#empty-create-workspace').count(), 1);
@@ -1426,7 +1426,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     await page.route(quitUrl, failQuit);
     await page.locator('#more-actions').hover();
     await page.locator('#quit-buildr').click();
-    await page.getByRole('dialog', { name: '退出 Buildr Web？', exact: true }).waitFor({ state: 'visible' });
+    await page.getByRole('dialog', { name: '退出 Buildr Development？', exact: true }).waitFor({ state: 'visible' });
     await confirmAntModal(page);
     await page.locator('#quit-buildr-error').waitFor();
     assert.match(await page.locator('#quit-buildr-error').innerText(), /尚未退出/);
@@ -1448,7 +1448,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     await page.route(restartUrl, failRestart);
     await page.locator('#more-actions').hover();
     await page.locator('#restart-buildr').click();
-    const confirmDialog = page.getByRole('dialog', { name: '重启 Buildr Web？', exact: true });
+    const confirmDialog = page.getByRole('dialog', { name: '重启 Buildr Development？', exact: true });
     await confirmDialog.waitFor({ state: 'visible' });
     assert.match(await confirmDialog.innerText(), /独立智能体（Agent）执行服务不会被强制停止/);
     await confirmAntModal(page);
@@ -1475,7 +1475,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     });
     await page.locator('#more-actions').hover();
     await page.locator('#restart-buildr').click();
-    await page.getByRole('dialog', { name: '重启 Buildr Web？', exact: true }).waitFor({ state: 'visible' });
+    await page.getByRole('dialog', { name: '重启 Buildr Development？', exact: true }).waitFor({ state: 'visible' });
     await confirmAntModal(page);
     await page.locator('#restart-screen').waitFor({ state: 'visible' });
     assert.match(await page.locator('#restart-screen').innerText(), /正在重启/);

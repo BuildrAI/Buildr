@@ -1,6 +1,7 @@
 import {defaultHarnessDataRoot} from '@buildr-ai/buildr-harness/profile';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -131,4 +132,28 @@ export function assertLauncherWebProfile(launcherIdentity: any, profile: any, op
 
 export function sameWebProfile(left: any, right: any) {
   return Boolean(left?.schemaVersion === WEB_PROFILE_SCHEMA && right?.schemaVersion === WEB_PROFILE_SCHEMA && left.identity === right.identity);
+}
+
+/** Prefer the current Buildr Development Dev launcher, falling back to legacy Buildr Web Dev. */
+export function developmentLauncherCandidates(platform: any = process.platform, options: any = {}) {
+  const env = options.env || process.env;
+  if (platform === 'darwin') {
+    return ['/Applications/Buildr Development Dev.app', '/Applications/Buildr Web Dev.app'];
+  }
+  const localAppData = env.LOCALAPPDATA || path.join(options.home ?? os.homedir(), 'AppData', 'Local');
+  return [
+    path.join(localAppData, 'Programs', 'Buildr Development Dev'),
+    path.join(localAppData, 'Programs', 'Buildr Web Dev'),
+  ];
+}
+
+export function resolveDevelopmentLauncherRoot(platform: any = process.platform, options: any = {}) {
+  const candidates = developmentLauncherCandidates(platform, options);
+  for (const candidate of candidates) {
+    const identityFile = platform === 'darwin'
+      ? path.join(candidate, 'Contents', 'Resources', 'launcher-identity.json')
+      : path.join(candidate, 'launcher-identity.json');
+    if (fs.existsSync(identityFile) || fs.existsSync(candidate)) return candidate;
+  }
+  return candidates[0];
 }

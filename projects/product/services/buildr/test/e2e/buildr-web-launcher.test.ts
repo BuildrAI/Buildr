@@ -39,30 +39,32 @@ function build(platform: any): any  {
   return output;
 }
 
-test('Buildr Web Dev使用固定端口、支持显式无浏览器且不复制产品字节', () => {
+test('Buildr Development Dev使用固定端口、支持显式无浏览器且不复制产品字节', () => {
   if (process.platform === 'darwin') {
     const mac: any = build('darwin');
-    const command: any = fs.readFileSync(path.join(mac, 'Buildr Web Dev.app', 'Contents', 'MacOS', 'Buildr'), 'utf8');
+    const command: any = fs.readFileSync(path.join(mac, 'Buildr Development Dev.app', 'Contents', 'MacOS', 'Buildr'), 'utf8');
     assert.match(command, /web --port 4458/);
     assert.match(command, /BUILDR_LAUNCHER_NO_OPEN/);
     assert.match(command, /NO_OPEN_ARG="--no-open"/);
     assert.doesNotMatch(command, /web --port 0/);
     assert.match(command, /Library\/Logs\/Buildr Dev/);
     assert.doesNotMatch(command, /Resources\/buildr|MacOS\/node/);
-    assert.equal(fs.existsSync(path.join(mac, 'Buildr Web Dev.app', 'Contents', 'MacOS', 'node')), false);
-    const identity: any = JSON.parse(fs.readFileSync(path.join(mac, 'Buildr Web Dev.app', 'Contents', 'Resources', 'launcher-identity.json'), 'utf8'));
+    assert.equal(fs.existsSync(path.join(mac, 'Buildr Development Dev.app', 'Contents', 'MacOS', 'node')), false);
+    const plist: any = fs.readFileSync(path.join(mac, 'Buildr Development Dev.app', 'Contents', 'Info.plist'), 'utf8');
+    assert.match(plist, /<key>CFBundleDisplayName<\/key><string>Buildr Development Dev<\/string>/);
+    const identity: any = JSON.parse(fs.readFileSync(path.join(mac, 'Buildr Development Dev.app', 'Contents', 'Resources', 'launcher-identity.json'), 'utf8'));
     assert.equal(identity.webPort, 4458);
   }
   const windows: any = build('win32');
-  const command: any = fs.readFileSync(path.join(windows, 'Buildr Web Dev', 'Launch-Buildr.cmd'), 'utf8');
+  const command: any = fs.readFileSync(path.join(windows, 'Buildr Development Dev', 'Launch-Buildr.cmd'), 'utf8');
   assert.match(command, /web --port 4458/);
   assert.match(command, /BUILDR_LAUNCHER_NO_OPEN/);
   assert.match(command, /NO_OPEN_ARG=--no-open/);
   assert.doesNotMatch(command, /web --port 0/);
   assert.match(command, /Buildr Dev\\Logs/);
   assert.doesNotMatch(command, /runtime\\node\.exe|app\\bin\\buildr\.mjs/);
-  assert.equal(fs.existsSync(path.join(windows, 'Buildr Web Dev', 'runtime')), false);
-  assert.equal(fs.existsSync(path.join(windows, 'Buildr Web Dev', 'app')), false);
+  assert.equal(fs.existsSync(path.join(windows, 'Buildr Development Dev', 'runtime')), false);
+  assert.equal(fs.existsSync(path.join(windows, 'Buildr Development Dev', 'app')), false);
 });
 
 test('development launcher支持带空格checkout并绑定独立development host Node', (t: any) => {
@@ -80,7 +82,7 @@ test('development launcher支持带空格checkout并绑定独立development host
       developmentRuntime: { executable: process.execPath, version: process.versions.node, identity: `development-host:${process.execPath}` },
     },
   });
-  const launcher: any = fs.readFileSync(path.join(output, 'Buildr Web Dev.app', 'Contents', 'MacOS', 'Buildr'), 'utf8');
+  const launcher: any = fs.readFileSync(path.join(output, 'Buildr Development Dev.app', 'Contents', 'MacOS', 'Buildr'), 'utf8');
   const escaped: any = sourceRoot.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
   assert.match(launcher, new RegExp(`SOURCE_ROOT='${escaped}'`));
   assert.match(launcher.replaceAll('\\', '/'), /bin\/buildr\.mjs/);
@@ -100,7 +102,7 @@ test('Development Launcher生成不在普通测试中执行真实平台入口', 
       developmentRuntime: { executable: process.execPath, version: process.versions.node, identity: `development-host:${process.execPath}:${process.versions.node}` },
     },
   });
-  const wrapper: any = path.join(output, 'Buildr Web Dev.app', 'Contents', 'MacOS', 'Buildr');
+  const wrapper: any = path.join(output, 'Buildr Development Dev.app', 'Contents', 'MacOS', 'Buildr');
   const command: any = fs.readFileSync(wrapper, 'utf8');
   assert.match(command, /web --port 4458/);
   assert.match(command, /BUILDR_LAUNCHER_NO_OPEN/);
@@ -128,7 +130,7 @@ test('web launcher CLI只读投影npm-owned Launcher target', (t: any) => {
   assert.equal(status.channel, 'npm');
   assert.equal(status.status, 'absent');
   assert.equal(status.target, root);
-  assert.doesNotMatch(status.target, /Buildr Web Dev/);
+  assert.doesNotMatch(status.target, /Buildr Development Dev/);
 
   const rejected: any = spawnSync(process.execPath, [CLI, 'web', 'launcher', 'install', '--channel', 'development', '--target', root, '--json'], { encoding: 'utf8' });
   assert.notEqual(rejected.status, 0);
@@ -146,7 +148,7 @@ test('development installer直接调用内部manager而不是npm-owned公开Laun
   assert.ok(manager.indexOf("if (action === 'install') await prepareDevelopmentWeb()") < manager.indexOf("action === 'install' ? await installLauncher(options)"));
 });
 
-test('Buildr Web Dev builder拒绝覆盖非空输出目录', (t: any) => {
+test('Buildr Development Dev builder拒绝覆盖非空输出目录', (t: any) => {
   const output: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-launcher-nonempty-'));
   t.after(() => fs.rmSync(output, { recursive: true, force: true }));
   fs.writeFileSync(path.join(output, 'running-bundle'), 'preserve');
@@ -156,26 +158,28 @@ test('Buildr Web Dev builder拒绝覆盖非空输出目录', (t: any) => {
   assert.equal(fs.readFileSync(path.join(output, 'running-bundle'), 'utf8'), 'preserve');
 });
 
-test('macOS Buildr Web Dev默认安装到系统Applications且与正式产品分根', { skip: process.platform !== 'darwin' }, () => {
+test('macOS Buildr Development Dev默认安装到系统Applications且与正式产品分根', { skip: process.platform !== 'darwin' }, () => {
   const override: any = process.env.BUILDR_APP_DATA_DIR;
   delete process.env.BUILDR_APP_DATA_DIR;
   const status: any = launcherStatus({ platform: 'darwin', channel: 'development' });
   process.env.BUILDR_APP_DATA_DIR = override;
-  assert.equal(status.target, '/Applications/Buildr Web Dev.app');
-  assert.notEqual(status.target, '/Applications/Buildr Web.app');
+  assert.equal(status.target, '/Applications/Buildr Development Dev.app');
+  assert.notEqual(status.target, '/Applications/Buildr Development.app');
   assert.match(status.dataRoot, /Application Support\/Buildr Dev$/u);
 });
 
-test('Buildr Web Dev使用staging安全切换并只清理可证明所有权的development入口', async (t: any) => {
+test('Buildr Development Dev使用staging安全切换并只清理可证明所有权的development入口', async (t: any) => {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-launcher-lifecycle-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const official: any = path.join(root, 'Buildr Web.app');
+  const official: any = path.join(root, 'Buildr Development.app');
   fs.mkdirSync(official);
   fs.writeFileSync(path.join(official, 'official-sentinel'), 'keep');
-  const ownedLegacy: any = path.join(root, 'Buildr Dev.app');
-  const legacyIdentity: any = path.join(ownedLegacy, 'Contents', 'Resources', 'launcher-identity.json');
-  fs.mkdirSync(path.dirname(legacyIdentity), { recursive: true });
-  fs.writeFileSync(legacyIdentity, `${JSON.stringify({ schemaVersion: 'buildr.launcher-identity/v1', channel: 'development', platform: 'darwin' })}\n`);
+  for (const legacyName of ['Buildr Web Dev.app', 'Buildr Dev.app']) {
+    const ownedLegacy: any = path.join(root, legacyName);
+    const legacyIdentity: any = path.join(ownedLegacy, 'Contents', 'Resources', 'launcher-identity.json');
+    fs.mkdirSync(path.dirname(legacyIdentity), { recursive: true });
+    fs.writeFileSync(legacyIdentity, `${JSON.stringify({ schemaVersion: 'buildr.launcher-identity/v1', channel: 'development', platform: 'darwin' })}\n`);
+  }
 
   const first: any = await installLauncher({ platform: 'darwin', channel: 'development', installRoot: root, runtime: process.execPath, stopInstance: false });
   assert.equal(first.installed, true);
@@ -184,7 +188,8 @@ test('Buildr Web Dev使用staging安全切换并只清理可证明所有权的de
   assert.equal(first.identity.sourceRoot, PRODUCT_ROOT);
   assert.ok(first.identity.developmentRuntime?.executable);
   assert.equal(fs.existsSync(path.join(first.target, 'Contents', 'MacOS', 'node')), false);
-  assert.equal(fs.existsSync(ownedLegacy), false);
+  assert.equal(fs.existsSync(path.join(root, 'Buildr Web Dev.app')), false);
+  assert.equal(fs.existsSync(path.join(root, 'Buildr Dev.app')), false);
   const second: any = await installLauncher({ platform: 'darwin', channel: 'development', installRoot: root, runtime: process.execPath, stopInstance: false });
   assert.ok(second.previous);
   assert.ok(fs.existsSync(path.join(official, 'official-sentinel')));
@@ -204,17 +209,17 @@ test('Buildr Web Dev使用staging安全切换并只清理可证明所有权的de
   assert.ok(fs.existsSync(path.join(official, 'official-sentinel')));
 });
 
-test('Buildr Web Dev保留ownership不可证明的旧入口与当前目标', async (t: any) => {
+test('Buildr Development Dev保留ownership不可证明的旧入口与当前目标', async (t: any) => {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-launcher-foreign-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const foreignLegacy: any = path.join(root, 'Buildr Dev.app');
+  const foreignLegacy: any = path.join(root, 'Buildr Web Dev.app');
   fs.mkdirSync(foreignLegacy, { recursive: true });
   fs.writeFileSync(path.join(foreignLegacy, 'foreign-sentinel'), 'keep');
   const installed: any = await installLauncher({ platform: 'darwin', channel: 'development', installRoot: root, runtime: process.execPath, stopInstance: false });
   assert.deepEqual(installed.migration.preserved.map((item: any) => item.code), ['launcher.ownership_unproven']);
   await uninstallLauncher({ platform: 'darwin', channel: 'development', installRoot: root });
   assert.equal(fs.readFileSync(path.join(foreignLegacy, 'foreign-sentinel'), 'utf8'), 'keep');
-  const foreignCurrent: any = path.join(root, 'Buildr Web Dev.app');
+  const foreignCurrent: any = path.join(root, 'Buildr Development Dev.app');
   fs.mkdirSync(foreignCurrent, { recursive: true });
   fs.writeFileSync(path.join(foreignCurrent, 'foreign-sentinel'), 'keep');
   await assert.rejects(() => installLauncher({ platform: 'darwin', channel: 'development', installRoot: root, runtime: process.execPath, stopInstance: false }), /Refusing to replace launcher without matching Buildr ownership/);

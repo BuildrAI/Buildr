@@ -49,10 +49,10 @@ function developmentRuntime(runtime: any): any  {
   };
 }
 function assertDevelopmentChannel(channel: any): any  {
-  if (channel !== 'development') throw new Error('Formal npm Buildr Web Launcher is managed only by `buildr web launcher`; tools/build/launcher manages development only.');
+  if (channel !== 'development') throw new Error('Formal npm Buildr Development Launcher is managed only by `buildr web launcher`; tools/build/launcher manages development only.');
 }
-function appName(channel: any): any  { return channel === 'development' ? 'Buildr Web Dev' : 'Buildr Web'; }
-function legacyAppName(channel: any): any  { return channel === 'development' ? 'Buildr Dev' : 'Buildr'; }
+function appName(channel: any): any  { return channel === 'development' ? 'Buildr Development Dev' : 'Buildr Development'; }
+function legacyAppNames(channel: any): string[] { return channel === 'development' ? ['Buildr Web Dev', 'Buildr Dev'] : ['Buildr Web', 'Buildr']; }
 function defaultInstallRoot(platform: any): any  {
   if (process.env.BUILDR_LAUNCHER_INSTALL_DIR) return path.resolve(process.env.BUILDR_LAUNCHER_INSTALL_DIR);
   if (platform === 'darwin') return '/Applications';
@@ -64,7 +64,9 @@ function namedTargetPath(platform: any, name: any, installRoot: any = defaultIns
     : path.win32.join(installRoot, name);
 }
 function targetPath(platform: any, channel: any, installRoot: any = defaultInstallRoot(platform)): any  { return namedTargetPath(platform, appName(channel), installRoot); }
-function legacyTargetPath(platform: any, channel: any, installRoot: any = defaultInstallRoot(platform)): any  { return namedTargetPath(platform, legacyAppName(channel), installRoot); }
+function legacyTargetPaths(platform: any, channel: any, installRoot: any = defaultInstallRoot(platform)): string[] {
+  return legacyAppNames(channel).map((name) => namedTargetPath(platform, name, installRoot));
+}
 function appDataRoot(platform: any = process.platform): any  {
   return resolveWebProfile({ channel: 'development', runtime: { role: 'development' } }, { platform }).dataRoot;
 }
@@ -108,7 +110,7 @@ function validateBundle(bundle: any, platform: any, expected: any): any  {
 function launcherDiagnostics(identity: any): any  {
   if (!identity || identity.channel !== 'development') return [];
   const findings: any[] = [];
-  if (identity.webPort !== DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT) findings.push({ code: 'development.web_port_mismatch', message: `Buildr Web Dev Launcher未绑定固定端口 ${DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT}。`, suggestion: '重新安装 Development Launcher。' });
+  if (identity.webPort !== DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT) findings.push({ code: 'development.web_port_mismatch', message: `Buildr Development Dev Launcher未绑定固定端口 ${DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT}。`, suggestion: '重新安装 Development Launcher。' });
   if (!identity.sourceRoot || !path.isAbsolute(identity.sourceRoot) || !fs.existsSync(identity.sourceRoot)) findings.push({ code: 'development.source_missing', message: `Buildr checkout 不存在：${identity.sourceRoot || 'unknown'}`, suggestion: '在保留的Buildr checkout中重新运行 npm run install:development。' });
   else if (!fs.existsSync(path.join(identity.sourceRoot, 'bin', 'buildr.mjs'))) findings.push({ code: 'development.cli_missing', message: `Buildr CLI 不存在：${path.join(identity.sourceRoot, 'bin', 'buildr.mjs')}`, suggestion: '确认当前 checkout 完整后重新安装 launcher。' });
   else if (!fs.existsSync(path.join(identity.sourceRoot, 'package.json')) || !fs.existsSync(path.join(identity.sourceRoot, 'src')) || !fs.existsSync(path.join(identity.sourceRoot, 'resources', 'manifest.yml'))) findings.push({ code: 'development.checkout_invalid', message: `Buildr Service checkout 不完整：${identity.sourceRoot}`, suggestion: '确认当前 checkout 完整后重新安装 launcher。' });
@@ -194,11 +196,11 @@ function removeOwnedShortcut(observation: any, removed: any, preserved: any): an
 export function launcherStatus({ platform = process.platform, channel = 'development', installRoot }: any = {}): any  {
   assertDevelopmentChannel(channel);
   const target: any = targetPath(platform, channel, installRoot);
-  const legacyTarget: any = legacyTargetPath(platform, channel, installRoot);
   const instance: any = runningInstance(platform);
   const current: any = ownedLauncher(target, platform, channel);
-  const legacy: any = ownedLauncher(legacyTarget, platform, channel);
-  const diagnostics: any = [current.diagnostic, legacy.diagnostic, ...launcherDiagnostics(current.identity)].filter(Boolean);
+  const legacyObservations: any[] = legacyTargetPaths(platform, channel, installRoot).map((itemTarget) => ownedLauncher(itemTarget, platform, channel));
+  const legacy: any = legacyObservations.find((item) => item.present) ?? legacyObservations[0];
+  const diagnostics: any = [current.diagnostic, ...legacyObservations.map((item) => item.diagnostic), ...launcherDiagnostics(current.identity)].filter(Boolean);
   return {
     schemaVersion: 'buildr.launcher-status/v1',
     platform,
@@ -222,22 +224,26 @@ export async function installLauncher({ platform = process.platform, channel = '
   const backup: any = `${target}.previous`;
   const currentBefore: any = ownedLauncher(target, platform, channel);
   const backupBefore: any = ownedLauncher(backup, platform, channel);
-  const legacyBefore: any = ownedLauncher(legacyTargetPath(platform, channel, installRoot), platform, channel);
-  const legacyPreviousBefore: any = ownedLauncher(`${legacyBefore.target}.previous`, platform, channel);
+  const legacyNames = legacyAppNames(channel);
+  const legacyEntries: any[] = legacyTargetPaths(platform, channel, installRoot).map((itemTarget, index) => ({
+    name: legacyNames[index],
+    current: ownedLauncher(itemTarget, platform, channel),
+    previous: ownedLauncher(`${itemTarget}.previous`, platform, channel),
+  }));
   if (currentBefore.present && !currentBefore.owned) throw new Error(`Refusing to replace launcher without matching Buildr ownership: ${target}`);
   if (backupBefore.present && !backupBefore.owned) throw new Error(`Refusing to replace launcher backup without matching Buildr ownership: ${backup}`);
   const currentShortcutBefore: any = platform === 'win32' ? inspectWindowsShortcut(appName(channel), target) : null;
-  const legacyShortcutBefore: any = platform === 'win32' && legacyBefore.owned
-    ? inspectWindowsShortcut(legacyAppName(channel), legacyBefore.target)
-    : platform === 'win32'
-      ? { target: windowsShortcutPath(legacyAppName(channel)), present: Boolean(windowsShortcutPath(legacyAppName(channel)) && fs.existsSync(windowsShortcutPath(legacyAppName(channel)))), owned: false, diagnostic: { code: 'launcher.shortcut_ownership_unproven', message: `旧 Windows shortcut 缺少 matching Buildr Launcher ownership，已保留：${windowsShortcutPath(legacyAppName(channel)) || 'unknown'}` } }
-      : null;
+  const legacyShortcutsBefore: any[] = platform === 'win32'
+    ? legacyEntries.map((entry) => entry.current.owned
+      ? inspectWindowsShortcut(entry.name, entry.current.target)
+      : { target: windowsShortcutPath(entry.name), present: Boolean(windowsShortcutPath(entry.name) && fs.existsSync(windowsShortcutPath(entry.name)!)), owned: false, diagnostic: { code: 'launcher.shortcut_ownership_unproven', message: `旧 Windows shortcut 缺少 matching Buildr Launcher ownership，已保留：${windowsShortcutPath(entry.name) || 'unknown'}` } })
+    : [];
   const staging: any = fs.mkdtempSync(path.join(path.dirname(target), `.buildr-${channel}-staging-`));
   let stagedBundle: any;
   try {
     stagedBundle = buildLauncher({ platform, output: staging, runtime, identity });
     validateBundle(stagedBundle, platform, identity);
-    if (stopInstance) await stopOwnedInstance({ channel, failOnUnknown: currentBefore.owned || legacyBefore.owned });
+    if (stopInstance) await stopOwnedInstance({ channel, failOnUnknown: currentBefore.owned || legacyEntries.some((entry) => entry.current.owned) });
     fs.rmSync(backup, { recursive: true, force: true });
     if (currentBefore.present) fs.renameSync(target, backup);
     try {
@@ -255,9 +261,11 @@ export async function installLauncher({ platform = process.platform, channel = '
     }
     const removed: any[] = [];
     const preserved: any[] = [];
-    removeOwnedPath(legacyBefore, removed, preserved);
-    removeOwnedPath(legacyPreviousBefore, removed, preserved);
-    if (legacyShortcutBefore) removeOwnedShortcut(legacyShortcutBefore, removed, preserved);
+    for (const entry of legacyEntries) {
+      removeOwnedPath(entry.current, removed, preserved);
+      removeOwnedPath(entry.previous, removed, preserved);
+    }
+    for (const shortcut of legacyShortcutsBefore) removeOwnedShortcut(shortcut, removed, preserved);
     return {
       ...launcherStatus({ platform, channel, installRoot }),
       previous: fs.existsSync(backup) ? backup : null,
@@ -268,24 +276,27 @@ export async function installLauncher({ platform = process.platform, channel = '
 export async function uninstallLauncher({ platform = process.platform, channel = 'development', installRoot }: any = {}): Promise<any>  {
   assertDevelopmentChannel(channel);
   const target: any = targetPath(platform, channel, installRoot);
-  const legacyTarget: any = legacyTargetPath(platform, channel, installRoot);
   const current: any = ownedLauncher(target, platform, channel);
   const currentPrevious: any = ownedLauncher(`${target}.previous`, platform, channel);
-  const legacy: any = ownedLauncher(legacyTarget, platform, channel);
-  const legacyPrevious: any = ownedLauncher(`${legacyTarget}.previous`, platform, channel);
+  const legacyNames = legacyAppNames(channel);
+  const legacyEntries: any[] = legacyTargetPaths(platform, channel, installRoot).map((itemTarget, index) => ({
+    name: legacyNames[index],
+    current: ownedLauncher(itemTarget, platform, channel),
+    previous: ownedLauncher(`${itemTarget}.previous`, platform, channel),
+  }));
   const currentShortcut: any = platform === 'win32' && current.owned
     ? inspectWindowsShortcut(appName(channel), target)
     : null;
-  const legacyShortcut: any = platform === 'win32' && legacy.owned
-    ? inspectWindowsShortcut(legacyAppName(channel), legacyTarget)
-    : null;
-  if ([current, currentPrevious, legacy, legacyPrevious].some((item: any) => item.owned)) {
+  const legacyShortcuts: any[] = platform === 'win32'
+    ? legacyEntries.filter((entry) => entry.current.owned).map((entry) => inspectWindowsShortcut(entry.name, entry.current.target))
+    : [];
+  if ([current, currentPrevious, ...legacyEntries.flatMap((entry) => [entry.current, entry.previous])].some((item: any) => item.owned)) {
     await stopOwnedInstance({ channel, failOnUnknown: true });
   }
   const removed: any[] = [];
   const preserved: any[] = [];
-  for (const observation of [current, currentPrevious, legacy, legacyPrevious]) removeOwnedPath(observation, removed, preserved);
-  for (const observation of [currentShortcut, legacyShortcut].filter(Boolean)) removeOwnedShortcut(observation, removed, preserved);
+  for (const observation of [current, currentPrevious, ...legacyEntries.flatMap((entry) => [entry.current, entry.previous])]) removeOwnedPath(observation, removed, preserved);
+  for (const observation of [currentShortcut, ...legacyShortcuts].filter(Boolean)) removeOwnedShortcut(observation, removed, preserved);
   return {
     ...launcherStatus({ platform, channel, installRoot }),
     installed: false,

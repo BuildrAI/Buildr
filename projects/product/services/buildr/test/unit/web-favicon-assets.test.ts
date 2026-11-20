@@ -7,9 +7,12 @@ import { PUBLIC_ICON_PATHS, serveDistAsset } from '../../src/web/http/static-fil
 
 const productRoot = path.resolve(import.meta.dirname, '../../../..');
 
-test('Buildr Web 和 Buildr Harness Web 页面入口声明多尺寸非占位图标且公共图标文件存在', () => {
+test('Buildr Development 和 Buildr Harness Web 页面入口声明多尺寸非占位图标且公共图标文件存在', () => {
   const buildrHtml = fs.readFileSync(path.join(productRoot, 'services/buildr-web/index.html'), 'utf8');
   assert.doesNotMatch(buildrHtml, /data:image\/png;base64/u);
+  assert.ok(buildrHtml.includes('<title>Buildr Development</title>'), 'buildr-web index.html missing Buildr Development title');
+  assert.ok(fs.statSync(path.join(productRoot, 'assets/branding/buildr-development-icon.png')).isFile(), 'missing buildr-development-icon.png');
+  assert.ok(fs.statSync(path.join(productRoot, 'assets/branding/buildr-icon.png')).isFile(), 'missing preserved parent buildr-icon.png');
   for (const href of ['/favicon.ico', '/favicon-32x32.png', '/icon-192.png', '/apple-touch-icon.png']) {
     assert.ok(buildrHtml.includes(`href="${href}"`), `buildr-web index.html missing ${href}`);
     assert.ok(fs.statSync(path.join(productRoot, 'services/buildr-web/public', href.slice(1))).isFile(), `buildr-web/public missing ${href}`);
