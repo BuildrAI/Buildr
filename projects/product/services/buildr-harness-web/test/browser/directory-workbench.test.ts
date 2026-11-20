@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
 import { connectHarnessProcess, prepareAgentRuntime, stopAgentProcess } from '../../../buildr-harness/src/index.ts';
 import { agentRuntimePackageTree } from '../../../buildr-harness/tools/package-runtime.ts';
+import { executionScopeKey } from '../../../buildr-harness/src/execution-contracts.ts';
 import { codeGitEnvironment } from '../../../buildr-harness/src/workbench/code-git-environment.ts';
 
 test('production Harness browses, edits, reviews and commits with no Development or model', {timeout:120000}, async t=>{
@@ -15,10 +17,11 @@ test('production Harness browses, edits, reviews and commits with no Development
   const dataRoot=path.join(root,'profile'), packageRoot=path.join(root,'package'), repo=path.join(root,'repo');
   const profileId='workbench-browser';
   let client:Awaited<ReturnType<typeof connectHarnessProcess>>|undefined;
+  let host:typeof client;
   let browser:Awaited<ReturnType<typeof chromium.launch>>|undefined;
   let ownerPid:number|undefined;
   t.after(async()=>{
-    try { await browser?.close(); } finally { await client?.disconnect(); }
+    try { await browser?.close(); } finally { await host?.disconnect(); await client?.disconnect(); }
     if(ownerPid){
       let failure:unknown;
       try{await stopAgentProcess({dataRoot,profileId,mode:'stop-owned'});}catch(error){failure=error;}
@@ -40,7 +43,9 @@ test('production Harness browses, edits, reviews and commits with no Development
   fs.writeFileSync(path.join(repo,'untouched.txt'),'external change\n');
   const coreRoot=path.resolve(import.meta.dirname,'../../../buildr-harness');
   agentRuntimePackageTree(coreRoot).materialize(packageRoot);
-  const runtime=prepareAgentRuntime({dataRoot,packageRoot});
+  fs.copyFileSync(path.join(coreRoot,'test/integration/fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/workbench-fixture.mjs'));
+  fs.writeFileSync(path.join(packageRoot,'build/fixture-version.json'),'{"version":"workbench-browser"}');
+  const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/workbench-fixture.mjs'});
   client=await connectHarnessProcess({dataRoot,profileId,runtime,sourceId:'harness-local',caller:{kind:'first-party-user',product:'buildr-harness'}});
   ownerPid=(await client.lifecycle.identity()).pid;
   const scope=await client.directories.register(repo,'工作台验收仓库');
@@ -53,7 +58,46 @@ test('production Harness browses, edits, reviews and commits with no Development
   browser=await chromium.launch({headless:true});
   const page=await browser.newPage({viewport:{width:1440,height:900}});
   await page.goto(login.url);
-  await page.getByRole('button',{name:'打开目录工作台',exact:true}).click();
+  const rail=page.locator('.ac-collapsed-rail');
+  const activateWorkspace=async()=>{
+    const toggle=page.getByRole('button',{name:'打开对话工作区',exact:true});
+    if(!await toggle.isVisible())await rail.getByRole('button',{name:'当前对话',exact:true}).click();
+    await toggle.click();
+  };
+  const workspace=page.getByRole('region',{name:'对话工作区',exact:true});
+  const header=page.locator('#agent-conversation-panel .ac-stream > .ac-thread-header');
+  await activateWorkspace();
+  const moduleTab=(name:string)=>workspace.getByRole('tab',{name,exact:true});
+  const pick=async(name:'资源管理器'|'源代码管理')=>{
+    const entry=workspace.getByRole('navigation',{name:'工作区内容'}).getByRole('button',{name,exact:true});
+    const tab=moduleTab(name);
+    await entry.or(tab).or(workspace.getByRole('button',{name:'打开工作区模块',exact:true})).first().waitFor();
+    if(await tab.isVisible())await tab.click();
+    else if(await entry.isVisible())await entry.click();
+    else {
+      await workspace.getByRole('button',{name:'打开工作区模块',exact:true}).click();
+      await entry.click();
+    }
+    await moduleTab(name).waitFor();
+  };
+  const assertAligned=async()=>{
+    const title=await header.locator('.ac-thread-title').boundingBox();
+    const compose=page.locator('#agent-conversation-panel .ac-compose-wrap');
+    const edges=await compose.evaluate(el=>{const box=el.getBoundingClientRect(),style=getComputedStyle(el);return {left:box.left+parseFloat(style.paddingLeft),right:box.right-parseFloat(style.paddingRight)};});
+    const toggle=await header.locator('.harness-workspace-toggle').boundingBox();
+    assert.ok(title&&toggle&&Math.abs(title.x-edges.left)<=2&&Math.abs(toggle.x+toggle.width-edges.right)<=2,JSON.stringify({title,toggle,edges}));
+  };
+  assert.equal(await page.locator('.harness-environment-controls').count(),0);
+  assert.equal(await header.locator('button[aria-label="更多对话操作"] + .harness-workspace-toggle').count(),1);
+  const [newButton,currentButton,listButton]=await Promise.all(['.ac-new-conversation','.ac-current-conversation','.ac-all-conversations'].map(selector=>rail.locator(selector).boundingBox()));
+  assert.ok(newButton&&currentButton&&listButton&&newButton.y<currentButton.y&&currentButton.y<listButton.y);
+  await assertAligned();
+  await workspace.getByRole('navigation',{name:'工作区内容'}).waitFor();
+  if(process.env.BUILDR_HARNESS_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR,'workspace-home.png')});
+  await pick('资源管理器');
+  await workspace.getByText('从右侧目录选择文件',{exact:true}).waitFor();
+  assert.equal(await workspace.locator('.repository-browser-context,.repository-file-tabs').count(),0);
+  if(process.env.BUILDR_HARNESS_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR,'workspace-files.png')});
   const explorer=page.getByRole('region',{name:'资源管理器',exact:true});
   await explorer.locator('.repository-tree-file[data-file-path="note.txt"]').click();
   await page.getByRole('button',{name:'编辑文件',exact:true}).click();
@@ -63,21 +107,38 @@ test('production Harness browses, edits, reviews and commits with no Development
   await page.getByText('与已观察版本一致',{exact:true}).waitFor();
   assert.equal(fs.readFileSync(path.join(repo,'note.txt'),'utf8'),'changed in real Harness\n');
   // Observe a competing edit, keep the local draft, then explicitly discard only the draft.
-  await editor.fill('must not overwrite\n');fs.writeFileSync(path.join(repo,'note.txt'),'external version\n');
+  await editor.fill('must not overwrite\n');
+  await pick('源代码管理');
+  const plus=workspace.getByRole('button',{name:'打开工作区模块',exact:true});
+  const home=workspace.getByRole('navigation',{name:'工作区内容'});
+  await plus.click();
+  await home.getByRole('button',{name:'资源管理器',exact:true}).waitFor();
+  await home.getByRole('button',{name:'源代码管理',exact:true}).waitFor();
+  await home.getByRole('button',{name:'源代码管理',exact:true}).click();
+  assert.equal(await workspace.getByRole('tablist',{name:'已打开的工作区模块'}).getByRole('tab').count(),2);
+  assert.equal(await moduleTab('资源管理器').getAttribute('aria-selected'),'false');
+  assert.equal(await moduleTab('源代码管理').getAttribute('aria-selected'),'true');
+  await moduleTab('源代码管理').press('ArrowLeft');
+  assert.equal(await editor.inputValue(),'must not overwrite\n');
+  await workspace.getByRole('button',{name:'关闭源代码管理标签',exact:true}).click();
+  assert.equal(await moduleTab('源代码管理').count(),0);
+  assert.equal(await editor.inputValue(),'must not overwrite\n');
+  fs.writeFileSync(path.join(repo,'note.txt'),'external version\n');
   await page.getByRole('button',{name:'保存文件',exact:true}).click();
   await page.getByText('磁盘文件已变化，已暂停保存并保留输入。',{exact:true}).waitFor();
   assert.equal(await editor.inputValue(),'must not overwrite\n');
   assert.equal(fs.readFileSync(path.join(repo,'note.txt'),'utf8'),'external version\n');
   page.once('dialog',dialog=>void dialog.accept());
   await page.getByRole('button',{name:'关闭编辑',exact:true}).click();
-  await page.getByText('源代码管理',{exact:true}).click();
+  await pick('源代码管理');
   const scm=page.locator('.source-control-workbench');
   const changes=scm.locator('.source-control-list');
   await changes.locator('.task-changed-row').filter({has:page.locator('[data-file-path="note.txt"]')}).first().click();
   await scm.locator('.task-diff-reader').getByText('external version',{exact:true}).first().waitFor();
   await scm.getByRole('button',{name:'在资源管理器打开',exact:true}).click();
   await explorer.getByText('note.txt',{exact:true}).first().waitFor();
-  await page.getByText('源代码管理',{exact:true}).click();
+  await pick('源代码管理');
+  await scm.locator('.task-diff-reader').getByText('external version',{exact:true}).first().waitFor();
   await page.getByRole('button',{name:'暂存 note.txt',exact:true}).click();
   await page.getByRole('button',{name:'取消暂存 note.txt',exact:true}).waitFor();
   assert.equal(git('diff','--cached','--name-only'),'note.txt');
@@ -89,6 +150,75 @@ test('production Harness browses, edits, reviews and commits with no Development
   await scm.locator('.source-control-browse-tabs').getByText('提交历史',{exact:true}).click();
   await scm.getByRole('button',{name:'查看提交 directory workbench commit',exact:true}).click();
   if(process.env.BUILDR_HARNESS_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR,'directory-workbench.png')});
+  await workspace.getByRole('button',{name:'关闭源代码管理标签',exact:true}).click();
+  assert.equal(await moduleTab('资源管理器').getAttribute('aria-selected'),'true');
+  await workspace.getByRole('button',{name:'关闭资源管理器标签',exact:true}).click();
+  await workspace.getByRole('navigation',{name:'工作区内容'}).waitFor();
+  await page.getByRole('button',{name:'收起对话工作区',exact:true}).click();
+  await assertAligned();
+  const localId=executionScopeKey(scope.ref);
+  const localChat=await client.operations.conversations.create(localId,{title:'本机检出对话'});
+  const engineering=fs.realpathSync(fs.mkdtempSync(path.join(root,'engineering-')));
+  fs.writeFileSync(path.join(engineering,'note.txt'),'different scope\n');
+  fs.writeFileSync(path.join(engineering,'engineering-only.txt'),'only here\n');
+  const engineeringId='engineering-fixture';
+  let available=true;
+  host=await connectHarnessProcess({dataRoot,profileId,runtime,sourceId:'buildr',caller:{kind:'host',sourceId:'buildr'},host:{
+    async resolveExecutionScope({ref}){assert.equal(ref.id,engineeringId);return {ref,rootPath:available?engineering:path.join(root,'unavailable'),revision:'engineering-binding'};},
+    async listExecutionScopes({sourceId}){return {refs:[{sourceId,id:engineeringId}],labels:{[engineeringId]:'工程工作空间'},rootPaths:{[engineeringId]:engineering},revision:'engineering-catalog'};},
+  }});
+  const engineeringChat=await host.operations.conversations.create(engineeringId,{title:'工程检出对话'});
+  const connection=await client.operations.connections.read('first');
+  await client.operations.connections.connect('first',{expectedRevision:connection.revision});
+  for(const [source,workspace,chat] of [[client,localId,localChat],[host,engineeringId,engineeringChat]] as const){
+    const draft={expectedRevision:chat.revision,connectionId:'first',text:'目录范围验证'};
+    const preview=await source.operations.conversations.prepareSend(workspace,chat.id,draft);
+    await source.operations.conversations.send(workspace,chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+  }
+  await page.reload();
+  await activateWorkspace();
+  page.setDefaultTimeout(12000);
+  const openChat=async(id:string)=>{
+    const row=page.locator(`.ac-history-row-main[data-conversation-id="${id}"]`);
+    if(!await page.locator('.ac-focus-history-pane').isVisible())await page.locator('.ac-collapsed-rail .ac-all-conversations').click();
+    await row.click();
+    await page.locator(`#agent-conversation-panel[data-conversation-id="${id}"]`).waitFor();
+  };
+  await openChat(localChat.id);
+  await assertAligned();
+  await pick('资源管理器');
+  await explorer.locator('.repository-tree-file[data-file-path="note.txt"]').click();
+  await page.getByRole('button',{name:'编辑文件',exact:true}).click();
+  await editor.fill('keep across workspace switch');
+  await pick('源代码管理');
+  await openChat(engineeringChat.id);
+  await workspace.getByText('源代码管理暂不可用',{exact:true}).waitFor();
+  assert.equal(await moduleTab('资源管理器').count(),1);
+  assert.equal(await moduleTab('源代码管理').getAttribute('aria-selected'),'true');
+  assert.equal(await changes.locator('[data-file-path="untouched.txt"]').count(),0);
+  await moduleTab('资源管理器').click();
+  await explorer.locator('[data-file-path="engineering-only.txt"]').waitFor();
+  assert.equal(await workspace.getByRole('textbox',{name:'文件原文'}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'添加本机目录'}).count(),0);
+  await pick('源代码管理');
+  await workspace.getByText('源代码管理暂不可用',{exact:true}).waitFor();
+  await openChat(localChat.id);
+  await pick('资源管理器');
+  await explorer.locator('.repository-tree-file[data-file-path="note.txt"]').click();
+  await page.getByRole('button',{name:'继续编辑草稿',exact:true}).click();
+  assert.equal(await editor.inputValue(),'keep across workspace switch');
+  if(!await page.locator('.ac-focus-history-pane').isVisible())await page.locator('.ac-collapsed-rail .ac-all-conversations').click();
+  await page.getByRole('button',{name:'在工程工作空间新建对话',exact:true}).click();
+  await pick('资源管理器');
+  await rail.getByRole('button',{name:'当前对话',exact:true}).click();
+  await explorer.locator('[data-file-path="engineering-only.txt"]').waitFor();
+  assert.equal(await page.locator('#agent-conversation-panel').getAttribute('data-conversation-id'),null);
+  available=false;
+  await page.getByRole('button',{name:'收起对话工作区',exact:true}).click();
+  await page.getByRole('button',{name:'打开对话工作区',exact:true}).click();
+  await workspace.getByText('当前工作空间目录不可用',{exact:true}).waitFor();
+  assert.equal(await workspace.locator('[data-file-path="note.txt"]').count(),0);
+  assert.equal((await client.directories.list()).length,1,'工程目录不重复登记');
   const denied=await fetch(new URL('/api/v1/harness/directory-workbench/status',login.url),{method:'POST',headers:{origin:new URL(login.url).origin,'content-type':'application/json'},body:JSON.stringify({scopeId:scope.ref.id,scopeRevision:scope.revision})});
   assert.equal(denied.status,403,'directory endpoints do not inherit a login or a scope from proximity');
   assert.equal(fs.existsSync(path.join(repo,'.buildr')),false);

@@ -1,10 +1,10 @@
-import {useRef} from 'react';
+import {useRef,type ReactNode} from 'react';
 import {ConversationPanel} from './ConversationPanel.tsx';
 import {ConversationChildWindows,type ConversationChildActions} from './ConversationChildWindows.tsx';
 import {useAgentConversations} from './AgentConversationsContext.tsx';
 import type {ConversationWorkspace as Workspace} from './ConversationHistory.tsx';
 
-type Props={workspaces:Workspace[];defaultWorkspaceId:string|null;portalTarget?:HTMLElement|null;development?:boolean};
+type Props={workspaces:Workspace[];defaultWorkspaceId:string|null;portalTarget?:HTMLElement|null;development?:boolean;headerAction?:ReactNode};
 /** The main selection stays owned by the shell; child windows get isolated view bindings. */
 export function ConversationWorkspace(props:Props) {
   const context=useAgentConversations(),parent=context.conversation;

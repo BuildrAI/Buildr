@@ -71,8 +71,8 @@ const statusLabels = {starting:'正在准备执行',running:'正在执行','wait
 const unconfirmedSupplementMessage='消息是否送达仍待确认，请勿重复发送；输入已保留。';
 type Prepared = {conversation:ConversationView;input:SendDraft;preview:SendPreview;clientRequestId:string;selection:ConversationSelection;recovery:ConversationSendRecovery};
 type SendOperation={selection:ConversationSelection;continueRunId?:string};
-type Props={development?:boolean;workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;portalTarget?:HTMLElement|null;embedded?:boolean;accessory?:ReactNode;onCreateChild?:()=>void};
-export function ConversationPanel({development=false,workspaces,defaultWorkspaceId,portalTarget,embedded=false,accessory,onCreateChild}:Props){
+type Props={development?:boolean;workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;portalTarget?:HTMLElement|null;embedded?:boolean;accessory?:ReactNode;headerAction?:ReactNode;onCreateChild?:()=>void};
+export function ConversationPanel({development=false,workspaces,defaultWorkspaceId,portalTarget,embedded=false,accessory,headerAction,onCreateChild}:Props){
   const context=useAgentConversations(),chat=context.conversation;
   const {message:appMessage}=App.useApp();
   const engineeringAnchor=useRef<HTMLSpanElement>(null);
@@ -890,23 +890,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     return <article key={entry.id} className={'ac-message is-'+entry.role} data-entry-id={entry.id} data-message-provider={entry.provider}>{entry.role==='user'?<div className="ac-user-bubble">{body}</div>:body}{entry.role==='user'&&text&&<span className="ac-reply-actions ac-user-actions"><CopyButton type="text" text={text} ariaLabel="复制消息" failureMessage="复制失败，请手动选择文字。"/></span>}{entry.role==='assistant'&&finalReplies.has(entry.id)&&<span className="ac-reply-actions"><CopyButton type="text" text={entry.text} ariaLabel="复制回复" failureMessage="复制失败，请手动选择文字。"/>{chat&&forkableReplies.has(entry.id)&&<ConversationForkAction conversation={chat} entryId={entry.id}/>}</span>}</article>;
   };
   const fileError=fileLinkFailure&&context.isSelectionCurrent(fileLinkFailure.selection)&&<Alert type="warning" message={fileLinkFailure.message} description={<code>{fileLinkFailure.reference}</code>} closable onClose={()=>setFileLinkFailure(null)} action={<CopyButton type="text" text={fileLinkFailure.reference} ariaLabel="复制来源路径" failureMessage="复制失败，请手动复制来源路径。"/>}/>;
-  const panel=<section id={panelId} className={'ac-panel'+(context.full?' is-full':'')+(historyResizing?' is-resizing':'')+(embedded?' ac-child-panel':'')} aria-label={embedded?'子对话':'内部对话'} data-dock={context.side} data-conversation-id={chat?.id}>
-    {context.view==='history'&&!focusSplit&&<ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} hiddenBySettings={showFocusSettings}/>}
-    {focusSplit&&context.view==='history'&&<>
-      <aside id={focusHistoryPaneId} className="ac-focus-history-pane" style={{width:effectiveHistoryWidth}}><ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} keepHistoryOpen/></aside>
-      <SplitDivider className={'ac-focus-history-divider'+(historyResizing?' is-dragging':'')} aria-label="调整专注模式对话列表宽度" aria-controls={focusHistoryPaneId} aria-orientation="vertical" aria-valuemin={FOCUS_HISTORY_MIN_WIDTH} aria-valuemax={historyMaxWidth} aria-valuenow={Math.round(effectiveHistoryWidth)} aria-valuetext={`${Math.round(effectiveHistoryWidth)} 像素`} title={`拖拽调整对话列表宽度（${FOCUS_HISTORY_MIN_WIDTH}–${historyMaxWidth}px）；方向键微调，双击恢复`}
-        onPointerDown={event=>{if(event.button!==0||historyDrag.current)return;event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);historyDrag.current={pointerId:event.pointerId,x:event.clientX,width:effectiveHistoryWidth};setHistoryResizing(true);}}
-        onPointerMove={event=>{const start=historyDrag.current;if(start?.pointerId===event.pointerId)commitHistoryWidth(start.width+event.clientX-start.x);}}
-        onPointerUp={event=>{if(historyDrag.current?.pointerId===event.pointerId){stopHistoryResize();if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}}}
-        onPointerCancel={event=>{if(historyDrag.current?.pointerId===event.pointerId)stopHistoryResize();}}
-        onLostPointerCapture={event=>{if(historyDrag.current?.pointerId===event.pointerId)stopHistoryResize();}}
-        onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();commitHistoryWidth(event.key==='Home'?FOCUS_HISTORY_MIN_WIDTH:event.key==='End'?historyMaxWidth:effectiveHistoryWidth+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?32:16));}}
-        onDoubleClick={()=>commitHistoryWidth(FOCUS_HISTORY_DEFAULT_WIDTH)}/>
-    </>}
-    {ownsSettings&&<AgentConnectionSettings inMain={focusSettings}/>}
-    <div className="ac-conversation-split" hidden={showFocusSettings||context.view==='history'&&!focusSplit}>
-    <div className="ac-conversation-view">
-      <header className="ac-thread-header" data-run-status={run&&['running','completed'].includes(run.status)?run.status:undefined}>
+  const threadHeader=<header className={"ac-thread-header"+(standalone?" ac-thread-header-in-stream":"")} data-run-status={run&&['running','completed'].includes(run.status)?run.status:undefined}>
         {!embedded&&!context.open&&<Button type="text" icon={<UnorderedListOutlined/>} aria-label="查看对话列表" title="对话列表" onClick={()=>context.openHistory(null,{preserveVisibility:true})}/>}
         <div className="ac-thread-heading">
         {chat?<button type="button" className="ac-thread-title" aria-label="重命名对话" title={chat.title} onClick={()=>{setTitle(chat.title);setRename(true);}}>{chat.title}</button>:<strong className="ac-thread-title ac-thread-title-static">{context.loading?'正在读取对话…':context.scope?'对话':'新对话'}</strong>}
@@ -947,11 +931,30 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
             else if(key==='copy-id'&&chat)void copyText(chat.id).then(copied=>copied?appMessage.success('对话 ID 已复制'):appMessage.warning('复制失败，请手动选择对话 ID 复制。'));
             else if(key==='hide'&&chat){if(!chat.hidden&&canCloseUncertainConversation(chat))void closeConversation();else void updateMetadata({hidden:!chat.hidden});}
           }}}><Button type="text" icon={<EllipsisOutlined/>} aria-label="更多对话操作" title="更多"/></Dropdown>
+          {headerAction}
         </div>
-      </header>
+      </header>;
+  const panel=<section id={panelId} className={'ac-panel'+(context.full?' is-full':'')+(historyResizing?' is-resizing':'')+(embedded?' ac-child-panel':'')} aria-label={embedded?'子对话':'内部对话'} data-dock={context.side} data-conversation-id={chat?.id}>
+    {context.view==='history'&&!focusSplit&&<ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} hiddenBySettings={showFocusSettings}/>}
+    {focusSplit&&context.view==='history'&&<>
+      <aside id={focusHistoryPaneId} className="ac-focus-history-pane" style={{width:effectiveHistoryWidth}}><ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} keepHistoryOpen/></aside>
+      <SplitDivider className={'ac-focus-history-divider'+(historyResizing?' is-dragging':'')} aria-label="调整专注模式对话列表宽度" aria-controls={focusHistoryPaneId} aria-orientation="vertical" aria-valuemin={FOCUS_HISTORY_MIN_WIDTH} aria-valuemax={historyMaxWidth} aria-valuenow={Math.round(effectiveHistoryWidth)} aria-valuetext={`${Math.round(effectiveHistoryWidth)} 像素`} title={`拖拽调整对话列表宽度（${FOCUS_HISTORY_MIN_WIDTH}–${historyMaxWidth}px）；方向键微调，双击恢复`}
+        onPointerDown={event=>{if(event.button!==0||historyDrag.current)return;event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);historyDrag.current={pointerId:event.pointerId,x:event.clientX,width:effectiveHistoryWidth};setHistoryResizing(true);}}
+        onPointerMove={event=>{const start=historyDrag.current;if(start?.pointerId===event.pointerId)commitHistoryWidth(start.width+event.clientX-start.x);}}
+        onPointerUp={event=>{if(historyDrag.current?.pointerId===event.pointerId){stopHistoryResize();if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}}}
+        onPointerCancel={event=>{if(historyDrag.current?.pointerId===event.pointerId)stopHistoryResize();}}
+        onLostPointerCapture={event=>{if(historyDrag.current?.pointerId===event.pointerId)stopHistoryResize();}}
+        onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();commitHistoryWidth(event.key==='Home'?FOCUS_HISTORY_MIN_WIDTH:event.key==='End'?historyMaxWidth:effectiveHistoryWidth+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?32:16));}}
+        onDoubleClick={()=>commitHistoryWidth(FOCUS_HISTORY_DEFAULT_WIDTH)}/>
+    </>}
+    {ownsSettings&&<AgentConnectionSettings inMain={focusSettings}/>}
+    <div className="ac-conversation-split" hidden={showFocusSettings||context.view==='history'&&!focusSplit}>
+    <div className="ac-conversation-view">
+      {!standalone&&threadHeader}
       {chat?.childOf&&<div className="ac-child-origin"><span title={chat.childOf.title}>背景来自「{chat.childOf.title}」 · {new Date(chat.childOf.createdAt).toLocaleString()}</span><span>仅继承创建时背景；后续按你的新要求独立处理。</span></div>}
       {chat&&<ConversationForkOrigin conversation={chat}/>}
       <div className="ac-stream" ref={stream} tabIndex={0} aria-label="对话记录" aria-busy={context.loading||earlier.loading} onScroll={()=>{earlier.onScroll();followBottom();}} onPointerDown={earlier.onPointerDown} onPointerUp={earlier.onPointerUp} onPointerCancel={earlier.onPointerCancel} onWheel={earlier.onWheel} onKeyDown={earlier.onKeyDown} onTouchStart={earlier.onTouchStart} onTouchMove={earlier.onTouchMove} onTouchEnd={earlier.onTouchEnd} onTouchCancel={earlier.onTouchCancel}>
+        {standalone&&threadHeader}
         {earlier.loading&&<div className="ac-history-loading" role="status" aria-label="正在加载更早记录"><Spin size="small"/></div>}
         <div className="ac-stream-content" ref={streamContent}>
         {context.error&&<Alert type="error" showIcon message={context.error} action={<Button onClick={()=>void context.refresh().catch(fail)}>重新读取</Button>}/>}

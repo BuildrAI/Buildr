@@ -32,6 +32,9 @@ type SearchResult = RepositoryPreviewFile & {repositoryId?:string;sourceReposito
 function treeKey(path: string, repositoryId?: string) { return repositoryId ? repositoryId + '::' + path : path; }
 
 export type RepositoryFileBrowserProps = {
+  treeOnRight?: boolean;
+  compactWorkspace?: boolean;
+  readerActions?: ReactNode;
   files: RepositoryPreviewFile[];
   treeRepositories?: RepositoryTreeScope[];
   selectedRepositoryId?: string;
@@ -110,7 +113,7 @@ export function RepositoryFileBrowser(props: RepositoryFileBrowserProps) {
   const [expandedMatches,setExpandedMatches]=useState<Record<string,boolean>>({});
   const [showIgnored, setShowIgnored] = useState(false);
   const [treeHidden, setTreeHidden] = useState(false);
-  const [openPaths, setOpenPaths] = useState<string[]>([props.selectedPath]);
+  const [openPaths, setOpenPaths] = useState<string[]>(props.selectedPath?[props.selectedPath]:[]);
   const [raw, setRaw] = useState(false);
   const [expanded, setExpanded] = useState<string[]>([]);
   const [range, setRange] = useState<[number, number] | null>(null);
@@ -160,12 +163,12 @@ export function RepositoryFileBrowser(props: RepositoryFileBrowserProps) {
   useEffect(()=>setExpandedMatches({}),[searchQuery,searchMode,searchScope]);
   useEffect(() => {
     if (!resizing) return;
-    const move = (event: PointerEvent) => { const origin = resizeOrigin.current; if (origin) setTreeWidth(Math.max(220, Math.min(440, origin.width + event.clientX - origin.x))); };
+    const move = (event: PointerEvent) => { const origin = resizeOrigin.current; if (origin) setTreeWidth(Math.max(220, Math.min(440, origin.width + (event.clientX - origin.x) * (props.treeOnRight ? -1 : 1)))); };
     const stop = () => { setResizing(false); resizeOrigin.current = null; };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', stop);
     return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop); };
-  }, [resizing]);
+  }, [resizing, props.treeOnRight]);
   useEffect(() => {
     setQuery(props.searchSeed || '');
     setSearchMode('name');
@@ -173,7 +176,7 @@ export function RepositoryFileBrowser(props: RepositoryFileBrowserProps) {
     setRange(null);
   }, [props.resetKey]);
   useEffect(() => {
-    setOpenPaths(paths => paths.includes(props.selectedPath) ? paths : [...paths, props.selectedPath]);
+    if (props.selectedPath) setOpenPaths(paths => paths.includes(props.selectedPath) ? paths : [...paths, props.selectedPath]);
     setRange(null);
     setRaw(false);
     const parts = props.selectedPath.split('/');
@@ -304,7 +307,7 @@ export function RepositoryFileBrowser(props: RepositoryFileBrowserProps) {
     </header>
 </>;
   const tree = <>      <aside className="repository-browser-tree" data-prototype-position="source-tree">
-        <div className="repository-tree-heading"><strong>文件</strong><div className="repository-tree-heading-actions">{(props.global || !treeHidden) && <Tooltip title="包含当前目录中被 Git 忽略规则或常见构建目录排除的文件；点号开头不代表忽略。不会显示其他目录中的文件，Git 管理目录始终隐藏。"><Button size="small" type="text" aria-label={showIgnored ? '隐藏忽略文件' : '显示忽略文件'} icon={showIgnored ? <EyeInvisibleOutlined /> : <EyeOutlined />} onClick={() => {setShowIgnored(value => !value);props.onShowIgnored?.(!showIgnored);}} /></Tooltip>}{!props.global&&<Tooltip title={treeHidden ? '展开目录' : '收起目录'}><Button type="text" size="small" aria-label={treeHidden ? '展开目录' : '收起目录'} icon={treeHidden ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setTreeHidden(!treeHidden)} /></Tooltip>}</div></div>
+        <div className="repository-tree-heading"><strong>文件</strong><div className="repository-tree-heading-actions">{props.compactWorkspace&&<Button type="text" size="small" aria-label="刷新展开目录" title="刷新展开目录" loading={refreshing} icon={<ReloadOutlined/>} onClick={()=>void refresh(true)}/>}{(props.global || !treeHidden) && <Tooltip title="包含当前目录中被 Git 忽略规则或常见构建目录排除的文件；点号开头不代表忽略。不会显示其他目录中的文件，Git 管理目录始终隐藏。"><Button size="small" type="text" aria-label={showIgnored ? '隐藏忽略文件' : '显示忽略文件'} icon={showIgnored ? <EyeInvisibleOutlined /> : <EyeOutlined />} onClick={() => {setShowIgnored(value => !value);props.onShowIgnored?.(!showIgnored);}} /></Tooltip>}{!props.global&&<Tooltip title={treeHidden ? '展开目录' : '收起目录'}><Button type="text" size="small" aria-label={treeHidden ? '展开目录' : '收起目录'} icon={treeHidden ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setTreeHidden(!treeHidden)} /></Tooltip>}</div></div>
         {(props.global || !treeHidden) && <>
           <div className="repository-file-search" data-prototype-position="file-search">
             <Input allowClear prefix={<SearchOutlined />} suffix={<span className="repository-search-scope" onMouseDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}><Select aria-label="搜索范围" classNames={{ popup: { root: 'repository-search-scope-popup' } }} variant="borderless" size="small" style={{ width: searchMode === 'name' ? 58 : 48 }} value={searchMode} placement="bottomRight" popupMatchSelectWidth={false} popupRender={selectPopupGuard} options={[{ label: '文件名', value: 'name' }, { label: '内容', value: 'content' }]} onChange={value => setSearchMode(value as 'name' | 'content')} /></span>} placeholder={searchMode === 'name' ? '搜索文件名' : '搜索内容'} aria-label="搜索文件" value={query} onChange={event => changeQuery(event.target.value)} />
@@ -333,16 +336,16 @@ export function RepositoryFileBrowser(props: RepositoryFileBrowserProps) {
         </>}
       </aside>
 </>;
-  return <section hidden={props.global && !props.readerActive} className={'repository-file-browser' + (props.global ? ' global-reader' : '') + (resizing ? ' is-resizing' : '')} aria-label="资源管理器" style={{ '--repository-tree-width': treeWidth + 'px' } as CSSProperties}>
-    {props.global ? props.sidebarHost && createPortal(<>{contextHeader}{tree}</>, props.sidebarHost) : contextHeader}
+  return <section hidden={props.global && !props.readerActive} className={'repository-file-browser' + (props.global ? ' global-reader' : '') + (props.treeOnRight ? ' tree-on-right' : '') + (resizing ? ' is-resizing' : '')} aria-label="资源管理器" style={{ '--repository-tree-width': treeWidth + 'px' } as CSSProperties}>
+    {props.global ? props.sidebarHost && createPortal(<>{contextHeader}{tree}</>, props.sidebarHost) : !props.compactWorkspace && contextHeader}
     <div className={'repository-browser-columns' + (!props.global && treeHidden ? ' tree-hidden' : '')}>
       {!props.global && tree}
-      {!props.global && !treeHidden && <button type="button" className="repository-tree-resize" role="separator" aria-label="拖拽调整目录宽度" aria-orientation="vertical" aria-valuemin={220} aria-valuemax={440} aria-valuenow={treeWidth} onPointerDown={event => { event.preventDefault(); resizeOrigin.current = { x: event.clientX, width: treeWidth }; setResizing(true); }} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setTreeWidth(value => Math.max(220, Math.min(440, value + (event.key === 'ArrowRight' ? 16 : -16)))); } }} onDoubleClick={() => setTreeWidth(272)} />}
+      {!props.global && !treeHidden && <button type="button" className="repository-tree-resize" role="separator" aria-label="拖拽调整目录宽度" aria-orientation="vertical" aria-valuemin={220} aria-valuemax={440} aria-valuenow={treeWidth} onPointerDown={event => { event.preventDefault(); resizeOrigin.current = { x: event.clientX, width: treeWidth }; setResizing(true); }} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setTreeWidth(value => Math.max(220, Math.min(440, value + (event.key === 'ArrowRight' ? 16 : -16) * (props.treeOnRight ? -1 : 1)))); } }} onDoubleClick={() => setTreeWidth(272)} />}
       <div className="repository-file-pane" data-prototype-position="file-reading">
-        {!props.global && <div className="repository-file-tabs" role="tablist" aria-label="打开的文件">
+        {!props.global && (openPaths.length>0||!props.compactWorkspace) && <div className="repository-file-tabs" role="tablist" aria-label="打开的文件">
           {openPaths.map(path => <div key={path} className={'repository-file-tab' + (path === props.selectedPath ? ' active' : '')}><button type="button" role="tab" aria-selected={path === props.selectedPath} title={path} onClick={() => select(path)}>{shortName(path)}</button>{openPaths.length > 1 && <button className="repository-file-close" type="button" aria-label={'关闭文件 ' + shortName(path)} onClick={() => { const next = openPaths.filter(item => item !== path); setOpenPaths(next); if (path === props.selectedPath) select(next.at(-1)!); }}>×</button>}</div>)}
         </div>}
-        {props.readerSurface ?? <>{file && <header className="repository-reader-toolbar">
+        {props.readerActions}{props.readerSurface ?? <>{file && <header className="repository-reader-toolbar">
           <div className="repository-file-identity"><strong>{shortName(file.path)}</strong><small title={(props.repositoryTitle ? props.repositoryTitle + ' · ' : '') + props.location + ' / ' + file.path}>{props.repositoryName ? props.repositoryName + ' · ' : ''}{file.path}</small><small className="repository-reading-location">{props.location} · {props.version}</small></div>
           <Space wrap size={4}>
             {props.onReturnTask && <Button size="small" onClick={props.onReturnTask} data-prototype-position="return-task">返回任务</Button>}
@@ -359,7 +362,7 @@ export function RepositoryFileBrowser(props: RepositoryFileBrowserProps) {
           {(visibleMatch?.continuesAfter||visibleMatch?.continuesBefore)&&<p className="repository-file-match-continuation">{visibleMatch.continuesAfter?'匹配文字跨段，下一段继续':'匹配文字续自上一段'}</p>}
         </section>}
         <div className="repository-reader-content" ref={codeRef} onScroll={event=>scrolls.current.set(readingKey,event.currentTarget.scrollTop)}>
-          {props.readError ? <div className="repository-reading-empty"><h3>文件暂不可读取</h3><p>{props.readError}</p><Button onClick={()=>void refresh()}>重新读取</Button>{props.historical && <Button onClick={props.onViewCurrent}>查看当前文件</Button>}</div> : refreshing && !props.onRefreshDirectories || props.readLoading ? <div className="repository-reading-empty"><Spin /><p>正在重新读取…</p></div> : props.unavailable ? <div className="repository-reading-empty"><FolderOpenOutlined /><h3>当前工作目录暂不可读取</h3><p>保留查看位置，恢复后可继续浏览。</p><Button onClick={()=>void refresh()}>重新读取</Button></div> : !file ? <Empty description="从目录选择一个文件" /> : file.kind === 'unsupported' ? <Empty description="此文件类型暂不支持阅读" /> : file.kind === 'image' ? <div className="repository-image-preview"><img src={file.image} alt={shortName(file.path)} /><p>{shortName(file.path)} · 图片预览</p></div> : file.kind === 'markdown' && !raw && !props.readPage ? (props.renderMarkdown ? props.renderMarkdown({markdown:file.content,className:'markdown-body repository-markdown',renderVersion:props.markdownRevision,options:props.markdownOptions || {allowRelativeLinks:true,onRelativeLinkClick:()=>message.info('相关文件可从目录打开。')}}) : <MarkdownHost markdown={file.content} className="markdown-body repository-markdown" renderVersion={props.markdownRevision} />) : <ReadOnlyFileCodeEditor key={readingKey} documentId={readingKey} path={file.path} content={file.content}
+          {props.readError ? <div className="repository-reading-empty"><h3>文件暂不可读取</h3><p>{props.readError}</p><Button onClick={()=>void refresh()}>重新读取</Button>{props.historical && <Button onClick={props.onViewCurrent}>查看当前文件</Button>}</div> : refreshing && !props.onRefreshDirectories || props.readLoading ? <div className="repository-reading-empty"><Spin /><p>正在重新读取…</p></div> : props.unavailable ? <div className="repository-reading-empty"><FolderOpenOutlined /><h3>当前工作目录暂不可读取</h3><p>保留查看位置，恢复后可继续浏览。</p><Button onClick={()=>void refresh()}>重新读取</Button></div> : !file ? (props.compactWorkspace?<div className="repository-reading-empty harness-open-file-empty"><FolderOpenOutlined aria-hidden/><strong>打开文件</strong><small>从右侧目录选择文件</small></div>:<Empty description="从目录选择一个文件" />) : file.kind === 'unsupported' ? <Empty description="此文件类型暂不支持阅读" /> : file.kind === 'image' ? <div className="repository-image-preview"><img src={file.image} alt={shortName(file.path)} /><p>{shortName(file.path)} · 图片预览</p></div> : file.kind === 'markdown' && !raw && !props.readPage ? (props.renderMarkdown ? props.renderMarkdown({markdown:file.content,className:'markdown-body repository-markdown',renderVersion:props.markdownRevision,options:props.markdownOptions || {allowRelativeLinks:true,onRelativeLinkClick:()=>message.info('相关文件可从目录打开。')}}) : <MarkdownHost markdown={file.content} className="markdown-body repository-markdown" renderVersion={props.markdownRevision} />) : <ReadOnlyFileCodeEditor key={readingKey} documentId={readingKey} path={file.path} content={file.content}
             startLine={firstLine} omitTrailingEmpty={omitTrailingEmpty} startsMidLine={props.readPage?.startsMidLine} endsMidLine={props.readPage?.endsMidLine}
             selectedLines={range} query={searchMode==='content'?searchQuery:''} observedMatch={visibleMatch}
             active={!props.global || props.readerActive} focusLine={props.focusLine} focusRequest={props.focusRequest}

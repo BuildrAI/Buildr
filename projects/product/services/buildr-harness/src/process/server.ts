@@ -2,7 +2,7 @@ import {agentRuntimeStatus} from '../interfaces/http/runtime-status.ts';
 import {HarnessWebEndpoint} from './web-endpoint.ts';
 import {connectHarnessProcess} from './client.ts';
 import type {AgentProcessConnection} from './client.ts';
-import { HarnessDirectoryHost, DIRECTORY_SOURCE_ID } from '../application/directory-host.ts';
+import { HarnessDirectoryHost, DIRECTORY_SOURCE_ID, observeWorkbenchDirectory } from '../application/directory-host.ts';
 import { previewLocalFile } from '../application/local-file-preview.ts';
 import { createDirectoryWorkbench, directoryWorkbenchWrites, workbenchError } from '../application/directory-workbench.ts';
 import { EDITABLE_FILE_JSON_BYTES } from '../workbench/editable-file.ts';
@@ -14,7 +14,7 @@ import type { ServiceEvent } from '../contracts.ts';
 import { conversationEventEncoder } from '../domain/conversation-transfer.ts';
 import path from 'node:path';
 import { conversationControlInstruction } from './conversation-control.ts';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { setTimeout as pause } from 'node:timers/promises';
 import { createAgentService } from '../application/agent-service.ts';
@@ -287,7 +287,39 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if (!caller || caller.caller.kind!=='first-party-user'||caller.caller.product!=='buildr-harness') throw new AgentServiceError('agent_caller_operation_denied','目录工作台需要本机 Harness 网页身份。',403);
       if (directoryWorkbenchWrites(input.operation) && (closing || retiring || !accepting)) throw new AgentServiceError('agent_process_switching','当前后台不接受新写入；输入已保留。',503);
       if (typeof input.operation!=='string'||!input.input||typeof input.input!=='object'||Array.isArray(input.input)||Object.keys(input).some(key=>!['operation','input'].includes(key))) throw new AgentServiceError('agent_directory_workbench_input_invalid','工作台请求无效。',400);
-      try { json(res,200,await createDirectoryWorkbench(directories)(input.operation,input.input)); }
+      try {
+        const {workspaceId,...fields}=input.input;
+        if(workspaceId===undefined && input.operation!=='scope') {
+          json(res,200,await createDirectoryWorkbench(directories)(input.operation,fields));return;
+        }
+        if(typeof workspaceId!=='string'||!workspaceId||workspaceId.length>2048||workspaceId.includes('\0')||
+          (input.operation==='scope'?Object.keys(fields).length!==0:Object.hasOwn(fields,'scopeId')))
+          throw new AgentServiceError('agent_directory_workbench_input_invalid','工作空间引用无效。',400);
+        const ref=callers.scope(caller,workspaceId);
+        if(workspaceId!==(ref.sourceId==='buildr'?ref.id:executionScopeKey(ref)))
+          throw new AgentServiceError('agent_directory_workbench_input_invalid','请选择准确的工作空间。',400);
+        if(ref.sourceId!==DIRECTORY_SOURCE_ID&&!hosts.sources().includes(ref.sourceId))
+          throw new AgentServiceError('agent_workbench_scope_unavailable','此工作空间的目录来源暂不可用。',503);
+        const local=ref.sourceId===DIRECTORY_SOURCE_ID?directories.resolveDirectory({ref}):null;
+        const trusted=local??await hosts.resolveExecutionScope({ref});
+        if(trusted?.ref?.id!==ref.id||trusted.ref.sourceId!==ref.sourceId||typeof trusted.rootPath!=='string'||!path.isAbsolute(trusted.rootPath)||!trusted.revision)
+          throw new AgentServiceError('agent_workbench_scope_unavailable','无法确认此工作空间的目录。',409);
+        const observed=observeWorkbenchDirectory(trusted.rootPath);
+        if(observed.rootPath!==trusted.rootPath)
+          throw new AgentServiceError('agent_scope_binding_changed','工作空间目录身份已变化，请重新读取。',409);
+        const scope={ref:{...ref,id:executionScopeKey(ref)},rootPath:observed.rootPath,selectedPath:trusted.rootPath,name:local?.name,
+          revision:createHash('sha256').update(JSON.stringify([ref,trusted.revision,observed.revision])).digest('hex')};
+        if(input.operation==='scope'){json(res,200,scope);return;}
+        const resolveDirectory=()=>{
+          if(fields.scopeRevision!==scope.revision||observeWorkbenchDirectory(trusted.rootPath).revision!==observed.revision)
+            throw new AgentServiceError('agent_scope_binding_changed','工作空间目录身份已变化，请重新读取。',409);
+          if(local)directories.resolveDirectory({ref,expectedRevision:local.revision});
+          if(directoryWorkbenchWrites(input.operation)&&(closing||retiring||!accepting))
+            throw new AgentServiceError('agent_process_switching','当前后台不接受新写入；输入已保留。',503);
+          return scope;
+        };
+        json(res,200,await createDirectoryWorkbench({resolveDirectory})(input.operation,{...fields,scopeId:scope.ref.id}));
+      }
       catch (error) { workbenchError(error); }
       return;
     }

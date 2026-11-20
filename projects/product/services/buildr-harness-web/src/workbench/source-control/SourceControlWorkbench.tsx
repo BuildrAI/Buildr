@@ -48,6 +48,7 @@ export type SourceControlWorkbenchProps = {
   fileEditing?: { renderDiff(diff: CodeDiffResponse, reader: SourceControlReader, mode: 'split'|'unified'): ReactNode; openFolder?(target: SourceControlFileTarget): Promise<unknown> };
   renderMarkdown?(input: WorkbenchMarkdownInput): ReactNode;
   separateChangeLayers?: boolean;
+  sidebarOnRight?: boolean;
   onOpenCurrentInExplorer?(target: SourceControlFileTarget): void;
   renderChangeFileAction?(repository: SourceControlRepository, worktree: SourceControlWorktree, file: SourceControlChange): ReactNode;
   task?: { id: string; title: string }; scopeSelection?: SourceControlScopeSelection; layoutStorageKey?: string; branchExtension?: SourceControlBranchExtension;
@@ -69,7 +70,7 @@ function readingPositions(root: HTMLElement | null): ReadingPosition[] {
 }
 
 /** Shared view: all observed facts and reads come from the caller, including in the offline prototype. */
-export function SourceControlWorkbench({ active = true, repositories, defaultRepositories, scene, reader, readKey, observation, onRefresh, onRetry, onClone, onScene, onOpenTask, onOpenFile, onViewCurrent, task, scopeSelection, sourceEntryKey, currentSourceSelection, onCurrentSourceSelect, layoutStorageKey, branchExtension, renderChangeActions, onDiscard, discardPending, catalogActions, catalogFeedback, fileEditing, renderMarkdown, renderChangeFileAction, separateChangeLayers, onOpenCurrentInExplorer }: SourceControlWorkbenchProps) {
+export function SourceControlWorkbench({ active = true, repositories, defaultRepositories, scene, reader, readKey, observation, onRefresh, onRetry, onClone, onScene, onOpenTask, onOpenFile, onViewCurrent, task, scopeSelection, sourceEntryKey, currentSourceSelection, onCurrentSourceSelect, layoutStorageKey, branchExtension, renderChangeActions, onDiscard, discardPending, catalogActions, catalogFeedback, fileEditing, renderMarkdown, renderChangeFileAction, separateChangeLayers, sidebarOnRight, onOpenCurrentInExplorer }: SourceControlWorkbenchProps) {
   const workbench = useRef<HTMLElement>(null);
   const [selectedWorktreeKey, setSelectedWorktreeKey] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -314,7 +315,7 @@ export function SourceControlWorkbench({ active = true, repositories, defaultRep
   }
   const historySearch = <div className="source-control-history-search"><Input size="small" allowClear prefix={<SearchOutlined />} placeholder="搜索提交、作者或任务编号（至少2字符）" aria-label="搜索提交历史" value={query} onCompositionStart={() => setComposing(true)} onCompositionEnd={event => { setComposing(false); setQuery(event.currentTarget.value); }} onChange={event => setQuery(event.target.value)} />{Array.from(query.trim()).length === 1 && <small>输入至少2个字符开始搜索</small>}</div>;
   return <section ref={workbench} className="source-control-workbench" aria-label="源代码管理" data-prototype-position="scm-panels" data-current-repository={selectedRepository?.id} data-current-checkout={selectedWorktree?.worktreeId}>
-    <ResizablePanels direction="horizontal" className="source-control-columns" initialSize={360} minFirst={260} minSecond={300} firstHidden={readingExpanded} storageKey={layoutStorageKey ? layoutStorageKey + ':columns' : undefined} separatorLabel="调整源代码管理与阅读区宽度" first={<aside className="source-control-sidebar">
+    <ResizablePanels direction="horizontal" reverseHorizontal={sidebarOnRight} className="source-control-columns" initialSize={sidebarOnRight ? 270 : 360} minFirst={sidebarOnRight ? 200 : 260} minSecond={300} firstHidden={readingExpanded} storageKey={layoutStorageKey ? layoutStorageKey + ':columns' : undefined} separatorLabel="调整源代码管理与阅读区宽度" first={<aside className="source-control-sidebar">
       <header className="source-control-title"><button type="button" className="source-control-catalog-toggle" aria-label={catalogExpanded ? '折叠代码库列表' : '展开代码库列表'} aria-expanded={catalogExpanded} onClick={() => setCatalogExpanded(value => !value)}>{catalogExpanded ? <DownOutlined /> : <RightOutlined />}<strong>代码库</strong></button><div className="source-control-catalog-actions">{catalogActions}<Tooltip title="重新读取本机代码状态"><Button type="text" size="small" aria-label="刷新源代码管理" icon={<ReloadOutlined spin={observation.loading} />} onClick={() => void refresh()} /></Tooltip></div></header>
       <ResizablePanels direction="vertical" className="source-control-stack" firstHidden={!catalogExpanded} storageKey={layoutStorageKey ? layoutStorageKey + ':stack' : undefined} initialRatio={renderChangeActions ? 0.29 : branchExtension ? 0.30 : 0.42} minFirst={120} minSecond={180} separatorLabel="调整代码库与浏览区高度"
         first={<div className="source-control-catalog-pane">

@@ -1,5 +1,6 @@
 import {Component, useEffect, useId, useState, type ComponentType, type ReactNode} from 'react';
 import {Alert, Button} from 'antd';
+import {LayoutOutlined} from '@ant-design/icons';
 import './harness-shell.css';
 
 /** Trusted, build-time composition only; not a dynamic plugin or permission API. */
@@ -9,7 +10,7 @@ export type HarnessWorkEnvironment = {
 } & ({Workspace: ComponentType; render?: never} | {Workspace?: never; render(active: boolean): ReactNode});
 
 type HarnessShellProps = {
-  children: ReactNode;
+  children: ReactNode | ((toggle: ReactNode) => ReactNode);
   environment?: HarnessWorkEnvironment;
   environmentOpen?: boolean;
   onEnvironmentOpenChange?(open: boolean): void;
@@ -39,16 +40,18 @@ export function HarnessShell({children, environment, environmentOpen, onEnvironm
   }, [open, environment?.id]);
   const Workspace = environment?.Workspace;
 
-  return <div className="harness-shell">
-    {environment && <nav className="harness-environment-controls" aria-label="工作环境">
-      <Button type="text" aria-expanded={open} aria-controls={panelId} onClick={() => {
-        setOpenedId(open ? null : environment.id);
-        setMountedId(environment.id);
-        onEnvironmentOpenChange?.(!open);
-      }}>{open ? '收起' : '打开'}{environment.title}</Button>
-    </nav>}
+  const integrated = typeof children === 'function';
+  const label = environment ? (open ? '收起' : '打开') + environment.title : '';
+  const toggle = environment && <Button type="text" className="harness-workspace-toggle" aria-label={label} title={label} aria-expanded={open} aria-controls={panelId}
+    icon={integrated ? <LayoutOutlined aria-hidden /> : undefined} onClick={() => {
+      setOpenedId(open ? null : environment.id);
+      setMountedId(environment.id);
+      onEnvironmentOpenChange?.(!open);
+    }}>{!integrated && label}</Button>;
+  return <div className={integrated ? "harness-shell harness-shell-integrated" : "harness-shell"}>
+    {!integrated && environment && <nav className="harness-environment-controls" aria-label="工作环境">{toggle}</nav>}
     <div className="harness-shell-body">
-      <div className="harness-conversation-region">{children}</div>
+      <div className="harness-conversation-region">{typeof children === 'function' ? children(toggle) : children}</div>
       {environment && <section id={panelId} key={environment.id}
         className="harness-environment-region" aria-label={environment.title} hidden={!open}>
         {mountedId === environment.id && <EnvironmentBoundary>{environment.render ? environment.render(open) : Workspace && <Workspace />}</EnvironmentBoundary>}

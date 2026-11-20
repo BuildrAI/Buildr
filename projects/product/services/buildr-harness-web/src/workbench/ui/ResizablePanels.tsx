@@ -11,6 +11,7 @@ export type ResizablePanelsProps = {
   minFirst?: number;
   minSecond?: number;
   firstHidden?: boolean;
+  reverseHorizontal?: boolean;
   className?: string;
   separatorLabel?: string;
   storageKey?: string;
@@ -38,8 +39,9 @@ function ratioBounds(available: number, minFirst: number, minSecond: number) {
 }
 
 /** One axis-aware layout for independently scrolling regions; hiding retains the first region's state. */
-export function ResizablePanels({ first, second, direction = 'horizontal', initialRatio = 0.38, initialSize, minFirst = 120, minSecond = 180, firstHidden = false, className = '', separatorLabel = '调整区域大小', storageKey }: ResizablePanelsProps) {
+export function ResizablePanels({ first, second, direction = 'horizontal', initialRatio = 0.38, initialSize, minFirst = 120, minSecond = 180, firstHidden = false, reverseHorizontal = false, className = '', separatorLabel = '调整区域大小', storageKey }: ResizablePanelsProps) {
   const horizontal = direction === 'horizontal';
+  const reversed = horizontal && reverseHorizontal;
   const defaultRatio = Number.isFinite(initialRatio) ? clamp(initialRatio, 0, 1) : 0.38;
   const pixelDefault = initialSize !== undefined && Number.isFinite(initialSize) ? Math.max(0, initialSize) : null;
   const [initialPreference] = useState(() => storedRatio(storageKey));
@@ -119,10 +121,10 @@ export function ResizablePanels({ first, second, direction = 'horizontal', initi
   const reset = () => updateRatio(pixelDefault !== null && available > 0 ? clamp(pixelDefault / available, 0, 1) : defaultRatio, true);
   const decreaseKey = horizontal ? 'ArrowLeft' : 'ArrowUp', increaseKey = horizontal ? 'ArrowRight' : 'ArrowDown';
   const valueText = horizontal
-    ? `左侧区域 ${Math.round(effectiveRatio * 100)}%，右侧区域 ${Math.round((1 - effectiveRatio) * 100)}%`
+    ? `左侧区域 ${Math.round((reversed ? 1 - effectiveRatio : effectiveRatio) * 100)}%，右侧区域 ${Math.round((reversed ? effectiveRatio : 1 - effectiveRatio) * 100)}%`
     : `上方区域 ${Math.round(effectiveRatio * 100)}%，下方区域 ${Math.round((1 - effectiveRatio) * 100)}%`;
 
-  return <div ref={host} className={`resizable-panels direction-${direction}${dragging ? ' is-resizing' : ''}${firstHidden ? ' first-hidden' : ''}${className ? ' ' + className : ''}`}>
+  return <div ref={host} className={`resizable-panels direction-${direction}${dragging ? ' is-resizing' : ''}${firstHidden ? ' first-hidden' : ''}${reversed ? ' is-reversed' : ''}${className ? ' ' + className : ''}`}>
     <div id={id + '-first'} hidden={firstHidden} className="resizable-panels-pane resizable-panels-first" style={{ flexBasis: axisSize ? firstSize : pixelDefault ?? defaultRatio * 100 + '%' }}>{first}</div>
     <SplitDivider hidden={firstHidden} orientation={horizontal ? 'vertical' : 'horizontal'} className="resizable-panels-divider" aria-label={separatorLabel}
       aria-controls={id + '-first ' + id + '-second'} aria-valuemin={Math.round(bounds.min * 100)} aria-valuemax={Math.round(bounds.max * 100)}
@@ -139,14 +141,14 @@ export function ResizablePanels({ first, second, direction = 'horizontal', initi
         if (!start || start.pointerId !== event.pointerId || start.available <= 0) return;
         const position = horizontal ? event.clientX : event.clientY;
         const limits = ratioBounds(start.available, validMinimum(minFirst), validMinimum(minSecond));
-        updateRatio(clamp((start.firstSize + position - start.position) / start.available, limits.min, limits.max));
+        updateRatio(clamp((start.firstSize + (position - start.position) * (reversed ? -1 : 1)) / start.available, limits.min, limits.max));
       }}
       onPointerUp={stopDragging} onPointerCancel={stopDragging} onLostPointerCapture={stopDragging}
       onKeyDown={event => {
         if (![decreaseKey, increaseKey, 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
         const step = available > 0 ? (event.shiftKey ? 32 : 16) / available : 0.05;
-        const next = event.key === 'Home' ? bounds.min : event.key === 'End' ? bounds.max : effectiveRatio + (event.key === increaseKey ? step : -step);
+        const next = event.key === 'Home' ? bounds.min : event.key === 'End' ? bounds.max : effectiveRatio + (event.key === increaseKey ? step : -step) * (reversed ? -1 : 1);
         updateRatio(clamp(next, bounds.min, bounds.max), true);
       }}
       onDoubleClick={reset} />

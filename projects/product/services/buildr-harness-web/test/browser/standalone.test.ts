@@ -131,7 +131,7 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await a.goto(origin);
     assert.equal(await a.locator('.harness-header').count(),0,'no duplicate outer navigation');
     assert.equal(await a.locator('.ac-collapsed-rail').count(),1);
-    assert.equal(await a.locator('.ac-collapsed-rail .ac-current-conversation').count(),0,'standalone rail omits current conversation collapse/expand button');
+    assert.equal(await a.locator('.ac-collapsed-rail .ac-current-conversation').getAttribute('aria-label'),'当前对话','standalone current entry navigates rather than collapsing the conversation');
     await a.locator('.ac-focus-history-pane').waitFor({state:'visible',timeout:10000});
     assert.equal(await a.locator('.ac-focus-history-pane').getByRole('button',{name:'返回当前对话',exact:true}).count(),0,'desktop split omits narrow back button');
     await a.getByRole('button',{name:'更多对话操作',exact:true}).click();
@@ -324,7 +324,7 @@ test('standalone production UI sends through real source HTTP, isolates two draf
         value: {writeText: async (text: string) => {(window as any).__copiedId = text;}},
       });
     });
-    await b.locator('.ac-panel > .ac-conversation-view > .ac-thread-header').getByRole('button', {name: '更多对话操作', exact: true}).click();
+    await b.locator('#agent-conversation-panel .ac-stream > .ac-thread-header').getByRole('button', {name: '更多对话操作', exact: true}).click();
     await b.getByRole('menuitem', {name: `复制对话 ID（${conversationId.slice(0, 8)}）`, exact: true}).click();
     assert.equal(await b.evaluate(() => (window as any).__copiedId), conversationId);
     await b.getByText('对话 ID 已复制', {exact: true}).waitFor();

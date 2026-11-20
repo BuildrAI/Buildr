@@ -52,7 +52,7 @@ export function DirectorySourceControl({scope,request,active,version,onOpenCurre
   if(!status&&read.error)return <Alert type="warning" showIcon message="源代码管理暂不可用" description={read.error} action={<Button onClick={()=>void refresh()}>重新读取</Button>} />;
   return <div className="harness-directory-source-control" aria-label="源代码管理">
     {result&&<Alert type={result.type} showIcon message={result.text} closable onClose={()=>setResult(null)}/>}
-    <SourceControlWorkbench separateChangeLayers onOpenCurrentInExplorer={onOpenCurrent?target=>onOpenCurrent(target.path):undefined} active={active} repositories={repositories} scene={scene} reader={reader}
+    <SourceControlWorkbench sidebarOnRight separateChangeLayers onOpenCurrentInExplorer={onOpenCurrent?target=>onOpenCurrent(target.path):undefined} active={active} repositories={repositories} scene={scene} reader={reader}
       readKey={scope.ref.id+':'+scope.revision} observation={{loading:read.loading,error:read.error,readAt:status?.readAt||'',diagnostics:status?.writeUnavailable?[status.writeUnavailable]:[],truncated:status?.truncated}}
       onRefresh={()=>refresh()} onRetry={()=>refresh()} onScene={setScene} onOpenTask={noTask}
       onViewCurrent={onOpenCurrent?target=>onOpenCurrent(target.path):undefined}

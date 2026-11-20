@@ -1,4 +1,4 @@
-import {scopeDisplayName} from './workspace-scopes';
+import {scopeDisplayName,workspaceScopeKey as key} from './workspace-scopes';
 import {FrameSubmissions} from './frame-submissions';
 import {useHarnessDirectoryFiles} from './directory-files';
 import {engineeringFile} from './engineering-files';
@@ -10,6 +10,8 @@ import {FolderOpenOutlined} from '@ant-design/icons';
 import {AgentConversationsProvider,AgentConnectionSettings,ConversationWorkspace,HarnessDirectoryFilesProvider,LocalFilePreviewModal,useAgentConversations,type HarnessDirectoryFiles,type HarnessFileContent} from './index';
 import {api} from './api/index';
 import type {ConversationWorkspace as ScopeView} from './features/agent-conversations/ConversationHistory';
+import {conversationDraftKey} from './features/agent-conversations/useConversationDraft';
+import {readDraft} from './features/agent-conversations/conversation-state';
 import type {ConversationView} from './features/agent-conversations/types';
 
 const DirectoryWorkbench=lazy(async()=>({default:(await import('./features/directory-workbench/HarnessDirectoryWorkbench')).HarnessDirectoryWorkbench}));
@@ -17,7 +19,6 @@ const DirectoryWorkbench=lazy(async()=>({default:(await import('./features/direc
 type Ref={sourceId:string;id:string};
 type Directory={ref:Ref;rootPath:string;revision:string;name?:string};
 type Catalog={scopes:Array<{key:string;ref:Ref;authority:'builtin'|'registered'|'offline';name?:string;rootPath?:string}>};
-const key=(ref:Ref)=>'scope:'+btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify([ref.sourceId,ref.id])))).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
 const directoryLeafName=(value:string)=>value.replace(/[\\/]+$/,'').split(/[\\/]/).filter(Boolean).at(-1)||value;
 const request=<T,>(path:string,input?:unknown,signal?:AbortSignal)=>api(path,input===undefined?{headers:{'x-buildr-session':''},signal}:{method:'POST',body:JSON.stringify(input),signal}) as Promise<T>;
 
@@ -25,16 +26,13 @@ export function HarnessApp({environment}:{environment?:HarnessWorkEnvironment}={
   const [file,setFile]=useState<{path:string;value:HarnessFileContent}|null>(null);
   const standalone=(typeof window==='undefined'||window.parent===window)&&!environment;
   const composition=useMemo(()=>({standalone}),[standalone]);
-  const [directoryVersion,bumpDirectories]=useState(0);
-  const builtin:HarnessWorkEnvironment={id:'harness-local-workbench',title:'目录工作台',render:active=><Suspense fallback={<Spin size="small" />}><DirectoryWorkbench active={active} onDirectoryAdded={()=>bumpDirectories(value=>value+1)}/></Suspense>};
   const host=useMemo<HarnessDirectoryFiles>(()=>({
     readFile:(conversation:ConversationView,path:string,signal:AbortSignal)=>window.parent!==window?engineeringFile('read',conversation.workspaceId,conversation.id,path,signal):api('/api/v1/harness/files',{method:'POST',body:JSON.stringify({conversationId:conversation.id,path}),signal}) as Promise<HarnessFileContent>,
     async openFile(conversation,path,_literal,signal){if(window.parent!==window){await engineeringFile('open',conversation.workspaceId,conversation.id,path,signal);return;}const value=await request<HarnessFileContent>('/api/v1/harness/files',{conversationId:conversation.id,path},signal);signal?.throwIfAborted();setFile({path:value.path||path,value});return false;},
   }),[]);
-  return <ConversationHostProvider host={composition}><HarnessDirectoryFilesProvider host={host}><AgentConversationsProvider standalone={standalone}><HarnessShell environment={environment??(standalone?builtin:undefined)}>
-    <Workspace standalone={standalone} directoryVersion={directoryVersion}/></HarnessShell></AgentConversationsProvider><LocalFilePreviewModal file={file} onClose={()=>setFile(null)}/></HarnessDirectoryFilesProvider></ConversationHostProvider>;
+  return <ConversationHostProvider host={composition}><HarnessDirectoryFilesProvider host={host}><AgentConversationsProvider standalone={standalone}><Workspace standalone={standalone} environment={environment}/></AgentConversationsProvider><LocalFilePreviewModal file={file} onClose={()=>setFile(null)}/></HarnessDirectoryFilesProvider></ConversationHostProvider>;
 }
-function Workspace({standalone,directoryVersion}:{standalone:boolean;directoryVersion:number}){
+function Workspace({standalone,environment}:{standalone:boolean;environment?:HarnessWorkEnvironment}){
   const embedded=window.parent!==window;
   const context=useAgentConversations();
   const files=useHarnessDirectoryFiles();
@@ -45,7 +43,7 @@ function Workspace({standalone,directoryVersion}:{standalone:boolean;directoryVe
     setScopes(catalog.scopes.map(scope=>{const directory=listed.directories.find(value=>key(value.ref)===scope.key);return {id:scope.key,name:scopeDisplayName({...scope,name:directory?.name??scope.name},directory?.rootPath),rootPath:directory?.rootPath??scope.rootPath??''};}));
     setSelected(previous=>previous&&listed.directories.some(value=>key(value.ref)===previous)?previous:listed.directories[0]?key(listed.directories[0].ref):undefined);
   },[]);
-  useEffect(()=>{if(!embedded)void refresh().catch(failure=>setError(failure instanceof Error?failure.message:'工作范围读取失败。'));if(!standalone){context.setOpen(true);if(!embedded)context.setFull(true);}},[embedded,standalone,refresh,directoryVersion]);
+  useEffect(()=>{if(!embedded)void refresh().catch(failure=>setError(failure instanceof Error?failure.message:'工作范围读取失败。'));if(!standalone){context.setOpen(true);if(!embedded)context.setFull(true);}},[embedded,standalone,refresh]);
   const initialConfigured=useRef(false);
   useEffect(()=>{
     if(!embedded)return;
@@ -83,7 +81,13 @@ function Workspace({standalone,directoryVersion}:{standalone:boolean;directoryVe
     try{const directory=await request<Directory>('/api/v1/harness/directories',{path,name:name.trim()});await refresh();const scope=key(directory.ref);setSelected(scope);context.newConversation({scope:{workspaceId:scope}});if(!standalone)context.setFull(true);setChoosing(false);setPath('');setName('');}
     catch(failure){setError(failure instanceof Error?failure.message:'目录未登记，输入已保留。');}finally{setBusy(false);}
   };
-  return <>{error&&!choosing&&<Alert type="warning" closable onClose={()=>setError('')} message={error}/>}<main className="harness-main"><HarnessDirectoryFilesProvider host={{...files,...(!embedded?{chooseWorkspace:()=>{setPath('');setName('');setError('');setChoosing(true);}}:{})}}><ConversationWorkspace workspaces={scopes} defaultWorkspaceId={selected??null}/></HarnessDirectoryFilesProvider></main>{!standalone&&<AgentConnectionSettings/>}<Modal open={choosing} centered width={500} className="harness-workspace-modal" title="添加工作空间" confirmLoading={busy} maskClosable={!busy} cancelText="取消" okText="创建并使用" cancelButtonProps={{disabled:busy}} okButtonProps={{'aria-label':'创建并使用',disabled:!path.trim()}} onOk={()=>void create()} onCancel={()=>{if(!busy)setChoosing(false);}}>
+  const draftWorkspace=()=>{try{return readDraft(conversationDraftKey(null,null),sessionStorage).workspaceId;}catch{return undefined;}};
+  const workbenchWorkspaceId=context.scope?.workspaceId??context.draftScope?.workspaceId??draftWorkspace()??selected;
+  const builtin:HarnessWorkEnvironment={id:'harness-conversation-workspace',title:'对话工作区',render:active=><Suspense fallback={<Spin size="small" />}>
+    <DirectoryWorkbench active={active} workspaceId={workbenchWorkspaceId} workspaceName={scopes.find(scope=>scope.id===workbenchWorkspaceId)?.name}
+      onDirectoryAdded={workspaceId=>{context.newConversation({scope:{workspaceId},preserveVisibility:true});void refresh().catch(failure=>setError(failure instanceof Error?failure.message:'工作范围读取失败。'));}} />
+  </Suspense>};
+  return <HarnessShell environment={environment??(standalone?builtin:undefined)}>{workspaceToggle=><>{error&&!choosing&&<Alert type="warning" closable onClose={()=>setError('')} message={error}/>}<main className="harness-main"><HarnessDirectoryFilesProvider host={{...files,...(!embedded?{chooseWorkspace:()=>{setPath('');setName('');setError('');setChoosing(true);}}:{})}}><ConversationWorkspace workspaces={scopes} defaultWorkspaceId={selected??null} headerAction={workspaceToggle}/></HarnessDirectoryFilesProvider></main>{!standalone&&<AgentConnectionSettings/>}<Modal open={choosing} centered width={500} className="harness-workspace-modal" title="添加工作空间" confirmLoading={busy} maskClosable={!busy} cancelText="取消" okText="创建并使用" cancelButtonProps={{disabled:busy}} okButtonProps={{'aria-label':'创建并使用',disabled:!path.trim()}} onOk={()=>void create()} onCancel={()=>{if(!busy)setChoosing(false);}}>
     <div className="harness-workspace-modal-body">
       <p className="harness-workspace-intro">选择一个本机目录并设置可选名称，创建后直接用于新对话。</p>
       {error&&<Alert className="harness-workspace-alert" type="warning" showIcon message={error}/>}
@@ -103,5 +107,5 @@ function Workspace({standalone,directoryVersion}:{standalone:boolean;directoryVe
         <Input id="harness-workspace-name" aria-label="工作空间名称" placeholder={path?`留空默认使用「${directoryLeafName(path)}」`:'留空时使用目录名'} maxLength={160} disabled={busy} value={name} onChange={event=>setName(event.target.value)} onPressEnter={()=>void create()}/>
       </div>
     </div>
-  </Modal></>;
+  </Modal></>}</HarnessShell>;
 }

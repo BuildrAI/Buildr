@@ -13,7 +13,7 @@ const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(va
 
 /** Observe both the selected route (including links) and the actual directory.
  * CWD is an execution starting point, not a filesystem sandbox. */
-function observe(selectedPath: string) {
+export function observeWorkbenchDirectory(selectedPath: string) {
   try {
     const rootPath = fs.realpathSync(selectedPath);
     const target = fs.statSync(rootPath);
@@ -61,7 +61,7 @@ export class HarnessDirectoryHost implements AgentHostCapabilities {
     const selected = path.normalize(selectedPath);
     const lock = claimStorage(this.dataRoot);
     try {
-      const store = this.store(), observation = observe(selected);
+      const store = this.store(), observation = observeWorkbenchDirectory(selected);
       const existing = store.directories.find(entry => entry.selectedPath === selected);
       if (existing) {
         this.assertCurrent(existing, observation);
@@ -78,7 +78,7 @@ export class HarnessDirectoryHost implements AgentHostCapabilities {
     const scope=await this.resolveExecutionScope(input);
     return previewLocalFile({path:input.path,cwd:scope.rootPath});
   }
-  private assertCurrent(entry: HarnessDirectory, current = observe(entry.selectedPath)): void {
+  private assertCurrent(entry: HarnessDirectory, current = observeWorkbenchDirectory(entry.selectedPath)): void {
     if (current.revision !== entry.revision || current.rootPath !== entry.rootPath) throw new AgentServiceError('agent_scope_binding_changed', '目录或链接身份已变化，未在新对象上继续；原对话及目录登记保留。', 409);
   }
   async resolveExecutionScope(input: { ref: ExecutionScopeRef; expectedRevision?: string }): Promise<ExecutionScope> {

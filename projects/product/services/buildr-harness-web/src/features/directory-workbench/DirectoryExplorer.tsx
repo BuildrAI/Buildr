@@ -56,14 +56,14 @@ export function DirectoryExplorer({scope,request,active,opened,onSaved,drafts}: 
   const refresh=()=>{void Promise.all(Object.keys({...folders,'':null}).map(folder=>loadDirectory(folder,true)));bump(value=>value+1);};
   const searchResults=searchRead.data?.matches.map(item=>({...item,line:item.line??undefined,repositoryId:id,repositoryName:'',kind:'text' as const,content:''}));
   const notes=[directoryError,searchRead.error,...(searchRead.data?.diagnostics.map(item=>item.message)||[]),Object.values(folders).some(item=>item.truncated)?'目录达到读取上限。':''].filter(Boolean);
-  return <div className="harness-directory-explorer">
-    <div className="harness-directory-file-actions"><Space wrap>
+  const readerActions=file&&<div className="harness-directory-file-actions"><Space wrap>
       {!!file&&!file.truncated&&(file.kind==='text'||file.kind==='markdown')&&<Button size="small" loading={loadingEditor} onClick={()=>editing?setEdit(''):void openEditor()}>{editing?'返回阅读':draft&&draft.content!==draft.observation.content?'继续编辑草稿':'编辑文件'}</Button>}
       {editing&&<Button size="small" onClick={()=>{if(draft.content===draft.observation.content||window.confirm('仅丢弃此文件未保存的网页草稿？磁盘文件不受影响。')){drafts.delete(draftKey);setEdit('');bump(value=>value+1);}}}>关闭编辑</Button>}
       {selected.path&&<code>{selected.path}</code>}
-    </Space></div>
+    </Space></div>;
+  return <div className="harness-directory-explorer">
     {editorError&&<Alert type="warning" showIcon message={editorError}/>}
-    <RepositoryFileBrowser context={scope.name||'当前目录'} location={scope.rootPath} version="当前目录" files={files}
+    <RepositoryFileBrowser treeOnRight compactWorkspace readerActions={readerActions} context={scope.name||'当前目录'} location={scope.rootPath} version="当前目录" files={files}
       treeRepositories={[{id,name:scope.name||'当前目录',location:scope.rootPath,files:entries}]} selectedRepositoryId={id} selectedPath={selected.path}
       onSelect={changeSelection} onSelectRepositoryFile={(_id,relative,line,query)=>changeSelection(relative,line,query)}
       onLoadDirectory={(_id,relative)=>loadDirectory(relative)} loadedDirectoryKeys={Object.keys(folders).map(folder=>id+'::'+folder)}
