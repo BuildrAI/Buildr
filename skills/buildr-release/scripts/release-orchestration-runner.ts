@@ -1408,6 +1408,16 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         artifacts: snapshot.artifacts, preparationCloseout: state.preparation });
     }
     changePhase('adoption-readiness');
+    let adoptionCompatibility: any;
+    if (!alreadyMerged && localPackageMode && targets.packages.length === 1 && targets.packages.includes('buildr')) {
+      const counterparts = await observePackageCounterparts(packageDependencies);
+      const compatibility = await evaluateObservedPackagePlan(targets,
+        { buildr: { artifact: candidateEvidence.packageArtifact, bytes: candidateEvidence.tarballBytes } },
+        counterparts, { ...packageDependencies, boundPairEvidence: candidateEvidence.aggregate?.packageHandoff?.pairEvidence });
+      adoptionCompatibility = { compatibility, counterpart: counterparts['dsh-plugin']?.observation, artifact: candidateEvidence.packageArtifact };
+      if (compatibility.status !== 'passed') return answer('compatibility-blocked',
+        ['主线采用前的原包配对未通过；保留原包和已有检查，只补配对缺口。'], { compatibility });
+    }
     const pr = take(ensureReleaseToMainPullRequest({ ...selectionArgs, generation: selection.generation, repo, candidateCommit: sourceCommit, candidateTree: selection.releaseTree,
       title: `Release ${key}`, body: `Release ${key} from frozen ${sourceCommit}.\n\nCandidate run ID: ${state.candidate.runId}${scoped ? `\nRelease selection: ${JSON.stringify(plan.selection)}${plan.requirements.plugin ? `\nBuildr peer: ${JSON.stringify(state.pluginSourceAggregate.verification.peer)}` : ''}` : ''}`,
       authorizeReleasePush: true, authorizePullRequest: true }, { execute }));
@@ -1436,7 +1446,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       const mainCommit = git(['rev-parse', 'origin/main'], repo);
       const actualParents = git(['rev-list', '--parents', '-n', '1', mainCommit], repo).split(/\s/u).slice(1);
       if (actualParents.length !== 2 || actualParents[1] !== sourceCommit || git(['rev-parse', `${mainCommit}^{tree}`], repo) !== selection.releaseTree) throw new Error('Protected main does not preserve the exact frozen tree through its merge second parent.');
-      const prepared = await preparePackageRelease({ ...options, repo, selection, mainCommit, candidateEvidence }, packageScope(), packageDependencies);
+      const prepared = await preparePackageRelease({ ...options, repo, selection, mainCommit, candidateEvidence, adoptionCompatibility }, packageScope(), packageDependencies);
       save(); return answer(prepared.status, prepared.nextActions, prepared);
     }
     state.transaction = { repo, canonicalWorkspace: workspace, version: options.version, sourceCommit: 'origin/main', remoteMain: 'origin/main', candidateBase: sourceCommit,

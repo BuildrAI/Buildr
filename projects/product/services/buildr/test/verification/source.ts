@@ -11,6 +11,8 @@ import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesyst
 import { assertMinimumNodeVersion } from '../../src/infrastructure/process.ts';
 import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts';
 import { prepareCandidateEnvironment } from '../../tools/verification/candidate-environment.ts';
+import { assertVerificationResourceDemand } from './dag-scheduler.ts';
+import { localExecutionStep } from './plan-runner.ts';
 import { createVerificationPlan } from './planner.ts';
 import { CANDIDATE_CI_SHARDS, sourcePreparationForCheck, VERIFICATION_PLATFORMS, verificationSteps, resolveVerificationExecutionProfile } from './registry.ts';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.ts';
@@ -168,6 +170,7 @@ export function prepareSourceVerificationEnvironment(plan: any, options: any, de
   while (true) {
     const required = sourceVerificationPreparation(plan, reuse, shards);
     const rank = required.profile === null ? -1 : sourcePreparationProfiles.indexOf(required.profile);
+    dependencies.assertAdmission?.(plan, reuse);
     if (rank <= preparedRank) return { reuse, preparation: required, preparations };
     preparations.push(prepare({ profile: required.profile, reusePrepared: true,
       preparationReuseOptions: { force: options.force === true } }));
@@ -270,8 +273,20 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
         if (args.resume && !round.allowFullRerun && round.output && !fs.existsSync(round.output)) {
           assertCandidateResumeScope(createCandidateRoundExecution(executionPlan, { ...reuseOptions, inspectOnly: true }).explanation);
         }
+        const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE, process.env, [...costs.values()].map(item => item.resources).filter(Boolean));
         const startedAt = Date.now();
-        const prepared = prepareSourceVerificationEnvironment(executionPlan, reuseOptions);
+        if (executionPlan.steps.some((step: any) => step.id === 'integration-candidate-release')) {
+          execFileSync(process.execPath, ['--test', '--test-name-pattern=Candidate gate loads',
+            path.join(productRoot, 'test/integration/release-contract-cold-start.test.ts')],
+            { cwd: productRoot, stdio: 'inherit', timeout: 60_000 });
+        }
+        const prepared = prepareSourceVerificationEnvironment(executionPlan, reuseOptions, {
+          assertAdmission(plan: any, reuse: any) {
+            const reusable = new Set(reuse.steps.filter((step: any) => step.disposition === 'reuse').map((step: any) => step.id));
+            assertVerificationResourceDemand({ steps: plan.steps.filter((step: any) => !reusable.has(step.id))
+              .map((step: any) => localExecutionStep(step, executionProfile, executionProfile.limits)) }, executionProfile.limits, executionProfile);
+          },
+        });
         let v1CompatibilityRoot: string | null = null;
         let v1CompatibilityPackage: string | null = null;
         try {
@@ -294,7 +309,6 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
           const environmentPreparationMs = Date.now() - startedAt;
           enforceOfflineVerification();
           const { executePlan } = await import('./plan-runner.ts');
-          const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE, process.env, [...costs.values()].map(item => item.resources).filter(Boolean));
           const evidence = createVerificationEvidencePaths('source');
           const source = collectVerificationSourceIdentity(productRoot, { projectRoot });
           const sourceObservationMs = Date.now() - startedAt - environmentPreparationMs;

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createReleaseContext, validateReleaseContext } from '../../../../../../skills/buildr-release/scripts/release-readiness.ts';
-import { releaseExecutionCommit, validateReleaseExecutorRecovery } from '../../../../../../skills/buildr-release/scripts/release-executor-recovery.ts';
+import { permitsExecutorRecoveryAttempt, releaseExecutionCommit, validateReleaseExecutorRecovery } from '../../../../../../skills/buildr-release/scripts/release-executor-recovery.ts';
 import { createReleaseTransactionEvidence, validateReleaseTransactionEvidence } from '../../../../../../skills/buildr-release/scripts/release-transaction-evidence.ts';
 import { verifyReleaseExecutorPullRequest } from '../../../../../../skills/buildr-release/scripts/release-executor-admission.ts';
 import { readHostedPluginNoWriteProof } from '../../../../../../skills/buildr-release/scripts/plugin-hosted-release.ts';
@@ -240,4 +240,20 @@ test('main failed-publisher admission retains its original marker and original C
   const result = await verifyReleaseExecutorPullRequest(f.event, f.repository, '/fixture', f.dependencies);
   assert.equal(result.status, 'passed'); assert.equal(result.kind, 'publisher-repair-admission'); assert.equal(result.originalRunId, 456);
   assert.equal(result.originalSourceCommit, sha('c')); assert.equal(result.candidateRunId, 90);
+});
+
+
+test('first failed publisher can recover only with explicit no-write evidence', () => {
+  const evidence = validateReleaseTransactionEvidence(createReleaseTransactionEvidence({ context: original(), outcome: 'failed',
+    publish: { repository: 'BuildrAI/Buildr', workflow: '.github/workflows/publish.yml', runId: 456, runAttempt: 1,
+      headSha: sha('c'), runUrl: 'https://github.com/BuildrAI/Buildr/actions/runs/456' },
+    publicFacts: { version: '1.2.3', registryPublished: false, registryObservation: 'absent', npmAttempted: false, effects: [] },
+  }));
+  assert.throws(() => validateReleaseTransactionEvidence({ ...evidence, attempt: { ...evidence.attempt, npmAttempted: true } }), /identity mismatch/);
+  assert.equal(permitsExecutorRecoveryAttempt(evidence), true);
+  for (const npmAttempted of [undefined, null, true]) {
+    assert.equal(permitsExecutorRecoveryAttempt({ ...evidence, attempt: { ...evidence.attempt, npmAttempted } }), false);
+  }
+  assert.equal(permitsExecutorRecoveryAttempt({ ...evidence, attempt: { ...evidence.attempt,
+    effects: [{ type: 'npm-published', state: 'unknown' }] } }), false);
 });

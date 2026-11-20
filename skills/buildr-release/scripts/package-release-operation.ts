@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { evaluateReleasePlan, normalizeReleaseTargets } from './release-targets.ts';
-import { sameArtifactIdentity } from './package-compatibility.ts';
+import { parseLegacyPairEvidence, sameArtifactIdentity } from './package-compatibility.ts';
 import { observePublishedPackageArtifact } from './package-artifact-observation.ts';
 import { createPackageReleaseContext, createPackagePublicationEvidence, validatePackageReleaseContext, validatePackagePublicationEvidence, validatePackageOwnerPublication, packageExecutionCommit, pluginExecutorRecoverySchema, assertUnattemptedPluginPublication } from './release-package-evidence.ts';
 import { runPluginHostedOperation, readHostedPluginCandidate, reconcilePluginPreparationPointer, readHostedPluginNoWriteProof, validatePluginNoWriteProof, validatePluginHostedRun } from './plugin-hosted-release.ts';
@@ -14,7 +14,7 @@ import { approvePendingEnvironmentDeployments } from './environment-approval.ts'
 import { runHostedReleaseTransaction } from './release-transaction-runner.ts';
 import { inspectHostedReleaseTransaction, validateReleaseTransactionEvidence } from './release-transaction-evidence.ts';
 import { createReleaseContext, releaseContextIdentity } from './release-readiness.ts';
-import { assertReleaseExecutorRecoveryEvidence, createReleaseExecutorRecovery, releaseExecutionCommit, assertReleaseExecutorSource } from './release-executor-recovery.ts';
+import { permitsExecutorRecoveryAttempt, assertReleaseExecutorRecoveryEvidence, createReleaseExecutorRecovery, releaseExecutionCommit, assertReleaseExecutorSource } from './release-executor-recovery.ts';
 import { containsCredentialMaterial } from './release-authority.ts';
 import { observeUnpublishedRelease } from './release-observation.ts';
 import { inspectReleaseTag } from './release-tag-ensure.ts';
@@ -37,7 +37,7 @@ export async function evaluateObservedPackagePlan(targets: any, candidates: any,
     const { verifyBuildrPluginPair } = await import('../../../projects/product/services/dsh-plugin/tools/verify-buildr-plugin-pair.ts');
     return verifyBuildrPluginPair(input);
   });
-  const pairEvidence: any[] = [];
+  const pairEvidence: any[] = (dependencies.boundPairEvidence ?? []).map(parseLegacyPairEvidence);
   const pairDiagnostics: any[] = [];
   const identity = ({ packageName, version, integrity, artifactSha256 }: any) => ({ packageName, version, integrity, artifactSha256 });
   const pairs: any[] = [];
@@ -51,6 +51,7 @@ export async function evaluateObservedPackagePlan(targets: any, candidates: any,
   if (targets.packages.includes('dsh-plugin')) add(candidates['dsh-plugin'], publicMain);
   if (targets.packages.length === 2) add(candidates['dsh-plugin'], candidates.buildr);
   for (const pair of pairs) {
+    if (pairEvidence.some(item => sameArtifactIdentity(item.consumer, pair.consumer.artifact) && sameArtifactIdentity(item.provider, pair.provider.artifact))) continue;
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-pair-'));
     try {
       const consumer = path.join(root, 'consumer.tgz'), provider = path.join(root, 'provider.tgz');
@@ -71,7 +72,7 @@ export async function evaluateObservedPackagePlan(targets: any, candidates: any,
   }
   const plan = evaluateReleasePlan({ targets, candidates: Object.fromEntries(Object.entries(candidates).map(([key, value]: any) => [key, value.artifact])),
     published: Object.fromEntries(Object.entries(counterparts).map(([key, value]: any) => [key, value.observation])), legacyPairEvidence: pairEvidence });
-  return { ...plan, ...(plan.status === 'blocked' && pairDiagnostics.length ? { pairDiagnostics } : {}) };
+  return { ...plan, ...(dependencies.capturePairEvidence && plan.status === 'passed' ? { pairEvidence } : {}), ...(plan.status === 'blocked' && pairDiagnostics.length ? { pairDiagnostics } : {}) };
 }
 
 export async function preparePackageRelease(options: any, scope: any, dependencies: any = {}): Promise<any> {
@@ -125,7 +126,11 @@ export async function preparePackageRelease(options: any, scope: any, dependenci
     candidates['dsh-plugin'] = { artifact: prepared.artifact, bytes: prepared.tarballBytes };
   }
   const counterparts = await observePackageCounterparts(dependencies);
-  const compatibility = await evaluateObservedPackagePlan(targets, candidates, counterparts, dependencies);
+  const adoption = options.adoptionCompatibility;
+  const compatibility = targets.packages.length === 1 && targets.packages[0] === 'buildr'
+    && adoption?.compatibility?.status === 'passed' && sameArtifactIdentity(adoption.artifact, candidates.buildr.artifact)
+    && isDeepStrictEqual(adoption.counterpart, counterparts['dsh-plugin']?.observation)
+    ? adoption.compatibility : await evaluateObservedPackagePlan(targets, candidates, counterparts, { ...dependencies, boundPairEvidence: options.candidateEvidence?.aggregate?.packageHandoff?.pairEvidence });
   state.compatibility = compatibility; save();
   if (compatibility.status !== 'passed') return { status: 'compatibility-blocked', compatibility, nextActions: ['保留已成立源码交付事实；修复对应兼容缺口再准备公开发布。'] };
   const context = createPackageReleaseContext({ targets, selection: {
@@ -195,16 +200,18 @@ async function recoverMainPublication(options: any, context: any, scope: any, de
   const matches = (value: any) => value?.id === pointer.runId && value.repository?.full_name === 'BuildrAI/Buildr'
     && value.path?.split('@')[0] === '.github/workflows/publish.yml' && value.event === 'workflow_dispatch'
     && value.head_branch === 'main' && value.head_sha === owner.convergence.mainCommit
-    && value.status === 'completed' && value.conclusion === 'failure' && Number.isSafeInteger(value.run_attempt) && value.run_attempt >= 2;
-  if (!matches(run)) return blocked('原主包请求尚未确认至少两次尝试后的终态失败，不替换指针。');
+    && value.status === 'completed' && value.conclusion === 'failure' && Number.isSafeInteger(value.run_attempt) && value.run_attempt >= 1;
+  if (!matches(run)) return blocked('原主包请求尚未确认终态失败，不替换指针。');
   const inspected = await (dependencies.inspectHostedReleaseTransaction ?? inspectHostedReleaseTransaction)({ runId: pointer.runId,
     repository: 'BuildrAI/Buildr', ghCommand: options.ghCommand }, dependencies.evidenceDependencies);
   const evidence = validateReleaseTransactionEvidence(inspected.evidence);
-  if (inspected.status !== 'failed' || evidence.status !== 'failed' || evidence.context.identity !== owner.identity
+  const beforeTag = evidence.attempt?.npmAttempted === false && evidence.release.tagCommit === null
+    && Array.isArray(evidence.attempt.effects) && evidence.attempt.effects.length === 0;
+  if (!permitsExecutorRecoveryAttempt(evidence) || inspected.status !== 'failed' || evidence.status !== 'failed' || evidence.context.identity !== owner.identity
     || evidence.publish.runId !== run.id || evidence.publish.runAttempt !== run.run_attempt || evidence.publish.headSha !== run.head_sha
     || evidence.release.registryPublished !== false || evidence.release.registryObservation !== 'absent' || evidence.release.registryIntegrity !== null
     || evidence.release.githubRelease !== null || evidence.release.tag !== `v${context.targets.versions.buildr}`
-    || evidence.release.tagCommit !== owner.convergence.mainCommit
+    || (!beforeTag && evidence.release.tagCommit !== owner.convergence.mainCommit)
     || (evidence.attempt.effects ?? []).some((effect: any) => !['local-tag-created', 'local-tag-reused', 'remote-tag-pushed', 'tag-reused'].includes(effect.type)
       || effect.state !== 'confirmed')) return blocked('缺少原运行最新匹配的失败记录，或存在未确认的发布副作用；保留原请求。');
   const publicState = await (dependencies.observeUnpublishedRelease ?? observeUnpublishedRelease)(context.targets.versions.buildr,
@@ -213,7 +220,8 @@ async function recoverMainPublication(options: any, context: any, scope: any, de
     || !Array.isArray(publicState.activeRuns) || publicState.activeRuns.length !== 0) return blocked('当前官方版本、GitHub Release或活动发布运行未确认安全，不派发恢复。');
   const repo = state.transactions?.buildr?.repo ?? state.executionRoot ?? scope.workspace;
   const tag = (dependencies.inspectReleaseTag ?? inspectReleaseTag)({ repo, tag: evidence.release.tag, sourceCommit: owner.convergence.mainCommit }, { execute: scope.execute });
-  if (tag.status !== 'ready' || tag.action !== 'reuse' || tag.observed?.targetCommit !== owner.convergence.mainCommit) return blocked('现有标签未精确指向原主包来源，不移动或重建标签。');
+  if (tag.status !== 'ready' || (beforeTag ? tag.action !== 'create' || tag.observed !== null
+    : tag.action !== 'reuse' || tag.observed?.targetCommit !== owner.convergence.mainCommit)) return blocked('标签实际状态与原发布记录不符，不移动或重建标签。');
   const candidates = await candidateBytes(context, state, scope, dependencies);
   git(['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main', 'refs/heads/dev:refs/remotes/origin/dev']);
   const executionCommit = git(['rev-parse', 'origin/main']);
@@ -498,7 +506,7 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
   const counterparts = await observePackageCounterparts(dependencies, counterpartOptions);
   const planTargets = completed.length ? normalizeReleaseTargets({ packages: next, version: next === 'buildr' ? context.targets.versions.buildr : undefined,
     pluginVersion: next === 'dsh-plugin' ? context.targets.versions['dsh-plugin'] : undefined, selectionId: context.targets.selectionId }) : context.targets;
-  const plan = await evaluateObservedPackagePlan(planTargets, candidates, counterparts, dependencies);
+  const plan = await evaluateObservedPackagePlan(planTargets, candidates, counterparts, { ...dependencies, boundPairEvidence: candidates.buildr?.candidateEvidence?.aggregate?.packageHandoff?.pairEvidence });
   if (plan.status !== 'passed' || (!completed.length && !isDeepStrictEqual(plan.publicationOrder, originalOrder))) return { status: 'compatibility-blocked', compatibility: plan,
     nextActions: ['当前对端或安全顺序改变；保留已成立事实并修复相关兼容缺口，不静默换序。'] };
   state.publicationAuthorization ??= { contextIdentity: context.identity, cleanupPolicy: 'delete-owned-release-branches/v2' };

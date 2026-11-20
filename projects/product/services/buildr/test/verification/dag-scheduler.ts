@@ -56,6 +56,16 @@ function stepDemand(step: any, executionProfile: any): any  {
   });
 }
 
+export function assertVerificationResourceDemand(plan: any, limits: any, executionProfile: any): Map<string, any> {
+  const demandByStep: any = new Map(plan.steps.map((step: any) => [step.id, stepDemand(step, executionProfile)]));
+  for (const step of plan.steps) for (const [dimension, value] of Object.entries(demandByStep.get(step.id))) {
+    const capacity: any = limits.capacities?.[dimension];
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) throw new Error(`Invalid ${dimension} resource demand for ${step.id}`);
+    if (!Number.isInteger(capacity) || capacity < (value as number)) throw new Error(`Unsatisfied ${dimension} resource demand for ${step.id}: demand=${value} capacity=${capacity ?? 'missing'}`);
+  }
+  return demandByStep;
+}
+
 export async function runVerificationDag(plan: any, options: any = {}): Promise<any>  {
   const execute: any = options.execute;
   if (typeof execute !== 'function') throw new Error('runVerificationDag requires an execute function');
@@ -101,12 +111,7 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
   const activeByResource: any = new Map();
   const activeDemand: any = new Map();
   const results: any = new Map();
-  const demandByStep: any = new Map(plan.steps.map((step: any) => [step.id, stepDemand(step, options.executionProfile)]));
-  for (const step of plan.steps) for (const [dimension, value] of Object.entries(demandByStep.get(step.id))) {
-    const capacity: any = limits.capacities?.[dimension];
-    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) throw new Error(`Invalid ${dimension} resource demand for ${step.id}`);
-    if (!Number.isInteger(capacity) || capacity < (value as number)) throw new Error(`Unsatisfied ${dimension} resource demand for ${step.id}: demand=${value} capacity=${capacity ?? 'missing'}`);
-  }
+  const demandByStep = assertVerificationResourceDemand(plan, limits, options.executionProfile);
 
   let schedulingEventAtMs = queuedAtMs;
   const waiting = new Map<string, { reasons: string[]; since: number }>();

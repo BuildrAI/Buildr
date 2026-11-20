@@ -6,8 +6,8 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { assertReleaseExecutionCheckout } from './candidate-source-binding.ts';
 import { runReleaseConsumer, inspectReleaseConsumerArtifact } from '../../../projects/product/services/buildr/test/verification/release/release-consumption.ts';
-import { RELEASE_CHECKS, validateReleaseCheckDefinitions, type ReleaseInitialCheckId, type ReleaseEffectCheckId } from '../../../projects/product/services/buildr/test/verification/release/release-consumption-contract.ts';
-import { validateReleaseContext, evaluateReleaseReadiness } from './release-readiness.ts';
+import { RELEASE_CHECKS, assertReleaseConsumptionCoverage, validateReleaseCheckDefinitions, type ReleaseInitialCheckId, type ReleaseEffectCheckId } from '../../../projects/product/services/buildr/test/verification/release/release-consumption-contract.ts';
+import { validateReleaseContext, evaluateReleaseReadiness, releaseContextIdentity } from './release-readiness.ts';
 import { runReleaseAuthorityOidcProbe } from './release-authority-oidc-probe.ts';
 import { checkReleaseConvergence } from './release-convergence.ts';
 import { ensureReleaseTag, inspectReleaseTag } from './release-tag-ensure.ts';
@@ -120,17 +120,17 @@ export async function completePublicationEffects(options: any, dependencies: any
       assertRegistryArtifact(observed, artifact.manifest);
       values.registry = observed;
     },
-    'tag-state': () => {
-      values.tag = ensureReleaseTag({ repo, tag: `v${version}`, sourceCommit: context.convergence.mainCommit }, dependencies.gitDependencies);
-      return values.tag;
-    },
-    'github-release-state': () => ensureGitHubRelease(expectedRelease, { token, mode: 'preflight', fetchImpl: dependencies.fetchImpl }),
-    'npm-publish': async () => {
+    'tag-state': async () => {
       if (!values.registry?.published && (options.previousAttempt ?? 'not-attempted') === 'not-attempted') {
         values.compatibility = await checkPublicationCompatibility({ context, artifact }, dependencies);
         if (values.compatibility.status !== 'passed') throw Object.assign(new Error('Package compatibility recheck did not pass; inspect the recorded checks and pair diagnostics.'),
           { code: 'release-package-compatibility-blocked', compatibility: values.compatibility });
       }
+      values.tag = ensureReleaseTag({ repo, tag: `v${version}`, sourceCommit: context.convergence.mainCommit }, dependencies.gitDependencies);
+      return values.tag;
+    },
+    'github-release-state': () => ensureGitHubRelease(expectedRelease, { token, mode: 'preflight', fetchImpl: dependencies.fetchImpl }),
+    'npm-publish': async () => {
       const published = await publishFrozenArtifact({ manifestPath: artifact.manifestPath, npmTag, deferReadback: true, previousAttempt: options.previousAttempt ?? 'not-attempted' }, { ...dependencies,
         onEffects: (effects: any[]) => checkpoint({ pendingEffects: effects }),
       });
@@ -172,12 +172,21 @@ export async function checkPublicationCompatibility({ context, artifact }: any, 
     { buildr: { artifact: candidate, bytes } }, { 'dsh-plugin': plugin }, dependencies);
 }
 
+export function readProtectedPairEvidence(aggregate: any, context: any, artifact: any): any[] | undefined {
+  if (releaseContextIdentity(aggregate) !== context.candidate.aggregateIdentity) throw new Error('Protected Candidate aggregate identity mismatch.');
+  assertReleaseConsumptionCoverage(aggregate, context.release, artifact, context);
+  return aggregate.executionModel === 'buildr.local-package/v1' ? aggregate.packageHandoff.pairEvidence : undefined;
+}
+
 export async function runReleasePublication(options: any, dependencies: any = {}): Promise<any> {
   validateReleaseCheckDefinitions();
   const repo = path.resolve(options.repo || releasePublicationRepositoryRoot);
   const context = validateReleaseContext(options.context);
   const recovery = assertReleaseExecutorRecoverySource(context, { repo });
   const artifact = inspectReleaseConsumerArtifact(options.manifestPath).artifact;
+  if (options.candidateAggregate) {
+    dependencies = { ...dependencies, boundPairEvidence: readProtectedPairEvidence(options.candidateAggregate, context, artifact.manifest) };
+  }
   const phases: any[] = [];
   const effects: any[] = [];
   let pendingEffects: any[] = [];
@@ -217,16 +226,16 @@ export async function runReleasePublication(options: any, dependencies: any = {}
       if (readiness.status !== 'ready') throw new Error(`Frozen context is not ready: ${readiness.findings.map((item: any) => item.code).join(', ')}`);
     },
     'publication-authority': async () => {
-      authority = await runReleaseAuthorityOidcProbe({ repo, sourceCommit: releaseExecutionCommit(context), workflowSha256: (recovery?.workflowDigest ?? context.workflow.digest).slice(7), context }, {
+      authority = await (dependencies.probeAuthority ?? runReleaseAuthorityOidcProbe)({ repo, sourceCommit: releaseExecutionCommit(context), workflowSha256: (recovery?.workflowDigest ?? context.workflow.digest).slice(7), context }, {
         fetchImpl: (url: any, init: any) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) }),
       });
       save(path.join(options.outputDirectory, 'release-authority.json'), authority);
       return authority;
     },
     'source-convergence': () => {
-      const convergence = checkReleaseConvergence({ repo, version: context.release.version, selectionId: context.selection?.selectionId ?? context.release.version, candidateBase: context.release.sourceCommit, candidateTree: context.release.sourceTree,
+      const convergence = (dependencies.checkConvergence ?? checkReleaseConvergence)({ repo, version: context.release.version, selectionId: context.selection?.selectionId ?? context.release.version, candidateBase: context.release.sourceCommit, candidateTree: context.release.sourceTree,
         stage: 'pre-tag', authorityEvidence: authority, publicationSourceCommit: context.convergence.mainCommit, releaseContext: context });
-      if (convergence.ok) inspectReleaseSourceProvenance({ repo, sourceCommit: context.release.sourceCommit, generation: context.selection.generation, devRef: 'origin/dev' });
+      if (convergence.ok) (dependencies.inspectProvenance ?? inspectReleaseSourceProvenance)({ repo, sourceCommit: context.release.sourceCommit, generation: context.selection.generation, devRef: 'origin/dev' });
       return convergence;
     },
   } satisfies Record<ReleaseInitialCheckId, () => unknown>, checkpoint);
@@ -252,7 +261,7 @@ export async function runReleasePublication(options: any, dependencies: any = {}
     registryObservation: registry ? (registry.published ? 'present' : npmAttempted === false ? 'absent' : 'unknown') : 'unknown',
     githubRelease: completed.values?.githubRelease || effects.some(effect => effect.type === 'github-release-created' && effect.state === 'confirmed') ? `https://github.com/${context.workflow.repository}/releases/tag/v${context.release.version}` : null,
     registrySmoke: completed.values?.registrySmoke?.status === 'passed' ? 'passed' : 'unknown',
-    steps: phases, effects,
+    steps: phases, effects, npmAttempted,
     conflict: Boolean((tagCommit && tagCommit !== context.convergence.mainCommit) || (registry?.published && registry.integrity !== artifact.manifest.integrity) || completed.failure?.code?.includes('conflict')),
   } });
   save(path.join(options.outputDirectory, 'release-transaction-evidence.json'), evidence);
@@ -260,9 +269,9 @@ export async function runReleasePublication(options: any, dependencies: any = {}
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [contextFile, manifestPath, outputDirectory] = process.argv.slice(2);
+  const [contextFile, manifestPath, outputDirectory, aggregateFile] = process.argv.slice(2);
   if (!contextFile || !manifestPath || !outputDirectory) throw new Error('Usage: release-publication.ts <context> <artifact-manifest> <output-directory>');
-  const result = await runReleasePublication({ context: JSON.parse(fs.readFileSync(contextFile, 'utf8')), manifestPath, outputDirectory, token: process.env.GITHUB_TOKEN,
+  const result = await runReleasePublication({ context: JSON.parse(fs.readFileSync(contextFile, 'utf8')), manifestPath, outputDirectory, candidateAggregate: aggregateFile ? JSON.parse(fs.readFileSync(aggregateFile, 'utf8')) : undefined, token: process.env.GITHUB_TOKEN,
     previousPublicationDirectory: process.env.BUILDR_PREVIOUS_PUBLICATION_DIRECTORY,
     publish: { repository: process.env.GITHUB_REPOSITORY, workflow: '.github/workflows/publish.yml', runId: Number(process.env.GITHUB_RUN_ID), runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
       runUrl: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`, headSha: process.env.GITHUB_SHA },

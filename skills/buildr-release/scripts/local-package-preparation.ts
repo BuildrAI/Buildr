@@ -177,13 +177,27 @@ export async function prepareLocalMainPackage(options: {
   const handoffStarted = performance.now();
   let handoffStatus = 'failed';
   try {
+    let pairEvidence: any[] | undefined;
+    const retained = path.join(handoffDirectory, 'handoff.json');
+    if (fs.existsSync(retained)) pairEvidence = JSON.parse(fs.readFileSync(retained, 'utf8')).pairEvidence;
+    else if (options.plan?.selection.packages.length === 1 && options.plan.selection.packages[0] === 'buildr') {
+      const { evaluateObservedPackagePlan } = await import('./package-release-operation.ts');
+      const { observePublishedPackageArtifact } = await import('./package-artifact-observation.ts');
+      const { normalizeReleaseTargets } = await import('./release-targets.ts');
+      const counterpart = await (dependencies.observePairCounterpart ?? observePublishedPackageArtifact)('dsh-plugin');
+      const pair = await evaluateObservedPackagePlan(normalizeReleaseTargets({ version: peer.version, selectionId: options.roundId }),
+        { buildr: { artifact: peer, bytes: fs.readFileSync(artifact.tarball) } }, { 'dsh-plugin': counterpart },
+        { capturePairEvidence: true, verifyBuildrPluginPair: dependencies.verifyBuildrPluginPair });
+      if (pair.status !== 'passed') return { status: 'compatibility-blocked', compatibility: pair, nextActions: ['保留原包，只补准确配对证明。'] };
+      pairEvidence = pair.pairEvidence;
+    }
     handoff = createPackageHandoff({ output: handoffDirectory, sourceCommit: options.sourceCommit, sourceTree: options.sourceTree,
       platform: options.platform, artifactSha256: artifact.manifest.sha256, files, verificationScope: options.scope, plugin,
-      platformPolicy: LOCAL_PLATFORM_POLICY, verificationRules, consume: input =>
+      platformPolicy: LOCAL_PLATFORM_POLICY, verificationRules, pairEvidence, consume: input =>
         (dependencies.preflight ?? preflightLocalConsumption)({ repo: options.repo, sourceCommit: options.sourceCommit, sourceTree: options.sourceTree,
           directory: path.join(directory, 'consumption-preflight'), handoff: input, artifactDirectory: packageDirectory,
           sourcePacket, artifactPacket, pluginDirectory, expectedPeer: options.plan?.selection.packages.includes('buildr') ? peer : options.peer,
-          roundId: options.roundId }, { execute })?.consumption });
+          roundId: options.roundId }, { execute: dependencies.executeConsumptionSync })?.consumption });
     handoffStatus = 'passed';
   } catch (error: any) {
     return { status: 'local-consumption-preflight-required', nextActions: [`正式消费预演未通过：${error.message}；保留原包和证明，修正读取／契约后接续，不重新制包。`] };

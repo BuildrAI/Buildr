@@ -1,3 +1,4 @@
+import { parseLegacyPairEvidence } from './package-compatibility.ts';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -57,6 +58,15 @@ export function validatePackageHandoff(value: any): any {
     || !['macos', 'windows'].includes(value.localRunner) || value.remoteRunner !== (value.localRunner === 'macos' ? 'windows' : 'macos')
     || !/^[a-f0-9]{64}$/u.test(value.artifactSha256 ?? '')
     || !Array.isArray(value.files) || value.files.length < (pluginOnly ? 3 : 5) || value.files.length > 128) throw new Error('Invalid local package handoff identity.');
+  if (value.pairEvidence !== undefined) {
+    if (pluginOnly || !Array.isArray(value.pairEvidence) || value.pairEvidence.length > 1) throw new Error('Invalid handoff pair evidence.');
+    for (const input of value.pairEvidence) {
+      const proof = parseLegacyPairEvidence(input);
+      if (proof.provider.packageName !== '@buildr-ai/buildr' || proof.provider.artifactSha256 !== value.artifactSha256
+        || proof.consumer.packageName !== '@buildr-ai/buildr-dsh-plugin'
+        || proof.features.some(feature => feature.required ? feature.status !== 'passed' : !['passed', 'unsupported'].includes(feature.status))) throw new Error('Handoff pair evidence does not prove the original.');
+    }
+  }
   let total = 0;
   const names = new Set<string>();
   for (const file of value.files) {
@@ -98,6 +108,7 @@ export function consumptionInputHandoff(value: any): any {
 export function createPackageHandoff(options: {
   output: string; sourceCommit: string; sourceTree: string; platform?: NodeJS.Platform;
   artifactSha256: string; files: Array<{ path: string; source: string }>; verificationScope?: any; plugin?: any; kind?: 'buildr' | 'plugin'; platformPolicy?: typeof LOCAL_PLATFORM_POLICY; verificationRules?: any;
+  pairEvidence?: any[];
   consume?: (handoff: any) => any;
 }): any {
   const platforms = localPackagePlatform(options.platform);
@@ -126,6 +137,7 @@ export function createPackageHandoff(options: {
     ...(options.verificationRules ? { verificationRules: options.verificationRules } : {}),
     sourceCommit: options.sourceCommit, sourceTree: options.sourceTree,
     localRunner: platforms.local, remoteRunner: platforms.remote, artifactSha256: options.artifactSha256,
+    ...(options.pairEvidence?.length ? { pairEvidence: options.pairEvidence } : {}),
     verificationScope: options.verificationScope ?? null, plugin: options.plugin ?? null, files };
   let manifest = validatePackageHandoff({ ...body, identity: digest(body) });
   const target = path.join(output, 'handoff.json');

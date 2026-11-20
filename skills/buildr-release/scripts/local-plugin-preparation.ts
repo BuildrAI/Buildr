@@ -29,8 +29,8 @@ export async function prepareLocalPlugin(options: {
         status: 'local-plugin-verification-required',
         nextActions: ['插件完整验证不支持本轮排除范围；保留既有原包，不绕过用户范围声明。'],
       };
-      const run = (file: string, args: string[], timeout: number) => {
-        const result = execute(process.execPath, [file, ...args], { cwd: root, encoding: 'utf8',
+      const run = async (file: string, args: string[], timeout: number) => {
+        const result = await execute(process.execPath, [file, ...args], { cwd: root, encoding: 'utf8',
           timeout, maxBuffer: 64 * 1024 * 1024,
           env: { ...process.env, BUILDR_CANDIDATE_SOURCE_SHA: options.sourceCommit, BUILDR_SELECTION_ID: options.roundId,
             ...(options.sourcePacket ? { BUILDR_SOURCE_VERIFICATION_FILE: options.sourcePacket } : {}) } });
@@ -42,11 +42,11 @@ export async function prepareLocalPlugin(options: {
         return String(result.stdout);
       };
       // Resolve and validate the SDK automatically, including when a stale inherited selector exists.
-      const output = run(path.join(root, 'tools/ensure-release-sdk.ts'), [], 40 * 60_000);
+      const output = await run(path.join(root, 'tools/ensure-release-sdk.ts'), [], 40 * 60_000);
       const sdk = JSON.parse(output.trim().split('\n').at(-1)!);
       if (sdk.status !== 'prepared' || typeof sdk.sdk !== 'string' || !path.isAbsolute(sdk.sdk)) throw new Error('Local SDK preparation did not return its exact output.');
       fs.mkdirSync(path.dirname(report), { recursive: true });
-      const verification = run(path.join(root, 'tools/verify-all.ts'), ['--source-sdk', sdk.sdk,
+      const verification = await run(path.join(root, 'tools/verify-all.ts'), ['--source-sdk', sdk.sdk,
         '--buildr-peer', options.peerFile, '--candidate-output', directory, '--output', report], 40 * 60_000);
       if (verification) process.stdout.write(verification);
     }
