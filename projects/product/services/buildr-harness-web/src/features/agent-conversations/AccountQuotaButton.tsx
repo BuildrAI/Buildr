@@ -78,7 +78,7 @@ export function AccountQuotaButton({ onClick, dedicated=false }: Props) {
       if (!next && document.activeElement === entry.current && !pointerFocus.current) return;
       setOpen(next);
     }}>
-    <Button ref={entry} type="text" className={'ac-conversation-icon '+(dedicated?'ac-quota-entry':'ac-account-settings')} icon={dedicated?<DashboardOutlined aria-hidden="true"/>:<SettingOutlined aria-hidden="true"/>} aria-label={dedicated?'供应商额度':'智能体与模型设置'}
+    <Button ref={entry} type="text" className={'ac-conversation-icon '+(dedicated?'ac-quota-entry':'ac-account-settings')} icon={dedicated?<DashboardOutlined aria-hidden="true"/>:<SettingOutlined aria-hidden="true"/>} aria-label={dedicated?'供应商额度':'设置'}
       onFocus={() => { if (!pointerFocus.current && !dismissed.current && !settings) setOpen(true); }}
       onBlur={() => { pointerFocus.current = false; if (!settings) dismissed.current = false; setOpen(false); }}
       onPointerEnter={() => { if (!pointerFocus.current) dismissed.current = false; }}

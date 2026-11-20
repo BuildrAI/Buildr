@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright-core';
@@ -56,12 +57,8 @@ test('wide diagrams, code and tables scroll locally without widening the convers
 
 test('rendered Mermaid diagrams fit proportionally without scrollbars in message stream and fit container width without clipping in document reader', {timeout: 30000}, async () => {
   const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-  const vite = await createViteServer({
-    root: serviceRoot,
-    server: {middlewareMode: true},
-    appType: 'custom',
-    logLevel: 'silent',
-  });
+  const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-markdown-overflow-vite-'));
+  let vite!: Awaited<ReturnType<typeof createViteServer>>;
   const server = http.createServer((req, res) => {
     if (req.url === '/__stream-fit-test__') {
       res.writeHead(200, {'content-type': 'text/html; charset=utf-8'});
@@ -180,6 +177,13 @@ test('rendered Mermaid diagrams fit proportionally without scrollbars in message
     }
     vite.middlewares(req, res);
   });
+  vite = await createViteServer({
+    root: serviceRoot,
+    cacheDir,
+    server: {middlewareMode: true, hmr: {server}},
+    appType: 'custom',
+    logLevel: 'silent',
+  });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : 0;
@@ -292,7 +296,9 @@ test('rendered Mermaid diagrams fit proportionally without scrollbars in message
     assert.ok(afterCompact > beforeCompact, `expected compact non-overflow diagram to scroll outer reader immediately (${beforeCompact} -> ${afterCompact})`);
   } finally {
     await browser.close();
-    await new Promise<void>(resolve => server.close(() => resolve()));
     await vite.close();
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    fs.rmSync(cacheDir, {recursive: true, force: true});
   }
 });

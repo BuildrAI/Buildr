@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
 import { chromium } from 'playwright-core';
 import { createServer } from 'vite';
 
@@ -44,16 +47,18 @@ createRoot(document.getElementById('root')).render(h(ConfigProvider,{theme:{...s
 `;
 
 test('subagent viewer preserves the real conversation draft and scope at desktop and narrow widths', {timeout:45000}, async t=>{
-  const vite=await createServer({root:new URL('../..',import.meta.url).pathname,server:{middlewareMode:true},appType:'custom',logLevel:'silent',plugins:[{
-    name:'subagent-fixture',resolveId(id){if(id==='/fixture.js')return id;},load(id){if(id==='/fixture.js')return fixture;},
-  }]});
+  let vite!: Awaited<ReturnType<typeof createServer>>;
+  const cacheDir=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-subagents-vite-'));
   const server=http.createServer((req,res)=>{
     if(req.url!=='/')return vite.middlewares(req,res);
     res.setHeader('content-type','text/html; charset=utf-8');
-    void vite.transformIndexHtml('/', '<!doctype html><style>body{margin:0}#root{height:100dvh;width:100%}#root>.ant-app{width:100%;min-width:0}#root .ac-panel{position:relative;inset:auto;height:100%;flex:1;width:100%;max-width:none;min-width:0}</style><div id="root"></div><script type="module" src="/fixture.js"></script>').then(html=>res.end(html),()=>res.end());
+    res.end('<!doctype html><style>body{margin:0}#root{height:100dvh;width:100%}#root>.ant-app{width:100%;min-width:0}#root .ac-panel{position:relative;inset:auto;height:100%;flex:1;width:100%;max-width:none;min-width:0}</style><div id="root"></div><script type="module" src="/fixture.js"></script>');
   });
+  vite=await createServer({root:new URL('../..',import.meta.url).pathname,cacheDir,configFile:false,esbuild:{jsx:'automatic'},optimizeDeps:{include:['react','react-dom/client','antd','@ant-design/icons']},server:{middlewareMode:true,hmr:{server}},appType:'custom',logLevel:'silent',plugins:[{
+    name:'subagent-fixture',resolveId(id){if(id==='/fixture.js')return id;},load(id){if(id==='/fixture.js')return fixture;},
+  }]});
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
-  t.after(async()=>{server.closeAllConnections();await Promise.all([vite.close(),new Promise<void>(resolve=>server.close(()=>resolve()))]);});
+  t.after(async()=>{await vite.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));fs.rmSync(cacheDir,{recursive:true,force:true});});
   const address=server.address();assert.ok(address&&typeof address!=='string');
   const browser=await chromium.launch({headless:true});
   try {

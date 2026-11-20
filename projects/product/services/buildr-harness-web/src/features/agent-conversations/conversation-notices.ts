@@ -100,7 +100,7 @@ function failureRetrySeconds(diagnostic: string): number | undefined {
 export function conversationFailureReason(diagnostic?: string, fault?: Pick<ConversationRun,'fault'>['fault']): ConversationFailureReason {
   const text = diagnostic ?? '';
   if (/agent_claude_sdk_missing|Claude Code 配套组件/.test(text)) {
-    return { summary: 'Claude Code 配套组件缺失或无法加载。', action: '请在「智能体与模型」中检查更新并修复 Claude Code。' };
+    return { summary: 'Claude Code 配套组件缺失或无法加载。', action: '请在「设置 → 智能体」中检查更新并修复 Claude Code。' };
   }
   if (/agent_context_binding_mismatch|agent_binding_changed|原生上下文与当前目录或配置身份不匹配|原连接身份不匹配|程序或原配置身份已失配/i.test(text)) {
     return { summary: '原会话与当前执行环境不匹配，无法继续。' };

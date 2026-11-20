@@ -213,26 +213,49 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await until(() => a.locator('.ac-model-label').innerText(), value => value.includes('Fixture'), 'fixture model selection');
     await a.locator('.ac-collapsed-rail .ac-all-conversations').click();
     await a.locator('.ac-focus-history-pane').waitFor({state:'visible'});
-    const gear=a.getByRole('button',{name:'智能体与模型设置',exact:true});
+    const gear=a.getByRole('button',{name:'设置',exact:true});
     const quota=a.getByRole('button',{name:'供应商额度',exact:true});
-    const settings=a.getByRole('region',{name:'智能体与模型',exact:true});
+    const settings=a.getByRole('region',{name:'设置',exact:true});
     const quotaOverview=a.getByTestId('account-quota-overview');
     await inputA.fill('打开设置前的未发送草稿');
     await gear.hover();
     assert.equal(await quotaOverview.isVisible(),false);
     await gear.click();
     await settings.waitFor();
-    assert.equal(await a.locator('.ac-focus-history-pane').isVisible(),true);
-    await settings.getByRole('tab',{name:'智能体',exact:true}).click();
-    await settings.getByRole('button',{name:'返回对话',exact:true}).click();
+    await settings.getByRole('button',{name:'全部供应商',exact:true}).waitFor();
+    assert.equal(await a.locator('.ac-collapsed-rail').isVisible(),true,'保留最左 52px 图标导轨');
+    assert.equal(await gear.getAttribute('aria-pressed'),'true');
+    assert.equal(await gear.evaluate(node=>node.classList.contains('is-active')),true,'桌面设置态导轨设置图标保持高亮');
+    assert.equal(await a.locator('.ac-collapsed-rail .ac-current-conversation').evaluate(node=>node.classList.contains('is-active')),false,'桌面设置态导轨当前对话不高亮');
+    assert.equal(await a.locator('.ac-collapsed-rail .ac-all-conversations').evaluate(node=>node.classList.contains('is-active')),false,'桌面设置态导轨对话列表不高亮');
+    assert.equal(await a.locator('.ac-focus-history-pane').isVisible(),false,'进入设置时隐藏左侧对话列表');
+    assert.equal(await settings.locator('.ac-focus-settings-nav-item .anticon-right').count(),0,'模型菜单右侧不加箭头');
+    await a.locator('.ac-collapsed-rail').evaluate(async node=>{await Promise.all(node.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{})));await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));});
+    if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await a.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'focus-settings-models.png')});
+    await settings.locator('.ac-focus-settings-nav').getByRole('button',{name:'智能体',exact:true}).click();
+    await settings.locator('.amm-source-list').waitFor({state:'hidden'});
+    await a.locator('.ac-collapsed-rail').evaluate(async node=>{await Promise.all(node.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{})));await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));});
+    if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await a.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'focus-settings-agents.png')});
+    await settings.getByRole('button',{name:'关闭设置',exact:true}).click();
+    await settings.waitFor({state:'hidden'});
+    assert.equal(await a.locator('.ac-focus-history-pane').isVisible(),true,'关闭设置后恢复原本展开的对话列表');
     assert.equal(await inputA.inputValue(),'打开设置前的未发送草稿');
+    await gear.click();
+    await settings.waitFor();
+    await a.keyboard.press('Escape');
+    await settings.waitFor({state:'hidden'});
+    assert.equal(await a.locator('.ac-focus-history-pane').isVisible(),true,'Esc 关闭设置后恢复对话列表');
     await quota.hover();
     await quotaOverview.getByText(/小时.*分钟后重置/).waitFor({state:'visible'});
     assert.match(await quotaOverview.innerText(),/每周窗口.*剩余 5%/s);
     await quotaOverview.screenshot({path:path.join(os.tmpdir(),'conversation-single-quota.png')});
     await quota.click();
+    await settings.waitFor();
+    assert.equal(await settings.locator('.ac-focus-settings-nav').getByRole('button',{name:'模型',exact:true}).getAttribute('aria-current'),'page');
     await settings.getByText('账号与额度',{exact:true}).waitFor();
-    await settings.getByRole('button',{name:'返回对话',exact:true}).click();
+    await a.locator('.ac-collapsed-rail .ac-all-conversations').click();
+    await settings.waitFor({state:'hidden'});
+    await a.locator('.ac-focus-history-pane').waitFor({state:'visible'});
     const group=a.locator('.ac-focus-history-pane [data-history-workspace]').filter({has:a.getByRole('button',{name:'在我的工作空间新建对话',exact:true})});
     await group.locator('.ac-history-group-toggle').click();
     await group.getByRole('button',{name:'在我的工作空间新建对话',exact:true}).click();
@@ -402,7 +425,7 @@ test('standalone production UI sends through real source HTTP, isolates two draf
         id: 'standalone-mermaid-entry',
         kind: 'message',
         role: 'assistant',
-        text: '![独立版验收图片](proof.png)\n\n[打开本机图片](proof.png)\n\n![目录外图片](../outside.png)\n\n时序图如下：\n\n```mermaid\nsequenceDiagram\n  actor U as 客户\n  participant C as 鲜虾小程序\n  participant B as 鲜虾后端\n  U->>C: 选择微信支付\n  C->>B: 提交下单内容\n  B-->>C: 返回内部支付流水\n```\n',
+        text: '![独立版验收图片](proof.png)\n\n[打开本机图片](proof.png)\n\n![目录外图片](../outside.png)\n\n![缺失图片](missing.png)\n\n时序图如下：\n\n```mermaid\nsequenceDiagram\n  actor U as 客户\n  participant C as 鲜虾小程序\n  participant B as 鲜虾后端\n  U->>C: 选择微信支付\n  C->>B: 提交下单内容\n  B-->>C: 返回内部支付流水\n```\n',
         createdAt: new Date().toISOString(),
       }];
       await route.fulfill({response: fetched, json: body});
@@ -413,7 +436,8 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     const inlineProof=a.getByRole('button',{name:'查看大图：独立版验收图片',exact:true});
     const proofSrc=`data:image/png;base64,${proofImage.toString('base64')}`;
     await a.waitForFunction(()=>[...document.images].some(img=>img.alt==='独立版验收图片'&&img.naturalWidth===1));
-    await a.getByText('图片无法预览：目录外图片',{exact:true}).waitFor();
+    await a.waitForFunction(()=>[...document.images].some(img=>img.alt==='目录外图片'&&img.naturalWidth===1));
+    await a.getByText('图片无法预览：缺失图片',{exact:true}).waitFor();
     await inlineProof.press('Enter');
     const proofDialog=a.getByRole('dialog',{name:'图片预览',exact:true});
     await proofDialog.waitFor();assert.equal(await proofDialog.locator('img').getAttribute('src'),proofSrc);
@@ -520,12 +544,13 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await until(() => a.locator('.ac-transfer-notice').count(), value => value === 0, 'switching back to original Harness and model clears transfer notice without reload');
     assert.equal(fs.readFileSync(path.join(dataRoot, 'native-sends.jsonl'), 'utf8').trim().split('\n').length, 3, 'model and harness switching before send never dispatches native work');
     await a.locator('.ac-collapsed-rail .ac-account-settings').click();
-    await a.getByRole('tab', {name: '智能体', exact: true}).click();
+    const settingsNav = a.locator('#agent-focus-settings .ac-focus-settings-nav');
+    await settingsNav.getByRole('button', {name: '智能体', exact: true}).click();
     await a.locator('.ams-executors').waitFor({state: 'visible', timeout: 10000});
-    await a.getByRole('tab', {name: '模型', exact: true}).click();
+    await settingsNav.getByRole('button', {name: '模型', exact: true}).click();
     await a.getByRole('button', {name: '全部供应商', exact: true}).waitFor({state: 'visible', timeout: 10000});
     await a.getByRole('button', {name: '添加供应商', exact: true}).waitFor({state: 'visible', timeout: 10000});
-    await a.getByRole('tab', {name: '系统提示词', exact: true}).click();
+    await settingsNav.getByRole('button', {name: '系统提示词', exact: true}).click();
     const promptText = a.getByRole('textbox', {name:'系统提示词内容',exact:true});
     const savePromptButton=a.getByRole('button',{name:'保存系统提示词',exact:true});
     const savePrompt=async()=>{
@@ -560,7 +585,7 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await until(()=>promptText.inputValue(),value=>value===defaultPrompt,'default prompt editor restored');
     await savePrompt();
     try {await until(()=>client.operations.systemPrompt.read(),value=>value.enabled&&value.text===value.defaultText,'system prompt restored');} catch(error) {t.diagnostic(JSON.stringify({saved:await client.operations.systemPrompt.read(),requests:promptSaves,ui:await a.locator('section[aria-label="Buildr Harness 系统提示词"]').innerText()}));throw error;}
-    await a.getByRole('tab', {name: '程序接入', exact: true}).click();
+    await a.locator('#agent-focus-settings .ac-focus-settings-nav').getByRole('button', {name: '程序接入', exact: true}).click();
     const newAccess = a.getByRole('button', {name: '新建接入', exact: true});
     await until(() => newAccess.isEnabled(), value => value, 'programmatic settings discovery');
     await newAccess.click();
@@ -633,6 +658,22 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await narrow.goto(origin);
     await narrow.getByRole('textbox', {name: '对话输入', exact: true}).waitFor({state: 'visible', timeout: 10000});
     assert.equal(await narrow.locator('.ac-history:visible').count(), 0, 'narrow viewport defaults to conversation view even when desktop history preference is open');
+    await narrow.locator('.ac-collapsed-rail .ac-account-settings').click();
+    const narrowSettings = narrow.getByRole('region', {name: '设置', exact: true});
+    await narrowSettings.waitFor({state: 'visible', timeout: 10000});
+    await narrowSettings.getByRole('button', {name: '全部供应商', exact: true}).waitFor({state: 'visible', timeout: 10000});
+    const narrowGear = narrow.locator('.ac-collapsed-rail .ac-account-settings');
+    assert.equal(await narrowGear.getAttribute('aria-pressed'), 'true');
+    assert.equal(await narrowGear.evaluate(node => node.classList.contains('is-active')), true, '窄屏设置态导轨设置图标保持高亮');
+    assert.equal(await narrow.locator('.ac-collapsed-rail .ac-current-conversation').evaluate(node => node.classList.contains('is-active')), false, '窄屏设置态导轨当前对话不高亮');
+    assert.equal(await narrow.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, '窄屏设置无横向溢出');
+    await narrow.locator('.ac-collapsed-rail').evaluate(async node => {
+      await Promise.all(node.getAnimations({subtree: true}).map(animation => animation.finished.catch(() => {})));
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
+    if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await narrow.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'focus-settings-narrow.png')});
+    await narrow.keyboard.press('Escape');
+    await narrowSettings.waitFor({state: 'hidden', timeout: 10000});
     await narrow.locator('.ac-collapsed-rail .ac-all-conversations').click();
     await narrow.locator('.ac-history').waitFor({state: 'visible', timeout: 10000});
     const backToConversation = narrow.getByRole('button', {name: '返回当前对话', exact: true});
@@ -697,7 +738,7 @@ test('standalone nests visible child conversations in reminders and history', {t
   const scope = executionScopeKey((await client.directories.register(work)).ref);
   await client.web.enable();
   browser = await chromium.launch({headless: true});
-  const context = await browser.newContext({viewport: {width: 500, height: 800}});
+  const context = await browser.newContext({viewport: {width: 500, height: 800}, reducedMotion: 'reduce'});
   // Both results are still unseen. The newer child normally sorts first,
   // and the reminder and expanded list group it immediately below its parent.
   const sendLayoutFixture = async (draft: {id: string; revision: string}, text: string) => {
@@ -716,6 +757,10 @@ test('standalone nests visible child conversations in reminders and history', {t
     const parent = layoutPage.locator(`${region} [${attribute}="${layoutParent.id}"]`);
     const child = layoutPage.locator(`${region} [${attribute}="${layoutChild.id}"]`);
     await child.waitFor({state: 'visible'});
+    await child.evaluate(async (node: HTMLElement) => {
+      await Promise.all((node.closest('.ant-popover') ?? node).getAnimations({subtree: true}).map(animation => animation.finished.catch(() => {})));
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
     assert.equal(await parent.evaluate((node, attr) => node.parentElement?.nextElementSibling?.querySelector(`[${attr}]`)?.getAttribute(attr), attribute), layoutChild.id);
     const parentTitle = await parent.locator('strong').boundingBox();
     const childTitle = await child.locator('strong').boundingBox();

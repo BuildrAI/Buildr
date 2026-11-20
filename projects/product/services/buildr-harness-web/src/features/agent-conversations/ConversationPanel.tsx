@@ -306,7 +306,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
   };
   useLayoutEffect(()=>{setError('');setFeedback('');setFileLinkFailure(null);setOpeningFile(null);setImageLink(null);setExpandedToolGroups({});const active=activeSend.current;if(!active||!context.isSelectionCurrent(active.selection)){activeSend.current=null;setSending(false);setPreparing(false);setPrepared(null);setSelectedHandoff(null);setReviewOpen(false);}bottom.current=true;readPosition.current=0;setAtBottom(true);},[context.selectionGeneration,context.scope?.workspaceId,context.scope?.conversationId,context.isSelectionCurrent]);
   useEffect(()=>()=>fileOpenRequest.current?.abort(),[context.selectionGeneration,context.scope?.workspaceId,context.scope?.conversationId]);
-  useEffect(()=>{setMoreOpen(false);setLocationOpen(false);},[context.selectionGeneration,context.open,context.side,context.full,context.view]);
+  useEffect(()=>{setMoreOpen(false);setLocationOpen(false);},[context.selectionGeneration,context.open,context.side,context.full,context.view,context.settings]);
   useEffect(()=>{earlier.followLayout();setAtBottom(bottom.current);},[chat?.id,chat?.entries.length,chat?.entries.at(-1)?.text,chat?.requests.length,chat?.run?.status,chat?.pendingSend?.id]);
   const conversationVisible=isConversationViewVisible(context.open,context.view,focusSplit);
   useLayoutEffect(()=>{const node=stream.current;if(!node?.getClientRects().length)return;if(bottom.current)earlier.followLayout();else{node.scrollTop=readPosition.current;earlier.remember();}setAtBottom(bottom.current);},[portalTarget,context.view,focusSplit,context.open]);
@@ -937,15 +937,15 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
   const panel=<section id={panelId} className={'ac-panel'+(context.full?' is-full':'')+(historyResizing?' is-resizing':'')+(embedded?' ac-child-panel':'')} aria-label={embedded?'子对话':'内部对话'} data-dock={context.side} data-conversation-id={chat?.id}>
     {context.view==='history'&&!focusSplit&&<ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} hiddenBySettings={showFocusSettings}/>}
     {focusSplit&&context.view==='history'&&<>
-      <aside id={focusHistoryPaneId} className="ac-focus-history-pane" style={{width:effectiveHistoryWidth}}><ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} keepHistoryOpen/></aside>
-      <SplitDivider className={'ac-focus-history-divider'+(historyResizing?' is-dragging':'')} aria-label="调整专注模式对话列表宽度" aria-controls={focusHistoryPaneId} aria-orientation="vertical" aria-valuemin={FOCUS_HISTORY_MIN_WIDTH} aria-valuemax={historyMaxWidth} aria-valuenow={Math.round(effectiveHistoryWidth)} aria-valuetext={`${Math.round(effectiveHistoryWidth)} 像素`} title={`拖拽调整对话列表宽度（${FOCUS_HISTORY_MIN_WIDTH}–${historyMaxWidth}px）；方向键微调，双击恢复`}
+      <aside id={focusHistoryPaneId} className="ac-focus-history-pane" style={{width:effectiveHistoryWidth}} hidden={showFocusSettings}><ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} keepHistoryOpen hiddenBySettings={showFocusSettings}/></aside>
+      {!showFocusSettings&&<SplitDivider className={'ac-focus-history-divider'+(historyResizing?' is-dragging':'')} aria-label="调整专注模式对话列表宽度" aria-controls={focusHistoryPaneId} aria-orientation="vertical" aria-valuemin={FOCUS_HISTORY_MIN_WIDTH} aria-valuemax={historyMaxWidth} aria-valuenow={Math.round(effectiveHistoryWidth)} aria-valuetext={`${Math.round(effectiveHistoryWidth)} 像素`} title={`拖拽调整对话列表宽度（${FOCUS_HISTORY_MIN_WIDTH}–${historyMaxWidth}px）；方向键微调，双击恢复`}
         onPointerDown={event=>{if(event.button!==0||historyDrag.current)return;event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);historyDrag.current={pointerId:event.pointerId,x:event.clientX,width:effectiveHistoryWidth};setHistoryResizing(true);}}
         onPointerMove={event=>{const start=historyDrag.current;if(start?.pointerId===event.pointerId)commitHistoryWidth(start.width+event.clientX-start.x);}}
         onPointerUp={event=>{if(historyDrag.current?.pointerId===event.pointerId){stopHistoryResize();if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}}}
         onPointerCancel={event=>{if(historyDrag.current?.pointerId===event.pointerId)stopHistoryResize();}}
         onLostPointerCapture={event=>{if(historyDrag.current?.pointerId===event.pointerId)stopHistoryResize();}}
         onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();commitHistoryWidth(event.key==='Home'?FOCUS_HISTORY_MIN_WIDTH:event.key==='End'?historyMaxWidth:effectiveHistoryWidth+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?32:16));}}
-        onDoubleClick={()=>commitHistoryWidth(FOCUS_HISTORY_DEFAULT_WIDTH)}/>
+        onDoubleClick={()=>commitHistoryWidth(FOCUS_HISTORY_DEFAULT_WIDTH)}/>}
     </>}
     {ownsSettings&&<AgentConnectionSettings inMain={focusSettings}/>}
     <div className="ac-conversation-split" hidden={showFocusSettings||context.view==='history'&&!focusSplit}>
@@ -960,7 +960,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
         {context.error&&<Alert type="error" showIcon message={context.error} action={<Button onClick={()=>void context.refresh().catch(fail)}>重新读取</Button>}/>}
         {run?.systemPrompt?.enabled&&run.systemPrompt.delivery==='unsupported'&&<Alert type="info" showIcon message="当前智能体不支持追加系统提示词，本轮未注入。"/>}
         <ConversationTranscript loading={context.loading}>
-        {context.error&&!chat?null:!chat||!visibleEntries.length?<div className="ac-welcome"><CommentOutlined/><h1>{chat?.taskId||boundTaskId?'从这项任务继续':'今天想做什么？'}</h1><p>了解一个问题，或者交办一件事。</p>{!chat&&settings}</div>:<div className="ac-message-list">
+        {context.error&&!chat?null:!chat||!visibleEntries.length?<div className="ac-welcome"><CommentOutlined/><h1>{chat?.taskId||boundTaskId?'从这项任务继续':'今天想做什么？'}</h1><p>了解一个问题，或者交办一件事。</p>{!chat&&!showFocusSettings&&settings}</div>:<div className="ac-message-list">
           {turns.map((turn,index)=>{
             const first=turn.items.find(item=>item.type==='process-block'||item.type==='entry'&&item.entry.role==='assistant');
             const assistant=first?.type==='process-block'?first.entries[0]:first?.entry;

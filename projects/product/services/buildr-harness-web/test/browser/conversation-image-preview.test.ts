@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
 import {chromium} from 'playwright-core';
 import {createServer} from 'vite';
 
@@ -22,18 +25,20 @@ test('clicking an embedded SVG shows the image without its encoded reference', {
       }
       createRoot(document.getElementById('root')).render(React.createElement(Fixture));
   `;
-  const vite = await createServer({
-    root: new URL('../..', import.meta.url).pathname,
-    configFile: false, esbuild: {jsx: 'automatic'}, server: {middlewareMode: true}, appType: 'custom', logLevel: 'silent',
-    plugins: [{name: 'image-preview-fixture', resolveId(id) {if (id === '/fixture.js') return id;}, load(id) {if (id === '/fixture.js') return fixture;}}],
-  });
+  let vite!: Awaited<ReturnType<typeof createServer>>;
+  const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-image-preview-vite-'));
   const server = http.createServer((req, res) => {
     if (req.url !== '/') return vite.middlewares(req, res);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.end('<!doctype html><div id="root"></div><script type="module" src="/fixture.js"></script>');
   });
+  vite = await createServer({
+    root: new URL('../..', import.meta.url).pathname,
+    cacheDir, configFile: false, esbuild: {jsx: 'automatic'}, optimizeDeps: {include: ['react', 'react-dom/client']}, server: {middlewareMode: true, hmr: {server}}, appType: 'custom', logLevel: 'silent',
+    plugins: [{name: 'image-preview-fixture', resolveId(id) {if (id === '/fixture.js') return id;}, load(id) {if (id === '/fixture.js') return fixture;}}],
+  });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(async () => {server.closeAllConnections(); await Promise.all([vite.close(), new Promise<void>(resolve => server.close(() => resolve()))]);});
+  t.after(async () => {await vite.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); fs.rmSync(cacheDir, {recursive: true, force: true});});
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
   const browser = await chromium.launch();

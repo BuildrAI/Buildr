@@ -23,11 +23,11 @@ export async function runPushbackSettingsJourney(fixture:AgentConversationFixtur
    saves++;stored=body.secret||stored;view={...view,revision:'pushback-'+(saves+1),state:body.enabled?'enabled':'disabled',url:body.url,hasSecret:!!stored,rateLimitHour:body.rateLimitHour,rateLimitMinute:body.rateLimitMinute};return route.fulfill({json:view});
   };
   await page.route(matcher,route);
-  const drawer=page.getByRole('dialog',{name:/^智能体与模型/});
+  const drawer=page.getByRole('dialog',{name:'设置',exact:true});
   const card=drawer.locator('#'+PREFIX);
-  const open=async()=>{if(!(await drawer.isVisible()))await page.getByRole('button',{name:'智能体与模型设置',exact:true}).click();await drawer.waitFor();await drawer.getByRole('tab',{name:'程序接入',exact:true}).click();await drawer.getByRole('button',{name:'查看GrokBot接入详情',exact:true}).click();await card.waitFor();};
+  const open=async()=>{if(!(await drawer.isVisible()))await page.getByRole('button',{name:'设置',exact:true}).click();await drawer.waitFor();await drawer.getByRole('tab',{name:'程序接入',exact:true}).click();await drawer.getByRole('button',{name:'查看GrokBot接入详情',exact:true}).click();await card.waitFor();};
   const collapse=async()=>{await drawer.getByRole('button',{name:'收起GrokBot接入详情',exact:true}).click();await card.waitFor({state:'hidden'});};
-  const close=async()=>{await drawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();await drawer.waitFor({state:'hidden'});await page.locator('.ant-drawer-content-wrapper').waitFor({state:'hidden'});};
+  const close=async()=>{await drawer.getByRole('button',{name:'关闭设置',exact:true}).click();await drawer.waitFor({state:'hidden'});await page.locator('.ant-drawer-content-wrapper').waitFor({state:'hidden'});};
   try{
    await open();assert.equal(reveals,0);assert.equal(saves,0);
    assert.equal(await drawer.getByRole('tab',{name:'事件通知',exact:true}).count(),0,'全局事件通知页签已移除');

@@ -63,7 +63,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 
 ## 检查智能体程序更新
 
-用户要检查智能体（Agent）命令行程序（CLI）或应用服务端（App Server）的新版本时，使用 Buildr 顶部“检查更新…”中的“智能体”列表，或“智能体与模型”的“智能体”页。两处复用受认证的 `GET /api/v1/app/agent-service/program-updates` 观察与 `POST /api/v1/app/agent-service/program-updates/check` 主动检查；后者接受空对象检查全部，或 `{connectionId}` 检查单项。非网页调用者复用现有宿主认证，不自行猜测端口或凭证。
+用户要检查智能体（Agent）命令行程序（CLI）或应用服务端（App Server）的新版本时，使用 Buildr 顶部“检查更新…”中的“智能体”列表，或“设置”的“智能体”页。两处复用受认证的 `GET /api/v1/app/agent-service/program-updates` 观察与 `POST /api/v1/app/agent-service/program-updates/check` 主动检查；后者接受空对象检查全部，或 `{connectionId}` 检查单项。非网页调用者复用现有宿主认证，不自行猜测端口或凭证。
 
 核对绑定路径、连接修订（Revision）、观察时间和版本口径。Codex 两种运行方式共用同一程序；Qoder 比较配套软件包版本，不将程序版本直接混比。固定安装版本不是最新版，官方默认发布版本也不代表 Buildr 已验证可安装。检查未知、网络失败或绑定漂移时重查原对象，不报告“已最新”。检查接口保持只读。用户明确要求升级时，可在同一条目的“更新”操作使用 `POST /api/v1/app/agent-service/connections/<connectionId>/program-upgrades`，输入 `{expectedRevision,expectedVersion}` 钉住已观察接入及版本，通过原检查结果中的 `upgrade` 读取下载、等待、重启与结果。不得换用任意包名或命令。
 
