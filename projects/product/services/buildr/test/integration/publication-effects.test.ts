@@ -10,7 +10,7 @@ import { checkPublicationCompatibility, completePublicationEffects, publicationA
 import { createPackageHandoff, createPackageHandoffCommit, restorePackageHandoff, LOCAL_PLATFORM_POLICY, LOCAL_PACKAGE_MODEL } from '../../../../../../skills/buildr-release/scripts/local-package-handoff.ts';
 import { RELEASE_CHECKS } from '../verification/release/release-consumption-contract.ts';
 import { localPackageCoverage } from '../verification/local-package-coverage.ts';
-import { artifactFromTarball } from '../../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
+import { artifactFromTarball, type observePublishedPackageArtifact } from '../../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
 import { createReleaseContext, releaseContextIdentity } from '../../../../../../skills/buildr-release/scripts/release-readiness.ts';
 import { createReleaseExecutorRecovery } from '../../../../../../skills/buildr-release/scripts/release-executor-recovery.ts';
 import { validateReleaseTransactionEvidence } from '../../../../../../skills/buildr-release/scripts/release-transaction-evidence.ts';
@@ -351,7 +351,7 @@ test('publication effects use the real artifact and recover each external partia
           const beforeTag = git(repo, ['ls-remote', 'origin', `refs/tags/${tag}`]);
           const firstDirectory = path.join(root, 'rc62-first');
           const protectedEffects = { ...dependencies, probeAuthority: () => ({ status: 'passed' }), checkConvergence: () => ({ status: 'passed', ok: true }), inspectProvenance: () => {},
-            observePublishedPackageArtifact: async () => ({ observation: { status: 'present', artifact: {
+            observePublishedPackageArtifact: async (): ReturnType<typeof observePublishedPackageArtifact> => ({ observation: { status: 'present', artifact: {
               packageName: '@buildr-ai/buildr-dsh-plugin', version: '0.1.0-rc.1', origin: 'registry', compatibility: null,
               integrity: `sha512-${Buffer.alloc(64, 1).toString('base64')}`, artifactSha256: '1'.repeat(64),
             } }, bytes: Buffer.from('plugin') }),
