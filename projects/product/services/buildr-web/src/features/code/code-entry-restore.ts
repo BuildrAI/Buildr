@@ -39,6 +39,25 @@ export function codeEntryRestoreUnconfirmed(catalog: CatalogFacts, repositoryId:
 }
 
 /**
+ * Available checkouts of the same repository that may be offered as an explicit choice.
+ * A restored entry without task identity cannot prove which one is authoritative, so the
+ * user picks; the task's own checkout stays first, then the main checkout, then the rest.
+ */
+export function codeEntryRestoreCandidates(
+  catalog: CatalogFacts,
+  repositoryId: string,
+  file: NonNullable<CodeTaskEntry['file']>,
+  taskId?: string,
+): CodeCatalog['worktrees'] {
+  const taskGroup = taskId ? 'task:' + taskId : '';
+  const rank = (member: CodeCatalog['worktrees'][number]) =>
+    taskGroup && member.groupId === taskGroup ? 0 : member.isMain === true || member.groupId === 'main' ? 1 : 2;
+  return catalog.worktrees
+    .filter(member => member.repositoryId === repositoryId && member.available && member.id !== file.checkoutId)
+    .sort((left, right) => rank(left) - rank(right));
+}
+
+/**
  * A file entry restored from browser history keeps only its observed checkout identity.
  * Task checkouts are recreated with a new identity at the same path. A current file keeps
  * the task identity as its only stable link; a historical file keeps its commit identity
@@ -63,7 +82,12 @@ export function resolveCodeEntryRestore(
     if (!current.length) return { reason: 'missing', successor: null };
     return { reason: 'ambiguous', successor: null };
   }
-  if (!taskId) return { reason: 'ambiguous', successor: null };
+  if (!taskId) {
+    // Without a task identity a single remaining checkout is still an explicit choice.
+    if (current.length === 1) return { reason: 'replaced', successor: current[0] };
+    if (!current.length) return { reason: 'missing', successor: null };
+    return { reason: 'ambiguous', successor: null };
+  }
   const candidates = current.filter(member => member.groupId === 'task:' + taskId);
   if (candidates.length === 1) return { reason: 'replaced', successor: candidates[0] };
   if (!candidates.length) return { reason: 'missing', successor: null };

@@ -169,13 +169,19 @@ export function useCodeExplorer(workspaceId:string,workspaceRoot:string|null|und
     const parents=path.split('/').slice(0,-1),browserId=codeBrowserKey(source);void loadDirectory(browserId,'',false,source);
     parents.forEach((_,index)=>void loadDirectory(browserId,parents.slice(0,index+1).join('/'),false,source));
   },[loadFile,loadDirectory,sourceChoice.select]);
-  const recoverEntry=useCallback(()=>{
+  const recoverEntry=useCallback((checkoutId?:string)=>{
     const recovery=current.current.entryRecovery,entry=current.current.entry,catalog=current.current.catalog;
     if(!recovery||!entry?.file||!catalog)return;
     // The notice may outlive a catalog refresh; never open the frozen identity.
     const restore=resolveCodeEntryRestore(catalog,recovery.repositoryId,entry.file,entry.taskId);
-    if(!restore.successor){setEntryRecovery({...recovery,reason:restore.reason,successor:null});return;}
-    const target={repositoryId:restore.successor.repositoryId,checkoutId:restore.successor.id};
+    const chosen=checkoutId
+      ?catalog.worktrees.find(member=>member.repositoryId===recovery.repositoryId&&member.id===checkoutId&&member.available)
+      :restore.successor;
+    if(!chosen){
+      setEntryRecovery({...recovery,reason:restore.reason,successor:restore.successor?{repositoryId:restore.successor.repositoryId,checkoutId:restore.successor.id}:null});
+      return;
+    }
+    const target={repositoryId:chosen.repositoryId,checkoutId:chosen.id};
     setEntryRecovery(null);
     setScope(previous=>previous.includes(target.repositoryId)?previous:[...previous,target.repositoryId]);
     setWorktreeScope('checkout:'+target.checkoutId);

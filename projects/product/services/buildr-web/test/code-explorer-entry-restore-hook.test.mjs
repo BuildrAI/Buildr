@@ -99,15 +99,49 @@ test('without task identity a stale checkout reports ambiguity instead of substi
   }finally{h.dispose();}
 });
 
-test('an entry whose task checkout disappeared entirely reports no recoverable source',async t=>{
+test('an ambiguous entry opens the explicitly chosen checkout',async t=>{
+  mockReads();const h=view();
+  try{
+    const state=await h.ready();
+    await state.applyEntry({...entry(fileEntry()),taskId:undefined});
+    let rendered=h.render();
+    assert.equal(rendered.tabs.length,0);
+    assert.equal(rendered.entryRecovery?.reason,'ambiguous');
+    rendered.recoverEntry('checkout-main');await settle();rendered=h.render();
+    assert.equal(rendered.entryRecovery,null,'an explicit choice clears the notice');
+    assert.equal(rendered.tabs.length,1);
+    assert.equal(rendered.tabs[0].checkoutId,'checkout-main');
+    assert.equal(rendered.worktreeScope,'checkout:checkout-main');
+  }finally{h.dispose();}
+});
+
+test('an entry whose task checkout disappeared offers the same-repository worktree',async t=>{
   mockReads();api.repositories=async()=>catalog([member('checkout-main','main')]);const h=view();
   try{
     const state=await h.ready();
     await state.applyEntry(entry(fileEntry()));
-    const rendered=h.render();
+    let rendered=h.render();
     assert.equal(rendered.tabs.length,0);
     assert.equal(rendered.entryRecovery?.reason,'missing');
     assert.equal(rendered.entryRecovery?.successor,null);
+    rendered.recoverEntry('checkout-main');await settle();rendered=h.render();
+    assert.equal(rendered.tabs.length,1);
+    assert.equal(rendered.tabs[0].checkoutId,'checkout-main');
+  }finally{h.dispose();}
+});
+
+test('a chosen checkout removed before the action is not opened as a dead tab',async t=>{
+  mockReads();const h=view();
+  try{
+    const state=await h.ready();
+    await state.applyEntry({...entry(fileEntry()),taskId:undefined});
+    api.repositories=async()=>catalog([member('checkout-new','task:t1')]);
+    await state.refreshCatalog();
+    h.render().recoverEntry('checkout-main');
+    const rendered=h.render();
+    assert.equal(rendered.tabs.length,0);
+    assert.equal(rendered.entryRecovery?.reason,'replaced','the only remaining checkout becomes an explicit action');
+    assert.equal(rendered.entryRecovery?.successor?.checkoutId,'checkout-new');
   }finally{h.dispose();}
 });
 

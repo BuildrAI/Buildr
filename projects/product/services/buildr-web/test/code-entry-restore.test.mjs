@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveCodeEntryRestore } from '../src/features/code/code-entry-restore.ts';
+import { codeEntryRestoreCandidates, resolveCodeEntryRestore } from '../src/features/code/code-entry-restore.ts';
 
 const member = (id, groupId, available = true) => ({
   id, repositoryId: 'repo', groupId, path: groupId === 'main' ? '/workspace' : '/workspace/.worktrees/t1',
@@ -26,9 +26,18 @@ test('a task entry never falls back to another worktree group', () => {
 });
 
 test('an entry without task identity cannot choose a replacement silently', () => {
-  for (const worktrees of [[task], [main, task]]) {
-    assert.deepEqual(resolveCodeEntryRestore({ worktrees }, 'repo', file()), { reason: 'ambiguous', successor: null });
-  }
+  assert.deepEqual(resolveCodeEntryRestore({ worktrees: [main, task] }, 'repo', file()), { reason: 'ambiguous', successor: null });
+  assert.equal(resolveCodeEntryRestore({ worktrees: [task] }, 'repo', file()).successor?.id, 'checkout-new', 'a single remaining checkout is still an explicit choice, never automatic');
+});
+
+test('recovery candidates list available checkouts of the same repository, task first', () => {
+  const other = member('checkout-other', 'worktree:other');
+  const otherRepo = { ...member('checkout-foreign', 'task:t1'), repositoryId: 'other-repo' };
+  const candidates = codeEntryRestoreCandidates({ worktrees: [other, main, task, otherRepo, member('checkout-off', 'worktree:off', false)] }, 'repo', file(), 't1');
+  assert.deepEqual(candidates.map(item => item.id), ['checkout-new', 'checkout-main', 'checkout-other']);
+  assert.deepEqual(codeEntryRestoreCandidates({ worktrees: [main, task] }, 'repo', file(), 't2').map(item => item.id), ['checkout-main', 'checkout-new']);
+  assert.deepEqual(codeEntryRestoreCandidates({ worktrees: [main, task] }, 'repo', file(task.id), 't1').map(item => item.id), ['checkout-main'], 'the stale identity is never offered back');
+  assert.deepEqual(codeEntryRestoreCandidates({ worktrees: [main] }, 'repo', file(), 't1').map(item => item.id), ['checkout-main'], 'a vanished task checkout still leaves the same-repository choice');
 });
 
 test('unavailable, foreign and stale checkouts cannot become the successor', () => {
@@ -64,6 +73,6 @@ test('an incomplete checkout observation is retryable, not evidence of removal',
   assert.deepEqual(historical, { reason: 'unconfirmed', successor: null }, 'an incomplete read must not silently switch read locations');
   const association = { worktrees: [main], diagnostics: [diagnostic('code_worktree_task_unconfirmed')] };
   assert.equal(resolveCodeEntryRestore(association, 'repo', file(), 't1').reason, 'unconfirmed');
-  assert.equal(resolveCodeEntryRestore(association, 'repo', file()).reason, 'ambiguous', 'association state is irrelevant without task identity');
+  assert.equal(resolveCodeEntryRestore(association, 'repo', file()).reason, 'replaced', 'association state is irrelevant without task identity; the single remaining checkout is an explicit choice');
   assert.equal(resolveCodeEntryRestore({ worktrees: [main], diagnostics: [diagnostic('code_worktree_unavailable', 'other')] }, 'repo', file(), 't1').reason, 'missing', 'another repository cannot block this one');
 });
