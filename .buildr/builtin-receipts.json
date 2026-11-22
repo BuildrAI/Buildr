@@ -49,15 +49,15 @@
       "type": "skill",
       "id": "code-architecture",
       "target": "skills/buildr/code-architecture",
-      "integrity": "sha256-e9cd450fdfd0391bc873f9da2510091636c204a8a4229990943333c4cc9e5d4d",
+      "integrity": "sha256-ab2df2d1b06530a48d47b7de3ea4c2bc118adc4f8baae8dd50f5d748d47d7446",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-ae4f0abcbd57db4c6cec0c28aa7cdd3bb01e7e9c9c5c60429bb214b3a85f1aac"
+          "integrity": "sha256-63b518b1513d5d0a4d3176405403242c5d8fcf9081ccfce1dc218edda990485c"
         },
         {
           "path": "references/examples.md",
-          "integrity": "sha256-f9a21ceb9806a6b2baace600e0137a7dc6c7ea2c1970ba9a2aac7dc033d51c5d"
+          "integrity": "sha256-40a0097c0bfc0b414879bbf7b7dbe726907fc378b7a0bba020eecb6bbe5efe15"
         }
       ]
     },
@@ -138,18 +138,6 @@
         {
           "path": "references/verification.md",
           "integrity": "sha256-35e7018e2811384c95b813cd15fe72937797e7c06dd31a14f61925fa73f0acbb"
-        }
-      ]
-    },
-    {
-      "type": "skill",
-      "id": "feature-design",
-      "target": "skills/buildr/feature-design",
-      "integrity": "sha256-9838e8c53c3284ff2edadde9c529e8783bc8b87e5412b78fd5323549b37bb71c",
-      "files": [
-        {
-          "path": "SKILL.md",
-          "integrity": "sha256-1a12dcfeeb70fbbf107d26c739983fb311b538657aba1b3447445659e2b9476b"
         }
       ]
     },
@@ -557,11 +545,11 @@
       "type": "skill",
       "id": "ux-design-laws",
       "target": "skills/buildr/ux-design-laws",
-      "integrity": "sha256-ef1069d0944eff149b0ac08511f744169c51d0e8e702d68502db69c66b3b4087",
+      "integrity": "sha256-370c166b8a6467a5041b4a3ffa3fc50b2bfad160551a7621fef352e9ba064c63",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-d51022e26b7f3b69738964104fff781721220ac8607cc74c47804ef64fe5b25e"
+          "integrity": "sha256-f030ccc3598d6e359f28010429527dba83ae0d4cf2bb782b1835baf042c99aa3"
         },
         {
           "path": "agents/openai.yaml",
