@@ -1,6 +1,6 @@
 import {useCallback, useMemo, useRef, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
-import {HarnessConversationSurface, LocalFilePreviewModal, type HarnessConversationHost, type HarnessDirectoryFiles, type HarnessFileContent} from '../../../../buildr-harness-web/src/conversation';
+import {HarnessConversationSurface, LocalFilePreviewModal, htmlFileLink, type HarnessConversationHost, type HarnessDirectoryFiles, type HarnessFileContent} from '../../../../buildr-harness-web/src/conversation';
 import {resolveTaskBriefReference, taskBriefHref} from '../../lib/taskBriefLinks';
 import {readExplorerFile} from '../code/code-file-read';
 import {offerCodeOpen} from '../code/code-open-observation';
@@ -23,13 +23,13 @@ async function locate(workspaceId:string,cwd:string,path:string,taskId:string|un
     try {
       const catalog=await codeApi.targetRepositories(workspaceId,absolute,signal);
       const target=conversationFileTarget(cwd,path,catalog);
-      if(target)return {kind:'repo' as const,target,catalog,partial:true};
+      if(target)return {kind:'repo' as const,absolute,target,catalog,partial:true};
     } catch (error) {
       if((error as ApiError).code!=='code_target_unconfirmed')throw error;
     }
     const catalog=await codeApi.repositories(workspaceId,taskId,signal);
     const target=conversationFileTarget(cwd,path,catalog);
-    if(target)return {kind:'repo' as const,target,catalog,partial:false};
+    if(target)return {kind:'repo' as const,absolute,target,catalog,partial:false};
   }
   return {kind:'local' as const,absolute};
 }
@@ -42,7 +42,7 @@ type Workspace = {id: string; name: string; rootPath: string};
 export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {defaultWorkspaceId: string | null; workspaces: Workspace[]}) {
   const context = useAgentConversations();
   const navigate = useNavigate(), location = useLocation();
-  const [previewFile, setPreviewFile] = useState<{path: string; value: HarnessFileContent} | null>(null);
+  const [previewFile, setPreviewFile] = useState<{path: string; value: HarnessFileContent; fragment?: string} | null>(null);
   const current = useRef({context, navigate, location});
   current.current = {context, navigate, location};
   const selected=useRef<string|null>(null);
@@ -59,19 +59,22 @@ export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {default
       if (located.kind === 'repo') return codeApi.explorerFile(observed.workspaceId,located.target,signal);
       return readLocalFile(located.absolute,observed.cwd,signal);
     },
-    async openFile(conversation, path, literal, linkSignal) {
+    async openFile(conversation, reference, literal, linkSignal) {
       opening.current?.abort();
       const request = new AbortController();
       const signal = linkSignal ? AbortSignal.any([request.signal, linkSignal]) : request.signal;
       opening.current = request;
       try {
         const observed = await current.current.context.api.read(conversation.workspaceId, conversation.id, signal);
-        const suffix = literal ? null : path.match(/(?::|#L)([1-9][0-9]*)$/);
+        const {path,fragment} = htmlFileLink(reference,literal);
+        const suffix = literal || fragment || (/^file:/i.test(reference) && /%23L[1-9][0-9]*$/i.test(reference))
+          ? null : path.match(/(?::|#L)([1-9][0-9]*)$/);
         const located = await locate(observed.workspaceId,observed.cwd,suffix ? path.slice(0,suffix.index) : path,observed.taskId,signal);
-        if (located.kind === 'local') {
-          const value = await readLocalFile(located.absolute, observed.cwd, signal);
+        if (located.kind === 'local' || fragment) {
+          const {absolute} = located;
+          const value = await readLocalFile(absolute, observed.cwd, signal);
           signal.throwIfAborted();
-          setPreviewFile({path: value.path || located.absolute, value});
+          setPreviewFile({path: value.path || absolute, value, fragment});
           return false;
         }
         const line = suffix ? Number(suffix[1]) : undefined;

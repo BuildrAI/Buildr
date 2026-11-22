@@ -3,17 +3,19 @@ import { Alert, Button, Modal, Segmented } from 'antd';
 import type { HarnessFileContent } from '../directory-files.tsx';
 import { CopyButton } from './CopyButton.tsx';
 import { MarkdownReader } from './MarkdownReader.tsx';
+import {htmlPreviewAddress} from '../lib/localFileLink.ts';
 import './local-file-preview-modal.css';
 
-export function LocalFilePreviewBody({ path, value }: { path: string; value: HarnessFileContent }) {
+export function LocalFilePreviewBody({ path, value, fragment }: { path: string; value: HarnessFileContent; fragment?: string }) {
   const [mode, setMode] = useState<'preview' | 'source'>('preview');
   const fullPath = value.path || path;
   const fileName = fullPath.split(/[\\/]/).at(-1) || fullPath;
-  const canRenderHtml = value.kind === 'html' && Boolean(value.htmlUrl);
+  const htmlUrl = htmlPreviewAddress(value.htmlUrl, fragment);
+  const canRenderHtml = value.kind === 'html' && Boolean(htmlUrl);
 
   useEffect(() => {
     setMode('preview');
-  }, [fullPath, value.kind, value.htmlUrl]);
+  }, [fullPath, value.kind, htmlUrl]);
 
   if (value.kind === 'html') {
     const showPreview = canRenderHtml && mode === 'preview';
@@ -27,7 +29,7 @@ export function LocalFilePreviewBody({ path, value }: { path: string; value: Har
             options={[{ label: '页面预览', value: 'preview' }, { label: '查看源码', value: 'source' }]}
             onChange={next => setMode(next as 'preview' | 'source')}
           />
-          <Button size="small" onClick={() => window.open(value.htmlUrl!, '_blank', 'noopener')}>新标签页打开</Button>
+          <Button size="small" onClick={() => window.open(htmlUrl!, '_blank', 'noopener')}>新标签页打开</Button>
         </div>
       )}
       {showPreview ? (
@@ -36,7 +38,7 @@ export function LocalFilePreviewBody({ path, value }: { path: string; value: Har
           title={fileName}
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
-          src={value.htmlUrl}
+          src={htmlUrl}
         />
       ) : (
         <>
@@ -68,7 +70,7 @@ export function LocalFilePreviewBody({ path, value }: { path: string; value: Har
   </>;
 }
 
-export function LocalFilePreviewModal({ file, onClose }: { file: { path: string; value: HarnessFileContent } | null; onClose(): void }) {
+export function LocalFilePreviewModal({ file, onClose }: { file: { path: string; value: HarnessFileContent; fragment?: string } | null; onClose(): void }) {
   const fullPath = file ? file.value.path || file.path : '';
   const fileName = fullPath.split(/[\\/]/).at(-1) || fullPath;
   const isHtmlPreview = file?.value.kind === 'html' && Boolean(file.value.htmlUrl);
@@ -89,7 +91,7 @@ export function LocalFilePreviewModal({ file, onClose }: { file: { path: string;
             <code className="local-file-preview-path">{fullPath}</code>
             <CopyButton type="text" text={fullPath} ariaLabel="复制文件路径" failureMessage="复制失败，请手动复制文件路径。" />
           </div>
-          <LocalFilePreviewBody path={fullPath} value={file.value} />
+          <LocalFilePreviewBody path={fullPath} value={file.value} fragment={file.fragment} />
         </>
       )}
     </Modal>

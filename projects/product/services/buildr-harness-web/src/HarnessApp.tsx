@@ -2,6 +2,7 @@ import {scopeDisplayName,workspaceScopeKey as key} from './workspace-scopes';
 import {FrameSubmissions} from './frame-submissions';
 import {useHarnessDirectoryFiles} from './directory-files';
 import {engineeringFile} from './engineering-files';
+import {htmlFileLink} from './lib/localFileLink';
 import {ConversationHostProvider} from './integration/ConversationHost';
 import {HarnessShell, type HarnessWorkEnvironment} from './shell/HarnessShell';
 import {lazy,Suspense,useCallback,useEffect,useMemo,useState,useRef} from 'react';
@@ -23,12 +24,17 @@ const directoryLeafName=(value:string)=>value.replace(/[\\/]+$/,'').split(/[\\/]
 const request=<T,>(path:string,input?:unknown,signal?:AbortSignal)=>api(path,input===undefined?{headers:{'x-buildr-session':''},signal}:{method:'POST',body:JSON.stringify(input),signal}) as Promise<T>;
 
 export function HarnessApp({environment}:{environment?:HarnessWorkEnvironment}={}){
-  const [file,setFile]=useState<{path:string;value:HarnessFileContent}|null>(null);
+  const [file,setFile]=useState<{path:string;value:HarnessFileContent;fragment?:string}|null>(null);
   const standalone=(typeof window==='undefined'||window.parent===window)&&!environment;
   const composition=useMemo(()=>({standalone}),[standalone]);
   const host=useMemo<HarnessDirectoryFiles>(()=>({
     readFile:(conversation:ConversationView,path:string,signal:AbortSignal)=>window.parent!==window?engineeringFile('read',conversation.workspaceId,conversation.id,path,signal):api('/api/v1/harness/files',{method:'POST',body:JSON.stringify({conversationId:conversation.id,path}),signal}) as Promise<HarnessFileContent>,
-    async openFile(conversation,path,_literal,signal){if(window.parent!==window){await engineeringFile('open',conversation.workspaceId,conversation.id,path,signal);return;}const value=await request<HarnessFileContent>('/api/v1/harness/files',{conversationId:conversation.id,path},signal);signal?.throwIfAborted();setFile({path:value.path||path,value});return false;},
+    async openFile(conversation,reference,literal,signal){
+      const {path,fragment}=htmlFileLink(reference,literal);
+      if(window.parent!==window){await engineeringFile('open',conversation.workspaceId,conversation.id,fragment ? reference : path,signal);return;}
+      const value=await request<HarnessFileContent>('/api/v1/harness/files',{conversationId:conversation.id,path},signal);
+      signal?.throwIfAborted();setFile({path:value.path||path,value,fragment});return false;
+    },
   }),[]);
   return <ConversationHostProvider host={composition}><HarnessDirectoryFilesProvider host={host}><AgentConversationsProvider standalone={standalone}><Workspace standalone={standalone} environment={environment}/></AgentConversationsProvider><LocalFilePreviewModal file={file} onClose={()=>setFile(null)}/></HarnessDirectoryFilesProvider></ConversationHostProvider>;
 }

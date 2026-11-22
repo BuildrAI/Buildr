@@ -47,7 +47,7 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
           event.preventDefault();
           const href = link.getAttribute('data-markdown-href') || link.getAttribute('href') || '';
           if (href.startsWith('#') && scrollMarkdownFragment(host.closest<HTMLElement>('.knowledge-artifact, .knowledge-documents, .markdown-reader') || view, href)) return;
-          optionsRef.current?.onRelativeLinkClick?.(href, event);
+          optionsRef.current?.onRelativeLinkClick?.(href, event, link.getAttribute('data-markdown-file-url') ?? undefined);
         });
     }
     if (currentOptions.onImageClick) bindMarkdownImagePreviews(view, () => optionsRef.current?.onImageClick);

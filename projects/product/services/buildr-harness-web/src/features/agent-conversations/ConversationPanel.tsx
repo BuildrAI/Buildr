@@ -337,7 +337,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     if(file.kind!=='image'||file.truncated||!/^data:image\/(?:png|jpeg|gif|webp|avif|bmp|x-icon);base64,/i.test(file.content))throw new Error('来源不是可完整预览的图片。');
     return file.content;
   },[host.readFile,chat?.workspaceId,chat?.id,chat?.cwd]);
-  const openProcessFile=async(path:string,literal=false)=>{
+  const openProcessFile=async(path:string,literal=false,fileUrl?:string)=>{
     if(!chat)return;
     fileOpenRequest.current?.abort();
     const selection=context.getSelection(), request=new AbortController();
@@ -349,7 +349,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
       if(image){setOpeningFile(null);setImageLink({selection,reference:path,load:signal=>loadImage(image,signal)});return;}
       if(!host.openFile)throw new Error('此入口未提供来源文件打开，请复制路径核对。');
       setOpeningFile(selection);
-      const shouldExitFull=await host.openFile(chat,path,literal,request.signal);
+      const shouldExitFull=await host.openFile(chat,fileUrl??path,literal,request.signal);
       if(stillCurrent()&&shouldExitFull!==false)context.setFull(false);
     }catch(failure){if(stillCurrent())setFileLinkFailure({selection,reference:path,message:failure instanceof Error?failure.message:'无法打开来源文件。'});}
     finally{if(stillCurrent()){fileOpenRequest.current=null;setOpeningFile(null);}}
@@ -850,7 +850,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     const source=conversationImageSource(chat?.cwd,href);
     return source?.path?{load:(signal:AbortSignal)=>loadImage(source.path,signal)}:source?.href?{href:source.href}:null;
   },[chat?.cwd,loadImage]);
-  const markdownOptions:MarkdownRenderOptions={allowRelativeLinks:true,allowParentRelativeLinks:true,allowAbsoluteFileLinks:true,taskLinkPathname:chat&&chat.workspaceId!=='@default'?'/workspaces/'+encodeURIComponent(chat.workspaceId):null,onRelativeLinkClick:reference=>void openProcessFile(reference),imageResolver:markdownImageResolver,onImageClick:image=>{if(!chat||!image.src)return;setFileLinkFailure(null);setImageLink({selection:context.getSelection(),reference:image.reference||image.src,href:image.src});}};
+  const markdownOptions:MarkdownRenderOptions={allowRelativeLinks:true,allowParentRelativeLinks:true,allowAbsoluteFileLinks:true,taskLinkPathname:chat&&chat.workspaceId!=='@default'?'/workspaces/'+encodeURIComponent(chat.workspaceId):null,onRelativeLinkClick:(reference,_event,fileUrl)=>void openProcessFile(reference,false,fileUrl),imageResolver:markdownImageResolver,onImageClick:image=>{if(!chat||!image.src)return;setFileLinkFailure(null);setImageLink({selection:context.getSelection(),reference:image.reference||image.src,href:image.src});}};
   const forkableReplies = forkableReplyIds(chat);
   const finalReplies = finalReplyIds(chat);
   const loadToolEntry=useCallback((entry:ConversationEntry,signal?:AbortSignal)=>context.api.entry(chat!.workspaceId,chat!.id,entry,signal),[context.api,chat?.workspaceId,chat?.id]);

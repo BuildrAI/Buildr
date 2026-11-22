@@ -18,3 +18,22 @@ export function localFilePath(value: string): string | null {
   if (!/^(?:\/|[a-z]:\/)/i.test(path)) return null;
   return path;
 }
+
+/** Separate the HTML fragment before decoding a file URL, so %23 stays in the filename. */
+export function htmlFileLink(reference: string, literal: boolean): { path: string; fragment?: string } {
+  if (literal) return { path: reference };
+  if (/^file:/i.test(reference)) {
+    const hash = reference.indexOf('#');
+    const path = hash >= 0 ? localFilePath(reference.slice(0, hash)) : null;
+    if (path && /\.html?$/i.test(path) && hash < reference.length - 1) {
+      return { path, fragment: reference.slice(hash) };
+    }
+    return { path: localFilePath(reference) ?? reference };
+  }
+  const match = /\.html?(#[^\r\n\0]+)$/i.exec(reference);
+  return match ? { path: reference.slice(0, -match[1].length), fragment: match[1] } : { path: reference };
+}
+
+export function htmlPreviewAddress(url: string | undefined, fragment?: string): string | undefined {
+  return url && fragment ? url.split('#', 1)[0] + fragment : url;
+}

@@ -23,7 +23,7 @@ export type MarkdownRenderOptions = {
   imageSignal?: AbortSignal;
   /** Hosts that can present the resolved image may offer an enlarged preview. */
   onImageClick?: (image: { src: string; alt: string; reference: string }) => void;
-  onRelativeLinkClick?: (href: string, event: MouseEvent) => void;
+  onRelativeLinkClick?: (href: string, event: MouseEvent, fileUrl?: string) => void;
 };
 
 function resolveSafeHref(href, { allowRelativeLinks = false, allowParentRelativeLinks = false, allowAbsoluteFileLinks = false } = {}) {
@@ -128,6 +128,8 @@ function appendInline(parent, tokens, doc, linkOptions) {
       } else {
         link.className = 'markdown-relative-link';
         link.setAttribute('data-markdown-href', resolved.localFile ? resolved.href : destination);
+        const fileUrl = resolved.localFile && markdownDestination(destination);
+        if (fileUrl && /^file:/i.test(fileUrl)) link.setAttribute('data-markdown-file-url', fileUrl);
         link.setAttribute('title', `${resolved.localFile ? '本地文件' : '相对路径'}：${resolved.href}`);
       }
       appendInline(link, token.tokens, doc, linkOptions);
