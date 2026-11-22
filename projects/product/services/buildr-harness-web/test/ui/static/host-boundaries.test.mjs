@@ -38,3 +38,21 @@ test('Shared markdown renderer, block CSS and reset import order remain aligned 
   const main=fs.readFileSync(path.join(root,'src/main.tsx'),'utf8');
   assert.ok(main.indexOf("import 'antd/dist/reset.css';")<main.indexOf("from './index'"),'reset.css precedes shared.css');
 });
+test('Browser E2E directories test real hosted builds and never import Vite dev server',()=>{
+  const servicesRoot=path.resolve(root,'..');
+  const browserRoots=[
+    path.join(servicesRoot,'buildr-harness-web','test','browser'),
+    path.join(servicesRoot,'buildr-web','test','browser'),
+    path.join(servicesRoot,'buildr','test','e2e'),
+  ];
+  const violations=[];
+  for(const dir of browserRoots){
+    for(const file of fs.globSync('**/*.{ts,tsx,js,mjs,cjs}',{cwd:dir})){
+      const text=fs.readFileSync(path.join(dir,file),'utf8');
+      if(/(?:from\s+|import\s*\(\s*|import\s*)['"]vite(?:\/[^'"]*)?['"]/u.test(text)){
+        violations.push(path.relative(servicesRoot,path.join(dir,file)));
+      }
+    }
+  }
+  assert.deepEqual(violations,[],'Browser E2E tests must use real hosted builds, not Vite dev server fixtures');
+});
