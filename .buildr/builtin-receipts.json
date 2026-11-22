@@ -333,7 +333,7 @@
       "type": "skill",
       "id": "project-verification",
       "target": "skills/buildr/project-verification",
-      "integrity": "sha256-36f079144a24dbaae63faf9b57cc43fa41306d1f1805d75740eb29cafdba0a04",
+      "integrity": "sha256-6fcbda36c83ce96de4ca13814b4e9247d8ec8b00f4726eb1aa919322ec8817af",
       "files": [
         {
           "path": "SKILL.md",
@@ -345,7 +345,7 @@
         },
         {
           "path": "references/impact-selection.md",
-          "integrity": "sha256-348886e92eccb24a944b8f85ed7f39cd98f087ad989e3be31f66e4b0a6980fbd"
+          "integrity": "sha256-0cdd74c780d866395b155e33c81a89bcad8770373d66037cba741d00f9c2b8f2"
         },
         {
           "path": "references/record-report.md",
