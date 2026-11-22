@@ -5,3 +5,4 @@
 .local-file-preview-image{display:block;max-width:100%;max-height:72vh;object-fit:contain;margin:0 auto}
 .local-file-preview-source{white-space:pre-wrap;overflow-wrap:anywhere;font:var(--font-size-code)/1.6 ui-monospace,monospace;max-height:70vh;overflow:auto;margin:0}
 .local-file-preview-truncated{margin-top:10px}
+.local-file-preview-line { display: inline-block; min-width: 100%; background: rgba(127, 169, 135, .22); }

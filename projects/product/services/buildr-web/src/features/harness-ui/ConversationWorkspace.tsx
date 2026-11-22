@@ -1,6 +1,6 @@
 import {useCallback, useMemo, useRef, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
-import {HarnessConversationSurface, LocalFilePreviewModal, htmlFileLink, type HarnessConversationHost, type HarnessDirectoryFiles, type HarnessFileContent} from '../../../../buildr-harness-web/src/conversation';
+import {HarnessConversationSurface, LocalFilePreviewModal, conversationFileLink, type HarnessConversationHost, type HarnessDirectoryFiles, type HarnessFileContent, type ConversationFilePreview} from '../../../../buildr-harness-web/src/conversation';
 import {resolveTaskBriefReference, taskBriefHref} from '../../lib/taskBriefLinks';
 import {readExplorerFile} from '../code/code-file-read';
 import {offerCodeOpen} from '../code/code-open-observation';
@@ -42,7 +42,7 @@ type Workspace = {id: string; name: string; rootPath: string};
 export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {defaultWorkspaceId: string | null; workspaces: Workspace[]}) {
   const context = useAgentConversations();
   const navigate = useNavigate(), location = useLocation();
-  const [previewFile, setPreviewFile] = useState<{path: string; value: HarnessFileContent; fragment?: string} | null>(null);
+  const [previewFile, setPreviewFile] = useState<ConversationFilePreview | null>(null);
   const current = useRef({context, navigate, location});
   current.current = {context, navigate, location};
   const selected=useRef<string|null>(null);
@@ -59,6 +59,29 @@ export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {default
       if (located.kind === 'repo') return codeApi.explorerFile(observed.workspaceId,located.target,signal);
       return readLocalFile(located.absolute,observed.cwd,signal);
     },
+    async findExplorerFile(conversation,reference,signal) {
+      const {path,line}=conversationFileLink(reference,false);
+      const resolve=async()=>{
+        const observed=await current.current.context.api.read(conversation.workspaceId,conversation.id,signal);
+        const located=await locate(observed.workspaceId,observed.cwd,path,observed.taskId,signal);
+        if(located.kind!=='repo')return null;
+        const file={...located.target,line};
+        const observation=await readExplorerFile(observed.workspaceId,file,signal,{editorFile:codeApi.editorFile,file:codeApi.explorerFile});
+        return {observed,located,file,observation};
+      };
+      const known=await resolve();
+      if(!known)return null;
+      return async()=>{
+        const latest=await resolve();
+        if(!latest||latest.located.absolute!==known.located.absolute||latest.file.checkoutId!==known.file.checkoutId||latest.file.repositoryId!==known.file.repositoryId)throw new Error('文件来源已变化，请重新定位。');
+        signal.throwIfAborted();
+        const {observed,located,file,observation}=latest;
+        const observationId=offerCodeOpen(observed.workspaceId,file,located.catalog,observation,located.partial);
+        const {navigate,location,context}=current.current;
+        navigate(`/workspaces/${encodeURIComponent(observed.workspaceId)}/code/explorer`,{state:{revealFileTree:true,codeEntry:{taskId:observed.taskId,file,observationId,from:{pathname:location.pathname,search:location.search,hash:location.hash,state:location.state}}}});
+        context.setFull(false);
+      };
+    },
     async openFile(conversation, reference, literal, linkSignal) {
       opening.current?.abort();
       const request = new AbortController();
@@ -66,26 +89,14 @@ export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {default
       opening.current = request;
       try {
         const observed = await current.current.context.api.read(conversation.workspaceId, conversation.id, signal);
-        const {path,fragment} = htmlFileLink(reference,literal);
-        const suffix = literal || fragment || (/^file:/i.test(reference) && /%23L[1-9][0-9]*$/i.test(reference))
-          ? null : path.match(/(?::|#L)([1-9][0-9]*)$/);
-        const located = await locate(observed.workspaceId,observed.cwd,suffix ? path.slice(0,suffix.index) : path,observed.taskId,signal);
-        if (located.kind === 'local' || fragment) {
-          const {absolute} = located;
-          const value = await readLocalFile(absolute, observed.cwd, signal);
-          signal.throwIfAborted();
-          setPreviewFile({path: value.path || absolute, value, fragment});
-          return false;
-        }
-        const line = suffix ? Number(suffix[1]) : undefined;
-        if (line !== undefined && !Number.isSafeInteger(line)) throw new Error('文件行号无效。');
-        const file = {...located.target, line};
-        const observation = await readExplorerFile(observed.workspaceId, file, signal, {editorFile:codeApi.editorFile,file:codeApi.explorerFile});
+        const {path,fragment,line} = conversationFileLink(reference,literal);
+        const located = await locate(observed.workspaceId,observed.cwd,path,observed.taskId,signal);
+        const value = located.kind==='repo' && !/\.html?$/i.test(path)
+          ? await readExplorerFile(observed.workspaceId, located.target, signal, {editorFile:codeApi.editorFile,file:codeApi.explorerFile})
+          : await readLocalFile(located.absolute, observed.cwd, signal);
         signal.throwIfAborted();
-        const observationId = offerCodeOpen(observed.workspaceId, file, located.catalog, observation, located.partial);
-        const {navigate, location, context} = current.current;
-        navigate(`/workspaces/${encodeURIComponent(observed.workspaceId)}/code/explorer`, {state: {codeEntry: {taskId: observed.taskId, file, observationId, from: {pathname: location.pathname, search: location.search, hash: location.hash, state: location.state}}}});
-        context.setFull(false);
+        setPreviewFile({path:located.absolute,value:{...value,path:located.kind==='repo'&&!/\.html?$/i.test(path)?located.absolute:value.path},fragment,line});
+        return false;
       } finally {
         if (opening.current === request) opening.current = null;
       }

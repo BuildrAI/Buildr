@@ -58,7 +58,10 @@ export function CodeExplorerPage() {
     const entry=location.state?.codeEntry as CodeTaskEntry|undefined;
     // This is the entry we just wrote for the open tab; re-applying it would only reopen it.
     if(entry&&entrySignature(entry)===writtenEntry.current)return;
-    if(entry)void state.applyEntry(entry);else state.clearEntry();
+    if(entry){
+      if(location.state?.revealFileTree===true)setTreeHidden(false);
+      void state.applyEntry(entry);
+    }else state.clearEntry();
   },[location.key,location.state,processed,state.applyEntry,state.clearEntry]);
   // Keep the history entry describing the file actually open. Otherwise a reload
   // re-applies the stale entry from an earlier open and the file appears lost.

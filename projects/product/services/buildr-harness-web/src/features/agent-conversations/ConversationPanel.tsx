@@ -354,6 +354,18 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     }catch(failure){if(stillCurrent())setFileLinkFailure({selection,reference:path,message:failure instanceof Error?failure.message:'无法打开来源文件。'});}
     finally{if(stillCurrent()){fileOpenRequest.current=null;setOpeningFile(null);}}
   };
+  const findFileAction=chat&&host.findExplorerFile?async(reference:string,signal:AbortSignal)=>{
+    const selection=context.getSelection();
+    const open=await host.findExplorerFile!(chat,reference,signal);
+    if(!open||!context.isSelectionCurrent(selection))return null;
+    return async()=>{
+      if(signal.aborted||!context.isSelectionCurrent(selection))return;
+      try {await open();}
+      catch (failure) {
+        if(!signal.aborted&&context.isSelectionCurrent(selection))setFileLinkFailure({selection,reference,message:failure instanceof Error?failure.message:'无法在资源管理器中打开。'});
+      }
+    };
+  }:undefined;
   const recoverConflict=async(failure:unknown)=>{
     const api=failure as ApiError;if(api?.status!==409)return false;
     const selection=context.getSelection();
@@ -886,7 +898,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
       return text?<div className="ac-handoff-receipt" key={entry.id}><span>{text}</span>{Boolean(entry.handoff?.changes.length)&&<Button type="link" size="small" onClick={()=>{setSelectedHandoff(entry);}}>交接内容</Button>}</div>:null;
     }
     const text=entry.kind==='notice'&&entry.id.startsWith('reply-')?conversationReplyText(entry.text):conversationSystemNoticeText(entry);
-    const body=<>{entry.role==='assistant'?<MarkdownHost markdown={entry.text} className="markdown-body" options={markdownOptions}/>:<p>{text}</p>}{entry.attachments?.length?<ConversationMessageImages conversation={chat!} ids={entry.attachments} read={context.api.readImage}/>:null}{entry.deliveryDiagnostic&&<small className="ac-input-diagnostic" role="status">{entry.deliveryDiagnostic}</small>}{entry.status==='unknown'&&<Tag color="warning">是否送达待确认</Tag>}</>;
+    const body=<>{entry.role==='assistant'?<MarkdownHost markdown={entry.text} className="markdown-body" options={markdownOptions} findFileAction={findFileAction}/>:<p>{text}</p>}{entry.attachments?.length?<ConversationMessageImages conversation={chat!} ids={entry.attachments} read={context.api.readImage}/>:null}{entry.deliveryDiagnostic&&<small className="ac-input-diagnostic" role="status">{entry.deliveryDiagnostic}</small>}{entry.status==='unknown'&&<Tag color="warning">是否送达待确认</Tag>}</>;
     return <article key={entry.id} className={'ac-message is-'+entry.role} data-entry-id={entry.id} data-message-provider={entry.provider}>{entry.role==='user'?<div className="ac-user-bubble">{body}</div>:body}{entry.role==='user'&&text&&<span className="ac-reply-actions ac-user-actions"><CopyButton type="text" text={text} ariaLabel="复制消息" failureMessage="复制失败，请手动选择文字。"/></span>}{entry.role==='assistant'&&finalReplies.has(entry.id)&&<span className="ac-reply-actions"><CopyButton type="text" text={entry.text} ariaLabel="复制回复" failureMessage="复制失败，请手动选择文字。"/>{chat&&forkableReplies.has(entry.id)&&<ConversationForkAction conversation={chat} entryId={entry.id}/>}</span>}</article>;
   };
   const fileError=fileLinkFailure&&context.isSelectionCurrent(fileLinkFailure.selection)&&<Alert type="warning" message={fileLinkFailure.message} description={<code>{fileLinkFailure.reference}</code>} closable onClose={()=>setFileLinkFailure(null)} action={<CopyButton type="text" text={fileLinkFailure.reference} ariaLabel="复制来源路径" failureMessage="复制失败，请手动复制来源路径。"/>}/>;

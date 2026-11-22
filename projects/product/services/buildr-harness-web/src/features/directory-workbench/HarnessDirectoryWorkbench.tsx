@@ -65,8 +65,9 @@ function WorkspaceContent({contents,active,tabs,setTabs,scope}: {contents:readon
   </div>;
 }
 
-export function HarnessDirectoryWorkbench({active=true,workspaceId,workspaceName,onDirectoryAdded}: {
-  active?:boolean;workspaceId?:string;workspaceName?:string;onDirectoryAdded(workspaceId:string):void;
+type DirectoryReveal={workspaceId:string;revision:string;path:string;line?:number};
+export function HarnessDirectoryWorkbench({active=true,workspaceId,workspaceName,onDirectoryAdded,reveal}: {
+  active?:boolean;reveal?:DirectoryReveal;workspaceId?:string;workspaceName?:string;onDirectoryAdded(workspaceId:string):void;
 }) {
   const [observation,setObservation]=useState<{id:string;scope?:DirectoryScope;error?:string}>();
   const [attempt,retry]=useState(0), [choosing,setChoosing]=useState(false), [chooseError,setChooseError]=useState('');
@@ -100,15 +101,16 @@ export function HarnessDirectoryWorkbench({active=true,workspaceId,workspaceName
     {!workspaceId?<Empty description="选择工作空间后即可浏览文件和变更，无需先发送消息。">
       <Button onClick={()=>void add()} loading={choosing}>添加本机目录</Button>
       {chooseError&&<Alert type="warning" message={chooseError}/>}
-    </Empty>:scope?<DirectoryPanels key={workspaceId+':'+scope.revision} scope={scope} workspaceId={workspaceId} active={active} tabs={tabs} setTabs={setTabs} drafts={drafts.current}/>:current?.error?
+    </Empty>:scope?<DirectoryPanels key={workspaceId+':'+scope.revision} scope={scope} workspaceId={workspaceId} reveal={reveal?.workspaceId===workspaceId&&reveal.revision===scope.revision?reveal:undefined} active={active} tabs={tabs} setTabs={setTabs} drafts={drafts.current}/>:current?.error?
       <Alert type="warning" showIcon message="当前工作空间目录不可用" description={current.error} action={<Button size="small" onClick={()=>retry(value=>value+1)}>重新读取</Button>}/>:<div className="harness-workspace-loading" role="status"><Spin size="small"/> 正在读取当前工作空间…</div>}
   </div>;
 }
 
-function DirectoryPanels({scope,workspaceId,active,drafts,tabs,setTabs}:{scope:DirectoryScope;workspaceId:string;active:boolean;drafts:Map<string,FileDraft>;tabs:ModuleTabs;setTabs(update:(old:ModuleTabs)=>ModuleTabs):void}){
-  const [opened,setOpened]=useState<{path:string;nonce:number}>(), [version,bump]=useState(0);
+function DirectoryPanels({scope,workspaceId,active,drafts,tabs,setTabs,reveal}:{scope:DirectoryScope;workspaceId:string;active:boolean;reveal?:DirectoryReveal;drafts:Map<string,FileDraft>;tabs:ModuleTabs;setTabs(update:(old:ModuleTabs)=>ModuleTabs):void}){
+  const [opened,setOpened]=useState<{path:string;line?:number;nonce:number}>(), [version,bump]=useState(0);
   const request=useMemo(()=>directoryClient(scope,workspaceId),[scope,workspaceId]);
-  const open=useCallback((path:string)=>{setOpened(previous=>({path,nonce:(previous?.nonce??0)+1}));setTabs(old=>openModule(old,'explorer'));},[setTabs]);
+  const open=useCallback((path:string,line?:number)=>{setOpened(previous=>({path,line,nonce:(previous?.nonce??0)+1}));setTabs(old=>openModule(old,'explorer'));},[setTabs]);
+  useEffect(()=>{if(reveal)open(reveal.path,reveal.line);},[open,reveal]);
   return <WorkspaceContent scope={scope} active={active} tabs={tabs} setTabs={setTabs} contents={[
     {id:'explorer',title:'资源管理器',icon:<FolderOpenOutlined/>,render:active=><DirectoryExplorer scope={scope} request={request} active={active} opened={opened} drafts={drafts} onSaved={()=>bump(value=>value+1)}/>},
     {id:'source-control',title:'源代码管理',icon:<ApartmentOutlined/>,render:active=><DirectorySourceControl scope={scope} request={request} active={active} version={version} onOpenCurrent={open}/>},

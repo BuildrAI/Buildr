@@ -2,7 +2,7 @@ import {scopeDisplayName,workspaceScopeKey as key} from './workspace-scopes';
 import {FrameSubmissions} from './frame-submissions';
 import {useHarnessDirectoryFiles} from './directory-files';
 import {engineeringFile} from './engineering-files';
-import {htmlFileLink} from './lib/localFileLink';
+import {conversationFileLink} from './lib/localFileLink';
 import {ConversationHostProvider} from './integration/ConversationHost';
 import {HarnessShell, type HarnessWorkEnvironment} from './shell/HarnessShell';
 import {lazy,Suspense,useCallback,useEffect,useMemo,useState,useRef} from 'react';
@@ -13,6 +13,8 @@ import {api} from './api/index';
 import type {ConversationWorkspace as ScopeView} from './features/agent-conversations/ConversationHistory';
 import {conversationDraftKey} from './features/agent-conversations/useConversationDraft';
 import {readDraft} from './features/agent-conversations/conversation-state';
+import {directoryClient,observeWorkspaceDirectory} from './features/directory-workbench/api';
+import type {ConversationFilePreview} from './directory-files';
 import type {ConversationView} from './features/agent-conversations/types';
 
 const DirectoryWorkbench=lazy(async()=>({default:(await import('./features/directory-workbench/HarnessDirectoryWorkbench')).HarnessDirectoryWorkbench}));
@@ -24,16 +26,16 @@ const directoryLeafName=(value:string)=>value.replace(/[\\/]+$/,'').split(/[\\/]
 const request=<T,>(path:string,input?:unknown,signal?:AbortSignal)=>api(path,input===undefined?{headers:{'x-buildr-session':''},signal}:{method:'POST',body:JSON.stringify(input),signal}) as Promise<T>;
 
 export function HarnessApp({environment}:{environment?:HarnessWorkEnvironment}={}){
-  const [file,setFile]=useState<{path:string;value:HarnessFileContent;fragment?:string}|null>(null);
+  const [file,setFile]=useState<ConversationFilePreview|null>(null);
   const standalone=(typeof window==='undefined'||window.parent===window)&&!environment;
   const composition=useMemo(()=>({standalone}),[standalone]);
   const host=useMemo<HarnessDirectoryFiles>(()=>({
     readFile:(conversation:ConversationView,path:string,signal:AbortSignal)=>window.parent!==window?engineeringFile('read',conversation.workspaceId,conversation.id,path,signal):api('/api/v1/harness/files',{method:'POST',body:JSON.stringify({conversationId:conversation.id,path}),signal}) as Promise<HarnessFileContent>,
     async openFile(conversation,reference,literal,signal){
-      const {path,fragment}=htmlFileLink(reference,literal);
-      if(window.parent!==window){await engineeringFile('open',conversation.workspaceId,conversation.id,fragment ? reference : path,signal);return;}
+      if(window.parent!==window){await engineeringFile('open',conversation.workspaceId,conversation.id,reference,signal);return;}
+      const {path,fragment,line}=conversationFileLink(reference,literal);
       const value=await request<HarnessFileContent>('/api/v1/harness/files',{conversationId:conversation.id,path},signal);
-      signal?.throwIfAborted();setFile({path:value.path||path,value,fragment});return false;
+      signal?.throwIfAborted();setFile({path:value.path||path,value,fragment,line});return false;
     },
   }),[]);
   return <ConversationHostProvider host={composition}><HarnessDirectoryFilesProvider host={host}><AgentConversationsProvider standalone={standalone}><Workspace standalone={standalone} environment={environment}/></AgentConversationsProvider><LocalFilePreviewModal file={file} onClose={()=>setFile(null)}/></HarnessDirectoryFilesProvider></ConversationHostProvider>;
@@ -89,11 +91,38 @@ function Workspace({standalone,environment}:{standalone:boolean;environment?:Har
   };
   const draftWorkspace=()=>{try{return readDraft(conversationDraftKey(null,null),sessionStorage).workspaceId;}catch{return undefined;}};
   const workbenchWorkspaceId=context.scope?.workspaceId??context.draftScope?.workspaceId??draftWorkspace()??selected;
+  const [environmentOpen,setEnvironmentOpen]=useState(false);
+  const [reveal,setReveal]=useState<{workspaceId:string;revision:string;path:string;line?:number}>();
+  const workspaceRef=useRef(workbenchWorkspaceId);workspaceRef.current=workbenchWorkspaceId;
+  const findExplorerFile:HarnessDirectoryFiles['findExplorerFile']=standalone?async(conversation,reference,signal)=>{
+    const {path,line}=conversationFileLink(reference,false);
+    const workspaceId=conversation.workspaceId;
+    const slash=(value:string)=>value.replace(/\\/g,'/').replace(/\/+$/,'');
+    const resolve=async()=>{
+      if(workspaceRef.current!==workspaceId)return null;
+      const scope=await observeWorkspaceDirectory(workspaceId,signal);
+      const absolute=slash(/^(?:[\\/]|[a-z]:[\\/])/i.test(path)?path:conversation.cwd+'/'+path);
+      const root=slash(scope.rootPath);
+      if(!absolute.startsWith(root+'/'))return null;
+      const relative=absolute.slice(root.length+1).split('/').filter(part=>part&&part!=='.').join('/');
+      if(!relative||relative.split('/').includes('..'))return null;
+      await directoryClient(scope,workspaceId)('file',{path:relative},signal);
+      signal.throwIfAborted();
+      return {workspaceId,revision:scope.revision,path:relative,line};
+    };
+    const known=await resolve();
+    if(!known)return null;
+    return async()=>{
+      const latest=await resolve();
+      if(!latest||latest.revision!==known.revision||latest.path!==known.path||workspaceRef.current!==workspaceId)throw new Error('文件来源已变化，请重新定位。');
+      setReveal(latest);setEnvironmentOpen(true);context.setFull(false);
+    };
+  }:undefined;
   const builtin:HarnessWorkEnvironment={id:'harness-conversation-workspace',title:'对话工作区',render:active=><Suspense fallback={<Spin size="small" />}>
-    <DirectoryWorkbench active={active} workspaceId={workbenchWorkspaceId} workspaceName={scopes.find(scope=>scope.id===workbenchWorkspaceId)?.name}
+    <DirectoryWorkbench reveal={reveal} active={active} workspaceId={workbenchWorkspaceId} workspaceName={scopes.find(scope=>scope.id===workbenchWorkspaceId)?.name}
       onDirectoryAdded={workspaceId=>{context.newConversation({scope:{workspaceId},preserveVisibility:true});void refresh().catch(failure=>setError(failure instanceof Error?failure.message:'工作范围读取失败。'));}} />
   </Suspense>};
-  return <HarnessShell environment={environment??(standalone?builtin:undefined)}>{workspaceToggle=><>{error&&!choosing&&<Alert type="warning" closable onClose={()=>setError('')} message={error}/>}<main className="harness-main"><HarnessDirectoryFilesProvider host={{...files,...(!embedded?{chooseWorkspace:()=>{setPath('');setName('');setError('');setChoosing(true);}}:{})}}><ConversationWorkspace workspaces={scopes} defaultWorkspaceId={selected??null} headerAction={workspaceToggle}/></HarnessDirectoryFilesProvider></main>{!standalone&&<AgentConnectionSettings/>}<Modal open={choosing} centered width={500} className="harness-workspace-modal" title="添加工作空间" confirmLoading={busy} maskClosable={!busy} cancelText="取消" okText="创建并使用" cancelButtonProps={{disabled:busy}} okButtonProps={{'aria-label':'创建并使用',disabled:!path.trim()}} onOk={()=>void create()} onCancel={()=>{if(!busy)setChoosing(false);}}>
+  return <HarnessShell environment={environment??(standalone?builtin:undefined)} environmentOpen={standalone?environmentOpen:undefined} onEnvironmentOpenChange={standalone?setEnvironmentOpen:undefined}>{workspaceToggle=><>{error&&!choosing&&<Alert type="warning" closable onClose={()=>setError('')} message={error}/>}<main className="harness-main"><HarnessDirectoryFilesProvider host={{...files,findExplorerFile,...(!embedded?{chooseWorkspace:()=>{setPath('');setName('');setError('');setChoosing(true);}}:{})}}><ConversationWorkspace workspaces={scopes} defaultWorkspaceId={selected??null} headerAction={workspaceToggle}/></HarnessDirectoryFilesProvider></main>{!standalone&&<AgentConnectionSettings/>}<Modal open={choosing} centered width={500} className="harness-workspace-modal" title="添加工作空间" confirmLoading={busy} maskClosable={!busy} cancelText="取消" okText="创建并使用" cancelButtonProps={{disabled:busy}} okButtonProps={{'aria-label':'创建并使用',disabled:!path.trim()}} onOk={()=>void create()} onCancel={()=>{if(!busy)setChoosing(false);}}>
     <div className="harness-workspace-modal-body">
       <p className="harness-workspace-intro">选择一个本机目录并设置可选名称，创建后直接用于新对话。</p>
       {error&&<Alert className="harness-workspace-alert" type="warning" showIcon message={error}/>}

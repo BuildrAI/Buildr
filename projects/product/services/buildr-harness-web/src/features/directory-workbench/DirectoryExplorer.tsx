@@ -6,7 +6,7 @@ import { DirectoryFileEditor, type FileDraft } from './DirectoryFileEditor';
 import type { DirectoryListing, DirectoryRequest, DirectoryScope, DirectorySearchResult, FileObservation, WorkbenchFile } from './api';
 
 export function DirectoryExplorer({scope,request,active,opened,onSaved,drafts}: {
-  scope:DirectoryScope; request:DirectoryRequest; active:boolean; opened?:{path:string;nonce:number}; onSaved():void; drafts:Map<string,FileDraft>;
+  scope:DirectoryScope; request:DirectoryRequest; active:boolean; opened?:{path:string;line?:number;nonce:number}; onSaved():void; drafts:Map<string,FileDraft>;
 }) {
   const id=scope.ref.id;
   const [selected,setSelected]=useState<{path:string;line?:number;query?:string}>({path:''});
@@ -20,7 +20,7 @@ export function DirectoryExplorer({scope,request,active,opened,onSaved,drafts}: 
   const changeSelection=useCallback((relative:string,line?:number,query?:string)=>{
     currentEditor.current?.abort();setLoadingEditor(false);setEditorError('');setEdit('');setPage(undefined);setSelected({path:relative,line,query});
   },[]);
-  useEffect(()=>{if(opened)changeSelection(opened.path);},[opened,changeSelection]);
+  useEffect(()=>{if(opened)changeSelection(opened.path,opened.line);},[opened,changeSelection]);
   useEffect(()=>()=>currentEditor.current?.abort(),[]);
   const loadDirectory=useCallback(async(relative:string,refresh=false)=>{
     if(!refresh&&(folderState.current[relative]||loads.current.has(relative)))return;
@@ -69,7 +69,7 @@ export function DirectoryExplorer({scope,request,active,opened,onSaved,drafts}: 
       onLoadDirectory={(_id,relative)=>loadDirectory(relative)} loadedDirectoryKeys={Object.keys(folders).map(folder=>id+'::'+folder)}
       onSearch={handleSearch} searchResults={searchResults} searchLoading={searchRead.loading} searchIncomplete={Boolean(searchRead.error||searchRead.data?.truncated)}
       onShowIgnored={setIgnored} onRefreshDirectories={refresh} onRetry={refresh} onViewCurrent={()=>{setPage(undefined);bump(value=>value+1);}}
-      focusLine={selected.line} readMatchQuery={selected.query} selectionKey={draftKey}
+      revealSelectionRequest={opened?.nonce} focusRequest={opened?.nonce} focusLine={selected.line} readMatchQuery={selected.query} selectionKey={draftKey}
       treeNotice={notes.length?<Alert type="warning" showIcon message={notes.join('；')}/>:undefined}
       readLoading={read.loading} readError={read.error} readMessage={file?.message} sizeBytes={file?.sizeBytes} readPage={file?.page} onReadPage={setPage}
       canModify={false} readerContent={editing?draft.content:undefined}

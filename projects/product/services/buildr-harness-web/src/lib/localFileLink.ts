@@ -34,6 +34,19 @@ export function htmlFileLink(reference: string, literal: boolean): { path: strin
   return match ? { path: reference.slice(0, -match[1].length), fragment: match[1] } : { path: reference };
 }
 
+export function conversationFileLink(reference: string, literal: boolean): {path:string; fragment?:string; line?:number} {
+  const parsed=htmlFileLink(reference,literal);
+  if(literal||parsed.fragment)return parsed;
+  const url=/^file:/i.test(reference);
+  const suffix=(url?reference:parsed.path).match(/(?:#L|:)([1-9][0-9]*)$/);
+  if(!suffix)return parsed;
+  const line=Number(suffix[1]);
+  if(!Number.isSafeInteger(line))throw new Error('文件行号无效。');
+  const base=(url?reference:parsed.path).slice(0,suffix.index);
+  const path=url?localFilePath(base):base;
+  return path?{path,line}:parsed;
+}
+
 export function htmlPreviewAddress(url: string | undefined, fragment?: string): string | undefined {
   return url && fragment ? url.split('#', 1)[0] + fragment : url;
 }

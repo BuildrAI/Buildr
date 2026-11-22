@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Modal, Segmented } from 'antd';
-import type { HarnessFileContent } from '../directory-files.tsx';
+import type { ConversationFilePreview, HarnessFileContent } from '../directory-files.tsx';
 import { CopyButton } from './CopyButton.tsx';
 import { MarkdownReader } from './MarkdownReader.tsx';
 import {htmlPreviewAddress} from '../lib/localFileLink.ts';
 import './local-file-preview-modal.css';
 
-export function LocalFilePreviewBody({ path, value, fragment }: { path: string; value: HarnessFileContent; fragment?: string }) {
+export function LocalFilePreviewBody({ path, value, fragment, line }: { path: string; value: HarnessFileContent; fragment?: string; line?:number }) {
   const [mode, setMode] = useState<'preview' | 'source'>('preview');
   const fullPath = value.path || path;
   const fileName = fullPath.split(/[\\/]/).at(-1) || fullPath;
@@ -49,6 +49,8 @@ export function LocalFilePreviewBody({ path, value, fragment }: { path: string; 
     </>;
   }
 
+  if(line && (value.kind==='markdown'||value.kind==='text'))return <LinePreview content={value.content} line={line} truncated={value.truncated}/>;
+
   if (value.kind === 'markdown') {
     return <>
       <MarkdownReader content={value.content} path={fullPath} />
@@ -70,7 +72,19 @@ export function LocalFilePreviewBody({ path, value, fragment }: { path: string; 
   </>;
 }
 
-export function LocalFilePreviewModal({ file, onClose }: { file: { path: string; value: HarnessFileContent; fragment?: string } | null; onClose(): void }) {
+function LinePreview({content,line,truncated}:{content:string;line:number;truncated:boolean}) {
+  const selected=useRef<HTMLSpanElement>(null);
+  const lines=content.split(/\r?\n/);
+  useEffect(()=>{const frame=requestAnimationFrame(()=>selected.current?.scrollIntoView({block:'center'}));return()=>cancelAnimationFrame(frame);},[content,line]);
+  return <>
+    {line>lines.length&&<Alert type="info" message={truncated?'该行不在当前预览范围内。':'该行不存在，已打开当前文件内容。'}/>}
+    <pre className="local-file-preview-source">{lines.map((text,index)=>index+1===line
+      ? <span key={index} ref={selected} className="local-file-preview-line" aria-label={`第 ${line} 行`} data-preview-line={line}>{text||' '}{'\n'}</span>
+      : text+'\n')}</pre>
+  </>;
+}
+
+export function LocalFilePreviewModal({ file, onClose }: { file: ConversationFilePreview | null; onClose(): void }) {
   const fullPath = file ? file.value.path || file.path : '';
   const fileName = fullPath.split(/[\\/]/).at(-1) || fullPath;
   const isHtmlPreview = file?.value.kind === 'html' && Boolean(file.value.htmlUrl);
@@ -91,7 +105,7 @@ export function LocalFilePreviewModal({ file, onClose }: { file: { path: string;
             <code className="local-file-preview-path">{fullPath}</code>
             <CopyButton type="text" text={fullPath} ariaLabel="复制文件路径" failureMessage="复制失败，请手动复制文件路径。" />
           </div>
-          <LocalFilePreviewBody path={fullPath} value={file.value} fragment={file.fragment} />
+          <LocalFilePreviewBody path={fullPath} value={file.value} fragment={file.fragment} line={file.line} />
         </>
       )}
     </Modal>
