@@ -53,11 +53,11 @@
       "type": "skill",
       "id": "connection-authoring",
       "target": "skills/buildr/connection-authoring",
-      "integrity": "sha256-450e89c416572201c2e5d6948457b322bed3352f55833ed17ba132e4a63a7a87",
+      "integrity": "sha256-ef87e72da8f0152fe80079af96654fed92b6bae754799d803f846de38a5f9595",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-130557f17c397bf864af183ade65147ddf513f146879844b495dc4fc8b90f9ff"
+          "integrity": "sha256-64be614b5f9441763e5ea6807fd46aa3d32d8d7934508daa830a8ab520111711"
         },
         {
           "path": "references/browser-authorization.md",
@@ -66,10 +66,6 @@
         {
           "path": "references/connection-contract.md",
           "integrity": "sha256-c491f4825f5018bc539a7203001b3322571dd5e195a965eeaa6c0dcd82e095b8"
-        },
-        {
-          "path": "templates/SKILL.md",
-          "integrity": "sha256-e50dd39b74b83f5dcec99dc16628be3a27221b87cea7f984a06e2150b05ca254"
         },
         {
           "path": "templates/client.mjs",
@@ -82,6 +78,10 @@
         {
           "path": "templates/connection.yml",
           "integrity": "sha256-8522146a481c43a9937eeabdbca76e183b6487146f0cc7342d31af9293a3aee5"
+        },
+        {
+          "path": "templates/skill-template.md",
+          "integrity": "sha256-e50dd39b74b83f5dcec99dc16628be3a27221b87cea7f984a06e2150b05ca254"
         }
       ]
     },
