@@ -30,11 +30,11 @@
   - [通用入口](../../services/buildr-harness/src/workbench.ts)：文件读取与编辑保护、打开文件夹、检出身份、分支切换、远程获取/同步/推送；供 Development 的工程应用复用，不启动执行后台。
   - [本地 Git 动作](../../services/buildr-harness/src/workbench/local-git.ts)：明确暂存、取消暂存和版本保护的本地提交，不隐式推送。
 - **Harness 前端**（`services/buildr-harness-web/src/`）
-  - [独立目录装配](../../services/buildr-harness-web/src/features/directory-workbench/HarnessDirectoryWorkbench.tsx)：仓库与工作树选择、模块切换和跨工作树准确跳转；两个模块采用同一浏览身份。
-  - [资源管理器](../../services/buildr-harness-web/src/explorer.ts)与[源代码管理](../../services/buildr-harness-web/src/source-control.ts)：可分别装配的公开视图；由宿主提供观察和动作，不调用 Development API。
+  - [独立目录装配](../../services/buildr-harness-web/src/features/directory-workbench/HarnessDirectoryWorkbench.tsx)：提供共享 `FileEditingSessionStore`、全量工作树目录观察、标签持久化与跨工作树跳转；顶部工具栏不渲染多余工作树选择器。
+  - [资源管理器](../../services/buildr-harness-web/src/explorer.ts)与[源代码管理](../../services/buildr-harness-web/src/source-control.ts)：包含右侧可停靠 `CodeTreePane`、`CodeExplorerNotices`、行内 `BranchManagementPopover`、`SourceControlWorktreeMenu`、`HistoryFilters`、`SourceControlCommitPanel`、`useSourceControlDiscard`、`SourceControlDiffEditor`、`SourceControlOperationNotices` 及共享编辑组件（[`workbench-editor.ts`](../../services/buildr-harness-web/src/workbench-editor.ts)）。
 - **Development 复用**（`services/buildr*/src/`）
-  - [工程代码应用](../../services/buildr/src/modules/code/application/code-application.ts)：根据登记与真实检出解析工程范围；文件及 Git 观察调用 Harness 通用实现。
-  - [工程资源管理器](../../services/buildr-web/src/features/code/pages/CodeExplorerPage.tsx)与[工程源代码管理](../../services/buildr-web/src/features/code/pages/CodeSourceControlPage.tsx)：装配同源文件页签、通用视图和 Git 实现，保留原导航、编辑会话、任务深链与工程操作。
+  - [工程代码应用](../../services/buildr/src/modules/code/application/code-application.ts)：根据登记与真实检出解析工程范围；文件只读校验证明、提交、说明生成、放弃更改及 Git 观察调用 Harness 通用实现（`@buildr-ai/buildr-harness/workbench`），并保留 `Buildr-Task:` 尾注校验与研发规则提示。
+  - [工程资源管理器](../../services/buildr-web/src/features/code/pages/CodeExplorerPage.tsx)与[工程源代码管理](../../services/buildr-web/src/features/code/pages/CodeSourceControlPage.tsx)：通过 [`buildr-harness-web`](../../services/buildr-harness-web/src/source-control.ts) 入口直接复用共享视图、编辑器与源代码管理组件，仅扩展研发仓库排序、任务作用域深链与项目文档能力。
 
 ## 关键调用链
 

@@ -189,3 +189,146 @@ test('standalone worktree management leaves the original checkout and branches i
   assert.equal(removed.status,'succeeded');assert.equal(fs.existsSync(peer),false);
   assert.equal(git('branch','--list','new-tree'),'new-tree');
 });
+
+test('Git-aware catalog discovery scales beyond 2048 directories, preserves error details, and runs commit/generate/discard/fetch/history filters', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-workbench-scale-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const remoteBare = path.join(root, 'origin.git');
+  const repo = path.join(root, 'workspace', 'big-repo');
+  const peer = path.join(repo, '.worktrees', 'peer');
+  fs.mkdirSync(remoteBare, { recursive: true });
+  fs.mkdirSync(repo, { recursive: true });
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync('git', ['-C', cwd, ...args], { env: codeGitEnvironment(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+
+  git(remoteBare, 'init', '--bare', '-q');
+  git(repo, '-c', 'init.templateDir=', 'init', '-q', '-b', 'main');
+  git(repo, 'config', 'user.name', 'Scale Tester');
+  git(repo, 'config', 'user.email', 'scale@example.invalid');
+  git(repo, 'config', 'commit.gpgSign', 'false');
+  git(repo, 'remote', 'add', 'origin', remoteBare);
+
+  // Create 2120 nested tracked subdirectories (> maxDirectories = 2048) to prove Git-aware skipping avoids truncation.
+  for (let i = 0; i < 2120; i++) {
+    const dir = path.join(repo, 'packages', `p-${String(i).padStart(4, '0')}`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'index.txt'), `item-${i}\n`);
+  }
+  fs.writeFileSync(path.join(repo, '.gitignore'), '.worktrees/\n');
+  fs.writeFileSync(path.join(repo, 'shared.txt'), 'v1\n');
+  git(repo, 'add', '.');
+  git(repo, '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'initial scaled commit');
+  git(repo, 'push', '-q', '-u', 'origin', 'main');
+  git(repo, 'branch', 'side-branch');
+  git(repo, 'worktree', 'add', '-qb', 'peer-branch', peer);
+  fs.writeFileSync(path.join(repo, 'shared.txt'), 'dirty-main\n');
+  fs.writeFileSync(path.join(peer, 'shared.txt'), 'dirty-peer\n');
+  fs.writeFileSync(path.join(peer, 'temp.txt'), 'remove-me\n');
+
+  const host = new HarnessDirectoryHost(path.join(root, 'profile'));
+  const scope = host.register(path.join(root, 'workspace'));
+  const { CodeGeneration } = await import('../../src/workbench/code-generation.ts');
+  const { workbenchError } = await import('../../src/application/directory-workbench.ts');
+  let resolveSlowModel: ((value: string) => void) | undefined;
+  const generation = new CodeGeneration(async input => {
+    if (input.modelId === 'slow-model') {
+      return await new Promise<string>(resolve => { resolveSlowModel = resolve; });
+    }
+    return JSON.stringify({ commitMessage: 'feat: generated message\n\nfrom mock model' });
+  });
+  t.after(() => generation.close());
+
+  const run = createDirectoryWorkbench(host, { generation });
+  const call = (operation: string, input: object = {}) => run(operation, { scopeId: scope.ref.id, scopeRevision: scope.revision, ...input }) as Promise<any>;
+
+  // 1. Repository & catalog discovery with >2100 tracked folders does not truncate and observes all members
+  const checkouts = await call('checkouts');
+  assert.equal(checkouts.truncated, false);
+  assert.equal(checkouts.repositories.length, 1);
+
+  const catalog = await call('catalog');
+  assert.equal(catalog.truncated, false);
+  assert.equal(catalog.repositories.length, 1);
+  const catalogRepo = catalog.repositories[0];
+  assert.equal(catalogRepo.members.length, 2);
+  const mainMember = catalogRepo.members.find((m: any) => m.isMain);
+  const peerMember = catalogRepo.members.find((m: any) => m.branch === 'peer-branch');
+  assert.ok(mainMember && peerMember);
+  assert.equal(mainMember.fileCount, 1);
+  assert.equal(peerMember.fileCount, 2);
+
+  // 2. Batch fetch
+  const fetched = await call('fetch', {
+    repositories: [{ repositoryId: catalogRepo.id, expectedGitId: catalogRepo.gitId, expectedCheckoutId: mainMember.id }],
+  });
+  assert.equal(fetched.repositories[0].status, 'succeeded');
+
+  // 3. Authors & history filters
+  const peerTarget = { repositoryPath: 'big-repo', checkoutId: peerMember.id, repositoryId: catalogRepo.id, worktreeId: peerMember.id };
+  const authors = await call('authors', peerTarget);
+  assert.equal(authors.currentAuthor?.email, 'scale@example.invalid');
+  assert.ok(authors.authors.some((a: any) => a.email === 'scale@example.invalid'));
+  const filteredHistory = await call('history', { ...peerTarget, branch: 'refs/heads/main', authorEmail: 'scale@example.invalid' });
+  assert.equal(filteredHistory.commits.length, 1);
+  assert.equal(filteredHistory.commits[0].subject.trim(), 'initial scaled commit');
+
+  // 4. Commit message generation + cancel + commit-context / commit-changes
+  const commitCtx = await call('commit-context', peerTarget);
+  assert.equal(commitCtx.hasChanges, true);
+  assert.equal(commitCtx.fileCount, 2);
+
+  const slowRun = await call('commit-message', {
+    ...peerTarget, expectedRevision: commitCtx.revision,
+    modelAccountId: 'acct', modelId: 'slow-model', accountIdentity: 'id', accountRevision: 'rev', label: 'Slow',
+  });
+  assert.equal(slowRun.status, 'running');
+  const cancelledRun = await call('commit-message-cancel', { runId: slowRun.id });
+  assert.equal(cancelledRun.status, 'cancelled');
+  resolveSlowModel?.('{}');
+
+  const fastRun = await call('commit-message', {
+    ...peerTarget, expectedRevision: commitCtx.revision,
+    modelAccountId: 'acct', modelId: 'fast-model', accountIdentity: 'id', accountRevision: 'rev', label: 'Fast',
+  });
+  let observedRun = fastRun;
+  for (let i = 0; i < 20 && observedRun.status === 'running'; i++) {
+    await new Promise(r => setTimeout(r, 10));
+    observedRun = await call('commit-message-run', { runId: fastRun.id });
+  }
+  assert.equal(observedRun.status, 'succeeded');
+  assert.equal(observedRun.output.commitMessage, 'feat: generated message\n\nfrom mock model');
+
+  // Discard temp.txt in peer, then commit shared.txt
+  const discardCtx = await call('discard-context', { ...peerTarget, path: 'temp.txt' });
+  assert.deepEqual(discardCtx.removePaths, ['temp.txt']);
+  const discarded = await call('discard-changes', { ...peerTarget, expectedRevision: discardCtx.revision, path: 'temp.txt' });
+  assert.equal(discarded.status, 'succeeded');
+  assert.equal(fs.existsSync(path.join(peer, 'temp.txt')), false);
+
+  const commitCtx2 = await call('commit-context', peerTarget);
+  const committed = await call('commit-changes', { ...peerTarget, expectedRevision: commitCtx2.revision, message: 'feat: peer commit', mode: 'commit' });
+  assert.equal(committed.commit.completed, true);
+  assert.equal(git(peer, 'show', '--format=%s', '-s', 'HEAD'), 'feat: peer commit');
+
+  // 5. File read attaches editorSnapshot with selector, and workbenchError preserves details on conflict
+  const readFile = await call('file', { repositoryPath: 'big-repo', checkoutId: mainMember.id, path: 'shared.txt' });
+  assert.equal(readFile.editorSnapshot?.selector.kind, 'code');
+  assert.equal(readFile.editorSnapshot?.selector.checkoutId, mainMember.id);
+  fs.writeFileSync(path.join(repo, 'shared.txt'), 'external-main-edit\n');
+  await assert.rejects(
+    async () => {
+      try {
+        await call('save', {
+          repositoryPath: 'big-repo', checkoutId: mainMember.id, path: 'shared.txt',
+          content: 'stale-write\n',
+          expectedFileId: readFile.editorSnapshot.fileId,
+          expectedSourceRevision: readFile.editorSnapshot.sourceRevision,
+          expectedRevision: readFile.editorSnapshot.revision,
+        });
+      } catch (err) {
+        workbenchError(err);
+      }
+    },
+    (err: any) => err?.code === 'agent_workbench_file_revision_conflict' && err?.details?.current?.selector?.checkoutId === mainMember.id,
+  );
+});

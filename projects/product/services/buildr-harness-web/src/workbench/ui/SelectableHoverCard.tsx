@@ -12,12 +12,13 @@ type Props = {
   closeOnTriggerClick?: boolean;
   /** Keep interactive information beside this ancestor, outside its pointer path. */
   sideBoundary?: string;
+  sideDirection?: 'left' | 'right';
   open?: boolean;
   onOpenChange?(open: boolean): void;
 };
 
 /** Buildr's existing Popover interaction, with time to enter and select its content. */
-export function SelectableHoverCard({ children, content, title, placement = 'rightTop', focusTrigger = 'always', closeOnTriggerClick = false, sideBoundary, open: controlledOpen, onOpenChange }: Props) {
+export function SelectableHoverCard({ children, content, title, placement = 'rightTop', focusTrigger = 'always', closeOnTriggerClick = false, sideBoundary, sideDirection = 'right', open: controlledOpen, onOpenChange }: Props) {
   const viewActive = useContext(WorkspaceViewActiveContext);
   const [localOpen, setLocalOpen] = useState(false);
   const trigger = useRef<HTMLSpanElement>(null), panel = useRef<HTMLDivElement>(null);
@@ -34,6 +35,14 @@ export function SelectableHoverCard({ children, content, title, placement = 'rig
     if (!anchor || !boundary) return false;
     const boundaryBox = boundary.getBoundingClientRect(), anchorBox = anchor.getBoundingClientRect();
     if (!boundaryBox.width || !boundaryBox.height || !anchorBox.width || !anchorBox.height) return false;
+    if (sideDirection === 'left') {
+      const left = boundaryBox.left;
+      const width = Math.min(440, left - 40);
+      if (width <= 0) return false;
+      const offset = left - 8 - anchorBox.left;
+      setSideLayout(previous => previous?.offset === offset && previous.width === width ? previous : {offset, width});
+      return true;
+    }
     const right = boundaryBox.right;
     const width = Math.min(440, window.innerWidth - right - 40);
     if (width <= 0) return false;
@@ -64,8 +73,8 @@ export function SelectableHoverCard({ children, content, title, placement = 'rig
     window.addEventListener('resize', update);
     window.addEventListener('scroll', update, true);
     return () => { observer.disconnect(); window.removeEventListener('resize', update); window.removeEventListener('scroll', update, true); };
-  }, [open, sideBoundary]);
-  return <Popover trigger={['hover']} placement={sideBoundary ? 'rightTop' : placement} mouseEnterDelay={0.35} mouseLeaveDelay={0}
+  }, [open, sideBoundary, sideDirection]);
+  return <Popover trigger={['hover']} placement={sideBoundary ? (sideDirection === 'left' ? 'leftTop' : 'rightTop') : placement} mouseEnterDelay={0.35} mouseLeaveDelay={0}
     align={sideBoundary && sideLayout ? {offset: [sideLayout.offset, 0], overflow: {adjustX: false, adjustY: true, shiftY: true}} : undefined}
     open={open} onOpenChange={next => { if (next) openNow(); else closeSoon(); }}
     classNames={{ root: 'selectable-hover-card' }} title={title}

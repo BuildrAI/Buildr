@@ -27,3 +27,17 @@ export * from './workbench/code-sync-model.ts';
 export * from './workbench/code-sync-application.ts';
 export * from './workbench/code-push-operation.ts';
 export * from './workbench/code-fetch-application.ts';
+export * from './workbench/verified-readonly-file.ts';
+export {
+  WINDOWS_READONLY_TARGET_MS,
+  WINDOWS_READONLY_TIMEOUT_MS,
+  WINDOWS_READONLY_SCRIPT,
+  parseWindowsReadonlyResponse,
+  readWindowsVerifiedReadonlyBatch,
+} from './workbench/verified-readonly-file-windows.ts';
+export * from './workbench/code-generation.ts';
+export * from './workbench/code-discard-application.ts';
+export * from './workbench/code-commit-application.ts';
+export * from './workbench/code-commit-guidance-model.ts';
+export * from './workbench/code-commit-material.ts';
+export * from './workbench/code-commit-message-application.ts';

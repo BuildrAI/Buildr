@@ -188,7 +188,7 @@ export class HarnessWebEndpoint {
   private error(res:ServerResponse,error:unknown):void {
     if(res.headersSent){res.destroy();return;}
     const known=error instanceof AgentServiceError;
-    json(res,known?error.status:500,{error:{code:known?error.code:'agent_web_failed',message:known?error.message:'独立网页请求未完成；原工作保留，请核对当前状态。'}});
+    json(res,known?error.status:500,{error:{code:known?error.code:'agent_web_failed',message:known?error.message:'独立网页请求未完成；原工作保留，请核对当前状态。',...(known&&error.details!==undefined?{details:error.details}:{})}});
   }
   private html(res:ServerResponse,content:string,nonce?:string):void {
     res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','content-security-policy':`default-src 'self'; script-src 'self'${nonce?" 'nonce-"+nonce+"'":''}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'`});res.end(content);
@@ -281,7 +281,7 @@ export class HarnessWebEndpoint {
     const workbench=url.pathname.match(/^\/api\/v1\/harness\/directory-workbench\/([a-z-]+)$/);
     if(workbench && req.method==='POST') {
       this.authorize(req,true);
-      const operation=workbench[1], input=await body(req,operation==='save'?EDITABLE_FILE_JSON_BYTES:32768);
+      const operation=workbench[1], input=await body(req,operation==='save'?EDITABLE_FILE_JSON_BYTES:operation==='commit-changes'?128*1024:32768);
       this.authorize(req,true);
       json(res,200,await connection.directories.workbench(operation,input));
       return;

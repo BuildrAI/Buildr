@@ -6,6 +6,7 @@ import { HarnessDirectoryHost, DIRECTORY_SOURCE_ID, observeWorkbenchDirectory } 
 import { BUILDR_SOURCE_ID, LocalWorkspaceAuthority } from '../application/local-workspaces.ts';
 import { previewLocalFile } from '../application/local-file-preview.ts';
 import { createDirectoryWorkbench, directoryWorkbenchWrites, workbenchError } from '../application/directory-workbench.ts';
+import { CodeGeneration } from '../workbench/code-generation.ts';
 import { EDITABLE_FILE_JSON_BYTES } from '../workbench/editable-file.ts';
 import { SourceContinuationPolicies } from './source-policies.ts';
 import { HarnessCallerClient } from './caller-client.ts';
@@ -74,7 +75,8 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   } });
   const repository = new ConversationRepository(path.join(options.dataRoot, 'agent-service'));
   service.models.startRefreshing();
-  abortStart = () => service.close();
+  const directoryGeneration = new CodeGeneration(input => service.models.generate(input));
+  abortStart = async () => { directoryGeneration.close(); await service.close(); };
   const instanceId = randomUUID(), pendingFile = path.join(controlRoot(options.dataRoot), 'pending.json');
   function savePending(value: unknown): void {
     const storage = claimStorage(options.dataRoot);
@@ -313,7 +315,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       try {
         const {workspaceId,...fields}=input.input;
         if(workspaceId===undefined && input.operation!=='scope') {
-          json(res,200,await createDirectoryWorkbench(directories)(input.operation,fields));return;
+          json(res,200,await createDirectoryWorkbench(directories, { generation: directoryGeneration })(input.operation,fields));return;
         }
         if(typeof workspaceId!=='string'||!workspaceId||workspaceId.length>2048||workspaceId.includes('\0')||
           (input.operation==='scope'?Object.keys(fields).length!==0:Object.hasOwn(fields,'scopeId')))
@@ -346,7 +348,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
             throw new AgentServiceError('agent_process_switching','当前后台不接受新写入；输入已保留。',503);
           return scope;
         };
-        json(res,200,await createDirectoryWorkbench({resolveDirectory})(input.operation,{...fields,scopeId:scope.ref.id}));
+        json(res,200,await createDirectoryWorkbench({resolveDirectory}, { generation: directoryGeneration })(input.operation,{...fields,scopeId:scope.ref.id}));
       }
       catch (error) { workbenchError(error); }
       return;
@@ -587,7 +589,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       json(res, 200, result);
     } finally { inflight--; }
   });
-  abortStart = async () => { await web.close(); await webConnection?.then(value=>value.disconnect()); await channel.close(); await service.close(); };
+  abortStart = async () => { directoryGeneration.close(); await web.close(); await webConnection?.then(value=>value.disconnect()); await channel.close(); await service.close(); };
   const processRecord = (): ProcessRecord => ({identity,origin:channel.origin,token:options.token,retiring,...(backendChange ? {backendChange} : {})});
   writeProcessInstance(options.dataRoot, processRecord());
   writePrivate(path.join(controlRoot(options.dataRoot), 'instance.json'), processRecord());
@@ -598,6 +600,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     diagnostics({event:'service-close-request',reason});
     closing = true; accepting = false;
     storageMaintenance.close();
+    directoryGeneration.close();
     let confirmed=false;
     closeWork = (async () => {
       try {

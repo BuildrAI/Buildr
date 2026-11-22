@@ -14,6 +14,7 @@ type Props = {
   fragment?: string;
   renderVersion?: string;
   findFileAction?: (reference:string,signal:AbortSignal)=>Promise<(() => Promise<void>)|null>;
+  onRendered?: (body: HTMLElement) => void | (() => void);
 };
 
 export function scrollMarkdownFragment(root: HTMLElement, fragment: string) {
@@ -25,13 +26,14 @@ export function scrollMarkdownFragment(root: HTMLElement, fragment: string) {
   return true;
 }
 
-export function MarkdownHost({ markdown, className, options, fragment, renderVersion, findFileAction }: Props) {
+export function MarkdownHost({ markdown, className, options, fragment, renderVersion, findFileAction, onRendered }: Props) {
   const hostActions=useConversationHost();
   const hostActionsRef=useRef(hostActions);hostActionsRef.current=hostActions;
   const ref = useRef<HTMLDivElement>(null);
   const optionsRef = useRef(options);
   optionsRef.current = options;
   const fileActionRef=useRef(findFileAction);fileActionRef.current=findFileAction;
+  const renderedRef=useRef(onRendered);renderedRef.current=onRendered;
   const [diagramPreview, setDiagramPreview] = useState<MarkdownDiagramTarget | null>(null);
 
   useEffect(() => {
@@ -66,9 +68,10 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
       setDiagramPreview(diagram);
     });
     host.replaceChildren(view);
+    const stopRendered = renderedRef.current?.(view);
     if (fragment) requestAnimationFrame(() => scrollMarkdownFragment(view, fragment));
     const stopDiagrams = renderMarkdownDiagrams(view, hostActionsRef.current.diagramRendererPath);
-    return () => { images.abort(); stopDiagrams(); };
+    return () => { images.abort(); stopDiagrams(); stopRendered?.(); };
   }, [markdown, className, fragment, renderVersion, options?.taskLinkPathname, options?.imageResolver, Boolean(findFileAction), JSON.stringify(options?.headingCounts)]);
 
   return (

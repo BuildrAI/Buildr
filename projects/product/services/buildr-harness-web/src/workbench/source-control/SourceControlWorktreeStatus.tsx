@@ -6,9 +6,9 @@ import type { SourceControlWorktree } from './source-control-model';
 import { sourceControlWorktreeStatus } from './source-control-worktree-status';
 import './source-control-worktree-status.css';
 
-type Props = { worktree?: SourceControlWorktree; name: string; visible: boolean; syncAction?:{pending:boolean;run():void}; trigger?:ReactElement; open?:boolean; onOpenChange?(open:boolean):void };
+type Props = { worktree?: SourceControlWorktree; name: string; visible: boolean; popoverPlacement?: 'rightTop' | 'leftTop'; syncAction?:{pending:boolean;run():void}; trigger?:ReactElement; open?:boolean; onOpenChange?(open:boolean):void };
 
-export function SourceControlWorktreeStatus({worktree, name, visible, syncAction, trigger, open:controlledOpen, onOpenChange}: Props) {
+export function SourceControlWorktreeStatus({worktree, name, visible, popoverPlacement = 'rightTop', syncAction, trigger, open:controlledOpen, onOpenChange}: Props) {
   const [localOpen, setLocalOpen] = useState(false), [syncTooltipOpen, setSyncTooltipOpen] = useState(false);
   const anchor = useRef<HTMLSpanElement>(null);
   const open = controlledOpen ?? localOpen;
@@ -30,7 +30,7 @@ export function SourceControlWorktreeStatus({worktree, name, visible, syncAction
     {!!worktree?.diagnostics.length && <p>{worktree.diagnostics.join('；')}</p>}
     <p>本机已观察记录；查看详情不获取远程。</p>
   </section>;
-  if (trigger) return <Popover trigger={[]} open={viewActive && visible && open} onOpenChange={setOpen} placement="rightTop" content={content} destroyOnHidden><span ref={anchor} className="source-control-menu-status-anchor">{trigger}</span></Popover>;
+  if (trigger) return <Popover trigger={[]} open={viewActive && visible && open} onOpenChange={setOpen} placement={popoverPlacement} content={content} destroyOnHidden><span ref={anchor} className="source-control-menu-status-anchor">{trigger}</span></Popover>;
   const canSync = status.remoteState === 'changed' && Boolean(syncAction);
   const remoteCounts = status.counts.filter(count => count.kind !== 'files');
   const detailCounts = canSync ? status.counts.filter(count => count.kind === 'files') : status.counts;
@@ -44,7 +44,7 @@ export function SourceControlWorktreeStatus({worktree, name, visible, syncAction
     data-remote-state={status.remoteState} data-file-state={status.fileState} aria-label={status.remoteLabel + '；' + status.fileLabel}>
     {canSync && <Tooltip title={syncLabel} trigger={['hover', 'focus']} open={viewActive && visible && !syncAction?.pending && syncTooltipOpen} onOpenChange={next => setSyncTooltipOpen(Boolean(viewActive && visible && !syncAction?.pending && next))} classNames={{root:'source-control-sync-tooltip'}} destroyOnHidden><Button type="text" size="small" className="source-control-sync-button" loading={syncAction?.pending} disabled={syncAction?.pending}
       aria-label={syncLabel} title={syncLabel} onClick={event => {event.stopPropagation(); setSyncTooltipOpen(false); syncAction?.run();}}><span className="source-control-status-content">{renderCounts(remoteCounts)}</span></Button></Tooltip>}
-    {showDetails && <Popover trigger="click" open={viewActive && visible && open} onOpenChange={setOpen} placement="rightTop" content={content} destroyOnHidden>
+    {showDetails && <Popover trigger="click" open={viewActive && visible && open} onOpenChange={setOpen} placement={popoverPlacement} content={content} destroyOnHidden>
       <Button type="text" size="small" className={'source-control-status-button' + (status.clean ? ' is-clean' : '')}
         data-remote-state={status.remoteState} data-file-state={status.fileState}
         aria-label={'查看状态 · ' + name + ' · ' + status.remoteLabel + '；' + status.fileLabel} aria-expanded={open}

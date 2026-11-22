@@ -7,3 +7,5 @@ export * from './workbench/ui/SelectableHoverCard';
 export * from './workbench/ui/useTabNavigation';
 export * from './workbench/ui/select-popup';
 export * from './workbench/ui/view-activity';
+export * from './components/ExecutionModelSelect';
+export * from './components/AgentActionControl';

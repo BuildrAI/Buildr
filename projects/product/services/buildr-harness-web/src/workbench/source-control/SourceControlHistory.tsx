@@ -9,7 +9,7 @@ import { layerFile } from './SourceControlRepositories';
 type Props = {
   active?: boolean;
   expanded: Record<string, boolean>; onToggle(key: string, defaultExpanded?: boolean): void;
-  commits: SourceControlCommit[]; selectedHash?: string; selectedFileKey: string | null;
+  commits: SourceControlCommit[]; selectedHash?: string; selectedFileKey: string | null; sideDirection?: 'left' | 'right';
   reader: SourceControlReader; readKey: string; version: string; repositoryId: string; worktreeId: string; worktreeLocation: string;
   onOpenTask(taskId: string): void; onSelect(commit: SourceControlCommit): void; onPick(commit: SourceControlCommit, file: SourceControlChange, baseHash: string | null): void;
 };
@@ -19,7 +19,7 @@ export function SourceControlHistory(props: Props) {
   return <ol className="source-control-graph">{props.commits.map(commit => <CommitRow key={commit.hash} {...props} commit={commit} />)}</ol>;
 }
 
-function CommitRow({active = true, commit, expanded: expansion, onToggle, selectedHash, selectedFileKey, reader, readKey, version, repositoryId, worktreeId, worktreeLocation, onOpenTask, onSelect, onPick}: Props & {commit: SourceControlCommit}) {
+function CommitRow({active = true, commit, expanded: expansion, onToggle, selectedHash, selectedFileKey, sideDirection = 'right', reader, readKey, version, repositoryId, worktreeId, worktreeLocation, onOpenTask, onSelect, onPick}: Props & {commit: SourceControlCommit}) {
   const identity = 'history:' + JSON.stringify([repositoryId, worktreeId, commit.hash]);
   const expanded = expansion[identity] ?? false;
   const input = {repositoryId, worktreeId, commitHash: commit.hash};
@@ -28,7 +28,7 @@ function CommitRow({active = true, commit, expanded: expansion, onToggle, select
   const files = detail.files.map(file => layerFile(file, commit.hash));
   const pathHints = sourceControlFilePathHints(files);
   return <li className={commit.hash === selectedHash ? 'is-selected' : ''} data-source-commit={commit.hash}>
-    <div className="source-control-history-row"><CommitInfoPopover sideBoundary=".source-control-sidebar" commit={detail} onOpenTask={onOpenTask}><button type="button" className="source-control-commit-toggle" aria-label={'查看提交 ' + commit.subject} aria-expanded={expanded} onClick={() => { if (!expanded || selectedHash !== commit.hash) onSelect(detail); onToggle(identity, false); }}>
+    <div className="source-control-history-row"><CommitInfoPopover sideBoundary=".source-control-sidebar" sideDirection={sideDirection} commit={detail} onOpenTask={onOpenTask}><button type="button" className="source-control-commit-toggle" aria-label={'查看提交 ' + commit.subject} aria-expanded={expanded} onClick={() => { if (!expanded || selectedHash !== commit.hash) onSelect(detail); onToggle(identity, false); }}>
       <span className="source-control-commit-icon"><NodeIndexOutlined /></span><span className="source-control-graph-copy"><strong>{commit.subject}</strong></span>
     </button></CommitInfoPopover><div className="source-control-history-actions">
       {(commit.branches.length > 0 || commit.tags.length > 0) && <Tooltip title={[...commit.branches, ...commit.tags].join(' · ')}><span className="source-control-history-refs" aria-label={'提交引用 ' + [...commit.branches, ...commit.tags].join(' · ')}><BranchesOutlined /></span></Tooltip>}

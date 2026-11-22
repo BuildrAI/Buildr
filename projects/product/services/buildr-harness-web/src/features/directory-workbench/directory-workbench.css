@@ -1,16 +1,12 @@
 .harness-directory-workbench{container-type:inline-size;display:flex;flex-direction:column;min-width:0;min-height:0;height:100%;background:var(--soft-surface,#fff)}
-@container (max-width:560px){.harness-directory-explorer .repository-browser-tree{flex-basis:min(44%,var(--repository-tree-width));width:min(44%,var(--repository-tree-width))}.harness-directory-explorer .repository-file-pane{min-width:0}}
+@container (max-width:560px){.harness-directory-explorer .repository-browser-tree{flex-basis:min(44%,var(--repository-tree-width));width:min(44%,var(--repository-tree-width))}.harness-directory-explorer .global-source-dock{max-width:44%}.harness-directory-explorer .repository-file-pane{min-width:0}}
 .harness-workspace-content{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
 .harness-workspace-loading{display:flex;align-items:center;justify-content:center;gap:8px;padding:28px;color:var(--soft-muted)}
-.harness-directory-workbench-pane,.harness-directory-explorer,.harness-directory-source-control{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
+.harness-directory-workbench-pane,.harness-directory-explorer,.harness-directory-source-control{display:flex;flex:1;min-width:0;min-height:0;overflow:hidden}
+.harness-directory-workbench-pane,.harness-directory-source-control{flex-direction:column}
 .harness-directory-workbench-pane[hidden]{display:none}
-.harness-file-tab-content>.repository-file-browser,.harness-directory-source-control>.source-control-workbench{flex:1;min-height:0;height:auto;border:0;border-radius:0}
+.harness-directory-source-control>.source-control-workbench{flex:1;min-height:0;height:auto;border:0;border-radius:0}
 @media(max-width:760px){.harness-directory-explorer .repository-browser-tree{flex-basis:min(38%,var(--repository-tree-width));width:min(38%,var(--repository-tree-width))}.harness-directory-explorer .repository-file-pane{min-width:0}}
-.harness-directory-file-actions{padding:4px 0;min-width:0}
-.harness-directory-file-actions code{overflow-wrap:anywhere}
-.harness-directory-file-editor{display:flex;flex:1;flex-direction:column;gap:8px;height:100%;min-height:160px;padding:8px}
-.harness-directory-file-editor textarea{flex:1;min-height:100px;resize:none;font-family:ui-monospace,monospace;font-size:var(--font-size-code)}
-.harness-local-commit{display:grid;gap:8px;padding:8px;min-width:0}
 
 .harness-workspace-bar{display:flex;align-items:center;gap:4px;height:43px;flex:none;padding:0 10px;border-bottom:1px solid var(--soft-line)}
 .harness-workspace-view-label{display:inline-flex;align-items:center;gap:7px;padding:4px 8px;border-radius:6px;font-weight:600;color:var(--soft-ink);background:var(--soft-bg)}
@@ -27,7 +23,8 @@
 .harness-directory-explorer .repository-browser-tree{background:var(--soft-surface,#fff)}
 .harness-directory-explorer .repository-file-pane{min-height:0}
 .harness-directory-explorer .repository-reader-content{max-height:none;min-height:0}
-.harness-directory-file-actions{padding:5px 10px;border-bottom:1px solid var(--soft-line)}
+.harness-directory-explorer .code-file-tabstrip{background:var(--soft-sidebar,#f4f6f7)}
+.harness-directory-explorer .code-tree-pane-title{background:var(--soft-sidebar,#f4f6f7)}
 
 .harness-workspace-tabs{display:flex;align-items:center;gap:4px;min-width:0;overflow-x:auto;scrollbar-width:thin}
 .harness-workspace-tab{display:flex;align-items:center;gap:2px;flex:none;padding-inline-end:2px;border:1px solid transparent;border-radius:7px;color:var(--soft-muted)}
@@ -36,6 +33,5 @@
 .harness-workspace-tab>[role=tab]:focus-visible{outline:2px solid var(--soft-primary);outline-offset:-2px}
 .harness-workspace-tab>.ant-btn{color:inherit;font-size:var(--font-size-meta);width:22px;min-width:22px}
 .harness-workspace-home button small{color:var(--soft-muted);font-size:var(--font-size-meta)}
-.harness-worktree-picker{min-width:0;max-width:200px;flex:0 1 180px}
-.harness-file-tabs{flex:none;min-width:0;padding:0 8px;border-bottom:1px solid var(--soft-line)}
-.harness-file-tab-content{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
+.harness-worktree-modal{display:grid;gap:10px}
+.harness-worktree-modal p{margin:0;line-height:1.6}

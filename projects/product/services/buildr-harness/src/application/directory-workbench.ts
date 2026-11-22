@@ -4,28 +4,34 @@ import { observeDirectoryCheckouts, observeDirectoryRepositories, resolveDirecto
 import { directoryWorktreeActions } from './directory-worktree-actions.ts';
 import { createHash } from 'node:crypto';
 import { createGitBranchOperations } from '../workbench/git-branch-operations.ts';
-import { createCodeFetchApplication } from '../workbench/code-fetch-application.ts';
+import { createCodeFetchApplication, type CodeFetchTarget } from '../workbench/code-fetch-application.ts';
 import { createCodeSyncApplication } from '../workbench/code-sync-application.ts';
 import { readCodePushSnapshot } from '../workbench/code-commit-snapshot.ts';
 import { pushObservedCodeSource } from '../workbench/code-push-operation.ts';
-import { assertCodeRevision } from '../workbench/source-control-git-reader.ts';
+import { assertCodeRevision, observeSourceControl, observeSourceControlAsync } from '../workbench/source-control-git-reader.ts';
 import { acquireCodeGitOperation } from '../workbench/code-git-operation-lock.ts';
 import { openDirectory } from '../workbench/open-directory.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import type { HarnessDirectory, HarnessDirectoryHost } from './directory-host.ts';
 import { DIRECTORY_SOURCE_ID } from './directory-host.ts';
 import { codeFailure, codeGit, gitCommonDirectory, localPath, readCodeDirectory, relativeCodePath, type CodeSource } from '../workbench/code-file-reader.ts';
-import { readCodeFile } from '../workbench/code-file-content.ts';
+import { isCodeImagePath, readCodeFile } from '../workbench/code-file-content.ts';
 import { searchCode } from '../workbench/code-search.ts';
 import { editableSourceRevision, readEditableFile, saveObservedEditableFile } from '../workbench/editable-file.ts';
 import { insideFilesystemPath } from '../workbench/filesystem-path-identity.ts';
 import { createWorkbenchGitReads } from '../workbench/source-control-reads.ts';
 import type { CodeSourceControlInput } from '../workbench/source-control-read-types.ts';
-import { observeSourceControl } from '../workbench/source-control-git-reader.ts';
 import { localGitIdentity, mutateLocalGit, observeLocalGit } from '../workbench/local-git.ts';
+import { createCodeCommitApplication } from '../workbench/code-commit-application.ts';
+import { createCodeDiscardApplication } from '../workbench/code-discard-application.ts';
+import { createCodeCommitMaterialReader } from '../workbench/code-commit-material.ts';
+import { createCodeCommitMessageApplication } from '../workbench/code-commit-message-application.ts';
+import { readDirectoryCommitGuidance } from '../workbench/code-commit-guidance-model.ts';
+import type { CodeGeneration } from '../workbench/code-generation.ts';
 
 const operations = {
   checkouts: [],
+  catalog: ['repositoryPath'],
   'open-folder': ['path'],
   directory: ['path','showIgnored'],
   search: ['query','mode','showIgnored'],
@@ -33,25 +39,57 @@ const operations = {
   editor: ['path'],
   save: ['path','content','expectedFileId','expectedSourceRevision','expectedRevision'],
   status: [],
+  authors: ['repositoryId','worktreeId','branch'],
   branches: [],
   'worktree-context': [],
   'worktree-write': ['action','expectedRevision','name'],
-  'branch-switch': ['targetRef','expectedTargetHash','expectedRevision'],
+  'branch-switch': ['targetRef','expectedTargetHash','expectedRevision','localName'],
   'fetch-context': [],
-  fetch: ['expectedRevision'],
+  fetch: ['expectedRevision','repositories'],
   'sync-context': [],
   sync: ['expectedRevision'],
   'push-context': [],
   push: ['expectedRevision'],
-  history: ['repositoryId','worktreeId','query','cursor','limit','expectedRevision'],
+  'commit-context': ['repositoryId','worktreeId'],
+  'commit-changes': ['repositoryId','worktreeId','expectedRevision','message','mode'],
+  'commit-push': ['repositoryId','worktreeId','expectedHead','expectedPushRevision'],
+  'commit-message': ['repositoryId','worktreeId','expectedRevision','modelAccountId','modelId','accountIdentity','accountRevision','label','serviceTier','reasoningEffort'],
+  'commit-message-run': ['runId'],
+  'commit-message-cancel': ['runId'],
+  'discard-context': ['repositoryId','worktreeId','path'],
+  'discard-changes': ['repositoryId','worktreeId','expectedRevision','path'],
+  history: ['repositoryId','worktreeId','branch','authorEmail','query','cursor','limit','expectedRevision'],
   commit: ['repositoryId','worktreeId','commitHash','expectedRevision'],
   diff: ['repositoryId','worktreeId','commitHash','path','area','expectedRevision'],
   'source-file': ['repositoryId','worktreeId','commitHash','path','area','expectedRevision','page','line','matchQuery'],
   'git-write': ['action','worktreeId','expectedRevision','path','message'],
 } as const;
 export type DirectoryWorkbenchOperation = keyof typeof operations;
-export const directoryWorkbenchWrites = (operation: string) => ['save','git-write','open-folder','worktree-write','branch-switch','fetch','sync','push'].includes(operation);
+export const directoryWorkbenchWrites = (operation: string) => [
+  'save','git-write','open-folder','worktree-write','branch-switch','fetch','sync','push',
+  'commit-changes','commit-push','commit-message','commit-message-cancel','discard-changes',
+].includes(operation);
 const invalid = () => new AgentServiceError('agent_directory_workbench_input_invalid','请选择准确目录和当前观察版本；工作台请求无效。',400);
+
+function inspectFetchTargets(value: unknown): CodeFetchTarget[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 128) throw invalid();
+  return value.map(item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw invalid();
+    const record = item as Record<string, unknown>;
+    const keys = Object.keys(record);
+    if (keys.some(key => !['repositoryId', 'expectedGitId', 'expectedCheckoutId'].includes(key))) throw invalid();
+    if (typeof record.repositoryId !== 'string' || !record.repositoryId || record.repositoryId.length > 4096 || record.repositoryId.includes('\0')) throw invalid();
+    for (const optional of ['expectedGitId', 'expectedCheckoutId'] as const) {
+      const candidate = record[optional];
+      if (candidate !== null && candidate !== undefined && (typeof candidate !== 'string' || candidate.length > 4096 || candidate.includes('\0'))) throw invalid();
+    }
+    return {
+      repositoryId: record.repositoryId,
+      expectedGitId: (record.expectedGitId ?? null) as string | null,
+      expectedCheckoutId: (record.expectedCheckoutId ?? null) as string | null,
+    };
+  });
+}
 
 function inspectInput(operation: string, input: Record<string, unknown>) {
   if (!Object.hasOwn(operations,operation)) throw invalid();
@@ -60,7 +98,9 @@ function inspectInput(operation: string, input: Record<string, unknown>) {
   for (const [key,value] of Object.entries(input)) {
     if (key==='showIgnored') { if (typeof value!=='boolean') throw invalid(); continue; }
     if (['page','line','limit'].includes(key)) { if (!Number.isSafeInteger(value)) throw invalid(); continue; }
-    if (typeof value!=='string' || value.includes('\0') || (key!=='content' && value.length>4096)) throw invalid();
+    if (key==='repositories') { inspectFetchTargets(value); continue; }
+    const maxBytes = key === 'content' ? Infinity : key === 'message' ? 32 * 1024 : 4096;
+    if (typeof value!=='string' || value.includes('\0') || (Number.isFinite(maxBytes) && Buffer.byteLength(value) > maxBytes)) throw invalid();
   }
   if (typeof input.scopeId!=='string'||!input.scopeId||typeof input.scopeRevision!=='string'||!input.scopeRevision) throw invalid();
   return input as Record<string, any>;
@@ -74,7 +114,17 @@ function fileSource(scope: HarnessDirectory): CodeSource {
   return { repositoryId:scope.ref.id, checkoutId:scope.ref.id, location:scope.rootPath, version:'当前文件',kind:'default',commitHash:null,worktreeGroupId:null,taskId:null,allowNonGit:true };
 }
 
-export function createDirectoryWorkbench(directories: Pick<HarnessDirectoryHost,'resolveDirectory'>, open = openDirectory) {
+export type DirectoryWorkbenchOptions = {
+  open?: typeof openDirectory;
+  generation?: CodeGeneration;
+};
+
+export function createDirectoryWorkbench(
+  directories: Pick<HarnessDirectoryHost,'resolveDirectory'>,
+  optionsOrOpen: typeof openDirectory | DirectoryWorkbenchOptions = openDirectory,
+) {
+  const open = typeof optionsOrOpen === 'function' ? optionsOrOpen : (optionsOrOpen.open ?? openDirectory);
+  const generation = typeof optionsOrOpen === 'function' ? undefined : optionsOrOpen.generation;
   return async (operation: string, raw: Record<string, unknown>): Promise<unknown> => {
     const input=inspectInput(operation,raw);
     const scopeQuery={ref:{sourceId:DIRECTORY_SOURCE_ID,id:input.scopeId},expectedRevision:input.scopeRevision};
@@ -101,6 +151,8 @@ export function createDirectoryWorkbench(directories: Pick<HarnessDirectoryHost,
     };
     const gitTarget=()=>{
       const source=current(), git=localGitIdentity(source.location);
+      if (input.repositoryId !== undefined && input.repositoryId !== source.repositoryId) throw codeFailure('code_worktree_identity_changed','Git 来源或工作树身份已变化，请刷新。',409);
+      if (input.worktreeId !== undefined && input.worktreeId !== git.id) throw codeFailure('code_worktree_identity_changed','Git 来源或工作树身份已变化，请刷新。',409);
       return {repositoryId:source.repositoryId,worktreeId:git.id};
     };
     const eligible=()=>gitSource(gitTarget());
@@ -122,6 +174,13 @@ export function createDirectoryWorkbench(directories: Pick<HarnessDirectoryHost,
       return {source,repositoryRoot:repository.location};
     });
     const sync=()=>createCodeSyncApplication({source:(_root,target)=>gitSource(target)});
+    const commitApp=createCodeCommitApplication({
+      source:(_root,target)=>gitSource(target),
+      prepareCommitSync:(_root,target)=>sync().prepareCommitSync('',target),
+    });
+    const discardApp=createCodeDiscardApplication({
+      source:(_root,target)=>gitSource(target),
+    });
     const requireRevision=()=>{if(!input.expectedRevision)throw invalid();return input.expectedRevision as string;};
     const relative=()=>relativeCodePath(input.path??'');
     const readEditor=()=>{
@@ -131,10 +190,80 @@ export function createDirectoryWorkbench(directories: Pick<HarnessDirectoryHost,
         path.relative(source.location,file).split(path.sep).join('/')==='.buildr/builtin-receipts.json'
           ? {code:'file_generated',message:'此文件由 Buildr 维护，请使用对应维护入口。'} : null);
       verifyFileSource(source);
-      return observed;
+      return {
+        ...observed,
+        snapshot: {
+          ...observed.snapshot,
+          selector: { kind: 'code' as const, repositoryId: source.repositoryId, checkoutId: source.checkoutId, path: name },
+        },
+      };
     };
     switch (operation) {
       case 'checkouts': {if(input.checkoutId!==undefined||input.repositoryPath!==undefined)throw invalid();const directory=scope(),result=observeDirectoryRepositories(directory.rootPath,directory.ref.id);scope();return result;}
+      case 'catalog': {
+        if (input.checkoutId !== undefined) throw invalid();
+        const directory = scope();
+        const base = fileSource(directory);
+        const discovered = observeDirectoryRepositories(directory.rootPath, directory.ref.id);
+        const targetRelative = input.repositoryPath !== undefined ? relativeCodePath(input.repositoryPath, true) : null;
+        const selectedRepos = targetRelative === null ? discovered.repositories : discovered.repositories.filter(repo => repo.path === targetRelative);
+        const repositories = [];
+        for (const repo of selectedRepos) {
+          let gitId: string | null = null;
+          const primaryLocation = repo.checkouts.members.find(member => member.id === repo.checkouts.defaultId)?.location ?? repo.checkouts.members[0]?.location;
+          if (primaryLocation) {
+            try { gitId = 'sha256-' + createHash('sha256').update(localGitIdentity(primaryLocation).commonDir).digest('hex'); }
+            catch { gitId = null; }
+          }
+          const members: Array<{
+            id: string; worktreeId: string; name: string; location: string; isMain: boolean; isRegistered: boolean;
+            branch: string | null; head: string | null; upstream: string | null; ahead: number | null; behind: number | null;
+            files: ReturnType<typeof observeSourceControl>['files']; fileCount: number | null; truncated: boolean;
+            observedRevision: string | null; status: 'ready' | 'clean' | 'offline' | 'partial'; diagnostics: string[]; readAt: string;
+          }> = new Array(repo.checkouts.members.length);
+          let cursor = 0;
+          const workers = Array.from({ length: Math.min(6, repo.checkouts.members.length) }, async () => {
+            for (;;) {
+              const index = cursor++;
+              if (index >= repo.checkouts.members.length) return;
+              const member = repo.checkouts.members[index]!;
+              const readAt = new Date().toISOString();
+              try {
+                const memberSource: CodeSource = {
+                  ...base, allowNonGit: undefined, repositoryId: repo.id, checkoutId: member.id,
+                  worktreeId: member.id, location: member.location, version: member.branch || member.head || '当前文件',
+                  kind: 'worktree', commitHash: null,
+                };
+                const observed = await observeSourceControlAsync(memberSource);
+                members[index] = {
+                  id: member.id, worktreeId: member.id, name: member.name, location: member.location,
+                  isMain: member.isMain, isRegistered: member.id === repo.checkouts.defaultId,
+                  branch: observed.branch, head: observed.head, upstream: observed.upstream,
+                  ahead: observed.ahead, behind: observed.behind, files: observed.files,
+                  fileCount: observed.fileCount, truncated: observed.truncated,
+                  observedRevision: observed.observedRevision,
+                  status: observed.truncated ? 'partial' : observed.fileCount ? 'ready' : 'clean',
+                  diagnostics: [], readAt,
+                };
+              } catch (error) {
+                members[index] = {
+                  id: member.id, worktreeId: member.id, name: member.name, location: member.location,
+                  isMain: member.isMain, isRegistered: member.id === repo.checkouts.defaultId,
+                  branch: member.branch, head: member.head, upstream: null,
+                  ahead: null, behind: null, files: [], fileCount: null, truncated: false,
+                  observedRevision: null, status: 'offline',
+                  diagnostics: [error instanceof Error ? error.message : '无法读取该工作树状态。'],
+                  readAt,
+                };
+              }
+            }
+          });
+          await Promise.all(workers);
+          repositories.push({ ...repo, gitId, members });
+        }
+        scope();
+        return { repositories, truncated: discovered.truncated, diagnostic: discovered.diagnostic, readAt: new Date().toISOString() };
+      }
       case 'open-folder': {
         const source=current(), file=localPath(source,relative());
         if (!relative() || !fs.statSync(file).isFile()) throw invalid();
@@ -146,7 +275,15 @@ export function createDirectoryWorkbench(directories: Pick<HarnessDirectoryHost,
         if (!['name','content'].includes(input.mode)||typeof input.query!=='string') throw invalid();
         const source=current(),result=searchCode(source,input.query,input.mode,input.showIgnored===true);verifyFileSource(source);return result;
       }
-      case 'file': {const source=current(),result=await readCodeFile(source,relative(),input);verifyFileSource(source);return result;}
+      case 'file': {
+        const source=current(), name=relative(), result=await readCodeFile(source,name,input);
+        verifyFileSource(source);
+        let editorSnapshot: ReturnType<typeof readEditor>['snapshot'] | undefined;
+        if (input.page === undefined && !isCodeImagePath(name) && result.kind !== 'image' && result.kind !== 'unsupported' && !result.truncated) {
+          try { editorSnapshot = readEditor().snapshot; } catch { /* Read-only viewer remains available when editable snapshot cannot be prepared. */ }
+        }
+        return editorSnapshot ? { ...result, editorSnapshot } : result;
+      }
       case 'editor': return readEditor().snapshot;
       case 'save':
         if (['content','expectedFileId','expectedSourceRevision','expectedRevision'].some(key=>typeof input[key]!=='string'||key!=='content'&&!input[key])) throw invalid();
@@ -165,9 +302,27 @@ export function createDirectoryWorkbench(directories: Pick<HarnessDirectoryHost,
         if(!['create','remove'].includes(input.action))throw invalid();
         return worktrees().execute(input.action,requireRevision(),input.name);
       case 'branches': return branches().branches('',gitTarget());
-      case 'branch-switch': return branches().switchBranch('',{...gitTarget(),targetRef:input.targetRef,expectedTargetHash:input.expectedTargetHash,expectedRevision:requireRevision()});
+      case 'branch-switch': return branches().switchBranch('',{...gitTarget(),targetRef:input.targetRef,expectedTargetHash:input.expectedTargetHash,expectedRevision:requireRevision(),...(input.localName!==undefined?{localName:input.localName}:{})});
       case 'fetch-context': {const {remotes,revision}=fetchContext();return {remotes,revision};}
       case 'fetch': {
+        if (input.repositories !== undefined) {
+          if (input.checkoutId !== undefined || input.repositoryPath !== undefined) throw invalid();
+          const directory = scope();
+          const targets = inspectFetchTargets(input.repositories);
+          const discovered = observeDirectoryRepositories(directory.rootPath, directory.ref.id);
+          const locations = new Map<string, string>();
+          for (const repo of discovered.repositories) {
+            const primary = repo.checkouts.members.find(member => member.id === repo.checkouts.defaultId)?.location ?? repo.checkouts.members[0]?.location;
+            if (primary) locations.set(repo.id, primary);
+          }
+          return createCodeFetchApplication({
+            registeredLocation: (_root, repositoryId) => {
+              const location = locations.get(repositoryId);
+              if (!location) throw codeFailure('code_repository_missing', '代码库不存在或当前不可读取。');
+              return location;
+            },
+          }).fetch('', { repositories: targets });
+        }
         const before=fetchContext();assertCodeRevision(before.revision,requireRevision());
         return createCodeFetchApplication({registeredLocation:()=>{
           const fresh=fetchContext();assertCodeRevision(fresh.revision,before.revision);return fresh.source.location;
@@ -187,6 +342,56 @@ export function createDirectoryWorkbench(directories: Pick<HarnessDirectoryHost,
           return await pushObservedCodeSource('',target,observed,(_root,value)=>gitSource(value));
         } finally {release();}
       }
+      case 'commit-context': return commitApp.commitContext('', gitTarget());
+      case 'commit-changes': {
+        const target = gitTarget();
+        return commitApp.commitChanges('', { ...target, expectedRevision: requireRevision(), message: input.message, mode: input.mode });
+      }
+      case 'commit-push': {
+        const target = gitTarget();
+        return commitApp.push('', { ...target, expectedHead: input.expectedHead, expectedPushRevision: input.expectedPushRevision });
+      }
+      case 'commit-message': {
+        if (!generation) throw codeFailure('code_generation_unavailable', '当前环境未启用提交说明生成服务。', 503);
+        const directory = scope();
+        const target = gitTarget();
+        if (['modelAccountId','modelId','accountIdentity','accountRevision','label'].some(key => typeof input[key] !== 'string' || !input[key])) throw invalid();
+        const commitMessageApp = createCodeCommitMessageApplication({
+          commitSnapshot: (_root, location, options) => commitApp.commitSnapshot('', location, options),
+          commitGuidance: (_root, snapshot) => readDirectoryCommitGuidance(directory.rootPath, snapshot),
+          commitMaterial: createCodeCommitMaterialReader(),
+          startGeneration: generationInput => generation.start(generationInput),
+        });
+        return commitMessageApp.generateCommitMessage(directory.rootPath, {
+          ...target,
+          expectedRevision: requireRevision(),
+          modelAccountId: input.modelAccountId,
+          modelId: input.modelId,
+          accountIdentity: input.accountIdentity,
+          accountRevision: input.accountRevision,
+          label: input.label,
+          ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
+          ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
+        });
+      }
+      case 'commit-message-run': {
+        if (!generation) throw codeFailure('code_generation_unavailable', '当前环境未启用提交说明生成服务。', 503);
+        if (typeof input.runId !== 'string' || !input.runId) throw invalid();
+        return generation.read(scope().rootPath, input.runId);
+      }
+      case 'commit-message-cancel': {
+        if (!generation) throw codeFailure('code_generation_unavailable', '当前环境未启用提交说明生成服务。', 503);
+        if (typeof input.runId !== 'string' || !input.runId) throw invalid();
+        return generation.cancel(scope().rootPath, input.runId);
+      }
+      case 'discard-context': {
+        const target = gitTarget();
+        return discardApp.discardContext('', { ...target, ...(input.path !== undefined ? { path: input.path } : {}) });
+      }
+      case 'discard-changes': {
+        const target = gitTarget();
+        return discardApp.discardChanges('', { ...target, expectedRevision: requireRevision(), ...(input.path !== undefined ? { path: input.path } : {}) });
+      }
       case 'git-write': {
         if (!['stage','unstage','commit'].includes(input.action)||!input.expectedRevision||!input.worktreeId) throw invalid();
         if (input.action==='commit') {
@@ -197,6 +402,7 @@ export function createDirectoryWorkbench(directories: Pick<HarnessDirectoryHost,
       default: {
         const reads=createWorkbenchGitReads({source:(_root,target)=>gitSource(target),verifySource:(_root,target)=>{gitSource(target);}});
         switch (operation) {
+          case 'authors':return reads.authors('',input);
           case 'history':return reads.history('',input);
           case 'commit':return reads.commit('',input);
           case 'diff':return reads.diff('',input);
@@ -211,7 +417,7 @@ export function createDirectoryWorkbench(directories: Pick<HarnessDirectoryHost,
 /** Known workbench errors cross only the authenticated Harness transport. */
 export function workbenchError(error: unknown): never {
   if (error instanceof AgentServiceError) throw error;
-  const failure=error as {code?:string;status?:number;message?:string};
-  if (failure.status && typeof failure.code==='string' && /^(?:code|file)_[a-z0-9_]+$/.test(failure.code)) throw new AgentServiceError('agent_workbench_'+failure.code,failure.message||'工作台操作未完成。',failure.status);
+  const failure=error as {code?:string;status?:number;message?:string;details?:unknown};
+  if (failure.status && typeof failure.code==='string' && /^(?:code|file)_[a-z0-9_]+$/.test(failure.code)) throw new AgentServiceError('agent_workbench_'+failure.code,failure.message||'工作台操作未完成。',failure.status,failure.details);
   throw error;
 }

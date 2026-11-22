@@ -32,10 +32,10 @@ flowchart LR
 
 ## 四个实现目录
 
-- `services/buildr-harness/`：原生执行接入、编排与私有交互、目录宿主；`@buildr-ai/buildr-harness/workbench` 提供无执行后台依赖的文件和 Git 通用能力。
-- `services/buildr-harness-web/`：唯一完整对话实现及独立网页；`explorer.ts` 和 `source-control.ts` 分别公开资源管理器与源代码管理视图。
-- `services/buildr/`：Development CLI、工程应用、工作范围解析、资源和发行；使用共享文件/Git 底层实现，保留工程接口和副作用边界。
-- `services/buildr-web/`：Development 工程页面。`harness-ui` 装配对话；工程代码入口装配 Harness 的视图并补充多仓库、任务深链、项目文件、发布和同步相关操作。
+- `services/buildr-harness/`：原生执行接入、编排与私有交互、目录宿主；`@buildr-ai/buildr-harness/workbench` 提供无执行后台依赖的文件编辑保护、只读分段核验、Git 发现与工作树检查、分支/同步/提交/放弃更改与提交说明生成通用能力。
+- `services/buildr-harness-web/`：唯一完整对话实现及独立网页；`explorer.ts`、`source-control.ts` 与 `workbench-editor.ts` 分别公开资源管理器、源代码管理与 CodeMirror 6 文件/差异编辑器共享视图。
+- `services/buildr/`：Development CLI、工程应用、工作范围解析、资源和发行；使用 `@buildr-ai/buildr-harness/workbench` 共享文件/Git 底层实现，保留工程接口、任务关联（`Buildr-Task:`）和副作用边界。
+- `services/buildr-web/`：Development 工程页面。`harness-ui` 装配对话；工程代码入口通过重导出与薄适配直接复用 `buildr-harness-web` 通用资源管理器、源代码管理与编辑器，并补充多仓库、任务深链、项目文件、发布和同步相关操作。
 
 实现定位见[双产品代码地图](../../code-map/harness-products.md)。
 

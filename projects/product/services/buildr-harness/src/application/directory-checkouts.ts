@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { codeFailure, fallbackIgnored, relativeCodePath } from '../workbench/code-file-reader.ts';
+import { codeFailure, codeGit, fallbackIgnored, relativeCodePath } from '../workbench/code-file-reader.ts';
 import { normalizeFilesystemPath, sameFilesystemPath } from '../workbench/filesystem-path-identity.ts';
 import { readGitWorktreeRecords } from '../workbench/git-worktree-list.ts';
 import { localGitIdentity } from '../workbench/local-git.ts';
@@ -52,31 +52,75 @@ export function resolveDirectoryCheckout(root: string, id: string) {
 
 const maxDirectories = 2048;
 
+function discoverGitCandidateDirectories(location: string): string[] {
+  const candidates = new Set<string>();
+  const statusOutput = codeGit(location, ['status', '--porcelain=v2', '--ignored=matching', '--untracked-files=normal', '-z'], 16 * 1024 * 1024).toString('utf8');
+  for (const record of statusOutput.split('\0')) {
+    if (!record || (!record.startsWith('? ') && !record.startsWith('! '))) continue;
+    const entry = record.slice(2);
+    if (entry.endsWith('/')) candidates.add(entry.slice(0, -1));
+  }
+  const indexOutput = codeGit(location, ['ls-files', '--stage', '-z'], 32 * 1024 * 1024).toString('utf8');
+  for (const record of indexOutput.split('\0')) {
+    if (!record.startsWith('160000 ')) continue;
+    const tab = record.indexOf('\t');
+    if (tab > 0) candidates.add(record.slice(tab + 1));
+  }
+  return [...candidates].filter(Boolean);
+}
+
 /** Discover Git roots in the selected directory, not Development registrations. */
 export function observeDirectoryRepositories(root: string, scopeId: string) {
-  const queue = [''], seen = new Set<string>();
+  const queue = [''], seen = new Set<string>(), skipLocations = new Set<string>(), queuedLocations = new Set<string>([normalizeFilesystemPath(root)]);
   const repositories: Array<{id:string;path:string;name:string;checkouts:ReturnType<typeof observeDirectoryCheckouts>}> = [];
   let visited = 0, entries = 0, truncated = false, unavailable = false;
   while (queue.length) {
     if (visited++ >= maxDirectories || repositories.length >= SOURCE_CONTROL_LIMITS.repositories || entries >= 32768) { truncated = true; break; }
     const relative = queue.shift()!, location = path.join(root, relative);
     try {
+      const normalized = normalizeFilesystemPath(location);
+      if (relative && skipLocations.has(normalized)) continue;
       if (!lexicalPath(fs.realpathSync(location), location)) { unavailable = true; continue; }
       const marker = fs.lstatSync(path.join(location, '.git'), {throwIfNoEntry:false});
+      let handledByGit = false;
       if (marker && (marker.isDirectory() || marker.isFile())) {
         try {
           const git = localGitIdentity(location);
+          handledByGit = true;
           if (!seen.has(git.commonDir)) {
             seen.add(git.commonDir);
-            repositories.push({id: relative ? git.id : scopeId,path:relative,name:path.basename(location),checkouts:observeDirectoryCheckouts(location)});
+            const checkouts = observeDirectoryCheckouts(location);
+            skipLocations.add(normalized);
+            for (const member of checkouts.members) skipLocations.add(normalizeFilesystemPath(member.location));
+            repositories.push({id: relative ? git.id : scopeId,path:relative,name:path.basename(location),checkouts});
+          }
+          try {
+            for (const sub of discoverGitCandidateDirectories(location)) {
+              if (++entries >= 32768) { truncated = true; break; }
+              const segments = sub.split('/');
+              if (segments.some(segment => !segment || segment === '.' || segment === '..' || segment.toLowerCase() === '.git' || fallbackIgnored.has(segment))) continue;
+              const childLocation = path.join(location, sub);
+              const normalizedChild = normalizeFilesystemPath(childLocation);
+              if (skipLocations.has(normalizedChild) || queuedLocations.has(normalizedChild)) continue;
+              if (visited + queue.length >= maxDirectories) { truncated = true; continue; }
+              queuedLocations.add(normalizedChild);
+              queue.push(relative ? relative + '/' + sub : sub);
+            }
+          } catch {
+            // Fall back to filesystem enumeration only if Git metadata cannot be inspected.
+            handledByGit = false;
           }
         } catch { unavailable = true; }
       }
+      if (handledByGit) continue;
       const directory = fs.opendirSync(location);
       try {
         for (let entry; entries++ < 32768 && (entry = directory.readSync());) {
           if (!entry.isDirectory() || entry.name.toLowerCase()==='.git' || fallbackIgnored.has(entry.name)) continue;
+          const normalizedChild = normalizeFilesystemPath(path.join(location, entry.name));
+          if (skipLocations.has(normalizedChild) || queuedLocations.has(normalizedChild)) continue;
           if (visited + queue.length >= maxDirectories) { truncated = true; continue; }
+          queuedLocations.add(normalizedChild);
           queue.push(relative ? relative + '/' + entry.name : entry.name);
         }
       } finally { directory.closeSync(); }
