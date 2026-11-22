@@ -2,6 +2,19 @@
 
 以下为示意代码地图，按问题选读。实际文件名、框架和类型可见性遵循项目约定。
 
+## 常见职责及位置（不是必建目录）
+
+| 职责 | 常见位置 | 提供什么 |
+|---|---|---|
+| 领域模型（Domain） | domain、model | 业务实体、身份、关系和自身规则 |
+| 应用服务（Application） | service、application | 用例、跨对象检查、操作顺序和事务范围 |
+| 数据访问（Persistence） | repository、mapper、dao、persistence | 数据读取、映射、写入和存储兼容 |
+| 基础设施（Infrastructure） | infrastructure、adapter | 文件、Git、进程、消息和外部系统等技术操作 |
+| 接口入口（Interface） | controller、handler、cli | 参数解析、协议校验、应用调用和响应转换 |
+| 对象装配（Composition） | module、configuration、bootstrap | 创建对象、注入依赖和注册入口 |
+
+值对象、请求结果以及查询映射优先在所属对象或文件中定义；公开协议或多个独立消费者确实需要时再提取。
+
 ## Java：类型放在所属对象内
 
 ```text
