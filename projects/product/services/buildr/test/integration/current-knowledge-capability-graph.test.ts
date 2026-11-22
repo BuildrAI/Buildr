@@ -23,12 +23,11 @@ function fixture(t: any) {
 test('内置知识消费者均解析 v4；缺少术语能力只降级相关专项', (t) => {
   const { root, file } = fixture(t);
   const manifest = YAML.parse(fs.readFileSync(file, 'utf8'));
-  manifest.skills.find((item: any) => item.id === 'terminology-governance').state = 'uninstalled';
-  fs.writeFileSync(file, YAML.stringify(manifest));
+  assert.equal(manifest.skills.some((item: any) => item.id === 'terminology-governance'), false);
   const graph = resolveSkillCapabilityGraph(root, { runtime: 'codex' });
-  const knowledge = graph.consumers.find((item: any) => item.consumer === 'current-knowledge-maintenance');
-  assert.equal(knowledge.readiness, 'degraded');
-  assert.equal(knowledge.dependencies[0].mode, 'optional');
+  const term = graph.consumers.find((item: any) => item.consumer === 'openspec-explore').dependencies.find((item: any) => item.capability === 'buildr.terminology-governance');
+  assert.equal(term.mode, 'optional');
+  assert.equal(term.selectedProvider.id, 'current-knowledge-maintenance');
   for (const id of ['task-triage', 'openspec-propose', 'openspec-update-change', 'openspec-apply-change']) {
     const consumer = graph.consumers.find((item: any) => item.consumer === id);
     const dependency = consumer.dependencies.find((item: any) => item.capability === capability);
@@ -90,7 +89,7 @@ test('v3 内置提供者升级后不改绑用户旧依赖，缺口只影响真�
   assert.deepEqual(fs.readFileSync(v3Path), oldContract);
   assert.deepEqual(updated.skills.find((item: any) => item.id === 'legacy-reader').requires, [{ capability, version: 3, mode: 'required' }]);
   assert.deepEqual(updated.bindings.find((item: any) => item.capability === capability && item.version === 3), oldBinding);
-  assert.deepEqual(updated.skills.find((item: any) => item.id === 'current-knowledge-maintenance').provides, [{ capability, version: 4 }]);
+  assert.deepEqual(updated.skills.find((item: any) => item.id === 'current-knowledge-maintenance').provides, [{ capability, version: 4 }, { capability: 'buildr.terminology-governance', version: 1 }]);
   const graph = resolveSkillCapabilityGraph(root, { runtime: 'codex' });
   const legacy = graph.consumers.find((item: any) => item.consumer === 'legacy-reader');
   assert.equal(legacy.readiness, 'blocked');

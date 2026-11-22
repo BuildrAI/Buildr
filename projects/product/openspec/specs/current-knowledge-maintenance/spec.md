@@ -60,7 +60,7 @@ Buildr MUST 允许 Agent 在没有 OpenSpec Change 时，对已由 canonical spe
 - **AND** MUST NOT 通过只改 knowledge 选择任意一方
 
 ### Requirement: Buildr 必须提供当前认知维护能力契约
-Buildr MUST 提供 `buildr.current-knowledge-maintenance/v4` 协作约定（Capability Contract）和默认技能（Skill），支持 `assess|reconcile|inspect|maintain`；内置调用方 MUST 同步采用 v4，默认包 MUST 保留旧契约内容而仅迁移内置提供与调用声明，MUST NOT 静默改写用户自有旧依赖或绑定。术语治理 MUST 作为可选依赖，仅在实际术语影响需要时消费已选提供者（Provider）。授权、来源、逐项结果和局部失败边界 MUST 保持有效；v4 MUST 不再创建、刷新或要求额外变更说明（Change Brief），MUST NOT 接管任务材料关联或默认收纳任务过程报告。
+Buildr MUST 提供 `buildr.current-knowledge-maintenance/v4` 协作约定（Capability Contract）和默认技能（Skill），支持 `assess|reconcile|inspect|maintain`；内置调用方 MUST 同步采用 v4，默认包 MUST 保留旧契约内容而仅迁移内置提供与调用声明，MUST NOT 静默改写用户自有旧依赖或绑定。术语治理 MUST 按需使用已选提供者（默认由本技能承接），仅在实际术语影响需要时消费已选提供者（Provider）。授权、来源、逐项结果和局部失败边界 MUST 保持有效；v4 MUST 不再创建、刷新或要求额外变更说明（Change Brief），MUST NOT 接管任务材料关联或默认收纳任务过程报告。
 
 #### Scenario: 评估 Change 影响
 - **WHEN** v4 consumer 请求 `assess`
@@ -192,7 +192,7 @@ Current Knowledge provider MUST允许Agent在实现、Review或Verification前�
 - **THEN** 智能体 MUST 标明该项限制与受影响动作，保留其他已完成成果和无关工作，不声称整组建设已完成
 
 ### Requirement: 映射维护必须组合专业能力而不接管事实建设
-当前知识维护（Current Knowledge Maintenance）MUST 将 OpenSpec 对规范建设、`code-architecture` 对代码建设的指导与映射制作区分；MUST 按真实需要采用当前可用的 Archify、`code-map` 和已选术语治理（Terminology Governance）能力，维护技术图（Technical Diagram）、代码地图（Code Map）、术语及解释之间的关联。已有 v3 范围、授权、结果和局部失败保证 MUST 保持有效，不把全部专业能力设为所有调用的必需条件。
+当前知识维护（Current Knowledge Maintenance）MUST 将 OpenSpec 对规范建设、`code-architecture` 对代码建设的指导与映射制作区分；MUST 按真实需要采用当前可用的 Archify、本技能的代码地图参考 和已选术语治理（Terminology Governance）能力，维护技术图（Technical Diagram）、代码地图（Code Map）、术语及解释之间的关联。已有 v3 范围、授权、结果和局部失败保证 MUST 保持有效，不把全部专业能力设为所有调用的必需条件。
 
 #### Scenario: 只有代码定位改变
 - **WHEN** 当前授权变更包含相关知识维护，且只移动实现文件且不改变术语或图中关系

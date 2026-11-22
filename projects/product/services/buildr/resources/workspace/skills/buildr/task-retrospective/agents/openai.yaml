@@ -1,4 +1,0 @@
-interface:
-  display_name: "任务复盘"
-  short_description: "生成和查看本机任务复盘文档"
-  default_prompt: "Use $task-retrospective to analyze a terminal Task from visible evidence, maintain its local Markdown document, and leave follow-up work to ordinary Task Records after the user decides."

@@ -1,8 +1,3 @@
----
-name: terminology-governance
-description: 确立或维护长期术语定义、解决影响结论的术语歧义，或需要正式术语对齐结果时使用。
----
-
 # 术语治理
 
 本 Skill 是 `buildr.terminology-governance/v1` 的默认 provider。它维护人和 Agent 共用的长期术语边界，不负责替代领域建模、OpenSpec 规范或用户对长期语义的最终判断。

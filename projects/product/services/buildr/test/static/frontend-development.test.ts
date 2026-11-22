@@ -3,10 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
-test('前端开发按既有可选技能机制投射且不引入强制绑定',()=>{
+test('前端开发不再独立安装，保留可用的原型入口',()=>{
  const root=path.resolve(import.meta.dirname,'../..'),manifest=YAML.parse(fs.readFileSync(path.join(root,'resources/manifest.yml'),'utf8'));
- const skill=manifest.builtins.skills.find((s:{id:string})=>s.id==='frontend-development');
- assert.equal(skill.required,false);assert.equal(skill.provides,undefined);assert.equal(skill.requires,undefined);assert.equal(Object.hasOwn(skill,'runtimes'),false,'通用技能不维护品牌白名单');
- assert.ok(manifest.workspaceFiles.includes(`${skill.path}/SKILL.md => ${skill.target}/SKILL.md copy`));
- assert.ok(fs.existsSync(path.join(root,skill.path,'SKILL.md')));
+ for (const id of ['frontend-development','agent-first-design','code-map','terminology-governance','task-retrospective']) {
+   assert.equal(manifest.builtins.skills.find((s:{id:string})=>s.id===id)?.retired,true);
+   assert.equal(fs.existsSync(path.join(root,'resources/workspace/skills/buildr',id,'SKILL.md')),false);
+ }
+ assert.ok(fs.existsSync(path.join(root,'resources/workspace/skills/buildr/ui-prototype/SKILL.md')));
 });

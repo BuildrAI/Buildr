@@ -2,6 +2,7 @@
 
 ## Purpose
 定义 Project 与 Service canonical terminology 的作用域、先调查后追问原则，以及可替换术语治理能力的结果契约。
+
 ## Requirements
 
 ### Requirement: Project 必须提供 canonical glossary 作用域
@@ -23,7 +24,7 @@ Buildr Project MUST 将 `knowledge/docs/glossary.md` 作为默认 canonical glos
 - **AND** 只有已确认且属于长期项目事实的术语才能进入 Project 或 Service canonical 资产
 
 ### Requirement: Buildr 必须提供术语治理能力契约
-Buildr MUST 提供 `buildr.terminology-governance/v1` capability contract，并 MUST 提供默认 workspace Skill provider。Contract MUST 要求 provider 解析当前 Project、定位 canonical glossary、检查已有术语、识别同义词、一词多义、中英不一致、新术语和作用域冲突。
+Buildr MUST 提供 `buildr.terminology-governance/v1` capability contract，并 MUST 提供默认 workspace Skill provider `current-knowledge-maintenance`；升级 MUST 保留用户自选绑定。Contract MUST 要求 provider 解析当前 Project、定位 canonical glossary、检查已有术语、识别同义词、一词多义、中英不一致、新术语和作用域冲突。
 
 #### Scenario: Consumer 请求术语对齐
 - **WHEN** consumer 通过 binding 使用 `buildr.terminology-governance/v1`

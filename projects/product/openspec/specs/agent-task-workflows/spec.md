@@ -885,7 +885,7 @@ Buildr-owned OpenSpec contributions MUST只把归档前可完成的实现、知�
 - **AND** MUST不要求Task Candidate、Development Handoff或旧Finish运行
 
 ### Requirement: 任务复盘必须由Agent按用户意图直接完成
-用户明确要求复盘终态Task时，Agent MUST使用`task-retrospective` Skill读取当前事实、生成固定本机Markdown并通过Task Record登记。Task完成本身 MUST不自动提示、生成、登记或要求复盘。
+用户明确要求复盘终态Task时，Agent MUST使用`task-manager` 的复盘指南读取当前事实、生成固定本机Markdown并通过Task Record登记。Task完成本身 MUST不自动提示、生成、登记或要求复盘。
 
 #### Scenario: 用户在任务完成后要求复盘
 - **WHEN** 用户明确要求复盘指定终态Task

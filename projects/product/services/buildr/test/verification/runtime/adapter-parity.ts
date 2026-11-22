@@ -179,14 +179,14 @@ async function verifyLifecycle(context: any): Promise<any>  {
   await harness.runAsync(['render', adapterId, '--scope', '.', '--target', workspace]);
   assert.equal(fs.existsSync(path.join(runtimeRoot, 'skills', 'complete-runtime-skill', 'assets', 'sample.bin')), false, `${adapterId} must safely remove a source-deleted managed asset`);
 
-  await harness.runAsync(['builtin', 'uninstall', 'task-retrospective', '--target', workspace, '--reason', 'runtime lifecycle fixture']);
+  await harness.runAsync(['builtin', 'uninstall', 'code-architecture', '--target', workspace, '--reason', 'runtime lifecycle fixture']);
   await harness.runAsync(['render', adapterId, '--scope', '.', '--target', workspace]);
-  assert.equal(fs.existsSync(path.join(runtimeRoot, 'skills', 'task-retrospective')), false, `${adapterId} must remove uninstalled task-retrospective`);
+  assert.equal(fs.existsSync(path.join(runtimeRoot, 'skills', 'code-architecture')), false, `${adapterId} must remove uninstalled code-architecture`);
   assert.ok(fs.existsSync(path.join(runtimeRoot, 'skills', 'task-finish', 'SKILL.md')), `${adapterId} task-finish must remain after review uninstall`);
 
-  await harness.runAsync(['builtin', 'restore', 'task-retrospective', '--target', workspace]);
+  await harness.runAsync(['builtin', 'restore', 'code-architecture', '--target', workspace]);
   await harness.runAsync(['render', adapterId, '--scope', '.', '--target', workspace]);
-  assert.ok(fs.existsSync(path.join(runtimeRoot, 'skills', 'task-retrospective', 'SKILL.md')), `${adapterId} must restore task-retrospective`);
+  assert.ok(fs.existsSync(path.join(runtimeRoot, 'skills', 'code-architecture', 'SKILL.md')), `${adapterId} must restore code-architecture`);
 
   if (adapterId === 'agents-standard' || adapterId === 'claude-code') {
     const renderedFinish: any = fs.readFileSync(path.join(runtimeRoot, 'skills', 'task-finish', 'SKILL.md'), 'utf8');
@@ -251,10 +251,10 @@ async function verifyRulesSymlinkGuard(seed: any): Promise<any>  {
 async function verifyGuardedOrphan(seed: any): Promise<any>  {
   const workspace: any = harness.cloneWorkspace(seed, 'buildr-runtime-guarded-orphan-');
   await harness.runAsync(['render', 'codex', '--scope', '.', '--target', workspace]);
-  const orphanDirectory: any = path.join(workspace, '.agents', 'skills', 'task-retrospective');
+  const orphanDirectory: any = path.join(workspace, '.agents', 'skills', 'code-architecture');
   const userFile: any = path.join(orphanDirectory, 'user-notes.md');
   fs.writeFileSync(userFile, 'user-owned\n');
-  const result: any = await harness.runAsync(['builtin', 'uninstall', 'task-retrospective', '--target', workspace, '--reason', 'guarded orphan fixture'], { allowFailure: true });
+  const result: any = await harness.runAsync(['builtin', 'uninstall', 'code-architecture', '--target', workspace, '--reason', 'guarded orphan fixture'], { allowFailure: true });
   assert.notEqual(result.status, 0, 'builtin uninstall must stop when a runtime Skill directory contains an unknown user file');
   assert.match(`${result.stdout}\n${result.stderr}`, /非 Buildr 管理的额外文件/);
   assert.equal(fs.readFileSync(userFile, 'utf8'), 'user-owned\n');
@@ -262,7 +262,7 @@ async function verifyGuardedOrphan(seed: any): Promise<any>  {
   // The builtin source lives in the fixed shared resource store, so a failed uninstall
   // keeps the workspace registration instead of rolling back local source files.
   const guardedSkills: any = parseSkillsManifest(path.join(workspace, 'skills', 'manifest.yml'));
-  const guardedSkill: any = guardedSkills.find((skill: any) => skill.id === 'task-retrospective');
+  const guardedSkill: any = guardedSkills.find((skill: any) => skill.id === 'code-architecture');
   assert.ok(guardedSkill && guardedSkill.state !== 'uninstalled', 'failed uninstall must keep the builtin registered instead of retiring its shared source');
 }
 

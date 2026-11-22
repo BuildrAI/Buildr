@@ -993,10 +993,6 @@ export function createPackageStaticValidator(deps: any): any  {
           // Frontmatter errors are already reported above.
         }
       }
-      if (skill.id === 'task-retrospective') {
-        if ((skill.provides || []).some((item: any) => item.capability === 'buildr.task-retrospective')) problems.push('task-retrospective must remain a pure Skill without a dedicated capability provider.');
-        if (!(skill.requires || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 4 && item.mode === 'required')) problems.push('task-retrospective must require buildr.task-record@4.');
-      }
       if (skill.id === 'task-triage') {
         if (!(skill.requires || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 4 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@4.');
         if (!(skill.requires || []).some((item: any) => item.capability === 'buildr.git-operations' && item.version === 1 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.git-operations@1.');
@@ -1019,10 +1015,10 @@ export function createPackageStaticValidator(deps: any): any  {
     if (manifest.builtins.skills.some((skill: any) => skill.id.includes('openspec-store'))) {
       problems.push('OpenSpec Stores are beta and must not be registered as a Buildr builtin Skill.');
     }
-    if (!manifest.builtins.skills.some((skill: any) => skill.id === 'task-retrospective' && skill.required === false)) {
-      problems.push('builtins.skills must declare optional task-retrospective.');
+    if (!manifest.workspaceFiles.includes('resources/workspace/skills/buildr/task-manager/references/retrospective.md => skills/buildr/task-manager/references/retrospective.md copy')) {
+      problems.push('Task manager must ship its on-demand retrospective guide.');
     }
-    if (manifest.builtins.skills.some((skill: any) => skill.id === 'task-asset-review')
+    if (manifest.builtins.skills.some((skill: any) => skill.id === 'task-asset-review' && skill.retired !== true)
       || (manifest.capabilityContracts || []).some((contract: any) => contract.id === 'buildr.task-asset-review')
       || (manifest.initialSkillBindings || []).some((binding: any) => binding.capability === 'buildr.task-asset-review')
       || manifest.builtins.skills.some((skill: any) => (skill.requires || []).some((dependency: any) => dependency.capability === 'buildr.task-asset-review'))) {
@@ -1077,10 +1073,6 @@ export function createPackageStaticValidator(deps: any): any  {
         const taskReview = baselineSkills.find((entry: any) => entry.id === 'task-review');
         if (!taskReview || taskReview.source !== 'buildr' || taskReview.state !== 'installed' || taskReview.enabled !== true || !(taskReview.provides || []).some((item: any) => item.capability === 'buildr.task-review' && item.version === 2)) {
           problems.push('Workspace skills baseline must declare enabled installed Buildr task-review providing buildr.task-review@2.');
-        }
-        const taskRetrospective = baselineSkills.find((entry: any) => entry.id === 'task-retrospective');
-        if (!taskRetrospective || taskRetrospective.source !== 'buildr' || taskRetrospective.state !== 'installed' || taskRetrospective.enabled !== true || (taskRetrospective.provides || []).some((item: any) => item.capability === 'buildr.task-retrospective') || !(taskRetrospective.requires || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 4)) {
-          problems.push('Workspace skills baseline must declare enabled installed pure task-retrospective requiring buildr.task-record@4.');
         }
         if (baselineSkills.some((entry: any) => entry.id === 'task-asset-review' || (entry.provides || []).some((item: any) => item.capability === 'buildr.task-asset-review') || (entry.requires || []).some((item: any) => item.capability === 'buildr.task-asset-review'))) {
           problems.push('Workspace skills baseline must not retain Task Asset Review provider or consumer declarations.');

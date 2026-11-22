@@ -7,7 +7,7 @@ import YAML from 'yaml';
 const read = (relative: string): string => fs.readFileSync(path.resolve(relative), 'utf8');
 
 type CapabilityReference = { capability?: unknown; version?: unknown; mode?: unknown };
-type SkillEntry = { id?: unknown; required?: unknown; provides?: CapabilityReference[]; requires?: CapabilityReference[] };
+type SkillEntry = { id?: unknown; required?: unknown; retired?: boolean; provides?: CapabilityReference[]; requires?: CapabilityReference[] };
 type ContractEntry = { id?: unknown; version?: unknown };
 type BindingEntry = { capability?: unknown };
 type Manifest = { builtins?: { skills?: SkillEntry[] }; capabilityContracts?: ContractEntry[]; initialSkillBindings?: BindingEntry[] };
@@ -26,13 +26,12 @@ function manifest(): Manifest {
   return parsed;
 }
 
-test('Task Retrospective 是按需纯 Skill，只依赖 Task Record v4', () => {
+test('复盘由任务管理按需承接，不再独立安装', () => {
   const value = manifest();
   const retrospective = value.builtins?.skills?.find((item) => item.id === 'task-retrospective');
   assert.ok(retrospective);
-  assert.equal(retrospective.required, false);
-  assert.deepEqual(retrospective.provides ?? [], []);
-  assert.ok(retrospective.requires?.some((item) => item.capability === 'buildr.task-record' && item.version === 4 && item.mode === 'required'));
+  assert.equal(retrospective.retired, true);
+  assert.ok(read('resources/workspace/skills/buildr/task-manager/references/retrospective.md').length > 0);
   assert.equal(value.capabilityContracts?.some((item) => item.id === 'buildr.task-retrospective'), false);
   assert.equal(value.initialSkillBindings?.some((item) => item.capability === 'buildr.task-retrospective'), false);
 });

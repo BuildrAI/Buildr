@@ -30,18 +30,9 @@ Review 是可选证据。Task Verification、任务收尾和 Parent 管理都不
 
 需要但未完成、材料缺失、未执行、确实不适用、发现问题与已接受分别如实说明。需要或不适用的理由必须通过工作摘要（Work Context）的 `checks` 结论显式留痕（`task work-context record --check planning-review|implementation-review --check-status needed|not-applicable --check-reason <理由>`），不只留在对话或临时文本中，不新增专业状态库；专业应用只保存已形成的真实结论。记录缺失、`changes-requested` 或旧对象不形成自动门禁，但必要目标或风险尚未解决时不得报整体完成；未完成不能称不适用或已通过。
 
-## 2. 动态审查
+## 2. 对象与结论
 
-根据 Task Intent、当前对象、工程风险和用户要求决定阅读范围，使用现有文件、Git、测试、浏览器、外部系统或其他专业工具重新观察。正常软件开发中，例如：方案审查检查接口边界、兼容性和测试安排；完成审查检查真实代码差异、关键测试结果及用户要求是否兑现。
-
-记录：
-
-- `reviewed`：至少一个实际审阅的可移植对象；
-- `uncovered`：相关但未审阅的对象及真实原因；
-- `findings`：简洁事实，可以为空；
-- `conclusion`：`accepted|changes-requested` 和非空摘要。
-
-同一 Agent 自审使用 `self`；只有另一 Agent 完整执行才使用 `independent-agent`；只有人给出本次结论才使用 `human`。不要保存隐藏推理、session、model、完整日志或凭证。
+审查的是具体方案或已完成成果，不是要求每次小改都写自评。按目标、版本和风险记录 `reviewed`、`uncovered` 及原因、`findings` 和 `accepted|changes-requested`。区分 `self`、`independent-agent` 和 `human`，不可用自己的判断冒充独立或人工评审。不记录隐藏推理或凭据；缺少审查不是测试失败。
 
 ## 3. 原子记录
 
@@ -59,4 +50,4 @@ buildr task review record <task-id> --type <planning|completion> --subject-ident
 
 报告类型、审查对象 identity、method、reviewed/uncovered、findings、结论和写入效果。Application 不判断适用性；以后使用该 Result 时，Agent 必须重新观察对象并自行判断。
 
-本 Skill 不创建验证报告、交付记录、Parent 决定、Git 提交或通用状态机；Task Retrospective 继续独立处理执行效率与流程改进。
+本 Skill 不创建验证报告、交付记录、Parent 决定、Git 提交或通用状态机；用户明确要求复盘时由 `task-manager` 承接，不把复盘当成本次审查。

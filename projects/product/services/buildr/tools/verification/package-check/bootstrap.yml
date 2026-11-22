@@ -16,7 +16,7 @@ buildrSkillRequiredText:
   - buildr.task-verification/v4
   - capability-adaptation
   - task-finish
-  - task-retrospective
+  - task-manager
 buildrSkillForbiddenText:
   - onboarding.contract.yml
   - bootstrap.contract.yml

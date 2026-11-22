@@ -7,7 +7,7 @@
 ## Requirements
 
 ### Requirement: Agent按需生成本机任务复盘文档
-用户明确要求复盘已完成或已放弃Task时，`task-retrospective` Skill MUST指导Agent只根据当前可见的Task、Git、代码、测试、专业结果、工具输出和用户事实生成自由Markdown，并写入`.buildr/local/task-retrospectives/<task-id>.md`。正文 MUST NOT进入SQLite、Git、发布物、Current Knowledge或其他专业Result。
+用户明确要求复盘已完成或已放弃Task时，`task-manager` 的按需复盘指南 MUST指导Agent只根据当前可见的Task、Git、代码、测试、专业结果、工具输出和用户事实生成自由Markdown，并写入`.buildr/local/task-retrospectives/<task-id>.md`。正文 MUST NOT进入SQLite、Git、发布物、Current Knowledge或其他专业Result。
 
 #### Scenario: 用户要求复盘终态Task
 - **WHEN** 用户明确要求复盘一个`completed`或`abandoned` Task

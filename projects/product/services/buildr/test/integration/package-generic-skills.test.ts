@@ -38,7 +38,7 @@ test('同步内置来源升级旧产品完整列表，保留用户范围、绑�
   runtime.initBuildr(['--source-only', '--target', root, '--name', 'generic-skills', '--profile', 'personal']);
   for (const runtimeId of [null, 'codex', 'dsh', 'new-host', 'claude-code']) {
     const resolved = resolveSkills(root, null, { runtime: runtimeId });
-    for (const id of ['capability-adaptation', 'frontend-development', 'ui-prototype', 'ux-design-laws']) {
+    for (const id of ['capability-adaptation', 'ui-prototype', 'ux-design-laws']) {
       assert.ok(resolved.some((entry: { id: string }) => entry.id === id), `${runtimeId}: ${id}`);
     }
   }
@@ -49,9 +49,9 @@ test('同步内置来源升级旧产品完整列表，保留用户范围、绑�
   skill('task-review').runtimes = ['codex'];
   skill('openspec-apply-change').runtimes = [...legacyRuntimes];
   skill('openspec-explore').runtimes = ['dsh'];
-  skill('code-map').runtimes = ['dsh'];
-  skill('code-map').state = 'uninstalled';
-  skill('code-map').enabled = false;
+  skill('code-architecture').runtimes = ['dsh'];
+  skill('code-architecture').state = 'uninstalled';
+  skill('code-architecture').enabled = false;
   manifest.skills.push({ id: 'local-reader', path: 'local-reader', enabled: true, assetIdentity: 'test:local-reader', sourceIdentity: 'workspace:local-reader', runtimes: [...legacyRuntimes] });
   const bindings = structuredClone(manifest.bindings);
   fs.writeFileSync(file, YAML.stringify(manifest));
@@ -67,9 +67,9 @@ test('同步内置来源升级旧产品完整列表，保留用户范围、绑�
   assert.deepEqual(updatedSkill('task-review').runtimes, ['codex']);
   assert.equal(Object.hasOwn(updatedSkill('openspec-apply-change'), 'runtimes'), false);
   assert.deepEqual(updatedSkill('openspec-explore').runtimes, ['dsh']);
-  assert.deepEqual(updatedSkill('code-map').runtimes, ['dsh']);
-  assert.equal(updatedSkill('code-map').state, 'uninstalled');
-  assert.equal(updatedSkill('code-map').enabled, false);
+  assert.deepEqual(updatedSkill('code-architecture').runtimes, ['dsh']);
+  assert.equal(updatedSkill('code-architecture').state, 'uninstalled');
+  assert.equal(updatedSkill('code-architecture').enabled, false);
   assert.deepEqual(updatedSkill('local-reader').runtimes, legacyRuntimes);
   assert.deepEqual(updated.bindings, bindings);
   const after = fs.readFileSync(file, 'utf8');

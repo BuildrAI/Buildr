@@ -194,7 +194,7 @@ initialSkillBindings:
     provider: task-finish
   - capability: buildr.terminology-governance
     version: 1
-    provider: terminology-governance
+    provider: current-knowledge-maintenance
   - capability: buildr.current-knowledge-maintenance
     version: 4
     provider: current-knowledge-maintenance
@@ -257,10 +257,9 @@ builtins:
           version: 1
           mode: optional
     - id: code-map
-      path: resources/workspace/skills/buildr/code-map
       target: skills/buildr/code-map
-      description: 建设、更新或检查代码地图时使用；依据真实职责、目录与文件解释实现组织，并核对受影响的来源与关联。
-      required: false
+      description: Retired official skill.
+      retired: true
     - id: code-architecture
       path: resources/workspace/skills/buildr/code-architecture
       target: skills/buildr/code-architecture
@@ -278,7 +277,7 @@ builtins:
     - id: task-manager
       path: resources/workspace/skills/buildr/task-manager
       target: skills/buildr/task-manager
-      description: 在已初始化的 Buildr 工作空间中，用户授权修复、优化、开始或继续代码、文档、配置、规则或技能修改，或要求维护任务与进展时使用；先登记或接续任务，纯只读咨询不创建任务。
+      description: 在已初始化的工作空间登记、接续和维护任务；明确要求时保存终态任务复盘或处理复盘决定，纯咨询不建任务。
       required: false
       provides:
         - capability: buildr.task-record
@@ -297,10 +296,9 @@ builtins:
       description: 修改技能行为、采用组织工作方式或调整能力声明与绑定时使用；先判断跨技能协作影响。
       required: false
     - id: frontend-development
-      path: resources/workspace/skills/buildr/frontend-development
       target: skills/buildr/frontend-development
-      description: 开发或修改前端页面、交互和样式时使用；复用已有组件与主题，隔离数据和业务操作，保持正式页面与已获授权原型一致。不自动制作原型。
-      required: false
+      description: Retired official skill.
+      retired: true
     - id: ui-prototype
       path: resources/workspace/skills/buildr/ui-prototype
       target: skills/buildr/ui-prototype
@@ -312,20 +310,13 @@ builtins:
       description: 设计或审查界面、交互与信息层级时使用，按真实问题选择体验法则；不用于单纯实现既定设计。
       required: false
     - id: task-retrospective
-      path: resources/workspace/skills/buildr/task-retrospective
       target: skills/buildr/task-retrospective
-      description: 用户明确要求复盘已完成或已放弃的正式Task，查看本机复盘文档，或在阅读后决定是否继续行动时使用；只基于当前可见事实生成本机Markdown并维护Task上的待决策/已决策状态。
-      required: false
-      requires:
-        - capability: buildr.task-record
-          version: 4
-          mode: required
-      replaces:
-        id: task-asset-review
-        target: skills/buildr/task-asset-review
-        runtimePath: task-asset-review
-      legacyIntegrities:
-        - sha256-e7224325aa5b2d183d9a152f336e4f24699e3fd10ea5505e08d90bd77f09f642
+      description: Retired official skill.
+      retired: true
+    - id: task-asset-review
+      target: skills/buildr/task-asset-review
+      description: Retired predecessor.
+      retired: true
     - id: task-worktree
       path: resources/workspace/skills/buildr/task-worktree
       target: skills/buildr/task-worktree
@@ -350,10 +341,9 @@ builtins:
         target: skills/buildr/task-verification
         runtimePath: task-verification
     - id: agent-first-design
-      path: resources/workspace/skills/buildr/agent-first-design
       target: skills/buildr/agent-first-design
-      description: 设计或改造引入智能体交付产品结果的软件，或审视智能体工作系统的职责、工作流与门禁时使用；围绕产物和真实现场划分职责。仅使用智能体开发普通软件时不自动适用。
-      required: false
+      description: Retired official skill.
+      retired: true
     - id: task-finish
       path: resources/workspace/skills/buildr/task-finish
       target: skills/buildr/task-finish
@@ -378,13 +368,9 @@ builtins:
         - sha256-1e0e321129f98abb33c4b82d6eddecd960ca0888e58a8ab47bc0776847f05fcf
         - sha256-47d716eff00cc7b20a0ff42d81b6140c7c1bb30ea9591204303bc192c48d3e4d
     - id: terminology-governance
-      path: resources/workspace/skills/buildr/terminology-governance
       target: skills/buildr/terminology-governance
-      description: 确立或维护长期术语定义、解决影响结论的术语歧义，或需要正式术语对齐结果时使用。
-      required: false
-      provides:
-        - capability: buildr.terminology-governance
-          version: 1
+      description: Retired official skill.
+      retired: true
     - id: project-composition-maintenance
       path: resources/workspace/skills/buildr/project-composition-maintenance
       target: skills/buildr/project-composition-maintenance
@@ -393,15 +379,13 @@ builtins:
     - id: current-knowledge-maintenance
       path: resources/workspace/skills/buildr/current-knowledge-maintenance
       target: skills/buildr/current-knowledge-maintenance
-      description: 理解或探索项目与服务、建设结构化项目知识，检查维护已有说明、视图和代码地图，或处理开发中的知识影响时使用。
+      description: 建设、更新或核对长期项目知识、代码地图与术语表时使用；普通项目问答不写资料。
       required: false
       provides:
         - capability: buildr.current-knowledge-maintenance
           version: 4
-      requires:
         - capability: buildr.terminology-governance
           version: 1
-          mode: optional
     - id: git-operations
       path: resources/workspace/skills/buildr/git-operations
       target: skills/buildr/git-operations
@@ -485,20 +469,19 @@ workspaceFiles:
   - resources/workspace/skills/contracts/buildr/terminology-governance/v1.md => skills/contracts/buildr/terminology-governance/v1.md copy
   - resources/workspace/skills/buildr/task-triage/SKILL.md => skills/buildr/task-triage/SKILL.md copy
   - resources/workspace/skills/buildr/task-triage/references/structured-handoff.md => skills/buildr/task-triage/references/structured-handoff.md copy
-  - resources/workspace/skills/buildr/code-map/references/knowledge-index.md => skills/buildr/code-map/references/knowledge-index.md copy
-  - resources/workspace/skills/buildr/code-map/SKILL.md => skills/buildr/code-map/SKILL.md copy
   - resources/workspace/skills/buildr/code-architecture/SKILL.md => skills/buildr/code-architecture/SKILL.md copy
   - resources/workspace/skills/buildr/code-architecture/references/examples.md => skills/buildr/code-architecture/references/examples.md copy
   - resources/workspace/skills/buildr/project-testing/SKILL.md => skills/buildr/project-testing/SKILL.md copy
   - resources/workspace/skills/buildr/project-testing/references/testing-model-v1.md => skills/buildr/project-testing/references/testing-model-v1.md copy
   - resources/workspace/skills/buildr/task-manager/SKILL.md => skills/buildr/task-manager/SKILL.md copy
+  - resources/workspace/skills/buildr/task-manager/references/retrospective.md => skills/buildr/task-manager/references/retrospective.md copy
+  - resources/workspace/skills/buildr/task-manager/references/parent-tasks.md => skills/buildr/task-manager/references/parent-tasks.md copy
   - resources/workspace/skills/buildr/task-manager/agents/openai.yaml => skills/buildr/task-manager/agents/openai.yaml copy
   - resources/workspace/skills/buildr/task-review/SKILL.md => skills/buildr/task-review/SKILL.md copy
   - resources/workspace/skills/buildr/task-review/agents/openai.yaml => skills/buildr/task-review/agents/openai.yaml copy
   - resources/workspace/skills/buildr/capability-adaptation/SKILL.md => skills/buildr/capability-adaptation/SKILL.md copy
   - resources/workspace/skills/buildr/capability-adaptation/references/adaptation-lifecycle.md => skills/buildr/capability-adaptation/references/adaptation-lifecycle.md copy
   - resources/workspace/skills/buildr/capability-adaptation/agents/openai.yaml => skills/buildr/capability-adaptation/agents/openai.yaml copy
-  - resources/workspace/skills/buildr/frontend-development/SKILL.md => skills/buildr/frontend-development/SKILL.md copy
   - resources/workspace/skills/buildr/ui-prototype/SKILL.md => skills/buildr/ui-prototype/SKILL.md copy
   - resources/workspace/skills/buildr/ui-prototype/references/content-format.md => skills/buildr/ui-prototype/references/content-format.md copy
   - resources/workspace/skills/buildr/ui-prototype/assets/feature-notes.js => skills/buildr/ui-prototype/assets/feature-notes.js copy
@@ -512,8 +495,6 @@ workspaceFiles:
   - resources/workspace/skills/buildr/ux-design-laws/references/visual-perception-and-layout.md => skills/buildr/ux-design-laws/references/visual-perception-and-layout.md copy
   - resources/workspace/skills/buildr/ux-design-laws/references/actions-and-feedback.md => skills/buildr/ux-design-laws/references/actions-and-feedback.md copy
   - resources/workspace/skills/buildr/ux-design-laws/references/journey-motivation-and-memory.md => skills/buildr/ux-design-laws/references/journey-motivation-and-memory.md copy
-  - resources/workspace/skills/buildr/task-retrospective/SKILL.md => skills/buildr/task-retrospective/SKILL.md copy
-  - resources/workspace/skills/buildr/task-retrospective/agents/openai.yaml => skills/buildr/task-retrospective/agents/openai.yaml copy
   - resources/workspace/skills/buildr/task-worktree/SKILL.md => skills/buildr/task-worktree/SKILL.md copy
   - resources/workspace/skills/buildr/project-verification/SKILL.md => skills/buildr/project-verification/SKILL.md copy
   - resources/workspace/skills/buildr/project-verification/references/frontend-verification.md => skills/buildr/project-verification/references/frontend-verification.md copy
@@ -523,13 +504,14 @@ workspaceFiles:
   - resources/workspace/skills/buildr/project-testing/references/maintain-map.md => skills/buildr/project-testing/references/maintain-map.md copy
   - resources/workspace/skills/buildr/project-testing/references/project-verification-v4.md => skills/buildr/project-testing/references/project-verification-v4.md copy
   - resources/workspace/skills/buildr/project-testing/templates/project-verification.yml => skills/buildr/project-testing/templates/project-verification.yml copy
-  - resources/workspace/skills/buildr/agent-first-design/SKILL.md => skills/buildr/agent-first-design/SKILL.md copy
   - resources/workspace/skills/buildr/task-finish/SKILL.md => skills/buildr/task-finish/SKILL.md copy
-  - resources/workspace/skills/buildr/terminology-governance/SKILL.md => skills/buildr/terminology-governance/SKILL.md copy
   - resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v3.md => skills/contracts/buildr/current-knowledge-maintenance/v3.md copy
   - resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v4.md => skills/contracts/buildr/current-knowledge-maintenance/v4.md copy
   - resources/workspace/skills/buildr/project-composition-maintenance/SKILL.md => skills/buildr/project-composition-maintenance/SKILL.md copy
   - resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md => skills/buildr/current-knowledge-maintenance/SKILL.md copy
+  - resources/workspace/skills/buildr/current-knowledge-maintenance/references/code-map.md => skills/buildr/current-knowledge-maintenance/references/code-map.md copy
+  - resources/workspace/skills/buildr/current-knowledge-maintenance/references/map-index.md => skills/buildr/current-knowledge-maintenance/references/map-index.md copy
+  - resources/workspace/skills/buildr/current-knowledge-maintenance/references/terminology.md => skills/buildr/current-knowledge-maintenance/references/terminology.md copy
   - resources/workspace/skills/buildr/current-knowledge-maintenance/references/architecture-knowledge.md => skills/buildr/current-knowledge-maintenance/references/architecture-knowledge.md copy
   - resources/workspace/skills/buildr/current-knowledge-maintenance/references/artifacts.md => skills/buildr/current-knowledge-maintenance/references/artifacts.md copy
   - resources/workspace/skills/buildr/current-knowledge-maintenance/references/change-collaboration.md => skills/buildr/current-knowledge-maintenance/references/change-collaboration.md copy
