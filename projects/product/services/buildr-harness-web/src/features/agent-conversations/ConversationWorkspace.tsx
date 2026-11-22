@@ -10,6 +10,6 @@ export function ConversationWorkspace(props:Props) {
   const context=useAgentConversations(),parent=context.conversation;
   const children=useRef<ConversationChildActions>(null);
   return <ConversationPanel {...props} accessory={parent&&!parent.childOf
-    ?<ConversationChildWindows ref={children} key={parent.workspaceId+':'+parent.id} parent={parent} workspaces={props.workspaces}/>
+    ?(visible=><ConversationChildWindows ref={children} key={parent.workspaceId+':'+parent.id} parent={parent} parentVisible={visible} workspaces={props.workspaces}/>)
     :undefined} onCreateChild={parent&&!parent.childOf?()=>children.current?.create():undefined}/>;
 }

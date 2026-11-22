@@ -30,12 +30,15 @@ const no=()=>{}, asyncNo=async()=>{}, list=async()=>({conversations:[],total:0,a
 const api=new Proxy({list,listAll:list,activitySummary:list,entries:async()=>({id:'c',workspaceId:'w',entries:[entry('old-prompt',0,'message','user','上一轮任务',{runId:'old-run',status:'accepted'}),entry('old-agent',0.5,'notice','system','已检查打包。',{runId:'old-run',subagent:{key:'old-agent',label:'历史复核',status:'completed'}})]}),entry:async(_w,_c,e)=>e},{get(t,k){return t[k]??asyncNo;}});
 const selection={workspaceId:'w',conversationId:'c',generation:1};
 function Fixture(){
-  const [done,setDone]=useState(false), [settled,setSettled]=useState(false), [hasEarlier,setHasEarlier]=useState(false), [older,setOlder]=useState([]);
+  const emptyOnly=new URLSearchParams(location.search).has('empty');
+  const [subagentsIncluded,setSubagentsIncluded]=useState(!emptyOnly);
+  const [done,setDone]=useState(false), [settled,setSettled]=useState(false), [hasEarlier,setHasEarlier]=useState(emptyOnly), [older,setOlder]=useState([]);
   window.settleTurn=()=>{setDone(true);setSettled(true);};
   window.allowEarlier=()=>setHasEarlier(true);
   window.finishChild=()=>setDone(true);
+  window.revealEarlierSubagent=()=>setSubagentsIncluded(true);
   const entries=done?initial.map(row=>row.id==='dispatch'?{...row,text:'审查通过',subagent:{...row.subagent,status:'completed',returned:true}}:row).concat(entry('child-result',7,'message','assistant','审查通过',{parentToolId:'review',status:'completed'})):initial;
-  const visibleEntries=[...older,...entries,...(settled?[entry('final',8,'message','assistant','已按审查意见处理完毕。',{status:'completed'})]:[])];
+  const visibleEntries=subagentsIncluded?[...older,...entries,...(settled?[entry('final',8,'message','assistant','已按审查意见处理完毕。',{status:'completed'})]:[])]:[entry('plain-prompt',10,'message','user','普通长对话',{status:'accepted'}),entry('plain-reply',11,'message','assistant',Array.from({length:40},(_,i)=>'普通答复第 '+i+' 段').join('\\n\\n'),{status:'completed'})];
   const conversation={id:'c',title:'完成原任务并保持主对话草稿',cwd:'/fixture',workspaceId:'w',revision:done?'2':'1',createdAt:now,updatedAt:now,participants:[{id:'agent',connectionId:'claude-code',provider:'claude-code',label:'Claude Code',contextId:'native',deliveredThrough:1}],requests:[],entries:visibleEntries,nextEntryCursor:hasEarlier?1:undefined,run:{...base,id:'run',generation:'generation',status:settled?'completed':'running',accepted:true,tools:[],waitingSubagents:done?[]:['review'],startedAt:now,updatedAt:now,executionState:'active'}};
   const value={activityCounts:{running:1},activityStats:{agents:[],models:[]},activityRows:[],activityTotal:0,activityError:'',activityTick:1,historyWorkspaceId:null,
     openHistory:no,refreshActivity:asyncNo,loadMoreActivity:asyncNo,markSeen:asyncNo,api,reconnecting:false,recovering:false,open:true,side:'right',full:true,view:'conversation',scope:selection,draftScope:null,
@@ -50,7 +53,7 @@ test('subagent viewer preserves the real conversation draft and scope at desktop
   let vite!: Awaited<ReturnType<typeof createServer>>;
   const cacheDir=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-subagents-vite-'));
   const server=http.createServer((req,res)=>{
-    if(req.url!=='/')return vite.middlewares(req,res);
+    if(req.url!=='/'&&!req.url?.startsWith('/?'))return vite.middlewares(req,res);
     res.setHeader('content-type','text/html; charset=utf-8');
     res.end('<!doctype html><style>body{margin:0}#root{height:100dvh;width:100%}#root>.ant-app{width:100%;min-width:0}#root .ac-panel{position:relative;inset:auto;height:100%;flex:1;width:100%;max-width:none;min-width:0}</style><div id="root"></div><script type="module" src="/fixture.js"></script>');
   });
@@ -136,5 +139,17 @@ test('subagent viewer preserves the real conversation draft and scope at desktop
       assert.deepEqual(errors,[]);
       await page.close();
     }
+    const emptyPage=await browser.newPage({viewport:{width:1120,height:830},reducedMotion:'reduce'});
+    const emptyErrors:string[]=[];emptyPage.on('pageerror',error=>emptyErrors.push(error.message));
+    emptyPage.setDefaultTimeout(8000);
+    await emptyPage.goto(`http://127.0.0.1:${address.port}/?empty=1`);
+    await emptyPage.getByText('普通答复第 0 段',{exact:true}).waitFor();
+    assert.equal(await emptyPage.locator('.ac-subagent-entry').count(),0,'无子智能体时不显示顶栏子智能体入口');
+    await emptyPage.evaluate(()=>((window as unknown as {revealEarlierSubagent():void}).revealEarlierSubagent()));
+    await emptyPage.getByRole('button',{name:'子智能体（2）',exact:true}).waitFor();
+    await emptyPage.getByRole('button',{name:'子智能体（2）',exact:true}).click();
+    await emptyPage.locator('.ac-subagent-pane').getByRole('heading',{name:'子智能体总览',exact:true}).waitFor();
+    assert.deepEqual(emptyErrors,[]);
+    await emptyPage.close();
   } finally {await browser.close();}
 });

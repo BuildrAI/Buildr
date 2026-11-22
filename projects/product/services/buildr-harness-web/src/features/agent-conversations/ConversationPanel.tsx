@@ -18,7 +18,7 @@ import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRe
 import { SplitDivider } from '../../components/SplitDivider.tsx';
 import { readOptionalPreference, writeOptionalPreference } from '../../lib/optional-preferences.ts';
 import { Alert, App, Button, Dropdown, Input, Modal, Popover, Select, Spin, Tag } from 'antd';
-import { ApartmentOutlined, ArrowDownOutlined, ArrowUpOutlined, CommentOutlined, EllipsisOutlined, MinusOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, StopOutlined, TeamOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { ApartmentOutlined, ArrowDownOutlined, ArrowUpOutlined, CommentOutlined, EllipsisOutlined, MinusOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, StopOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { MarkdownHost } from '../../components/MarkdownHost.tsx';
 import type { MarkdownRenderOptions } from '../../markdown.ts';
 import type { ApiError } from '../../api/index.ts';
@@ -71,7 +71,7 @@ const statusLabels = {starting:'正在准备执行',running:'正在执行','wait
 const unconfirmedSupplementMessage='消息是否送达仍待确认，请勿重复发送；输入已保留。';
 type Prepared = {conversation:ConversationView;input:SendDraft;preview:SendPreview;clientRequestId:string;selection:ConversationSelection;recovery:ConversationSendRecovery};
 type SendOperation={selection:ConversationSelection;continueRunId?:string};
-type Props={development?:boolean;workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;portalTarget?:HTMLElement|null;embedded?:boolean;accessory?:ReactNode;headerAction?:ReactNode;onCreateChild?:()=>void};
+type Props={development?:boolean;workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;portalTarget?:HTMLElement|null;embedded?:boolean;accessory?:ReactNode|((conversationVisible:boolean)=>ReactNode);headerAction?:ReactNode;onCreateChild?:()=>void};
 export function ConversationPanel({development=false,workspaces,defaultWorkspaceId,portalTarget,embedded=false,accessory,headerAction,onCreateChild}:Props){
   const context=useAgentConversations(),chat=context.conversation;
   const {message:appMessage}=App.useApp();
@@ -308,7 +308,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
   useEffect(()=>()=>fileOpenRequest.current?.abort(),[context.selectionGeneration,context.scope?.workspaceId,context.scope?.conversationId]);
   useEffect(()=>{setMoreOpen(false);setLocationOpen(false);},[context.selectionGeneration,context.open,context.side,context.full,context.view,context.settings]);
   useEffect(()=>{earlier.followLayout();setAtBottom(bottom.current);},[chat?.id,chat?.entries.length,chat?.entries.at(-1)?.text,chat?.requests.length,chat?.run?.status,chat?.pendingSend?.id]);
-  const conversationVisible=isConversationViewVisible(context.open,context.view,focusSplit);
+  const conversationVisible=!showFocusSettings&&isConversationViewVisible(context.open,context.view,focusSplit);
   useLayoutEffect(()=>{const node=stream.current;if(!node?.getClientRects().length)return;if(bottom.current)earlier.followLayout();else{node.scrollTop=readPosition.current;earlier.remember();}setAtBottom(bottom.current);},[portalTarget,context.view,focusSplit,context.open]);
   const hasMessageList=Boolean(chat?.entries.length)&&!context.loading;
   useEffect(()=>{
@@ -908,16 +908,15 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
         {chat?<button type="button" className="ac-thread-title" aria-label="重命名对话" title={chat.title} onClick={()=>{setTitle(chat.title);setRename(true);}}>{chat.title}</button>:<strong className="ac-thread-title ac-thread-title-static">{context.loading?'正在读取对话…':context.scope?'对话':'新对话'}</strong>}
         </div>
         <div className="ac-thread-actions">
-          {accessory}
-          {(subagents.agents.length>0||chat?.nextEntryCursor!==undefined)&&<Button ref={subagentMenu} type="text" className="ac-subagent-entry" icon={<ApartmentOutlined aria-hidden="true"/>} title="子智能体总览" aria-label={subagents.agents.length?`子智能体（${subagents.agents.length}）`:'子智能体'} aria-expanded={subagentPaneOpen} aria-controls={subagentPaneOpen?subagentPaneId:undefined} onClick={event=>{
+          {typeof accessory==='function'?accessory(conversationVisible):accessory}
+          {subagents.agents.length>0&&<Button ref={subagentMenu} type="text" className="ac-subagent-entry" icon={<ApartmentOutlined aria-hidden="true"/>} title="子智能体总览" aria-label={`子智能体（${subagents.agents.length}）`} aria-expanded={subagentPaneOpen} aria-controls={subagentPaneOpen?subagentPaneId:undefined} onClick={event=>{
             if(subagentOverviewOpen)closeSubagent();
             else openSubagentOverview(event.currentTarget);
-          }}><span className="ac-subagent-entry-label">子智能体</span>{subagents.agents.length>0&&<span className="ac-subagent-entry-count" aria-hidden="true">{subagents.agents.length}{chat?.nextEntryCursor!==undefined?'+':''}</span>}</Button>}
-          {participantPairs.length>0&&<Popover rootClassName="ac-panel-popup ac-participant-history" title="参与过此对话" trigger="click" content={<div className="ac-participants" aria-label="参与过此对话的智能体与模型">{participantPairs.map(pair=><span key={pair.key}>{pair.label||context.connections.find(item=>item.id===pair.connectionId)?.label||executionAgentName(pair.provider)} · {pair.modelName}</span>)}</div>}>
-            <Button type="text" icon={<TeamOutlined/>} aria-label="参与过此对话的智能体与模型" title="参与过此对话"/>
-          </Popover>}
+          }}><span className="ac-subagent-entry-label">子智能体</span><span className="ac-subagent-entry-count" aria-hidden="true">{subagents.agents.length}{chat?.nextEntryCursor!==undefined?'+':''}</span></Button>}
           {embedded?<Button type="text" icon={<MinusOutlined/>} aria-label="收起子对话" title="收起子对话" onClick={()=>context.setOpen(false)}/>:!context.open&&<Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" title="新建对话" onClick={()=>context.newConversation({preserveVisibility:true})}/>}
-          <Dropdown overlayClassName="ac-panel-popup" trigger={['click']} open={moreOpen} onOpenChange={setMoreOpen} menu={{items:[
+          <Dropdown overlayClassName="ac-panel-popup" trigger={['click']} open={moreOpen} onOpenChange={setMoreOpen}
+            popupRender={participantPairs.length>0?(menu=><div className="ac-more-menu-popup">{menu}<div className="ac-participant-history"><div className="ac-participant-history-title">参与过此对话</div><div className="ac-participants" aria-label="参与过此对话的智能体与模型">{participantPairs.map(pair=><span key={pair.key}>{pair.label||context.connections.find(item=>item.id===pair.connectionId)?.label||executionAgentName(pair.provider)} · {pair.modelName}</span>)}</div></div></div>):undefined}
+            menu={{items:[
             ...(onCreateChild?[{key:'create-child',label:'创建子对话',icon:<PlusOutlined aria-hidden/>},{type:'divider' as const}]:[]),
             ...(!standalone?[
               {key:'collapse',label:'收起对话'},
@@ -932,8 +931,8 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
           ].filter(item=>!embedded||!['full','side','hide'].includes(item.key||'')),onClick:({key})=>{
             setMoreOpen(false);
             if(standalone&&['collapse','full','side'].includes(key))return;
-            if(composition.requestLayout&&(key==='collapse'||key==='full')){composition.requestLayout(key,key==='full'?!context.full:undefined);return;}
-            if(window.parent!==window&&['collapse','full'].includes(key)){window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'layout',action:key,...(key==='full'?{full:!context.full}:{})},location.origin);return;}
+            if(!embedded&&composition.requestLayout&&(key==='collapse'||key==='full')){composition.requestLayout(key,key==='full'?!context.full:undefined);return;}
+            if(!embedded&&window.parent!==window&&['collapse','full'].includes(key)){window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'layout',action:key,...(key==='full'?{full:!context.full}:{})},location.origin);return;}
             if(key==='collapse')context.setOpen(false);
             else if(key==='side')context.move();
             else if(key==='full'){context.setOpen(true);context.setFull(!context.full);}
