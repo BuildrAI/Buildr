@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
-import { readAntigravityCommandExits, readAntigravityScheduleTriggers } from '../../src/executors/antigravity/content.ts';
+import { readAntigravityActiveBackgroundCommands, readAntigravityCommandExits, readAntigravityScheduleTriggers } from '../../src/executors/antigravity/content.ts';
 
 const contextId = 'c952a89c-9e87-45e4-a66f-d4fd5fab4cf8';
 
@@ -131,4 +131,61 @@ test('readAntigravityScheduleTriggers extracts Timer and Cron triggers and ignor
     { task: timerTask, prompt: prompt1, result: prompt1, taskCreatedAt: Date.parse('2026-11-15T04:10:00.000Z') },
     { task: cronTask, prompt: prompt2, result: prompt2, taskCreatedAt: Date.parse('2026-11-15T04:11:00.000Z') },
   ]);
+});
+
+test('readAntigravityCommandExits recognizes canceled tasks and readAntigravityActiveBackgroundCommands inspects task logs', t => {
+  const canceledTask = `${contextId}/task-12`;
+  const activeTask = `${contextId}/task-15`;
+  const scheduleTask = `${contextId}/task-16`;
+  const created = '2026-11-15T04:20:00.000Z';
+  const root = writeTranscript(t, [
+    {
+      created_at: created,
+      source: 'MODEL',
+      type: 'GENERIC',
+      content: `Tool is running as a background task with task id: ${canceledTask}\nTask Description: npm test\nTask logs are available at: file:///fixture/task-12.log`,
+    },
+    {
+      created_at: '2026-11-15T04:20:05.000Z',
+      source: 'SYSTEM',
+      type: 'SYSTEM_MESSAGE',
+      content: `[Message] timestamp=2026-11-15T04:20:05Z sender=${canceledTask} priority=HIGH content=Task id "${canceledTask}" was canceled with result:\nTool execution was canceled`,
+    },
+    {
+      created_at: '2026-11-15T04:21:00.000Z',
+      source: 'MODEL',
+      type: 'GENERIC',
+      content: `Tool is running as a background task with task id: ${activeTask}\nTask Description: npx tsx check.ts\nTask logs are available at: file:///fixture/task-15.log`,
+    },
+    {
+      created_at: '2026-11-15T04:21:10.000Z',
+      source: 'MODEL',
+      type: 'GENERIC',
+      content: `Tool is running as a background task with task id: ${scheduleTask}\nTask Description: Timer: 5s, Prompt: recheck\nTask logs are available at: file:///fixture/task-16.log`,
+    },
+  ]);
+
+  const logFile = path.join(root, 'home', '.gemini', 'antigravity-cli', 'brain', contextId, '.system_generated', 'tasks', 'task-15.log');
+  fs.mkdirSync(path.dirname(logFile), { recursive: true });
+  fs.writeFileSync(logFile, 'Need to install tsx\nOk to proceed? (y) ');
+  const modifiedAt = Date.parse('2026-11-15T04:21:30.000Z');
+  fs.utimesSync(logFile, modifiedAt / 1000, modifiedAt / 1000);
+
+  const exits = readAntigravityCommandExits(root, contextId, Date.parse('2026-11-15T04:00:00.000Z'));
+  assert.deepEqual(exits, [
+    {
+      task: canceledTask,
+      command: 'npm test',
+      code: 130,
+      result: 'Tool execution was canceled',
+      taskCreatedAt: Date.parse(created),
+    },
+  ]);
+
+  const active = readAntigravityActiveBackgroundCommands(root, contextId, Date.parse('2026-11-15T04:00:00.000Z'));
+  assert.equal(active.length, 1);
+  assert.equal(active[0]!.task, activeTask);
+  assert.equal(active[0]!.command, 'npx tsx check.ts');
+  assert.equal(active[0]!.lastActivityAt, modifiedAt);
+  assert.equal(active[0]!.tail, 'Need to install tsx\nOk to proceed? (y)');
 });

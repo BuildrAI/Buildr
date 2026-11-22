@@ -663,3 +663,91 @@ test('Antigravity supports schedule supplement, transcript Timer wakeup and full
   assert.equal(afterFullAccessLaunches, beforeFullAccessLaunches);
   assert.equal(afterResumes, beforeResumes);
 });
+
+test('Antigravity silence watchdog wakes turn for silent non-daemon command and settles when canceled', { timeout: 15_000 }, async t => {
+  const h = await createHarness(t, { scenario: 'background-silent-command', cancelOnSilence: true, autoAllow: true });
+  const rt = await createAntigravityExecutor({ backgroundCommandSilenceMs: 120, backgroundPollIntervalMs: 30 }).open({
+    connectionId: 'antigravity',
+    configRoot: h.configRoot,
+    executable: h.executable,
+    environment: h.environment,
+  });
+  t.after(() => rt.close());
+
+  const contextRef = await rt.createContext({ cwd: h.cwd, permissionMode: 'full-access' });
+  const finished = Promise.withResolvers<void>();
+  const events: ExecutorEvent[] = [];
+  await rt.send({
+    contextRef,
+    cwd: h.cwd,
+    permissionMode: 'full-access',
+    text: 'run interactive command',
+    images: [],
+    clientRequestId: 'silence-watchdog-1',
+    onEvent: event => {
+      events.push(event);
+      if (event.type === 'completed') finished.resolve();
+    },
+  });
+
+  await finished.promise;
+  const prompts = await h.readFixtureJsonl('fixture-prompts.jsonl');
+  const silencePrompt = prompts.find(row => row.text.includes('长时间无新输出'));
+  assert.ok(silencePrompt, 'expected silence watchdog continuation prompt');
+  assert.ok(silencePrompt.text.includes('Ok to proceed? (y)'), 'expected task log tail in silence prompt');
+  const exitPrompt = prompts.find(row => row.text.includes('退出码：130'));
+  assert.ok(exitPrompt, 'expected canceled task result to settle with code 130');
+  const obs = await rt.observe({ contextRef });
+  assert.equal(obs.status, 'idle');
+  assert.equal(obs.tools.some(tool => tool.status === 'running'), false);
+});
+
+test('Antigravity silence watchdog ignores IsDaemon commands and resets when task log actively grows', { timeout: 15_000 }, async t => {
+  const h = await createHarness(t, { scenario: 'background-silent-command', isDaemon: true, autoAllow: true });
+  const rt = await createAntigravityExecutor({ backgroundCommandSilenceMs: 200, backgroundPollIntervalMs: 30 }).open({
+    connectionId: 'antigravity',
+    configRoot: h.configRoot,
+    executable: h.executable,
+    environment: h.environment,
+  });
+  t.after(() => rt.close());
+
+  const daemonCtx = await rt.createContext({ cwd: h.cwd, permissionMode: 'full-access' });
+  await rt.send({
+    contextRef: daemonCtx,
+    cwd: h.cwd,
+    permissionMode: 'full-access',
+    text: 'start daemon server',
+    images: [],
+    clientRequestId: 'silence-daemon-1',
+    onEvent: () => {},
+  });
+  await new Promise(resolve => setTimeout(resolve, 320));
+  const daemonPrompts = (await h.readFixtureJsonl('fixture-prompts.jsonl')).filter(row => row.sessionId === daemonCtx.id);
+  assert.equal(daemonPrompts.length, 1, 'daemon command must never trigger silence nudge');
+  const daemonObs = await rt.observe({ contextRef: daemonCtx });
+  await rt.stop({ contextRef: daemonCtx, executionRef: daemonObs.executionRef! });
+
+  await h.setControl({ scenario: 'background-silent-command', isDaemon: false, cancelOnSilence: true });
+  const activeCtx = await rt.createContext({ cwd: h.cwd, permissionMode: 'full-access' });
+  const finished = Promise.withResolvers<void>();
+  await rt.send({
+    contextRef: activeCtx,
+    cwd: h.cwd,
+    permissionMode: 'full-access',
+    text: 'run active noisy command',
+    images: [],
+    clientRequestId: 'silence-active-1',
+    onEvent: event => { if (event.type === 'completed') finished.resolve(); },
+  });
+  const logFile = path.join(h.configRoot, 'home', '.gemini', 'antigravity-cli', 'brain', activeCtx.id, '.system_generated', 'tasks', 'task-201.log');
+  for (let tick = 0; tick < 4; tick += 1) {
+    await new Promise(resolve => setTimeout(resolve, 60));
+    await writeFile(logFile, `progress line ${tick}\n`, { flag: 'a' });
+  }
+  const duringGrowth = (await h.readFixtureJsonl('fixture-prompts.jsonl')).filter(row => row.sessionId === activeCtx.id);
+  assert.equal(duringGrowth.length, 1, 'active log output must reset silence tracking without nudging');
+  await finished.promise;
+  const afterSilence = (await h.readFixtureJsonl('fixture-prompts.jsonl')).filter(row => row.sessionId === activeCtx.id);
+  assert.ok(afterSilence.some(row => row.text.includes('progress line 3')), 'after activity stops, silence nudge reports latest log tail');
+});

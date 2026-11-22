@@ -31,6 +31,7 @@ const SERVICE_ROOT = `${PRODUCT_ROOT}/services/buildr`;
 const HARNESS_SERVICE_ROOT = `${PRODUCT_ROOT}/services/buildr-harness`;
 const HARNESS_WEB_ROOT = `${PRODUCT_ROOT}/services/buildr-harness-web`;
 const HARNESS_ENTRY_PATH = `${HARNESS_SERVICE_ROOT}/bin/buildr-harness.mjs`;
+const PREPARED_HARNESS_ENTRY_PATH = `${SERVICE_ROOT}/node_modules/@buildr-ai/buildr-harness/bin/buildr-harness.mjs`;
 const COMPONENT_PATH = 'components/workspace/buildr-self-bootstrap/component.yml';
 const DEVELOPMENT_WEB_CONTINUITY_SCRIPT = 'skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
 function developmentSourceBinding(root, instance) {
@@ -384,9 +385,22 @@ function installedHarnessDevelopmentLauncherTargets(environment) {
   return targets;
 }
 
+function resolveDevelopmentHarnessEntry(root) {
+  const prepared = path.join(root, PREPARED_HARNESS_ENTRY_PATH);
+  if (fs.existsSync(prepared)) return prepared;
+  const legacy = path.join(root, HARNESS_ENTRY_PATH);
+  return fs.existsSync(legacy) ? legacy : null;
+}
+
+function isOwnedDevelopmentHarnessEntry(root, entry) {
+  if (typeof entry !== 'string' || !entry) return false;
+  return sameFilesystemPath(entry, path.join(root, PREPARED_HARNESS_ENTRY_PATH))
+    || sameFilesystemPath(entry, path.join(root, HARNESS_ENTRY_PATH));
+}
+
 function refreshInstalledHarnessDevelopmentLaunchers({ execute, root, nodeExecutable, environment, phaseResult }) {
-  const harnessEntry = path.join(root, HARNESS_ENTRY_PATH);
-  if (!fs.existsSync(harnessEntry)) return [];
+  const harnessEntry = resolveDevelopmentHarnessEntry(root);
+  if (!harnessEntry) return [];
   const dataRoot = developmentWebDataRoot(environment);
   const effects = [];
   for (const target of installedHarnessDevelopmentLauncherTargets(environment)) {
@@ -397,7 +411,7 @@ function refreshInstalledHarnessDevelopmentLaunchers({ execute, root, nodeExecut
       : path.join(target, 'Contents', 'Resources', 'harness-launcher.json');
     const binding = readJsonSafe(bindingFile);
     if (binding?.productId !== 'buildr-harness' || binding?.profile !== 'development'
-      || typeof binding?.entry !== 'string' || !sameFilesystemPath(binding.entry, harnessEntry)
+      || !isOwnedDevelopmentHarnessEntry(root, binding?.entry)
       || typeof binding?.dataRoot !== 'string' || !sameFilesystemPath(binding.dataRoot, dataRoot)) {
       continue;
     }
@@ -418,8 +432,8 @@ function refreshInstalledHarnessDevelopmentLaunchers({ execute, root, nodeExecut
 }
 
 function reconcileDevelopmentHarnessRuntime({ execute, root, nodeExecutable, environment, phaseResult, changedPaths, forceRestart }) {
-  const harnessEntry = path.join(root, HARNESS_ENTRY_PATH);
-  if (!fs.existsSync(harnessEntry)) return [];
+  const harnessEntry = resolveDevelopmentHarnessEntry(root);
+  if (!harnessEntry) return [];
   const harnessChanged = forceRestart || changedPaths.some((pathname) => pathname.startsWith(`${HARNESS_SERVICE_ROOT}/`) || pathname.startsWith(`${HARNESS_WEB_ROOT}/`));
   if (!harnessChanged) return [];
   const dataRoot = developmentWebDataRoot(environment);

@@ -30,8 +30,18 @@ export function antigravityNativeTranscriptPath(configRoot: string, contextId: s
   return path.join(configRoot, 'home', '.gemini', 'antigravity', 'transcripts', `${contextId}.jsonl`);
 }
 
-export function readAntigravityCommandExits(configRoot: string, contextId: string, startedAt: number) {
-  if (!isValidAntigravityContextId(contextId)) return [];
+function readAntigravityBackgroundTasks(
+  configRoot: string,
+  contextId: string,
+  startedAt: number,
+  options: { excludeSchedules?: boolean } = {},
+) {
+  if (!isValidAntigravityContextId(contextId)) {
+    return {
+      tasks: new Map<string, { command: string; createdAt: number }>(),
+      exits: new Map<string, { task: string; command: string; code: number; result: string; taskCreatedAt: number }>(),
+    };
+  }
   const file = path.join(configRoot, 'home', '.gemini', 'antigravity-cli', 'brain', contextId,
     '.system_generated', 'logs', 'transcript_full.jsonl');
   const rows = (readImmutableJsonlFile(file) ?? []).filter(row => Date.parse(row?.created_at) >= startedAt);
@@ -40,9 +50,9 @@ export function readAntigravityCommandExits(configRoot: string, contextId: strin
     if (row.source !== 'MODEL' || row.type !== 'GENERIC' || typeof row.content !== 'string') continue;
     const task = /^Tool is running as a background task with task id: (.+)\r?$/m.exec(row.content)?.[1];
     const description = /^Task Description: ([\s\S]+?)\r?\nTask logs are available at:/m.exec(row.content)?.[1];
-    if (task?.startsWith(contextId + '/') && /^task-\d+$/.test(task.slice(contextId.length + 1)) && description) {
-      tasks.set(task, { command: description, createdAt: Date.parse(row.created_at) });
-    }
+    if (!task?.startsWith(contextId + '/') || !/^task-\d+$/.test(task.slice(contextId.length + 1)) || !description) continue;
+    if (options.excludeSchedules && /^(?:Timer|Cron): /u.test(description)) continue;
+    tasks.set(task, { command: description, createdAt: Date.parse(row.created_at) });
   }
   // Every exit is kept, keyed by its exact native task id. Re-running the same
   // command produces several tasks with an identical description; the caller
@@ -57,13 +67,67 @@ export function readAntigravityCommandExits(configRoot: string, contextId: strin
       if (info) exits.set(coded[1]!, { task: coded[1]!, command: info.command, code: Number(coded[3]), result: row.content.slice(coded.index + coded[0].lastIndexOf('Command exited')).split('\n</SYSTEM_MESSAGE>')[0]!.trim(), taskCreatedAt: info.createdAt });
       continue;
     }
-    // A finished background task can omit the exit code when native output is truncated.
-    const finished = /^\[Message\] timestamp=\S+ sender=(\S+) priority=\S+ content=Task id "([^"]+)" finished with result:\r?\n([\s\S]*)$/m.exec(row.content);
-    if (!finished || finished[1] !== finished[2]) continue;
-    const info = tasks.get(finished[1]!);
-    if (info) exits.set(finished[1]!, { task: finished[1]!, command: info.command, code: 0, result: (finished[3] ?? '').split('\n</SYSTEM_MESSAGE>')[0]!.trim(), taskCreatedAt: info.createdAt });
+    // A finished or canceled background task can omit the numeric exit code.
+    const settled = /^\[Message\] timestamp=\S+ sender=(\S+) priority=\S+ content=Task id "([^"]+)" (finished|was canceled) with result:\r?\n([\s\S]*)$/m.exec(row.content);
+    if (!settled || settled[1] !== settled[2]) continue;
+    const info = tasks.get(settled[1]!);
+    if (info) {
+      exits.set(settled[1]!, {
+        task: settled[1]!,
+        command: info.command,
+        code: settled[3] === 'was canceled' ? 130 : 0,
+        result: (settled[4] ?? '').split('\n</SYSTEM_MESSAGE>')[0]!.trim(),
+        taskCreatedAt: info.createdAt,
+      });
+    }
   }
-  return [...exits.values()];
+  return { tasks, exits };
+}
+
+export function readAntigravityCommandExits(configRoot: string, contextId: string, startedAt: number) {
+  return [...readAntigravityBackgroundTasks(configRoot, contextId, startedAt).exits.values()];
+}
+
+export function readAntigravityActiveBackgroundCommands(configRoot: string, contextId: string, startedAt: number) {
+  const { tasks, exits } = readAntigravityBackgroundTasks(configRoot, contextId, startedAt, { excludeSchedules: true });
+  const active: Array<{ task: string; command: string; taskCreatedAt: number; lastActivityAt: number; logSize: number; tail: string }> = [];
+  for (const [task, info] of tasks) {
+    if (exits.has(task)) continue;
+    const taskName = task.slice(contextId.length + 1);
+    const logFile = path.join(configRoot, 'home', '.gemini', 'antigravity-cli', 'brain', contextId,
+      '.system_generated', 'tasks', `${taskName}.log`);
+    let lastActivityAt = info.createdAt;
+    let logSize = 0;
+    let tail = '';
+    try {
+      const stat = fs.lstatSync(logFile);
+      if (stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1) {
+        lastActivityAt = Math.max(info.createdAt, Math.floor(stat.mtimeMs));
+        logSize = stat.size;
+        if (stat.size > 0) {
+          const bytesToRead = Math.min(1024, stat.size);
+          const offset = stat.size - bytesToRead;
+          const buffer = Buffer.alloc(bytesToRead);
+          const fd = fs.openSync(logFile, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+          try {
+            let total = 0;
+            while (total < bytesToRead) {
+              const read = fs.readSync(fd, buffer, total, bytesToRead - total, offset + total);
+              if (!read) break;
+              total += read;
+            }
+            if (total > 0) tail = new TextDecoder('utf-8').decode(buffer.subarray(0, total)).trim();
+          } finally {
+            fs.closeSync(fd);
+          }
+        }
+      }
+    } catch {
+      // Missing or transient task log falls back to task creation timestamp.
+    }
+    active.push({ task, command: info.command, taskCreatedAt: info.createdAt, lastActivityAt, logSize, tail });
+  }
+  return active;
 }
 
 export function readAntigravityScheduleTriggers(configRoot: string, contextId: string, startedAt: number) {

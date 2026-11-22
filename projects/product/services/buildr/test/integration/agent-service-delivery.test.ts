@@ -344,3 +344,58 @@ test('the real frozen Buildr npm artifact installs the private runtime without s
   assert.equal(probe.status, 0, probe.stderr);
   assert.match(probe.stdout, /frozen-private-runtime-passed/u);
 });
+
+test('Development and Harness Dev entries share the identical pruned runtime digest without retiring each other', { timeout: 30_000 }, async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-unified-harness-digest-'));
+  const dataRoot = path.join(root, 'shared-data');
+  let stopRuntime: (() => Promise<unknown>) | undefined;
+  t.after(async () => {
+    if (stopRuntime) await stopRuntime().catch(() => {});
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const workspaceService = path.join(root, 'services/buildr');
+  const harnessSource = path.join(root, 'services/buildr-harness');
+  const harnessWebSource = path.join(root, 'services/buildr-harness-web');
+  fs.mkdirSync(workspaceService, { recursive: true });
+  createPreparationFixture(harnessSource, 'export const ready = true;\n');
+  fs.mkdirSync(path.join(harnessSource, 'build/process'), { recursive: true });
+  fs.writeFileSync(path.join(harnessSource, 'build/process/entry.js'), 'export {};\n');
+  fs.mkdirSync(path.join(harnessSource, 'node_modules/@types/dev-only'), { recursive: true });
+  fs.writeFileSync(path.join(harnessSource, 'node_modules/@types/dev-only/package.json'), '{"name":"@types/dev-only","version":"1.0.0"}');
+  fs.writeFileSync(path.join(harnessSource, 'build/index.js.map'), '{"version":3}');
+  fs.mkdirSync(path.join(harnessWebSource, 'src'), { recursive: true });
+  fs.mkdirSync(path.join(harnessWebSource, 'tools'), { recursive: true });
+  fs.writeFileSync(path.join(harnessWebSource, 'package.json'), JSON.stringify({ name: '@buildr-ai/buildr-harness-web', version: '0.1.0', private: true }));
+  fs.writeFileSync(path.join(harnessWebSource, 'tools/dev-server.mjs'), 'export {};\n');
+
+  const preparedDir = prepareDevelopmentAgent({ serviceRoot: workspaceService, agentRoot: harnessSource, build: false });
+  const unifiedHarnessEntry = path.join(workspaceService, 'node_modules/@buildr-ai/buildr-harness/bin/buildr-harness.mjs');
+  assert.equal(fs.existsSync(unifiedHarnessEntry), true);
+
+  const { computeAgentRuntimeDigest, prepareAgentRuntimeAsync, activateAgentRuntime, stopAgentProcess } = await import('@buildr-ai/buildr-harness');
+  const harnessEntryPackageRoot = path.resolve(path.dirname(unifiedHarnessEntry), '..');
+  assert.equal(
+    computeAgentRuntimeDigest({ packageRoot: preparedDir, node: process.execPath }),
+    computeAgentRuntimeDigest({ packageRoot: harnessEntryPackageRoot, node: process.execPath }),
+    'Development Dev and unified Harness Dev entry must produce identical runtime digests',
+  );
+  assert.notEqual(
+    computeAgentRuntimeDigest({ packageRoot: preparedDir, node: process.execPath }),
+    computeAgentRuntimeDigest({ packageRoot: harnessSource, node: process.execPath }),
+    'unpruned source directory with devDependencies/.map must not match the pruned runtime package',
+  );
+
+  const realPreparedRoot = path.join(serviceRoot, 'node_modules/@buildr-ai/buildr-harness');
+  if (fs.existsSync(path.join(realPreparedRoot, 'build/process/entry.js'))) {
+    stopRuntime = () => stopAgentProcess({ dataRoot, profileId: 'development', mode: 'stop-owned' });
+    const devRuntime = await prepareAgentRuntimeAsync({ dataRoot, packageRoot: realPreparedRoot });
+    const first = await activateAgentRuntime({ dataRoot, profileId: 'development', runtime: devRuntime, sourceId: 'buildr' });
+    const harnessRuntime = await prepareAgentRuntimeAsync({ dataRoot, packageRoot: realPreparedRoot });
+    const second = await activateAgentRuntime({ dataRoot, profileId: 'development', runtime: harnessRuntime, sourceId: 'harness-local' });
+    assert.equal(second.currentDigest, first.currentDigest);
+    assert.equal(second.generation, first.generation);
+    const retiredFile = path.join(dataRoot, 'agent-service/process/retired-runtimes.json');
+    const retired = fs.existsSync(retiredFile) ? JSON.parse(fs.readFileSync(retiredFile, 'utf8')) : [];
+    assert.deepEqual(retired, [], 're-activating unified runtime across both product entries must not retire any digest');
+  }
+});

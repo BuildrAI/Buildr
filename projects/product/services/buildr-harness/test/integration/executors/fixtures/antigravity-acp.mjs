@@ -388,6 +388,16 @@ async function runPrompt(id, params) {
       fail(id, -32603, 'continuation failed');
       return;
     }
+    if (text.includes('长时间无新输出') && control().cancelOnSilence === true) {
+      const task = sessionId + '/task-201';
+      const file = join(cliRoot, 'brain', sessionId, '.system_generated', 'logs', 'transcript_full.jsonl');
+      setTimeout(() => writeFileSync(file, JSON.stringify({
+        created_at: new Date().toISOString(),
+        source: 'SYSTEM',
+        type: 'SYSTEM_MESSAGE',
+        content: `[Message] timestamp=test sender=${task} priority=MESSAGE_PRIORITY_LOW content=Task id "${task}" was canceled with result:\nTool execution was canceled`,
+      }) + '\n', { flag: 'a' }), 30);
+    }
     const repeatBudget = Number(control().backgroundContinuationRepeats ?? 0);
     session.bgContinuationCount = (session.bgContinuationCount ?? 0) + 1;
     writeSession(session);
@@ -784,13 +794,19 @@ async function runPrompt(id, params) {
       toolCallId: tool2Id,
       title: isSchedule ? 'Run schedule' : isReadUnsettled ? 'Read secret.txt' : isDiff ? 'Edit src/index.ts' : 'Run unit check',
       kind: isSchedule ? 'other' : isReadUnsettled ? 'read' : isDiff ? 'edit' : 'execute',
-      rawInput: isSchedule ? { DurationSeconds: 1, Prompt: schedulePrompt } : isReadUnsettled ? { file_path: 'secret.txt' } : isDiff ? { path: 'src/index.ts' } : { CommandLine: 'npm test' },
+      rawInput: isSchedule
+        ? { DurationSeconds: 1, Prompt: schedulePrompt }
+        : isReadUnsettled
+          ? { file_path: 'secret.txt' }
+          : isDiff
+            ? { path: 'src/index.ts' }
+            : { CommandLine: 'npm test', ...(control().isDaemon === true ? { IsDaemon: true } : {}) },
       locations: isSchedule ? [] : [{ path: isReadUnsettled ? 'secret.txt' : isDiff ? 'src/index.ts' : 'package.json' }],
       status: 'in_progress',
     },
   });
   const tool2Text = isDiff ? '--- a/src/index.ts\n+++ b/src/index.ts\n@@ -1 +1 @@\n-old\n+new' : 'PASS all checks (12 tests)';
-  if (!['unsettled-tool', 'unsettled-read-tool', 'schedule-acp-complete', 'schedule-transcript-trigger', 'late-command-result', 'continuation-fails', 'native-background-continuation', 'background-transcript-exit', 'background-rerun-exit'].includes(activeScenario) && !text.includes('[UNSETTLED_TOOL]')) {
+  if (!['unsettled-tool', 'unsettled-read-tool', 'schedule-acp-complete', 'schedule-transcript-trigger', 'late-command-result', 'continuation-fails', 'native-background-continuation', 'background-transcript-exit', 'background-rerun-exit', 'background-silent-command'].includes(activeScenario) && !text.includes('[UNSETTLED_TOOL]')) {
     notify('session/update', {
       sessionId,
       update: {
@@ -918,6 +934,20 @@ async function runPrompt(id, params) {
     writeRow({ source: 'MODEL', type: 'PLANNER_RESPONSE', content: `[Message] timestamp=test sender=${task} priority=HIGH content=Task id "${task}" finished with result:\nCommand exited with code 0.` });
     setTimeout(() => writeRow({ source: 'SYSTEM', type: 'SYSTEM_MESSAGE',
       content: `[Message] timestamp=test sender=${task} priority=HIGH content=Task id "${task}" finished with result:\nCommand exited with code 7.\nCommand output: fixture failure` }), 250);
+  }
+  if (activeScenario === 'background-silent-command') {
+    const file = join(cliRoot, 'brain', sessionId, '.system_generated', 'logs', 'transcript_full.jsonl');
+    const logFile = join(cliRoot, 'brain', sessionId, '.system_generated', 'tasks', 'task-201.log');
+    mkdirSync(dirname(file), { recursive: true });
+    mkdirSync(dirname(logFile), { recursive: true });
+    const task = sessionId + '/task-201';
+    writeFileSync(logFile, 'Need to install the following packages:\nOk to proceed? (y) ');
+    writeFileSync(file, JSON.stringify({
+      created_at: new Date().toISOString(),
+      source: 'MODEL',
+      type: 'GENERIC',
+      content: `Created At: test\nTool is running as a background task with task id: ${task}\nTask Description: npm test\nTask logs are available at: file://${logFile}`,
+    }) + '\n', { flag: 'a' });
   }
   if (activeScenario === 'background-rerun-exit') {
     const file = join(cliRoot, 'brain', sessionId, '.system_generated', 'logs', 'transcript_full.jsonl');

@@ -315,3 +315,78 @@ test('install-buildr-web skips absent or foreign Harness launcher, idle backend,
   const webPhase = result.phases.find((stage: any) => stage.id === 'install-buildr-web');
   assert.equal(webPhase.effects.some((effect: any) => String(effect.type).startsWith('harness-')), false);
 });
+
+test('install-buildr-web upgrades owned legacy Harness Dev launcher to the prepared runtime entry while skipping foreign entries', t => {
+  const f = fixture(t);
+  const legacyEntry = path.join(f.root, 'projects/product/services/buildr-harness/bin/buildr-harness.mjs');
+  const preparedEntry = path.join(f.root, 'projects/product/services/buildr/node_modules/@buildr-ai/buildr-harness/bin/buildr-harness.mjs');
+  for (const file of [legacyEntry, preparedEntry]) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, '#!/usr/bin/env node\n', { mode: 0o755 });
+  }
+  git(f.root, 'add', '--', 'projects/product/services/buildr-harness/bin/buildr-harness.mjs');
+  git(f.root, 'commit', '-m', 'add harness entry');
+  git(f.root, 'push', 'origin', 'dev');
+  const deliveredRef = git(f.root, 'rev-parse', 'HEAD');
+
+  const testHome = path.join(path.dirname(f.root), 'harness-home-upgrade');
+  const dataRoot = path.join(path.dirname(f.root), 'harness-data-upgrade');
+  const ownedTarget = process.platform === 'win32'
+    ? path.join(testHome, 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Buildr Harness Dev.lnk')
+    : path.join(testHome, 'Applications', 'Buildr Harness Dev.app');
+  const ownedBindingFile = process.platform === 'win32'
+    ? path.join(`${ownedTarget}.buildr-harness`, 'harness-launcher.json')
+    : path.join(ownedTarget, 'Contents', 'Resources', 'harness-launcher.json');
+  fs.mkdirSync(path.dirname(ownedBindingFile), { recursive: true });
+  if (process.platform === 'win32') fs.writeFileSync(ownedTarget, 'lnk');
+  fs.writeFileSync(ownedBindingFile, JSON.stringify({ schemaVersion: 1, productId: 'buildr-harness', profile: 'development', entry: legacyEntry, dataRoot, target: ownedTarget }));
+
+  const foreignTarget = '/Applications/Buildr Harness Dev.app';
+  const foreignBindingFile = process.platform === 'win32'
+    ? path.join(`${foreignTarget}.buildr-harness`, 'harness-launcher.json')
+    : path.join(foreignTarget, 'Contents', 'Resources', 'harness-launcher.json');
+  const instanceFile = path.join(dataRoot, 'agent-service', 'process', 'instance.json');
+  fs.mkdirSync(path.dirname(instanceFile), { recursive: true });
+  fs.writeFileSync(instanceFile, JSON.stringify({ identity: { pid: process.pid } }));
+
+  const environment = {
+    ...f.environment,
+    HOME: testHome,
+    ...(process.platform === 'win32' ? { APPDATA: path.join(testHome, 'AppData', 'Roaming') } : {}),
+    BUILDR_APP_DATA_DIR: dataRoot,
+  };
+  delete environment.BUILDR_HOST_HOME;
+
+  const harnessCalls: Array<{ executable: string; args: string[] }> = [];
+  const baseExecute = executor(f.root);
+  const result: any = runDirectSelfBootstrapCloseout({
+    workspaceRoot: f.root,
+    taskId: 'harness-sync-upgrade-prepared',
+    baseRef: f.baseRef,
+    deliveredRef,
+    targetBranch: 'dev',
+    remote: 'origin',
+    agent: 'codex',
+    nodeExecutable: process.execPath,
+    environment,
+    execute(executable: string, args: string[], context: any) {
+      if (executable === process.execPath && (args[0] === preparedEntry || args[0] === legacyEntry)) {
+        harnessCalls.push({ executable: args[0], args: args.slice(1) });
+        if (args[1] === 'launcher' && args[2] === 'install') {
+          return { status: 0, stdout: JSON.stringify({ status: 'installed', binding: { target: ownedTarget, entry: args[0] } }), stderr: '' };
+        }
+        if (args[1] === 'activate') {
+          return { status: 0, stdout: JSON.stringify({ status: 'ready', targetDigest: 'sha256-unified', currentDigest: 'sha256-unified', generation: 'gen-3', accepting: true }), stderr: '' };
+        }
+      }
+      return baseExecute(executable, args, context);
+    },
+  });
+
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.ok(harnessCalls.every(call => sameOrExact(call.executable, preparedEntry)));
+  assert.ok(harnessCalls.some(call => call.args[0] === 'launcher' && call.args[1] === 'install' && call.args.includes(ownedTarget)));
+  assert.ok(harnessCalls.some(call => call.args[0] === 'activate' && call.args.includes('--profile') && call.args.includes('development')));
+  assert.equal(fs.existsSync(foreignBindingFile) && harnessCalls.some(call => call.args.includes(foreignTarget)), false);
+  function sameOrExact(left: string, right: string) { return path.resolve(left) === path.resolve(right); }
+});
