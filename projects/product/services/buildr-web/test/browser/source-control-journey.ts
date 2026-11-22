@@ -206,6 +206,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     try {
       await open(); await selectWorktree(value);
       const row = root().locator('[data-source-repository="' + value.repositoryId + '"] [data-source-worktree="' + value.worktreeId + '"] .source-control-worktree');
+      await row.locator('.source-control-row-name-text').filter({ hasText: sourceName }).waitFor();
       const separator = root().getByRole('separator', {name:'调整源代码管理与阅读区宽度', exact:true});
       const menuButton = row.locator('.source-control-row-menu-button');
       const menuLabel = await menuButton.getAttribute('aria-label');
@@ -220,17 +221,22 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
         const copyGap = parseFloat(getComputedStyle(element.querySelector('.source-control-row-copy')!).columnGap);
         return {full:fixed + name + branchWidth + copyGap + shortcuts, branchMinimum:fixed + name + Math.min(branchWidth,48) + copyGap + shortcuts, nameStatus:fixed + name + shortcuts, name, width:element.getBoundingClientRect().width};
       });
+      const waitTwoFrames = () => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
       const setWidth = async (width:number, layout:string) => {
         const current = await root().locator('.source-control-sidebar').boundingBox();
         await drag(separator, width - current.width, 0);
+        await waitTwoFrames();
         await page.waitForFunction(({id, layout}:{id:string;layout:string}) => [...document.querySelectorAll<HTMLElement>('.code-source-control-page:not([hidden]) .source-control-worktree')].find(element => element.closest('[data-source-worktree]')?.getAttribute('data-source-worktree') === id)?.dataset.sourceRowLayout === layout, {id:value.worktreeId, layout});
-        await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+        await waitTwoFrames();
         assert.equal(await row.getAttribute('data-source-row-layout'), layout);
         const actual = await row.evaluate((element:HTMLElement) => {const strong = element.querySelector('strong')!.getBoundingClientRect(), text = element.querySelector('.source-control-row-name-text')!.getBoundingClientRect(), box = element.getBoundingClientRect(), menu = element.querySelector('.source-control-row-menu-button')!.getBoundingClientRect(); return {nameComplete:strong.width >= text.width - 1, height:box.height, menuInside:menu.left >= box.left && menu.right <= box.right, width:box.width};});
         assert.equal(actual.height, 36, '不同宽度均维持单行来源'); assert.equal(actual.menuInside, true, '末尾菜单始终位于行内');
         return actual;
       };
-      await separator.press('End'); const required = await measure();
+      await separator.press('End');
+      await page.waitForFunction((id:string) => [...document.querySelectorAll<HTMLElement>('.code-source-control-page:not([hidden]) .source-control-worktree')].find(element => element.closest('[data-source-worktree]')?.getAttribute('data-source-worktree') === id)?.dataset.sourceRowLayout === 'full', value.worktreeId);
+      await waitTwoFrames();
+      const required = await measure();
       assert.ok(required.nameStatus > 280 && required.full < 1000, '实测长名称覆盖三级压缩的真实宽度区间：' + JSON.stringify(required));
       assert.equal((await setWidth(Math.ceil(required.full) + 12, 'full')).nameComplete, true);
       const branch = row.locator('.source-control-row-action-button'); assert.equal(await branch.isVisible(), true);

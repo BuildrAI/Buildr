@@ -61,7 +61,7 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 `e2e-browser:code-explorer` 与 `e2e-browser:code` 是文件浏览和源代码管理两个独立检查。源码浏览器检查按上述档位准入，仍受全局进程、工作线程和工作空间读写额度约束；它们共享不可变前端产物，各自使用临时工作空间、随机端口、浏览器和清理责任。其他共享可变资源的检查继续互斥。开始结束时间必须证明实际并行，准备去重不能被误算为测试通过。
 
-兼容选择器可以在确证不引入状态污染、不跳过断言且清理完整时复用同一隔离宿主。当前只合并`core,shell,workbench`为`browser:bundle:reading`：代表步骤执行完整场景，其余成员以零成本结果回填；单独聚焦任一成员时仍保持窄范围。`project+service`因service运行时目录污染、`task+task-materials`因Task列表响应等待超时未采用，继续使用独立现场。调度器在`browser-runtime`有空闲槽位时优先准入待执行浏览器步骤，槽位满后恢复普通成本顺序，避免普通检查被永久饿死。
+兼容选择器可以在确证不引入状态污染、不跳过断言且清理完整时复用同一隔离宿主。当前只合并`core,shell,workbench,change`为`browser:bundle:reading`：代表步骤执行完整场景，其余成员以零成本结果回填；单独聚焦任一成员时仍保持窄范围。`project+service`因service运行时目录污染、`task+task-materials`因Task列表响应等待超时已移除`task-records`打包，继续使用独立现场。`e2e-browser:*`与`development-live-browser`、`harness-frame-browser`、`harness-shell-composition`、`harness-standalone-browser`等独立Playwright检查共用`browser-runtime`资源槽位，调度器在`browser-runtime`有空闲槽位时优先准入待执行浏览器步骤，槽位满后恢复普通成本顺序，避免普通检查被永久饿死。
 
 对话 `history` 的独立成员由 `buildr-web/test/browser/agent-conversations-history-scenarios.ts` 声明，稳定身份形如 `history/workspace-order`。完整运行不再由一个进程承包整个对话组，而是使用两个静态隔离批次：批次A保留`setup,tasks,recovery`顺序并只分配约三分之一history场景，批次B承载其余组和剩余history场景；两个批次各用独立进程与互斥场景集合。每个成员仍新建浏览器上下文和夹具，独立失败同轮收集；领取后崩溃不会自动重放，清理或共享服务状态异常会明确留下未运行项。通过 `BUILDR_AGENT_JOURNEY_PART=history` 和 `BUILDR_AGENT_SCENARIO_FOCUS=<身份，多个用 | 分隔>` 可在同一 `test:e2e -- --check e2e-browser:agent-conversations` 入口定点诊断；未知筛选报错，子集通过不能作为整组通过，coverage会标记focused，失败接续仍选择未完整证明的父检查。较重的服务和生产构建仍由本轮共享，场景结果与耗时保存在现有诊断日志。
 

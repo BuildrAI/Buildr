@@ -684,7 +684,7 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
   } finally {
     // Stop the current conversation subscription before removing its transport fixture.
     await page.evaluate(() => sessionStorage.clear()).catch(() => {});
-    await page.reload().catch(() => {});
+    await page.goto('about:blank').catch(() => {});
     await agent.dispose(); await fixture.cleanup(); await page.setViewportSize({ width: 1280, height: 720 });
   }
 }

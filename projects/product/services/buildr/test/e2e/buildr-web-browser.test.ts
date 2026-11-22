@@ -160,6 +160,7 @@ function createShellFixture(root: any): any  {
   fs.mkdirSync(source);
   fs.writeFileSync(path.join(source, 'README.md'), '# Demo API\n');
   fixtureRuntime().createServiceAsset({ targetRoot: root, project: 'demo', service: 'api', repoRef: source, attachRef: null, name: '演示服务', description: '浏览器测试服务', type: 'backend', rulesSource: null, remote: 'origin', remoteExplicit: false, integrationBranch: null });
+  fs.writeFileSync(path.join(root, 'projects', 'demo', 'AGENTS.md'), '# AGENTS.md\n\n演示项目规则。\n', 'utf8');
   writeChange(path.join(root, 'projects', 'demo'), 'browser-flow', '浏览器流程');
   runGit(root, ['init', '-q']);
   runGit(root, ['config', 'user.name', 'Buildr Browser Fixture']);
@@ -455,22 +456,45 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   const previousProductData: any = process.env.BUILDR_PRODUCT_DATA_DIR;
   let browser: any;
   let server: any;
+  let serverInstance: any;
   let previewServer: any;
+  let previewServerInstance: any;
   let webRuntime: any;
   t.after(async () => {
     costBegin('cleanup');
     let cleanupComplete = false;
     try {
+      process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=cleanup-browser\n`);
       if (browser) await browser.close();
-      if (server) await new Promise((resolve: any) => server.close(resolve));
-      if (previewServer) await new Promise((resolve: any) => previewServer.close(resolve));
+      process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=cleanup-servers\n`);
+      if (serverInstance) await serverInstance.shutdown();
+      else if (server) await new Promise((resolve: any) => server.close(resolve));
+      if (previewServerInstance) await previewServerInstance.shutdown();
+      else if (previewServer) await new Promise((resolve: any) => previewServer.close(resolve));
+      process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=cleanup-agent-close\n`);
       if (webRuntime) await runtimeProvide(webRuntime, AGENT_SERVICE_APPLICATION).close();
+      process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=cleanup-agent-stop\n`);
       // The direct HTTP fixture owns its callback bridge and isolated execution
       // daemon; closing server sockets alone cannot release those resources.
       await stopAgentProcess({dataRoot:path.join(base,'app-data'),mode:'stop-owned'});
-      fs.rmSync(base, { recursive: true, force: true });
+      if (!managedSmokeRoot) {
+        process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=cleanup-rm\n`);
+        fs.rmSync(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      }
       cleanupComplete = true;
       process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=cleanup-complete\n`);
+    } catch (error: any) {
+      const appDataRoot = path.join(base, 'app-data');
+      const stopDiagnostics: Record<string, unknown> = {};
+      if (fs.existsSync(appDataRoot)) {
+        for (const rel of fs.readdirSync(appDataRoot, { recursive: true, encoding: 'utf8' })) {
+          if (rel.endsWith('last-stop.json') || rel.endsWith('instance.json') || rel.endsWith('instances.json')) {
+            try { stopDiagnostics[rel] = fs.readFileSync(path.join(appDataRoot, rel), 'utf8'); } catch {}
+          }
+        }
+      }
+      process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=cleanup-error message=${error?.stack || error?.message || String(error)} diagnostics=${JSON.stringify(stopDiagnostics)}\n`);
+      throw error;
     } finally {
       if (costEnabled) {
         costBegin('finished');
@@ -564,6 +588,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     webProfile: { profile: 'development' },
     staticRoot: BROWSER_WEB_DIST_ROOT,
   });
+  serverInstance = instance;
   server = instance.server;
   const { url, initialWorkspaceId }: any = await instance.ready;
   const previewInstance: any = createLocalWorkspaceServer(webRuntime, {
@@ -579,6 +604,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
       reuse: { source: 'development', facets: ['model-catalog', 'agent-runtime'] },
     },
   });
+  previewServerInstance = previewInstance;
   previewServer = previewInstance.server;
   const { url: previewUrl }: any = await previewInstance.ready;
   const workspaceUrl: any = `${url}/workspaces/${initialWorkspaceId}`;
@@ -653,6 +679,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   let page: any = await newBrowserPage();
   let lastTick=performance.now(),maximumLag=0;
   const lagTimer=setInterval(()=>{const now=performance.now();maximumLag=Math.max(maximumLag,now-lastTick-100);lastTick=now;},100);
+  lagTimer.unref();
   t.after(()=>{clearInterval(lagTimer);process.stderr.write('[browser-host-lag] '+JSON.stringify({maximumLag})+'\n');});
 
   const observedNavigations: Array<{path:string;status:number}> = [];
@@ -672,12 +699,20 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     if (SELECTORS.size === 1 && SELECTORS.has('service') && !taskFocused(args[0])) return Promise.resolve();
     const action=args.at(-1);
     if(typeof action==='function')args[args.length-1]=async(context:any)=>{
+      const scenarioName = String(args[0]);
       const started = costClock();
+      process.stderr.write(`[buildr-browser-scenario] selector=${selectorLabel} status=started name=${JSON.stringify(scenarioName)}\n`);
+      let scenarioStatus = 'passed';
       try{return await action(context);}catch(error){
+        scenarioStatus = 'failed';
         const state=await page.evaluate(()=>({path:location.pathname,title:document.title,session:Boolean(document.querySelector('meta[name="buildr-session"]')),nodes:[...document.querySelectorAll('[data-task-node]')].map(n=>({value:n.getAttribute('data-task-node'),visible:Boolean(n.getClientRects().length)})),ids:[...document.querySelectorAll('[id]')].slice(0,100).map(n=>n.id),text:document.body.innerText.slice(0,5000)})).catch(()=>({closed:true}));
         process.stderr.write('[browser-failure-state] '+JSON.stringify({scenario:args[0],navigations:observedNavigations,writes:observedWrites,state})+'\n');
         throw error;
-      } finally { if (costEnabled) costScenarios.push({ name: String(args[0]), durationMs: costClock() - started }); }
+      } finally {
+        const durationMs = Math.round(costClock() - started);
+        process.stderr.write(`[buildr-browser-scenario] selector=${selectorLabel} status=${scenarioStatus} durationMs=${durationMs} name=${JSON.stringify(scenarioName)}\n`);
+        if (costEnabled) costScenarios.push({ name: scenarioName, durationMs });
+      }
     };
     return runTest(...args);
   };
@@ -1811,6 +1846,10 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   });
 
   if (selected('project')) await t.test('项目列表展示标题与说明，详情展示基础事实与文档', async () => {
+    const demoAgentsPath = path.join(workspaceRoot, 'projects', 'demo', 'AGENTS.md');
+    const previousDemoAgents = fs.existsSync(demoAgentsPath) ? fs.readFileSync(demoAgentsPath, 'utf8') : null;
+    if (previousDemoAgents === null) fs.writeFileSync(demoAgentsPath, '# AGENTS.md\n\n演示项目规则。\n', 'utf8');
+    try {
     const beforeProjectEdit = runtime.assetCatalog(workspaceRoot);
     if (beforeProjectEdit.migrationRequired) runtime.migrateAssetCatalog(workspaceRoot, { revision: beforeProjectEdit.revision });
     await page.goto(`${workspaceUrl}/projects`);
@@ -2012,6 +2051,10 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     await page.waitForFunction(() => [...document.querySelectorAll('.workspace-tabstrip .pane-tab .pane-tab-text')].some((node: any) => node.textContent?.includes('演示项目（已更新）')));
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     await page.setViewportSize({ width: 1280, height: 720 });
+    } finally {
+      if (previousDemoAgents === null) fs.rmSync(demoAgentsPath, { force: true });
+      else fs.writeFileSync(demoAgentsPath, previousDemoAgents, 'utf8');
+    }
   });
 
   if (selected('project')) await t.test('元信息最新读取失败保留输入，旧编辑迟到响应不能解锁新保存', async () => {

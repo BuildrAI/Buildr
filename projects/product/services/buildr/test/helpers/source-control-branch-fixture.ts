@@ -31,13 +31,28 @@ export async function withSourceControlBranchFixture(
   assert.ok(!git(root, ['remote']).split('\n').includes(remote), '验收远程名称必须尚不存在');
   let created = false, remoteAdded = false;
   const configFile = path.join(path.resolve(root, git(root, ['rev-parse', '--git-common-dir'])), 'config');
-  let originalAuthorConfig: Buffer | null = null;
+  const AUTHOR_CONFIG_KEYS = ['author.name', 'author.email', 'user.name', 'user.email'] as const;
+  const readLocalConfigEntries = () => {
+    const entries = new Map<string, string[]>();
+    const raw = git(root, ['config', '--local', '--list', '--null']);
+    for (const record of raw.split('\0')) {
+      if (!record) continue;
+      const splitAt = record.indexOf('\n');
+      const key = (splitAt >= 0 ? record.slice(0, splitAt) : record).toLowerCase();
+      if (!(AUTHOR_CONFIG_KEYS as readonly string[]).includes(key)) continue;
+      const list = entries.get(key) ?? [];
+      if (splitAt >= 0) list.push(record.slice(splitAt + 1));
+      entries.set(key, list);
+    }
+    return entries;
+  };
+  const originalAuthorEntries: { current: Map<string, string[]> | null } = { current: null };
   const configureAuthor = (configuration: {name: string; email: string; userName?: string; userEmail?: string} | null) => {
     // Local empty values explicitly mask the host's global identity. Nothing
     // outside this disposable repository is changed or inferred from commits.
     const relative = path.relative(fs.realpathSync(input.base), fs.realpathSync(configFile));
     assert.ok(relative && !relative.startsWith('..') && !path.isAbsolute(relative), '作者配置只能修改隔离夹具自己的Git配置');
-    originalAuthorConfig ||= fs.readFileSync(configFile);
+    originalAuthorEntries.current ||= readLocalConfigEntries();
     const values = {
       'author.name': configuration?.name || '', 'author.email': configuration?.email || '',
       'user.name': configuration?.userName ?? configuration?.name ?? '',
@@ -128,12 +143,19 @@ export async function withSourceControlBranchFixture(
     // No force or restore touches the registered directory; all authored content
     // discarded below belongs solely to the disposable browser checkout.
     if (git(root, ['symbolic-ref', '--short', 'HEAD']) !== originalBranch) git(root, ['checkout', originalBranch]);
-    if (originalAuthorConfig) fs.writeFileSync(configFile, originalAuthorConfig);
+    const savedAuthorEntries = originalAuthorEntries.current;
+    if (savedAuthorEntries) {
+      const currentEntries = readLocalConfigEntries();
+      for (const key of AUTHOR_CONFIG_KEYS) {
+        if (currentEntries.has(key)) git(root, ['config', '--local', '--unset-all', key]);
+        for (const value of savedAuthorEntries.get(key) ?? []) git(root, ['config', '--local', '--add', key, value]);
+      }
+    }
     if (created) git(root, ['worktree', 'remove', '--force', location]);
     for (const name of [remoteName, alternate, branch]) {
       if (spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/' + name], { cwd: root }).status === 0) git(root, ['branch', '-D', name]);
     }
-    if (remoteAdded) git(root, ['remote', 'remove', remote]);
+    if (remoteAdded && git(root, ['remote']).split(/\r?\n/).includes(remote)) git(root, ['remote', 'remove', remote]);
     fs.rmSync(remoteDirectory, { recursive: true, force: true });
   }
 }

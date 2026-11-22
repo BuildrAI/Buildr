@@ -4390,3 +4390,22 @@ test('Claude SDK startup failure persists a visible reason on the undelivered in
   const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
   assert.equal(done.entries.find(e=>e.id===entry?.id)?.deliveryDiagnostic,entry?.deliveryDiagnostic);
 });
+
+test('closing service and deleting data root during unknown disconnect produces no unhandledRejection', async () => {
+  const native = fake('local', { disconnect: 'unknown' }), f = fixture([native.executor]);
+  const rejections: unknown[] = [];
+  const onRejection = (reason: unknown) => { rejections.push(reason); };
+  process.on('unhandledRejection', onRejection);
+  try {
+    await connected(f.service, 'local');
+    const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', 'close right after unknown');
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), v => v.run?.status === 'unknown');
+    await f.close();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.deepEqual(rejections, []);
+  } finally {
+    process.off('unhandledRejection', onRejection);
+    await f.close();
+  }
+});

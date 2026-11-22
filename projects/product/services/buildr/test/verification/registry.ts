@@ -937,11 +937,12 @@ const serviceSteps = serviceSets.flatMap(([service, checks]) => checks.map((chec
   const input = (value: string) => service === 'buildr' || /^(?:\.github|skills|knowledge|openspec|services)\//u.test(value) ? value : `services/${service}/${value}`;
   const command = (value: any) => ({ ...value, cwd: path.resolve(root, value.cwd ?? '.') });
   const inherited = builtInVerificationSteps.find((step: any) => step.id === check.id);
-  const footprints = ['Static', 'Unit'].includes(check.type) ? [] : ['filesystem', 'cli'];
+  const browserRuntime = (check.resources ?? []).includes('browser-runtime');
+  const footprints = ['Static', 'Unit'].includes(check.type) ? [] : browserRuntime ? ['filesystem', 'cli', 'workspace-lifecycle'] : ['filesystem', 'cli'];
   return Object.freeze({
     dependsOn: [], groups: [], profiles: inherited?.profiles ?? (service === 'dsh-plugin' || check.selection === 'explicit-only' ? [] : ['candidate']),
     contexts: [], resources: check.resources ?? [], developmentRunners: [],
-    isolationMode: footprints.length ? 'sandbox' : 'none', resetStrategy: footprints.length ? 'recreate' : 'none',
+    isolationMode: browserRuntime ? 'full-lifecycle' : footprints.length ? 'sandbox' : 'none', resetStrategy: footprints.length ? 'recreate' : 'none',
     parallelSafety: 'worker-safe', concurrencyClass: 'cpu-heavy', resourceDemand: check.resourceDemand ?? inherited?.resourceDemand ?? { workers: 1, processes: 1 },
     ...(inherited?.keepFinalDoctor === true ? { keepFinalDoctor: true } : {}),
     ...(check.schedulingCostMs ? { schedulingCostMs: check.schedulingCostMs } : {}),
@@ -960,7 +961,7 @@ const serviceSteps = serviceSets.flatMap(([service, checks]) => checks.map((chec
       ?? (service === 'dsh-plugin' ? { scope: 'plugin' } : ['buildr-web','buildr-harness-web'].includes(service) ? { scope: 'web' } : service === 'buildr-harness' ? { scope: 'backend', releaseNotes: false } : { scope: 'repository' }),
     testing: { ownerScope: `service:product/${service}`, primaryIntent: 'Development', executionBoundary: check.type,
       proves: check.proves ?? check.name, primaryEvidenceOwner: check.id,
-      environment: { footprints, isolation: footprints.length ? 'unique-temporary-root' : 'none' }, resetBurden: footprints.length ? 'single-cleanup' : 'none' },
+      environment: { footprints, isolation: footprints.length ? 'unique-temporary-root' : 'none' }, resetBurden: browserRuntime ? 'lifecycle' : footprints.length ? 'single-cleanup' : 'none' },
     contextDisposition: verificationContextDisposition(check.id),
   });
 }));

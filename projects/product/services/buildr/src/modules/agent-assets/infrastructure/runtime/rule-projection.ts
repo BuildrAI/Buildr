@@ -19,6 +19,7 @@ const RULE_DISCOVERY_EXCLUDED_DIRECTORIES: any = new Set([
   '.hg',
   '.svn',
   '.agents',
+  '.buildr',
   '.claude',
   '.codex',
   '.cursor',
@@ -199,6 +200,19 @@ function managedNestedGitRoots(repoRoot: any): any  {
   return roots;
 }
 
+/** 仅排除 Buildr 自身包模板根目录 `resources/`，避免误伤用户项目中合法的 `resources/`。 */
+function isBuildrPackageResourceRoot(directory: any): boolean {
+  if (path.basename(directory) !== 'resources') return false;
+  if (!isFile(path.join(directory, 'manifest.yml')) || !isDirectory(path.join(directory, 'workspace'))) return false;
+  const packageFile = path.join(path.dirname(directory), 'package.json');
+  if (!isFile(packageFile)) return false;
+  try {
+    return JSON.parse(fs.readFileSync(packageFile, 'utf8'))?.name === '@buildr-ai/buildr';
+  } catch {
+    return false;
+  }
+}
+
 function discoveryBoundary(repoRoot: any, directory: any, reason: any): any  {
   return { path: toPosixRelative(repoRoot, directory), reason };
 }
@@ -219,7 +233,7 @@ function discoverDescendantFiles(repoRoot: any, scopeInfo: any, basename: any): 
         boundaries.push(discoveryBoundary(repoRoot, child, 'symbolic-link'));
         continue;
       }
-      if (RULE_DISCOVERY_EXCLUDED_DIRECTORIES.has(entry.name)) {
+      if (RULE_DISCOVERY_EXCLUDED_DIRECTORIES.has(entry.name) || isBuildrPackageResourceRoot(child)) {
         boundaries.push(discoveryBoundary(repoRoot, child, 'excluded-directory'));
         continue;
       }
@@ -276,11 +290,24 @@ export function resolveAgentFiles(repoRoot: any, scopeInfo: any): any  {
 
 export function discoverManagedOrphanRuleBridges(repoRoot: any, scopeInfo: any): any  {
   const descendants = discoverDescendantFiles(repoRoot, scopeInfo, 'CLAUDE.md');
+  const seen: any = new Set(descendants.files);
   const files: any[] = [];
   for (const targetFile of descendants.files) {
     if (isFile(path.join(path.dirname(targetFile), 'AGENTS.md'))) continue;
     const content = fs.readFileSync(targetFile, 'utf8');
     if (hasManagedRulesMarker(content)) files.push(targetFile);
+  }
+  for (const boundary of descendants.boundaries) {
+    if (boundary.reason !== 'excluded-directory') continue;
+    const boundaryDir = path.join(repoRoot, boundary.path);
+    if (!isBuildrPackageResourceRoot(boundaryDir)) continue;
+    const staleBridge = path.join(boundaryDir, 'workspace', 'CLAUDE.md');
+    if (!isFile(staleBridge) || seen.has(staleBridge)) continue;
+    const content = fs.readFileSync(staleBridge, 'utf8');
+    if (hasManagedRulesMarker(content)) {
+      seen.add(staleBridge);
+      files.push(staleBridge);
+    }
   }
   return { files, boundaries: descendants.boundaries };
 }

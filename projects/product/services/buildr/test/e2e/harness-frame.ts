@@ -334,6 +334,15 @@ try{
  await imageDialog.getByRole('button',{name:'关闭预览',exact:true}).click();
  await page.locator('#agent-conversation-panel').getByRole('link',{name:'不确定文件',exact:true}).click();
  await page.getByText('不能确认文件的准确工程来源。',{exact:true}).waitFor();
+ const proofLink=page.locator('#agent-conversation-panel').getByRole('link',{name:'验收文件',exact:true});
+ const beforePreviewUrl=page.url();
+ await proofLink.click();
+ const previewDialog=page.getByRole('dialog',{name:'surface-proof.md',exact:true});
+ await previewDialog.waitFor({state:'visible'});
+ await previewDialog.getByText('same-page file proof',{exact:false}).waitFor();
+ assert.equal(page.url(),beforePreviewUrl,'默认点击代码库文件链接保持就地弹窗预览，不跳转页面');
+ await previewDialog.locator('.ant-modal-close').click();
+ await previewDialog.waitFor({state:'hidden'});
  const fileReads:string[]=[];
  const countFileReads=(request:{url():string})=>{const target=new URL(request.url());if(target.pathname.endsWith('/code/repositories'))fileReads.push(target.searchParams.has('targetPath')?'target':'catalog');else if(target.searchParams.get('filePath')==='surface-proof.md')fileReads.push(target.pathname.split('/').at(-1)!);};
  const catalogRoute='**/code/repositories?*';
@@ -342,8 +351,14 @@ try{
  await page.route(catalogRoute,async route=>{if(!new URL(route.request().url()).searchParams.has('targetPath'))await holdCatalog;await route.fallback();});
  page.on('request',countFileReads);
  try{
+  await page.mouse.move(10,10);
+  await proofLink.hover();
+  const reveal=page.locator('#agent-conversation-panel').getByRole('button',{name:'在资源管理器中打开',exact:true});
+  await reveal.waitFor({state:'visible'});
+  fileReads.length=0;
   const full=page.waitForResponse(response=>{const target=new URL(response.url());return target.pathname.endsWith('/code/repositories')&&!target.searchParams.has('targetPath');});
-  await page.locator('#agent-conversation-panel').getByRole('link',{name:'验收文件',exact:true}).click();
+  full.catch(()=>{});
+  await reveal.click();
   await page.waitForURL('**/code/explorer');
   const body=page.locator('.code-explorer-stage .file-editing-pane').getByText('same-page file proof',{exact:false});
   await body.waitFor();

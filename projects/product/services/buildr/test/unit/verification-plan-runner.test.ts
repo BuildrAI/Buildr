@@ -216,3 +216,18 @@ test('browser bundle keeps one real host while focused single-selector checks st
   assert.equal(focused.steps[0].dependsOn.length, 0);
   assert.equal(focused.coveredBy.size, 0);
 });
+
+test('standalone playwright checks declare browser-runtime resource and task selectors stay independent', () => {
+  for (const id of ['development-live-browser', 'harness-frame-browser', 'harness-shell-composition', 'harness-standalone-browser']) {
+    const step = verificationSteps.find((check: any) => check.id === id);
+    assert.ok(step, `expected check ${id} in registry`);
+    assert.ok(Array.isArray(step.resources) && step.resources.includes('browser-runtime'), `${id} must declare browser-runtime resource`);
+  }
+  const taskMembers = ['task', 'task-materials'].map((selector: string) =>
+    verificationSteps.find((check: any) => check.id === `e2e-browser:${selector}`));
+  assert.equal(taskMembers.length, 2);
+  const bundled = bundleBrowserExecutionSteps(taskMembers);
+  assert.equal(bundled.steps.length, 2);
+  assert.equal(bundled.coveredBy.size, 0);
+  for (const step of bundled.steps) assert.equal(step.browserSelectors, undefined);
+});

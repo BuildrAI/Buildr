@@ -1519,7 +1519,9 @@ export class ConversationApplication {
       this.workers.delete(run.id);
       this.cancelledRetries.delete(run.id);
       this.scheduleSourceRelease(workspaceId, id);
-      if (this.currentRun(workspaceId, id, run.id)?.view.run?.diagnostic === BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC) {
+      if (this.closing) return;
+      const state = this.options.repository.readState(id);
+      if (state?.view.workspaceId === workspaceId && state.view.run?.id === run.id && state.view.run.generation === this.options.generation && state.view.run.diagnostic === BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC) {
         queueMicrotask(() => { void this.releaseIdleSources({ workspaceId, id }).catch(() => {}); });
       }
     });
