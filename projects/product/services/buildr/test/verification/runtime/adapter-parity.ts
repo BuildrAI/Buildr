@@ -66,6 +66,12 @@ function prepareSeed(): any  {
   harness.run(['project', 'create', 'scope-alpha', '--target', seed, '--description', 'scope alpha']);
   harness.run(['project', 'create', 'scope-beta', '--target', seed, '--description', 'scope beta']);
 
+  for (const project of ['scope-alpha', 'scope-beta']) {
+    const rule = path.join(seed, 'projects', project, 'AGENTS.md');
+    assert.equal(fs.existsSync(rule), false);
+    fs.writeFileSync(rule, `# ${project} 用户规则\n`);
+  }
+
   const completeSkillSource: any = path.join(seed, '.fixture-source', 'complete-runtime-skill');
   for (const directory of ['agents', 'assets', 'examples', 'references', 'scripts', 'templates']) fs.mkdirSync(path.join(completeSkillSource, directory), { recursive: true });
   fs.writeFileSync(path.join(completeSkillSource, 'SKILL.md'), '---\nname: complete-runtime-skill\ndescription: complete runtime projection fixture\n---\n\n# Complete Runtime Skill\n');

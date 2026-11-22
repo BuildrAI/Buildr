@@ -66,7 +66,7 @@ function createFirstProject(target: string, catalog: any): void {
   const created = JSON.parse(result.stdout);
   assert.equal(created.migrationRequired, false);
   assert.equal(created.projects[0].code, 'first');
-  assert.ok(fs.existsSync(path.join(target, 'projects/first/AGENTS.md')));
+  assert.equal(fs.existsSync(path.join(target, 'projects/first/AGENTS.md')), false);
 }
 
 try {

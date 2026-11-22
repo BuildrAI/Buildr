@@ -1719,7 +1719,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
 
   if (selected('project')) await t.test('项目资料从实际规则文档返回，迟到资料不能恢复旧阅读', async () => {
     const projectRoot = path.join(workspaceRoot, 'projects/demo');
-    const agents = path.join(projectRoot, 'AGENTS.md'), original = fs.readFileSync(agents, 'utf8');
+    const agents = path.join(projectRoot, 'AGENTS.md'), original = fs.existsSync(agents) ? fs.readFileSync(agents, 'utf8') : null;
     const docs = path.join(projectRoot, 'docs'); fs.mkdirSync(docs, { recursive: true });
     fs.appendFileSync(agents, '\n## 原始规则阅读\n\n[下一份资料](docs/continuity-fast.md)\n');
     fs.writeFileSync(path.join(docs, 'continuity-fast.md'), '# 当前资料阅读\n\n[迟到资料](continuity-slow.md)\n');
@@ -1758,7 +1758,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
       assert.equal(await reading().getByRole('heading', { name: '迟到资料不得恢复', exact: true }).count(), 0);
       assert.equal(await reading().getByRole('button', { name: '← 返回上一篇', exact: true }).count(), 0);
     } finally {
-      release(); if (routed) await finished; await page.unroute(slow); fs.writeFileSync(agents, original);
+      release(); if (routed) await finished; await page.unroute(slow); if (original === null) fs.rmSync(agents); else fs.writeFileSync(agents, original);
       for (const file of ['continuity-fast.md', 'continuity-slow.md']) fs.rmSync(path.join(docs, file));
     }
   });
@@ -2430,6 +2430,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     assert.ok(!c.services.some((s: any) => s.id === service.id));
     assert.ok(c.repositories.some((r: any) => r.id === service.repositoryId));
     assert.equal(fs.existsSync(path.join(workspaceRoot, 'services/delete-browser-api')), false);
+    fs.writeFileSync(path.join(workspaceRoot, 'projects/delete-browser/AGENTS.md'), '# 用户项目规则\n');
     await page.goto(`${workspaceUrl}/projects/delete-browser`);
     await page.getByRole('button', { name: '更多项目操作', exact: true }).click();
     await page.getByRole('menuitem', { name: /^移\s*除$/ }).click();

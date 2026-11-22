@@ -162,7 +162,6 @@ export function createScopeDiagnostics(deps: any) {
 
   function missingProjectBaselineAssets(status: any) {
     const labels: Record<string, string> = {
-      agentsFile: 'AGENTS.md',
       openspecSpecs: 'openspec/specs',
       knowledge: 'knowledge',
       openspecChanges: 'openspec/changes',
@@ -170,7 +169,7 @@ export function createScopeDiagnostics(deps: any) {
       servicesDirectory: 'services',
     };
     return Object.entries(status)
-      .filter(([key]: any) => key !== 'commandsContext')
+      .filter(([key]: any) => Object.hasOwn(labels, key))
       .filter(([, exists]: any) => !exists)
       .map(([key]: any) => labels[key]);
   }

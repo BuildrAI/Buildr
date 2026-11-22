@@ -49,6 +49,7 @@ export function createPackageRuntimeChecks(deps: any): any  {
       buildrSelf.exec(['project', 'create', 'demo', '--target', recursiveRoot], { cwd: root, stdio: 'ignore' });
       fs.writeFileSync(path.join(recursiveRoot, 'AGENTS.md'), '# User root rules\n', 'utf8');
       const recursiveProjectRoot = path.join(recursiveRoot, 'projects', 'demo');
+      fs.writeFileSync(path.join(recursiveProjectRoot, 'AGENTS.md'), '# User project rules\n');
       const apiRoot = path.join(recursiveProjectRoot, 'services', 'api');
       const webRoot = path.join(recursiveProjectRoot, 'services', 'web');
       const customRoot = path.join(apiRoot, 'modules', 'custom');

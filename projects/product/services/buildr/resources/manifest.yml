@@ -544,11 +544,7 @@ projectDirectories:
   - openspec/changes
   - services
 
-projectFiles:
-  - resources/workspace/projects/AGENTS.project.md => AGENTS.md render
-
-templateVariables:
-  - project
+projectFiles: []
 
 forbiddenPatterns:
   - /Users/
