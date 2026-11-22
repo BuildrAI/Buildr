@@ -1195,3 +1195,8 @@ Buildr SHALL 交付 `project-testing` 与 `project-verification` 两个测试技
 #### Scenario: 推送前检查不完整
 - **WHEN** 推送前必要检查失败或环境缺项
 - **THEN** 智能体（Agent）SHALL 不声称通过或自行略过，继续独立安全工作，反馈真实失败、未覆盖和所需决定
+
+#### Scenario: 用户只要求运行现有检查
+- **WHEN** 某项目已有合适的检查，用户只要求运行它
+- **THEN** `project-verification` SHALL 按该项目真实入口执行，不要求先开始持久修改、建设测试、创建正式任务或触发交付
+- **AND** 通用分流和收尾说明 MUST NOT 抄写 Buildr 自用服务名单；要求全量时相关子集不能代替当前项目声明的完整证据

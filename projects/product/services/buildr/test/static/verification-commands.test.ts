@@ -30,7 +30,7 @@ test('each declared service has source checks for its declared boundary', () => 
     const entry = testing.find((item: { id: string }) => item.id === id);
     assert.ok(entry?.scope.services.length, `${id}: no declared services`);
     for (const service of entry.scope.services) {
-      assert.ok(verificationSteps.some(step => step.testing.ownerScope === `service:product/${service}`
+      assert.ok(verificationSteps.some((step: { testing: { ownerScope: string; executionBoundary: string }; target: string }) => step.testing.ownerScope === `service:product/${service}`
         && step.target === 'source' && step.testing.executionBoundary === boundary), `${service}: ${boundary}`);
     }
   }
