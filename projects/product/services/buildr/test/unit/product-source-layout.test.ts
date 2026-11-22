@@ -43,6 +43,15 @@ test('Product 治理根与 Buildr Service 实现根满足最终结构契约', ()
   }), []);
 });
 
+test('结构 verifier 接受没有独立 AGENTS.md 的 Buildr Service', () => {
+  assert.deepEqual(validateProductSourceLayout({
+    projectEntries: canonicalProjectEntries,
+    serviceEntries: canonicalServiceEntries.filter(entry => entry !== 'AGENTS.md'),
+    packageFiles: deferredPackageFiles,
+    bridgeSource: canonicalBridge,
+  }), []);
+});
+
 test('Product 治理根接受与 AGENTS 同目录的受管 CLAUDE runtime bridge', () => {
   assert.ok(productSourceLayoutContract.allowedProjectRootEntries.includes('CLAUDE.md'));
   assert.deepEqual(validateProductSourceLayout({
