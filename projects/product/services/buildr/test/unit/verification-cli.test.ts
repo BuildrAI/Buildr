@@ -66,13 +66,12 @@ test('related verification adds explicit requirements to the actual changed-path
   assert.ok(plan.steps.some((step: any) => step.id === 'frontend-logic'));
 });
 
-test('push check cannot be narrowed by an explicit selection and includes all four services', () => {
+test('push check cannot be narrowed by an explicit selection and includes all applicable registered source checks', () => {
   const plan = planVerification(parseVerificationArguments(['check', '--check', 'unit']));
   const actual = new Set(plan.steps.map((step: any) => step.id));
   for (const step of verificationSteps) {
     if (step.target === 'source' && ['Static', 'Unit'].includes(step.testing.executionBoundary) && step.selection !== 'explicit-only') assert.ok(actual.has(step.id), step.id);
   }
-  for (const id of ['unit', 'frontend-logic', 'agent-unit', 'plugin-unit']) assert.ok(actual.has(id), id);
 });
 
 test('unknown checks preserve independently executable selections and report the gap', () => {

@@ -1,15 +1,15 @@
 # Buildr 测试与验证框架
 
-Buildr 产品使用四类检查：静态检查（Static Check）、单元测试（Unit Test）、集成测试（Integration Test）、端到端测试（End-to-End Test，E2E）。日常开发按用户目标定向选择检查，推送前取得四服务全部静态检查（Static Check）与单元测试（Unit Test）的有效完整证明。发布核对准确交付物及真实平台差异，不另造第五类测试。
+Buildr 产品使用四类检查：静态检查（Static Check）、单元测试（Unit Test）、集成测试（Integration Test）、端到端测试（End-to-End Test，E2E）。日常开发按用户目标定向选择检查，推送前取得已登记服务全部静态检查（Static Check）与单元测试（Unit Test）的有效完整证明。发布核对准确交付物及真实平台差异，不另造第五类测试。
 
-本页解释产品自身执行方式；[项目声明](../../../verification.yml)公开少量稳定入口，[准备声明](../../../preparation.yml)记录真实准备命令。四服务是 `buildr`、`buildr-web`、`buildr-harness` 与 `dsh-plugin`，成员发现、类型和相关选择由[实际执行登记](../../../services/buildr/test/verification/registry.ts)与项目程序负责，不在说明和地图各复制一份文件清单。
+本页解释产品自身执行方式；[项目声明](../../../verification.yml)公开少量稳定入口，[准备声明](../../../preparation.yml)记录真实准备命令。适用服务以项目声明的 `scope.services` 为准，成员发现、类型和相关选择由[实际执行登记](../../../services/buildr/test/verification/registry.ts)与项目程序负责，不在说明和地图各复制一份文件清单。
 
 ## 三层职责
 
 | 层次 | 负责什么 | 与下一层的关系 |
 | --- | --- | --- |
 | Buildr 产品提供的通用项目测试能力 | 测试建设技能维护项目自己的测试与`verification.yml`；验证技能选择并执行项目入口，应用保存可选任务报告。 | Buildr 自身是使用这套能力的一个项目；普通用户项目不必采用Buildr内部执行器。 |
-| Buildr 项目的具体测试框架 | 四服务检查登记、发现与选组、准备、依赖调度、多维资源、隔离执行、内容适用性、失败与计时证据。 | 日常开发与发布都消费这些检查；测试类型本身不构成阶段屏障。 |
+| Buildr 项目的具体测试框架 | 已登记服务检查登记、发现与选组、准备、依赖调度、多维资源、隔离执行、内容适用性、失败与计时证据。 | 日常开发与发布都消费这些检查；测试类型本身不构成阶段屏障。 |
 | Buildr 发布编排 | 冻结准确来源和原包，选择所需源码/原包/平台检查，消费有效证明，再执行另行授权的发布动作。 | 不复制第二份测试清单，不把源码成功当作原包或跨平台成功。 |
 
 具体执行从`cli.ts`取得请求，经`planner.ts`与`registry.ts`选组；`plan-runner.ts`组织准备、上下文和执行，`dag-scheduler.ts`只在依赖与预算允许时准入，`executor.ts`调用真实检查。`resource-coordinator.ts`协调跨执行租约；计时、覆盖及内容适用性分别保留原始结果和有效复用来源。各模块位于[验证实现目录](../../../services/buildr/test/verification/)，正式任务报告仍由应用保存。
@@ -33,9 +33,9 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 | 需求 | 入口 |
 | --- | --- |
-| 四服务全量单元测试（Unit Test） | `npm test` |
-| 推送前四服务全部静态检查（Static Check）与单元测试（Unit Test） | `npm run check` |
-| 四服务全量静态检查（Static Check） | `npm run test:static` |
+| 已登记服务全量单元测试（Unit Test） | `npm test` |
+| 推送前已登记服务全部静态检查（Static Check）与单元测试（Unit Test） | `npm run check` |
+| 已登记服务全量静态检查（Static Check） | `npm run test:static` |
 | 全量集成测试（Integration Test） | `npm run test:integration` |
 | 全量端到端测试（End-to-End Test，E2E） | `npm run test:e2e` |
 | 集成与端到端共同调度，覆盖两类完整并集 | `npm run test:system` |
@@ -43,11 +43,11 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 用户可指定具体检查、类型、全量或相关范围，不要求先创建正式任务或先提供 Git 基线。已知检查直接执行；需要比较才使用明确来源。相关选择须依据实际公共行为、调用方、依赖及交付边界补足自动路径选择，零匹配不能冒充目标已验证。
 
-日常自动 `test:related -- --base <ref>` 保守发现全部候选后，最多执行10组（包含依赖），不满不凑数。独立改动的测试优先，预算可容纳时为直接行为检查预留最多2项，其余优先基础检查，同级优先已登记短测试；未知耗时不当作零。共享测试脚本不提升所有旅程的优先级。计划和执行证据的 `selectionBudget` 保留未选候选及原因，成功只证明定向范围。显式 `--check`、`--tag`、失败接续及全量/发布入口不截断；用户要求全量或发布时实际执行完整检查，推送前四服务Static/Unit政策不变。
+日常自动 `test:related -- --base <ref>` 保守发现全部候选后，最多执行10组（包含依赖），不满不凑数。独立改动的测试优先，预算可容纳时为直接行为检查预留最多2项，其余优先基础检查，同级优先已登记短测试；未知耗时不当作零。共享测试脚本不提升所有旅程的优先级。计划和执行证据的 `selectionBudget` 保留未选候选及原因，成功只证明定向范围。显式 `--check`、`--tag`、失败接续及全量/发布入口不截断；用户要求全量或发布时实际执行完整检查，推送前已登记服务Static/Unit政策不变。
 
 `--list` 列出检查标识，`--plan` 或 `--json` 只查看计划。`test:related -- --base <ref> --check <id>` 在相关集合中追加显式检查；只有 `--check` 时直接执行指定集合。`check` 包含全部不依赖外部运行时的源码静态检查（Static Check）与单元测试（Unit Test），添加 `--check` 不会缩小推送前范围。
 
-静态检查（Static Check）同时检查四服务测试及辅助脚本：JavaScript 做语法解析，TypeScript 做严格类型检查。`test-typecheck` 检查主体、网页和智能体测试，并随 `npm run check` 自动执行。`plugin-typecheck` 与 `plugin-test-typecheck` 使用准确的软件开发工具包（SDK）与已生成的协议声明，按入口分别检查插件宿主端和客户端，避免两端同名类型相互干扰；它们依赖本机准备的外部 DSH SDK，登记为仅显式选择，由插件服务自己的 `test:static` 与发布/候选验证（`tools/verify-all.ts --source-sdk`）执行，不进入日常全量检查。
+静态检查（Static Check）同时检查已登记服务测试及辅助脚本：JavaScript 做语法解析，TypeScript 做严格类型检查。`test-typecheck` 检查主体、网页和智能体测试，并随 `npm run check` 自动执行。`plugin-typecheck` 与 `plugin-test-typecheck` 使用准确的软件开发工具包（SDK）与已生成的协议声明，按入口分别检查插件宿主端和客户端，避免两端同名类型相互干扰；它们依赖本机准备的外部 DSH SDK，登记为仅显式选择，由插件服务自己的 `test:static` 与发布/候选验证（`tools/verify-all.ts --source-sdk`）执行，不进入日常全量检查。
 
 ## 测试内容与并行
 

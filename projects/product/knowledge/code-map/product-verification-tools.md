@@ -107,7 +107,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
 
 ## 前端与产品行为：从要证明的结果定位测试
 
-四服务完整单元测试（Unit Test）由 `services/buildr` 的 `npm test` 聚合；`npm run check` 覆盖推送前全部静态检查（Static Check）与单元测试（Unit Test）。另外提供 `test:static`、`test:integration`、`test:e2e` 和 `test:related`，所有入口均可通过 `--plan` 查看集合、`--check <id>` 显式指定检查。相关选择不要求正式任务或先有比较基线；已知具体检查可直接指定，选择完整性仍由智能体（Agent）对照目标判断。原包消费与准确双包验证保留其实际环境要求，不构成第五类。各入口范围见[产品测试架构](../docs/architecture/verification-framework.md#公开入口)。
+已登记服务完整单元测试（Unit Test）由 `services/buildr` 的 `npm test` 聚合；`npm run check` 覆盖推送前全部静态检查（Static Check）与单元测试（Unit Test）。另外提供 `test:static`、`test:integration`、`test:e2e` 和 `test:related`，所有入口均可通过 `--plan` 查看集合、`--check <id>` 显式指定检查。相关选择不要求正式任务或先有比较基线；已知具体检查可直接指定，选择完整性仍由智能体（Agent）对照目标判断。原包消费与准确双包验证保留其实际环境要求，不构成第五类。各入口范围见[产品测试架构](../docs/architecture/verification-framework.md#公开入口)。
 
 - **`services/buildr-web/test/`** — 前端逻辑的独立测试集合
   - [parentCoordination.test.mjs](../../services/buildr-web/test/parentCoordination.test.mjs) — 父任务确认的默认拒绝、子任务处置和版本保留，不启动网页
@@ -117,7 +117,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - `unit/`
     - [verification-changed-paths.test.ts](../../services/buildr/test/unit/verification-changed-paths.test.ts) — 受影响路径必须选中必要步骤，选择成功与实际测试通过分别核对
   - `static/`
-    - [verification-entrypoints.test.ts](../../services/buildr/test/static/verification-entrypoints.test.ts) — 测试族（Testing Family）的完整入口与声明范围对应，包括四服务及四类检查的完整范围
+    - [verification-entrypoints.test.ts](../../services/buildr/test/static/verification-entrypoints.test.ts) — 测试族（Testing Family）的完整入口与声明范围对应，包括已登记服务及四类检查的完整范围
   - `integration/`
     - [source-control-observations.test.ts](../../services/buildr/test/integration/source-control-observations.test.ts) — 真实 Git／文件与受控监听传输的归属、忽略和批处理矩阵
     - [source-control-native-observations.test.ts](../../services/buildr/test/integration/source-control-native-observations.test.ts) — 独立真实原生事件通道，追踪并原样转发回调，绝不注入通知

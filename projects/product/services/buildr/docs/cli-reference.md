@@ -331,7 +331,7 @@ Buildr 不 render 或安装 Commands，不保存 binary、token、cookie、登�
 
 `projects/<project>/verification.yml` 只接受closed `buildr.project-verification/v4`测试地图。每项testing family声明稳定id、Project/Service scope、purpose、sourcePaths、testRoots、完整command或Agent入口、选择指导与requirements，不列举具体测试文件，也不保存一次性计划或运行结果。
 
-`project-verification` 根据用户目标、实际改动和公共调用面选齐相关静态检查（Static Check）、单元测试（Unit Test）、集成测试（Integration Test）与端到端测试（End-to-End Test，E2E），直接调用项目实际工具并交付证据。用户可指定具体检查、某类全量或相关范围，不要求正式任务或比较基线。Buildr 产品推送前执行四服务全部静态检查（Static Check）与单元测试（Unit Test）；其他项目遵循其明确政策。测试失败先修复或如实报告；已有且仍为 `active` 的任务可通过应用（Application）保存实际报告。
+`project-verification` 根据用户目标、实际改动和公共调用面选齐相关静态检查（Static Check）、单元测试（Unit Test）、集成测试（Integration Test）与端到端测试（End-to-End Test，E2E），直接调用项目实际工具并交付证据。用户可指定具体检查、某类全量或相关范围，不要求正式任务或比较基线。Buildr 产品推送前执行已登记服务全部静态检查（Static Check）与单元测试（Unit Test）；其他项目遵循其明确政策。测试失败先修复或如实报告；已有且仍为 `active` 的任务可通过应用（Application）保存实际报告。
 
 没有声明或没有适用能力时，doctor 不产生 finding，`project-verification` 在实际结果中报告覆盖缺口。文件存在时 doctor 只做 closed schema、路径、scope 与资源引用校验，不运行命令或探测测试环境。`project-testing` 从真实构建脚本、持续集成（CI）、文档和已有测试维护测试登记；已授权的事实维护直接完成，业务取舍、授权缺失或范围扩大才反馈用户决定。
 

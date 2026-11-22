@@ -2631,7 +2631,7 @@ sources:
     title: 产品完整入口与声明范围契约
     kind: code
     path: services/buildr/test/static/verification-entrypoints.test.ts
-    summary: 核对 Buildr 自身公开测试入口、四服务与四类检查的完整范围及真实命令，不把这些命令强加给用户项目。
+    summary: 核对 Buildr 自身公开测试入口、已登记服务与四类检查的完整范围及真实命令，不把这些命令强加给用户项目。
     observedDigest: 488ed1b320d92285d464ef205f7fe99f63f8ce8cce0d5f73e48be2cc9f10e5af
   - id: verification-installed-package
     title: 安装包中的地图与报告行为

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-定义四服务的四类检查、统一选择与执行入口、真实证据及隔离边界，使开发、推送前和用户指定验证均可解释、可执行，并如实报告覆盖、失败、缺项与成本。
+定义已登记服务的四类检查、统一选择与执行入口、真实证据及隔离边界，使开发、推送前和用户指定验证均可解释、可执行，并如实报告覆盖、失败、缺项与成本。
 
 ## Requirements
 
@@ -27,19 +27,19 @@ Buildr Product SHALL 仅以 `Static`、`Unit`、`Integration`、`E2E` 作为正�
 - **WHEN** 旧单元、组件、契约、系统或发布检查实际覆盖不同边界
 - **THEN** 维护者 SHALL 按真实断言拆分或归类并保留有效覆盖，不得仅改目录名或把慢测试移走以制造快速结果
 
-### Requirement: 四服务必须具有完整且可解释的检查登记
-Buildr SHALL 以单一执行登记和实际发现规则覆盖主体、网页、智能体服务及插件。每项 SHALL 具有稳定身份、四类归属、证明内容、真实入口、相关源码及环境要求；项目测试地图 SHALL 描述稳定能力，不复制文件成员清单。每个有效检查 SHALL 具有唯一主要归属，辅助覆盖不得冒充第二份独立证明。
+### Requirement: 已登记服务必须具有完整且可解释的检查登记
+Buildr SHALL 以单一执行登记和实际发现规则覆盖项目验证声明中适用的服务。每项 SHALL 具有稳定身份、四类归属、证明内容、真实入口、相关源码及环境要求；项目测试地图 SHALL 描述稳定能力，不复制文件成员清单。每个有效检查 SHALL 具有唯一主要归属，辅助覆盖不得冒充第二份独立证明。
 
 #### Scenario: 新增或迁移测试
 - **WHEN** 服务新增、删除或移动检查
 - **THEN** 完整发现 SHALL 核对其实际入口和归属，遗漏及重复 SHALL 明确诊断，不能只凭目录数量宣称完整
 
 ### Requirement: 日常公开命令必须具有确定语义
-Buildr SHALL 从主体服务的项目包装入口提供 `npm test`、`npm run check`、`npm run test:static`、`npm run test:integration`、`npm run test:e2e` 和 `npm run test:related`。`test` SHALL 运行四服务全部单元，`check` SHALL 完整选择当前源码静态与单元，类型入口 SHALL 选择对应完整集合。旧日常档位、逐页面和五类定位命令 SHALL 撤销并迁移现行消费者。
+Buildr SHALL 从主体服务的项目包装入口提供 `npm test`、`npm run check`、`npm run test:static`、`npm run test:integration`、`npm run test:e2e` 和 `npm run test:related`。`test` SHALL 运行已登记服务全部单元，`check` SHALL 完整选择当前源码静态与单元，类型入口 SHALL 选择对应完整集合。旧日常档位、逐页面和五类定位命令 SHALL 撤销并迁移现行消费者。
 
 #### Scenario: 推送前全量检查
 - **WHEN** 智能体（Agent）准备推送 Buildr 产品代码
-- **THEN** SHALL 调用 `check` 并核对覆盖四服务且对应准确待推送内容，不能因本次仅改文档而缩小声明集合
+- **THEN** SHALL 调用 `check` 并核对覆盖已登记服务且对应准确待推送内容，不能因本次仅改文档而缩小声明集合
 
 #### Scenario: 全量入口传入缩小选择参数
 - **WHEN** 调用方试图用显式检查参数缩小 `check`
@@ -85,7 +85,7 @@ Buildr SHALL 从主体服务的项目包装入口提供 `npm test`、`npm run ch
 - **THEN** SHALL 继续收集实际结果和耗时，不得跳过剩余检查、缩小覆盖或报告超预算即正确性失败
 
 ### Requirement: 类型检查必须说明真实范围
-四服务 SHALL 具有可独立调用的类型检查及明确输入准备；类型检查 SHALL 与网页打包及插件完整装载分离。`noCheck`、仅转译、被排除的测试源码或未准备的软件开发工具包（SDK） SHALL NOT 作为严格类型检查已通过的证据。
+已登记服务 SHALL 具有可独立调用的类型检查及明确输入准备；类型检查 SHALL 与网页打包及插件完整装载分离。`noCheck`、仅转译、被排除的测试源码或未准备的软件开发工具包（SDK） SHALL NOT 作为严格类型检查已通过的证据。
 
 #### Scenario: 存在历史测试类型缺口
 - **WHEN** 当前配置未严格检查部分测试源码
