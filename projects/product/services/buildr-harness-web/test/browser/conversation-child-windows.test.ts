@@ -224,7 +224,27 @@ test('child conversation floating window works in split-history view, hides in f
     const popup = page.locator('.ac-more-menu-popup');
     await popup.waitFor({state:'visible'});
     await popup.locator('.ac-participant-history').getByText('参与过此对话', {exact:true}).waitFor({state:'visible'});
-    await popup.locator('.ac-participant-history .ac-participants').getByText('Codex · GPT-5', {exact:true}).waitFor({state:'visible'});
+    const participantChip = popup.locator('.ac-participant-history .ac-participants').getByText('Codex · GPT-5', {exact:true});
+    await participantChip.waitFor({state:'visible'});
+    const participantStyle = await participantChip.evaluate(el => {
+      const chip = getComputedStyle(el);
+      const title = el.closest('.ac-participant-history')?.querySelector('.ac-participant-history-title');
+      const menuItem = el.closest('.ac-more-menu-popup')?.querySelector('.ant-dropdown-menu-item');
+      if (!title || !menuItem) return null;
+      const titleRect = title.getBoundingClientRect();
+      const itemStyle = getComputedStyle(menuItem);
+      const itemTextLeft = menuItem.getBoundingClientRect().left + parseFloat(itemStyle.paddingLeft);
+      return {
+        borderTopStyle: chip.borderTopStyle,
+        borderTopWidth: chip.borderTopWidth,
+        titleLeft: titleRect.left,
+        itemTextLeft,
+      };
+    });
+    assert.ok(participantStyle, '应读取到参与者样式与菜单项定位');
+    assert.equal(participantStyle.borderTopStyle, 'none', '参与过此对话条目应采用无边框样式');
+    assert.equal(participantStyle.borderTopWidth, '0px', '参与过此对话条目边框宽度应为 0');
+    assert.ok(Math.abs(participantStyle.titleLeft - participantStyle.itemTextLeft) <= 2, `参与者标题应与菜单项文本左对齐: ${JSON.stringify(participantStyle)}`);
 
     await page.getByRole('menuitem', {name:'创建子对话',exact:true}).click();
     const childWindow = page.locator('.ac-child-window:not([hidden])');

@@ -62,6 +62,7 @@ test('production Harness browses, edits, reviews and commits with no Development
   const activateWorkspace=async()=>{
     const toggle=page.getByRole('button',{name:'打开对话工作区',exact:true});
     if(!await toggle.isVisible())await rail.getByRole('button',{name:'当前对话',exact:true}).click();
+    assert.equal(await toggle.locator('svg[data-icon="panel-right"]').count(),1,'折叠态工作区按钮应展示右侧面板图标');
     await toggle.click();
   };
   const workspace=page.getByRole('region',{name:'对话工作区',exact:true});
@@ -89,6 +90,7 @@ test('production Harness browses, edits, reviews and commits with no Development
   };
   assert.equal(await page.locator('.harness-environment-controls').count(),0);
   assert.equal(await header.locator('button[aria-label="更多对话操作"] + .harness-workspace-toggle').count(),1);
+  assert.equal(await header.locator('.harness-workspace-toggle svg[data-icon="panel-right-open"]').count(),1,'展开态工作区按钮应展示展开后的右侧面板图标');
   const [newButton,currentButton,listButton]=await Promise.all(['.ac-new-conversation','.ac-current-conversation','.ac-all-conversations'].map(selector=>rail.locator(selector).boundingBox()));
   assert.ok(newButton&&currentButton&&listButton&&newButton.y<currentButton.y&&currentButton.y<listButton.y);
   await assertAligned();
@@ -215,7 +217,9 @@ test('production Harness browses, edits, reviews and commits with no Development
   assert.equal(await page.locator('#agent-conversation-panel').getAttribute('data-conversation-id'),null);
   available=false;
   await page.getByRole('button',{name:'收起对话工作区',exact:true}).click();
+  assert.equal(await header.locator('.harness-workspace-toggle svg[data-icon="panel-right"]').count(),1,'收起工作区后按钮应恢复折叠态右侧面板图标');
   await page.getByRole('button',{name:'打开对话工作区',exact:true}).click();
+  assert.equal(await header.locator('.harness-workspace-toggle svg[data-icon="panel-right-open"]').count(),1,'再次展开工作区后按钮应展示展开态右侧面板图标');
   await workspace.getByText('当前工作空间目录不可用',{exact:true}).waitFor();
   assert.equal(await workspace.locator('[data-file-path="note.txt"]').count(),0);
   assert.equal((await client.directories.list()).length,1,'工程目录不重复登记');

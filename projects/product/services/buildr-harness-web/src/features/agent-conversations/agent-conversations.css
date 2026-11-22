@@ -265,11 +265,12 @@
 .ac-fork-origin .ant-btn{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto}
 .ac-fork-origin small{display:block;color:var(--ant-color-text-secondary,#777)}
 
-.ac-more-menu-popup{border-radius:8px;background:#fff;box-shadow:0 6px 16px 0 rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12),0 9px 28px 8px rgba(0,0,0,.05);overflow:hidden}
-.ac-more-menu-popup>.ant-dropdown-menu{box-shadow:none;border-radius:0}
-.ac-more-menu-popup>.ac-participant-history{padding:8px 12px 10px;border-top:1px solid var(--soft-line,#e1e5e9);max-width:300px}
-.ac-participant-history-title{font-size:var(--font-size-meta);color:var(--soft-muted,#68766f);margin-bottom:6px;line-height:1.4}
-.ac-participant-history .ac-participants{max-width:276px;max-height:160px;overflow-y:auto;min-height:0;padding:0;border:0;gap:6px}
+.ac-more-menu-popup{padding:4px;border:1px solid var(--soft-line,#e1e5e9);border-radius:8px;background:var(--soft-surface,#fff);box-shadow:0 6px 16px 0 rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12),0 9px 28px 8px rgba(0,0,0,.05)}
+.ac-more-menu-popup>.ant-dropdown-menu{padding:0;background:transparent;box-shadow:none;border-radius:0}
+.ac-more-menu-popup>.ac-participant-history{margin:4px 0 0;padding:8px 12px 6px;border-top:1px solid var(--soft-line,#e1e5e9);max-width:280px}
+.ac-participant-history-title{font-size:var(--font-size-meta);color:var(--soft-muted,#5e6873);margin-bottom:4px;line-height:1.4}
+.ac-participant-history .ac-participants{display:flex;flex-direction:column;align-items:stretch;flex-wrap:nowrap;gap:2px;max-width:100%;max-height:156px;overflow-y:auto;min-height:0;padding:0;border:0;font-size:var(--font-size-secondary);color:var(--soft-ink,#252a31)}
+.ac-participant-history .ac-participants>span{padding:2px 0;border:0;border-radius:0;background:transparent;color:color-mix(in srgb,var(--soft-ink,#252a31) 82%,var(--soft-surface,#fff));line-height:1.5;max-width:100%;overflow-wrap:anywhere;white-space:normal}
 .ac-stream-content{min-width:0;display:flow-root}
 /* Short transcripts stay at the top; overflowing streams follow latest via scroll position. */
 .ac-request-submit{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px 14px;margin-top:12px}

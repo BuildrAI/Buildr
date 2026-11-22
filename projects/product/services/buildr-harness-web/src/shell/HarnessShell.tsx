@@ -1,7 +1,14 @@
 import {Component, useEffect, useId, useState, type ComponentType, type ReactNode} from 'react';
 import {Alert, Button} from 'antd';
-import {LayoutOutlined} from '@ant-design/icons';
 import './harness-shell.css';
+
+function WorkspacePanelIcon({open}: {open: boolean}) {
+  return <svg className="harness-workspace-toggle-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" data-icon={open ? 'panel-right-open' : 'panel-right'} aria-hidden="true">
+    <rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2" />
+    {open && <path d="M10.25 2.5H12.25A1.75 1.75 0 0 1 14 4.25V11.75A1.75 1.75 0 0 1 12.25 13.5H10.25Z" fill="currentColor" fillOpacity="0.22" stroke="none" />}
+    <line x1="10.25" y1="2.25" x2="10.25" y2="13.75" />
+  </svg>;
+}
 
 /** Trusted, build-time composition only; not a dynamic plugin or permission API. */
 export type HarnessWorkEnvironment = {
@@ -43,7 +50,7 @@ export function HarnessShell({children, environment, environmentOpen, onEnvironm
   const integrated = typeof children === 'function';
   const label = environment ? (open ? '收起' : '打开') + environment.title : '';
   const toggle = environment && <Button type="text" className="harness-workspace-toggle" aria-label={label} title={label} aria-expanded={open} aria-controls={panelId}
-    icon={integrated ? <LayoutOutlined aria-hidden /> : undefined} onClick={() => {
+    icon={integrated ? <WorkspacePanelIcon open={open} /> : undefined} onClick={() => {
       setOpenedId(open ? null : environment.id);
       setMountedId(environment.id);
       onEnvironmentOpenChange?.(!open);

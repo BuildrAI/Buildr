@@ -16,6 +16,7 @@
 .ac-thread-header-in-stream .ac-thread-title{padding-inline:0}
 .ac-thread-header-in-stream .ac-thread-actions{align-items:center;gap:2px}
 .ac-thread-header-in-stream .ant-btn{color:var(--soft-muted);border-radius:6px}
+.harness-workspace-toggle-icon{display:block;width:var(--icon-size-regular);height:var(--icon-size-regular)}
 .ac-thread-header-in-stream .harness-workspace-toggle[aria-expanded=true]{color:var(--soft-primary);background:var(--soft-bg)}
 .ac-thread-header-in-stream .ac-thread-actions .ac-subagent-entry-label{display:none}
 .ac-thread-header-in-stream + .ac-history-loading{top:46px}
