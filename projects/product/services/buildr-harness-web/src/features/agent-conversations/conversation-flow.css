@@ -17,7 +17,7 @@
 .ac-turn-head{display:flex;flex-direction:column;gap:8px;padding-block:12px}
 .ac-turn-context{position:static;min-width:0}
 .ac-turn-context:empty{display:none}
-.ac-turn.is-executing>.ac-turn-head{position:sticky;top:0;z-index:2;background:var(--soft-surface,#fff)}
+.ac-turn.is-executing>.ac-turn-head{position:sticky;top:var(--ac-stream-sticky-top,0px);z-index:2;background:var(--soft-surface,#fff)}
 /* Paint below the divider only; execution must not change the shared layout. */
 .ac-turn.is-executing>.ac-turn-head .ac-turn-identity::after{content:"";position:absolute;inset-inline:0;top:100%;height:6px;background:linear-gradient(to bottom,color-mix(in srgb,var(--soft-ink,#252a31) 10%,transparent),transparent);pointer-events:none}
 .ac-turn-prompt.ac-message{position:relative;margin-bottom:0;margin-right:12px}
