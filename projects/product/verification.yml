@@ -201,3 +201,47 @@ testing:
       - 源码组通过不等于安装后或浏览器通过；复用证据必须对应相同字节、环境与目标。
     requirements:
       - 本机稳定版 Node >=24.15.0 与 npm；可用受控浏览器；不调用付费模型或修改日常配置域。
+  - id: harness-dsh-plugin-unit
+    title: Harness DSH 开发插件接入检查
+    scope:
+      project: product
+      services:
+        - buildr-harness-dsh-plugin
+    purpose: 验证入口授权、网页目标校验、端点复用与目标变化时的处理，不打开桌面或使用账号。
+    sourcePaths:
+      - services/buildr-harness-dsh-plugin/**
+    testRoots:
+      - services/buildr-harness-dsh-plugin/test/**
+    full:
+      kind: command
+      argv:
+        - npm
+        - test
+      cwd: services/buildr-harness-dsh-plugin
+    requirements:
+      - 项目开发 Node（>=24.15.0）。
+  - id: harness-dsh-desktop-acceptance
+    title: Harness DSH 已安装开发插件桌面验收
+    scope:
+      project: product
+      services:
+        - buildr-harness-dsh-plugin
+        - buildr-harness
+        - buildr-harness-web
+    purpose: 验证安装后同窗进入独立生产 Web、实际 Harness 目录操作与往返时的状态保全。
+    sourcePaths:
+      - services/buildr-harness-dsh-plugin/**
+      - services/buildr-harness/**
+      - services/buildr-harness-web/**
+    testRoots:
+      - services/buildr-harness-dsh-plugin/test/desktop-acceptance.md
+    full:
+      kind: agent
+      instructions:
+        - 使用插件 README 的开发包入口与本机 DSH 0.2.2-rc.5 官方安装工具，在独立桌面配置绑定准确 Harness
+          安装包和隔离数据域。
+        - 从 DSH 主页面点击入口、操作 Harness
+          测试目录并核对文件变动，返回及再次进入时核对同窗口、同页面和原后台。测试执行器及模型替身不能证明真实订阅或其他宿主平台。
+        - 记录准确安装包与观察结果；结束本次测试进程，保留独立安装和可重新打开的入口，不写日用配置。
+    requirements:
+      - 本机 DSH 桌面 0.2.2-rc.5、Buildr 开发 Node、Harness 本机验收包和有界桌面验证现场。

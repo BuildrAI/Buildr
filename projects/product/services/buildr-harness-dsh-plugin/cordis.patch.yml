@@ -1,0 +1,4 @@
+- insert:
+    - id: buildr-harness-dev
+      name: '@buildr-ai/buildr-harness-dsh-plugin-dev'
+      disabled: false
