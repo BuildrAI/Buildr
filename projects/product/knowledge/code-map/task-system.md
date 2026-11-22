@@ -42,7 +42,7 @@
 
 共用[Markdown 主体](../../services/buildr-web/src/components/MarkdownHost.tsx)通过[任务引用解析](../../services/buildr-web/src/lib/taskBriefLinks.ts)识别严格的 `@task/<task-id>` 稳定任务引用，在当前工作空间进入对应任务，不依赖归档目录深度。记录正文使用明确的逻辑项目引用 `projects/<project>/<path>`；[共享文档解析](../../services/buildr-web/src/lib/workspaceMarkdownReferences.ts)核对当前任务范围与登记项目后按项目身份读取，支持附接项目（Attached Project），不拼接物理目录。旧普通文件链接保留原语义，不能扩大文件读取范围。[阅读状态](../../services/buildr-web/src/features/task/hooks/useTaskReadingState.ts)与[会话阅读历史](../../services/buildr-web/src/features/task/task-reading-history.ts)按工作空间、任务和浏览器历史条目保存有限快照，普通与组合任务的节点、方案选择及滚动分别接续。新打开任务默认说明；`@task` 链接明确进入记录正文，即使复用同任务阅读面也不会吞掉请求，浏览器返回恢复原条目的阅读选择。 [任务页面](../../services/buildr-web/src/features/task/pages/TaskDetailPage.tsx)通过“查看源文件”或选中文件进入代码区域（Code），传递任务、代码库、文件及可选提交身份和返回现场；进入代码前清除旧的说明打开意图，返回后接续原任务阅读，不将代码定位改成新的说明请求。
 
-审查和验证仍从各自应用按需读取；无结果只说明未记录，必要未完成、不适用理由由实际说明或工作摘要表达。真实执行结果和未覆盖理由分别呈现，材料存在不能推导完成。稳定的[浏览器回归](../../services/buildr-web/test/browser/task-materials-journey.ts)直接从列表打开节点、更新正文后刷新、验证无变更专业结果及真实归档后点击，不能只检查顶部链接或文件存在。
+审查和验证仍从各自应用按需读取；无结果只说明未记录，必要未完成、不适用理由由实际说明或工作摘要表达。真实执行结果和未覆盖理由分别呈现，材料存在不能推导完成。精简后的[浏览器冒烟检查](../../services/buildr-web/test/browser/task-materials-journey.ts)覆盖从列表/详情打开节点、说明更新刷新及无变更审查与验证证据展示。
 
 ## 文件正文图片怎样落到实现？
 

@@ -183,9 +183,9 @@ test('independent conversation and storage owners share the existing IO capacity
 });
 
 
-test('a cached two-browser owner executes without browser or IO reservation', async () => {
-  const definition = verificationSteps.find((check: any) => check.id === 'e2e-browser:agent-conversations');
-  const cached = reusedExecutionStep(definition);
+test('a cached browser owner executes without browser or IO reservation', async () => {
+  const definition = verificationSteps.find((check: any) => check.id === 'e2e-browser:core');
+  const cached = reusedExecutionStep({ ...definition, resourceUnits: { 'browser-runtime': 1 } });
   assert.deepEqual(cached.resources, []);
   assert.deepEqual(cached.resourceUnits, {});
   const results = await runVerificationDag({ steps: [cached] }, {

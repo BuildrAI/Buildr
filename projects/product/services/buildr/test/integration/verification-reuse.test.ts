@@ -234,11 +234,13 @@ test('round file coverage adopts only matching complete files and retains origin
   }
 });
 
+import { BROWSER_SELECTORS } from '../verification/browser-selector-catalog.ts';
+
 test('browser selectors compute fallback-free reuse proofs and agent test edits stay isolated across split groups', t => {
   const productRoot = path.resolve(import.meta.dirname, '../..');
   const repositoryRoot = path.resolve(productRoot, '../../../..');
   const browserSteps = verificationSteps.filter((item: any) => item.id.startsWith('e2e-browser:'));
-  assert.equal(browserSteps.length, 14);
+  assert.equal(browserSteps.length, BROWSER_SELECTORS.length);
   for (const item of browserSteps) assert.deepEqual(item.reuse, { scope: 'web', releaseNotes: false });
   const storageStep = verificationSteps.find((item: any) => item.id === 'agent-integration-storage-runtime');
   const conversationsStep = verificationSteps.find((item: any) => item.id === 'agent-integration-conversations');

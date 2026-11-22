@@ -63,10 +63,6 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 兼容选择器可以在确证不引入状态污染、不跳过断言且清理完整时复用同一隔离宿主。当前只合并`core,shell,workbench,change`为`browser:bundle:reading`：代表步骤执行完整场景，其余成员以零成本结果回填；单独聚焦任一成员时仍保持窄范围。`project+service`因service运行时目录污染、`task+task-materials`因Task列表响应等待超时已移除`task-records`打包，继续使用独立现场。`e2e-browser:*`与`development-live-browser`、`harness-frame-browser`、`harness-shell-composition`、`harness-standalone-browser`等独立Playwright检查共用`browser-runtime`资源槽位，调度器在`browser-runtime`有空闲槽位时优先准入待执行浏览器步骤，槽位满后恢复普通成本顺序，避免普通检查被永久饿死。
 
-对话 `history` 的独立成员由 `buildr-web/test/browser/agent-conversations-history-scenarios.ts` 声明，稳定身份形如 `history/workspace-order`。完整运行不再由一个进程承包整个对话组，而是使用两个静态隔离批次：批次A保留`setup,tasks,recovery`顺序并只分配约三分之一history场景，批次B承载其余组和剩余history场景；两个批次各用独立进程与互斥场景集合。每个成员仍新建浏览器上下文和夹具，独立失败同轮收集；领取后崩溃不会自动重放，清理或共享服务状态异常会明确留下未运行项。通过 `BUILDR_AGENT_JOURNEY_PART=history` 和 `BUILDR_AGENT_SCENARIO_FOCUS=<身份，多个用 | 分隔>` 可在同一 `test:e2e -- --check e2e-browser:agent-conversations` 入口定点诊断；未知筛选报错，子集通过不能作为整组通过，coverage会标记focused，失败接续仍选择未完整证明的父检查。较重的服务和生产构建仍由本轮共享，场景结果与耗时保存在现有诊断日志。
-
-对话父组的 `resourceUnits.browser-runtime=2` 与 `workers/processes=2` 记录两个子现场的真实占用；外层按数量准入、释放和估算，物理浏览器租约仍由子进程分别持有，父组不重复申请。`workspaceIo=2` 保证外层预算不会把两个内层现场压成串行。浏览器只有两个槽位，另一个浏览器检查占用时第二个对话批次仍会等待；缓存命中不执行子进程，同时清空数量与资源声明，避免占住其他检查的读写预算。
-
 自动语义关注点区分产品实现与测试路径；测试变化保留真实直接归属，不再仅因文件名包含conversation就追加无关原生进程组。显式 `--tag` 继续扩大集合。内容快照的检出目录身份与交付比较基线分开：基线变化仍比较实际内容，旧成功采用仍须通过配方、发现成员和环境校验。
 
 ## 环境准备入口

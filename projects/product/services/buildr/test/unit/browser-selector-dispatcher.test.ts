@@ -4,13 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { BROWSER_SELECTORS, parseChangedPaths, planBrowserCommands, planCodeBrowserGroups, runAgentConversationCommands, selectBrowserSelectors } from '../verification/browser-selector-dispatcher.ts';
+import { BROWSER_SELECTORS, parseChangedPaths, planBrowserCommands, planCodeBrowserGroups, selectBrowserSelectors } from '../verification/browser-selector-dispatcher.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
-import { resolveVerificationExecutionProfile, verificationSteps } from '../verification/registry.ts';
-import { AGENT_CONVERSATION_BATCHES, AGENT_CONVERSATION_GROUPS, AGENT_CONVERSATION_WORKERS, parseAgentConversationBatch, runAgentConversationBatch } from '../../../buildr-web/test/browser/agent-conversation-groups.ts';
-import { AGENT_CONVERSATION_QUEUE_ITEMS, claimAgentConversationGroups, finishAgentConversationGroup, inspectAgentConversationQueue } from '../../../buildr-web/test/browser/agent-conversation-queue.ts';
-import { HISTORY_SCENARIO_CATALOG } from '../../../buildr-web/test/browser/agent-conversation-history-catalog.ts';
-import { guardConversationServerWrite, resetConversationVisits } from '../../../buildr-web/test/browser/agent-conversation-isolation.ts';
 
 test('Task-owned materials select the existing production-host browser boundary', () => {
   const plan = selectBrowserSelectors(['services/buildr/src/modules/task/materials/application/task-materials-application.ts']);
@@ -24,9 +19,15 @@ test('Browser dispatcher skips Chrome for HTTP-only Buildr Web changes', () => {
   assert.deepEqual(plan.selectors, []);
   assert.match(plan.reasons[0].reason, /HTTP\/API owner/);
 });
-test('complete Harness webpage has its own browser owner, not component consumers',()=>{
- const standalone=selectBrowserSelectors(['services/buildr-harness-web/src/HarnessApp.tsx']);assert.deepEqual(standalone.selectors,[]);assert.ok(standalone.reasons.some((value:{reason:string})=>value.reason.includes('完整 Harness 网页')));
- assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/harness-ui/ConversationWorkspace.tsx']).selectors,['agent-conversations']);
+
+test('complete Harness webpage and Development embedded frame each have their own browser owner', () => {
+  const standalone = selectBrowserSelectors(['services/buildr-harness-web/src/HarnessApp.tsx']);
+  assert.deepEqual(standalone.selectors, []);
+  assert.ok(standalone.reasons.some((value: { reason: string }) => value.reason.includes('完整 Harness 网页')));
+  const frame = selectBrowserSelectors(['services/buildr-web/src/features/harness-ui/ConversationWorkspace.tsx']);
+  assert.deepEqual(frame.selectors, []);
+  assert.equal(frame.status, 'not-applicable');
+  assert.ok(frame.reasons.some((value: { reason: string }) => value.reason.includes('harness-frame-browser')));
 });
 
 test('Browser dispatcher selects only affected resource selectors', () => {
@@ -111,294 +112,90 @@ test('changed planner gives Buildr Web Runtime HTTP its narrow System owner', ()
   assert.equal(ids.includes('system'), false);
 });
 
-
 test('Browser dispatcher covers shared reading and publication components', () => {
-  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/publication/components/ArticleEditorPanel.tsx']).selectors, ['layout', 'articles']);
-  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/knowledge/components/KnowledgeBrowser.tsx']).selectors, ['layout', 'project', 'service', 'articles']);
+  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/publication/components/ArticleEditorPanel.tsx']).selectors, ['shell', 'articles']);
+  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/knowledge/components/KnowledgeBrowser.tsx']).selectors, ['shell', 'project', 'service', 'articles']);
   for (const file of ['app/WorkspacePages.tsx', 'app/WorkspacePaneHost.tsx', 'components/WorkspaceStage.tsx']) {
-    assert.deepEqual(selectBrowserSelectors([`services/buildr-web/src/${file}`]).selectors, ['layout', 'shell', 'workbench', 'project', 'service', 'articles', 'task', 'task-materials', 'agent-conversations']);
+    assert.deepEqual(selectBrowserSelectors([`services/buildr-web/src/${file}`]).selectors, ['shell', 'workbench', 'project', 'service', 'articles', 'task', 'task-materials']);
   }
 });
 
-test('shared styles and frontend browser scenarios select executable layout coverage', () => {
+test('shared styles and frontend browser scenarios select executable shell or full coverage', () => {
   for (const file of ['styles.css', 'theme.ts', 'components/workspace-stage.css']) {
-    assert.ok(selectBrowserSelectors([`services/buildr-web/src/${file}`]).selectors.includes('layout'));
+    assert.ok(selectBrowserSelectors([`services/buildr-web/src/${file}`]).selectors.includes('shell'));
   }
-  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/test/browser/layout-journey.ts']).selectors, ['all']);
+  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/test/browser/task-list-journey.ts']).selectors, ['all']);
 });
 
 test('Explorer and SCM are independent explicit checks sharing only the immutable frontend', () => {
-  const root='/tmp/buildr-browser-contract/web-dist';
-  const explorer=planBrowserCommands(['code-explorer'],root,{}),scm=planBrowserCommands(['code'],root,{});
-  assert.deepEqual(explorer.map(item=>item.id),['browser:code-explorer:explorer']);
-  assert.deepEqual(scm.map(item=>item.id),['browser:code:source-control']);
-  assert.deepEqual(planCodeBrowserGroups({}).map(item=>item.id),['source-control']);
-  assert.equal(explorer[0].env.BUILDR_CODE_EXPLORER_FOCUS,'all');assert.equal(explorer[0].env.BUILDR_SOURCE_CONTROL_FOCUS,'');
-  assert.equal(scm[0].env.BUILDR_SOURCE_CONTROL_FOCUS,'all');assert.equal(scm[0].env.BUILDR_CODE_EXPLORER_FOCUS,'');
-  for(const command of [...explorer,...scm]){
-    assert.equal(command.argv[0],process.execPath);assert.match(command.argv[1],/run-isolated-workspace-check\.ts$/);
-    assert.deepEqual(command.argv.slice(4),['--','code']);assert.equal(command.env.BUILDR_BROWSER_WEB_DIST_ROOT,root);
+  const root = '/tmp/buildr-browser-contract/web-dist';
+  const explorer = planBrowserCommands(['code-explorer'], root, {});
+  const scm = planBrowserCommands(['code'], root, {});
+  assert.deepEqual(explorer.map(item => item.id), ['browser:code-explorer:explorer']);
+  assert.deepEqual(scm.map(item => item.id), ['browser:code:source-control']);
+  assert.deepEqual(planCodeBrowserGroups({}).map(item => item.id), ['source-control']);
+  assert.equal(explorer[0].env.BUILDR_CODE_EXPLORER_FOCUS, 'all');
+  assert.equal(explorer[0].env.BUILDR_SOURCE_CONTROL_FOCUS, '');
+  assert.equal(scm[0].env.BUILDR_SOURCE_CONTROL_FOCUS, 'all');
+  assert.equal(scm[0].env.BUILDR_CODE_EXPLORER_FOCUS, '');
+  for (const command of [...explorer, ...scm]) {
+    assert.equal(command.argv[0], process.execPath);
+    assert.match(command.argv[1], /run-isolated-workspace-check\.ts$/);
+    assert.deepEqual(command.argv.slice(4), ['--', 'code']);
+    assert.equal(command.env.BUILDR_BROWSER_WEB_DIST_ROOT, root);
   }
-  assert.notEqual(explorer[0].env,scm[0].env);
-});
-test('full browser selection discovers both isolated code checks once',()=>{
- const commands=planBrowserCommands(['all'],'/tmp/web-dist',{});assert.equal(commands.length,BROWSER_SELECTORS.length+AGENT_CONVERSATION_WORKERS-1);
- assert.deepEqual(commands.filter(item=>item.argv.at(-1)==='code').map(item=>item.id),['browser:code-explorer:explorer','browser:code:source-control']);
- assert.equal(new Set(commands.map(item=>item.id)).size,commands.length);
-});
-test('compatible browser selectors share one host in a bundle command',()=>{
- const commands=planBrowserCommands(['core','shell','workbench'],'/tmp/web-dist',{});
- assert.equal(commands.length,1);
- assert.equal(commands[0].id,'browser:bundle:reading');
- assert.deepEqual(commands[0].argv.slice(4),['--','core,shell,workbench']);
- assert.equal(commands[0].env.BUILDR_BROWSER_WEB_DIST_ROOT,'/tmp/web-dist');
- const partial=planBrowserCommands(['shell','workbench'],'/tmp/web-dist',{});
- assert.equal(partial.length,1);
- assert.deepEqual(partial[0].argv.slice(4),['--','shell,workbench']);
- const independent=planBrowserCommands(['articles','layout'],'/tmp/web-dist',{});
- assert.deepEqual(independent.map(item=>item.id),['browser:articles','browser:layout']);
-});
-test('source-control diagnostic focus remains scoped to its explicit check',()=>{
- for(const focus of ['all','branch|source']){
-  const commands=planBrowserCommands(['code'],'/tmp/web-dist',{BUILDR_SOURCE_CONTROL_FOCUS:focus});
-  assert.equal(commands.length,1);assert.equal(commands[0].env.BUILDR_SOURCE_CONTROL_FOCUS,focus);
- }
-});
-test('conflicting diagnostic input is rejected without changing unrelated checks',()=>{
- const conflict={BUILDR_CODE_EXPLORER_FOCUS:'all',BUILDR_SOURCE_CONTROL_FOCUS:'all'};
- assert.throws(()=>planBrowserCommands(['code'],'/tmp/web-dist',conflict),error=>error instanceof Error && 'code' in error && error.code==='browser_code_focus_conflict');
- assert.throws(()=>planBrowserCommands(['code-explorer'],'/tmp/web-dist',{BUILDR_CODE_EXPLORER_FOCUS:'1'}),error=>error instanceof Error && 'code' in error && error.code==='browser_code_explorer_focus_invalid');
- assert.deepEqual(planBrowserCommands(['project'],'/tmp/web-dist',conflict).map(item=>item.id),['browser:project']);
+  assert.notEqual(explorer[0].env, scm[0].env);
 });
 
-test('current dialogue browser entry proves complete Harness webpage and Development frame separately',()=>{
- const commands=planBrowserCommands(['agent-conversations'],'/tmp/conversation-web-dist',{});
- assert.deepEqual(commands.map(item=>item.id),['browser:agent-conversations:development-frame','browser:agent-conversations:harness-web']);
- assert.match(commands[0].argv[1],/run-isolated-workspace-check\.ts$/);assert.ok(commands[0].argv.some((value:string)=>value.endsWith('harness-frame.ts')));assert.equal(commands[0].env.BUILDR_BROWSER_WEB_DIST_ROOT,'/tmp/conversation-web-dist');
- assert.ok(commands[1].argv.some((value:string)=>value.endsWith('standalone.test.ts')));
- assert.throws(()=>planBrowserCommands(['agent-conversations'],'/tmp/dist',{BUILDR_AGENT_JOURNEY_PART:'history'}),(error:unknown)=>error instanceof Error&&'code' in error&&error.code==='browser_agent_conversation_focus_retired');
+test('full browser selection discovers all active selectors once', () => {
+  const commands = planBrowserCommands(['all'], '/tmp/web-dist', {});
+  assert.equal(commands.length, BROWSER_SELECTORS.length);
+  assert.deepEqual(commands.filter(item => item.argv.at(-1) === 'code').map(item => item.id), ['browser:code-explorer:explorer', 'browser:code:source-control']);
+  assert.equal(new Set(commands.map(item => item.id)).size, commands.length);
 });
 
-test('对话静态批次互斥覆盖所有逻辑组与独立场景，并优先保持时序敏感组同进程',()=>{
-  assert.equal(AGENT_CONVERSATION_BATCHES.length,AGENT_CONVERSATION_WORKERS);
-  const all=[...AGENT_CONVERSATION_BATCHES.flat()];
-  assert.equal(new Set(all).size,all.length,'同一场景不得出现在两个隔离现场');
-  assert.deepEqual([...AGENT_CONVERSATION_BATCHES[0]].filter(group=>AGENT_CONVERSATION_GROUPS.includes(group as any)),['setup','tasks','recovery']);
-  for(const group of AGENT_CONVERSATION_GROUPS.filter(group=>group!=='history'))assert.ok(all.includes(group),'缺少逻辑组 '+group);
-  assert.deepEqual(all.filter(item=>item.startsWith('history/')).sort(),HISTORY_SCENARIO_CATALOG.map(item=>item.id).sort());
-  assert.doesNotThrow(()=>parseAgentConversationBatch(JSON.stringify(AGENT_CONVERSATION_BATCHES[0])));
-  assert.throws(()=>parseAgentConversationBatch(JSON.stringify(['history/unknown-scenario'])),/有效场景组或独立场景/);
+test('compatible browser selectors share one host in a bundle command', () => {
+  const commands = planBrowserCommands(['core', 'shell', 'workbench'], '/tmp/web-dist', {});
+  assert.equal(commands.length, 1);
+  assert.equal(commands[0].id, 'browser:bundle:reading');
+  assert.deepEqual(commands[0].argv.slice(4), ['--', 'core,shell,workbench']);
+  assert.equal(commands[0].env.BUILDR_BROWSER_WEB_DIST_ROOT, '/tmp/web-dist');
+  const partial = planBrowserCommands(['shell', 'workbench'], '/tmp/web-dist', {});
+  assert.equal(partial.length, 1);
+  assert.deepEqual(partial[0].argv.slice(4), ['--', 'shell,workbench']);
+  const independent = planBrowserCommands(['articles', 'project'], '/tmp/web-dist', {});
+  assert.deepEqual(independent.map(item => item.id), ['browser:articles', 'browser:project']);
 });
 
-test('a shared queue claims each group once and distinguishes unfinished work', t => {
-  const root=fs.mkdtempSync(path.join(os.tmpdir(),'conversation-queue-unit-'));
-  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
-  const first=claimAgentConversationGroups(root),second=claimAgentConversationGroups(root);
-  const a=first.next().value!,b=second.next().value!;
-  assert.notEqual(a,b);
-  finishAgentConversationGroup(root,a);
-  const rest=[...first,...second];
-  for(const group of rest)finishAgentConversationGroup(root,group);
-  const state=inspectAgentConversationQueue(root);
-  assert.deepEqual(state.unclaimed,[]);
-  assert.deepEqual(state.unfinished,[b]);
-  assert.equal(state.attempted.length,AGENT_CONVERSATION_QUEUE_ITEMS.length-1);
-  finishAgentConversationGroup(root,b);
-  assert.deepEqual(inspectAgentConversationQueue(root).attempted,[...AGENT_CONVERSATION_QUEUE_ITEMS]);
-});
-
-test('the queue preserves coarse coverage and distributes every independent history member exactly once', () => {
-  assert.equal(new Set(AGENT_CONVERSATION_QUEUE_ITEMS).size,AGENT_CONVERSATION_QUEUE_ITEMS.length);
-  assert.deepEqual(AGENT_CONVERSATION_QUEUE_ITEMS.filter(item=>!item.startsWith('history/')),
-    AGENT_CONVERSATION_GROUPS.filter(group=>group!=='history'));
-  assert.deepEqual(AGENT_CONVERSATION_QUEUE_ITEMS.filter(item=>item.startsWith('history/')),
-    HISTORY_SCENARIO_CATALOG.map(scenario=>scenario.id));
-  assert.equal(AGENT_CONVERSATION_QUEUE_ITEMS.some(item=>String(item)==='history'),false);
-});
-
-test('an unusable environment leaves subsequent groups unclaimed', async t => {
-  const root=fs.mkdtempSync(path.join(os.tmpdir(),'conversation-queue-taint-'));
-  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
-  let healthy=true;
-  await assert.rejects(runAgentConversationBatch(claimAgentConversationGroups(root),{
-    preparePage:async()=>{},
-    runGroup:async()=>{healthy=false;throw new Error('broken browser');},
-    afterGroup:group=>finishAgentConversationGroup(root,group),
-    canContinue:()=>healthy,
-  }),AggregateError);
-  const state=inspectAgentConversationQueue(root);
-  assert.deepEqual(state.attempted,['setup']);
-  assert.equal(state.unclaimed.length,AGENT_CONVERSATION_QUEUE_ITEMS.length-1);
-});
-
-test('only unmocked server writes are blocked in a shared conversation environment', async () => {
-  const blocked:string[]=[];let continued=0;const responses:any[]=[];
-  const route=(method:string,url='http://localhost/api/v1/workspaces/demo/tasks',status='current')=>({
-    request:()=>({method:()=>method,url:()=>url,postDataJSON:()=>({workspaceId:'demo'})}),
-    continue:async()=>{continued++;},
-    fulfill:async(response:any)=>{responses.push(response);},
-    fetch:async()=>({ok:()=>true,json:async()=>({ready:true,workspaceId:'demo',resourceRefresh:{status}})}),
-    abort:async()=>{},
-  });
-  await guardConversationServerWrite(route('GET'),blocked,['demo']);
-  await guardConversationServerWrite(route('POST'),blocked,['demo']);
-  await guardConversationServerWrite(route('POST','http://localhost/api/v1/workspaces/open'),blocked,['demo']);
-  await guardConversationServerWrite(route('POST','http://localhost/api/v1/workspaces/open'),blocked,['other']);
-  await guardConversationServerWrite(route('POST','http://localhost/api/v1/workspaces/demo/workbench/visits'),blocked,['demo']);
-  assert.equal(continued,2);
-  assert.deepEqual(blocked,['POST /api/v1/workspaces/demo/tasks','POST /api/v1/workspaces/open']);
-  assert.equal(responses[0].status,409);
-});
-
-test('real recent visits are cleared while unknown workbench state is preserved', () => {
-  const rows = new Map<string,any[]>([
-    ['one',[{kind:'recent-resource',key:'task:a'},{kind:'recent-resource',key:'task:b'}]],
-    ['two',[{kind:'recent-resource',key:'task:c'}]],
-  ]);
-  const app = {
-    inspectWorkbenchPreferences:(root:string)=>({items:rows.get(root)}),
-    removeWorkbenchPreference:(root:string,kind:string,key:string)=>rows.set(root,rows.get(root)!.filter(item=>item.kind!==kind||item.key!==key)),
-  };
-  resetConversationVisits(app,['one','two']);
-  assert.deepEqual(rows.get('one'),[]);
-  assert.deepEqual(rows.get('two'),[]);
-  rows.set('one',[{kind:'recent-resource',key:'task:a'}]);
-  rows.set('two',[{kind:'pinned-task',key:'must-keep'}]);
-  assert.throws(()=>resetConversationVisits(app,['one','two']));
-  assert.equal(rows.get('one')!.length,1);
-  assert.equal(rows.get('two')![0].key,'must-keep');
-});
-
-test('conversation batches accept only distinct known groups',()=>{
-  assert.equal(parseAgentConversationBatch(undefined),null);
-  assert.deepEqual(parseAgentConversationBatch('["models","selection"]'),['models','selection']);
-  for(const value of ['{','[]','["models","models"]','["unknown"]','["history",1]']){
-    assert.throws(()=>parseAgentConversationBatch(value));
+test('source-control diagnostic focus remains scoped to its explicit check', () => {
+  for (const focus of ['all', 'branch|source']) {
+    const commands = planBrowserCommands(['code'], '/tmp/web-dist', { BUILDR_SOURCE_CONTROL_FOCUS: focus });
+    assert.equal(commands.length, 1);
+    assert.equal(commands[0].env.BUILDR_SOURCE_CONTROL_FOCUS, focus);
   }
 });
 
-test('a failed group does not stop the next isolated page and remains a failure',async()=>{
-  const seen:string[]=[];
-  const pages: Record<string, string>[] = [];
-  let page:Record<string,string>={};
-  await assert.rejects(runAgentConversationBatch(['setup','video'],{
-    preparePage:async()=>{page={};pages.push(page);},
-    runGroup:async(group)=>{
-      seen.push(group);
-      if(group==='setup'){page.preference='dirty';throw new Error('fixture failure');}
-      assert.equal(page.preference,undefined);
-      page.video='passed';
-    },
-  }),AggregateError);
-  assert.deepEqual(seen,['setup','video']);
-  assert.notEqual(pages[0],pages[1]);
-  assert.equal(pages[0].preference,'dirty');
-  assert.equal(pages[1].video,'passed');
+test('conflicting diagnostic input is rejected without changing unrelated checks', () => {
+  const conflict = { BUILDR_CODE_EXPLORER_FOCUS: 'all', BUILDR_SOURCE_CONTROL_FOCUS: 'all' };
+  assert.throws(() => planBrowserCommands(['code'], '/tmp/web-dist', conflict), error => error instanceof Error && 'code' in error && error.code === 'browser_code_focus_conflict');
+  assert.throws(() => planBrowserCommands(['code-explorer'], '/tmp/web-dist', { BUILDR_CODE_EXPLORER_FOCUS: '1' }), error => error instanceof Error && 'code' in error && error.code === 'browser_code_explorer_focus_invalid');
+  assert.deepEqual(planBrowserCommands(['project'], '/tmp/web-dist', conflict).map(item => item.id), ['browser:project']);
 });
 
-test('conversation batching respects the outer budget and releases a slot after failure',async()=>{
-  const commands=['a','b','c','d'].map(id=>({id}));
-  let active=0,peak=0;
-  const ran:string[]=[],released:string[]=[];
-  let serial=0;
-  const results=await runAgentConversationCommands(commands,{
-    limit:2,
-    acquire:async()=>{
-      const ticket=String(serial++);
-      active++;peak=Math.max(peak,active);
-      return {release:async()=>{active--;released.push(ticket);return [{status:'released'}];}};
-    },
-    run:async(command:any)=>{
-      ran.push(command.id);
-      await new Promise(resolve=>setTimeout(resolve,10));
-      if(command.id==='b')throw new Error('simulated group failure');
-      return {status:'passed'};
-    },
-  });
-  assert.equal(peak,2);
-  assert.equal(active,0);
-  assert.equal(released.length,commands.length);
-  assert.deepEqual(ran.sort(),['a','b','c','d']);
-  assert.deepEqual(results.map(item=>item.status),['passed','failed','passed','passed']);
-});
-
-test('cancelling conversation batches releases the active slot without starting pending work',async()=>{
-  const controller=new AbortController();
-  let acquired=0,released=0;
-  const results=await runAgentConversationCommands([{id:'first'},{id:'pending'}],{
-    limit:1,signal:controller.signal,
-    acquire:async()=>{acquired++;return {release:async()=>{released++;return [{status:'released'}];}};},
-    run:async()=>{controller.abort();return {status:'cancelled'};},
-  });
-  assert.equal(acquired,1);
-  assert.equal(released,1);
-  assert.deepEqual(results.map(item=>item.status),['cancelled','failed']);
-});
-
-test('unconfirmed process cleanup retains the browser slot and stops pending work',async()=>{
-  const controller=new AbortController();
-  let acquired=0,released=0,started=0;
-  const results=await runAgentConversationCommands([{id:'unsafe'},{id:'pending'}],{
-    limit:1,signal:controller.signal,onUnsafeCleanup:()=>controller.abort(),
-    acquire:async()=>{acquired++;return {release:async()=>{released++;return [{status:'released'}];}};},
-    run:async()=>{started++;return {status:'failed',processCleanup:{status:'failed'}};},
-  });
-  assert.equal(acquired,1);
-  assert.equal(released,0);
-  assert.equal(started,1);
-  assert.equal(controller.signal.aborted,true);
-  assert.deepEqual(results.map(item=>item.status),['failed','failed']);
-});
-
-test('conversation check accounts for both browser workers without a parent lease deadlock',()=>{
-  const step=verificationSteps.find((item:any)=>item.id==='e2e-browser:agent-conversations');
-  assert.deepEqual(step.resourceClaims,[]);
-  assert.deepEqual(step.resourceUnits,{'browser-runtime':1});
-  assert.deepEqual(step.resourceDemand,{workers:AGENT_CONVERSATION_WORKERS,processes:AGENT_CONVERSATION_WORKERS,workspaceIo:2});
-  for(const id of ['local','ci','ci-workspace-limited']){
-    const limits=resolveVerificationExecutionProfile(id).limits;
-    assert.ok(limits.capacities.workers>=1);
-    assert.ok(limits.capacities.processes>=1);
-    assert.ok(limits.capacities.workspaceIo>=2);
-    assert.equal(limits.resources['browser-runtime'],2);
-  }
-});
-
-test('independent scenarios collect two failures, isolate fixtures and retain success', async () => {
-  const {runIndependentScenarios,selectIndependentScenarios}=await import('../../../buildr-web/test/browser/agent-conversation-scenarios.ts');
-  const disposed:number[]=[],results:any[]=[];let created=0;
-  const members=[0,1,2].map(n=>({id:'history/case-'+n,name:'case '+n,run:async(f:{id:number})=>{assert.equal(f.id,n);if(n!==1)throw Error('injected '+n);}}));
-  assert.throws(()=>selectIndependentScenarios(members,'history/unknown'),/未知/);
-  assert.deepEqual(selectIndependentScenarios(members,'history/case-1').map(s=>s.id),['history/case-1']);
-  await assert.rejects(runIndependentScenarios(members,{create:async()=>({id:created++}),dispose:async f=>{disposed.push(f.id);},record:r=>results.push(r)}),AggregateError);
-  assert.deepEqual(results.map(r=>r.status),['failed','passed','failed']);assert.deepEqual(disposed,[0,1,2]);
-});
-
-test('independent scenario cleanup failure leaves remaining members explicitly unrun', async () => {
-  const {runIndependentScenarios}=await import('../../../buildr-web/test/browser/agent-conversation-scenarios.ts');
-  let creates=0;const results:any[]=[];
-  await assert.rejects(runIndependentScenarios([0,1].map(n=>({id:String(n),name:String(n),run:async()=>{}})),{create:async()=>{creates++;return {};},dispose:async()=>{throw Error('dirty');},record:r=>results.push(r)}));
-  assert.equal(creates,1);assert.deepEqual(results.map(r=>r.status),['failed','not-run']);
-});
-
-test('test-only changes retain browser ownership without inferring unrelated product tags', async () => {
-  const {semanticTagsForPaths}=await import('../verification/semantic-tags.ts');
-  const file='services/buildr-web/test/browser/agent-conversations-history-scenarios.ts';
-  assert.deepEqual(semanticTagsForPaths([file]),[]);
-  const testPlan=createVerificationPlan({paths:[file],related:true,semantic:true,target:'source'},verificationSteps);
-  const ids=testPlan.steps.map((s:any)=>s.id);
-  assert.ok(ids.includes('e2e-browser:agent-conversations'));assert.ok(ids.includes('test-typecheck'));
-  assert.equal(ids.some((id:string)=>id.startsWith('agent-integration')),false);
-  const explicit=createVerificationPlan({paths:[file],tags:['handoff'],related:true,semantic:true,target:'source'},verificationSteps);
-  assert.ok(explicit.steps.some((s:any)=>s.id==='agent-integration-handoff'));
-  const transport=createVerificationPlan({paths:['services/buildr-harness/src/process/transport.ts'],related:true,semantic:true,target:'source'},verificationSteps);
-  assert.ok(transport.steps.some((s:any)=>s.id==='agent-integration-handoff'));
-  const preparation=createVerificationPlan({paths:['test/verification/web-dist.ts'],related:true,semantic:true,target:'source'},verificationSteps);
-  assert.ok(preparation.steps.some((s:any)=>s.id.startsWith('e2e-browser:')));
-});
-
-test('unknown history identity is rejected before browser commands are scheduled',()=>{
-  assert.throws(()=>planBrowserCommands(['agent-conversations'],'/unused',{BUILDR_AGENT_JOURNEY_PART:'history',BUILDR_AGENT_SCENARIO_FOCUS:'history/unknown'}),/旧组件场景选择/);
+test('test-only changes retain ownership without inferring unrelated product tags', async () => {
+  const { semanticTagsForPaths } = await import('../verification/semantic-tags.ts');
+  const file = 'services/buildr-web/test/browser/task-list-journey.ts';
+  assert.deepEqual(semanticTagsForPaths([file]), []);
+  const testPlan = createVerificationPlan({ paths: [file], related: true, semantic: true, target: 'source' });
+  const ids = testPlan.steps.map((s: any) => s.id);
+  assert.ok(ids.includes('test-typecheck'));
+  assert.equal(ids.some((id: string) => id.startsWith('agent-integration')), false);
+  const explicit = createVerificationPlan({ paths: [file], tags: ['handoff'], related: true, semantic: true, target: 'source' });
+  assert.ok(explicit.steps.some((s: any) => s.id === 'agent-integration-handoff'));
+  const transport = createVerificationPlan({ paths: ['services/buildr-harness/src/process/transport.ts'], related: true, semantic: true, target: 'source' });
+  assert.ok(transport.steps.some((s: any) => s.id === 'agent-integration-handoff'));
+  const preparation = createVerificationPlan({ paths: ['test/verification/web-dist.ts'], related: true, semantic: true, target: 'source' });
+  assert.ok(preparation.steps.some((s: any) => s.id.startsWith('e2e-browser:')));
 });
 
 test('shared framework changes retain contract owners without inferred broad tags', async () => {

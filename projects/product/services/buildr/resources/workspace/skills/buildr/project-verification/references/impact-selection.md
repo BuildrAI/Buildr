@@ -47,21 +47,9 @@ Git 内容比较仅在 `.github/workflows/verify.yml` 能成功解析、保留�
 
 报告必须分别给出整轮起止和各阶段耗时，包括计划、准备、检查、复跑、诊断和记录，不能把测试框架内部计时冒充智能体整轮耗时。CLI证据包含选择阶段耗时，原始失败和后续对照分别保留。
 
-## 对话浏览器独立场景
-
-`history` 的37个场景由 `agent-conversations-history-scenarios.ts` 唯一声明稳定身份。完整组运行全部成员；需要定点诊断时，在实际服务根执行：
-
-```sh
-BUILDR_AGENT_JOURNEY_PART=history BUILDR_AGENT_SCENARIO_FOCUS='history/workspace-order|history/reading-position' tools/development/run-development-npm run test:e2e -- --check e2e-browser:agent-conversations
-```
-
-筛选允许精确身份或既有名称片段，以 `|` 分隔；未知项在创建浏览器前明确失败。独立场景各用全新浏览器上下文与夹具，服务和本轮生产产物继续共享；单场景失败后继续其他无依赖场景，清理或共享状态校验失败时停止并标记后续未运行。现有timing的诊断日志内 `[agent-conversation-scenario]` 逐项保存身份、结果和耗时。定点成功只证明选中成员；不得把整组节点名称或退出码当作其余场景通过。旧证据无场景信息时仍按组处理，不自动猜测失败成员。
-
 ## 网页准备复用
 
 本机源码浏览器检查的网页准备使用当前检出目录 `build/verification-web-dist-cache` 下的既有准备回执与生成产物清单。源码、生成接口、构建配方、依赖实际字节、Node/npm及必要环境均参与校验；仅下载缓存路径和日志设置不作为已安装依赖构建的失效条件；输出损坏或输入变化时重建。命中后向本轮独立输出复制并校验完整清单，不读取在线页面目录。准备结果的 `preparation.status`、`durationMs` 和输入摘要区分重建与复用；冷构建和暖复制分别报告，不能把缓存命中当作浏览器测试已通过。构建失败或输入中途变化不产生新的成功回执。
-
-定点对话检查会在输出中标明 `proof scope=focused`，并在 `coverage.selected` 保存 `scope: focused`。即使该子集成功，后续 `--failed-from` 仍保守选择尚未完整证明的父检查，避免遗漏同组其他失败；Agent 可依据实际场景记录再指定准确子集，不能把一次定点成功登记为全组成功。失败场景记录仅补充错误类型及测试源码位置，不输出原请求或环境秘密。
 
 真实退避上限用例归 `agent-integration-recovery-budget` 独立检查，保留原40秒用例期限与原恢复组240秒预算；新组60秒安全期限。完整集成入口按唯一服务登记发现，不能通过拆分丢掉成员。
 
