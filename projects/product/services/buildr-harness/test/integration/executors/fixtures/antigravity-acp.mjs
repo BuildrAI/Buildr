@@ -388,6 +388,74 @@ async function runPrompt(id, params) {
       fail(id, -32603, 'continuation failed');
       return;
     }
+    const repeatBudget = Number(control().backgroundContinuationRepeats ?? 0);
+    session.bgContinuationCount = (session.bgContinuationCount ?? 0) + 1;
+    writeSession(session);
+    if (session.bgContinuationCount <= repeatBudget) {
+      const cycle = session.bgContinuationCount;
+      const bgToolId = `call-${++toolCounter}`;
+      const msgId = `msg-${randomUUID()}`;
+      const delayMs = Number(control().backgroundContinuationExitDelay ?? control().backgroundExitDelay ?? 50);
+      notify('session/update', {
+        sessionId,
+        update: { sessionUpdate: 'agent_message_chunk', messageId: msgId, content: { type: 'text', text: `第 ${cycle} 次续行启动后台命令。` } },
+      });
+      notify('session/update', {
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: bgToolId,
+          title: `Run background step ${cycle}`,
+          kind: 'execute',
+          rawInput: { CommandLine: `npm test -- --step=${cycle}` },
+          locations: [{ path: 'package.json' }],
+          status: 'in_progress',
+        },
+      });
+      appendTranscript(sessionId, {
+        type: 'tool_call',
+        toolCallId: bgToolId,
+        cwd: session.cwd,
+        kind: 'execute',
+        name: 'command',
+        input: { command: `npm test -- --step=${cycle}`, path: 'package.json' },
+        status: 'running',
+      });
+      appendTranscript(sessionId, {
+        type: 'turn_complete',
+        promptId: userMessageId,
+        cwd: session.cwd,
+        stopReason: 'end_turn',
+        backgroundActive: true,
+      });
+      finishActivePrompt({
+        userMessageId,
+        stopReason: 'end_turn',
+      });
+      setTimeout(() => {
+        notify('session/update', {
+          sessionId,
+          update: {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: bgToolId,
+            status: 'completed',
+            content: [{ type: 'content', content: { type: 'text', text: `background step ${cycle} exited with code 0` } }],
+          },
+        });
+        appendTranscript(sessionId, {
+          type: 'tool_result',
+          toolCallId: bgToolId,
+          cwd: session.cwd,
+          kind: 'execute',
+          name: 'command',
+          input: { command: `npm test -- --step=${cycle}`, path: 'package.json' },
+          status: 'completed',
+          exitCode: 0,
+          output: `background step ${cycle} exited with code 0`,
+        });
+      }, delayMs).unref();
+      return;
+    }
     const finalText = '后台结果已读取，继续处理完成。';
     const finalMsgId = `msg-${randomUUID()}`;
     notify('session/update', {

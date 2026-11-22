@@ -1,6 +1,6 @@
 import { resolvePermissionMode } from './permission-mode.ts';
 import type { RunView, SendDraft } from '../contracts.ts';
-import { RETIRED_EXECUTION_DIAGNOSTIC, fail, type StoredConversation } from './agent-state.ts';
+import { BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC, RETIRED_EXECUTION_DIAGNOSTIC, fail, type StoredConversation } from './agent-state.ts';
 
 export type ContinuedFrom = NonNullable<RunView['continuedFrom']>;
 
@@ -60,6 +60,9 @@ export function continuationDraft(record: StoredConversation, input: SendDraft):
   const attempt = record.attempts.find(value => value.runId === run.id);
   const original = record.view.entries.findLast(entry => entry.role === 'user' && entry.kind === 'message' && entry.sequence <= (attempt?.through ?? 0));
   if (!original) fail('agent_continue_unavailable', '尚未找到可恢复的原用户要求，工作记录已保留。', 409);
+  if (released && run.diagnostic === BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC && run.tools.every(tool => tool.status === 'completed')) {
+    return { ...input, attachmentIds: [], text: '用户明确请求恢复原对话并接续原目标。原轮因后台自动续行次数达到上限而暂停，观测到的后台命令均已结束并取得结果，原生控制资源也已释放。请先读取原对话与已取得的后台结果及当前成果，确认哪些工作已经生效，再直接继续尚未完成的目标；不要重复执行已经完成的命令，不要重发原指令，不要覆盖已有成果，不扩大原权限或代答待决定。' };
+  }
   if (released) return { ...input, attachmentIds: [], text: '用户明确请求恢复原对话并接续原目标。旧原生控制资源已核验释放，但旧轮及独立命令的操作结果仍未知；这不证明命令退出或工作成功。请先读取原对话与当前成果，核对未知工具及可能仍在运行的命令，确认哪些工作已经生效，再继续尚未完成的目标。不要逐条重放历史命令，不得重跑结果未知的旧命令，不重发原指令，不覆盖已有成果，不扩大原权限或代答待决定。未知工具引用：' + run.tools.filter(tool => tool.status === 'unknown').map(tool => tool.id).join('、') };
   const recoveringOriginal = Boolean(attempt?.continuationOf && attempt.clientRequestId.startsWith('host-recovery:'));
   return { ...input, text: run.accepted || recoveringOriginal

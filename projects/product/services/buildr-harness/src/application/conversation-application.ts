@@ -32,7 +32,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ExecutorInputRejected } from '../contracts.ts';
 import type { AgentRuntime, AgentServiceOptions, ConnectionView, ContextRef, ConversationActivityCounts, ConversationEntry, ConversationSummaryView, ConversationView, ExecutorDescriptor, ExecutorEvent, ExecutorImage, ExecutorItem, ExecutorNativeSource, ExecutorObservation, RunStatus, RunView, SendDraft, SendPreview } from '../contracts.ts';
-import { AgentServiceError, BUSY_STATES, RETIRED_EXECUTION_DIAGNOSTIC, conversationRuns, unfinishedRun, expected, fail, nonempty, safeDiagnostic } from '../domain/agent-state.ts';
+import { AgentServiceError, BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC, BUSY_STATES, RETIRED_EXECUTION_DIAGNOSTIC, conversationRuns, unfinishedRun, expected, fail, nonempty, safeDiagnostic } from '../domain/agent-state.ts';
 import type { StoredConversation, StoredParticipant } from '../domain/agent-state.ts';
 import type { ConversationRepository } from '../persistence/conversation-repository.ts';
 import type { ConnectionApplication } from './connection-application.ts';
@@ -552,10 +552,15 @@ export class ConversationApplication {
             const newlyReleased=!run.resourcesReleased;
             const previousStatus=run.status;
             const executionEnded=run.executionState==='ended'&&!unfinishedRun(run);
+            const limitPaused=run.diagnostic===BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC;
             run.executionState=run.executionState==='ended'?'ended':facts.get(value.id)!;run.resourcesReleased=true;
             if(run.accepted===false && !record.attempts.find(attempt=>attempt.runId===run.id)?.executionRef && (run.stopRequested||record.interruption?.runId===run.id && record.interruption.cancelled) && !run.tools.length){
               run.status='stopped';run.canContinue=false;
               run.diagnostic='已停止本轮接续并释放后台连接；原输入是否送达仍未知，已有操作结果保留，不会重发。';
+            }else if(limitPaused && BUSY_STATES.has(previousStatus)){
+              run.status='unknown';run.diagnostic=BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC;
+              run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
+              if(record.interruption?.runId===run.id)delete record.interruption;
             }else if(BUSY_STATES.has(previousStatus)){
               run.status='unknown';run.interrupted=true;
               run.diagnostic=run.executionState==='ended'?'原执行已结束、后台资源已释放；操作结果仍待核对，不会自动重发。':'原生控制资源已释放；独立命令及操作结果仍待核对，不会自动重发。';
@@ -566,7 +571,7 @@ export class ConversationApplication {
             }
             // Resource bookkeeping is not additional execution time.
             if(!executionEnded)run.updatedAt=this.options.now();this.save(record);
-            if(newlyReleased && record.view.run?.id===run.id && record.interruption?.runId===run.id && !record.interruption.cancelled && !record.interruption.attempted && this.shouldContinueInterrupted(value.workspaceId) && !this.closing) {
+            if(!limitPaused && newlyReleased && record.view.run?.id===run.id && record.interruption?.runId===run.id && !record.interruption.cancelled && !record.interruption.attempted && this.shouldContinueInterrupted(value.workspaceId) && !this.closing) {
               queueMicrotask(()=>{void this.recoverOne(value.workspaceId,value.conversationId).catch(()=>{});});
             }
           }
@@ -610,13 +615,16 @@ export class ConversationApplication {
         if(run.generation!==this.options.generation||run.resourcesReleased||!unfinishedRun(run))continue;
         this.backgroundRuns.delete(run.id);
         const previousStatus=run.status;
+        const limitPaused=run.diagnostic===BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC;
         run.resourcesReleased=true;run.executionState='unknown';
-        if(!['stopped','failed','completed'].includes(previousStatus)){run.status='unknown';run.interrupted=true;}
+        if(!['stopped','failed','completed'].includes(previousStatus)){run.status='unknown';if(!limitPaused)run.interrupted=true;}
         run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
         delete run.fault;
-        run.diagnostic=RETIRED_EXECUTION_DIAGNOSTIC;
+        run.diagnostic=limitPaused?BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC:RETIRED_EXECUTION_DIAGNOSTIC;
         run.updatedAt=this.options.now();
-        if(record.view.run?.id===run.id && run.accepted && !run.stopRequested && !this.conversationStopRequested(record,run.id) && !record.interruption?.cancelled && record.interruption?.runId!==run.id &&
+        if(limitPaused){
+          if(record.interruption?.runId===run.id)delete record.interruption;
+        }else if(record.view.run?.id===run.id && run.accepted && !run.stopRequested && !this.conversationStopRequested(record,run.id) && !record.interruption?.cancelled && record.interruption?.runId!==run.id &&
           (['running','waiting-approval','waiting-question','tools-active'].includes(previousStatus) || previousStatus==='unknown')){
           record.interruption={runId:run.id,awaitingUser:record.view.requests.some(request=>request.runId===run.id)||['waiting-approval','waiting-question'].includes(previousStatus)};
         }
@@ -745,8 +753,9 @@ export class ConversationApplication {
       const continuation = record.continuations?.[run.id] ?? (record.attempts ? continuationPrompt(record as Pick<StoredConversation, 'view' | 'attempts'>, run.id) : undefined);
       if (continuation) run.continuedFrom = includeContinuationPrompt ? continuation : {runId: continuation.runId, userEntryId: continuation.userEntryId};
       if (run.generation !== this.options.generation && !this.options.generationAlive?.(run.generation) && BUSY_STATES.has(run.status)) {
-        run.status = 'unknown'; run.interrupted = true;
-        if (run.diagnostic !== RETIRED_EXECUTION_DIAGNOSTIC) run.diagnostic = '服务重启后原执行尚待核对，工作记录已保留。';
+        const limitPaused = run.diagnostic === BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC;
+        run.status = 'unknown'; if (!limitPaused) run.interrupted = true;
+        if (run.diagnostic !== RETIRED_EXECUTION_DIAGNOSTIC && !limitPaused) run.diagnostic = '服务重启后原执行尚待核对，工作记录已保留。';
       }
     }
     view.pendingSend = this.pendingSends.view(this.pendingSends.read(view.workspaceId, view.id));
@@ -878,7 +887,7 @@ export class ConversationApplication {
     const result=this.options.repository.querySummaries(workspaceIds,{...input,draftConversationIds:[...new Set(input.draftConversationIds??[])].sort(),generation:this.options.generation,query:input.query?.trim().slice(0,200),limit:bounded(input.limit,30,100)},this.options.generationAlive);
     for(const view of result.conversations){
       if(view.titleState?.status==='generating'&&!this.titleWork.has(view.id))view.titleState={status:'failed',reason:STALE_TITLE_REASON};
-      if(view.run&&view.run.generation!==this.options.generation&&!this.options.generationAlive?.(view.run.generation)&&BUSY_STATES.has(view.run.status)){view.run.status='unknown';view.run.interrupted=true;}
+      if(view.run&&view.run.generation!==this.options.generation&&!this.options.generationAlive?.(view.run.generation)&&BUSY_STATES.has(view.run.status)){view.run.status='unknown';if(view.run.diagnostic!==BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC)view.run.interrupted=true;}
     }
     return result;
   }
@@ -1506,7 +1515,14 @@ export class ConversationApplication {
     record.view.run = run;
     record.view.hidden = false;
     this.save(record, initial);
-    const work = this.execute(workspaceId, id, run.id, prepared, undefined, hostVerified).finally(() => { this.workers.delete(run.id); this.cancelledRetries.delete(run.id); this.scheduleSourceRelease(workspaceId, id); });
+    const work = this.execute(workspaceId, id, run.id, prepared, undefined, hostVerified).finally(() => {
+      this.workers.delete(run.id);
+      this.cancelledRetries.delete(run.id);
+      this.scheduleSourceRelease(workspaceId, id);
+      if (this.currentRun(workspaceId, id, run.id)?.view.run?.diagnostic === BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC) {
+        queueMicrotask(() => { void this.releaseIdleSources({ workspaceId, id }).catch(() => {}); });
+      }
+    });
     this.workers.set(run.id, work);
     return { run: structuredClone(run), conversation: this.read(workspaceId, id,{compactTools:true}) };
   }
@@ -1887,6 +1903,13 @@ export class ConversationApplication {
         delete record.interruption; delete run.interrupted; delete run.diagnostic;
       }
     } else if (observation.status === 'waiting' && run.status !== 'stopping') run.status = this.waitingStatus(record, run.id) ?? 'unknown';
+    if (run.diagnostic === BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC) {
+      if (record.interruption?.runId === run.id) delete record.interruption;
+      if (run.generation === this.options.generation && !this.closing && !run.resourcesReleased) {
+        this.scheduleSourceRelease(record.view.workspaceId, record.view.id);
+        queueMicrotask(() => { void this.releaseIdleSources({ workspaceId: record.view.workspaceId, id: record.view.id }).catch(() => {}); });
+      }
+    }
     run.updatedAt = this.options.now();
     this.scheduleQuestionWaitReleases(record);
   }
@@ -2556,7 +2579,7 @@ export class ConversationApplication {
   }
   private async recoverRun(workspaceId:string,id:string):Promise<void>{
     let record=this.load(workspaceId,id),run=record.view.run;
-    if(!run || !run.accepted || this.closing || (run.generation===this.options.generation && !record.interruption))return;
+    if(!run || !run.accepted || this.closing || run.diagnostic===BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC || (run.generation===this.options.generation && !record.interruption))return;
     if(!record.interruption){
       const retiredInterrupted = run.accepted && run.status === 'unknown' && run.resourcesReleased === true &&
         run.interrupted === true && run.diagnostic === RETIRED_EXECUTION_DIAGNOSTIC &&
@@ -2673,12 +2696,14 @@ export class ConversationApplication {
       if(record.view.revision!==revision)return;
       if(!released||this.options.generationAlive(saved.generation)||this.workers.has(saved.id))continue;
       const run=conversationRuns(record.view).find(run=>run.id===saved.id)!;
+      const limitPaused=run.diagnostic===BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC;
       run.resourcesReleased=true;
       if(run.executionState!=='ended')run.executionState='unknown';
       if(BUSY_STATES.has(run.status)){
         run.status='unknown';run.canContinue=false;
         run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
-        run.diagnostic='准确原控制进程组已退出，控制资源已释放；原操作结果仍待核对，不会重发。';
+        if(!limitPaused)run.diagnostic='准确原控制进程组已退出，控制资源已释放；原操作结果仍待核对，不会重发。';
+        if(limitPaused&&record.interruption?.runId===run.id)delete record.interruption;
       }
       this.save(record);
     }
@@ -2797,8 +2822,19 @@ export class ConversationApplication {
             // carries one describes an older execution and must not settle this new run.
             const observationMatchesRun = attempt?.executionRef ? observation?.executionRef?.id === attempt.executionRef.id : !observation?.executionRef;
             if (!observationMatchesRun) {
+              const limitPaused = target.diagnostic === BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC;
               const retiredGeneration = target.resourcesReleased === true && target.interrupted === true && target.diagnostic === RETIRED_EXECUTION_DIAGNOSTIC && target.generation !== this.options.generation && this.options.generationAlive?.(target.generation) !== true;
-              if (!observation?.executionRef && (this.releasingRetired || retiredGeneration)) {
+              if (limitPaused) {
+                target.status = 'unknown';
+                target.diagnostic = BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC;
+                if (target.generation !== this.options.generation && this.options.generationAlive?.(target.generation) !== true && !target.resourcesReleased && !observation?.executionRef) {
+                  target.resourcesReleased = true;
+                  target.executionState = 'unknown';
+                  delete target.fault;
+                }
+                if (record.interruption?.runId === target.id) delete record.interruption;
+                target.tools = target.tools.map(tool => tool.status === 'running' ? { ...tool, status: 'unknown', canStop: false } : tool);
+              } else if (!observation?.executionRef && (this.releasingRetired || retiredGeneration)) {
                 target.status = 'unknown';
                 target.interrupted = true;
                 target.resourcesReleased = true;
@@ -2810,7 +2846,7 @@ export class ConversationApplication {
                 target.status = 'unknown'; target.diagnostic = '原生观察未匹配本轮执行，不能据此结束或重新发送。';
               }
             } else if (target.generation !== this.options.generation && !observation?.executionRef) {
-              target.status = 'unknown'; target.diagnostic = '尚未确认原执行的准确身份，保留记录并重新观察。';
+              target.status = 'unknown'; if (target.diagnostic !== BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC) target.diagnostic = '尚未确认原执行的准确身份，保留记录并重新观察。';
             } else {
               if (target.generation !== this.options.generation) {
                 this.retireQuestions(record, record.view.requests.filter(request => request.runId === target.id));

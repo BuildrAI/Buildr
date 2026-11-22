@@ -27,7 +27,7 @@ import type {
   PermissionMode,
 } from '../../contracts.ts';
 import { ExecutorInputRejected, ExecutorObservationLost } from '../../contracts.ts';
-import { AgentServiceError, RETIRED_EXECUTION_DIAGNOSTIC } from '../../domain/agent-state.ts';
+import { AgentServiceError, BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC, RETIRED_EXECUTION_DIAGNOSTIC } from '../../domain/agent-state.ts';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import type { ModelQuotaObservation } from '../../model-access/contracts.ts';
@@ -88,8 +88,12 @@ import { generateAntigravityTitle } from './title.ts';
 const PROVIDER = 'antigravity';
 const NATIVE_SOURCE_ID = 'native-antigravity';
 const EXCLUSIVE_REASON = '受 Google 官方授权限制，Google 个人账号仅可在 Antigravity 中使用。';
+export interface AntigravityExecutorOptions {
+  maxBackgroundContinuations?: number;
+}
+
 const STOP_CANCEL_GRACE_MS = 1_200;
-const MAX_BACKGROUND_CONTINUATIONS = 8;
+export const MAX_BACKGROUND_CONTINUATIONS = 20;
 const CONTINUATION_OUTPUT_LIMIT = 4_000;
 const CONTINUATION_PROMPT_LIMIT = 8_000;
 /** A steering prompt is held by the native turn until it ends; only an
@@ -191,6 +195,8 @@ interface TurnState {
    * to the tool that spawned it when the same command text runs more than once. */
   commandStartedAt: Map<string, number>;
   continuations: number;
+  continuationSequence: number;
+  continuationLimitReached: boolean;
   backgroundTimer?: ReturnType<typeof setInterval>;
   textSegment?: { id: string; kind: 'message' | 'thinking'; nativeId?: string };
   segmentCounter: number;
@@ -292,9 +298,11 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
   private readonly nativeSource?: ExecutorNativeSource;
   private readonly composedInstructions: string;
   private readonly policyDigest: string;
+  private readonly maxBackgroundContinuations: number;
   private readonly diagnostics?: ExecutorOpenOptions['diagnostics'];
   private readonly turns = new Map<string, TurnState>();
   private readonly releaseProofs = new Set<string>();
+  private readonly closingProcesses = new Map<string, Promise<void>>();
 
   private constructor(init: {
     bindingIdentity: string;
@@ -306,6 +314,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     composedInstructions: string;
     policyDigest: string;
     supportsSystemPromptAppend: boolean;
+    maxBackgroundContinuations: number;
     diagnostics?: ExecutorOpenOptions['diagnostics'];
   }) {
     this.bindingIdentity = init.bindingIdentity;
@@ -316,6 +325,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     this.nativeSource = init.nativeSource;
     this.composedInstructions = init.composedInstructions;
     this.policyDigest = init.policyDigest;
+    this.maxBackgroundContinuations = init.maxBackgroundContinuations;
     this.diagnostics = init.diagnostics;
     if (init.supportsSystemPromptAppend) {
       this.participationInstruction = instructionParticipation('interaction-policy', init.composedInstructions);
@@ -330,7 +340,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     return this.exitCodeValue;
   }
 
-  static async open(options: ExecutorOpenOptions): Promise<AntigravityRuntime> {
+  static async open(options: ExecutorOpenOptions, executorOptions?: AntigravityExecutorOptions): Promise<AntigravityRuntime> {
     if (options.gateway) {
       throw new AgentServiceError(
         'agent_gateway_unsupported',
@@ -435,6 +445,12 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       composedInstructions: baseInstructions,
       policyDigest: antigravityPolicyDigest(baseInstructions),
       supportsSystemPromptAppend: handshake.supportsSystemPromptAppend,
+      maxBackgroundContinuations:
+        typeof executorOptions?.maxBackgroundContinuations === 'number'
+        && Number.isInteger(executorOptions.maxBackgroundContinuations)
+        && executorOptions.maxBackgroundContinuations >= 0
+          ? executorOptions.maxBackgroundContinuations
+          : MAX_BACKGROUND_CONTINUATIONS,
       diagnostics: options.diagnostics,
     });
   }
@@ -967,6 +983,8 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       commandInputs: new Map(),
       commandStartedAt: new Map(),
       continuations: 0,
+      continuationSequence: 0,
+      continuationLimitReached: false,
       segmentCounter: 0,
       pending: true,
       cancelRequested: false,
@@ -1105,6 +1123,8 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       throw new ExecutorInputRejected(this.supplementRefusalMessage(early.error));
     }
     dispatched.owner.admitted = true;
+    turn.continuations = 0;
+    turn.continuationLimitReached = false;
     const userItemId = `user:${randomUUID()}`;
     appendAntigravitySessionRow(this.configRoot, input.contextRef.id, {
       type: 'user',
@@ -1507,6 +1527,16 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     }
   }
 
+  private closeTurnProcess(contextId: string): Promise<void> {
+    const existing = this.closingProcesses.get(contextId);
+    if (existing) return existing;
+    const work = this.coordinator.closeConversationProcess(contextId).catch(() => {}).finally(() => {
+      if (this.closingProcesses.get(contextId) === work) this.closingProcesses.delete(contextId);
+    });
+    this.closingProcesses.set(contextId, work);
+    return work;
+  }
+
   private scheduleBackgroundContinuation(
     turn: TurnState,
     handle: ConversationProcessHandle,
@@ -1515,14 +1545,16 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     if (!turn.backgroundWork || turn.pending || turn.cancelRequested || turn.stopConfirmed || this.closedFlag) return;
     clearInterval(turn.backgroundTimer);
     turn.backgroundTimer = undefined;
-    if (turn.continuations >= MAX_BACKGROUND_CONTINUATIONS) {
+    if (turn.continuations >= this.maxBackgroundContinuations) {
       turn.backgroundWork = false;
+      turn.continuationLimitReached = true;
       turn.status = 'unknown';
-      turn.diagnostic = '后台结果已取得，但自动续行次数已达上限；未报告为完成。';
+      turn.diagnostic = BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC;
       turn.executionRef = handle.client.executionRef(turn.executionId, turn.contextId, this.bindingIdentity, false);
       turn.stream.flush();
       turn.stream.push({ type: 'observation', observation: this.buildObservation(turn) });
       turn.markSettled();
+      void this.closeTurnProcess(turn.contextId);
       return;
     }
     void this.requestBackgroundContinuation(turn, handle, this.backgroundContinuationText(exits));
@@ -1547,9 +1579,10 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
   ): Promise<void> {
     if (turn.cancelRequested || turn.stopConfirmed || this.closedFlag) return;
     turn.continuations += 1;
+    turn.continuationSequence += 1;
     appendAntigravitySessionRow(this.configRoot, turn.contextId, {
       type: 'continuation',
-      id: `continuation:${turn.executionId}:${turn.continuations}`,
+      id: `continuation:${turn.executionId}:${turn.continuationSequence}`,
       cwd: turn.cwd,
       text,
     });
@@ -2060,9 +2093,10 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       return Boolean(await this.canRelease(input));
     }
     if (turn.pending || turn.backgroundWork || turn.requests.size > 0) return false;
-    if (!['idle', 'stopped'].includes(turn.status)) return false;
+    if (!['idle', 'stopped'].includes(turn.status) && !turn.continuationLimitReached) return false;
 
     const handle = this.coordinator.getConversationProcess(input.contextRef.id);
+    if (turn.continuationLimitReached) await this.closeTurnProcess(turn.contextId);
     const effectiveRef = input.executionRef.data
       ? { ...input.executionRef, data: { ...input.executionRef.data, backgroundWork: false } }
       : input.executionRef;
@@ -2084,7 +2118,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     const matchingTurn = turn && turn.executionId === input.executionRef.id ? turn : undefined;
     if (matchingTurn) {
       if (matchingTurn.pending || matchingTurn.backgroundWork || matchingTurn.requests.size > 0) return false;
-      if (!['idle', 'stopped'].includes(matchingTurn.status)) return false;
+      if (!['idle', 'stopped'].includes(matchingTurn.status) && !matchingTurn.continuationLimitReached) return false;
     }
 
     const hasProof = this.releaseProofs.has(this.releaseKey(input.contextRef.id, input.executionRef));
@@ -2330,13 +2364,13 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
   }
 }
 
-export function createAntigravityExecutor(): AgentExecutor {
+export function createAntigravityExecutor(executorOptions?: AntigravityExecutorOptions): AgentExecutor {
   return {
     nativeContent: antigravityNativeContent,
     readReleasedControl: input => releasedNativeControl(PROVIDER, input),
     readPersistedExecution: input => readAntigravityPersistedExecution(input),
     storage: antigravityStorage(),
     descriptor: antigravityExecutorDescriptor,
-    open: options => AntigravityRuntime.open(options),
+    open: options => AntigravityRuntime.open(options, executorOptions),
   };
 }

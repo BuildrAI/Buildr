@@ -7,10 +7,10 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import type { ExecutorEvent, ExecutorItem, ExecutorRequest } from '../../../src/contracts.ts';
 import { ExecutorInputRejected, ExecutorObservationLost } from '../../../src/contracts.ts';
-import { AgentServiceError } from '../../../src/domain/agent-state.ts';
+import { AgentServiceError, BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC } from '../../../src/domain/agent-state.ts';
 import { interactionPolicy } from '../../../src/domain/interaction-policy.ts';
-import { appendAntigravitySessionRow, readAntigravityTool } from '../../../src/executors/antigravity/content.ts';
-import { createAntigravityExecutor } from '../../../src/executors/antigravity/index.ts';
+import { antigravitySessionRecordPath, appendAntigravitySessionRow, readAntigravityTool } from '../../../src/executors/antigravity/content.ts';
+import { MAX_BACKGROUND_CONTINUATIONS, createAntigravityExecutor } from '../../../src/executors/antigravity/index.ts';
 import { ownedProcessGroupIdle } from '../../../src/executors/native-process.ts';
 
 const fixtureSource = fileURLToPath(new URL('./fixtures/antigravity-acp.mjs', import.meta.url));
@@ -1768,4 +1768,216 @@ test('Antigravity readHistory truncates oversized durable tool output and input 
   assert.ok(fullDetail);
   assert.equal(fullDetail.input, hugeInput);
   assert.equal(fullDetail.text, hugeOutput);
+});
+
+test('Antigravity default background continuation limit is 20 and reaching the limit closes idle process for physical release', { timeout: 15_000 }, async t => {
+  assert.equal(MAX_BACKGROUND_CONTINUATIONS, 20);
+  const h = await createHarness(t, {
+    scenario: 'late-command-result',
+    autoAllow: true,
+    backgroundContinuationRepeats: 5,
+    backgroundExitDelay: 40,
+  });
+  const rt = await createAntigravityExecutor({ maxBackgroundContinuations: 2 }).open({
+    connectionId: 'antigravity',
+    configRoot: h.configRoot,
+    executable: h.executable,
+    environment: h.environment,
+  });
+  t.after(() => rt.close());
+
+  const contextRef = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+  const events: ExecutorEvent[] = [];
+  const limitReached = Promise.withResolvers<void>();
+  await rt.send({
+    contextRef,
+    cwd: h.cwd,
+    text: '触发后台续行上限暂停',
+    images: [],
+    clientRequestId: 'bg-limit-pause',
+    onEvent: event => {
+      events.push(event);
+      if (event.type === 'observation' && event.observation.diagnostic === BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC) {
+        limitReached.resolve();
+      } else if (event.type === 'completed') {
+        limitReached.reject(new Error(`Unexpected completion event: ${event.status}`));
+      }
+    },
+  });
+  await limitReached.promise;
+
+  const finalObs = await rt.observe({ contextRef });
+  assert.equal(finalObs.status, 'unknown');
+  assert.equal(finalObs.backgroundWork, false);
+  assert.equal(finalObs.executionRef?.data?.backgroundWork, false);
+  assert.equal(finalObs.diagnostic, BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC);
+  assert.ok(finalObs.tools.length >= 3 && finalObs.tools.every(tool => tool.status === 'completed'));
+  assert.equal(events.some(event => event.type === 'completed'), false);
+
+  const prompts = await h.readFixtureJsonl('fixture-prompts.jsonl');
+  assert.equal(prompts.filter(row => row.text.includes('[[buildr:background-continuation]]')).length, 2);
+
+  assert.equal(await rt.prepareRelease!({ contextRef, executionRef: finalObs.executionRef! }), true);
+  assert.equal(await rt.canRelease!({ contextRef, executionRef: finalObs.executionRef! }), true);
+  if (process.platform !== 'win32') {
+    assert.equal(await ownedProcessGroupIdle(Number(finalObs.executionRef!.data!.resourceGroup)), true);
+  }
+});
+
+test('Antigravity refuses to reset continuation budget on rejected supplement', { timeout: 15_000 }, async t => {
+  const h = await createHarness(t, {
+    scenario: 'late-command-result',
+    autoAllow: true,
+    backgroundContinuationRepeats: 5,
+    backgroundExitDelay: 40,
+    backgroundContinuationExitDelay: 1200,
+  });
+  const rt = await createAntigravityExecutor({ maxBackgroundContinuations: 1 }).open({
+    connectionId: 'antigravity',
+    configRoot: h.configRoot,
+    executable: h.executable,
+    environment: h.environment,
+  });
+  t.after(() => rt.close());
+
+  const contextRef = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+  const events: ExecutorEvent[] = [];
+  const acceptedReady = Promise.withResolvers<ExecutorEvent>();
+  const limitReached = Promise.withResolvers<void>();
+  const sendPromise = rt.send({
+    contextRef,
+    cwd: h.cwd,
+    text: '测试被拒追加不重置预算',
+    images: [],
+    clientRequestId: 'bg-refuse-no-reset',
+    onEvent: event => {
+      events.push(event);
+      if (event.type === 'accepted') acceptedReady.resolve(event);
+      if (event.type === 'observation' && event.observation.diagnostic === BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC) {
+        limitReached.resolve();
+      } else if (event.type === 'completed') {
+        limitReached.reject(new Error(`Unexpected completion event: ${event.status}`));
+      }
+    },
+  });
+
+  const accepted = await acceptedReady.promise;
+  assert.equal(accepted.type, 'accepted');
+  const deadline = Date.now() + 8000;
+  while (Date.now() < deadline) {
+    const prompts = await h.readFixtureJsonl('fixture-prompts.jsonl');
+    if (prompts.filter(row => row.text.includes('[[buildr:background-continuation]]')).length === 1) break;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  assert.equal((await h.readFixtureJsonl('fixture-prompts.jsonl')).filter(row => row.text.includes('[[buildr:background-continuation]]')).length, 1);
+
+  await h.setControl({ scenario: 'background-supplement-refused' });
+  await assert.rejects(
+    () => rt.supplement!({
+      contextRef,
+      executionRef: accepted.executionRef,
+      cwd: h.cwd,
+      text: '被拒绝的追加',
+      images: [],
+      clientRequestId: 'bg-refused-supplement',
+    }),
+    ExecutorInputRejected,
+  );
+  await h.setControl({ scenario: 'late-command-result', backgroundContinuationExitDelay: 40 });
+  await Promise.all([sendPromise, limitReached.promise]);
+
+  const finalObs = await rt.observe({ contextRef });
+  assert.equal(finalObs.status, 'unknown');
+  assert.equal(finalObs.diagnostic, BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC);
+  const prompts = await h.readFixtureJsonl('fixture-prompts.jsonl');
+  assert.equal(prompts.filter(row => row.text.includes('[[buildr:background-continuation]]')).length, 1);
+});
+
+test('Antigravity resets continuation budget on admitted supplement while keeping monotonic continuation ids', { timeout: 20_000 }, async t => {
+  const h = await createHarness(t, {
+    scenario: 'late-command-result',
+    autoAllow: true,
+    backgroundContinuationRepeats: 10,
+    backgroundExitDelay: 40,
+    backgroundContinuationExitDelay: 40,
+  });
+  const rt = await createAntigravityExecutor({ maxBackgroundContinuations: 2 }).open({
+    connectionId: 'antigravity',
+    configRoot: h.configRoot,
+    executable: h.executable,
+    environment: h.environment,
+  });
+  t.after(() => rt.close());
+
+  const contextRef = await rt.createContext({ cwd: h.cwd, permissionMode: 'default' });
+  const acceptedReady = Promise.withResolvers<ExecutorEvent>();
+  const limitReached = Promise.withResolvers<void>();
+  const sendPromise = rt.send({
+    contextRef,
+    cwd: h.cwd,
+    text: '测试已受理追加重置续行预算',
+    images: [],
+    clientRequestId: 'bg-admit-reset-budget',
+    onEvent: event => {
+      if (event.type === 'accepted') acceptedReady.resolve(event);
+      if (event.type === 'observation' && event.observation.diagnostic === BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC) {
+        limitReached.resolve();
+      } else if (event.type === 'completed') {
+        limitReached.reject(new Error(`Unexpected completion event: ${event.status}`));
+      }
+    },
+  });
+
+  const accepted = await acceptedReady.promise;
+  assert.equal(accepted.type, 'accepted');
+
+  const deadline1 = Date.now() + 8000;
+  while (Date.now() < deadline1) {
+    const prompts = await h.readFixtureJsonl('fixture-prompts.jsonl');
+    if (prompts.filter(row => row.text.includes('[[buildr:background-continuation]]')).length >= 1) break;
+    await new Promise(resolve => setTimeout(resolve, 15));
+  }
+  await h.setControl({ backgroundContinuationExitDelay: 1200 });
+
+  const deadline2 = Date.now() + 8000;
+  while (Date.now() < deadline2) {
+    const prompts = await h.readFixtureJsonl('fixture-prompts.jsonl');
+    if (prompts.filter(row => row.text.includes('[[buildr:background-continuation]]')).length >= 2) break;
+    await new Promise(resolve => setTimeout(resolve, 15));
+  }
+  assert.equal((await rt.observe({ contextRef })).backgroundWork, true);
+
+  await h.setControl({ scenario: 'background-supplement', supplementDelay: 20 });
+  const receipt = await rt.supplement!({
+    contextRef,
+    executionRef: accepted.executionRef,
+    cwd: h.cwd,
+    text: '重置当前轮次续行预算',
+    images: [],
+    clientRequestId: 'bg-admit-reset-supplement',
+  });
+  assert.equal(receipt.executionRef.id, accepted.executionRef.id);
+
+  await h.setControl({ scenario: 'late-command-result', backgroundContinuationExitDelay: 40 });
+  await Promise.all([sendPromise, limitReached.promise]);
+
+  const finalObs = await rt.observe({ contextRef });
+  assert.equal(finalObs.status, 'unknown');
+  assert.equal(finalObs.diagnostic, BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC);
+
+  const prompts = await h.readFixtureJsonl('fixture-prompts.jsonl');
+  assert.equal(prompts.filter(row => row.text.includes('[[buildr:background-continuation]]')).length, 4);
+
+  const sessionRows = (await readFile(antigravitySessionRecordPath(h.configRoot, contextRef.id), 'utf8'))
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map(line => JSON.parse(line) as { type?: string; id?: string });
+  const continuationIds = sessionRows.filter(row => row.type === 'continuation').map(row => row.id);
+  assert.deepEqual(continuationIds, [
+    `continuation:${accepted.executionRef.id}:1`,
+    `continuation:${accepted.executionRef.id}:2`,
+    `continuation:${accepted.executionRef.id}:3`,
+    `continuation:${accepted.executionRef.id}:4`,
+  ]);
 });

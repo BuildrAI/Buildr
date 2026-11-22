@@ -39,6 +39,11 @@ export function conversationRecoveryAction(conversation: ConversationView | null
 /** A successful observation may confirm that the result is still unknown. */
 export function conversationObservationFeedback(run?: ConversationRun): string {
   if (!run) return '读取完成：当前没有待处理的执行。';
+  if (run.status === 'unknown' && /自动续行次数已达上限/.test(run.diagnostic ?? '')) {
+    return run.resourcesReleased
+      ? '读取完成：后台自动续行已达上限，本轮已暂停并释放后台连接。可继续核对成果并接续原目标。'
+      : '读取完成：后台自动续行已达上限，本轮已暂停，正在释放或核对后台连接。';
+  }
   if (run.resourcesReleased && (run.status === 'unknown' || run.status === 'tools-active' || run.tools.some(tool => tool.status !== 'completed'))) return '读取完成：后台连接已释放，但未读到本轮结束记录。可发送新要求继续，不会重做原操作。';
   if (run.status === 'unknown') return '读取完成：仍无法读取原执行状态，记录已保留。可发送新要求，不会重做原操作。';
   if (run.status === 'tools-active' && run.tools.some(tool => tool.status === 'running') && !run.tools.some(tool => tool.status === 'unknown')) return '读取完成：后台命令仍在运行。';

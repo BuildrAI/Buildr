@@ -72,3 +72,13 @@ test('核对结论保留在同一行的可见文案',()=>{
  assert.match(html,/title="[^"]*仍无法读取原执行状态/);
  assert.doesNotMatch(html,/<details|>继续原任务</);
 });
+
+test('后台自动续行达到上限暂停且已释放资源时显示原因与唯一继续原任务按钮',()=>{
+ const run=live({diagnostic:'后台结果已取得，但自动续行次数已达上限；未报告为完成。',resourcesReleased:true,tools:[{id:'cmd-1',label:'command',status:'completed'}]});
+ const html=render({run,onContinue(){}});
+ assert.match(html,/后台自动续行已达上限，本轮已暂停。/);
+ assert.match(html,/后台结果已取得，记录和已完成的操作都保留/);
+ assert.equal((html.match(/>继续原任务</g)||[]).length,1);
+ assert.doesNotMatch(html,/>关闭对话<|>重新读取<|>停止</);
+ assert.doesNotMatch(html,/服务重启中断/);
+});

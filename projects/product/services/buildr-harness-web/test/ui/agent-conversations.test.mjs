@@ -1027,3 +1027,14 @@ test('登录尝试终态自动使共享账号与模型目录只读缓存失效',
   staleAccountsRelease.resolve({accounts:[],providers:[]});
   await Promise.all([staleRead,sharedRead]);
 });
+
+test('后台自动续行上限暂停已释放时提供继续原任务出口并准确反馈核对结论',async()=>{
+ const {canContinueConversation,canCloseUncertainConversation,conversationRecoveryAction,conversationObservationFeedback}=await import('../../src/features/agent-conversations/conversation-state.ts');
+ const pausedRun={...conversation.run,status:'unknown',accepted:true,stopRequested:false,resourcesReleased:true,executionState:'unknown',diagnostic:'后台结果已取得，但自动续行次数已达上限；未报告为完成。',tools:[{id:'cmd-1',status:'completed'}]};
+ const view={...conversation,requests:[],retainedRuns:[],run:pausedRun};
+ assert.equal(canContinueConversation(view),true);
+ assert.equal(canCloseUncertainConversation(view),true);
+ assert.deepEqual(conversationRecoveryAction(view),{kind:'recover',label:'继续原任务'});
+ assert.match(conversationObservationFeedback(pausedRun),/读取完成：后台自动续行已达上限，本轮已暂停并释放后台连接/);
+ assert.match(conversationObservationFeedback({...pausedRun,resourcesReleased:false}),/正在释放或核对后台连接/);
+});
