@@ -848,11 +848,20 @@ export class NativeProgramManager implements AgentProgramManager {
         npm = await findExecutable(undefined, ['npm-cli.js', 'npm'], this.environment);
       } catch { /* Try the npm shipped with the current Node runtime. */ }
       if (!npm || (this.platform === 'win32' && !/\.[cm]?js$/i.test(npm))) {
-        for (const relative of ['node_modules/npm/bin/npm-cli.js', '../lib/node_modules/npm/bin/npm-cli.js']) {
-          const candidate = path.resolve(path.dirname(process.execPath), relative);
-          if (await fs.stat(candidate).then(item => item.isFile(), () => false)) {
-            npm = await fs.realpath(candidate);
-            break;
+        const hostNode = this.environment.BUILDR_HOST_NODE?.trim() || process.env.BUILDR_HOST_NODE?.trim();
+        const hostVersion = this.environment.BUILDR_HOST_NODE_VERSION?.trim() || process.env.BUILDR_HOST_NODE_VERSION?.trim();
+        const useHostNode = Boolean(hostNode && path.isAbsolute(hostNode) && (!hostVersion || hostVersion === process.versions.node));
+        const candidateBases = [...new Set([
+          useHostNode ? path.dirname(path.resolve(hostNode!)) : null,
+          path.dirname(process.execPath),
+        ].filter((value): value is string => Boolean(value)))];
+        outer: for (const baseDir of candidateBases) {
+          for (const relative of ['node_modules/npm/bin/npm-cli.js', '../lib/node_modules/npm/bin/npm-cli.js']) {
+            const candidate = path.resolve(baseDir, relative);
+            if (await fs.stat(candidate).then(item => item.isFile(), () => false)) {
+              npm = await fs.realpath(candidate);
+              break outer;
+            }
           }
         }
       }

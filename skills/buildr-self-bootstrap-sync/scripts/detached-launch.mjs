@@ -72,6 +72,236 @@ function isTestIsolationDisabled(env) {
   return env.BUILDR_TEST_STATE_REQUIRED === '1' || Boolean(env.NODE_TEST_CONTEXT);
 }
 
+function runtimeNodeName(platform = process.platform) {
+  return platform === 'win32' ? 'node.exe' : 'node';
+}
+
+function isPidAlive(pid) {
+  return defaultIsPidAlive(pid);
+}
+
+function computeFileDigest(filePath) {
+  const hash = crypto.createHash('sha256');
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    let read = 0;
+    while ((read = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) {
+      hash.update(buffer.subarray(0, read));
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+  return hash.digest('hex');
+}
+
+export function resolveSharedRuntimeNodeRoot({ fallbackDataRoot, env = process.env, platform = process.platform } = {}) {
+  const explicit = env.BUILDR_SHARED_NODE_ROOT?.trim();
+  const isAbs = explicit ? (platform === 'win32' ? path.win32.isAbsolute(explicit) : path.isAbsolute(explicit)) : false;
+  if (explicit && isAbs) {
+    return platform === 'win32' ? path.win32.resolve(explicit) : path.resolve(explicit);
+  }
+  if (isTestIsolationDisabled(env)) {
+    if (fallbackDataRoot) {
+      return platform === 'win32'
+        ? path.win32.join(path.win32.resolve(fallbackDataRoot), 'runtime')
+        : path.join(path.resolve(fallbackDataRoot), 'runtime');
+    }
+    const testHome = env.HOME?.trim() || os.homedir();
+    if (platform === 'darwin') return path.join(testHome, 'Library', 'Application Support', 'Buildr', 'runtime');
+    if (platform === 'win32') return path.win32.join(env.LOCALAPPDATA || path.win32.join(testHome, 'AppData', 'Local'), 'Buildr', 'runtime');
+    return path.posix.join(env.XDG_STATE_HOME || path.posix.join(testHome, '.local', 'state'), 'buildr', 'runtime');
+  }
+  const hostHome = env.BUILDR_HOST_HOME?.trim() || os.homedir();
+  if (platform === 'darwin') return path.join(hostHome, 'Library', 'Application Support', 'Buildr', 'runtime');
+  if (platform === 'win32') return path.win32.join(env.LOCALAPPDATA || path.win32.join(hostHome, 'AppData', 'Local'), 'Buildr', 'runtime');
+  return path.posix.join(env.XDG_STATE_HOME || path.posix.join(hostHome, '.local', 'state'), 'buildr', 'runtime');
+}
+
+function assertSafeSharedNodeStat(stat, platform) {
+  if (
+    !stat
+    || !stat.isFile()
+    || stat.isSymbolicLink()
+    || stat.nlink !== 1
+    || (process.getuid && stat.uid !== process.getuid())
+    || (stat.mode & 0o222) !== 0
+    || (platform !== 'win32' && (stat.mode & 0o100) === 0)
+  ) {
+    throw Object.assign(new Error('Shared Buildr Node runtime binary is unsafe or tampered.'), {
+      code: 'shared_runtime_node_unsafe',
+    });
+  }
+}
+
+export function ensureSharedRuntimeNode(sourceNode, { fallbackDataRoot, env = process.env, platform = process.platform } = {}) {
+  const resolvedSource = path.resolve(sourceNode);
+  const sourceStat = fs.lstatSync(resolvedSource);
+  if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
+    throw Object.assign(new Error(`Invalid source Node runtime binary: ${resolvedSource}`), {
+      code: 'shared_runtime_node_source_invalid',
+    });
+  }
+  const sharedRoot = resolveSharedRuntimeNodeRoot({ fallbackDataRoot, env, platform });
+  const targetPath = platform === 'win32'
+    ? path.win32.join(sharedRoot, runtimeNodeName(platform))
+    : path.join(sharedRoot, runtimeNodeName(platform));
+  const nodeDigest = computeFileDigest(resolvedSource);
+  fs.mkdirSync(sharedRoot, { recursive: true, mode: 0o700 });
+  const dirInfo = fs.lstatSync(sharedRoot);
+  if (!dirInfo.isDirectory() || dirInfo.isSymbolicLink()) {
+    throw Object.assign(new Error(`Shared Buildr Node directory is unsafe: ${sharedRoot}`), {
+      code: 'shared_runtime_node_unsafe',
+    });
+  }
+  try { fs.chmodSync(sharedRoot, 0o700); } catch { /* Ignore chmod on unsupported filesystems. */ }
+  const lockDir = path.join(sharedRoot, '.lock');
+  const ownerFile = path.join(lockDir, 'owner.json');
+  const nonce = crypto.randomUUID();
+  const lockStage = path.join(sharedRoot, `.lock-stage-${nonce}`);
+  fs.mkdirSync(lockStage, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(lockStage, 'owner.json'), `${JSON.stringify({ pid: process.pid, nonce, createdAtMs: Date.now() })}\n`, { mode: 0o600, flag: 'wx' });
+  const readOwner = () => {
+    try {
+      const info = fs.lstatSync(ownerFile, { throwIfNoEntry: false });
+      if (!info || !info.isFile() || info.isSymbolicLink() || info.nlink !== 1) return null;
+      const parsed = JSON.parse(fs.readFileSync(ownerFile, 'utf8'));
+      if (!Number.isSafeInteger(parsed.pid) || parsed.pid < 1 || typeof parsed.nonce !== 'string') return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  };
+  const deadline = Date.now() + 15_000;
+  try {
+    for (;;) {
+      try {
+        fs.renameSync(lockStage, lockDir);
+        break;
+      } catch (error) {
+        if (!['ENOTEMPTY', 'EEXIST', 'EPERM', 'EACCES'].includes(error?.code)) throw error;
+        if (!fs.existsSync(lockDir)) continue;
+        const prior = readOwner();
+        if (!prior || !isPidAlive(prior.pid)) {
+          const reclaim = `${lockDir}.reclaim`;
+          let claimedReclaim = false;
+          try {
+            fs.mkdirSync(reclaim, { mode: 0o700 });
+            claimedReclaim = true;
+            const current = readOwner();
+            if ((!current && !prior) || (current && prior && current.nonce === prior.nonce && !isPidAlive(current.pid)) || (!current && prior && !isPidAlive(prior.pid))) {
+              const retired = `${lockDir}.retired-${crypto.randomUUID()}`;
+              try {
+                fs.renameSync(lockDir, retired);
+                fs.rmSync(retired, { recursive: true, force: true });
+              } catch { /* Reclaimed concurrently. */ }
+            }
+          } catch { /* Reclaim in progress. */ }
+          finally {
+            if (claimedReclaim && fs.existsSync(reclaim)) fs.rmSync(reclaim, { recursive: true, force: true });
+          }
+        }
+        if (Date.now() >= deadline) {
+          throw Object.assign(new Error(`Timed out waiting for shared Node lock in ${sharedRoot}.`), {
+            code: 'shared_runtime_node_locked',
+          });
+        }
+        defaultSleepSync(15);
+      }
+    }
+  } finally {
+    if (fs.existsSync(lockStage)) fs.rmSync(lockStage, { recursive: true, force: true });
+  }
+  try {
+    try {
+      for (const name of fs.readdirSync(sharedRoot)) {
+        if (!name.startsWith('.retired-')) continue;
+        try { fs.rmSync(path.join(sharedRoot, name), { force: true }); } catch { /* Still in use. */ }
+      }
+    } catch { /* Ignore cleanup failure. */ }
+    const manifestPath = path.join(sharedRoot, 'node.json');
+    const readManifest = () => {
+      const info = fs.lstatSync(manifestPath, { throwIfNoEntry: false });
+      if (!info) return null;
+      if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || (process.getuid && info.uid !== process.getuid())) {
+        throw Object.assign(new Error('Shared Buildr Node manifest is unsafe.'), { code: 'shared_runtime_node_unsafe' });
+      }
+      const parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      if (parsed?.schemaVersion !== 1 || typeof parsed.nodeDigest !== 'string' || !/^[a-f0-9]{64}$/.test(parsed.nodeDigest)) {
+        throw Object.assign(new Error('Shared Buildr Node manifest is invalid.'), { code: 'shared_runtime_node_unsafe' });
+      }
+      return parsed;
+    };
+    const writeManifest = (digestValue) => {
+      const tmp = `${manifestPath}.${crypto.randomUUID()}.tmp`;
+      try {
+        fs.writeFileSync(tmp, `${JSON.stringify({ schemaVersion: 1, nodeDigest: digestValue })}\n`, { mode: 0o600, flag: 'wx' });
+        fs.renameSync(tmp, manifestPath);
+      } finally {
+        if (fs.existsSync(tmp)) fs.rmSync(tmp, { force: true });
+      }
+    };
+    const existingStat = fs.lstatSync(targetPath, { throwIfNoEntry: false });
+    if (existingStat) {
+      assertSafeSharedNodeStat(existingStat, platform);
+      const manifest = readManifest();
+      const actualDigest = computeFileDigest(targetPath);
+      if (manifest && actualDigest !== manifest.nodeDigest) {
+        throw Object.assign(new Error('Shared Buildr Node runtime binary digest mismatch.'), { code: 'shared_runtime_node_unsafe' });
+      }
+      if (actualDigest === nodeDigest) {
+        if (!manifest) writeManifest(nodeDigest);
+        return targetPath;
+      }
+      if (!manifest) {
+        throw Object.assign(new Error('Shared Buildr Node runtime binary is missing verified manifest.'), { code: 'shared_runtime_node_unsafe' });
+      }
+    }
+    const stage = path.join(sharedRoot, `.stage-${crypto.randomUUID()}`);
+    fs.mkdirSync(stage, { recursive: true, mode: 0o700 });
+    const stagedNode = path.join(stage, runtimeNodeName(platform));
+    try {
+      fs.copyFileSync(resolvedSource, stagedNode, fs.constants.COPYFILE_FICLONE | fs.constants.COPYFILE_EXCL);
+      fs.chmodSync(stagedNode, 0o500);
+      if (computeFileDigest(stagedNode) !== nodeDigest) {
+        throw Object.assign(new Error('Staged shared Buildr Node binary digest mismatch.'), { code: 'shared_runtime_node_unsafe' });
+      }
+      try {
+        fs.renameSync(stagedNode, targetPath);
+      } catch (error) {
+        if (platform === 'win32' && ['EPERM', 'EBUSY', 'EACCES'].includes(error?.code) && fs.existsSync(targetPath)) {
+          const retired = path.join(sharedRoot, `.retired-${crypto.randomUUID()}.exe`);
+          try {
+            fs.renameSync(targetPath, retired);
+            fs.renameSync(stagedNode, targetPath);
+          } catch {
+            return resolvedSource;
+          }
+        } else {
+          throw error;
+        }
+      }
+      assertSafeSharedNodeStat(fs.lstatSync(targetPath, { throwIfNoEntry: false }), platform);
+      if (computeFileDigest(targetPath) !== nodeDigest) {
+        throw Object.assign(new Error('Published shared Buildr Node binary digest mismatch.'), { code: 'shared_runtime_node_unsafe' });
+      }
+      writeManifest(nodeDigest);
+      return targetPath;
+    } finally {
+      if (fs.existsSync(stage)) fs.rmSync(stage, { recursive: true, force: true });
+    }
+  } finally {
+    const current = readOwner();
+    if (current?.nonce === nonce) {
+      const retired = `${lockDir}.released-${nonce}`;
+      try {
+        fs.renameSync(lockDir, retired);
+        fs.rmSync(retired, { recursive: true, force: true });
+      } catch { /* Best-effort release. */ }
+    }
+  }
+}
+
 export function shouldUsePlatformIsolation(env = process.env, deps = {}) {
   const explicit = env.BUILDR_DETACHED_ISOLATION?.trim().toLowerCase();
   const platform = deps.platform ?? process.platform;

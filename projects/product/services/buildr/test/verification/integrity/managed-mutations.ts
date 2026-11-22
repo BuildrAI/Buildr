@@ -121,6 +121,8 @@ const allowed: any = new Map([
   ['src/modules/artifact-lifecycle/application/artifact-application.ts', new Set(['cleanArtifacts', 'collectAutomaticArtifacts'])],
   // launchViaLaunchd writes and immediately unlinks only its own 0600 staging plist and job metadata; pruneExitedLaunchdJobs removes only exited/corrupt launchd job metadata inside stateDir.
   ['src/infrastructure/detached-launch.ts', new Set(['launchViaLaunchd', 'pruneExitedLaunchdJobs'])],
+  // Ensures the single shared fixed Node runtime binary under an exclusive directory lock, atomic staging, and tamper verification.
+  ['src/infrastructure/shared-runtime-node.ts', new Set(['writeSharedNodeManifest', 'acquireSharedNodeLock', 'releaseSharedNodeLock', 'cleanupRetiredSharedNodes', 'ensureSharedRuntimeNode'])],
   // Removes only its own handoff-failure-*.json diagnostic file after handoff settles.
   ['src/web/application/web-handoff-successor-log.ts', new Set(['clearWebHandoffFailureFile'])],
 ]);

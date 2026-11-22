@@ -25,21 +25,30 @@ if (!isAcceptableNodeVersion(actualNodeVersion, declaredNodeVersion)) {
   process.exit(1);
 }
 
-const nodeRoot: any = path.dirname(process.execPath);
-const npmCandidates: any = process.platform === 'win32'
+const hostNodeCandidate = process.env.BUILDR_HOST_NODE?.trim();
+const hostNodeVersion = process.env.BUILDR_HOST_NODE_VERSION?.trim();
+const hostNodeRoot = hostNodeCandidate && path.isAbsolute(hostNodeCandidate) && (!hostNodeVersion || hostNodeVersion === process.versions.node)
+  ? path.dirname(path.resolve(hostNodeCandidate))
+  : null;
+const candidateRoots = [...new Set([hostNodeRoot, path.dirname(process.execPath)].filter((value): value is string => Boolean(value)))];
+const npmRelativeCandidates: any = process.platform === 'win32'
   ? [
-      path.join(nodeRoot, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
-      path.resolve(nodeRoot, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+      ['node_modules', 'npm', 'bin', 'npm-cli.js'],
+      ['..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'],
     ]
   : [
-      path.resolve(nodeRoot, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
-      path.join(nodeRoot, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+      ['..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'],
+      ['node_modules', 'npm', 'bin', 'npm-cli.js'],
     ];
+const npmCandidates: any = candidateRoots.flatMap((rootDir) =>
+  npmRelativeCandidates.map((segments: string[]) => path.resolve(rootDir, ...segments)));
 const npmCli: any = npmCandidates.find((candidate: any) => fs.existsSync(candidate));
 if (!npmCli) {
   console.error(`The selected Buildr Product Node does not provide its adjacent npm CLI: ${npmCandidates.join(', ')}`);
   process.exit(1);
 }
+const nodeRoot: any = candidateRoots.find((rootDir) =>
+  npmRelativeCandidates.some((segments: string[]) => path.resolve(rootDir, ...segments) === npmCli)) ?? path.dirname(process.execPath);
 
 const result: any = spawnSync(process.execPath, [npmCli, ...process.argv.slice(2)], {
   env: { ...process.env, PATH: [nodeRoot, process.env.PATH].filter(Boolean).join(path.delimiter) },

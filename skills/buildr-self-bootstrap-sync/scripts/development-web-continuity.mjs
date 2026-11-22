@@ -6,7 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { launchDetachedProcess, shouldUsePlatformIsolation } from './detached-launch.mjs';
+import { ensureSharedRuntimeNode, launchDetachedProcess, shouldUsePlatformIsolation } from './detached-launch.mjs';
 
 export const DEVELOPMENT_WEB_CONTINUITY_SCHEMA = 'buildr.development-web-continuity/v1';
 export const DEFAULT_DEVELOPMENT_WEB_PORT = 4458;
@@ -492,11 +492,34 @@ export async function restartDevelopmentInstance({
     startupStarted = now();
     const useIsolated = spawnImpl === spawn && shouldUsePlatformIsolation(environment) !== 'direct';
     if (useIsolated) {
+      const serviceRoot = path.join(path.dirname(projectBridge), 'services', 'buildr');
+      const cliEntry = path.join(serviceRoot, 'bin', 'buildr.mjs');
+      const programsDir = path.join(serviceRoot, 'tools', 'development', 'programs');
+      let launchCommand = projectBridge;
+      let launchArgs = ['web', '--port', String(port), '--no-open'];
+      let launchEnv = childEnv;
+      if (fs.existsSync(cliEntry) && nodeExecutable && fs.existsSync(nodeExecutable)) {
+        const resolvedHostNode = path.resolve(nodeExecutable);
+        const launchNode = ensureSharedRuntimeNode(resolvedHostNode, { fallbackDataRoot: dataRoot, env: childEnv });
+        const hostVersion = samePath(resolvedHostNode, process.execPath)
+          ? process.versions.node
+          : (spawnSync(resolvedHostNode, ['-p', 'process.versions.node'], { encoding: 'utf8' }).stdout || '').trim() || undefined;
+        const currentPathEntries = (childEnv.PATH || '').split(path.delimiter).filter(Boolean);
+        const pathEntries = [programsDir, path.dirname(resolvedHostNode), ...currentPathEntries.filter((entry) => entry !== programsDir && entry !== path.dirname(resolvedHostNode))];
+        launchCommand = launchNode;
+        launchArgs = [cliEntry, 'web', '--port', String(port), '--no-open'];
+        launchEnv = {
+          ...childEnv,
+          BUILDR_HOST_NODE: resolvedHostNode,
+          ...(hostVersion ? { BUILDR_HOST_NODE_VERSION: hostVersion } : {}),
+          PATH: pathEntries.join(path.delimiter),
+        };
+      }
       isolatedHandle = launchDetachedProcess({
-        command: projectBridge,
-        args: ['web', '--port', String(port), '--no-open'],
+        command: launchCommand,
+        args: launchArgs,
         cwd: childCwd,
-        env: childEnv,
+        env: launchEnv,
         labelPrefix: 'self-bootstrap-web',
         stateDir: path.join(dataRoot, 'launchd-jobs'),
         standardOutPath: logFile,

@@ -5,6 +5,7 @@ import process from 'node:process';
 
 import { spawnCommandSync } from '../../../infrastructure/process.ts';
 import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
+import { resolveHostNodeExecutable } from '../../../infrastructure/shared-runtime-node.ts';
 import { readDevelopmentRuntimeIdentity } from './development-runtime-inputs.ts';
 import {
   readApplicationPayloadManifest,
@@ -208,7 +209,7 @@ export function readCurrentInstallationOrigin(productRoot: any, options: any = {
 }
 
 export function runtimeIdentityForOrigin(origin: any, options: any = {}) {
-  const executable = path.resolve(options.executable || process.execPath);
+  const executable = path.resolve(options.executable || resolveHostNodeExecutable());
   const role = RUNTIME_ROLES.includes(origin?.runtimeRole) ? origin.runtimeRole : 'unknown';
   return Object.freeze({
     role,

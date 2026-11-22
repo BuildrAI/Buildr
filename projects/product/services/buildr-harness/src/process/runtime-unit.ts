@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createHash, randomUUID, type Hash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -9,23 +10,71 @@ import { safeStoragePath } from '../storage/files.ts';
 import { materializeRuntimeObject } from '../storage/runtime-objects.ts';
 import { AGENT_EXECUTION_CONTRACTS } from '../execution-contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
-import { claimStorage, controlRoot, privateDirectory, readPackageRecord, readPrivate, writePrivate } from './ownership.ts';
+import { claimStorage, controlRoot, live, privateDirectory, readPackageRecord, readPrivate, writePrivate } from './ownership.ts';
 
-function runtimeNodeName(): string {
-  return process.platform === 'win32' ? 'node.exe' : 'node';
+function runtimeNodeName(platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? 'node.exe' : 'node';
 }
 
-/** Directory retaining independent per-content Node binaries for stable OS permission identity. */
+function isTestNodeIsolation(env: NodeJS.ProcessEnv): boolean {
+  return env.BUILDR_TEST_STATE_REQUIRED === '1' || Boolean(env.NODE_TEST_CONTEXT);
+}
+
+/** Directory retaining legacy per-digest Node binaries for safe cleanup compatibility. */
 export function runtimeNodesRoot(dataRoot: string): string {
   return path.join(controlRoot(dataRoot), 'node-runtimes');
 }
 
-/** Stable executable path keyed only by Node binary digest so code updates keep TCC identity. */
-export function stableRuntimeNodePath(dataRoot: string, nodeDigest: string): string {
-  if (!/^[a-f0-9]{64}$/.test(nodeDigest)) {
+/** Machine-wide fixed directory housing the single shared Node binary without version or hash segments. */
+export function sharedRuntimeNodeRoot(
+  dataRoot?: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const explicit = env.BUILDR_SHARED_NODE_ROOT?.trim();
+  const isAbs = explicit ? (platform === 'win32' ? path.win32.isAbsolute(explicit) : path.isAbsolute(explicit)) : false;
+  if (explicit && isAbs) {
+    return platform === 'win32' ? path.win32.resolve(explicit) : path.resolve(explicit);
+  }
+  if (isTestNodeIsolation(env)) {
+    if (dataRoot) {
+      return platform === 'win32'
+        ? path.win32.join(path.win32.resolve(dataRoot), 'runtime')
+        : path.join(path.resolve(dataRoot), 'runtime');
+    }
+    const testHome = env.HOME?.trim() || os.homedir();
+    if (platform === 'darwin') return path.join(testHome, 'Library', 'Application Support', 'Buildr', 'runtime');
+    if (platform === 'win32') return path.win32.join(env.LOCALAPPDATA || path.win32.join(testHome, 'AppData', 'Local'), 'Buildr', 'runtime');
+    return path.posix.join(env.XDG_STATE_HOME || path.posix.join(testHome, '.local', 'state'), 'buildr', 'runtime');
+  }
+  const hostHome = env.BUILDR_HOST_HOME?.trim() || os.homedir();
+  if (platform === 'darwin') return path.join(hostHome, 'Library', 'Application Support', 'Buildr', 'runtime');
+  if (platform === 'win32') return path.win32.join(env.LOCALAPPDATA || path.win32.join(hostHome, 'AppData', 'Local'), 'Buildr', 'runtime');
+  return path.posix.join(env.XDG_STATE_HOME || path.posix.join(hostHome, '.local', 'state'), 'buildr', 'runtime');
+}
+
+/** Machine-wide fixed Node binary path shared across Buildr and Harness background services. */
+export function sharedRuntimeNodePath(
+  dataRoot?: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const root = sharedRuntimeNodeRoot(dataRoot, env, platform);
+  const name = runtimeNodeName(platform);
+  return platform === 'win32' ? path.win32.join(root, name) : path.join(root, name);
+}
+
+/** Stable executable path resolving to the shared machine-wide fixed Node binary. */
+export function stableRuntimeNodePath(
+  dataRoot: string,
+  nodeDigest?: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  if (nodeDigest !== undefined && !/^[a-f0-9]{64}$/.test(nodeDigest)) {
     throw new AgentServiceError('agent_runtime_identity_invalid', '执行运行单元Node摘要无效。', 409);
   }
-  return path.join(runtimeNodesRoot(dataRoot), nodeDigest, runtimeNodeName());
+  return sharedRuntimeNodePath(dataRoot, env, platform);
 }
 
 
@@ -85,25 +134,7 @@ function computeNodeDigest(file: string): string {
   return digest.digest('hex');
 }
 
-/** Verify an existing stable Node runtime entry is exclusive (nlink===1), read-only, executable and content-matched. */
-export function verifyStableRuntimeNode(dataRoot: string, nodePath: string, expectedDigest: string): boolean {
-  const expectedPath = stableRuntimeNodePath(dataRoot, expectedDigest);
-  if (nodePath !== expectedPath) {
-    throw new AgentServiceError('agent_runtime_identity_invalid', '固定Node运行路径与摘要不匹配。', 409);
-  }
-  const directory = path.dirname(expectedPath);
-  const dirStat = fs.lstatSync(directory, { throwIfNoEntry: false });
-  if (!dirStat) return false;
-  const agentRoot = path.join(path.resolve(dataRoot), 'agent-service');
-  if (!dirStat.isDirectory() || dirStat.isSymbolicLink() || !safeStoragePath(agentRoot, directory)) {
-    throw new AgentServiceError('agent_process_storage_unsafe', '固定Node目录来源不安全。', 409);
-  }
-  const nodeName = runtimeNodeName();
-  const entries = fs.readdirSync(directory);
-  if (entries.length !== 1 || entries[0] !== nodeName) {
-    throw new AgentServiceError('agent_runtime_changed', '固定Node目录包含未登记文件。', 409);
-  }
-  const stat = fs.lstatSync(expectedPath, { throwIfNoEntry: false });
+function assertSafeNodeStat(stat: fs.Stats | undefined): asserts stat is fs.Stats {
   if (
     !stat ||
     !stat.isFile() ||
@@ -115,57 +146,238 @@ export function verifyStableRuntimeNode(dataRoot: string, nodePath: string, expe
   ) {
     throw new AgentServiceError('agent_runtime_changed', '固定Node运行文件已变化或来源不安全。', 409);
   }
-  if (computeNodeDigest(expectedPath) !== expectedDigest) {
+}
+
+function verifyNodeBinaryFile(nodePath: string, expectedDigest: string): boolean {
+  const stat = fs.lstatSync(nodePath, { throwIfNoEntry: false });
+  if (!stat) return false;
+  assertSafeNodeStat(stat);
+  if (computeNodeDigest(nodePath) !== expectedDigest) {
     throw new AgentServiceError('agent_runtime_changed', '固定Node运行文件已变化或来源不安全。', 409);
   }
   return true;
 }
 
-function materializeStableRuntimeNodeLocked(dataRoot: string, sourceNode: string, nodeDigest: string): string {
-  const expected = stableRuntimeNodePath(dataRoot, nodeDigest);
-  if (verifyStableRuntimeNode(dataRoot, expected, nodeDigest)) {
-    const now = new Date();
-    fs.utimesSync(path.dirname(expected), now, now);
-    return expected;
+function readSharedNodeManifest(sharedRoot: string): { schemaVersion: 1; nodeDigest: string } | undefined {
+  const manifestPath = path.join(sharedRoot, 'node.json');
+  const info = fs.lstatSync(manifestPath, { throwIfNoEntry: false });
+  if (!info) return undefined;
+  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || (process.getuid && info.uid !== process.getuid())) {
+    throw new AgentServiceError('agent_runtime_changed', '固定Node清单来源不安全。', 409);
   }
+  let parsed: { schemaVersion?: unknown; nodeDigest?: unknown };
+  try {
+    parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as { schemaVersion?: unknown; nodeDigest?: unknown };
+  } catch {
+    throw new AgentServiceError('agent_runtime_changed', '固定Node清单已损坏。', 409);
+  }
+  if (parsed?.schemaVersion !== 1 || typeof parsed.nodeDigest !== 'string' || !/^[a-f0-9]{64}$/.test(parsed.nodeDigest)) {
+    throw new AgentServiceError('agent_runtime_changed', '固定Node清单无效。', 409);
+  }
+  return { schemaVersion: 1, nodeDigest: parsed.nodeDigest };
+}
+
+function writeSharedNodeManifest(sharedRoot: string, nodeDigest: string): void {
+  const manifestPath = path.join(sharedRoot, 'node.json');
+  const tmp = `${manifestPath}.${randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(tmp, `${JSON.stringify({ schemaVersion: 1, nodeDigest })}\n`, { mode: 0o600, flag: 'wx' });
+    fs.renameSync(tmp, manifestPath);
+  } finally {
+    if (fs.existsSync(tmp)) fs.rmSync(tmp, { force: true });
+  }
+}
+
+function claimSharedNodeLock(sharedRoot: string): { release(): void } {
+  privateDirectory(sharedRoot);
+  const lockDir = path.join(sharedRoot, '.lock');
+  const ownerFile = path.join(lockDir, 'owner.json');
+  const nonce = randomUUID();
+  const stage = path.join(sharedRoot, `.lock-stage-${nonce}`);
+  privateDirectory(stage);
+  fs.writeFileSync(path.join(stage, 'owner.json'), `${JSON.stringify({ pid: process.pid, nonce, createdAtMs: Date.now() })}\n`, { mode: 0o600, flag: 'wx' });
+  const deadline = Date.now() + 15_000;
+  const sleeper = new Int32Array(new SharedArrayBuffer(4));
+  const readOwner = (): { pid: number; nonce: string } | null => {
+    try {
+      const info = fs.lstatSync(ownerFile, { throwIfNoEntry: false });
+      if (!info || !info.isFile() || info.isSymbolicLink() || info.nlink !== 1) return null;
+      const parsed = JSON.parse(fs.readFileSync(ownerFile, 'utf8')) as { pid?: unknown; nonce?: unknown };
+      if (!Number.isSafeInteger(parsed.pid) || (parsed.pid as number) < 1 || typeof parsed.nonce !== 'string') return null;
+      return { pid: parsed.pid as number, nonce: parsed.nonce };
+    } catch {
+      return null;
+    }
+  };
+  try {
+    for (;;) {
+      try {
+        fs.renameSync(stage, lockDir);
+        break;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== 'ENOTEMPTY' && code !== 'EEXIST' && code !== 'EPERM' && code !== 'EACCES') throw error;
+        if (!fs.existsSync(lockDir)) continue;
+        const prior = readOwner();
+        if (!prior || !live(prior.pid)) {
+          const reclaim = `${lockDir}.reclaim`;
+          let claimedReclaim = false;
+          try {
+            fs.mkdirSync(reclaim, { mode: 0o700 });
+            claimedReclaim = true;
+            const current = readOwner();
+            if ((!current && !prior) || (current && prior && current.nonce === prior.nonce && !live(current.pid)) || (!current && prior && !live(prior.pid))) {
+              const retired = `${lockDir}.retired-${randomUUID()}`;
+              try {
+                fs.renameSync(lockDir, retired);
+                fs.rmSync(retired, { recursive: true, force: true });
+              } catch { /* Another process reclaimed it concurrently. */ }
+            }
+          } catch { /* Reclaim in progress by another process. */ }
+          finally {
+            if (claimedReclaim && fs.existsSync(reclaim)) fs.rmSync(reclaim, { recursive: true, force: true });
+          }
+        }
+        if (Date.now() >= deadline) {
+          throw new AgentServiceError('agent_process_owned', '固定Node运行目录正被其他进程占用。', 409);
+        }
+        Atomics.wait(sleeper, 0, 0, 15);
+      }
+    }
+  } finally {
+    if (fs.existsSync(stage)) fs.rmSync(stage, { recursive: true, force: true });
+  }
+  return {
+    release() {
+      const current = readOwner();
+      if (current?.nonce !== nonce) return;
+      const retired = `${lockDir}.released-${nonce}`;
+      try {
+        fs.renameSync(lockDir, retired);
+        fs.rmSync(retired, { recursive: true, force: true });
+      } catch { /* Best-effort lock release. */ }
+    },
+  };
+}
+
+function cleanupRetiredSharedNodes(sharedRoot: string): void {
+  try {
+    for (const name of fs.readdirSync(sharedRoot)) {
+      if (!name.startsWith('.retired-')) continue;
+      try { fs.rmSync(path.join(sharedRoot, name), { force: true }); } catch { /* Still held by an active process. */ }
+    }
+  } catch { /* Ignore cleanup failure. */ }
+}
+
+/** Verify an existing stable Node runtime entry (shared fixed path or legacy per-digest path). */
+export function verifyStableRuntimeNode(dataRoot: string, nodePath: string, expectedDigest: string): boolean {
+  if (!/^[a-f0-9]{64}$/.test(expectedDigest)) {
+    throw new AgentServiceError('agent_runtime_identity_invalid', '执行运行单元Node摘要无效。', 409);
+  }
+  const sharedPath = sharedRuntimeNodePath(dataRoot);
+  if (nodePath === sharedPath) {
+    const dirStat = fs.lstatSync(path.dirname(sharedPath), { throwIfNoEntry: false });
+    if (!dirStat) return false;
+    if (!dirStat.isDirectory() || dirStat.isSymbolicLink()) {
+      throw new AgentServiceError('agent_process_storage_unsafe', '固定Node目录来源不安全。', 409);
+    }
+    return verifyNodeBinaryFile(sharedPath, expectedDigest);
+  }
+  const legacyPath = path.join(runtimeNodesRoot(dataRoot), expectedDigest, runtimeNodeName());
+  if (nodePath !== legacyPath) {
+    throw new AgentServiceError('agent_runtime_identity_invalid', '固定Node运行路径与摘要不匹配。', 409);
+  }
+  const directory = path.dirname(legacyPath);
+  const dirStat = fs.lstatSync(directory, { throwIfNoEntry: false });
+  if (!dirStat) return false;
+  const agentRoot = path.join(path.resolve(dataRoot), 'agent-service');
+  if (!dirStat.isDirectory() || dirStat.isSymbolicLink() || !safeStoragePath(agentRoot, directory)) {
+    throw new AgentServiceError('agent_process_storage_unsafe', '固定Node目录来源不安全。', 409);
+  }
+  const nodeName = runtimeNodeName();
+  const entries = fs.readdirSync(directory);
+  if (entries.length !== 1 || entries[0] !== nodeName) {
+    throw new AgentServiceError('agent_runtime_changed', '固定Node目录包含未登记文件。', 409);
+  }
+  return verifyNodeBinaryFile(legacyPath, expectedDigest);
+}
+
+function materializeSharedRuntimeNode(dataRoot: string, sourceNode: string, nodeDigest: string): string {
+  const expected = sharedRuntimeNodePath(dataRoot);
+  const sharedRoot = path.dirname(expected);
   const sourceStat = fs.lstatSync(sourceNode);
   if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
     throw new AgentServiceError('agent_runtime_file_invalid', '执行运行单元Node来源无效。', 409);
   }
-  const root = runtimeNodesRoot(dataRoot);
-  privateDirectory(root);
-  const stage = path.join(root, '.stage-' + randomUUID());
-  privateDirectory(stage);
-  const stagedNode = path.join(stage, runtimeNodeName());
+  const lock = claimSharedNodeLock(sharedRoot);
   try {
-    if (sourceStat.size >= 1024 * 1024) {
-      try {
-        cloneFile(sourceNode, stagedNode);
-      } catch {
+    cleanupRetiredSharedNodes(sharedRoot);
+    const existingStat = fs.lstatSync(expected, { throwIfNoEntry: false });
+    if (existingStat) {
+      assertSafeNodeStat(existingStat);
+      const manifest = readSharedNodeManifest(sharedRoot);
+      const actualDigest = computeNodeDigest(expected);
+      if (manifest && actualDigest !== manifest.nodeDigest) {
+        throw new AgentServiceError('agent_runtime_changed', '固定Node运行文件已变化或来源不安全。', 409);
+      }
+      if (actualDigest === nodeDigest) {
+        if (!manifest) writeSharedNodeManifest(sharedRoot, nodeDigest);
+        const now = new Date();
+        try { fs.utimesSync(sharedRoot, now, now); } catch { /* Ignore mtime refresh error. */ }
+        return expected;
+      }
+      if (!manifest) {
+        throw new AgentServiceError('agent_runtime_changed', '固定Node运行文件已变化或来源不安全。', 409);
+      }
+    }
+    const stage = path.join(sharedRoot, '.stage-' + randomUUID());
+    privateDirectory(stage);
+    const stagedNode = path.join(stage, runtimeNodeName());
+    try {
+      if (sourceStat.size >= 1024 * 1024) {
+        try {
+          cloneFile(sourceNode, stagedNode);
+        } catch {
+          fs.copyFileSync(sourceNode, stagedNode, fs.constants.COPYFILE_FICLONE | fs.constants.COPYFILE_EXCL);
+        }
+      } else {
         fs.copyFileSync(sourceNode, stagedNode, fs.constants.COPYFILE_FICLONE | fs.constants.COPYFILE_EXCL);
       }
-    } else {
-      fs.copyFileSync(sourceNode, stagedNode, fs.constants.COPYFILE_FICLONE | fs.constants.COPYFILE_EXCL);
+      fs.chmodSync(stagedNode, 0o500);
+      if (computeNodeDigest(stagedNode) !== nodeDigest) {
+        throw new AgentServiceError('agent_runtime_changed', '固定Node运行文件校验不匹配。', 409);
+      }
+      try {
+        fs.renameSync(stagedNode, expected);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (process.platform === 'win32' && ['EPERM', 'EBUSY', 'EACCES'].includes(code ?? '') && fs.existsSync(expected)) {
+          const retired = path.join(sharedRoot, `.retired-${randomUUID()}.exe`);
+          try {
+            fs.renameSync(expected, retired);
+            fs.renameSync(stagedNode, expected);
+            cleanupRetiredSharedNodes(sharedRoot);
+          } catch {
+            return sourceNode;
+          }
+        } else {
+          throw error;
+        }
+      }
+      if (!verifyNodeBinaryFile(expected, nodeDigest)) {
+        throw new AgentServiceError('agent_runtime_changed', '固定Node运行文件未完成物化。', 409);
+      }
+      writeSharedNodeManifest(sharedRoot, nodeDigest);
+      return expected;
+    } finally {
+      if (fs.existsSync(stage)) fs.rmSync(stage, { recursive: true, force: true });
     }
-    fs.chmodSync(stagedNode, 0o500);
-    if (computeNodeDigest(stagedNode) !== nodeDigest) {
-      throw new AgentServiceError('agent_runtime_changed', '固定Node运行文件校验不匹配。', 409);
-    }
-    try {
-      fs.renameSync(stage, path.dirname(expected));
-    } catch (error) {
-      if (!fs.existsSync(path.dirname(expected))) throw error;
-    }
-    if (!verifyStableRuntimeNode(dataRoot, expected, nodeDigest)) {
-      throw new AgentServiceError('agent_runtime_changed', '固定Node运行文件未完成物化。', 409);
-    }
-    return expected;
   } finally {
-    if (fs.existsSync(stage)) fs.rmSync(stage, { recursive: true });
+    lock.release();
   }
 }
 
-/** Resolve and materialize the exclusive per-Node-digest binary for launching processes. */
+/** Resolve and materialize the shared fixed-path Node binary for launching processes. */
 export function ensureStableRuntimeNode(dataRoot: string, runtime: AgentRuntimeUnit): string {
   const expectedDirectory = path.join(controlRoot(dataRoot), 'runtimes', runtime.digest);
   const expectedRuntimeNode = path.join(expectedDirectory, runtimeNodeName());
@@ -182,14 +394,7 @@ export function ensureStableRuntimeNode(dataRoot: string, runtime: AgentRuntimeU
     throw new AgentServiceError('agent_runtime_file_invalid', '执行运行单元Node来源无效。', 409);
   }
   const nodeDigest = computeNodeDigest(runtime.node);
-  const stablePath = stableRuntimeNodePath(dataRoot, nodeDigest);
-  if (verifyStableRuntimeNode(dataRoot, stablePath, nodeDigest)) return stablePath;
-  const lock = claimStorage(dataRoot);
-  try {
-    return materializeStableRuntimeNodeLocked(dataRoot, runtime.node, nodeDigest);
-  } finally {
-    lock.release();
-  }
+  return materializeSharedRuntimeNode(dataRoot, runtime.node, nodeDigest);
 }
 
 /** Materialize the already prepared private package; no source or global installation fallback. */
@@ -209,7 +414,7 @@ export function prepareAgentRuntime(input: { dataRoot: string; packageRoot?: str
   const units = path.join(controlRoot(input.dataRoot), 'runtimes'); privateDirectory(units);
   const directory = path.join(units, digest);
   const descriptor: AgentRuntimeUnit = { schemaVersion: 1, digest, directory, entry: path.join(directory, entry), node: path.join(directory, runtimeNodeName()), ...([1,2,3,4].includes(compatibility?.parallelCompatibility ?? 0) ? { parallelCompatibility: compatibility!.parallelCompatibility } : {}) };
-  if (fs.existsSync(directory)) { validateAgentRuntime(input.dataRoot, descriptor); checkCancelled(); const now = new Date(); fs.utimesSync(directory, now, now); materializeStableRuntimeNodeLocked(input.dataRoot, descriptor.node, computeNodeDigest(descriptor.node)); return descriptor; }
+  if (fs.existsSync(directory)) { validateAgentRuntime(input.dataRoot, descriptor); checkCancelled(); const now = new Date(); fs.utimesSync(directory, now, now); materializeSharedRuntimeNode(input.dataRoot, descriptor.node, computeNodeDigest(descriptor.node)); return descriptor; }
   const stage = path.join(units, '.stage-' + randomUUID()); privateDirectory(stage);
   try {
     for (const name of names) { checkCancelled(); const target = path.join(stage, name); fs.mkdirSync(path.dirname(target), { recursive: true }); if (name === 'build/runtime-contracts.json') fs.copyFileSync(path.join(packageRoot, name), target);
@@ -220,7 +425,7 @@ export function prepareAgentRuntime(input: { dataRoot: string; packageRoot?: str
     try { fs.renameSync(stage, directory); } catch (error) { if (!fs.existsSync(directory)) throw error; }
     validateAgentRuntime(input.dataRoot, descriptor);
     checkCancelled();
-    materializeStableRuntimeNodeLocked(input.dataRoot, descriptor.node, computeNodeDigest(descriptor.node));
+    materializeSharedRuntimeNode(input.dataRoot, descriptor.node, computeNodeDigest(descriptor.node));
     return descriptor;
   } finally { if (fs.existsSync(stage)) fs.rmSync(stage, { recursive: true }); }
   } finally { lock.release(); }

@@ -134,7 +134,7 @@ test('Buildr Development Dev.app macOS 入口在真实 launchd 模式下以独�
   fs.writeFileSync(path.join(sourceRoot, 'resources/manifest.yml'), 'fixture\n');
   fs.writeFileSync(
     path.join(sourceRoot, 'bin/buildr.mjs'),
-    `import fs from 'node:fs';fs.writeFileSync(${JSON.stringify(observation)},JSON.stringify({pid:process.pid,ppid:process.ppid,args:process.argv.slice(2),path:process.env.PATH,identity:process.env.BUILDR_LAUNCHER_IDENTITY}));\n`,
+    `import fs from 'node:fs';fs.writeFileSync(${JSON.stringify(observation)},JSON.stringify({pid:process.pid,ppid:process.ppid,execPath:process.execPath,hostNode:process.env.BUILDR_HOST_NODE,hostNodeVersion:process.env.BUILDR_HOST_NODE_VERSION,args:process.argv.slice(2),path:process.env.PATH,identity:process.env.BUILDR_LAUNCHER_IDENTITY}));\n`,
   );
 
   buildLauncher({
@@ -177,7 +177,13 @@ test('Buildr Development Dev.app macOS 入口在真实 launchd 模式下以独�
   while (!fs.existsSync(observation) && Date.now() < deadline) await new Promise(r => setTimeout(r, 25));
   assert.equal(fs.existsSync(observation), true);
   const observed = JSON.parse(fs.readFileSync(observation, 'utf8'));
+  const expectedSharedNode = path.join(home, 'Library', 'Application Support', 'Buildr', 'runtime', 'node');
   assert.equal(observed.ppid, 1);
+  assert.equal(observed.execPath, expectedSharedNode);
+  assert.equal(fs.lstatSync(expectedSharedNode).nlink, 1);
+  assert.equal(fs.lstatSync(expectedSharedNode).mode & 0o222, 0);
+  assert.equal(observed.hostNode, process.execPath);
+  assert.equal(observed.hostNodeVersion, process.versions.node);
   assert.deepEqual(observed.args, ['web', '--port', '4458', '--no-open']);
   assert.deepEqual(observed.path.split(path.delimiter), [
     path.join(sourceRoot, 'tools/development/programs'),

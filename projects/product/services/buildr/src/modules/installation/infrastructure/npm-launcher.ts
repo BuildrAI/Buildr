@@ -171,6 +171,23 @@ export function npmLauncherBindingPath(platform: any = process.platform, target:
     : path.join(productDataRoot(), 'launchers', 'npm', 'launcher-binding.json');
 }
 
+const MAC_SHARED_NODE_SCRIPT = [
+  "const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),crypto=require('node:crypto');",
+  "const s=path.resolve(process.argv[1]),ss=fs.lstatSync(s);if(!ss.isFile()||ss.isSymbolicLink())throw new Error('invalid source node');",
+  "const sha=f=>{const h=crypto.createHash('sha256'),b=Buffer.allocUnsafe(1048576),fd=fs.openSync(f,'r');try{let n;while((n=fs.readSync(fd,b,0,b.length,null))>0)h.update(b.subarray(0,n));}finally{fs.closeSync(fd);}return h.digest('hex');};",
+  "const alive=p=>{if(!Number.isSafeInteger(p)||p<1)return false;try{process.kill(p,0);return true;}catch(e){return e&&e.code==='EPERM';}};",
+  "const sleep=ms=>Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,ms);",
+  "const iso=process.env.BUILDR_TEST_STATE_REQUIRED==='1'||Boolean(process.env.NODE_TEST_CONTEXT);",
+  "const exp=process.env.BUILDR_SHARED_NODE_ROOT?.trim();",
+  "const base=exp&&path.isAbsolute(exp)?path.resolve(exp):path.join(iso?(process.env.HOME?.trim()||os.homedir()):(process.env.BUILDR_HOST_HOME?.trim()||os.homedir()),'Library','Application Support','Buildr','runtime');",
+  "fs.mkdirSync(base,{recursive:true,mode:0o700});const bi=fs.lstatSync(base);if(!bi.isDirectory()||bi.isSymbolicLink())throw new Error('unsafe shared runtime dir');",
+  "const ld=path.join(base,'.lock'),of=path.join(ld,'owner.json'),nonce=crypto.randomUUID(),ls=path.join(base,`.lock-stage-${nonce}`);",
+  "fs.mkdirSync(ls,{recursive:true,mode:0o700});fs.writeFileSync(path.join(ls,'owner.json'),JSON.stringify({pid:process.pid,nonce,createdAtMs:Date.now()})+'\\n',{mode:0o600,flag:'wx'});",
+  "const ro=()=>{try{const i=fs.lstatSync(of,{throwIfNoEntry:false});if(!i||!i.isFile()||i.isSymbolicLink()||i.nlink!==1)return null;const p=JSON.parse(fs.readFileSync(of,'utf8'));return Number.isSafeInteger(p.pid)&&p.pid>0&&typeof p.nonce==='string'?p:null;}catch{return null;}};",
+  "const dl=Date.now()+15000;try{for(;;){try{fs.renameSync(ls,ld);break;}catch(e){if(!['ENOTEMPTY','EEXIST','EPERM','EACCES'].includes(e&&e.code))throw e;if(!fs.existsSync(ld))continue;const pr=ro();if(!pr||!alive(pr.pid)){const rc=ld+'.reclaim';let cr=false;try{fs.mkdirSync(rc,{mode:0o700});cr=true;const cu=ro();if((!cu&&!pr)||(cu&&pr&&cu.nonce===pr.nonce&&!alive(cu.pid))||(!cu&&pr&&!alive(pr.pid))){const rt=ld+'.retired-'+crypto.randomUUID();try{fs.renameSync(ld,rt);fs.rmSync(rt,{recursive:true,force:true});}catch{}}}catch{}finally{if(cr&&fs.existsSync(rc))fs.rmSync(rc,{recursive:true,force:true});}}if(Date.now()>=dl)throw new Error('shared node lock timeout');sleep(15);}}}finally{if(fs.existsSync(ls))fs.rmSync(ls,{recursive:true,force:true});}",
+  "try{const dst=path.join(base,'node'),mf=path.join(base,'node.json'),dg=sha(s);const chk=st=>{if(!st||!st.isFile()||st.isSymbolicLink()||st.nlink!==1||(process.getuid&&st.uid!==process.getuid())||(st.mode&0o222)!==0||(st.mode&0o100)===0)throw new Error('unsafe shared node');};const rm=()=>{const mi=fs.lstatSync(mf,{throwIfNoEntry:false});if(!mi)return null;if(!mi.isFile()||mi.isSymbolicLink()||mi.nlink!==1||(process.getuid&&mi.uid!==process.getuid()))throw new Error('unsafe shared manifest');const mp=JSON.parse(fs.readFileSync(mf,'utf8'));if(mp?.schemaVersion!==1||typeof mp.nodeDigest!=='string'||!/^[a-f0-9]{64}$/.test(mp.nodeDigest))throw new Error('invalid shared manifest');return mp;};const wm=d=>{const mt=mf+'.'+crypto.randomUUID()+'.tmp';try{fs.writeFileSync(mt,JSON.stringify({schemaVersion:1,nodeDigest:d})+'\\n',{mode:0o600,flag:'wx'});fs.renameSync(mt,mf);}finally{if(fs.existsSync(mt))fs.rmSync(mt,{force:true});}};const es=fs.lstatSync(dst,{throwIfNoEntry:false});if(es){chk(es);const m=rm();const ad=sha(dst);if(m&&ad!==m.nodeDigest)throw new Error('tampered shared node');if(ad===dg){if(!m)wm(dg);process.stdout.write(dst);process.exit(0);}if(!m)throw new Error('unverified shared node');}const stg=path.join(base,'.stage-'+crypto.randomUUID());fs.mkdirSync(stg,{recursive:true,mode:0o700});const sn=path.join(stg,'node');try{fs.copyFileSync(s,sn,fs.constants.COPYFILE_FICLONE|fs.constants.COPYFILE_EXCL);fs.chmodSync(sn,0o500);if(sha(sn)!==dg)throw new Error('staged node digest mismatch');fs.renameSync(sn,dst);chk(fs.lstatSync(dst,{throwIfNoEntry:false}));if(sha(dst)!==dg)throw new Error('published node digest mismatch');wm(dg);process.stdout.write(dst);}finally{if(fs.existsSync(stg))fs.rmSync(stg,{recursive:true,force:true});}}finally{const cu=ro();if(cu&&cu.nonce===nonce){const rel=ld+'.released-'+nonce;try{fs.renameSync(ld,rel);fs.rmSync(rel,{recursive:true,force:true});}catch{}}}",
+].join('');
+
 function macLauncherScript(binding: any) {
   const jobPrefix = `ai.buildr.web.npm-launcher.runner.${binding.launcherOwnershipIdentity.slice('sha256-'.length, 'sha256-'.length + 16)}`;
   return `#!/bin/sh
@@ -181,6 +198,7 @@ ENTRY=${quoteShell(binding.packageEntry.path)}
 ENTRY_SHA=${quoteShell(binding.packageEntry.sha256.slice('sha256-'.length))}
 BINDING=${quoteShell(binding.bindingPath)}
 JOB_PREFIX=${quoteShell(jobPrefix)}
+SHARED_NODE_SCRIPT=${quoteShell(MAC_SHARED_NODE_SCRIPT)}
 LOG_DIR="\${HOME}/Library/Logs/Buildr"
 LOG_FILE="\${LOG_DIR}/launcher.log"
 mkdir -p "\${LOG_DIR}"
@@ -214,6 +232,7 @@ APP_DATA="$7"
 PRODUCT_DATA="$8"
 NO_OPEN="$9"
 NO_NOTIFY="\${10}"
+SHARED_NODE_SCRIPT="\${11}"
 cleanup() {
   /bin/launchctl remove "\${LABEL}" >/dev/null 2>&1 || true
 }
@@ -226,15 +245,21 @@ export PATH="\${NODE_BIN}\${PATH:+:\${PATH}}"
 NODE_VERSION="$("\${NODE}" -p "process.versions.node")"
 NODE_EXECUTABLE="$("\${NODE}" -p "process.execPath")"
 printf "%s\n" "Node identity: executable=\${NODE_EXECUTABLE} version=\${NODE_VERSION} pathHead=\${NODE_BIN}" >>"\${LOG_FILE}"
-"\${NODE}" "\${ENTRY}" web --launcher-binding "\${BINDING}" >>"\${LOG_FILE}" 2>&1
+export BUILDR_HOST_NODE="\${NODE}"
+export BUILDR_HOST_NODE_VERSION="\${NODE_VERSION}"
+LAUNCH_NODE="$("\${NODE}" -e "\${SHARED_NODE_SCRIPT}" "\${NODE}" 2>>"\${LOG_FILE}")"
 STATUS=$?
+if [ "\${STATUS}" -eq 0 ] && [ -n "\${LAUNCH_NODE}" ]; then
+  "\${LAUNCH_NODE}" "\${ENTRY}" web --launcher-binding "\${BINDING}" >>"\${LOG_FILE}" 2>&1
+  STATUS=$?
+fi
 if [ "\${STATUS}" -ne 0 ]; then
   printf "%s\\n" "Buildr Development exited with status \${STATUS}" >>"\${LOG_FILE}"
   if [ "\${NO_NOTIFY}" != "1" ]; then
     /usr/bin/osascript -e "display alert \\"Buildr Development 无法启动\\" message \\"正式 Launcher 启动失败。请在终端运行 buildr web launcher status，然后执行 buildr web launcher repair。\\" as critical" >/dev/null 2>&1 || true
   fi
 fi
-' buildr-web-launcher "\${LABEL}" "\${NODE}" "\${NODE_BIN}" "\${ENTRY}" "\${BINDING}" "\${LOG_FILE}" "\${APP_DATA}" "\${PRODUCT_DATA}" "\${NO_OPEN}" "\${NO_NOTIFY}"
+' buildr-web-launcher "\${LABEL}" "\${NODE}" "\${NODE_BIN}" "\${ENTRY}" "\${BINDING}" "\${LOG_FILE}" "\${APP_DATA}" "\${PRODUCT_DATA}" "\${NO_OPEN}" "\${NO_NOTIFY}" "\${SHARED_NODE_SCRIPT}"
 STATUS=$?
 [ "\${STATUS}" -eq 0 ] || fail "Could not submit Buildr Development background runner: status \${STATUS}"
 exit 0
