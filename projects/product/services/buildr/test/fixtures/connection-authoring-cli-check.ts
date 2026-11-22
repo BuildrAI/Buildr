@@ -22,7 +22,7 @@ function command(args: string[], input?: string) {
     errorCode: (result.error as NodeJS.ErrnoException | undefined)?.code, signal: result.signal, stderr: result.stderr, stdout: result.stdout }));
   return structured ? JSON.parse(result.stdout) : result.stdout;
 }
-command(['init', '--name', 'authoring-forward-example', '--description', 'Independent local acceptance', '--profile', 'team']);
+command(['init', '--agent', 'codex', '--name', 'authoring-forward-example', '--description', 'Independent local acceptance', '--profile', 'team']);
 const fixture = path.resolve('test/fixtures/connection-authoring-example');
 command(['skills', 'add', '--source', fixture]);
 const catalogue = command(['connection-skill', 'definitions', 'list']);
@@ -30,6 +30,7 @@ const entry = catalogue.definitions.find((item: any) => item.definition.definiti
 assert.ok(entry, JSON.stringify(catalogue)); assert.equal(entry.skill.id, 'independent-local-inspector');
 assert.equal(entry.definition.category, 'local-inspection');
 assert.equal(entry.skill.sourcePath, 'connections/independent-local-inspector');
+assert.equal(catalogue.definitions.some((item: any) => item.skill.id === 'company-example'), false);
 const file = path.join(temporary, 'instance-input.json');
 const binding = { skillAssetIdentity: entry.skill.assetIdentity, sourceIdentity: entry.skill.sourceIdentity, definitionId: entry.definition.definitionId, configVersion: 1 };
 const values = { username: 'TEAM_FIXTURE', password: 'TEAM_FIXTURE_SECRET' };
@@ -92,8 +93,11 @@ assert.equal(updated.authentication.source, 'personal'); assert.equal(updated.lo
 assert.equal(fs.existsSync(path.join(root, 'skills', 'connections', 'independent-local-inspector', 'references', 'commands-and-results.md')), true);
 // Assemble exactly the files distributed by the authoring guide; no Nacos or
 // developer implementation imports are needed by the resulting unknown Skill.
-const template = path.resolve('resources/workspace/skills/buildr/connection-authoring/templates'), source = path.join(temporary, 'template-source');
-for (const [from, to] of [['SKILL.md', 'SKILL.md'], ['connection.yml', 'assets/connection.yml'], ['client.mjs', 'scripts/client.mjs'], ['commands-and-results.md', 'references/commands-and-results.md']] as const) {
+const authoring = path.join(root, '.agents/skills/connection-authoring');
+const template = path.join(authoring, 'templates'), source = path.join(temporary, 'template-source');
+assert.match(fs.readFileSync(path.join(authoring, 'SKILL.md'), 'utf8'), /templates\/skill-template\.md/);
+assert.equal(fs.existsSync(path.join(template, 'SKILL.md')), false, 'The standalone template must not be discoverable as a skill.');
+for (const [from, to] of [['skill-template.md', 'SKILL.md'], ['connection.yml', 'assets/connection.yml'], ['client.mjs', 'scripts/client.mjs'], ['commands-and-results.md', 'references/commands-and-results.md']] as const) {
   const destination = path.join(source, to); fs.mkdirSync(path.dirname(destination), { recursive: true }); fs.copyFileSync(path.join(template, from), destination);
 }
 const offline = spawnSync(process.execPath, [path.join(source, 'scripts/client.mjs'), '--self-test'], { encoding: 'utf8', env: process.env, timeout: 5000 });

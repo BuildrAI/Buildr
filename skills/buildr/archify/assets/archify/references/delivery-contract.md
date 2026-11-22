@@ -620,7 +620,7 @@ artifact receipts are no longer current.
 
 For a requested diagnostic or structured handoff, derive the following details
 from the existing receipts. Ordinary user-facing replies follow
-[Output](../SKILL.md#output); this checklist is not a default chat response.
+[Output](../AUTHORING.md#output); this checklist is not a default chat response.
 
 ```text
 diagram_type: <actual diagram type>

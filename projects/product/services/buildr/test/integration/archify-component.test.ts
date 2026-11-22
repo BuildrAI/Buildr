@@ -33,11 +33,16 @@ async function scenario() {
   assert.equal(listed.components.some((item: any) => item.id === 'archify'), false);
   // Simulate a real old shared set and its three separately registered workspaces.
   const old = ensurePackageResources(service);
+  const legacySource = path.join(sharedResourcesRoot(), 'skills/buildr/archify');
   for (const file of files(source).sort()) {
-    const relative = path.relative(source, file).split(path.sep).join('/');
-    const target = path.join(sharedResourcesRoot(), 'skills/buildr/archify', relative);
-    fs.mkdirSync(path.dirname(target), { recursive: true }); fs.copyFileSync(file, target);
-    old.files.push({ source: `workspace/skills/buildr/archify/${relative}`, path: `skills/buildr/archify/${relative}`, sha256: hash(fs.readFileSync(file)), mode: fs.statSync(file).mode & 0o777 });
+    const relative = path.relative(source, file).split(path.sep).join('/').replace('assets/archify/AUTHORING.md', 'assets/archify/SKILL.md');
+    const target = path.join(legacySource, relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    // The preserved input represents the historical layout, not today's workspace wrapper.
+    if (['SKILL.md', 'assets/archify/references/repository-authoring.md', 'assets/archify/references/delivery-contract.md'].includes(relative)) {
+      fs.writeFileSync(target, fs.readFileSync(file, 'utf8').replaceAll('AUTHORING.md', 'SKILL.md'), { mode: fs.statSync(file).mode & 0o777 });
+    } else fs.copyFileSync(file, target);
+    old.files.push({ source: `workspace/skills/buildr/archify/${relative}`, path: `skills/buildr/archify/${relative}`, sha256: hash(fs.readFileSync(target)), mode: fs.statSync(target).mode & 0o777 });
   }
   old.id = `${old.version}-${hash(JSON.stringify(old.files))}`;
   fs.writeFileSync(path.join(sharedResourcesRoot(), 'resource-set.json'), JSON.stringify(old));
@@ -48,7 +53,7 @@ async function scenario() {
     const registryFile = path.join(workspace, 'components/manifest.yml'), registry = YAML.parse(fs.readFileSync(registryFile, 'utf8'));
     registry.components.push({ id: 'archify', source: 'buildr', path: 'components/buildr/archify', enabled: true, required: false, state: 'installed' });
     fs.writeFileSync(registryFile, YAML.stringify(registry));
-    const definition = { schemaVersion: 'buildr.component/v1', id: 'archify', kind: 'integration', version: '3.1.0+buildr.1', source: 'buildr', members: { rules: [], skills: ['skills/buildr/archify'], commandCollections: [], skillContributions: [] }, integrity: [`skills/buildr/archify=${assetIntegrity(source)}`] };
+    const definition = { schemaVersion: 'buildr.component/v1', id: 'archify', kind: 'integration', version: '3.1.0+buildr.1', source: 'buildr', members: { rules: [], skills: ['skills/buildr/archify'], commandCollections: [], skillContributions: [] }, integrity: [`skills/buildr/archify=${assetIntegrity(legacySource)}`] };
     fs.mkdirSync(path.join(workspace, 'components/buildr/archify'), { recursive: true });
     fs.writeFileSync(path.join(workspace, 'components/buildr/archify/component.yml'), YAML.stringify(definition));
     fs.writeFileSync(path.join(workspace, '.buildr/local/package-resources.json'), JSON.stringify({ schemaVersion: 'buildr.resource-adoption/v1', layout: 'fixed', ready: true, resourceSet: old.id }));
@@ -80,6 +85,9 @@ async function scenario() {
   }
   assert.match(fs.readFileSync(path.join(custom, 'SKILL.md'), 'utf8'), /Workspace customization/);
   const tool = path.join(source, 'assets/archify');
+  assert.match(fs.readFileSync(path.join(source, 'SKILL.md'), 'utf8'), /assets\/archify\/AUTHORING\.md/);
+  assert.ok(fs.existsSync(path.join(tool, 'AUTHORING.md')));
+  assert.equal(fs.existsSync(path.join(tool, 'SKILL.md')), false);
   const graph = path.join(root, 'self-use.json'); fs.copyFileSync(path.join(tool, 'examples/brand-aware-delivery.architecture.json'), graph);
   const rendered = spawnSync(process.execPath, [path.join(tool, 'bin/archify.mjs'), 'deliver', 'architecture', graph, path.join(root, 'self-use.html'), '--quality', 'showcase', '--json'], { cwd: tool, env: process.env, encoding: 'utf8', timeout: 30_000 });
   assert.equal(rendered.status, 0, rendered.stdout + rendered.stderr);

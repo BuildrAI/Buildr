@@ -249,6 +249,7 @@ test('完整 Skill 目录跨 adapter 投射字节、权限、回执与 stale 清
   fs.mkdirSync(path.join(sourceDir, 'assets'), { recursive: true });
   fs.mkdirSync(path.join(sourceDir, 'scripts'), { recursive: true });
   fs.mkdirSync(path.join(sourceDir, 'agents'), { recursive: true });
+  fs.mkdirSync(path.join(sourceDir, 'templates'), { recursive: true });
   fs.mkdirSync(targetRoot, { recursive: true });
   const sourceFile: any = path.join(sourceDir, 'SKILL.md');
   fs.writeFileSync(sourceFile, '---\nname: complete-demo\ndescription: complete demo\n---\n\n# Complete Demo\n');
@@ -256,6 +257,8 @@ test('完整 Skill 目录跨 adapter 投射字节、权限、回执与 stale 清
   fs.writeFileSync(path.join(sourceDir, 'scripts', 'run.sh'), '#!/bin/sh\necho demo\n');
   fs.chmodSync(path.join(sourceDir, 'scripts', 'run.sh'), 0o744);
   fs.writeFileSync(path.join(sourceDir, 'agents', 'openai.yaml'), 'interface:\n  display_name: Complete Demo\n');
+  const template = '---\nname: example-template\ndescription: a template, not a skill\n---\n';
+  fs.writeFileSync(path.join(sourceDir, 'templates', 'SKILL.md'), template);
   assert.equal(spawnSync('git', ['init', '--quiet'], { cwd: root }).status, 0);
   assert.equal(spawnSync('git', ['add', '--', 'source'], { cwd: root }).status, 0);
   assert.equal(spawnSync('git', ['update-index', '--chmod=+x', '--', 'source/scripts/run.sh'], { cwd: root }).status, 0);
@@ -265,7 +268,7 @@ test('完整 Skill 目录跨 adapter 投射字节、权限、回执与 stale 清
     const projection: any = buildSkillRenderPlan(root, targetRoot, [skill], adapterId);
     const relativeTargets: any = projection.writes.map((item: any) => path.relative(targetRoot, item.targetFile).split(path.sep).join('/'));
     const runtimeRoot: any = getRuntimeAdapter(adapterId).traits.skills.root;
-    for (const relative of ['SKILL.md', 'agents/openai.yaml', 'assets/sample.bin', 'scripts/run.sh']) {
+    for (const relative of ['SKILL.md', 'agents/openai.yaml', 'assets/sample.bin', 'scripts/run.sh', 'templates/SKILL.md']) {
       const runtimePath = runtimeRoot === '.agents' ? 'complete-demo' : 'team/complete-demo';
       assert.ok(relativeTargets.includes(`${runtimeRoot}/skills/${runtimePath}/${relative}`), `${adapterId} missing ${relative}`);
     }
@@ -286,10 +289,14 @@ test('完整 Skill 目录跨 adapter 投射字节、权限、回执与 stale 清
   const second: any = buildSkillRenderPlan(root, targetRoot, [skill], 'codex');
   assert.doesNotThrow(() => applySkillRenderPlan(second, targetRoot));
   fs.rmSync(path.join(sourceDir, 'assets', 'sample.bin'));
+  fs.renameSync(path.join(sourceDir, 'templates', 'SKILL.md'), path.join(sourceDir, 'templates', 'skill-template.md'));
   const stale: any = buildSkillRenderPlan(root, targetRoot, [skill], 'codex');
-  assert.equal(stale.removals.length, 1);
+  assert.equal(stale.removals.length, 2);
   applySkillRenderPlan(stale, targetRoot);
   assert.equal(fs.existsSync(path.join(runtimeDir, 'assets', 'sample.bin')), false);
+  assert.equal(fs.existsSync(path.join(runtimeDir, 'templates', 'SKILL.md')), false);
+  assert.equal(fs.readFileSync(path.join(runtimeDir, 'templates', 'skill-template.md'), 'utf8'), template);
+  assert.ok(fs.existsSync(path.join(runtimeDir, 'SKILL.md')));
 });
 
 test('Skill 投射所有权按 destination 隔离，同根 adapter 共用所有权', () => {
