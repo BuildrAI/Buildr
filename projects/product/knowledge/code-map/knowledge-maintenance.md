@@ -100,9 +100,9 @@
 | [规范建设（OpenSpec）](../../services/buildr/resources/workspace/skills/openspec/openspec-propose/SKILL.md) | 指导明确行为承诺、变更范围和验收要求 |
 | [代码架构（code-architecture）](../../services/buildr/resources/workspace/skills/buildr/code-architecture/SKILL.md) | 指导智能体（Agent）按清晰职责组织真实代码 |
 | [当前知识维护（current-knowledge-maintenance）](../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md) | 围绕阅读目标调查事实、组织成果更新并检查一致性 |
-| [代码地图制作（code-map）](../../services/buildr/resources/workspace/skills/buildr/code-map/SKILL.md) | 解释规范、职责、协作怎样落实到真实目录与文件 |
+| [代码地图制作（code-map）](../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/references/code-map.md) | 解释规范、职责、协作怎样落实到真实目录与文件 |
 | [技术图制作（Archify）](../../../../skills/buildr/archify/SKILL.md) | 用合适图示表达关系或过程，检查图源与展示 |
-| [术语治理（terminology-governance）](../../services/buildr/resources/workspace/skills/buildr/terminology-governance/SKILL.md) | 在含义或作用域变化时核对术语；平时沿用唯一解释 |
+| [术语治理（terminology-governance）](../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/references/terminology.md) | 在含义或作用域变化时核对术语；平时沿用唯一解释 |
 
 这些是智能体（Agent）采用的工作方法，不是运行时函数调用。OpenSpec 的提案和实施交接识别知识影响，实际维护按用户授权进行；方法的完整过程见各自详情。
 

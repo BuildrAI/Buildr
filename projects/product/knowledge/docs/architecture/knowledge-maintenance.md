@@ -56,7 +56,7 @@ Buildr 在同一知识入口提供主题阅读与文档目录。前者沿理解�
 
 文件发现保证覆盖，作者编排帮助理解。`documentSections` 每章维护 `id/title/summary/entries`；条目用已发现的 `location/path` 关联原文件，补充面向读者的 `title/summary`，必要时标记 `supplementary: true`。图示依据、语言版本和纯导航可作为补充阅读折叠，但仍参与搜索和总数；代码地图（Code Map）或 README 是否属于主阅读，依据实际内容判断，不能只看文件名。
 
-编排不能扩大文件读取范围。新发现但尚未编排的正文仍在“其他文档”中可读；失效或重复条目只提示，不阻断主题阅读，也不凭空生成文件。新增文档时先判断已有章节能否承接，再更新阅读信息；没有新增理解问题，就不增加主题。格式见[阅读关联参考](../../../services/buildr/resources/workspace/skills/buildr/code-map/references/knowledge-index.md#文档阅读章节)。
+编排不能扩大文件读取范围。新发现但尚未编排的正文仍在“其他文档”中可读；失效或重复条目只提示，不阻断主题阅读，也不凭空生成文件。新增文档时先判断已有章节能否承接，再更新阅读信息；没有新增理解问题，就不增加主题。格式见[阅读关联参考](../../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/references/map-index.md#文档阅读章节)。
 
 目录解决发现问题，专题解释具体问题；每个持续有效的问题保留一份正文。少量目录入口在 GitHub 也提供相同阅读路径，不再为了跳转单独生成空章节。数量应说明统计范围，区分正文、目录入口、图示依据和规范，不能把知识主线选中的文章数当作项目所有文件数。
 

@@ -343,7 +343,7 @@
 - 定义：解释真实实现职责及其目录、文件位置的结构映射。
 - 适用范围：从功能定位代码，说明职责、关键协作与来源。
 - 避免混用：不是源码副本、逐行索引或行为规范；目录存在也不证明解释正确。
-- 来源：[代码地图方法](../../services/buildr/resources/workspace/skills/buildr/code-map/SKILL.md)。
+- 来源：[代码地图方法](../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/references/code-map.md)。
 
 ## 技术图（Technical Diagram）
 
