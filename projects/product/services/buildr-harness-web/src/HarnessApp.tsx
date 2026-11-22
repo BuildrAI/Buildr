@@ -3,16 +3,25 @@ import {FrameSubmissions} from './frame-submissions';
 import {useHarnessDirectoryFiles} from './directory-files';
 import {engineeringFile} from './engineering-files';
 import {conversationFileLink} from './lib/localFileLink';
-import {ConversationHostProvider} from './integration/ConversationHost';
+import {ConversationHostProvider, useConversationHost, type HarnessThreePaneHost} from './integration/ConversationHost';
 import {HarnessShell, type HarnessWorkEnvironment} from './shell/HarnessShell';
-import {lazy,Suspense,useCallback,useEffect,useMemo,useState,useRef} from 'react';
+import {
+  HARNESS_RAIL_WIDTH,
+  THREE_PANE_DEFAULT_CONVERSATION_RATIO,
+  THREE_PANE_HISTORY_DEFAULT_WIDTH,
+  resizeThreePaneConversationRatio,
+  resizeThreePaneHistory,
+  resolveHarnessThreePaneLayout,
+} from './shell/harness-layout';
+import {readOptionalPreference, writeOptionalPreference} from './lib/optional-preferences';
+import {lazy,Suspense,useCallback,useEffect,useLayoutEffect,useMemo,useState,useRef} from 'react';
 import {Alert,Button,Input,Modal,Spin} from 'antd';
 import {FolderOpenOutlined} from '@ant-design/icons';
 import {AgentConversationsProvider,AgentConnectionSettings,ConversationWorkspace,HarnessDirectoryFilesProvider,LocalFilePreviewModal,useAgentConversations,type HarnessDirectoryFiles,type HarnessFileContent} from './index';
 import {api} from './api/index';
 import type {ConversationWorkspace as ScopeView} from './features/agent-conversations/ConversationHistory';
 import {conversationDraftKey} from './features/agent-conversations/useConversationDraft';
-import {readDraft} from './features/agent-conversations/conversation-state';
+import {canSplitFocusHistory,readDraft} from './features/agent-conversations/conversation-state';
 import {directoryClient,observeWorkspaceDirectory} from './features/directory-workbench/api';
 import type {ConversationFilePreview} from './directory-files';
 import type {ConversationView} from './features/agent-conversations/types';
@@ -24,6 +33,13 @@ type Directory={ref:Ref;rootPath:string;revision:string;name?:string};
 type Catalog={scopes:Array<{key:string;ref:Ref;authority:'builtin'|'registered'|'offline';name?:string;rootPath?:string}>};
 const directoryLeafName=(value:string)=>value.replace(/[\\/]+$/,'').split(/[\\/]/).filter(Boolean).at(-1)||value;
 const request=<T,>(path:string,input?:unknown,signal?:AbortSignal)=>api(path,input===undefined?{headers:{'x-buildr-session':''},signal}:{method:'POST',body:JSON.stringify(input),signal}) as Promise<T>;
+const harnessProfile=()=>typeof document==='undefined'?'local':document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content')||'local';
+const readSavedNumber=(key:string):number|undefined=>{
+  const raw=readOptionalPreference(key);
+  if(raw===null||!raw.trim())return undefined;
+  const value=Number(raw);
+  return Number.isFinite(value)?value:undefined;
+};
 
 export function HarnessApp({environment}:{environment?:HarnessWorkEnvironment}={}){
   const [file,setFile]=useState<ConversationFilePreview|null>(null);
@@ -90,11 +106,111 @@ function Workspace({standalone,environment}:{standalone:boolean;environment?:Har
     try{const directory=await request<Directory>('/api/v1/harness/directories',{path,name:name.trim()});await refresh();const scope=canonicalScopeKey(directory.ref);setSelected(scope);context.newConversation({scope:{workspaceId:scope}});if(!standalone)context.setFull(true);setChoosing(false);setPath('');setName('');}
     catch(failure){setError(failure instanceof Error?failure.message:'目录未登记，输入已保留。');}finally{setBusy(false);}
   };
+  const composition=useConversationHost();
+  const profile=useMemo(harnessProfile,[]);
+  const workspaceRatioKey='buildr.harness-shell.workspace-ratio:'+profile;
+  const threePaneHistoryKey='buildr.harness-three-pane.history-width:'+profile;
+  const [shellWidth,setShellWidth]=useState<number>(()=>(typeof window!=='undefined'?window.innerWidth:1280));
+  const [viewportWidth,setViewportWidth]=useState<number>(()=>(typeof window!=='undefined'?window.innerWidth:1280));
+  const [preferredRatio,setPreferredRatio]=useState<number>(()=>{
+    const saved=readSavedNumber(workspaceRatioKey);
+    return saved!==undefined&&saved>0&&saved<1?saved:THREE_PANE_DEFAULT_CONVERSATION_RATIO;
+  });
+  const [preferredThreePaneHistory,setPreferredThreePaneHistory]=useState<number>(()=>{
+    const saved=readSavedNumber(threePaneHistoryKey);
+    return saved!==undefined&&saved>0?saved:THREE_PANE_HISTORY_DEFAULT_WIDTH;
+  });
+  useEffect(()=>{
+    if(!standalone||typeof window==='undefined')return;
+    const onResize=()=>setViewportWidth(window.innerWidth);
+    window.addEventListener('resize',onResize);
+    return()=>window.removeEventListener('resize',onResize);
+  },[standalone]);
   const draftWorkspace=()=>{try{return readDraft(conversationDraftKey(null,null),sessionStorage).workspaceId;}catch{return undefined;}};
   const workbenchWorkspaceId=context.scope?.workspaceId??context.draftScope?.workspaceId??draftWorkspace()??selected;
   const [environmentOpen,setEnvironmentOpen]=useState(false);
   const [reveal,setReveal]=useState<{workspaceId:string;revision:string;path:string;line?:number}>();
   const workspaceRef=useRef(workbenchWorkspaceId);workspaceRef.current=workbenchWorkspaceId;
+  const effectiveEnvironmentOpen=standalone?environmentOpen&&!context.settings:undefined;
+  const layout=useMemo(
+    ()=>resolveHarnessThreePaneLayout({
+      shellWidth,
+      viewportWidth,
+      historyOpen:context.view==='history'&&!context.settings,
+      workspaceOpen:Boolean(effectiveEnvironmentOpen),
+      preferredConversationRatio:preferredRatio,
+      preferredHistoryWidth:preferredThreePaneHistory,
+    }),
+    [shellWidth,viewportWidth,context.view,context.settings,effectiveEnvironmentOpen,preferredRatio,preferredThreePaneHistory],
+  );
+  const workspaceNeedsSingleLeft=Boolean(effectiveEnvironmentOpen)&&!layout.canThreePane;
+  const previousWorkspaceNeedsSingleLeftRef=useRef(workspaceNeedsSingleLeft);
+  const stashedHistoryForWorkspaceRef=useRef(false);
+  useLayoutEffect(()=>{
+    const previous=previousWorkspaceNeedsSingleLeftRef.current;
+    previousWorkspaceNeedsSingleLeftRef.current=workspaceNeedsSingleLeft;
+    if(!standalone)return;
+    if(!previous&&workspaceNeedsSingleLeft&&context.view==='history'){
+      stashedHistoryForWorkspaceRef.current=true;
+      context.setView('conversation');
+    }else if(previous&&!workspaceNeedsSingleLeft&&stashedHistoryForWorkspaceRef.current){
+      stashedHistoryForWorkspaceRef.current=false;
+      const canRestore=Boolean(effectiveEnvironmentOpen)?layout.canThreePane:canSplitFocusHistory(Math.max(0,shellWidth-HARNESS_RAIL_WIDTH),viewportWidth);
+      if(canRestore&&context.view!=='history')context.setView('history');
+    }
+  },[standalone,workspaceNeedsSingleLeft,effectiveEnvironmentOpen,layout.canThreePane,shellWidth,viewportWidth,context.view,context.setView]);
+  const layoutRef=useRef(layout);layoutRef.current=layout;
+  const shellWidthRef=useRef(shellWidth);shellWidthRef.current=shellWidth;
+  const preferredRatioRef=useRef(preferredRatio);preferredRatioRef.current=preferredRatio;
+  const preferredHistoryRef=useRef(preferredThreePaneHistory);preferredHistoryRef.current=preferredThreePaneHistory;
+  const rightDragStartHistoryRef=useRef<number|null>(null);
+  const leftDragStartRatioRef=useRef<number|null>(null);
+  const handleEnvironmentDragChange=useCallback((dragging:boolean)=>{
+    rightDragStartHistoryRef.current=dragging?layoutRef.current.historyWidth:null;
+  },[]);
+  const handleConversationRatioChange=useCallback((nextRatio:number,commit:boolean)=>{
+    const currentLayout=layoutRef.current;
+    const baseHistory=rightDragStartHistoryRef.current??preferredHistoryRef.current;
+    const resized=resizeThreePaneConversationRatio({shellWidth:shellWidthRef.current,historyWidth:baseHistory,threePaneActive:currentLayout.threePaneActive},nextRatio);
+    setPreferredRatio(resized.conversationRatio);
+    if(currentLayout.threePaneActive)setPreferredThreePaneHistory(resized.historyWidth);
+    if(commit){
+      writeOptionalPreference(workspaceRatioKey,String(resized.conversationRatio));
+      if(currentLayout.threePaneActive&&resized.historyWidth!==baseHistory){
+        writeOptionalPreference(threePaneHistoryKey,String(resized.historyWidth));
+      }
+    }
+  },[workspaceRatioKey,threePaneHistoryKey]);
+  const handleHistoryDragChange=useCallback((dragging:boolean)=>{
+    leftDragStartRatioRef.current=dragging?layoutRef.current.conversationRatio:null;
+  },[]);
+  const handleResizeHistory=useCallback((nextWidth:number,commit:boolean)=>{
+    const baseRatio=leftDragStartRatioRef.current??preferredRatioRef.current;
+    const resized=resizeThreePaneHistory({shellWidth:shellWidthRef.current,conversationRatio:baseRatio,historyWidth:preferredHistoryRef.current},nextWidth);
+    setPreferredThreePaneHistory(resized.historyWidth);
+    setPreferredRatio(resized.conversationRatio);
+    if(commit){
+      writeOptionalPreference(threePaneHistoryKey,String(resized.historyWidth));
+      if(resized.conversationRatio!==baseRatio){
+        writeOptionalPreference(workspaceRatioKey,String(resized.conversationRatio));
+      }
+    }
+  },[workspaceRatioKey,threePaneHistoryKey]);
+  const threePaneHost=useMemo<HarnessThreePaneHost|undefined>(
+    ()=>standalone?{
+      workspaceOpen:Boolean(effectiveEnvironmentOpen),
+      canSplitHistory:layout.canThreePane,
+      panelWidth:Math.max(0,layout.conversationRegionWidth-HARNESS_RAIL_WIDTH),
+      historyWidth:layout.historyWidth,
+      historyMinWidth:layout.historyMinWidth,
+      historyMaxWidth:layout.historyMaxWidth,
+      defaultHistoryWidth:THREE_PANE_HISTORY_DEFAULT_WIDTH,
+      onResizeHistory:handleResizeHistory,
+      onHistoryDragChange:handleHistoryDragChange,
+    }:undefined,
+    [standalone,effectiveEnvironmentOpen,layout.canThreePane,layout.conversationRegionWidth,layout.historyWidth,layout.historyMinWidth,layout.historyMaxWidth,handleResizeHistory,handleHistoryDragChange],
+  );
+  const workspaceHost=useMemo(()=>(threePaneHost?{...composition,threePane:threePaneHost}:composition),[composition,threePaneHost]);
   const findExplorerFile:HarnessDirectoryFiles['findExplorerFile']=standalone?async(conversation,reference,signal)=>{
     const {path,line}=conversationFileLink(reference,false);
     const workspaceId=conversation.workspaceId;
@@ -123,7 +239,19 @@ function Workspace({standalone,environment}:{standalone:boolean;environment?:Har
     <DirectoryWorkbench reveal={reveal} active={active} workspaceId={workbenchWorkspaceId} workspaceName={scopes.find(scope=>scope.id===workbenchWorkspaceId)?.name}
       onDirectoryAdded={workspaceId=>{context.newConversation({scope:{workspaceId},preserveVisibility:true});void refresh().catch(failure=>setError(failure instanceof Error?failure.message:'工作范围读取失败。'));}} />
   </Suspense>};
-  return <HarnessShell environment={environment??(standalone?builtin:undefined)} environmentOpen={standalone?environmentOpen:undefined} onEnvironmentOpenChange={standalone?setEnvironmentOpen:undefined}>{workspaceToggle=><>{error&&!choosing&&<Alert type="warning" closable onClose={()=>setError('')} message={error}/>}<main className="harness-main"><HarnessDirectoryFilesProvider host={{...files,findExplorerFile,...(!embedded?{chooseWorkspace:()=>{setPath('');setName('');setError('');setChoosing(true);}}:{})}}><ConversationWorkspace workspaces={scopes} defaultWorkspaceId={selected??null} headerAction={workspaceToggle}/></HarnessDirectoryFilesProvider></main>{!standalone&&<AgentConnectionSettings/>}<Modal open={choosing} centered width={500} className="harness-workspace-modal" title="添加工作空间" confirmLoading={busy} maskClosable={!busy} cancelText="取消" okText="创建并使用" cancelButtonProps={{disabled:busy}} okButtonProps={{'aria-label':'创建并使用',disabled:!path.trim()}} onOk={()=>void create()} onCancel={()=>{if(!busy)setChoosing(false);}}>
+  return <HarnessShell
+    environment={environment??(standalone?builtin:undefined)}
+    environmentOpen={effectiveEnvironmentOpen}
+    onEnvironmentOpenChange={standalone?setEnvironmentOpen:undefined}
+    resizable={standalone}
+    conversationRatio={layout.conversationRatio}
+    defaultConversationRatio={THREE_PANE_DEFAULT_CONVERSATION_RATIO}
+    minConversationWidth={layout.minConversationRegion}
+    minEnvironmentWidth={layout.minWorkspace}
+    onConversationRatioChange={handleConversationRatioChange}
+    onShellWidthChange={setShellWidth}
+    onEnvironmentDragChange={handleEnvironmentDragChange}
+  >{workspaceToggle=><>{error&&!choosing&&<Alert type="warning" closable onClose={()=>setError('')} message={error}/>}<main className="harness-main"><ConversationHostProvider host={workspaceHost}><HarnessDirectoryFilesProvider host={{...files,findExplorerFile,...(!embedded?{chooseWorkspace:()=>{setPath('');setName('');setError('');setChoosing(true);}}:{})}}><ConversationWorkspace workspaces={scopes} defaultWorkspaceId={selected??null} headerAction={workspaceToggle}/></HarnessDirectoryFilesProvider></ConversationHostProvider></main>{!standalone&&<AgentConnectionSettings/>}<Modal open={choosing} centered width={500} className="harness-workspace-modal" title="添加工作空间" confirmLoading={busy} maskClosable={!busy} cancelText="取消" okText="创建并使用" cancelButtonProps={{disabled:busy}} okButtonProps={{'aria-label':'创建并使用',disabled:!path.trim()}} onOk={()=>void create()} onCancel={()=>{if(!busy)setChoosing(false);}}>
     <div className="harness-workspace-modal-body">
       <p className="harness-workspace-intro">选择一个本机目录并设置可选名称，创建后直接用于新对话。</p>
       {error&&<Alert className="harness-workspace-alert" type="warning" showIcon message={error}/>}

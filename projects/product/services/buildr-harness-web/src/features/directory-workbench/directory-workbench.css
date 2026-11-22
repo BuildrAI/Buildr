@@ -1,4 +1,5 @@
-.harness-directory-workbench{display:flex;flex-direction:column;min-width:0;min-height:0;height:100%;background:var(--soft-surface,#fff)}
+.harness-directory-workbench{container-type:inline-size;display:flex;flex-direction:column;min-width:0;min-height:0;height:100%;background:var(--soft-surface,#fff)}
+@container (max-width:560px){.harness-directory-explorer .repository-browser-tree{flex-basis:min(44%,var(--repository-tree-width));width:min(44%,var(--repository-tree-width))}.harness-directory-explorer .repository-file-pane{min-width:0}}
 .harness-workspace-content{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
 .harness-workspace-loading{display:flex;align-items:center;justify-content:center;gap:8px;padding:28px;color:var(--soft-muted)}
 .harness-directory-workbench-pane,.harness-directory-explorer,.harness-directory-source-control{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;overflow:hidden}

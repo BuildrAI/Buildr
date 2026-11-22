@@ -85,8 +85,10 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
   const [historyWidth,setHistoryWidth]=useState<number>(()=>{const saved=Number(readOptionalPreference(focusHistoryWidthKey));return Number.isFinite(saved)&&saved>=FOCUS_HISTORY_MIN_WIDTH?saved:FOCUS_HISTORY_DEFAULT_WIDTH;});
   const [panelWidth,setPanelWidth]=useState<number>(()=>(typeof window!=='undefined'?Math.max(0,window.innerWidth-52):0));
   const [viewportWidth,setViewportWidth]=useState<number>(()=>(typeof window!=='undefined'?window.innerWidth:1280));
-  const historyDrag=useRef<{pointerId:number;x:number;width:number}|null>(null);
+  const historyDrag=useRef<{pointerId:number;x:number;width:number;latest:number;moved:boolean}|null>(null);
   const [historyResizing,setHistoryResizing]=useState(false);
+  const threePane=!embedded?composition.threePane:undefined;
+  const threePaneWorkspaceOpen=Boolean(threePane?.workspaceOpen);
   useLayoutEffect(()=>{
     if(embedded)return;
     const element=document.getElementById(panelId);
@@ -101,13 +103,17 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     observer?.observe(element!);
     window.addEventListener('resize',measure);
     return()=>{observer?.disconnect();window.removeEventListener('resize',measure);};
-  },[embedded,panelId,context.full,context.open,context.view]);
+  },[embedded,panelId,context.full,context.open,context.view,threePaneWorkspaceOpen]);
   const ownsSettings=!embedded&&(standalone||development);
   const focusSettings=ownsSettings&&context.full;
   const showFocusSettings=focusSettings&&context.settings;
-  const focusSplit=Boolean(context.full&&!embedded&&canSplitFocusHistory(panelWidth,viewportWidth));
-  const historyMaxWidth=focusHistoryMaxWidth(panelWidth);
-  const effectiveHistoryWidth=clampFocusHistoryWidth(historyWidth,panelWidth);
+  const effectivePanelWidth=!threePaneWorkspaceOpen&&threePane?.panelWidth&&threePane.panelWidth>0?threePane.panelWidth:panelWidth;
+  const canSplitHistory=threePaneWorkspaceOpen?Boolean(threePane?.canSplitHistory):canSplitFocusHistory(effectivePanelWidth,viewportWidth);
+  const focusSplit=Boolean(context.full&&!embedded&&canSplitHistory);
+  const effectiveHistoryMinWidth=threePaneWorkspaceOpen?threePane!.historyMinWidth:FOCUS_HISTORY_MIN_WIDTH;
+  const effectiveHistoryDefaultWidth=threePaneWorkspaceOpen?threePane!.defaultHistoryWidth:FOCUS_HISTORY_DEFAULT_WIDTH;
+  const historyMaxWidth=threePaneWorkspaceOpen?threePane!.historyMaxWidth:focusHistoryMaxWidth(effectivePanelWidth);
+  const effectiveHistoryWidth=threePaneWorkspaceOpen?threePane!.historyWidth:clampFocusHistoryWidth(historyWidth,effectivePanelWidth);
   useLayoutEffect(()=>{
     if(window.parent===window)return;
     const anchor=engineeringAnchor.current;if(!anchor)return;
@@ -121,7 +127,6 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     setHistoryWidth(clamped);
     writeOptionalPreference(focusHistoryWidthKey,String(clamped));
   },[panelId,panelWidth]);
-  const stopHistoryResize=useCallback(()=>{historyDrag.current=null;setHistoryResizing(false);},[]);
   const [modulePreference,setModulePreference]=useState(readConversationModulePreference);
   const [modelPreference,setModelPreference]=useState(readConversationModelPreference);
   const draft=useConversationDraft(context.scope?.workspaceId||defaultWorkspaceId||'@default',context.scope?.conversationId||null);
@@ -945,18 +950,27 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
           {headerAction}
         </div>
       </header>;
-  const panel=<section id={panelId} className={'ac-panel'+(context.full?' is-full':'')+(historyResizing?' is-resizing':'')+(embedded?' ac-child-panel':'')} aria-label={embedded?'子对话':'内部对话'} data-dock={context.side} data-conversation-id={chat?.id}>
+  const finishHistoryResize=(element?:HTMLButtonElement,pointerId?:number)=>{
+    const drag=historyDrag.current;
+    if(!drag||(pointerId!==undefined&&drag.pointerId!==pointerId))return;
+    historyDrag.current=null;
+    setHistoryResizing(false);
+    if(element&&pointerId!==undefined&&element.hasPointerCapture(pointerId))element.releasePointerCapture(pointerId);
+    if(drag.moved&&threePaneWorkspaceOpen)threePane?.onResizeHistory(drag.latest,true);
+    threePane?.onHistoryDragChange?.(false);
+  };
+  const panel=<section id={panelId} className={'ac-panel'+(context.full?' is-full':'')+(historyResizing?' is-resizing':'')+(embedded?' ac-child-panel':'')} aria-label={embedded?'子对话':'内部对话'} data-dock={context.side} data-conversation-id={chat?.id} data-can-split-history={canSplitHistory?'true':'false'} data-three-pane={focusSplit&&threePaneWorkspaceOpen?'true':undefined}>
     {context.view==='history'&&!focusSplit&&<ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} hiddenBySettings={showFocusSettings}/>}
     {focusSplit&&context.view==='history'&&<>
       <aside id={focusHistoryPaneId} className="ac-focus-history-pane" style={{width:effectiveHistoryWidth}} hidden={showFocusSettings}><ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} keepHistoryOpen hiddenBySettings={showFocusSettings}/></aside>
-      {!showFocusSettings&&<SplitDivider className={'ac-focus-history-divider'+(historyResizing?' is-dragging':'')} aria-label="调整专注模式对话列表宽度" aria-controls={focusHistoryPaneId} aria-orientation="vertical" aria-valuemin={FOCUS_HISTORY_MIN_WIDTH} aria-valuemax={historyMaxWidth} aria-valuenow={Math.round(effectiveHistoryWidth)} aria-valuetext={`${Math.round(effectiveHistoryWidth)} 像素`} title={`拖拽调整对话列表宽度（${FOCUS_HISTORY_MIN_WIDTH}–${historyMaxWidth}px）；方向键微调，双击恢复`}
-        onPointerDown={event=>{if(event.button!==0||historyDrag.current)return;event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);historyDrag.current={pointerId:event.pointerId,x:event.clientX,width:effectiveHistoryWidth};setHistoryResizing(true);}}
-        onPointerMove={event=>{const start=historyDrag.current;if(start?.pointerId===event.pointerId)commitHistoryWidth(start.width+event.clientX-start.x);}}
-        onPointerUp={event=>{if(historyDrag.current?.pointerId===event.pointerId){stopHistoryResize();if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}}}
-        onPointerCancel={event=>{if(historyDrag.current?.pointerId===event.pointerId)stopHistoryResize();}}
-        onLostPointerCapture={event=>{if(historyDrag.current?.pointerId===event.pointerId)stopHistoryResize();}}
-        onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();commitHistoryWidth(event.key==='Home'?FOCUS_HISTORY_MIN_WIDTH:event.key==='End'?historyMaxWidth:effectiveHistoryWidth+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?32:16));}}
-        onDoubleClick={()=>commitHistoryWidth(FOCUS_HISTORY_DEFAULT_WIDTH)}/>}
+      {!showFocusSettings&&<SplitDivider className={'ac-focus-history-divider'+(historyResizing?' is-dragging':'')} aria-label="调整专注模式对话列表宽度" aria-controls={focusHistoryPaneId} aria-orientation="vertical" aria-valuemin={effectiveHistoryMinWidth} aria-valuemax={historyMaxWidth} aria-valuenow={Math.round(effectiveHistoryWidth)} aria-valuetext={`${Math.round(effectiveHistoryWidth)} 像素`} title={`拖拽调整对话列表宽度（${effectiveHistoryMinWidth}–${historyMaxWidth}px）；方向键微调，双击恢复`}
+        onPointerDown={event=>{if(event.button!==0||historyDrag.current)return;event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);historyDrag.current={pointerId:event.pointerId,x:event.clientX,width:effectiveHistoryWidth,latest:effectiveHistoryWidth,moved:false};setHistoryResizing(true);if(threePaneWorkspaceOpen)threePane?.onHistoryDragChange?.(true);}}
+        onPointerMove={event=>{const start=historyDrag.current;if(start?.pointerId!==event.pointerId)return;const next=start.width+event.clientX-start.x;start.latest=next;start.moved=true;if(threePaneWorkspaceOpen)threePane!.onResizeHistory(next,false);else commitHistoryWidth(next);}}
+        onPointerUp={event=>finishHistoryResize(event.currentTarget,event.pointerId)}
+        onPointerCancel={event=>finishHistoryResize(event.currentTarget,event.pointerId)}
+        onLostPointerCapture={event=>finishHistoryResize(event.currentTarget,event.pointerId)}
+        onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const next=event.key==='Home'?effectiveHistoryMinWidth:event.key==='End'?historyMaxWidth:effectiveHistoryWidth+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?32:16);if(threePaneWorkspaceOpen)threePane!.onResizeHistory(next,true);else commitHistoryWidth(next);}}
+        onDoubleClick={()=>{if(threePaneWorkspaceOpen)threePane!.onResizeHistory(effectiveHistoryDefaultWidth,true);else commitHistoryWidth(effectiveHistoryDefaultWidth);}}/>}
     </>}
     {ownsSettings&&<AgentConnectionSettings inMain={focusSettings}/>}
     <div className="ac-conversation-split" hidden={showFocusSettings||context.view==='history'&&!focusSplit}>

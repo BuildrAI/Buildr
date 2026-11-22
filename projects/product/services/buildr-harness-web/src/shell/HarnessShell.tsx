@@ -1,5 +1,7 @@
 import {Component, useEffect, useId, useState, type ComponentType, type ReactNode} from 'react';
 import {Alert, Button} from 'antd';
+import {ResizablePanels} from '../workbench/ui/ResizablePanels';
+import {HARNESS_MOBILE_BREAKPOINT, THREE_PANE_DEFAULT_CONVERSATION_RATIO, THREE_PANE_WORKSPACE_MIN_WIDTH, TWO_PANE_WORKSPACE_MIN_CONVERSATION_WIDTH} from './harness-layout';
 import './harness-shell.css';
 
 function WorkspacePanelIcon({open}: {open: boolean}) {
@@ -21,6 +23,15 @@ type HarnessShellProps = {
   environment?: HarnessWorkEnvironment;
   environmentOpen?: boolean;
   onEnvironmentOpenChange?(open: boolean): void;
+  resizable?: boolean;
+  conversationRatio?: number;
+  defaultConversationRatio?: number;
+  minConversationWidth?: number;
+  minEnvironmentWidth?: number;
+  onConversationRatioChange?(ratio: number, commit: boolean): void;
+  onShellWidthChange?(width: number): void;
+  onEnvironmentDragChange?(dragging: boolean): void;
+  storageKey?: string;
 };
 
 class EnvironmentBoundary extends Component<{children: ReactNode}, {failed: boolean}> {
@@ -37,10 +48,34 @@ class EnvironmentBoundary extends Component<{children: ReactNode}, {failed: bool
   }
 }
 
-export function HarnessShell({children, environment, environmentOpen, onEnvironmentOpenChange}: HarnessShellProps) {
+export function HarnessShell({
+  children,
+  environment,
+  environmentOpen,
+  onEnvironmentOpenChange,
+  resizable = false,
+  conversationRatio,
+  defaultConversationRatio = THREE_PANE_DEFAULT_CONVERSATION_RATIO,
+  minConversationWidth = TWO_PANE_WORKSPACE_MIN_CONVERSATION_WIDTH,
+  minEnvironmentWidth = THREE_PANE_WORKSPACE_MIN_WIDTH,
+  onConversationRatioChange,
+  onShellWidthChange,
+  onEnvironmentDragChange,
+  storageKey,
+}: HarnessShellProps) {
   const panelId = useId();
   const [openedId, setOpenedId] = useState<string | null>(null);
   const [mountedId, setMountedId] = useState<string | null>(null);
+  const [narrow, setNarrow] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth <= HARNESS_MOBILE_BREAKPOINT : false
+  );
+  useEffect(() => {
+    if (!resizable || typeof window === 'undefined') return;
+    const update = () => setNarrow(window.innerWidth <= HARNESS_MOBILE_BREAKPOINT);
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [resizable]);
   const open = !!environment && (environmentOpen ?? openedId === environment.id);
   useEffect(() => {
     if (open && environment) setMountedId(environment.id);
@@ -55,14 +90,36 @@ export function HarnessShell({children, environment, environmentOpen, onEnvironm
       setMountedId(environment.id);
       onEnvironmentOpenChange?.(!open);
     }}>{!integrated && label}</Button>;
+  const conversationNode = typeof children === 'function' ? children(toggle) : children;
+  const environmentSection = environment ? <section id={panelId} key={environment.id}
+    className="harness-environment-region" aria-label={environment.title} hidden={!open}>
+    {mountedId === environment.id && <EnvironmentBoundary>{environment.render ? environment.render(open) : Workspace && <Workspace />}</EnvironmentBoundary>}
+  </section> : null;
+
   return <div className={integrated ? "harness-shell harness-shell-integrated" : "harness-shell"}>
     {!integrated && environment && <nav className="harness-environment-controls" aria-label="工作环境">{toggle}</nav>}
-    <div className="harness-shell-body">
-      <div className="harness-conversation-region">{typeof children === 'function' ? children(toggle) : children}</div>
-      {environment && <section id={panelId} key={environment.id}
-        className="harness-environment-region" aria-label={environment.title} hidden={!open}>
-        {mountedId === environment.id && <EnvironmentBoundary>{environment.render ? environment.render(open) : Workspace && <Workspace />}</EnvironmentBoundary>}
-      </section>}
-    </div>
+    {resizable ? (
+      <ResizablePanels
+        direction={narrow ? 'vertical' : 'horizontal'}
+        className="harness-shell-body harness-shell-panels"
+        initialRatio={narrow ? 0.52 : defaultConversationRatio}
+        ratio={narrow ? undefined : conversationRatio}
+        minFirst={narrow ? 160 : minConversationWidth}
+        minSecond={narrow ? 160 : minEnvironmentWidth}
+        secondHidden={!open}
+        separatorLabel={narrow ? '调整对话与工作区高度' : '调整对话与工作区宽度'}
+        storageKey={narrow ? undefined : storageKey}
+        onRatioChange={narrow ? undefined : onConversationRatioChange}
+        onAxisSizeChange={narrow ? undefined : onShellWidthChange}
+        onDragChange={narrow ? undefined : onEnvironmentDragChange}
+        first={<div className="harness-conversation-region">{conversationNode}</div>}
+        second={environmentSection}
+      />
+    ) : (
+      <div className="harness-shell-body">
+        <div className="harness-conversation-region">{conversationNode}</div>
+        {environmentSection}
+      </div>
+    )}
   </div>;
 }

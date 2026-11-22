@@ -8,13 +8,18 @@ export type ResizablePanelsProps = {
   direction?: 'horizontal' | 'vertical';
   initialRatio?: number;
   initialSize?: number;
+  ratio?: number;
   minFirst?: number;
   minSecond?: number;
   firstHidden?: boolean;
+  secondHidden?: boolean;
   reverseHorizontal?: boolean;
   className?: string;
   separatorLabel?: string;
   storageKey?: string;
+  onRatioChange?(ratio: number, commit: boolean): void;
+  onAxisSizeChange?(size: number): void;
+  onDragChange?(dragging: boolean): void;
 };
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const validMinimum = (value: number) => Number.isFinite(value) ? Math.max(0, value) : 0;
@@ -39,31 +44,42 @@ function ratioBounds(available: number, minFirst: number, minSecond: number) {
 }
 
 /** One axis-aware layout for independently scrolling regions; hiding retains the first region's state. */
-export function ResizablePanels({ first, second, direction = 'horizontal', initialRatio = 0.38, initialSize, minFirst = 120, minSecond = 180, firstHidden = false, reverseHorizontal = false, className = '', separatorLabel = '调整区域大小', storageKey }: ResizablePanelsProps) {
+export function ResizablePanels({ first, second, direction = 'horizontal', initialRatio = 0.38, initialSize, ratio: controlledRatio, minFirst = 120, minSecond = 180, firstHidden = false, secondHidden = false, reverseHorizontal = false, className = '', separatorLabel = '调整区域大小', storageKey, onRatioChange, onAxisSizeChange, onDragChange }: ResizablePanelsProps) {
   const horizontal = direction === 'horizontal';
   const reversed = horizontal && reverseHorizontal;
+  const isControlled = controlledRatio !== undefined;
+  const anyHidden = firstHidden || secondHidden;
   const defaultRatio = Number.isFinite(initialRatio) ? clamp(initialRatio, 0, 1) : 0.38;
   const pixelDefault = initialSize !== undefined && Number.isFinite(initialSize) ? Math.max(0, initialSize) : null;
   const [initialPreference] = useState(() => storedRatio(storageKey));
-  const [ratio, setRatio] = useState(initialPreference ?? defaultRatio);
+  const [internalRatio, setInternalRatio] = useState(initialPreference ?? defaultRatio);
+  const ratio = isControlled ? clamp(controlledRatio, 0, 1) : internalRatio;
   const latestRatio = useRef(ratio), preferenceKey = useRef(storageKey);
+  const onRatioChangeRef = useRef(onRatioChange);
+  onRatioChangeRef.current = onRatioChange;
+  const onAxisSizeChangeRef = useRef(onAxisSizeChange);
+  onAxisSizeChangeRef.current = onAxisSizeChange;
+  const onDragChangeRef = useRef(onDragChange);
+  onDragChangeRef.current = onDragChange;
   const [axisSize, setAxisSize] = useState(0);
   const [dragging, setDragging] = useState(false);
   const host = useRef<HTMLDivElement>(null);
   const initialSizeApplied = useRef(initialPreference !== null);
-  const origin = useRef<{ position: number; firstSize: number; available: number; pointerId: number; element: HTMLButtonElement; storageKey?: string } | null>(null);
+  const origin = useRef<{ position: number; firstSize: number; available: number; pointerId: number; element: HTMLButtonElement; storageKey?: string; moved: boolean } | null>(null);
   const id = useId();
   const available = Math.max(0, axisSize);
   const bounds = ratioBounds(available, validMinimum(minFirst), validMinimum(minSecond));
   const effectiveRatio = clamp(ratio, bounds.min, bounds.max);
+  if (!origin.current) latestRatio.current = effectiveRatio;
   const firstSize = available * effectiveRatio;
   const saveRatio = (value: number) => {
     saveStoredRatio(storageKey, value);
   };
   const updateRatio = (value: number, save = false) => {
     latestRatio.current = value;
-    setRatio(value);
-    if (save) saveRatio(value);
+    if (!isControlled) setInternalRatio(value);
+    if (save && !isControlled) saveRatio(value);
+    onRatioChangeRef.current?.(value, save);
   };
 
   useEffect(() => {
@@ -71,20 +87,29 @@ export function ResizablePanels({ first, second, direction = 'horizontal', initi
     const draggingOrigin = origin.current;
     if (draggingOrigin) {
       origin.current = null;
-      saveStoredRatio(draggingOrigin.storageKey, latestRatio.current);
+      if (draggingOrigin.moved) {
+        if (!isControlled) saveStoredRatio(draggingOrigin.storageKey, latestRatio.current);
+        onRatioChangeRef.current?.(latestRatio.current, true);
+      }
       if (draggingOrigin.element.hasPointerCapture(draggingOrigin.pointerId)) draggingOrigin.element.releasePointerCapture(draggingOrigin.pointerId);
       setDragging(false);
+      onDragChangeRef.current?.(false);
     }
     preferenceKey.current = storageKey;
     const preference = storedRatio(storageKey);
     initialSizeApplied.current = preference !== null;
-    updateRatio(preference ?? defaultRatio);
-  }, [storageKey, defaultRatio]);
+    if (!isControlled) updateRatio(preference ?? defaultRatio);
+  }, [storageKey, defaultRatio, isControlled]);
 
   useEffect(() => {
     const element = host.current;
     if (!element) return;
-    const measure = () => { const rectangle = element.getBoundingClientRect(); setAxisSize(horizontal ? rectangle.width : rectangle.height); };
+    const measure = () => {
+      const rectangle = element.getBoundingClientRect();
+      const next = horizontal ? rectangle.width : rectangle.height;
+      setAxisSize(next);
+      onAxisSizeChangeRef.current?.(next);
+    };
     measure();
     if (typeof ResizeObserver === 'function') {
       const observer = new ResizeObserver(measure);
@@ -96,49 +121,59 @@ export function ResizablePanels({ first, second, direction = 'horizontal', initi
   }, [horizontal]);
 
   useEffect(() => {
-    if (initialSizeApplied.current || firstHidden || available <= 0) return;
+    if (isControlled || initialSizeApplied.current || anyHidden || available <= 0) return;
     if (pixelDefault !== null) updateRatio(clamp(pixelDefault / available, 0, 1));
     initialSizeApplied.current = true;
-  }, [available, pixelDefault, firstHidden, storageKey]);
+  }, [isControlled, available, pixelDefault, anyHidden, storageKey]);
 
   useEffect(() => {
-    if (!firstHidden || !origin.current) return;
+    if (!anyHidden || !origin.current) return;
     const start = origin.current;
     origin.current = null;
-    saveStoredRatio(start.storageKey, latestRatio.current);
+    if (start.moved) {
+      if (!isControlled) saveStoredRatio(start.storageKey, latestRatio.current);
+      onRatioChangeRef.current?.(latestRatio.current, true);
+    }
     if (start.element.hasPointerCapture(start.pointerId)) start.element.releasePointerCapture(start.pointerId);
     setDragging(false);
-  }, [firstHidden]);
+    onDragChangeRef.current?.(false);
+  }, [anyHidden, isControlled]);
 
   const stopDragging = (event: PointerEvent<HTMLButtonElement>) => {
     if (!origin.current || origin.current.pointerId !== event.pointerId) return;
     const start = origin.current;
     origin.current = null;
-    saveStoredRatio(start.storageKey, latestRatio.current);
+    if (start.moved) {
+      if (!isControlled) saveStoredRatio(start.storageKey, latestRatio.current);
+      onRatioChangeRef.current?.(latestRatio.current, true);
+    }
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     setDragging(false);
+    onDragChangeRef.current?.(false);
   };
-  const reset = () => updateRatio(pixelDefault !== null && available > 0 ? clamp(pixelDefault / available, 0, 1) : defaultRatio, true);
+  const reset = () => updateRatio(pixelDefault !== null && available > 0 ? clamp(pixelDefault / available, bounds.min, bounds.max) : clamp(defaultRatio, bounds.min, bounds.max), true);
   const decreaseKey = horizontal ? 'ArrowLeft' : 'ArrowUp', increaseKey = horizontal ? 'ArrowRight' : 'ArrowDown';
   const valueText = horizontal
     ? `左侧区域 ${Math.round((reversed ? 1 - effectiveRatio : effectiveRatio) * 100)}%，右侧区域 ${Math.round((reversed ? effectiveRatio : 1 - effectiveRatio) * 100)}%`
     : `上方区域 ${Math.round(effectiveRatio * 100)}%，下方区域 ${Math.round((1 - effectiveRatio) * 100)}%`;
 
-  return <div ref={host} className={`resizable-panels direction-${direction}${dragging ? ' is-resizing' : ''}${firstHidden ? ' first-hidden' : ''}${reversed ? ' is-reversed' : ''}${className ? ' ' + className : ''}`}>
-    <div id={id + '-first'} hidden={firstHidden} className="resizable-panels-pane resizable-panels-first" style={{ flexBasis: axisSize ? firstSize : pixelDefault ?? defaultRatio * 100 + '%' }}>{first}</div>
-    <SplitDivider hidden={firstHidden} orientation={horizontal ? 'vertical' : 'horizontal'} className="resizable-panels-divider" aria-label={separatorLabel}
+  return <div ref={host} className={`resizable-panels direction-${direction}${dragging ? ' is-resizing' : ''}${firstHidden ? ' first-hidden' : ''}${secondHidden ? ' second-hidden' : ''}${reversed ? ' is-reversed' : ''}${className ? ' ' + className : ''}`}>
+    <div id={id + '-first'} hidden={firstHidden} className="resizable-panels-pane resizable-panels-first" style={secondHidden ? undefined : { flexBasis: axisSize ? firstSize : pixelDefault ?? defaultRatio * 100 + '%' }}>{first}</div>
+    <SplitDivider hidden={anyHidden} orientation={horizontal ? 'vertical' : 'horizontal'} className="resizable-panels-divider" aria-label={separatorLabel}
       aria-controls={id + '-first ' + id + '-second'} aria-valuemin={Math.round(bounds.min * 100)} aria-valuemax={Math.round(bounds.max * 100)}
       aria-valuenow={Math.round(effectiveRatio * 100)} aria-valuetext={valueText} title="拖动调整大小；方向键微调，双击恢复"
       onPointerDown={event => {
-        if (event.button !== 0 || firstHidden || !available) return;
+        if (event.button !== 0 || anyHidden || !available) return;
         event.preventDefault();
         event.currentTarget.setPointerCapture(event.pointerId);
-        origin.current = { position: horizontal ? event.clientX : event.clientY, firstSize, available, pointerId: event.pointerId, element: event.currentTarget, storageKey };
+        origin.current = { position: horizontal ? event.clientX : event.clientY, firstSize, available, pointerId: event.pointerId, element: event.currentTarget, storageKey, moved: false };
         setDragging(true);
+        onDragChangeRef.current?.(true);
       }}
       onPointerMove={event => {
         const start = origin.current;
         if (!start || start.pointerId !== event.pointerId || start.available <= 0) return;
+        start.moved = true;
         const position = horizontal ? event.clientX : event.clientY;
         const limits = ratioBounds(start.available, validMinimum(minFirst), validMinimum(minSecond));
         updateRatio(clamp((start.firstSize + (position - start.position) * (reversed ? -1 : 1)) / start.available, limits.min, limits.max));
@@ -152,6 +187,6 @@ export function ResizablePanels({ first, second, direction = 'horizontal', initi
         updateRatio(clamp(next, bounds.min, bounds.max), true);
       }}
       onDoubleClick={reset} />
-    <div id={id + '-second'} className="resizable-panels-pane resizable-panels-second">{second}</div>
+    <div id={id + '-second'} hidden={secondHidden} className="resizable-panels-pane resizable-panels-second">{second}</div>
   </div>;
 }
