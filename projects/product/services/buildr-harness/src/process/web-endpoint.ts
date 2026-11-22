@@ -17,7 +17,7 @@ import type {AgentProcessConnection} from './client.ts';
 import {chooseHarnessDirectory} from './directory-picker.ts';
 import {readLocalHtmlFile,writeIsolatedLocalHtml} from '../application/local-file-preview.ts';
 import {EDITABLE_FILE_JSON_BYTES} from '../workbench/editable-file.ts';
-import {defaultHarnessWorkspaceRoot} from '../profile.ts';
+import {resolveLocalDefaultWorkspaceRoot} from '../application/local-workspaces.ts';
 
 export interface HarnessWebStatus {enabled:boolean;ready:boolean;endpointId?:string;origin?:string;generation:string;diagnostic?:string;mode?:'live'|'static'}
 interface Options {dataRoot:string;profileId?:string;generation:string;instanceId:string;staticRoot:string;runtimeDigest?:string;ownsListener():boolean;connect():Promise<AgentProcessConnection>}
@@ -287,7 +287,7 @@ export class HarnessWebEndpoint {
       return;
     }
     if(!this.handlers){
-      const defaultWorkspace=()=>{const rootPath=defaultHarnessWorkspaceRoot(this.options.dataRoot);return {rootPath:fs.existsSync(rootPath)?fs.realpathSync(rootPath):rootPath};};
+      const defaultWorkspace=()=>{const rootPath=resolveLocalDefaultWorkspaceRoot(this.options.dataRoot);return {rootPath:fs.existsSync(rootPath)?fs.realpathSync(rootPath):rootPath};};
       const common=createAgentServiceHttpContribution(async()=>(await this.options.connect()).operations,{defaultWorkspace,prepareDefaultWorkspace:()=>{fs.mkdirSync(defaultWorkspace().rootPath,{recursive:true});},executionScopeKeys:async()=>[...new Set(['@default',...(await (await this.options.connect()).scopeCatalog()).scopes.map(value=>value.key)])],runtimeStatus:async()=>agentRuntimeStatus(await (await this.options.connect()).lifecycle.status()),restartRuntime:async input=>(await this.options.connect()).web.restart(input)});
       const programmatic=createProgrammaticHttpContribution(async()=>(await this.options.connect()).operations,common,{dataRoot:()=>this.options.dataRoot,workspaces:()=>[],scopeKeys:async()=>[...new Set(['@default',...(await (await this.options.connect()).scopeCatalog()).scopes.map(value=>value.key)])],version:()=>'harness',buildId:()=>this.options.runtimeDigest??null});
       this.handlers={common,programmatic};

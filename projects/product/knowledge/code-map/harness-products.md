@@ -24,7 +24,8 @@
 ## 目录工作台
 
 - **Harness 后端**（`services/buildr-harness/src/`）
-  - [目录引用](../../services/buildr-harness/src/application/directory-host.ts)：选择来源、记录身份、重新核对准确目录。
+  - [目录引用](../../services/buildr-harness/src/application/directory-host.ts)：选择来源、记录身份、重新核对准确目录；命中同数据域已登记工作空间时复用原身份。
+  - [本机工作空间解析](../../services/buildr-harness/src/application/local-workspaces.ts)：零依赖读取同数据域 `workspace-registry.json`、工作空间元数据及 `@default` 并核验文件系统身份，支持 Development 离线时的工作空间与工作台独立解析。
   - [目录工作台](../../services/buildr-harness/src/application/directory-workbench.ts)：用目录标识和观察版本定位文件与 Git 操作，不需要对话标识或业务范围。
   - [通用入口](../../services/buildr-harness/src/workbench.ts)：文件读取、编辑保护和 Git 观察；供 Development 的工程应用复用，不启动执行后台。
   - [本地 Git 动作](../../services/buildr-harness/src/workbench/local-git.ts)：明确暂存、取消暂存和版本保护的本地提交，不隐式推送。
@@ -41,7 +42,7 @@
 2. Harness 将当前对话观察交给装配方；Development 通过可选上下文插槽呈现任务关联和工程参与，按已观察修订写入。不再使用对话 iframe、窗口消息或坐标覆盖；上下文故障与对话控制隔离。
 3. 两种入口都由 Harness 处理模型选择、发送、审批、停止和恢复。Development 只交接明确工程操作，结果未知不重发。文件由 `HarnessDirectoryFiles` 接入，工程对象由宿主回调解释；当前分别接已有代码浏览器与任务导航，跳转前核验来源和对话选择代次。
 4. 第一方前端构建从公开组件入口组合双方；Harness 核心仍将独立完整网页放入 `build/harness-web-dist/`，安装后独立及兼容入口使用所带产物，不依赖相邻源码。当前 Development 启动/路由保持不变，不代表已完成动态插件宿主。
-5. 独立网页从范围发现取得宿主提供的名称；目录工作空间显示保存的名称，未填写时默认目录名，身份仍使用准确来源与范围标识。添加表单填写可选名称、通过受认证的本机选择接口取得目录，不提供手填路径，确认后登记并用于新对话，不初始化 Development 工程资产。Development 外壳独立保存对话展开与专注/分屏布局偏好并承接内嵌流程图顶层放大预览，不接管内层会话记忆。
+5. 独立网页从范围发现取得内置或宿主提供的名称；目录工作空间显示保存的名称，未填写时默认目录名，同数据域已登记本地工作空间与 `@default` 在 Development 未运行时也由 Harness 内置解析并保持原范围身份。添加表单填写可选名称、通过受认证的本机选择接口取得目录，不提供手填路径，确认后登记（命中已有本地工作空间目录时复用原身份）并用于新对话，不初始化 Development 工程资产。Development 外壳独立保存对话展开与专注/分屏布局偏好并承接内嵌流程图顶层放大预览，不接管内层会话记忆。
 
 ## 验证入口
 

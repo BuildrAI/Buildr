@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { HarnessDirectoryHost } from '../../src/application/directory-host.ts';
+import { LocalWorkspaceAuthority } from '../../src/application/local-workspaces.ts';
 import { createDirectoryWorkbench } from '../../src/application/directory-workbench.ts';
 import { codeGitEnvironment } from '../../src/workbench/code-git-environment.ts';
 
@@ -80,4 +81,31 @@ test('local Git workbench reads comparisons and commits only the staged tree', a
   const child=path.join(dir,'child');fs.mkdirSync(child);const childScope=host.register(child);
   await assert.rejects(run('status',{scopeId:childScope.ref.id,scopeRevision:childScope.revision}),{code:'code_checkout_unavailable'});
   assert.deepEqual((await run('directory',{scopeId:childScope.ref.id,scopeRevision:childScope.revision}) as any).entries,[]);
+});
+
+test('local registered buildr workspace can be inspected in workbench without Development running', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-workbench-local-ws-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const dataRoot = path.join(root, 'data');
+  const workDir = path.join(root, 'ws');
+  fs.mkdirSync(path.join(workDir, '.buildr'), { recursive: true });
+  const workspaceId = '66666666-6666-4666-8666-666666666666';
+  fs.writeFileSync(path.join(workDir, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: ${workspaceId}\nname: 独立空间\n`);
+  fs.writeFileSync(path.join(workDir, 'readme.txt'), 'hello standalone workbench\n');
+  fs.mkdirSync(dataRoot, { recursive: true });
+  fs.writeFileSync(path.join(dataRoot, 'workspace-registry.json'), JSON.stringify({
+    schemaVersion: 'buildr.local-workspace-registry/v1',
+    roots: [workDir],
+    lastOpenedRoot: workDir,
+  }));
+
+  const authority = new LocalWorkspaceAuthority(dataRoot);
+  const scope = authority.resolveExecutionScope({ ref: { sourceId: 'buildr', id: workspaceId } })!;
+  const run = createDirectoryWorkbench({
+    resolveDirectory: () => ({ ...scope, name: '独立空间', selectedPath: workDir }),
+  });
+  const listing = await run('directory', { scopeId: workspaceId, scopeRevision: scope.revision }) as { entries: Array<{ path: string }> };
+  assert.ok(listing.entries.some(item => item.path === 'readme.txt'));
+  const file = await run('file', { scopeId: workspaceId, scopeRevision: scope.revision, path: 'readme.txt' }) as { content: string };
+  assert.equal(file.content, 'hello standalone workbench\n');
 });

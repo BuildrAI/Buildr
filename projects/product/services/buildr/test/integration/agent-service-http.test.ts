@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { AGENT_SERVICE_APPLICATION, createAgentServiceModule } from '../../src/modules/agent-service/module.ts';
 import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
 import { TASK_QUERY_APPLICATION } from '../../src/modules/task/module.ts';
-import { connectHarnessProcess, prepareAgentRuntime, stopAgentProcess } from '@buildr-ai/buildr-harness';
+import { connectHarnessProcess, prepareAgentRuntime, restartAgentProcess, stopAgentProcess } from '@buildr-ai/buildr-harness';
 import { runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -65,6 +65,53 @@ test('standalone Harness discovers the Buildr workspace after a transient host s
   assert.equal((await scope())?.rootPath,root);
   await instance.lifecycle.stop();
   assert.equal(await scope(),undefined);
+});
+
+test('agent-service start() automatically reconnects after transient failure and Harness generation restart', {timeout:45_000}, async t => {
+  let instance: ReturnType<ReturnType<typeof createAgentServiceModule>['create']> | undefined;
+  let harness: Awaited<ReturnType<typeof connectHarnessProcess>> | undefined;
+  let dataRoot: string | undefined;
+  t.after(async()=>{
+    try { await instance?.provides[AGENT_SERVICE_APPLICATION].close(); }
+    finally {
+      await harness?.disconnect();
+      if(dataRoot)await stopAgentProcess({dataRoot});
+    }
+  });
+  const {base,root}=taskRecordFixture(t,'agent-host-start-reconnect');
+  const fixtureRoot=path.join(base,'private-agent'), profileId='fixture', id='start-recovery-workspace';
+  dataRoot=fixtureRoot;
+  const standalone=await connectHarnessProcess({dataRoot,profileId,sourceId:'harness-local',caller:{kind:'first-party-user',product:'buildr-harness'}});
+  harness=standalone;
+  let attempts=0;
+  const module=createAgentServiceModule({
+    readProductIdentity:()=>({}),
+    resolveWebProfile:()=>{
+      if(++attempts===1)throw new Error('temporary startup failure');
+      return {dataRoot:fixtureRoot,profile:profileId};
+    },
+  });
+  instance=module.create({
+    [WORKSPACE_APPLICATION]:{listRegisteredWorkspaces:()=>({workspaces:[{rootPath:root,workspace:{id,name:'Buildr'}}]})},
+  });
+  const scope=async()=>(await standalone.scopeCatalog()).scopes.find(item=>item.ref.sourceId==='buildr'&&item.ref.id===id);
+  await assert.rejects(instance.provides[AGENT_SERVICE_APPLICATION].start(), /temporary startup failure/);
+  assert.equal(await scope(), undefined);
+  const attachDeadline=Date.now()+10_000;
+  while(Date.now()<attachDeadline && (await scope())?.authority!=='registered'){
+    await new Promise(resolve=>setTimeout(resolve,50));
+  }
+  assert.equal((await scope())?.authority,'registered');
+
+  const initialIdentity=await standalone.lifecycle.identity();
+  const restarted=await restartAgentProcess({dataRoot,profileId,sourceId:'harness-local',caller:{kind:'first-party-user',product:'buildr-harness'},expectedGeneration:initialIdentity.generation});
+  await standalone.disconnect();
+  harness=restarted;
+  const reattachDeadline=Date.now()+20_000;
+  while(Date.now()<reattachDeadline && (await (await restarted.scopeCatalog()).scopes.find(item=>item.ref.sourceId==='buildr'&&item.ref.id===id)?.authority)!=='registered'){
+    await new Promise(resolve=>setTimeout(resolve,100));
+  }
+  assert.equal((await restarted.scopeCatalog()).scopes.find(item=>item.ref.sourceId==='buildr'&&item.ref.id===id)?.authority,'registered');
 });
 
 test('linked task verification uses the authoritative summary without resolving full task diagnostics', {timeout:30_000}, async t => {

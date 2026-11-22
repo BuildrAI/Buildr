@@ -27,9 +27,9 @@ test('resolveHostNodeExecutable 仅在路径存在且版本一致时采纳 BUILD
   );
   assert.equal(
     resolveHostNodeExecutable({ BUILDR_HOST_NODE: fakeHostNode, BUILDR_HOST_NODE_VERSION: process.versions.node }),
-    fs.realpathSync(fakeHostNode),
+    path.resolve(fakeHostNode),
   );
-  assert.equal(resolveHostNodeExecutable({ BUILDR_HOST_NODE: fakeHostNode }), fs.realpathSync(fakeHostNode));
+  assert.equal(resolveHostNodeExecutable({ BUILDR_HOST_NODE: fakeHostNode }), path.resolve(fakeHostNode));
 });
 
 test('sharedRuntimeNodeRoot 在测试隔离环境忽略 BUILDR_HOST_HOME，在真实环境按宿主目录统一解析', () => {

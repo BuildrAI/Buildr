@@ -1,4 +1,4 @@
-import {scopeDisplayName,workspaceScopeKey as key} from './workspace-scopes';
+import {canonicalScopeKey,scopeDisplayName} from './workspace-scopes';
 import {FrameSubmissions} from './frame-submissions';
 import {useHarnessDirectoryFiles} from './directory-files';
 import {engineeringFile} from './engineering-files';
@@ -48,8 +48,9 @@ function Workspace({standalone,environment}:{standalone:boolean;environment?:Har
   const [scopes,setScopes]=useState<ScopeView[]>([]),[selected,setSelected]=useState<string>(),[error,setError]=useState(''),[choosing,setChoosing]=useState(false),[path,setPath]=useState(''),[busy,setBusy]=useState(false),[name,setName]=useState('');
   const refresh=useCallback(async()=>{
     const [catalog,listed]=await Promise.all([request<Catalog>('/api/v1/harness/scopes'),request<{directories:Directory[]}>('/api/v1/harness/directories')]);
-    setScopes(catalog.scopes.map(scope=>{const directory=listed.directories.find(value=>key(value.ref)===scope.key);return {id:scope.key,name:scopeDisplayName({...scope,name:directory?.name??scope.name},directory?.rootPath),rootPath:directory?.rootPath??scope.rootPath??''};}));
-    setSelected(previous=>previous&&listed.directories.some(value=>key(value.ref)===previous)?previous:listed.directories[0]?key(listed.directories[0].ref):undefined);
+    setScopes(catalog.scopes.map(scope=>{const directory=listed.directories.find(value=>canonicalScopeKey(value.ref)===scope.key);return {id:scope.key,name:scopeDisplayName({...scope,name:directory?.name??scope.name},directory?.rootPath),rootPath:directory?.rootPath??scope.rootPath??''};}));
+    const selectable=new Set([...listed.directories.map(value=>canonicalScopeKey(value.ref)),...catalog.scopes.filter(scope=>scope.key!=='@default'&&scope.authority!=='offline'&&Boolean(scope.rootPath)).map(scope=>scope.key)]);
+    setSelected(previous=>previous&&selectable.has(previous)?previous:listed.directories[0]?canonicalScopeKey(listed.directories[0].ref):catalog.scopes.find(scope=>scope.key!=='@default'&&scope.authority!=='offline'&&Boolean(scope.rootPath))?.key);
   },[]);
   useEffect(()=>{if(!embedded)void refresh().catch(failure=>setError(failure instanceof Error?failure.message:'工作范围读取失败。'));if(!standalone){context.setOpen(true);if(!embedded)context.setFull(true);}},[embedded,standalone,refresh]);
   const initialConfigured=useRef(false);
@@ -86,7 +87,7 @@ function Workspace({standalone,environment}:{standalone:boolean;environment?:Har
   };
   const create=async()=>{
     if(!path.trim()||busy)return;setBusy(true);setError('');
-    try{const directory=await request<Directory>('/api/v1/harness/directories',{path,name:name.trim()});await refresh();const scope=key(directory.ref);setSelected(scope);context.newConversation({scope:{workspaceId:scope}});if(!standalone)context.setFull(true);setChoosing(false);setPath('');setName('');}
+    try{const directory=await request<Directory>('/api/v1/harness/directories',{path,name:name.trim()});await refresh();const scope=canonicalScopeKey(directory.ref);setSelected(scope);context.newConversation({scope:{workspaceId:scope}});if(!standalone)context.setFull(true);setChoosing(false);setPath('');setName('');}
     catch(failure){setError(failure instanceof Error?failure.message:'目录未登记，输入已保留。');}finally{setBusy(false);}
   };
   const draftWorkspace=()=>{try{return readDraft(conversationDraftKey(null,null),sessionStorage).workspaceId;}catch{return undefined;}};

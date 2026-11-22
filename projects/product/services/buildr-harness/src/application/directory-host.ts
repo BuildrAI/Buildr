@@ -6,6 +6,8 @@ import { AgentServiceError } from '../domain/agent-state.ts';
 import { claimStorage, readPrivate, writePrivate } from '../process/ownership.ts';
 import { previewLocalFile, type LocalFilePreview } from './local-file-preview.ts';
 
+import type { LocalWorkspaceAuthority } from './local-workspaces.ts';
+
 export const DIRECTORY_SOURCE_ID = 'harness-local';
 export interface HarnessDirectory extends ExecutionScope { selectedPath: string; name?: string }
 interface DirectoryStore { version: 1; directories: HarnessDirectory[] }
@@ -37,9 +39,11 @@ export function observeWorkbenchDirectory(selectedPath: string) {
 export class HarnessDirectoryHost implements AgentHostCapabilities {
   private readonly filename: string;
   private readonly dataRoot: string;
-  constructor(dataRoot: string) {
+  private readonly localWorkspaces?: LocalWorkspaceAuthority;
+  constructor(dataRoot: string, localWorkspaces?: LocalWorkspaceAuthority) {
     this.dataRoot = dataRoot;
     this.filename = path.join(dataRoot, 'agent-service', 'directories.json');
+    this.localWorkspaces = localWorkspaces;
   }
   private store(): DirectoryStore {
     const value = readPrivate<DirectoryStore>(this.filename);
@@ -67,6 +71,13 @@ export class HarnessDirectoryHost implements AgentHostCapabilities {
         this.assertCurrent(existing, observation);
         if(requestedName && requestedName !== (existing.name || path.basename(existing.rootPath) || existing.rootPath)) throw new AgentServiceError('agent_directory_already_registered', '该目录已登记为其他名称，请直接选择已有工作空间；原名称未改变。', 409);
         return structuredClone(existing);
+      }
+      const registeredWorkspace = this.localWorkspaces?.findBySelectedPath(selected);
+      if (registeredWorkspace) {
+        if (requestedName && requestedName !== registeredWorkspace.name) {
+          throw new AgentServiceError('agent_directory_already_registered', '该目录已登记为其他名称，请直接选择已有工作空间；原名称未改变。', 409);
+        }
+        return structuredClone(registeredWorkspace);
       }
       const entry: HarnessDirectory = { ref: { sourceId: DIRECTORY_SOURCE_ID, id: randomUUID() }, selectedPath: selected, name: requestedName || path.basename(selected) || observation.rootPath, ...observation };
       store.directories.push(entry);

@@ -311,13 +311,13 @@ artifacts:
     kind: document
     path: knowledge/docs/architecture/harness-products.md
     objects: [agent-integration, system-structure]
-    sources: [agent-service-public-source, harness-directory-host-source, harness-directory-workbench-source, harness-explorer-source, harness-source-control-source, harness-runtime-activation-source, harness-ui-host-source, harness-web-shell-source, harness-cli-source]
+    sources: [agent-service-public-source, harness-directory-host-source, harness-local-workspaces-source, harness-directory-workbench-source, harness-explorer-source, harness-source-control-source, harness-runtime-activation-source, harness-ui-host-source, harness-web-shell-source, harness-cli-source]
   - id: harness-products-map
     title: 双产品代码地图
     kind: code-map
     path: knowledge/code-map/harness-products.md
     objects: [agent-integration, system-structure]
-    sources: [agent-service-public-source, harness-directory-host-source, harness-directory-workbench-source, harness-explorer-source, harness-source-control-source, harness-runtime-activation-source, harness-ui-host-source, harness-web-shell-source, harness-cli-source]
+    sources: [agent-service-public-source, harness-directory-host-source, harness-local-workspaces-source, harness-directory-workbench-source, harness-explorer-source, harness-source-control-source, harness-runtime-activation-source, harness-ui-host-source, harness-web-shell-source, harness-cli-source]
   - id: product-release-flow
     title: Buildr 发布
     kind: document
@@ -2029,6 +2029,11 @@ sources:
     kind: code
     path: services/buildr-harness/src/application/directory-host.ts
     summary: 内置目录登记、稳定来源引用及目录和链接身份复核，不创建工程业务对象。
+  - id: harness-local-workspaces-source
+    title: Harness 本机工作空间权威读取器
+    kind: code
+    path: services/buildr-harness/src/application/local-workspaces.ts
+    summary: 零依赖读取同数据域已登记工作空间元数据与默认工作空间并校验文件系统身份，使独立 Harness 无需依赖 Development 在线即可工作。
   - id: harness-directory-workbench-source
     title: Harness 目录工作台
     kind: code

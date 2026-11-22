@@ -221,7 +221,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
     if (pending) return pending;
     const registration = sendTo(candidate, '/host/attach', {
       peer: host.peer, autoContinueInterrupted: options.autoContinueInterrupted,
-    }, AbortSignal.timeout(3000)).then(() => {
+    }, AbortSignal.timeout(10_000)).then(() => {
       attached.set(instanceId, candidate);
     }).catch(error => {
       if (error instanceof AgentServiceError) throw error;

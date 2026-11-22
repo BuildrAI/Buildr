@@ -7,3 +7,4 @@ export function scopeDisplayName(scope:{ref:ScopeRef;name?:string;authority:stri
 }
 
 export const workspaceScopeKey=(ref:{sourceId:string;id:string})=>'scope:'+btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify([ref.sourceId,ref.id])))).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
+export const canonicalScopeKey=(ref:{sourceId:string;id:string})=>ref.sourceId==='buildr'?ref.id:workspaceScopeKey(ref);

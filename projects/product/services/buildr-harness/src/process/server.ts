@@ -3,6 +3,7 @@ import {HarnessWebEndpoint} from './web-endpoint.ts';
 import {connectHarnessProcess} from './client.ts';
 import type {AgentProcessConnection} from './client.ts';
 import { HarnessDirectoryHost, DIRECTORY_SOURCE_ID, observeWorkbenchDirectory } from '../application/directory-host.ts';
+import { BUILDR_SOURCE_ID, LocalWorkspaceAuthority } from '../application/local-workspaces.ts';
 import { previewLocalFile } from '../application/local-file-preview.ts';
 import { createDirectoryWorkbench, directoryWorkbenchWrites, workbenchError } from '../application/directory-workbench.ts';
 import { EDITABLE_FILE_JSON_BYTES } from '../workbench/editable-file.ts';
@@ -36,7 +37,6 @@ import { PendingSends } from './pending-sends.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
 import { StorageMaintenance } from './storage-maintenance.ts';
 import { runtimeChange } from './runtime-change.ts';
-import { defaultHarnessWorkspaceRoot } from '../profile.ts';
 
 const RUNTIME_REGISTRATION_WAIT_MS = 30_000;
 const RUNTIME_REGISTRATION_RETRY_MS = 100;
@@ -51,8 +51,9 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   let abortStart: (() => Promise<void>) | undefined;
   let cleanupDiagnostics:(()=>void)|undefined;
   try {
-  const directories = new HarnessDirectoryHost(options.dataRoot);
-  const hosts = new AgentHostRegistry(directories, () => defaultHarnessWorkspaceRoot(options.dataRoot));
+  const localWorkspaces = new LocalWorkspaceAuthority(options.dataRoot);
+  const directories = new HarnessDirectoryHost(options.dataRoot, localWorkspaces);
+  const hosts = new AgentHostRegistry(directories, localWorkspaces);
   const sourcePolicies = new SourceContinuationPolicies(options.dataRoot, options.legacySourceId!, () => options.autoContinueInterrupted ?? false);
   const backendChange = runtimeChange(readProcessRecord(options.dataRoot), options.runtime.digest, new Date().toISOString());
   const retainedOwners=new Map(readProcessInstances(options.dataRoot).map(record=>[record.identity.generation,record.identity]));
@@ -263,8 +264,16 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if (!caller) throw new AgentServiceError('agent_caller_contract_unsupported', '范围发现需要显式新版调用连接。', 409);
       const keys = new Set(repository.listScopeKeys());
       for (const directory of directories.list()) keys.add(executionScopeKey(directory.ref));
+      const builtinWorkspaces = localWorkspaces.listRegistered();
+      const builtinBuildrIds = new Set<string>();
       const registered = new Set(hosts.sources());
       const labels = new Map<string,string>(), rootPaths = new Map<string,string>();
+      for (const workspace of builtinWorkspaces) {
+        keys.add(workspace.ref.id);
+        builtinBuildrIds.add(workspace.ref.id);
+        labels.set(executionScopeKey(workspace.ref), workspace.name);
+        rootPaths.set(executionScopeKey(workspace.ref), workspace.rootPath);
+      }
       await Promise.all([...registered].filter(source => callers.isFirstParty(caller) || caller.caller.kind === 'host' && caller.caller.sourceId === source).map(async sourceId => {
         try {
           const result = await hosts.listExecutionScopes({sourceId});
@@ -277,9 +286,23 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
           }
         } catch { registered.delete(sourceId); }
       }));
+      if (builtinWorkspaces.length > 0 && !registered.has(BUILDR_SOURCE_ID)) keys.add('@default');
+      if (keys.has('@default') && !registered.has(BUILDR_SOURCE_ID)) {
+        const defaultScope = localWorkspaces.defaultWorkspaceSummary();
+        builtinBuildrIds.add('@default');
+        labels.set(executionScopeKey(defaultScope.ref), defaultScope.name);
+        rootPaths.set(executionScopeKey(defaultScope.ref), defaultScope.rootPath);
+      }
       const scopes = [...keys].filter(key => callers.canRead(caller, key)).map(key => {
         const ref = executionScopeRef(key, 'buildr');
-        return {key, ref, ...(labels.has(executionScopeKey(ref))?{name:labels.get(executionScopeKey(ref))}:{}), ...(rootPaths.has(executionScopeKey(ref))?{rootPath:rootPaths.get(executionScopeKey(ref))}:{}), authority: ref.sourceId === DIRECTORY_SOURCE_ID ? 'builtin' : registered.has(ref.sourceId) ? 'registered' : 'offline'};
+        const authority = ref.sourceId === DIRECTORY_SOURCE_ID
+          ? 'builtin'
+          : registered.has(ref.sourceId)
+            ? 'registered'
+            : ref.sourceId === BUILDR_SOURCE_ID && builtinBuildrIds.has(ref.id)
+              ? 'builtin'
+              : 'offline';
+        return {key, ref, ...(labels.has(executionScopeKey(ref))?{name:labels.get(executionScopeKey(ref))}:{}), ...(rootPaths.has(executionScopeKey(ref))?{rootPath:rootPaths.get(executionScopeKey(ref))}:{}), authority};
       });
       json(res, 200, {scopes}); return;
     }
@@ -298,16 +321,21 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
         const ref=callers.scope(caller,workspaceId);
         if(workspaceId!==(ref.sourceId==='buildr'?ref.id:executionScopeKey(ref)))
           throw new AgentServiceError('agent_directory_workbench_input_invalid','请选择准确的工作空间。',400);
-        if(ref.sourceId!==DIRECTORY_SOURCE_ID&&!hosts.sources().includes(ref.sourceId))
-          throw new AgentServiceError('agent_workbench_scope_unavailable','此工作空间的目录来源暂不可用。',503);
         const local=ref.sourceId===DIRECTORY_SOURCE_ID?directories.resolveDirectory({ref}):null;
-        const trusted=local??await hosts.resolveExecutionScope({ref});
+        const trusted=local??await hosts.resolveExecutionScope({ref}).catch(error=>{
+          if(error instanceof AgentServiceError&&error.code==='agent_host_unavailable')
+            throw new AgentServiceError('agent_workbench_scope_unavailable','此工作空间的目录来源暂不可用。',503);
+          throw error;
+        });
         if(trusted?.ref?.id!==ref.id||trusted.ref.sourceId!==ref.sourceId||typeof trusted.rootPath!=='string'||!path.isAbsolute(trusted.rootPath)||!trusted.revision)
           throw new AgentServiceError('agent_workbench_scope_unavailable','无法确认此工作空间的目录。',409);
         const observed=observeWorkbenchDirectory(trusted.rootPath);
         if(observed.rootPath!==trusted.rootPath)
           throw new AgentServiceError('agent_scope_binding_changed','工作空间目录身份已变化，请重新读取。',409);
-        const scope={ref:{...ref,id:executionScopeKey(ref)},rootPath:observed.rootPath,selectedPath:trusted.rootPath,name:local?.name,
+        const localWorkspaceName = ref.sourceId === BUILDR_SOURCE_ID
+          ? (ref.id === '@default' ? '默认工作空间' : localWorkspaces.listRegistered().find(item => item.ref.id === ref.id)?.name)
+          : undefined;
+        const scope={ref:{...ref,id:executionScopeKey(ref)},rootPath:observed.rootPath,selectedPath:trusted.rootPath,name:local?.name??localWorkspaceName,
           revision:createHash('sha256').update(JSON.stringify([ref,trusted.revision,observed.revision])).digest('hex')};
         if(input.operation==='scope'){json(res,200,scope);return;}
         const resolveDirectory=()=>{

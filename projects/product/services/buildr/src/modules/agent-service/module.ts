@@ -106,11 +106,17 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
         try { await (await resolve()).pushback.migrateGlobal(GROKBOT_CREDENTIAL_ID, legacy); }
         catch { console.warn('[agent_pushback_migration] 既有全局通知配置迁移未完成，保留原配置等待重试。'); }
       })();
-      const start = async () => { await connect(); await migrateLegacyWebhook(); };
       let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
       const observationInterval = 15_000;
       let retryDelay = 0;
+      const scheduleReconnect = (delay: number) => {
+        clearTimeout(reconnectTimer);
+        if (closed) return;
+        reconnectTimer = setTimeout(() => void maintainHostConnection(), delay);
+        reconnectTimer.unref();
+      };
       const maintainHostConnection = async () => {
+        clearTimeout(reconnectTimer);
         try {
           // The independent Harness does not call Buildr Web. Observing the
           // coordinator here also registers the host after a generation change.
@@ -122,9 +128,21 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
           if (retryDelay === 0) console.warn('执行后台连接未完成，将自动重试。已有工作记录保留。');
           retryDelay = retryDelay === 0 ? 1_000 : Math.min(retryDelay * 2, observationInterval);
         }
-        if (!closed) {
-          reconnectTimer = setTimeout(() => void maintainHostConnection(), retryDelay || observationInterval);
-          reconnectTimer.unref();
+        scheduleReconnect(retryDelay || observationInterval);
+      };
+      const start = async () => {
+        clearTimeout(reconnectTimer);
+        try {
+          await (await connect()).lifecycle.identity();
+          retryDelay = 0;
+          await migrateLegacyWebhook();
+          scheduleReconnect(observationInterval);
+        } catch (error) {
+          if (!closed) {
+            retryDelay = 1_000;
+            scheduleReconnect(retryDelay);
+          }
+          throw error;
         }
       };
       // 运行单元不一致或存在待切换单元时，响应契约差异来自版本对齐窗口而非违约。

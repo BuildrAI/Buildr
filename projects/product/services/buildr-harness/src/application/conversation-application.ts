@@ -2537,34 +2537,46 @@ export class ConversationApplication {
   /** Startup scans executions, never task status. No browser subscription is required. */
   recoverInterrupted(): Promise<void> {
     if(this.recoveryWork)return this.recoveryWork;
-    for(const candidate of this.options.repository.listPending(true)) {
-      // Backfill only durable accepted switches. The current run and its owner
-      // remain untouched, including when an older backend is still executing.
-      try {
-        this.retryRecordUpdate(()=>{
-          const record=this.load(candidate.view.workspaceId,candidate.view.id);
-          const changed=reconcileLegacySupersededRuns(record);
-          const requests=record.view.requests.filter(request=>record.view.retainedRuns?.some(run=>run.id===request.runId&&run.supersededBy));
-          if(requests.length)this.retireQuestions(record,requests);
-          if(changed||requests.length)this.save(record);
-        });
-        const record=this.load(candidate.view.workspaceId,candidate.view.id);
-        this.scheduleQuestionWaitReleases(record);
-        for(const stop of record.stops??[])void this.stops.resume(record.view.workspaceId,record.view.id,stop.id).catch(()=>{});
-        if(conversationRuns(record.view).some(run=>run.supersededBy))void this.cleanupSuperseded(record.view.workspaceId,record.view.id).catch(()=>{});
-      } catch { /* A local conflict must not prevent recovery of unrelated work. */ }
-    }
-    const candidates=this.options.repository.listInterrupted();
     const work=async()=>{
+      const pendingHeaders = this.options.repository.listPendingStates(true);
+      for(let index=0; index<pendingHeaders.length && !this.closing; index++) {
+        if (index > 0 && index % 8 === 0) await new Promise<void>(resolve => setImmediate(resolve));
+        const candidate = pendingHeaders[index]!;
+        const hasLegacyRetained = Boolean(candidate.view.retainedRuns?.some(run => !run.supersededBy && run.id !== candidate.view.run?.id));
+        const hasSupersededRequests = candidate.view.requests.some(request => candidate.view.retainedRuns?.some(run => run.id === request.runId && run.supersededBy));
+        const hasPendingWaits = conversationRuns(candidate.view).some(run => run.questionsEndedBy && unfinishedRun(run) && run.tools.every(tool => tool.status === 'completed'));
+        const hasActiveStops = Boolean(candidate.view.stopRequest) || conversationRuns(candidate.view).some(run => run.stopRequested && !run.resourcesReleased && !['completed', 'failed', 'stopped'].includes(run.status));
+        const hasSupersededCleanup = conversationRuns(candidate.view).some(run => run.supersededBy);
+        if (!hasLegacyRetained && !hasSupersededRequests && !hasPendingWaits && !hasActiveStops && !hasSupersededCleanup) continue;
+        // Backfill only durable accepted switches. The current run and its owner
+        // remain untouched, including when an older backend is still executing.
+        try {
+          if (hasLegacyRetained || hasSupersededRequests) {
+            this.retryRecordUpdate(()=>{
+              const record=this.load(candidate.view.workspaceId,candidate.view.id);
+              const changed=reconcileLegacySupersededRuns(record);
+              const requests=record.view.requests.filter(request=>record.view.retainedRuns?.some(run=>run.id===request.runId&&run.supersededBy));
+              if(requests.length)this.retireQuestions(record,requests);
+              if(changed||requests.length)this.save(record);
+            });
+          }
+          const record=this.load(candidate.view.workspaceId,candidate.view.id);
+          this.scheduleQuestionWaitReleases(record);
+          for(const stop of record.stops??[])void this.stops.resume(record.view.workspaceId,record.view.id,stop.id).catch(()=>{});
+          if(conversationRuns(record.view).some(run=>run.supersededBy))void this.cleanupSuperseded(record.view.workspaceId,record.view.id).catch(()=>{});
+        } catch { /* A local conflict must not prevent recovery of unrelated work. */ }
+      }
+      const candidates=this.options.repository.listInterruptedRefs();
       let next=0;
       await Promise.all(Array.from({length:Math.min(2,candidates.length)},async()=>{
         while(next<candidates.length&&!this.closing){
-          const candidate=candidates[next++]!,{workspaceId,id}=candidate.view;
+          const candidate=candidates[next++]!,{workspaceId,id}=candidate;
           try{
             await this.reconcilePersisted(workspaceId,id);
             const current=this.load(workspaceId,id);
             if((current.view.run?.generation!==this.options.generation&&!this.options.generationAlive?.(current.view.run?.generation??''))||current.interruption?.runId===current.view.run?.id)await this.recoverOne(workspaceId,id);
           }catch{/* One unreadable or concurrently changed conversation must not block the rest. */}
+          await new Promise<void>(resolve => setImmediate(resolve));
         }
       }));
     };

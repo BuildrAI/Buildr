@@ -579,6 +579,30 @@ export class ConversationRepository {
       return (db.prepare(`SELECT body FROM conversations WHERE json_extract(body,'$.interruption.runId')=json_extract(body,'$.view.run.id') OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') ORDER BY updated_at DESC`).all() as {body:string}[]).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation,this.nativeReader));
     } finally { db.close(); }
   }
+  listInterruptedRefs(): Array<{ workspaceId: string; id: string }> {
+    const db = this.open(false); if (!db) return [];
+    try {
+      if (!ConversationReadModel.available(db)) {
+        return (db.prepare(`SELECT workspace_id,id FROM conversations WHERE json_extract(body,'$.interruption.runId')=json_extract(body,'$.view.run.id') OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') ORDER BY updated_at DESC`).all() as Array<{workspace_id:string;id:string}>)
+          .map(row => ({ workspaceId: row.workspace_id, id: row.id }));
+      }
+      const rows = db.prepare(`SELECT c.workspace_id,c.id,c.updated_at FROM conversation_read_states s JOIN conversations c ON c.id=s.id WHERE s.active=1
+        UNION
+        SELECT c.workspace_id,c.id,c.updated_at FROM conversations c LEFT JOIN conversation_read_states s ON c.id=s.id WHERE s.id IS NULL AND (json_extract(c.body,'$.interruption.runId')=json_extract(c.body,'$.view.run.id') OR json_extract(c.body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active'))
+        UNION
+        SELECT workspace_id,id,updated_at FROM conversations WHERE json_extract(body,'$.interruption.runId')=json_extract(body,'$.view.run.id')
+        ORDER BY updated_at DESC`).all() as Array<{workspace_id:string;id:string}>;
+      const seen = new Set<string>();
+      const refs: Array<{ workspaceId: string; id: string }> = [];
+      for (const row of rows) {
+        const key = `${row.workspace_id}/${row.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        refs.push({ workspaceId: row.workspace_id, id: row.id });
+      }
+      return refs;
+    } finally { db.close(); }
+  }
   querySummaries(workspaceIds: string[], input: {draftConversationIds?:string[];workspaceId?:string;activeOnly?:boolean;active?:boolean;attention?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;generation?:string;cursor?:string;limit:number}, generationAlive?: (generation:string)=>boolean): {conversations:ConversationView[];nextCursor?:string;total:number;stats:{modelExecutions:Array<{accountId:string;accountLabel:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>;executions:Array<{provider:string;model:string;count:number}>};activityCounts:{pendingSend?:number;sendFailed?:number;active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number}} {
     const empty={conversations:[],total:0,stats:{agents:[],models:[],executions:[],modelExecutions:[]},activityCounts:{active:0,running:0,waiting:0,unseen:0,unknown:0,attention:0}};
     const db=this.open(false);if(!db||!workspaceIds.length){db?.close();return empty;}
