@@ -6,6 +6,7 @@ import { assertCodeRevision, assertSourceControlPath, codeRevision, observeSourc
 import { runCodeGitMutation } from './code-git-mutation-runner.ts';
 import { acquireCodeGitOperation } from './code-git-operation-lock.ts';
 import { sameFilesystemPath } from './filesystem-path-identity.ts';
+import { observeGitCheckoutReadIdentity } from './checkout-read-identity.ts';
 
 const limit = 16 * 1024 * 1024;
 const text = (source: CodeSource, args: string[]) => codeGit(source.location, args).toString('utf8').trim();
@@ -26,11 +27,9 @@ export function localGitIdentity(root: string) {
   if (!sameFilesystemPath(root, rootOutput)) throw unavailable('当前目录是仓库子目录。请明确选择 Git 工作树根目录后使用源代码管理。');
   gitDir = fs.realpathSync(gitDir);
   const commonDir = gitCommonDirectory(root);
-  const identity = [root, gitDir, commonDir].map(value => {
-    const stat = fs.statSync(value, {bigint:true});
-    return [value, String(stat.dev), String(stat.ino), String(stat.birthtimeNs)];
-  });
-  return { id: codeRevision(identity), gitDir, commonDir, isMain: sameFilesystemPath(gitDir, commonDir) };
+  const identity = observeGitCheckoutReadIdentity(root);
+  if(!sameFilesystemPath(gitDir,identity.gitDirectory)||!sameFilesystemPath(commonDir,identity.commonDirectory)) throw unavailable('Git 工作树身份已变化。');
+  return { id: identity.id, gitDir, commonDir, isMain: sameFilesystemPath(gitDir, commonDir) };
 }
 
 function indexBytes(index: string): Buffer | null {

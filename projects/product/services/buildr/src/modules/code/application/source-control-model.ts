@@ -1,5 +1,5 @@
 import type { CodeReadDiagnostic, CodeReadMeta } from '@buildr-ai/buildr-harness/workbench';
-import type { CodeChange, CodeBranchEntry, CodeBranchSwitchEffects } from '../domain/source-control.ts';
+import type { CodeChange } from '../domain/source-control.ts';
 export type { CodeSourceControlInput, CodeReadDiagnostic, CodeReadCoverage, CodeReadMeta, CodeHistoryResponse, CodeAuthorsResponse, CodeCommitResponse, CodeDiffResponse, CodeSourceFileResponse } from '@buildr-ai/buildr-harness/workbench';
 import type { CodeSource } from '../infrastructure/code-file-reader.ts';
 export type { CodeChangeArea, CodeChange, CodeBranch, CodeBranchEntry, CodeHistoryCommit } from '../domain/source-control.ts';
@@ -21,6 +21,4 @@ export type CodeSourceControlRepository = {
   worktrees:CodeSourceControlWorktree[];worktreeCount:number|null;worktreeCoverage:{limit:number;total:number|null;read:number;truncated:boolean};
 };
 export type CodeSourceControlResponse = CodeReadMeta & { repositories: CodeSourceControlRepository[]; selectedRepositoryIds: string[];selectedWorktreeIds:string[];selectedWorktrees:Array<{repositoryId:string;worktreeId:string}>;worktreeCoverage:{limit:number;total:number|null;read:number;truncated:boolean}; scopeReason: string };
-export type CodeBranchesResponse = CodeReadMeta & { source: CodeSource; branches: CodeBranchEntry[] };
-export type CodeBranchSwitchInput = { repositoryId: string; worktreeId: string; targetRef: string; expectedTargetHash: string; expectedRevision: string; localName?: string };
-export type CodeBranchSwitchResponse = { source: CodeSource; branch: string | null; head: string | null; upstream: string | null; observedRevision: string; readAt: string; effects: CodeBranchSwitchEffects };
+export type { CodeBranchesResponse, CodeBranchSwitchInput, CodeBranchSwitchResponse } from '@buildr-ai/buildr-harness/workbench';

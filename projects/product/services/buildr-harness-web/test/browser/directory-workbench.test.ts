@@ -41,6 +41,9 @@ test('production Harness browses, edits, reviews and commits with no Development
   fs.writeFileSync(path.join(repo,'note.txt'),'before\n');fs.writeFileSync(path.join(repo,'untouched.txt'),'base\n');
   git('add','--','note.txt','untouched.txt');git('commit','-qm','initial test revision');
   fs.writeFileSync(path.join(repo,'untouched.txt'),'external change\n');
+  const linked=path.join(root,'linked-review');
+  git('worktree','add','-qb','linked-review',linked);
+  fs.writeFileSync(path.join(linked,'note.txt'),'from linked checkout\n');
   const coreRoot=path.resolve(import.meta.dirname,'../../../buildr-harness');
   agentRuntimePackageTree(coreRoot).materialize(packageRoot);
   fs.copyFileSync(path.join(coreRoot,'test/integration/fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/workbench-fixture.mjs'));
@@ -151,7 +154,22 @@ test('production Harness browses, edits, reviews and commits with no Development
   assert.equal(git('diff','--name-only'),'untouched.txt');
   await scm.locator('.source-control-browse-tabs').getByText('提交历史',{exact:true}).click();
   await scm.getByRole('button',{name:'查看提交 directory workbench commit',exact:true}).click();
+  const expand=scm.getByRole('button',{name:'展开代码库 工作台验收仓库',exact:true});
+  if(await expand.isVisible())await expand.click();
+  await scm.getByRole('button',{name:/查看工作树 linked-review/}).click();
+  await scm.locator('.source-control-browse-tabs').getByText('未提交变更',{exact:true}).click();
+  await changes.locator('.task-changed-row').filter({has:page.locator('[data-file-path="note.txt"]')}).first().click();
+  await scm.locator('.task-diff-reader').getByText('from linked checkout',{exact:true}).first().waitFor();
+  await scm.getByRole('button',{name:'在资源管理器打开',exact:true}).click();
+  const fileTabs=workspace.getByRole('tablist',{name:'打开的文件'});
+  await fileTabs.getByRole('tab',{name:'linked-review · note.txt',exact:true}).waitFor();
+  await explorer.getByText('from linked checkout',{exact:true}).first().waitFor();
+  await fileTabs.getByRole('tab',{name:'repo · note.txt',exact:true}).click();
+  await explorer.getByText('external version',{exact:true}).first().waitFor();
+  assert.equal(git('branch','--show-current'),'main');
+
   if(process.env.BUILDR_HARNESS_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR,'directory-workbench.png')});
+  await pick('源代码管理');
   await workspace.getByRole('button',{name:'关闭源代码管理标签',exact:true}).click();
   assert.equal(await moduleTab('资源管理器').getAttribute('aria-selected'),'true');
   await workspace.getByRole('button',{name:'关闭资源管理器标签',exact:true}).click();

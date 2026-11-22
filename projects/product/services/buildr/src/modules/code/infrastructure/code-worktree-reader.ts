@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { parseGitWorktreeRecord as parseWorktreeRecord, readGitWorktreeRecords } from '@buildr-ai/buildr-harness/workbench';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { normalizeFilesystemPath, sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
@@ -32,21 +33,11 @@ function unavailableWorktreeId(commonDirectory: string, location: string) {
   return 'checkout-' + crypto.createHash('sha256').update(JSON.stringify({ unavailable: true, common: normalizeFilesystemPath(commonDirectory), path: normalizeFilesystemPath(location) })).digest('hex');
 }
 
-function parseWorktreeRecord(record: string) {
-  const fields = record.split('\0'), declared = fields.find(field => field.startsWith('worktree '))?.slice(9);
-  if (!declared || !path.isAbsolute(declared)) throw codeFailure('code_worktree_list_invalid', 'Git 工作树清单包含无效目录。', 409);
-  const branch = fields.find(field => field.startsWith('branch '))?.slice(7);
-  const head = fields.find(field => field.startsWith('HEAD '))?.slice(5) || null;
-  return { declared, branch: branch?.startsWith('refs/heads/') ? branch.slice(11) : null, head };
-}
-
 /** Git's registration is the inventory; live identities are shared with the code explorer. */
 function observeCodeWorktrees(registeredLocation: string, observedCommonDirectory?: string) {
   const commonDirectory = observedCommonDirectory ?? gitCommonDirectory(registeredLocation);
   const identities = new Map<string, CheckoutIdentity>();
-  const records = codeGit(registeredLocation, ['worktree', 'list', '--porcelain', '-z'], 8 * 1024 * 1024).toString('utf8').split('\0\0').filter(Boolean);
-  const worktrees = records.map((record, index) => {
-    const parsed = parseWorktreeRecord(record);
+  const worktrees = readGitWorktreeRecords(registeredLocation).map((parsed, index) => {
     const location = actualPath(parsed.declared);
     let worktreeId: string;
     try {

@@ -3,7 +3,7 @@
 .harness-workspace-loading{display:flex;align-items:center;justify-content:center;gap:8px;padding:28px;color:var(--soft-muted)}
 .harness-directory-workbench-pane,.harness-directory-explorer,.harness-directory-source-control{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
 .harness-directory-workbench-pane[hidden]{display:none}
-.harness-directory-explorer>.repository-file-browser,.harness-directory-source-control>.source-control-workbench{flex:1;min-height:0;height:auto;border:0;border-radius:0}
+.harness-file-tab-content>.repository-file-browser,.harness-directory-source-control>.source-control-workbench{flex:1;min-height:0;height:auto;border:0;border-radius:0}
 @media(max-width:760px){.harness-directory-explorer .repository-browser-tree{flex-basis:min(38%,var(--repository-tree-width));width:min(38%,var(--repository-tree-width))}.harness-directory-explorer .repository-file-pane{min-width:0}}
 .harness-directory-file-actions{padding:4px 0;min-width:0}
 .harness-directory-file-actions code{overflow-wrap:anywhere}
@@ -35,3 +35,6 @@
 .harness-workspace-tab>[role=tab]:focus-visible{outline:2px solid var(--soft-primary);outline-offset:-2px}
 .harness-workspace-tab>.ant-btn{color:inherit;font-size:var(--font-size-meta);width:22px;min-width:22px}
 .harness-workspace-home button small{color:var(--soft-muted);font-size:var(--font-size-meta)}
+.harness-worktree-picker{min-width:0;max-width:200px;flex:0 1 180px}
+.harness-file-tabs{flex:none;min-width:0;padding:0 8px;border-bottom:1px solid var(--soft-line)}
+.harness-file-tab-content{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}

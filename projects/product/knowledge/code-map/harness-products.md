@@ -26,15 +26,15 @@
 - **Harness 后端**（`services/buildr-harness/src/`）
   - [目录引用](../../services/buildr-harness/src/application/directory-host.ts)：选择来源、记录身份、重新核对准确目录；命中同数据域已登记工作空间时复用原身份。
   - [本机工作空间解析](../../services/buildr-harness/src/application/local-workspaces.ts)：零依赖读取同数据域 `workspace-registry.json`、工作空间元数据及 `@default` 并核验文件系统身份，支持 Development 离线时的工作空间与工作台独立解析。
-  - [目录工作台](../../services/buildr-harness/src/application/directory-workbench.ts)：用目录标识和观察版本定位文件与 Git 操作，不需要对话标识或业务范围。
-  - [通用入口](../../services/buildr-harness/src/workbench.ts)：文件读取、编辑保护和 Git 观察；供 Development 的工程应用复用，不启动执行后台。
+  - [目录工作台](../../services/buildr-harness/src/application/directory-workbench.ts)与[仓库发现](../../services/buildr-harness/src/application/directory-checkouts.ts)：以明确目录为锚，有界发现本机仓库并按实际 Git 登记复核检出，不依赖对话或 Development 的工程登记。
+  - [通用入口](../../services/buildr-harness/src/workbench.ts)：文件读取与编辑保护、打开文件夹、检出身份、分支切换、远程获取/同步/推送；供 Development 的工程应用复用，不启动执行后台。
   - [本地 Git 动作](../../services/buildr-harness/src/workbench/local-git.ts)：明确暂存、取消暂存和版本保护的本地提交，不隐式推送。
 - **Harness 前端**（`services/buildr-harness-web/src/`）
-  - [独立目录装配](../../services/buildr-harness-web/src/features/directory-workbench/HarnessDirectoryWorkbench.tsx)：目录选择、视图切换与打开当前文件，保持文件和 Git 模块独立。
+  - [独立目录装配](../../services/buildr-harness-web/src/features/directory-workbench/HarnessDirectoryWorkbench.tsx)：仓库与工作树选择、模块切换和跨工作树准确跳转；两个模块采用同一浏览身份。
   - [资源管理器](../../services/buildr-harness-web/src/explorer.ts)与[源代码管理](../../services/buildr-harness-web/src/source-control.ts)：可分别装配的公开视图；由宿主提供观察和动作，不调用 Development API。
 - **Development 复用**（`services/buildr*/src/`）
   - [工程代码应用](../../services/buildr/src/modules/code/application/code-application.ts)：根据登记与真实检出解析工程范围；文件及 Git 观察调用 Harness 通用实现。
-  - [工程资源管理器](../../services/buildr-web/src/features/code/pages/CodeExplorerPage.tsx)与[工程源代码管理](../../services/buildr-web/src/features/code/pages/CodeSourceControlPage.tsx)：包装通用视图，保留原导航、编辑会话、任务深链和工程操作。
+  - [工程资源管理器](../../services/buildr-web/src/features/code/pages/CodeExplorerPage.tsx)与[工程源代码管理](../../services/buildr-web/src/features/code/pages/CodeSourceControlPage.tsx)：装配同源文件页签、通用视图和 Git 实现，保留原导航、编辑会话、任务深链与工程操作。
 
 ## 关键调用链
 
