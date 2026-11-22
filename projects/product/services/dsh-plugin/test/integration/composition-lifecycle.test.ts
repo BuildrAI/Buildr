@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createSdkRequire } from '../../tools/sdk-require.ts';
 import { compositionPatch } from '../../tools/build-composition.ts';
 import { PRESET_MODULES, ROOT_MODULES, CLIENT_MODULES, COMPOSITION_SCHEMA } from '../../plugin/composition/definition.ts';
+import { COMPOSITION_GUARD_SCHEMA, guardFilePath } from '../../plugin/composition/circuit-breaker.ts';
 
 test('real Loader and preset registry activate, withdraw, reinstall and share a composition without persistent private refs', async t => {
   const sdk = process.env.BUILDR_DSH_SOURCE_SDK_ROOT;
@@ -211,4 +212,222 @@ const value={enhanced:true,variant,config};roots.set(${JSON.stringify(id)},value
   await reload([names[0]], false);
   assert.equal(activeRoots.get('tools')?.enhanced, false);
   assert.equal(activeRoots.has('skill'), false);
+});
+
+async function setupIsolatedHost(t: test.TestContext, options: {
+  hostVersion?: string;
+  throwInNativeExecutorOnEnhanced?: boolean;
+  sameShapeTools?: boolean;
+  preSeedGuard?: { pid: number; state: 'attempting' | 'ready' | 'tripped'; hostVersion: string };
+} = {}) {
+  const sdk = process.env.BUILDR_DSH_SOURCE_SDK_ROOT;
+  if (!sdk) return null;
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+  const dir = await mkdtemp(join(tmpdir(), 'buildr-composition-failsafe-'));
+  let host: any;
+  t.after(async () => { await host?.fiber.dispose(); await rm(dir, { recursive: true, force: true, maxRetries: 3 }); });
+  const req = createSdkRequire(sdk), yaml = req('js-yaml');
+  const runtime = join(dir, 'runtime'); await mkdir(runtime);
+  await writeFile(join(dir, 'package.json'), JSON.stringify({ name: 'composition-test-runtime', version: options.hostVersion ?? '0.2.2-rc.5' }));
+  await req('esbuild').build({ stdin: { contents: `
+export { Context, Service } from '@deepseek-ai/cordis';
+export { default as Loader } from '@deepseek-ai/cordis-plugin-loader';
+export { Include, applyEntryPatches } from '@deepseek-ai/cordis-plugin-include';
+export { readProfilePatches, loadProfileDirectory, mountRootInclude, reconcileProfilePatches } from '@deepseek-ai/dsh-app-boot';
+export { default as Hmr } from '@deepseek-ai/dsh-hmr';
+export { default as ConfigEditor } from '@deepseek-ai/dsh-config-editor';
+export { default as Settings } from '@deepseek-ai/dsh-settings';
+export { default as z } from '@deepseek-ai/schemastery';
+export { default as AgentPresets } from '@deepseek-ai/dsh-agent-preset-registry';
+export { default as OfficialPreset } from '@deepseek-ai/dsh-agent-preset';
+export { default as EnhancedPreset } from ${JSON.stringify(join(root, 'plugin/composition/preset-owner.ts'))};
+export { default as Composition } from ${JSON.stringify(join(root, 'plugin/composition/index.ts'))};
+`, resolveDir: sdk, loader: 'ts' }, outfile: join(runtime, 'harness.mjs'), bundle: true, format: 'esm', platform: 'node', target: 'es2022',
+    tsconfig: join(sdk, 'tsconfig.base.json'), nodePaths: [join(sdk, 'node_modules')],
+    banner: { js: "import {createRequire as __cr} from 'node:module';const require=__cr(import.meta.url);" } });
+  const h = await import(pathToFileURL(join(runtime, 'harness.mjs')).href);
+  const profileDir = join(dir, 'profile'), home = join(dir, 'home'), installation = join(dir, 'installation');
+  await Promise.all([mkdir(profileDir), mkdir(home), mkdir(installation)]);
+  const anchor = join(installation, 'package.json');
+  await writeFile(anchor, JSON.stringify({ name: '@deepseek-ai/dsh', version: options.hostVersion ?? '0.2.2-rc.5' }));
+
+  const baseRows = [
+    ...Object.entries(ROOT_MODULES).map(([id, name]) => ({ id, name })),
+    { id: 'tool-executor-native', name: '@deepseek-ai/dsh-tool-executor-native' },
+    { id: 'preset-standard', name: '@deepseek-ai/dsh-agent-preset', config: { id: 'standard', plugins: PRESET_MODULES.map(name => ({ name, disabled: false, config: {} })) } },
+    { id: 'ui-trajectory', name: CLIENT_MODULES['ui-trajectory'], disabled: true },
+    { id: 'ui-settings-agent-loop', name: CLIENT_MODULES['ui-settings-agent-loop'] },
+  ];
+
+  const officialDir = join(profileDir, 'node_modules/fixture-official');
+  await mkdir(officialDir, { recursive: true });
+  await writeFile(join(officialDir, 'package.json'), JSON.stringify({ name: 'fixture-official', dsh: { bundle: { patch: 'cordis.patch.yml' } } }));
+  await writeFile(join(officialDir, 'cordis.patch.yml'), yaml.dump([{ insert: baseRows }]));
+
+  const pluginName = '@buildr-ai/buildr-dsh-plugin';
+  const pluginDir = join(profileDir, 'node_modules', pluginName);
+  await mkdir(join(pluginDir, 'runtime-composition'), { recursive: true });
+  await writeFile(join(pluginDir, 'package.json'), JSON.stringify({
+    name: pluginName,
+    version: '0.1.0-rc.5',
+    dsh: { bundle: { patch: 'cordis.patch.yml' } },
+    buildrComposition: { schemaVersion: COMPOSITION_SCHEMA, patchSha256: 'testpatch' },
+  }));
+  const graph = Object.fromEntries([...Object.values(ROOT_MODULES), ...PRESET_MODULES, ...Object.values(CLIENT_MODULES)].map((name, idx) =>
+    [name, pathToFileURL(join(pluginDir, `enhanced-${idx}.mjs`)).href]));
+  for (const [id, name] of Object.entries({ ...ROOT_MODULES, ...CLIENT_MODULES })) {
+    const isTools = id === 'tools';
+    await writeFile(fileURLToPath(graph[name]), isTools ? `
+import { Service } from ${JSON.stringify(pathToFileURL(join(runtime, 'harness.mjs')).href)};
+export default class EnhancedTools extends Service {
+  enhanced = true;
+  constructor(ctx) { super(ctx, 'tools'); }
+  ${options.sameShapeTools ? 'setExecutor() { this.ctx.get("fixtureState").enhancedToolsExecutorCalled = true; }' : ''}
+}
+` : `
+export default {
+  ${id === 'agent-loop' ? "inject: ['tools']," : ''}
+  apply(ctx) {
+    const s = ctx.get('fixtureState');
+    s.active.set(${JSON.stringify(id)}, { enhanced: true });
+    return () => { s.active.delete(${JSON.stringify(id)}); };
+  }
+};
+`);
+  }
+  for (const name of PRESET_MODULES) {
+    await writeFile(fileURLToPath(graph[name]), 'export default { apply() {} };');
+  }
+  const presetOwner = pathToFileURL(join(pluginDir, 'preset-owner.mjs')).href;
+  await writeFile(fileURLToPath(presetOwner), `import {EnhancedPreset} from ${JSON.stringify(pathToFileURL(join(runtime, 'harness.mjs')).href)};export default class extends EnhancedPreset {}`);
+  await writeFile(join(pluginDir, 'runtime-composition/definition.json'), JSON.stringify({ schemaVersion: COMPOSITION_SCHEMA, modules: graph, presetOwner }));
+  await writeFile(join(pluginDir, 'cordis.patch.yml'), compositionPatch('buildr', pluginName, 'runtime-composition', 'trajectory', []));
+
+  if (options.preSeedGuard) {
+    const guardPath = guardFilePath(profileDir);
+    await mkdir(dirname(guardPath), { recursive: true });
+    await writeFile(guardPath, JSON.stringify({
+      schemaVersion: COMPOSITION_GUARD_SCHEMA,
+      hostVersion: options.preSeedGuard.hostVersion,
+      compositionIdentity: `${pluginName}@0.1.0-rc.5:testpatch`,
+      state: options.preSeedGuard.state,
+      pid: options.preSeedGuard.pid,
+      updatedAt: new Date().toISOString(),
+    }));
+  }
+
+  const profileFile = join(profileDir, 'package.json'), userFile = join(profileDir, 'cordis.patch.yml');
+  await writeFile(userFile, '[]\n');
+  await writeFile(profileFile, JSON.stringify({ name: 'fixture', dsh: { profile: { bundles: ['fixture-official', pluginName] } } }));
+
+  host = new h.Context();
+  await host.plugin(h.Loader, { baseUrl: pathToFileURL(dir + '/').href });
+  host.provide('sessionProjections', { register() { return () => {}; } });
+  await host.plugin(h.AgentPresets, { default: 'standard' });
+  host.loader.builtins.include = h.Include;
+  const profile = { name: 'fixture', dir: profileDir, patchPath: userFile, installAnchor: anchor, cwd: dir, home, startedBundles: [], overlays: [], telemetryDisabledEnv: undefined };
+  host.provide('profileContext', profile);
+  await host.plugin(h.ConfigEditor); await host.plugin(h.Settings);
+  const state = { active: new Map<string, { enhanced: boolean }>(), executorReady: false, enhancedToolsExecutorCalled: false };
+  host.provide('fixtureState', state);
+
+  class StockTools extends h.Service {
+    enhanced = false;
+    constructor(ctx: any) { super(ctx, 'tools'); }
+    setExecutor() { state.executorReady = true; }
+  }
+  const stockExecutor = {
+    inject: ['tools'],
+    apply(ctx: any) {
+      if (options.throwInNativeExecutorOnEnhanced && ctx.tools.enhanced) {
+        throw new Error('incompatible enhanced tools runtime');
+      }
+      ctx.tools.setExecutor();
+      state.active.set('tool-executor-native', { enhanced: false });
+      return () => { state.active.delete('tool-executor-native'); };
+    },
+  };
+  const stockSimple = (id: string) => ({
+    ...(id === 'agent-loop' ? { inject: ['tools'] } : {}),
+    apply(ctx: any) {
+      const s = ctx.get('fixtureState');
+      s.active.set(id, { enhanced: false });
+      return () => { s.active.delete(id); };
+    },
+  });
+
+  host.loader.internal = {
+    version: 'v2',
+    async import(name: string) {
+      if (name === ROOT_MODULES.tools) return { default: StockTools };
+      if (name === '@deepseek-ai/dsh-tool-executor-native') return stockExecutor;
+      for (const [id, modName] of Object.entries({ ...ROOT_MODULES, ...CLIENT_MODULES })) {
+        if (name === modName) return stockSimple(id);
+      }
+      if (name === '@deepseek-ai/dsh-agent-preset') return h.OfficialPreset;
+      if (name.startsWith('file://') && name.endsWith('.mjs')) return import(name);
+      if (name.endsWith('/runtime-composition/index.js')) return h.Composition;
+      if (name === pluginName) return { apply() {} };
+      return { apply() {} };
+    },
+  };
+
+  new h.Hmr(host.extend({ baseUrl: pathToFileURL(dir + '/').href }), { root: [], ignored: [], debounce: 1 });
+  const configFile = join(dir, 'cordis.yml'); await writeFile(configFile, '[]\n');
+  await h.mountRootInclude(host, configFile, h.readProfilePatches('fixture', profile));
+  await host.loader.await();
+  return { host, state, pluginName, dir, h, anchor, profile };
+}
+
+test('incompatible host method mismatch degrades gracefully and keeps native DSH and gateway alive', async t => {
+  const setup = await setupIsolatedHost(t, { sameShapeTools: false });
+  if (!setup) return t.skip('explicit verified source SDK required');
+  const { host, state } = setup;
+  assert.equal(host.buildrCompositionRuntime.status().state, 'degraded');
+  assert.equal(host.buildrCompositionRuntime.status().reason, 'incompatible-host');
+  assert.equal(host.tools.enhanced, false);
+  assert.equal(state.executorReady, true);
+  assert.equal(state.active.get('tool-executor-native')?.enhanced, false);
+  assert.equal(state.active.get('agent-loop')?.enhanced, false);
+  assert.equal(host.loader.resolve('include:buildr').fiber?.state, 2);
+});
+
+test('runtime failure of a required sibling triggers ordered rollback and restarts native sibling', async t => {
+  const setup = await setupIsolatedHost(t, { sameShapeTools: true, throwInNativeExecutorOnEnhanced: true });
+  if (!setup) return t.skip('explicit verified source SDK required');
+  const { host, state } = setup;
+  assert.equal(host.buildrCompositionRuntime.status().state, 'degraded');
+  assert.equal(host.buildrCompositionRuntime.status().reason, 'activation-failed');
+  assert.equal(host.tools.enhanced, false);
+  assert.equal(state.executorReady, true);
+  assert.equal(state.active.get('tool-executor-native')?.enhanced, false);
+  assert.equal(state.active.get('agent-loop')?.enhanced, false);
+  assert.equal(host.loader.resolve('include:tool-executor-native').fiber?.state, 2);
+});
+
+test('disposing root host while enhanced composition is active completes promptly without deadlock', async t => {
+  const setup = await setupIsolatedHost(t, { sameShapeTools: true, throwInNativeExecutorOnEnhanced: false });
+  if (!setup) return t.skip('explicit verified source SDK required');
+  const { host } = setup;
+  assert.equal(host.buildrCompositionRuntime.status().state, 'active');
+  const started = Date.now();
+  await host.fiber.dispose();
+  assert.ok(Date.now() - started < 2_000, 'host dispose must not deadlock');
+});
+
+test('startup circuit breaker skips takeover after prior process crash and resets on host upgrade', async t => {
+  const blocked = await setupIsolatedHost(t, {
+    hostVersion: '0.2.2-rc.5',
+    sameShapeTools: true,
+    preSeedGuard: { pid: 999999, state: 'attempting', hostVersion: '0.2.2-rc.5' },
+  });
+  if (!blocked) return t.skip('explicit verified source SDK required');
+  assert.equal(blocked.host.buildrCompositionRuntime.status().state, 'degraded');
+  assert.equal(blocked.host.buildrCompositionRuntime.status().reason, 'circuit-breaker');
+  assert.equal(blocked.host.tools.enhanced, false);
+
+  await writeFile(blocked.anchor, JSON.stringify({ name: '@deepseek-ai/dsh', version: '0.2.2-rc.6' }));
+  await blocked.host.loader.resolve('include:buildr-composition').fiber.restart();
+  assert.equal(blocked.host.buildrCompositionRuntime.status().state, 'active');
+  assert.equal(blocked.host.tools.enhanced, true);
 });

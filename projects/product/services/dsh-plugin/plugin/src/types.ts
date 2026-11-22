@@ -5,7 +5,14 @@ export type OpenResult =
 
 /** Qualification of this gateway in the current cooperative plugin service domain. */
 export type ActivationStatus =
-  | { active: true; packageName: string }
+  | {
+    active: true;
+    packageName: string;
+    compositionDegraded?: {
+      reason: 'incompatible-host' | 'activation-failed' | 'circuit-breaker';
+      detail: string;
+    };
+  }
   | { active: false; packageName: string; code: 'plugin-conflict' | 'disposed'; message: string; ownerPackage?: string };
 
 /**

@@ -86,4 +86,12 @@ export { NativeConfigurationOwner, withinReload } from ${JSON.stringify(join(roo
   const count = seen.length;
   await owner.serialized(() => owner.enhance(entry, 'file:///fixture/enhanced-loop.js'));
   assert.equal(seen.length, count, 'an intentionally disabled source never starts');
+
+  await entry.update({ disabled: false });
+  await owner.serialized(() => owner.enhance(entry, 'file:///fixture/enhanced-loop.js'));
+  const beforeNonRestore = seen.length;
+  await owner.serialized(() => owner.release({ restoreStock: false }));
+  assert.equal(seen.length, beforeNonRestore, 'release with restoreStock=false must not re-initialize stock');
+  assert.equal(entry.options.name, '@deepseek-ai/dsh-agent-loop');
+  assert.equal(entry.options.disabled, undefined);
 });
