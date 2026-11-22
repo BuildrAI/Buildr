@@ -4,6 +4,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { agentRuntimePackageTree } from '../../../buildr-harness/tools/package-runtime.ts';
 import { withExclusiveFileLock } from '../../src/infrastructure/filesystem/exclusive-file-lock.ts';
+import { developmentAgentBuildReuse } from './development-agent-build-reuse.ts';
 
 const buildrRoot = path.resolve(import.meta.dirname, '../..');
 
@@ -30,20 +31,28 @@ export function prepareDevelopmentAgent({
   agentRoot = path.resolve(serviceRoot, '../buildr-harness'),
   build = true,
   buildWeb = true,
-}: { serviceRoot?: string; agentRoot?: string; build?: boolean; buildWeb?: boolean } = {}): string {
-  return withDevelopmentAgentPreparationLock(serviceRoot, () => materializeDevelopmentAgent({ serviceRoot, agentRoot, build, buildWeb }));
+  reuseBuild = false,
+}: { serviceRoot?: string; agentRoot?: string; build?: boolean; buildWeb?: boolean; reuseBuild?: boolean } = {}): string {
+  return withDevelopmentAgentPreparationLock(serviceRoot, () => materializeDevelopmentAgent({ serviceRoot, agentRoot, build, buildWeb, reuseBuild }));
 }
 
-function materializeDevelopmentAgent({ serviceRoot, agentRoot, build, buildWeb }: { serviceRoot: string; agentRoot: string; build: boolean; buildWeb: boolean }): string {
-  if (build) {
+function materializeDevelopmentAgent({ serviceRoot, agentRoot, build, buildWeb, reuseBuild }: { serviceRoot: string; agentRoot: string; build: boolean; buildWeb: boolean; reuseBuild: boolean }): string {
+  const webRoot = path.resolve(agentRoot, '../buildr-harness-web');
+  const reuse = build && buildWeb && reuseBuild ? developmentAgentBuildReuse(serviceRoot, agentRoot, webRoot) : null;
+  const input = reuse?.input() ?? null;
+  if (reuse?.matches(input)) {
+    process.stderr.write('development-preparation: verified Harness build reused\n');
+  } else if (build) {
+    reuse?.invalidate();
     // Preparation is embedded by JSON-returning installers. Build progress and
     // diagnostics share stderr; stdout belongs to the caller's final receipt.
     if (buildWeb) {
-      const web = spawnSync(process.execPath, [path.resolve(agentRoot, '../buildr-harness-web/tools/build.ts')], {cwd: path.resolve(agentRoot, '../buildr-harness-web'), stdio:['inherit',2,2], timeout:240000});
+      const web = spawnSync(process.execPath, [path.join(webRoot, 'tools/build.ts')], {cwd: webRoot, stdio:['inherit',2,2], timeout:240000});
       if(web.error || web.status!==0)throw web.error??new Error('harness_web_build_failed');
     }
     const result = spawnSync(process.execPath, [path.join(agentRoot, 'tools/build.ts')], { cwd: agentRoot, stdio: ['inherit', 2, 2] });
     if (result.error || result.status !== 0) throw new Error(`agent_preparation_build_failed: ${result.error?.message ?? result.status}`);
+    reuse?.remember(input);
   }
   const finalDestination = path.join(serviceRoot, 'node_modules/@buildr-ai/buildr-harness');
   fs.mkdirSync(path.dirname(finalDestination), { recursive: true });
@@ -62,5 +71,7 @@ function materializeDevelopmentAgent({ serviceRoot, agentRoot, build, buildWeb }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === import.meta.filename) {
-  process.stdout.write(`${JSON.stringify({ status: 'passed', root: prepareDevelopmentAgent({ build: !process.argv.includes('--no-build') }) })}\n`);
+  process.stdout.write(`${JSON.stringify({ status: 'passed', root: prepareDevelopmentAgent({
+    build: !process.argv.includes('--no-build'), reuseBuild: process.argv.includes('--reuse-build'),
+  }) })}\n`);
 }

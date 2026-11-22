@@ -148,6 +148,89 @@ test('unchanged Agent preparation avoids staging and repairs same-size output dr
   }
 });
 
+test('shared test preparation rebuilds only when Harness build evidence is absent or invalid', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-harness-prepare-reuse-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const host = path.join(root, 'host'), agent = path.join(root, 'buildr-harness');
+  const web = path.join(root, 'buildr-harness-web');
+  const put = (base: string, file: string, content = '') => {
+    fs.mkdirSync(path.dirname(path.join(base, file)), { recursive: true });
+    fs.writeFileSync(path.join(base, file), content);
+  };
+  createPreparationFixture(agent, 'original');
+  for (const file of ['src/fixture.ts', 'tools/codegen/fixture.ts', 'node_modules/compiler/fixture.js', 'package-lock.json', 'tsconfig.json']) put(agent, file);
+  for (const file of ['src/fixture.ts', 'node_modules/bundler/fixture.js', 'index.html', 'mermaid-renderer.html', 'vite.config.ts', 'tsconfig.json', 'package-lock.json']) put(web, file);
+  put(web, 'package.json', '{"type":"module"}');
+  put(web, 'tools/build.ts', `
+    import fs from 'node:fs';
+    fs.appendFileSync('../builds', 'web\\n');
+    fs.mkdirSync('dist', {recursive: true});
+    fs.mkdirSync('build/generated', {recursive: true});
+    fs.writeFileSync('dist/index.html', 'page');
+    fs.writeFileSync('dist/mermaid-renderer.html', 'mermaid');
+    fs.writeFileSync('build/generated/agent-service-http-dto.ts', 'dto');
+  `);
+  put(agent, 'tools/build.ts', `
+    import fs from 'node:fs';
+    fs.appendFileSync('../builds', 'core\\n');
+    if (fs.existsSync('../fail')) process.exit(1);
+    fs.mkdirSync('build/harness-web-dist', {recursive: true});
+    fs.writeFileSync('build/harness-web-dist/index.html', 'page');
+    fs.writeFileSync('build/index.js', 'ready');
+    fs.writeFileSync('build/http-dto.d.ts', 'dto');
+    if (fs.existsSync('../drift')) fs.appendFileSync('src/fixture.ts', '// source changed during build\\n');
+  `);
+  const run = path.join(root, 'run.mjs');
+  const prepare = pathToFileURL(path.join(serviceRoot, 'tools/development/prepare-development-agent.ts')).href;
+  put(root, 'run.mjs', `import {prepareDevelopmentAgent} from ${JSON.stringify(prepare)};
+    prepareDevelopmentAgent(${JSON.stringify({ serviceRoot: host, agentRoot: agent, reuseBuild: true })});`);
+  const env: NodeJS.ProcessEnv = { ...process.env, NODE_OPTIONS: '', NODE_PATH: '' };
+  delete env.BUILDR_HARNESS_WEB_DIST;
+  let scratch = 'first';
+  const attempt = () => spawnSync(process.execPath, [run], {
+    cwd: root, env: { ...env, BUILDR_TEST_LOCAL_STATE_ROOT: path.join(root, scratch) },
+    encoding: 'utf8', timeout: 10_000,
+  });
+  const buildCount = () => (fs.readFileSync(path.join(root, 'builds'), 'utf8').match(/core\n/g) ?? []).length;
+  const ready = (count: number, reused = false) => {
+    const result = attempt();
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(buildCount(), count);
+    assert.equal(result.stderr.includes('verified Harness build reused'), reused);
+  };
+  ready(1);
+  scratch = 'second'; // A fresh verification sandbox must not invalidate the build.
+  ready(1, true);
+  const installedEntry = path.join(host, 'node_modules/@buildr-ai/buildr-harness/build/index.js');
+  fs.writeFileSync(installedEntry, 'stale');
+  ready(1, true);
+  assert.equal(fs.readFileSync(installedEntry, 'utf8'), 'ready', 'reuse still repairs the installed copy');
+
+  put(web, 'dist/index.html', 'fake'); // Same size as the real output.
+  ready(2);
+  put(agent, 'src/fixture.ts', '// changed');
+  ready(3);
+  put(web, 'node_modules/bundler/fixture.js', '// dependency changed');
+  ready(4);
+  env.VITE_FIXTURE = 'runtime-value';
+  ready(5);
+  put(web, '.env.production', 'VITE_FIXTURE=changed');
+  ready(6);
+  scratch = 'third'; // A dotenv file may refer to this variable.
+  ready(7);
+  fs.unlinkSync(path.join(web, 'dist/mermaid-renderer.html'));
+  put(root, 'fail');
+  const failed = attempt();
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, /agent_preparation_build_failed/u);
+  fs.unlinkSync(path.join(root, 'fail'));
+  put(root, 'drift');
+  ready(9);
+  fs.unlinkSync(path.join(root, 'drift'));
+  ready(10);
+  ready(10, true);
+});
+
 test('missing required Harness launcher or resources preserves the previously prepared runtime', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-harness-required-trees-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

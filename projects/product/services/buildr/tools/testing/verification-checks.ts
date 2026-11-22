@@ -6,7 +6,7 @@ const node = (script: string, ...args: string[]) => ({ file: process.execPath, a
 
 /** Generated inputs are explicit preparation, shared once by checks in one execution. */
 export const sharedCheckPreparation = [
-  node('tools/development/prepare-development-agent.ts'),
+  node('tools/development/prepare-development-agent.ts', '--reuse-build'),
   ...['task-dto', 'task-professional-dto', 'runtime-system-dto', 'workbench-dto', 'workspace-agent-assets-dto']
     .map(name => node(`tools/codegen/contracts/${name}.ts`)),
   node('tools/testing/test-context-build.ts', 'generate'),
