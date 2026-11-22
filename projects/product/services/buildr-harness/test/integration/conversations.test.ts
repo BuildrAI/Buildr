@@ -4409,3 +4409,65 @@ test('closing service and deleting data root during unknown disconnect produces 
     await f.close();
   }
 });
+
+
+test('observe forwards permissionMode during unknown reconcile and supplement surfaces readable unknown diagnostic', async () => {
+  const resumedModes: Array<string | undefined> = [];
+  const native = fake('local');
+  native.executor.descriptor.capabilities.permissionModes = ['default', 'full-access'];
+  const open = native.executor.open;
+  let executionRef = { id: 'execution-1' };
+  const unknownDiagnostic = 'Antigravity 正文已结束，但仍有工具缺少完成回执；未报告为完整成功。';
+  native.executor.open = async input => {
+    const rt = await open(input);
+    rt.capabilities.permissionModes = ['default', 'full-access'];
+    rt.capabilities.supplement = true;
+    return {
+      ...rt,
+      async resumeContext(args) { resumedModes.push(args.permissionMode); return rt.resumeContext(args); },
+      async send(args) {
+        executionRef = { id: args.clientRequestId };
+        args.onEvent({ type: 'accepted', executionRef });
+        args.onEvent({
+          type: 'observation',
+          observation: {
+            status: 'unknown', executionRef,
+            tools: [{ id: 'tool-1', label: 'read', status: 'unknown' }],
+            diagnostic: unknownDiagnostic,
+          },
+        });
+      },
+      async observe() {
+        return {
+          status: 'unknown', executionRef,
+          tools: [{ id: 'tool-1', label: 'read', status: 'unknown' }],
+          diagnostic: unknownDiagnostic,
+        };
+      },
+      async supplement() { throw new Error('supplement must not run when unknown'); },
+    };
+  };
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local');
+    const chat = await f.service.conversations.create('workspace-one', {});
+    const draft = { expectedRevision: chat.revision, connectionId: 'local', model: 'test-model', permissionMode: 'full-access' as const, text: 'unknown test' };
+    const preview = f.service.conversations.prepareSend('workspace-one', chat.id, draft);
+    f.service.conversations.send('workspace-one', chat.id, { ...draft, previewToken: preview.token, clientRequestId: randomUUID() });
+    const unknown = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), v => v.run?.status === 'unknown');
+    resumedModes.length = 0;
+    const observed = await f.service.conversations.observe('workspace-one', chat.id);
+    assert.equal(observed.run?.status, 'unknown');
+    assert.ok(resumedModes.includes('full-access'));
+    const sup = await f.service.conversations.supplement('workspace-one', chat.id, {
+      runId: unknown.run!.id, participantId: unknown.run!.participantId, generation: unknown.run!.generation,
+      clientRequestId: randomUUID(), text: 'already open',
+    });
+    assert.equal(sup.delivery, 'rejected');
+    const failedEntry = sup.conversation.entries.findLast(e => e.role === 'user' && e.text === 'already open');
+    assert.match(failedEntry?.deliveryDiagnostic ?? '', /仍有工具缺少完成回执/);
+    assert.match(failedEntry?.deliveryDiagnostic ?? '', /停止/);
+  } finally {
+    await f.close();
+  }
+});

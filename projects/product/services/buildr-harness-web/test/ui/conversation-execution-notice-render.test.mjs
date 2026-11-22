@@ -82,3 +82,19 @@ test('后台自动续行达到上限暂停且已释放资源时显示原因与�
  assert.doesNotMatch(html,/>关闭对话<|>重新读取<|>停止</);
  assert.doesNotMatch(html,/服务重启中断/);
 });
+
+test('未释放的未知轮存在可读诊断时直接展示真实原因而非暂时无法读取执行状态',()=>{
+ const run=live({diagnostic:'Antigravity 正文已结束，但仍有工具缺少完成回执；未报告为完整成功。',resourcesReleased:false});
+ const html=render({run,onContinue(){}});
+ assert.match(html,/Antigravity 正文已结束，但仍有工具缺少完成回执；未报告为完整成功。/);
+ assert.doesNotMatch(html,/暂时无法读取执行状态/);
+ assert.equal((html.match(/>重新读取</g)||[]).length,1);
+ assert.equal((html.match(/>停止</g)||[]).length,1);
+ assert.doesNotMatch(html,/>继续原任务</);
+});
+
+test('未释放的未知轮收到原始内部诊断码时映射为可读说明',()=>{
+ const html=render({run:live({diagnostic:'qoder_late_native_activity'})});
+ assert.match(html,/原生执行在结束后仍有迟到活动，结果尚未确认。/);
+ assert.doesNotMatch(html,/暂时无法读取执行状态/);
+});

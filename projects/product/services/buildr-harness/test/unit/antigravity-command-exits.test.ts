@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
-import { readAntigravityCommandExits } from '../../src/executors/antigravity/content.ts';
+import { readAntigravityCommandExits, readAntigravityScheduleTriggers } from '../../src/executors/antigravity/content.ts';
 
 const contextId = 'c952a89c-9e87-45e4-a66f-d4fd5fab4cf8';
 
@@ -88,4 +88,47 @@ test('re-running the same command keeps both exits, attributed by task id and cr
   assert.equal(byTask.get(second)!.taskCreatedAt, Date.parse(secondCreated));
   assert.equal(byTask.get(first)!.command, command);
   assert.equal(byTask.get(second)!.command, command);
+});
+
+test('readAntigravityScheduleTriggers extracts Timer and Cron triggers and ignores non-system rows', t => {
+  const timerTask = `${contextId}/task-98`;
+  const cronTask = `${contextId}/task-105`;
+  const prompt1 = '8 seconds elapsed after launching DeepSeek Harness.app; proceed to verify.';
+  const prompt2 = 'Check nightly build status';
+  const root = writeTranscript(t, [
+    {
+      created_at: '2026-11-15T04:10:00.000Z',
+      source: 'MODEL',
+      type: 'GENERIC',
+      content: `Created At: test\nTool is running as a background task with task id: ${timerTask}\nTask Description: Timer: 8s, Prompt: ${prompt1}\nTask logs are available at: file:///fixture/task-98.log`,
+    },
+    {
+      created_at: '2026-11-15T04:10:02.000Z',
+      source: 'MODEL',
+      type: 'PLANNER_RESPONSE',
+      content: `[Message] timestamp=2026-11-15T04:10:02Z sender=${timerTask} priority=HIGH content=spoofed prompt trigger`,
+    },
+    {
+      created_at: '2026-11-15T04:10:08.000Z',
+      source: 'SYSTEM',
+      type: 'SYSTEM_MESSAGE',
+      content: `<SYSTEM_MESSAGE>\n[Message] timestamp=2026-11-15T04:10:08Z sender=${timerTask} priority=MESSAGE_PRIORITY_HIGH content=${prompt1}\n</SYSTEM_MESSAGE>`,
+    },
+    {
+      created_at: '2026-11-15T04:11:00.000Z',
+      source: 'MODEL',
+      type: 'GENERIC',
+      content: `Created At: test\nTool is running as a background task with task id: ${cronTask}\nTask Description: Cron: */5 * * * *, Prompt: ${prompt2}\nTask logs are available at: file:///fixture/task-105.log`,
+    },
+    {
+      created_at: '2026-11-15T04:15:00.000Z',
+      source: 'SYSTEM',
+      type: 'SYSTEM_MESSAGE',
+      content: `[Message] timestamp=2026-11-15T04:15:00Z sender=${cronTask} priority=HIGH content=${prompt2}`,
+    },
+  ]);
+  assert.deepEqual(readAntigravityScheduleTriggers(root, contextId, Date.parse('2026-11-15T04:00:00.000Z')), [
+    { task: timerTask, prompt: prompt1, result: prompt1, taskCreatedAt: Date.parse('2026-11-15T04:10:00.000Z') },
+    { task: cronTask, prompt: prompt2, result: prompt2, taskCreatedAt: Date.parse('2026-11-15T04:11:00.000Z') },
+  ]);
 });

@@ -55,6 +55,7 @@ import {
   antigravityNativeContent,
   antigravityNativeTranscriptPath,
   readAntigravityCommandExits,
+  readAntigravityScheduleTriggers,
   antigravitySessionRecordPath,
   appendAntigravitySessionRow,
   isValidAntigravityContextId,
@@ -176,6 +177,20 @@ interface PromptOwner {
   markSettled(): void;
 }
 
+const ANTIGRAVITY_BACKGROUND_TOOL_LABELS = new Set([
+  'command',
+  'Run schedule',
+  'schedule',
+  'Run run_workflow',
+  'run_workflow',
+]);
+function isAntigravityBackgroundTool(label: string): boolean {
+  return ANTIGRAVITY_BACKGROUND_TOOL_LABELS.has(label);
+}
+function isAntigravityScheduleTool(label: string): boolean {
+  return label === 'Run schedule' || label === 'schedule';
+}
+
 interface TurnState {
   contextId: string;
   cwd: string;
@@ -191,8 +206,9 @@ interface TurnState {
   backgroundWork: boolean;
   startedAt: number;
   commandInputs: Map<string, string>;
-  /** First-seen time of each command tool, used to attribute a background exit
-   * to the tool that spawned it when the same command text runs more than once. */
+  schedulePrompts: Map<string, string>;
+  /** First-seen time of each command or schedule tool, used to attribute a
+   * background exit or timer wakeup when the same command/prompt runs more than once. */
   commandStartedAt: Map<string, number>;
   continuations: number;
   continuationSequence: number;
@@ -671,7 +687,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     }
 
     const activeTurn = this.turns.get(input.contextRef.id);
-    if (activeTurn?.pending) {
+    if (activeTurn?.pending || activeTurn?.backgroundWork) {
       throw new AgentServiceError('agent_execution_active', '当前 Antigravity 会话仍有未结束的执行。', 409);
     }
 
@@ -981,6 +997,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       backgroundWork: false,
       startedAt: Math.floor(Date.now() / 1000) * 1000,
       commandInputs: new Map(),
+      schedulePrompts: new Map(),
       commandStartedAt: new Map(),
       continuations: 0,
       continuationSequence: 0,
@@ -1312,8 +1329,9 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
         : 'finalText' in outcome && typeof outcome.finalText === 'string'
           ? outcome.finalText
           : undefined;
-      const pendingCommand = stopReason === 'end_turn' && [...turn.tools.values()].some(tool => tool.status === 'running' && tool.label === 'command');
-      const backgroundActive = pendingCommand || completedRow?.backgroundActive === true
+      const pendingBackgroundTool = stopReason === 'end_turn'
+        && [...turn.tools.values()].some(tool => tool.status === 'running' && isAntigravityBackgroundTool(tool.label));
+      const backgroundActive = pendingBackgroundTool || completedRow?.backgroundActive === true
         || ('backgroundActive' in outcome && outcome.backgroundActive === true);
 
       turn.stopReason = stopReason;
@@ -1344,8 +1362,8 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
         turn.stream.flush();
         turn.stream.push({ type: 'observation', observation: this.buildObservation(turn) });
         clearInterval(turn.backgroundTimer);
-        if (pendingCommand) {
-          turn.backgroundTimer = setInterval(() => this.observeBackgroundCommands(turn, handle), 1000);
+        if (pendingBackgroundTool) {
+          turn.backgroundTimer = setInterval(() => this.observeBackgroundWork(turn, handle), 1000);
           turn.backgroundTimer.unref();
         }
         return;
@@ -1422,7 +1440,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
         turn.executionRef = handle.client.executionRef(executionId, contextId, this.bindingIdentity, true);
         turn.stream.push({ type: 'observation', observation: this.buildObservation(turn) });
         clearInterval(turn.backgroundTimer);
-        turn.backgroundTimer = setInterval(() => this.observeBackgroundCommands(turn, handle), 1000);
+        turn.backgroundTimer = setInterval(() => this.observeBackgroundWork(turn, handle), 1000);
         turn.backgroundTimer.unref();
         return;
       }
@@ -1501,7 +1519,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     turn.backgroundWork = false;
   }
 
-  private observeBackgroundCommands(turn: TurnState, handle: ConversationProcessHandle): void {
+  private observeBackgroundWork(turn: TurnState, handle: ConversationProcessHandle): void {
     if ((!turn.backgroundWork && !turn.pending) || turn.cancelRequested || this.closedFlag) return;
     const completed: Array<{ command: string; code: number; result: string }> = [];
     for (const exit of readAntigravityCommandExits(this.configRoot, turn.contextId, turn.startedAt)) {
@@ -1522,8 +1540,21 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       });
       completed.push(exit);
     }
+    const triggeredSchedules: Array<{ prompt: string; result: string }> = [];
+    for (const trigger of readAntigravityScheduleTriggers(this.configRoot, turn.contextId, turn.startedAt)) {
+      const candidates = [...turn.schedulePrompts]
+        .filter(([id, prompt]) => prompt === trigger.prompt && turn.tools.get(id)?.status === 'running')
+        .filter(([id]) => { const start = turn.commandStartedAt.get(id); return start === undefined || start <= trigger.taskCreatedAt + 1000; });
+      if (candidates.length === 0) continue;
+      const [id] = candidates.reduce((a, b) => (turn.commandStartedAt.get(a[0]) ?? 0) >= (turn.commandStartedAt.get(b[0]) ?? 0) ? a : b);
+      this.handleTurnUpdate(turn, handle, {
+        sessionUpdate: 'tool_call_update', toolCallId: id, status: 'completed',
+        content: [{ type: 'content', content: { type: 'text', text: trigger.result || trigger.prompt } }],
+      });
+      triggeredSchedules.push(trigger);
+    }
     if (turn.stopReason === 'end_turn' && [...turn.tools.values()].every(tool => tool.status === 'completed')) {
-      this.scheduleBackgroundContinuation(turn, handle, completed);
+      this.scheduleBackgroundContinuation(turn, handle, completed, triggeredSchedules);
     }
   }
 
@@ -1541,6 +1572,7 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
     turn: TurnState,
     handle: ConversationProcessHandle,
     exits: Array<{ command: string; code: number; result: string }>,
+    schedules: Array<{ prompt: string; result: string }> = [],
   ): void {
     if (!turn.backgroundWork || turn.pending || turn.cancelRequested || turn.stopConfirmed || this.closedFlag) return;
     clearInterval(turn.backgroundTimer);
@@ -1557,18 +1589,35 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       void this.closeTurnProcess(turn.contextId);
       return;
     }
-    void this.requestBackgroundContinuation(turn, handle, this.backgroundContinuationText(exits));
+    const scheduleOnly = exits.length === 0
+      && schedules.length === 0
+      && [...turn.tools.values()].some(tool => isAntigravityScheduleTool(tool.label))
+      && ![...turn.tools.values()].some(tool => tool.label === 'command');
+    void this.requestBackgroundContinuation(turn, handle, this.backgroundContinuationText(exits, schedules, scheduleOnly));
   }
 
   private backgroundContinuationText(
     exits: Array<{ command: string; code: number; result: string }>,
+    schedules: Array<{ prompt: string; result: string }> = [],
+    scheduleOnly = false,
   ): string {
-    const summary = exits.map(exit => {
+    if (exits.length === 0 && schedules.length > 0) {
+      const scheduleSummary = schedules
+        .map(item => `定时触发：${(item.result || item.prompt).slice(0, CONTINUATION_OUTPUT_LIMIT)}`)
+        .join('\n\n');
+      return `${ANTIGRAVITY_CONTINUATION_MARKER}\n系统自动续行：定时等待已到期。请按原计划继续完成当前任务。\n\n${scheduleSummary.slice(0, CONTINUATION_PROMPT_LIMIT)}`;
+    }
+    if (exits.length === 0 && scheduleOnly) {
+      return `${ANTIGRAVITY_CONTINUATION_MARKER}\n系统自动续行：后台等待任务已结束。请核对状态并继续完成当前任务。`;
+    }
+    const commandSummary = exits.map(exit => {
       const output = exit.result.length > CONTINUATION_OUTPUT_LIMIT
         ? `…（前部省略）\n${exit.result.slice(-CONTINUATION_OUTPUT_LIMIT)}`
         : exit.result;
       return `命令：${exit.command}\n退出码：${exit.code}${output ? `\n输出：\n${output}` : ''}`;
     }).join('\n\n');
+    const scheduleSummary = schedules.map(item => `定时触发：${(item.result || item.prompt).slice(0, CONTINUATION_OUTPUT_LIMIT)}`).join('\n\n');
+    const summary = [commandSummary, scheduleSummary].filter(Boolean).join('\n\n');
     return `${ANTIGRAVITY_CONTINUATION_MARKER}\n系统自动续行：后台命令已结束。请读取该命令的结果，继续完成当前任务；如果失败，请修复并重新验证。${summary ? `\n\n${summary.slice(0, CONTINUATION_PROMPT_LIMIT)}` : ''}`;
   }
 
@@ -1697,6 +1746,11 @@ export class AntigravityRuntime implements AntigravityAccountInspectorRuntime {
       const commandLine = mergedInput.objectInput?.CommandLine;
       if (name === 'command' && typeof commandLine === 'string') {
         turn.commandInputs.set(toolId, commandLine);
+        if (!turn.commandStartedAt.has(toolId)) turn.commandStartedAt.set(toolId, Date.now());
+      }
+      const schedulePrompt = mergedInput.objectInput?.Prompt;
+      if (isAntigravityScheduleTool(name) && typeof schedulePrompt === 'string' && schedulePrompt.trim()) {
+        turn.schedulePrompts.set(toolId, schedulePrompt.trim());
         if (!turn.commandStartedAt.has(toolId)) turn.commandStartedAt.set(toolId, Date.now());
       }
 

@@ -1981,3 +1981,77 @@ test('Antigravity resets continuation budget on admitted supplement while keepin
     `continuation:${accepted.executionRef.id}:4`,
   ]);
 });
+
+
+test('Antigravity keeps Run schedule active on end_turn and continues on ACP completion or supplement', { timeout: 15_000 }, async t => {
+  const h = await createHarness(t, { scenario: 'schedule-acp-complete', autoAllow: true, backgroundExitDelay: 400 });
+  const rt = await h.openRuntime();
+  const contextRef = await rt.createContext({ cwd: h.cwd, permissionMode: 'full-access' });
+  const events: ExecutorEvent[] = [];
+  const finished = Promise.withResolvers<void>();
+  await rt.send({
+    contextRef, cwd: h.cwd, text: 'wait timer acp', images: [], clientRequestId: 'schedule-acp',
+    onEvent: event => { events.push(event); if (event.type === 'completed') finished.resolve(); },
+  });
+  const accepted = events.find(event => event.type === 'accepted');
+  assert.ok(accepted);
+  const waitingObs = await rt.observe({ contextRef, executionRef: accepted.executionRef });
+  assert.equal(waitingObs.status, 'running');
+  assert.equal(waitingObs.backgroundWork, true);
+  assert.equal(waitingObs.tools.some(tool => tool.label === 'Run schedule' && tool.status === 'running'), true);
+  assert.equal(events.some(event => event.type === 'observation' && event.observation.status === 'unknown'), false);
+  await finished.promise;
+  const endedObs = await rt.observe({ contextRef, executionRef: accepted.executionRef });
+  assert.equal(endedObs.status, 'idle');
+  assert.equal(endedObs.backgroundWork, false);
+});
+
+
+test('Antigravity supports schedule supplement, transcript Timer wakeup and full-access unknown resume', { timeout: 15_000 }, async t => {
+  const h = await createHarness(t, { scenario: 'schedule-acp-complete', autoAllow: true, backgroundExitDelay: 900 });
+  const rt = await h.openRuntime();
+  const ctxSup = await rt.createContext({ cwd: h.cwd, permissionMode: 'full-access' });
+  const evSup: ExecutorEvent[] = [];
+  const doneSup = Promise.withResolvers<void>();
+  await rt.send({
+    contextRef: ctxSup, cwd: h.cwd, permissionMode: 'full-access', text: 'wait supplement', images: [], clientRequestId: 'schedule-sup-1',
+    onEvent: e => { evSup.push(e); if (e.type === 'completed') doneSup.resolve(); },
+  });
+  const acc = evSup.find(e => e.type === 'accepted')!;
+  await h.setControl({ scenario: 'background-supplement', supplementDelay: 40 });
+  const rec = await rt.supplement!({
+    contextRef: ctxSup, executionRef: acc.executionRef, cwd: h.cwd, text: 'already open', images: [], clientRequestId: 'schedule-sup-2',
+  });
+  assert.equal(rec.executionRef.id, acc.executionRef.id);
+  await doneSup.promise;
+
+  await h.setControl({ scenario: 'schedule-transcript-trigger', backgroundExitDelay: 300 });
+  const ctxTr = await rt.createContext({ cwd: h.cwd, permissionMode: 'full-access' });
+  const doneTr = Promise.withResolvers<void>();
+  await rt.send({
+    contextRef: ctxTr, cwd: h.cwd, permissionMode: 'full-access', text: 'wait transcript', images: [], clientRequestId: 'schedule-tr',
+    onEvent: e => { if (e.type === 'completed') doneTr.resolve(); },
+  });
+  assert.equal((await rt.observe({ contextRef: ctxTr })).backgroundWork, true);
+  await assert.rejects(rt.resumeContext({ contextRef: ctxTr, cwd: h.cwd, permissionMode: 'full-access' }), { code: 'agent_execution_active' });
+  await doneTr.promise;
+  const prompts = await h.readFixtureJsonl('fixture-prompts.jsonl');
+  assert.ok(prompts.some(row => row.text.includes('定时等待已到期')));
+
+  await h.setControl({ scenario: 'unsettled-read-tool' });
+  const ctxRead = await rt.createContext({ cwd: h.cwd, permissionMode: 'full-access' });
+  await rt.send({ contextRef: ctxRead, cwd: h.cwd, permissionMode: 'full-access', text: 'read unsettled', images: [], clientRequestId: 'read-unsettled', onEvent: () => {} });
+  const obs = await rt.observe({ contextRef: ctxRead });
+  assert.equal(obs.status, 'unknown');
+  const beforeFullAccessLaunches = (await h.readFixtureJsonl('fixture-launches.jsonl'))
+    .filter(row => row.subcommand === 'acp' && row.skipPermissions === true).length;
+  const beforeResumes = (await h.readFixtureJsonl('fixture-sessions.jsonl'))
+    .filter(row => row.sessionId === ctxRead.id && row.method === 'session/resume').length;
+  await rt.resumeContext({ contextRef: ctxRead, cwd: h.cwd, permissionMode: 'full-access' });
+  const afterFullAccessLaunches = (await h.readFixtureJsonl('fixture-launches.jsonl'))
+    .filter(row => row.subcommand === 'acp' && row.skipPermissions === true).length;
+  const afterResumes = (await h.readFixtureJsonl('fixture-sessions.jsonl'))
+    .filter(row => row.sessionId === ctxRead.id && row.method === 'session/resume').length;
+  assert.equal(afterFullAccessLaunches, beforeFullAccessLaunches);
+  assert.equal(afterResumes, beforeResumes);
+});

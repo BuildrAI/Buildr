@@ -145,10 +145,15 @@ export class ConversationSupplements {
       catch (error) { this.report(workspaceId, id, input, 'observe', error); }
       if (observed) {
         if (ended || observed.requests?.some(request => request.kind === 'question') || !['running','waiting'].includes(observed.status) || observed.executionRef?.id !== execution.id) {
+          const liveDiagnostic = observed.diagnostic?.trim();
+          const readableDiagnostic = liveDiagnostic && /[一-鿿]/.test(liveDiagnostic)
+            ? liveDiagnostic.replace(/[。；;]+$/, '')
+            : undefined;
           refusal = ended ? '原轮已结束，这条追加尚未发送；输入已保留，不会自动另开会话。'
             : observed.requests?.some(request => request.kind === 'question') ? '原轮仍有待回答问题，请在原卡片处理；追加内容已保留。'
             : observed.executionRef?.id !== execution.id ? '尚未核对到准确的原生执行身份，追加内容未发送。'
-            : '已自动核对，但原生执行状态仍无法确认；追加内容未发送，不会另开会话。';
+            : readableDiagnostic ? `原执行状态待确认（${readableDiagnostic}），暂不能向原轮追加；输入已保留，不会另开会话。可先点击“停止”结束本轮后再发送。`
+            : '已自动核对，但原生执行状态仍无法确认，暂不能向原轮追加；输入已保留，不会另开会话。可先“重新读取”或点击“停止”后再发送。';
           throw new ExecutorInputRejected('agent_supplement_unavailable');
         }
         // The observation itself is asynchronous; never target a superseded input.

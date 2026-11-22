@@ -2796,7 +2796,19 @@ export class ConversationApplication {
         const runtime = (await this.sourceRuntime(record, saved)).runtime;
         if (runtime.bindingIdentity !== saved.bindingIdentity) fail('agent_binding_changed', '参与者的程序或原配置身份已失配。', 409);
         const liveAccepted = Boolean(savedRun?.accepted && savedRun.generation === this.options.generation && this.hasLiveExecution(savedRun.id));
-        if (!liveAccepted) await runtime.resumeContext({ contextRef: saved.contextRef, cwd: record.view.cwd });
+        const preserveActivePermission = Boolean(
+          savedRun?.permissionMode
+          && BUSY_STATES.has(savedRun.status)
+          && !savedRun.resourcesReleased
+          && savedRun.generation === this.options.generation,
+        );
+        if (!liveAccepted) {
+          await runtime.resumeContext({
+            contextRef: saved.contextRef,
+            cwd: record.view.cwd,
+            ...(preserveActivePermission ? { permissionMode: savedRun!.permissionMode } : {}),
+          });
+        }
         const items = await runtime.readHistory({ contextRef: saved.contextRef, cwd: record.view.cwd });
         const receiptRecord = this.load(workspaceId, id);
         if (receiptRecord.view.run?.id !== observedRunId) break;

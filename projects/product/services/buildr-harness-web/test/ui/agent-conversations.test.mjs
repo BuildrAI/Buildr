@@ -835,7 +835,10 @@ test('核对完成必须明确反馈未知、已释放与真实终态，不能�
  const unknown={status:'unknown',tools:[],resourcesReleased:true};
  assert.match(conversationObservationFeedback(unknown),/读取完成.*后台连接已释放.*未读到.*结束记录/);
  assert.doesNotMatch(conversationObservationFeedback(unknown),/已确认停止|执行成功/);
- assert.match(conversationObservationFeedback({...unknown,resourcesReleased:false}),/仍无法读取原执行状态/);
+ assert.match(conversationObservationFeedback({...unknown,resourcesReleased:false}),/仍无法读取原执行状态.*停止/);
+ assert.doesNotMatch(conversationObservationFeedback({...unknown,resourcesReleased:false}),/可发送新要求/);
+ assert.match(conversationObservationFeedback({...unknown,resourcesReleased:false,diagnostic:'Antigravity 正文已结束，但仍有工具缺少完成回执；未报告为完整成功。'}),/仍有工具缺少完成回执.*点击“停止”/);
+ assert.doesNotMatch(conversationObservationFeedback({...unknown,resourcesReleased:false,diagnostic:'Antigravity 正文已结束，但仍有工具缺少完成回执；未报告为完整成功。'}),/可发送新要求/);
  assert.match(conversationObservationFeedback({status:'running',tools:[]}),/仍在执行/);
  assert.match(conversationObservationFeedback({status:'stopped',tools:[]}),/已确认停止/);
  assert.match(conversationObservationFeedback({status:'completed',tools:[]}),/本轮已结束/);

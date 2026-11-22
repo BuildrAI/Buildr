@@ -92,6 +92,17 @@ export function conversationUnknownExecutionSummary(run: Pick<ConversationRun,'d
   return { reason: '本轮执行中断，结果未能确认。', detail };
 }
 
+/** Live unknown notices surface real readable diagnostics instead of hiding them in tooltips. */
+export function conversationLiveUnknownReason(diagnostic?: string, streamError?: string): string | undefined {
+  for (const raw of [diagnostic, streamError]) {
+    const text = raw?.trim();
+    if (!text) continue;
+    if (/[一-鿿]/.test(text)) return text;
+    if (/^qoder_late_native_activity$/i.test(text)) return '原生执行在结束后仍有迟到活动，结果尚未确认。';
+  }
+  return undefined;
+}
+
 export type ConversationFailureReason = { summary: string; action?: string };
 
 function failureRetrySeconds(diagnostic: string): number | undefined {

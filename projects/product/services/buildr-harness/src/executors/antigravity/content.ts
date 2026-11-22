@@ -66,6 +66,34 @@ export function readAntigravityCommandExits(configRoot: string, contextId: strin
   return [...exits.values()];
 }
 
+export function readAntigravityScheduleTriggers(configRoot: string, contextId: string, startedAt: number) {
+  if (!isValidAntigravityContextId(contextId)) return [];
+  const file = path.join(configRoot, 'home', '.gemini', 'antigravity-cli', 'brain', contextId,
+    '.system_generated', 'logs', 'transcript_full.jsonl');
+  const rows = (readImmutableJsonlFile(file) ?? []).filter(row => Date.parse(row?.created_at) >= startedAt);
+  const tasks = new Map<string, { prompt: string; createdAt: number }>();
+  for (const row of rows) {
+    if (row.source !== 'MODEL' || row.type !== 'GENERIC' || typeof row.content !== 'string') continue;
+    const task = /^Tool is running as a background task with task id: (.+)\r?$/m.exec(row.content)?.[1];
+    const prompt = /^Task Description: (?:Timer|Cron): [\s\S]*?Prompt: ([\s\S]+?)\r?\nTask logs are available at:/m.exec(row.content)?.[1]?.trim();
+    if (task?.startsWith(contextId + '/') && /^task-\d+$/.test(task.slice(contextId.length + 1)) && prompt) {
+      tasks.set(task, { prompt, createdAt: Date.parse(row.created_at) });
+    }
+  }
+  const triggers = new Map<string, { task: string; prompt: string; result: string; taskCreatedAt: number }>();
+  for (const row of rows) {
+    if (row.source !== 'SYSTEM' || row.type !== 'SYSTEM_MESSAGE' || typeof row.content !== 'string') continue;
+    const match = /^\[Message\] timestamp=\S+ sender=(\S+) priority=\S+ content=([\s\S]*)$/m.exec(row.content);
+    if (!match) continue;
+    const sender = match[1]!;
+    const info = tasks.get(sender);
+    if (!info) continue;
+    const result = (match[2] ?? '').split('\n</SYSTEM_MESSAGE>')[0]!.trim();
+    triggers.set(sender, { task: sender, prompt: info.prompt, result, taskCreatedAt: info.createdAt });
+  }
+  return [...triggers.values()];
+}
+
 export function appendAntigravitySessionRow(
   configRoot: string,
   contextId: string,
