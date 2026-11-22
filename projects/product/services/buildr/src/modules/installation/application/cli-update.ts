@@ -50,7 +50,7 @@ export function identifyCliSource(productRoot: any, options: any = {}) {
         validateFormalInstallationOriginPayloadBinding(origin, payloadManifest);
       }
     } else {
-      origin = readCurrentInstallationOrigin(root, { payloadRoot, ...options, includeWorkingTree: false });
+      origin = readCurrentInstallationOrigin(root, { payloadRoot, ...options, includeWorkingTree: false, includeRuntimeIdentity: false });
     }
   } catch (error: any) {
     origin = {

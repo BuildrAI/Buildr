@@ -178,8 +178,15 @@ test('independent conversation and storage owners share the existing IO capacity
   assert.equal(result.every((value:any)=>value.status==='passed'),true);assert.equal(overlap,true);
   const [storage,conversations]=definitions;
   assert.equal(storage.resourceDemand.workers+conversations.resourceDemand.workers,3);
-  assert.equal(storage.executor.discoveredFiles.includes('../buildr-harness/test/integration/conversations.test.ts'),false);
-  assert.deepEqual(conversations.executor.discoveredFiles,['../buildr-harness/test/integration/conversations.test.ts']);
+  const expectedConversationFiles = [
+    '../buildr-harness/test/integration/conversations.test.ts',
+    '../buildr-harness/test/integration/conversations-controls-and-models.test.ts',
+    '../buildr-harness/test/integration/conversations-handoff.test.ts',
+    '../buildr-harness/test/integration/conversations-history-titles.test.ts',
+    '../buildr-harness/test/integration/conversations-recovery.test.ts',
+  ];
+  for (const file of expectedConversationFiles) assert.equal(storage.executor.discoveredFiles.includes(file), false);
+  assert.deepEqual(conversations.executor.discoveredFiles, expectedConversationFiles);
 });
 
 

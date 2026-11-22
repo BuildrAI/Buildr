@@ -130,7 +130,8 @@ export default {
       "src/modules/agent-assets/application/source-observations.ts",
       "src/modules/agent-assets/application/skill-content-query.ts",
       "src/modules/agent-assets/persistence/source-object-repository.ts",
-      "src/modules/agent-assets/persistence/skill-content-repository.ts"
+      "src/modules/agent-assets/persistence/skill-content-repository.ts",
+      "test/helpers/knowledge-query-fixture.ts"
     ],
     "inputExclusions": []
   },
@@ -152,7 +153,7 @@ export default {
       "resources/workspace/AGENTS.md",
       "resources/workspace/components/**",
       "resources/workspace/skills/buildr/task-triage/**",
-      "test/helpers/legacy-asset-catalog.ts", "test/helpers/asset-relationships.ts", "test/helpers/inline-core-fixture.ts"
+      "test/helpers/in-process-cli.ts", "test/helpers/legacy-asset-catalog.ts", "test/helpers/asset-relationships.ts", "test/helpers/inline-core-fixture.ts"
     ],
     "inputExclusions": []
   },
@@ -166,6 +167,7 @@ export default {
       "src/modules/agent-assets/application/package-maintenance.ts",
       "src/modules/agent-assets/application/components.ts",
       "skills/buildr/archify/**",
+      "test/helpers/in-process-cli.ts",
       "test/helpers/archify-command-cost.ts",
       "tools/development/run-isolated-workspace-check.ts"
     ],
@@ -196,6 +198,7 @@ export default {
       "bin/buildr-mysql.mjs",
       "resources/workspace/skills/connections/**",
       "resources/workspace/skills/buildr/connection-authoring/**",
+      "test/helpers/in-process-cli.ts",
       "test/fixtures/connection-skills-cli-check.ts",
       "test/fixtures/connection-authoring-cli-check.ts",
       "test/fixtures/connection-authoring-example/**"
@@ -206,6 +209,7 @@ export default {
     "inputs": [
       "src/modules/connection-skills/**",
       "resources/workspace/skills/connections/**",
+      "test/helpers/in-process-cli.ts",
       "test/fixtures/connection-skills-cli-check.ts",
       "test/helpers/child-process-supervisor.ts",
       "test/verification/support/verification-deadline.ts",
@@ -296,6 +300,9 @@ export default {
 "integration-self-bootstrap": {
     "inputs": [
       "test/integration/self-bootstrap-closeout.test.ts",
+      "test/integration/self-bootstrap-recovery.test.ts",
+      "test/integration/self-bootstrap-detached.test.ts",
+      "test/helpers/self-bootstrap-closeout-fixture.ts",
       "test/integration/development-web-continuity.test.ts",
       "src/modules/installation/infrastructure/development-runtime-inputs.ts",
       "skills/buildr-self-bootstrap-sync/**",
@@ -350,6 +357,7 @@ export default {
 "integration-public-json": {
     "inputs": [
       "test/integration/public-json-contracts.test.ts",
+      "test/helpers/in-process-cli.ts",
       "src/infrastructure/contracts/public-json.ts",
       "src/bootstrap/cli/**",
       "src/modules/task/interfaces/cli/**",
@@ -528,6 +536,7 @@ export default {
 "capability-cli-integration": {
     "inputs": [
       "test/capability-cli.integration.ts",
+      "test/helpers/in-process-cli.ts",
       "src/modules/agent-assets/application/package-maintenance/package-assets.ts",
       "src/modules/agent-assets/application/skills.ts",
       "src/modules/diagnostics/application/capability-diagnostics.ts",
@@ -545,6 +554,7 @@ export default {
     "inputs": [
       "commands.yml",
       "test/commands-cli.integration.ts",
+      "test/helpers/in-process-cli.ts",
       "test/helpers/legacy-asset-catalog.ts",
       "src/modules/agent-assets/application/commands.ts",
       "src/modules/agent-assets/application/components.ts",
@@ -577,6 +587,7 @@ export default {
   },
 "managed-data-integrity": {
     "inputs": [
+      "test/helpers/in-process-cli.ts",
       "test/helpers/legacy-asset-catalog.ts",
       "src/modules/agent-assets/application/package-maintenance/**",
       "src/modules/agent-assets/application/package-maintenance.ts",
@@ -592,7 +603,7 @@ export default {
       "resources/manifest.yml",
       "resources/workspace/manifest.yml",
       "resources/workspace/components/**",
-      "resources/workspace/skills/buildr/task-retrospective/**",
+      "resources/workspace/skills/buildr/ui-prototype/**",
       "test/verification/integrity/**"
     ],
     "inputExclusions": []

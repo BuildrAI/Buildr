@@ -6,12 +6,13 @@ import test, { after } from 'node:test';
 
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { taskRecordFixture, runBuildr } from '../helpers/task-record-system-fixture.ts';
+import { runCliInProcess } from '../helpers/in-process-cli.ts';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 
 after(() => cleanupLocalTaskLifecycleSystemContext());
 
-async function fixture(t: any, name: string) {
+async function fixture(t: any, name: string, realCli = false) {
   const { root, base } = taskRecordFixture(t, name);
   const source = path.join(base, 'attached-project');
   fs.mkdirSync(path.join(source, 'docs'), { recursive: true });
@@ -23,7 +24,9 @@ async function fixture(t: any, name: string) {
   const previous = process.env.BUILDR_APP_DATA_DIR;
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
   t.after(() => { if (previous === undefined) delete process.env.BUILDR_APP_DATA_DIR; else process.env.BUILDR_APP_DATA_DIR = previous; });
-  runBuildr(['project', 'create', 'attached', '--attach', source, '--name', '附接项目', '--target', root]);
+  const createArgs = ['project', 'create', 'attached', '--attach', source, '--name', '附接项目', '--target', root];
+  if (realCli) runBuildr(createArgs);
+  else await runCliInProcess(createArgs, 0);
   const runtime = createRuntime();
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
   t.after(() => new Promise<void>(resolve => instance.server.close(() => resolve())));
@@ -37,7 +40,7 @@ async function fixture(t: any, name: string) {
 }
 
 test('公开附接项目的空服务列表在全局迁移前后可读且不补外部清单', async t => {
-  const { root, source, runtime, request } = await fixture(t, 'attached-services-empty');
+  const { root, source, runtime, request } = await fixture(t, 'attached-services-empty', true);
   const before = fs.readFileSync(path.join(root, 'projects', 'manifest.yml'));
   const originalFiles = fs.readdirSync(source, { recursive: true });
   assert.equal(fs.existsSync(path.join(root, 'services', 'manifest.yml')), false);

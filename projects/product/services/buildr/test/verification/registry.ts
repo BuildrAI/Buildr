@@ -590,6 +590,8 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/current-knowledge-capability-graph.test.ts',
     'test/integration/knowledge-document-quality.test.ts',
     'test/integration/knowledge-query.test.ts',
+    'test/integration/knowledge-query-http.test.ts',
+    'test/integration/knowledge-query-documents.test.ts',
     'test/integration/skill-content-query.test.ts',
   ], { schedulingCostMs: 25000, args: ['--test-concurrency=2'] }),
   integrationSlice('integration-workspace-assets', [
@@ -750,6 +752,8 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
   ], { schedulingCostMs: 46000, args: ['--test-concurrency=1'] }),
   integrationSlice('integration-self-bootstrap', [
     'test/integration/self-bootstrap-closeout.test.ts',
+    'test/integration/self-bootstrap-recovery.test.ts',
+    'test/integration/self-bootstrap-detached.test.ts',
     'test/integration/development-web-continuity.test.ts',
   ], { schedulingCostMs: 37000, resources: ['workspace-saturating'], args: ['--test-concurrency=1'] }),
   integrationSlice('integration-task-read-models', [

@@ -3,12 +3,30 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { describe, test } from 'node:test';
+import { after, before, describe, test } from 'node:test';
 import YAML from 'yaml';
+import { runCliInProcess } from './helpers/in-process-cli.ts';
 
 const buildr: any = path.resolve('bin/buildr.mjs');
+let baselineRoot: string = '';
 
-function run(args: any, expected: any = 0, options: any = {}): any  {
+before(async () => {
+  baselineRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-capability-baseline-'));
+  await spawnRun(['init', '--source-only', '--target', baselineRoot, '--name', 'capability-baseline', '--profile', 'personal']);
+});
+
+after(() => {
+  if (baselineRoot) fs.rmSync(baselineRoot, { recursive: true, force: true });
+});
+
+function cloneBaseline(t: any, prefix: string): string {
+  const root: string = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  fs.cpSync(baselineRoot, root, { recursive: true, mode: fs.constants.COPYFILE_FICLONE });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  return root;
+}
+
+function spawnRun(args: any, expected: any = 0, options: any = {}): any  {
   return new Promise((resolve: any, reject: any) => {
     const child: any = spawn(process.execPath, [buildr, ...args], options);
     let stdout: any = '';
@@ -27,6 +45,10 @@ function run(args: any, expected: any = 0, options: any = {}): any  {
       }
     });
   });
+}
+
+function run(args: any, expected: any = 0, options: any = {}): any {
+  return runCliInProcess(args, expected, options);
 }
 
 function writeSkill(root: any, id: any): any  {
@@ -51,12 +73,10 @@ function consumer(result: any, scope: any, id: any): any  {
   return graph?.consumers.find((item: any) => item.consumer === id);
 }
 
-describe('capability CLI integration', { concurrency: 2 }, () => {
+describe('capability CLI integration', () => {
 
-test('CLI 集成验证 provider 替换、绑定与 builtin 恢复', { concurrency: true }, async (t: any) => {
-  const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-capability-cli-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await run(['init', '--source-only', '--target', root, '--name', 'capability-cli', '--profile', 'personal']);
+test('CLI 集成验证 provider 替换、绑定与 builtin 恢复', async (t: any) => {
+  const root: any = cloneBaseline(t, 'buildr-capability-cli-');
 
   await run([
     'skills', 'add', 'invalid-provider', '--remote-source', 'https://example.com/invalid-provider', '--scope', '.', '--target', root,
@@ -96,6 +116,8 @@ test('CLI 集成验证 provider 替换、绑定与 builtin 恢复', { concurrenc
   assert.equal(consumer(readyDoctor, '.', 'task-finish').readiness, 'ready');
   assert.equal(consumer(readyDoctor, '.', 'task-finish').dependencies.some((item: any) => item.capability === 'buildr.task-verification'), false);
   assert.doesNotMatch(JSON.stringify(readyDoctor.capabilities), /sourceFile|absolutePath|skillContributions/);
+  const spawnReadyDoctor: any = JSON.parse((await spawnRun(['doctor', '--target', root, '--scope', '.', '--json', '--detail', 'full'])).stdout);
+  assert.deepEqual(spawnReadyDoctor, readyDoctor);
   const humanDoctor: any = await run(['doctor', '--target', root, '--scope', '.']);
   assert.match(humanDoctor.stdout, /Capability readiness（ready 只表示结构可路由）：/);
   assert.match(humanDoctor.stdout, /task-finish[\s\S]*buildr\.git-operations@1/);
@@ -109,20 +131,16 @@ test('CLI 集成验证 provider 替换、绑定与 builtin 恢复', { concurrenc
   assert.equal(workspaceManifest.bindings.find((item: any) => item.capability === 'buildr.task-verification').provider, 'internal-verification', 'builtin restore must preserve the explicitly selected custom provider');
 });
 
-test('CLI 集成验证独立Task Retrospective卸载不影响生命周期consumer', { concurrency: true }, async (t: any) => {
-  const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-capability-optional-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await run(['init', '--source-only', '--target', root, '--name', 'capability-optional', '--profile', 'personal']);
-  await run(['builtin', 'uninstall', 'task-retrospective', '--target', root, '--reason', 'optional fixture']);
+test('CLI 集成验证独立可选 Builtin 卸载不影响生命周期consumer', async (t: any) => {
+  const root: any = cloneBaseline(t, 'buildr-capability-optional-');
+  await run(['builtin', 'uninstall', 'ui-prototype', '--target', root, '--reason', 'optional fixture']);
   const report: any = await doctor(root);
   assert.equal(report.capabilities.graphs.some((graph: any) => graph.consumer === 'task-development'), false);
   assert.equal(consumer(report, '.', 'task-finish').readiness, 'ready');
 });
 
-test('CLI 集成验证 Git Operations required/optional consumers、legacy Project 拒绝与项目能力退役', { concurrency: true }, async (t: any) => {
-  const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-capability-project-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await run(['init', '--source-only', '--target', root, '--name', 'capability-project', '--profile', 'personal']);
+test('CLI 集成验证 Git Operations required/optional consumers、legacy Project 拒绝与项目能力退役', async (t: any) => {
+  const root: any = cloneBaseline(t, 'buildr-capability-project-');
   const internalSource: any = writeSkill(root, 'internal-git');
   await run(['skills', 'add', '--source', internalSource, '--target', root, '--provides', 'buildr.git-operations@1']);
   const unbind: any = await run(['skills', 'unbind', 'buildr.git-operations@1', '--scope', '.', '--target', root]);
@@ -184,13 +202,11 @@ test('CLI 集成验证 Git Operations required/optional consumers、legacy Proje
 
 });
 
-test('skills render 将 source workspace 与 user/workspace destination 分离并复用用户投射', { concurrency: true }, async (t: any) => {
-  const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-skill-destination-'));
+test('skills render 将 source workspace 与 user/workspace destination 分离并复用用户投射', async (t: any) => {
+  const root: any = cloneBaseline(t, 'buildr-skill-destination-');
   const userHome: any = path.join(root, 'user-home');
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(userHome, { recursive: true });
   const env: any = { ...process.env, HOME: userHome, USERPROFILE: userHome };
-  await run(['init', '--source-only', '--target', root, '--name', 'destinations', '--profile', 'personal'], 0, { env });
   await run(['skills', 'render', 'codex', '--destination', 'user', '--target', root], 0, { env });
   const userSkill: any = path.join(userHome, '.agents', 'skills', 'task-triage', 'SKILL.md');
   assert.equal(fs.existsSync(userSkill), true);
@@ -212,15 +228,13 @@ test('skills render 将 source workspace 与 user/workspace destination 分离�
   assert.doesNotMatch(local.stderr, /runtime\.skill_visibility_incomplete/);
 });
 
-test('skills render 对用户层同名外部资产输出稳定 JSON 并整次零写入', { concurrency: true }, async (t: any) => {
-  const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-skill-conflict-'));
+test('skills render 对用户层同名外部资产输出稳定 JSON 并整次零写入', async (t: any) => {
+  const root: any = cloneBaseline(t, 'buildr-skill-conflict-');
   const userHome: any = path.join(root, 'user-home');
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const external: any = path.join(userHome, '.agents', 'skills', 'task-triage');
   fs.mkdirSync(external, { recursive: true });
   fs.writeFileSync(path.join(external, 'SKILL.md'), '---\nname: task-triage\ndescription: foreign\n---\nforeign\n');
   const env: any = { ...process.env, HOME: userHome, USERPROFILE: userHome };
-  await run(['init', '--source-only', '--target', root, '--name', 'conflict', '--profile', 'personal'], 0, { env });
   const result: any = await run(['skills', 'render', 'codex', '--destination', 'workspace', '--target', root, '--json'], 1, { env });
   const report: any = JSON.parse(result.stdout);
   assert.equal(report.schemaVersion, 'buildr.skill-conflict-report/v1');
@@ -231,10 +245,8 @@ test('skills render 对用户层同名外部资产输出稳定 JSON 并整次零
   assert.equal(fs.existsSync(path.join(root, '.agents')), false, 'blocking preflight must write no candidate or receipt');
 });
 
-test('已删除 Project Skill 自动迁移 route 返回 unknown-command 且不改写旧 source', { concurrency: true }, async (t: any) => {
-  const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-project-skill-retired-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await run(['init', '--source-only', '--target', root, '--name', 'retired', '--profile', 'personal']);
+test('已删除 Project Skill 自动迁移 route 返回 unknown-command 且不改写旧 source', async (t: any) => {
+  const root: any = cloneBaseline(t, 'buildr-project-skill-retired-');
   await run(['project', 'create', 'demo', '--target', root]);
   const legacyRoot: any = path.join(root, 'projects', 'demo', 'skills');
   fs.mkdirSync(path.join(legacyRoot, 'legacy-demo'), { recursive: true });

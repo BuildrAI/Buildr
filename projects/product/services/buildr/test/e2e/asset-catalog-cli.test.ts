@@ -11,26 +11,26 @@ import { createRuntime } from '../helpers/runtime-harness.ts';
 import { copyPreparedProjectWorkspace, copyPreparedLegacyProjectWorkspace } from '../helpers/prepared-fixtures.ts';
 import { createWorkspaceHttpContribution } from '../../src/modules/workspace/interfaces/http/workspace-http.ts';
 import { setup, setupLegacy, ready, addRepo, waitFor, makeOriginRepository, initRepository } from '../helpers/asset-relationships.ts';
+import { runCliInProcess } from '../helpers/in-process-cli.ts';
 
 
 
-test('public asset CLI reads and writes the same catalog with version protection', (t: any) => {
+test('public asset CLI reads and writes the same catalog with version protection', async (t: any) => {
   const { root, runtime } = setup(t);
-  const cli = path.resolve(import.meta.dirname, '../../bin/buildr.mjs');
-  const invoke = (...args: string[]) => spawnSync(process.execPath, [cli, 'assets', ...args, '--target', root, '--json'], { encoding: 'utf8' });
-  const observed = invoke('inspect'); assert.equal(observed.status, 0, observed.stderr);
+  const invoke = (...args: string[]) => runCliInProcess(['assets', ...args, '--target', root, '--json']);
+  const observed = await invoke('inspect'); assert.equal(observed.status, 0, observed.stderr);
   const before = JSON.parse(observed.stdout);
   const input = path.join(root, 'migration-input.json'); fs.writeFileSync(input, JSON.stringify({ revision: before.revision }));
-  const migrated = invoke('migrate', '--input', input); assert.equal(migrated.status, 0, migrated.stderr);
+  const migrated = await invoke('migrate', '--input', input); assert.equal(migrated.status, 0, migrated.stderr);
   fs.writeFileSync(input, JSON.stringify({ revision: JSON.parse(migrated.stdout).revision, code: 'cli-code', url: 'https://example.com/cli.git', integrationBranch: 'dev' }));
-  const created = invoke('create', 'repository', '--input', input); assert.equal(created.status, 0, created.stderr);
+  const created = await invoke('create', 'repository', '--input', input); assert.equal(created.status, 0, created.stderr);
   assert.equal(runtime.assetCatalog(root).repositories[0].code, 'cli-code');
-  assert.notEqual(invoke('create', 'repository', '--input', input).status, 0);
+  assert.notEqual((await invoke('create', 'repository', '--input', input)).status, 0);
   const directory = path.join(root, 'projects/cli-existing'); fs.mkdirSync(directory);
-  const candidates = invoke('project-candidates'); assert.equal(candidates.status, 0, candidates.stderr);
+  const candidates = await invoke('project-candidates'); assert.equal(candidates.status, 0, candidates.stderr);
   const available = JSON.parse(candidates.stdout), candidate = available.candidates.find((item: any) => item.code === 'cli-existing');
   fs.writeFileSync(input, JSON.stringify({ revision: available.revision, code: candidate.code, name: 'CLI existing', observation: candidate.observation }));
-  const registered = invoke('register', 'project', '--input', input); assert.equal(registered.status, 0, registered.stderr);
+  const registered = await invoke('register', 'project', '--input', input); assert.equal(registered.status, 0, registered.stderr);
   assert.equal(runtime.assetCatalog(root).projects.some((project: any) => project.code === candidate.code), true);
   assert.deepEqual(fs.readdirSync(directory), []);
 });
@@ -40,30 +40,29 @@ test('assets help examples execute through the public CLI and retired guide stay
   const { root, runtime } = setup(t);
   let catalog = ready(runtime, root);
   const cli = path.resolve(import.meta.dirname, '../../bin/buildr.mjs');
-  const invoke = (...args: string[]) => spawnSync(process.execPath, [cli, ...args], {
-    cwd: root, encoding: 'utf8',
-    env: { ...process.env, BUILDR_APP_DATA_DIR: path.join(root, '.isolated-app'), BUILDR_PRODUCT_DATA_DIR: path.join(root, '.isolated-product') },
-  });
-  const help = invoke('help', 'assets');
+  const env = { ...process.env, BUILDR_APP_DATA_DIR: path.join(root, '.isolated-app'), BUILDR_PRODUCT_DATA_DIR: path.join(root, '.isolated-product') };
+  const spawnInvoke = (...args: string[]) => spawnSync(process.execPath, [cli, ...args], { cwd: root, encoding: 'utf8', env });
+  const invoke = (...args: string[]) => runCliInProcess(args, undefined, { cwd: root, env });
+  const help = spawnInvoke('help', 'assets');
   assert.equal(help.status, 0, help.stderr);
-  assert.equal(invoke('assets', '--help').stdout, help.stdout);
+  assert.equal((await invoke('assets', '--help')).stdout, help.stdout);
   const examples = help.stdout.split('\n').filter(line => line.trim().startsWith('{')).map(line => JSON.parse(line));
   assert.equal(examples.length, 3);
   const inputFile = path.join(root, 'help-input.json');
-  const write = (args: string[], input: any) => {
+  const write = async (args: string[], input: any) => {
     fs.writeFileSync(inputFile, JSON.stringify(input));
-    const result = invoke('assets', ...args, '--target', root, '--input', inputFile, '--json');
+    const result = await invoke('assets', ...args, '--target', root, '--input', inputFile, '--json');
     assert.equal(result.status, 0, result.stderr || result.stdout);
     return JSON.parse(result.stdout);
   };
   // The prepared workspace already owns demo; replace only the example identity.
-  catalog = write(['create', 'project'], { ...examples[0], code: 'help-project', revision: catalog.revision });
+  catalog = await write(['create', 'project'], { ...examples[0], code: 'help-project', revision: catalog.revision });
   assert.equal(catalog.projects.find((p: any) => p.code === 'help-project').description, '项目目标');
   catalog = addRepo(runtime, root, catalog.revision, 'help-code', 'main');
   const repositoryId = catalog.repositories.find((r: any) => r.code === 'help-code').id;
-  catalog = write(['create', 'service'], { ...examples[1], revision: catalog.revision, service: { ...examples[1].service, repositoryId } });
+  catalog = await write(['create', 'service'], { ...examples[1], revision: catalog.revision, service: { ...examples[1].service, repositoryId } });
   const serviceId = catalog.services.find((service: any) => service.code === 'api').id;
-  catalog = write(['associate', 'help-project'], { ...examples[2], revision: catalog.revision, serviceIds: [serviceId] });
+  catalog = await write(['associate', 'help-project'], { ...examples[2], revision: catalog.revision, serviceIds: [serviceId] });
   assert.deepEqual(catalog.projects.find((p: any) => p.code === 'help-project').serviceIds, [serviceId]);
   await waitFor(() => runtime.repositoryCloneStatus(root, repositoryId).state !== 'cloning', 'repository clone must finish');
   const cloned = runtime.repositoryCloneStatus(root, repositoryId);
@@ -72,7 +71,7 @@ test('assets help examples execute through the public CLI and retired guide stay
   const before = ['projects/manifest.yml', 'services/manifest.yml', 'repositories/manifest.yml'].map(file => fs.readFileSync(path.join(root, file)));
   const directoryBefore = fs.readdirSync(root);
   for (const args of [['bootstrap', 'guide'], ['bootstrap', 'guide', '--help'], ['help', 'bootstrap', 'guide']]) {
-    const result = invoke(...args, '--json');
+    const result = await invoke(...args, '--json');
     assert.equal(result.status, 2);
     const diagnostic = JSON.parse(result.stdout);
     assert.match(diagnostic.error.code, /^cli\.unknown_(?:command|help_topic)$/);

@@ -6,21 +6,26 @@ import { spawnSync } from 'node:child_process';
 import { parse as parseYaml } from 'yaml';
 import { createRuntime, runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import { AGENT_ASSETS_APPLICATION } from '../../src/modules/agent-assets/module.ts';
+import { runCliInProcess } from '../helpers/in-process-cli.ts';
 const root = process.env.BUILDR_SMOKE_WORKSPACE_ROOT!, temporary = process.env.BUILDR_SMOKE_ROOT!;
 assert.ok(root && temporary, 'Use the isolated workspace smoke runner.');
 const cli = path.resolve('bin/buildr.mjs');
-function command(args: string[], input?: string) {
+function spawnCommand(args: string[], input?: string) {
   const result = spawnSync(process.execPath, [cli, ...args, '--target', root, ...(args[0] === 'init' ? [] : ['--json'])], { input, encoding: 'utf8', env: process.env, timeout: 20_000 });
   assert.equal(result.status, 0, result.stderr || result.stdout); return args[0] === 'init' ? {} : JSON.parse(result.stdout);
 }
-command(['init', '--name', 'connection-skill-smoke', '--description', 'Isolated acceptance', '--profile', 'team']);
-const retired = spawnSync(process.execPath, [cli, 'connection', 'list', '--target', root, '--json'], { encoding: 'utf8', env: process.env, timeout: 20_000 });
+async function command(args: string[]) {
+  const result = await runCliInProcess([...args, '--target', root, '--json'], 0);
+  return JSON.parse(result.stdout);
+}
+spawnCommand(['init', '--name', 'connection-skill-smoke', '--description', 'Isolated acceptance', '--profile', 'team']);
+const retired = await runCliInProcess(['connection', 'list', '--target', root, '--json'], 2);
 assert.equal(retired.status, 2); assert.equal(JSON.parse(retired.stdout).error.code, 'cli.connection_retired');
 assert.ok(JSON.parse(retired.stdout).suggestions.includes('connection-skill --help'));
-const oldPreview = spawnSync(process.execPath, [cli, 'web', 'preview', 'start', 'retired-credentials', '--target', root, '--connection-credentials-from', 'development', '--json'], { encoding: 'utf8', env: process.env, timeout: 20_000 });
+const oldPreview = await runCliInProcess(['web', 'preview', 'start', 'retired-credentials', '--target', root, '--connection-credentials-from', 'development', '--json']);
 assert.notEqual(oldPreview.status, 0); assert.match(oldPreview.stderr + oldPreview.stdout, /Unknown argument: --connection-credentials-from/);
 
-const definitions = command(['connection-skill', 'definitions', 'list']);
+const definitions = await command(['connection-skill', 'definitions', 'list']);
 const entry = definitions.definitions.find((item: any) => item.definition.definitionId === 'nacos');
 assert.ok(entry, JSON.stringify(definitions));
 const file = path.join(temporary, 'input.json');
@@ -28,28 +33,28 @@ const file = path.join(temporary, 'input.json');
 // isolated workspace; it never starts a browser or touches a real profile.
 const browserInput = path.join(temporary, 'browser-input.json');
 fs.writeFileSync(browserInput, JSON.stringify({ id: 'personal', expectedRevision: 'absent' }));
-const browserCreated = command(['connection-skill', 'browser', 'create', '--file', browserInput]);
+const browserCreated = await command(['connection-skill', 'browser', 'create', '--file', browserInput]);
 assert.equal(browserCreated.profile.id, 'personal');
-assert.equal(command(['connection-skill', 'browser', 'list']).profiles.length, 1);
+assert.equal((await command(['connection-skill', 'browser', 'list'])).profiles.length, 1);
 fs.writeFileSync(browserInput, JSON.stringify({ id: 'personal' }));
-const browserRead = command(['connection-skill', 'browser', 'inspect', '--file', browserInput]);
+const browserRead = await command(['connection-skill', 'browser', 'inspect', '--file', browserInput]);
 assert.equal(browserRead.revision, browserCreated.revision);
 assert.equal(browserRead.runtime.status, 'stopped');
 if (process.platform !== 'win32') {
   fs.writeFileSync(browserInput, JSON.stringify({ id: 'personal', expectedRevision: browserRead.revision, confirmSharedReset: true }));
-  const browserReset = command(['connection-skill', 'browser', 'reset', '--file', browserInput]);
+  const browserReset = await command(['connection-skill', 'browser', 'reset', '--file', browserInput]);
   assert.notEqual(browserReset.revision, browserRead.revision);
 }
 fs.writeFileSync(file, JSON.stringify({ id: 'smoke-nacos', name: 'Mock only', binding: { skillAssetIdentity: entry.skill.assetIdentity, sourceIdentity: entry.skill.sourceIdentity, definitionId: 'nacos', configVersion: entry.definition.configVersion }, config: { apiBaseUrl: 'https://unreachable.invalid/nacos', consoleUrl: 'https://console.invalid/', production: false }, authentication: { intent: 'replace', values: { username: 'fixture-user', password: 'fixture-password-only' } }, expected: { teamRevision: 'absent', definitionRevision: entry.revision } }));
-const created = command(['connection-skill', 'create', '--file', file]);
+const created = await command(['connection-skill', 'create', '--file', file]);
 assert.equal(created.instance.id, 'smoke-nacos'); assert.ok(!JSON.stringify(created).includes('fixture-password-only'));
 assert.ok(fs.readFileSync(path.join(root, created.instance.sourcePath), 'utf8').includes('fixture-password-only'));
-const help = command(['connection-skill', 'help', '--connection', 'smoke-nacos']); assert.equal(help.exitCode, 0); assert.match(help.stdout, /publish/);
-const check = command(['connection-skill', 'check', '--connection', 'smoke-nacos']); assert.equal(check.ready, true);
-const read = command(['connection-skill', 'get', '--connection', 'smoke-nacos']).instance;
+const help = await command(['connection-skill', 'help', '--connection', 'smoke-nacos']); assert.equal(help.exitCode, 0); assert.match(help.stdout, /publish/);
+const check = await command(['connection-skill', 'check', '--connection', 'smoke-nacos']); assert.equal(check.ready, true);
+const read = (await command(['connection-skill', 'get', '--connection', 'smoke-nacos'])).instance;
 fs.writeFileSync(file, JSON.stringify({ values: { username: 'personal-fixture', password: 'local-fixture-password' }, expected: { teamRevision: read.teamRevision, definitionRevision: read.definitionRevision, localRevision: read.localRevision } }));
-assert.equal(command(['connection-skill', 'auth', 'set', '--connection', 'smoke-nacos', '--file', file]).instance.authentication.source, 'personal');
-const readAgain = command(['connection-skill', 'get', '--connection', 'smoke-nacos']).instance;
+assert.equal((await command(['connection-skill', 'auth', 'set', '--connection', 'smoke-nacos', '--file', file])).instance.authentication.source, 'personal');
+const readAgain = spawnCommand(['connection-skill', 'get', '--connection', 'smoke-nacos']).instance;
 assert.equal(readAgain.authentication.source, 'personal'); assert.ok(!JSON.stringify(readAgain).includes('local-fixture-password'));
 const bounded = spawnSync(process.execPath, [cli, 'connection-skill', 'run', '--connection', readAgain.id, '--expected-revision', readAgain.revision, '--timeout-ms', '300000', '--target', root, '--json', '--', 'help'], { input: '', encoding: 'utf8', env: process.env, timeout: 20_000 });
 assert.equal(bounded.status, 0, bounded.stderr || bounded.stdout);
@@ -57,13 +62,13 @@ const boundedResult = JSON.parse(bounded.stdout);
 assert.equal(boundedResult.status, 'exited'); assert.equal(boundedResult.exitCode, 0); assert.match(boundedResult.stdout, /publish/);
 assert.ok(!bounded.stdout.includes('local-fixture-password'));
 fs.writeFileSync(file, JSON.stringify({ id: 'smoke-copy', name: 'Local transfer only', binding: readAgain.binding, config: readAgain.config, authentication: { intent: 'remove' }, expected: { teamRevision: 'absent', definitionRevision: readAgain.definitionRevision } }));
-const copiedTarget = command(['connection-skill', 'create', '--file', file]).instance;
+const copiedTarget = (await command(['connection-skill', 'create', '--file', file])).instance;
 const expected = (view: any) => ({ teamRevision: view.teamRevision, definitionRevision: view.definitionRevision, localRevision: view.localRevision });
 fs.writeFileSync(file, JSON.stringify({ source: { id: readAgain.id, authenticationSource: 'personal', expected: expected(readAgain) }, expected: expected(copiedTarget), removeSource: false }));
-const copied = command(['connection-skill', 'auth', 'migrate', '--connection', copiedTarget.id, '--file', file]);
+const copied = await command(['connection-skill', 'auth', 'migrate', '--connection', copiedTarget.id, '--file', file]);
 assert.equal(copied.instance.authentication.source, 'personal'); assert.equal(copied.sourceRemoved, false); assert.ok(!JSON.stringify(copied).includes('local-fixture-password'));
 fs.writeFileSync(file, JSON.stringify({ expected: expected(copied.instance) }));
-assert.equal(command(['connection-skill', 'auth', 'relocate', '--connection', copiedTarget.id, '--file', file]).relocated, true);
+assert.equal((await command(['connection-skill', 'auth', 'relocate', '--connection', copiedTarget.id, '--file', file])).relocated, true);
 assert.equal(fs.existsSync(path.join(root, 'AGENTS.md')), false, 'init does not inject user root rules');
 const assets = runtimeProvide(createRuntime(), AGENT_ASSETS_APPLICATION) as {
   skillsAdd(input: { targetRoot: string; sourceInput: string; explicitId: string; connectionDefinitions?: string[] }): unknown;
@@ -85,15 +90,15 @@ if (process.platform !== 'win32') {
   } finally { fs.unlinkSync(standardDirectory); fs.renameSync(retainedDirectory, standardDirectory); }
 }
 assets.skillsAdd({ targetRoot: root, sourceInput: privateSource, explicitId: 'private-nacos' });
-const privateDefinitions = command(['connection-skill', 'definitions', 'list']);
+const privateDefinitions = await command(['connection-skill', 'definitions', 'list']);
 const privateEntry = privateDefinitions.definitions.find((item: any) => item.skill.id === 'private-nacos'); assert.ok(privateEntry, JSON.stringify(privateDefinitions));
 assert.equal(privateEntry.skill.sourcePath, 'connections/private-nacos');
 fs.writeFileSync(file, JSON.stringify({ id: 'smoke-private', name: 'Private example', binding: { skillAssetIdentity: privateEntry.skill.assetIdentity, sourceIdentity: privateEntry.skill.sourceIdentity, definitionId: 'nacos', configVersion: privateEntry.definition.configVersion }, config: { apiBaseUrl: 'https://unreachable.invalid/nacos', consoleUrl: 'https://console.invalid/', production: false }, authentication: { intent: 'replace', values: { username: 'fixture-user', password: 'fixture-password-only' } }, expected: { teamRevision: 'absent', definitionRevision: privateEntry.revision } }));
-command(['connection-skill', 'create', '--file', file]);
-const privateBefore = command(['connection-skill', 'get', '--connection', 'smoke-private']).instance;
+await command(['connection-skill', 'create', '--file', file]);
+const privateBefore = (await command(['connection-skill', 'get', '--connection', 'smoke-private'])).instance;
 fs.writeFileSync(file, JSON.stringify({ values: { username: 'private-personal-fixture', password: 'private-local-fixture-password' }, expected: { teamRevision: privateBefore.teamRevision, definitionRevision: privateBefore.definitionRevision, localRevision: privateBefore.localRevision } }));
-command(['connection-skill', 'auth', 'set', '--connection', 'smoke-private', '--file', file]);
-const replacementBefore = command(['connection-skill', 'get', '--connection', 'smoke-private']).instance;
+await command(['connection-skill', 'auth', 'set', '--connection', 'smoke-private', '--file', file]);
+const replacementBefore = (await command(['connection-skill', 'get', '--connection', 'smoke-private'])).instance;
 const teamBytesBefore = fs.readFileSync(path.join(root, replacementBefore.sourcePath), 'utf8');
 const registeredPrivate = parseYaml(fs.readFileSync(path.join(root, 'skills/manifest.yml'), 'utf8')).skills.find((skill: any) => skill.id === 'private-nacos');
 assert.equal(registeredPrivate.provides, undefined);
@@ -104,7 +109,7 @@ assert.match(replacement.stdout, /连接：Private example \(smoke-private\)/);
 assert.equal(replacement.stdout.match(/连接：Private example \(smoke-private\)/g)?.length, 1);
 assert.ok(!replacement.stdout.includes('fixture-password-only')); assert.ok(!replacement.stdout.includes('private-local-fixture-password'));
 assert.match(fs.readFileSync(path.join(root, 'skills/connections/private-nacos/SKILL.md'), 'utf8'), /Replacement fixture body\./);
-const replacementAfter = command(['connection-skill', 'get', '--connection', 'smoke-private']).instance;
+const replacementAfter = (await command(['connection-skill', 'get', '--connection', 'smoke-private'])).instance;
 assert.deepEqual(replacementAfter.binding, replacementBefore.binding);
 assert.deepEqual(replacementAfter.authentication, replacementBefore.authentication);
 assert.equal(replacementAfter.teamRevision, replacementBefore.teamRevision); assert.equal(replacementAfter.localRevision, replacementBefore.localRevision);
@@ -119,7 +124,7 @@ assert.ok(fs.existsSync(path.join(root, 'skills/connections/private-nacos/SKILL.
 const candidates = assets.skillRegistrationCandidates(root), candidate = candidates.candidates.find(item => item.id === 'private-nacos');
 assert.equal(candidate?.path, 'connections/private-nacos');
 assets.registerLocalSkill(root, { revision: candidates.revision, ...candidate! });
-assert.equal(command(['connection-skill', 'definitions', 'list']).definitions.find((item: any) => item.skill.id === 'private-nacos')?.available, true);
+assert.equal((await command(['connection-skill', 'definitions', 'list'])).definitions.find((item: any) => item.skill.id === 'private-nacos')?.available, true);
 const wrongDirectory = path.join(root, 'skills/wrong-nacos'); fs.cpSync(privateSource, wrongDirectory, { recursive: true });
 const wrongSkill = path.join(wrongDirectory, 'SKILL.md'); fs.writeFileSync(wrongSkill, fs.readFileSync(wrongSkill, 'utf8').replace(/^name: private-nacos$/m, 'name: wrong-nacos'));
 const invalidCandidates = assets.skillRegistrationCandidates(root);
@@ -130,5 +135,5 @@ assert.equal(preflight.removable, true); assert.ok(preflight.impacts.some(impact
 const uninstall = spawnSync(process.execPath, [cli, 'builtin', 'uninstall', 'nacos-connection', '--target', root], { encoding: 'utf8', env: process.env, timeout: 20_000 });
 assert.equal(uninstall.status, 0, uninstall.stderr || uninstall.stdout); assert.match(uninstall.stdout, /smoke-nacos/);
 assert.ok(fs.existsSync(path.join(root, created.instance.sourcePath)));
-assert.equal(command(['connection-skill', 'get', '--connection', 'smoke-nacos']).instance.authentication.personal.present, true);
+assert.equal((await command(['connection-skill', 'get', '--connection', 'smoke-nacos'])).instance.authentication.personal.present, true);
 console.log(JSON.stringify({ status: 'passed', checks: ['installed source declarations', 'CLI private persistence across processes', 'professional help', 'bounded run through actual CLI and professional program', 'explicit dependency check', 'old path separate', 'core rule distribution', 'replacement impact without capability declarations', 'lifecycle impact and preserved instances'], externalSystems: 'not-contacted' }));

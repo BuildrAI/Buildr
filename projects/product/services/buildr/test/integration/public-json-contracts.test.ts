@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { createRuntime } from '../helpers/runtime-harness.ts';
+import { runCliInProcess } from '../helpers/in-process-cli.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../src/infrastructure/contracts/public-json.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -21,7 +22,7 @@ const fixtureContexts: any = {
   managed: path.join(fixtureRoot, 'managed'),
 };
 
-function run(args: any, options: any = {}): any  {
+function spawnRun(args: any, options: any = {}): any  {
   return new Promise((resolve: any, reject: any) => {
     const child: any = spawn(process.execPath, [buildr, ...args], { cwd: productRoot, env: options.env || process.env });
     let stdout: any = '';
@@ -42,6 +43,11 @@ function run(args: any, options: any = {}): any  {
   });
 }
 
+async function run(args: any, options: any = {}): Promise<any> {
+  const result = await runCliInProcess(args, options.expectedStatus ?? 0, { cwd: productRoot, env: options.env });
+  return options.json === false || !result.stdout.trim() ? result.stdout : JSON.parse(result.stdout);
+}
+
 function fixtureWorkspace(t: any, context: any): any  {
   const root: any = fs.mkdtempSync(path.join(fixtureRoot, `${context}-case-`));
   fs.cpSync(fixtureContexts[context], root, { recursive: true });
@@ -50,7 +56,7 @@ function fixtureWorkspace(t: any, context: any): any  {
 }
 
 before(async () => {
-  await run(['init', '--source-only', '--target', fixtureContexts.plain, '--name', 'json-contracts', '--description', 'JSON contracts fixture', '--profile', 'team'], { json: false, env: fixtureEnv });
+  await spawnRun(['init', '--source-only', '--target', fixtureContexts.plain, '--name', 'json-contracts', '--description', 'JSON contracts fixture', '--profile', 'team'], { json: false, env: fixtureEnv });
   fs.cpSync(fixtureContexts.plain, fixtureContexts.codex, { recursive: true });
   // A full runtime sync (not a bare render) completes the shared-resource entry check.
   fixtureRuntime.syncRuntime('codex', ['--target', fixtureContexts.codex]);
@@ -62,7 +68,7 @@ before(async () => {
 
 after(() => fs.rmSync(fixtureRoot, { recursive: true, force: true }));
 
-describe('public JSON contracts', { concurrency: 2 }, () => {
+describe('public JSON contracts', () => {
 
 test('JSON helper 只接受登记 schema 和对象 payload', () => {
   assert.deepEqual(withJsonSchema(PUBLIC_JSON_SCHEMAS.doctor, { ok: true }), {
@@ -97,7 +103,8 @@ test('全部 workspace JSON command family 输出登记的 schemaVersion', async
     [['task', 'verification', 'inspect', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskVerificationOperationResult],
   ];
   for (const [args, expected, expectedStatus = 0] of cases) {
-    assert.equal((await run(args, { expectedStatus, env })).schemaVersion, expected, args.join(' '));
+    const runner = args[0] === 'version' || args[0] === 'unknown-command' ? spawnRun : run;
+    assert.equal((await runner(args, { expectedStatus, env })).schemaVersion, expected, args.join(' '));
   }
 });
 
@@ -144,7 +151,7 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
 
 test('doctor JSON默认compact且full必须显式请求', async (t: any) => {
   const root: any = fixtureWorkspace(t, 'codex');
-  const compact: any = await run(['doctor', '--agent', 'codex', '--target', root, '--json']);
+  const compact: any = await spawnRun(['doctor', '--agent', 'codex', '--target', root, '--json']);
   const explicitCompact: any = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'compact']);
   assert.deepEqual(compact, explicitCompact);
   assert.deepEqual(Object.keys(compact), [

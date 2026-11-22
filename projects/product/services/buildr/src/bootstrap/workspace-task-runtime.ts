@@ -8,7 +8,7 @@ import { TASK_MODULE, createWorktreeProviderModule } from '../modules/task/modul
 export function createWorkspaceTaskRuntime() {
   const runtime = createRuntimeInfrastructure();
   const registry = createModuleRegistry();
-  registry.install(createWorkspaceModule(runtime, { readProductIdentity: readCurrentProductIdentity, webProfileContract }));
+  registry.install(createWorkspaceModule(runtime, { readProductIdentity: () => readCurrentProductIdentity({ includeRuntimeIdentity: false }), webProfileContract }));
   registry.install(TASK_MODULE);
   registry.install(createWorktreeProviderModule(runtime));
   return { runtime, registry };

@@ -107,13 +107,14 @@ export function developmentInstanceMatchesInstallation(expected: any, running: a
     && expected.protocolIdentity === running.protocolIdentity;
 }
 
-export function readCurrentProductIdentity() {
+export function readCurrentProductIdentity(options: { includeRuntimeIdentity?: boolean } = {}) {
   const productRoot = resolveProductRoot();
   const metadata = JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8'));
   if (!metadata.name || !metadata.version) throw new Error('Buildr package identity is incomplete.');
   const payloadRoot = resolveApplicationPayloadRoot();
   const payload = payloadRoot ? readApplicationPayloadManifest(payloadRoot) : null;
-  const origin = readCurrentInstallationOrigin(productRoot, { payloadRoot, payloadManifest: payload });
+  const includeRuntimeIdentity = options.includeRuntimeIdentity !== false;
+  const origin = readCurrentInstallationOrigin(productRoot, { payloadRoot, payloadManifest: payload, includeWorkingTree: false, includeRuntimeIdentity });
   const runtime = runtimeIdentityForOrigin(origin);
   const formal = origin.channel === 'npm';
   return Object.freeze({
@@ -125,7 +126,7 @@ export function readCurrentProductIdentity() {
     runtime,
     installationIdentity: origin.ownershipIdentity,
     sourceCommit: origin.channel === 'development' || formal ? origin.sourceCommit : payload?.sourceCommit || origin.sourceCommit,
-    ...(origin.channel === 'development' ? { developmentRuntimeIdentity: origin.developmentRuntimeIdentity } : {}),
+    ...(origin.channel === 'development' && includeRuntimeIdentity ? { developmentRuntimeIdentity: origin.developmentRuntimeIdentity } : {}),
     ...(origin.channel === 'development' ? { sourceRoot: origin.sourceRoot || origin.installUnit } : {}),
   });
 }

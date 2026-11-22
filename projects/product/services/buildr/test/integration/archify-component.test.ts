@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
+import { runCliInProcess } from '../helpers/in-process-cli.ts';
 import { publishPackageResources as ensurePackageResources, sharedResourcesRoot, readPreservedArchify } from '../../src/infrastructure/product-resources/shared-resources.ts';
 import { preservedArchifyRoot } from '../../src/infrastructure/product-resources/preserved-archify.ts';
 import { assetIntegrity } from '../../src/modules/agent-assets/infrastructure/component-source.ts';
@@ -21,15 +22,18 @@ function files(directory: string): string[] {
 async function scenario() {
   const root = process.env.BUILDR_SMOKE_ROOT!; assert.ok(root, 'Use the isolated workspace runner.');
   const cli = path.join(service, 'bin/buildr.mjs');
-  const run = (args: string[]) => {
-    const result = spawnSync(process.execPath, [cli, ...args], { cwd: service, env: { ...process.env, BUILDR_DEBUG_STACK: '1' }, encoding: 'utf8', timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
+  const runOptions = { cwd: service, env: { ...process.env, BUILDR_DEBUG_STACK: '1' } };
+  const spawnRun = (args: string[]) => {
+    const result = spawnSync(process.execPath, [cli, ...args], { ...runOptions, encoding: 'utf8', timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
     assert.equal(result.status, 0, args.join(' ') + '\n' + result.stdout + result.stderr); return result.stdout;
   };
+  const run = async (args: string[]) => (await runCliInProcess(args, 0, runOptions)).stdout;
   const spaces = ['active', 'offline', 'custom', 'disabled'].map(name => path.join(root, name));
-  for (const workspace of spaces) run(['init', '--agent', 'codex', '--target', workspace, '--name', path.basename(workspace), '--profile', 'personal', '--description', 'Isolated Archify migration acceptance workspace']);
+  spawnRun(['init', '--agent', 'codex', '--target', spaces[0]!, '--name', path.basename(spaces[0]!), '--profile', 'personal', '--description', 'Isolated Archify migration acceptance workspace']);
+  for (const workspace of spaces.slice(1)) await run(['init', '--agent', 'codex', '--target', workspace, '--name', path.basename(workspace), '--profile', 'personal', '--description', 'Isolated Archify migration acceptance workspace']);
   assert.equal(fs.existsSync(preservedArchifyRoot(sharedResourcesRoot())), false, 'Fresh installations must not create retained sources.');
   assert.equal(fs.existsSync(path.join(sharedResourcesRoot(), 'skills/buildr/archify')), false);
-  const listed = JSON.parse(run(['component', 'list', '--target', spaces[0]!, '--json']));
+  const listed = JSON.parse(await run(['component', 'list', '--target', spaces[0]!, '--json']));
   assert.equal(listed.components.some((item: any) => item.id === 'archify'), false);
   // Simulate a real old shared set and its three separately registered workspaces.
   const old = ensurePackageResources(service);
@@ -68,8 +72,8 @@ async function scenario() {
   assert.equal(fs.existsSync(path.join(sharedResourcesRoot(), 'skills/buildr/archify')), false);
   const preserved = readPreservedArchify();
   assert.equal(preserved.set.files.length, files(source).length);
-  for (const workspace of [spaces[0]!, spaces[2]!, spaces[3]!]) run(['sync', 'codex', '--target', workspace]);
-  fs.renameSync(hidden, spaces[1]!); run(['sync', 'codex', '--target', spaces[1]!]);
+  for (const workspace of [spaces[0]!, spaces[2]!, spaces[3]!]) await run(['sync', 'codex', '--target', workspace]);
+  fs.renameSync(hidden, spaces[1]!); await run(['sync', 'codex', '--target', spaces[1]!]);
   for (const workspace of spaces) {
     const manifest = YAML.parse(fs.readFileSync(path.join(workspace, 'skills/manifest.yml'), 'utf8'));
     const skill = manifest.skills.find((item: any) => item.id === 'archify');
@@ -77,10 +81,10 @@ async function scenario() {
     assert.equal(YAML.parse(fs.readFileSync(path.join(workspace, 'components/manifest.yml'), 'utf8')).components.some((item: any) => item.id === 'archify'), false);
     assert.equal(fs.readFileSync(path.join(workspace, 'diagrams/keep.json'), 'utf8'), '{"keep":true}');
     assert.equal(fs.existsSync(path.join(workspace, '.agents/skills/archify/assets/archify/bin/archify.mjs')), skill.enabled);
-    const doctor = JSON.parse(run(['doctor', '--agent', 'codex', '--target', workspace, '--json']));
+    const doctor = JSON.parse(await run(['doctor', '--agent', 'codex', '--target', workspace, '--json']));
     assert.equal(doctor.health.ready, true, JSON.stringify({ health: doctor.health, findings: doctor.findings }));
     const before = assetIntegrity(path.join(workspace, 'skills/buildr/archify'));
-    run(['sync', 'codex', '--target', workspace]);
+    await run(['sync', 'codex', '--target', workspace]);
     assert.equal(assetIntegrity(path.join(workspace, 'skills/buildr/archify')), before);
   }
   assert.match(fs.readFileSync(path.join(custom, 'SKILL.md'), 'utf8'), /Workspace customization/);

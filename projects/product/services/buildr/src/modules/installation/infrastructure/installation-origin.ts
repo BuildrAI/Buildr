@@ -119,7 +119,7 @@ function git(root: any, args: any) {
   return result.status === 0 ? String(result.stdout || '').trim() : null;
 }
 
-function developmentOrigin(productRoot: any, metadata: any, { includeWorkingTree = true }: any = {}) {
+function developmentOrigin(productRoot: any, metadata: any, { includeWorkingTree = true, includeRuntimeIdentity = true }: any = {}) {
   const gitRoot = git(productRoot, ['rev-parse', '--show-toplevel']);
   if (!gitRoot) return null;
   let canonicalGitRoot;
@@ -148,7 +148,7 @@ function developmentOrigin(productRoot: any, metadata: any, { includeWorkingTree
     ...createInstallationOrigin(base),
     sourceRoot: canonicalProductRoot,
     gitRoot: canonicalGitRoot,
-    developmentRuntimeIdentity: readDevelopmentRuntimeIdentity(canonicalProductRoot, canonicalGitRoot),
+    ...(includeRuntimeIdentity ? { developmentRuntimeIdentity: readDevelopmentRuntimeIdentity(canonicalProductRoot, canonicalGitRoot) } : {}),
     ...(includeWorkingTree ? { dirty: Boolean(git(productRoot, ['status', '--porcelain=v1', '--untracked-files=normal'])) } : {}),
   };
 }
