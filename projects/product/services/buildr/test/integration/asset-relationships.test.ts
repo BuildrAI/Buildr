@@ -38,7 +38,10 @@ test('project association is many-to-many; unlink keeps service, code and other 
   c = runtime.createCatalogService(root, { revision: c.revision, service: { code: 'shared-api', name: '共享实现', repositoryId: c.repositories[0].id } });
   const serviceId = c.services[0].id;
   c = runtime.createCatalogProject(root, { revision: c.revision, code: 'egg', name: '鸡蛋', serviceIds: [serviceId] });
-  assert.ok(fs.existsSync(path.join(root, 'projects/egg/AGENTS.md')));
+  const eggRule = path.join(root, 'projects/egg/AGENTS.md');
+  assert.equal(fs.existsSync(eggRule), false);
+  const userRule = '# 鸡蛋项目专属规则\n';
+  fs.writeFileSync(eggRule, userRule);
   const demo = c.projects.find((p: any) => p.code === 'demo');
   c = runtime.updateProjectServices(root, demo.id, { revision: c.revision, serviceIds: [serviceId] });
   c = runtime.updateProjectServices(root, demo.id, { revision: c.revision, serviceIds: [] });
@@ -46,6 +49,7 @@ test('project association is many-to-many; unlink keeps service, code and other 
   assert.deepEqual(c.projects.find((p: any) => p.code === 'egg').serviceIds, [serviceId]);
   assert.deepEqual(runtime.listServices(root, 'demo').services, []);
   assert.equal(runtime.listServices(root, 'egg').services[0].id, serviceId);
+  assert.equal(fs.readFileSync(eggRule, 'utf8'), userRule);
 });
 
 test('nested creation validates references before writing any project or repository', (t: any) => {
