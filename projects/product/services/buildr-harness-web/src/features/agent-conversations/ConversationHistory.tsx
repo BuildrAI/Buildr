@@ -98,17 +98,23 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   const workspaceName=(id:string)=>id===DEFAULT_HISTORY_GROUP?'默认':workspaces.find(item=>item.id===id)?.name||id;
   const renderRow=(row:ConversationSummary,depth:number,branch?:ConversationHistoryBranch,toggle?:()=>void)=>{
     const meta=conversationMetadata(row,undefined,row.run?.model?conversationModelLabel(row.run.model,context.connections,context.modelCatalog,{modelAccountId:row.run.modelAccountId}):undefined);
+    const openRow=()=>{context.setSettings(false);void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true,preserveHistoryView:keepHistoryOpen});};
     return <div key={row.workspaceId+':'+row.id} style={conversationChildIndent(depth)} className={'ac-history-row'+(depth?' ac-conversation-child-row':'')+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
-      <button type="button" className="ac-history-row-main" data-conversation-id={row.id} onClick={()=>{context.setSettings(false);void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true,preserveHistoryView:keepHistoryOpen});}}>
-        <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/><DraftStatusBadge visible={shouldShowConversationDraft(row,settledDraftIds)} immediateHide={activityState(row)!==null}/></span>
+      <div className="ac-history-row-main" data-conversation-id={row.id} onClick={event=>{if(event.target instanceof Element&&event.target.closest('button'))return;openRow();}}>
+        <span className="ac-history-row-title">
+          <span className="ac-history-row-heading">
+            <button type="button" className="ac-history-row-open" onClick={openRow}><strong title={row.title}>{row.title}</strong></button>
+            {branch&&<button type="button" className="ac-history-child-toggle" aria-expanded={branch.expanded} aria-disabled={branch.forced||undefined}
+              aria-label={`${branch.expanded?'收起':'展开'}「${row.title}」的 ${branch.count} 个子对话`} title={branch.forced?'为保留当前对话或搜索结果，暂时保持展开':`${branch.count} 个已加载的子对话`} onClick={toggle}>
+              <RightOutlined aria-hidden="true" rotate={branch.expanded?90:0}/><span>{branch.count}</span>
+            </button>}
+          </span>
+          <ConversationActivityStatus state={activityState(row)}/><DraftStatusBadge visible={shouldShowConversationDraft(row,settledDraftIds)} immediateHide={activityState(row)!==null}/>
+        </span>
         {sendActivity(row)?.reason&&<span className="ac-send-reason">{sendActivity(row)?.reason}</span>}
         {row.searchSnippet&&<span className="ac-history-row-snippet" title={row.searchSnippet}>{row.searchSnippet}</span>}
         {meta&&<small><span className="ac-history-meta" title={meta}>{meta}</span></small>}
-      </button>
-      {branch&&<button type="button" className="ac-history-child-toggle" aria-expanded={branch.expanded} aria-disabled={branch.forced||undefined}
-        aria-label={`${branch.expanded?'收起':'展开'}「${row.title}」的 ${branch.count} 个子对话`} title={branch.forced?'为保留当前对话或搜索结果，暂时保持展开':`${branch.count} 个已加载的子对话`} onClick={toggle}>
-        <RightOutlined aria-hidden="true" rotate={branch.expanded?90:0}/><span>{branch.count}</span>
-      </button>}
+      </div>
       <CopyButton type="text" className="ac-history-row-copy" text={row.id} ariaLabel="复制对话 ID" title={copyConversationIdTitle(row.id)} failureMessage="复制失败，请手动选择对话 ID 复制。"/>
     </div>;
   };

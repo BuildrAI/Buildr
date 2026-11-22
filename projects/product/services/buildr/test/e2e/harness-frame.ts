@@ -76,7 +76,7 @@ try{
  assert.equal(await page.locator('.harness-conversation-region').evaluate(node=>Math.round(node.getBoundingClientRect().width)),52);
  const frame=page;
  const openConversation=async(id:string)=>{
-  const target=page.locator('.ac-history-list button[data-conversation-id="'+id+'"]:visible');
+  const target=page.locator('.ac-history-list .ac-history-row-main[data-conversation-id="'+id+'"]:visible');
   const search=page.getByRole('textbox',{name:'搜索对话',exact:true});
   if(!await search.isVisible())await page.locator('.ac-collapsed-rail .ac-all-conversations').click();
   await search.waitFor();await search.fill('');

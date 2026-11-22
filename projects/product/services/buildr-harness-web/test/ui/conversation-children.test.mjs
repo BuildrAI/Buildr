@@ -45,6 +45,9 @@ registerHooks({
 const { ConversationHostProvider } = await import('../../src/integration/ConversationHost.tsx');
 const { AgentConversationsViewProvider } = await import('../../src/features/agent-conversations/AgentConversationsContext.tsx');
 const { ConversationPanel } = await import('../../src/features/agent-conversations/ConversationPanel.tsx');
+const { ConversationHistory } = await import('../../src/features/agent-conversations/ConversationHistory.tsx');
+const { createConversationHistoryCache } = await import('../../src/features/agent-conversations/conversation-history-page.ts');
+const { HISTORY_GROUP_LIMIT } = await import('../../src/features/agent-conversations/conversation-history-groups.ts');
 const { useChildConversation } = await import('../../src/features/agent-conversations/useChildConversation.ts');
 
 const row=(id,createdAt,fields={})=>({id,workspaceId:'workspace',updatedAt:'2026-10-29',childOf:{createdAt},...fields});
@@ -240,4 +243,59 @@ test('嵌入式子对话面板独立标识并隔离收起操作不折叠宿主�
   assert.equal(childClosed, 2);
   assert.equal(hostCollapsed, 0);
   assert.equal(hostToggled, 0);
+});
+
+test('对话列表将子对话展开按钮置于标题后方且不产生嵌套按钮', () => {
+  const historyCache = createConversationHistoryCache();
+  const key = JSON.stringify(['w', '', false, undefined, undefined, HISTORY_GROUP_LIMIT, JSON.stringify([])]);
+  const parent = {
+    id: 'parent-row',
+    workspaceId: 'w',
+    title: '父对话标题',
+    updatedAt: '2026-11-22T00:00:00.000Z',
+    run: { status: 'running', provider: 'codex', model: 'gpt-5' },
+    activity: { version: 2, seenThrough: 2, active: true, updatedAt: '2026-11-22T00:00:00.000Z' },
+  };
+  const child = {
+    id: 'child-row',
+    workspaceId: 'w',
+    title: '子对话标题',
+    updatedAt: '2026-11-22T00:00:01.000Z',
+    childOf: { workspaceId: 'w', conversationId: 'parent-row', createdAt: '2026-11-22T00:00:01.000Z' },
+  };
+  historyCache.pages.set(key, {
+    page: { conversations: [parent, child], total: 2, hasMore: false },
+    error: '',
+    version: 'global:1',
+  });
+  const html = withDomGlobals(() => renderToStaticMarkup(React.createElement(App, null,
+    React.createElement(ConversationHostProvider, { host: { standalone: true } },
+      React.createElement(AgentConversationsViewProvider, { value: createPanelContextValue({ historyCache, view: 'history' }) },
+        React.createElement(ConversationHistory, { workspaces: [{ id: 'w', name: 'Buildr', rootPath: '/fixture' }], defaultWorkspaceId: 'w' }))))));
+
+  assert.match(html, /<div class="ac-history-row-main" data-conversation-id="parent-row">/);
+  const openStart = html.indexOf('<button type="button" class="ac-history-row-open">');
+  const toggleStart = html.indexOf('<button type="button" class="ac-history-child-toggle"');
+  const statusStart = html.indexOf('class="ac-activity-status', openStart);
+  assert.ok(openStart > 0 && toggleStart > openStart && statusStart > toggleStart, 'DOM 顺序应为标题按钮 → 子对话按钮 → 右侧状态');
+
+  const headingMatch = html.match(/<span class="ac-history-row-heading">([\s\S]*?)<\/span><span class="ac-activity-status/);
+  assert.ok(headingMatch, '标题与子对话按钮应同在 .ac-history-row-heading 内且位于状态之前');
+  assert.match(headingMatch[1], /<button type="button" class="ac-history-row-open"><strong title="父对话标题">父对话标题<\/strong><\/button><button type="button" class="ac-history-child-toggle"/);
+  assert.doesNotMatch(html, /<button\b[^>]*>(?:(?!<\/button>)[\s\S])*<button\b/, '不应出现 button 嵌套 button');
+});
+
+test('对话列表标题与子对话展开按钮样式确保紧邻标题且右侧状态与普通行对齐', () => {
+  const activityCss = readFileSync(new URL('../../src/features/agent-conversations/conversation-activity.css', import.meta.url), 'utf8');
+  const conversationCss = readFileSync(new URL('../../src/features/agent-conversations/agent-conversations.css', import.meta.url), 'utf8');
+
+  assert.match(activityCss, /\.ac-history-row-title\{[^}]*display:flex;align-items:center;gap:10px;min-width:0\}/);
+  assert.match(activityCss, /\.ac-history-row-heading\{[^}]*display:flex;align-items:center;gap:6px;flex:1;min-width:0\}/);
+  assert.match(activityCss, /\.ac-history-row-open\{[^}]*flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden/);
+  assert.match(activityCss, /\.ac-history-row-open>strong\{[^}]*font-size:var\(--font-size-body\)[^}]*line-height:20px\}/);
+
+  assert.match(conversationCss, /\.ac-history-row:has\(\.ac-history-row-open:focus-visible\)\{outline:1px solid var\(--soft-primary\);outline-offset:-1px\}/);
+  assert.match(conversationCss, /\.ac-history-child-toggle\{[^}]*flex:none;[^}]*height:20px;[^}]*font-size:var\(--font-size-meta\)/);
+  assert.match(conversationCss, /\.ac-history-child-toggle>\.anticon\{font-size:var\(--icon-size-tiny\)\}/);
+  assert.doesNotMatch(conversationCss, /\.ac-history-row:not\(:has\(>\.ac-history-row-main>small\)\)\s*\.ac-history-child-toggle/);
 });
