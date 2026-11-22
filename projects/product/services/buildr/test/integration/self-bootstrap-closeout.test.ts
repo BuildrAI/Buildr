@@ -1382,3 +1382,138 @@ test('explicit restart reaches the owned continuity path even without runtime ch
   assert.ok(restart);assert.deepEqual(restart.slice(-2),['--force-restart','true']);
   assert.throws(()=>runSelfBootstrapCloseoutCommand({args:['--target',f.root,'--node-executable',process.execPath,'--restart-development-web','yes']}), (e: any)=>e.code==='self-bootstrap-closeout.restart-value-invalid');
 });
+
+test('install-buildr-web refreshes installed owned Harness Dev launcher, activates running agent runtime, and verifies enabled standalone Harness Web', t => {
+  const f = fixture(t);
+  const harnessEntry = path.join(f.root, 'projects/product/services/buildr-harness/bin/buildr-harness.mjs');
+  fs.mkdirSync(path.dirname(harnessEntry), { recursive: true });
+  fs.writeFileSync(harnessEntry, '#!/usr/bin/env node\n', { mode: 0o755 });
+  git(f.root, 'add', '--', 'projects/product/services/buildr-harness/bin/buildr-harness.mjs');
+  git(f.root, 'commit', '-m', 'add harness cli entrypoint');
+  git(f.root, 'push', 'origin', 'dev');
+  const deliveredRef = git(f.root, 'rev-parse', 'HEAD');
+
+  const testHome = path.join(path.dirname(f.root), 'harness-home');
+  const dataRoot = path.join(path.dirname(f.root), 'harness-data-root');
+  const launcherTarget = process.platform === 'win32'
+    ? path.join(testHome, 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Buildr Harness Dev.lnk')
+    : path.join(testHome, 'Applications', 'Buildr Harness Dev.app');
+  const bindingFile = process.platform === 'win32'
+    ? path.join(`${launcherTarget}.buildr-harness`, 'harness-launcher.json')
+    : path.join(launcherTarget, 'Contents', 'Resources', 'harness-launcher.json');
+  fs.mkdirSync(path.dirname(bindingFile), { recursive: true });
+  if (process.platform === 'win32') fs.writeFileSync(launcherTarget, 'lnk');
+  fs.writeFileSync(bindingFile, JSON.stringify({ schemaVersion: 1, productId: 'buildr-harness', profile: 'development', entry: harnessEntry, dataRoot, target: launcherTarget }));
+
+  const instanceFile = path.join(dataRoot, 'agent-service', 'process', 'instance.json');
+  fs.mkdirSync(path.dirname(instanceFile), { recursive: true });
+  fs.writeFileSync(instanceFile, JSON.stringify({ identity: { pid: process.pid } }));
+
+  const sessionStateFile = path.join(dataRoot, 'agent-service', 'harness-web', 'session-state.json');
+  fs.mkdirSync(path.dirname(sessionStateFile), { recursive: true });
+  fs.writeFileSync(sessionStateFile, JSON.stringify({ version: 1, endpointId: 'ep-1', enabled: true, port: 9519, tickets: [], sessions: [] }));
+
+  const environment = {
+    ...f.environment,
+    HOME: testHome,
+    ...(process.platform === 'win32' ? { APPDATA: path.join(testHome, 'AppData', 'Roaming') } : {}),
+    BUILDR_APP_DATA_DIR: dataRoot,
+  };
+  delete environment.BUILDR_HOST_HOME;
+
+  const harnessCalls: any[] = [];
+  const baseExecute = executor(f.root);
+  const result: any = runDirectSelfBootstrapCloseout({
+    workspaceRoot: f.root,
+    taskId: 'harness-sync-owned',
+    baseRef: f.baseRef,
+    deliveredRef,
+    targetBranch: 'dev',
+    remote: 'origin',
+    agent: 'codex',
+    nodeExecutable: process.execPath,
+    environment,
+    execute(executable: string, args: string[], context: any) {
+      if (executable === process.execPath && args[0] === harnessEntry) {
+        harnessCalls.push(args.slice(1));
+        if (args[1] === 'launcher' && args[2] === 'install') {
+          return { status: 0, stdout: JSON.stringify({ status: 'installed', binding: { target: launcherTarget } }), stderr: '' };
+        }
+        if (args[1] === 'activate') {
+          return { status: 0, stdout: JSON.stringify({ status: 'ready', targetDigest: 'sha256-next', currentDigest: 'sha256-next', generation: 'gen-2', accepting: true }), stderr: '' };
+        }
+        if (args[1] === 'web') {
+          return { status: 0, stdout: JSON.stringify({ status: 'ready', web: { enabled: true, ready: true, origin: 'http://127.0.0.1:9519' } }), stderr: '' };
+        }
+      }
+      return baseExecute(executable, args, context);
+    },
+  });
+
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.ok(harnessCalls.some(args => args[0] === 'launcher' && args[1] === 'install' && args.includes('--target') && args.includes(launcherTarget)));
+  assert.ok(harnessCalls.some(args => args[0] === 'activate' && args.includes('--profile') && args.includes('development')));
+  assert.ok(harnessCalls.some(args => args[0] === 'web' && args.includes('--port') && args.includes('9519') && args.includes('--no-open')));
+  const webPhase = result.phases.find((stage: any) => stage.id === 'install-buildr-web');
+  assert.ok(webPhase.effects.some((effect: any) => effect.type === 'harness-launcher-refreshed' && effect.target === launcherTarget));
+  assert.ok(webPhase.effects.some((effect: any) => effect.type === 'harness-runtime-activated' && effect.digest === 'sha256-next'));
+  assert.ok(webPhase.effects.some((effect: any) => effect.type === 'harness-web-verified' && effect.port === 9519));
+});
+
+test('install-buildr-web skips absent or foreign Harness launcher, idle backend, and disabled standalone Harness Web', t => {
+  const f = fixture(t);
+  const harnessEntry = path.join(f.root, 'projects/product/services/buildr-harness/bin/buildr-harness.mjs');
+  fs.mkdirSync(path.dirname(harnessEntry), { recursive: true });
+  fs.writeFileSync(harnessEntry, '#!/usr/bin/env node\n', { mode: 0o755 });
+  git(f.root, 'add', '--', 'projects/product/services/buildr-harness/bin/buildr-harness.mjs');
+  git(f.root, 'commit', '-m', 'add harness cli entrypoint');
+  git(f.root, 'push', 'origin', 'dev');
+  const deliveredRef = git(f.root, 'rev-parse', 'HEAD');
+
+  const testHome = path.join(path.dirname(f.root), 'harness-home-absent');
+  const dataRoot = path.join(path.dirname(f.root), 'harness-data-absent');
+  const foreignTarget = process.platform === 'win32'
+    ? path.join(testHome, 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Buildr Harness Dev.lnk')
+    : path.join(testHome, 'Applications', 'Buildr Harness Dev.app');
+  const foreignBindingFile = process.platform === 'win32'
+    ? path.join(`${foreignTarget}.buildr-harness`, 'harness-launcher.json')
+    : path.join(foreignTarget, 'Contents', 'Resources', 'harness-launcher.json');
+  fs.mkdirSync(path.dirname(foreignBindingFile), { recursive: true });
+  if (process.platform === 'win32') fs.writeFileSync(foreignTarget, 'lnk');
+  fs.writeFileSync(foreignBindingFile, JSON.stringify({ schemaVersion: 1, productId: 'buildr-harness', profile: 'development', entry: '/foreign/checkout/bin/buildr-harness.mjs', dataRoot, target: foreignTarget }));
+
+  const sessionStateFile = path.join(dataRoot, 'agent-service', 'harness-web', 'session-state.json');
+  fs.mkdirSync(path.dirname(sessionStateFile), { recursive: true });
+  fs.writeFileSync(sessionStateFile, JSON.stringify({ version: 1, endpointId: 'ep-1', enabled: false, port: 9519, tickets: [], sessions: [] }));
+
+  const environment = {
+    ...f.environment,
+    HOME: testHome,
+    ...(process.platform === 'win32' ? { APPDATA: path.join(testHome, 'AppData', 'Roaming') } : {}),
+    BUILDR_APP_DATA_DIR: dataRoot,
+  };
+  delete environment.BUILDR_HOST_HOME;
+
+  const harnessCalls: any[] = [];
+  const baseExecute = executor(f.root);
+  const result: any = runDirectSelfBootstrapCloseout({
+    workspaceRoot: f.root,
+    taskId: 'harness-sync-absent',
+    baseRef: f.baseRef,
+    deliveredRef,
+    targetBranch: 'dev',
+    remote: 'origin',
+    agent: 'codex',
+    nodeExecutable: process.execPath,
+    environment,
+    execute(executable: string, args: string[], context: any) {
+      if (executable === process.execPath && args[0] === harnessEntry) harnessCalls.push(args.slice(1));
+      return baseExecute(executable, args, context);
+    },
+  });
+
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.deepEqual(harnessCalls, []);
+  const webPhase = result.phases.find((stage: any) => stage.id === 'install-buildr-web');
+  assert.equal(webPhase.effects.some((effect: any) => String(effect.type).startsWith('harness-')), false);
+});

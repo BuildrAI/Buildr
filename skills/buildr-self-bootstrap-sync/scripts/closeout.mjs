@@ -28,6 +28,9 @@ export const SELF_BOOTSTRAP_CLOSEOUT_PHASES = Object.freeze([
 
 const PRODUCT_ROOT = 'projects/product';
 const SERVICE_ROOT = `${PRODUCT_ROOT}/services/buildr`;
+const HARNESS_SERVICE_ROOT = `${PRODUCT_ROOT}/services/buildr-harness`;
+const HARNESS_WEB_ROOT = `${PRODUCT_ROOT}/services/buildr-harness-web`;
+const HARNESS_ENTRY_PATH = `${HARNESS_SERVICE_ROOT}/bin/buildr-harness.mjs`;
 const COMPONENT_PATH = 'components/workspace/buildr-self-bootstrap/component.yml';
 const DEVELOPMENT_WEB_CONTINUITY_SCRIPT = 'skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
 function developmentSourceBinding(root, instance) {
@@ -332,6 +335,126 @@ function developmentLauncherIdentityPath(payload) {
   return payload.platform === 'darwin'
     ? path.join(payload.target, 'Contents', 'Resources', 'launcher-identity.json')
     : path.join(payload.target, 'launcher-identity.json');
+}
+
+function isLivePid(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === 'EPERM';
+  }
+}
+
+function readJsonSafe(file) {
+  try {
+    const stat = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (!stat || !stat.isFile() || stat.isSymbolicLink()) return null;
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function installedHarnessDevelopmentLauncherTargets(environment) {
+  const isolated = environment?.BUILDR_TEST_STATE_REQUIRED === '1' || Boolean(environment?.NODE_TEST_CONTEXT);
+  const homes = [...new Set(
+    [environment?.HOME, os.homedir(), ...(isolated ? [] : [environment?.BUILDR_HOST_HOME])]
+      .filter((value) => typeof value === 'string' && value.trim())
+      .map((value) => path.resolve(value.trim())),
+  )];
+  const candidates = process.platform === 'darwin'
+    ? [...homes.map((home) => path.join(home, 'Applications', 'Buildr Harness Dev.app')), ...(isolated ? [] : ['/Applications/Buildr Harness Dev.app'])]
+    : process.platform === 'win32'
+      ? [
+          ...(typeof environment?.APPDATA === 'string' && environment.APPDATA.trim()
+            ? [path.join(environment.APPDATA.trim(), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Buildr Harness Dev.lnk')]
+            : homes.map((home) => path.join(home, 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Buildr Harness Dev.lnk'))),
+        ]
+      : [];
+  const seen = new Set();
+  const targets = [];
+  for (const target of candidates) {
+    const key = normalizeFilesystemPath(target);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    targets.push(target);
+  }
+  return targets;
+}
+
+function refreshInstalledHarnessDevelopmentLaunchers({ execute, root, nodeExecutable, environment, phaseResult }) {
+  const harnessEntry = path.join(root, HARNESS_ENTRY_PATH);
+  if (!fs.existsSync(harnessEntry)) return [];
+  const dataRoot = developmentWebDataRoot(environment);
+  const effects = [];
+  for (const target of installedHarnessDevelopmentLauncherTargets(environment)) {
+    const stat = fs.lstatSync(target, { throwIfNoEntry: false });
+    if (!stat || stat.isSymbolicLink()) continue;
+    const bindingFile = process.platform === 'win32'
+      ? path.join(`${target}.buildr-harness`, 'harness-launcher.json')
+      : path.join(target, 'Contents', 'Resources', 'harness-launcher.json');
+    const binding = readJsonSafe(bindingFile);
+    if (binding?.productId !== 'buildr-harness' || binding?.profile !== 'development'
+      || typeof binding?.entry !== 'string' || !sameFilesystemPath(binding.entry, harnessEntry)
+      || typeof binding?.dataRoot !== 'string' || !sameFilesystemPath(binding.dataRoot, dataRoot)) {
+      continue;
+    }
+    const installed = command(execute, nodeExecutable, [
+      harnessEntry, 'launcher', 'install', '--profile', 'development', '--data-root', dataRoot, '--target', target,
+    ], root, 'refresh-development-harness-launcher', phaseResult, {
+      kind: 'harness-launcher-refresh',
+      target,
+    }, environment);
+    requirePassed(installed, 'self-bootstrap-closeout.harness-launcher-refresh-failed', 'Buildr Harness Dev 启动器刷新失败。', { target, dataRoot });
+    const payload = parseJson(installed, 'self-bootstrap-closeout.harness-launcher-result-invalid', 'Buildr Harness Dev 启动器刷新结果无效。');
+    if (payload?.status !== 'installed' || !sameFilesystemPath(payload?.binding?.target, target)) {
+      throw closeoutError('self-bootstrap-closeout.harness-launcher-result-invalid', 'Buildr Harness Dev 启动器刷新结果不匹配。', { target, actual: payload || null });
+    }
+    effects.push({ type: 'harness-launcher-refreshed', target });
+  }
+  return effects;
+}
+
+function reconcileDevelopmentHarnessRuntime({ execute, root, nodeExecutable, environment, phaseResult, changedPaths, forceRestart }) {
+  const harnessEntry = path.join(root, HARNESS_ENTRY_PATH);
+  if (!fs.existsSync(harnessEntry)) return [];
+  const harnessChanged = forceRestart || changedPaths.some((pathname) => pathname.startsWith(`${HARNESS_SERVICE_ROOT}/`) || pathname.startsWith(`${HARNESS_WEB_ROOT}/`));
+  if (!harnessChanged) return [];
+  const dataRoot = developmentWebDataRoot(environment);
+  const instance = readJsonSafe(path.join(dataRoot, 'agent-service', 'process', 'instance.json'));
+  if (!isLivePid(instance?.identity?.pid)) return [];
+  const effects = [];
+  const activated = command(execute, nodeExecutable, [
+    harnessEntry, 'activate', '--profile', 'development', '--data-root', dataRoot,
+  ], root, 'activate-development-harness-runtime', phaseResult, {
+    kind: 'harness-runtime-activation',
+    dataRoot,
+  }, environment);
+  requirePassed(activated, 'self-bootstrap-closeout.harness-runtime-activation-failed', 'Buildr Harness 运行时激活失败。', { dataRoot });
+  const activation = parseJson(activated, 'self-bootstrap-closeout.harness-runtime-activation-invalid', 'Buildr Harness 运行时激活结果无效。');
+  if (activation?.status !== 'ready' || !activation?.currentDigest || activation.currentDigest !== activation.targetDigest || activation.accepting !== true) {
+    throw closeoutError('self-bootstrap-closeout.harness-runtime-activation-invalid', 'Buildr Harness 运行时激活未确认就绪。', { dataRoot, actual: activation || null });
+  }
+  effects.push({ type: 'harness-runtime-activated', digest: activation.currentDigest, generation: activation.generation || null });
+  const webState = readJsonSafe(path.join(dataRoot, 'agent-service', 'harness-web', 'session-state.json'));
+  if (webState?.enabled === true && Number.isInteger(webState?.port) && webState.port > 0 && webState.port <= 65535) {
+    const verified = command(execute, nodeExecutable, [
+      harnessEntry, 'web', '--profile', 'development', '--data-root', dataRoot, '--port', String(webState.port), '--no-open',
+    ], root, 'verify-development-harness-web', phaseResult, {
+      kind: 'harness-web-verify',
+      dataRoot,
+      port: webState.port,
+    }, environment);
+    requirePassed(verified, 'self-bootstrap-closeout.harness-web-verify-failed', '已启用的独立 Harness 网页恢复核验失败。', { dataRoot, port: webState.port });
+    const webPayload = parseJson(verified, 'self-bootstrap-closeout.harness-web-verify-invalid', '已启用的独立 Harness 网页核验结果无效。');
+    if (webPayload?.status !== 'ready' || webPayload?.web?.enabled !== true || webPayload?.web?.ready !== true) {
+      throw closeoutError('self-bootstrap-closeout.harness-web-verify-invalid', '已启用的独立 Harness 网页尚未就绪。', { dataRoot, port: webState.port, actual: webPayload || null });
+    }
+    effects.push({ type: 'harness-web-verified', port: webState.port, origin: webPayload.web.origin || null });
+  }
+  return effects;
 }
 
 function recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, successor, launcher, continuity, environment, phaseResult, forceRestart = false }) {
@@ -873,7 +996,19 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
         clearDevelopmentWebRecovery(root, developmentWebRecovery);
         developmentWebRecovery = null;
       }
-      markPassed(active, deliveredRef, successor, [{ type: 'development-web-continuity', status: continuityAfter.status }]);
+      const harnessEffects = [
+        ...refreshInstalledHarnessDevelopmentLaunchers({ execute, root, nodeExecutable, environment, phaseResult: active }),
+        ...reconcileDevelopmentHarnessRuntime({
+          execute,
+          root,
+          nodeExecutable,
+          environment,
+          phaseResult: active,
+          changedPaths: actions['install-development-buildr-web'],
+          forceRestart: restartDevelopmentWeb,
+        }),
+      ];
+      markPassed(active, deliveredRef, successor, [{ type: 'development-web-continuity', status: continuityAfter.status }, ...harnessEffects]);
     }
     start('verify-development-entry'); assertHead(successor);
     const identity = verifyDevelopmentEntryIdentity({ execute, root, nodeExecutable, successor, environment, phaseResult: active });
