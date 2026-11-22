@@ -305,11 +305,11 @@
       "type": "skill",
       "id": "project-testing",
       "target": "skills/buildr/project-testing",
-      "integrity": "sha256-af077c2525001b237d0d2f42c95d110d390efe11f3773e85f77fc78f050bc7fe",
+      "integrity": "sha256-b6008dd0aa66ea3ad3616a98337a2a162cd87f4df4a82fe23511531ab2c21cae",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-ada9030fd60e3792fbf26a2e1751c24e9a837cf8f6551cc7ae77d6719c13970c"
+          "integrity": "sha256-cdf7d9379f7e002fc5f33b44cb69d7a93301c66ae8912b268f3d184f72d8fa26"
         },
         {
           "path": "references/maintain-map.md",
