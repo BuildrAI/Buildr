@@ -66,6 +66,11 @@ export interface ModelQuotaObservation {
   balances?: Array<{currency:string;total:string;toppedUp?:string;granted?:string}>;
   windows?: Array<{id:string;label:string;groupLabel?:string;remainingPercent:number;resetsAt?:string;limitWindowSeconds?:number;/** Platform-reported credit amounts; omitted when the source only reports percentages. */remainingCredits?:number;totalCredits?:number}>;
 }
+/** Read-only observations from a bound gateway, never used by model admission. */
+export interface GatewayQuotaSnapshot {
+  readAt:string;
+  accounts:Array<{provider:string;providerLabel:string;accountLabel?:string;plan?:string;balance?:string;observedAt?:string;unavailable?:boolean;windows:Array<{label:string;remainingPercent?:number;resetsAt?:string}>}>;
+}
 export interface CustomProviderModel {
   /** Upstream model id, sent verbatim. */
   id: string;
@@ -136,6 +141,7 @@ export interface ProviderInferenceInput {
 }
 export interface ModelProviderRuntime {
   openSettings?(): Promise<void>;
+  readGatewayQuota?(): Promise<GatewayQuotaSnapshot>;
   readonly protocol: ModelProtocol;
   protocolForModel?(modelId: string): ModelProtocol;
   inspect(): Promise<ModelProviderObservation>;

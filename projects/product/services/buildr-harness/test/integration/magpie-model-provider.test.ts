@@ -12,12 +12,20 @@ import {ManagedMagpie} from '../../src/model-access/providers/magpie-installatio
 
 test('Magpie connects a verified existing gateway without launching and isolates model choices',async()=>{
   const root=await mkdtemp(join(tmpdir(),'buildr-magpie-'));
-  let valid=true, empty=false, launches=0, opened='', inference=0, posted='';
+  let valid=true, empty=false, quotaFail=false, quotaReads=0, launches=0, opened='', inference=0, posted='';
   const id='codex/gpt-example';
   const server=createServer(async(req,res)=>{
     res.setHeader('Content-Type','application/json');
     if(req.url==='/api/hello')return res.end(JSON.stringify({name:valid?'magpie':'unrelated',version:'fixture'}));
     if(req.url==='/v1/models')return res.end(JSON.stringify({data:empty?[]:[{id,display_name:'GPT Example',context_window:180000,modalities:{input:['text','image']}},{id:'not-a-chat',kind:'image'}]}));
+    if(req.url==='/v1/magpie/quotas?kept=1'&&req.method==='GET'){
+      quotaReads++;
+      if(quotaFail)return res.writeHead(503).end('{"error":"upstream sensitive body"}');
+      return res.end(JSON.stringify({data:[
+        {provider:'codex',name:'Codex',user:'alice@example.test',plan:'Pro',balance:'12.35 credits',readAt:'2026-11-23T00:00:00Z',windows:[{name:'7d',remaining:0,resetsAt:'2026-11-25T00:00:00Z'}],token:'fixture-private-token'},
+        {provider:'codex',name:'Codex',user:'anna@example.test',balance:'$4.10',error:'private upstream message',windows:[{name:'5h',remaining:140}]},
+      ]}));
+    }
     if(req.url==='/v1/responses'&&req.method==='POST'){
       inference++;const chunks=[];for await(const c of req)chunks.push(c);posted=JSON.parse(Buffer.concat(chunks).toString()).model;
       return res.end(JSON.stringify({id:'response',object:'response',status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'fixture reply'}]}]}));
@@ -36,6 +44,22 @@ test('Magpie connects a verified existing gateway without launching and isolates
     assert.equal(launches,0); assert.equal(source.provider,'magpie');assert.equal(source.label,'Magpie');assert.equal(source.status,'ready');
     assert.deepEqual(source.models.map(x=>[x.id,x.enabled,x.images,x.contextWindow]),[[id,true,true,180000]]);
     assert.notEqual(source.id,custom.id);assert.equal(source.quota,undefined);
+    await assert.rejects(access.accounts.readGatewayQuota(custom.id,{expectedRevision:custom.revision}),{code:'model_gateway_quota_unavailable'});
+    await assert.rejects(access.accounts.readGatewayQuota(source.id,{expectedRevision:'stale'}),{code:'model_revision_conflict'});
+    assert.equal(quotaReads,0);
+    const quota=await access.accounts.readGatewayQuota(source.id,{expectedRevision:source.revision});
+    assert.deepEqual(quota.accounts.map(a=>a.balance),['12.35 credits','$4.10']);
+    assert.equal(quota.accounts[0]?.windows[0]?.remainingPercent,0);
+    assert.equal(quota.accounts[0]?.windows[0]?.resetsAt,'2026-11-25T00:00:00Z');
+    assert.equal(quota.accounts[0]?.observedAt,'2026-11-23T00:00:00Z');
+    assert.equal(quota.accounts[1]?.windows[0]?.remainingPercent,undefined);
+    assert.equal(quota.accounts[1]?.unavailable,true);
+    assert.doesNotMatch(JSON.stringify(quota),/alice|anna|private-token|private upstream/);
+    quotaFail=true;
+    await assert.rejects(access.accounts.readGatewayQuota(source.id,{expectedRevision:source.revision}),{code:'model_magpie_quota_unavailable'});
+    assert.equal(quotaReads,2);
+    assert.deepEqual(access.accounts.read(source.id),source,'quota read must not change revision, lease readiness or model account quota');
+
     await assert.rejects(access.accounts.add({provider:'magpie'}),{code:'model_provider_already_configured'});
     await assert.rejects(access.accounts.configureCustom(source.id,{...config,expectedRevision:source.revision,baseUrl:'https://example.com'}),{code:'model_magpie_url_invalid'});
     await assert.rejects(access.accounts.openSettings(source.id,{expectedRevision:'stale'}));assert.equal(opened,'');

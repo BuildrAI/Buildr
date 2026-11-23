@@ -141,6 +141,7 @@ export const AGENT_OPERATION_SCHEMAS = {
   modelPreferences: named('AgentModelPreferences',closed({expectedRevision:text,sourceEnabled:boolean,models:{type:'array',minItems:1,maxItems:2000,items:closed({id:text,enabled:boolean,contextWindow:{anyOf:[{type:'integer',minimum:1,maximum:10000000},{type:'null'}]}},['id'])}},['expectedRevision'])),
   modelAccount: named('AgentModelAccount', modelAccount),
   modelAccounts: named('AgentModelAccounts', closed({accounts:list(modelAccount),providers:list(modelProvider)})),
+  modelGatewayQuota: named('AgentModelGatewayQuota',closed({readAt:text,accounts:list(closed({provider:text,providerLabel:text,accountLabel:text,plan:text,balance:text,observedAt:text,unavailable:boolean,windows:list(closed({label:text,remainingPercent:{type:'number',minimum:0,maximum:100},resetsAt:text},['label']))},['provider','providerLabel','windows']))})),
   modelAccountUsage: named('AgentModelAccountUsage', closed({references:integer},['references'])),
   modelApiKey: named('AgentModelApiKey', closed({expectedRevision:text,apiKey:{type:'string',minLength:1,maxLength:4096}},['expectedRevision','apiKey'])),
   modelCustomConfigure: named('AgentModelCustomConfigure', customConfigure),

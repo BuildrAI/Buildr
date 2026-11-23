@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { lstat, readFile } from 'node:fs/promises';
-import { ModelAccessError, type CustomProviderConfigureInput, type ModelOffering, type ModelProvider, type ModelProviderObservation } from '../contracts.ts';
+import { ModelAccessError, type CustomProviderConfigureInput, type GatewayQuotaSnapshot, type ModelOffering, type ModelProvider, type ModelProviderObservation } from '../contracts.ts';
 import { createCustomModelProvider } from './custom.ts';
 import { record, string } from './private-account.ts';
 import { ManagedMagpie, type MagpieInstallation } from './magpie-installation.ts';
@@ -65,6 +65,29 @@ function offerings(value: unknown[]): ModelOffering[] {
   }
   return [...out.values()];
 }
+const displayText = (value:unknown, max=120) => typeof value==='string' ? value.replace(/[\p{Cc}\p{Cf}]/gu,'').trim().slice(0,max)||undefined : undefined;
+const timestamp = (value:unknown) => typeof value==='string'&&value.length<=64 && Number.isFinite(Date.parse(value)) && /^\d{4}-\d\d-\d\dT/.test(value) ? value : undefined;
+function maskAccount(value:unknown):string | undefined {
+  const account=displayText(value);
+  if (!account) return;
+  const at=account.lastIndexOf('@');
+  return at>=0 ? `${Array.from(account.slice(0,at))[0]??''}•••${account.slice(at)}` : account;
+}
+function quotaSnapshot(value:unknown[],readAt:string):GatewayQuotaSnapshot {
+  const accounts:GatewayQuotaSnapshot['accounts']=[];
+  for (const raw of value.slice(0,200)) {
+    const row=record(raw),provider=displayText(row.provider);
+    if(!provider)continue;
+    const windows:GatewayQuotaSnapshot['accounts'][number]['windows']=[];
+    for(const rawWindow of (Array.isArray(row.windows)?row.windows:[]).slice(0,40)) {
+      const w=record(rawWindow),label=displayText(w.name),resetsAt=timestamp(w.resetsAt);
+      const remainingPercent=typeof w.remaining==='number' && Number.isFinite(w.remaining) && w.remaining>=0 && w.remaining<=100 ? w.remaining : undefined;
+      if(label) windows.push({label,remainingPercent,resetsAt});
+    }
+    accounts.push({provider,providerLabel:displayText(row.name)??provider,accountLabel:maskAccount(row.user),plan:displayText(row.plan),balance:displayText(row.balance,220),observedAt:timestamp(row.readAt),unavailable:Boolean(row.error)||undefined,windows});
+  }
+  return {readAt,accounts};
+}
 export function createMagpieModelProvider(options: {root: string; fetch?: typeof fetch; installation?: MagpieInstallation; configuredOrigin?: () => Promise<string|undefined>}): ModelProvider {
   const fetcher = options.fetch ?? fetch;
   const identify = (origin: string, signal?: AbortSignal) => hello(fetcher, origin, signal);
@@ -118,6 +141,16 @@ export function createMagpieModelProvider(options: {root: string; fetch?: typeof
         },
         async beginLogin() { throw new ModelAccessError('model_magpie_login_external','请在 Magpie 管理上游账号。',409); },
         async cancelLogin() {},
+        async readGatewayQuota() {
+          try {
+            if(!await identify(origin,lifetime.signal))throw new Error('magpie_offline');
+            const value=await json(fetcher,origin+'/v1/magpie/quotas?kept=1',catalogLimit,lifetime.signal);
+            if(!Array.isArray(value.data)||value.data.length>200 || value.data.some(item=>Array.isArray(record(item).windows)&&(record(item).windows as unknown[]).length>40))throw new Error('magpie_quota_format');
+            const snapshot=quotaSnapshot(value.data,new Date().toISOString());
+            if(snapshot.accounts.length!==value.data.length)throw new Error('magpie_quota_format');
+            return snapshot;
+          } catch {throw new ModelAccessError('model_magpie_quota_unavailable','未能读取该 Magpie 的额度记录。模型使用不受影响。',503);}
+        },
         async openSettings() { await installation.open(origin); },
         async close() { lifetime.abort(); await base.close(); },
       };

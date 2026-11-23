@@ -104,7 +104,8 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (request.method === 'GET') authorizeRead(); else authorizeWrite();
       const modelAccountsRead = pathname === `${prefix}/model-accounts` && request.method === 'GET';
       const modelCatalogRead = pathname === `${prefix}/model-catalog` && request.method === 'GET';
-      query(searchParams, modelAccountsRead ? ['includeDisabled'] : modelCatalogRead ? ['revision'] : []);
+      const gatewayQuotaRead=request.method==='GET'&&/^\/model-accounts\/[a-zA-Z0-9_-]{1,100}\/gateway-quota$/.test(pathname.slice(prefix.length));
+      query(searchParams, modelAccountsRead ? ['includeDisabled'] : modelCatalogRead||gatewayQuotaRead ? ['revision'] : []);
       if (modelAccountsRead && searchParams.has('includeDisabled') && !['true','false'].includes(searchParams.get('includeDisabled')!)) throw inputError();
       if (modelCatalogRead && searchParams.has('revision') && !/^[a-f0-9]{64}$/.test(searchParams.get('revision')!)) throw inputError();
       if (pathname === `${prefix}/default-workspace` && request.method === 'GET' && defaultWorkspace) return result('defaultWorkspace', defaultWorkspace());
@@ -122,9 +123,10 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         const revision = createHash('sha256').update(JSON.stringify(catalog)).digest('hex');
         return result('modelCatalog', expectedRevision === revision ? { revision, unchanged: true as const } : { ...catalog, revision });
       }
-      const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-zA-Z0-9_-]{1,100})(?:\/(check|disconnect|login-attempts|preferences|api-key|custom|open-settings|usage)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
+      const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-zA-Z0-9_-]{1,100})(?:\/(check|disconnect|login-attempts|preferences|api-key|custom|open-settings|usage|gateway-quota)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
       if (accountRoute) {
         const [, accountId, action, attemptId, cancel] = accountRoute;
+        if (gatewayQuotaRead) return result('modelGatewayQuota',await service.models.accounts.readGatewayQuota(accountId,validate('revision',{expectedRevision:searchParams.get('revision')})));
         if (request.method === 'GET' && !action) return result('modelAccount', await service.models.accounts.read(accountId));
         if (request.method === 'GET' && action === 'usage' && !attemptId) {
           const references = await service.conversations.modelAccountReferences([accountId]);

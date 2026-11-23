@@ -640,6 +640,19 @@ export class ModelAccessApplication {
     } catch { if (this.closed || this.metadataReadOnly || this.operations.get(id) !== operation) return this.view(this.current(id)); before??=this.selectionState(row); if (row.status !== 'ready') row.status = 'failed'; row.diagnostic = '模型供应商检查未完成，已保留上次目录。'; }
     return await this.observed(row, before!);
   }
+  async readGatewayQuota(id:string,input:{expectedRevision:string}) {
+    await this.ready;
+    const row=this.current(id);conflict(row.revision,input.expectedRevision);
+    const unavailable=()=>new ModelAccessError('model_gateway_quota_unavailable','该模型来源当前没有可读的网关额度。',409);
+    if(this.closed||this.metadataReadOnly||!row.enabled||row.sourceEnabled===false||row.provider!=='magpie')throw unavailable();
+    return await this.withRuntimeOp(id,async runtime=>{
+      conflict(this.current(id).revision,input.expectedRevision);
+      if(!runtime.readGatewayQuota)throw unavailable();
+      const quota=await runtime.readGatewayQuota();
+      conflict(this.current(id).revision,input.expectedRevision);
+      return quota;
+    });
+  }
   async openSettings(id:string,input:{expectedRevision:string}) {
     await this.ready; const row=this.current(id); conflict(row.revision,input.expectedRevision);
     if(this.closed||this.metadataReadOnly||!this.providers.get(row.provider)?.resolveCustom||!row.enabled) throw new ModelAccessError('model_settings_unavailable','该模型来源当前不能打开本机设置。',409);
@@ -1021,7 +1034,7 @@ export function createModelAccess(options: ModelAccessOptions) {
     resolveModelAlias: (accountId: string, modelId: string) => application.resolveModelAlias(accountId, modelId),
     resolveLegacyModelVariant: (accountId: string, modelId: string) => application.resolveLegacyModelVariant(accountId, modelId),
     ensureLinked: () => application.ensureLinked(), invalidate: (id:string,input?:{abortActive?:boolean}) => application.invalidate(id,input), clearAuthentication: (id: string) => application.clearAuthentication(id),
-    accounts: { list: (input?:{includeDisabled?:boolean}) => application.list(input), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: ModelAccountAddInput) => application.add(input), openSettings: (id:string,input:{expectedRevision:string})=>application.openSettings(id,input), configure: (id:string,input:{expectedRevision:string;apiKey:string}) => application.configure(id,input), configureCustom: (id:string,input:CustomProviderConfigureInput) => application.configureCustom(id,input), discoverCustom: (input:CustomProviderDiscoveryInput) => application.discoverCustom(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input), remove: (id:string,input:{expectedRevision:string}) => application.remove(id,input) },
+    accounts: { list: (input?:{includeDisabled?:boolean}) => application.list(input), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: ModelAccountAddInput) => application.add(input), openSettings: (id:string,input:{expectedRevision:string})=>application.openSettings(id,input), readGatewayQuota:(id:string,input:{expectedRevision:string})=>application.readGatewayQuota(id,input), configure: (id:string,input:{expectedRevision:string;apiKey:string}) => application.configure(id,input), configureCustom: (id:string,input:CustomProviderConfigureInput) => application.configureCustom(id,input), discoverCustom: (input:CustomProviderDiscoveryInput) => application.discoverCustom(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input), remove: (id:string,input:{expectedRevision:string}) => application.remove(id,input) },
     catalog: { list: () => application.catalog() },
     activity: () => application.activity(),
     freezeMetadata: (value = true) => application.freezeMetadata(value),
