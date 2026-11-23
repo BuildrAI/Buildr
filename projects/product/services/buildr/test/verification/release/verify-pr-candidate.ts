@@ -290,6 +290,11 @@ async function main(): Promise<void> {
         process.stdout.write(`${JSON.stringify(verifyHarnessFirstReleasePR(event, repository, repo))}\n`);
         return;
       }
+      if (/^codex\/release-harness-admission-/u.test(event?.pull_request?.head?.ref ?? '')) {
+        const { verifyHarnessReleaseAdmissionPR } = await import('../../../../../../../skills/buildr-release/scripts/harness-release-admission.ts');
+        process.stdout.write(`${JSON.stringify(verifyHarnessReleaseAdmissionPR(event, repository, repo))}\n`);
+        return;
+      }
       const result = /^codex\/release-executor-/u.test(event?.pull_request?.head?.ref ?? '')
         ? await (await import('../../../../../../../skills/buildr-release/scripts/release-executor-admission.ts')).verifyReleaseExecutorPullRequest(event, repository, repo)
         : await verifyReleasePullRequestCandidate(event, repository, async endpoint => {

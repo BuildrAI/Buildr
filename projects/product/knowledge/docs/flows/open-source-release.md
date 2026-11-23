@@ -26,14 +26,15 @@
 
 开始耗时验证前，先只读核对发布目标、版本和来源，以及当前适用的发行决定与平台支持声明，尽早说明已知缺口；源码检查通过不等于原包验收或发行资格通过。公开所需决定缺失时，不替负责人批准、不自动放宽门槛；不依赖该决定的内部准备仍可按授权继续。最终公开判断仍以准确原包自身证据为准，不用源码声明替代，也不新增另一套发布门禁或状态。
 
-## 独立 Harness 首发
+## 独立 Harness 与 DSH Buildr Harness
 
 独立 Buildr Harness（`@buildr-ai/buildr-harness`）与 DSH Buildr Harness（`@buildr-ai/dsh-buildr-harness`）不采用 Development 的候选或发布标签。首发 PR 只接入两个工作流、校验器和准确候选准入记录，不将移动中的 `dev` 整体合入 `main`。
 
-- 本机按已冻结的源码和原包做验收。准入记录必须分别绑定包目标、版本、源码提交与树、SHA-256、npm 完整性和验收记录摘要。`main` 既有 Candidate gate 校验首发 PR 范围；其他 PR 仍走原检查。
+- 本机按已冻结的源码和原包做验收。准入记录必须分别绑定包目标、版本、源码提交与树、SHA-256、npm 完整性和验收记录摘要。后续版本用同库 `codex/release-harness-admission-v<版本>` PR，在受保护 `main` 的准入清单尾部追加该版本的一包或两包，不改旧记录、不携带其他文件、不跟发 Development。Candidate gate 核对新增来源仍由 `dev` 保留；两个包版本独立，不同版本分别准入。
 - GitHub 在受保护的 `main` 运行 `preserve-harness.yml`，只按准入记录恢复同一原包及证明；不执行候选代码。先发独立 Harness，再发与已公开 Harness 准确配对的插件。插件 GitHub Release 标签指向其打包源码，资产与 npm 字节一致。RC 使用 `next`。
-- 新 npm 包需维护者先完成首次登记（可用 npm 暂存与双因素批准），之后可绑定 `publish-harness.yml` / `npm-production` 的 Trusted Publishing。不得用占位发布绕过候选验证。若首发版本已通过维护者批准进入 npm，保护流程先读取准确版本和摘要，再补相应 GitHub 资产，不重复上传。
-- 本次支持声明仅 macOS arm64；DSH 0.2.x 为声明的兼容范围，0.2.2-rc.5 为实际桌面证据。本机的隔离 npm 和压缩包直链验证不冒充公开地址回读。
+- 两个包已完成 npm 首次登记。下一次版本和原包已获准且能在两天内发布时，逐包在 npm Settings → Trusted Publisher 绑定 `BuildrAI` / `Buildr` / `publish-harness.yml` / `npm-production`，开启直接 `npm publish`，不另外授权 `npm dist-tag`，不保存长期 token。只允许 `npm stage publish` 仍会要求逐版在 npm 批准，不能替代直接发布。按 [npm 规则](https://docs.npmjs.com/trusted-publishers/#trusted-publisher-configuration-expiry)，新绑定两天内未成功首次可信发布会过期，不用测试版或占位包激活。
+- 首次绑定后，可从 `main` 对两个包分别运行 `publish-harness.yml` 的 `authority` 模式，只验证短期凭证交换，不上传、不改标签、不消耗该版本的上传尝试；交换成功不等于已实测直接发布。检查通过且具体原包获准后，使用 `publish` 模式经 GitHub `npm-production` 审批直接上传，先独立 Harness，后配对插件。已建立信任后每版不需要再到 npm 批准。只有前次未上传的事实清楚时才考虑下一次写入，结果未知使用原候选 `readback`；若包已公开，直接核对原包，不重复上传。
+- 首发证据限定 macOS arm64；DSH 0.2.x 为声明的兼容范围，0.2.2-rc.5 是首发实测版本，不是用户必须安装的固定版本。本机的隔离 npm 和压缩包直链验证不冒充公开地址回读。
 
 ## 谁负责
 

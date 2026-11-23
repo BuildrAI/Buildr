@@ -13,6 +13,16 @@ const versionPattern = /^\d+\.\d+\.\d+(?:-rc\.[1-9]\d*)?$/u;
 const integrityPattern = /^sha512-[A-Za-z0-9+/]{86}==$/u;
 const keys = ['target','version','sourceCommit','sourceTree','sha256','integrity','proofSha256'] as const;
 const targets = ['harness','dsh-buildr-harness'];
+const trustedPublishingSetupRef = 'codex/release-harness-admission-trusted-publishing';
+const authorityProbePath = 'skills/buildr-release/scripts/harness-npm-authority.ts';
+export const trustedPublishingSetupPaths = [
+  '.github/workflows/publish-harness.yml',
+  'projects/product/knowledge/docs/flows/open-source-release.md',
+  'projects/product/services/buildr/test/verification/release/verify-pr-candidate.ts',
+  authorityProbePath,
+  'skills/buildr-release/scripts/harness-release-admission.test.ts',
+  'skills/buildr-release/scripts/harness-release-admission.ts',
+];
 export const firstReleasePaths = [
   '.github/workflows/preserve-harness.yml',
   '.github/workflows/publish-harness.yml',
@@ -74,19 +84,50 @@ export function assertAdmittedHarnessOriginal(candidate: any, proofBytes: Buffer
   return proof;
 }
 
-export function verifyHarnessFirstReleasePR(event: any, repository: string, cwd: string, git: Git = gitAt(cwd)) {
+function verifyHarnessPRIdentity(event: any, repository: string, git: Git) {
   const pr = event?.pull_request;
   if (repository !== repoName || pr?.base?.ref !== 'main' || pr?.base?.repo?.full_name !== repoName ||
-      pr?.head?.ref !== 'codex/release-harness-first-rc1' || pr?.head?.repo?.full_name !== repoName ||
+      pr?.head?.repo?.full_name !== repoName ||
       !commitId.test(pr?.base?.sha ?? '') || !commitId.test(pr?.head?.sha ?? '') ||
       git(['rev-parse','HEAD']) !== pr.head.sha || git(['rev-parse','refs/remotes/origin/main']) !== pr.base.sha ||
       git(['rev-list','--parents','-1',pr.head.sha]) !== `${pr.head.sha} ${pr.base.sha}`) throw Error('harness-release-pr-identity-invalid');
+  return pr;
+}
+
+function verifyHarnessPRPaths(pr: any, paths: string[], git: Git) {
   const changed = git(['diff','--name-only','--no-renames','-z',pr.base.sha,pr.head.sha,'--']).split('\0').filter(Boolean);
-  if (changed.length !== firstReleasePaths.length || changed.some(name => !firstReleasePaths.includes(name))) throw Error('harness-release-pr-paths-invalid');
+  if (changed.length !== paths.length || changed.some(name => !paths.includes(name))) throw Error('harness-release-pr-paths-invalid');
   for (const name of changed) if (!/^100644 blob [a-f0-9]{40}\t/u.test(git(['ls-tree',pr.head.sha,'--',name]))) throw Error('harness-release-pr-file-invalid');
+}
+
+export function verifyHarnessFirstReleasePR(event: any, repository: string, cwd: string, git: Git = gitAt(cwd)) {
+  const pr = verifyHarnessPRIdentity(event, repository, git);
+  if (pr.head.ref !== 'codex/release-harness-first-rc1') throw Error('harness-release-pr-identity-invalid');
+  verifyHarnessPRPaths(pr, firstReleasePaths, git);
   const admitted = parseAdmissions(git(['show',`${pr.head.sha}:${approvalPath}`]));
   if (admitted.length !== 2 || admitted.some(item => item.version !== '0.1.0-rc.1') || new Set(admitted.map(item => item.target)).size !== 2 ||
       new Set(admitted.map(item => item.sourceCommit)).size !== 1) throw Error('harness-first-release-pair-invalid');
   verifySources(admitted,git);
   return {status:'passed',kind:'harness-independent-release-admission',sourceCommit:admitted[0]!.sourceCommit,targets:admitted.map(({target,version})=>({target,version}))};
+}
+
+export function verifyHarnessReleaseAdmissionPR(event: any, repository: string, cwd: string, git: Git = gitAt(cwd)) {
+  const pr = verifyHarnessPRIdentity(event, repository, git);
+  if (pr.head.ref === trustedPublishingSetupRef) {
+    verifyHarnessPRPaths(pr, trustedPublishingSetupPaths, git);
+    // The initial setup can add the probe, but cannot amend or admit any candidate.
+    if (git(['ls-tree',pr.base.sha,'--',authorityProbePath])) throw Error('harness-trusted-publishing-setup-already-admitted');
+    return {status:'passed',kind:'harness-trusted-publishing-setup',targets:[]};
+  }
+  if (!/^codex\/release-harness-admission-v\d+\.\d+\.\d+(?:-rc\.[1-9]\d*)?$/u.test(pr.head.ref)) throw Error('harness-release-pr-identity-invalid');
+  verifyHarnessPRPaths(pr, [approvalPath], git);
+  const version = pr.head.ref.slice('codex/release-harness-admission-v'.length);
+  const before = parseAdmissions(git(['show',`${pr.base.sha}:${approvalPath}`]));
+  const after = parseAdmissions(git(['show',`${pr.head.sha}:${approvalPath}`]));
+  if (after.length <= before.length ||
+      before.some((item, index) => keys.some(key => item[key] !== after[index]?.[key]))) throw Error('harness-release-admission-not-append-only');
+  const added = after.slice(before.length);
+  if (added.some(item => item.version !== version)) throw Error('harness-release-admission-version-mismatch');
+  verifySources(added, git);
+  return {status:'passed',kind:'harness-independent-release-admission',targets:added.map(({target,version})=>({target,version}))};
 }
