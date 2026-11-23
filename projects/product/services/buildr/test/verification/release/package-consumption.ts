@@ -156,6 +156,14 @@ export function runPackageConsumptionCommand(command: any, args: any, options: a
 }
 const run = runPackageConsumptionCommand;
 
+function installedMacLauncherExecutable(target: string): string {
+  const executable = run('/usr/bin/plutil', ['-extract', 'CFBundleExecutable', 'raw', '-o', '-', path.join(target, 'Contents', 'Info.plist')]).trim();
+  assert.ok(executable && path.basename(executable) === executable && !['.', '..'].includes(executable), 'bundle must declare an in-package executable');
+  const file = path.join(target, 'Contents', 'MacOS', executable);
+  assert.ok(fs.lstatSync(file).isFile(), 'probe must use the installed launcher, not create a different path');
+  return file;
+}
+
 function parseJson(label: any, output: any, schemaVersion: any): any  {
   const payload: any = JSON.parse(output);
   assert.equal(payload.schemaVersion, schemaVersion, `${label} schemaVersion`);
@@ -504,7 +512,7 @@ export async function runPackageConsumption(env: any = process.env): Promise<any
           return;
         }
         if (process.platform === 'darwin') {
-          const executable: any = path.join(launcherTarget, 'Contents', 'MacOS', 'Buildr Web');
+          const executable: any = installedMacLauncherExecutable(launcherTarget);
           const launched: any = spawnSync(executable, [], { cwd: workspace, env: launcherEnvironment, encoding: 'utf8' });
           launchObservation = launched;
           if (launched.status !== 0) throw new Error(`${executable} exited ${launched.status}:\n${launched.stdout}\n${launched.stderr}`);
@@ -607,7 +615,7 @@ export async function runPackageConsumption(env: any = process.env): Promise<any
 
       progress.runSync('launcher-drift', () => {
       if (process.platform === 'darwin') {
-        fs.appendFileSync(path.join(launcherTarget, 'Contents', 'MacOS', 'Buildr Web'), '\n# drift\n');
+        fs.appendFileSync(installedMacLauncherExecutable(launcherTarget), '\n# drift\n');
       } else {
         const driftScript: any = '$shell=New-Object -ComObject WScript.Shell; $s=$shell.CreateShortcut($env:BUILDR_LAUNCHER_SHORTCUT); $s.Arguments="foreign"; $s.Save()';
         run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', driftScript], {

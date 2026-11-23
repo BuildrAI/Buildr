@@ -249,7 +249,9 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
 
     const retrospective: any = run(['__internal', 'task-retrospective', 'record', '--task', 'retrospective-route-fixture', '--target', workflowWorkspace, '--report-markdown', '# Installed route fixture\n\nThe bundled Retrospective writer reached the canonical Application.']);
     assert.notEqual(retrospective.status, 0, 'retired Task Retrospective internal route must be absent');
-    assert.equal(fs.existsSync(path.join(packageRoot, 'payload/product/resources/workspace/skills/buildr/task-retrospective/SKILL.md')), true);
+    const bundledSkills = path.join(packageRoot, 'payload/product/resources/workspace/skills/buildr');
+    assert.equal(fs.existsSync(path.join(bundledSkills, 'task-retrospective/SKILL.md')), false, 'the retired bundled skill must also be absent');
+    assert.match(fs.readFileSync(path.join(bundledSkills, 'task-manager/SKILL.md'), 'utf8'), /复盘/, 'the bundled Task Manager owns retrospectives');
     assert.equal(fs.existsSync(path.join(appData, 'instance.json')), false, 'ordinary CLI must not start HTTP');
     const installationRegistryFile: any = path.join(appData, 'product-installations.json');
     const firstRegistryBytes: any = fs.readFileSync(installationRegistryFile, 'utf8');
