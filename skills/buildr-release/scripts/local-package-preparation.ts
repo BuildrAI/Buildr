@@ -52,7 +52,7 @@ export async function prepareLocalMainPackage(options: {
     && (step.executor?.type === 'candidate-artifact' || !excluded.has(step.testing?.executionBoundary) && !excludedSteps.has(step.id))).map((step: any) => step.id) : undefined;
   const source = await (dependencies.prepareSource ?? prepareLocalSourceVerification)({
     repo: options.repo, sourceFile, roundId: options.roundId, base: options.base, platform: options.platform,
-    packages: ['buildr', ...(options.plan?.requirements.plugin ? ['dsh-plugin'] : [])],
+    packages: ['buildr', ...(options.plan?.requirements.plugin ? ['dsh-plugin'] : [])], transport: 'file',
     ...(selectedStepIds ? { selectedStepIds } : {}),
   });
   const cost: any = { sourceCommit: options.sourceCommit, artifactSha256: null, stages: [], sourceChecks: [], artifactChecks: null, package: null };
@@ -152,7 +152,7 @@ export async function prepareLocalMainPackage(options: {
     { path: 'candidate-package/npm-pack.json', source: artifact.packMetadataPath ?? artifact.metadataPath ?? path.join(packageDirectory, 'npm-pack.json') },
   ];
   const sourcePacket = path.join(directory, 'source-verification.json'), artifactPacket = path.join(directory, 'artifact-verification.json');
-  assertPublicHandoffData(decodeCandidateSourceImport(source.transport));
+  assertPublicHandoffData(decodeCandidateSourceImport(source.transport, 'file'));
   write(sourcePacket, { transport: source.transport });
   write(artifactPacket, { evidence: artifactImports });
   files.push({ path: 'source-verification.json', source: sourcePacket }, { path: 'artifact-verification.json', source: artifactPacket });
