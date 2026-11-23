@@ -5,7 +5,7 @@ import { linkDestination, liveCarrier, preferredCarrier, sessionSelection, toolA
 const PANEL = 'buildr-harness-dev';
 const ANCHOR = '--buildr-harness-dsh';
 const KEY = 'buildr.harness-dsh.carriers.v1';
-const titles: Record<Tool, string> = { explorer: 'Buildr 资源管理器', 'source-control': 'Buildr 源代码管理' };
+const toolLabels: Record<Tool, string> = { explorer: '资源管理器', 'source-control': '源代码管理' };
 interface Observable<T> { subscribe(listener: () => void): () => void; getSnapshot(): T }
 interface Context {
   slots: { inject(name: string, mount: () => unknown): () => void; register(options: Record<string, unknown>, component: unknown): unknown };
@@ -34,19 +34,24 @@ function Mark({ size }: { size: number }) {
   </svg>;
 }
 type IconProps = { size?: number; className?: string };
-function ExplorerIcon({ size = 22, className }: IconProps) {
-  return <svg className={className} width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+type ToolIconProps = IconProps & { color?: string };
+function ExplorerIcon({ size = 22, className, color }: ToolIconProps) {
+  return <svg className={className} width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke={color ?? 'currentColor'} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
     <path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h5l2 2h7A1.5 1.5 0 0 1 20.5 9v9a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18ZM4 10.5h16" />
     <path d="M8 14h8m-8 2.7h5" />
   </svg>;
 }
-function SourceControlIcon({ size = 22, className }: IconProps) {
-  return <svg className={className} width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+function SourceControlIcon({ size = 22, className, color }: ToolIconProps) {
+  return <svg className={className} width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke={color ?? 'currentColor'} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
     <circle cx="7" cy="5" r="2" /><circle cx="7" cy="19" r="2" /><circle cx="17" cy="7" r="2" />
     <path d="M7 7v10m0-1.5c0-4.5 10-.5 10-6.5" />
   </svg>;
 }
 const toolIcons: Record<Tool, ComponentType<IconProps>> = { explorer: ExplorerIcon, 'source-control': SourceControlIcon };
+const guideIcons: Record<Tool, ComponentType<IconProps>> = {
+  explorer: props => <ExplorerIcon {...props} color="#d97706" />,
+  'source-control': props => <SourceControlIcon {...props} color="#8b5cf6" />,
+};
 function readBindings() {
   const result = new Map<string, string>();
   try {
@@ -221,8 +226,19 @@ export function apply(ctx: Context) {
       slots.inject('shell.overlay', () => slots.register({ name: 'shell.overlay', id: PANEL }, Shell)),
     ];
     const toolKinds = ['explorer', 'source-control'] as const;
-    const tools = toolKinds.map(kind => slots.inject('sidebar.right.pane.tab', () => slots.register({ name: 'sidebar.right.pane.tab', key: toolId(kind) },
-      (props: Omit<Parameters<typeof ToolPane>[0], 'kind'>) => <ToolPane {...props} kind={kind} />)));
+    const tools = toolKinds.flatMap(kind => {
+      const id = toolId(kind);
+      const Icon = toolIcons[kind];
+      return [
+        slots.inject('sidebar.right.pane.tab', () => slots.register({ name: 'sidebar.right.pane.tab', key: id },
+          (props: Omit<Parameters<typeof ToolPane>[0], 'kind'>) => <ToolPane {...props} kind={kind} />)),
+        slots.inject('sidebar.right.pane.tab.title', () => slots.register({ name: 'sidebar.right.pane.tab.title', key: id },
+          ({ useTabInfo }: { useTabInfo(): { tab: { title: string } } }) => {
+            const { tab } = useTabInfo();
+            return <><Icon size={16} />{tab.title}</>;
+          })),
+      ];
+    });
     let visibleEntries: boolean | undefined;
     let disposeTypes: Array<() => void> = [];
     syncToolEntries = visible => {
@@ -233,9 +249,9 @@ export function apply(ctx: Context) {
       for (const dispose of disposeTypes) dispose();
       disposeTypes = toolKinds.map(kind => {
         const id = toolId(kind);
-        return ctx.sidebarRightTabs.register({ id, kind: id, title: () => titles[kind], patterns: [toolAddress(kind)],
+        return ctx.sidebarRightTabs.register({ id, kind: id, title: () => `Buildr ${toolLabels[kind]}`, patterns: [toolAddress(kind)],
           canOpen: (address: string) => address === toolAddress(kind), keepMounted: true,
-          ...(visible ? { guide: [{ id, title: () => titles[kind], icon: toolIcons[kind], order: kind === 'explorer' ? 5 : 6 }] } : {}) });
+          ...(visible ? { guide: [{ id, title: () => toolLabels[kind], icon: guideIcons[kind], order: kind === 'explorer' ? 5 : 6 }] } : {}) });
       });
     };
     syncToolEntries(false);
