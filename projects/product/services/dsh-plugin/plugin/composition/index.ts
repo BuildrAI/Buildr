@@ -67,9 +67,14 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function fiberError(fiber: Entry['fiber']): unknown {
+  // Some hosts expose the error; the supported SDK only guarantees Fiber.state.
+  return fiber && 'error' in fiber ? fiber.error : undefined;
+}
+
 export default class BuildrComposition {
   static inject = ['loader', 'profileContext'];
-  private tree?: CompositionTree;
+  private tree: CompositionTree | undefined;
   private disposed = false;
   private active = false;
   private readyTimer: ReturnType<typeof setTimeout> | undefined;
@@ -79,7 +84,7 @@ export default class BuildrComposition {
   private readonly suspended = new Map<Entry, EntryOptions>();
   private readonly configurationOwner: NativeConfigurationOwner;
   private appliedRows?: RawEntry[];
-  private appliedDefinition?: CompositionDefinition;
+  private appliedDefinition: CompositionDefinition | undefined;
 
   constructor(private readonly ctx: Context) {
     this.configurationOwner = new NativeConfigurationOwner(ctx);
@@ -227,7 +232,7 @@ export default class BuildrComposition {
       if (entry.disabled || !requiredSet.has(entry.options.id) || entry.options.id === 'agent-loop') continue;
       const fiber = entry.fiber;
       if (fiber === undefined || fiber.state === FIBER_ACTIVE) continue;
-      if (fiber.state === FIBER_FAILED || fiber.error !== undefined || fiber.uid === null) {
+      if (fiber.state === FIBER_FAILED || fiberError(fiber) !== undefined || fiber.uid === null) {
         if (fiber.uid !== null) {
           await boundedAwait(fiber.restart().catch(() => {}), SIBLING_SETTLE_TIMEOUT_MS);
         } else {
@@ -283,10 +288,10 @@ export default class BuildrComposition {
         await boundedAwait(entry.fiber.await().catch(() => {}), SIBLING_SETTLE_TIMEOUT_MS);
       }
     }));
-    const failed = siblings.filter(entry => entry.fiber?.state === FIBER_FAILED || entry.fiber?.error !== undefined);
+    const failed = siblings.filter(entry => entry.fiber?.state === FIBER_FAILED || fiberError(entry.fiber) !== undefined);
     if (failed.length > 0) {
       const detail = failed
-        .map(entry => `${entry.options.id}: ${errorMessage(entry.fiber?.error ?? 'activation failed')}`)
+        .map(entry => `${entry.options.id}: ${errorMessage(fiberError(entry.fiber) ?? 'activation failed')}`)
         .join('; ');
       throw Error(`buildr-composition: required sibling failed (${detail})`);
     }
