@@ -32,8 +32,9 @@ export type DirectoryCatalogMember = {
   diagnostics: string[];
   readAt: string;
 };
-export type DirectoryCatalogRepository = DirectoryRepository & { gitId: string | null; members: DirectoryCatalogMember[] };
-export type DirectoryCatalog = { repositories: DirectoryCatalogRepository[]; topologyPaths?: string[]; topologyRevision?: string | null; truncated: boolean; diagnostic: string | null; readAt: string };
+export type DirectoryCatalogRepository = DirectoryRepository & { gitId: string | null; members: DirectoryCatalogMember[]; pending?: boolean; error?: string; readAt?: string; topologyRevision?: string | null };
+export type DirectoryInventory = { repositories: Array<{path: string; name: string}>; nextCursor: string | null; limited: boolean; diagnostic: string | null; readAt: string };
+export type DirectoryCatalog = { nextCursor?: string | null; limited?: boolean; repositories: DirectoryCatalogRepository[]; topologyPaths?: string[]; topologyRevision?: string | null; truncated: boolean; diagnostic: string | null; readAt: string };
 export type DirectorySelection = { repositoryId: string; checkoutId: string };
 export type DirectoryRequest = <T>(operation: string, input?: object, signal?: AbortSignal) => Promise<T>;
 export type DirectoryListing = { entries: Array<{ name: string; path: string; kind: 'directory' | 'file' | 'link'; ignored: boolean }>; truncated: boolean };

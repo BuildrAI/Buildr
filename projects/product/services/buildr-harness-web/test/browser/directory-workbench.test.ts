@@ -192,6 +192,9 @@ test('production Harness browses, edits, reviews and commits with no Development
   await scm.locator('.source-control-commit-panel').waitFor();
   assert.equal(await scm.locator('.harness-local-commit').count(), 0);
   assert.equal(await scm.locator('.source-control-diagnostics').filter({ hasText: '代码库读取达到上限' }).count(), 0, '不应误报代码库读取达到上限');
+  await scm.getByRole('button', {name:'查找更多仓库',exact:true}).click();
+  await scm.getByRole('button', {name:'查找更多仓库',exact:true}).waitFor({state:'hidden'});
+  await scm.locator('.source-control-commit-panel').waitFor();
   assert.equal(await scm.locator('.source-control-status-unknown, [data-file-state="unknown"]').count(), 0, '所有工作树应具备完整状态观察，不显示问号未知状态');
 
   // Linked worktree shows real branch & status right away

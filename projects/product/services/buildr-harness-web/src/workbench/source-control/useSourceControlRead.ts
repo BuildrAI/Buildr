@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-type Loader<I, T> = (input: I, signal: AbortSignal) => Promise<T>;
+type Loader<I, T> = (input: I, signal: AbortSignal, publish: (data: T) => void) => Promise<T>;
 type ReadState<T> = { key: string; data: T | null; loading: boolean; error: string };
 
 /** Each observation owns cancellation, its source key and a bounded cache; an old source cannot replace the current one. */
@@ -29,7 +29,11 @@ export function useSourceControlRead<I extends object, T>(key: string, input: I,
     const isCurrent = () => !request.signal.aborted && version === sequence.current && current.current.key === source.key && current.current.enabled;
     setState({ key: source.key, data: cache.current.get(source.key) ?? null, loading: true, error: '' });
     try {
-      const result = await source.loader({ ...source.input, ...override }, request.signal);
+      const result = await source.loader({ ...source.input, ...override }, request.signal, data => {
+        if (!isCurrent()) return;
+        cache.current.set(source.key, data);
+        setState({key:source.key, data, loading:true, error:''});
+      });
       if (!isCurrent()) return;
       const data = merge ? merge(cache.current.get(source.key) ?? null, result) : result;
       cache.current.delete(source.key); cache.current.set(source.key, data);

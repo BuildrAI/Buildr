@@ -23,6 +23,7 @@ import {
 } from './api';
 import { DirectoryExplorer, type DirectoryOpenRequest } from './DirectoryExplorer';
 import { DirectorySourceControl } from './DirectorySourceControl';
+import { loadDirectoryCatalog } from './directory-catalog';
 import {desktopNotify} from '../../dsh-desktop';
 import './directory-workbench.css';
 
@@ -148,7 +149,7 @@ export function HarnessDirectoryWorkbench({ active = true, workspaceId, workspac
   </div>;
 }
 
-const noInput = {};
+const noInput: {more?: boolean; keepDiscovery?: boolean} = {};
 
 function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, module }: {
   scope: DirectoryScope;
@@ -163,10 +164,12 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
   const [version, bump] = useState(0);
   const [selected, setSelected] = useState<DirectorySelection | null>();
   const base = useMemo(() => directoryClient(scope, workspaceId), [scope, workspaceId]);
-  const load = useCallback((_input: object, signal: AbortSignal) => base<DirectoryCatalog>('catalog', {}, signal), [base]);
-  const catalog = useSourceControlRead(scope.ref.id + ':' + scope.revision, noInput, load, active, String(version));
+  const catalogRef = useRef<DirectoryCatalog | null>(null);
+  const priority = useRef<string | undefined>(undefined);
+  const load = useCallback((input: typeof noInput, signal: AbortSignal, publish: (value: DirectoryCatalog) => void) =>
+    loadDirectoryCatalog(base, catalogRef.current, !!input.more, !!input.keepDiscovery, () => priority.current, signal, publish), [base]);
+  const catalog = useSourceControlRead(scope.ref.id + ':' + scope.revision, noInput, load, active);
   const repos = catalog.data?.repositories ?? [];
-  const catalogRef = useRef(catalog.data);
   catalogRef.current = catalog.data;
   const refreshCatalog = catalog.refresh;
   const observingGit = active && (module === 'source-control' || !module && !tabs.home && tabs.selected === 'source-control');
@@ -180,17 +183,20 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
       try {
         const before = observation.current.catalog;
         if (document.visibilityState === 'hidden' || before.loading || !before.data?.topologyPaths) return;
-        const { revision } = await base<{revision:string}>('git-topology', { repositoryPaths: before.data.topologyPaths }, stop.signal);
+        const { repositoryRevisions } = await base<{repositoryRevisions: Array<{path:string;revision:string}>}>('git-topology', { repositoryPaths: before.data.topologyPaths }, stop.signal);
+        const revisions = new Map(repositoryRevisions.map(item => [item.path,item.revision]));
+        const changed = before.data.repositories.some(repo => revisions.has(repo.path) && revisions.get(repo.path) !== repo.topologyRevision);
         const latest = observation.current;
         if (!stop.signal.aborted && latest.observingGit && document.visibilityState === 'visible' && !latest.catalog.loading
-            && latest.catalog.data === before.data && revision !== before.data.topologyRevision) await refreshCatalog();
+            && latest.catalog.data === before.data && changed) await refreshCatalog({keepDiscovery:true});
       } catch { /* Retain the last read; a later tick or manual refresh can recover. */ }
       finally { if (!stop.signal.aborted) timer = setTimeout(observe, 3500); }
     }
     timer = setTimeout(observe, 500);
     return () => { stop.abort(); clearTimeout(timer); };
   }, [observingGit, base, refreshCatalog]);
-  const rootRepo = repos.find(item => item.path === '') ?? repos[0];
+  const first = repos.find(item => item.path === '') ?? repos.find(item => item.pending || item.checkouts.defaultId);
+  const rootRepo = first?.pending ? undefined : first;
   const defaultSelection: DirectorySelection | null = rootRepo
     ? { repositoryId: rootRepo.id, checkoutId: rootRepo.checkouts.defaultId ?? rootRepo.members[0]?.id ?? '' }
     : null;
@@ -228,7 +234,7 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
             expectedSourceRevision: binding.snapshot.sourceRevision,
             expectedRevision,
           });
-          void refreshCatalog();
+          void refreshCatalog({keepDiscovery:true});
           return directoryEditableDocument(workspaceId, saved);
         } catch (error) {
           const failure = error as { code?: string; details?: unknown };
@@ -257,11 +263,11 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
     if (!reveal || !ready) return;
     const signature = JSON.stringify([reveal.workspaceId, reveal.revision, reveal.path, reveal.line ?? null,reveal.checkout]);
     if (revealedRef.current === signature) return;
-    revealedRef.current = signature;
     if (reveal.checkout) {
       const repo = catalog.data?.repositories.find(item => item.id === reveal.checkout!.repositoryId);
       if (!repo?.members.some(member => member.id === reveal.checkout!.checkoutId)) return;
     }
+    revealedRef.current = signature;
     open(reveal.checkout ?? (defaultSelection?.checkoutId ? defaultSelection : null), reveal.path, reveal.line);
   }, [open, reveal, ready, catalog.data, defaultSelection?.repositoryId, defaultSelection?.checkoutId]);
   const openFromGit = useCallback((target: SourceControlFileTarget) => {
@@ -309,10 +315,13 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
           active={paneActive && ready}
           version={version}
           current={current}
+          explicitSelection={selected}
           catalog={catalog.data}
           catalogError={catalog.error}
           catalogLoading={catalog.loading}
           refreshCatalog={async () => { await refreshCatalog(); bump(v => v + 1); }}
+          discoverMore={() => catalog.refresh({more:true})}
+          prioritizeRepository={repositoryPath => { priority.current = repositoryPath; }}
           onSelectCheckout={selectSource}
           onOpenCurrent={openFromGit}
         />,

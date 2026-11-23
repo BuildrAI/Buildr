@@ -1,5 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { parse } from 'yaml';
+import { executionScopeRef } from '../execution-contracts.ts';
+import type { HarnessDirectory } from './directory-host.ts';
 import { codeFailure, codeGit, fallbackIgnored, relativeCodePath } from '../workbench/code-file-reader.ts';
 import { normalizeFilesystemPath, sameFilesystemPath } from '../workbench/filesystem-path-identity.ts';
 import { readGitWorktreeRecords } from '../workbench/git-worktree-list.ts';
@@ -128,6 +132,131 @@ export function observeDirectoryRepositories(root: string, scopeId: string) {
   }
   if(entries>=32768) truncated = true;
   return {repositories, truncated, diagnostic:unavailable?'部分目录或仓库暂不可核对。':!repositories.length&&!truncated?'当前目录范围没有发现 Git 仓库。':null};
+}
+
+export type DirectoryRepositoryHint = { path: string; name: string };
+
+/** The workspace document only supplies in-scope path hints, never Git identity or permission. */
+function registeredHints(directory: HarnessDirectory): DirectoryRepositoryHint[] | null {
+  if (directory.ref.sourceId !== 'buildr') return null;
+  try {
+    const ref = executionScopeRef(directory.ref.id, directory.ref.sourceId);
+    if (ref.id === '@default' || ref.sourceId !== directory.ref.sourceId) return null;
+    const read = (relative: string) => {
+      const file = path.join(directory.rootPath, relative);
+      if (!lexicalPath(fs.realpathSync(file), file)) throw missing();
+      const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+      try {
+        const stat = fs.fstatSync(fd);
+        if (!stat.isFile() || stat.size > 1024 * 1024) throw missing();
+        const body = Buffer.alloc(stat.size + 1);
+        let length = 0;
+        while (length < body.length) {
+          const count = fs.readSync(fd, body, length, body.length - length, null);
+          if (!count) break;
+          length += count;
+        }
+        if (length !== stat.size) throw missing();
+        return parse(body.toString('utf8', 0, length), {maxAliasCount: 0});
+      } finally { fs.closeSync(fd); }
+    };
+    const workspace = read('.buildr/workspace.yml');
+    if (workspace?.schemaVersion !== 'buildr.workspace/v1' || workspace.id !== ref.id) return null;
+    const manifest = read('repositories/manifest.yml');
+    if (manifest?.schemaVersion !== 'buildr.repositories/v1' || !manifest.repositories || typeof manifest.repositories !== 'object' || Array.isArray(manifest.repositories)) return null;
+    return Object.values(manifest.repositories as Record<string, {workspaceId?: string; name?: string; source?: {path?: string}}>).flatMap(item => {
+      if (!item || item.workspaceId !== ref.id || typeof item.source?.path !== 'string' || path.isAbsolute(item.source.path)) return [];
+      try {
+        const relative = item.source.path === '.' ? '' : relativeCodePath(item.source.path, true);
+        return [{path:relative, name:typeof item.name === 'string' && item.name.trim() ? item.name : path.basename(relative || directory.rootPath)}];
+      } catch { return []; }
+    });
+  } catch { return null; }
+}
+
+type ScanItem = { path: string; depth: number };
+type Discovery = {
+  binding: string; expiresAt: number; queue: ScanItem[]; seen: Set<string>; reported: Set<string>;
+  entries: number; limited: boolean; unavailable: boolean;
+};
+const discoveryTtl = 5 * 60_000;
+const discoveryPage = 64;
+const discoveryDirectoryLimit = 8192;
+const discoveryEntryLimit = 32768;
+
+/** One bounded read session per cursor. No filesystem handles survive a request. */
+export function createDirectoryRepositoryDiscovery(now = Date.now) {
+  const sessions = new Map<string, Discovery>();
+  const receipts = new Map<string, {binding:string; expiresAt:number; result:{repositories:DirectoryRepositoryHint[]; nextCursor:string|null; limited:boolean; diagnostic:string|null; readAt:string}}>();
+  return (directory: HarnessDirectory, cursor?: string) => {
+    const time = now();
+    for (const [id, scan] of sessions) if (scan.expiresAt <= time) sessions.delete(id);
+    const binding = JSON.stringify([directory.ref.sourceId, directory.ref.id, directory.rootPath, directory.revision]);
+    for (const [id, receipt] of receipts) if (receipt.expiresAt <= time) receipts.delete(id);
+    const receipt = cursor ? receipts.get(cursor) : undefined;
+    if (receipt?.binding === binding) return receipt.result;
+    const resume = cursor ? sessions.get(cursor) : undefined;
+    if (cursor && (!resume || resume.binding !== binding)) throw codeFailure('code_directory_discovery_expired', '查找进度已过期或不属于当前目录，请重新读取后再查找。', 409);
+    const scan: Discovery = resume ?? {binding, expiresAt:time+discoveryTtl, queue:[{path:'',depth:0}], seen:new Set(['']), reported:new Set(), entries:0, limited:false, unavailable:false};
+    const hints = !cursor ? registeredHints(directory) : null;
+    const results: DirectoryRepositoryHint[] = [];
+    const report = (hint: DirectoryRepositoryHint) => {
+      if (scan.reported.has(hint.path)) return;
+      if (scan.reported.size >= SOURCE_CONTROL_LIMITS.repositories) { scan.limited = true; return; }
+      scan.reported.add(hint.path); results.push(hint);
+    };
+    for (const hint of hints ?? []) report(hint);
+    const candidate = (parent: ScanItem, relative: string) => {
+      if (++scan.entries >= discoveryEntryLimit) { scan.limited = true; return; }
+      const pieces = relative.split('/');
+      if (pieces.some(piece => !piece || piece === '.' || piece === '..' || piece.toLowerCase() === '.git' || fallbackIgnored.has(piece))) return;
+      const next = parent.path ? parent.path + '/' + relative : relative;
+      if (scan.seen.has(next)) return;
+      if (scan.seen.size >= discoveryDirectoryLimit) { scan.limited = true; return; }
+      scan.seen.add(next); scan.queue.push({path:next,depth:parent.depth+pieces.length});
+    };
+    if (!hints) for (let page = 0; page < discoveryPage && scan.queue.length && !scan.limited; page++) {
+      const index = cursor ? 0 : scan.queue.findIndex(item => item.depth <= 1);
+      if (index < 0) break;
+      const [item] = scan.queue.splice(index, 1);
+      const location = path.join(directory.rootPath, item.path);
+      try {
+        if (!lexicalPath(fs.realpathSync(location), location)) continue;
+        const marker = fs.lstatSync(path.join(location, '.git'), {throwIfNoEntry:false});
+        if (marker?.isDirectory() || marker?.isFile()) {
+          report({path:item.path, name:path.basename(location)});
+          // Do not walk tracked source trees eagerly. Defer even Git's candidate
+          // inspection of the shallow repositories until the user asks for more.
+          if (!cursor) { scan.queue.push({...item, depth:2}); continue; }
+          try { for (const child of discoverGitCandidateDirectories(location)) { candidate(item, child); if (scan.limited) break; } }
+          catch { scan.unavailable = true; }
+          continue;
+        }
+        const dir = fs.opendirSync(location);
+        try {
+          for (let entry; !scan.limited && (entry = dir.readSync());) {
+            if (entry.isDirectory()) candidate(item, entry.name);
+            else if (++scan.entries >= discoveryEntryLimit) scan.limited = true;
+          }
+        } finally { dir.closeSync(); }
+      } catch { scan.unavailable = true; }
+    }
+    const more = scan.queue.length > 0 && !scan.limited;
+    const nextCursor = more ? randomUUID() : null;
+    if (cursor) sessions.delete(cursor);
+    if (nextCursor) {
+      scan.expiresAt = time + discoveryTtl;
+      sessions.set(nextCursor, scan);
+      while (sessions.size > 8) sessions.delete(sessions.keys().next().value!);
+    }
+    const result = {repositories:results, nextCursor, limited:scan.limited,
+      diagnostic:scan.unavailable ? '部分目录暂不可核对，已保留找到的仓库。' : null, readAt:new Date(time).toISOString()};
+    if (cursor) {
+      receipts.set(cursor,{binding,expiresAt:time+discoveryTtl,result});
+      while (receipts.size > 16) receipts.delete(receipts.keys().next().value!);
+    }
+    return result;
+  };
 }
 
 export function resolveDirectoryRepository(root: string, scopeId: string, repositoryPath: string) {

@@ -364,3 +364,38 @@ test('Git topology changes on external branches and worktrees, not ordinary file
   assert.equal(await topology(), branch);
   await assert.rejects(call('git-topology', { repositoryPaths: ['../outside'] }), { code: 'code_path_forbidden' });
 });
+
+test('repository inventory uses in-scope registrations and resumes ordinary shallow discovery without losing a page', async t => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'harness-progressive-')));
+  t.after(() => fs.rmSync(base,{recursive:true,force:true}));
+  const {createDirectoryRepositoryDiscovery} = await import('../../src/application/directory-checkouts.ts');
+  const root = path.join(base,'workspace');
+  fs.mkdirSync(path.join(root,'.buildr'),{recursive:true});
+  fs.mkdirSync(path.join(root,'repositories'));
+  fs.writeFileSync(path.join(root,'.buildr/workspace.yml'),'schemaVersion: buildr.workspace/v1\nid: verified\n');
+  fs.writeFileSync(path.join(root,'repositories/manifest.yml'),JSON.stringify({schemaVersion:'buildr.repositories/v1',repositories:{one:{workspaceId:'verified',name:'已登记',source:{path:'repositories/deep/repo'}},outside:{workspaceId:'verified',source:{path:'../escape'}}}}));
+  const scope = {ref:{sourceId:'buildr',id:'verified'},rootPath:root,selectedPath:root,revision:'one'};
+  let time = 1000;
+  const discover = createDirectoryRepositoryDiscovery(() => time);
+  const registered = discover(scope);
+  assert.deepEqual(registered.repositories,[{path:'repositories/deep/repo',name:'已登记'}]);
+  assert.ok(registered.nextCursor); assert.equal(registered.limited,false);
+  const local = {...scope,ref:{sourceId:'harness-local',id:'local'}};
+  for (const relative of ['shallow','group/deeper/repo']) {
+    const dir = path.join(root,relative); fs.mkdirSync(dir,{recursive:true});
+    execFileSync('git',['-C',dir,'-c','init.templateDir=','init','-q'],{env:codeGitEnvironment()});
+  }
+  const first = discover(local);
+  assert.deepEqual(first.repositories.map(repo => repo.path),['shallow']); assert.ok(first.nextCursor);
+  assert.throws(() => discover(scope,first.nextCursor!), {code:'code_directory_discovery_expired'});
+  const second = discover(local, first.nextCursor!);
+  assert.deepEqual(second.repositories.map(repo => repo.path),['group/deeper/repo']);
+  assert.deepEqual(discover(local,first.nextCursor!), second);
+  const run = createDirectoryWorkbench({resolveDirectory:() => local});
+  const call = (operation:string,input={}) => run(operation,{scopeId:'local',scopeRevision:'one',...input}) as Promise<any>;
+  assert.equal((await call('catalog',{repositoryPath:'group/deeper/repo'})).repositories[0].members[0].status,'clean');
+  assert.equal((await call('catalog',{repositoryPath:'group/deeper/repo'})).repositories.length,1);
+  await assert.rejects(call('catalog',{repositoryPath:'../escape'}),{code:'code_path_forbidden'});
+  time += 6*60_000;
+  assert.throws(() => discover(local,first.nextCursor!), {code:'code_directory_discovery_expired'});
+});

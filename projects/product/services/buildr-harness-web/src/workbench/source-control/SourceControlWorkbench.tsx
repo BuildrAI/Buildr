@@ -44,6 +44,7 @@ export type SourceControlWorkbenchProps = {
   onOpenFile?(target: SourceControlFileTarget): void; onViewCurrent?(target: SourceControlFileTarget): void;
   onDiscard?(repository: SourceControlRepository, worktree: SourceControlWorktree, file?: SourceControlChange): void;
   discardPending?: boolean;
+  liveReadsSuspended?(repository: SourceControlRepository, worktree: SourceControlWorktree): boolean;
   renderChangeActions?(repository: SourceControlRepository, worktree: SourceControlWorktree, active: boolean): ReactNode;
   fileEditing?: { renderDiff(diff: CodeDiffResponse, reader: SourceControlReader, mode: 'split'|'unified'): ReactNode; openFolder?(target: SourceControlFileTarget): Promise<unknown> };
   renderMarkdown?(input: WorkbenchMarkdownInput): ReactNode;
@@ -72,10 +73,10 @@ function readingPositions(root: HTMLElement | null): ReadingPosition[] {
 }
 
 /** Shared view: all observed facts and reads come from the caller, including in the offline prototype. */
-export function SourceControlWorkbench({ active = true, repositories, defaultRepositories, scene, reader, readKey, observation, onRefresh, onRetry, onClone, onScene, onOpenTask, onOpenFile, onViewCurrent, task, scopeSelection, sourceEntryKey, suspendSelection, currentSourceSelection, onCurrentSourceSelect, onPrioritizeRepository, layoutStorageKey, branchExtension, renderChangeActions, onDiscard, discardPending, catalogActions, catalogFeedback, fileEditing, renderMarkdown, renderChangeFileAction, separateChangeLayers, sidebarOnRight, onOpenCurrentInExplorer }: SourceControlWorkbenchProps) {
+export function SourceControlWorkbench({ active = true, repositories, defaultRepositories, scene, reader, readKey, observation, onRefresh, onRetry, onClone, onScene, onOpenTask, onOpenFile, onViewCurrent, task, scopeSelection, sourceEntryKey, suspendSelection, currentSourceSelection, onCurrentSourceSelect, onPrioritizeRepository, layoutStorageKey, branchExtension, renderChangeActions, onDiscard, discardPending, liveReadsSuspended, catalogActions, catalogFeedback, fileEditing, renderMarkdown, renderChangeFileAction, separateChangeLayers, sidebarOnRight, onOpenCurrentInExplorer }: SourceControlWorkbenchProps) {
   const workbench = useRef<HTMLElement>(null);
   const [selectedWorktreeKey, setSelectedWorktreeKey] = useState('');
-  const [pendingPick, setPendingPick] = useState<{readKey: string; repositoryId: string; sourceKey?: string; entryKey?: string}>();
+  const [pendingPick, setPendingPick] = useState<{readKey: string; repositoryId: string; sourceKey?: string; entryKey?: string; discoveryKey?: string}>();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [catalogExpanded, setCatalogExpanded] = useState(true);
   const [sourceDetailsExpanded, setSourceDetailsExpanded] = useState(false);
@@ -105,13 +106,15 @@ export function SourceControlWorkbench({ active = true, repositories, defaultRep
   // The sidebar list and the reader choose independently: switching a reader tab keeps the list where the user left it.
   const showHistoryList = listMode === 'history';
   const sources = repositories.flatMap(repository => repository.worktrees.map(worktree => ({repository, worktree})));
-  const pendingRepositoryId = pendingPick?.readKey === readKey && pendingPick.sourceKey === currentSourceSelection?.key && pendingPick.entryKey === sourceEntryKey ? pendingPick.repositoryId : undefined;
-  const pendingRepository = repositories.find(repository => repository.id === pendingRepositoryId);
+  const pendingId = pendingPick?.readKey === readKey && pendingPick.sourceKey === currentSourceSelection?.key && pendingPick.entryKey === sourceEntryKey ? pendingPick.repositoryId : undefined;
+  const pendingRepository = pendingId === undefined ? undefined : repositories.find(repository => pendingPick?.discoveryKey !== undefined ? repository.discoveryKey === pendingPick.discoveryKey : repository.id === pendingId);
+  const pendingRepositoryId = pendingRepository?.id ?? pendingId;
   const pendingCount = repositories.filter(repository => repository.pending).length;
   const pendingMessage = pendingRepositoryId ? pendingRepository?.pending ? '正在核对所选代码库…' : '所选代码库暂不可读取。' : pendingCount && !selectedWorktreeKey ? '正在核对代码库，可直接点选。' : null;
   const selectedSource = pendingRepositoryId || suspendSelection || scopeSelection && selectionEpoch !== scopeSelection.key ? undefined : selectedWorktreeKey ? sources.find(({repository, worktree}) => sourceControlWorktreeKey(repository.id, worktree.worktreeId) === selectedWorktreeKey) : sourceControlDefaultSource(defaultRepositories || repositories);
   const selectedRepository = selectedSource?.repository, selectedWorktree = selectedSource?.worktree;
-  const sourceChanging = Boolean(selectedRepository && branchExtension?.readsSuspended?.(selectedRepository.id));
+  const sourceChanging = Boolean(selectedRepository && (branchExtension?.readsSuspended?.(selectedRepository.id)
+    || selectedWorktree && liveReadsSuspended?.(selectedRepository, selectedWorktree)));
   const selectedIdentity = selectedSource ? sourceControlWorktreeKey(selectedSource.repository.id, selectedSource.worktree.worktreeId) : '';
   const entryIntentKey = sourceEntryKey || scopeSelection?.key;
   useEffect(() => {
@@ -313,7 +316,7 @@ export function SourceControlWorkbench({ active = true, repositories, defaultRep
   }, [active, pendingRepositoryId, pendingRepository]);
   function pickPending(repository: SourceControlRepository) {
     rememberReading();
-    setPendingPick({readKey, repositoryId:repository.id, sourceKey:currentSourceSelection?.key, entryKey:sourceEntryKey});
+    setPendingPick({readKey, repositoryId:repository.id, sourceKey:currentSourceSelection?.key, entryKey:sourceEntryKey, discoveryKey:repository.discoveryKey});
     onPrioritizeRepository?.(repository.id);
   }
   function toggle(key: string, defaultExpanded = true) { setExpanded(value => ({...value, [key]: !(value[key] ?? defaultExpanded)})); }

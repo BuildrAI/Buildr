@@ -44,7 +44,7 @@ export type SourceControlState = '' | 'empty' | 'partial' | 'loading' | 'failure
 export type SourceControlChange = ChangedFileEntry & { worktreeId?: string | null; area: 'unstaged' | 'staged' | 'untracked' | 'working'; content: string; previousContent?: string };
 export type SourceControlCommit = GitCommitView & { worktreeId?: string | null; files: SourceControlChange[]; branches: string[]; tags: string[]; taskId?: string | null; taskTitle?: string | null; taskDiagnostic?: string | null };
 export type SourceControlRepository = {
-  id: string; code: string; name: string; location: string; taskLocation?: string; taskBranch?: string | null; readonly pending?: boolean;
+  id: string; discoveryKey?: string; code: string; name: string; location: string; taskLocation?: string; taskBranch?: string | null; readonly pending?: boolean;
   gitId?: string | null; checkoutId?: string | null; readVersion?: string; refsVersion?: string; cached?: boolean;
   branch: string | null; branches: string[]; ahead: number | null; behind: number | null;
   status: 'ready' | 'clean' | 'offline' | 'partial'; simulated: boolean; services: string[];
