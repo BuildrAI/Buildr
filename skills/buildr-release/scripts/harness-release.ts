@@ -54,6 +54,12 @@ export function inspectCandidate(dir: string) {
   const candidate: Candidate = JSON.parse(fs.readFileSync(path.join(dir,'candidate.json'),'utf8'));
   const {file} = artifact(dir,candidate);
   const distribution = candidate.target === 'harness' ? inspectArtifactDistribution(file, candidate.packageName) : null;
+  if (distribution?.status === 'eligible') {
+    const approval = distribution.platformSupport?.publicationApproval;
+    if (approval?.version !== candidate.version || approval.platform !== 'darwin' ||
+        !Array.isArray(approval.architectures) || approval.architectures.length !== 1 || approval.architectures[0] !== 'arm64' ||
+        typeof approval.authority !== 'string' || !approval.authority.trim()) throw Error('candidate-platform-approval-mismatch');
+  }
   return {candidate, file, distribution};
 }
 

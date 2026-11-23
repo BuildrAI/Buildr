@@ -4,8 +4,10 @@
   "platforms": {
     "darwin": {
       "launcherImplemented": true,
-      "support": "candidate",
-      "evidenceRequired": "准确安装包的真实应用打开、重复及并发打开、共享后台身份与清理"
+      "support": "supported",
+      "architectures": ["arm64"],
+      "evidenceRequired": "准确安装包的真实应用打开、重复及并发打开、共享后台身份与清理",
+      "unverifiedArchitectures": ["x64"]
     },
     "win32": {
       "launcherImplemented": true,
@@ -17,5 +19,11 @@
       "support": "not-declared"
     }
   },
-  "publicationApproved": false
+  "publicationApproved": true,
+  "publicationApproval": {
+    "version": "0.1.0-rc.1",
+    "platform": "darwin",
+    "architectures": ["arm64"],
+    "authority": "Buildr 发行对话 422cb3d8-db73-5fb3-a3cf-a852346af7f7：首发不等待其他系统验证"
+  }
 }
