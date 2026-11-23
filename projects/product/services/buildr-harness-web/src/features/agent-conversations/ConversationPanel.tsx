@@ -1,3 +1,4 @@
+import {HARNESS_MOBILE_BREAKPOINT} from '../../shell/harness-layout';
 import {ConversationContextSlot, useConversationHost} from '../../integration/ConversationHost';
 import {useHarnessDirectoryFiles} from '../../directory-files.tsx';
 import { ConversationCompactionNotice } from './ConversationCompactionNotice.tsx';
@@ -930,7 +931,9 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
             ...(!standalone?[
               {key:'collapse',label:'收起对话'},
               ...(!composition.modeSwitchInHost?[{key:'full',label:context.full?'恢复分屏':'专注对话'}]:[]),
-              {key:'side',label:context.side==='right'?'对话移到最左侧':'对话移到右侧'},
+              ...(!composition.modeSwitchInHost || (!context.full && viewportWidth > HARNESS_MOBILE_BREAKPOINT) ? [{key:'side',label:composition.modeSwitchInHost
+                ? (context.side==='right'?'将对话栏移到左侧':'将对话栏移到右侧')
+                : (context.side==='right'?'对话移到最左侧':'对话移到右侧')}] : []),
               {type:'divider' as const},
             ]:[]),
             {key:'generate-title',label:generatingTitle?'正在生成标题…':'生成简短标题',disabled:generatingTitle||!canGenerateConversationTitle(chat)},

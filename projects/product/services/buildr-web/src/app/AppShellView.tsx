@@ -37,6 +37,7 @@ export function AppShellHeader({isGlobal,primaryNavigation='top',brandHref,devel
             </span>
           ) : null}
 
+          {modeNavigation}
             <Dropdown overlayClassName="workspace-switcher-popup" menu={{ items: workspaceMenuItems }} trigger={['click']}>
               <button type="button" className="workspace-switcher" aria-label="切换工作空间">
                 <span className="context-label">工作空间</span>
@@ -50,7 +51,6 @@ export function AppShellHeader({isGlobal,primaryNavigation='top',brandHref,devel
   return (
         <header className={"topbar" + (modeNavigation ? " development-topbar" : "")} ref={headerRef}>
           {modeNavigation ? <div className="topbar-identity">{identity}</div> : identity}
-          {modeNavigation}
           {!isGlobal && primaryNavigation === 'top' ? <nav className="top-nav" aria-label="主导航">
             <Link to={workbenchHref} data-area="workbench" aria-current={area === 'workbench' ? 'page' : undefined} className={area === 'workbench' ? 'active' : ''}
               >工作台</Link>

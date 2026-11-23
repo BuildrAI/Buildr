@@ -1,10 +1,12 @@
 .development-work-environment-shell{height:100dvh;min-height:0;min-width:0;overflow:hidden}
 .app-shell .topbar-identity{display:flex;align-items:center;gap:inherit;min-width:0}
-.app-shell.development-work-environment-shell > .development-topbar{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);min-height:48px;z-index:21;flex-wrap:nowrap}
-.development-topbar .topbar-actions{min-width:0;justify-self:end}
+.app-shell.development-work-environment-shell > .development-topbar{display:flex;min-height:48px;z-index:21;flex-wrap:nowrap}
+.development-topbar .topbar-identity{align-self:stretch}
+.development-topbar .topbar-actions{min-width:0}
 /* The full preview identity remains on the status element; it must not displace the mode tabs. */
 .development-topbar .preview-identity > span:not(.preview-identity-label){display:none}
-.development-mode-navigation{height:100%;display:flex;align-items:stretch;gap:4px;white-space:nowrap}
+.development-mode-navigation{align-self:stretch;display:flex;align-items:stretch;gap:4px;white-space:nowrap;flex:none}
+.development-mode-navigation::after{content:"";align-self:center;height:20px;border-inline-end:1px solid var(--soft-line)}
 .development-mode-navigation button{border:0;border-bottom:2px solid transparent;background:transparent;color:var(--soft-muted);padding:0 12px;font:inherit;cursor:pointer}
 .development-mode-navigation button:hover,.development-mode-navigation button[aria-current=page]{color:var(--soft-ink)}
 .development-mode-navigation button[aria-current=page]{border-color:var(--soft-primary);font-weight:650}
@@ -25,10 +27,10 @@
 .development-harness-frame.in-shell,.development-harness-frame.in-shell.is-full{position:relative;inset:auto;flex:1;width:100%!important;max-width:none;height:100%;min-height:0;overflow:visible}
 @media(max-width:1050px){.development-topbar .preview-identity{display:none}.development-topbar .brand-link strong{display:none}.development-topbar .workspace-switcher .context-label{display:none}}
 @media(max-width:760px){
-  .app-shell.development-work-environment-shell > .development-topbar{grid-template-columns:minmax(0,1fr) auto auto;gap:5px;padding-inline:6px}
+  .app-shell.development-work-environment-shell > .development-topbar{gap:5px;padding-inline:6px}
   .development-topbar .topbar-identity,.development-topbar .topbar-actions{gap:4px}
   .development-topbar .development-environment-badge,.development-topbar .topbar-actions .workbench-search-trigger-label{display:none}
-  .development-topbar .workspace-switcher{max-width:100%;padding-inline:4px}.development-topbar .workspace-switcher strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .development-topbar .workspace-switcher{min-width:0;max-width:100%;padding-inline:4px}.development-topbar .workspace-switcher strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .development-mode-navigation{gap:0}.development-mode-navigation button{padding-inline:5px}
   .development-topbar #open-agent-action{font-size:0}.development-topbar #open-agent-action .anticon{font-size:var(--icon-size-regular)}
   .development-work-environment-shell .development-shell-body{flex-direction:column-reverse}
