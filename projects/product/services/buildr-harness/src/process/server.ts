@@ -599,12 +599,13 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (closeWork) return closeWork;
     diagnostics({event:'service-close-request',reason});
     closing = true; accepting = false;
-    storageMaintenance.close();
+    const storageDrained = storageMaintenance.close();
     directoryGeneration.close();
     let confirmed=false;
     closeWork = (async () => {
       try {
         for (const controller of generations.values()) controller.abort();
+        await storageDrained;
         await web.close();
         await webConnection?.then(value=>value.disconnect()).catch(()=>{});
         await service.close();

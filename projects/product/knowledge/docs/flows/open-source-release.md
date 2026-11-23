@@ -26,6 +26,15 @@
 
 开始耗时验证前，先只读核对发布目标、版本和来源，以及当前适用的发行决定与平台支持声明，尽早说明已知缺口；源码检查通过不等于原包验收或发行资格通过。公开所需决定缺失时，不替负责人批准、不自动放宽门槛；不依赖该决定的内部准备仍可按授权继续。最终公开判断仍以准确原包自身证据为准，不用源码声明替代，也不新增另一套发布门禁或状态。
 
+## 独立 Harness 与 DSH Buildr Harness
+
+这两个目标独立于 `buildr` 和旧 `dsh-plugin`。在规范检出的仓库根使用项目 Node 运行 `node skills/buildr-release/scripts/harness-release.ts prepare <harness|dsh-buildr-harness> <version> <空目录>`，用 `inspect <目录>` 只读回看。未提交源码只能用 `--rehearsal`，不得把其摘要用作正式候选。
+
+1. 固定对应源码与版本，仅生产一次原包；Harness 用实际 Node 24.15.0 运行 `harness-package-smoke.ts <目录>`，并完成真实启动器、共存和资料保全验收。插件按桌面验收做准确对端、两种安装入口和宿主能力检查。保留绑定原包摘要的 `verification.json` 和真实日志，未通过不登记成功。
+2. `harness-handoff.ts pack <候选目录> <sha256>` 只建不可变本机数据对象，不写源码引用。按真实 Git 身份、明确授权和精确引用交接返回的 commit 与 ref；调用 `preserve-harness.yml` 校验并保全原包和证明，不重建。仅在本机验包不需要交接远端。
+3. 获得针对包名、版本、原包和渠道的公开授权，核对 npm Trusted Publishing 已绑定 `publish-harness.yml` 和 `npm-production`。受保护入口只接收同树 `main`、交接 run、原包 SHA-256 与验证证明。先确认独立 Harness 从官方源可安装，再发配对通过的插件。RC 使用 `next`；插件的 GitHub Release 资产与 npm 原包逐字节一致。
+4. 超时或未知后以原候选选择 `readback`，不自动重传。只在确认相应动作未发出、重新获得准确发布依据后才发新的写入请求。局部失败保留已知事实，按失败渠道补齐，不覆盖既有资产。候选临时 Git 数据引用按精确归属保全后清理。
+
 ## 谁负责
 
 发布编排拥有原包与不可变交接；验证框架拥有检查与内容适用性；GitHub 是数据校验保全、独立可选冒烟和受保护公开的执行环境，不是整条发布链的控制中心。

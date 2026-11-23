@@ -57,11 +57,11 @@ Development 通过 `conversation.ts` 接入完整对话，并分别装配共享�
 
 Harness 本机包携带编译核心、CLI、启动器、完整网页、运行依赖和许可证据；不含 Development 工程业务、用户账号或工作空间私人资料。Development 主包 `@buildr-ai/buildr` 携带工程实现与网页、工程资源，并携带所用 Harness 运行负载及完整网页，无需用户手动先装另一份独立 CLI。
 
-Node 最低要求仍为 `24.15.0`；原生程序管理、真实模型账号和使用权是各自边界，不因制包成功自动取得。Harness 独立包当前仍 `private:true`，本机验收包不是正式公开发布旁路；许可证据和平台批准不能代填。Windows 实测不在本轮范围。
+Node 最低要求仍为 `24.15.0`；原生程序管理、真实模型账号和使用权是各自边界，不因制包成功自动取得。Harness 源服务保留 `private:true`，正式候选只在独立发行暂存区生成公开包元数据；本机预演原包不进入公开流程。许可证据和平台批准不能代填。Windows 实测不在本轮范围。
 
 ## DSH 插件组合
 
-DSH 是一个可选的生态宿主，也可以是 Harness 选择的原生执行入口；这两种角色不同。插件可以组合 Harness、Development 或其他开发者提供的工作台。插件接入不复制对话/任务权威，不把两套编排同时施加给同一执行；现有 `dsh-plugin` 继续服务 Development Web。独立的 [Harness DSH 开发插件](../../../services/buildr-harness-dsh-plugin/README.md) 支持本机 DSH Desktop 0.2.2-rc.5 中从左侧切换到完整 Harness 网页。它通过桌面隔离容器使用显式绑定的 Harness 本机包；不持有用户账号，不依赖已有 DSH 会话，未公开发行。
+DSH 是一个可选的生态宿主，也可以是 Harness 选择的原生执行入口；这两种角色不同。插件接入不复制对话权威，不把两套编排施加给同一执行；现有 `dsh-plugin` 继续服务 Development Web。[DSH Buildr Harness](../../../services/buildr-harness-dsh-plugin/README.md) 是独立发行目标 `@buildr-ai/dsh-buildr-harness`，使用核验后的本机正式 Harness；本机开发入口 Buildr Harness Dev 使用明确绑定的开发域。DSH 0.2.x 的宿主范围与实际桌面验收版本分开记录。日常兼容激活不需要重装插件；已有交互的页面先保留现场并提示刷新。
 
 既有拆分规范见[产品边界](../../../openspec/specs/harness-product/spec.md)、[网页装配](../../../openspec/specs/harness-web-composition/spec.md)和[独立发行](../../../openspec/specs/harness-independent-distribution/spec.md)；目录工作台和共享视图的本次演进见[工作台变更](../../../openspec/changes/archive/2026-11-20-harness-directory-workbench/proposal.md)。本页描述当前源码能力，不把候选实现当作所有渠道已交付。
 

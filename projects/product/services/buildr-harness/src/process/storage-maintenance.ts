@@ -99,6 +99,7 @@ export class StorageMaintenance {
   private worker?: Worker;
   private timer?: ReturnType<typeof setTimeout>;
   private closed = false;
+  private draining?: Promise<void>;
   private nativeDue: number;
   private inventoryDue: number;
   private readonly diagnostics?: ExecutionDiagnosticSink;
@@ -154,6 +155,15 @@ export class StorageMaintenance {
     } catch { next(); }
   }
 
-  /** Do not abort an in-flight narrow rename/delete; the worker is unreferenced and drains naturally. */
-  close(): void { this.closed = true; clearTimeout(this.timer); }
+  /** Stop scheduling and let an in-flight mutation release its own storage lock. */
+  close(): Promise<void> {
+    this.closed = true;
+    clearTimeout(this.timer);
+    if (this.draining) return this.draining;
+    const worker = this.worker;
+    if (!worker) return Promise.resolve();
+    worker.ref();
+    this.draining = new Promise<void>(resolve => worker.once('exit', () => resolve()));
+    return this.draining;
+  }
 }

@@ -1,3 +1,5 @@
+import { released } from './channel.ts';
+import { discoverReleased } from './installation.ts';
 import { execFile } from 'node:child_process';
 import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
@@ -49,22 +51,25 @@ export function apply(ctx: HostContext) {
   const dataRoot = process.env.BUILDR_HARNESS_DSH_DATA_ROOT;
   const port = process.env.BUILDR_HARNESS_DSH_PORT ?? '9519';
   const binding = Boolean(process.connected && node && isAbsolute(node) && packageRoot && isAbsolute(packageRoot) && dataRoot && isAbsolute(dataRoot));
+  if (typeof ctx.connection?.admit !== 'function' || typeof ctx.webServer?.register !== 'function' || typeof ctx.effect !== 'function') return;
   ctx.effect(() => {
     const lifetime = new AbortController();
     const unregister = ctx.webServer.register({ kind: 'exact', path: OPEN_PATH, async handler(req, res) {
       if (!desktopAdmission(ctx, req)) { json(res, 403, { code: 'desktop-required' }); return; }
-      if (!binding) { json(res, 409, { code: 'binding-missing' }); return; }
+      const discovery = released ? discoverReleased() : binding ? { installation: { node: node!, packageRoot: packageRoot!, dataRoot: dataRoot!, port } } : { code: 'binding-missing' as const };
+      if ('code' in discovery) { json(res, 409, { code: discovery.code }); return; }
+      const target = discovery.installation;
       const request = new AbortController();
       const onClose = () => request.abort();
       res.once('close', onClose);
       try {
-        const executable = await realpath(node!);
+        const executable = await realpath(target.node);
         if (!(await stat(executable)).isFile()) throw Error('invalid-node');
         const env = { ...process.env };
         delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS; delete env.NODE_PATH;
         const signal = AbortSignal.any([lifetime.signal, request.signal]);
         if (signal.aborted) return;
-        const { stdout } = await run(executable, [launcher, packageRoot!, dataRoot!, port], {
+        const { stdout } = await run(executable, [launcher, target.packageRoot, target.dataRoot, target.port], {
           env, signal, timeout: 45_000, maxBuffer: 16 * 1024, encoding: 'utf8', windowsHide: true,
         });
         json(res, 200, handoff(JSON.parse(stdout)));

@@ -29,6 +29,15 @@ test('logical page sessions persist; tickets are target-bound, single use, expir
   const disk=fs.readFileSync(path.join(dataRoot,'agent-service/harness-web/session-state.json'),'utf8');assert.ok(!disk.includes(session.token)&&!disk.includes(first.ticket));
 });
 
+test('a retired web listener can release twice without claiming storage or rewriting its successor',t=>{
+  const dataRoot=root(t),store=new HarnessWebSessions(dataRoot);
+  const old={instanceId:'old',generation:'g1',pid:process.pid,released:false};
+  const next={instanceId:'next',generation:'g2',pid:process.pid,released:false};
+  store.enable(48000);store.listening(old,48000);store.released(old);store.listening(next,48000);
+  const before=store.read();store.released(old);
+  assert.deepEqual(store.read(),before);
+});
+
 test('page sessions slide with authenticated activity; expiry, revocation and rebind are never undone by renewal',t=>{
   const dataRoot=root(t);let now=1_000_000;const store=new HarnessWebSessions(dataRoot,()=>now),identity={instanceId:'a',generation:'g1',pid:process.pid,released:false};
   store.enable(48010);store.listening(identity,48010);const origin='http://127.0.0.1:48010';

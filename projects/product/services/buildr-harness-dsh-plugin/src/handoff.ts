@@ -1,8 +1,10 @@
+import { released } from './channel.ts';
+
 /** The exact Desktop request and bounded data exchanged between Host and panel. */
-export const OPEN_PATH = '/buildr-harness-desktop/open';
+export const OPEN_PATH = released ? '/dsh-buildr-harness/open' : '/buildr-harness-desktop/open';
 export const DESKTOP_HEADER = 'x-buildr-harness-desktop';
 export interface Handoff { origin: string; endpointId: string; url: string; expiresAt: number }
-export type OpenCode = 'binding-missing' | 'harness-unavailable' | 'desktop-required';
+export type OpenCode = 'binding-missing' | 'harness-unavailable' | 'desktop-required' | 'harness-not-installed' | 'harness-installation-invalid' | 'harness-incompatible' | 'harness-platform';
 
 export function handoff(value: unknown, now = Date.now()): Handoff {
   const v = value as Partial<Handoff> | null;

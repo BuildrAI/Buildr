@@ -1,10 +1,10 @@
+import { label, panelId as PANEL, released } from './channel.ts';
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentType } from 'react';
 import { attachHarnessGuest, desktopBridge, type DesktopBridge } from './guest.ts';
 import { linkDestination, liveCarrier, preferredCarrier, sessionSelection, toolAddress, toolId, type GuestMessage, type Reveal, type Scope, type SessionCatalog, type Tool } from './workspace.ts';
 
-const PANEL = 'buildr-harness-dev';
 const ANCHOR = '--buildr-harness-dsh';
-const KEY = 'buildr.harness-dsh.carriers.v1';
+const KEY = released ? 'buildr.harness-dsh.released.carriers.v1' : 'buildr.harness-dsh.carriers.v1';
 const toolLabels: Record<Tool, string> = { explorer: '资源管理器', 'source-control': '源代码管理' };
 interface Observable<T> { subscribe(listener: () => void): () => void; getSnapshot(): T }
 interface Context {
@@ -63,6 +63,10 @@ function readBindings() {
 const messages: Record<string, string> = {
   'binding-missing': '尚未绑定本机 Harness。请用此开发插件的本机入口重新打开 DSH。',
   'harness-unavailable': '无法连接已绑定的 Harness。请确认安装和运行状态后重试。',
+  'harness-not-installed': '尚未找到正式版 Buildr Harness。安装正式 npm 包并运行 buildr-harness launcher install，再重新检查。',
+  'harness-installation-invalid': '无法核对正式版启动器。请用已安装的正式 Buildr Harness 重新登记默认启动器，再重新检查。',
+  'harness-incompatible': '已安装的 Buildr Harness 版本不兼容。请按安装说明选择兼容版本，再重新检查。',
+  'harness-platform': '当前平台尚无已支持的正式 Harness 发现入口。',
   'harness-timeout': '打开 Harness 超时。请核对当前运行状态后重试。',
   'harness-navigation': 'Harness 网页未能加载。现有对话和执行不受影响。',
 };
@@ -70,6 +74,7 @@ function Guest({ bridge, tool, onMessage, onControl }: { bridge: DesktopBridge; 
   const mount = useRef<HTMLDivElement>(null);
   const latest = useRef({ onMessage, onControl }); latest.current = { onMessage, onControl };
   const [attempt, setAttempt] = useState(0);
+  const [reload, setReload] = useState<(() => void) | undefined>();
   const [state, setState] = useState<{ ready: boolean; error?: string }>({ ready: false });
   const kind = tool?.kind, workspaceId = tool?.workspaceId;
   useEffect(() => {
@@ -77,13 +82,15 @@ function Guest({ bridge, tool, onMessage, onControl }: { bridge: DesktopBridge; 
     return attachHarnessGuest(mount.current, bridge, error => setState(error ? { ready: false, error } : { ready: true }), {
       tool: kind && workspaceId ? { kind, workspaceId } : undefined,
       onMessage: message => latest.current.onMessage?.(message), onControl: send => latest.current.onControl?.(send),
+      onUpdate: action => setReload(() => action),
     });
   }, [attempt, bridge, kind, workspaceId]);
   return <div style={{ minHeight: 0, position: 'relative', flex: 1 }}>
     <div ref={mount} style={{ position: 'absolute', inset: 0 }} />
+    {state.ready && reload && <div role="status" style={{position: "absolute", inset: "auto 12px 12px auto", background: "Canvas", padding: 8, zIndex: 1}}>开发版已更新。请保存当前编辑后再刷新。 <button type="button" onClick={reload}>刷新</button></div>}
     {!state.ready && <div role={state.error ? 'alert' : 'status'} style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', padding: 20, background: 'Canvas', gap: 8 }}>
-      {state.error ? messages[state.error] : '正在打开 Buildr Harness…'}
-      {state.error && <button type="button" onClick={() => { setState({ ready: false }); setAttempt(n => n + 1); }}>重新打开</button>}
+      {state.error ? (messages[state.error] ?? messages['harness-unavailable']) : `正在打开 ${label}…`}
+      {state.error && <button type="button" onClick={() => { setState({ ready: false }); setAttempt(n => n + 1); }}>重新检查</button>}
     </div>}
   </div>;
 }
@@ -91,7 +98,9 @@ function Anchor() { return <div style={{ height: '100%', width: '100%', ...{ anc
 
 export function apply(ctx: Context) {
   const bridge = desktopBridge();
-  if (!bridge) return;
+  if (!bridge || typeof ctx.slots?.inject !== 'function' || typeof ctx.slots?.register !== 'function'
+      || typeof ctx.layout?.selectPanel !== 'function' || typeof ctx.layout?.panelInfo?.subscribe !== 'function'
+      || typeof ctx.sidebarRightTabs?.register !== 'function' || typeof ctx.configForms?.get !== 'function') return;
   const { layout, slots, sidebarRight, sessions, workspaces, uiSession } = ctx;
   const bindings = readBindings();
   const settings = ctx.configForms.get('ui-chat');
@@ -212,7 +221,7 @@ export function apply(ctx: Context) {
   function Shell() {
     const observed = useSyncExternalStore(store.subscribe, store.getSnapshot);
     if (!observed.opened) return null;
-    return <section aria-label="Buildr Harness" className="buildr-harness-dsh-center" hidden={!observed.active} style={observed.active ? {
+    return <section aria-label={label} className="buildr-harness-dsh-center" hidden={!observed.active} style={observed.active ? {
       position: 'fixed', ...{ positionAnchor: ANCHOR, top: 'max(anchor(top), var(--dsh-frame-top-clearance, 0px))', bottom: 'anchor(bottom)', left: 'anchor(left)', width: 'anchor-size(width)' },
       pointerEvents: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--dsw-alias-bg-base, Canvas)', color: 'CanvasText',
     } : { display: 'none' }}>
@@ -222,7 +231,7 @@ export function apply(ctx: Context) {
   ctx.effect(() => {
     const stable = [
       slots.inject('main', () => slots.register({ name: 'main', key: PANEL }, Anchor)),
-      slots.inject('sidebar.panellist', () => slots.register({ name: 'sidebar.panellist', id: PANEL, order: 10, label: () => 'Buildr Harness' }, Mark)),
+      slots.inject('sidebar.panellist', () => slots.register({ name: 'sidebar.panellist', id: PANEL, order: 10, label: () => label }, Mark)),
       slots.inject('shell.overlay', () => slots.register({ name: 'shell.overlay', id: PANEL }, Shell)),
     ];
     const toolKinds = ['explorer', 'source-control'] as const;

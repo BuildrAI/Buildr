@@ -1,3 +1,5 @@
+import { released } from './channel.ts';
+import { supportsHarness } from './installation.ts';
 /** Executed by the explicitly selected Node, not inside DSH's Electron Host. */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,12 +33,12 @@ async function main() {
   const root = fs.realpathSync(packageRoot);
   const metadata = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const index = path.join(root, 'build/index.js');
-  if (metadata.name !== '@buildr-ai/buildr-harness' || fs.realpathSync(index) !== index) throw Error('harness-package-mismatch');
+  if (metadata.name !== '@buildr-ai/buildr-harness' || (released && (metadata.private === true || !supportsHarness(metadata.version))) || fs.realpathSync(index) !== index) throw Error('harness-package-mismatch');
   const port = Number(portText);
   if (!/^[0-9]+$/.test(portText) || !Number.isInteger(port) || port < 1 || port > 65535) throw Error('invalid-port');
   const { connectHarnessProcess } = await import(pathToFileURL(index).href);
   const client: HarnessClient = await connectHarnessProcess({
-    dataRoot, profileId: 'development', sourceId: 'harness-local',
+    dataRoot, profileId: released ? 'released' : 'development', sourceId: 'harness-local',
     caller: { kind: 'first-party-user', product: 'buildr-harness' },
   });
   // stdout is a private pipe to the Desktop host, not DSH logs or the command line.

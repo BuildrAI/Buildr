@@ -49,7 +49,11 @@ export class HarnessWebSessions {
       state.port=input.port;state.tickets=[];state.sessions=[];
     });
   }
-  released(identity:WebListenerIdentity):void {this.mutate(state=>{if(state.listener?.instanceId===identity.instanceId&&state.listener.generation===identity.generation)state.listener={...identity,released:true};});}
+  released(identity:WebListenerIdentity):void {
+    const matches=(listener:WebListenerIdentity|undefined)=>listener?.instanceId===identity.instanceId&&listener.generation===identity.generation&&!listener.released;
+    if(!matches(this.read()?.listener))return;
+    this.mutate(state=>{if(matches(state.listener))state.listener={...identity,released:true};});
+  }
   cookieName():string {const state=this.read();if(!state?.port)fail('agent_web_not_ready','网页尚未就绪。',503);return 'buildr_harness_'+hash(state!.endpointId+':'+state!.port).slice(0,20);}
   issue(origin:string,bundle:string):{ticket:string;expiresAt:number} {
     return this.mutate(state=>{if(origin!==`http://127.0.0.1:${state.port}`||!state.listener||state.listener.released)fail('agent_web_not_ready','网页端点尚未就绪。',503);if(state.tickets.length>=128)fail('agent_web_ticket_capacity','待使用登录票据过多。');const ticket='brht_'+randomBytes(32).toString('base64url'),expiresAt=this.now()+30000;state.tickets.push({hash:hash(ticket),origin,bundle,expiresAt});return {ticket,expiresAt};});

@@ -202,12 +202,12 @@ testing:
     requirements:
       - 本机稳定版 Node >=24.15.0 与 npm；可用受控浏览器；不调用付费模型或修改日常配置域。
   - id: harness-dsh-plugin-unit
-    title: Harness DSH 开发插件接入检查
+    title: Harness DSH 插件接入检查
     scope:
       project: product
       services:
         - buildr-harness-dsh-plugin
-    purpose: 验证入口授权、端点复用、会话目录约束、文件跳转输入和链接目的地选择，不打开桌面或使用账号。
+    purpose: 验证正式安装识别、入口授权、端点复用、会话目录约束、文件跳转输入和链接目的地选择，不打开桌面或使用账号。
     sourcePaths:
       - services/buildr-harness-dsh-plugin/**
     testRoots:
@@ -221,7 +221,7 @@ testing:
     requirements:
       - 项目开发 Node（>=24.15.0）。
   - id: harness-dsh-desktop-acceptance
-    title: Harness DSH 已安装开发插件桌面验收
+    title: Harness DSH 已安装插件桌面验收
     scope:
       project: product
       services:
@@ -238,7 +238,7 @@ testing:
     full:
       kind: agent
       instructions:
-        - 使用插件 README 的开发包入口与本机 DSH 0.2.2-rc.5 官方安装工具，在独立桌面配置绑定准确 Harness
+        - 使用插件 README 的准确候选入口与本机兼容 DSH Desktop 官方安装工具，在独立桌面配置绑定准确 Harness
           安装包和隔离数据域。
         - 按桌面验收文档核对无绑定、两个真实目录与 DSH 承载切换、工具标签、网页偏好及返回后视图保留。若截获外部打开，单独标明只核验到宿主边界。
         - 记录准确安装包、真实观察和验证缺口；只停止本次隔离实例和后台，不写日用配置。
