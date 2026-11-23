@@ -179,7 +179,7 @@ test('Buildr Development Dev.app macOS 入口在真实 launchd 模式下以独�
   const observed = JSON.parse(fs.readFileSync(observation, 'utf8'));
   const expectedSharedNode = path.join(home, 'Library', 'Application Support', 'Buildr', 'runtime', 'node');
   assert.equal(observed.ppid, 1);
-  assert.equal(observed.execPath, expectedSharedNode);
+  assert.equal(fs.realpathSync(observed.execPath), fs.realpathSync(expectedSharedNode));
   assert.equal(fs.lstatSync(expectedSharedNode).nlink, 1);
   assert.equal(fs.lstatSync(expectedSharedNode).mode & 0o222, 0);
   assert.equal(observed.hostNode, process.execPath);

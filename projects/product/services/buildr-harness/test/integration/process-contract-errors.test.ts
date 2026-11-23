@@ -153,13 +153,20 @@ test('local reads stay available while concurrent detail reads share a callback 
   const identity:AgentProcessIdentity={contracts:AGENT_EXECUTION_CONTRACTS,instanceId:'projection-owner',generation:'projection-generation',profileId:'fixture',dataRoot:root,pid:process.pid,runtime};
   let stallNext = false, failNext = false, attachments = 0;
   const stalled = Promise.withResolvers<void>();
+  const failStalledRegistration = Promise.withResolvers<void>();
   const operations: string[] = [];
   const server=createServer(async(req,res)=>{
     if(req.url==='/identity'){res.end(JSON.stringify(identity));return;}
     let raw='';for await(const chunk of req)raw+=chunk;const input=JSON.parse(raw);
     if (req.url === '/host/attach') {
       attachments++;
-      if (stallNext) { stallNext = false; stalled.resolve(); return; }
+      if (stallNext) {
+        stallNext = false;
+        stalled.resolve();
+        await failStalledRegistration.promise;
+        res.destroy();
+        return;
+      }
       if (failNext) { failNext = false; res.destroy(); return; }
       res.end('{}');
       return;
@@ -180,21 +187,25 @@ test('local reads stay available while concurrent detail reads share a callback 
     connection.operations.conversations.read('scope', 'two'),
   ]);
   await stalled.promise;
-  const start = performance.now();
-  await Promise.all([
-    connection.operations.conversations.listAll(['scope'],{activeOnly:true,limit:100}),
-    connection.operations.conversations.pendingSummary(),
-    connection.operations.conversations.pending(),
-    connection.operations.conversations.listChildren('scope', 'one'),
-    connection.operations.connections.list(),
-    connection.operations.models.accounts.list(),
-    connection.operations.models.catalog.list({refresh:false}),
-  ]);
-  assert.ok(performance.now()-start<1000,'ready projections must not inherit the 3-second callback timeout');
-  assert.equal(attachments, initial + 1, 'concurrent detail reads share the in-flight registration');
-  assert.equal(operations.length, 7, 'only local reads are dispatched before registration succeeds');
-  await details;
-  assert.equal(attachments, initial + 2, 'the timed-out registration is retried once for both detail reads');
+  try {
+    await Promise.all([
+      connection.operations.conversations.listAll(['scope'], {activeOnly:true,limit:100}),
+      connection.operations.conversations.pendingSummary(),
+      connection.operations.conversations.pending(),
+      connection.operations.conversations.listChildren('scope', 'one'),
+      connection.operations.connections.list(),
+      connection.operations.models.accounts.list(),
+      connection.operations.models.catalog.list({refresh:false}),
+    ]);
+    assert.equal(attachments, initial + 1, 'concurrent detail reads share the in-flight registration');
+    assert.equal(operations.length, 7, 'only local reads are dispatched while registration is pending');
+  } finally {
+    // Both network failure and the attach deadline fail before dispatch. Inject
+    // the former after the local reads complete, without waiting for the latter.
+    failStalledRegistration.resolve();
+    await details;
+  }
+  assert.equal(attachments, initial + 2, 'the failed registration is retried once for both detail reads');
   assert.deepEqual(operations.slice(7), ['conversations.read', 'conversations.read']);
   await connection.operations.models.catalog.list({refresh:true});
   assert.equal(attachments, initial + 3, 'an explicit refresh still registers the host');

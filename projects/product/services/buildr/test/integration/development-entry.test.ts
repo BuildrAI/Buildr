@@ -67,6 +67,7 @@ test('Agent preparation keeps build progress off the machine-readable stdout cha
   write(entry, fs.readFileSync(path.join(serviceRoot, 'tools/development/prepare-development-agent.ts'), 'utf8'));
   // Isolate package copying and locking; exercise the real preparation entry and
   // real child-process stdout/stderr routing, not a second build implementation.
+  write('services/buildr/tools/development/development-agent-build-reuse.ts', 'export const developmentAgentBuildReuse=()=>{throw Error("unexpected build reuse")};');
   write('services/buildr-harness/tools/package-runtime.ts', 'export const agentRuntimePackageTree=()=>({matches:()=>true});');
   write('services/buildr/src/infrastructure/filesystem/exclusive-file-lock.ts', 'export const withExclusiveFileLock=(_lock,_target,action)=>action();');
   write('services/buildr-harness-web/tools/build.ts', 'console.log("Harness fixture build output");console.error("Harness fixture diagnostic");');

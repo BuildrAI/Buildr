@@ -11,6 +11,7 @@ import { createCodeCommitApplication } from '../../src/modules/code/application/
 import { createCodeHttpContribution } from '../../src/modules/code/interfaces/http/code-http.ts';
 import { CODE_HTTP_SCHEMAS, CODE_HTTP_VALIDATORS } from '../../src/modules/code/interfaces/http/code-http-contracts.ts';
 import { runCodeGitMutation } from '../../src/modules/code/infrastructure/code-git-mutation-runner.ts';
+import { observeGitCheckoutReadIdentity } from '../../src/infrastructure/git/checkout-read-identity.ts';
 
 export function fixture(t: test.TestContext, format = 'sha1') {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-commit-operation-')), root = path.join(base, 'repository');
@@ -21,7 +22,9 @@ export function fixture(t: test.TestContext, format = 'sha1') {
   const write = (file: string, value: string, directory = root) => fs.writeFileSync(path.join(directory, file), value);
   const commit = (message = 'base') => { git('add', '--all'); git('commit', '-qm', message); return git('rev-parse', 'HEAD'); };
   const app = createCodeApplication({ assetCatalog: () => ({ repositories: [{ id: 'repo-one', code: 'repo', name: 'Fixture', source: { type: 'workspace', path: root } }], services: [], projects: [] }), resolveSourceRoot: (_root, source) => source.path, readTaskScope: () => ({ projects: [], services: [] }), readGitWorktreeEvidence: () => null });
-  const input = () => ({ repositoryId: 'repo-one', worktreeId: app.sourceControl(root).repositories[0].worktrees.find(item => item.isRegistered)!.worktreeId });
+  // These cases already own the registered checkout; inventory, status and
+  // change previews are covered by the source-control integration tests.
+  const input = () => ({ repositoryId: 'repo-one', worktreeId: observeGitCheckoutReadIdentity(root).id });
   const request = (message = 'all current changes', mode: 'commit' | 'commit-push' | 'commit-sync' = 'commit', location = input()) => ({ ...location, expectedRevision: app.commitContext(root, location).revision, message, mode });
   const index = () => { const file = git('rev-parse', '--path-format=absolute', '--git-path', 'index'); return fs.existsSync(file) ? crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') : null; };
   const remote = () => { const target = path.join(base, 'remote.git'); gitAt(base, 'init', '--bare', '--object-format=' + format, target); git('remote', 'add', 'origin', target); git('push', '-u', 'origin', 'main'); return target; };
