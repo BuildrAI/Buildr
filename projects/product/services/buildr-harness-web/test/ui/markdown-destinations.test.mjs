@@ -39,3 +39,21 @@ test('conversation links split line locations without reinterpreting encoded or 
  assert.deepEqual(conversationFileLink('/a/a.md:7',false),{path:'/a/a.md',line:7});
  assert.deepEqual(conversationFileLink('/a/report.html#L7',false),{path:'/a/report.html',fragment:'#L7'});
 });
+
+test('conversation links open Markdown headings without including the fragment in the filename',async()=>{
+ const {conversationFileLink}=await import('../../src/lib/localFileLink.ts');
+ const cases=[
+  ['skills/release-preparation/references/naming-rules.md#前缀选择','skills/release-preparation/references/naming-rules.md','#前缀选择'],
+  ['skills/release-preparation/SKILL.md#2-选择发布基线','skills/release-preparation/SKILL.md','#2-选择发布基线'],
+  ['/a/notes.MARKDOWN#not-found','/a/notes.MARKDOWN','#not-found'],
+  ['file:///a/a%23b.md#%E5%89%8D%E7%BC%80','/a/a#b.md','#%E5%89%8D%E7%BC%80'],
+  ['/a/notes.md#heading:7','/a/notes.md','#heading:7'],
+ ];
+ for(const [reference,path,fragment] of cases)assert.deepEqual(conversationFileLink(reference,false),{path,fragment});
+ for(const [reference,path] of [
+  ['/a/a#b.md','/a/a#b.md'],
+  ['file:///a/notes.md%23heading','/a/notes.md#heading'],
+  ['/a/notes.txt#heading','/a/notes.txt#heading'],
+ ])assert.deepEqual(conversationFileLink(reference,false),{path});
+ assert.deepEqual(conversationFileLink('/a/notes.md#heading',true),{path:'/a/notes.md#heading'});
+});

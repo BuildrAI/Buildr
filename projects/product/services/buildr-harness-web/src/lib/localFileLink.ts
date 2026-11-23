@@ -38,11 +38,21 @@ export function conversationFileLink(reference: string, literal: boolean): {path
   const parsed=htmlFileLink(reference,literal);
   if(literal||parsed.fragment)return parsed;
   const url=/^file:/i.test(reference);
-  const suffix=(url?reference:parsed.path).match(/(?:#L|:)([1-9][0-9]*)$/);
+  const raw=url?reference:parsed.path;
+  // A Markdown heading takes precedence over a trailing :number inside the fragment.
+  // Only an exact #L<number> retains the existing source-line interpretation.
+  const markdown=url
+    ? /^([^#]+)(#[^\r\n\0]+)$/.exec(raw)
+    : /^(.+?\.(?:md|markdown))(#[^\r\n\0]+)$/i.exec(raw);
+  if(markdown&&!/^#L[1-9][0-9]*$/.test(markdown[2])){
+    const path=url?localFilePath(markdown[1]):markdown[1];
+    if(path&&/\.(?:md|markdown)$/i.test(path))return {path,fragment:markdown[2]};
+  }
+  const suffix=raw.match(/(?:#L|:)([1-9][0-9]*)$/);
   if(!suffix)return parsed;
   const line=Number(suffix[1]);
   if(!Number.isSafeInteger(line))throw new Error('文件行号无效。');
-  const base=(url?reference:parsed.path).slice(0,suffix.index);
+  const base=raw.slice(0,suffix.index);
   const path=url?localFilePath(base):base;
   return path?{path,line}:parsed;
 }

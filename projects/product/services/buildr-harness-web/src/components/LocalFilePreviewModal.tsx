@@ -53,7 +53,7 @@ export function LocalFilePreviewBody({ path, value, fragment, line }: { path: st
 
   if (value.kind === 'markdown') {
     return <>
-      <MarkdownReader content={value.content} path={fullPath} />
+      <MarkdownReader content={value.content} path={fullPath} fragment={fragment} />
       {value.truncated && <Alert className="local-file-preview-truncated" type="info" message="内容超过预览上限，仅显示前 1 MiB。" />}
     </>;
   }

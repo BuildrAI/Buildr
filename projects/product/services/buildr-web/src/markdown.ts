@@ -125,6 +125,7 @@ function appendInline(parent, tokens, doc, linkOptions) {
       if (resolved.external) {
         link.setAttribute('rel', 'noopener noreferrer');
         link.setAttribute('target', '_blank');
+        link.setAttribute('data-harness-web-link', '');
       } else {
         link.className = 'markdown-relative-link';
         link.setAttribute('data-markdown-href', resolved.localFile ? resolved.href : destination);
@@ -167,6 +168,7 @@ function appendInline(parent, tokens, doc, linkOptions) {
         link.setAttribute('href', resolved.href);
         link.setAttribute('rel', 'noopener noreferrer');
         link.setAttribute('target', '_blank');
+        link.setAttribute('data-harness-web-link', '');
         link.append(code);
         parent.append(link);
       } else parent.append(code);
