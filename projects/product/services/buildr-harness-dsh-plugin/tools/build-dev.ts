@@ -25,7 +25,7 @@ try {
     description: 'Buildr Harness Web for DeepSeek Harness Desktop (local development).',
     main: './lib/index.js', exports: { '.': './lib/index.js', './client': './lib/client.js', './package.json': './package.json' },
     files: ['lib', 'cordis.patch.yml', 'LICENSE', 'README.md'], engines: { dsh: '0.2.2-rc.5' },
-    dsh: { manifestVersion: 1, bundle: { patch: './cordis.patch.yml' }, client: { platform: 'web', inject: ['@deepseek-ai/dsh-client-ui-layout', '@deepseek-ai/dsh-client-ui-sidebar'] } },
+    dsh: { manifestVersion: 1, bundle: { patch: './cordis.patch.yml' }, client: { platform: 'web', inject: ['@deepseek-ai/dsh-client-ui-layout', '@deepseek-ai/dsh-client-ui-sidebar', '@deepseek-ai/dsh-api-session-controller', '@deepseek-ai/dsh-api-workspace-controller', '@deepseek-ai/dsh-client-ui-session', '@deepseek-ai/dsh-client-ui-workspace', '@deepseek-ai/dsh-client-ui-sidebar-right', '@deepseek-ai/dsh-client-ui-settings'] } },
   }, null, 2) + '\n');
   for (const file of ['cordis.patch.yml', 'README.md', 'LICENSE']) fs.copyFileSync(path.join(root, file), path.join(stage, file));
   const packed = spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', out], { cwd: stage, encoding: 'utf8', timeout: 120_000 });

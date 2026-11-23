@@ -23,6 +23,7 @@ import {
 } from './api';
 import { DirectoryExplorer, type DirectoryOpenRequest } from './DirectoryExplorer';
 import { DirectorySourceControl } from './DirectorySourceControl';
+import {desktopNotify} from '../../dsh-desktop';
 import './directory-workbench.css';
 
 const unfinishedWorkspaces = new WorkspaceFileEditingStores();
@@ -100,14 +101,15 @@ function WorkspaceContent({ contents, active, tabs, setTabs, scope }: {
   </div>;
 }
 
-type DirectoryReveal = { workspaceId: string; revision: string; path: string; line?: number };
+export type DirectoryReveal = { workspaceId: string; revision: string; path: string; line?: number; checkout?: DirectorySelection };
 
-export function HarnessDirectoryWorkbench({ active = true, workspaceId, workspaceName, onDirectoryAdded, reveal }: {
+export function HarnessDirectoryWorkbench({ active = true, workspaceId, workspaceName, onDirectoryAdded, reveal, module }: {
   active?: boolean;
   reveal?: DirectoryReveal;
   workspaceId?: string;
   workspaceName?: string;
   onDirectoryAdded(workspaceId: string): void;
+  module?: 'explorer' | 'source-control';
 }) {
   const [observation, setObservation] = useState<{ id: string; scope?: DirectoryScope; error?: string }>();
   const [attempt, retry] = useState(0), [choosing, setChoosing] = useState(false), [chooseError, setChooseError] = useState('');
@@ -141,15 +143,16 @@ export function HarnessDirectoryWorkbench({ active = true, workspaceId, workspac
     {!workspaceId ? <Empty description="选择工作空间后即可浏览文件和变更，无需先发送消息。">
       <Button onClick={() => void add()} loading={choosing}>添加本机目录</Button>
       {chooseError && <Alert type="warning" message={chooseError} />}
-    </Empty> : scope ? <DirectoryPanels key={workspaceId + ':' + scope.revision} scope={scope} workspaceId={workspaceId} reveal={reveal?.workspaceId === workspaceId && reveal.revision === scope.revision ? reveal : undefined} active={active} tabs={tabs} setTabs={setTabs} /> : current?.error ?
+    </Empty> : scope ? <DirectoryPanels key={workspaceId + ':' + scope.revision} scope={scope} workspaceId={workspaceId} reveal={reveal?.workspaceId === workspaceId && reveal.revision === scope.revision ? reveal : undefined} active={active} tabs={tabs} setTabs={setTabs} module={module} /> : current?.error ?
       <Alert type="warning" showIcon message="当前工作空间目录不可用" description={current.error} action={<Button size="small" onClick={() => retry(value => value + 1)}>重新读取</Button>} /> : <div className="harness-workspace-loading" role="status"><Spin size="small" /> 正在读取当前工作空间…</div>}
   </div>;
 }
 
 const noInput = {};
 
-function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal }: {
+function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, module }: {
   scope: DirectoryScope;
+  module?: 'explorer' | 'source-control';
   workspaceId: string;
   active: boolean;
   reveal?: DirectoryReveal;
@@ -231,20 +234,26 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal }: 
   const revealedRef = useRef('');
   useEffect(() => {
     if (!reveal || !ready) return;
-    const signature = JSON.stringify([reveal.workspaceId, reveal.revision, reveal.path, reveal.line ?? null]);
+    const signature = JSON.stringify([reveal.workspaceId, reveal.revision, reveal.path, reveal.line ?? null,reveal.checkout]);
     if (revealedRef.current === signature) return;
     revealedRef.current = signature;
-    open(defaultSelection?.checkoutId ? defaultSelection : null, reveal.path, reveal.line);
-  }, [open, reveal, ready, defaultSelection?.repositoryId, defaultSelection?.checkoutId]);
+    if (reveal.checkout) {
+      const repo = catalog.data?.repositories.find(item => item.id === reveal.checkout!.repositoryId);
+      if (!repo?.members.some(member => member.id === reveal.checkout!.checkoutId)) return;
+    }
+    open(reveal.checkout ?? (defaultSelection?.checkoutId ? defaultSelection : null), reveal.path, reveal.line);
+  }, [open, reveal, ready, catalog.data, defaultSelection?.repositoryId, defaultSelection?.checkoutId]);
   const openFromGit = useCallback((target: SourceControlFileTarget) => {
-    open(target.worktreeId ? { repositoryId: target.repositoryId, checkoutId: target.worktreeId } : null, target.path);
-  }, [open]);
+    const checkout = target.worktreeId ? { repositoryId: target.repositoryId, checkoutId: target.worktreeId } : undefined;
+    if (module === 'source-control') desktopNotify({ kind:'reveal', file:{workspaceId,revision:scope.revision,path:target.path,checkout} });
+    else open(checkout ?? null, target.path);
+  }, [open, module, workspaceId, scope.revision]);
   const selectSource = useCallback((target: DirectorySelection | null) => {
     setSelected(target);
   }, []);
 
   return <FileEditingProvider operations={operations} store={store}>
-    <WorkspaceContent scope={scope} active={active} tabs={tabs} setTabs={setTabs} contents={[
+    <ModuleContents scope={scope} active={active} tabs={tabs} setTabs={setTabs} module={module} contents={[
       {
         id: 'explorer',
         title: '资源管理器',
@@ -262,6 +271,7 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal }: 
               source={current}
               requestFor={requestFor}
               active={paneActive}
+              initialTreeOpen={module==='explorer'}
               opened={opened}
               onSaved={() => bump(value => value + 1)}
             />,
@@ -288,4 +298,13 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal }: 
       },
     ]} />
   </FileEditingProvider>;
+}
+
+function ModuleContents({module,...props}: Parameters<typeof WorkspaceContent>[0] & {module?: 'explorer'|'source-control'}) {
+  if(!module)return <WorkspaceContent {...props}/>;
+  return <section className="harness-directory-workbench-pane" aria-label={props.contents.find(content=>content.id===module)?.title}>
+    <WorkspaceViewActiveContext.Provider value={props.active}>
+      {props.contents.find(content=>content.id===module)?.render(props.active)}
+    </WorkspaceViewActiveContext.Provider>
+  </section>;
 }

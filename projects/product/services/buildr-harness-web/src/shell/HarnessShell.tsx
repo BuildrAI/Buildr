@@ -4,7 +4,7 @@ import {ResizablePanels} from '../workbench/ui/ResizablePanels';
 import {HARNESS_MOBILE_BREAKPOINT, THREE_PANE_DEFAULT_CONVERSATION_RATIO, THREE_PANE_WORKSPACE_MIN_WIDTH, TWO_PANE_WORKSPACE_MIN_CONVERSATION_WIDTH} from './harness-layout';
 import './harness-shell.css';
 
-function WorkspacePanelIcon({open}: {open: boolean}) {
+export function WorkspacePanelIcon({open}: {open: boolean}) {
   return <svg className="harness-workspace-toggle-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" data-icon={open ? 'panel-right-open' : 'panel-right'} aria-hidden="true">
     <rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2" />
     {open && <path d="M10.25 2.5H12.25A1.75 1.75 0 0 1 14 4.25V11.75A1.75 1.75 0 0 1 12.25 13.5H10.25Z" fill="currentColor" fillOpacity="0.22" stroke="none" />}

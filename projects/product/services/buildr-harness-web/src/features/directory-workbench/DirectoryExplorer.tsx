@@ -70,7 +70,7 @@ function resolveRelativePath(documentPath: string, href: string): string | null 
 const folderKey = (browserId: string, relative: string) => `${browserId}::${relative}`;
 const sourceName = (location: string, fallback: string) => location.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean).at(-1) || fallback;
 
-export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catalogError, catalogLoading, refreshCatalog, source, requestFor, active, opened, onSaved }: {
+export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catalogError, catalogLoading, refreshCatalog, source, requestFor, active, opened, onSaved, initialTreeOpen }: {
   workspaceId: string;
   scope: DirectoryScope;
   scopeKey: string;
@@ -81,6 +81,7 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
   source: DirectorySelection | null;
   requestFor: (selection: DirectorySelection | null) => DirectoryRequest;
   active: boolean;
+  initialTreeOpen?: boolean;
   opened?: DirectoryOpenRequest;
   onSaved(): void;
 }) {
@@ -88,7 +89,7 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
   const { message } = App.useApp();
   const editing = useFileEditingContext();
   const [host, setHost] = useState<HTMLDivElement | null>(null);
-  const [treeHidden, setTreeHidden] = useState(() => typeof window !== 'undefined' && window.innerWidth < 680);
+  const [treeHidden, setTreeHidden] = useState(() => !initialTreeOpen && typeof window !== 'undefined' && window.innerWidth < 680);
   const [ignored, setIgnored] = useState(false);
 
   const repos = catalog?.repositories ?? [];

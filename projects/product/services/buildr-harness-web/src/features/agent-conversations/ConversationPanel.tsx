@@ -71,8 +71,8 @@ const statusLabels = {starting:'正在准备执行',running:'正在执行','wait
 const unconfirmedSupplementMessage='消息是否送达仍待确认，请勿重复发送；输入已保留。';
 type Prepared = {conversation:ConversationView;input:SendDraft;preview:SendPreview;clientRequestId:string;selection:ConversationSelection;recovery:ConversationSendRecovery};
 type SendOperation={selection:ConversationSelection;continueRunId?:string};
-type Props={development?:boolean;workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;portalTarget?:HTMLElement|null;embedded?:boolean;accessory?:ReactNode|((conversationVisible:boolean)=>ReactNode);headerAction?:ReactNode;onCreateChild?:()=>void};
-export function ConversationPanel({development=false,workspaces,defaultWorkspaceId,portalTarget,embedded=false,accessory,headerAction,onCreateChild}:Props){
+type Props={development?:boolean;workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;portalTarget?:HTMLElement|null;embedded?:boolean;accessory?:ReactNode|((conversationVisible:boolean)=>ReactNode);headerAction?:ReactNode;onReturnToHost?:()=>void;onCreateChild?:()=>void};
+export function ConversationPanel({development=false,workspaces,defaultWorkspaceId,portalTarget,embedded=false,accessory,headerAction,onReturnToHost,onCreateChild}:Props){
   const context=useAgentConversations(),chat=context.conversation;
   const {message:appMessage}=App.useApp();
   const engineeringAnchor=useRef<HTMLSpanElement>(null);
@@ -922,6 +922,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
           <Dropdown overlayClassName="ac-panel-popup" trigger={['click']} open={moreOpen} onOpenChange={setMoreOpen}
             popupRender={participantPairs.length>0?(menu=><div className="ac-more-menu-popup">{menu}<div className="ac-participant-history"><div className="ac-participant-history-title">参与过此对话</div><div className="ac-participants" aria-label="参与过此对话的智能体与模型">{participantPairs.map(pair=><span key={pair.key}>{pair.label||context.connections.find(item=>item.id===pair.connectionId)?.label||executionAgentName(pair.provider)} · {pair.modelName}</span>)}</div></div></div>):undefined}
             menu={{items:[
+            ...(onReturnToHost?[{key:'return-to-host',label:'返回 DSH'},{type:'divider' as const}]:[]),
             ...(onCreateChild?[{key:'create-child',label:'创建子对话',icon:<PlusOutlined aria-hidden/>},{type:'divider' as const}]:[]),
             ...(!standalone?[
               {key:'collapse',label:'收起对话'},
@@ -941,6 +942,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
             if(key==='collapse')context.setOpen(false);
             else if(key==='side')context.move();
             else if(key==='full'){context.setOpen(true);context.setFull(!context.full);}
+            else if(key==='return-to-host')onReturnToHost?.();
             else if(key==='create-child')onCreateChild?.();
             else if(key==='generate-title')void generateTitle();
             else if(key==='rename'&&chat){setTitle(chat.title);setRename(true);}
@@ -960,7 +962,8 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     threePane?.onHistoryDragChange?.(false);
   };
   const panel=<section id={panelId} className={'ac-panel'+(context.full?' is-full':'')+(historyResizing?' is-resizing':'')+(embedded?' ac-child-panel':'')} aria-label={embedded?'子对话':'内部对话'} data-dock={context.side} data-conversation-id={chat?.id} data-can-split-history={canSplitHistory?'true':'false'} data-three-pane={focusSplit&&threePaneWorkspaceOpen?'true':undefined}>
-    {context.view==='history'&&!focusSplit&&<ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} hiddenBySettings={showFocusSettings}/>}
+    {context.view==='history'&&!focusSplit&&<ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} hiddenBySettings={showFocusSettings}
+      headerAction={onReturnToHost&&<><Dropdown trigger={['click']} menu={{items:[{key:'return-to-host',label:'返回 DSH'}],onClick:onReturnToHost}}><Button type="text" icon={<EllipsisOutlined/>} aria-label="更多对话操作" title="更多"/></Dropdown>{headerAction}</>}/>}
     {focusSplit&&context.view==='history'&&<>
       <aside id={focusHistoryPaneId} className="ac-focus-history-pane" style={{width:effectiveHistoryWidth}} hidden={showFocusSettings}><ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} keepHistoryOpen hiddenBySettings={showFocusSettings}/></aside>
       {!showFocusSettings&&<SplitDivider className={'ac-focus-history-divider'+(historyResizing?' is-dragging':'')} aria-label="调整专注模式对话列表宽度" aria-controls={focusHistoryPaneId} aria-orientation="vertical" aria-valuemin={effectiveHistoryMinWidth} aria-valuemax={historyMaxWidth} aria-valuenow={Math.round(effectiveHistoryWidth)} aria-valuetext={`${Math.round(effectiveHistoryWidth)} 像素`} title={`拖拽调整对话列表宽度（${effectiveHistoryMinWidth}–${historyMaxWidth}px）；方向键微调，双击恢复`}

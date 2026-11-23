@@ -4,7 +4,7 @@ import {useHarnessDirectoryFiles} from './directory-files';
 import {engineeringFile} from './engineering-files';
 import {conversationFileLink} from './lib/localFileLink';
 import {ConversationHostProvider, useConversationHost, type HarnessThreePaneHost} from './integration/ConversationHost';
-import {HarnessShell, type HarnessWorkEnvironment} from './shell/HarnessShell';
+import {HarnessShell, WorkspacePanelIcon, type HarnessWorkEnvironment} from './shell/HarnessShell';
 import {
   HARNESS_RAIL_WIDTH,
   THREE_PANE_DEFAULT_CONVERSATION_RATIO,
@@ -24,6 +24,7 @@ import {conversationDraftKey} from './features/agent-conversations/useConversati
 import {canSplitFocusHistory,readDraft} from './features/agent-conversations/conversation-state';
 import {directoryClient,observeWorkspaceDirectory} from './features/directory-workbench/api';
 import type {ConversationFilePreview} from './directory-files';
+import {desktopNotify} from './dsh-desktop';
 import type {ConversationView} from './features/agent-conversations/types';
 
 const DirectoryWorkbench=lazy(async()=>({default:(await import('./features/directory-workbench/HarnessDirectoryWorkbench')).HarnessDirectoryWorkbench}));
@@ -41,7 +42,7 @@ const readSavedNumber=(key:string):number|undefined=>{
   return Number.isFinite(value)?value:undefined;
 };
 
-export function HarnessApp({environment}:{environment?:HarnessWorkEnvironment}={}){
+export function HarnessApp({environment,desktop=false}:{environment?:HarnessWorkEnvironment;desktop?:boolean}={}){
   const [file,setFile]=useState<ConversationFilePreview|null>(null);
   const standalone=(typeof window==='undefined'||window.parent===window)&&!environment;
   const composition=useMemo(()=>({standalone}),[standalone]);
@@ -54,9 +55,9 @@ export function HarnessApp({environment}:{environment?:HarnessWorkEnvironment}={
       signal?.throwIfAborted();setFile({path:value.path||path,value,fragment,line});return false;
     },
   }),[]);
-  return <ConversationHostProvider host={composition}><HarnessDirectoryFilesProvider host={host}><AgentConversationsProvider standalone={standalone}><Workspace standalone={standalone} environment={environment}/></AgentConversationsProvider><LocalFilePreviewModal file={file} onClose={()=>setFile(null)}/></HarnessDirectoryFilesProvider></ConversationHostProvider>;
+  return <ConversationHostProvider host={composition}><HarnessDirectoryFilesProvider host={host}><AgentConversationsProvider standalone={standalone}><Workspace standalone={standalone} environment={environment} desktop={desktop}/></AgentConversationsProvider><LocalFilePreviewModal file={file} onClose={()=>setFile(null)}/></HarnessDirectoryFilesProvider></ConversationHostProvider>;
 }
-function Workspace({standalone,environment}:{standalone:boolean;environment?:HarnessWorkEnvironment}){
+function Workspace({standalone,environment,desktop}:{standalone:boolean;environment?:HarnessWorkEnvironment;desktop:boolean}){
   const embedded=window.parent!==window;
   const context=useAgentConversations();
   const files=useHarnessDirectoryFiles();
@@ -131,7 +132,25 @@ function Workspace({standalone,environment}:{standalone:boolean;environment?:Har
   const [environmentOpen,setEnvironmentOpen]=useState(false);
   const [reveal,setReveal]=useState<{workspaceId:string;revision:string;path:string;line?:number}>();
   const workspaceRef=useRef(workbenchWorkspaceId);workspaceRef.current=workbenchWorkspaceId;
-  const effectiveEnvironmentOpen=standalone?environmentOpen&&!context.settings:undefined;
+  const [nativeSidebar,setNativeSidebar]=useState(false);
+  useEffect(()=>{
+    if(!desktop)return;
+    const receive=(event:Event)=>{const value=(event as CustomEvent).detail?.native;if(typeof value==='boolean')setNativeSidebar(value);};
+    window.addEventListener('buildr-dsh-host',receive);
+    return()=>window.removeEventListener('buildr-dsh-host',receive);
+  },[desktop]);
+  useEffect(()=>{
+    if(!desktop)return;
+    setNativeSidebar(false);
+    desktopNotify({kind:'workspace',scope:null});
+    if(!workbenchWorkspaceId)return;
+    const abort=new AbortController();
+    void observeWorkspaceDirectory(workbenchWorkspaceId,abort.signal).then(scope=>{
+      if(!abort.signal.aborted)desktopNotify({kind:'workspace',scope:{id:workbenchWorkspaceId,path:scope.rootPath}});
+    }).catch(()=>{});
+    return()=>abort.abort();
+  },[desktop,workbenchWorkspaceId]);
+  const effectiveEnvironmentOpen=standalone?environmentOpen&&!context.settings&&!nativeSidebar:undefined;
   const layout=useMemo(
     ()=>resolveHarnessThreePaneLayout({
       shellWidth,
@@ -232,7 +251,8 @@ function Workspace({standalone,environment}:{standalone:boolean;environment?:Har
     return async()=>{
       const latest=await resolve();
       if(!latest||latest.revision!==known.revision||latest.path!==known.path||workspaceRef.current!==workspaceId)throw new Error('文件来源已变化，请重新定位。');
-      setReveal(latest);setEnvironmentOpen(true);context.setFull(false);
+      if (desktop&&nativeSidebar) desktopNotify({kind:'reveal',file:latest});
+      else {setReveal(latest);setEnvironmentOpen(true);context.setFull(false);}
     };
   }:undefined;
   const builtin:HarnessWorkEnvironment={id:'harness-conversation-workspace',title:'对话工作区',render:active=><Suspense fallback={<Spin size="small" />}>
@@ -240,7 +260,7 @@ function Workspace({standalone,environment}:{standalone:boolean;environment?:Har
       onDirectoryAdded={workspaceId=>{context.newConversation({scope:{workspaceId},preserveVisibility:true});void refresh().catch(failure=>setError(failure instanceof Error?failure.message:'工作范围读取失败。'));}} />
   </Suspense>};
   return <HarnessShell
-    environment={environment??(standalone?builtin:undefined)}
+    environment={environment??(standalone&&!nativeSidebar?builtin:undefined)}
     environmentOpen={effectiveEnvironmentOpen}
     onEnvironmentOpenChange={standalone?setEnvironmentOpen:undefined}
     resizable={standalone}
@@ -251,7 +271,9 @@ function Workspace({standalone,environment}:{standalone:boolean;environment?:Har
     onConversationRatioChange={handleConversationRatioChange}
     onShellWidthChange={setShellWidth}
     onEnvironmentDragChange={handleEnvironmentDragChange}
-  >{workspaceToggle=><>{error&&!choosing&&<Alert type="warning" closable onClose={()=>setError('')} message={error}/>}<main className="harness-main"><ConversationHostProvider host={workspaceHost}><HarnessDirectoryFilesProvider host={{...files,findExplorerFile,...(!embedded?{chooseWorkspace:()=>{setPath('');setName('');setError('');setChoosing(true);}}:{})}}><ConversationWorkspace workspaces={scopes} defaultWorkspaceId={selected??null} headerAction={workspaceToggle}/></HarnessDirectoryFilesProvider></ConversationHostProvider></main>{!standalone&&<AgentConnectionSettings/>}<Modal open={choosing} centered width={500} className="harness-workspace-modal" title="添加工作空间" confirmLoading={busy} maskClosable={!busy} cancelText="取消" okText="创建并使用" cancelButtonProps={{disabled:busy}} okButtonProps={{'aria-label':'创建并使用',disabled:!path.trim()}} onOk={()=>void create()} onCancel={()=>{if(!busy)setChoosing(false);}}>
+  >{workspaceToggle=><>{error&&!choosing&&<Alert type="warning" closable onClose={()=>setError('')} message={error}/>}<main className="harness-main"><ConversationHostProvider host={workspaceHost}><HarnessDirectoryFilesProvider host={{...files,findExplorerFile,...(!embedded?{chooseWorkspace:()=>{setPath('');setName('');setError('');setChoosing(true);}}:{})}}><ConversationWorkspace workspaces={scopes} defaultWorkspaceId={selected??null} headerAction={desktop&&nativeSidebar?<Button type="text" className="harness-workspace-toggle" title="切换 DSH 工作区侧栏" aria-label="切换 DSH 工作区侧栏"
+      icon={<WorkspacePanelIcon open={false}/>} onClick={()=>desktopNotify({kind:'shell',action:'toggle-right'})}/>:workspaceToggle}
+      onReturnToHost={desktop?()=>desktopNotify({kind:'shell',action:'leave'}):undefined}/></HarnessDirectoryFilesProvider></ConversationHostProvider></main>{!standalone&&<AgentConnectionSettings/>}<Modal open={choosing} centered width={500} className="harness-workspace-modal" title="添加工作空间" confirmLoading={busy} maskClosable={!busy} cancelText="取消" okText="创建并使用" cancelButtonProps={{disabled:busy}} okButtonProps={{'aria-label':'创建并使用',disabled:!path.trim()}} onOk={()=>void create()} onCancel={()=>{if(!busy)setChoosing(false);}}>
     <div className="harness-workspace-modal-body">
       <p className="harness-workspace-intro">选择一个本机目录并设置可选名称，创建后直接用于新对话。</p>
       {error&&<Alert className="harness-workspace-alert" type="warning" showIcon message={error}/>}

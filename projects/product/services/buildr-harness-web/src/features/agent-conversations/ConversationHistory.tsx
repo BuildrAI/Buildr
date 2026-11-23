@@ -38,7 +38,7 @@ function DraftStatusBadge({visible,immediateHide}:{visible:boolean;immediateHide
   if(!visible&&!leaving)return null;
   return <span className={'ac-draft-status'+(leaving&&!visible?' is-leaving':'')} aria-hidden={leaving&&!visible?true:undefined}>有草稿</span>;
 }
-export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWorkspaceId,keepHistoryOpen=false,hiddenBySettings=false}:{workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;keepHistoryOpen?:boolean;hiddenBySettings?:boolean}) {
+export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWorkspaceId,keepHistoryOpen=false,hiddenBySettings=false,headerAction}:{workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;keepHistoryOpen?:boolean;hiddenBySettings?:boolean;headerAction?:import('react').ReactNode}) {
   const context=useAgentConversations();
   const showBackToConversation=!keepHistoryOpen;
   const presence=useConversationDraftPresenceDetail();
@@ -148,7 +148,8 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   });
   const empty=groupsSettled&&visibleGroups.every(id=>groupResults.values[id]?.total===0);
   return <section className="ac-history" aria-label="对话列表" hidden={hiddenBySettings}>
-    <header className="ac-thread-header">{showBackToConversation&&<Button type="text" icon={<ArrowLeftOutlined/>} aria-label="返回当前对话" title="返回当前对话" onClick={()=>context.setView('conversation')}/>}<strong>对话列表</strong>{!context.open&&<Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" title="新建对话" onClick={()=>context.newConversation({preserveVisibility:true,preserveHistoryView:keepHistoryOpen})}/>}</header>
+    <header className="ac-thread-header">{showBackToConversation&&<Button type="text" icon={<ArrowLeftOutlined/>} aria-label="返回当前对话" title="返回当前对话" onClick={()=>context.setView('conversation')}/>}<strong>对话列表</strong>{!context.open&&<Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" title="新建对话" onClick={()=>context.newConversation({preserveVisibility:true,preserveHistoryView:keepHistoryOpen})}/>}
+      {headerAction&&<div className="ac-thread-actions" style={{marginInlineStart:'auto'}}>{headerAction}</div>}</header>
     <div className="ac-history-body">
       <div className="ac-history-toolbar"><Input allowClear prefix={<SearchOutlined/>} aria-label="搜索对话" placeholder="搜索对话" value={query} onChange={event=>setQuery(event.target.value)}/><Select aria-label="对话列表工作空间" value={workspaceId} options={[{value:'',label:'全部工作空间'},...workspaces.map(item=>({value:item.id,label:item.name}))]} onChange={value=>{setWorkspaceId(value);setFilter(null);}}/></div>
       

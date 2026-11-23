@@ -1,3 +1,4 @@
+import { CHANNEL, parseGuestMessage, type GuestMessage, type Tool } from './workspace.ts';
 import { DESKTOP_HEADER, handoff, OPEN_PATH } from './handoff.ts';
 
 interface Reservation { lease: string; partition: string }
@@ -9,6 +10,7 @@ interface Webview extends HTMLElement {
   loadURL(url: string): Promise<void>;
   getURL(): string;
   clearHistory(): void;
+  executeJavaScript(script: string): Promise<unknown>;
 }
 
 export function desktopBridge(): DesktopBridge | undefined {
@@ -17,7 +19,11 @@ export function desktopBridge(): DesktopBridge | undefined {
   return typeof browser?.acquire === 'function' && typeof browser.release === 'function' ? browser : undefined;
 }
 
-export function attachHarnessGuest(mount: HTMLElement, bridge: DesktopBridge, onState: (error?: string) => void) {
+export function attachHarnessGuest(mount: HTMLElement, bridge: DesktopBridge, onState: (error?: string) => void, options?: {
+  tool?: { kind: Tool; workspaceId: string };
+  onMessage?: (message: GuestMessage) => void;
+  onControl?: (send: (data: object) => void) => void;
+}) {
   const abort = new AbortController();
   let lease: string | undefined;
   let guest: Webview | undefined;
@@ -47,25 +53,55 @@ export function attachHarnessGuest(mount: HTMLElement, bridge: DesktopBridge, on
     view.setAttribute('aria-label', 'Buildr Harness Web');
     view.setAttribute('data-sidebar-browser-frame', 'webview');
     Object.assign(view.style, { width: '100%', height: '100%', display: 'flex' });
+    const destination = new URL(target.url);
+    const mode = new URLSearchParams({ dsh: options?.tool?.kind ?? 'chat' });
+    if (options?.tool) mode.set('workspace', options.tool.workspaceId);
+    const modeHash = '#' + mode;
+    const isTrusted = () => {
+      try {
+        const current = new URL(view.getURL());
+        return current.origin === destination.origin && current.pathname === '/' && !current.search && current.hash === modeHash;
+      } catch { return false; }
+    };
+    const send = (data: object) => {
+      if (!abort.signal.aborted && isTrusted()) {
+        const detail = JSON.stringify(JSON.stringify(data));
+        void view.executeJavaScript(`window.dispatchEvent(new CustomEvent('buildr-dsh-host', {detail:JSON.parse(${detail})}))`).catch(() => {});
+      }
+    };
+    view.addEventListener('console-message', event => {
+      const { message, sourceId } = event as Event & { message?: string; sourceId?: string };
+      if (abort.signal.aborted || !message?.startsWith(CHANNEL) || !isTrusted()) return;
+      try {
+        if (!sourceId) return;
+        const source = new URL(sourceId);
+        if (source.origin !== target.origin || !/^\/bundles\/[a-z0-9-]+\/assets\/[^/]+\.js$/i.test(source.pathname)) return;
+      } catch { return; }
+      const request = parseGuestMessage(message);
+      if (request && (!options?.tool || request.kind === 'reveal' || request.kind === 'link' || request.kind === 'tool-ready')) options?.onMessage?.(request);
+    });
     let started = false;
     view.addEventListener('dom-ready', () => {
       if (started || abort.signal.aborted) return;
       started = true;
-      try { void view.loadURL(target.url).catch(() => fail('harness-navigation')); }
+      try { void view.loadURL(destination.href).catch(() => fail('harness-navigation')); }
       catch { fail('harness-navigation'); }
     });
+    const ready = () => {
+      if (!abort.signal.aborted && isTrusted()) {
+        view.clearHistory(); clearTimeout(timeout); onState(); options?.onControl?.(send);
+      }
+    };
+    view.addEventListener('did-navigate-in-page', ready);
     view.addEventListener('did-finish-load', () => {
       if (!started || abort.signal.aborted) return;
       try {
         const here = new URL(view.getURL());
-        if (here.origin !== target.origin) return;
-        if (here.hash.startsWith('#ticket=')) {
-          // If the partition already had a session, no redemption page ran.
-          // Drop the ticket with a clean navigation, not a history-bearing tab.
-          void view.loadURL(`${target.origin}/`).catch(() => fail('harness-navigation'));
-          return;
-        }
-        view.clearHistory(); clearTimeout(timeout); onState();
+        if (here.origin !== target.origin || here.pathname !== '/' || here.search) return;
+        if (isTrusted()) { ready(); return; }
+        // The unauthenticated ticket page has no app root and owns redemption.
+        // Only switch presentation once the authenticated production document is running.
+        void view.executeJavaScript(`if(document.getElementById('root')) location.replace(${JSON.stringify(modeHash)})`).catch(() => {});
       } catch { fail('harness-navigation'); }
     });
     view.addEventListener('render-process-gone', () => fail('harness-navigation'));

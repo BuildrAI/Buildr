@@ -77,7 +77,7 @@ export function AgentProgramUpdates({ active, checkRequest = 0, scope = 'setting
             {program.checkedAt&&<><dt>检查时间</dt><dd>{new Date(program.checkedAt).toLocaleString()}</dd></>}
           </dl>
           {program.compatible===false&&!repairRequired&&<Alert type="warning" showIcon message="当前程序不在已声明的兼容范围内。"/>}
-          {program.releaseSource&&<div className="ac-program-update-links"><a href={program.releaseSource} target="_blank" rel="noopener noreferrer">查看版本来源</a></div>}
+          {program.releaseSource&&<div className="ac-program-update-links"><a href={program.releaseSource} data-harness-web-link target="_blank" rel="noopener noreferrer">查看版本来源</a></div>}
           {renderPreparation?.(program.connectionId)}
           </div>
         </details>
