@@ -96,7 +96,9 @@ push 前重新观察实际 remote、source ref、destination ref 和 destination
 
 逐个确认 range 中的 commit 都在 consumer 授权 scope。range 含 scope 外 unpublished commit、远端/ref 无法可靠观察、destination 漂移或目标不匹配时，在 remote 零写入状态返回 `blocked`。不得自动扩大授权、改推其他 ref、创建远端任务分支、rebase、merge 或 force push。
 
-普通 push 被拒绝时停止；不自动 force push、不改写共享历史、不切换目标或策略。只有 caller/Agent 重新核验事实并取得所需决定后才能重试。
+普通推送（Push）已获授权，且实际身份、代码库（Repository）、目标和完整推送范围均已核验时，仅查到目标存在分支保护、规则集或合并请求（Pull Request）要求，不等于当前身份的推送会被拒绝，也不是重新询问同一授权的理由。没有已核实且适用于本次操作的禁止条件时，用已核验的身份按原计划执行普通推送，成功后回读目标引用确认结果。
+
+普通 push 实际被拒绝时停止并报告；不自动 force push、不改写共享历史、不换账号、不切换目标或策略。结果未知时先回读目标引用，不盲目重试。只有 caller/Agent 重新核验事实并取得所需决定后才能重试。
 
 远端访问失败（`could not read Username`、`Permission denied (publickey)`、凭据帮助器（Credential Helper）无输出）先按第 3 节核对身份与配置来源，再下“无凭据”结论：`gh auth git-credential`、自定义 `credential.helper` 与 SSH 配置都按 `HOME` 定位，在真实 `HOME` 下重新解析（如 `HOME="$BUILDR_HOST_HOME" git credential fill`）并验证帮助器实际返回可用凭据（不输出、不保存凭据内容）。环境与帮助器核对后仍无凭据才按缺失处理：请求凭据、改用已授权凭据或交还用户推送，不得因此切换 remote、账号或目标。本诊断同样适用于 fetch 与 `ls-remote` 等需要远端认证的只读观察。
 
