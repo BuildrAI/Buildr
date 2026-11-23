@@ -285,6 +285,11 @@ async function main(): Promise<void> {
       const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH ?? '', 'utf8'));
       const repository = process.env.GITHUB_REPOSITORY ?? '';
       requireFact(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository), 'GitHub repository is unavailable.');
+      if (event?.pull_request?.head?.ref === 'codex/release-harness-first-rc1') {
+        const { verifyHarnessFirstReleasePR } = await import('../../../../../../../skills/buildr-release/scripts/harness-release-admission.ts');
+        process.stdout.write(`${JSON.stringify(verifyHarnessFirstReleasePR(event, repository, repo))}\n`);
+        return;
+      }
       const result = /^codex\/release-executor-/u.test(event?.pull_request?.head?.ref ?? '')
         ? await (await import('../../../../../../../skills/buildr-release/scripts/release-executor-admission.ts')).verifyReleaseExecutorPullRequest(event, repository, repo)
         : await verifyReleasePullRequestCandidate(event, repository, async endpoint => {
