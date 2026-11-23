@@ -1,7 +1,7 @@
 # harness-dsh-desktop-plugin Specification
 
 ## Purpose
-TBD - created by archiving change add-harness-dsh-desktop-plugin. Update Purpose after archive.
+定义 DSH 桌面如何打开完整的 Harness 工作区，以及开发插件如何仅连接经过核验的本机 Harness 实例，保留双方各自的配置和执行状态。
 
 ## Requirements
 
