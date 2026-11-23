@@ -98,9 +98,10 @@ export function accountQuotaView(account: ModelAccount, now = Date.now(), compac
     observedLabel: Number.isFinite(observed) ? new Date(observed).toLocaleString() : '尚未读取',
   };
 }
-/** 缓存额度照常展示；只有账号本身待确认才额外说明，额度过期或诊断不另提示。 */
+/** 普通过期不打扰；Google AI 明确刷新失败时说明仍在显示上次观察。 */
 export function accountQuotaWarning(account: ModelAccount): string|undefined {
-  return account.status === 'failed' ? '供应商待确认' : undefined;
+  if (account.status === 'failed') return '供应商待确认';
+  return account.id === 'native-antigravity' && account.quota?.stale ? '本次额度未能更新，显示上次观察' : undefined;
 }
 /** Failed observations with a previous authenticated snapshot remain explicitly unconfirmed. */
 export function quotaOverviewAccounts(accounts: ModelAccount[]): ModelAccount[] {

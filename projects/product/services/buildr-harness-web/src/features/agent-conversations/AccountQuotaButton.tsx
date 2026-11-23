@@ -3,17 +3,21 @@ import { Alert, Button, Empty, Popover, Spin } from 'antd';
 import { DashboardOutlined, ExportOutlined, SettingOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext.tsx';
 import { accountBillingLink, groupQuotaWindows, accountQuotaView, accountQuotaWarning, accountSourceName, quotaOverviewAccounts, quotaResetCountdown } from './account-quota-view.ts';
+import { useGoogleAccountRefresh } from './useGoogleAccountRefresh.ts';
 import type { ModelAccount } from './types.ts';
 import './account-quota-button.css';
 
 type Props = { onClick?(): void; dedicated?:boolean };
-/** Reads shared account snapshots only; opening this never logs in or checks all providers. */
+/** Shows the cached overview first, with a bounded Google-only refresh while visible. */
 export function AccountQuotaButton({ onClick, dedicated=false }: Props) {
   const { api, settings, full, side } = useAgentConversations();
   const [open, setOpen] = useState(false), [accounts, setAccounts] = useState<ModelAccount[]>([]);
   const [loaded, setLoaded] = useState(false), [error, setError] = useState('');
   const dismissed = useRef(false), pointerFocus = useRef(false), entry = useRef<HTMLButtonElement>(null);
   const previewOpen = open && !settings;
+  const refreshSnapshot = useRef<() => Promise<void>>(async () => {});
+  const [googleRefreshFailed, setGoogleRefreshFailed] = useState(false);
+  useGoogleAccountRefresh(previewOpen, api, () => { setGoogleRefreshFailed(false); void refreshSnapshot.current(); }, () => setGoogleRefreshFailed(true));
   const dismiss = () => { dismissed.current = true; setOpen(false); };
   useEffect(() => {
     if (!previewOpen) return;
@@ -29,6 +33,7 @@ export function AccountQuotaButton({ onClick, dedicated=false }: Props) {
         if (!controller.signal.aborted) setError('更新失败，已保留上次额度');
       } finally { pending = false; if (!controller.signal.aborted) setLoaded(true); }
     };
+    refreshSnapshot.current = refresh;
     void refresh();
     const timer = setInterval(() => void refresh(), 5000);
     return () => { controller.abort(); clearInterval(timer); };
@@ -36,6 +41,7 @@ export function AccountQuotaButton({ onClick, dedicated=false }: Props) {
   const visible = quotaOverviewAccounts(accounts);
   const content = <div className="ac-account-quota-overview" data-testid="account-quota-overview">
     {error && <Alert type="warning" showIcon message={error}/>}
+    {googleRefreshFailed && <Alert type="warning" showIcon message="Google AI 刷新未完成，保留上次额度"/>}
     {!loaded && !error ? <Spin size="small"/> : !visible.length && !error ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚无已接入的供应商，点击图标接入"/> : null}
     {visible.map(account => {
       const view = accountQuotaView(account, Date.now(), true), warning = accountQuotaWarning(account);
