@@ -195,7 +195,7 @@ export function apply(ctx: Context) {
     if (existing) { sidebarRight.focus(existing.tabId); if (!sidebarRight.isExpanded()) sidebarRight.toggleExpanded(); }
     else sidebarRight.openTab(toolId(kind));
   }
-  function ToolPane({ kind, sessionId, useTabInfo }: { kind: Tool; sessionId: string; useTabInfo(): { tab: { id: string; actions: { close(): void } } } }) {
+  function ToolPane({ kind, sessionId, useTabInfo }: { kind: Tool; sessionId: string; useTabInfo(): { tab: { id: string; visible: boolean; actions: { close(): void } } } }) {
     const observed = useSyncExternalStore(store.subscribe, store.getSnapshot);
     const inventory = useSyncExternalStore(sidebarRight.openTabs.subscribe, sidebarRight.openTabs.getSnapshot);
     const mounted = useSyncExternalStore(sidebarRight.mounted.subscribe, sidebarRight.mounted.getSnapshot);
@@ -207,6 +207,8 @@ export function apply(ctx: Context) {
     if (observed.active && observed.carrier === sessionId && observed.scope) initial.current = observed.scope.id;
     const id = initial.current;
     const send = useRef<((data: object) => void) | undefined>(undefined);
+    const toolActive = !duplicate && tab.visible && observed.active && observed.carrier === sessionId && observed.scope?.id === id;
+    useEffect(() => { send.current?.({ active: toolActive }); }, [toolActive]);
     useEffect(() => () => { if (kind === 'explorer' && explorerControls.get(sessionId) === send.current) explorerControls.delete(sessionId); }, [kind, sessionId, id]);
     if (duplicate) return null;
     const matching = observed.active && observed.carrier === sessionId && observed.scope?.id === id;
@@ -214,9 +216,10 @@ export function apply(ctx: Context) {
       {id && <div hidden={!matching} style={{ height: '100%', display: matching ? 'flex' : 'none', flexDirection: 'column' }}><Guest bridge={bridge!} key={id} tool={{ kind, workspaceId: id }}
       onMessage={message => {
         if (message.kind === 'tool-ready') {
+          send.current?.({ active: toolActive });
           if (kind === 'explorer' && send.current) { explorerControls.set(sessionId, send.current); flushExplorer(); }
         } else if (mountAvailable() && state.carrier === sessionId && state.scope?.id === id) accept(message, send.current);
-      }} onControl={fn => { send.current = fn; }} /></div>}</>;
+      }} onControl={fn => { send.current = fn; fn({ active: toolActive }); }} /></div>}</>;
   }
   function Shell() {
     const observed = useSyncExternalStore(store.subscribe, store.getSnapshot);

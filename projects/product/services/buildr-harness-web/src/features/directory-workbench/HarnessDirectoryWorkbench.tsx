@@ -169,6 +169,27 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
   const catalogRef = useRef(catalog.data);
   catalogRef.current = catalog.data;
   const refreshCatalog = catalog.refresh;
+  const observingGit = active && (module === 'source-control' || !module && !tabs.home && tabs.selected === 'source-control');
+  const observation = useRef({ catalog, observingGit });
+  observation.current = { catalog, observingGit };
+  useEffect(() => {
+    if (!observingGit) return;
+    const stop = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    async function observe() {
+      try {
+        const before = observation.current.catalog;
+        if (document.visibilityState === 'hidden' || before.loading || !before.data?.topologyPaths) return;
+        const { revision } = await base<{revision:string}>('git-topology', { repositoryPaths: before.data.topologyPaths }, stop.signal);
+        const latest = observation.current;
+        if (!stop.signal.aborted && latest.observingGit && document.visibilityState === 'visible' && !latest.catalog.loading
+            && latest.catalog.data === before.data && revision !== before.data.topologyRevision) await refreshCatalog();
+      } catch { /* Retain the last read; a later tick or manual refresh can recover. */ }
+      finally { if (!stop.signal.aborted) timer = setTimeout(observe, 3500); }
+    }
+    timer = setTimeout(observe, 500);
+    return () => { stop.abort(); clearTimeout(timer); };
+  }, [observingGit, base, refreshCatalog]);
   const rootRepo = repos.find(item => item.path === '') ?? repos[0];
   const defaultSelection: DirectorySelection | null = rootRepo
     ? { repositoryId: rootRepo.id, checkoutId: rootRepo.checkouts.defaultId ?? rootRepo.members[0]?.id ?? '' }

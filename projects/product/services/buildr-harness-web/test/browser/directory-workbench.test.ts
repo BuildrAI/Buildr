@@ -198,6 +198,14 @@ test('production Harness browses, edits, reviews and commits with no Development
   const expand = scm.getByRole('button', { name: '展开代码库 工作台验收仓库', exact: true });
   if (await expand.isVisible()) await expand.click();
   await scm.getByRole('button', { name: /查看工作树 linked-review/ }).waitFor();
+  // A separate execution materializes a worktree while this pane stays open.
+  const checkout = path.join(root, 'background-worktree');
+  git('worktree', 'add', '-qb', 'background-worktree', checkout);
+  const background = scm.getByRole('button', { name: /查看工作树 background-worktree/ });
+  await background.waitFor({state:'visible', timeout:15000});
+  assert.match(await changes.innerText(), /note\.txt/, 'refresh retains the originally selected checkout');
+  git('worktree', 'remove', checkout);
+  await background.waitFor({state:'detached', timeout:15000});
 
   // Header menu exposes batch sync/fetch/create worktree
   await scm.getByRole('button', { name: '源代码管理操作菜单', exact: true }).click();

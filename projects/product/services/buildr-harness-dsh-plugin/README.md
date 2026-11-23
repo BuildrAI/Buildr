@@ -17,6 +17,8 @@
 
 ## 本机开发
 
+Buildr 自举工作空间交付改变本插件的包输入后，自举会单独更新已从本工作空间安装的开发包，不会安装缺失插件、更新正式版或重启 DSH。若仍在运行，候选已准备但配置不变；正常退出 DSH 后以同一交付输入再次运行自举，确认安装后按原方式打开。网页变化单独走 Harness 开发运行更新，不必为网页重装本插件。
+
 - 已做开发桌面验收的宿主包括 DeepSeek Harness Desktop **0.2.2-rc.5**；这不是安装锁。使用桌面应用随附命令和独立 `DSH_HOME` / `--user-data-dir`；先启动该桌面一次初始化，再退出后安装。普通 dsh 或浏览器宿主不是受支持入口。
 - 在本服务目录执行 `npm run build:dev -- <产物目录>`。使用桌面随附的 `dsh plugin --profile desktop add /绝对路径/buildr-ai-buildr-harness-dsh-plugin-dev-0.1.0.tgz` 安装到已初始化的独立 `DSH_HOME`；不要修改 `cordis.patch.yml` 绕过加载器。
 - 启动桌面前在本地环境提供 `BUILDR_HARNESS_DSH_NODE`（Buildr 的 Node 24.15+ 可执行文件）、`BUILDR_HARNESS_DSH_PACKAGE_ROOT`（安装后 `@buildr-ai/buildr-harness` 的实际绝对目录）与 `BUILDR_HARNESS_DSH_DATA_ROOT`（明确的开发数据域绝对路径）。可用 `BUILDR_HARNESS_DSH_PORT` 选择首次启用的独立 Web 端口，默认 9519；已有匹配端点优先复用，不迁移或覆盖已有端点。独立 Harness 验收包可从 `../buildr-harness/tools/pack-local.ts` 制作，不依赖公开 npm。

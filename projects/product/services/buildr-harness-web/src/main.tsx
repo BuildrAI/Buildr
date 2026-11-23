@@ -13,16 +13,19 @@ const DirectoryWorkbench=lazy(async()=>({default:(await import('./features/direc
 
 function ToolPage({workspaceId,module}:{workspaceId:string;module:DesktopTool}) {
   const [reveal,setReveal]=useState<DirectoryReveal>();
+  const [active,setActive]=useState(true);
   useEffect(()=>{
     const receive=(event:Event)=>{
-      const file=(event as CustomEvent).detail?.reveal as DirectoryReveal | undefined;
+      const detail=(event as CustomEvent).detail;
+      if(typeof detail?.active==='boolean')setActive(detail.active);
+      const file=detail?.reveal as DirectoryReveal | undefined;
       if(module==='explorer'&&file?.workspaceId===workspaceId)setReveal(file);
     };
     window.addEventListener('buildr-dsh-host',receive);
     desktopNotify({kind:'tool-ready'});
     return()=>window.removeEventListener('buildr-dsh-host',receive);
   },[workspaceId,module]);
-  return <div className="harness-dsh-tool"><Suspense fallback={null}><DirectoryWorkbench workspaceId={workspaceId} module={module} reveal={reveal} onDirectoryAdded={()=>{}}/></Suspense></div>;
+  return <div className="harness-dsh-tool"><Suspense fallback={null}><DirectoryWorkbench workspaceId={workspaceId} active={active} module={module} reveal={reveal} onDirectoryAdded={()=>{}}/></Suspense></div>;
 }
 
 let mounted: ReturnType<typeof createRoot> | undefined;

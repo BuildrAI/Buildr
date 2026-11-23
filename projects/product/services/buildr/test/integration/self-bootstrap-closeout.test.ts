@@ -580,3 +580,58 @@ test('自举技能源变更必须同步组件完整性声明', async () => {
     assert.equal(assetIntegrity(path.join(workspaceRoot,member)),expected.get(member),`组件成员摘要未跟随源文件更新：${member}`);
   }
 });
+
+test('DSH 开发插件自举只换装已核对的本地旧包，运行时准备候选但不改配置', async t => {
+  const { isDshDevelopmentPluginInput, updateDshDevelopmentPlugin } = await import('../../../../../../skills/buildr-self-bootstrap-sync/scripts/dsh-development-plugin.mjs');
+  const f = fixture(t);
+  const home = path.join(f.root, 'dsh-home');
+  const owner = path.join(f.root, '.buildr/local/buildr-harness-dsh-plugin');
+  const profile = path.join(home, '.dsh/profiles/desktop');
+  const name = '@buildr-ai/buildr-harness-dsh-plugin-dev';
+  const installed = path.join(profile, 'node_modules', name);
+  const manifest = path.join(profile, 'package.json');
+  const hostCli = path.join(f.root, 'dsh');
+  fs.writeFileSync(hostCli, 'fixture');
+  const old = path.join(owner, 'old.tgz');
+  fs.mkdirSync(owner, { recursive:true });
+  fs.mkdirSync(path.join(installed, 'lib'), { recursive:true });
+  fs.writeFileSync(old, 'old');
+  const files = ['package.json', 'cordis.patch.yml', 'lib/client.js', 'lib/index.js', 'lib/launcher.js'];
+  const contents = (version: string, file: string) => file === 'package.json' ? JSON.stringify({name, version}) : version;
+  const install = (archive: string, version: string) => {
+    fs.writeFileSync(manifest, JSON.stringify({dependencies: {[name]: `file:${archive}`, unrelated:'1.0.0'}}));
+    for (const file of files) fs.writeFileSync(path.join(installed, file), contents(version, file));
+  };
+  install(old, '0.0.1');
+  let running = true, installs = 0;
+  const run = (_exe: string, args: string[], id: string) => {
+    let stdout: string | Buffer = '';
+    if (id === 'dsh-host-version') stdout = '0.2.2-rc.5';
+    else if (id === 'dsh-processes') stdout = running ? '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness' : '/sbin/launchd';
+    else if (id === 'dsh-build-plugin') {
+      const file = path.join(args.at(-1)!, 'built.tgz'); fs.writeFileSync(file, 'new'); stdout = JSON.stringify({name,path:file});
+    } else if (id.startsWith('dsh-verify-')) stdout = Buffer.from(contents(args[1] === old ? '0.0.1' : '0.0.2', args.at(-1)!.slice('package/'.length)));
+    else if (id === 'dsh-install-plugin') { installs++; install(args.at(-1)!, '0.0.2'); }
+    else assert.fail(id);
+    return {status:0,stdout};
+  };
+  const activate = () => updateDshDevelopmentPlugin({ root:f.root, nodeExecutable:process.execPath, run, environment:{ HOME:home }, platform:'darwin', hostCli });
+  assert.equal(isDshDevelopmentPluginInput('projects/product/services/buildr-harness-dsh-plugin/src/client.tsx'), true);
+  assert.equal(isDshDevelopmentPluginInput('projects/product/services/buildr-harness-dsh-plugin/test/desktop-acceptance.md'), false);
+  assert.equal(isDshDevelopmentPluginInput('projects/product/services/buildr-harness-web/src/main.tsx'), false);
+  const pending = activate();
+  assert.equal(pending.status, 'pending', JSON.stringify(pending));
+  assert.equal(installs, 0);
+  assert.equal(JSON.parse(fs.readFileSync(manifest,'utf8')).dependencies[name], `file:${old}`);
+  running = false;
+  const next = activate();
+  assert.equal(next.status, 'installed', JSON.stringify(next));
+  assert.ok('desktopLoaded' in next && 'archive' in pending);
+  assert.equal(next.desktopLoaded, false);
+  assert.equal(next.archive, pending.archive);
+  assert.equal(activate().status, 'unchanged');
+  assert.equal(installs, 1);
+  fs.writeFileSync(path.join(installed, 'lib/client.js'), 'not from package');
+  assert.equal(activate().status, 'blocked');
+  assert.equal(installs, 1);
+});

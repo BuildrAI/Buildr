@@ -33,7 +33,7 @@ export type DirectoryCatalogMember = {
   readAt: string;
 };
 export type DirectoryCatalogRepository = DirectoryRepository & { gitId: string | null; members: DirectoryCatalogMember[] };
-export type DirectoryCatalog = { repositories: DirectoryCatalogRepository[]; truncated: boolean; diagnostic: string | null; readAt: string };
+export type DirectoryCatalog = { repositories: DirectoryCatalogRepository[]; topologyPaths?: string[]; topologyRevision?: string | null; truncated: boolean; diagnostic: string | null; readAt: string };
 export type DirectorySelection = { repositoryId: string; checkoutId: string };
 export type DirectoryRequest = <T>(operation: string, input?: object, signal?: AbortSignal) => Promise<T>;
 export type DirectoryListing = { entries: Array<{ name: string; path: string; kind: 'directory' | 'file' | 'link'; ignored: boolean }>; truncated: boolean };

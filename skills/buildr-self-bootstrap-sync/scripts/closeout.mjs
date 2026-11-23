@@ -9,6 +9,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { isDshDevelopmentPluginInput, updateDshDevelopmentPlugin } from './dsh-development-plugin.mjs';
 import { developmentWebDataRoot } from './development-web-continuity.mjs';
 
 export const SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA = 'buildr.self-bootstrap-closeout-result/v1';
@@ -22,6 +23,7 @@ export const SELF_BOOTSTRAP_CLOSEOUT_PHASES = Object.freeze([
   'commit',
   'push',
   'install-buildr-web',
+  'update-dsh-development-plugin',
   'verify-development-entry',
   'finalize',
 ]);
@@ -163,6 +165,7 @@ function classifications(changedPaths, workspaceRoot) {
   return {
     'sync-retained-workspace': [...new Set(sync)].sort(),
     'install-development-buildr-web': [...new Set(buildrWeb)].sort(),
+    'update-dsh-development-plugin': changedPaths.filter(isDshDevelopmentPluginInput).sort(),
     'verify-development-entry': [...new Set([...sync, ...cli, ...buildrWeb])].sort(),
   };
 }
@@ -1054,6 +1057,20 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
       });
     }
     markPassed(active, successor, successor);
+    if (actions['update-dsh-development-plugin'].length) {
+      start('update-dsh-development-plugin'); assertHead(successor);
+      const plugin = updateDshDevelopmentPlugin({
+        root, nodeExecutable, environment,
+        run: (exe, args, id, env, opts = {}, record = true) => record
+          ? command(execute, exe, args, root, id, active, {}, env, opts)
+          : execute(exe, args, { cwd: root, env, ...opts }),
+      });
+      markPassed(active, deliveredRef, successor, [{ type: 'dsh-development-plugin', ...plugin }]);
+      if (plugin.status === 'pending' || plugin.status === 'blocked') {
+        active.status = 'blocked';
+        return result('blocked', { code: `self-bootstrap-closeout.dsh-plugin-${plugin.status}`, message: plugin.reason, details: plugin });
+      }
+    }
     return result('passed');
   } catch (error) {
     if (active) active.status = 'blocked';

@@ -332,3 +332,35 @@ test('Git-aware catalog discovery scales beyond 2048 directories, preserves erro
     (err: any) => err?.code === 'agent_workbench_file_revision_conflict' && err?.details?.current?.selector?.checkoutId === mainMember.id,
   );
 });
+
+test('Git topology changes on external branches and worktrees, not ordinary file writes', async t => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'harness-git-topology-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const dir = path.join(root, 'repo');
+  fs.mkdirSync(dir);
+  const git = (...args: string[]) => execFileSync('git', ['-C', dir, ...args], { env: codeGitEnvironment(), stdio: 'pipe' });
+  git('-c', 'init.templateDir=', 'init', '-q', '-b', 'main');
+  git('-c', 'user.name=Fixture', '-c', 'user.email=git@example.invalid', '-c', 'commit.gpgSign=false', 'commit', '--allow-empty', '-qm', 'initial');
+  const host = new HarnessDirectoryHost(path.join(root, 'profile'));
+  const scope = host.register(dir);
+  const run = createDirectoryWorkbench(host);
+  const call = async (operation: string, input = {}) => await run(operation, { scopeId: scope.ref.id, scopeRevision: scope.revision, ...input }) as any;
+  const catalog = await call('catalog');
+  const topology = async () => (await call('git-topology', { repositoryPaths: catalog.topologyPaths })).revision;
+  assert.ok(catalog.topologyRevision);
+  assert.equal(await topology(), catalog.topologyRevision);
+  fs.writeFileSync(path.join(dir, 'external.txt'), 'not part of topology');
+  assert.equal(await topology(), catalog.topologyRevision);
+  git('branch', 'background');
+  const branch = await topology();
+  assert.notEqual(branch, catalog.topologyRevision);
+  const tree = path.join(root, 'checkout');
+  git('worktree', 'add', tree, 'background');
+  assert.notEqual(await topology(), branch);
+  const refreshed = await call('catalog');
+  assert.ok(refreshed.repositories[0].members.some((member: {branch:string}) => member.branch === 'background'));
+  assert.equal(refreshed.topologyRevision, await topology());
+  git('worktree', 'remove', tree);
+  assert.equal(await topology(), branch);
+  await assert.rejects(call('git-topology', { repositoryPaths: ['../outside'] }), { code: 'code_path_forbidden' });
+});

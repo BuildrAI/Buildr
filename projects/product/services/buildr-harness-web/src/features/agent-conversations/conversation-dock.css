@@ -42,7 +42,6 @@
 .ac-focus-history-divider.split-divider{flex:none;position:relative;z-index:4;margin-inline:-4.5px}
 .ac-focus-history-divider.is-dragging::before,.ac-focus-history-divider.is-dragging::after{background:var(--soft-primary)}
 .ac-panel[data-three-pane=true] .ac-focus-history-pane .ac-history-body{padding-inline:12px}
-.ac-panel[data-three-pane=true] .ac-focus-history-pane .ac-history-toolbar>.ant-select{max-width:none}
 
 .ac-quota-entry.ant-btn{margin-top:auto;flex-shrink:0}
 .ac-quota-entry+.ac-account-settings.ant-btn{margin-top:3px}

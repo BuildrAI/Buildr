@@ -12,14 +12,14 @@ export async function runCodeExplorerJourney({ t, page, workspaceUrl, capture }:
     await page.locator('.repository-search-result[data-file-path="projects/demo/services/api/src/main.ts"]').click();
     await page.locator('.file-editing-pane:visible .cm-content').filter({ hasText: 'explorerAnswer' }).waitFor();
 
-    await page.locator('.repository-search-scope').click();
-    await page.locator('.repository-search-scope-popup').getByText('内容', { exact: true }).click();
+    await page.getByRole('button', { name: /^搜索范围/ }).click();
+    await page.getByRole('menuitem', { name: '内容', exact: true }).click();
     await searchInput.fill('explorerAnswer');
     await page.locator('.repository-search-occurrence[data-match-line="1"]').first().click();
     await page.locator('.file-editing-pane:visible .cm-content').filter({ hasText: 'explorerAnswer' }).waitFor();
 
-    await page.locator('.repository-search-scope').click();
-    await page.locator('.repository-search-scope-popup').getByText('文件名', { exact: true }).click();
+    await page.getByRole('button', { name: /^搜索范围/ }).click();
+    await page.getByRole('menuitem', { name: '文件名', exact: true }).click();
     await searchInput.fill('README.md');
     await page.locator('.repository-search-result[data-file-path="projects/demo/services/api/README.md"]').click();
     await page.locator('.file-editing-pane:visible .markdown-body').filter({ hasText: 'Explorer document' }).waitFor();

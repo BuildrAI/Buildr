@@ -14,13 +14,14 @@ import { openDirectory } from '../workbench/open-directory.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import type { HarnessDirectory, HarnessDirectoryHost } from './directory-host.ts';
 import { DIRECTORY_SOURCE_ID } from './directory-host.ts';
-import { codeFailure, codeGit, gitCommonDirectory, localPath, readCodeDirectory, relativeCodePath, type CodeSource } from '../workbench/code-file-reader.ts';
+import { codeFailure, codeGit, codeGitAsync, gitCommonDirectory, localPath, readCodeDirectory, relativeCodePath, type CodeSource } from '../workbench/code-file-reader.ts';
 import { isCodeImagePath, readCodeFile } from '../workbench/code-file-content.ts';
 import { searchCode } from '../workbench/code-search.ts';
 import { editableSourceRevision, readEditableFile, saveObservedEditableFile } from '../workbench/editable-file.ts';
 import { insideFilesystemPath } from '../workbench/filesystem-path-identity.ts';
 import { createWorkbenchGitReads } from '../workbench/source-control-reads.ts';
 import type { CodeSourceControlInput } from '../workbench/source-control-read-types.ts';
+import { parseGitWorktreeRecord } from '../workbench/git-worktree-list.ts';
 import { localGitIdentity, mutateLocalGit, observeLocalGit } from '../workbench/local-git.ts';
 import { createCodeCommitApplication } from '../workbench/code-commit-application.ts';
 import { createCodeDiscardApplication } from '../workbench/code-discard-application.ts';
@@ -32,6 +33,7 @@ import type { CodeGeneration } from '../workbench/code-generation.ts';
 const operations = {
   checkouts: [],
   catalog: ['repositoryPath'],
+  'git-topology': ['repositoryPaths'],
   'open-folder': ['path'],
   directory: ['path','showIgnored'],
   search: ['query','mode','showIgnored'],
@@ -98,12 +100,44 @@ function inspectInput(operation: string, input: Record<string, unknown>) {
   for (const [key,value] of Object.entries(input)) {
     if (key==='showIgnored') { if (typeof value!=='boolean') throw invalid(); continue; }
     if (['page','line','limit'].includes(key)) { if (!Number.isSafeInteger(value)) throw invalid(); continue; }
+    if (key==='repositoryPaths') {
+      if (!Array.isArray(value) || value.length > 128 || value.some(item => typeof item !== 'string' || Buffer.byteLength(item)>4096)) throw invalid();
+      continue;
+    }
     if (key==='repositories') { inspectFetchTargets(value); continue; }
     const maxBytes = key === 'content' ? Infinity : key === 'message' ? 32 * 1024 : 4096;
     if (typeof value!=='string' || value.includes('\0') || (Number.isFinite(maxBytes) && Buffer.byteLength(value) > maxBytes)) throw invalid();
   }
   if (typeof input.scopeId!=='string'||!input.scopeId||typeof input.scopeRevision!=='string'||!input.scopeRevision) throw invalid();
   return input as Record<string, any>;
+}
+
+// Only read Git metadata. No full discovery, status, or member filesystem scan on a tick.
+async function gitTopology(directory: HarnessDirectory, paths: readonly string[], inventory?: ReturnType<typeof observeDirectoryRepositories>) {
+  let inventoryChanged = false;
+  const observed = [];
+  for (const relative of [...new Set(paths)].sort()) {
+    try {
+      const repo = resolveDirectoryRepository(directory.rootPath, directory.ref.id, relative);
+      const git = localGitIdentity(repo.location);
+      const [trees, refs] = await Promise.all([
+        codeGitAsync(repo.location, ['worktree', 'list', '--porcelain', '-z'], 2 * 1024 * 1024),
+        codeGitAsync(repo.location, ['for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads'], 2 * 1024 * 1024),
+      ]);
+      if (localGitIdentity(repo.location).id !== git.id) throw invalid();
+      const expected = inventory?.repositories.find(item => item.path === relative)?.checkouts;
+      if (expected) {
+        const records = trees.toString('utf8').split('\0\0').filter(Boolean).map(parseGitWorktreeRecord);
+        const byPath = new Map(records.map(record => [record.declared, record]));
+        inventoryChanged ||= (!expected.diagnostic && !expected.truncated && records.length !== expected.members.length) || expected.members.some(member => {
+          const record = byPath.get(member.location);
+          return !record || record.branch !== member.branch || record.head !== member.head;
+        });
+      } else if (inventory) inventoryChanged = true;
+      observed.push([relative, git.id, createHash('sha256').update(trees).digest('hex'), createHash('sha256').update(refs).digest('hex')]);
+    } catch { observed.push([relative, null]); }
+  }
+  return inventoryChanged ? null : createHash('sha256').update(JSON.stringify(observed)).digest('hex');
 }
 
 function fileSource(scope: HarnessDirectory): CodeSource {
@@ -200,11 +234,20 @@ export function createDirectoryWorkbench(
     };
     switch (operation) {
       case 'checkouts': {if(input.checkoutId!==undefined||input.repositoryPath!==undefined)throw invalid();const directory=scope(),result=observeDirectoryRepositories(directory.rootPath,directory.ref.id);scope();return result;}
+      case 'git-topology': {
+        if (input.checkoutId !== undefined || input.repositoryPath !== undefined || !input.repositoryPaths) throw invalid();
+        const paths = input.repositoryPaths.map((item: string) => relativeCodePath(item, true));
+        const revision = await gitTopology(scope(), paths);
+        scope();
+        return { revision };
+      }
       case 'catalog': {
         if (input.checkoutId !== undefined) throw invalid();
         const directory = scope();
         const base = fileSource(directory);
         const discovered = observeDirectoryRepositories(directory.rootPath, directory.ref.id);
+        const topologyPaths = [...new Set(['', ...discovered.repositories.map(repo => repo.path)])].slice(0, 128);
+        const topologyRevision = await gitTopology(directory, topologyPaths, discovered);
         const targetRelative = input.repositoryPath !== undefined ? relativeCodePath(input.repositoryPath, true) : null;
         const selectedRepos = targetRelative === null ? discovered.repositories : discovered.repositories.filter(repo => repo.path === targetRelative);
         const repositories = [];
@@ -262,7 +305,7 @@ export function createDirectoryWorkbench(
           repositories.push({ ...repo, gitId, members });
         }
         scope();
-        return { repositories, truncated: discovered.truncated, diagnostic: discovered.diagnostic, readAt: new Date().toISOString() };
+        return { repositories, topologyPaths, topologyRevision, truncated: discovered.truncated, diagnostic: discovered.diagnostic, readAt: new Date().toISOString() };
       }
       case 'open-folder': {
         const source=current(), file=localPath(source,relative());
@@ -310,6 +353,8 @@ export function createDirectoryWorkbench(
           const directory = scope();
           const targets = inspectFetchTargets(input.repositories);
           const discovered = observeDirectoryRepositories(directory.rootPath, directory.ref.id);
+        const topologyPaths = [...new Set(['', ...discovered.repositories.map(repo => repo.path)])].slice(0, 128);
+        const topologyRevision = await gitTopology(directory, topologyPaths, discovered);
           const locations = new Map<string, string>();
           for (const repo of discovered.repositories) {
             const primary = repo.checkouts.members.find(member => member.id === repo.checkouts.defaultId)?.location ?? repo.checkouts.members[0]?.location;

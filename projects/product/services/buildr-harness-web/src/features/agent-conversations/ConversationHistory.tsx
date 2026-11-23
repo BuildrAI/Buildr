@@ -4,12 +4,13 @@ import { useConversationDraftPresenceDetail, useConversationDraftSubmittedIds } 
 import { ConversationExecutionSummary } from './ConversationExecutionSummary.tsx';
 import { conversationModelSourceLabel, conversationModelLabel } from './conversation-model-label.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Empty, Input, Select } from 'antd';
-import { ArrowLeftOutlined, PlusOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons';
+import { Alert, Button, Empty, Tooltip } from 'antd';
+import { ArrowLeftOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext.tsx';
 import { ConversationActivityStatus } from './ConversationActivityStatus.tsx';
 import { activityState, sendActivity, conversationMetadata, copyConversationIdTitle } from './conversation-activity.ts';
 import type { ExecutionFilter } from './ConversationExecutionStats.tsx';
+import { ScopedSearch } from '../../workbench/ui/ScopedSearch.tsx';
 import { CopyButton } from '../../components/CopyButton.tsx';
 import { DEFAULT_HISTORY_GROUP, historyGroupOrder, moveHistoryGroup, writeHistoryGroupPreference } from './conversation-history-groups.ts';
 import { useHistoryGroupPreference } from './useHistoryGroupPreference.ts';
@@ -100,10 +101,11 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
     const meta=conversationMetadata(row,undefined,row.run?.model?conversationModelLabel(row.run.model,context.connections,context.modelCatalog,{modelAccountId:row.run.modelAccountId}):undefined);
     const openRow=()=>{context.setSettings(false);void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true,preserveHistoryView:keepHistoryOpen});};
     return <div key={row.workspaceId+':'+row.id} style={conversationChildIndent(depth)} className={'ac-history-row'+(depth?' ac-conversation-child-row':'')+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
+      <Tooltip title={meta || null} trigger={['hover', 'focus']} mouseEnterDelay={0.55} mouseLeaveDelay={0.25} placement="right">
       <div className="ac-history-row-main" data-conversation-id={row.id} onClick={event=>{if(event.target instanceof Element&&event.target.closest('button'))return;openRow();}}>
         <span className="ac-history-row-title">
           <span className="ac-history-row-heading">
-            <button type="button" className="ac-history-row-open" onClick={openRow}><strong title={row.title}>{row.title}</strong></button>
+            <button type="button" className="ac-history-row-open" aria-description={meta || undefined} onClick={openRow}><strong title={meta ? undefined : row.title}>{row.title}</strong></button>
             {branch&&<button type="button" className="ac-history-child-toggle" aria-expanded={branch.expanded} aria-disabled={branch.forced||undefined}
               aria-label={`${branch.expanded?'收起':'展开'}「${row.title}」的 ${branch.count} 个子对话`} title={branch.forced?'为保留当前对话或搜索结果，暂时保持展开':`${branch.count} 个已加载的子对话`} onClick={toggle}>
               <RightOutlined aria-hidden="true" rotate={branch.expanded?90:0}/><span>{branch.count}</span>
@@ -113,8 +115,8 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
         </span>
         {sendActivity(row)?.reason&&<span className="ac-send-reason">{sendActivity(row)?.reason}</span>}
         {row.searchSnippet&&<span className="ac-history-row-snippet" title={row.searchSnippet}>{row.searchSnippet}</span>}
-        {meta&&<small><span className="ac-history-meta" title={meta}>{meta}</span></small>}
       </div>
+      </Tooltip>
       <CopyButton type="text" className="ac-history-row-copy" text={row.id} ariaLabel="复制对话 ID" title={copyConversationIdTitle(row.id)} failureMessage="复制失败，请手动选择对话 ID 复制。"/>
     </div>;
   };
@@ -148,10 +150,15 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   });
   const empty=groupsSettled&&visibleGroups.every(id=>groupResults.values[id]?.total===0);
   return <section className="ac-history" aria-label="对话列表" hidden={hiddenBySettings}>
-    <header className="ac-thread-header">{showBackToConversation&&<Button type="text" icon={<ArrowLeftOutlined/>} aria-label="返回当前对话" title="返回当前对话" onClick={()=>context.setView('conversation')}/>}<strong>对话列表</strong>{!context.open&&<Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" title="新建对话" onClick={()=>context.newConversation({preserveVisibility:true,preserveHistoryView:keepHistoryOpen})}/>}
-      {headerAction&&<div className="ac-thread-actions" style={{marginInlineStart:'auto'}}>{headerAction}</div>}</header>
     <div className="ac-history-body">
-      <div className="ac-history-toolbar"><Input allowClear prefix={<SearchOutlined/>} aria-label="搜索对话" placeholder="搜索对话" value={query} onChange={event=>setQuery(event.target.value)}/><Select aria-label="对话列表工作空间" value={workspaceId} options={[{value:'',label:'全部工作空间'},...workspaces.map(item=>({value:item.id,label:item.name}))]} onChange={value=>{setWorkspaceId(value);setFilter(null);}}/></div>
+      <div className="ac-history-toolbar">
+        {showBackToConversation&&<Button type="text" icon={<ArrowLeftOutlined/>} aria-label="返回当前对话" title="返回当前对话" onClick={()=>context.setView('conversation')}/>}
+        <ScopedSearch label="搜索对话" placeholder="搜索对话" query={query} onQueryChange={setQuery} scopeLabel="对话列表工作空间"
+          scope={workspaceId} options={[{value:'',label:'全部工作空间'},...workspaces.map(item=>({value:item.id,label:item.name}))]}
+          onScopeChange={value=>{setWorkspaceId(value);setFilter(null);}} />
+        {!context.open&&<Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" title="新建对话" onClick={()=>context.newConversation({preserveVisibility:true,preserveHistoryView:keepHistoryOpen})}/>}
+        {headerAction}
+      </div>
       
       <ConversationExecutionSummary stats={stats} stale={!!error} filter={filter} onFilter={setFilter} sourceLabel={id=>conversationModelSourceLabel(id,context.modelCatalog)} modelLabel={(id,accountId)=>conversationModelLabel(id,context.connections,context.modelCatalog,{modelAccountId:accountId})}/>
       {filter&&<div className="ac-execution-filter"><span>执行中 · {filter.kind==='model'?modelName(filter.value):filter.value}</span><Button type="link" size="small" onClick={()=>setFilter(null)}>清除筛选</Button></div>}

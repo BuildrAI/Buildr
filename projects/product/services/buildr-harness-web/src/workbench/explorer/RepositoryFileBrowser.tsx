@@ -1,14 +1,14 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Alert, App, Button, Empty, Input, Modal, Segmented, Select, Space, Spin, Tag, Tooltip, Tree } from 'antd';
-import { DownOutlined, EyeInvisibleOutlined, EyeOutlined, FileImageOutlined, FileTextOutlined, FolderOpenOutlined, FolderOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ReloadOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Empty, Input, Modal, Segmented, Space, Spin, Tag, Tooltip, Tree } from 'antd';
+import { DownOutlined, EyeInvisibleOutlined, EyeOutlined, FileImageOutlined, FileTextOutlined, FolderOpenOutlined, FolderOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ReloadOutlined, RightOutlined } from '@ant-design/icons';
 import type { DataNode } from 'antd/es/tree';
 import { MarkdownHost } from '../../components/MarkdownHost';
 import { ReadOnlyFileCodeEditor } from '../editor/ReadOnlyFileCodeEditor';
 import { RepositorySearchText } from './RepositorySearchText';
 import { SelectableHoverCard } from '../ui/SelectableHoverCard';
 import { repositorySearchQuery } from './repository-search-query';
-import { selectPopupGuard } from '../ui/select-popup';
+import { ScopedSearch } from '../ui/ScopedSearch';
 import { CopyButton } from '../ui/CopyButton';
 import { repositorySourceLines, visibleRepositoryMatch, type RepositoryFilePage } from './repository-file-page';
 export type { RepositoryFilePage } from './repository-file-page';
@@ -310,7 +310,9 @@ export function RepositoryFileBrowser(props: RepositoryFileBrowserProps) {
         <div className="repository-tree-heading"><strong>文件</strong><div className="repository-tree-heading-actions">{(props.global || !treeHidden) && props.compactWorkspace && <Button type="text" size="small" aria-label="刷新展开目录" title="刷新展开目录" loading={refreshing} icon={<ReloadOutlined/>} onClick={()=>void refresh(true)}/>}{(props.global || !treeHidden) && <Tooltip title="包含当前目录中被 Git 忽略规则或常见构建目录排除的文件；点号开头不代表忽略。不会显示其他目录中的文件，Git 管理目录始终隐藏。"><Button size="small" type="text" aria-label={showIgnored ? '隐藏忽略文件' : '显示忽略文件'} icon={showIgnored ? <EyeInvisibleOutlined /> : <EyeOutlined />} onClick={() => {setShowIgnored(value => !value);props.onShowIgnored?.(!showIgnored);}} /></Tooltip>}{!props.global&&<Tooltip title={treeHidden ? '展开目录' : '收起目录'}><Button type="text" size="small" aria-label={treeHidden ? '展开目录' : '收起目录'} icon={treeHidden ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setTreeHidden(!treeHidden)} /></Tooltip>}</div></div>
         {(props.global || !treeHidden) && <>
           <div className="repository-file-search" data-prototype-position="file-search">
-            <Input allowClear prefix={<SearchOutlined />} suffix={<span className="repository-search-scope" onMouseDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}><Select aria-label="搜索范围" classNames={{ popup: { root: 'repository-search-scope-popup' } }} variant="borderless" size="small" style={{ width: searchMode === 'name' ? 58 : 48 }} value={searchMode} placement="bottomRight" popupMatchSelectWidth={false} popupRender={selectPopupGuard} options={[{ label: '文件名', value: 'name' }, { label: '内容', value: 'content' }]} onChange={value => setSearchMode(value as 'name' | 'content')} /></span>} placeholder={searchMode === 'name' ? '搜索文件名' : '搜索内容'} aria-label="搜索文件" value={query} onChange={event => changeQuery(event.target.value)} />
+            <ScopedSearch<'name' | 'content'> label="搜索文件" placeholder={searchMode === 'name' ? '搜索文件名' : '搜索内容'} query={query} onQueryChange={changeQuery}
+              scopeLabel="搜索范围" scope={searchMode} options={[{ label: '文件名', value: 'name' }, { label: '内容', value: 'content' }]}
+              onScopeChange={setSearchMode} iconOnly />
           </div>
           <div className="repository-tree-body">
             {props.treeNotice}

@@ -16,6 +16,7 @@ test('a projected closeout script loads runtime policy from the explicit product
   fs.copyFileSync(path.resolve(import.meta.dirname, '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), projected);
   fs.copyFileSync(path.resolve(import.meta.dirname, '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs'), path.join(path.dirname(projected), 'development-web-continuity.mjs'));
   fs.copyFileSync(path.resolve(import.meta.dirname, '../../../../../../skills/buildr-self-bootstrap-sync/scripts/detached-launch.mjs'), path.join(path.dirname(projected), 'detached-launch.mjs'));
+  fs.copyFileSync(path.resolve(import.meta.dirname, '../../../../../../skills/buildr-self-bootstrap-sync/scripts/dsh-development-plugin.mjs'), path.join(path.dirname(projected), 'dsh-development-plugin.mjs'));
   const { runDirectSelfBootstrapCloseout: runProjected } = await import((await import('node:url')).pathToFileURL(projected).href);
   fs.writeFileSync(path.join(f.root, 'README.md'), 'documentation\n');
   git(f.root, 'add', '.'); git(f.root, 'commit', '-m', 'documentation'); git(f.root, 'push', 'origin', 'dev');

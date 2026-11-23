@@ -273,15 +273,18 @@ test('对话列表将子对话展开按钮置于标题后方且不产生嵌套�
       React.createElement(AgentConversationsViewProvider, { value: createPanelContextValue({ historyCache, view: 'history' }) },
         React.createElement(ConversationHistory, { workspaces: [{ id: 'w', name: 'Buildr', rootPath: '/fixture' }], defaultWorkspaceId: 'w' }))))));
 
-  assert.match(html, /<div class="ac-history-row-main" data-conversation-id="parent-row">/);
-  const openStart = html.indexOf('<button type="button" class="ac-history-row-open">');
+  assert.match(html, /<div class="ac-history-row-main" data-conversation-id="parent-row"[^>]*>/);
+  const openStart = html.indexOf('<button type="button" class="ac-history-row-open"');
   const toggleStart = html.indexOf('<button type="button" class="ac-history-child-toggle"');
   const statusStart = html.indexOf('class="ac-activity-status', openStart);
   assert.ok(openStart > 0 && toggleStart > openStart && statusStart > toggleStart, 'DOM 顺序应为标题按钮 → 子对话按钮 → 右侧状态');
 
   const headingMatch = html.match(/<span class="ac-history-row-heading">([\s\S]*?)<\/span><span class="ac-activity-status/);
   assert.ok(headingMatch, '标题与子对话按钮应同在 .ac-history-row-heading 内且位于状态之前');
-  assert.match(headingMatch[1], /<button type="button" class="ac-history-row-open"><strong title="父对话标题">父对话标题<\/strong><\/button><button type="button" class="ac-history-child-toggle"/);
+  assert.match(headingMatch[1], /<button type="button" class="ac-history-row-open"[^>]*><strong>父对话标题<\/strong><\/button><button type="button" class="ac-history-child-toggle"/);
+  assert.match(html, /aria-description="Codex · GPT-5"/);
+  assert.doesNotMatch(html, /<strong>对话列表<\/strong>|<small[^>]*>Codex · GPT-5/);
+  assert.match(html, /class="scoped-search-picker"/);
   assert.doesNotMatch(html, /<button\b[^>]*>(?:(?!<\/button>)[\s\S])*<button\b/, '不应出现 button 嵌套 button');
 });
 
