@@ -146,13 +146,15 @@ export function retireRuntimeRecords(dataRoot: string, directory: string): void 
 }
 
 /** Housekeeping failure retains disk data and never changes execution or session facts. */
-export function cleanupStoppedProcesses(dataRoot: string, keep: AgentRuntimeUnit, reconcile = false): void {
+export function cleanupStoppedProcesses(dataRoot: string, keep: AgentRuntimeUnit, reconcile = false, cancelled = () => false): void {
   // Preserve the existing timely reaping of normal, authenticated shutdowns.
   if (!reconcile && !readProcessInstances(dataRoot).some(record => confirmedStop(dataRoot,record))) return;
   const root = path.join(dataRoot, 'agent-service');
   reanchorProtectedRuntimeInodes(dataRoot, keep);
   const use = observeStorageUse();
+  if (cancelled()) return;
   for (const item of retainedRuntimeCandidates(dataRoot, use, keep, Date.now(), !reconcile).filter(item => item.eligible)) {
+    if (cancelled()) break;
     let lock: ReturnType<typeof claim> | undefined;
     try {
       lock = claim(dataRoot, 'storage');

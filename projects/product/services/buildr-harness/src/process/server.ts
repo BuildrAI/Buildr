@@ -606,9 +606,12 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       try {
         for (const controller of generations.values()) controller.abort();
         await storageDrained;
+        diagnostics({event:'service-close-progress',phase:'storage-drained'});
         await web.close();
         await webConnection?.then(value=>value.disconnect()).catch(()=>{});
+        diagnostics({event:'service-close-progress',phase:'web-closed'});
         await service.close();
+        diagnostics({event:'service-close-progress',phase:'service-closed'});
         await Promise.all([...forwardingClients.values()].map(client => client.close()));
         await new Promise<void>(resolve => setImmediate(resolve));
         const activity = service.activity();

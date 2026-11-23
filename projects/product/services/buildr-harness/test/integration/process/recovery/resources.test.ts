@@ -40,7 +40,10 @@ for(const newInstruction of [true,false])test('retiring process preserves unknow
   }
   if(newInstruction)uncertain=await until(()=>observer!.operations.conversations.read(scope,uncertain.id),v=>v.run?.id!==original.id&&v.run?.status==='completed');
   fs.writeFileSync(path.join(dataRoot,'release-uncertain-resource'),'yes');
-  uncertain=await until(()=>observer!.operations.conversations.read(scope,uncertain.id),v=>(newInstruction?v.retainedRuns?.find(run=>run.id===original.id):v.run)?.resourcesReleased===true);
+  // The marker can arrive just after a failed retirement observation. Allow
+  // the existing 20 s observation window and its next 5 s retry, but require
+  // the exact old run's confirmed release rather than merely seeing it idle.
+  uncertain=await until(()=>observer!.operations.conversations.read(scope,uncertain.id),v=>(newInstruction?v.retainedRuns?.find(run=>run.id===original.id):v.run)?.resourcesReleased===true,26_000);
   const retainedRun=(newInstruction?uncertain.retainedRuns!.find(run=>run.id===original.id):uncertain.run)!;
   assert.equal(retainedRun.status,'unknown');assert.equal(retainedRun.executionState,'unknown');assert.equal(retainedRun.tools[0].status,'unknown');assert.equal(uncertain.pendingSend,undefined);assert.ok(isLive(old.pid),'another conversation still owns this generation');
   if(newInstruction){

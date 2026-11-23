@@ -41,8 +41,11 @@ test('maintenance backs off after expensive passes and avoids overlapping or rep
   t.mock.timers.tick(1);
   assert.equal(workers.length, 4);
   assert.equal(workers[3].data.nativeOnly, true);
+  const closing = new Int32Array(workers[3].data.closing);
+  assert.equal(Atomics.load(closing, 0), 0);
   let drained=false;
   const closed=maintenance.close().then(()=>{drained=true;});
+  assert.equal(Atomics.load(closing, 0), 1, 'the worker sees shutdown before beginning the next phase');
   await Promise.resolve();
   assert.equal(drained,false,'shutdown waits for the active worker to release its resources');
   workers[3].worker.emit('exit', 0);

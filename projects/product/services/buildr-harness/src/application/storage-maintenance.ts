@@ -32,10 +32,11 @@ export interface AgentStoragePlan {
 
 /** Batch migration of the known old npm cache class. The worker and direct
  * maintenance use the same references, lock, occupancy and final identity proof. */
-export async function mergeLegacyNpmCaches(plan:AgentStoragePlan,budgetMs=30000) {
+export async function mergeLegacyNpmCaches(plan:AgentStoragePlan,budgetMs=30000,cancelled=()=>false) {
   const root=path.join(plan.dataRoot,'agent-service'),repository=new ConversationRepository(root);
   const deadline=Date.now()+Math.max(100,Math.min(budgetMs,30000)),results=[];
   for(const item of plan.items){
+    if(cancelled()) break;
     if(item.kind!=='cache'||!['home/.npm/_cacache','cache/npm/_cacache'].includes(path.relative(item.ownerRoot,item.path).split(path.sep).join('/')))continue;
     let lock:ReturnType<typeof claim>|undefined;
     try {
@@ -184,7 +185,7 @@ function inventoryAgentStorage(
 
 /** Execute only objects still present, eligible and unchanged in a fresh inventory.
  * Native sessions additionally require this caller's explicit confirmation. */
-export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, options:{budgetMs?:number;confirmNativeSessions?:boolean;now?:number}={}) {
+export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, options:{budgetMs?:number;confirmNativeSessions?:boolean;now?:number;cancelled?:()=>boolean}={}) {
   if (plan.schemaVersion !== 1 || !path.isAbsolute(plan.dataRoot) || !Array.isArray(plan.items)) throw new Error('agent_storage_plan_invalid');
   const root = path.join(plan.dataRoot, 'agent-service');
   if (!safeStoragePath(plan.dataRoot, root)) throw new Error('agent_storage_root_unsafe');
@@ -263,6 +264,7 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
   const runtimeRank = (kind: StorageCandidate['kind']) => kind === 'runtime' || kind === 'runtime-share' || kind === 'runtime-object' || kind === 'runtime-node' ? 1 : 0;
   const pending=plan.items.filter(item=>item.eligible&&item.kind!=='native-session'&&item.kind!=='native-home').sort((a,b)=>runtimeRank(a.kind)-runtimeRank(b.kind)||b.sizeBytes-a.sizeBytes),handled=new Set<string>();
   for (const expected of pending) {
+    if (options.cancelled?.()) break;
     if(handled.has(expected.path))continue;
     const item = candidates.get(expected.kind + ":" + expected.path);
     let reason = !item ? 'storage_no_longer_candidate' : item.kind !== expected.kind || item.identity !== expected.identity ? 'storage_changed' : item.reason;

@@ -28,6 +28,8 @@ if (!isMainThread && workerData?.kind === 'agent-storage-program') {
 
 async function runMaintenance(): Promise<void> {
   const { dataRoot, runtime, nativeOnly, inventoryOnly } = workerData;
+  const closing = workerData.closing instanceof SharedArrayBuffer ? new Int32Array(workerData.closing) : undefined;
+  const cancelled = () => closing !== undefined && Atomics.load(closing, 0) !== 0;
   const started = performance.now(), cpuStarted = process.threadCpuUsage();
   const stages: Record<string, number> = {};
   let stageStarted = started;
@@ -42,8 +44,10 @@ async function runMaintenance(): Promise<void> {
     return { durationMs: Math.round(performance.now() - started), cpuMs: Math.ceil((cpu.user + cpu.system) / 1000), stages };
   };
   try {
-    if (runtime) try { cleanupStoppedProcesses(dataRoot, runtime); } catch { /* Retain unknown resources. */ }
+    if (cancelled()) return;
+    if (runtime) try { cleanupStoppedProcesses(dataRoot, runtime, false, cancelled); } catch { /* Retain unknown resources. */ }
     stage('runtimes');
+    if (cancelled()) return;
     if (!inventoryOnly) content = maintainNativeContent(dataRoot, { maximumItems: 512, budgetMs: 1000 });
     stage('nativeContent');
     if (nativeOnly) {
@@ -61,21 +65,24 @@ async function runMaintenance(): Promise<void> {
       if (stat.isFile() && !stat.isSymbolicLink() && stat.size < 1024 * 1024) previous = JSON.parse(fs.readFileSync(observationFile, 'utf8'));
     } catch { /* First observation starts a new cycle. */ }
     stage('cacheObservation');
+    if (cancelled()) return;
     const plan = inspectAgentStorage({
       dataRoot,
       homeCursor: previous?.homeStorage?.cursor,
       runtimeObjectBudget: { maxVerifyItems: 256, maxVerifyBytes: 256 * 1024 * 1024 },
     });
     stage('inventory');
+    if (cancelled()) return;
     // Migration verifies the whole cache before retirement. A shorter fixed
     // deadline could repeatedly restart verification without making progress.
-    const npmCaches = await mergeLegacyNpmCaches(plan);
+    const npmCaches = await mergeLegacyNpmCaches(plan, 30000, cancelled);
     stage('migration');
+    if (cancelled()) return;
     if (!cacheObservationComplete) for (const item of plan.items) if (item.kind === 'shared-cache') {
       item.eligible = false;
       item.reason = 'cache_usage_observation_failed';
     }
-    const result = collectAgentStorage(plan, 512, { budgetMs: 4000 });
+    const result = collectAgentStorage(plan, 512, { budgetMs: 4000, cancelled });
     stage('collection');
     try {
       ensureStorageDirectory(root, path.join(root, 'process'));
@@ -96,6 +103,7 @@ async function runMaintenance(): Promise<void> {
 }
 
 export class StorageMaintenance {
+  private readonly closing = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
   private worker?: Worker;
   private timer?: ReturnType<typeof setTimeout>;
   private closed = false;
@@ -136,7 +144,7 @@ export class StorageMaintenance {
     try {
       const worker = new Worker(new URL(import.meta.url), {
         workerData: { kind: 'agent-storage-maintenance', dataRoot: this.dataRoot, nativeOnly,
-          inventoryOnly: !nativeOnly, runtime: nativeOnly ? undefined : this.runtime },
+          inventoryOnly: !nativeOnly, runtime: nativeOnly ? undefined : this.runtime, closing: this.closing.buffer },
       });
       worker.on('message', message => {
         const cpuDelay = Number.isFinite(message.cpuMs) ? 50 * message.cpuMs : 0;
@@ -158,6 +166,9 @@ export class StorageMaintenance {
   /** Stop scheduling and let an in-flight mutation release its own storage lock. */
   close(): Promise<void> {
     this.closed = true;
+    // A message cannot interrupt a synchronous inventory in the worker. Share
+    // a one-way flag; finish any owned transaction before releasing its lock.
+    Atomics.store(this.closing, 0, 1);
     clearTimeout(this.timer);
     if (this.draining) return this.draining;
     const worker = this.worker;
