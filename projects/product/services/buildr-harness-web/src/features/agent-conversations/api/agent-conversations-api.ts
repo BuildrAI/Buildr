@@ -101,9 +101,11 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       if(!catalogRead){const pending=fetchModelCatalog().finally(()=>{if(catalogRead===pending)catalogRead=undefined;});catalogRead=pending;}
       return catalogRead;
     },
+    addMagpie(input:{baseUrl?:string;prepareLocalGateway?:boolean}) {return changeModels<ModelAccount>(appPath+'/model-accounts',post({provider:'magpie',prepareLocalGateway:input.prepareLocalGateway,...(input.baseUrl?{custom:{label:'Magpie',baseUrl:input.baseUrl,protocol:'responses',useApiKey:false}}:{})}));},
+    openModelSettings(account:ModelAccount) {return request<ModelAccount>(appPath+'/model-accounts/'+encodeURIComponent(account.id)+'/open-settings',post({expectedRevision:account.revision}));},
     addModelAccount(provider:string) {return changeModels<ModelAccount>(appPath+'/model-accounts',post({provider}));},
     addCustomModelAccount(input:CustomProviderConfigInput) {return changeModels<ModelAccount>(appPath+'/model-accounts',post({provider:'custom',custom:input}));},
-    configureCustomModelAccount(account:ModelAccount,input:CustomProviderConfigInput) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+encodeURIComponent(account.id)+'/custom',post({expectedRevision:account.revision,...input}));},
+    configureCustomModelAccount(account:ModelAccount,input:CustomProviderConfigInput&{prepareLocalGateway?:boolean}) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+encodeURIComponent(account.id)+'/custom',post({expectedRevision:account.revision,...input}));},
     discoverCustomModels(input:CustomDiscoveryInput,signal?:AbortSignal) {return request<CustomDiscoveryResult>(appPath+'/model-custom/discovery',{...post(input),signal});},
     readSystemPrompt() { return request<HarnessSystemPromptSystemPrompt>(appPath+'/system-prompt'); },
     saveSystemPrompt(input:HarnessSystemPromptInputSystemPromptInput) { return request<HarnessSystemPromptSystemPrompt>(appPath+'/system-prompt',post(input)); },

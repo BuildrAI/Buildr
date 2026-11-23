@@ -96,7 +96,7 @@ const modelProvider = closed({id:text,label:text,singleton:boolean,authenticatio
 const customModel = closed({id:text,label:text,contextWindow:{type:'integer',minimum:1,maximum:10000000}},['id']);
 const modelProtocol = {enum:['chat-completions','responses','anthropic-messages','gemini']};
 const customConfig = closed({protocol:modelProtocol,baseUrl:{type:'string',minLength:1,maxLength:2048},modelsPath:{type:'string',minLength:1,maxLength:2048,pattern:'^/(?!/)[^\\s?#]*$'},useApiKey:boolean,models:list(customModel)},['protocol','baseUrl','useApiKey','models']);
-const customConfigure = closed({expectedRevision:text,label:text,baseUrl:{type:'string',minLength:1,maxLength:2048},protocol:modelProtocol,modelsPath:{type:'string',minLength:1,maxLength:2048,pattern:'^/(?!/)[^\\s?#]*$'},useApiKey:boolean,apiKey:{type:'string',minLength:1,maxLength:4096},models:list(customModel)},['label','baseUrl','protocol','useApiKey']);
+const customConfigure = closed({expectedRevision:text,prepareLocalGateway:boolean,label:text,baseUrl:{type:'string',minLength:1,maxLength:2048},protocol:modelProtocol,modelsPath:{type:'string',minLength:1,maxLength:2048,pattern:'^/(?!/)[^\\s?#]*$'},useApiKey:boolean,apiKey:{type:'string',minLength:1,maxLength:4096},models:list(customModel)},['label','baseUrl','protocol','useApiKey']);
 const customDiscovery = closed({accountId:text,baseUrl:{type:'string',minLength:1,maxLength:2048},protocol:modelProtocol,modelsPath:{type:'string',minLength:1,maxLength:2048,pattern:'^/(?!/)[^\\s?#]*$'},useApiKey:boolean,apiKey:{type:'string',minLength:1,maxLength:4096}},['baseUrl','protocol','useApiKey']);
 const customDiscoveryResult = closed({models:list(closed({id:text,label:text},['id'])),observedAt:text,incomplete:boolean,diagnostic:text},['models']);
 const modelAccount = closed({connectionId:text,id: text, identity: text, provider: text, label: text, revision: text, enabled: boolean, sourceEnabled:boolean, status: {enum:['not-authenticated','ready','expired','failed','disconnected']},authType:{enum:['oauth','api-key']},singleton:boolean,group:providerGroup,modeLabel:text,sharing:providerSharing,inference:providerInference,presentation:providerPresentation,executorCompatibility:list(executorCompatibilityItem),credentialConfigured:boolean,accountLabel: text, custom:customConfig, models: list(offering), observedAt: text, quota, diagnostic: text, loginAttempt: closed({id: text, state: {enum:['initializing','waiting-browser','checking','completed','cancelled','expired','failed']},updatedAt:text,url:string,diagnostic:string},['id','state','updatedAt'])},['id','provider','label','revision','enabled','status','models']);
@@ -150,7 +150,7 @@ export const AGENT_OPERATION_SCHEMAS = {
     closed({revision:text,unchanged:{const:true}}),
     closed({revision:text,models:list(catalogModel),diagnostic:text,hasSnapshot:boolean},['models']),
   ]}),
-  addModelAccount: named('AgentModelAccountAdd', closed({provider:text,label:text,custom:customConfigure},['provider'])),
+  addModelAccount: named('AgentModelAccountAdd', closed({provider:text,label:text,custom:customConfigure,prepareLocalGateway:boolean},['provider'])),
   empty: named('AgentServiceEmptyRequest', closed({})),
   connection: named('AgentServiceConnection', connection),
   connectionAccountImpact: named('AgentServiceConnectionAccountImpact', closed({

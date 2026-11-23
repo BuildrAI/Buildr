@@ -98,3 +98,10 @@ test('AgentConnectionSettings saveProvider preserves underlying failure message 
   assert.match(source, /let failureMessage='';/);
   assert.match(source, /if\(!saved\)throw new Error\(failureMessage\|\|'供应商配置未完成。'\);/);
 });
+
+test('Magpie offers connection and explicit local setup without subscription or API Key fields',()=>{
+ const html=renderToStaticMarkup(React.createElement(ProviderConnectionDrawer,{open:true,initial:{kind:'magpie',label:'Magpie',baseUrl:''},providers:[{id:'magpie',label:'Magpie',custom:true}],onClose(){},async onSave(){}}));
+ assert.match(html,/连接 Magpie/);
+ assert.match(html,/下载并启动/);
+ assert.doesNotMatch(html,/保存并登录|API Key|API 协议/);
+});

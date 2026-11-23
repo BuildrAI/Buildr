@@ -96,7 +96,7 @@ export function createAgentService(options: AgentServiceOptions) {
     return typeof digest === 'string' ? digest : undefined;
   });
   const preparations = new PreparationApplication(connections, programManager, generation, now);
-  const providerList = options.modelProviders ?? createDefaultModelProviders({ connections, programManager, readAccountIdentity: accountId => models.accounts.read(accountId).identity, now });
+  const providerList = options.modelProviders ?? createDefaultModelProviders({ connections, programManager, magpieRoot:path.join(root,'magpie'), readAccountIdentity: accountId => models.accounts.read(accountId).identity, now });
   const noBackgroundRefreshProviders = new Set<string>();
   const startupRefreshProviders = new Set(providerList.filter(provider => provider.refreshOnStart).map(provider => provider.id));
   const registeredProviderIds = new Set(providerList.map(provider => provider.id));

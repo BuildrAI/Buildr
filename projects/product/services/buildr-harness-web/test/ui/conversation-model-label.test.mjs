@@ -95,3 +95,12 @@ test('服务端展示元数据优先于历史兜底名称，离线历史仍保�
  assert.equal(conversationRunIdentity({provider:'antigravity',model:'gemini-2.5-pro',modelAccountId:'native-antigravity'},{id:'antigravity',provider:'antigravity',label:'Antigravity',models:[]},customCatalog),'Antigravity · Google / Gemini 2.5 Pro');
  assert.equal(conversationRunIdentity({provider:'claude-code',model:'claude-sonnet-4-6'},undefined,[]),'Claude Code · claude-sonnet-4-6');
 });
+
+test('only Magpie choices append the source, without changing their selection IDs',async()=>{
+ const {catalogConversationOption}=await import('../../src/features/agent-conversations/conversation-options.ts');
+ const base={accountId:'direct',modelId:'gpt-6.2-sol',provider:'codex',label:'GPT‑6.2 Sol',available:true};
+ const magpie={...base,accountId:'magpie-account',provider:'magpie',modelId:'codex/gpt-6.2-sol'};
+ assert.deepEqual(catalogConversationOption('codex',base),{value:'shared:direct::gpt-6.2-sol',label:'GPT‑6.2 Sol',disabled:false});
+ assert.deepEqual(catalogConversationOption('codex',magpie),{value:'shared:magpie-account::codex/gpt-6.2-sol',label:'GPT‑6.2 Sol · Magpie',disabled:false});
+ assert.equal(catalogConversationOption('codex',{...magpie,available:false}).disabled,true);
+});

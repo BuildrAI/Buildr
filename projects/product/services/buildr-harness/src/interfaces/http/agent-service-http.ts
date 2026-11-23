@@ -122,7 +122,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         const revision = createHash('sha256').update(JSON.stringify(catalog)).digest('hex');
         return result('modelCatalog', expectedRevision === revision ? { revision, unchanged: true as const } : { ...catalog, revision });
       }
-      const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-zA-Z0-9_-]{1,100})(?:\/(check|disconnect|login-attempts|preferences|api-key|custom|usage)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
+      const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-zA-Z0-9_-]{1,100})(?:\/(check|disconnect|login-attempts|preferences|api-key|custom|open-settings|usage)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
       if (accountRoute) {
         const [, accountId, action, attemptId, cancel] = accountRoute;
         if (request.method === 'GET' && !action) return result('modelAccount', await service.models.accounts.read(accountId));
@@ -137,6 +137,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         if(action==='api-key'&&!attemptId&&!cancel)return result('modelAccount',await service.models.accounts.configure(accountId,validate('modelApiKey',await readJsonBody())));
         if(action==='custom'&&!attemptId&&!cancel)return result('modelAccount',await service.models.accounts.configureCustom(accountId,validate('modelCustomConfigure',await readJsonBody())));
         const body = validate('revision', await readJsonBody());
+        if (action === 'open-settings' && !attemptId) return result('modelAccount', await service.models.accounts.openSettings(accountId, body));
         if (action === 'check') return result('modelAccount', await service.models.accounts.check(accountId, body));
         if (action === 'disconnect') return result('modelAccount', await service.models.accounts.disconnect(accountId, body));
         if (action === 'login-attempts' && !attemptId) return result('modelAccount', await service.models.accounts.login(accountId, body), 202);

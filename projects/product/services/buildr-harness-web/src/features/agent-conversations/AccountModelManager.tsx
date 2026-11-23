@@ -27,7 +27,7 @@ export interface AccountSelection {sourceId:string;tab:AccountSettingsTab;}
 interface Props {
   refreshingIds?:string[];
   sources:ModelSourceView[];selection:AccountSelection;busy:boolean;
-  onSelect(selection:AccountSelection):void;onRefresh(id:string):void;onLogin(id:string):void;onDisconnect(id:string):void;onPrepare(id:string):void;
+  onSelect(selection:AccountSelection):void;onRefresh(id:string):void;onOpenProvider?(id:string):void;onLogin(id:string):void;onDisconnect(id:string):void;onPrepare(id:string):void;
   additionalProviders?:Array<{id:string;label:string}>;onAdd?(provider:string):void;
   onAddProvider?():void;onEditProvider?(sourceId:string):void;onDeleteProvider?(sourceId:string):Promise<void>;onDeleteUsage?(sourceId:string):Promise<number>;
   onLogoutManaged?(sourceId:string):Promise<void>;
@@ -43,7 +43,7 @@ interface Props {
 }
 const statusLabel={ready:'已登录','not-authenticated':'未登录',expired:'登录已过期',failed:'暂不可用'};
 const customStatusLabel={ready:'已连接','not-authenticated':'待配置',expired:'已失效',failed:'暂不可用'};
-const sourceStatusLabel=(source:Pick<ModelSourceView,'status'|'authType'|'provider'>)=>source.provider==='custom'
+const sourceStatusLabel=(source:Pick<ModelSourceView,'status'|'authType'|'provider'>)=>source.provider==='custom'||source.provider==='magpie'
   ?customStatusLabel[source.status]
   :source.authType==='api-key'
     ?({ready:'已连接','not-authenticated':'未配置',expired:'密钥失效',failed:'暂不可用'} as const)[source.status]
@@ -70,7 +70,7 @@ function UsageQuota({source}:{source:ModelSourceView}){
 }
 
 /** Shared candidate view. Sources, selection and every operation are supplied by its host. */
-export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,onLogin,onDisconnect,onPrepare,onEnable,onContext,onCancelLogin,onConfigureKey,onCustomDiscover,onCustomModels,onAddProvider,onEditProvider,onDeleteProvider,onDeleteUsage,onLogoutManaged,onSwitchManagedAccount,onManagedAccountImpact,refreshingIds=[],showDisabled=false,onShowDisabled,onSourceEnabled}:Props){
+export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,onLogin,onDisconnect,onPrepare,onEnable,onContext,onCancelLogin,onConfigureKey,onCustomDiscover,onCustomModels,onAddProvider,onEditProvider,onOpenProvider,onDeleteProvider,onDeleteUsage,onLogoutManaged,onSwitchManagedAccount,onManagedAccountImpact,refreshingIds=[],showDisabled=false,onShowDisabled,onSourceEnabled}:Props){
   const [query,setQuery]=useState(''),[filter,setFilter]=useState('all'),[family,setFamily]=useState('all');
   const [deleting,setDeleting]=useState<ModelSourceView|null>(null),[deleteBusy,setDeleteBusy]=useState(false),[deleteError,setDeleteError]=useState('');
   const [deleteUsage,setDeleteUsage]=useState<number|undefined>(undefined),[deleteUsageLoaded,setDeleteUsageLoaded]=useState(false),[deleteUsageLoading,setDeleteUsageLoading]=useState(false);
@@ -189,7 +189,7 @@ export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,o
       <div className="amm-nav-note">登录一次<br/>模型供不同智能体使用</div>
     </aside>
     <main className="amm-main">
-      <div className="amm-main-heading"><div><h2>{selected?.providerLabel||'全部供应商'}</h2><p>{selected?selected.provider==='custom'?selected.custom?.baseUrl||'自定义模型端点':selected.authType==='api-key'?(selected.status==='ready'?`${selected.accountLabel} · API Key`:`使用 API Key 连接 ${selected.vendorLabel||selected.providerLabel} 官方 API`):selected.status==='ready'?`${selected.accountLabel} · ${selected.planLabel}`:'登录后自动同步模型与额度':'集中管理登录、套餐额度和可选模型'}</p></div><Space size={4}>{selected?.provider==='custom'&&onEditProvider&&<Button onClick={()=>onEditProvider(selected.id)}>编辑接入</Button>}<Button icon={<ReloadOutlined/>} loading={busy||refreshingIds.some(id=>!selected||id===selected.id)} onClick={()=>onRefresh(selected?.id||'all')}>刷新</Button></Space></div>
+      <div className="amm-main-heading"><div><h2>{selected?.providerLabel||'全部供应商'}</h2><p>{selected?selected.provider==='magpie'?selected.custom?.baseUrl||'本机 Magpie':selected.provider==='custom'?selected.custom?.baseUrl||'自定义模型端点':selected.authType==='api-key'?(selected.status==='ready'?`${selected.accountLabel} · API Key`:`使用 API Key 连接 ${selected.vendorLabel||selected.providerLabel} 官方 API`):selected.status==='ready'?`${selected.accountLabel} · ${selected.planLabel}`:'登录后自动同步模型与额度':'集中管理登录、套餐额度和可选模型'}</p></div><Space size={4}>{selected?.provider==='magpie'&&onOpenProvider&&<Button disabled={busy||selected.status!=='ready'} onClick={()=>onOpenProvider(selected.id)}>打开 Magpie</Button>}{(selected?.provider==='custom'||selected?.provider==='magpie')&&onEditProvider&&<Button onClick={()=>onEditProvider(selected.id)}>编辑接入</Button>}<Button icon={<ReloadOutlined/>} loading={busy||refreshingIds.some(id=>!selected||id===selected.id)} onClick={()=>onRefresh(selected?.id||'all')}>刷新</Button></Space></div>
       <Tabs className="amm-tabs" activeKey={selection.tab} onChange={tab=>onSelect({...selection,tab:tab as AccountSettingsTab})} items={[{key:'quota',label:'账号与额度'},{key:'models',label:<span>模型 <span className="amm-tab-count">{enabled}/{rows.length}</span></span>}]}/>
       <div className="amm-content">
       {selection.tab==='quota'&&<><p className="amm-section-description">{selected?.provider==='custom'?'自定义供应商没有额度接口，Buildr 不推断余额。':selected?.authType==='api-key'?`API Key 模式的费用与额度由 ${selected.vendorLabel||selected.providerLabel} 账户管理，Buildr 不推断套餐余额。`:selected?.exclusiveReason||'登录后在这里查看供应商共享额度，模型有独立限额时单独显示。'}</p>{visible.map(quota)}</>}

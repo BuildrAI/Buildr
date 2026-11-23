@@ -28,6 +28,7 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('check-model-account', 'POST', `${base}/model-accounts/:accountId/check`, 'revision', 'modelAccount'),
   operation('disconnect-model-account', 'POST', `${base}/model-accounts/:accountId/disconnect`, 'revision', 'modelAccount'),
   operation('delete-model-account', 'DELETE', `${base}/model-accounts/:accountId`, 'revision', 'modelAccounts'),
+  operation('open-model-settings','POST',`${base}/model-accounts/:accountId/open-settings`,'revision','modelAccount'),
   operation('model-account-usage', 'GET', `${base}/model-accounts/:accountId/usage`, 'empty', 'modelAccountUsage'),
   operation('login-model-account', 'POST', `${base}/model-accounts/:accountId/login-attempts`, 'revision', 'modelAccount'),
   operation('model-login-attempt', 'GET', `${base}/model-accounts/:accountId/login-attempts/:attemptId`, 'empty', 'modelAccount'),

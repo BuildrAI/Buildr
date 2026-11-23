@@ -82,6 +82,7 @@ export interface CustomProviderConfig {
 }
 export interface CustomProviderConfigureInput {
   expectedRevision?: string;
+  prepareLocalGateway?:boolean;
   label: string;
   baseUrl: string;
   protocol: string;
@@ -92,6 +93,7 @@ export interface CustomProviderConfigureInput {
   modelsPath?: string;
   models?: CustomProviderModel[];
 }
+export interface ModelAccountAddInput { provider:string; label?:string; custom?:CustomProviderConfigureInput; prepareLocalGateway?:boolean; }
 export interface CustomProviderDiscoveryInput {
   /** Reuse the stored key of an existing custom account when `apiKey` is omitted. */
   accountId?: string;
@@ -133,6 +135,7 @@ export interface ProviderInferenceInput {
   context: { accountId: string; agentId: string; conversationId: string; runId: string; requestId: string };
 }
 export interface ModelProviderRuntime {
+  openSettings?(): Promise<void>;
   readonly protocol: ModelProtocol;
   protocolForModel?(modelId: string): ModelProtocol;
   inspect(): Promise<ModelProviderObservation>;
@@ -180,6 +183,8 @@ export interface ModelProvider {
   readonly refreshOnStart?: boolean;
   /** Accounts of this provider carry user-declared endpoint configuration. */
   readonly custom?: boolean;
+  /** Resolve locally discovered or explicitly prepared gateway configuration. */
+  resolveCustom?(input:CustomProviderConfigureInput|undefined, prepare:boolean, signal:AbortSignal):Promise<CustomProviderConfigureInput>;
   /** Optional on-demand preparation (e.g. downloading local proxy binary/config) when adding an account. */
   prepare?(input: { configRoot: string; environment: Readonly<Record<string, string>>; signal?: AbortSignal }): Promise<void>;
   open(input: { accountId: string; configRoot: string; environment: Readonly<Record<string, string>>; custom?: CustomProviderConfig }): Promise<ModelProviderRuntime>;

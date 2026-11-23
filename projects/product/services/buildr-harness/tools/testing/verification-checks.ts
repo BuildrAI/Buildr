@@ -44,6 +44,7 @@ const modelsAccountsFiles = integrationTests(
   'model-login-completion.test.ts',
   'model-preferences.test.ts',
   'model-providers.test.ts',
+  'magpie-model-provider.test.ts',
   'native-content.test.ts',
   'qoder-cn-login.test.ts',
   'qoder-upgrade-pair.test.ts',

@@ -6,6 +6,7 @@ import { ModelAccessError, type ModelProvider } from '../contracts.ts';
 import { createAnthropicApiModelProvider } from './anthropic-api.ts';
 import { createAntigravityModelProvider } from './antigravity.ts';
 import { createCodexModelProvider } from './codex.ts';
+import { createMagpieModelProvider } from './magpie.ts';
 import { createCustomModelProvider } from './custom.ts';
 import { createDeepSeekModelProvider } from './deepseek.ts';
 import { createDevinModelProvider } from './devin.ts';
@@ -21,6 +22,7 @@ export interface DefaultModelProvidersDependencies {
     runtime(id: string, gateway?: undefined, accountProbe?: boolean): Promise<AgentRuntime>;
   };
   programManager: AgentProgramManager;
+  magpieRoot?: string;
   readAccountIdentity(accountId: string): string | undefined;
   now(): string;
 }
@@ -129,6 +131,7 @@ export function createDefaultModelProviders(deps: DefaultModelProvidersDependenc
     createOpenAIApiModelProvider(),
     createAnthropicApiModelProvider(),
     createCustomModelProvider(),
+    ...(deps.magpieRoot ? [createMagpieModelProvider({root:deps.magpieRoot})] : []),
     createDevinModelProvider(),
     createDeepSeekModelProvider({
       ownerFactory: async input => {
