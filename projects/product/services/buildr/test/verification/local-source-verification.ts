@@ -2,14 +2,14 @@ import { pluginSourcePhaseFiles, pluginSourcePhaseStep } from '../../../dsh-plug
 import fs from 'node:fs';
 import path from 'node:path';
 import { createSourceVerificationPlan, pinSourceVerificationBase, selectSourceVerificationSubset } from './source.ts';
-import { encodeCandidateSourceImport } from './candidate-source-reuse.ts';
+import { encodeCandidateSourceImport, type SourceProofTransport } from './candidate-source-reuse.ts';
 import { assertCandidateRound, createCandidateRoundExecution, passedRoundRecord, readCandidateRound } from './candidate-round.ts';
 import { verificationSteps } from './registry.ts';
 import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts';
 
 export async function prepareLocalSourceVerification(options: {
   repo: string; sourceFile?: string; base?: string; platform?: string; env?: NodeJS.ProcessEnv; packages?: string[]; roundId: string;
-  selectedStepIds?: string[];
+  selectedStepIds?: string[]; transport?: SourceProofTransport;
 }, dependencies: any = {}): Promise<any> {
   const plan = (dependencies.createSourcePlan ?? createSourceVerificationPlan)(options.platform ?? process.platform);
   const buildrRequired = options.packages?.includes('buildr') ?? true;
@@ -69,7 +69,7 @@ export async function prepareLocalSourceVerification(options: {
       invalidationsByInput: [...byInput].sort(([a], [b]) => a.localeCompare(b)).map(([input, checkIds]) => ({ input, checkIds, scope: checkIds.length > 1 ? 'shared' : 'single' })),
       invalidationsByReason: [...byReason].sort(([a], [b]) => a.localeCompare(b)).map(([reason, checkIds]) => ({ reason, checkIds })),
     },
-    ...(missingStepIds.length ? {} : { transport: encodeCandidateSourceImport(log) }),
+    ...(missingStepIds.length ? {} : { transport: encodeCandidateSourceImport(log, options.transport) }),
     nextActions: fullRerun ? ['补验需全量，未启动测试。请先核对分组原因、原记录和执行环境；确需全量时显式确认。'] : missingStepIds.length ? [
       ...(missingStepIds.some((id: string) => id !== 'dsh-plugin:unit') ? [
         `在 ${productRoot} 执行 tools/development/run-development-node test/verification/source.ts --round ${options.roundId}${options.base ? ` --base ${options.base}` : ''}${options.sourceFile ? ` --output ${options.sourceFile}` : ''}${options.sourceFile && log.records.some((record: any) => record.identity.stepId !== 'dsh-plugin:unit') ? ' --resume' : ''}${selectedStepIds.size > 0 ? ` --selected ${[...selectedStepIds].sort().join(',')}` : ''}；按有效证据补验。`,
