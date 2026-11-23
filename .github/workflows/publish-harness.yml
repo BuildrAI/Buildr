@@ -12,30 +12,31 @@ on:
           - harness
           - dsh-buildr-harness
       version:
-        description: Exact approved package version
-        required: true
+        description: Exact approved package version (required for publish/readback)
+        required: false
         type: string
       candidate_run_id:
         description: Run ID of the preserved candidate artifact in this repository
-        required: true
+        required: false
         type: string
       candidate_artifact:
         description: Exact preserved artifact name containing original tgz, candidate.json and verification.json
-        required: true
+        required: false
         type: string
       source_commit:
         description: Exact original source commit
-        required: true
+        required: false
         type: string
       original_sha256:
         description: SHA-256 of the exact approved original tarball
-        required: true
+        required: false
         type: string
       mode:
-        description: Publish only once; otherwise reconcile readback
+        description: Check npm trust without uploading, publish once, or reconcile readback
         required: true
         type: choice
         options:
+          - authority
           - readback
           - publish
         default: readback
@@ -46,8 +47,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  authority:
+    if: inputs.mode == 'authority' && github.ref == 'refs/heads/main' && github.repository == 'BuildrAI/Buildr'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: npm-production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+          package-manager-cache: false
+      - name: Check npm trust without publishing
+        env:
+          RELEASE_TARGET: ${{ inputs.release_target }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node --input-type=module -e "import { checkHarnessNpmAuthority } from './skills/buildr-release/scripts/harness-npm-authority.ts'; console.log(JSON.stringify(await checkHarnessNpmAuthority()));"
+
   publish:
-    if: github.ref == 'refs/heads/main' && github.repository == 'BuildrAI/Buildr'
+    if: (inputs.mode == 'publish' || inputs.mode == 'readback') && github.ref == 'refs/heads/main' && github.repository == 'BuildrAI/Buildr'
     runs-on: ubuntu-latest
     environment: npm-production
     permissions:
@@ -60,9 +84,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ inputs.candidate_run_id }}
           ARTIFACT_NAME: ${{ inputs.candidate_artifact }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
           ORIGINAL_SHA256: ${{ inputs.original_sha256 }}
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
-          [[ "$RUN_ID" =~ ^[1-9][0-9]*$ && "$ORIGINAL_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$RUN_ID" =~ ^[1-9][0-9]*$ && "$SOURCE_COMMIT" =~ ^[a-f0-9]{40}$ && "$ORIGINAL_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[1-9][0-9]*)?$ ]]
           test "$ARTIFACT_NAME" = "harness-original-$ORIGINAL_SHA256"
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" | jq -e '
             .path == ".github/workflows/preserve-harness.yml" and
@@ -72,6 +99,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24.15.0
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
       - uses: actions/download-artifact@v7
         with:
           name: ${{ inputs.candidate_artifact }}

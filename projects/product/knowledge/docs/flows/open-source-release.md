@@ -35,6 +35,13 @@
 3. 获得针对包名、版本、原包和渠道的公开授权，核对 npm Trusted Publishing 已绑定 `publish-harness.yml` 和 `npm-production`。受保护入口只接收同树 `main`、交接 run、原包 SHA-256 与验证证明。先确认独立 Harness 从官方源可安装，再发配对通过的插件。RC 使用 `next`；插件的 GitHub Release 资产与 npm 原包逐字节一致。
 4. 超时或未知后以原候选选择 `readback`，不自动重传。只在确认相应动作未发出、重新获得准确发布依据后才发新的写入请求。局部失败保留已知事实，按失败渠道补齐，不覆盖既有资产。候选临时 Git 数据引用按精确归属保全后清理。
 
+### GitHub 直接上传 npm
+
+两个包已完成 npm 首次登记。新版本候选和授权齐备、预计能在两天内完成首次可信发布时，逐包在 npm 包设置绑定 Trusted Publisher：`BuildrAI` / `Buildr` / `publish-harness.yml` / `npm-production`，允许直接 `npm publish`，不需要长期 token 或额外 `npm dist-tag` 写权限。只允许 `npm stage publish` 仍会要求逐版在 npm 确认。按 [npm 的到期规则](https://docs.npmjs.com/trusted-publishers/#trusted-publisher-configuration-expiry)，首次可信发布超过两天未完成，新绑定会失效；不为激活而发布占位包。
+
+`dev` 上的工作流是准备态；实际发布只从受保护的 `main` 运行。先核对 `main` 已采用对应发布工具和候选准入，再绑定。若 `main` 已采用 `authority` 模式，可从同一工作流逐包仅检查短期凭证交换，不上传、不改标签。交换通过不代表上传已验收。随后用原候选运行 `publish`，保留 GitHub `npm-production` 审批，先独立 Harness、再匹配插件。首次可信发布后，后续获准版本由 GitHub 直接上传，无需逐版回 npm 审批。
+
+
 ## 谁负责
 
 发布编排拥有原包与不可变交接；验证框架拥有检查与内容适用性；GitHub 是数据校验保全、独立可选冒烟和受保护公开的执行环境，不是整条发布链的控制中心。
