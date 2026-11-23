@@ -604,6 +604,8 @@ test('DSH 开发插件自举只换装已核对的本地旧包，运行时准备�
   };
   install(old, '0.0.1');
   let running = true, installs = 0;
+  let installBehavior: 'normal' | 'failure' | 'unknown' | 'unknown-after-write' = 'normal';
+  const lifecycle: string[] = [];
   const run = (_exe: string, args: string[], id: string) => {
     let stdout: string | Buffer = '';
     if (id === 'dsh-host-version') stdout = '0.2.2-rc.5';
@@ -611,7 +613,13 @@ test('DSH 开发插件自举只换装已核对的本地旧包，运行时准备�
     else if (id === 'dsh-build-plugin') {
       const file = path.join(args.at(-1)!, 'built.tgz'); fs.writeFileSync(file, 'new'); stdout = JSON.stringify({name,path:file});
     } else if (id.startsWith('dsh-verify-')) stdout = Buffer.from(contents(args[1] === old ? '0.0.1' : '0.0.2', args.at(-1)!.slice('package/'.length)));
-    else if (id === 'dsh-install-plugin') { installs++; install(args.at(-1)!, '0.0.2'); }
+    else if (id === 'dsh-install-plugin') {
+      installs++; lifecycle.push('install');
+      if (installBehavior === 'unknown') return { status:1, errorCode:'ETIMEDOUT', stdout };
+      if (installBehavior === 'failure') return { status:1, stdout };
+      install(args.at(-1)!, '0.0.2');
+      if (installBehavior === 'unknown-after-write') return { status:1, errorCode:'ETIMEDOUT', stdout };
+    }
     else assert.fail(id);
     return {status:0,stdout};
   };
@@ -634,4 +642,134 @@ test('DSH 开发插件自举只换装已核对的本地旧包，运行时准备�
   fs.writeFileSync(path.join(installed, 'lib/client.js'), 'not from package');
   assert.equal(activate().status, 'blocked');
   assert.equal(installs, 1);
+  const activateAndReopen = (quitStatus: string, loaded = true) => updateDshDevelopmentPlugin({
+    root:f.root, nodeExecutable:process.execPath, run, environment:{ HOME:home }, platform:'darwin', hostCli, restartDsh:true,
+    continuity: () => ({
+      quit(_: string, beforeQuit: () => boolean) {
+        assert.equal(beforeQuit(), true);
+        lifecycle.push('quit');
+        if (quitStatus === 'exited') { running = false; return {status:quitStatus, verified:{}}; }
+        return {status:quitStatus};
+      },
+      reopen() { assert.equal(running,false); lifecycle.push('reopen'); running = true; return {status:loaded ? 'reopened' : 'opened-load-unconfirmed', desktopLoaded:loaded}; },
+    }) as any,
+  });
+  const reset = () => { install(old, '0.0.1'); running = true; lifecycle.length = 0; installBehavior = 'normal'; };
+  for (const status of ['unconfirmed','not-accepted','not-exited']) {
+    reset(); assert.equal(activateAndReopen(status).status, 'pending'); assert.deepEqual(lifecycle,['quit']);
+  }
+  reset(); const restarted = activateAndReopen('exited');
+  assert.equal(restarted.status,'installed'); assert.ok('desktopLoaded' in restarted && restarted.desktopLoaded === true);
+  assert.deepEqual(lifecycle,['quit','install','reopen']);
+  lifecycle.length = 0;
+  assert.equal(activateAndReopen('exited').status, 'unchanged'); assert.deepEqual(lifecycle,[]);
+  reset(); const unconfirmed = activateAndReopen('exited',false);
+  assert.equal(unconfirmed.status,'installed'); assert.ok('desktopLoaded' in unconfirmed && unconfirmed.desktopLoaded === false);
+  reset(); installBehavior = 'failure';
+  assert.equal(activateAndReopen('exited').status,'blocked'); assert.deepEqual(lifecycle,['quit','install','reopen']);
+  reset(); installBehavior = 'unknown';
+  assert.equal(activateAndReopen('exited').status,'blocked'); assert.deepEqual(lifecycle,['quit','install']);
+  reset(); installBehavior = 'unknown-after-write';
+  const partial = activateAndReopen('exited');
+  assert.equal(partial.status,'installed'); assert.ok('desktopLoaded' in partial && partial.desktopLoaded === false);
+  assert.deepEqual(lifecycle,['quit','install']);
+});
+
+for (const [relative, web, plugin] of [
+  ['projects/product/services/buildr-harness-web/src/fixture.ts', true, false],
+  ['projects/product/services/buildr-harness-dsh-plugin/src/client.tsx', false, true],
+  ['projects/product/services/buildr-harness-dsh-plugin/README.md', false, false],
+] as const) {
+  test(`自举预检只读区分网页和插件：${relative}`, t => {
+    const f = fixture(t), target = path.join(f.root, relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, 'change\n');
+    git(f.root, 'add', '--', relative); git(f.root, 'commit', '-m', 'delivery'); git(f.root, 'push', 'origin', 'dev');
+    const tip = git(f.root, 'rev-parse', 'HEAD');
+    const result = runSelfBootstrapCloseoutCommand({ args: [
+      '--plan', 'true', '--restart-dsh', 'true', '--target', f.root, '--base-ref', f.baseRef, '--delivered-ref', tip, '--branch', 'dev', '--remote', 'origin', '--agent', 'codex',
+    ], environment: f.environment, execute: (executable, args, context) => {
+      assert.equal(executable, 'git');
+      assert.ok(['check-ref-format', 'rev-parse', 'diff', 'symbolic-ref', 'merge-base', 'ls-remote'].includes(args[0]), JSON.stringify(args));
+      return executor(f.root)(executable, args, context);
+    }});
+    assert.equal(result.status, 'planned', JSON.stringify(result));
+    assert.deepEqual(result.updateScope?.harnessRuntimePaths, web ? [relative] : []);
+    assert.equal(result.updateScope?.developmentWebRequested, web);
+    assert.equal(result.updateScope?.restartDshRequested, plugin);
+    assert.deepEqual(result.updateScope?.paths['update-dsh-development-plugin'], plugin ? [relative] : []);
+    assert.equal(git(f.root, 'status', '--porcelain'), '');
+    assert.equal(fs.existsSync(path.join(f.root, '.git/buildr/self-bootstrap-direct.lock')), false);
+  });
+}
+
+test('DSH 待安装接续仅换包、验证入口并拒绝保留提交漂移', t => {
+  const f = fixture(t);
+  const inputs = ['projects/product/services/buildr-harness-web/src/fixture.ts', 'projects/product/services/buildr-harness-dsh-plugin/src/client.tsx'];
+  for (const relative of inputs) {
+    const file = path.join(f.root, relative); fs.mkdirSync(path.dirname(file), { recursive:true }); fs.writeFileSync(file, 'change\n');
+  }
+  git(f.root, 'add', '--', ...inputs); git(f.root, 'commit', '-m', 'delivery'); git(f.root, 'push', 'origin', 'dev');
+  const deliveredRef = git(f.root, 'rev-parse', 'HEAD');
+  const input = { workspaceRoot:f.root, baseRef:f.baseRef, deliveredRef, targetBranch:'dev', remote:'origin', agent:'codex', nodeExecutable:process.execPath, environment:f.environment };
+  const pending = runDirectSelfBootstrapCloseout({ ...input, execute:executor(f.root), updateDshPlugin: () => ({ status:'pending', archive:'candidate', reason:'DSH is running' }) });
+  assert.equal(pending.diagnostic?.code, 'self-bootstrap-closeout.dsh-plugin-pending', JSON.stringify(pending));
+  assert.ok(pending.phases.some((phase: { id:string; status:string }) => phase.id === 'install-buildr-web' && phase.status === 'passed'));
+  const receipt = path.join(path.dirname(f.root), 'pending-result.json'); fs.writeFileSync(receipt, JSON.stringify(pending));
+  let attempts = 0;
+  const resume = () => {
+    const perform = executor(f.root);
+    return runDirectSelfBootstrapCloseout({ ...input, resumeDsh:receipt, execute:(exe,args,ctx) => {
+      assert.ok(!args.some((arg: string) => /prepare-development-agent\.ts$|launcher\/manage\.ts$/.test(arg)));
+      assert.ok(!args.includes('sync') && !args.includes('push'));
+      return perform(exe,args,ctx);
+    }, updateDshPlugin:() => { attempts++; return { status:'installed', archive:'candidate', desktopLoaded:false }; }});
+  };
+  const resumed = resume();
+  assert.equal(resumed.status, 'passed', JSON.stringify(resumed));
+  assert.deepEqual(resumed.phases.map((phase: { id:string }) => phase.id), ['preflight','verify-development-entry','finalize','update-dsh-development-plugin']);
+  assert.equal(attempts, 1);
+  fs.writeFileSync(receipt, JSON.stringify({ ...pending, phases: pending.phases.map((phase: { id:string }) => phase.id === 'update-dsh-development-plugin' ? {...phase,operations:[{id:'dsh-install-plugin'}]} : phase) }));
+  assert.equal(resume().diagnostic?.code, 'self-bootstrap-closeout.dsh-resume-mismatch');
+  fs.writeFileSync(receipt, JSON.stringify(pending));
+  git(f.root, 'commit', '--allow-empty', '-m', 'checkout advanced'); git(f.root, 'push', 'origin', 'dev');
+  assert.equal(resume().diagnostic?.code, 'self-bootstrap-closeout.dsh-resume-mismatch');
+  assert.equal(attempts, 1);
+});
+
+test('DSH 原生重开仅采用可验证的宿主绑定和本次加载回执', { skip: process.platform === 'win32' }, async t => {
+  const { dshDesktopContinuity } = await import('../../../../../../skills/buildr-self-bootstrap-sync/scripts/dsh-desktop-continuity.mjs');
+  const f = fixture(t), root = fs.realpathSync(f.root), home = path.join(root,'home'), dataRoot = path.join(home,'data');
+  const dshHome = path.join(home,'.dsh'), packageRoot = path.join(root,'projects/product/services/buildr/node_modules/@buildr-ai/buildr-harness');
+  const app = '/Applications/DeepSeek Harness.app', executable = `${app}/Contents/MacOS/DeepSeek Harness`;
+  fs.mkdirSync(dshHome,{recursive:true}); fs.mkdirSync(packageRoot,{recursive:true}); fs.mkdirSync(path.join(dataRoot,'agent-service'),{recursive:true});
+  const receipt = path.join(dataRoot,'agent-service/dsh-development-desktop.json');
+  const binding = {schemaVersion:'buildr.dsh-development-desktop/v1',desktopPid:33,hostPid:34,observedAt:2005,node:fs.realpathSync(process.execPath),packageRoot,dataRoot,dshHome,port:'9519',entryDigest:'old',nonce:null as string|null};
+  const writeReceipt = () => fs.writeFileSync(receipt,JSON.stringify(binding),{mode:0o600});
+  let front = {pid:33,app,startedAt:2000,ready:true};
+  let exited = false, exits = 0, starts = 0, issueNonce = true, extraInstance = false;
+  const run = (_exe:string,args:string[],id:string) => {
+    if (id === 'dsh-desktop-inspect') return {status:0,stdout:JSON.stringify(exited ? [] : extraInstance ? [front,front] : [front])};
+    if (id === 'dsh-desktop-processes') return {status:0,stdout:`${front.pid} 1 ${process.getuid?.()} ${executable}\n${binding.hostPid} ${front.pid} ${process.getuid?.()} ${executable}`};
+    if (id === 'dsh-desktop-original-launch') return {status:0,stdout:executable};
+    if (id === 'dsh-desktop-quit') { assert.equal(args.at(-3),String(front.pid)); exits++; exited = true; return {status:0,stdout:'accepted'}; }
+    if (id === 'dsh-desktop-reopen') {
+      starts++; assert.equal(exited,true);
+      assert.ok(args.includes(`BUILDR_HARNESS_DSH_DATA_ROOT=${dataRoot}`)); assert.ok(args.includes('BUILDR_HARNESS_DSH_PORT=9519'));
+      front = {...front,pid:55,startedAt:3000}; exited = false;
+      Object.assign(binding,{desktopPid:55,hostPid:56,observedAt:3001,entryDigest:'new',nonce:issueNonce ? args.at(-1)?.split('=')[1] : null});
+      writeReceipt(); return {status:0,stdout:''};
+    }
+    assert.fail(id);
+  };
+  const control = dshDesktopContinuity({root,home,dataRoot,nodeExecutable:process.execPath,run,env:{},exited:() => exited,boundMs:0});
+  assert.equal(control.quit('old').status,'unconfirmed');
+  writeReceipt(); extraInstance = true; assert.equal(control.quit('old').status,'unconfirmed');
+  extraInstance = false; assert.equal(control.quit('different').status,'unconfirmed');
+  assert.equal(control.quit('old',()=>false).status,'unconfirmed'); assert.equal(exits,0);
+  const quit = control.quit('old'); assert.equal(quit.status,'exited'); assert.ok(quit.verified);
+  assert.deepEqual(control.reopen(quit.verified,'new'),{status:'reopened',desktopLoaded:true});
+  const secondQuit = control.quit('new'); assert.ok(secondQuit.verified);
+  issueNonce = false;
+  assert.deepEqual(control.reopen(secondQuit.verified,'new'),{status:'opened-load-unconfirmed',desktopLoaded:false});
+  assert.equal(exits,2); assert.equal(starts,2);
 });

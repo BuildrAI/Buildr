@@ -137,6 +137,10 @@ function matches(pathname, exact, prefixes = []) {
   return exact.includes(pathname) || prefixes.some((prefix) => pathname.startsWith(prefix));
 }
 
+function isHarnessRuntimeInput(pathname) {
+  return pathname.startsWith(`${HARNESS_SERVICE_ROOT}/`) || pathname.startsWith(`${HARNESS_WEB_ROOT}/`);
+}
+
 function classifications(changedPaths, workspaceRoot) {
   // A projected Skill resolves the single product-owned policy from the verified root.
   const { isDevelopmentRuntimeInput } = createRequire(import.meta.url)(path.join(workspaceRoot, SERVICE_ROOT, 'src/modules/installation/infrastructure/development-runtime-inputs.ts'));
@@ -239,7 +243,7 @@ export function defaultExecute(executable, args, options) {
       env: { ...(options.env || process.env), BUILDR_DEVELOPMENT_PROGRESS_FD: '3' },
       // Trusted preparation helpers write fixed progress events to fd 3 only;
       // raw child streams stay private and are never relayed to worker.log.
-      stdio: ['ignore', stdoutFd, stderrFd, 2] });
+      timeout: options.timeout, stdio: ['ignore', stdoutFd, stderrFd, 2] });
     const stdout = fs.readFileSync(stdoutFile, options.binary ? undefined : 'utf8');
     const stderr = fs.readFileSync(stderrFile, 'utf8');
     return { status: Number.isInteger(result.status) ? result.status : 1, signal: result.signal || null,
@@ -437,7 +441,7 @@ function refreshInstalledHarnessDevelopmentLaunchers({ execute, root, nodeExecut
 function reconcileDevelopmentHarnessRuntime({ execute, root, nodeExecutable, environment, phaseResult, changedPaths, forceRestart }) {
   const harnessEntry = resolveDevelopmentHarnessEntry(root);
   if (!harnessEntry) return [];
-  const harnessChanged = forceRestart || changedPaths.some((pathname) => pathname.startsWith(`${HARNESS_SERVICE_ROOT}/`) || pathname.startsWith(`${HARNESS_WEB_ROOT}/`));
+  const harnessChanged = forceRestart || changedPaths.some(isHarnessRuntimeInput);
   if (!harnessChanged) return [];
   const dataRoot = developmentWebDataRoot(environment);
   const instance = readJsonSafe(path.join(dataRoot, 'agent-service', 'process', 'instance.json'));
@@ -880,12 +884,43 @@ function verifyAndRepairRuntimeDoctor({ execute, identity, environment, root, su
   return { health, agentRuntime: health.agentRuntime || initialRuntime };
 }
 
+function validateDshContinuation(file, { observationIdentity, head, deliveredRef, remote, targetBranch, needsWeb }) {
+  let previous;
+  try {
+    if (!path.isAbsolute(file) || !fs.lstatSync(file).isFile()) throw new Error('not a regular file');
+    const read = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+    try {
+      const stat = fs.fstatSync(read);
+      if (!stat.isFile() || stat.size > 4 * 1024 * 1024) throw new Error('invalid file size');
+      previous = JSON.parse(fs.readFileSync(read, 'utf8'));
+    } finally { fs.closeSync(read); }
+  } catch {
+    throw closeoutError('self-bootstrap-closeout.dsh-resume-invalid', '无法读取原自举完整结果，未接续换包。');
+  }
+  const phases = Array.isArray(previous?.phases) ? previous.phases : [];
+  const plugin = phases.at(-1);
+  const earlier = phases.slice(0, -1);
+  if (previous?.schemaVersion !== SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA || previous.status !== 'blocked'
+      || previous.observationIdentity !== observationIdentity || previous.successor !== head
+      || previous.delivery?.observed !== true || previous.delivery.ref !== deliveredRef
+      || previous.delivery.remote !== remote || previous.delivery.targetBranch !== targetBranch
+      || previous.diagnostic?.code !== 'self-bootstrap-closeout.dsh-plugin-pending'
+      || plugin?.id !== 'update-dsh-development-plugin' || plugin.status !== 'blocked'
+      || !Array.isArray(plugin.operations) || plugin.operations.some(operation => operation?.id === 'dsh-install-plugin')
+      || !Array.isArray(plugin.effects) || !plugin.effects.some(effect => effect?.type === 'dsh-development-plugin' && effect.status === 'pending')
+      || !earlier.every(phase => phase?.status === 'passed')
+      || !['preflight', 'verify-development-entry', 'finalize', ...(needsWeb && !previous.updateScope?.pluginOnlyContinuation ? ['install-buildr-web'] : [])]
+        .every(id => earlier.some(phase => phase?.id === id))) {
+    throw closeoutError('self-bootstrap-closeout.dsh-resume-mismatch', '原结果、当前保留提交或先前通过的阶段不匹配，未接续换包。');
+  }
+}
+
 /**
  * @param {{workspaceRoot: string, taskId?: string|null, baseRef: string, deliveredRef: string,
  * targetBranch: string, remote: string, agent: string, nodeExecutable: string,
- * resumeSync?: string|null, restartDevelopmentWeb?: boolean, execute?: typeof defaultExecute, environment?: NodeJS.ProcessEnv}} options
+ * resumeSync?: string|null, resumeDsh?: string|null, planOnly?: boolean, restartDevelopmentWeb?: boolean, restartDsh?: boolean, updateDshPlugin?: typeof updateDshDevelopmentPlugin, execute?: typeof defaultExecute, environment?: NodeJS.ProcessEnv}} options
  */
-export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, baseRef, deliveredRef, targetBranch, remote, agent, nodeExecutable, resumeSync = null, restartDevelopmentWeb = false, execute = defaultExecute, environment = process.env }) {
+export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, baseRef, deliveredRef, targetBranch, remote, agent, nodeExecutable, resumeSync = null, resumeDsh = null, planOnly = false, restartDevelopmentWeb = false, restartDsh = false, updateDshPlugin = updateDshDevelopmentPlugin, execute = defaultExecute, environment = process.env }) {
   const executionTiming = beginTiming({});
   progress('execution', 'started', 'self-bootstrap.closeout', executionTiming);
   const root = fs.realpathSync(path.resolve(workspaceRoot));
@@ -897,12 +932,14 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
   let successor = null;
   let developmentWebRecovery = null;
   const activationIdentity = digest({ baseRef, deliveredRef, targetBranch, remote, agent });
+  const observationIdentity = digest({ root, activationIdentity, nodeExecutable, dataRoot: developmentWebDataRoot(environment), hostHome: environment.BUILDR_HOST_HOME || environment.HOME || null });
+  let updateScope = null;
   /** @param {string} status @param {{code: string, message: string, details: object|null}|null} diagnostic */
   let completedResult = null;
   const result = (status, diagnostic = null) => {
     if (active?.status === 'pending') active.status = status;
     finishPhase(active);
-    completedResult = { schemaVersion: SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA, status, taskId, runId: null, delivery: { observed: delivered, ref: deliveredRef, remote, targetBranch }, phases, successor, diagnostic, ...executionTiming };
+    completedResult = { schemaVersion: SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA, status, taskId, runId: null, delivery: { observed: delivered, ref: deliveredRef, remote, targetBranch }, phases, successor, diagnostic, observationIdentity, updateScope, ...executionTiming };
     return completedResult;
   };
   const start = (id) => { finishPhase(active); active = phase(id); phases.push(active); return active; };
@@ -915,13 +952,34 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
     if (!fs.existsSync(path.join(root, 'components/workspace/buildr-self-bootstrap/component.yml'))) return result('not-applicable');
     if ((taskId !== null && !/^[a-z0-9][a-z0-9._-]*$/.test(taskId)) || !/^[a-f0-9]{40,64}$/.test(baseRef || '') || !/^[a-f0-9]{40,64}$/.test(deliveredRef || '') || !targetBranch || !remote || !agent) throw closeoutError('self-bootstrap-closeout.direct-input-invalid', '需要明确的基线和交付提交、分支、远端及宿主；任务编号可选。');
     if (remote.startsWith('-') || targetBranch.startsWith('-')) throw closeoutError('self-bootstrap-closeout.direct-input-invalid', '分支和远端不能是命令选项。');
+    if ((planOnly && (resumeSync !== null || resumeDsh !== null)) || (resumeDsh !== null && (resumeSync !== null || restartDevelopmentWeb))) {
+      throw closeoutError('self-bootstrap-closeout.mode-conflict', '预检、同步恢复和 DSH 待换装恢复不得混用。');
+    }
     const resume = resumeSync === null ? null : readSyncResumeInput(resumeSync, { workspaceRoot: root, baseRef, deliveredRef, targetBranch, remote, agent });
     requirePassed(git(execute, root, ['check-ref-format', `refs/heads/${targetBranch}`], 'target-ref', active), 'self-bootstrap-closeout.target-invalid', '目标分支无效。');
     if (!sameFilesystemPath(read(['rev-parse', '--show-toplevel'], 'workspace-root'), root)) throw closeoutError('self-bootstrap-closeout.workspace-mismatch', '目标必须是工作空间的真实 Git 根。');
-    const scopedPaths = zeroList(read(['diff', '--name-only', '-z', baseRef, deliveredRef, '--'], 'activation-paths'));
+    const scopedPaths = zeroList(read(['diff', '--name-only', '-z', '--no-renames', baseRef, deliveredRef, '--'], 'activation-paths'));
     const actions = classifications(scopedPaths, root);
+    const webRecoveryPending = fs.existsSync(developmentWebRecoveryFile(root));
+    updateScope = {
+      baseRef,
+      paths: actions,
+      harnessRuntimePaths: actions['install-development-buildr-web'].filter(isHarnessRuntimeInput),
+      developmentWebRequested: restartDevelopmentWeb || webRecoveryPending || actions['install-development-buildr-web'].length > 0,
+      pluginOnlyContinuation: resumeDsh !== null,
+      restartDshRequested: restartDsh && actions['update-dsh-development-plugin'].length > 0,
+    };
+    if (planOnly) {
+      const head = read(['rev-parse', 'HEAD'], 'head');
+      assertHead(head);
+      requirePassed(git(execute, root, ['merge-base', '--is-ancestor', baseRef, deliveredRef], 'base-ancestry', active), 'self-bootstrap-closeout.base-mismatch', '基线不是交付提交的祖先。');
+      requirePassed(git(execute, root, ['merge-base', '--is-ancestor', deliveredRef, head], 'delivery-ancestry', active), 'self-bootstrap-closeout.delivery-mismatch', '当前工作空间不包含交付提交。');
+      requirePassed(git(execute, root, ['merge-base', '--is-ancestor', deliveredRef, remoteRef(execute, root, remote, targetBranch, active)], 'remote-containment', active), 'self-bootstrap-closeout.delivery-unconfirmed', '当前远端未证明包含交付提交。');
+      delivered = true;
+      return result('planned');
+    }
     if (resume && !actions['sync-retained-workspace'].length) throw closeoutError('self-bootstrap-closeout.resume-input-mismatch', '本次交付范围不包含可恢复的同步动作。');
-    if (!restartDevelopmentWeb && !Object.values(actions).some((paths) => paths.length) && !fs.existsSync(developmentWebRecoveryFile(root))) return result('not-applicable');
+    if (resumeDsh === null && !updateScope.developmentWebRequested && !Object.values(actions).some((paths) => paths.length)) return result('not-applicable');
     // A short-lived lock belongs to this runner; it is not delivery evidence.
     const common = read(['rev-parse', '--path-format=absolute', '--git-common-dir'], 'git-common-directory');
     const lockParent = path.join(common, 'buildr');
@@ -954,18 +1012,24 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
       pendingSuccessor = parents.length === 2 && parents[1] === beforeRemote && (matchesIdentity || matchesLegacyTask) && trailers.includes(`Buildr-Activation-Delivery: ${deliveredRef}`);
       if (!pendingSuccessor) throw closeoutError('self-bootstrap-closeout.remote-drift', '保留分支与远端不同，且不是本次激活尚未推送的后继提交。');
     }
+    if (resumeDsh !== null) {
+      if (developmentWebRecovery || pendingSuccessor || !actions['update-dsh-development-plugin'].length) {
+        throw closeoutError('self-bootstrap-closeout.dsh-resume-mismatch', '存在其他待恢复动作或交付未涉及 DSH 插件，不能仅接续换包。');
+      }
+      validateDshContinuation(resumeDsh, { observationIdentity, head, deliveredRef, remote, targetBranch, needsWeb: updateScope.developmentWebRequested });
+    }
     // The first Product CLI import already consumes the private Agent package.
     // Prepare it before sync, not only during the later application install:
     // newly delivered HTTP declarations may require a newly added Agent schema.
     const preparation = path.join(root, SERVICE_ROOT, 'tools/development/prepare-development-agent.ts');
-    requirePassed(command(execute, nodeExecutable, [preparation], root, 'prepare-agent-package', active,
+    if (resumeDsh === null) requirePassed(command(execute, nodeExecutable, [preparation], root, 'prepare-agent-package', active,
       { kind: 'product-preparation', script: preparation }), 'self-bootstrap-closeout.agent-preparation-failed',
     '产品命令入口的智能体服务包准备失败；尚未同步或停止开发应用。');
     assertHead(head);
     markPassed(active, deliveredRef, head, resume ? [{ type: 'workspace-sync-resume', inputIdentity: resume.inputIdentity, paths: resume.paths, expectedHead: resume.expectedHead }] : []);
     successor = head;
     let ownedPaths = resume?.paths || [];
-    if (actions['sync-retained-workspace'].length && !pendingSuccessor && !resume) {
+    if (resumeDsh === null && actions['sync-retained-workspace'].length && !pendingSuccessor && !resume) {
       start('sync'); assertHead(successor);
       requirePassed(productCommand(execute, root, nodeExecutable, ['sync', agent, '--publish-resources', '--target', root, '--json'], 'workspace-sync', active), 'self-bootstrap-closeout.sync-failed', '工作空间同步失败；保留已发生变更。');
       assertHead(successor);
@@ -998,7 +1062,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
       if (after !== successor) throw closeoutError('self-bootstrap-closeout.remote-readback-mismatch', '推送后远端提交不匹配。');
       markPassed(active, beforeRemote, after);
     }
-    if (actions['install-development-buildr-web'].length || developmentWebRecovery || restartDevelopmentWeb) {
+    if (resumeDsh === null && updateScope.developmentWebRequested) {
       start('install-buildr-web'); assertHead(successor);
       const continuity = inspectDevelopmentWebContinuity(execute, root, nodeExecutable, environment, active);
       if (restartDevelopmentWeb && continuity.status !== 'healthy-development') throw closeoutError('self-bootstrap-closeout.restart-instance-unavailable', '显式重启要求存在可核验的健康开发实例，未停止或替换其他实例。');
@@ -1059,13 +1123,19 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
     markPassed(active, successor, successor);
     if (actions['update-dsh-development-plugin'].length) {
       start('update-dsh-development-plugin'); assertHead(successor);
-      const plugin = updateDshDevelopmentPlugin({
-        root, nodeExecutable, environment,
+      const drift = zeroList(read(['diff', '--name-only', '-z', '--no-renames', deliveredRef, successor, '--'], 'dsh-source-drift')).filter(isDshDevelopmentPluginInput);
+      if (drift.length) throw closeoutError('self-bootstrap-closeout.dsh-source-drift', '保留检出包含交付范围以外的插件改动，未换包。', { paths: drift });
+      const plugin = updateDshPlugin({
+        root, nodeExecutable, environment, restartDsh,
         run: (exe, args, id, env, opts = {}, record = true) => record
           ? command(execute, exe, args, root, id, active, {}, env, opts)
           : execute(exe, args, { cwd: root, env, ...opts }),
       });
       markPassed(active, deliveredRef, successor, [{ type: 'dsh-development-plugin', ...plugin }]);
+      if (plugin.status === 'installed' && 'desktop' in plugin && !plugin.desktopLoaded) {
+        active.status = 'blocked';
+        return result('blocked', { code: 'self-bootstrap-closeout.dsh-reopen-unconfirmed', message: 'DSH 开发插件已换装，但未确认重开后加载新版；未重试换包或启动。', details: plugin });
+      }
       if (plugin.status === 'pending' || plugin.status === 'blocked') {
         active.status = 'blocked';
         return result('blocked', { code: `self-bootstrap-closeout.dsh-plugin-${plugin.status}`, message: plugin.reason, details: plugin });
@@ -1140,7 +1210,7 @@ function declaredDevelopmentNode(environment) {
 }
 
 export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), actualNodeExecutable = process.execPath, execute = defaultExecute, environment = process.env } = {}) {
-  const allowed = new Set(['--target', '--node-executable', '--detail', '--task', '--base-ref', '--delivered-ref', '--branch', '--remote', '--agent', '--resume-sync', '--restart-development-web']);
+  const allowed = new Set(['--target', '--node-executable', '--detail', '--task', '--base-ref', '--delivered-ref', '--branch', '--remote', '--agent', '--resume-sync', '--resume-dsh', '--plan', '--restart-development-web', '--restart-dsh']);
   if (args.length % 2 !== 0) throw closeoutError('self-bootstrap-closeout.arguments-invalid', '参数必须是选项和值。');
   for (let index = 0; index < args.length; index += 2) if (!allowed.has(args[index])) throw closeoutError('self-bootstrap-closeout.option-unknown', `不支持的选项：${args[index]}。`);
   const workspaceRoot = option(args, '--target');
@@ -1150,11 +1220,21 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
   if (!['compact', 'full'].includes(detail)) throw closeoutError('self-bootstrap-closeout.detail-invalid', 'detail 只支持 compact 或 full。');
   const restart = option(args, '--restart-development-web') || 'false';
   if (!['true', 'false'].includes(restart)) throw closeoutError('self-bootstrap-closeout.restart-value-invalid', 'restart-development-web 只支持 true 或 false。');
-  return runDirectSelfBootstrapCloseout({ workspaceRoot, taskId: option(args, '--task'), baseRef: option(args, '--base-ref'), deliveredRef: option(args, '--delivered-ref'), targetBranch: option(args, '--branch'), remote: option(args, '--remote'), agent: option(args, '--agent'), nodeExecutable, resumeSync: option(args, '--resume-sync'), restartDevelopmentWeb: restart === 'true', execute, environment });
+  const restartDsh = option(args, '--restart-dsh') ?? 'false';
+  if (!['true', 'false'].includes(restartDsh)) throw closeoutError('self-bootstrap-closeout.dsh-restart-invalid', 'restart-dsh 只支持 true 或 false。');
+  const plan = option(args, '--plan') ?? 'false';
+  if (!['true', 'false'].includes(plan)) throw closeoutError('self-bootstrap-closeout.plan-invalid', 'plan 只支持 true 或 false。');
+  return runDirectSelfBootstrapCloseout({ workspaceRoot, restartDsh: restartDsh === 'true', planOnly: plan === 'true', resumeDsh: option(args, '--resume-dsh'), taskId: option(args, '--task'), baseRef: option(args, '--base-ref'), deliveredRef: option(args, '--delivered-ref'), targetBranch: option(args, '--branch'), remote: option(args, '--remote'), agent: option(args, '--agent'), nodeExecutable, resumeSync: option(args, '--resume-sync'), restartDevelopmentWeb: restart === 'true', execute, environment });
 }
 
 async function main() {
   try {
+    if (option(process.argv.slice(2), '--plan') === 'true') {
+      const result = runSelfBootstrapCloseoutCommand();
+      console.log(JSON.stringify(result, null, 2));
+      if (result.status === 'blocked') process.exitCode = 1;
+      return;
+    }
     const { runDetachedCloseout } = await import('./detached-execution.mjs');
     const result = await runDetachedCloseout({
       args: process.argv.slice(2),

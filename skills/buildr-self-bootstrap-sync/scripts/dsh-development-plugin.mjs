@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { dshDesktopContinuity } from './dsh-desktop-continuity.mjs';
+import { developmentWebDataRoot } from './development-web-continuity.mjs';
 
 const service = 'projects/product/services/buildr-harness-dsh-plugin';
 const name = '@buildr-ai/buildr-harness-dsh-plugin-dev';
@@ -23,7 +25,7 @@ const inside = (parent, file) => file.startsWith(parent + path.sep);
 const blocked = reason => ({ status: 'blocked', reason });
 
 /** Called only by the retained checkout's self-bootstrap runner, under its lock. */
-export function updateDshDevelopmentPlugin({ root, nodeExecutable, run, environment, platform = process.platform, hostCli = cli }) {
+export function updateDshDevelopmentPlugin({ root, nodeExecutable, run, environment, platform = process.platform, hostCli = cli, restartDsh = false, continuity = dshDesktopContinuity }) {
   if (platform !== 'darwin') return { status: 'skipped', reason: '本机没有受支持的 macOS DSH 桌面入口。' };
   const home = environment.BUILDR_HOST_HOME || environment.HOME;
   if (!home || !path.isAbsolute(home)) return blocked('无法确认 DSH 的宿主主目录。');
@@ -35,7 +37,7 @@ export function updateDshDevelopmentPlugin({ root, nodeExecutable, run, environm
   const env = { ...environment, HOME: home, DSH_HOME: dshHome, PATH: `${path.dirname(nodeExecutable)}${path.delimiter}${environment.PATH || '/usr/bin:/bin'}` };
   const appExited = () => {
     const check = run('/bin/ps', ['-axo', 'comm='], 'dsh-processes', env);
-    return check.status === 0 && String(check.stdout).trim() && !/DeepSeek Harness|dsh-desktop-host/i.test(String(check.stdout));
+    return check.status === 0 && Boolean(String(check.stdout).trim()) && !/DeepSeek Harness|dsh-desktop-host/i.test(String(check.stdout));
   };
   let archive;
   const readBinding = () => {
@@ -72,12 +74,34 @@ export function updateDshDevelopmentPlugin({ root, nodeExecutable, run, environm
     if (!fs.existsSync(archive)) fs.copyFileSync(output.path, archive, fs.constants.COPYFILE_EXCL);
     if (hash(readFile(archive)) !== identity) return blocked('DSH 候选包已变化，未更改安装。');
     if (matches(archive)) return { status: 'unchanged', archive, desktopLoaded: false };
-    if (readBinding()?.digest !== initial.digest || !matches(initial.archive)) return blocked('DSH 安装配置或插件文件在准备期间已变化，未覆盖。');
-    if (!appExited()) return { status: 'pending', archive, reason: 'DSH 桌面仍在运行或未确认已退出；候选包已准备，退出后使用同一交付重新运行自举。' };
-    const result = run(hostCli, ['plugin', '--profile', 'desktop', 'add', '--ignore-scripts', archive], 'dsh-install-plugin', env);
+    const originalUnchanged = () => readBinding()?.digest === initial.digest && matches(initial.archive);
+    const entryDigest = () => hash(readFile(path.join(installed, 'lib/index.js')));
+    if (!originalUnchanged()) return blocked('DSH 安装配置或插件文件在准备期间已变化，未覆盖。');
+    let continuityController, verified;
+    if (!appExited()) {
+      if (!restartDsh) return { status: 'pending', archive, reason: 'DSH 桌面仍在运行或未确认已退出；候选包已准备。' };
+      continuityController = continuity({ root, home, nodeExecutable, dataRoot: developmentWebDataRoot(environment, platform, home), run, env, exited: appExited });
+      const quit = continuityController.quit(entryDigest(), originalUnchanged);
+      if (quit.status !== 'exited') return { status: 'pending', archive, desktop: quit.status, reason: '未能确认同源 DSH 实例已正常退出；候选包已准备，未换包。' };
+      verified = quit.verified;
+      if (!originalUnchanged() || !appExited()) return { ...blocked('DSH 退出后配置或运行状态已变化，未换包、未自动重开。'), archive, desktop: 'exited' };
+    }
+    let result;
+    try { result = run(hostCli, ['plugin', '--profile', 'desktop', 'add', '--ignore-scripts', archive], 'dsh-install-plugin', env, { timeout: 120000 }); }
+    catch { result = { status: 1, errorCode: 'unknown' }; }
     // Reconcile even if the CLI exits nonzero; never repeat an uncertain installation.
     const after = readBinding();
-    if (after?.archive !== archive || !matches(archive)) return { ...blocked(result.status === 0 ? 'DSH 安装结果回读不一致。' : 'DSH 换装未确认；已回读配置，不自动重试。'), archive };
+    if (after?.archive !== archive || !matches(archive)) {
+      const restored = verified && !result.signal && !result.errorCode && originalUnchanged() ? continuityController.reopen(verified, entryDigest()) : null;
+      return { ...blocked(result.status === 0 ? 'DSH 安装结果回读不一致。' : 'DSH 换装未确认；已回读配置，不自动重试。'), archive, ...(verified ? { desktop: restored?.status || 'exited', desktopLoaded: false } : {}) };
+    }
+    if (verified && (result.signal || result.errorCode)) {
+      return { status: 'installed', archive, desktop: 'install-result-unconfirmed', desktopLoaded: false };
+    }
+    if (verified) {
+      const opened = continuityController.reopen(verified, entryDigest());
+      return { status: 'installed', archive, desktop: opened.status, desktopLoaded: opened.desktopLoaded };
+    }
     return { status: 'installed', archive, desktopLoaded: false };
   } catch (error) {
     return { ...blocked(error instanceof Error ? error.message : '无法核验 DSH 开发插件。'), ...(archive ? { archive } : {}) };

@@ -1,4 +1,5 @@
 import { released } from './channel.ts';
+import { recordDesktopActivation } from './desktop-activation.ts';
 import { discoverReleased } from './installation.ts';
 import { execFile } from 'node:child_process';
 import { realpath, stat } from 'node:fs/promises';
@@ -78,6 +79,9 @@ export function apply(ctx: HostContext) {
         if (!request.signal.aborted) json(res, 503, { code: 'harness-unavailable' });
       } finally { res.off('close', onClose); }
     } });
-    return () => { lifetime.abort(); unregister(); };
+    const releaseActivation = !released && process.platform === 'darwin' && binding
+      ? recordDesktopActivation({ node: node!, packageRoot: packageRoot!, dataRoot: dataRoot!, port, entry: fileURLToPath(import.meta.url) })
+      : undefined;
+    return () => { lifetime.abort(); unregister(); releaseActivation?.(); };
   }, 'buildr-harness: desktop opening');
 }
