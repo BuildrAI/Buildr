@@ -926,7 +926,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
             ...(onCreateChild?[{key:'create-child',label:'创建子对话',icon:<PlusOutlined aria-hidden/>},{type:'divider' as const}]:[]),
             ...(!standalone?[
               {key:'collapse',label:'收起对话'},
-              {key:'full',label:context.full?'恢复分屏':'专注对话'},
+              ...(!composition.modeSwitchInHost?[{key:'full',label:context.full?'恢复分屏':'专注对话'}]:[]),
               {key:'side',label:context.side==='right'?'对话移到最左侧':'对话移到右侧'},
               {type:'divider' as const},
             ]:[]),

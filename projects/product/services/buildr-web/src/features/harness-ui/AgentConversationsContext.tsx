@@ -9,7 +9,7 @@ export type TextConversationActionResult={status:'started';conversation:Conversa
 export type ConversationCommand=HarnessConversationCommand;
 type PanelView = 'conversation' | 'history';
 type PanelState = { open: boolean; full: boolean; view: PanelView };
-type SessionPanelState = { open?: boolean; full?: boolean; view?: PanelView };
+type SessionPanelState = { open?: boolean; full?: boolean; view?: PanelView; pathname?: string };
 
 const PANEL_OPEN_KEY = 'buildr.harness-panel-open';
 const PANEL_FULL_KEY = 'buildr.harness-panel-full';
@@ -23,6 +23,7 @@ function readSessionPanelState(): SessionPanelState {
     const parsed = JSON.parse(sessionStorage.getItem(panelSessionStateKey()) || 'null');
     if (!parsed || typeof parsed !== 'object') return {};
     return {
+      ...(typeof parsed.pathname === 'string' ? { pathname: parsed.pathname } : {}),
       ...(typeof parsed.open === 'boolean' ? { open: parsed.open } : {}),
       ...(typeof parsed.full === 'boolean' ? { full: parsed.full } : {}),
       ...(parsed.view === 'conversation' || parsed.view === 'history' ? { view: parsed.view } : {}),
@@ -34,7 +35,7 @@ function readSessionPanelState(): SessionPanelState {
 
 function writeSessionPanelState(state: PanelState): void {
   try {
-    sessionStorage.setItem(panelSessionStateKey(), JSON.stringify(state));
+    sessionStorage.setItem(panelSessionStateKey(), JSON.stringify({...state, pathname: window.location.pathname}));
   } catch { /* In-memory state stays intact if sessionStorage is unavailable. */ }
 }
 
@@ -49,7 +50,8 @@ function readInitialPanelState(): PanelState {
   const legacyFull = readOptionalPreference(`buildr.agent-conversation.full:${profile}`);
   const explicitOpen = session.open ?? (openRaw === 'true' ? true : openRaw === 'false' ? false : undefined);
   const rawFull = session.full ?? (fullRaw === 'true' ? true : fullRaw === 'false' ? false : legacyFull === null ? conversationEntry : legacyFull === 'true');
-  const full = !catalogEntry && explicitOpen !== false && rawFull;
+  // A saved workbench mode applies to its own page, not unrelated engineering deep links.
+  const full = !catalogEntry && explicitOpen !== false && rawFull && (conversationEntry || session.pathname === window.location.pathname);
   const open = explicitOpen ?? full;
   const candidateView: PanelView = session.view ?? (viewRaw === 'history' || (viewRaw === null && readOptionalPreference(`buildr.agent-conversation.focus-history:${profile}`) === 'true') ? 'history' : 'conversation');
   return { open, full, view: open && full && candidateView === 'history' ? 'history' : 'conversation' };

@@ -1,4 +1,4 @@
-import {useCallback, useMemo, useRef, useState} from 'react';
+import {useCallback, useMemo, useRef, useState, type ReactNode} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {HarnessConversationSurface, LocalFilePreviewModal, conversationFileLink, type HarnessConversationHost, type HarnessDirectoryFiles, type HarnessFileContent, type ConversationFilePreview} from '../../../../buildr-harness-web/src/conversation';
 import {resolveTaskBriefReference, taskBriefHref} from '../../lib/taskBriefLinks';
@@ -39,7 +39,7 @@ function readLocalFile(path:string,cwd:string,signal?:AbortSignal){
 }
 
 type Workspace = {id: string; name: string; rootPath: string};
-export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {defaultWorkspaceId: string | null; workspaces: Workspace[]}) {
+export function ConversationWorkspace({defaultWorkspaceId, workspaces, headerAction}: {defaultWorkspaceId: string | null; workspaces: Workspace[]; headerAction?: ReactNode}) {
   const context = useAgentConversations();
   const navigate = useNavigate(), location = useLocation();
   const [previewFile, setPreviewFile] = useState<ConversationFilePreview | null>(null);
@@ -103,6 +103,7 @@ export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {default
     },
   }), []);
   const host: HarnessConversationHost = {
+    modeSwitchInHost: true,
     diagramRendererPath: '/mermaid-renderer.html',
     requestLayout(action, full) {
       if (action === 'collapse') context.setOpen(false);
@@ -122,7 +123,7 @@ export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {default
   };
   return <section data-selected-workspace={context.conversation?.workspaceId} data-selected-conversation={context.conversation?.id}
     className={'development-harness-frame in-shell' + (context.full ? ' is-full' : '') + (!context.open ? ' is-collapsed' : '')}>
-    <HarnessConversationSurface workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} open={context.open} full={context.full} view={context.view}
+    <HarnessConversationSurface headerAction={headerAction} workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} open={context.open} full={context.full} view={context.view}
       command={context.command} sequence={context.sequence} files={files} host={host}
       onOpenChange={context.setOpen} onSideChange={context.setSide} onWidthChange={context.setWidth}
       onConversationChange={onConversationChange} onViewChange={context.setView} onResult={context.reply}/>

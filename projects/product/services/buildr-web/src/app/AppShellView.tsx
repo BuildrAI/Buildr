@@ -4,9 +4,9 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { Button, Dropdown, type MenuProps } from 'antd';
 import { CaretDownFilled, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
-type HeaderProps = { isGlobal?:boolean; primaryNavigation?: 'top' | 'rail'; brandHref:string; development?:boolean; workspaceName:string; workspaceMenuItems:MenuProps['items']; area:'workspace'|'workbench'|'code';codeHref?:string; workbenchHref:string; workspaceDestination:{to:string;state?:unknown}; actions:ReactNode };
+type HeaderProps = { isGlobal?:boolean; primaryNavigation?: 'top' | 'rail'; brandHref:string; development?:boolean; workspaceName:string; workspaceMenuItems:MenuProps['items']; area:'workspace'|'workbench'|'code';codeHref?:string; workbenchHref:string; workspaceDestination:{to:string;state?:unknown}; actions:ReactNode; modeNavigation?:ReactNode };
 /** Shared product chrome; all business effects remain in the caller. */
-export function AppShellHeader({isGlobal,primaryNavigation='top',brandHref,development,workspaceName,workspaceMenuItems,area,codeHref,workbenchHref,workspaceDestination,actions}:HeaderProps) {
+export function AppShellHeader({isGlobal,primaryNavigation='top',brandHref,development,workspaceName,workspaceMenuItems,area,codeHref,workbenchHref,workspaceDestination,actions,modeNavigation}:HeaderProps) {
   const headerRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (primaryNavigation !== 'rail' || !headerRef.current) return;
@@ -18,8 +18,7 @@ export function AppShellHeader({isGlobal,primaryNavigation='top',brandHref,devel
     observer.observe(header);
     return () => observer.disconnect();
   }, [primaryNavigation]);
-  return (
-        <header className="topbar" ref={headerRef}>
+  const identity = <>
           <Link
             className="brand-link"
             to={brandHref}
@@ -47,6 +46,11 @@ export function AppShellHeader({isGlobal,primaryNavigation='top',brandHref,devel
                 <CaretDownFilled aria-hidden />
               </button>
             </Dropdown>
+          </>;
+  return (
+        <header className={"topbar" + (modeNavigation ? " development-topbar" : "")} ref={headerRef}>
+          {modeNavigation ? <div className="topbar-identity">{identity}</div> : identity}
+          {modeNavigation}
           {!isGlobal && primaryNavigation === 'top' ? <nav className="top-nav" aria-label="主导航">
             <Link to={workbenchHref} data-area="workbench" aria-current={area === 'workbench' ? 'page' : undefined} className={area === 'workbench' ? 'active' : ''}
               >工作台</Link>

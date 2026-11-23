@@ -1,0 +1,309 @@
+<!doctype html>
+<!-- buildr:ui-prototype -->
+<!-- 参考：用户提供的 Development 与 Harness 截图；AppShellView、DevelopmentHarnessShell、HarnessShell、PrototypeReaderPage，以及共用主题与功能说明组件。第二版只讨论顶栏、两种模式与 HarnessDirectoryWorkbench 的装配；内部工具内容为隔离示意，使用模拟数据，不复用业务运行组件、不连接服务。 -->
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Buildr Development · 顶栏与两种模式（第二版）</title>
+<script id="buildr-prototype" type="application/json">
+{"version":1,"pages":[{"id":"bench","title":"工作台","notes":[{"id":"switch","title":"两个模式，一个顶栏","text":"沿用产品顶栏，把工作台与工作空间放在品牌后，和当前空间分开。","position":"modes"},{"id":"chat","title":"对话是日常工作的主界面","text":"左侧列表可收起。切换到工作空间继续使用原对话，未发文字和阅读现场都保留。","position":"conversation"},{"id":"tools","title":"沿用原来的对话工作区","text":"点击对话标题栏的分栏图标，在右侧用两个入口或「+」打开工具。对话不自动附加变更文件清单。","position":"tools-area"}],"states":[{"id":"home","title":"对话工作区","notes":[{"id":"launcher","title":"原有工作区入口","text":"沿用右侧工作区和工具标签；收起工作区不清空标签。","position":"inspector"}]},{"id":"changes","title":"查看 Git 变更","notes":[{"id":"diff","title":"并排审查改动","text":"从源代码管理选择文件。切换模式再回来，标签与选中文件都保留。","position":"inspector"}]},{"id":"files","title":"浏览文件","notes":[{"id":"files","title":"随手浏览目录","text":"在同一个辅助区切到资源管理器。资源管理器和变更各自记住当前文件。","position":"inspector"}]}]},{"id":"space","title":"工作空间","notes":[{"id":"switch","title":"随时返回工作台","text":"全局顶栏不动，管理和对话两侧从同一高度开始；切回工作台仍是原来的工具标签。","position":"modes"},{"id":"manage","title":"维护工作环境","text":"在主区管理项目、服务、代码库、环境和技能。服务目录演示直接编辑并保存说明。","position":"management"},{"id":"assist","title":"侧边还是同一个对话","text":"点击「交给 Agent」会把当前对象带到输入框，不会自动发送。可以继续讨论设置，也可以执行原任务。","position":"conversation"}],"states":[]}]}
+</script>
+<style>
+:root {
+  --soft-bg: #f7f8f9;
+  --soft-surface: #ffffff;
+  --soft-ink: #252a31;
+  --soft-muted: #5e6873;
+  --soft-line: #e1e5e9;
+  --soft-primary: #397d74;
+  --soft-sidebar: #f6f7f8;
+  --soft-development-bg: #fff6dc;
+  --soft-development-ink: #805817;
+  --soft-development-line: #e2bc67;
+  --page-gutter: 32px;
+  --main-content-width: 1200px;
+  --reading-content-width: 1200px;
+  --main-content-gutter: 24px;
+  --sidebar-width: 256px;
+  --sidebar-collapsed-width: 64px;
+}
+.prototype-features-hint { color:var(--soft-muted,#667085); font-size:12px; line-height:1.7; margin:0 0 14px; }
+.prototype-feature { display:block; width:100%; margin:0 0 12px; padding:14px; border:1px solid var(--soft-line,#dce2e8); border-radius:8px; background:var(--soft-surface,#fff); color:var(--soft-ink,#252b33); text-align:left; font:inherit; }
+button.prototype-feature { cursor:pointer; transition:background .12s,border-color .12s; }
+.prototype-feature strong,.prototype-feature h3 { display:block; font-size:14px; line-height:1.5; margin:0 0 8px; font-weight:600; }
+.prototype-feature > span,.prototype-feature p { display:block; margin:0; font-size:13px; line-height:1.8; white-space:pre-wrap; }
+.prototype-feature.is-active,button.prototype-feature:hover,button.prototype-feature:focus-visible { border-color:var(--soft-primary,#397d74); background:#f1f7f4; }
+button.prototype-feature:focus-visible { outline:2px solid var(--soft-primary,#397d74); outline-offset:2px; }
+
+[data-prototype-highlight="true"] { outline:2px solid var(--soft-primary,#397d74); outline-offset:3px; box-shadow:0 0 0 5px rgb(57 125 116 / 10%); border-radius:6px; }
+
+:root{--sel:#eaf3ee;--green:#30695d;--panel:#f8f9fa;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--tool-width:43%;--chat-width:32%;color-scheme:light}
+*{box-sizing:border-box}body{margin:0;color:var(--soft-ink);background:var(--soft-surface);font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",system-ui,sans-serif}button,textarea,input{font:inherit;color:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--soft-primary);outline-offset:2px}[hidden]{display:none!important}svg.i{width:17px;height:17px;flex:none;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;vertical-align:middle}.muted{color:var(--soft-muted)}.mono{font-family:var(--mono)}.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.spacer{flex:1;min-width:0}
+.btn,.icon,.navitem,.list-btn,.quiet,.link{border:0;background:none;border-radius:7px;display:inline-flex;align-items:center;gap:7px;text-align:left;white-space:nowrap}.btn{padding:6px 11px;border:1px solid var(--soft-line);background:white;font-size:13px;font-weight:550}.btn:hover,.icon:hover,.navitem:hover,.list-btn:hover,.quiet:hover{background:#edf1f0}.btn.primary{background:var(--soft-primary);border-color:var(--soft-primary);color:white}.btn.primary:hover{background:var(--green)}.icon{width:32px;height:32px;justify-content:center;padding:0;color:var(--soft-muted)}.quiet{padding:5px 8px;color:var(--soft-muted);font-size:12px}.link{padding:2px 0;color:var(--green);font-weight:600}.icon[aria-pressed=true],.btn[aria-pressed=true]{color:var(--green);background:var(--sel);border-color:#cfe0d7}.icon .i{width:16px;height:16px}.tiny{font-size:11px}.badge{border-radius:5px;padding:2px 6px;font-size:11px;line-height:1.4;white-space:nowrap;color:var(--green);background:var(--sel)}
+#root{display:flex;flex-direction:column;height:100dvh;isolation:isolate}.global{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:14px;padding:0 16px;height:53px;flex:none;background:white;border-bottom:1px solid var(--soft-line);z-index:3}.brand,.global-right,.modes{display:flex;align-items:center;gap:9px;min-width:0}.brand strong{letter-spacing:-.2px;white-space:nowrap}.brand-mark{width:27px;height:27px;display:grid;place-items:center;background:var(--soft-primary);color:white;font-size:16px;font-weight:750;border-radius:7px;flex:none}.dev{color:var(--soft-development-ink);background:var(--soft-development-bg);font-size:10px;border-radius:4px;padding:1px 5px}.modes{background:#f0f2f3;border:1px solid #ecedef;border-radius:8px;gap:3px;padding:3px}.modes button{border:none;border-radius:5px;background:none;color:var(--soft-muted);font-weight:600;padding:4px 13px;min-height:28px;font-size:13px;white-space:nowrap}.modes button:hover{color:var(--green)}.modes button[aria-current=page]{background:white;color:var(--green);box-shadow:0 1px 3px #24362d20}.global-right{justify-content:flex-end}.context{display:flex;align-items:center;gap:6px;white-space:nowrap;font-size:12px}.context .i{width:15px}.preview-tools{display:flex;align-items:center;gap:1px;border-left:1px solid var(--soft-line);padding-left:7px;position:relative}.preview-tools .icon{width:27px}.preview-tools .quiet{gap:4px}.preview-tools .quiet svg{width:14px}.preview-tools #help-pop{position:absolute;right:0;top:42px;width:min(320px,calc(100vw - 24px));background:white;border:1px solid var(--soft-line);border-radius:10px;box-shadow:0 12px 34px #20332924;padding:12px;max-height:75dvh;overflow:auto}.help-head,.bar{display:flex;align-items:center;gap:7px}.help-head strong{flex:1}.help-head select{max-width:130px;border:1px solid var(--soft-line);background:white;border-radius:5px;font-size:12px;padding:4px;color:var(--soft-ink)}.help-head .quiet{font-size:11px}.notes-fixed{width:300px;flex:none;background:var(--panel);border-left:1px solid var(--soft-line);overflow:auto;padding:12px}.main-wrap{display:flex;flex:1;min-height:0;overflow:hidden}.main{display:grid;flex:1;min-width:0;min-height:0;grid-template: minmax(0,1fr) / minmax(0,1fr);grid-template-areas:"chat"}.main[data-mode=bench][data-history=true]{grid-template-columns:220px minmax(0,1fr);grid-template-areas:"history chat"}.main[data-mode=bench][data-tool=true]{grid-template-columns:minmax(0,1fr) 5px minmax(350px,var(--tool-width));grid-template-areas:"chat divider inspector"}.main[data-mode=bench][data-history=true][data-tool=true]{grid-template-columns:220px minmax(0,1fr) 5px minmax(350px,var(--tool-width));grid-template-areas:"history chat divider inspector"}.main[data-mode=space]{grid-template-columns:195px minmax(0,1fr);grid-template-areas:"space-nav management"}.main[data-mode=space][data-side=true]{grid-template-columns:195px minmax(0,1fr) 5px minmax(340px,var(--chat-width));grid-template-areas:"space-nav management divider chat"}.main>*{min-width:0;min-height:0}.bar{height:46px;padding:0 14px;border-bottom:1px solid var(--soft-line);flex:none;background:white}.bar strong{font-weight:650}.history,.space-nav{background:var(--panel);border-right:1px solid var(--soft-line);overflow:auto}.history{grid-area:history}.history .bar,.space-nav .bar{background:transparent}.history-body,.space-menu{padding:11px 9px}.small-label{font-size:11px;color:var(--soft-muted);font-weight:650;display:block;margin:12px 8px 5px}.history-search{width:100%;border:1px solid var(--soft-line);border-radius:6px;padding:6px 9px;background:white;font-size:12px}.list-btn{width:100%;justify-content:space-between;padding:8px 8px;margin:1px 0}.list-btn[aria-current=true],.navitem[aria-current=page]{background:var(--sel);color:var(--green)}.history-item{display:block}.history-item strong{display:block;font-size:13px;font-weight:630}.history-item small{color:var(--soft-muted);font-size:11px}.history-foot{padding:4px 8px;font-size:11px;color:var(--soft-muted)}
+.conversation{grid-area:chat;display:flex;flex-direction:column;position:relative;background:white;overflow:hidden}.chat-actions{display:flex;align-items:center;gap:4px}.chat-title{min-width:0;display:flex;align-items:center;gap:8px}.chat-title strong{font-size:13px}.chat-title .i{width:15px;color:var(--soft-primary)}.tools{display:flex;gap:3px}.tools .btn{padding:5px 7px;border-color:transparent;color:var(--soft-muted);font-size:12px}.tools .btn[aria-pressed=true]{color:var(--green);border-color:#d7e4de}.tools .btn .i{width:15px;height:15px}.transcript{overflow:auto;flex:1;min-height:0;scrollbar-gutter:stable}.reading{max-width:724px;margin:auto;padding:24px 24px 14px}.date-line{display:flex;align-items:center;gap:12px;color:var(--soft-muted);font-size:11px;margin-bottom:23px}.date-line:before,.date-line:after{content:"";height:1px;flex:1;background:#edf0ef}.user-message{display:flex;justify-content:flex-end;margin:0 0 25px}.user-message p{margin:0;max-width:90%;padding:10px 14px;background:#edf5f1;border-radius:12px 12px 4px 12px;white-space:pre-wrap;overflow-wrap:anywhere}.response{margin-bottom:21px}.byline{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:650;color:var(--green);margin-bottom:9px}.byline .agent-mark{display:grid;place-items:center;width:25px;height:25px;border:1px solid #dfe9e3;background:#f5f9f6;border-radius:7px}.agent-mark .i{width:14px;height:14px}.byline time{font-size:11px;font-weight:400;color:var(--soft-muted)}.response p{margin:0 0 10px;line-height:1.72}.result{border:1px solid #dce5e0;border-radius:9px;overflow:hidden;margin:13px 0;background:white}.result-head{display:flex;align-items:center;gap:8px;padding:8px 11px;border-bottom:1px solid #e9efec;background:#f8fbf9;font-size:12px}.result-head .i{color:var(--green);width:15px}.result button{border:0;width:100%;display:flex;align-items:center;gap:9px;background:white;text-align:left;padding:8px 11px;font-size:12px;border-bottom:1px solid #eef1f0}.result button:last-child{border-bottom:0}.result button:hover{background:var(--sel)}.result button .i{color:var(--green);width:14px}.result button .stats{margin-left:auto;white-space:nowrap}.stats{color:#2e744e;font:11px var(--mono)}.stats .removed{color:#a2443c}.response .test{font-size:12px;color:var(--soft-muted);display:flex;align-items:center;gap:6px}.test .i{color:var(--green);width:14px}.compose-zone{flex:none;padding:6px 24px 10px}.compose-inner{max-width:676px;margin:auto}.composer{border:1px solid #dce4e0;border-radius:12px;background:white;box-shadow:0 2px 7px #21352b08;overflow:hidden}.composer:focus-within{border-color:#9fbdb1}.composer textarea{border:0;outline:0;width:100%;min-height:48px;max-height:110px;display:block;padding:11px 12px 3px;resize:vertical;font-size:13px;background:transparent}.compose-actions{display:flex;gap:6px;align-items:center;min-height:38px;padding:4px 8px 6px 11px}.compose-actions .model{font-size:11px;color:var(--soft-muted);display:flex;align-items:center;gap:4px}.compose-actions .model .i{width:13px}.send{width:29px;height:29px;padding:0;display:grid;place-items:center;border:0;border-radius:8px;color:white;background:var(--soft-primary)}.send[disabled]{cursor:default;background:#e9efec;color:#73817b}.send .i{width:15px}.compose-context,.chat-footer{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--soft-muted)}.compose-context{padding:6px 10px;background:#f4f8f6;border-bottom:1px solid #e7efeb}.compose-context .icon{height:22px;width:24px}.chat-footer{margin-top:7px;justify-content:space-between}.chat-footer b{font-weight:600;color:var(--green)}.fallback-label{display:none}
+.divider{grid-area:divider;background:#e6eaec;cursor:col-resize;position:relative;touch-action:none;z-index:1}.divider:hover,.divider:focus-visible,.divider.dragging{background:#9bbab0}.divider:after{content:"";position:absolute;left:1px;top:50%;height:25px;width:3px;border-radius:3px;background:#a5b3af;transform:translateY(-50%)}
+.inspector{grid-area:inspector;display:flex;flex-direction:column;background:white;overflow:hidden}.inspect-tabs{display:flex;gap:5px}.inspect-tabs .btn{border-color:transparent;color:var(--soft-muted);font-size:12px;padding:5px 7px}.inspect-tabs .btn[aria-pressed=true]{color:var(--green);background:var(--sel)}.location{display:flex;align-items:center;gap:9px;font-size:12px;padding:9px 13px;background:#fafbfb;border-bottom:1px solid var(--soft-line)}.location .i{color:var(--green);width:15px}.inspect-content{min-height:0;flex:1;display:flex;flex-direction:column}.tree{flex:none;max-height:205px;overflow:auto;padding:6px 8px 8px;border-bottom:1px solid var(--soft-line)}.tree .small-label{margin-top:4px}.tree .list-btn{font-size:12px;min-height:28px;padding:5px 8px;justify-content:flex-start;gap:7px}.tree .list-btn .i{width:14px;color:var(--green)}.tree .list-btn .stats{margin-left:auto}.tree .list-btn .status{font:11px var(--mono);color:var(--green);min-width:12px}.reader{min-height:0;flex:1;overflow:auto}.reader-head{display:flex;align-items:center;gap:7px;padding:8px 12px;border-bottom:1px solid var(--soft-line);background:#fafbfb;font-size:12px}.reader-head .i{width:14px;color:var(--green)}.code-lines{padding:8px 0;font:12px/1.7 var(--mono);min-width:max-content}.code-row{display:grid;grid-template-columns:33px 33px 21px 1fr;min-height:24px;align-items:center;padding-right:12px}.code-row span{color:#63716e;text-align:right;padding-right:7px;user-select:none}.code-row code{white-space:pre;color:#2f3d3a}.code-row.add{background:#e8f6eb}.code-row.del{background:#fceeee}.code-row.hunk{background:#edf1f5;color:#4d6176}.code-row.hunk code{color:inherit}.code-row.plain{grid-template-columns:46px 1fr}.empty-code{padding:24px 16px;color:var(--soft-muted)}
+.space-nav{grid-area:space-nav}.space-nav .bar{color:var(--green)}.navitem{width:100%;padding:8px 9px;margin:1px 0;color:var(--soft-muted);font-size:13px;font-weight:550}.navitem .i{width:16px}.management{grid-area:management;display:flex;flex-direction:column;min-width:0;overflow:hidden;background:white}.management .bar .btn{font-size:12px}.path{font-size:12px;color:var(--soft-muted);display:flex;align-items:center;gap:5px;min-width:0}.path strong{color:var(--soft-ink)}.path .i{width:13px}.management-body{overflow:auto;flex:1}.manage-page{max-width:980px;margin:0 auto;padding:28px 25px}.manage-page h1{margin:0;font-size:24px;letter-spacing:-.5px}.manage-page h2{margin:23px 0 9px;font-size:14px}.manage-page p{margin:5px 0 16px;color:var(--soft-muted);font-size:13px}.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.summary{padding:13px;border:1px solid var(--soft-line);border-radius:9px;text-align:left;background:#fff;min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:7px;font-size:13px}.summary:hover{border-color:#b7cfc4;background:#f8fbf9}.summary .i{color:var(--green)}.summary small{width:100%;color:var(--soft-muted);line-height:1.45}.table{border:1px solid var(--soft-line);border-radius:8px;overflow:hidden}.table-row{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1.15fr) auto;align-items:center;gap:8px;padding:10px 12px;border-top:1px solid #edf0f1;font-size:12px}.table-row:first-child{border:0;background:#f6f8f8;color:var(--soft-muted);font-weight:600}.table-row .quiet{font-weight:500}.table-row b,.table-row small{display:block}.table-row small{font-size:11px;color:var(--soft-muted);overflow-wrap:anywhere}.manage-hint{margin-top:15px;font-size:12px;color:var(--soft-muted)}
+#edit-dialog{border:1px solid var(--soft-line);box-shadow:0 14px 50px #20282b36;border-radius:12px;padding:20px;width:min(450px,calc(100% - 28px));color:var(--soft-ink)}#edit-dialog::backdrop{background:#1c302938}#edit-dialog h2{font-size:17px;margin:0 0 10px}#edit-dialog label{display:block;font-size:13px}#edit-dialog input{display:block;width:100%;margin-top:6px;padding:8px;border:1px solid var(--soft-line);border-radius:6px}.dialog-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:16px}.toast{position:absolute;z-index:5;bottom:18px;left:50%;transform:translateX(-50%);background:#264f44;color:white;font-size:12px;padding:8px 14px;border-radius:8px;pointer-events:none;max-width:90vw}
+@media(max-width:1320px){.main[data-mode=bench][data-history=true]{grid-template-columns:190px minmax(0,1fr)}.main[data-mode=bench][data-history=true][data-tool=true]{grid-template-columns:190px minmax(0,1fr) 5px minmax(350px,var(--tool-width))}.main[data-mode=space]{grid-template-columns:170px minmax(0,1fr)}.main[data-mode=space][data-side=true]{grid-template-columns:170px minmax(0,1fr) 5px minmax(340px,var(--chat-width))}.main[data-tool=true] .tools .btn span{display:none}.main[data-tool=true] .reading,.main[data-mode=space] .reading{padding-inline:15px}.main[data-tool=true] .compose-zone,.main[data-mode=space] .compose-zone{padding-inline:15px}}
+@media(max-width:1030px){.global{gap:6px;padding-inline:10px}.global .dev{display:none}.context .muted{display:none}.main[data-mode=bench][data-history=true][data-tool=true]{grid-template-columns:minmax(0,1fr) 5px minmax(330px,var(--tool-width));grid-template-areas:"chat divider inspector"}.main[data-mode=bench][data-tool=true] .history{display:none}.main[data-mode=space]{grid-template-columns:145px minmax(0,1fr)}.main[data-mode=space][data-side=true]{grid-template-columns:145px minmax(0,1fr) 5px minmax(310px,var(--chat-width))}.manage-page{padding-inline:18px}.notes-fixed{width:250px}}
+@media(min-width:761px) and (max-width:1030px){.main[data-tool=true][data-mobile-history=true] .history{display:block;position:absolute;z-index:2;left:0;top:99px;bottom:0;width:230px;box-shadow:6px 0 20px #1b2c281e}}
+@media(max-width:760px){#pin-help{display:none}.brand strong{display:none}.global-right .context{display:none}.global{height:49px}.modes button{padding-inline:9px}.preview-tools{border:0;padding-left:0}.preview-tools #help-trigger{font-size:11px}.main[data-mode=bench][data-history=true]{grid-template-columns:minmax(0,1fr);grid-template-areas:"chat"}.main[data-mode=bench] .history{position:absolute;z-index:2;left:0;top:95px;bottom:0;width:min(235px,80vw);box-shadow:6px 0 20px #1b2c281e}.main[data-mode=bench][data-mobile-history=false] .history{display:none}.main[data-mode=bench][data-tool=true],.main[data-mode=bench][data-history=true][data-tool=true]{grid-template:minmax(0,1fr) minmax(170px,45%) / minmax(0,1fr);grid-template-areas:"chat" "inspector"}.main[data-mode=space],.main[data-mode=space][data-side=true]{grid-template:44px minmax(0,1fr) / minmax(0,1fr);grid-template-areas:"space-nav" "management"}.main[data-mode=space][data-side=true]{grid-template:44px minmax(170px,1fr) minmax(165px,44%) / minmax(0,1fr);grid-template-areas:"space-nav" "management" "chat"}.main .divider{display:none}.space-nav .bar,.space-menu .small-label{display:none}.space-menu{display:flex;gap:2px;overflow:auto;padding:4px}.space-menu .navitem{width:auto;padding:5px 7px;font-size:12px}.inspector,.main[data-mode=space] .conversation{border-top:1px solid var(--soft-line)}.tree{max-height:85px}.reading{padding:14px 15px 6px}.compose-zone{padding:4px 12px 6px}.chat-footer .shortcut{display:none}.manage-page{padding:14px 12px}.notes-fixed{display:none!important}.bar{padding-inline:8px}.tools .btn span{display:none}.table-row{padding-inline:7px}}
+
+.global{display:flex;justify-content:flex-start;gap:15px;padding-inline:16px;height:48px}
+.modes{gap:2px;padding:0;border:0;border-radius:0;background:none;height:100%;flex:none}.modes button{position:relative;height:100%;padding:0 12px;border-radius:0;box-shadow:none}.modes button[aria-current=page]{background:transparent;box-shadow:none;color:var(--green)}.modes button[aria-current=page]:after{content:"";position:absolute;height:2px;bottom:0;left:12px;right:12px;border-radius:2px;background:var(--soft-primary)}
+.global>.context{border-left:1px solid var(--soft-line);padding-left:13px}.global-right>#space-actions{display:flex;align-items:center;gap:5px}.global-right{flex:none}.global .preview-tools{opacity:.88}.global #space-actions .btn{font-size:12px}.brand strong{font-size:13px}.bar{height:41px}
+.workspace-bar{background:#fafbfb;gap:4px;padding:0 10px}.workspace-bar .icon{width:25px;height:27px}.workspace-label{display:inline-block;background:#edf0ef;padding:2px 7px;border-radius:4px;font-size:12px;font-weight:650}.workspace-name{font-size:11px;white-space:nowrap}.directory-tabs{display:flex;align-items:center;min-width:0;overflow:auto;scrollbar-width:thin;gap:2px}.directory-tab{display:flex;align-items:center;flex:none;border-radius:5px}.directory-tab .quiet{gap:4px;padding-inline:6px;color:var(--soft-ink)}.directory-tab .i{width:14px;height:14px}.directory-tab .close-tab{width:21px}.directory-tab .close-tab .i{width:11px;height:11px}.directory-tab.is-active{background:var(--sel)}.directory-tab.is-active .quiet{color:var(--green);font-weight:600}#toggle-work-area[aria-expanded=true]{background:var(--sel);color:var(--green)}
+.directory-home{margin:auto;padding:14px;text-align:center}.directory-home h2{margin:0 0 5px;font-size:16px}.directory-home p{margin:0 0 16px;color:var(--soft-muted);font-size:12px}.directory-home nav{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}.directory-home button{display:grid;justify-items:start;gap:4px;border:1px solid var(--soft-line);background:#f6f8f8;min-width:105px;padding:10px 11px;border-radius:8px;font-size:12px}.directory-home button:hover{background:var(--sel);border-color:#cdded6}.directory-home button .i{width:15px;height:15px}.directory-home small{color:var(--soft-muted)}
+@media(max-width:760px){.global{gap:5px;padding-inline:7px}.global>.context{padding-left:5px}.global .context .i{display:none}.global .context strong{font-size:11px}.global-right{gap:3px}.global #space-actions .btn{padding-inline:5px}.global .brand-mark{width:23px;height:23px}.modes button{padding:0 6px}.modes button[aria-current=page]:after{left:6px;right:6px}.preview-tools #help-trigger{padding-inline:3px}.main[data-mode=bench] .history{top:89px}}
+@media(max-width:375px){.global .preview-tools #help-trigger{max-width:22px;overflow:hidden}.global .preview-tools #help-trigger .i{flex:none}.global>.context{max-width:42px}.global #space-actions .btn .i{display:none}}
+</style></head>
+<body>
+<svg aria-hidden="true" width="0" height="0" style="position:absolute" xmlns="http://www.w3.org/2000/svg"><defs>
+<symbol id="i-pane" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M14.5 5v14"/></symbol><symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 11.3a7.8 7.8 0 0 1-8 7.7c-1 0-2-.2-2.9-.5L4 20l1.4-4.3A7.4 7.4 0 0 1 4 11.3a8 8 0 1 1 16 0Z"/><path d="M8 11h8m-8 3h5"/></symbol><symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></symbol><symbol id="i-diff" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="19" r="2"/><path d="M6 7v10m0-3c0-4 4-4 6-4s6-.5 6-2"/></symbol><symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></symbol><symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h1m-1 6h1m-1 6h1"/></symbol><symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3h7l4 4v13H6V4a1 1 0 0 1 1-1Z"/><path d="M14 3v5h4M9 12h6m-6 4h6"/></symbol><symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol><symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol><symbol id="i-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol><symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4 10-9"/></symbol><symbol id="i-agent" viewBox="0 0 24 24"><path d="m12 3 2.3 6.7L21 12l-6.7 2.3L12 21l-2.3-6.7L3 12l6.7-2.3Z"/></symbol><symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></symbol><symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 11a9 9 0 1 1 2 7M3 5v6h6"/></symbol><symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8v.1"/></symbol><symbol id="i-service" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="7" rx="2"/><rect x="4" y="13" width="16" height="7" rx="2"/><path d="M8 7.5h1m-1 9h1"/></symbol><symbol id="i-env" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/></symbol>
+</defs></svg>
+<div id="root">
+<header class="global" aria-label="产品顶栏"><div class="brand"><span class="brand-mark">D</span><strong>Buildr Development</strong><span class="dev">开发版</span></div><nav class="modes" data-prototype-position="modes" aria-label="产品模式"><button type="button" data-mode-btn="bench" aria-current="page">工作台</button><button type="button" data-mode-btn="space">工作空间</button></nav><div class="context" aria-label="当前工作空间 Buildr"><svg class="i" aria-hidden="true"><use href="#i-grid"/></svg><span class="muted">当前空间</span><strong>Buildr</strong></div><div class="spacer"></div><div class="global-right"><div id="space-actions" hidden><button class="icon" id="show-chat" type="button" aria-label="打开侧边对话" title="打开侧边对话" hidden><svg class="i" aria-hidden="true"><use href="#i-chat"/></svg></button><button class="btn primary" id="handoff" type="button"><svg class="i" aria-hidden="true"><use href="#i-agent"/></svg>交给 Agent</button></div><div class="preview-tools" id="preview-tools"><button class="quiet" id="help-trigger" type="button" aria-expanded="false" aria-controls="help-pop" title="原型功能说明"><svg class="i" aria-hidden="true"><use href="#i-help"/></svg>功能说明</button><button class="icon" type="button" id="reset" aria-label="重置演示" title="重置演示"><svg class="i" aria-hidden="true"><use href="#i-reset"/></svg></button><div id="help-pop" hidden><div id="help-content"><div class="help-head"><strong>功能说明</strong><select id="scenes" aria-label="切换演示场景"><option value="bench:">工作台</option><option value="bench:home">对话工作区</option><option value="bench:changes">Git 变更</option><option value="bench:files">资源管理器</option><option value="space:">工作空间</option></select><button class="quiet" id="pin-help" type="button">固定</button></div><div id="feature-notes"></div></div></div></div></div></header>
+<div class="main-wrap"><main class="main" id="main" data-mode="bench" data-history="true" data-tool="false" data-side="true" data-mobile-history="false">
+<aside class="history" aria-label="对话列表" id="history"><div class="bar"><strong>对话列表</strong><div class="spacer"></div><button class="icon" type="button" id="new-chat" aria-label="新建演示对话" title="新建对话"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg></button></div><div class="history-body"><input class="history-search" aria-label="搜索对话" placeholder="搜索对话"><span class="small-label">Buildr · 最近对话</span><div id="history-list"></div><p class="history-foot" id="history-foot">当前空间 · 本地对话</p></div></aside>
+<section class="conversation" id="chat" aria-label="当前对话" data-prototype-position="conversation"><div class="bar"><button class="icon" id="history-toggle" type="button" aria-label="对话列表" title="展开或收起对话列表" aria-controls="history"><svg class="i" aria-hidden="true"><use href="#i-list"/></svg></button><div class="chat-title"><strong class="truncate" id="chat-title">统一 Development 顶栏</strong></div><div class="spacer"></div><div id="work-tools" data-prototype-position="tools-area"><button type="button" class="icon" id="toggle-work-area" aria-expanded="false" aria-controls="inspector" aria-label="显示对话工作区"><svg class="i" aria-hidden="true"><use href="#i-pane"/></svg></button></div><button class="icon" id="hide-chat" type="button" aria-label="收起侧边对话" title="收起侧边对话" hidden><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+<div class="transcript" id="transcript" tabindex="0" aria-label="对话消息"><div class="reading" id="messages"></div></div><div class="compose-zone"><div class="compose-inner"><form class="composer" id="composer"><div class="compose-context" id="compose-context" hidden><svg class="i" aria-hidden="true"><use href="#i-file"/></svg><span class="truncate" id="compose-object"></span><div class="spacer"></div><button class="icon" type="button" id="remove-context" aria-label="移除工程对象"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button></div><textarea id="draft" aria-label="对话输入" placeholder="提出问题，或描述想完成的工作" rows="2"></textarea><div class="compose-actions"><span class="model"><svg class="i" aria-hidden="true"><use href="#i-agent"/></svg>Codex</span><div class="spacer"></div><button class="send" id="send" aria-label="发送模拟消息" title="发送（模拟）" type="submit" disabled><svg class="i" aria-hidden="true"><use href="#i-up"/></svg></button></div></form><div class="chat-footer"><span>所属工作空间：<b>Buildr</b></span><span class="shortcut">Enter 发送 · Shift+Enter 换行</span></div></div></div></section>
+<div class="divider" id="divider" role="separator" aria-label="调整分栏宽度" aria-orientation="vertical" tabindex="0" hidden></div>
+<aside class="inspector" id="inspector" aria-label="对话工作区" data-prototype-position="inspector" hidden><div class="bar workspace-bar" data-prototype-position="tools-area"><div id="directory-tabs" class="directory-tabs"></div><button type="button" id="add-tool" class="icon" aria-label="打开工作区模块" title="打开工作区模块"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg></button><div class="spacer"></div><span class="muted workspace-name">Buildr</span></div><div class="location" id="location" hidden></div><div class="inspect-content" id="inspect-content"></div></aside>
+<nav class="space-nav" id="space-nav" aria-label="工作空间导航" hidden><div class="bar"><svg class="i" aria-hidden="true"><use href="#i-grid"/></svg><strong>空间管理</strong></div><div class="space-menu" id="space-menu"></div></nav>
+<section class="management" id="management" aria-label="工作空间管理" data-prototype-position="management" hidden><div class="bar"><div class="path"><span>Buildr</span><svg class="i" aria-hidden="true"><use href="#i-right"/></svg><strong id="manage-crumb"></strong></div><div class="spacer"></div></div><div class="management-body" id="manage-body"></div></section>
+</main><aside class="notes-fixed" id="notes-fixed" aria-label="固定的功能说明" hidden></aside></div>
+<dialog id="edit-dialog" aria-labelledby="edit-title"><form id="edit-form"><h2 id="edit-title"></h2><label>说明<input id="edit-value" required maxlength="100"></label><div class="dialog-actions"><button class="btn" type="button" id="cancel-edit">取消</button><button class="btn primary" type="submit">保存示例</button></div></form></dialog><div class="toast" role="status" hidden></div>
+</div>
+<script>
+/** @typedef {{id:string,title:string,text:string,position?:string}} FeatureNote */
+/** @typedef {{id:string,notes:FeatureNote[],states:Array<{id:string,notes:FeatureNote[]}>}} PrototypeScene */
+
+/**
+ * Framework-independent task feature cards. Plain text only; no application requests.
+ * @param {HTMLElement} root
+ * @param {{notes:FeatureNote[],activePosition?:string,onHighlight:(position?:string,reveal?:boolean)=>void}} options
+ */
+function mountFeatureNotes(root, options) {
+  const doc=root.ownerDocument;
+  let fingerprint='';
+  /** @type {Array<{node:HTMLElement,position?:string}>} */
+  let cards=[];
+  root.classList.add('prototype-features');
+  function update({notes,activePosition}) {
+    const next=JSON.stringify(notes);
+    if(next!==fingerprint) {
+      fingerprint=next;cards=[];root.replaceChildren();
+      const hint=doc.createElement('p');
+      hint.className='prototype-features-hint';
+      hint.textContent=notes.length?'本次任务在当前画面中的功能。悬停查看对应区域，点击定位。':'此页面尚未提供与本次任务相关的功能说明。';
+      root.append(hint);
+      for(const note of notes) {
+        const node=doc.createElement(note.position?'button':'section');
+        node.className='prototype-feature';node.dataset.featureNote=note.id;
+        const title=doc.createElement('strong'),body=doc.createElement('span');
+        title.textContent=note.title;body.textContent=note.text;node.append(title,body);
+        if(note.position) {
+          node.setAttribute('type','button');
+          node.addEventListener('pointerenter',event=>{if(event.pointerType!=='touch')options.onHighlight(note.position);});
+          node.addEventListener('pointerleave',()=>{if(!node.matches(':focus-visible'))options.onHighlight();});
+          node.addEventListener('focus',()=>options.onHighlight(note.position));
+          node.addEventListener('blur',()=>options.onHighlight());
+          node.addEventListener('click',()=>options.onHighlight(note.position,true));
+        }
+        root.append(node);cards.push({node,position:note.position});
+      }
+    }
+    for(const card of cards)card.node.classList.toggle('is-active',Boolean(card.position&&card.position===activePosition));
+  }
+  update(options);
+  return {update,destroy(){options.onHighlight();root.replaceChildren();root.classList.remove('prototype-features');}};
+}
+
+/** @param {Document} doc */
+function createRegionHighlighter(doc) {
+  /** @param {string|null|undefined} position @param {boolean} [reveal] */
+  return (position,reveal=false)=>{
+    doc.querySelectorAll('[data-prototype-highlight]').forEach(el=>el.removeAttribute('data-prototype-highlight'));
+    if(!position)return;
+    const nodes=[...doc.querySelectorAll('[data-prototype-position]')].filter(el=>el.getAttribute('data-prototype-position')===position&&el.getClientRects().length);
+    nodes.forEach(el=>el.setAttribute('data-prototype-highlight','true'));
+    if(reveal)nodes[0]?.scrollIntoView({block:'nearest',inline:'nearest',behavior:'smooth'});
+  };
+}
+
+/**
+ * Optional sandbox reading bridge. Card highlights never invoke onSelect.
+ * @param {{pages:PrototypeScene[],getSelection:()=>{page:string,state:string},onSelect:(page:string,state:string)=>void}} options
+ * @param {Window} [win]
+ */
+function connectPrototype(options,win=window) {
+  const doc=win.document,paint=createRegionHighlighter(doc);
+  let nonce='';
+  const notes=(page,state)=>{
+    const scene=options.pages.find(p=>p.id===page);
+    return scene?[...scene.notes,...(scene.states.find(s=>s.id===state)?.notes||[])]:[];
+  };
+  const receive=event=>{
+    const m=event.data;
+    if(event.source!==win.parent||!m||typeof m.nonce!=='string'||!m.nonce)return;
+    const scene=options.pages.find(p=>p.id===m.page);
+    if(!scene||(m.state!==''&&!scene.states.some(s=>s.id===m.state)))return;
+    if(m.type==='buildr:prototype:select'){
+      nonce=m.nonce;paint(null);options.onSelect(m.page,m.state);
+      win.requestAnimationFrame(()=>{
+        const current=options.getSelection();
+        if(nonce===m.nonce&&current.page===m.page&&current.state===m.state&&win.parent!==win)
+          win.parent.postMessage({type:'buildr:prototype:rendered',nonce,page:m.page,state:m.state},'*');
+      });
+      return;
+    }
+    const current=options.getSelection();
+    if(m.type!=='buildr:prototype:highlight'||m.nonce!==nonce||m.page!==current.page||m.state!==current.state)return;
+    if(m.position!==null&&(typeof m.position!=='string'||!notes(m.page,m.state).some(n=>n.position===m.position)))return;
+    paint(m.position,m.reveal===true);
+  };
+  const region=target=>{
+    const current=options.getSelection(),declared=notes(current.page,current.state);
+    let node=target?.nodeType===1?target:null;
+    while(node){const position=node.getAttribute('data-prototype-position');if(position&&declared.some(n=>n.position===position))return position;node=node.parentElement;}
+    return null;
+  };
+  const inform=position=>{
+    paint(position);
+    if(win.parent!==win&&nonce)win.parent.postMessage({type:'buildr:prototype:highlight',nonce,...options.getSelection(),position},'*');
+  };
+  const enter=event=>inform(region(event.target));
+  const leave=event=>inform(region(event.relatedTarget));
+  win.addEventListener('message',receive);
+  doc.addEventListener('pointerover',enter);doc.addEventListener('pointerout',leave);
+  doc.addEventListener('focusin',enter);doc.addEventListener('focusout',leave);
+  if(win.parent!==win)win.parent.postMessage({type:'buildr:prototype:ready'},'*');
+  return {
+    report(page,state=''){paint(null);if(win.parent!==win&&nonce)win.parent.postMessage({type:'buildr:prototype:state',nonce,page,state},'*');},
+    destroy(){nonce='';win.removeEventListener('message',receive);doc.removeEventListener('pointerover',enter);doc.removeEventListener('pointerout',leave);doc.removeEventListener('focusin',enter);doc.removeEventListener('focusout',leave);paint(null);},
+  };
+}
+
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const icon=name=>`<svg class="i" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+const clean=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const K={home:['工作空间总览','grid','查看这个空间已准备好的项目、服务和工作能力。'],projects:['项目','folder','维护项目的用途、资料与工程组成。'],services:['服务目录','service','维护服务登记及关联的代码库。'],repos:['代码库','diff','维护工作空间使用的仓库与工作位置。'],env:['工作环境','env','查看本机工作环境和项目准备项。'],skills:['技能目录','agent','维护可在工作空间中使用的技能。']};
+const files=[
+ {name:'AppShellView.tsx',path:'src/app',delta:['+18','−5'],before:22,after:22,lines:[['@','@@ -22,6 +22,10 @@ AppShellHeader'],[' ','  <header className="topbar">'],[' ','    <Brand />'],['-','    <DevelopmentToggle />'],['+','    <ModeSwitch mode={mode} onChange={onModeChange} />'],['+','    <WorkspaceContext />'],[' ','  </header>']],read:['export function AppShellHeader({ mode, onModeChange }) {','  return (','    <header className="topbar">','      <Brand />','      <ModeSwitch mode={mode} onChange={onModeChange} />','      <WorkspaceContext />','    </header>','  );','}']},
+ {name:'DevelopmentHarnessShell.tsx',path:'src/app',delta:['+11','−7'],before:35,after:35,lines:[['@','@@ -35,5 +35,7 @@ DevelopmentHarnessShell'],['-','  return <HarnessShell environment={development} />;'],['+','  return <DevelopmentLayout mode={mode}>'],['+','    {conversation}'],['+','  </DevelopmentLayout>;']],read:['export function DevelopmentHarnessShell({ mode, conversation }) {','  return <DevelopmentLayout mode={mode}>','    {conversation}','  </DevelopmentLayout>;','}']},
+ {name:'conversation-dock.css',path:'src/features',delta:['+6','−2'],before:19,after:19,lines:[['@','@@ -19,5 +19,8 @@ conversation dock'],[' ','  display: grid;'],['-','  grid-template-columns: 1fr;'],['+','  grid-template-columns: minmax(0, 1fr) auto;'],['+','  min-height: 0;']],read:['.conversation-dock {','  display: grid;','  grid-template-columns: minmax(0, 1fr) auto;','  min-height: 0;','}']},
+ {name:'README.md',path:'',read:['# Buildr Development','','默认进入对话工作台。','从顶栏切到工作空间，管理工程环境。']}
+];
+const seedServices=[{name:'Buildr Web',detail:'Development 网页与工程界面',repo:'buildr',slug:'buildr-web'}, {name:'Harness Web',detail:'对话、文件和源代码管理',repo:'buildr',slug:'buildr-harness-web'}, {name:'Agent Service',detail:'对话执行与模型接入',repo:'buildr',slug:'agent-service'}];
+const dirs={projects:[['Buildr 产品','产品研发与交付','3 个服务'],['工程验证','产品检查和回归验证','1 个服务']],repos:[['buildr','Buildr 产品代码','dev']],env:[['本机开发环境','Node.js · 本地仓库','已就绪'],['工程检查','类型检查 · 单元测试','已配置']],skills:[['界面原型','整理和演示界面设计','UI Prototype'],['项目验证','运行与记录适用检查','Project Verification'],['Git 操作','核对仓库、分支和变更','Git Operations']]};
+const startChats=()=>[
+ {id:'layout',title:'统一 Development 顶栏',time:'刚刚',example:true,draft:'',turns:[],scroll:null,object:null},
+ {id:'review',title:'浏览 Harness 变更',time:'昨天',intro:'上一轮已整理目录浏览的改动，可以在工作台打开源代码管理继续核对。',draft:'',turns:[],scroll:null,object:null},
+ {id:'setup',title:'核对工作空间准备项',time:'昨天',intro:'环境和技能可以在工作空间中单独查看。需要时，也可以把当前对象带回这个对话。',draft:'',turns:[],scroll:null,object:null}
+];
+const seed=()=>({mode:'bench',history:true,mobileHistory:false,tool:'home',workOpen:false,tabs:[],side:true,diff:0,file:3,nav:'home',active:'layout',chats:startChats(),services:structuredClone(seedServices),edit:null});
+let st=seed(),seq=0,toastTimer,helpTimer,helpPin=false,helpLock=false;
+const embedded=window.parent!==window,main=$('#main'), transcript=$('#transcript'), draft=$('#draft'),dialog=$('#edit-dialog');
+const manifest=JSON.parse($('#buildr-prototype').textContent);
+const highlight=createRegionHighlighter(document);
+const notes=mountFeatureNotes($('#feature-notes'),{notes:[],onHighlight:highlight});
+const selection=()=>({page:st.mode,state:st.mode==='bench'?(st.workOpen?st.tool:''):''});
+const bridge=connectPrototype({pages:manifest.pages,getSelection:selection,onSelect:(page,state)=>resetScene(page,state)});
+function resetScene(page='bench',state=''){
+ if(dialog.open)dialog.close(); st=seed();st.mode=page;st.workOpen=!!state;st.tool=state||'home';if(state==='changes'||state==='files')st.tabs=[state];$('.history-search').value='';main.style.removeProperty('--tool-width');main.style.removeProperty('--chat-width'); render();renderMessages();transcript.scrollTop=0;
+}
+function active(){return st.chats.find(c=>c.id===st.active)}
+function toast(text){const el=$('.toast');clearTimeout(toastTimer);el.textContent=text;el.hidden=false;toastTimer=setTimeout(()=>el.hidden=true,2300)}
+function updateHelp(){const {page,state}=selection(),scene=manifest.pages.find(p=>p.id===page);notes.update({notes:[...scene.notes,...(scene.states.find(x=>x.id===state)?.notes||[])]});$('#scenes').value=page+':'+state;bridge.report(page,state)}
+function render(){
+ const bench=st.mode==='bench'; Object.assign(main.dataset,{mode:st.mode,history:String(st.history),tool:String(st.workOpen),side:String(st.side),mobileHistory:String(st.mobileHistory)});
+ $$('[data-mode-btn]').forEach(b=>b.dataset.modeBtn===st.mode?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current'));
+ $('#history').hidden=!bench;$('#history-toggle').hidden=!bench;$('#history-toggle').setAttribute('aria-expanded',String(window.innerWidth<=760||window.innerWidth<=1030&&st.workOpen?st.mobileHistory:st.history));
+ $('#work-tools').hidden=!bench;const toggle=$('#toggle-work-area');toggle.setAttribute('aria-expanded',String(st.workOpen));toggle.title=st.workOpen?'收起对话工作区':'显示对话工作区';toggle.setAttribute('aria-label',toggle.title);$('#space-actions').hidden=bench;$('#hide-chat').hidden=bench;$('#chat').hidden=!bench&&!st.side;
+ $('#space-nav').hidden=bench;$('#management').hidden=bench;$('#show-chat').hidden=st.side;
+ $('#inspector').hidden=!bench||!st.workOpen;$('#divider').hidden=bench?!st.workOpen:!st.side;
+ if(!bench)renderManage();else if(st.workOpen)renderInspector();
+ renderHistory();renderComposer();updateHelp();
+}
+function renderHistory(){
+ const term=$('.history-search').value.trim().toLowerCase(), hits=st.chats.filter(c=>c.title.toLowerCase().includes(term));
+ $('#history-list').innerHTML=hits.map(c=>`<button class="list-btn history-item" type="button" data-chat="${c.id}" aria-current="${c.id===st.active}"><strong class="truncate">${clean(c.title)}</strong><small>${clean(c.time)}</small></button>`).join('')||'<p class="history-foot">没有匹配的对话</p>';
+}
+const userBubble=text=>`<div class="user-message"><p>${clean(text)}</p></div>`;
+const agentLine=(time='14:26')=>`<div class="byline"><span class="agent-mark">${icon('agent')}</span>Codex <time>${time}</time></div>`;
+const delta=f=>`<span class="stats">${f.delta[0]} <span class="removed">${f.delta[1]}</span></span>`;
+function renderMessages(){
+ const c=active();$('#chat-title').textContent=c.title;
+ $('#messages').innerHTML='<div class="date-line">今天</div>'+(c.example?`${userBubble('把工作台和工作空间放到同一条产品顶栏。改完后我想先看看 diff。')}<article class="response">${agentLine()}<p>已把 <strong>工作台 / 工作空间</strong> 放进同一条产品顶栏，移除了单独的展开行。切换布局时会保留当前对话和输入。</p><p>要查看改动时，可以打开右侧工作区里的源代码管理。</p></article>`:c.intro?`<article class="response">${agentLine()}<p>${clean(c.intro)}</p></article>`:'<p class="muted">在这个工作空间开始一段新对话。</p>')+c.turns.map(t=>`${userBubble(t.text)}<article class="response">${agentLine('刚刚')}<p>${t.object?'收到了你要处理的对象：<strong>'+clean(t.object)+'</strong>。':'收到了。这个原型会保留这条消息和当前工作现场。'} 这里仅演示对话接续，不会启动真实执行。</p></article>`).join('');
+}
+function renderComposer(){const c=active();if(draft.value!==c.draft)draft.value=c.draft;$('#compose-context').hidden=!c.object;$('#compose-object').textContent=c.object||'';$('#send').disabled=!draft.value.trim()}
+function retainScroll(action){const old=transcript.scrollTop; action();transcript.scrollTop=old}
+const toolInfo={files:['资源管理器','folder'],changes:['源代码管理','diff']};
+function openTool(tool){retainScroll(()=>{st.workOpen=true;st.tool=tool;if(tool!=='home'&&!st.tabs.includes(tool))st.tabs.push(tool);st.mobileHistory=false;render()});if(tool!=='home')$(`[data-select-tool="${tool}"]`)?.focus({preventScroll:true});else $('[data-launch-tool]')?.focus({preventScroll:true})}
+function toggleWorkArea(){retainScroll(()=>{st.workOpen=!st.workOpen;st.mobileHistory=false;render()})}
+function closeToolTab(tool){const i=st.tabs.indexOf(tool);st.tabs=st.tabs.filter(id=>id!==tool);if(st.tool===tool)st.tool=st.tabs[i]||st.tabs.at(-1)||'home';render();(st.tool==='home'?$('#add-tool'):$(`[data-select-tool="${st.tool}"]`))?.focus({preventScroll:true})}
+function mode(next){if(next===st.mode)return;st.mobileHistory=false;retainScroll(()=>{st.mode=next;render()})}
+function chooseChat(id){active().scroll=transcript.scrollTop;st.active=id;st.mobileHistory=false;render();renderMessages();transcript.scrollTop=active().scroll??0}
+function renderInspector(){
+ const tabs=$('#directory-tabs'), loc=$('#location'), content=$('#inspect-content');
+ tabs.innerHTML=st.tabs.length?st.tabs.map(id=>{const [label,mark]=toolInfo[id];return `<span class="directory-tab${st.tool===id?' is-active':''}"><button type="button" class="quiet" data-select-tool="${id}" aria-pressed="${st.tool===id}">${icon(mark)}${label}</button><button type="button" class="icon close-tab" data-close-tab="${id}" aria-label="关闭${label}标签">${icon('close')}</button></span>`}).join(''):'<span class="workspace-label">工作区</span>';
+ loc.hidden=st.tool==='home';$('#add-tool').setAttribute('aria-expanded',String(st.tool==='home'));
+ if(st.tool==='home'){content.innerHTML=`<div class="directory-home"><h2>对话工作区</h2><p>在同一工作空间里浏览文件、查看变更。</p><nav aria-label="工作区内容">${Object.entries(toolInfo).map(([id,[label,mark]])=>`<button type="button" data-launch-tool="${id}">${icon(mark)}<strong>${label}</strong>${st.tabs.includes(id)?'<small>已打开</small>':''}</button>`).join('')}</nav></div>`;return}
+ const change=st.tool==='changes', f=files[change?st.diff:st.file];
+ $('#location').innerHTML=icon('diff')+'<strong>buildr</strong><span class="muted">/</span><span class="mono muted">dev</span><span class="spacer"></span><span class="muted">主工作树</span>';
+ const list=change?files.slice(0,3):[files[3],...files.slice(0,3)];
+ let old=f.before,now=f.after;
+ const code=change?f.lines.map(([mark,s])=>{const a=mark==='+'||mark==='@'?'':old++, b=mark==='-'||mark==='@'?'':now++;return `<div class="code-row ${mark==='@'?'hunk':mark==='+'?'add':mark==='-'?'del':''}"><span>${a}</span><span>${b}</span><span>${mark==='@'?'':mark}</span><code>${clean(s)}</code></div>`}).join(''):f.read.map((line,i)=>`<div class="code-row plain"><span>${i+1}</span><code>${clean(line)}</code></div>`).join('');
+ $('#inspect-content').innerHTML=`<div class="tree"><span class="small-label">${change?'未提交变更 · 3 个文件':'文件 · buildr'}</span>${list.map(item=>{const index=files.indexOf(item);return `<button type="button" class="list-btn" data-inspect="${index}" aria-current="${item===f}" aria-label="${item.name}">${icon('file')}<strong class="truncate">${item.name}</strong><span class="muted truncate">${item.path||''}</span><span class="spacer"></span>${change?'<span class="status">M</span>':''}</button>`}).join('')}</div><div class="reader-head">${icon('file')}<span class="truncate">${f.path?f.path+'/':''}${f.name}</span><span class="spacer"></span>${change?delta(f):'<span class="muted">文件内容</span>'}</div><div class="reader" tabindex="0" aria-label="${change?'文件差异':'文件内容'}"><div class="code-lines">${code}</div></div>`;
+}
+function renderManage(){
+ $('#space-menu').innerHTML=['home','projects','services','repos','env','skills'].map(k=>(k==='projects'?'<span class="small-label">工程组成</span>':k==='env'?'<span class="small-label">环境与能力</span>':'')+`<button type="button" class="navitem" data-nav="${k}" ${k===st.nav?'aria-current="page"':''}>${icon(K[k][1])}${K[k][0]}</button>`).join('');
+ const [title,,description]=K[st.nav];$('#manage-crumb').textContent=title;
+ const header=`<h1>${title}</h1><p>${description}</p>`;
+ let body=st.nav==='home'?`<h2>空间组成</h2><div class="cards">${[['projects','2 个项目'],['services',st.services.length+' 个服务'],['repos','1 个代码库'],['env','本机开发环境'],['skills','3 项可用技能']].map(([key,meta])=>`<button type="button" class="summary" data-nav="${key}">${icon(K[key][1])}<strong>${K[key][0]}</strong><span class="spacer"></span><span class="muted tiny">${meta}</span><small>${K[key][2]}</small></button>`).join('')}</div>`:st.nav==='services'?`<div class="table"><div class="table-row"><span>服务</span><span>说明 / 代码库</span><span>操作</span></div>${st.services.map((s,i)=>`<div class="table-row"><span><b>${s.name}</b><small class="mono">${s.slug}</small></span><span><b>${clean(s.detail)}</b><small class="mono">${s.repo}</small></span><button type="button" class="quiet" data-edit="${i}" aria-label="编辑 ${s.name}">编辑</button></div>`).join('')}</div><p class="manage-hint">可以手动编辑服务说明，也可以在右侧对话中讨论当前目录的配置。</p>`:`<div class="table"><div class="table-row"><span>名称</span><span>说明</span><span>当前状态</span></div>${dirs[st.nav].map(([a,b,c])=>`<div class="table-row"><b>${a}</b><span class="muted">${b}</span><span class="badge">${c}</span></div>`).join('')}</div>`;
+ $('#manage-body').innerHTML=`<div class="manage-page">${header}${body}</div>`;
+}
+function unpinHelp(){helpPin=false;$('#help-pop').append($('#help-content'));$('#notes-fixed').hidden=true;$('#pin-help').textContent='固定'}
+function openHelp(open){$('#help-pop').hidden=!open;$('#help-trigger').setAttribute('aria-expanded',String(open||helpPin));if(!open&&!helpPin)highlight(null)}
+function queueClose(){clearTimeout(helpTimer);helpTimer=setTimeout(()=>{if(!helpLock&&!helpPin)openHelp(false)},180)}
+const preview=$('#preview-tools');preview.hidden=embedded;
+preview.addEventListener('pointerenter',()=>clearTimeout(helpTimer));preview.addEventListener('pointerleave',queueClose);
+$('#help-trigger').addEventListener('pointerenter',e=>{if(e.pointerType!=='touch'&&!helpPin)openHelp(true)});
+$('#help-trigger').addEventListener('click',()=>{if(helpPin){unpinHelp();helpLock=false;openHelp(false)}else{helpLock=!helpLock;openHelp(helpLock)}});
+$('#pin-help').addEventListener('click',()=>{if(helpPin){unpinHelp();helpLock=true;openHelp(true)}else if(window.innerWidth>760){helpPin=true;helpLock=false;$('#notes-fixed').append($('#help-content'));$('#notes-fixed').hidden=false;$('#pin-help').textContent='取消固定';openHelp(false)}});
+$('#scenes').addEventListener('change',e=>{const [page,state]=e.target.value.split(':');resetScene(page,state)});
+$('#reset').addEventListener('click',()=>{resetScene();toast('已重置演示')});
+window.addEventListener('resize',()=>{if(window.innerWidth<=760&&helpPin){unpinHelp();openHelp(false)}st.mobileHistory=false; main.dataset.mobileHistory='false';$('#history-toggle').setAttribute('aria-expanded',String(window.innerWidth<=760||window.innerWidth<=1030&&st.workOpen?false:st.history))});
+document.addEventListener('click',e=>{if(helpLock&&!preview.contains(e.target)&&!$('#notes-fixed').contains(e.target)){helpLock=false;openHelp(false)}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#help-pop').hidden){helpLock=false;openHelp(false);$('#help-trigger').focus()}});
+main.addEventListener('click',e=>{
+ const b=e.target.closest('button');if(!b)return;
+ if(b.id==='toggle-work-area'){toggleWorkArea();return}
+ if(b.id==='add-tool'){openTool('home');return}
+ if(b.dataset.selectTool||b.dataset.launchTool){openTool(b.dataset.selectTool||b.dataset.launchTool);return}
+ if(b.dataset.closeTab){closeToolTab(b.dataset.closeTab);return}
+ if(b.hasAttribute('data-inspect')){st[st.tool==='changes'?'diff':'file']=Number(b.dataset.inspect);renderInspector();$(`[data-inspect="${b.dataset.inspect}"]`).focus({preventScroll:true});return}
+ if(b.dataset.nav){st.nav=b.dataset.nav;renderManage();$(`.space-menu [data-nav="${st.nav}"]`).focus({preventScroll:true});return}
+ if(b.dataset.chat){chooseChat(b.dataset.chat);return}
+ if(b.hasAttribute('data-edit')){st.edit=Number(b.dataset.edit);const s=st.services[st.edit];$('#edit-title').textContent='编辑 '+s.name;$('#edit-value').value=s.detail;dialog.showModal();$('#edit-value').focus();return}
+ if(b.id==='history-toggle'){if(window.innerWidth<=760||window.innerWidth<=1030&&st.workOpen){st.mobileHistory=!st.mobileHistory}else{st.history=!st.history}retainScroll(render);return}
+ if(b.id==='new-chat'){const id='new-'+ ++seq;st.chats.unshift({id,title:'新对话 '+seq,time:'刚刚',draft:'',turns:[],scroll:null,object:null});$('.history-search').value='';chooseChat(id);draft.focus();return}
+ if(b.id==='remove-context'){active().object=null;renderComposer();draft.focus();return}
+ if(b.id==='hide-chat'){retainScroll(()=>{st.side=false;render()});$('#show-chat').focus({preventScroll:true});return}
+});
+$('#show-chat').addEventListener('click',()=>{retainScroll(()=>{st.side=true;render()});$('#hide-chat').focus({preventScroll:true})});
+$('#handoff').addEventListener('click',()=>{st.side=true;active().object='工作空间 · '+K[st.nav][0];retainScroll(render);draft.focus({preventScroll:true})});
+$$('[data-mode-btn]').forEach(b=>b.addEventListener('click',()=>mode(b.dataset.modeBtn)));
+$('.history-search').addEventListener('input',renderHistory);
+draft.addEventListener('input',()=>{active().draft=draft.value;renderComposer()});
+draft.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();$('#composer').requestSubmit()}});
+$('#composer').addEventListener('submit',e=>{e.preventDefault();const c=active(),text=c.draft.trim();if(!text)return;c.turns.push({text,object:c.object});c.draft='';c.object=null;renderComposer();renderMessages();transcript.scrollTop=transcript.scrollHeight;draft.focus()});
+$('#cancel-edit').addEventListener('click',()=>dialog.close());
+$('#edit-form').addEventListener('submit',e=>{e.preventDefault();const v=$('#edit-value').value.trim();if(!v)return;const index=st.edit;st.services[index].detail=v;dialog.close();renderManage();$(`[data-edit="${index}"]`).focus();toast('服务说明已在演示中保存')});
+const divider=$('#divider');
+function setPaneWidth(percent){const bench=st.mode==='bench';main.style.setProperty(bench?'--tool-width':'--chat-width',Math.min(bench?55:49,Math.max(bench?35:26,percent))+'%')}
+divider.addEventListener('pointerdown',e=>{divider.setPointerCapture(e.pointerId);divider.classList.add('dragging')});
+divider.addEventListener('pointermove',e=>{if(divider.hasPointerCapture(e.pointerId)){const box=main.getBoundingClientRect();setPaneWidth((box.right-e.clientX)/box.width*100)}});
+divider.addEventListener('lostpointercapture',()=>divider.classList.remove('dragging'));
+divider.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();const p=st.mode==='bench'?$('#inspector'):$('#chat');setPaneWidth(p.offsetWidth/main.offsetWidth*100+(e.key==='ArrowLeft'?2:-2))}});
+render();renderMessages();
+</script></body></html>

@@ -1,18 +1,40 @@
 .development-work-environment-shell{height:100dvh;min-height:0;min-width:0;overflow:hidden}
-.development-work-environment-shell .harness-shell-body{flex-direction:row-reverse}
-.development-work-environment-shell.is-conversation-left .harness-shell-body{flex-direction:row}
-.development-work-environment-shell .harness-environment-region{flex:1;min-width:0;overflow:hidden;border-left:0}
-.development-work-environment-shell .harness-conversation-region{position:relative;z-index:10;flex:0 0 calc(var(--development-conversation-width) + 52px);max-width:100%;min-width:0;overflow:visible}
-.development-work-environment-shell.is-conversation-focused .harness-conversation-region{flex:1}
-.development-work-environment-shell.is-conversation-collapsed .harness-conversation-region{flex:0 0 52px}
-.development-conversation-slot{position:relative;display:flex;flex:1;min-height:0;min-width:0}
-.development-work-environment-shell .harness-environment-region .app-shell{height:100%;min-height:0}
+.app-shell .topbar-identity{display:flex;align-items:center;gap:inherit;min-width:0}
+.app-shell.development-work-environment-shell > .development-topbar{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);min-height:48px;z-index:21;flex-wrap:nowrap}
+.development-topbar .topbar-actions{min-width:0;justify-self:end}
+/* The full preview identity remains on the status element; it must not displace the mode tabs. */
+.development-topbar .preview-identity > span:not(.preview-identity-label){display:none}
+.development-mode-navigation{height:100%;display:flex;align-items:stretch;gap:4px;white-space:nowrap}
+.development-mode-navigation button{border:0;border-bottom:2px solid transparent;background:transparent;color:var(--soft-muted);padding:0 12px;font:inherit;cursor:pointer}
+.development-mode-navigation button:hover,.development-mode-navigation button[aria-current=page]{color:var(--soft-ink)}
+.development-mode-navigation button[aria-current=page]{border-color:var(--soft-primary);font-weight:650}
+.development-mode-navigation button:focus-visible{outline:2px solid var(--soft-primary);outline-offset:-3px}
+.development-shell-body{display:flex;flex:1;flex-direction:row-reverse;min-height:0;min-width:0;overflow:hidden}
+.is-workspace.is-conversation-left .development-shell-body,.is-workbench .development-shell-body{flex-direction:row}
+.development-engineering-region{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
+.development-engineering-region[hidden],.development-engineering-content[hidden]{display:none}
+.development-engineering-content{display:flex;flex:1;min-width:0;min-height:0}
+.development-work-environment-shell .development-engineering-content>.app-shell{width:100%;height:100%;min-height:0}
+.development-engineering-content>.app-shell.has-primary-navigation>.app-frame{height:auto}
+.development-conversation-slot{position:relative;z-index:10;display:flex;flex:0 0 calc(var(--development-conversation-width) + 52px);max-width:100%;min-height:0;min-width:0}
+.is-conversation-collapsed .development-conversation-slot{flex-basis:52px}
+.is-workbench .development-conversation-slot{flex:1}
+.has-workbench-tools .development-engineering-region{flex:0 1 49%;border-inline-start:1px solid var(--soft-line);background:var(--soft-surface)}
+.has-workbench-tools .harness-workspace-home{flex:1;min-height:0}
+.has-workbench-tools .development-engineering-content .primary-navigation,.has-workbench-tools .development-engineering-content .workspace-page-tabs{display:none}
 .development-harness-frame.in-shell,.development-harness-frame.in-shell.is-full{position:relative;inset:auto;flex:1;width:100%!important;max-width:none;height:100%;min-height:0;overflow:visible}
+@media(max-width:1050px){.development-topbar .preview-identity{display:none}.development-topbar .brand-link strong{display:none}.development-topbar .workspace-switcher .context-label{display:none}}
 @media(max-width:760px){
-  .development-work-environment-shell .harness-shell-body,
-  .development-work-environment-shell.is-conversation-left .harness-shell-body{flex-direction:column}
-  .development-work-environment-shell .harness-conversation-region,.development-work-environment-shell .harness-environment-region{flex:1}
-  .development-work-environment-shell.is-conversation-collapsed .harness-conversation-region{flex:0 0 52px}
+  .app-shell.development-work-environment-shell > .development-topbar{grid-template-columns:minmax(0,1fr) auto auto;gap:5px;padding-inline:6px}
+  .development-topbar .topbar-identity,.development-topbar .topbar-actions{gap:4px}
+  .development-topbar .development-environment-badge,.development-topbar .topbar-actions .workbench-search-trigger-label{display:none}
+  .development-topbar .workspace-switcher{max-width:100%;padding-inline:4px}.development-topbar .workspace-switcher strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .development-mode-navigation{gap:0}.development-mode-navigation button{padding-inline:5px}
+  .development-topbar #open-agent-action{font-size:0}.development-topbar #open-agent-action .anticon{font-size:var(--icon-size-regular)}
+  .development-work-environment-shell .development-shell-body{flex-direction:column-reverse}
+  .development-work-environment-shell.is-workbench .development-shell-body{flex-direction:column}
+  .development-work-environment-shell .development-conversation-slot{flex:1}.development-work-environment-shell.is-conversation-collapsed .development-conversation-slot{flex:0 0 52px}
+  .has-workbench-tools .development-engineering-region{flex:0 0 48%;border-inline-start:0;border-top:1px solid var(--soft-line)}
   .development-work-environment-shell .harness-conversation-surface{flex-direction:column}
   .development-work-environment-shell .harness-conversation-surface>.ac-panel{width:100%!important;max-width:100%;flex:1;min-height:0}
   .development-work-environment-shell .harness-conversation-surface>.ac-divider{display:none}

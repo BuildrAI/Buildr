@@ -20,6 +20,7 @@ export type HarnessConversationHost = {
   renderContext?(conversation: ConversationView, apply: (value: ConversationView, observedRevision?: string) => void): ReactNode;
   /** The assembled host interprets its own objects; ordinary files use HarnessDirectoryFiles. */
   openObject?(reference: string, scopePath: string): void;
+  modeSwitchInHost?: boolean;
   requestLayout?(action: 'collapse' | 'full', full?: boolean): void;
   onWidthChange?(width: number): void;
   /** True when standalone Harness Web owns the viewport without an assembled work environment. */
