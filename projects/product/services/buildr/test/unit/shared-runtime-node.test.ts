@@ -35,7 +35,7 @@ test('resolveHostNodeExecutable 仅在路径存在且版本一致时采纳 BUILD
 test('sharedRuntimeNodeRoot 在测试隔离环境忽略 BUILDR_HOST_HOME，在真实环境按宿主目录统一解析', () => {
   assert.equal(
     sharedRuntimeNodeRoot({
-      env: { BUILDR_SHARED_NODE_ROOT: '/custom/shared/runtime', BUILDR_HOST_HOME: '/Users/real-host', NODE_TEST_CONTEXT: '1' },
+      env: { BUILDR_SHARED_NODE_ROOT: '/custom/shared/runtime', BUILDR_HOST_HOME: '/fixture/macos-host', NODE_TEST_CONTEXT: '1' },
       platform: 'darwin',
       fallbackDataRoot: '/tmp/test-data',
     }),
@@ -43,7 +43,7 @@ test('sharedRuntimeNodeRoot 在测试隔离环境忽略 BUILDR_HOST_HOME，在�
   );
   assert.equal(
     sharedRuntimeNodeRoot({
-      env: { BUILDR_HOST_HOME: '/Users/real-host', NODE_TEST_CONTEXT: '1', HOME: '/tmp/test-home' },
+      env: { BUILDR_HOST_HOME: '/fixture/macos-host', NODE_TEST_CONTEXT: '1', HOME: '/tmp/test-home' },
       platform: 'darwin',
       fallbackDataRoot: '/tmp/test-data',
     }),
@@ -51,18 +51,18 @@ test('sharedRuntimeNodeRoot 在测试隔离环境忽略 BUILDR_HOST_HOME，在�
   );
   assert.equal(
     sharedRuntimeNodeRoot({
-      env: { BUILDR_HOST_HOME: '/Users/real-host', BUILDR_TEST_STATE_REQUIRED: '1', HOME: '/tmp/test-home' },
+      env: { BUILDR_HOST_HOME: '/fixture/macos-host', BUILDR_TEST_STATE_REQUIRED: '1', HOME: '/tmp/test-home' },
       platform: 'darwin',
     }),
     path.join('/tmp/test-home', 'Library', 'Application Support', 'Buildr', 'runtime'),
   );
   assert.equal(
     sharedRuntimeNodeRoot({
-      env: { BUILDR_HOST_HOME: '/Users/real-host', HOME: '/tmp/isolated-agent-home' },
+      env: { BUILDR_HOST_HOME: '/fixture/macos-host', HOME: '/tmp/isolated-agent-home' },
       platform: 'darwin',
-      fallbackDataRoot: '/Users/real-host/Library/Application Support/Buildr Dev',
+      fallbackDataRoot: '/fixture/macos-host/Library/Application Support/Buildr Dev',
     }),
-    '/Users/real-host/Library/Application Support/Buildr/runtime',
+    '/fixture/macos-host/Library/Application Support/Buildr/runtime',
   );
   assert.equal(
     sharedRuntimeNodePath({

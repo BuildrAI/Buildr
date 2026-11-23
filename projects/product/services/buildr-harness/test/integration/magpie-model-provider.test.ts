@@ -22,8 +22,8 @@ test('Magpie connects a verified existing gateway without launching and isolates
       quotaReads++;
       if(quotaFail)return res.writeHead(503).end('{"error":"upstream sensitive body"}');
       return res.end(JSON.stringify({data:[
-        {provider:'codex',name:'Codex',user:'alice@example.test',plan:'Pro',balance:'12.35 credits',readAt:'2026-11-23T00:00:00Z',windows:[{name:'7d',remaining:0,resetsAt:'2026-11-25T00:00:00Z'}],token:'fixture-private-token'},
-        {provider:'codex',name:'Codex',user:'anna@example.test',balance:'$4.10',error:'private upstream message',windows:[{name:'5h',remaining:140}]},
+        {provider:'codex',name:'Codex',user:'account-1@example.com',plan:'Pro',balance:'12.35 credits',readAt:'2026-11-23T00:00:00Z',windows:[{name:'7d',remaining:0,resetsAt:'2026-11-25T00:00:00Z'}],token:'fixture-private-token'},
+        {provider:'codex',name:'Codex',user:'account-2@example.com',balance:'$4.10',error:'private upstream message',windows:[{name:'5h',remaining:140}]},
       ]}));
     }
     if(req.url==='/v1/responses'&&req.method==='POST'){
