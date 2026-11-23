@@ -3,4 +3,3 @@
 .scoped-search-picker .anticon { flex:none; font-size:var(--icon-size-tiny); }
 .scoped-search-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .scoped-search-picker.is-icon-only .ant-btn { width:24px; padding-inline:0; }
-.scoped-search-picker:focus-within { border-inline-start-color:var(--soft-primary,#397d74); }
