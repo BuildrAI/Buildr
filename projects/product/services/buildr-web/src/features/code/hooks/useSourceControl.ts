@@ -34,7 +34,9 @@ export function useSourceControlSummary(workspaceId?: string | null) {
 export function useSourceControl(workspaceId: string, taskId?: string, active = true) {
   const shared = useContext(WorkspaceSourceControlContext);
   const observer = shared && shared.workspaceId === workspaceId ? shared.observer : null;
+  const priority = useRef<{workspaceId: string; taskId?: string; repositoryId: string} | undefined>(undefined);
   const catalog = useMemo(() => observer?.catalog(taskId) || createSourceControlCatalog(createSourceControlRefreshLoader({
+    preferredRepository: () => priority.current?.workspaceId === workspaceId && priority.current.taskId === taskId ? priority.current.repositoryId : undefined,
     inventory:signal => codeApi.sourceControlInventory(workspaceId, {taskId}, signal),
     repository:(repositoryId, signal) => codeApi.sourceControl(workspaceId, {taskId, repositoryId}, signal),
   })), [workspaceId, taskId, observer]);
@@ -58,7 +60,11 @@ export function useSourceControl(workspaceId: string, taskId?: string, active = 
   const refresh = useMemo(() => observer ? (repositoryId?: string) => observer.refresh(repositoryId) : catalog.refresh, [observer, catalog]);
   const repositories = useMemo(() => state.data?.repositories.map(repository => ({...sourceControlRepository(repository), cached:state.cachedRepositoryIds?.includes(repository.id) || false, readVersion:String(state.versions[repository.id] || ''), refsVersion:String(state.refsVersions[repository.id] || ''),
     diagnostics:[...repository.diagnostics.filter(item => item.code !== 'code_source_control_pending').map(item => item.message), ...(state.repositoryErrors[repository.id] ? [state.repositoryErrors[repository.id]] : [])]})) || [], [state]);
-  return { repositories, reader, readKey: workspaceId, selection: completedSelection.current?.catalog === catalog ? completedSelection.current.value : undefined, refresh,
+  const prioritize = (repositoryId: string) => {
+    priority.current = {workspaceId, taskId, repositoryId};
+    observer?.prioritize(repositoryId, taskId);
+  };
+  return { repositories, reader, prioritize, readKey: workspaceId, selection: completedSelection.current?.catalog === catalog ? completedSelection.current.value : undefined, refresh,
     observation: { loading: state.loading, error: state.error, readAt: state.cachedRepositoryIds?.length ? state.cachedReadAt || state.data?.readAt || '' : state.data?.readAt || '', cached:Boolean(state.cachedRepositoryIds?.length),
       diagnostics: [...watch.diagnostics, ...(state.data?.diagnostics.filter(item => item.code !== 'code_source_control_pending').map(item => item.message) || []), ...Object.entries(state.repositoryErrors).filter(([, error]) => error).map(([id, error]) => { const repository = state.data?.repositories.find(item => item.id === id); return (repository ? codeRepositoryLabel(repository) : id) + '：' + error; })], truncated: state.data?.coverage.truncated || false } };
 }

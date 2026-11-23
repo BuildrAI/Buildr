@@ -3,6 +3,7 @@ import type { CodeSourceControlResponse } from './api/code-api';
 export type SourceControlProgress = (value: CodeSourceControlResponse, phase: 'inventory' | 'repository') => void;
 export type SourceControlLoader = (repositoryId: string | undefined, signal: AbortSignal, onProgress?: SourceControlProgress, shared?: boolean) => Promise<CodeSourceControlResponse>;
 type Readers = {
+  preferredRepository?(): string | undefined;
   inventory(signal: AbortSignal): Promise<CodeSourceControlResponse>;
   repository(repositoryId: string, signal: AbortSignal, shared?: boolean): Promise<CodeSourceControlResponse>;
 };
@@ -30,11 +31,15 @@ export function createSourceControlRefreshLoader(readers: Readers): SourceContro
       completed.set(repository.id, value);
       onProgress?.(value, 'repository');
     }
-    let cursor = 0;
+    const remaining = new Map(scheduled.map(repository => [repository.id, repository]));
+    const scopePriority = new Set(inventory.selectedRepositoryIds);
     const worker = async () => {
-      while (cursor < scheduled.length) {
+      while (remaining.size) {
         signal.throwIfAborted();
-        const repository = scheduled[cursor++];
+        const preferred = readers.preferredRepository?.();
+        const repository = (preferred && remaining.get(preferred))
+          || [...remaining.values()].find(item => scopePriority.has(item.id)) || remaining.values().next().value!;
+        remaining.delete(repository.id);
         let value: CodeSourceControlResponse;
         try {
           value = await readers.repository(repository.id, signal, shared);

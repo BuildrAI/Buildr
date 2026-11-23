@@ -63,7 +63,7 @@ export function createRepositoryCloneSupervisor({ timeoutMs = CLONE_TIMEOUT_MS, 
   activeSupervisors.add(self);
   const key = (root: string, id: string) => path.resolve(root) + '\0' + id;
 
-  function status(root: string, repositoryId: string, repository?: Repository): RepositoryCloneStatus {
+  function status(root: string, repositoryId: string, repository?: {source: Parameters<typeof resolveSourceRoot>[1]}): RepositoryCloneStatus {
     const current = states.get(key(root, repositoryId));
     const location = repository ? resolveSourceRoot(root, repository.source) : current?.record.location;
     if (!location) return { ...emptyStatus };

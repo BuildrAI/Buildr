@@ -42,6 +42,8 @@ export type TreeProps = FoldProps & {
   onClone?(repositoryId: string): void;
   renderWorktreeControl?(repository: SourceControlRepository, worktree: SourceControlWorktree, ready: boolean, context: SourceControlRowContext): ReactNode;
   renderWorktreeActions?(repository: SourceControlRepository, worktree: SourceControlWorktree, ready: boolean, context: SourceControlRowContext): ReactNode;
+  pendingRepositoryId?: string;
+  onPickPending?(repository: SourceControlRepository): void;
   syncAction?(repository: SourceControlRepository, worktree: SourceControlWorktree): {pending: boolean; run(): void} | undefined;
 };
 function RepositoryCloneControl({repository, onClone}: {repository: SourceControlRepository; onClone(repositoryId: string): void}) {
@@ -49,7 +51,7 @@ function RepositoryCloneControl({repository, onClone}: {repository: SourceContro
   if (clone?.state === 'cloning') return <Tooltip title="正在后台克隆代码库"><Button type="text" size="small" className="source-control-row-menu-button" icon={<LoadingOutlined aria-hidden spin />} aria-label={'正在克隆代码库 ' + label} aria-busy="true" /></Tooltip>;
   return <Tooltip title={clone?.state === 'failed' ? `克隆失败：${clone.diagnostic || '原因未确认'}，可重试` : '克隆代码库到登记位置'}><Button type="text" size="small" className="source-control-row-menu-button" icon={<CloudDownloadOutlined aria-hidden />} aria-label={'克隆代码库 ' + label} onClick={() => onClone(repository.id)} /></Tooltip>;
 }
-export function SourceControlRepositoryTree({repositories, ready, active, selectedWorktreeKey, sideDirection = 'right', onPick, onOpenTask, onClone, renderWorktreeControl, renderWorktreeActions, syncAction, ...fold}: TreeProps) {
+export function SourceControlRepositoryTree({repositories, ready, active, selectedWorktreeKey, sideDirection = 'right', onPick, onOpenTask, onClone, renderWorktreeControl, renderWorktreeActions, syncAction, pendingRepositoryId, onPickPending, ...fold}: TreeProps) {
   const popoverPlacement = sideDirection === 'left' ? 'leftTop' : 'rightTop';
   const hasWorktreeActions = Boolean(renderWorktreeControl || renderWorktreeActions);
   function worktreeControl(repository: SourceControlRepository, worktree: SourceControlWorktree, branchVisible: boolean, rowVisible:boolean) {
@@ -64,16 +66,19 @@ export function SourceControlRepositoryTree({repositories, ready, active, select
     <div className="source-control-repository-tree-scroll" aria-label="代码库与工作树列表">
     {repositories.map(repository => {
       const main = repository.worktrees.find(worktree => worktree.isMain);
+      const canPickPending = Boolean(repository.pending && onPickPending);
+      const pendingSelected = pendingRepositoryId === repository.id;
+      const selected = pendingSelected || Boolean(main && selectedWorktreeKey === sourceControlWorktreeKey(repository.id, main.worktreeId));
       const children = repository.worktrees.filter(worktree => !worktree.isMain);
       const group = 'catalog-repo:' + repository.id, isOpen = open(fold.expanded, group), repositoryLabel = codeRepositoryLabel(repository), repositoryCode = codeRepositoryCode(repository);
       return <section key={repository.id} data-source-repository={repository.id}>
-      <SourceControlSourceRow className={'source-control-repository' + (main && selectedWorktreeKey === sourceControlWorktreeKey(repository.id, main.worktreeId) ? ' is-selected' : '')} worktreeId={main?.worktreeId} active={active} measureKey={measurement(repositoryCode, main)}>{({branchVisible, shortcutsVisible}) => <>
+      <SourceControlSourceRow className={'source-control-repository' + (selected ? ' is-selected' : '')} worktreeId={main?.worktreeId} active={active} measureKey={measurement(repositoryCode, main)}>{({branchVisible, shortcutsVisible}) => <>
         <button type="button" className="source-control-fold source-control-repository-fold" aria-label={(isOpen ? '折叠' : '展开') + '代码库 ' + repositoryLabel} aria-expanded={isOpen} onClick={() => fold.onToggle(group)}><span className="source-control-repository-chevron" aria-hidden="true">{isOpen ? <DownOutlined /> : <RightOutlined />}</span><BookOutlined /></button>
-        <div className="source-control-row-copy"><WorktreeLocationCard repository={repository} worktree={main} visible={active} sideDirection={sideDirection}><button type="button" className="source-control-repository-copy" disabled={!main} onClick={() => main && onPick(repository, main)} aria-label={'查看主工作树 · ' + repositoryLabel} aria-pressed={Boolean(main && selectedWorktreeKey === sourceControlWorktreeKey(repository.id, main.worktreeId))}>
+        <div className="source-control-row-copy"><WorktreeLocationCard repository={repository} worktree={main} visible={active} sideDirection={sideDirection}><button type="button" className="source-control-repository-copy" disabled={!main && !canPickPending} onClick={() => main ? onPick(repository, main) : canPickPending && onPickPending?.(repository)} aria-label={(canPickPending ? '优先读取代码库 · ' : '查看主工作树 · ') + repositoryLabel} aria-pressed={selected}>
           <strong><span className="source-control-row-name-text">{repositoryCode}{repository.simulated && <small>模拟</small>}</span></strong>
         </button></WorktreeLocationCard>{main && worktreeControl(repository, main, branchVisible, active)}</div>
-        <span className="source-control-row-shortcuts" aria-hidden={!shortcutsVisible || undefined} inert={!shortcutsVisible}><SourceControlWorktreeStatus worktree={main} name={repositoryLabel} visible={active && shortcutsVisible} popoverPlacement={popoverPlacement} syncAction={main && syncAction?.(repository, main)} /><TaskLink worktree={main} onOpenTask={onOpenTask} /></span>
-        {main ? worktreeActions(repository, main, branchVisible, active) : onClone && !repository.cached && <span className="source-control-row-action-slot" onClick={event => event.stopPropagation()}><RepositoryCloneControl repository={repository} onClone={onClone} /></span>}
+        <span className="source-control-row-shortcuts" aria-hidden={!shortcutsVisible || undefined} inert={!shortcutsVisible}>{repository.pending ? <small className="source-control-pending-label">待核对</small> : <SourceControlWorktreeStatus worktree={main} name={repositoryLabel} visible={active && shortcutsVisible} popoverPlacement={popoverPlacement} syncAction={main && syncAction?.(repository, main)} />}<TaskLink worktree={main} onOpenTask={onOpenTask} /></span>
+        {main ? worktreeActions(repository, main, branchVisible, active) : onClone && !repository.cached && !repository.pending && <span className="source-control-row-action-slot" onClick={event => event.stopPropagation()}><RepositoryCloneControl repository={repository} onClone={onClone} /></span>}
       </>}</SourceControlSourceRow>
       <div hidden={!isOpen} className="source-control-worktree-children">
         {children.map(worktree => <div key={worktree.worktreeId} data-source-worktree={worktree.worktreeId}>

@@ -1,6 +1,6 @@
 import type { CodeDependencies } from './code-application.ts';
 
-type Workspace = Pick<CodeDependencies, 'assetCatalog' | 'assetCatalogVersion' | 'repositoryCloneStatus' | 'repositoryCloneRequest'>;
+type Workspace = Pick<CodeDependencies, 'assetCatalog' | 'assetRegistration' | 'assetCatalogVersion' | 'repositoryCloneStatus' | 'repositoryCloneStatusForSource' | 'repositoryCloneRequest'>;
 type Projects = Pick<CodeDependencies, 'resolveSourceRoot' | 'projectDetail' | 'projectDocumentImageContext'>;
 type Worktrees = Pick<CodeDependencies, 'gitWorktreeEvidencePath' | 'gitWorktreeEvidenceDirectories' | 'createGitWorktreeEvidenceReader' | 'readGitWorktreeEvidence'>;
 type ReadTask = (root: string, id: string) => {
@@ -16,8 +16,10 @@ export function createCodeDependencies(
 ): CodeDependencies {
   return {
     assetCatalog: workspace.assetCatalog,
+    assetRegistration: workspace.assetRegistration,
     assetCatalogVersion: workspace.assetCatalogVersion,
     repositoryCloneStatus: workspace.repositoryCloneStatus,
+    repositoryCloneStatusForSource: workspace.repositoryCloneStatusForSource,
     repositoryCloneRequest: workspace.repositoryCloneRequest,
     resolveSourceRoot: projects.resolveSourceRoot,
     projectDetail: projects.projectDetail,

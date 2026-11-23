@@ -271,3 +271,24 @@ test('后端未取得Git身份而返回登记子目录时，失败只标陈旧�
   assert.ok(actual.diagnostics.some(item => item.code === 'code_source_control_stale'));
   catalog.dispose();
 });
+
+test('待核对仓库可改变下一读取位置，不重读在途仓库，也不改变名单顺序', async () => {
+  let preferred;
+  const requests = [], updates = [];
+  const loader = createSourceControlRefreshLoader({preferredRepository: () => preferred,
+    inventory: async () => inventory('slow', 'fast', 'third', 'last'),
+    repository: id => { const req = {...deferred(), id}; requests.push(req); return req.promise; },
+  });
+  const result = loader(undefined, new AbortController().signal, (value, phase) => updates.push([phase, value.repositories.map(item => item.id)]));
+  await settle();
+  assert.deepEqual(updates, [['inventory', ['slow', 'fast', 'third', 'last']]]);
+  assert.deepEqual(requests.map(item => item.id), ['slow', 'fast']);
+  preferred = 'third'; preferred = 'last';
+  requests[1].resolve(response(repository('fast'))); await settle();
+  assert.equal(requests[2].id, 'last', '最后一个显式选择取得下一个空位');
+  requests[2].resolve(response(repository('last'))); await settle();
+  assert.equal(requests[3].id, 'third', '已在途或已完成的优先库不会再排一次');
+  assert.deepEqual(updates.slice(1), [['repository', ['fast']], ['repository', ['last']]]);
+  requests[0].resolve(response(repository('slow'))); requests[3].resolve(response(repository('third')));
+  assert.deepEqual((await result).repositories.map(item => item.id), ['slow', 'fast', 'third', 'last']);
+});

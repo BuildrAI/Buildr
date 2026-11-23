@@ -11,8 +11,19 @@ export async function runSourceControlJourney({ t, page, workspaceUrl, capture, 
     const api = workspaceUrl.replace('/workspaces/', '/api/v1/workspaces/');
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(`${workspaceUrl}/code/source-control`);
-    await root.locator('.source-control-repository-copy').first().waitFor();
+    // Delay only delivery of real scoped status requests; the served app and Git reads stay real.
+    const scopedStatus = (url: URL) => url.pathname === new URL(`${api}/code/source-control`).pathname && url.searchParams.has('repositoryId');
+    let releaseStatus!: () => void;
+    const statusGate = new Promise<void>(resolve => { releaseStatus = resolve; });
+    await page.route(scopedStatus, async (route: any) => { await statusGate; await route.continue(); });
+    try {
+      await page.goto(`${workspaceUrl}/code/source-control`);
+      const waitingRepository = root.getByRole('button', { name: /^优先读取代码库 · / }).first();
+      await waitingRepository.click();
+      await root.locator('.source-control-list').getByText('正在核对所选代码库…').waitFor();
+      assert.equal(await waitingRepository.getAttribute('aria-pressed'), 'true');
+    } finally { releaseStatus(); }
+    // The browser scenario owner removes routes after all requests and assertions finish.
     await root.locator('.source-control-title .anticon-spin').waitFor({ state: 'hidden' });
 
     const response = await page.request.get(`${api}/code/source-control`);
