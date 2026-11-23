@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import test from 'node:test';
 import { createNativeExecutors } from '../../src/executors/index.ts';
@@ -20,6 +20,21 @@ import type { AgentRuntime } from '../../src/contracts.ts';
 
 const unused = { complete: true, paths: [] };
 const day = 24 * 60 * 60_000;
+async function waitForStorageHolder(child: ChildProcess, label: string) {
+  const stop = new AbortController();
+  const signal = AbortSignal.any([stop.signal, AbortSignal.timeout(10_000)]);
+  try {
+    const result = await Promise.race([
+      once(child.stdout!, 'data', { signal }).then(([data]) => ({ ready: String(data) })),
+      once(child, 'close', { signal }).then(([code, signal]) => ({ code, signal })),
+    ]);
+    assert.deepEqual(result, { ready: 'ready' }, `${label}: expected the file holder to announce readiness`);
+  } catch (cause) {
+    throw new Error(`${label}: file holder did not become ready`, { cause });
+  } finally {
+    stop.abort();
+  }
+}
 function fixture(t: test.TestContext) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-storage-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true })); return root;
@@ -163,7 +178,7 @@ test('real system observation protects files held by another process', { skip: p
   const root = fixture(t), cache = path.join(root, 'cache'), held = path.join(cache, 'plugin.js'); file(held);
   const child = spawn(process.execPath, ['-e', "require('fs').openSync(process.argv[1],'r');process.stdout.write('ready');setInterval(()=>{},1000)", held], { stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(async () => { if(child.exitCode===null&&child.signalCode===null){const exited=once(child,'exit');child.kill();await exited;} });
-  await once(child.stdout!, 'data');
+  await waitForStorageHolder(child, 'held storage file');
   const use = observeStorageUse(); assert.ok(use.complete);
   assert.equal(storageCandidate(root, 'cache', cache, cache, use, Infinity).reason, 'storage_in_use');
   const preview = storageCandidate(root, 'cache', cache, cache, unused, Infinity);
@@ -243,7 +258,7 @@ test('runtime preparation waits for another process short storage collection', a
   const source=new URL('../../src/process/ownership.ts',import.meta.url).href;
   const child=spawn(process.execPath,['--input-type=module','-e',`import {claim} from ${JSON.stringify(source)};const lock=claim(process.argv[1],'storage');process.stdout.write('ready');setTimeout(()=>lock.release(),150);`,dataRoot],{stdio:['ignore','pipe','pipe']});
   t.after(async()=>{if(child.exitCode===null){child.kill();await once(child,'exit');}});
-  await once(child.stdout!,'data');
+  await waitForStorageHolder(child, 'storage claim');
   assert.doesNotThrow(()=>prepareAgentRuntime({dataRoot,packageRoot:pkg,entry:'build/entry.js',node}));
 });
 
@@ -888,7 +903,7 @@ test('re-anchoring protected runtimes clears XNU hardlink attribution drift so u
 
   const child = spawn(process.execPath, ['-e', "require('fs').openSync(process.argv[1],'r');process.stdout.write('ready');setInterval(()=>{},1000)", liveUnit.node], { stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(async () => { if (child.exitCode === null && child.signalCode === null) { const exited = once(child, 'exit'); child.kill(); await exited; } });
-  await once(child.stdout!, 'data');
+  await waitForStorageHolder(child, 'retained runtime node');
   const generation = randomUUID();
   const liveRecord = { identity: { dataRoot, generation, pid: child.pid, runtime: liveUnit }, origin: 'http://127.0.0.1:1', token: 'fixture' };
   writePrivate(path.join(controlRoot(dataRoot), 'instance.json'), liveRecord);
@@ -958,7 +973,7 @@ test('runtime objects respect per-pass verification budgets, batch reclamation a
   const busyFile = path.join(remaining[1]!.path, process.platform === 'win32' ? 'payload.exe' : 'payload');
   const holder = spawn(process.execPath, ['-e', "require('fs').openSync(process.argv[1],'r');process.stdout.write('ready');setInterval(()=>{},1000)", busyFile], { stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(async () => { if (holder.exitCode === null && holder.signalCode === null) { const exited = once(holder, 'exit'); holder.kill(); await exited; } });
-  await once(holder.stdout!, 'data');
+  await waitForStorageHolder(holder, 'runtime object payload');
 
   const batchRemoved = removeRuntimeObjectBatch(root, remaining, () => true, observeStorageUse, Date.now() + 5000);
   assert.deepEqual(batchRemoved, [remaining[0]!.path]);
@@ -1138,7 +1153,7 @@ test('stable runtime Node paths share one hashless location across builds and da
   // 3. Node v1 -> v2 -> v3 upgrades replace the same path atomically even while a live process holds v1's inode open.
   const openHold = spawn(process.execPath, ['-e', "const fs=require('node:fs');const fd=fs.openSync(process.argv[1],'r');process.stdout.write('ready');setInterval(()=>{fs.readFileSync(process.argv[1]);},1000)", sharedPath], { stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(async () => { if (openHold.exitCode === null && openHold.signalCode === null) { const exited = once(openHold, 'exit'); openHold.kill(); await exited; } });
-  await once(openHold.stdout!, 'data');
+  await waitForStorageHolder(openHold, 'shared runtime node');
   const v1Ino = fs.lstatSync(sharedPath).ino;
   const rV2 = prepareAgentRuntime({ dataRoot: releasedRoot, packageRoot: pkg, entry: 'build/entry.js', node: nodeV2 });
   assert.equal(ensureStableRuntimeNode(releasedRoot, rV2), sharedPath);
@@ -1195,7 +1210,7 @@ test('stable runtime Node paths share one hashless location across builds and da
 
   const holder = spawn(process.execPath, ['-e', "require('fs').openSync(process.argv[1],'r');process.stdout.write('ready');setInterval(()=>{},1000)", legacyNodeV2], { stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(async () => { if (holder.exitCode === null && holder.signalCode === null) { const exited = once(holder, 'exit'); holder.kill(); await exited; } });
-  await once(holder.stdout!, 'data');
+  await waitForStorageHolder(holder, 'legacy runtime node');
 
   const recentPlan = inspectAgentStorage({ dataRoot, scanHomes: false, tempRoots: [], now: fs.statSync(legacyDirV1).mtimeMs + day - 1000 });
   assert.equal(recentPlan.items.find(item => item.path === legacyDirV1)?.reason, 'storage_recent');
