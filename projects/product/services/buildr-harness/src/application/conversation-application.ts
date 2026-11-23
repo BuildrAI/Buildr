@@ -1027,9 +1027,8 @@ export class ConversationApplication {
       !this.supplements.hasPending(workspaceId,id) && ![...this.repliesInFlight.values()].includes(id));
   }
   async verifyNext(workspaceId: string, id: string): Promise<void> {
-    const record = this.load(workspaceId, id);
+    this.load(workspaceId, id);
     await this.options.host.resolve(workspaceId);
-    if (record.view.taskId) await this.options.host.verify(workspaceId, record.view.taskId);
   }
   validatePending(workspaceId: string, id: string, input: SendDraft): SendDraft {
     if (input.continueRunId && !input.waitingHandoff) fail('agent_continue_unavailable', '恢复动作不能排队到其他执行之后，请核对当前状态再继续。', 409);
@@ -1917,7 +1916,9 @@ export class ConversationApplication {
   }
 
   private async verifyExecutionHost(record: StoredConversation): Promise<void> {
-    const {workspaceId,taskId}=record.view;
+    const {workspaceId}=record.view;
+    // Existing task associations supply context. Creating or changing an
+    // association verifies the work object separately from execution scope.
     // Identity and location decide whether this conversation still belongs to the scope it was
     // created in. The observation version also covers environment facts that legitimately change
     // while the directory stays the same (for example a restart), so a drifted version is
@@ -1928,7 +1929,6 @@ export class ConversationApplication {
       record.hostScope=workspace;
       try { this.save(record); } catch { /* The newer observation stays in effect even when persisting races another writer. */ }
     }
-    if(taskId)await this.options.host.verify(workspaceId,taskId);
   }
 
   private async execute(workspaceId: string, id: string, runId: string, prepared: ReturnType<ConversationApplication['prepare']>, retryCount?: number, hostVerified = false): Promise<void> {

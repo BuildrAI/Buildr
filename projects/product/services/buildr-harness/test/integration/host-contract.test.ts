@@ -6,6 +6,8 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createAgentService, executionScopeKey, AgentServiceError } from '../../src/index.ts';
 import type { AgentExecutor, AgentHostCapabilities, ExecutorSendInput } from '../../src/index.ts';
+import { LocalWorkspaceAuthority } from '../../src/application/local-workspaces.ts';
+import { AgentHostRegistry, exposeAgentHost } from '../../src/process/host-channel.ts';
 
 function executor(id: string, sends: ExecutorSendInput[], hold = false): AgentExecutor {
   const capabilities = { text:true,images:false,approval:false,questions:false,stop:true,resume:true,maxInputBytes:65536 };
@@ -60,6 +62,60 @@ test('a host with no Buildr business modules supports separate sources, handoff 
     await assert.rejects(service.conversations.create(alpha,{}),{code:'agent_host_unavailable'});
     available=true;wrong=true;await assert.rejects(service.conversations.create(alpha,{}),{code:'agent_scope_binding_changed'});
   }finally{await service.close();fs.rmSync(root,{recursive:true,force:true});}
+});
+
+test('a task-linked conversation can continue in its registered local workspace while Development is offline', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-offline-linked-workspace-'));
+  const dataRoot = path.join(root, 'profile');
+  const cwd = path.join(root, 'workspace');
+  const scope = randomUUID();
+  fs.mkdirSync(path.join(cwd, '.buildr'), {recursive:true});
+  fs.mkdirSync(dataRoot);
+  fs.writeFileSync(path.join(cwd,'.buildr','workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: ${scope}\nname: Fixture\n`);
+  fs.writeFileSync(path.join(dataRoot,'workspace-registry.json'), JSON.stringify({
+    schemaVersion:'buildr.local-workspace-registry/v1', roots:[cwd],
+  }));
+  const local = new LocalWorkspaceAuthority(dataRoot);
+  const host = new AgentHostRegistry(undefined, local);
+  const peer = await exposeAgentHost('buildr', {
+    async resolveExecutionScope(input) { return local.resolveExecutionScope(input)!; },
+    async verifyWorkObject({ref}) { return {ref,revision:'one'}; },
+    async listExecutionScopes() { return {refs:[{sourceId:'buildr',id:scope}],revision:'one'}; },
+  });
+  const sends: ExecutorSendInput[] = [];
+  const service = createAgentService({dataRoot, host, legacySourceId:'buildr', executors:[executor('fixture',sends)], modelProviders:[]});
+  t.after(async () => {
+    await service.close();
+    fs.rmSync(root,{recursive:true,force:true});
+  });
+  host.attach(peer.peer);
+  const chat = await service.conversations.create(scope,{taskId:'existing-task'}).finally(() => peer.close());
+  await service.connections.connect('fixture',{expectedRevision:service.connections.read('fixture').revision});
+
+  async function send(text: string) {
+    await service.verifyNext(scope,chat.id);
+    const view = service.conversations.read(scope,chat.id);
+    const draft = {expectedRevision:view.revision,connectionId:'fixture',text};
+    const preview = service.conversations.prepareSend(scope,chat.id,draft);
+    const submitted = service.conversations.send(scope,chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+    await settled(() => {
+      const run = service.conversations.read(scope,chat.id).run;
+      return run?.id === submitted.run.id && run.status === 'completed';
+    });
+  }
+
+  host.detach(peer.peer.peerId);
+  await send('continue after the host detached');
+  host.attach(peer.peer);
+  await send('continue with an unreachable callback');
+  assert.equal(sends.length,2);
+  const current = service.conversations.read(scope,chat.id);
+  assert.equal(current.taskId,'existing-task');
+  assert.equal(current.cwd,fs.realpathSync(cwd));
+  await assert.rejects(service.conversations.update(scope,chat.id,{
+    expectedRevision:current.revision,taskIds:['existing-task','new-task'],
+  }),{code:'agent_host_unavailable'});
+  assert.deepEqual(service.conversations.read(scope,chat.id).taskIds,['existing-task']);
 });
 
 test('authority loss after native acceptance does not cancel work or block its exact stop',async()=>{

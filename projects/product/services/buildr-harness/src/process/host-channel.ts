@@ -70,7 +70,7 @@ export class AgentHostRegistry implements AgentHostCapabilities {
         // credentials or arbitrary response bodies in the failure diagnostic.
       }
     }
-    if (peers.length === 0 && method === 'resolveExecutionScope' && sourceId === BUILDR_SOURCE_ID) {
+    if (method === 'resolveExecutionScope' && sourceId === BUILDR_SOURCE_ID) {
       const scopeInput = input as { ref?: ExecutionScopeRef; expectedRevision?: string };
       if (this.localWorkspaces && scopeInput?.ref) {
         const resolved = this.localWorkspaces.resolveExecutionScope({ ref: scopeInput.ref, expectedRevision: scopeInput.expectedRevision });

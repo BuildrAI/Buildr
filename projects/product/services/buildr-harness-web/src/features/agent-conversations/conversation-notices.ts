@@ -71,10 +71,11 @@ export function conversationHandoffReceipt(entry:Pick<ConversationEntry,'handoff
 }
 
 /** Receipt and tool outcomes are independent. Failure alone never permits replay. */
-export function conversationFailureImpact(run: Pick<ConversationRun,'status'|'accepted'|'tools'|'diagnostic'>): string | undefined {
+export function conversationFailureImpact(run: Pick<ConversationRun,'status'|'accepted'|'tools'|'diagnostic'>, inputStatus?: ConversationEntry['status']): string | undefined {
   if(run.status!=='failed')return;
   const preflight=/agent_context_binding_mismatch|原生上下文与当前目录或配置身份不匹配|本轮要求未发送|本次.*未发送|消息未发送：Claude Code 配套组件/.test(run.diagnostic??'');
-  const delivery=run.accepted?'本轮已受理，但未完成。':preflight?'本次要求未送达。':'本次要求是否送达尚未确认。';
+  const undelivered=inputStatus==='failed'||inputStatus===undefined&&preflight;
+  const delivery=run.accepted?'本轮已受理，但未完成。':undelivered?'本次要求未送达。':'本次要求是否送达尚未确认。';
   const work=run.tools.some(tool=>tool.status!=='completed')?'仍有工具结果待确认，不会自动重跑。':'';
   return `${delivery}${work}`;
 }
@@ -114,6 +115,9 @@ function failureRetrySeconds(diagnostic: string): number | undefined {
 /** 只提炼可公开的原因；原始厂商内容仍留在技术详情中。 */
 export function conversationFailureReason(diagnostic?: string, fault?: Pick<ConversationRun,'fault'>['fault']): ConversationFailureReason {
   const text = diagnostic ?? '';
+  if (/agent_host_unavailable|执行环境提供方暂时不可达|工作对象提供方暂时不可用/.test(text)) {
+    return { summary: '执行环境提供方暂时不可达。' };
+  }
   if (/agent_claude_sdk_missing|Claude Code 配套组件/.test(text)) {
     return { summary: 'Claude Code 配套组件缺失或无法加载。', action: '请在「设置 → 智能体」中检查更新并修复 Claude Code。' };
   }

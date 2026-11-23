@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {isQuietAutomaticContinuation, conversationFailureImpact, visibleConversationEntries, latestVisibleConversationMessage, conversationModelWarning, conversationActionError, conversationHandoffReceipt, conversationNativeSessionDiagnostic, conversationNativeSessionIssue, conversationNativeSessionSummary, conversationSystemNoticeText} from '../../src/features/agent-conversations/conversation-notices.ts';
+import {isQuietAutomaticContinuation, conversationFailureImpact, conversationFailureReason, visibleConversationEntries, latestVisibleConversationMessage, conversationModelWarning, conversationActionError, conversationHandoffReceipt, conversationNativeSessionDiagnostic, conversationNativeSessionIssue, conversationNativeSessionSummary, conversationSystemNoticeText} from '../../src/features/agent-conversations/conversation-notices.ts';
 
 const receipt=(id, extra={})=>({id,kind:'notice',role:'system',text:'已请求重试上次未送达的要求。',participantId:'codex',...extra});
+test('宿主未连接时说明原因，并按原输入记录区分未送达和待确认',()=>{
+  const diagnostic='执行环境提供方暂时不可达（verifyWorkObject；no_registered_peer）；原执行和记录已保留。';
+  const run={status:'failed',accepted:false,tools:[],diagnostic};
+  assert.match(conversationFailureReason(diagnostic).summary,/执行环境提供方暂时不可达/);
+  assert.match(conversationFailureImpact(run,'failed'),/未送达/);
+  assert.match(conversationFailureImpact(run,'unknown'),/尚未确认/);
+  assert.match(conversationFailureImpact(run),/尚未确认/);
+});
 test('连续重试仅显示最后一条，保留原始记录与后续回复',()=>{
   const entries=[receipt('one'),receipt('two'),receipt('three'),{id:'reply',kind:'message',role:'assistant',text:'继续执行'}];
   const original=structuredClone(entries);
