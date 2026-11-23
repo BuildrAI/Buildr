@@ -1,0 +1,40 @@
+name: Preserve Harness candidate
+on:
+  workflow_dispatch:
+    inputs:
+      data_commit:
+        description: Exact data commit on the candidate transport ref
+        required: true
+        type: string
+      original_sha256:
+        description: SHA-256 of the original tarball
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  preserve:
+    if: github.ref == 'refs/heads/main' && github.repository == 'BuildrAI/Buildr'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+      - name: Verify and restore original data
+        env:
+          DATA_COMMIT: ${{ inputs.data_commit }}
+          ORIGINAL_SHA256: ${{ inputs.original_sha256 }}
+        run: |
+          [[ "$DATA_COMMIT" =~ ^[a-f0-9]{40}$ && "$ORIGINAL_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          git fetch --no-tags --depth=1 origin "refs/heads/release-data/harness-$ORIGINAL_SHA256"
+          test "$(git rev-parse FETCH_HEAD)" = "$DATA_COMMIT"
+          mkdir "$RUNNER_TEMP/harness-original"
+          node skills/buildr-release/scripts/harness-handoff.ts restore "$RUNNER_TEMP/harness-original" "$ORIGINAL_SHA256" "$DATA_COMMIT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: harness-original-${{ inputs.original_sha256 }}
+          path: ${{ runner.temp }}/harness-original
+          if-no-files-found: error
