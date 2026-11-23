@@ -5,9 +5,13 @@
     "darwin": {
       "launcherImplemented": true,
       "support": "supported",
-      "architectures": ["arm64"],
+      "architectures": [
+        "arm64"
+      ],
       "evidenceRequired": "准确安装包的真实应用打开、重复及并发打开、共享后台身份与清理",
-      "unverifiedArchitectures": ["x64"]
+      "unverifiedArchitectures": [
+        "x64"
+      ]
     },
     "win32": {
       "launcherImplemented": true,
@@ -21,9 +25,11 @@
   },
   "publicationApproved": true,
   "publicationApproval": {
-    "version": "0.1.0-rc.1",
+    "version": "0.1.0-rc.2",
     "platform": "darwin",
-    "architectures": ["arm64"],
-    "authority": "Buildr 发行对话 422cb3d8-db73-5fb3-a3cf-a852346af7f7：首发不等待其他系统验证"
+    "architectures": [
+      "arm64"
+    ],
+    "authority": "Buildr 发行对话 422cb3d8-db73-5fb3-a3cf-a852346af7f7：本批三产品 RC，独立 Harness 延续 macOS arm64 验收范围。"
   }
 }

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {inspectCandidate} from './harness-release.ts';
+import {assertAdmittedHarnessOriginal} from './harness-release-admission.ts';
 
 const REPO='BuildrAI/Buildr';
 const WORKFLOW=`${REPO}/.github/workflows/publish-harness.yml@refs/heads/main`;
@@ -33,15 +34,10 @@ if (!dir||!expectedCommit||!expectedSha||!['publish','readback'].includes(mode??
     process.env.GITHUB_EVENT_NAME!=='workflow_dispatch'||!process.env.ACTIONS_ID_TOKEN_REQUEST_URL||!process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN||!process.env.GH_TOKEN) throw Error('protected-harness-publisher-required');
 const {candidate,file,distribution}=inspectCandidate(dir);
 if(candidate.target!==process.env.RELEASE_TARGET||candidate.version!==process.env.RELEASE_VERSION||candidate.rehearsal||candidate.sourceCommit!==expectedCommit||candidate.sha256!==expectedSha||
-    git('rev-parse','HEAD')!==process.env.GITHUB_SHA||git('rev-parse','HEAD^{tree}')!==candidate.sourceTree) throw Error('publication-candidate-source-mismatch');
+    git('rev-parse','HEAD')!==process.env.GITHUB_SHA) throw Error('publication-candidate-source-mismatch');
 if(candidate.target==='harness'&&distribution?.status!=='eligible')throw Error('distribution-approval-required');
-const proof=JSON.parse(fs.readFileSync(path.join(dir,'verification.json'),'utf8'));
-if(proof.status!=='passed'||proof.sha256!==candidate.sha256||proof.platform!=='darwin'||proof.arch!=='arm64')throw Error('local-package-proof-required');
-if(candidate.target==='harness'){
-  if(proof.check!=='installed-cli-launcher-web'||proof.node!=='v24.15.0')throw Error('installed-harness-proof-required');
-}else{
-  if(proof.check!=='installed-dsh-npm-and-github'||typeof proof.dshVersion!=='string'||!/^0\.2\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(proof.dshVersion)||
-      typeof proof.harnessVersion!=='string'||!/^0\.1\.\d+(?:-rc\.[1-9]\d*)?$/.test(proof.harnessVersion)||typeof proof.harnessIntegrity!=='string')throw Error('installed-dsh-proof-required');
+const proof=assertAdmittedHarnessOriginal(candidate,fs.readFileSync(path.join(dir,'verification.json')));
+if(candidate.target==='dsh-buildr-harness'){
   const provider=await query('@buildr-ai/buildr-harness',proof.harnessVersion);
   if(!provider||provider.dist.integrity!==proof.harnessIntegrity||!provider.buildrCompatibility?.provides?.some((item:any)=>item.feature==='desktop-entry'&&item.contracts?.includes('buildr.harness-desktop-web/v1'))) throw Error('verified-harness-peer-not-published');
 }
@@ -74,13 +70,13 @@ if(candidate.target==='dsh-buildr-harness'){
   let release=await github(`releases/tags/${tag}`);
   if(!release){
     if(mode==='readback')throw Error('github-release-absent: use approved publish mode after npm readback');
-    gh('release','create',tag,file,'--target',process.env.GITHUB_SHA!,'--title',`DSH Buildr Harness ${candidate.version}`,
+    gh('release','create',tag,file,'--target',candidate.sourceCommit,'--title',`DSH Buildr Harness ${candidate.version}`,
       '--notes',`npm: ${candidate.packageName}@${candidate.version}\n\nSHA-256: ${candidate.sha256}\n\n实测 DSH Desktop: ${proof.dshVersion}`,
       ...(candidate.version.includes('-rc.')?['--prerelease']:[]));
     release=await github(`releases/tags/${tag}`);
   }
   const actualTag=git('ls-remote','origin',`refs/tags/${tag}`,`refs/tags/${tag}^{}`).split('\n').filter(Boolean).at(-1)?.split(/\s+/)[0];
-  if(release?.tag_name!==tag||actualTag!==process.env.GITHUB_SHA||!release.assets?.some((asset:any)=>asset.name===candidate.file))throw Error('github-release-identity-mismatch');
+  if(release?.tag_name!==tag||actualTag!==candidate.sourceCommit||!release.assets?.some((asset:any)=>asset.name===candidate.file))throw Error('github-release-identity-mismatch');
   const downloaded=path.join(dir,'public-readback.tgz');
   gh('release','download',tag,'--pattern',candidate.file,'--output',downloaded);
   if(digest(downloaded)!==candidate.sha256)throw Error('github-release-bytes-differ');

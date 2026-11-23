@@ -32,7 +32,7 @@
 
 1. 固定对应源码与版本，仅生产一次原包；Harness 用实际 Node 24.15.0 运行 `harness-package-smoke.ts <目录>`，并完成真实启动器、共存和资料保全验收。插件按桌面验收做准确对端、两种安装入口和宿主能力检查。保留绑定原包摘要的 `verification.json` 和真实日志，未通过不登记成功。
 2. `harness-handoff.ts pack <候选目录> <sha256>` 只建不可变本机数据对象，不写源码引用。按真实 Git 身份、明确授权和精确引用交接返回的 commit 与 ref；调用 `preserve-harness.yml` 校验并保全原包和证明，不重建。仅在本机验包不需要交接远端。
-3. 获得针对包名、版本、原包和渠道的公开授权，核对 npm Trusted Publishing 已绑定 `publish-harness.yml` 和 `npm-production`。受保护入口只接收同树 `main`、交接 run、原包 SHA-256 与验证证明。先确认独立 Harness 从官方源可安装，再发配对通过的插件。RC 使用 `next`；插件的 GitHub Release 资产与 npm 原包逐字节一致。
+3. 获得针对包名、版本、原包和渠道的公开授权，核对 npm Trusted Publishing 已绑定 `publish-harness.yml` 和 `npm-production`。受保护 `main` 只采用准入清单精确绑定的交接 run、原包 SHA-256 与验证证明。用同库 `codex/release-harness-admission-v<版本>` PR 逐版本追加已验原包，保留首发与既有记录；准入 PR 只改清单，不宽放普通主线检查。先确认独立 Harness 从官方源可安装，再发配对通过的插件。RC 使用 `next`；插件的 GitHub Release 资产与 npm 原包逐字节一致。
 4. 超时或未知后以原候选选择 `readback`，不自动重传。只在确认相应动作未发出、重新获得准确发布依据后才发新的写入请求。局部失败保留已知事实，按失败渠道补齐，不覆盖既有资产。候选临时 Git 数据引用按精确归属保全后清理。
 
 ### GitHub 直接上传 npm

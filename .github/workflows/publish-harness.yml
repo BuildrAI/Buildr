@@ -96,6 +96,8 @@ jobs:
             .head_branch == "main" and .repository.id == 993537957 and
             .event == "workflow_dispatch" and .conclusion == "success"'
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 24.15.0

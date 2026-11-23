@@ -4,6 +4,7 @@ import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {inspectCandidate} from './harness-release.ts';
+import {assertAdmittedHarnessOriginal} from './harness-release-admission.ts';
 
 const [mode,dir,digest,commit]=process.argv.slice(2);
 const maxBuffer=65*1024*1024;
@@ -40,5 +41,6 @@ if(mode==='pack'){
   }
   const {candidate}=inspectCandidate(dir);
   if(candidate.sha256!==digest||candidate.rehearsal||!received.has('verification.json'))throw Error('transport identity differs');
+  assertAdmittedHarnessOriginal(candidate,fs.readFileSync(path.join(dir,'verification.json')));
   console.log(JSON.stringify({status:'preserved',candidate}));
 }else{throw Error('Usage: harness-handoff.ts pack <candidate-directory> <sha256> | restore <empty-directory> <sha256> <data-commit>');}
