@@ -273,7 +273,9 @@ export function createVerificationExecutor(options: any): any  {
     return { ...result, ...(testContextRuntime ? { testContextRuntime } : {}), ...(preparationResults.length ? { preparations: preparationResults } : {}) };
   };
   executeVerificationStep.prepareSteps = async (steps: any[]) => {
+    const before = preparations.size;
     for (const step of steps) for (const preparation of requiredPreparationsFor(step)) await prepareOnce(preparation);
+    return preparations.size !== before;
   };
   return executeVerificationStep;
 }

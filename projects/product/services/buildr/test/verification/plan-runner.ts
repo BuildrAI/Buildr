@@ -7,7 +7,7 @@ import { runVerificationDag } from './dag-scheduler.ts';
 import { createVerificationExecutor } from './executor.ts';
 import { coordinatedResourcesFromLimits, createVerificationResourceCoordinator, resolveVerificationCoordinationRoot } from './resource-coordinator.ts';
 import { VERIFICATION_CONCURRENCY } from './registry.ts';
-import { createVerificationPlanReuse, reusedVerificationResult } from './verification-reuse.ts';
+import { createLocalHistoryBudget, createVerificationPlanReuse, reusedVerificationResult } from './verification-reuse.ts';
 
 export function printPlan(plan: any, stream: any = process.stdout): any  {
   stream.write(`Verification plan: status=${plan.status ?? 'ready'} ${plan.steps.length} step(s)\n`);
@@ -29,16 +29,23 @@ export function printPlan(plan: any, stream: any = process.stdout): any  {
 
 /** Dependencies produced by owned preparation belong to the execution environment.
  * Freeze their proof after preparation, including checks made fresh by that change. */
-export async function prepareVerificationReuse(plan: any, prepare: (steps: any[]) => Promise<void>, observe: () => any) {
+export async function prepareVerificationReuse(plan: any, prepare: (steps: any[]) => Promise<boolean | void>, observe: () => any) {
   let reuse = observe();
   const prepared = new Set<string>();
   for (;;) {
     const pending = plan.steps.filter((step: any) => !prepared.has(step.id) && !reuse?.hits.has(step.id));
     if (!pending.length) return reuse;
-    await prepare(pending);
+    if (await prepare(pending) === false) return reuse;
     for (const step of pending) prepared.add(step.id);
     reuse = observe();
   }
+}
+
+/** Timing hints only order eligible local checks; they grant no capacity or proof. */
+export function withObservedSchedulingCost(step: any, profile: any, hint: any) {
+  if (!['local', 'local-auto'].includes(profile?.id) || hint?.estimateSource !== 'prior-execution'
+    || !Number.isFinite(hint.estimatedDurationMs) || hint.estimatedDurationMs <= 0) return step;
+  return { ...step, schedulingCostMs: Math.max(1, Math.round(hint.estimatedDurationMs)) };
 }
 
 /** Private lifecycle fixtures need IO headroom, not ownership of unrelated checks.
@@ -118,13 +125,25 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
     const { loadCandidatePackageAdapter } = await import('./package-adapter.ts');
     options = { ...options, packageAdapter: await loadCandidatePackageAdapter() };
   }
-  const observeReuse = () => createCandidateRoundExecution(plan, options) ?? createVerificationPlanReuse(plan, options);
+  const localHistoryBudget = createLocalHistoryBudget();
+  timings.reuseObservationMs = 0;
+  timings.ownedPreparationMs = 0;
+  const observeReuse = () => {
+    const started = performance.now();
+    try { return createCandidateRoundExecution(plan, options) ?? createVerificationPlanReuse(plan, { ...options, localHistoryBudget }); }
+    finally { timings.reuseObservationMs += Math.round(performance.now() - started); }
+  };
   const preflight = options.executorFactory ? null : createVerificationExecutor({ ...options, diagnosticsDirectory, artifactDirectory, preparations });
+  const prepare = async (steps: any[]) => {
+    const started = performance.now();
+    try { return await preflight!.prepareSteps(steps); }
+    finally { timings.ownedPreparationMs += Math.round(performance.now() - started); }
+  };
   const forced = options.reuse?.force === true || (options.env ?? process.env).BUILDR_VERIFICATION_FORCE === '1';
   // A forced run has no reusable checks. Observe once after owned preparation,
   // while retaining the mandatory post-execution content/cleanup validation.
-  if (preflight && forced) await preflight.prepareSteps(plan.steps);
-  const reuse = preflight && !forced ? await prepareVerificationReuse(plan, preflight.prepareSteps, observeReuse) : observeReuse();
+  if (preflight && forced) await prepare(plan.steps);
+  const reuse = preflight && !forced ? await prepareVerificationReuse(plan, prepare, observeReuse) : observeReuse();
   if (reuse?.explanation) {
     const estimate = reuse.explanation.estimate;
     options.stream?.write(`[${prefix}] plan: execute=${estimate.executedCount} reuse=${estimate.reusedCount} remaining-work=${estimate.remainingWorkMs}ms dependency-path=${estimate.dependencyCriticalPathMs}ms (history/declared targets; queue/preparation excluded)\n`);
@@ -132,6 +151,8 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   }
   if (options.round?.protectResume) assertCandidateResumeScope(reuse?.explanation);
   timings.preparationMs = Date.now() - planStartedAt;
+  timings.localHistoryObservationMs = localHistoryBudget.stats().elapsedMs;
+  timings.localHistoryBudgetLimited = localHistoryBudget.stats().limited;
   const contextsStartedAt = Date.now();
   const resourceCoordinator: any = options.resourceCoordinator ?? createVerificationResourceCoordinator({
     root: resolveVerificationCoordinationRoot(options.productRoot, options.env),
@@ -228,9 +249,12 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   let results: any;
   let contextCleanup: any = null;
   try {
+    const timingHints = new Map<string, any>((reuse?.explanation?.steps ?? []).map((hint: any) => [hint.id, hint]));
+    const canUseLocalTiming = plan.target === 'source' && !options.round && !forced;
     const baseExecutionPlan = { ...plan, steps: plan.steps.map((step: any) => reuse?.hits.has(step.id)
       ? reusedExecutionStep(step)
-      : localExecutionStep(step, options.executionProfile, concurrency)) };
+      : localExecutionStep(canUseLocalTiming ? withObservedSchedulingCost(step, options.executionProfile, timingHints.get(step.id)) : step,
+        options.executionProfile, concurrency)) };
     const bundledExecution = bundleBrowserExecutionSteps(baseExecutionPlan.steps, (id: string) => Boolean(reuse?.hits.has(id)));
     coveredBrowserSteps = bundledExecution.coveredBy;
     const executionPlan = { ...baseExecutionPlan, steps: bundledExecution.steps };

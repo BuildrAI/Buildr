@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { bundleBrowserExecutionSteps, executePlan, localExecutionStep, reusedExecutionStep, prepareVerificationReuse } from '../verification/plan-runner.ts';
+import { bundleBrowserExecutionSteps, executePlan, localExecutionStep, reusedExecutionStep, prepareVerificationReuse, withObservedSchedulingCost } from '../verification/plan-runner.ts';
+import { createLocalHistoryBudget } from '../verification/verification-reuse.ts';
 import { resolveVerificationExecutionProfile, verificationSteps } from '../verification/registry.ts';
 import { runVerificationDag } from '../verification/dag-scheduler.ts';
 
@@ -25,6 +26,35 @@ test('preparation changing a dependency also prepares checks whose cached proof 
 });
 
 const step = (id: string, dependsOn: string[] = []) => ({ id, name: id, dependsOn, contexts: [], resources: [], concurrencyClass: 'default' });
+
+test('a cache miss with no new preparation does not repeat the source observation', async () => {
+  let observations = 0;
+  const original = { hits: new Map() };
+  const result = await prepareVerificationReuse({ steps: [step('fresh')] }, async checks => {
+    assert.deepEqual(checks.map(check => check.id), ['fresh']);
+    return false;
+  }, () => { observations++; return original; });
+  assert.equal(result, original);
+  assert.equal(observations, 1);
+});
+
+test('local history work has one cumulative budget; a costly read never fabricates another hit', () => {
+  let time = 0;
+  const budget = createLocalHistoryBudget(10, () => time);
+  assert.equal(budget.observe(() => { time += 6; return 'proof-one'; }), 'proof-one');
+  time += 100; // preparation is not historical observation
+  assert.equal(budget.observe(() => { time += 5; return 'proof-two'; }), 'proof-two');
+  assert.equal(budget.observe(() => assert.fail('history budget exhausted')), null);
+  assert.deepEqual(budget.stats(), { elapsedMs: 11, limited: true });
+});
+
+test('measured scheduling estimates change local priority, never admission or candidate settings', () => {
+  const check = { ...step('a'), schedulingCostMs: 10, resourceDemand: { git: 1 } };
+  const observed = { estimateSource: 'prior-execution', estimatedDurationMs: 80 };
+  assert.deepEqual(withObservedSchedulingCost(check, { id: 'local-auto' }, observed), { ...check, schedulingCostMs: 80 });
+  assert.equal(withObservedSchedulingCost(check, { id: 'ci' }, observed), check);
+  assert.equal(withObservedSchedulingCost(check, { id: 'local' }, { ...observed, estimatedDurationMs: 0 }), check);
+});
 function options(execute: (check: any) => Promise<any>) {
   const events: string[] = [];
   return {

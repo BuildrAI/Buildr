@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import test from 'node:test';
-import { collectVerificationReuseSnapshot, collectVerificationReuseBundle, verificationFileSteps, createVerificationReuseIdentity, createVerificationReuseStore, createVerificationPlanReuse, inspectVerificationReusePlan, reusedVerificationResult, validateVerificationReuseRecord } from '../verification/verification-reuse.ts';
+import { collectVerificationReuseSnapshot, collectVerificationReuseBundle, verificationFileSteps, createLocalHistoryBudget, createVerificationReuseIdentity, createVerificationReuseStore, createVerificationPlanReuse, inspectVerificationReusePlan, reusedVerificationResult, validateVerificationReuseRecord } from '../verification/verification-reuse.ts';
 import { executePlan } from '../verification/plan-runner.ts';
 import { runVerificationStep } from '../verification/timing/parallel-runner.ts';
 import { createVerificationExecutor } from '../verification/executor.ts';
@@ -34,6 +34,27 @@ function fixture(t: test.TestContext) {
   return { root, productRoot, step, options, observe };
 }
 const passed = { status: 'passed', exitCode: 0, durationMs: 12, childOutcome: 'passed', childExitCode: 0, childSignal: null, processCleanup: { status: 'clean' } };
+
+test('exhausted local history cannot suppress a fresh check or an exact-key reuse', t => {
+  const f = fixture(t), snapshot = f.observe();
+  const origin = { kind: 'local' as const, runId: 'history-budget', sourceCommit: snapshot.sourceCommit,
+    startedAt: '2026-01-01T00:00:00.000Z', finishedAt: '2026-01-01T00:00:01.000Z' };
+  const store = createVerificationReuseStore({ ...f.options, snapshot });
+  const exact = store.stage(f.step, { id: f.step.id, ...passed }, origin);
+  assert.ok(exact);
+  store.commit(snapshot, true);
+  const budget = createLocalHistoryBudget(0);
+  const exactStore = createVerificationReuseStore({ ...f.options, snapshot, historyBudget: budget });
+  assert.deepEqual(exactStore.lookup(f.step), exact);
+  assert.equal(budget.stats().limited, false);
+
+  fs.writeFileSync(path.join(f.productRoot, 'src/check.ts'), 'export const value = 2;\n');
+  const changed = f.observe();
+  changed.historicalInputs = () => assert.fail('the exhausted local history budget must not rebuild a proof');
+  const plan = inspectVerificationReusePlan({ steps: [f.step] }, { ...f.options, snapshot: changed, historyBudget: budget });
+  assert.equal(plan.steps[0].disposition, 'execute');
+  assert.equal(plan.history.limited, true);
+});
 
 for (const cleanup of ['clean', 'failed', 'unknown']) test(`interrupted source exports completed checks only with confirmed ${cleanup} child cleanup`, async t => {
   const f = fixture(t);
