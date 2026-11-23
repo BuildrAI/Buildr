@@ -182,8 +182,17 @@ export function conversationActionError(error: string, modelWarning: string | un
   return error;
 }
 
-/** Internal recovery instructions stay in source history; the page shows the actual receipt. */
+/** Keep internal entries in the transcript model for run ownership and pagination. */
+function isAutomaticContinuation(entry:Pick<ConversationEntry,'kind'|'role'|'text'>):boolean {
+  return entry.kind==='notice'&&entry.role==='system'&&['系统自动恢复：','系统自动重试：'].some(prefix=>entry.text.startsWith(prefix));
+}
+
+export function isQuietAutomaticContinuation(entry:ConversationEntry):boolean {
+  return Boolean(entry.runId)&&isAutomaticContinuation(entry)&&entry.status!=='failed'&&entry.status!=='unknown'&&!entry.deliveryDiagnostic;
+}
+
+/** Internal instructions stay in source history; the page shows only the receipt. */
 export function conversationSystemNoticeText(entry:Pick<ConversationEntry,'kind'|'role'|'text'|'status'>):string {
-  if(entry.kind!=='notice'||entry.role!=='system'||!entry.text.startsWith('系统自动恢复：'))return entry.text;
+  if(!isAutomaticContinuation(entry))return entry.text;
   return entry.status==='accepted'?'已自动接续上次工作。':entry.status==='failed'?'自动恢复未能接续。':entry.status==='unknown'?'自动恢复是否接续仍待确认。':'正在自动核对并接续上次工作。';
 }
