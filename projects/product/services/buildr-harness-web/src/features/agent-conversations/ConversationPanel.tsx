@@ -65,6 +65,7 @@ import { ConversationProcessBlock } from './ConversationProcessBlock.tsx';
 import {modelPreferenceFromChoice,preferredConversationChoice,readConversationModelPreference,readConversationModulePreference,rememberConversationAgent,rememberConversationPermission,rememberedConversationPermission,writeConversationModelPreference,writeConversationModulePreference} from './conversation-preferences.ts';
 import {isQuietAutomaticContinuation,conversationSystemNoticeText,visibleConversationEntries,conversationModelWarning,conversationActionError,conversationHandoffReceipt,conversationNativeSessionDiagnostic,conversationNativeSessionIssue,conversationNativeSessionSummary,latestVisibleConversationMessage} from './conversation-notices.ts';
 import { findSeenFallbackTarget, isConversationViewVisible } from './seen-activity-refresh.ts';
+import { revealConversationAnswer } from './conversation-reading.ts';
 import './agent-conversations.css';
 import {AgentConnectionSettings} from './AgentConnectionSettings';
 import './conversation-flow.css';
@@ -221,13 +222,13 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
   const [atBottom,setAtBottom]=useState(true);
   const stream=useRef<HTMLDivElement>(null),readPosition=useRef(0),bottom=useRef(true),composing=useRef(false);
   const streamContent=useRef<HTMLDivElement>(null);
-  const revealAnswer=useCallback((element:HTMLElement)=>{
+  const earlierRef=useRef<ReturnType<typeof useEarlierConversationEntries>|null>(null);
+  const revealAnswer=useCallback((anchor:HTMLElement,container?:HTMLElement)=>{
     const node=stream.current;if(!node)return;
-    const overflow=element.getBoundingClientRect().bottom-node.getBoundingClientRect().bottom+12;
-    if(overflow>0)node.scrollTop+=overflow;
-    bottom.current=node.scrollHeight-node.scrollTop-node.clientHeight<=24;
-    earlier.remember();
-    setAtBottom(bottom.current);
+    const pinned=revealConversationAnswer(node,anchor,bottom.current,container);
+    bottom.current=pinned;
+    earlierRef.current?.remember();
+    setAtBottom(pinned);
   },[]);
   const effectiveAccountId=resolveNativeExecutionAccountId(choice.modelAccountId,choice.connectionId,context.connections,context.modelCatalog);
   const selectedSourceModel=context.modelCatalog.find(model=>model.accountId===effectiveAccountId&&model.modelId===choice.model&&(!choice.modelAccountIdentity||model.accountIdentity===choice.modelAccountIdentity));
@@ -781,6 +782,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     loadPage:(value,cursor,signal)=>context.api.entries(value.workspaceId,value.id,cursor,signal),
     prepend:page=>{if(chat)setExpandedToolGroups(previous=>carryExpandedProcessBlocks(visibleConversationEntries(chat.entries),visibleConversationEntries(page.entries),previous,chat.run,chat.retainedRuns));context.prependEntries(page);},
   });
+  earlierRef.current=earlier;
   const followBottom=()=>{
     setAtBottom(previous=>previous===bottom.current?previous:bottom.current);
     // Completion must not collapse the live process underneath an upward reader.

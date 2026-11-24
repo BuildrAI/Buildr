@@ -163,3 +163,29 @@ test('无内嵌顶栏或顶栏非粘性时保持原定位偏移不变',t=>{
  locateConversationContent(nonSticky.target,true);
  assert.equal(nonSticky.stream.scrollTop,500+420-100-(96+8));
 });
+
+const {revealConversationAnswer}=await import('../../src/features/agent-conversations/conversation-reading.ts');
+test('已贴底时展开其他回答直接贴紧底部并返回 true，避免误弹出到底按钮',()=>{
+ const shortStream={scrollTop:0,scrollHeight:680,clientHeight:600,getBoundingClientRect:()=>({top:0,bottom:600})};
+ assert.equal(revealConversationAnswer(shortStream,{getBoundingClientRect:()=>({top:480,bottom:640})},true,{getBoundingClientRect:()=>({top:300,bottom:660})}),true);
+ assert.equal(shortStream.scrollTop,80);
+
+ const longStream={scrollTop:800,scrollHeight:1580,clientHeight:600,getBoundingClientRect:()=>({top:0,bottom:600})};
+ assert.equal(revealConversationAnswer(longStream,{getBoundingClientRect:()=>({top:520,bottom:680})},true,{getBoundingClientRect:()=>({top:360,bottom:720})}),true);
+ assert.equal(longStream.scrollTop,980);
+});
+test('未贴底但底部卡片展开后进入贴底范围时自动对齐底部并返回 true',()=>{
+ const stream={scrollTop:940,scrollHeight:1580,clientHeight:600,getBoundingClientRect:()=>({top:0,bottom:600})};
+ assert.equal(revealConversationAnswer(stream,{getBoundingClientRect:()=>({top:430,bottom:600})},false,{getBoundingClientRect:()=>({top:350,bottom:620})}),true);
+ assert.equal(stream.scrollTop,980);
+});
+test('上方卡片展开且下方仍有较多内容时只滚出该卡片与留白，返回 false',()=>{
+ const stream={scrollTop:400,scrollHeight:2000,clientHeight:600,getBoundingClientRect:()=>({top:100,bottom:700})};
+ assert.equal(revealConversationAnswer(stream,{getBoundingClientRect:()=>({top:560,bottom:730})},false,{getBoundingClientRect:()=>({top:500,bottom:730})}),false);
+ assert.equal(stream.scrollTop,448);
+});
+test('多题卡片首题展开其他时若贴底会顶出输入框，则按安全上限滚动并保持输入框可见',()=>{
+ const stream={scrollTop:600,scrollHeight:1500,clientHeight:500,getBoundingClientRect:()=>({top:100,bottom:600})};
+ assert.equal(revealConversationAnswer(stream,{getBoundingClientRect:()=>({top:320,bottom:480})},true,{getBoundingClientRect:()=>({top:320,bottom:650})}),false);
+ assert.equal(stream.scrollTop,668);
+});
