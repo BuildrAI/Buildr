@@ -5,6 +5,7 @@ import {EllipsisOutlined,EyeOutlined,LoginOutlined,PlusOutlined,ReloadOutlined,R
 import {reasoningEffortLabel,sortReasoningEfforts} from './conversation-options.ts';
 import {CombinationModelList} from './CombinationModelList.tsx';
 import {DEFAULT_CUSTOM_MODELS_PATH,upsertCustomModel,type CustomProviderDiscoverInput,type CustomProviderDiscoverResult,type CustomProviderModelInput,type CustomProviderProtocol,type CustomProviderSaveInput} from './custom-provider-model.ts';
+import {modelBulkSelection} from './model-bulk-selection.ts';
 import {ModelContextInput} from './ModelContextInput.tsx';
 import './account-model-manager.css';
 
@@ -111,10 +112,10 @@ export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,o
   const visible=selected?[selected]:sourceGroups.flatMap(group=>group.items);
   const rows=visible.flatMap(source=>source.models.map(model=>({...model,key:source.id+':'+model.id,source})));
   const families=[...new Set(rows.map(row=>row.family))];
-  const filtered=rows.filter(row=>(!query||`${row.label} ${row.source.providerLabel}`.toLowerCase().includes(query.toLowerCase()))&&(filter==='all'||row.enabled===(filter==='enabled'))&&(family==='all'||family===row.family));
+  const {filtered,enabledCount,enable,disable}=modelBulkSelection(rows,query,filter,family);
+  const hasFilters=Boolean(query)||filter!=='all'||family!=='all';
   const enabled=rows.filter(row=>row.enabled).length;
   const choose=(sourceId:string,tab=selection.tab)=>{setQuery('');setFamily('all');setModelNotice('');onSelect({sourceId,tab});};
-  const bulk=(enabled:boolean)=>onEnable(filtered.filter(row=>row.available&&row.source.status==='ready').map(row=>({sourceId:row.source.id,modelId:row.id,enabled})));
   const sidebarDetail=(source:ModelSourceView)=>{
     if(source.provider==='custom')return source.custom?.baseUrl.replace(/^https?:\/\//,'')||source.accountLabel;
     if(source.sendGate?.state==='paused')return source.sendGate.reason==='account-unconfirmed'?'账号待核对':'账号操作中';
@@ -206,7 +207,7 @@ export function AccountModelManager({sources,selection,busy,onSelect,onRefresh,o
         </Space>}
         {modelNotice&&<Alert className="amm-model-notice" type="info" showIcon closable message={modelNotice} onClose={()=>setModelNotice('')}/>}
         <div className="amm-model-toolbar"><Input prefix={<SearchOutlined aria-hidden/>} aria-label="搜索模型" placeholder="搜索模型名称" value={query} allowClear onChange={e=>setQuery(e.target.value)}/><Select aria-label="启用状态" value={filter} onChange={value=>{setFilter(value);}} options={[{value:'all',label:'全部模型'},{value:'enabled',label:'已启用'},{value:'disabled',label:'未启用'}]}/><Select aria-label="模型系列" value={family} onChange={value=>{setFamily(value);}} options={[{value:'all',label:'全部系列'},...families.map(value=>({value,label:value}))]}/></div>
-        <div className="amm-model-summary"><span><strong>已启用 {enabled}</strong> / {rows.length}<span className="amm-divider-dot">·</span>仅已启用的模型出现在对话中</span><Space size={4}><Button size="small" disabled={busy||!filtered.some(row=>row.available&&row.source.status==='ready')} onClick={()=>bulk(true)}>{query||filter!=='all'||family!=='all'?'启用筛选结果':'全部启用'}</Button><Button size="small" disabled={busy||!filtered.some(row=>row.available&&row.source.status==='ready')} onClick={()=>bulk(false)}>{query||filter!=='all'||family!=='all'?'停用筛选结果':'全部停用'}</Button></Space></div>
+        <div className="amm-model-summary"><span role="status">{hasFilters?<><strong>匹配 {filtered.length} 个模型</strong>，其中 {enabledCount} 个已启用</>:<><strong>已启用 {enabled}</strong> / {rows.length}<span className="amm-divider-dot">·</span>仅已启用的模型出现在对话中</>}</span><Space size={4} wrap><Button size="small" disabled={busy||!enable.length} onClick={()=>onEnable(enable)}>{hasFilters?'全部开启（当前筛选）':'全部开启'}</Button><Button size="small" disabled={busy||!disable.length} onClick={()=>onEnable(disable)}>{hasFilters?'全部关闭（当前筛选）':'全部关闭'}</Button></Space></div>
         <Table className="amm-model-table" size="small" rowKey="key" dataSource={filtered} pagination={false} sticky locale={{emptyText:<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={query?'没有匹配的模型':'当前筛选下没有模型'}/>}} columns={[
           {title:'模型',key:'name',render:(_,row)=><div className="amm-model-name"><strong>{row.label}</strong><div><span>{row.source.providerLabel}</span>{row.images&&<Tooltip title="支持图片"><EyeOutlined aria-label="支持图片"/></Tooltip>}{row.tools&&<Tooltip title="支持工具调用"><ToolOutlined aria-label="支持工具调用"/></Tooltip>}{row.modes&&<span>{row.modes.join(' / ')}</span>}{row.creditFactor!==undefined&&<Tooltip title="每请求 credit 系数"><span>{row.creditFactor.toFixed(2)}x</span></Tooltip>}{row.efforts?.length?<Tooltip title={sortReasoningEfforts(row.efforts).map(reasoningEffortLabel).join(' · ')}><span>{row.efforts.length} 个思考档位</span></Tooltip>:row.preset&&<span>{row.preset}</span>}{!row.available&&<Tag>平台不可用</Tag>}</div></div>},
           {title:'上下文窗口',key:'context',width:152,render:(_,row)=><ModelContextInput label={row.label} value={row.contextWindow} override={row.contextOverride} reported={row.reportedContextWindow} defaultWindow={row.defaultContextWindow} disabled={busy} onSave={value=>onContext(row.source.id,row.id,value)}/>},

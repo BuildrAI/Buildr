@@ -11,7 +11,7 @@ import {DrawerShell} from '../../components/DrawerShell.tsx';
 import {useAgentConversations} from './AgentConversationsContext.tsx';
 import {AgentProgramPreparation} from './AgentProgramPreparation.tsx';
 import {type AccountSelection} from './AccountModelManager.tsx';
-import {previewModelContext} from './context-window.ts';
+import {ModelPreferenceQueue,previewModelPreferences,type ModelPreferenceChange} from './model-preference-queue.ts';
 import {MagpieQuotaPanel} from './MagpieQuotaPanel.tsx';
 import {AgentModelSetup} from './AgentModelSetup.tsx';
 import {modelSourceViews,newModelSourceProvider} from './account-model-view.ts';
@@ -73,7 +73,8 @@ export function AgentConnectionSettings({inMain=false}: {inMain?:boolean}={}){
  const checking=useRef(new Set<string>());
  const gate=useRef(false),readGeneration=useRef(0);
  const accountRead=useRef<AbortController|null>(null);
- const update=(account:ModelAccount)=>setAccounts(previous=>{const next=previous.some(value=>value.id===account.id)?previous.map(value=>value.id===account.id?account:value):[...previous,account];accountsRef.current=next;return next;});
+ const accountsRef=useRef(accounts);
+ const update=(account:ModelAccount)=>{const previous=accountsRef.current;const next=previous.some(value=>value.id===account.id)?previous.map(value=>value.id===account.id?account:value):[...previous,account];accountsRef.current=next;setAccounts(next);};
  const refresh=useCallback(async()=>{
   const controller=accountRead.current;
   if(!controller)return;
@@ -208,7 +209,6 @@ export function AgentConnectionSettings({inMain=false}: {inMain?:boolean}={}){
  function check(id:string){for(const account of accounts.filter(item=>id==='all'?(item.enabled&&item.sourceEnabled!==false):id===item.id)){if(checking.current.has(account.id))continue;checking.current.add(account.id);setRefreshingIds([...checking.current]);const conn=account.connectionId?context.connections.find(item=>item.id===account.connectionId):undefined;const preCheck=id!=='all'&&conn&&conn.sendGate?.state==='paused'?context.api.check(conn).then(value=>context.updateConnection(value)).catch(()=>{}):Promise.resolve();void preCheck.then(()=>context.api.modelAccountAction(account,'check')).then(value=>{update(value);if(value.id==='native-antigravity')setGoogleRefreshFailed(false);}).then(()=>Promise.allSettled([context.refreshModelCatalog(),...(conn?[context.refreshConnections()]:[])])).catch(()=>setError('部分供应商刷新失败，已保留已有信息。')).finally(()=>{checking.current.delete(account.id);setRefreshingIds([...checking.current]);});}}
  function disconnect(id:string){const account=accounts.find(account=>account.id===id);if(account)void act(async()=>{update(await context.api.modelAccountAction(account,'disconnect'));if(!account.connectionId)void context.refreshConnections().catch(()=>{});});}
  function cancel(id:string){const account=accounts.find(account=>account.id===id);if(!account)return;void act(async()=>{if(account.connectionId){const connection=context.connections.find(connection=>connection.id===account.connectionId);if(connection?.loginAttempt)context.updateConnection(await context.api.cancelLogin(connection,connection.loginAttempt.id));}else update(await context.api.cancelModelLogin(account));});}
- const accountsRef=useRef(accounts);accountsRef.current=accounts;
  async function saveCustomModels(id:string,models:CustomProviderModelInput[]):Promise<void>{
   const account=accountsRef.current.find(item=>item.id===id);
   if(!account?.custom)throw new Error('供应商已变化，请刷新后重试。');
@@ -222,52 +222,37 @@ export function AgentConnectionSettings({inMain=false}: {inMain?:boolean}={}){
   if(!account?.custom)return;
   setProviderEditing({kind:account.provider==='magpie'?'magpie':'custom',accountId:account.id,label:account.label,baseUrl:account.custom.baseUrl,protocol:account.custom.protocol,modelsPath:account.custom.modelsPath??DEFAULT_CUSTOM_MODELS_PATH,useApiKey:account.custom.useApiKey,credentialConfigured:account.credentialConfigured});
  }
-  const preferenceQueue=useRef(Promise.resolve());
-  const preferenceEpochs=useRef(new Map<string,number>());
-  function changes(values:Array<{sourceId:string;modelId:string;enabled?:boolean;contextWindow?:number|null}>){
-   const snapshot=accountsRef.current;
-   const epochs=values.map(value=>{const key=value.sourceId+'\0'+value.modelId;const epoch=(preferenceEpochs.current.get(key)??0)+1;preferenceEpochs.current.set(key,epoch);return {...value,key,epoch};});
-   setAccounts(previous=>previous.map(account=>{
-    const rows=epochs.filter(value=>value.sourceId===account.id);
-    if(!rows.length)return account;
-    return {...account,models:account.models.map(model=>{
-     const row=rows.find(item=>item.modelId===model.id);
-     if(!row)return model;
-     const enabled=row.enabled??model.enabled;
-     return {...model,enabled,...previewModelContext(model,row.contextWindow)};
-    })};
-   }));
-   preferenceQueue.current=preferenceQueue.current.then(async()=>{
-    const pending=epochs.filter(value=>preferenceEpochs.current.get(value.key)===value.epoch);
-    for(const account of snapshot){
-     const rows=pending.filter(value=>value.sourceId===account.id).map(({modelId,enabled,contextWindow})=>({id:modelId,enabled,contextWindow}));
-     if(!rows.length)continue;
+  const [preferenceQueue]=useState(()=>new ModelPreferenceQueue());
+  const [pendingPreferences,setPendingPreferences]=useState<ModelPreferenceChange[][]>([]);
+  function changes(values:ModelPreferenceChange[]){
+   for(const account of accountsRef.current){
+    const batch=values.filter(value=>value.sourceId===account.id);
+    if(!batch.length)continue;
+    setPendingPreferences(previous=>[...previous,batch]);
+    const rows=batch.map(({modelId,enabled,contextWindow})=>({id:modelId,enabled,contextWindow}));
+    void preferenceQueue.enqueue(account,rows,async(observed,prefs)=>{
      try{
-      const saved=await context.api.modelPreferences(account,rows);
-      setAccounts(previous=>previous.map(current=>{
-       if(current.id!==saved.id)return current;
-       const stillCurrent=pending.filter(value=>value.sourceId===account.id).every(value=>preferenceEpochs.current.get(value.key)===value.epoch);
-       return {...saved,models:stillCurrent?saved.models:current.models.map(model=>{const confirmed=saved.models.find(item=>item.id===model.id);const touched=pending.some(value=>value.sourceId===account.id&&value.modelId===model.id&&preferenceEpochs.current.get(value.key)===value.epoch);return confirmed&&touched?confirmed:model;}),revision:stillCurrent?saved.revision:current.revision};
-      }));
+      const saved=await context.api.modelPreferences(observed,prefs);
+      const current=accountsRef.current.find(item=>item.id===observed.id);
+      if(current&&(current.revision===observed.revision||current.revision===saved.revision)){
+       ++readGeneration.current;
+       update(saved);
+      }else{
+       await refresh().catch(()=>{});
+      }
       void context.refreshModelCatalog().catch(()=>{});
+      return saved;
      }catch(failure){
-      setAccounts(previous=>previous.map(current=>{
-       if(current.id!==account.id)return current;
-       const original=snapshot.find(item=>item.id===account.id);
-       if(!original)return current;
-       return {...current,models:current.models.map(model=>{
-        const change=pending.find(value=>value.sourceId===account.id&&value.modelId===model.id);
-        return change&&preferenceEpochs.current.get(change.key)===change.epoch?original.models.find(item=>item.id===model.id)??model:model;
-       })};
-      }));
-      message.error(failure instanceof Error?failure.message:'模型设置保存失败，已恢复修改前的选择。');
+      await refresh().catch(()=>{});
+      message.error(failure instanceof Error?failure.message:'模型设置未能确认，请刷新后查看。');
+      throw failure;
      }
-    }
-   }).catch(()=>{});
+    }).then(()=>setPendingPreferences(previous=>previous.filter(value=>value!==batch)));
+   }
   }
-  const sources=modelSourceViews(accounts,context.connections,true);
+  const sources=modelSourceViews(previewModelPreferences(accounts,pendingPreferences),context.connections,true);
   const configuredProviderIds=providers.filter(provider=>Boolean(providerAccount(accounts,provider))).map(provider=>provider.id);
- const setSourceEnabled=(id:string,enabled:boolean)=>{void act(async()=>{await preferenceQueue.current;let current=accountsRef.current.find(a=>a.id===id);if(!current){const provider=newModelSourceProvider(id);if(!provider)throw new Error('供应商已变化，请刷新后重试。');current=await context.api.addModelAccount(provider);}else current=await context.api.modelAccount(id);update(await context.api.modelSourceEnabled(current,enabled));if(!current.connectionId)void context.refreshConnections().catch(()=>{});if(!enabled)setSelection({sourceId:'all',tab:selection.tab});});};
+ const setSourceEnabled=(id:string,enabled:boolean)=>{void act(async()=>{await preferenceQueue.settled;let current=accountsRef.current.find(a=>a.id===id);if(!current){const provider=newModelSourceProvider(id);if(!provider)throw new Error('供应商已变化，请刷新后重试。');current=await context.api.addModelAccount(provider);}else current=await context.api.modelAccount(id);update(await context.api.modelSourceEnabled(current,enabled));if(!current.connectionId)void context.refreshConnections().catch(()=>{});if(!enabled)setSelection({sourceId:'all',tab:selection.tab});});};
  const activeSectionLabel=SETTINGS_NAV_ITEMS.find(item=>item.key===mode)?.label??'设置';
  const selectedSource=sources.find(source=>source.id===selection.sourceId&&(showDisabled||source.sourceEnabled!==false));
  const selectedSourceLabel=selectedSource?.providerLabel||'全部供应商';
