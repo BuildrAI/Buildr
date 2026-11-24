@@ -744,7 +744,7 @@ function parseShimCliArgs(argv: readonly string[]): { dataRoot: string; shimDir:
   return { dataRoot, shimDir, userArgs: argv.slice(index) };
 }
 
-if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+async function main(): Promise<void> {
   try {
     const parsed = parseShimCliArgs(process.argv.slice(2));
     await runDevelopmentSessionCli(parsed.userArgs, { dataRoot: parsed.dataRoot, shimDir: parsed.shimDir });
@@ -753,4 +753,9 @@ if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import
     if (error?.nextAction) console.error(error.nextAction);
     process.exitCode = 1;
   }
+}
+
+// Keep the shared module synchronous for public package consumers that use require().
+if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  void main();
 }
