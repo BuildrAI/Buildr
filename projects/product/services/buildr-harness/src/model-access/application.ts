@@ -769,7 +769,7 @@ export class ModelAccessApplication {
       if(update.contextWindow!==undefined){
         const value=update.contextWindow,limit=model.reportedContextWindow??model.contextWindow;
         if(value===null)delete preference.contextWindow;
-        else {if(!Number.isSafeInteger(value)||value<1||value>10000000||limit!==undefined&&value>limit)throw new ModelAccessError('model_context_invalid','上下文必须为正整数，且不能超过平台报告上限。',400);preference.contextWindow=value;}
+        else {if(!Number.isSafeInteger(value)||value<1||value>10000000||limit!==undefined&&value>limit)throw new ModelAccessError('model_context_invalid','上下文必须为正整数，且不能超过可配置上限。',400);preference.contextWindow=value;}
       }
       Object.defineProperty(next,model.id,{value:preference,enumerable:true,writable:true,configurable:true});
     }
