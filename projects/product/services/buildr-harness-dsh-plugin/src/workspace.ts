@@ -8,6 +8,7 @@ export const CHANNEL = 'buildr-harness-desktop/v1:';
 export type Reveal = { workspaceId: string; revision: string; path: string; line?: number; checkout?: { repositoryId: string; checkoutId: string } };
 export type GuestMessage = { kind: 'workspace'; scope: Scope | null } | { kind: 'link'; url: string; external: boolean }
   | {kind:'reveal'; file: Reveal} | {kind:'tool-ready'}
+  | {kind:'image-preview'; id:string}
   | {kind:'shell'; action:'leave'|'toggle-right'};
 
 function shortText(value: unknown, max: number): value is string {
@@ -28,6 +29,7 @@ export function parseGuestMessage(message: string): GuestMessage | undefined {
   try {
     const value = JSON.parse(message.slice(CHANNEL.length));
     if (value?.kind === 'shell' && (value.action === 'leave' || value.action === 'toggle-right')) return {kind:'shell',action:value.action};
+    if (value?.kind === 'image-preview' && typeof value.id === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value.id)) return {kind:'image-preview',id:value.id};
     if (value?.kind === 'tool-ready') return { kind:'tool-ready' };
     if (value?.kind === 'reveal') { const file = fileReveal(value.file); return file && { kind:'reveal', file }; }
     if (value?.kind === 'workspace') {

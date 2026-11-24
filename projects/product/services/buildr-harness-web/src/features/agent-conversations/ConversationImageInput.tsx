@@ -1,12 +1,25 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, Image } from 'antd';
 import { CloseOutlined, FileImageOutlined, FileTextOutlined } from '@ant-design/icons';
+import { requestDesktopImagePreview } from '../../dsh-desktop-bridge.ts';
 import type { AttachmentView } from './types.ts';
 import { attachmentMimeType, conversationDocumentTypes, transferredFiles } from './conversation-images.ts';
 
 export type DraftImage = AttachmentView & { name: string; file?: File };
 export function ImageThumbnail({ image, disabled = false, onRemove }: { image: Pick<DraftImage, 'name' | 'file'> & {mimeType?:string;size?:number}; disabled?: boolean; onRemove?(): void }) {
   const [url, setUrl] = useState<string>();
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const pendingPreview = useRef<AbortController | null>(null);
+  useEffect(() => () => { pendingPreview.current?.abort(); }, [url]);
+  const openPreview = async (open: boolean) => {
+    if (!open) { setPreviewOpen(false); return; }
+    if (!url || pendingPreview.current) return;
+    const pending = new AbortController();
+    pendingPreview.current = pending;
+    try {
+      if (!await requestDesktopImagePreview(url, image.name, pending.signal) && !pending.signal.aborted) setPreviewOpen(true);
+    } finally { if (pendingPreview.current === pending) pendingPreview.current = null; }
+  };
   const type = image.file?.type || image.mimeType || '';
   const video = type.startsWith('video/'), document = conversationDocumentTypes.includes(type);
   useEffect(() => {
@@ -19,7 +32,7 @@ export function ImageThumbnail({ image, disabled = false, onRemove }: { image: P
     return () => { reader.onload = null; reader.abort(); };
   }, [image.file, video, document]);
   return <div className={'ac-image-thumbnail'+(document?' ac-document-thumbnail':video?' ac-video-thumbnail':'')} title={image.name}>
-    {document ? <><FileTextOutlined/><span className="ac-document-name">{image.name}</span><small>{Math.ceil((image.size ?? image.file?.size ?? 0)/1024)} KiB</small></> : url ? video ? <><video src={url} controls preload="metadata" playsInline aria-label={image.name}/><small>视频 · 抽样画面，不含音轨</small></> : <Image src={url} alt={image.name} width={72} height={72} preview={{ mask: <></> }} /> : <FileImageOutlined />}
+    {document ? <><FileTextOutlined/><span className="ac-document-name">{image.name}</span><small>{Math.ceil((image.size ?? image.file?.size ?? 0)/1024)} KiB</small></> : url ? video ? <><video src={url} controls preload="metadata" playsInline aria-label={image.name}/><small>视频 · 抽样画面，不含音轨</small></> : <Image src={url} alt={image.name} width={72} height={72} preview={{ mask: <></>, visible: previewOpen, onVisibleChange: openPreview }} /> : <FileImageOutlined />}
     {onRemove && <Button type="text" size="small" className="ac-image-remove" icon={<CloseOutlined />} aria-label={(document?'移除文档 ':video?'移除视频 ':'移除图片 ') + image.name} disabled={disabled} onClick={onRemove} />}
   </div>;
 }

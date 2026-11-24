@@ -1,6 +1,7 @@
 import { label, panelId, released } from './channel.ts';
 import { CHANNEL, parseGuestMessage, type GuestMessage, type Tool } from './workspace.ts';
 import { DESKTOP_HEADER, handoff, OPEN_PATH } from './handoff.ts';
+import { openImagePreview, parsePreviewImage } from './image-preview.ts';
 import type { DesktopKeyboardInput } from './refresh.ts';
 
 interface Reservation { lease: string; partition: string }
@@ -33,6 +34,7 @@ export function desktopKeyboard(): DesktopKeyboardBridge | undefined {
 export function attachHarnessGuest(mount: HTMLElement, bridge: DesktopBridge, onState: (error?: string) => void, options?: {
   tool?: { kind: Tool; workspaceId: string };
   onMessage?: (message: GuestMessage) => void;
+  canPreviewImage?: () => boolean;
   onControl?: (send: (data: object) => void) => void;
   onRefresh?: (handle: { lease: string; reload: () => void } | undefined) => void;
 }) {
@@ -40,7 +42,11 @@ export function attachHarnessGuest(mount: HTMLElement, bridge: DesktopBridge, on
   let lease: string | undefined;
   let guest: Webview | undefined;
   let probeTimer: ReturnType<typeof setTimeout> | undefined;
+  let closePreview: (() => void) | undefined;
+  let previewSequence = 0;
+  const dismissPreview = () => { ++previewSequence; closePreview?.(); closePreview = undefined; };
   const release = () => {
+    dismissPreview();
     options?.onRefresh?.(undefined);
     if (probeTimer) clearTimeout(probeTimer);
     guest?.remove(); guest = undefined;
@@ -96,6 +102,26 @@ export function attachHarnessGuest(mount: HTMLElement, bridge: DesktopBridge, on
         if (source.origin !== target.origin || !/^\/bundles\/[a-z0-9-]+\/assets\/[^/]+\.js$/i.test(source.pathname)) return;
       } catch { return; }
       const request = parseGuestMessage(message);
+      if (request?.kind === 'image-preview') {
+        if (!options?.canPreviewImage?.() || options.tool) { send({ imagePreview: { id: request.id, opened: false } }); return; }
+        dismissPreview();
+        const sequence = previewSequence;
+        void (async () => {
+          let opened = false;
+          try {
+            const payload = await view.executeJavaScript(`(() => {
+              const detail = { id: ${JSON.stringify(request.id)} };
+              window.dispatchEvent(new CustomEvent('buildr-dsh-read-preview', { detail }));
+              return detail.image;
+            })()`);
+            if (abort.signal.aborted || previewSequence !== sequence || !isTrusted() || !options.canPreviewImage?.()) return;
+            const image = parsePreviewImage(payload, Date.now());
+            if (image) { closePreview = openImagePreview(image, view); opened = true; }
+          } catch { /* Keep the existing guest preview if the host cannot present it. */ }
+          if (previewSequence === sequence) send({ imagePreview: { id: request.id, opened } });
+        })();
+        return;
+      }
       if (request && (!options?.tool || request.kind === 'reveal' || request.kind === 'link' || request.kind === 'tool-ready')) options?.onMessage?.(request);
     });
     let started = false;
@@ -149,6 +175,7 @@ export function attachHarnessGuest(mount: HTMLElement, bridge: DesktopBridge, on
         options?.onRefresh?.({ lease: reserved.lease, reload });
       }
     };
+    view.addEventListener('did-start-navigation', dismissPreview);
     view.addEventListener('did-navigate-in-page', ready);
     view.addEventListener('did-finish-load', () => {
       if (!started || abort.signal.aborted) return;

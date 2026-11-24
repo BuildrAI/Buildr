@@ -1,15 +1,8 @@
 import {useEffect,useState} from 'react';
 import {Alert,Button} from 'antd';
 
-export type DesktopTool = 'explorer' | 'source-control';
-const CHANNEL = 'buildr-harness-desktop/v1:';
-export function desktopNotify(data: object) { console.info(CHANNEL+JSON.stringify(data)); }
-export function desktopPage(search: string): {kind:'chat'} | {kind:DesktopTool;workspaceId:string} | undefined {
-  const query=new URLSearchParams(search), kind=query.get('dsh');
-  if(kind==='chat')return {kind};
-  const workspaceId=query.get('workspace');
-  if((kind==='explorer'||kind==='source-control')&&workspaceId&&workspaceId.length<=1024)return {kind,workspaceId};
-}
+import { desktopNotify } from './dsh-desktop-bridge.ts';
+export { desktopNotify, desktopPage, type DesktopTool } from './dsh-desktop-bridge.ts';
 
 /** Only app-rendered, opted-in links from real user clicks enter the host bridge. */
 export function DesktopNavigation() {

@@ -79,9 +79,9 @@ const messages: Record<string, string> = {
   'harness-timeout': '打开 Harness 超时。请核对当前运行状态后重试。',
   'harness-navigation': 'Harness 网页未能加载。现有对话和执行不受影响。',
 };
-function Guest({ bridge, tool, onMessage, onControl, onRefresh }: { bridge: DesktopBridge; tool?: { kind: Tool; workspaceId: string }; onMessage?: (m: GuestMessage) => void; onControl?: (send: (d: object) => void) => void; onRefresh?: (handle: { lease?: string; reload: () => void } | undefined) => void }) {
+function Guest({ bridge, tool, onMessage, onControl, onRefresh, canPreviewImage }: { bridge: DesktopBridge; tool?: { kind: Tool; workspaceId: string }; onMessage?: (m: GuestMessage) => void; canPreviewImage?: () => boolean; onControl?: (send: (d: object) => void) => void; onRefresh?: (handle: { lease?: string; reload: () => void } | undefined) => void }) {
   const mount = useRef<HTMLDivElement>(null);
-  const latest = useRef({ onMessage, onControl, onRefresh }); latest.current = { onMessage, onControl, onRefresh };
+  const latest = useRef({ onMessage, onControl, onRefresh, canPreviewImage }); latest.current = { onMessage, onControl, onRefresh, canPreviewImage };
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<{ ready: boolean; error?: string }>({ ready: false });
   const kind = tool?.kind, workspaceId = tool?.workspaceId;
@@ -90,6 +90,7 @@ function Guest({ bridge, tool, onMessage, onControl, onRefresh }: { bridge: Desk
     if (!mount.current) return;
     return attachHarnessGuest(mount.current, bridge, error => setState(error ? { ready: false, error } : { ready: true }), {
       tool: kind && workspaceId ? { kind, workspaceId } : undefined,
+      canPreviewImage: () => latest.current.canPreviewImage?.() === true,
       onMessage: message => latest.current.onMessage?.(message), onControl: send => latest.current.onControl?.(send),
       onRefresh: handle => latest.current.onRefresh?.(handle),
     });
@@ -182,7 +183,7 @@ export function apply(ctx: Context) {
   }
   function accept(message: GuestMessage, send = sendToChat) {
     if (!state.active) return;
-    if (message.kind === 'tool-ready') return;
+    if (message.kind === 'tool-ready' || message.kind === 'image-preview') return;
     if (message.kind === 'shell') {
       if (message.action === 'leave') leave();
       else if (message.action === 'toggle-right' && mountAvailable()) sidebarRight.toggleExpanded();
@@ -260,7 +261,7 @@ export function apply(ctx: Context) {
       position: 'fixed', ...{ positionAnchor: ANCHOR, top: 'max(anchor(top), var(--dsh-frame-top-clearance, 0px))', bottom: 'anchor(bottom)', left: 'anchor(left)', width: 'anchor-size(width)' },
       pointerEvents: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--dsw-alias-bg-base, Canvas)', color: 'CanvasText',
     } : { display: 'none' }}>
-      <Guest bridge={bridge!} onMessage={accept} onControl={fn => { sendToChat = fn; tellGuest(); fn({ active: state.active }); }} onRefresh={handle => { chatRefresh = handle; }} />
+      <Guest bridge={bridge!} canPreviewImage={() => state.active} onMessage={accept} onControl={fn => { sendToChat = fn; tellGuest(); fn({ active: state.active }); }} onRefresh={handle => { chatRefresh = handle; }} />
     </section>;
   }
   function Anchor() {
