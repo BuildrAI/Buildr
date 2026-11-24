@@ -3,7 +3,7 @@ import { applyConfirmedSeenActivity, executionStatsSignature } from './conversat
 import { useConversationDraftPresenceDetail, useConversationDraftSubmittedIds } from './useConversationDraftPresence.ts';
 import { ConversationExecutionSummary } from './ConversationExecutionSummary.tsx';
 import { conversationModelSourceLabel, conversationModelLabel } from './conversation-model-label.ts';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Alert, Button, Empty, Tooltip } from 'antd';
 import { ArrowLeftOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext.tsx';
@@ -19,6 +19,7 @@ import { conversationChildIndent, type ConversationHistoryBranch } from './conve
 import { ConversationHistoryGroup } from './ConversationHistoryGroup.tsx';
 import { useConversationHistoryPage } from './useConversationHistoryPage.ts';
 import { useDebouncedValue } from './useDebouncedValue.ts';
+import { isElementFocusVisible, isKeyboardNavigationKey, shouldOpenConversationTooltipOnFocus } from './conversation-row-tooltip.ts';
 import './conversation-activity.css';
 export type ConversationWorkspace = {id:string;name:string;rootPath:string};
 type HistoryGroupResult = {total?:number;busy:boolean;error:boolean};
@@ -39,8 +40,120 @@ function DraftStatusBadge({visible,immediateHide}:{visible:boolean;immediateHide
   if(!visible&&!leaving)return null;
   return <span className={'ac-draft-status'+(leaving&&!visible?' is-leaving':'')} aria-hidden={leaving&&!visible?true:undefined}>有草稿</span>;
 }
+
+function ConversationHistoryRowTooltip({
+  rowId,
+  meta,
+  hidden,
+  dismissNonce,
+  keyboardNavRef,
+  onOpenRow,
+  children,
+}: {
+  rowId: string;
+  meta: string;
+  hidden: boolean;
+  dismissNonce: number;
+  keyboardNavRef: RefObject<boolean>;
+  onOpenRow(): void;
+  children: ReactNode;
+}) {
+  const [hoverOpen, setHoverOpen] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+
+  useEffect(() => {
+    setHoverOpen(false);
+    setKeyboardOpen(false);
+  }, [dismissNonce, hidden]);
+
+  return (
+    <Tooltip
+      title={meta || null}
+      trigger={['hover']}
+      mouseEnterDelay={0.55}
+      mouseLeaveDelay={0.25}
+      placement="right"
+      open={Boolean(meta) && !hidden && (hoverOpen || keyboardOpen)}
+      onOpenChange={next => setHoverOpen(Boolean(meta) && !hidden && next)}
+      destroyOnHidden
+    >
+      <div
+        className="ac-history-row-main"
+        data-conversation-id={rowId}
+        onPointerDown={() => {
+          keyboardNavRef.current = false;
+          setHoverOpen(false);
+          setKeyboardOpen(false);
+        }}
+        onFocus={event => {
+          if (!(event.target instanceof Element) || !event.target.matches('.ac-history-row-open')) return;
+          if (shouldOpenConversationTooltipOnFocus({
+            hasMeta: Boolean(meta),
+            hidden,
+            keyboardNavActive: keyboardNavRef.current,
+            focusVisible: isElementFocusVisible(event.target),
+          })) {
+            setKeyboardOpen(true);
+          }
+        }}
+        onBlur={event => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setKeyboardOpen(false);
+          }
+        }}
+        onClick={event => {
+          if (event.target instanceof Element && event.target.closest('button')) return;
+          onOpenRow();
+        }}
+      >
+        {children}
+      </div>
+    </Tooltip>
+  );
+}
+
 export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWorkspaceId,keepHistoryOpen=false,hiddenBySettings=false,headerAction}:{workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;keepHistoryOpen?:boolean;hiddenBySettings?:boolean;headerAction?:import('react').ReactNode}) {
   const context=useAgentConversations();
+  const keyboardNavRef = useRef(false);
+  const [tooltipDismissNonce, setTooltipDismissNonce] = useState(0);
+  const dismissRowTooltips = useCallback(() => {
+    keyboardNavRef.current = false;
+    setTooltipDismissNonce(value => value + 1);
+  }, []);
+
+  useEffect(() => {
+    if (hiddenBySettings) dismissRowTooltips();
+  }, [hiddenBySettings, dismissRowTooltips]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isKeyboardNavigationKey(event)) {
+        keyboardNavRef.current = true;
+      } else if (event.key === 'Escape') {
+        dismissRowTooltips();
+      }
+    };
+    const onPointerDown = () => {
+      keyboardNavRef.current = false;
+    };
+    const onBlur = () => {
+      dismissRowTooltips();
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden) dismissRowTooltips();
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('blur', onBlur);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('blur', onBlur);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [dismissRowTooltips]);
   const showBackToConversation=!keepHistoryOpen;
   const presence=useConversationDraftPresenceDetail();
   const activeEditingScope=keepHistoryOpen&&context.scope?context.scope:null;
@@ -99,10 +212,9 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   const workspaceName=(id:string)=>id===DEFAULT_HISTORY_GROUP?'默认':workspaces.find(item=>item.id===id)?.name||id;
   const renderRow=(row:ConversationSummary,depth:number,branch?:ConversationHistoryBranch,toggle?:()=>void)=>{
     const meta=conversationMetadata(row,undefined,row.run?.model?conversationModelLabel(row.run.model,context.connections,context.modelCatalog,{modelAccountId:row.run.modelAccountId}):undefined);
-    const openRow=()=>{context.setSettings(false);void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true,preserveHistoryView:keepHistoryOpen});};
+    const openRow=()=>{dismissRowTooltips();context.setSettings(false);void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true,preserveHistoryView:keepHistoryOpen});};
     return <div key={row.workspaceId+':'+row.id} style={conversationChildIndent(depth)} className={'ac-history-row'+(depth?' ac-conversation-child-row':'')+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
-      <Tooltip title={meta || null} trigger={['hover', 'focus']} mouseEnterDelay={0.55} mouseLeaveDelay={0.25} placement="right">
-      <div className="ac-history-row-main" data-conversation-id={row.id} onClick={event=>{if(event.target instanceof Element&&event.target.closest('button'))return;openRow();}}>
+      <ConversationHistoryRowTooltip rowId={row.id} meta={meta} hidden={hiddenBySettings} dismissNonce={tooltipDismissNonce} keyboardNavRef={keyboardNavRef} onOpenRow={openRow}>
         <span className="ac-history-row-title">
           <span className="ac-history-row-heading">
             <button type="button" className="ac-history-row-open" aria-description={meta || undefined} onClick={openRow}><strong title={meta ? undefined : row.title}>{row.title}</strong></button>
@@ -115,8 +227,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
         </span>
         {sendActivity(row)?.reason&&<span className="ac-send-reason">{sendActivity(row)?.reason}</span>}
         {row.searchSnippet&&<span className="ac-history-row-snippet" title={row.searchSnippet}>{row.searchSnippet}</span>}
-      </div>
-      </Tooltip>
+      </ConversationHistoryRowTooltip>
       <CopyButton type="text" className="ac-history-row-copy" text={row.id} ariaLabel="复制对话 ID" title={copyConversationIdTitle(row.id)} failureMessage="复制失败，请手动选择对话 ID 复制。"/>
     </div>;
   };

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Alert, App, Button, Select, Spin, Tag } from 'antd';
-import { FolderOpenOutlined, InfoCircleOutlined, ReloadOutlined } from '@ant-design/icons';
+import { CloseOutlined, FolderOpenOutlined, InfoCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useFileEditingContext } from '../../workbench/editor/FileEditingContext';
 import { FileEditingPane } from '../../workbench/editor/FileEditingPane';
 import type { MarkdownReadingPosition } from '../../workbench/editor/markdown-reading-position';
@@ -99,6 +99,7 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
   const repos = catalog?.repositories ?? [];
   const [repositoryPath, setRepositoryPath] = useState<string>();
   const [checkout, setCheckout] = useState<DirectorySelection | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const root = useMemo<BrowserSource>(() => ({
     id: `workspace:${scope.ref.id}`, repositoryId: scope.ref.id, repositoryPath: '', checkoutId: null,
     name: scope.name || sourceName(scope.rootPath, '工作空间目录'), locationLabel: '工作空间目录',
@@ -199,8 +200,23 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
     handledNonce.current = opened.nonce;
     setCheckout(target.selection);
     setRepositoryPath(target.selection ? target.repositoryPath : undefined);
+    setPickerOpen(false);
     openFile(target.id, opened.path, opened.line);
   }, [allSources, openFile, opened]);
+
+  useEffect(() => {
+    if (!active) setPickerOpen(false);
+  }, [active]);
+
+  useEffect(() => {
+    setPickerOpen(false);
+  }, [scopeKey]);
+
+  useEffect(() => {
+    if (!pickerOpen || repositoryPath !== undefined || repos.length !== 1) return;
+    setRepositoryPath(repos[0].path);
+    prioritizeRepository?.(repos[0].path);
+  }, [pickerOpen, repositoryPath, repos, prioritizeRepository]);
 
   const visibleIdsSignature = visibleSources.map(item => item.id).join(',');
   const expandedKeysKey = expandedKeys.join('|');
@@ -431,23 +447,50 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
     return { value: repo.path, label: codeRepositoryCode({ name: displayName, code: displayCode }), title: codeRepositoryLabel({ name: displayName, code: displayCode }) };
   });
   const selectedRepo = repos.find(repo => repo.path === repositoryPath);
-  const contextControl = <section className="code-root-selectors directory-browse-source" aria-label="浏览来源">
+  const togglePicker = () => {
+    if (!pickerOpen) {
+      onChooseCheckout(true);
+      setPickerOpen(true);
+      return;
+    }
+    setPickerOpen(false);
+    if (!checkout) onChooseCheckout(false);
+  };
+  const resetToWorkspaceRoot = () => {
+    setCheckout(null);
+    setRepositoryPath(undefined);
+    setPickerOpen(false);
+    onChooseCheckout(false);
+  };
+  const checkoutRepo = checkout ? repos.find(repo => repo.id === checkout.repositoryId) : undefined;
+  const checkoutRepoShort = checkoutRepo
+    ? (checkoutRepo.path ? (checkoutRepo.code || checkoutRepo.name) : (scope.name || checkoutRepo.code || checkoutRepo.name))
+    : '';
+  const checkoutMemberLabel = checkoutSource?.locationLabel || '所选工作树';
+  const checkoutDisplayLabel = checkout
+    ? (checkoutRepoShort && (repos.length > 1 || Boolean(checkoutRepo?.path)) ? `${checkoutRepoShort} · ${checkoutMemberLabel}` : checkoutMemberLabel)
+    : '工作空间目录';
+  const contextControl = <section className={'code-root-selectors directory-browse-source' + (checkout ? ' is-selected' : '')} aria-label="浏览来源">
     <div className="directory-browse-source-row">
       <span className="directory-browse-source-current" title={checkoutSource?.location || scope.rootPath}>
-        <FolderOpenOutlined aria-hidden /><span>{checkout ? checkoutSource?.locationLabel || '所选工作树' : '工作空间目录'}</span>
+        <FolderOpenOutlined aria-hidden /><span>{checkoutDisplayLabel}</span>
       </span>
-      <Button size="small" type="text" aria-expanded={choosingCheckout} onClick={() => {
-        if (choosingCheckout) { setCheckout(null); setRepositoryPath(undefined); }
-        onChooseCheckout(!choosingCheckout);
-      }}>{choosingCheckout ? (checkout ? '返回工作空间目录' : '取消选择') : '选择工作树'}</Button>
+      <div className="directory-browse-source-actions">
+        <Button size="small" type="text" className="directory-browse-source-toggle" aria-expanded={pickerOpen} onClick={togglePicker}>
+          {pickerOpen ? '收起' : (checkout ? '切换' : '选择工作树')}
+        </Button>
+        {checkout && <Button size="small" type="text" className="directory-browse-source-clear" aria-label="返回工作空间目录" title="返回工作空间目录" icon={<CloseOutlined />} onClick={resetToWorkspaceRoot} />}
+      </div>
     </div>
-    {choosingCheckout && <div className="directory-browse-source-fields">
-      <label><span>代码库</span><Select showSearch optionFilterProp="title" aria-label="选择代码库" placeholder="选择代码库" value={repositoryPath} loading={catalogLoading}
+    {pickerOpen && <div className="directory-browse-source-fields">
+      <label><span>代码库</span><Select size="small" showSearch optionFilterProp="title" aria-label="选择代码库" placeholder="选择代码库" value={repositoryPath} loading={catalogLoading}
         onChange={value => { setRepositoryPath(value); prioritizeRepository?.(value); }} options={repositoryOptions} popupRender={selectPopupGuard} /></label>
-      <label><span>工作树</span><Select showSearch optionFilterProp="label" aria-label="选择工作树" placeholder={selectedRepo?.pending ? '正在核对' : '选择工作树'} disabled={!selectedRepo || Boolean(selectedRepo.pending)} loading={Boolean(selectedRepo?.pending)}
+      <label><span>工作树</span><Select size="small" showSearch optionFilterProp="label" aria-label="选择工作树" placeholder={selectedRepo?.pending ? '正在核对…' : selectedRepo ? '选择工作树' : '先选择代码库'} disabled={!selectedRepo || Boolean(selectedRepo.pending)} loading={Boolean(selectedRepo?.pending)}
         value={checkout?.repositoryId === selectedRepo?.id ? checkout?.checkoutId : undefined}
-        onChange={id => { if (selectedRepo) setCheckout({ repositoryId: selectedRepo.id, checkoutId: id }); }}
-        options={selectedRepo?.members.map(member => ({ value: member.id, label: member.isMain ? '主工作树' : member.name, title: member.location }))} popupRender={selectPopupGuard} /></label>
+        onChange={id => { if (selectedRepo) { setCheckout({ repositoryId: selectedRepo.id, checkoutId: id }); setPickerOpen(false); } }}
+        options={selectedRepo?.members.map(member => ({ value: member.id, label: member.isMain ? '主工作树' : member.name, branch: member.branch || '', title: member.location }))}
+        optionRender={option => <div className="code-worktree-option" title={option.data.title}><span>{option.data.label}</span>{option.data.branch && <small>{option.data.branch}</small>}</div>}
+        popupRender={selectPopupGuard} /></label>
     </div>}
   </section>;
   const inScope = Boolean(!activeTab || visibleSources.some(src => src.id === activeTab.browserId));
