@@ -192,6 +192,16 @@
       "reason": "Buildr 产品自有组件随该版本公开分发批准。"
     },
     {
+      "name": "@buildr-ai/buildr",
+      "version": "0.1.0-rc.65",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation 422cb3d8-db73-5fb3-a3cf-a852346af7f7 (2026-11-24)"
+      },
+      "reason": "Buildr Development 自有组件随该版本按 MIT 公开分发，替代未在 npm 公开的 RC.64。"
+    },
+    {
       "name": "@chevrotain/cst-dts-gen",
       "version": "13.2.0",
       "disposition": "approved",
