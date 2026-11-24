@@ -13,15 +13,25 @@ function coded(error: unknown, code: string): boolean {
   return error instanceof Error && 'code' in error && error.code === code;
 }
 
-function fixture(t: test.TestContext) {
+function fixture(t: test.TestContext, options: { useHostHomeHint?: boolean } = {}) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-preview-reuse-')));
   const target = path.join(root, 'target');
   const dataRoot = path.join(root, 'app-data');
   const home = path.join(root, 'home');
+  const hostHome = path.join(root, 'host-home');
+  fs.mkdirSync(home, { recursive: true });
   const worker = path.join(root, 'worker.mjs');
   const pidFile = path.join(root, 'worker.pid');
-  const reuseOptions = { home, platform: process.platform, env: { LOCALAPPDATA: path.join(home, 'localappdata'), XDG_STATE_HOME: path.join(home, 'state') } as NodeJS.ProcessEnv };
-  const developmentRoot = defaultWebDataRoot('development', reuseOptions);
+  const reuseOptions = options.useHostHomeHint
+    ? {
+      platform: process.platform,
+      env: { HOME: home, USERPROFILE: home, BUILDR_HOST_HOME: hostHome } as NodeJS.ProcessEnv,
+    }
+    : { home, platform: process.platform, env: { LOCALAPPDATA: path.join(home, 'localappdata'), XDG_STATE_HOME: path.join(home, 'state') } as NodeJS.ProcessEnv };
+  const developmentRoot = defaultWebDataRoot(
+    'development',
+    options.useHostHomeHint ? { home: hostHome, platform: process.platform, env: {} } : reuseOptions,
+  );
   const modelAccess = path.join(developmentRoot, 'agent-service', 'model-access');
   fs.mkdirSync(modelAccess, { recursive: true });
   fs.writeFileSync(path.join(modelAccess, 'accounts.json'), `${JSON.stringify({
@@ -257,4 +267,16 @@ test('单个 facet 失败不阻止预览启动并保留其他 facet 结果', { t
   assert.ok(started.owner.reuse?.results[1].diagnostics.some((entry) => entry.includes('模型目录')));
   assert.equal(fs.existsSync(path.join(previewDataRoot('demo', data.dataRoot), 'agent-service', 'model-access')), false);
   await stopPreview('demo', { dataRoot: data.dataRoot, purge: true });
+});
+
+test('隔离 HOME 下默认沿用可通过 BUILDR_HOST_HOME 读取宿主机开发版配置并完成播种', { timeout: 20_000 }, async (t) => {
+  const data = fixture(t, { useHostHomeHint: true });
+  const started = await data.start([]);
+  assert.equal(started.status, 'started');
+  assert.equal(started.owner.reuse?.source, 'development');
+  assert.equal(started.owner.reuse?.results.find((result) => result.id === 'model-catalog')?.status, 'seeded');
+  const copiedAccounts = path.join(previewDataRoot('demo', data.dataRoot), 'agent-service', 'model-access', 'accounts.json');
+  assert.equal(fs.readFileSync(copiedAccounts, 'utf8'), fs.readFileSync(path.join(data.modelAccess, 'accounts.json'), 'utf8'));
+  const purged = await stopPreview('demo', { dataRoot: data.dataRoot, purge: true });
+  assert.equal(purged.status, 'purged');
 });

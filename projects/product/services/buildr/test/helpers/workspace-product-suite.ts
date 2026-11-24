@@ -652,11 +652,12 @@ suiteTest('app-process', 'buildr web 重复启动复用单实例并从陈旧 run
   }
 });
 
-// 默认沿用 development 会读取 HOME 下的开发版数据根；套件必须隔离 HOME，
+// 默认沿用 development 会读取 BUILDR_HOST_HOME 或 HOME 下的开发版数据根；套件必须同时隔离二者，
 // 否则真实开发版的程序目录（数百 MB）会被复制进每个预览实例并超时。
 function isolatedPreviewEnv(base: string, env: any): any {
   const home = path.join(base, 'preview-home');
   const previewEnv = { ...env, HOME: home, LOCALAPPDATA: path.join(home, 'localappdata'), XDG_STATE_HOME: path.join(home, 'state') };
+  delete previewEnv.BUILDR_HOST_HOME;
   const modelAccess = path.join(defaultWebDataRoot('development', { home, env: previewEnv, platform: process.platform }), 'agent-service', 'model-access');
   fs.mkdirSync(modelAccess, { recursive: true });
   fs.writeFileSync(path.join(modelAccess, 'accounts.json'), '{"version":1,"preferences":{},"accounts":[]}\n');
