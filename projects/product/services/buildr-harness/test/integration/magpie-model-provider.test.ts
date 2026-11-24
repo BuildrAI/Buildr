@@ -104,7 +104,7 @@ test('Magpie handles default-only, unknown and explicit maximums without a model
     entry('explicit-max',250_000,{max_context_window:600_000}),
   ];
   const provider=createMagpieModelProvider({root,configuredOrigin:async()=>origin,
-    fetch:async url=>new URL(url).pathname==='/api/hello'?Response.json({name:'magpie',version:'0.1.4708'}):Response.json({data}),
+    fetch:async input=>new URL(input instanceof Request?input.url:input).pathname==='/api/hello'?Response.json({name:'magpie',version:'0.1.4708'}):Response.json({data}),
     installation:{address:async()=>undefined,start:async()=>{throw Error('unexpected launch');},open:async()=>{}}});
   let access=createModelAccess({root,providers:[provider]});
   try{
