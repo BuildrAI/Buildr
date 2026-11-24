@@ -49,17 +49,43 @@ async function configuredOrigin(): Promise<string | undefined> {
     return port ? gateway(port) : undefined;
   } catch { return undefined; }
 }
+function formatUpstreamLabel(key: string): string {
+  return key
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map(part => /^[a-z]+$/.test(part) ? part[0]!.toUpperCase() + part.slice(1) : part)
+    .join(' ');
+}
+function upstreamMeta(id: string, label: string, row: Record<string, unknown>): { provider?: string; providerLabel?: string } {
+  const slash = id.indexOf('/');
+  const prefix = slash > 0 ? displayText(id.slice(0, slash), 80) : undefined;
+  const provider = displayText(row.owned_by, 80) ?? prefix;
+  const magpieLabel = typeof row.magpie_label === 'string' ? row.magpie_label : undefined;
+  const sep = label + ' · ';
+  const extracted = magpieLabel && magpieLabel.startsWith(sep) ? displayText(magpieLabel.slice(sep.length), 80) : undefined;
+  const providerLabel = extracted ?? (provider ? displayText(formatUpstreamLabel(provider), 80) : undefined);
+  return { provider, providerLabel };
+}
 function offerings(value: unknown[]): ModelOffering[] {
   const out = new Map<string, ModelOffering>();
   for (const valueRow of value) {
     const row = record(valueRow), id = string(row.id);
     if (!id || !/^[^\s\u0000-\u001f]{1,256}$/u.test(id) || out.has(id) || (row.kind && row.kind !== 'chat' && row.kind !== 'model')) continue;
     const label = string(row.display_name)?.trim().slice(0,160) || id;
+    const upstream = upstreamMeta(id, label, row);
     const input = record(row.modalities).input;
-    const contextWindow = integer(row.context_window), maxOutputTokens = integer(row.max_output_tokens);
+    const defaultWindow = integer(row.context_window);
+    // Only an explicit maximum is a total-window cap. Do not promote the
+    // default or the separate max_input_tokens count into that cap.
+    const maxWindow = integer(row.max_context_window) ?? null;
+    const contextWindow = defaultWindow !== undefined ? Math.min(defaultWindow, maxWindow ?? defaultWindow) : undefined;
+    const maxOutputTokens = integer(row.max_output_tokens);
     const efforts = [...new Set((Array.isArray(row.reasoning_levels) ? row.reasoning_levels : []).filter((item): item is string => typeof item === 'string' && /^(none|minimal|low|medium|high|xhigh|max|ultra)$/.test(item)))];
     out.set(id, {id, label, images: Array.isArray(input) && input.includes('image'), tools: row.supports_tools !== false,
-      ...(contextWindow ? {contextWindow} : {}), ...(maxOutputTokens ? {maxOutputTokens} : {}),
+      ...(upstream.provider ? { upstreamProvider: upstream.provider } : {}),
+      ...(upstream.providerLabel ? { upstreamProviderLabel: upstream.providerLabel } : {}),
+      ...(contextWindow ? {contextWindow} : {}), reportedContextWindow:maxWindow,
+      ...(maxOutputTokens ? {maxOutputTokens} : {}),
       ...(efforts.length ? {reasoningEfforts:efforts.map(id=>({id,label:id}))} : {})});
     if (out.size >= 1000) break;
   }

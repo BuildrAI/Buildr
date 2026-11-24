@@ -5,6 +5,7 @@ import type {AgentProcessConnection} from './client.ts';
 import { HarnessDirectoryHost, DIRECTORY_SOURCE_ID, observeWorkbenchDirectory } from '../application/directory-host.ts';
 import { BUILDR_SOURCE_ID, LocalWorkspaceAuthority } from '../application/local-workspaces.ts';
 import { previewLocalFile } from '../application/local-file-preview.ts';
+import { createDirectoryRepositoryDiscovery } from '../application/directory-checkouts.ts';
 import { createDirectoryWorkbench, directoryWorkbenchWrites, workbenchError } from '../application/directory-workbench.ts';
 import { CodeGeneration } from '../workbench/code-generation.ts';
 import { EDITABLE_FILE_JSON_BYTES } from '../workbench/editable-file.ts';
@@ -58,7 +59,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   const sourcePolicies = new SourceContinuationPolicies(options.dataRoot, options.legacySourceId!, () => options.autoContinueInterrupted ?? false);
   const backendChange = runtimeChange(readProcessRecord(options.dataRoot), options.runtime.digest, new Date().toISOString());
   const retainedOwners=new Map(readProcessInstances(options.dataRoot).map(record=>[record.identity.generation,record.identity]));
-  const service = createAgentService({ ...options.serviceOptions, backendChange, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, get autoContinueInterrupted() { return options.autoContinueInterrupted; }, continuationPolicy: scope => sourcePolicies.enabled(scope), host: hosts, controlSupersededRun:async(scope,id,control,action)=>{
+  const service = createAgentService({ ...options.serviceOptions, backendChange, dataRoot: options.dataRoot, profileId: options.profileId, legacySourceId: options.legacySourceId, get autoContinueInterrupted() { return options.autoContinueInterrupted; }, continuationPolicy: scope => sourcePolicies.enabled(scope), host: hosts, controlSupersededRun:async(scope,id,control,action)=>{
     const target=await recipient(scope,id,control.generation);
     if(target)return forward(target,'/operations',{contract:AGENT_EXECUTION_CONTRACTS.operations,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,operation:action==='stop'?'conversations.stop':action==='release-question-wait'?'conversations.releaseQuestionWait':'conversations.observeRun',args:[scope,id,control]});
     return action==='stop'?service.conversations.stop(scope,id,control):action==='release-question-wait'?service.conversations.releaseQuestionWait(scope,id,control):service.conversations.observeRun(scope,id,control);
@@ -75,6 +76,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   } });
   const repository = new ConversationRepository(path.join(options.dataRoot, 'agent-service'));
   service.models.startRefreshing();
+  const directoryDiscovery = createDirectoryRepositoryDiscovery();
   const directoryGeneration = new CodeGeneration(input => service.models.generate(input));
   abortStart = async () => { directoryGeneration.close(); await service.close(); };
   const instanceId = randomUUID(), pendingFile = path.join(controlRoot(options.dataRoot), 'pending.json');
@@ -315,7 +317,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       try {
         const {workspaceId,...fields}=input.input;
         if(workspaceId===undefined && input.operation!=='scope') {
-          json(res,200,await createDirectoryWorkbench(directories, { generation: directoryGeneration })(input.operation,fields));return;
+          json(res,200,await createDirectoryWorkbench(directories, { generation: directoryGeneration, discovery: directoryDiscovery })(input.operation,fields));return;
         }
         if(typeof workspaceId!=='string'||!workspaceId||workspaceId.length>2048||workspaceId.includes('\0')||
           (input.operation==='scope'?Object.keys(fields).length!==0:Object.hasOwn(fields,'scopeId')))
@@ -348,7 +350,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
             throw new AgentServiceError('agent_process_switching','当前后台不接受新写入；输入已保留。',503);
           return scope;
         };
-        json(res,200,await createDirectoryWorkbench({resolveDirectory}, { generation: directoryGeneration })(input.operation,{...fields,scopeId:scope.ref.id}));
+        json(res,200,await createDirectoryWorkbench({resolveDirectory}, { generation: directoryGeneration, discovery: directoryDiscovery })(input.operation,{...fields,scopeId:scope.ref.id}));
       }
       catch (error) { workbenchError(error); }
       return;

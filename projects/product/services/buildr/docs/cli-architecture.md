@@ -14,7 +14,7 @@ projects/product/buildr（checkout convenience）
 
 `bin/buildr.mjs` 是薄入口。`src/bootstrap/cli/main.ts` 处理内部安装动作、进程级错误，并延迟加载命令分发；`src/bootstrap/cli/registry.ts` 创建技术运行时（Runtime），从模块贡献（Contribution）建立唯一命令目录、帮助与未知命令候选，再调用对应入口。模块生命周期由模块登记（Module Registry）管理。
 
-正式 npm 包由 `../../../../skills/buildr-release/scripts/release-artifact.ts:npmBinSource()` 生成默认入口，在完整业务负载、产品 Node 范围检查及安装环境注入之前，调用安装模块的 `application/workspace-cli-routing.ts`。独立的 `runtime/workspace-cli-router.cjs` 只读现有管理归属和启动登记，选择继续当前 npm 或委派开发来源；不装配业务运行时（Runtime）或打开 SQLite。参数与当前目录原样传递，委派边界清理父来源身份并传播标准输入输出、退出状态及适用信号。显式源码入口、图形启动器（Launcher）、安装自身动作和独立 `buildr-mysql` 保持绑定来源。
+正式 npm 包由 `../../../../skills/buildr-release/scripts/release-artifact.ts:npmBinSource()` 生成默认入口，在完整业务负载、产品 Node 范围检查及安装环境注入之前，调用安装模块的 `application/workspace-cli-routing.ts`。独立的 `runtime/workspace-cli-router.cjs` 只读现有管理归属、目标开发数据目录 `development-source.json` 及兼容启动登记，选择继续当前 npm 或委派开发来源；不装配业务运行时（Runtime）或打开 SQLite。参数与当前目录原样传递，委派边界清理父来源身份并传播标准输入输出、退出状态及适用信号。显式源码入口、图形启动器（Launcher）、安装自身动作和独立 `buildr-mysql` 保持绑定来源。
 
 ## 源码结构
 
@@ -110,7 +110,7 @@ module.ts → private composition
 - `../../../../skills/buildr-release/scripts/application-payload.ts` 构建产品运行闭包；`package.json#files` 与 manifest 约束 npm 文件集合。
 - `resources/runtime/` 与 `resources/workspace/` 保存文件型交付源。
 - `tools/build/launcher/` 只构建/维护 Development Launcher。
-- 源码桥接与 macOS 开发启动器（Development Launcher）将 `tools/development/programs/` 和已选 Node.js 的目录加入当前进程的 `PATH`，提供 `buildr-mysql` 辅助命令。该私有目录不含 `buildr`，默认 npm 安装入口保持独立；通用连接程序继续按实际依赖判断可用性。
+- 源码桥接与 macOS 开发启动器（Development Launcher）将 `tools/development/programs/` 和已选 Node.js 的目录加入当前进程的 `PATH`，提供 `buildr-mysql` 辅助命令。该私有目录不含 `buildr`，默认 npm 安装入口保持独立；通用连接程序继续按实际依赖判断可用性。`development` 配置域的 Harness 执行器存储另在自身私有工具链目录（`<dataRoot>/agent-service/toolchains/dev-cli-bin/`）为智能体子进程注入会话级 `buildr` 入口，直连已验证开发源码并在需要全局 npm 动作或独占发布版工作空间时剥离自身目录委派下游 `buildr`。
 - `package/` 已无职责；派生测试库位于 Git 忽略的 `build/test-context/`。
 - 安装后的用户命令只依赖安装包内运行闭包；开发维护命令 `package check` 不属于该范围。
 - 现有 `docs/cli-reference.md` 随应用负载（Application Payload）交付，供命令无法启动或离线时读取安装与恢复依据；其他开发文档和源码链接仍以仓库为准，不为安装包复制整套手册。

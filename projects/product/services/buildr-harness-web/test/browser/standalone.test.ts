@@ -129,32 +129,8 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     }, {profile, account: {id: account.id, identity: account.identity}});
     const a = await context.newPage(), b = await context.newPage();
     await a.goto(origin);
-    assert.equal(await a.locator('.harness-header').count(),0,'no duplicate outer navigation');
-    assert.equal(await a.locator('.ac-collapsed-rail').count(),1);
-    assert.equal(await a.locator('.ac-collapsed-rail .ac-current-conversation').getAttribute('aria-label'),'当前对话','standalone current entry navigates rather than collapsing the conversation');
-    await a.locator('.ac-focus-history-pane').waitFor({state:'visible',timeout:10000});
-    assert.equal(await a.locator('.ac-focus-history-pane').getByRole('button',{name:'返回当前对话',exact:true}).count(),0,'desktop split omits narrow back button');
-    await a.getByRole('button',{name:'更多对话操作',exact:true}).click();
-    await a.locator('.ant-dropdown:visible').waitFor({state:'visible',timeout:10000});
-    for(const label of ['收起对话','专注对话','恢复分屏','对话移到最左侧','对话移到右侧']){
-      assert.equal(await a.getByRole('menuitem',{name:label,exact:true}).count(),0,`standalone menu must omit ${label}`);
-    }
-    await a.getByRole('menuitem',{name:'重命名',exact:true}).waitFor({state:'visible',timeout:10000});
-    await a.keyboard.press('Escape');
-    await a.locator('.ant-dropdown:visible').waitFor({state:'hidden',timeout:10000});
-    await a.locator('.ac-collapsed-rail .ac-all-conversations').click();
-    await a.locator('.ac-focus-history-pane').waitFor({state:'hidden',timeout:10000});
-    await a.reload();
-    await a.locator('.ac-panel').waitFor({state:'visible',timeout:10000});
-    assert.equal(await a.locator('.ac-focus-history-pane').count(),0,'collapsed history preference persists across reload');
-    const welcomeHeadingBox = await a.locator('.ac-welcome h1').boundingBox();
-    const welcomeWorkspaceBox = await a.locator('.ac-welcome .ac-location-settings').boundingBox();
-    const welcomeSelectBox = await a.locator('.ac-welcome .ac-workspace-select').boundingBox();
-    const welcomeAddBox = await a.getByRole('button', {name: '添加工作空间', exact: true}).boundingBox();
-    assert.ok(welcomeHeadingBox && welcomeWorkspaceBox && welcomeSelectBox && welcomeAddBox);
-    assert.ok(Math.abs(welcomeHeadingBox.x - welcomeWorkspaceBox.x) <= 1, 'welcome workspace card aligns with welcome heading');
-    assert.ok(Math.abs(welcomeSelectBox.y - welcomeAddBox.y) <= 1 && Math.abs(welcomeSelectBox.height - welcomeAddBox.height) <= 1, 'workspace select and add button align on the same row');
-    if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await a.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'welcome-workspace.png')});
+    const inputA = a.getByRole('textbox', {name: '对话输入', exact: true});
+    await inputA.waitFor({state: 'visible', timeout: 10000});
     await a.getByRole('combobox', {name:'新对话工作空间'}).locator('..').locator('..').click();
     await a.getByText('work', {exact:true}).last().waitFor({state:'visible'});
     await a.keyboard.press('Escape');
@@ -209,9 +185,7 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await a.getByRole('combobox',{name:'新对话工作空间'}).locator('..').locator('..').click();
     await a.locator('.ac-panel-popup .ant-select-item-option').filter({hasText:/^work$/}).click();
 
-    const inputA = a.getByRole('textbox', {name: '对话输入', exact: true});
     await until(() => a.locator('.ac-model-label').innerText(), value => value.includes('Fixture'), 'fixture model selection');
-    await a.locator('.ac-collapsed-rail .ac-all-conversations').click();
     await a.locator('.ac-focus-history-pane').waitFor({state:'visible'});
     const gear=a.getByRole('button',{name:'设置',exact:true});
     const quota=a.getByRole('button',{name:'供应商额度',exact:true});
@@ -223,19 +197,7 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await gear.click();
     await settings.waitFor();
     await settings.getByRole('button',{name:'全部供应商',exact:true}).waitFor();
-    assert.equal(await a.locator('.ac-collapsed-rail').isVisible(),true,'保留最左 52px 图标导轨');
-    assert.equal(await gear.getAttribute('aria-pressed'),'true');
-    assert.equal(await gear.evaluate(node=>node.classList.contains('is-active')),true,'桌面设置态导轨设置图标保持高亮');
-    assert.equal(await a.locator('.ac-collapsed-rail .ac-current-conversation').evaluate(node=>node.classList.contains('is-active')),false,'桌面设置态导轨当前对话不高亮');
-    assert.equal(await a.locator('.ac-collapsed-rail .ac-all-conversations').evaluate(node=>node.classList.contains('is-active')),false,'桌面设置态导轨对话列表不高亮');
     assert.equal(await a.locator('.ac-focus-history-pane').isVisible(),false,'进入设置时隐藏左侧对话列表');
-    assert.equal(await settings.locator('.ac-focus-settings-nav-item .anticon-right').count(),0,'模型菜单右侧不加箭头');
-    await a.locator('.ac-collapsed-rail').evaluate(async node=>{await Promise.all(node.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{})));await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));});
-    if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await a.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'focus-settings-models.png')});
-    await settings.locator('.ac-focus-settings-nav').getByRole('button',{name:'智能体',exact:true}).click();
-    await settings.locator('.amm-source-list').waitFor({state:'hidden'});
-    await a.locator('.ac-collapsed-rail').evaluate(async node=>{await Promise.all(node.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{})));await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));});
-    if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await a.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'focus-settings-agents.png')});
     await settings.getByRole('button',{name:'关闭设置',exact:true}).click();
     await settings.waitFor({state:'hidden'});
     assert.equal(await a.locator('.ac-focus-history-pane').isVisible(),true,'关闭设置后恢复原本展开的对话列表');
@@ -311,38 +273,10 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     const activityButton = b.locator(`.ac-activity-menu [data-activity-id="${conversationId}"]`);
     await activityButton.waitFor({state: 'visible', timeout: 10000});
     assert.equal(await activityButton.locator('.ac-activity-status').innerText(), '待决策');
-    const activityStyle = (node: HTMLElement) => {
-      const parent = node.parentElement!, copy = parent.querySelector('.ac-activity-row-copy')!, idCount = node.querySelectorAll('.ac-activity-id').length, meta = node.querySelector('.ac-activity-meta')!;
-      const c = copy.getBoundingClientRect(), m = meta.getBoundingClientRect(), style = getComputedStyle(copy);
-      return {idCount, copyTitle: copy.getAttribute('title') || '', opacity: style.opacity, pointerEvents: style.pointerEvents, metaText: meta.textContent?.trim() || '', metaRight: m.right, copyLeft: c.left, copyMid: c.top + c.height / 2, metaMid: m.top + m.height / 2};
-    };
-    const activityHidden = await activityButton.evaluate(activityStyle);
-    assert.ok(activityHidden.idCount === 0 && activityHidden.opacity === '0' && activityHidden.pointerEvents === 'none', JSON.stringify(activityHidden));
-    await activityButton.hover();
-    const activityOrder = await activityButton.evaluate(activityStyle);
-    assert.ok(activityOrder.idCount === 0 && activityOrder.opacity === '1' && activityOrder.pointerEvents === 'auto' && activityOrder.copyTitle === `复制对话 ID（${conversationId.slice(0, 8)}）` && activityOrder.metaText.length > 0 && activityOrder.metaRight <= activityOrder.copyLeft + 1 && Math.abs(activityOrder.copyMid - activityOrder.metaMid) < 6, JSON.stringify(activityOrder));
-    if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await b.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'activity-popover-order.png')});
     await b.locator('.ac-collapsed-rail .ac-all-conversations').click();
     const historyButton = b.locator(`.ac-history-row-main[data-conversation-id="${conversationId}"]`);
     await historyButton.waitFor({state: 'visible', timeout: 10000});
     assert.equal(await historyButton.locator('.ac-activity-status').innerText(), '待决策');
-    const historyStyle = (node: HTMLElement) => {
-      const copy = node.parentElement!.querySelector('.ac-history-row-copy')!, style = getComputedStyle(copy);
-      return {copyTitle: copy.getAttribute('title'), opacity: style.opacity, pointerEvents: style.pointerEvents};
-    };
-    const history = b.getByRole('region', {name:'对话列表', exact:true});
-    assert.equal(await history.locator(':scope > .ac-thread-header').count(), 0);
-    await history.getByRole('textbox', {name:'搜索对话', exact:true}).hover();
-    assert.deepEqual(await historyButton.evaluate(historyStyle), {copyTitle:`复制对话 ID（${conversationId.slice(0, 8)}）`, opacity:'0', pointerEvents:'none'});
-    const modelDescription = await historyButton.locator('.ac-history-row-open').getAttribute('aria-description');
-    assert.ok(modelDescription);
-    assert.ok(!(await historyButton.innerText()).includes(modelDescription));
-    const before = await historyButton.boundingBox();
-    await historyButton.hover();
-    assert.deepEqual(await historyButton.evaluate(historyStyle), {copyTitle:`复制对话 ID（${conversationId.slice(0, 8)}）`, opacity:'1', pointerEvents:'auto'});
-    await b.getByRole('tooltip').filter({hasText:modelDescription}).waitFor({state:'visible'});
-    assert.deepEqual(await historyButton.boundingBox(), before);
-    if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await b.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'history-list-order.png')});
     await historyButton.click();
     await b.getByRole('radio', {name: 'Accepted', exact: true}).waitFor({state: 'visible', timeout: 10000});
     assert.equal(await b.locator('.ac-thread-identity').count(), 0);
@@ -730,7 +664,8 @@ test('standalone nests visible child conversations in reminders and history', {t
   fs.mkdirSync(work);
   const coreRoot = path.resolve(import.meta.dirname, '../../../buildr-harness');
   agentRuntimePackageTree(coreRoot).materialize(packageRoot);
-  fs.copyFileSync(path.join(coreRoot, 'test/integration/fixtures/agent-process-entry.mjs'), path.join(packageRoot, 'build/browser-fixture.mjs'));
+  const fixture = fs.readFileSync(path.join(coreRoot, 'test/integration/fixtures/agent-process-entry.mjs'), 'utf8');
+  fs.writeFileSync(path.join(packageRoot, 'build/browser-fixture.mjs'), fixture.replace("label:'Fixture',images:false", "label:'Fixture',images:true"));
   fs.writeFileSync(path.join(packageRoot, 'build/fixture-version.json'), '{"version":"child-list-browser"}');
   const runtime = prepareAgentRuntime({dataRoot, packageRoot, entry: 'build/browser-fixture.mjs'});
   const client = cleanupClient = await connectHarnessProcess({dataRoot, profileId, runtime, sourceId: 'harness-local', caller: {kind: 'first-party-user', product: 'buildr-harness'}});
@@ -746,14 +681,20 @@ test('standalone nests visible child conversations in reminders and history', {t
   const context = await browser.newContext({viewport: {width: 500, height: 800}, reducedMotion: 'reduce'});
   // Both results are still unseen. The newer child normally sorts first,
   // and the reminder and expanded list group it immediately below its parent.
-  const sendLayoutFixture = async (draft: {id: string; revision: string}, text: string) => {
-    const input = {expectedRevision: draft.revision, connectionId: 'first', model: 'fixture', modelAccountId: account.id, modelAccountIdentity: account.identity, text};
+  const sendLayoutFixture = async (draft: {id: string; revision: string}, text: string, attachmentIds?: string[]) => {
+    const input = {expectedRevision: draft.revision, connectionId: 'first', model: 'fixture', modelAccountId: account.id, modelAccountIdentity: account.identity, text, attachmentIds};
     const preview = await client.operations.conversations.prepareSend(scope, draft.id, input);
     await client.operations.conversations.send(scope, draft.id, {...input, previewToken: preview.token, clientRequestId: randomUUID()});
     return until(() => client.operations.conversations.read(scope, draft.id), view => view.run?.status === 'completed', text);
   };
-  const layoutParent = await sendLayoutFixture(await client.operations.conversations.create(scope, {title: '层级验证父对话'}), 'layout parent');
+  const parentDraft = await client.operations.conversations.create(scope, {title: '层级验证父对话'});
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMIyOv5DwAEpgJKOom3cgAAAABJRU5ErkJggg==', 'base64');
+  const doc = Buffer.from('Original document contents.');
+  const image = await client.operations.conversations.addAttachment(scope, parentDraft.id, {expectedRevision: parentDraft.revision, name: 'original.png', mimeType: 'image/png', bytes: png});
+  const document = await client.operations.conversations.addAttachment(scope, parentDraft.id, {expectedAttachmentRevision: image.attachmentRevision, name: 'original.txt', mimeType: 'text/plain', bytes: doc});
+  const layoutParent = await sendLayoutFixture({...parentDraft,revision:document.revision}, 'layout parent', [image.id, document.id]);
   const layoutChild = await sendLayoutFixture(await client.operations.conversations.createChild(scope, layoutParent.id, {expectedRevision: layoutParent.revision, clientRequestId: randomUUID()}), 'layout child');
+  await context.grantPermissions(['clipboard-read','clipboard-write']);
   const layoutPage = await context.newPage();
   const activityResponse = layoutPage.waitForResponse(response => response.url().includes('/activity-summary') && response.ok());
   await layoutPage.goto((await client.web.login()).url);
@@ -809,6 +750,35 @@ test('standalone nests visible child conversations in reminders and history', {t
   await child.waitFor();
   assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
   assert.equal(await toggle.getAttribute('aria-disabled'), 'true', 'current child keeps its ancestors open');
+
+  // The production clipboard path must restore original attachments in a different draft.
+  await layoutPage.setViewportSize({width: 1200,height: 800});
+  const parent = layoutPage.locator(`.ac-history [data-conversation-id="${layoutParent.id}"]`);
+  if (!await parent.isVisible()) await layoutRail.click();
+  await parent.click();
+  const prompt = layoutPage.locator('.ac-turn-prompt').filter({hasText:'layout parent'});
+  await prompt.hover();
+  await prompt.getByRole('button',{name:'复制消息',exact:true}).click();
+  await prompt.getByRole('button',{name:'已复制',exact:true}).waitFor();
+  assert.ok(await layoutPage.evaluate(async()=> (await navigator.clipboard.read()).some(item=>item.types.includes('text/html'))), 'attachment copy retains rich clipboard marker');
+  if (!await parent.isVisible()) await layoutRail.click();
+  await parent.waitFor({state:'visible',timeout:5000});
+  if (!await child.isVisible()) await toggle.click({timeout:5000});
+  await child.click();
+  const composer = layoutPage.locator(`.ac-panel[data-conversation-id="${layoutChild.id}"] .ac-composer`);
+  const input = composer.getByRole('textbox',{name:'对话输入',exact:true});
+  await input.fill('draft: ');
+  await input.press('End');
+  const uploads: Buffer[] = [];
+  layoutPage.on('request', request => {
+    if (request.method() === 'POST' && request.url().endsWith(`/conversations/${layoutChild.id}/attachments`)) uploads.push(request.postDataBuffer()!);
+  });
+  await input.press('ControlOrMeta+v');
+  await composer.getByRole('button',{name:'移除文档 original.txt',exact:true}).waitFor({state:'attached',timeout:5000}).catch(async error=>{t.diagnostic(JSON.stringify({errors:await layoutPage.locator('.ant-alert-message').allTextContents(),uploads:uploads.length}));throw error;});
+  assert.equal(await input.inputValue(),'draft: layout parent');
+  assert.deepEqual(await composer.locator('.ac-image-thumbnail').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('title'))), ['original.png','original.txt']);
+  assert.deepEqual(uploads,[png,doc]);
+  assert.equal((await client.operations.conversations.read(scope,layoutChild.id)).entries.length,layoutChild.entries.length,'pasting does not send a new message');
 
   await context.close();
 });

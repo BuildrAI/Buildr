@@ -5,6 +5,7 @@ import { Worker } from 'node:worker_threads';
 import { regenerableToolCaches, legacyDownloadRetained } from '../storage/tool-cache.ts';
 import { recordSharedCacheUse } from '../storage/shared-cache.ts';
 import { sharedToolchainEnvironment } from '../storage/toolchain-environment.ts';
+import { prepareDevelopmentCliEnvironment } from '../storage/development-cli-environment.ts';
 import type { AgentExecutor, AgentRuntime, ExecutorOpenOptions } from '../contracts.ts';
 import { claim, privateDirectory } from '../process/ownership.ts';
 import { disposableGatewayLease, ensureStorageDirectory, observeStorageUse, safeStoragePath, storageCandidate, storageInUse, type StorageCandidate, type StorageUse } from '../storage/files.ts';
@@ -13,7 +14,11 @@ import { disposableGatewayLease, ensureStorageDirectory, observeStorageUse, safe
 export class ExecutorStorage {
   private readonly bindings = new WeakMap<AgentRuntime, { root: string; executor: AgentExecutor; nativeRoot?: string }>();
   private readonly root: string;
-  constructor(root: string) { this.root = root; }
+  private readonly profileId?: string;
+  constructor(root: string, options?: { profileId?: string }) {
+    this.root = root;
+    this.profileId = options?.profileId;
+  }
 
   options(executor: AgentExecutor, options: ExecutorOpenOptions): ExecutorOpenOptions {
     options = { ...options, environment: { ...options.environment, BUILDR_APP_DATA_DIR: options.environment.BUILDR_APP_DATA_DIR || path.dirname(this.root) } };
@@ -25,7 +30,8 @@ export class ExecutorStorage {
     privateDirectory(connection);
     if (!safeStoragePath(this.root, connection)) throw new Error('agent_storage_path_unsafe');
     const shared = sharedToolchainEnvironment(this.root, options.environment);
-    options = { ...options, environment: shared.environment, cacheRoot: shared.cacheRoot };
+    const environment = prepareDevelopmentCliEnvironment(this.root, this.profileId, shared.environment);
+    options = { ...options, environment, cacheRoot: shared.cacheRoot };
     if (!executor.storage) return options;
     try {
       for (const part of ['cache', 'cache/npm', 'cache/node-compile', 'cache/yarn']) {

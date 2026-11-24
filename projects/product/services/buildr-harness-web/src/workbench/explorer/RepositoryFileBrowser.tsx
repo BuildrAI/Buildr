@@ -44,6 +44,7 @@ export type RepositoryFileBrowserProps = {
   selectedPath: string;
   onSelect(path: string, line?: number, matchQuery?: string): void;
   context: ReactNode;
+  contextInTree?: boolean;
   location: string;
   version: string;
   historical?: boolean;
@@ -307,8 +308,9 @@ export function RepositoryFileBrowser(props: RepositoryFileBrowserProps) {
     </header>
 </>;
   const tree = <>      <aside className="repository-browser-tree" data-prototype-position="source-tree">
-        <div className="repository-tree-heading"><strong>文件</strong><div className="repository-tree-heading-actions">{(props.global || !treeHidden) && props.compactWorkspace && <Button type="text" size="small" aria-label="刷新展开目录" title="刷新展开目录" loading={refreshing} icon={<ReloadOutlined/>} onClick={()=>void refresh(true)}/>}{(props.global || !treeHidden) && <Tooltip title="包含当前目录中被 Git 忽略规则或常见构建目录排除的文件；点号开头不代表忽略。不会显示其他目录中的文件，Git 管理目录始终隐藏。"><Button size="small" type="text" aria-label={showIgnored ? '隐藏忽略文件' : '显示忽略文件'} icon={showIgnored ? <EyeInvisibleOutlined /> : <EyeOutlined />} onClick={() => {setShowIgnored(value => !value);props.onShowIgnored?.(!showIgnored);}} /></Tooltip>}{!props.global&&<Tooltip title={treeHidden ? '展开目录' : '收起目录'}><Button type="text" size="small" aria-label={treeHidden ? '展开目录' : '收起目录'} icon={treeHidden ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setTreeHidden(!treeHidden)} /></Tooltip>}</div></div>
+        <div className="repository-tree-heading"><strong>文件</strong><div className="repository-tree-heading-actions">{(props.global || !treeHidden) && (props.compactWorkspace || props.contextInTree) && <Button type="text" size="small" aria-label="刷新展开目录" title="刷新展开目录" loading={refreshing} icon={<ReloadOutlined/>} onClick={()=>void refresh(true)}/>}{(props.global || !treeHidden) && <Tooltip title="包含当前目录中被 Git 忽略规则或常见构建目录排除的文件；点号开头不代表忽略。不会显示其他目录中的文件，Git 管理目录始终隐藏。"><Button size="small" type="text" aria-label={showIgnored ? '隐藏忽略文件' : '显示忽略文件'} icon={showIgnored ? <EyeInvisibleOutlined /> : <EyeOutlined />} onClick={() => {setShowIgnored(value => !value);props.onShowIgnored?.(!showIgnored);}} /></Tooltip>}{!props.global&&<Tooltip title={treeHidden ? '展开目录' : '收起目录'}><Button type="text" size="small" aria-label={treeHidden ? '展开目录' : '收起目录'} icon={treeHidden ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setTreeHidden(!treeHidden)} /></Tooltip>}</div></div>
         {(props.global || !treeHidden) && <>
+          {props.contextInTree && props.context}
           <div className="repository-file-search" data-prototype-position="file-search">
             <ScopedSearch<'name' | 'content'> label="搜索文件" placeholder={searchMode === 'name' ? '搜索文件名' : '搜索内容'} query={query} onQueryChange={changeQuery}
               scopeLabel="搜索范围" scope={searchMode} options={[{ label: '文件名', value: 'name' }, { label: '内容', value: 'content' }]}
@@ -339,7 +341,7 @@ export function RepositoryFileBrowser(props: RepositoryFileBrowserProps) {
       </aside>
 </>;
   return <section hidden={props.global && !props.readerActive} className={'repository-file-browser' + (props.global ? ' global-reader' : '') + (props.treeOnRight ? ' tree-on-right' : '') + (resizing ? ' is-resizing' : '')} aria-label="资源管理器" style={{ '--repository-tree-width': treeWidth + 'px' } as CSSProperties}>
-    {props.global ? props.sidebarHost && createPortal(<>{contextHeader}{tree}</>, props.sidebarHost) : !props.compactWorkspace && contextHeader}
+    {props.global ? props.sidebarHost && createPortal(<>{!props.contextInTree && contextHeader}{tree}</>, props.sidebarHost) : !props.compactWorkspace && contextHeader}
     <div className={'repository-browser-columns' + (!props.global && treeHidden ? ' tree-hidden' : '')}>
       {!props.global && tree}
       {!props.global && !treeHidden && <button type="button" className="repository-tree-resize" role="separator" aria-label="拖拽调整目录宽度" aria-orientation="vertical" aria-valuemin={220} aria-valuemax={440} aria-valuenow={treeWidth} onPointerDown={event => { event.preventDefault(); resizeOrigin.current = { x: event.clientX, width: treeWidth }; setResizing(true); }} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setTreeWidth(value => Math.max(220, Math.min(440, value + (event.key === 'ArrowRight' ? 16 : -16) * (props.treeOnRight ? -1 : 1)))); } }} onDoubleClick={() => setTreeWidth(272)} />}

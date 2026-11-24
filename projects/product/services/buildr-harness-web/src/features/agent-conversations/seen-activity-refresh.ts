@@ -5,19 +5,59 @@ import type { ConversationEntry, ConversationRun, ConversationSummary, Conversat
 type Timer = ReturnType<typeof setTimeout>;
 const STREAMING_STATUSES = new Set(['starting', 'running', 'stopping']);
 
+export function isStreamingSeenStatus(status?: string): boolean {
+  return Boolean(status && STREAMING_STATUSES.has(status));
+}
+
+export function seenAttemptKey(
+  chat: Pick<ConversationView, 'workspaceId' | 'id' | 'activity' | 'run'>,
+): string | null {
+  const version = chat.activity?.version;
+  if (version === undefined || version <= (chat.activity?.seenThrough ?? 0)) return null;
+  return `${chat.workspaceId}:${chat.id}:${version}:${isStreamingSeenStatus(chat.run?.status) ? 'streaming' : 'settled'}`;
+}
+
+export function resolveSeenRefreshTarget(
+  sent: ConversationView,
+  current: ConversationView | null | undefined,
+): ConversationView {
+  if (current && current.id === sent.id && current.workspaceId === sent.workspaceId) {
+    return {
+      ...current,
+      activity: current.activity
+        ? {
+            ...current.activity,
+            seenThrough: Math.min(current.activity.seenThrough, sent.activity?.seenThrough ?? current.activity.seenThrough),
+          }
+        : sent.activity,
+    };
+  }
+  return sent;
+}
+
 export function createStreamingSeenScheduler(options: {
-  send: (value: ConversationView) => Promise<void>;
+  send: (value: ConversationView) => Promise<boolean | void>;
   intervalMs?: number;
+  retryDelayMs?: number;
+  maxRetries?: number;
+  shouldRetry?: (value: ConversationView) => boolean;
   now?: () => number;
   schedule?: (callback: () => void, milliseconds: number) => Timer;
   cancel?: (timer: Timer) => void;
 }) {
   const intervalMs = options.intervalMs ?? 1500;
+  const retryDelayMs = options.retryDelayMs ?? 3000;
+  const maxRetries = options.maxRetries ?? 3;
   const now = options.now ?? (() => Date.now());
   const schedule = options.schedule ?? ((callback, ms) => setTimeout(callback, ms));
   const cancel = options.cancel ?? (timer => clearTimeout(timer));
   let timer: Timer | null = null;
+  let retryTimer: Timer | null = null;
   let pendingValue: ConversationView | null = null;
+  let retryValue: ConversationView | null = null;
+  let retryCount = 0;
+  let disposed = false;
+  let dispatchId = 0;
   let lastSentKey: string | null = null;
   let lastSentAt = 0;
 
@@ -28,26 +68,76 @@ export function createStreamingSeenScheduler(options: {
     }
   };
 
-  const dispatch = (value: ConversationView): Promise<void> => {
-    clearTimer();
-    pendingValue = null;
+  const clearRetry = () => {
+    if (retryTimer !== null) {
+      cancel(retryTimer);
+      retryTimer = null;
+    }
+    retryValue = null;
+    retryCount = 0;
+  };
+
+  const runSend = async (value: ConversationView, isRetry = false): Promise<boolean> => {
+    const id = ++dispatchId;
+    if (!isRetry) clearRetry();
     lastSentAt = now();
     lastSentKey = `${value.workspaceId}:${value.id}`;
-    return options.send(value);
+    let ok = false;
+    try {
+      const result = await options.send(value);
+      ok = result !== false;
+    } catch {
+      ok = false;
+    }
+    if (ok) {
+      if (id === dispatchId) {
+        retryValue = null;
+        retryCount = 0;
+      }
+      return true;
+    }
+    if (
+      !disposed &&
+      id === dispatchId &&
+      !pendingValue &&
+      retryCount < maxRetries &&
+      (!options.shouldRetry || options.shouldRetry(value))
+    ) {
+      const delay = retryDelayMs * 2 ** retryCount;
+      retryCount++;
+      retryValue = value;
+      retryTimer = schedule(() => {
+        retryTimer = null;
+        const next = retryValue;
+        retryValue = null;
+        if (!disposed && next && (!options.shouldRetry || options.shouldRetry(next))) {
+          void runSend(next, true);
+        }
+      }, delay);
+    }
+    return false;
+  };
+
+  const dispatch = (value: ConversationView): Promise<boolean> => {
+    clearTimer();
+    pendingValue = null;
+    return runSend(value, false);
   };
 
   return {
-    notify(value: ConversationView): Promise<void> {
+    notify(value: ConversationView): Promise<boolean> {
       const version = value.activity?.version;
-      if (version === undefined || version <= (value.activity?.seenThrough ?? 0)) return Promise.resolve();
+      if (version === undefined || version <= (value.activity?.seenThrough ?? 0)) return Promise.resolve(true);
       const key = `${value.workspaceId}:${value.id}`;
-      if (pendingValue && (`${pendingValue.workspaceId}:${pendingValue.id}` !== key)) {
+      if (pendingValue && `${pendingValue.workspaceId}:${pendingValue.id}` !== key) {
         void dispatch(pendingValue);
+      } else if (retryValue && `${retryValue.workspaceId}:${retryValue.id}` !== key) {
+        clearRetry();
       }
-      const status = value.run?.status;
-      if (!status || !STREAMING_STATUSES.has(status)) {
+      if (!isStreamingSeenStatus(value.run?.status)) {
         return dispatch(value);
       }
+      clearRetry();
       const elapsed = Math.max(0, now() - lastSentAt);
       if (lastSentKey !== key || (timer === null && elapsed >= intervalMs)) {
         return dispatch(value);
@@ -60,25 +150,41 @@ export function createStreamingSeenScheduler(options: {
           const next = pendingValue;
           pendingValue = null;
           if (next) {
-            lastSentAt = now();
-            lastSentKey = `${next.workspaceId}:${next.id}`;
-            void options.send(next);
+            void runSend(next, false);
           }
         }, delay);
       }
-      return Promise.resolve();
+      return Promise.resolve(true);
     },
-    flush(): Promise<void> {
+    flushMatching(value: ConversationView): Promise<boolean> | null {
+      const version = value.activity?.version;
+      if (
+        !pendingValue ||
+        pendingValue.workspaceId !== value.workspaceId ||
+        pendingValue.id !== value.id ||
+        version === undefined ||
+        (pendingValue.activity?.version ?? -1) < version ||
+        version <= (value.activity?.seenThrough ?? 0) ||
+        isStreamingSeenStatus(value.run?.status)
+      ) {
+        return null;
+      }
       clearTimer();
+      pendingValue = null;
+      return runSend(value, false);
+    },
+    flush(): Promise<boolean> {
+      clearTimer();
+      clearRetry();
       const next = pendingValue;
       pendingValue = null;
-      if (!next) return Promise.resolve();
-      lastSentAt = now();
-      lastSentKey = `${next.workspaceId}:${next.id}`;
-      return options.send(next);
+      if (!next) return Promise.resolve(true);
+      return runSend(next, false);
     },
     dispose(): void {
+      disposed = true;
       clearTimer();
+      clearRetry();
       pendingValue = null;
     },
   };

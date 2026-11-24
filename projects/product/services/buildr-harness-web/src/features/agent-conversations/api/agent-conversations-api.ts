@@ -228,7 +228,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       if(!response.ok){const error:ApiError=new Error(body.error?.message||'附件上传失败。');error.status=response.status;error.code=body.error?.code;error.details=body.error?.details;throw error;}
       return body as AttachmentView;
     },
-    async readImage(conversation: ConversationView, id: string, signal?: AbortSignal): Promise<Blob> {
+    async readImage(conversation: Pick<ConversationView, 'workspaceId' | 'id'>, id: string, signal?: AbortSignal): Promise<Blob> {
       const send = () => fetcher(path(conversation.workspaceId, conversation.id) + '/attachments/' + encodeURIComponent(id), { cache: 'no-store', signal, headers: session.writeHeaders() });
       let response = await send();
       if (response.status === 403 && session.refreshSession) {

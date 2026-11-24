@@ -226,6 +226,7 @@
 .source-control-tree-controls { flex:none; background:var(--soft-surface); border-bottom:1px solid var(--soft-line); }
 .source-control-repository-tree-scroll { container-type:inline-size; container-name:source-control-catalog; flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; }
 .source-control-catalog-pane>.source-control-task-origin { flex:0 1 auto; min-height:0; overflow:auto; }
+.source-control-catalog-more { flex:none; padding:4px 10px 6px; border-top:1px solid var(--soft-line); }
 .source-control-catalog-toggle { display:flex; align-items:center; gap:8px; min-width:0; padding:0; border:0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
 .source-control-catalog-toggle>.anticon { font-size:var(--icon-size-small); color:var(--soft-muted); }
 .source-control-catalog-toggle:focus-visible { outline:2px solid var(--soft-primary); outline-offset:3px; border-radius:3px; }

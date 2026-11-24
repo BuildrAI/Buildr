@@ -108,11 +108,38 @@ test('Magpie offers connection and explicit local setup without subscription or 
 
 
 test('Magpie quota shows distinct accounts, original units, observed times and unknown windows',async()=>{
- const {MagpieQuotaRows}=await import('../../src/features/agent-conversations/MagpieQuotaPanel.tsx');
+ const {MagpieQuotaRows,MagpieQuotaPanel}=await import('../../src/features/agent-conversations/MagpieQuotaPanel.tsx');
  const html=renderToStaticMarkup(React.createElement(MagpieQuotaRows,{snapshot:{readAt:'2026-11-23T00:00:00Z',accounts:[
   {provider:'codex',providerLabel:'Codex',accountLabel:'a•••@example.test',balance:'12.35 credits',observedAt:'2026-11-23T00:00:00Z',windows:[{label:'7d',remainingPercent:0}]},
   {provider:'codex',providerLabel:'Codex',accountLabel:'a•••@example.test',balance:'$4.10',windows:[{label:'5h'}],unavailable:true},
+  {provider:'qoder',providerLabel:'Qoder',windows:[{label:'Credits',remainingPercent:50.91575091575091}]},
   {provider:'claude',providerLabel:'Claude',windows:[]},
  ]}}));
- for(const value of ['账号 1','账号 2','12.35 credits','$4.10','剩余 0%','剩余未知','Magpie 观察于','上游读取未完成','Buildr 读取于','Claude'])assert.ok(html.includes(value),value);
+ for(const value of ['amm-magpie-provider-card','账号 1','账号 2','12.35 credits','$4.10','剩余 0%','剩余 50.92%','剩余未知','Magpie 观察于','上游读取未完成','Buildr 读取于','Claude'])assert.ok(html.includes(value),value);
+ assert.equal(html.includes('50.91575091575091'),false);
+ const panelHtml=renderToStaticMarkup(React.createElement(MagpieQuotaPanel,{accountId:'m1',revision:'r1',enabled:true,async read(){return {readAt:'2026-11-23T00:00:00Z',accounts:[]};}}));
+ assert.equal(panelHtml.includes('重新读取额度'),false);
+});
+
+test('AccountModelManager renders clean bulk toggle labels and Magpie upstream provider filter',async()=>{
+ const {AccountModelManager}=await import('../../src/features/agent-conversations/AccountModelManager.tsx');
+ const html=renderToStaticMarkup(React.createElement(AccountModelManager,{
+  sources:[{
+   id:'magpie-1',provider:'magpie',providerLabel:'Magpie',accountLabel:'Magpie',planLabel:'本机网关',status:'ready',
+   models:[
+    {id:'codex/gpt-6.2-sol',label:'GPT-6.2-Sol',family:'GPT',upstreamProvider:'codex',upstreamProviderLabel:'Codex',enabled:true,available:true},
+    {id:'qoder/ultimate',label:'Ultimate',family:'其他',upstreamProvider:'qoder',upstreamProviderLabel:'Qoder',enabled:false,available:true},
+   ],
+   windows:[],observedLabel:'刚刚',
+  }],
+  selection:{sourceId:'magpie-1',tab:'models'},
+  busy:false,
+  onSelect(){},onRefresh(){},onLogin(){},onDisconnect(){},onPrepare(){},onContext(){},onEnable(){},
+ }));
+ assert.ok(html.includes('aria-label="Magpie 供应商"'));
+ assert.ok(html.includes('Codex · Magpie'));
+ assert.ok(html.includes('Qoder · Magpie'));
+ assert.ok(html.includes('全部开启'));
+ assert.ok(html.includes('全部关闭'));
+ assert.equal(html.includes('（当前筛选）'),false);
 });

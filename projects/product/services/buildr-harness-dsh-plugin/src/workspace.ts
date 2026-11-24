@@ -1,4 +1,4 @@
-export type Scope = { id: string; path: string };
+export type Scope = { id: string; path: string; name?: string };
 export type Session = { cwd?: string | null; updatedAt?: number; origin?: 'subagent'; formatStatus?: 'current' | 'migration-required' };
 export type SessionCatalog = { phase: 'pending' | 'ready'; ids: readonly string[]; byId: Readonly<Record<string, Session>> };
 export type Tool = 'explorer' | 'source-control';
@@ -8,6 +8,7 @@ export const CHANNEL = 'buildr-harness-desktop/v1:';
 export type Reveal = { workspaceId: string; revision: string; path: string; line?: number; checkout?: { repositoryId: string; checkoutId: string } };
 export type GuestMessage = { kind: 'workspace'; scope: Scope | null } | { kind: 'link'; url: string; external: boolean }
   | {kind:'reveal'; file: Reveal} | {kind:'tool-ready'}
+  | {kind:'image-preview'; id:string}
   | {kind:'shell'; action:'leave'|'toggle-right'};
 
 function shortText(value: unknown, max: number): value is string {
@@ -28,6 +29,7 @@ export function parseGuestMessage(message: string): GuestMessage | undefined {
   try {
     const value = JSON.parse(message.slice(CHANNEL.length));
     if (value?.kind === 'shell' && (value.action === 'leave' || value.action === 'toggle-right')) return {kind:'shell',action:value.action};
+    if (value?.kind === 'image-preview' && typeof value.id === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value.id)) return {kind:'image-preview',id:value.id};
     if (value?.kind === 'tool-ready') return { kind:'tool-ready' };
     if (value?.kind === 'reveal') { const file = fileReveal(value.file); return file && { kind:'reveal', file }; }
     if (value?.kind === 'workspace') {
@@ -35,7 +37,10 @@ export function parseGuestMessage(message: string): GuestMessage | undefined {
       if (scope === null) return { kind: 'workspace', scope: null };
       if (typeof scope?.id !== 'string' || !scope.id || scope.id.length > 1024 || /[\0\r\n]/.test(scope.id)
           || typeof scope.path !== 'string' || scope.path.length > 4096 || !scope.path.startsWith('/') || /[\0\r\n]/.test(scope.path)) return;
-      return { kind: 'workspace', scope: { id: scope.id, path: scope.path } };
+      const name = typeof scope.name === 'string' && scope.name.trim() && scope.name.length <= 256 && !/[\0\r\n]/.test(scope.name)
+        ? scope.name.trim()
+        : undefined;
+      return { kind: 'workspace', scope: { id: scope.id, path: scope.path, ...(name ? { name } : {}) } };
     }
     if (value?.kind === 'link' && typeof value.url === 'string' && value.url.length <= 16384 && !/[\0\r\n]/.test(value.url)) {
       const url = new URL(value.url);
@@ -43,6 +48,15 @@ export function parseGuestMessage(message: string): GuestMessage | undefined {
       return { kind: 'link', url: url.href, external: value.external === true };
     }
   } catch { /* Invalid or unrelated renderer output has no effect. */ }
+}
+
+export function workspaceDisplayName(scope: Scope | null | undefined): string | undefined {
+  if (!scope) return undefined;
+  const explicit = scope.name?.trim();
+  if (explicit) return explicit;
+  if (scope.id === '@default') return '默认工作空间';
+  const trimmed = scope.path.replace(/\/+$/, '');
+  return trimmed.split('/').filter(Boolean).at(-1) || trimmed || undefined;
 }
 
 export function sameDirectory(session: Session | undefined, scope: Scope | null): boolean {
@@ -84,4 +98,8 @@ export function linkDestination(preference: unknown, external: boolean, native: 
 /** A native selection is navigation unless it acknowledges our exact pending carrier. */
 export function sessionSelection(expected: string | undefined, selected: string | undefined): 'align' | 'leave' {
   return expected !== undefined && selected === expected ? 'align' : 'leave';
+}
+
+export function shouldNotifyChatActive(panelActive: boolean, visibilityState: string): boolean {
+  return panelActive && visibilityState === 'visible';
 }

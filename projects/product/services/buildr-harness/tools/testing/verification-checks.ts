@@ -12,6 +12,7 @@ const harnessProductFiles = ['harness-product.test.ts', 'harness-protocol.test.t
 const storageRuntimeFiles = integrationTests(
   'component-sharing.test.ts',
   'conversation-storage.test.ts',
+  'development-cli-shim.test.ts',
   'diagnostic-storage.test.ts',
   'directory-host.test.ts',
   'directory-workbench.test.ts',

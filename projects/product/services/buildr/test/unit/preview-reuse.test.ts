@@ -8,6 +8,7 @@ import {
   applyPreviewReuse,
   parsePreviewReuseSelection,
   previewReuseError,
+  previewReuseSourceRoot,
   readPreviewReuseFacts,
   resolvePreviewReuseSource,
   type PreviewReuseFacet,
@@ -59,6 +60,80 @@ test('来源解析拒绝缺失与不可读路径，并遵循平台数据根环�
   const state = path.join(home, 'state');
   fs.mkdirSync(path.join(state, 'buildr-dev'), { recursive: true });
   assert.equal(resolvePreviewReuseSource('development', { platform: 'linux', home, env: { XDG_STATE_HOME: state } }).root, path.join(state, 'buildr-dev'));
+});
+
+test('真实隔离 HOME 环境按 BUILDR_HOST_HOME 解析开发版来源，测试隔离边界严格忽略该提示', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-reuse-host-home-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const hostHome = path.join(root, 'host-home');
+  const isolatedHome = path.join(root, 'isolated-home');
+  const hostDev = path.join(hostHome, 'Library', 'Application Support', 'Buildr Dev');
+  fs.mkdirSync(hostDev, { recursive: true });
+  fs.mkdirSync(isolatedHome, { recursive: true });
+
+  // 非测试环境下（未传入测试隔离标记），未显式指定 options.home 时优先使用绝对路径 BUILDR_HOST_HOME。
+  assert.equal(
+    previewReuseSourceRoot('development', {
+      platform: 'darwin',
+      env: { HOME: isolatedHome, BUILDR_HOST_HOME: hostHome },
+    }),
+    hostDev,
+  );
+  assert.equal(
+    resolvePreviewReuseSource('development', {
+      platform: 'darwin',
+      env: { HOME: isolatedHome, BUILDR_HOST_HOME: hostHome },
+    }).root,
+    hostDev,
+  );
+  assert.equal(
+    previewReuseSourceRoot('development', {
+      platform: 'win32',
+      env: { HOME: 'C:\\Isolated', USERPROFILE: 'C:\\Isolated', BUILDR_HOST_HOME: 'C:\\HostUser' },
+    }),
+    'C:\\HostUser\\AppData\\Local\\Buildr Dev',
+  );
+  assert.equal(
+    previewReuseSourceRoot('development', {
+      platform: 'linux',
+      env: { HOME: '/isolated/home', BUILDR_HOST_HOME: '/host/home' },
+    }),
+    '/host/home/.local/state/buildr-dev',
+  );
+
+  // 显式 options.home 优先于 BUILDR_HOST_HOME；相对或空白 BUILDR_HOST_HOME 被忽略并回退到 env.HOME。
+  assert.equal(
+    previewReuseSourceRoot('development', {
+      platform: 'darwin',
+      home: isolatedHome,
+      env: { HOME: isolatedHome, BUILDR_HOST_HOME: hostHome },
+    }),
+    path.join(isolatedHome, 'Library', 'Application Support', 'Buildr Dev'),
+  );
+  assert.equal(
+    previewReuseSourceRoot('development', {
+      platform: 'darwin',
+      env: { HOME: isolatedHome, BUILDR_HOST_HOME: 'relative/host-home' },
+    }),
+    path.join(isolatedHome, 'Library', 'Application Support', 'Buildr Dev'),
+  );
+
+  // 测试隔离环境下严格忽略 BUILDR_HOST_HOME，避免误读宿主开发版数据根。
+  for (const isolationEnv of [
+    { NODE_TEST_CONTEXT: '1' },
+    { BUILDR_TEST_STATE_REQUIRED: '1' },
+    { BUILDR_TEST_LOCAL_STATE_ROOT: path.join(root, 'test-state') },
+  ]) {
+    const env = { HOME: isolatedHome, BUILDR_HOST_HOME: hostHome, ...isolationEnv };
+    assert.equal(
+      previewReuseSourceRoot('development', { platform: 'darwin', env }),
+      path.join(isolatedHome, 'Library', 'Application Support', 'Buildr Dev'),
+    );
+    assert.throws(
+      () => resolvePreviewReuseSource('development', { platform: 'darwin', env }),
+      (error) => coded(error, 'preview_reuse_source_unavailable'),
+    );
+  }
 });
 
 test('facet 失败被隔离，结果与时间可观察且不泄露异常路径', async (t) => {

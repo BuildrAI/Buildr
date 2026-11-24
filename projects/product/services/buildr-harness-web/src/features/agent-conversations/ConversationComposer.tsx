@@ -8,6 +8,7 @@ type Props = {
   images: DraftImage[];
   attachmentAccept?: string;
   addLabel?: string;
+  showAdd?: boolean;
   materialDisabled: boolean;
   addDisabled: boolean;
   uploading?: boolean;
@@ -20,19 +21,23 @@ type Props = {
 };
 
 /** Shared composition surface; its caller owns upload, submission and execution effects. */
-export function ConversationComposer({ images, attachmentAccept=conversationAttachmentAccept, addLabel, materialDisabled, addDisabled, uploading, input, access, execution, onAdd, onRemove, onBlocked }: Props) {
+export function ConversationComposer({ images, attachmentAccept=conversationAttachmentAccept, addLabel, showAdd=true, materialDisabled, addDisabled, uploading, input, access, execution, onAdd, onRemove, onBlocked }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
+  const showToolbar = showAdd || Boolean(access) || Boolean(execution);
+  const showAccess = showAdd || Boolean(access);
   return <ConversationImageInput images={images} disabled={materialDisabled} onAdd={onAdd} onRemove={onRemove} onBlocked={onBlocked}>
     <Input.TextArea {...input} />
-    <div className="ac-compose-toolbar">
-      <div className="ac-compose-access">
-        <input ref={fileInput} type="file" accept={attachmentAccept} multiple hidden onChange={event => {
-          const files = Array.from(event.target.files ?? []); event.target.value = ''; if (files.length) void onAdd(files);
-        }} />
-        <Button type="text" icon={<PlusOutlined />} aria-label={addLabel??"添加图片、视频或文档"} title={addLabel??"添加图片、视频或文档，也可粘贴或拖入；文档和视频最多32 MiB，图片最多8 MiB"} loading={uploading} disabled={addDisabled} onClick={() => fileInput.current?.click()} />
+    {showToolbar && <div className="ac-compose-toolbar">
+      {showAccess && <div className="ac-compose-access">
+        {showAdd && <>
+          <input ref={fileInput} type="file" accept={attachmentAccept} multiple hidden onChange={event => {
+            const files = Array.from(event.target.files ?? []); event.target.value = ''; if (files.length) void onAdd(files);
+          }} />
+          <Button type="text" icon={<PlusOutlined />} aria-label={addLabel??"添加图片、视频或文档"} title={addLabel??"添加图片、视频或文档，也可粘贴或拖入；文档和视频最多32 MiB，图片最多8 MiB"} loading={uploading} disabled={addDisabled} onClick={() => fileInput.current?.click()} />
+        </>}
         {access}
-      </div>
-      <div className="ac-compose-execution">{execution}</div>
-    </div>
+      </div>}
+      {execution && <div className="ac-compose-execution">{execution}</div>}
+    </div>}
   </ConversationImageInput>;
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Alert, Button, Empty, Spin } from 'antd';
 import { ApartmentOutlined, CloseOutlined, FolderOpenOutlined, PlusOutlined } from '@ant-design/icons';
 import { FileEditingProvider } from '../../workbench/editor/FileEditingContext';
@@ -21,12 +21,16 @@ import {
   type DirectoryScope,
   type DirectorySelection,
 } from './api';
-import { DirectoryExplorer, type DirectoryOpenRequest } from './DirectoryExplorer';
-import { DirectorySourceControl } from './DirectorySourceControl';
+import type { DirectoryOpenRequest } from './DirectoryExplorer';
+import { loadDirectoryCatalog } from './directory-catalog';
 import {desktopNotify} from '../../dsh-desktop';
 import './directory-workbench.css';
 
+const DirectoryExplorer = lazy(async () => ({ default: (await import('./DirectoryExplorer')).DirectoryExplorer }));
+const DirectorySourceControl = lazy(async () => ({ default: (await import('./DirectorySourceControl')).DirectorySourceControl }));
+
 const unfinishedWorkspaces = new WorkspaceFileEditingStores();
+const recentCatalogs = new Map<string, DirectoryCatalog>();
 
 type Content = { id: string; title: string; icon?: ReactNode; render(active: boolean): ReactNode };
 
@@ -94,7 +98,7 @@ function WorkspaceContent({ contents, active, tabs, setTabs, scope }: {
       const paneActive = active && !home && id === selectedContent;
       return <section className="harness-directory-workbench-pane" key={id} id={prefix + '-pane-' + id} role="tabpanel" aria-labelledby={prefix + '-tab-' + id} hidden={home || id !== selectedContent}>
         <WorkspaceViewActiveContext.Provider value={paneActive}>
-          {find(id).render(paneActive)}
+          <Suspense fallback={<ToolLoading title={find(id).title} />}>{find(id).render(paneActive)}</Suspense>
         </WorkspaceViewActiveContext.Provider>
       </section>;
     })}
@@ -148,7 +152,7 @@ export function HarnessDirectoryWorkbench({ active = true, workspaceId, workspac
   </div>;
 }
 
-const noInput = {};
+const noInput: {more?: boolean; keepDiscovery?: boolean} = {};
 
 function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, module }: {
   scope: DirectoryScope;
@@ -162,14 +166,36 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
   const [opened, setOpened] = useState<DirectoryOpenRequest>();
   const [version, bump] = useState(0);
   const [selected, setSelected] = useState<DirectorySelection | null>();
+  const catalogKey = workspaceId + ':' + scope.ref.id + ':' + scope.revision;
   const base = useMemo(() => directoryClient(scope, workspaceId), [scope, workspaceId]);
-  const load = useCallback((_input: object, signal: AbortSignal) => base<DirectoryCatalog>('catalog', {}, signal), [base]);
-  const catalog = useSourceControlRead(scope.ref.id + ':' + scope.revision, noInput, load, active, String(version));
+  const catalogRef = useRef<DirectoryCatalog | null>(recentCatalogs.get(catalogKey) ?? null);
+  const priority = useRef<string | undefined>(undefined);
+  const selectedRef = useRef(selected); selectedRef.current = selected;
+  const observingGit = active && (module === 'source-control' || !module && !tabs.home && tabs.selected === 'source-control');
+  const readingGit = useRef(observingGit); readingGit.current = observingGit;
+  const load = useCallback((input: typeof noInput, signal: AbortSignal, publish: (value: DirectoryCatalog) => void) => {
+    const previous = catalogRef.current;
+    const selectedRepository = previous?.repositories.find(repo => repo.id === selectedRef.current?.repositoryId);
+    return loadDirectoryCatalog(base, previous, !!input.more, !!input.keepDiscovery,
+      () => priority.current ?? selectedRepository?.path, signal, publish,
+      readingGit.current ? path => {
+        const preferredCheckoutId = path === selectedRepository?.path ? selectedRef.current?.checkoutId : undefined;
+        return preferredCheckoutId ? { preferredCheckoutId } : {};
+      } : undefined);
+  }, [base]);
+  const [choosingCheckout, setChoosingCheckout] = useState(false);
+  const catalogEnabled = observingGit || (active && (choosingCheckout || Boolean(reveal?.checkout)));
+  const catalog = useSourceControlRead(catalogKey, noInput, load, catalogEnabled, '', recentCatalogs);
   const repos = catalog.data?.repositories ?? [];
-  const catalogRef = useRef(catalog.data);
   catalogRef.current = catalog.data;
   const refreshCatalog = catalog.refresh;
-  const observingGit = active && (module === 'source-control' || !module && !tabs.home && tabs.selected === 'source-control');
+  const [discoveringMore, setDiscoveringMore] = useState(false);
+  const discoverMore = useCallback(async () => {
+    if (discoveringMore) return;
+    setDiscoveringMore(true);
+    try { await refreshCatalog({ more: true }); }
+    finally { setDiscoveringMore(false); }
+  }, [discoveringMore, refreshCatalog]);
   const observation = useRef({ catalog, observingGit });
   observation.current = { catalog, observingGit };
   useEffect(() => {
@@ -180,17 +206,20 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
       try {
         const before = observation.current.catalog;
         if (document.visibilityState === 'hidden' || before.loading || !before.data?.topologyPaths) return;
-        const { revision } = await base<{revision:string}>('git-topology', { repositoryPaths: before.data.topologyPaths }, stop.signal);
+        const { repositoryRevisions } = await base<{repositoryRevisions: Array<{path:string;revision:string}>}>('git-topology', { repositoryPaths: before.data.topologyPaths }, stop.signal);
+        const revisions = new Map(repositoryRevisions.map(item => [item.path,item.revision]));
+        const changed = before.data.repositories.some(repo => revisions.has(repo.path) && revisions.get(repo.path) !== repo.topologyRevision);
         const latest = observation.current;
         if (!stop.signal.aborted && latest.observingGit && document.visibilityState === 'visible' && !latest.catalog.loading
-            && latest.catalog.data === before.data && revision !== before.data.topologyRevision) await refreshCatalog();
+            && latest.catalog.data === before.data && changed) await refreshCatalog({keepDiscovery:true});
       } catch { /* Retain the last read; a later tick or manual refresh can recover. */ }
       finally { if (!stop.signal.aborted) timer = setTimeout(observe, 3500); }
     }
     timer = setTimeout(observe, 500);
     return () => { stop.abort(); clearTimeout(timer); };
   }, [observingGit, base, refreshCatalog]);
-  const rootRepo = repos.find(item => item.path === '') ?? repos[0];
+  const first = repos.find(item => item.path === '') ?? repos.find(item => item.pending || item.checkouts.defaultId);
+  const rootRepo = first?.pending ? undefined : first;
   const defaultSelection: DirectorySelection | null = rootRepo
     ? { repositoryId: rootRepo.id, checkoutId: rootRepo.checkouts.defaultId ?? rootRepo.members[0]?.id ?? '' }
     : null;
@@ -198,15 +227,18 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
   const requestFor = useCallback((selection: DirectorySelection | null): DirectoryRequest => {
     if (!selection?.checkoutId) return base;
     const repo = catalogRef.current?.repositories.find(item => item.id === selection.repositoryId);
-    return directoryClient(scope, workspaceId, selection.checkoutId, repo?.path ?? '');
+    if (!repo) return async () => { throw new Error('所选工作树已不可用，请重新选择。'); };
+    return directoryClient(scope, workspaceId, selection.checkoutId, repo.path);
   }, [base, scope, workspaceId]);
 
   const operations = useMemo<FileEditingOperations>(() => {
     const requestForBinding = (snapshot: EditableFileSnapshot): DirectoryRequest => {
       const sel = snapshot.selector;
       if (sel.kind === 'code') {
+        if (sel.repositoryId === scope.ref.id && sel.checkoutId === scope.ref.id) return base;
         const repo = catalogRef.current?.repositories.find(item => item.id === sel.repositoryId);
-        if (repo) return directoryClient(scope, workspaceId, sel.checkoutId, repo.path);
+        if (!repo) throw new Error('所选工作树已不可用，请重新选择。');
+        return directoryClient(scope, workspaceId, sel.checkoutId, repo.path);
       }
       return base;
     };
@@ -228,7 +260,7 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
             expectedSourceRevision: binding.snapshot.sourceRevision,
             expectedRevision,
           });
-          void refreshCatalog();
+          void refreshCatalog({keepDiscovery:true});
           return directoryEditableDocument(workspaceId, saved);
         } catch (error) {
           const failure = error as { code?: string; details?: unknown };
@@ -248,28 +280,30 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
   // while keeping FileEditingProvider inside DirectoryPanels so open/save events share one session store.
   const open = useCallback((target: DirectorySelection | null, path: string, line?: number) => {
     setSelected(target);
+    if (target?.checkoutId) setChoosingCheckout(true);
     setOpened(previous => ({ source: target, path, line, nonce: (previous?.nonce ?? 0) + 1 }));
     setTabs(old => openModule(old, 'explorer'));
   }, [setTabs]);
   const ready = Boolean(catalog.data || catalog.error);
   const revealedRef = useRef('');
   useEffect(() => {
-    if (!reveal || !ready) return;
+    if (!reveal) return;
     const signature = JSON.stringify([reveal.workspaceId, reveal.revision, reveal.path, reveal.line ?? null,reveal.checkout]);
     if (revealedRef.current === signature) return;
-    revealedRef.current = signature;
     if (reveal.checkout) {
       const repo = catalog.data?.repositories.find(item => item.id === reveal.checkout!.repositoryId);
       if (!repo?.members.some(member => member.id === reveal.checkout!.checkoutId)) return;
     }
-    open(reveal.checkout ?? (defaultSelection?.checkoutId ? defaultSelection : null), reveal.path, reveal.line);
-  }, [open, reveal, ready, catalog.data, defaultSelection?.repositoryId, defaultSelection?.checkoutId]);
+    revealedRef.current = signature;
+    open(reveal.checkout ?? null, reveal.path, reveal.line);
+  }, [open, reveal, catalog.data]);
   const openFromGit = useCallback((target: SourceControlFileTarget) => {
     const checkout = target.worktreeId ? { repositoryId: target.repositoryId, checkoutId: target.worktreeId } : undefined;
     if (module === 'source-control') desktopNotify({ kind:'reveal', file:{workspaceId,revision:scope.revision,path:target.path,checkout} });
     else open(checkout ?? null, target.path);
   }, [open, module, workspaceId, scope.revision]);
   const selectSource = useCallback((target: DirectorySelection | null) => {
+    priority.current = undefined;
     setSelected(target);
   }, []);
 
@@ -279,9 +313,7 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
         id: 'explorer',
         title: '资源管理器',
         icon: <FolderOpenOutlined />,
-        render: paneActive => !ready
-          ? <div className="harness-workspace-loading" role="status"><Spin size="small" /> 正在读取目录…</div>
-          : <DirectoryExplorer
+        render: paneActive => <DirectoryExplorer
               workspaceId={workspaceId}
               scope={scope}
               scopeKey={scope.ref.id + ':' + scope.revision}
@@ -289,7 +321,9 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
               catalogError={catalog.error}
               catalogLoading={catalog.loading}
               refreshCatalog={refreshCatalog}
-              source={current}
+              prioritizeRepository={repositoryPath => { priority.current = repositoryPath; }}
+              choosingCheckout={choosingCheckout}
+              onChooseCheckout={setChoosingCheckout}
               requestFor={requestFor}
               active={paneActive}
               initialTreeOpen={module==='explorer'}
@@ -309,10 +343,14 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
           active={paneActive && ready}
           version={version}
           current={current}
+          explicitSelection={selected}
           catalog={catalog.data}
           catalogError={catalog.error}
           catalogLoading={catalog.loading}
           refreshCatalog={async () => { await refreshCatalog(); bump(v => v + 1); }}
+          discoverMore={discoverMore}
+          discoveringMore={discoveringMore}
+          prioritizeRepository={repositoryPath => { priority.current = repositoryPath; }}
           onSelectCheckout={selectSource}
           onOpenCurrent={openFromGit}
         />,
@@ -321,11 +359,16 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
   </FileEditingProvider>;
 }
 
-function ModuleContents({module,...props}: Parameters<typeof WorkspaceContent>[0] & {module?: 'explorer'|'source-control'}) {
-  if(!module)return <WorkspaceContent {...props}/>;
-  return <section className="harness-directory-workbench-pane" aria-label={props.contents.find(content=>content.id===module)?.title}>
+function ToolLoading({ title }: { title: string }) {
+  return <div className="harness-workspace-loading" role="status"><Spin size="small" /> 正在打开{title}…</div>;
+}
+
+function ModuleContents({ module, ...props }: Parameters<typeof WorkspaceContent>[0] & { module?: 'explorer' | 'source-control' }) {
+  if (!module) return <WorkspaceContent {...props} />;
+  const content = props.contents.find(item => item.id === module)!;
+  return <section className="harness-directory-workbench-pane" aria-label={content.title}>
     <WorkspaceViewActiveContext.Provider value={props.active}>
-      {props.contents.find(content=>content.id===module)?.render(props.active)}
+      <Suspense fallback={<ToolLoading title={content.title} />}>{content.render(props.active)}</Suspense>
     </WorkspaceViewActiveContext.Provider>
   </section>;
 }

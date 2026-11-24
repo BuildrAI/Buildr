@@ -114,6 +114,23 @@ export function tierReasoningEffort(tier:{reasoningEfforts?:ReadonlyArray<{id:st
   return options?.some(option=>option.id===effort)?effort:undefined;
 }
 
+export function magpieUpstreamProvider(model:{id?:string;modelId?:string;upstreamProvider?:string;upstreamProviderLabel?:string}):{id:string;label:string}|undefined {
+  const candidateId=model.upstreamProvider?.trim();
+  const modelKey=model.modelId||model.id||'';
+  const slash=modelKey.indexOf('/');
+  const rawId=candidateId||(slash>0?modelKey.slice(0,slash).trim():'');
+  if(!rawId||rawId.toLowerCase()==='magpie')return undefined;
+  const formatted=rawId.split(/[-_\s]+/).filter(Boolean).map(part=>/^[a-z]+$/.test(part)?part[0]!.toUpperCase()+part.slice(1):part).join(' ');
+  const label=model.upstreamProviderLabel?.trim()||formatted;
+  if(!label||label.toLowerCase()==='magpie')return undefined;
+  return {id:rawId.toLowerCase(),label};
+}
+
+export function magpieSourceGroupLabel(providerLabel?:string):string {
+  const label=providerLabel?.trim();
+  return label&&label.toLowerCase()!=='magpie'?`${label} · Magpie`:'Magpie';
+}
+
 /** Only agents prepared on this machine can start a conversation; installed-but-unprepared ones stay in settings. */
 export function preparedAgentConnections<T extends {enabled:boolean;configPath?:string}>(connections:readonly T[]):T[] {
   return connections.filter(connection => connection.enabled && !!connection.configPath);

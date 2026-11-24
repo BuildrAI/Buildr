@@ -1,3 +1,4 @@
+import { copyMessageWithAttachments, readPastedMessageAttachments, readCopiedMessageAttachments } from './conversation-message-clipboard.ts';
 import {HARNESS_MOBILE_BREAKPOINT} from '../../shell/harness-layout';
 import {ConversationContextSlot, useConversationHost} from '../../integration/ConversationHost';
 import {useHarnessDirectoryFiles} from '../../directory-files.tsx';
@@ -64,7 +65,8 @@ import { conversationSubagents, subagentWaitingLabel } from './conversation-suba
 import { ConversationProcessBlock } from './ConversationProcessBlock.tsx';
 import {modelPreferenceFromChoice,preferredConversationChoice,readConversationModelPreference,readConversationModulePreference,rememberConversationAgent,rememberConversationPermission,rememberedConversationPermission,writeConversationModelPreference,writeConversationModulePreference} from './conversation-preferences.ts';
 import {isQuietAutomaticContinuation,conversationSystemNoticeText,visibleConversationEntries,conversationModelWarning,conversationActionError,conversationHandoffReceipt,conversationNativeSessionDiagnostic,conversationNativeSessionIssue,conversationNativeSessionSummary,latestVisibleConversationMessage} from './conversation-notices.ts';
-import { findSeenFallbackTarget, isConversationViewVisible } from './seen-activity-refresh.ts';
+import { findSeenFallbackTarget, isConversationViewVisible, seenAttemptKey } from './seen-activity-refresh.ts';
+import { revealConversationAnswer } from './conversation-reading.ts';
 import './agent-conversations.css';
 import {AgentConnectionSettings} from './AgentConnectionSettings';
 import './conversation-flow.css';
@@ -221,13 +223,13 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
   const [atBottom,setAtBottom]=useState(true);
   const stream=useRef<HTMLDivElement>(null),readPosition=useRef(0),bottom=useRef(true),composing=useRef(false);
   const streamContent=useRef<HTMLDivElement>(null);
-  const revealAnswer=useCallback((element:HTMLElement)=>{
+  const earlierRef=useRef<ReturnType<typeof useEarlierConversationEntries>|null>(null);
+  const revealAnswer=useCallback((anchor:HTMLElement,container?:HTMLElement)=>{
     const node=stream.current;if(!node)return;
-    const overflow=element.getBoundingClientRect().bottom-node.getBoundingClientRect().bottom+12;
-    if(overflow>0)node.scrollTop+=overflow;
-    bottom.current=node.scrollHeight-node.scrollTop-node.clientHeight<=24;
-    earlier.remember();
-    setAtBottom(bottom.current);
+    const pinned=revealConversationAnswer(node,anchor,bottom.current,container);
+    bottom.current=pinned;
+    earlierRef.current?.remember();
+    setAtBottom(pinned);
   },[]);
   const effectiveAccountId=resolveNativeExecutionAccountId(choice.modelAccountId,choice.connectionId,context.connections,context.modelCatalog);
   const selectedSourceModel=context.modelCatalog.find(model=>model.accountId===effectiveAccountId&&model.modelId===choice.model&&(!choice.modelAccountIdentity||model.accountIdentity===choice.modelAccountIdentity));
@@ -746,12 +748,14 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     try{await uploadConversationMaterials(chat,files,context.api.upload,accept,()=>context.isSelectionCurrent(selection));}
     finally{try{if(context.isSelectionCurrent(selection))await context.refresh();}finally{actions.finish(key);}}
   };
-  const upload=async(files:FileList|File[]|null)=>{
-    if(!files?.length||uploading||sending||context.loading||Boolean(context.scope&&!chat))return;setError('');
-    const selected=Array.from(files);const validation=imageSelectionError(selected,images.length,connection?.capabilities.maxImageBytes);
-    if(validation){setError(validation);return;}
+  const upload=async(files:FileList|File[]|null|(()=>Promise<File[]>))=>{
+    if((typeof files!=='function'&&!files?.length)||uploading||sending||context.loading||Boolean(context.scope&&!chat))return;setError('');
     let key=uploadKey;if(!actions.begin(key))return;setPrepared(null);setReviewOpen(false);let selection=context.getSelection();
     try {
+      const selected=typeof files==='function'?await files():Array.from(files!);
+      if(!context.isSelectionCurrent(selection))return;
+      const validation=imageSelectionError(selected,images.length,connection?.capabilities.maxImageBytes);
+      if(validation){setError(validation);return;}
       if(!chat){await newImages.add(selected);return;}
       const current=chat;
       selection={...selection,scope:{workspaceId:current.workspaceId,conversationId:current.id}};
@@ -781,6 +785,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     loadPage:(value,cursor,signal)=>context.api.entries(value.workspaceId,value.id,cursor,signal),
     prepend:page=>{if(chat)setExpandedToolGroups(previous=>carryExpandedProcessBlocks(visibleConversationEntries(chat.entries),visibleConversationEntries(page.entries),previous,chat.run,chat.retainedRuns));context.prependEntries(page);},
   });
+  earlierRef.current=earlier;
   const followBottom=()=>{
     setAtBottom(previous=>previous===bottom.current?previous:bottom.current);
     // Completion must not collapse the live process underneath an upward reader.
@@ -797,8 +802,10 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     const element=stream.current;
     if(!chat||!element||!conversationVisible)return;
     const latest=latestVisibleConversationMessage(chat.entries);
-    const check=()=>{
-      if(document.visibilityState!=='visible'||!latest||!element.getClientRects().length)return;
+    const key=seenAttemptKey(chat);
+    let activeFrame=0;
+    const check=(forceRetry=false)=>{
+      if(document.visibilityState!=='visible'||!latest||!key||!element.getClientRects().length)return;
       let message=Array.from(element.querySelectorAll<HTMLElement>('[data-entry-id]')).find(node=>node.dataset.entryId===latest.id);
       if(!message||!message.getClientRects().length){
         const fallback=findSeenFallbackTarget(latest,visibleEntries,chat.run,chat.retainedRuns,expandedGroupsRef.current);
@@ -811,14 +818,19 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
       if(!message)return;
       const bounds=element.getBoundingClientRect(),rect=message.getBoundingClientRect();
       if(rect.top>=bounds.bottom||rect.bottom<=bounds.top||rect.width===0)return;
-      const key=chat.workspaceId+':'+chat.id+':'+chat.activity?.version;
-      if(seenAttempt.current===key)return;
+      if(!forceRetry&&seenAttempt.current===key)return;
       seenAttempt.current=key;void context.markSeen(chat);
     };
-    const frame=requestAnimationFrame(check);
-    const observer=new ResizeObserver(check);observer.observe(element);if(streamContent.current)observer.observe(streamContent.current);
-    element.addEventListener('scroll',check);document.addEventListener('visibilitychange',check);window.addEventListener('focus',check);
-    return()=>{cancelAnimationFrame(frame);observer.disconnect();element.removeEventListener('scroll',check);document.removeEventListener('visibilitychange',check);window.removeEventListener('focus',check);};
+    const checkPassive=()=>check(false),checkRetry=()=>check(true);
+    const onHost=(event:Event)=>{
+      if((event as CustomEvent).detail?.active!==true)return;
+      checkRetry();
+      if(!activeFrame)activeFrame=requestAnimationFrame(()=>{activeFrame=0;checkRetry();});
+    };
+    const frame=requestAnimationFrame(checkPassive);
+    const observer=new ResizeObserver(checkPassive);observer.observe(element);if(streamContent.current)observer.observe(streamContent.current);
+    element.addEventListener('scroll',checkPassive);document.addEventListener('visibilitychange',checkRetry);window.addEventListener('focus',checkRetry);window.addEventListener('buildr-dsh-host',onHost);
+    return()=>{cancelAnimationFrame(frame);if(activeFrame)cancelAnimationFrame(activeFrame);observer.disconnect();element.removeEventListener('scroll',checkPassive);document.removeEventListener('visibilitychange',checkRetry);window.removeEventListener('focus',checkRetry);window.removeEventListener('buildr-dsh-host',onHost);};
   },[chat,visibleEntries,conversationVisible,context.markSeen]);
   const run=chat?.run;
   const failedRunInputStatus=run?.status==='failed'
@@ -887,6 +899,35 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
       else subagentMenu.current?.focus({preventScroll:true});
     });
   }
+  const attachmentPaste=useRef<AbortController|null>(null);
+  useEffect(()=>()=>attachmentPaste.current?.abort(),[context.selectionGeneration,context.scope?.workspaceId,context.scope?.conversationId]);
+  const pasteMessageAttachments=async(event:React.ClipboardEvent<HTMLTextAreaElement>)=>{
+    // Native files retain their usual path. For a copied message, leave the default text insertion alone.
+    if(event.clipboardData.files.length)return;
+    const selection=context.getSelection();
+    const source=await readPastedMessageAttachments(permissionProfile,event.clipboardData.getData('text/html'),event.clipboardData.getData('text/plain'));
+    if(!source||!context.isSelectionCurrent(selection))return;
+    if(source==='unavailable'){setError('复制的附件已不可用，请从原消息重新复制。');return;}
+    if(activeSend.current||sending||uploading||actions.has(uploadKey)||context.loading||Boolean(context.scope&&!chat)){
+      setError('当前无法添加复制的附件，请稍后重试。');return;
+    }
+    if(source.ids.length+images.length>9){setError('未添加复制的附件：每次最多添加 9 份附件。');return;}
+    const controller=new AbortController();attachmentPaste.current=controller;
+    void upload(()=>readCopiedMessageAttachments(source,context.api.readImage,controller.signal)).finally(()=>{
+      if(attachmentPaste.current===controller)attachmentPaste.current=null;
+    });
+  };
+  const copyUserMessage=(text:string,ids?:string[])=>{
+    if(!text&&!ids?.length)return null;
+    const source=chat&&ids?.length?{workspaceId:chat.workspaceId,id:chat.id,ids}:undefined;
+    return <span className="ac-reply-actions ac-user-actions"><CopyButton type="text" text={text} ariaLabel="复制消息"
+      title={source?'复制消息和附件':undefined} failureMessage={source?'复制消息和附件失败。':'复制失败，请手动选择文字。'}
+      write={source?async()=>{
+        const result=await copyMessageWithAttachments(permissionProfile,text,source);
+        if(result==='text')setError('仅复制了正文：此浏览器未能复制附件。');
+        return result!=='failed';
+      }:undefined}/></span>;
+  };
   const renderEntry=(entry:ConversationEntry)=>{
     if(entry.subagent){
       const agent=subagents.agents.find(row=>row.entry.id===entry.id);
@@ -908,7 +949,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     }
     const text=entry.kind==='notice'&&entry.id.startsWith('reply-')?conversationReplyText(entry.text):conversationSystemNoticeText(entry);
     const body=<>{entry.role==='assistant'?<MarkdownHost markdown={entry.text} className="markdown-body" options={markdownOptions} findFileAction={findFileAction}/>:<p>{text}</p>}{entry.attachments?.length?<ConversationMessageImages conversation={chat!} ids={entry.attachments} read={context.api.readImage}/>:null}{entry.deliveryDiagnostic&&<small className="ac-input-diagnostic" role="status">{entry.deliveryDiagnostic}</small>}{entry.status==='unknown'&&<Tag color="warning">是否送达待确认</Tag>}</>;
-    return <article key={entry.id} className={'ac-message is-'+entry.role} data-entry-id={entry.id} data-message-provider={entry.provider}>{entry.role==='user'?<div className="ac-user-bubble">{body}</div>:body}{entry.role==='user'&&text&&<span className="ac-reply-actions ac-user-actions"><CopyButton type="text" text={text} ariaLabel="复制消息" failureMessage="复制失败，请手动选择文字。"/></span>}{entry.role==='assistant'&&finalReplies.has(entry.id)&&<span className="ac-reply-actions"><CopyButton type="text" text={entry.text} ariaLabel="复制回复" failureMessage="复制失败，请手动选择文字。"/>{chat&&forkableReplies.has(entry.id)&&<ConversationForkAction conversation={chat} entryId={entry.id}/>}</span>}</article>;
+    return <article key={entry.id} className={'ac-message is-'+entry.role} data-entry-id={entry.id} data-message-provider={entry.provider}>{entry.role==='user'?<div className="ac-user-bubble">{body}</div>:body}{entry.role==='user'&&copyUserMessage(text,entry.attachments)}{entry.role==='assistant'&&finalReplies.has(entry.id)&&<span className="ac-reply-actions"><CopyButton type="text" text={entry.text} ariaLabel="复制回复" failureMessage="复制失败，请手动选择文字。"/>{chat&&forkableReplies.has(entry.id)&&<ConversationForkAction conversation={chat} entryId={entry.id}/>}</span>}</article>;
   };
   const fileError=fileLinkFailure&&context.isSelectionCurrent(fileLinkFailure.selection)&&<Alert type="warning" message={fileLinkFailure.message} description={<code>{fileLinkFailure.reference}</code>} closable onClose={()=>setFileLinkFailure(null)} action={<CopyButton type="text" text={fileLinkFailure.reference} ariaLabel="复制来源路径" failureMessage="复制失败，请手动复制来源路径。"/>}/>;
   const threadHeader=<header className={"ac-thread-header"+(standalone?" ac-thread-header-in-stream":"")} data-run-status={run&&['running','completed'].includes(run.status)?run.status:undefined}>
@@ -1022,7 +1063,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
             const unverified=Boolean(turnRun&&turnRun.status==='unknown'&&!execution.current&&!turnRun.supersededBy);
             const turnSubagents=subagents.agents.filter(agent=>agent.entry.runId&&turnEntryRunIds.has(agent.entry.runId));
             const turnWaiting=subagentWaitingLabel(execution.current?run:undefined,subagents.agents)??(execution.current&&backgroundSubagents.length?'后台子智能体仍在运行':execution.waiting);
-            return <ConversationTurn key={turn.key} id={turn.key} runId={resolvedRunId} prompt={shownPrompt?{id:shownPrompt.id,text:shownPrompt.text,images:shownPrompt.attachments?.length?<ConversationMessageImages conversation={chat} ids={shownPrompt.attachments} read={context.api.readImage}/>:undefined,diagnostic:prompt?(prompt.deliveryDiagnostic?<small className="ac-input-diagnostic" role="status">{prompt.deliveryDiagnostic}</small>:prompt.status==='failed'?<small className="ac-input-diagnostic" role="status">未送达</small>:prompt.status==='unknown'&&(execution.current||turnExpanded)?<Tag color={execution.current?'warning':'default'}>{execution.current?'是否送达待确认':'历史送达未确认'}</Tag>:undefined):<small className="ac-continuation-prompt-label">继续上次要求</small>}:undefined}
+            return <ConversationTurn key={turn.key} id={turn.key} runId={resolvedRunId} prompt={shownPrompt?{id:shownPrompt.id,text:shownPrompt.text,copyAction:copyUserMessage(shownPrompt.text,shownPrompt.attachments),images:shownPrompt.attachments?.length?<ConversationMessageImages conversation={chat} ids={shownPrompt.attachments} read={context.api.readImage}/>:undefined,diagnostic:prompt?(prompt.deliveryDiagnostic?<small className="ac-input-diagnostic" role="status">{prompt.deliveryDiagnostic}</small>:prompt.status==='failed'?<small className="ac-input-diagnostic" role="status">未送达</small>:prompt.status==='unknown'&&(execution.current||turnExpanded)?<Tag color={execution.current?'warning':'default'}>{execution.current?'是否送达待确认':'历史送达未确认'}</Tag>:undefined):<small className="ac-continuation-prompt-label">继续上次要求</small>}:undefined}
               onCollapseProcess={processKeys.some(key=>expandedToolGroups[key]===true)?()=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(processKeys.map(key=>[key,false]))})):undefined} collapseLabel={hasExpandedProcess?'收起处理过程':'收起工具调用'} identity={execution.current?runIdentity:turnIdentity(latestAssistant||assistant||latestEntry||prompt)} executing={executing&&!turnPaused} showExecutionIndicator={Boolean(assistant||hasProcess||executing)} startedAt={timing.startedAt} finishedAt={timing.finishedAt} processExpanded={turnExpanded} summary={!turnExpanded&&turnSubagents.length>0?<ConversationTurnSubagents agents={turnSubagents} onSelect={openSubagent} onOverview={openSubagentOverview}/>:undefined} onToggleProcess={hasProcess||hasQuietContinuation||hasSupplement||turnSubagents.length>0?()=>setExpandedToolGroups(previous=>({...previous,[turnExpansionKey]:!turnExpanded,...Object.fromEntries(settled.flatMap(item=>item.type==='process-block'?[[processBlockKey(item.entries),!turnExpanded]]:[]))})):undefined}>
               {executing&&turnWaiting&&<small className="ac-input-diagnostic" role="status">{turnWaiting}</small>}
               {unverified&&turnExpanded&&<small className="ac-input-diagnostic" title={turnRun?.diagnostic}>{turnRun?.attentionSettled?'历史执行提醒已结束；原记录仍保留。':<>历史执行结果未确认，不影响当前对话。原记录保留在可展开的处理过程中。{canSettleRetainedRun(chat,turnRun)&&<Button type="link" size="small" loading={Boolean(chat&&actions.has(actionKey(chat,'settle-retained',turnRun!.id)))} onClick={()=>void settleRetained(turnRun!)} title="仅结束提醒：原执行结果仍未知，不终止可能仍在运行的进程，不会重发原操作。">结束提醒</Button>}</>}</small>}
@@ -1063,7 +1104,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
           onDismiss={()=>{setPrepared(null);setReviewOpen(false);requestAnimationFrame(()=>document.getElementById(panelId)?.querySelector<HTMLTextAreaElement>('.ac-composer textarea')?.focus());}}
           onChooseModel={()=>{setPrepared(null);setReviewOpen(false);requestAnimationFrame(()=>{const trigger=document.getElementById(panelId)?.querySelector<HTMLButtonElement>('.ac-model-trigger');trigger?.focus();trigger?.click();});}}/>}
         <ConversationComposer images={images} materialDisabled={sending||uploading||context.loading||Boolean(context.scope&&!chat)} addDisabled={sending||context.loading||Boolean(context.scope&&!chat)} uploading={uploading} onAdd={upload} onBlocked={()=>setError('当前正在发送或上传，请稍后再添加附件。')} onRemove={id=>{if(!chat){void newImages.remove(id).catch(fail);}else setAttachments(previous=>({...previous,[attachmentKey]:(previous[attachmentKey]||[]).filter(item=>item.id!==id)}));setPrepared(null);setReviewOpen(false);}}
-          input={{id:embedded?'agent-child-conversation-input-'+chat?.id:'agent-conversation-input','aria-label':embedded?'子对话输入':'对话输入',disabled:context.loading||Boolean(context.scope&&!chat),placeholder:currentConversationRequests(chat).length?'原轮等待回答或授权，请使用上方卡片；输入会保留…':locked&&!chat?.run?.resourcesReleased&&!chat?.run?.stopRequested?'追加要求到当前执行，不另开会话…':'提出问题，或描述想完成的工作',value:draft.text,onChange:event=>{draftEditVersion.current++;draft.setText(event.target.value);setPrepared(null);setReviewOpen(false);},autoSize:{minRows:2,maxRows:8},onCompositionStart:()=>{composing.current=true;},onCompositionEnd:()=>{composing.current=false;},onKeyDown:event=>{if(shouldSendOnKey({key:event.key,shiftKey:event.shiftKey,isComposing:composing.current||event.nativeEvent.isComposing,keyCode:event.nativeEvent.keyCode})){event.preventDefault();if(canSend&&!review)void prepare(false);}}}}
+          input={{id:embedded?'agent-child-conversation-input-'+chat?.id:'agent-conversation-input','aria-label':embedded?'子对话输入':'对话输入',disabled:context.loading||Boolean(context.scope&&!chat),placeholder:currentConversationRequests(chat).length?'原轮等待回答或授权，请使用上方卡片；输入会保留…':locked&&!chat?.run?.resourcesReleased&&!chat?.run?.stopRequested?'追加要求到当前执行，不另开会话…':'提出问题，或描述想完成的工作',value:draft.text,onPaste:pasteMessageAttachments,onChange:event=>{draftEditVersion.current++;draft.setText(event.target.value);setPrepared(null);setReviewOpen(false);},autoSize:{minRows:2,maxRows:8},onCompositionStart:()=>{composing.current=true;},onCompositionEnd:()=>{composing.current=false;},onKeyDown:event=>{if(shouldSendOnKey({key:event.key,shiftKey:event.shiftKey,isComposing:composing.current||event.nativeEvent.isComposing,keyCode:event.nativeEvent.keyCode})){event.preventDefault();if(canSend&&!review)void prepare(false);}}}}
           access={<><ConversationAgentSelect connections={context.connections} value={choice} disabled={sending} onChange={select}/><Select<PermissionMode> className="ac-choice ac-permission-select" aria-label="执行权限" placement="topLeft" variant="borderless" size="small" suffixIcon={null} labelRender={({label})=><span className="ac-permission-label"><SafetyCertificateOutlined/>{label}</span>} value={permissionMode} disabled={sending||uploading||context.loading||Boolean(context.scope&&!chat)} popupMatchSelectWidth={false} classNames={{popup:{root:'ac-panel-popup ac-choice-popup'}}} title="权限更改用于本对话下一轮。完全访问会跳过逐次工具审批；业务问题仍需回复，系统与厂家限制继续有效。" options={[{value:'default',label:'默认权限',disabled:!supportsConversationPermission(connection,'default')},{value:'full-access',label:'完全访问',disabled:!supportsConversationPermission(connection,'full-access')}]} onChange={selectPermission}/></>}
           execution={<><ConversationOptions showAgent={false} key={choiceKey+':'+context.side+':'+context.open} connections={context.connections} value={choice} disabled={sending} onChange={select}/><Button type="primary" shape="circle" icon={<ArrowUpOutlined/>} aria-label="发送对话" title={waitingHandoffAvailable?waitingHandoffLabel:'发送'} disabled={Boolean(review)||!canSend||(!waitingHandoffAvailable&&!sendText.trim()&&!images.length)} loading={sending} onClick={()=>void prepare(false)}/></>}/>
         <div className="ac-location-meta"><span>所属工作空间：<Popover rootClassName="ac-panel-popup" title="对话信息" trigger="click" open={locationOpen} onOpenChange={setLocationOpen} content={settings}><button type="button" className="ac-location-name" aria-label="对话信息与工作空间" title={(chat?.cwd||newCwd)||undefined}>{chat?(workspace?.name||(chat.workspaceId==='@default'?'默认工作空间':chat.workspaceId)):(scopeMissing?'请选择工作空间':workspaces.find(item=>item.id===draftWorkspaceId)?.name||'默认工作空间')}</button></Popover></span>{chat&&composition.renderContext?<span className="ac-engineering-context"><ConversationContextSlot conversation={chat} apply={context.apply}/></span>:window.parent!==window&&<span ref={engineeringAnchor} className="ac-engineering-context-anchor"/>}<small className="ac-location-keys">{review?'确认后发送 · Shift+Enter 换行':'Enter 发送 · Shift+Enter 换行'}</small></div>

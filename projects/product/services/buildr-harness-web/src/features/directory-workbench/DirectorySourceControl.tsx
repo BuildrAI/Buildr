@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Alert, App, Button, Dropdown, Input, Modal } from 'antd';
-import { CloudDownloadOutlined, DeleteOutlined, MoreOutlined, PlusOutlined, SyncOutlined } from '@ant-design/icons';
+import { CloudDownloadOutlined, DeleteOutlined, MoreOutlined, PlusOutlined, SearchOutlined, SyncOutlined } from '@ant-design/icons';
 import { useFileEditingContext } from '../../workbench/editor/FileEditingContext';
 import { formatShortDateTime } from '../../workbench/ui/date-format';
 import { BranchManagementPopover } from '../../workbench/source-control/BranchManagementPopover';
@@ -64,10 +64,14 @@ type Props = {
   active: boolean;
   version: number;
   current: DirectorySelection | null;
+  explicitSelection?: DirectorySelection | null;
   catalog: DirectoryCatalog | null;
   catalogError: string;
   catalogLoading: boolean;
   refreshCatalog(): Promise<void>;
+  discoverMore(): Promise<void>;
+  discoveringMore?: boolean;
+  prioritizeRepository(repositoryPath: string): void;
   onSelectCheckout(target: DirectorySelection): void;
   onOpenCurrent?(target: SourceControlFileTarget): void;
 };
@@ -210,7 +214,7 @@ function DirectoryHistoryControls({ active, repository, worktree, version, branc
   </>;
 }
 
-export function DirectorySourceControl({ workspaceId, scope, baseRequest, requestFor, active, version, current, catalog, catalogError, catalogLoading, refreshCatalog, onSelectCheckout, onOpenCurrent }: Props) {
+export function DirectorySourceControl({ workspaceId, scope, baseRequest, requestFor, active, version, current, explicitSelection, catalog, catalogError, catalogLoading, refreshCatalog, discoverMore, discoveringMore = false, prioritizeRepository, onSelectCheckout, onOpenCurrent }: Props) {
   const { message } = App.useApp();
   const editing = useFileEditingContext();
   const conversations = useOptionalAgentConversations();
@@ -237,7 +241,7 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
 
   // Build SourceControlRepository[] cleanly from backend catalog
   const repositories = useMemo<SourceControlRepository[]>(() => {
-    const mapped = (catalog?.repositories ?? []).flatMap(repo => {
+    const mapped = (catalog?.repositories ?? []).flatMap<SourceControlRepository & {_isRoot:boolean}>(repo => {
       const worktrees: SourceControlWorktree[] = repo.members.map(member => ({
         worktreeId: member.worktreeId,
         name: member.name,
@@ -257,28 +261,37 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
         diagnostics: member.diagnostics,
       }));
       const registered = worktrees.find(item => item.isRegistered) || worktrees.find(item => item.isMain) || worktrees[0];
-      if (!registered) return [];
-      const name = repo.path ? repo.name : scope.name || repo.name;
+      const displayCode = repo.path ? (repo.code || repo.name) : (scope.name || repo.code || repo.name);
+      const displayName = repo.path ? repo.name : (scope.name || repo.name);
+      if (!registered) return [{id:repo.id, discoveryKey:repo.path, location:repo.path, code:displayCode, name:displayName,
+        status:'offline' as const, branch:null, branches:[], pending:repo.pending, fileCount:null,
+        services:[], simulated:false, ahead:null, behind:null, changes:[], commits:[], worktrees:[], worktreeCount:null,
+        diagnostics:repo.error ? [repo.error] : [], _isRoot:repo.path === ''}];
       return [{
         ...registered,
         id: repo.id,
+        discoveryKey: repo.path,
         gitId: repo.gitId,
         checkoutId: repo.checkouts.defaultId ?? registered.worktreeId,
-        readVersion: `${catalog!.readAt}:${version}`,
-        refsVersion: `${catalog!.readAt}:${version}`,
-        code: name,
-        name,
+        readVersion: `${repo.readAt ?? catalog!.readAt}:${version}`,
+        refsVersion: `${repo.readAt ?? catalog!.readAt}:${version}`,
+        code: displayCode,
+        name: displayName,
         branches: [],
         simulated: false,
         services: [],
         worktrees,
-        worktreeCount: worktrees.length,
+        worktreeCount: repo.checkouts.members.length,
         _isRoot: repo.path === '',
       }];
     });
-    mapped.sort((a, b) => Number(b._isRoot) - Number(a._isRoot) || Number(sourceControlRepositoryHasChanges(b)) - Number(sourceControlRepositoryHasChanges(a)) || a.name.localeCompare(b.name));
+    mapped.sort((a, b) => Number(b._isRoot) - Number(a._isRoot) || Number(sourceControlRepositoryHasChanges(b)) - Number(sourceControlRepositoryHasChanges(a)) || a.code.localeCompare(b.code));
     return mapped.map(({ _isRoot: _, ...repo }) => repo);
   }, [catalog, scope.name, version]);
+  const defaultRepositories = useMemo(() => {
+    const byId = new Map(repositories.map(repository => [repository.id, repository]));
+    return (catalog?.repositories ?? []).flatMap(repo => byId.get(repo.id) ?? []);
+  }, [catalog, repositories]);
 
   const reader = useMemo<SourceControlReader>(() => ({
     history: (input, signal) => requestForRef.current(input.worktreeId ? { repositoryId: input.repositoryId!, checkoutId: input.worktreeId } : null)('history', input, signal),
@@ -331,7 +344,7 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
   }>({ pending: {}, successfulAt: {}, results: {}, feedback: {} });
   const fetchInFlight = useRef(new Set<string>());
   const runFetch = useCallback(async (targets: SourceControlRepository[]) => {
-    const unique = [...new Map(targets.filter(item => !item.cached).map(item => [item.id, item])).values()];
+    const unique = [...new Map(targets.filter(item => !item.cached && item.gitId && item.checkoutId).map(item => [item.id, item])).values()];
     if (!unique.length || unique.some(item => fetchInFlight.current.has(item.id))) return;
     for (const item of unique) fetchInFlight.current.add(item.id);
     setFetchState(prev => ({ ...prev, pending: { ...prev.pending, ...Object.fromEntries(unique.map(item => [item.id, true])) } }));
@@ -342,7 +355,7 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
         const chunk = unique.slice(start, start + 128);
         try {
           const res = await baseRequestRef.current<CodeFetchResponse>('fetch', {
-            repositories: chunk.map(item => ({ repositoryId: item.id, expectedGitId: item.gitId ?? null, expectedCheckoutId: item.checkoutId ?? null })),
+            repositories: chunk.map(item => ({ repositoryId: item.id, repositoryPath: item.discoveryKey, expectedGitId: item.gitId ?? null, expectedCheckoutId: item.checkoutId ?? null })),
           });
           readAt = res.readAt;
           outcomes.push(...res.repositories);
@@ -602,7 +615,7 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
     return directoryEditableDocument(workspaceId, snapshot);
   }, [workspaceId]);
 
-  const targets = useMemo(() => current ? [current] : [], [current?.repositoryId, current?.checkoutId]);
+  const targets = useMemo(() => explicitSelection ? [explicitSelection] : [], [explicitSelection?.repositoryId, explicitSelection?.checkoutId]);
   const fetching = Object.values(fetchState.pending).some(Boolean);
   const syncing = syncState.all || Object.values(syncState.pending).some(Boolean);
   const selectedRepositoryForModal = repositories.find(r => r.id === current?.repositoryId) ?? repositories[0];
@@ -610,7 +623,15 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
     ?? selectedRepositoryForModal?.worktrees.find(w => w.isMain)
     ?? selectedRepositoryForModal?.worktrees[0];
 
-  if (!repositories.length && !catalogLoading) {
+  const worktreeStatusPending = catalog?.repositories.some(repo => repo.statusPending);
+  const showInlineDiscoverMore = Boolean(catalog?.nextCursor && (!catalog?.registered || !repositories.length));
+  const showMenuDiscoverMore = Boolean(catalog?.nextCursor && catalog?.registered && repositories.length > 0);
+  const discoveryControl = showInlineDiscoverMore
+    ? <div className="source-control-catalog-more"><Button size="small" type="link" loading={discoveringMore} disabled={discoveringMore} onClick={() => void discoverMore()}>查找更多仓库</Button></div>
+    : !catalog?.nextCursor && catalog?.limited
+      ? <p className="source-control-catalog-note">目录查找已达到本次范围，可能还有仓库未发现。</p>
+      : null;
+  if (!repositories.length && !catalogLoading && !catalog?.nextCursor) {
     return <Alert type="warning" showIcon message="源代码管理暂不可用" description={catalogError || catalog?.diagnostic || '当前目录不是 Git 代码库，也未发现嵌套代码库。'} action={<Button onClick={() => void refreshCatalog()}>重新读取</Button>} />;
   }
 
@@ -620,7 +641,7 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
       sidebarOnRight
       active={active}
       repositories={repositories}
-      defaultRepositories={repositories}
+      defaultRepositories={defaultRepositories}
       scene={scene}
       reader={reader}
       readKey={scope.ref.id + ':' + scope.revision}
@@ -628,11 +649,14 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
         loading: catalogLoading,
         error: catalogError,
         readAt: catalog?.readAt ?? '',
-        diagnostics: catalog?.diagnostic ? [catalog.diagnostic] : [],
+        diagnostics: [...(catalog?.diagnostic ? [catalog.diagnostic] : []), ...(catalog?.repositories.flatMap(repo => repo.error ? [`${codeRepositoryLabel({ name: repo.name, code: repo.code })}：${repo.error}`] : []) ?? [])],
         truncated: catalog?.truncated,
       }}
-      currentSourceSelection={current?.checkoutId ? { key: current.checkoutId, targets, preferredTarget: targets[0] } : null}
+      currentSourceSelection={explicitSelection?.checkoutId ? { key: explicitSelection.checkoutId, targets, preferredTarget: targets[0] } : null}
       onCurrentSourceSelect={onSelectCheckout}
+      onPrioritizeRepository={id => { const repository = catalog?.repositories.find(item => item.id === id); if (repository) prioritizeRepository(repository.path); }}
+      catalogFeedback={<>{discoveryControl}{worktreeStatusPending && catalogLoading &&
+        <p className="source-control-catalog-note" role="status">正在读取其余工作树…</p>}</>}
       onRefresh={() => refreshCatalog()}
       onRetry={() => refreshCatalog()}
       onScene={setScene}
@@ -641,13 +665,18 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
       onOpenCurrentInExplorer={onOpenCurrent}
       onDiscard={(repository, worktree, file) => void discard.run(repository, worktree, file)}
       discardPending={discard.pending}
+      liveReadsSuspended={(repository, worktree) => !!actions.state({workspaceId, repositoryId:repository.id, worktreeId:worktree.worktreeId, branch:worktree.branch}).gitPending}
       branchExtension={branchExtension}
       layoutStorageKey={'buildr:harness-scm:' + workspaceId}
       catalogActions={<Dropdown open={active && catalogMenuOpen} onOpenChange={setCatalogMenuOpen} trigger={['click']} placement="bottomRight" menu={{
         'aria-label': '源代码管理操作菜单',
         items: [
-          { key: 'sync', icon: <SyncOutlined aria-hidden spin={syncing} />, label: syncing ? '正在同步…' : '全部同步', disabled: fetching || syncing || !repositories.length },
+          { key: 'sync', icon: <SyncOutlined aria-hidden spin={syncing} />, label: syncing ? '正在同步…' : '全部同步', disabled: fetching || syncing || worktreeStatusPending || !repositories.length },
           { key: 'fetch', icon: <CloudDownloadOutlined aria-hidden spin={fetching} />, label: fetching ? '正在获取远程…' : '全部获取远程', disabled: fetching || syncing || !repositories.length },
+          ...(showMenuDiscoverMore ? [
+            { type: 'divider' as const },
+            { key: 'discover-more', icon: <SearchOutlined aria-hidden />, label: discoveringMore ? '正在查找更多仓库…' : '查找更多仓库', disabled: discoveringMore || fetching || syncing },
+          ] : []),
           ...(selectedRepositoryForModal && selectedWorktreeForModal ? [
             { type: 'divider' as const },
             { key: 'create-worktree', icon: <PlusOutlined aria-hidden />, label: '新建工作树', disabled: fetching || syncing },
@@ -657,9 +686,10 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
           setCatalogMenuOpen(false);
           if (key === 'sync') void runSyncAll(repositories);
           else if (key === 'fetch') void runFetch(repositories);
+          else if (key === 'discover-more') void discoverMore();
           else if (key === 'create-worktree' && selectedRepositoryForModal && selectedWorktreeForModal) void openWorktreeModal('create', selectedRepositoryForModal, selectedWorktreeForModal);
         },
-      }}><Button type="text" size="small" icon={<MoreOutlined rotate={90} />} loading={fetching || syncing} aria-label="源代码管理操作菜单" title="源代码管理操作菜单" aria-expanded={catalogMenuOpen} aria-haspopup="menu" /></Dropdown>}
+      }}><Button type="text" size="small" icon={<MoreOutlined rotate={90} />} loading={fetching || syncing || discoveringMore} aria-label="源代码管理操作菜单" title="源代码管理操作菜单" aria-expanded={catalogMenuOpen} aria-haspopup="menu" /></Dropdown>}
       renderChangeActions={(repository, worktree, panelVisible) => <SourceControlCommitPanel active={panelVisible} workspaceId={workspaceId} repository={repository} worktree={worktree} actions={actions} version={repository.readVersion || ''} modelCatalog={modelCatalog} modelsLoading={modelsLoading} modelError={modelError} />}
       fileEditing={{
         renderDiff: (diff, diffReader, mode) => <SourceControlDiffEditor workspaceId={workspaceId} diff={diff} reader={diffReader} mode={mode} editing={editing} active={active} readEditableFile={readDiffEditableFile} />,

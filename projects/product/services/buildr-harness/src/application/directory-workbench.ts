@@ -1,6 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { observeDirectoryCheckouts, observeDirectoryRepositories, resolveDirectoryCheckout, resolveDirectoryRepository } from './directory-checkouts.ts';
+import {
+  createDirectoryRepositoryDiscovery,
+  observeDirectoryCheckouts,
+  observeDirectoryCheckoutsAsync,
+  observeDirectoryRepositories,
+  observeDirectoryRepositoriesAsync,
+  observedCheckoutCommonDir,
+  resolveDirectoryCheckout,
+  resolveDirectoryCheckoutAsync,
+  resolveDirectoryRepository,
+  resolveDirectoryRepositoryAsync,
+} from './directory-checkouts.ts';
 import { directoryWorktreeActions } from './directory-worktree-actions.ts';
 import { createHash } from 'node:crypto';
 import { createGitBranchOperations } from '../workbench/git-branch-operations.ts';
@@ -14,7 +25,7 @@ import { openDirectory } from '../workbench/open-directory.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import type { HarnessDirectory, HarnessDirectoryHost } from './directory-host.ts';
 import { DIRECTORY_SOURCE_ID } from './directory-host.ts';
-import { codeFailure, codeGit, codeGitAsync, gitCommonDirectory, localPath, readCodeDirectory, relativeCodePath, type CodeSource } from '../workbench/code-file-reader.ts';
+import { codeFailure, codeGit, codeGitAsync, gitCommonDirectory, gitCommonDirectoryAsync, localPath, readCodeDirectoryAsync, readWorkspaceDirectory, relativeCodePath, type CodeSource } from '../workbench/code-file-reader.ts';
 import { isCodeImagePath, readCodeFile } from '../workbench/code-file-content.ts';
 import { searchCode } from '../workbench/code-search.ts';
 import { editableSourceRevision, readEditableFile, saveObservedEditableFile } from '../workbench/editable-file.ts';
@@ -22,7 +33,7 @@ import { insideFilesystemPath } from '../workbench/filesystem-path-identity.ts';
 import { createWorkbenchGitReads } from '../workbench/source-control-reads.ts';
 import type { CodeSourceControlInput } from '../workbench/source-control-read-types.ts';
 import { parseGitWorktreeRecord } from '../workbench/git-worktree-list.ts';
-import { localGitIdentity, mutateLocalGit, observeLocalGit } from '../workbench/local-git.ts';
+import { localGitIdentity, localGitIdentityAsync, mutateLocalGit, observeLocalGit } from '../workbench/local-git.ts';
 import { createCodeCommitApplication } from '../workbench/code-commit-application.ts';
 import { createCodeDiscardApplication } from '../workbench/code-discard-application.ts';
 import { createCodeCommitMaterialReader } from '../workbench/code-commit-material.ts';
@@ -32,7 +43,8 @@ import type { CodeGeneration } from '../workbench/code-generation.ts';
 
 const operations = {
   checkouts: [],
-  catalog: ['repositoryPath'],
+  inventory: ['cursor'],
+  catalog: ['repositoryPath', 'primaryStatus', 'preferredCheckoutId'],
   'git-topology': ['repositoryPaths'],
   'open-folder': ['path'],
   directory: ['path','showIgnored'],
@@ -73,19 +85,21 @@ export const directoryWorkbenchWrites = (operation: string) => [
 ].includes(operation);
 const invalid = () => new AgentServiceError('agent_directory_workbench_input_invalid','请选择准确目录和当前观察版本；工作台请求无效。',400);
 
-function inspectFetchTargets(value: unknown): CodeFetchTarget[] {
+function inspectFetchTargets(value: unknown): Array<CodeFetchTarget & {repositoryPath?: string}> {
   if (!Array.isArray(value) || value.length < 1 || value.length > 128) throw invalid();
   return value.map(item => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) throw invalid();
     const record = item as Record<string, unknown>;
     const keys = Object.keys(record);
-    if (keys.some(key => !['repositoryId', 'expectedGitId', 'expectedCheckoutId'].includes(key))) throw invalid();
+    if (keys.some(key => !['repositoryId', 'expectedGitId', 'expectedCheckoutId', 'repositoryPath'].includes(key))) throw invalid();
     if (typeof record.repositoryId !== 'string' || !record.repositoryId || record.repositoryId.length > 4096 || record.repositoryId.includes('\0')) throw invalid();
     for (const optional of ['expectedGitId', 'expectedCheckoutId'] as const) {
       const candidate = record[optional];
       if (candidate !== null && candidate !== undefined && (typeof candidate !== 'string' || candidate.length > 4096 || candidate.includes('\0'))) throw invalid();
     }
+    if (record.repositoryPath !== undefined && (typeof record.repositoryPath !== 'string' || Buffer.byteLength(record.repositoryPath) > 4096 || !record.expectedGitId || !record.expectedCheckoutId)) throw invalid();
     return {
+      ...(typeof record.repositoryPath === 'string' ? {repositoryPath:relativeCodePath(record.repositoryPath,true)} : {}),
       repositoryId: record.repositoryId,
       expectedGitId: (record.expectedGitId ?? null) as string | null,
       expectedCheckoutId: (record.expectedCheckoutId ?? null) as string | null,
@@ -98,7 +112,7 @@ function inspectInput(operation: string, input: Record<string, unknown>) {
   const allowed = new Set<string>(['scopeId','scopeRevision','checkoutId','repositoryPath',...operations[operation as DirectoryWorkbenchOperation]]);
   if (Object.keys(input).some(key=>!allowed.has(key))) throw invalid();
   for (const [key,value] of Object.entries(input)) {
-    if (key==='showIgnored') { if (typeof value!=='boolean') throw invalid(); continue; }
+    if (key==='showIgnored' || key==='primaryStatus') { if (typeof value!=='boolean') throw invalid(); continue; }
     if (['page','line','limit'].includes(key)) { if (!Number.isSafeInteger(value)) throw invalid(); continue; }
     if (key==='repositoryPaths') {
       if (!Array.isArray(value) || value.length > 128 || value.some(item => typeof item !== 'string' || Buffer.byteLength(item)>4096)) throw invalid();
@@ -113,31 +127,55 @@ function inspectInput(operation: string, input: Record<string, unknown>) {
 }
 
 // Only read Git metadata. No full discovery, status, or member filesystem scan on a tick.
+function topologyMatchesInventory(
+  trees: Buffer,
+  expected: ReturnType<typeof observeDirectoryRepositories>['repositories'][number]['checkouts'],
+): boolean {
+  if (!expected) return false;
+  const records = trees.toString('utf8').split('\0\0').filter(Boolean).map(parseGitWorktreeRecord);
+  const byPath = new Map(records.map(record => [record.declared, record]));
+  return (!expected.diagnostic && !expected.truncated && records.length !== expected.members.length)
+    || expected.members.some(member => {
+      const record = byPath.get(member.location);
+      return !record || record.branch !== member.branch || record.head !== member.head;
+    });
+}
+
 async function gitTopology(directory: HarnessDirectory, paths: readonly string[], inventory?: ReturnType<typeof observeDirectoryRepositories>) {
+  const sortedPaths = [...new Set(paths)].sort();
+  const observed: Array<[string, string, string, string] | [string, null]> = new Array(sortedPaths.length);
   let inventoryChanged = false;
-  const observed = [];
-  for (const relative of [...new Set(paths)].sort()) {
-    try {
-      const repo = resolveDirectoryRepository(directory.rootPath, directory.ref.id, relative);
-      const git = localGitIdentity(repo.location);
-      const [trees, refs] = await Promise.all([
-        codeGitAsync(repo.location, ['worktree', 'list', '--porcelain', '-z'], 2 * 1024 * 1024),
-        codeGitAsync(repo.location, ['for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads'], 2 * 1024 * 1024),
-      ]);
-      if (localGitIdentity(repo.location).id !== git.id) throw invalid();
-      const expected = inventory?.repositories.find(item => item.path === relative)?.checkouts;
-      if (expected) {
-        const records = trees.toString('utf8').split('\0\0').filter(Boolean).map(parseGitWorktreeRecord);
-        const byPath = new Map(records.map(record => [record.declared, record]));
-        inventoryChanged ||= (!expected.diagnostic && !expected.truncated && records.length !== expected.members.length) || expected.members.some(member => {
-          const record = byPath.get(member.location);
-          return !record || record.branch !== member.branch || record.head !== member.head;
-        });
-      } else if (inventory) inventoryChanged = true;
-      observed.push([relative, git.id, createHash('sha256').update(trees).digest('hex'), createHash('sha256').update(refs).digest('hex')]);
-    } catch { observed.push([relative, null]); }
-  }
-  return inventoryChanged ? null : createHash('sha256').update(JSON.stringify(observed)).digest('hex');
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(6, sortedPaths.length) }, async () => {
+    for (;;) {
+      const index = cursor++;
+      if (index >= sortedPaths.length) return;
+      const relative = sortedPaths[index]!;
+      try {
+        const repo = await resolveDirectoryRepositoryAsync(directory.rootPath, directory.ref.id, relative);
+        const [trees, refs] = await Promise.all([
+          codeGitAsync(repo.location, ['worktree', 'list', '--porcelain', '-z'], 2 * 1024 * 1024),
+          codeGitAsync(repo.location, ['for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads'], 2 * 1024 * 1024),
+        ]);
+        if ((await localGitIdentityAsync(repo.location)).id !== repo.git.id) throw invalid();
+        if (inventory) {
+          const expected = inventory.repositories.find(item => item.path === relative)?.checkouts;
+          if (!expected || topologyMatchesInventory(trees, expected)) inventoryChanged = true;
+        }
+        observed[index] = [relative, repo.git.id, createHash('sha256').update(trees).digest('hex'), createHash('sha256').update(refs).digest('hex')];
+      } catch {
+        if (inventory?.repositories.some(item => item.path === relative)) inventoryChanged = true;
+        observed[index] = [relative, null];
+      }
+    }
+  }));
+  const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  return {revision:inventoryChanged ? null : digest(observed), repositoryRevisions:observed.map(row => ({path:row[0] as string, revision:digest([row])}))};
+}
+
+function workspaceFileSource(scope: HarnessDirectory): CodeSource {
+  if (scope.rootPath.split(path.sep).some(segment => segment.toLowerCase() === '.git')) throw codeFailure('code_path_forbidden', '不能打开 Git 管理目录。', 403);
+  return { repositoryId: scope.ref.id, checkoutId: scope.ref.id, location: scope.rootPath, version: '当前文件', kind: 'default', commitHash: null, worktreeGroupId: null, taskId: null, allowNonGit: true };
 }
 
 function fileSource(scope: HarnessDirectory): CodeSource {
@@ -148,9 +186,18 @@ function fileSource(scope: HarnessDirectory): CodeSource {
   return { repositoryId:scope.ref.id, checkoutId:scope.ref.id, location:scope.rootPath, version:'当前文件',kind:'default',commitHash:null,worktreeGroupId:null,taskId:null,allowNonGit:true };
 }
 
+async function fileSourceAsync(scope: HarnessDirectory): Promise<CodeSource> {
+  if (scope.rootPath.split(path.sep).some(segment => segment.toLowerCase() === '.git')) throw codeFailure('code_path_forbidden', '不能打开 Git 管理目录。', 403);
+  let metadata: string | undefined;
+  try { metadata = await gitCommonDirectoryAsync(scope.rootPath); } catch { /* A plain folder does not require Git. */ }
+  if (metadata && insideFilesystemPath(metadata, scope.rootPath)) throw codeFailure('code_path_forbidden', '不能打开 Git 管理目录。', 403);
+  return { repositoryId: scope.ref.id, checkoutId: scope.ref.id, location: scope.rootPath, version: '当前文件', kind: 'default', commitHash: null, worktreeGroupId: null, taskId: null, allowNonGit: true };
+}
+
 export type DirectoryWorkbenchOptions = {
   open?: typeof openDirectory;
   generation?: CodeGeneration;
+  discovery?: ReturnType<typeof createDirectoryRepositoryDiscovery>;
 };
 
 export function createDirectoryWorkbench(
@@ -159,6 +206,7 @@ export function createDirectoryWorkbench(
 ) {
   const open = typeof optionsOrOpen === 'function' ? optionsOrOpen : (optionsOrOpen.open ?? openDirectory);
   const generation = typeof optionsOrOpen === 'function' ? undefined : optionsOrOpen.generation;
+  const discovery = typeof optionsOrOpen === 'function' ? createDirectoryRepositoryDiscovery() : optionsOrOpen.discovery ?? createDirectoryRepositoryDiscovery();
   return async (operation: string, raw: Record<string, unknown>): Promise<unknown> => {
     const input=inspectInput(operation,raw);
     const scopeQuery={ref:{sourceId:DIRECTORY_SOURCE_ID,id:input.scopeId},expectedRevision:input.scopeRevision};
@@ -173,9 +221,29 @@ export function createDirectoryWorkbench(
       const selected=resolveDirectoryCheckout(repository.location,input.checkoutId);
       return {...source, repositoryId:repository.id, location:selected.root, checkoutId:selected.git.id, worktreeId:selected.git.id};
     };
+    const currentAsync = async (): Promise<{ source: CodeSource; gitCommonDir?: string }> => {
+      const directory = scope();
+      const source = await fileSourceAsync(directory);
+      if (input.checkoutId === undefined) {
+        if (input.repositoryPath !== undefined) throw invalid();
+        return { source };
+      }
+      const repository = await resolveDirectoryRepositoryAsync(directory.rootPath, directory.ref.id, input.repositoryPath ?? '');
+      const selected = await resolveDirectoryCheckoutAsync(repository.location, input.checkoutId, repository.git);
+      return {
+        source: { ...source, repositoryId: repository.id, location: selected.root, checkoutId: selected.git.id, worktreeId: selected.git.id },
+        gitCommonDir: selected.git.commonDir,
+      };
+    };
     const verifyFileSource=(source: CodeSource)=>{
       const latest=current();
       if (source.location!==latest.location || source.checkoutId!==latest.checkoutId || source.repositoryId!==latest.repositoryId) throw codeFailure('code_worktree_identity_changed','文件来源已变化，请刷新。',409);
+    };
+    const verifyFileSourceAsync = async (source: CodeSource) => {
+      const { source: latest } = await currentAsync();
+      if (source.location !== latest.location || source.checkoutId !== latest.checkoutId || source.repositoryId !== latest.repositoryId) {
+        throw codeFailure('code_worktree_identity_changed', '文件来源已变化，请刷新。', 409);
+      }
     };
     const gitSource=(target: CodeSourceControlInput) => {
       const source=current(), git=localGitIdentity(source.location);
@@ -233,43 +301,52 @@ export function createDirectoryWorkbench(
       };
     };
     switch (operation) {
-      case 'checkouts': {if(input.checkoutId!==undefined||input.repositoryPath!==undefined)throw invalid();const directory=scope(),result=observeDirectoryRepositories(directory.rootPath,directory.ref.id);scope();return result;}
+      case 'checkouts': {if(input.checkoutId!==undefined||input.repositoryPath!==undefined)throw invalid();const directory=scope(),result=await observeDirectoryRepositoriesAsync(directory.rootPath,directory.ref.id);scope();return result;}
       case 'git-topology': {
         if (input.checkoutId !== undefined || input.repositoryPath !== undefined || !input.repositoryPaths) throw invalid();
         const paths = input.repositoryPaths.map((item: string) => relativeCodePath(item, true));
-        const revision = await gitTopology(scope(), paths);
+        const observed = await gitTopology(scope(), paths);
         scope();
-        return { revision };
+        return observed;
+      }
+      case 'inventory': {
+        if (input.checkoutId !== undefined || input.repositoryPath !== undefined) throw invalid();
+        const result = discovery(scope(), input.cursor); scope(); return result;
       }
       case 'catalog': {
         if (input.checkoutId !== undefined) throw invalid();
         const directory = scope();
-        const base = fileSource(directory);
-        const discovered = observeDirectoryRepositories(directory.rootPath, directory.ref.id);
-        const topologyPaths = [...new Set(['', ...discovered.repositories.map(repo => repo.path)])].slice(0, 128);
-        const topologyRevision = await gitTopology(directory, topologyPaths, discovered);
+        const base = await fileSourceAsync(directory);
         const targetRelative = input.repositoryPath !== undefined ? relativeCodePath(input.repositoryPath, true) : null;
-        const selectedRepos = targetRelative === null ? discovered.repositories : discovered.repositories.filter(repo => repo.path === targetRelative);
-        const repositories = [];
-        for (const repo of selectedRepos) {
-          let gitId: string | null = null;
-          const primaryLocation = repo.checkouts.members.find(member => member.id === repo.checkouts.defaultId)?.location ?? repo.checkouts.members[0]?.location;
-          if (primaryLocation) {
-            try { gitId = 'sha256-' + createHash('sha256').update(localGitIdentity(primaryLocation).commonDir).digest('hex'); }
-            catch { gitId = null; }
-          }
-          const members: Array<{
-            id: string; worktreeId: string; name: string; location: string; isMain: boolean; isRegistered: boolean;
-            branch: string | null; head: string | null; upstream: string | null; ahead: number | null; behind: number | null;
-            files: ReturnType<typeof observeSourceControl>['files']; fileCount: number | null; truncated: boolean;
-            observedRevision: string | null; status: 'ready' | 'clean' | 'offline' | 'partial'; diagnostics: string[]; readAt: string;
-          }> = new Array(repo.checkouts.members.length);
+        if ((input.primaryStatus !== undefined && targetRelative === null) || (input.preferredCheckoutId !== undefined && !input.primaryStatus)) throw invalid();
+        type CatalogMember = {
+          id: string; worktreeId: string; name: string; location: string; isMain: boolean; isRegistered: boolean;
+          branch: string | null; head: string | null; upstream: string | null; ahead: number | null; behind: number | null;
+          files: ReturnType<typeof observeSourceControl>['files']; fileCount: number | null; truncated: boolean;
+          observedRevision: string | null; status: 'ready' | 'clean' | 'offline' | 'partial'; diagnostics: string[]; readAt: string;
+        };
+        const sha256Hex = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
+
+        if (targetRelative !== null) {
+          const repoInfo = await resolveDirectoryRepositoryAsync(directory.rootPath, directory.ref.id, targetRelative);
+          const [trees, refs] = await Promise.all([
+            codeGitAsync(repoInfo.location, ['worktree', 'list', '--porcelain', '-z'], 2 * 1024 * 1024),
+            codeGitAsync(repoInfo.location, ['for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads'], 2 * 1024 * 1024),
+          ]);
+          const checkouts = await observeDirectoryCheckoutsAsync(repoInfo.location, { anchor: repoInfo.git, worktreeOutput: trees });
+          const baseName = path.basename(repoInfo.location);
+          const repo = { id: repoInfo.id, path: targetRelative, code: baseName, name: baseName, checkouts };
+          const gitId = 'sha256-' + sha256Hex(repoInfo.git.commonDir);
+          const primary = checkouts.members.find(member => member.id === input.preferredCheckoutId)
+            ?? checkouts.members.find(member => member.id === checkouts.defaultId) ?? checkouts.members[0];
+          const statusTargets = input.primaryStatus && primary ? [primary] : checkouts.members;
+          const members: CatalogMember[] = new Array(statusTargets.length);
           let cursor = 0;
-          const workers = Array.from({ length: Math.min(6, repo.checkouts.members.length) }, async () => {
+          await Promise.all(Array.from({ length: Math.min(6, statusTargets.length) }, async () => {
             for (;;) {
               const index = cursor++;
-              if (index >= repo.checkouts.members.length) return;
-              const member = repo.checkouts.members[index]!;
+              if (index >= statusTargets.length) return;
+              const member = statusTargets[index]!;
               const readAt = new Date().toISOString();
               try {
                 const memberSource: CodeSource = {
@@ -280,7 +357,7 @@ export function createDirectoryWorkbench(
                 const observed = await observeSourceControlAsync(memberSource);
                 members[index] = {
                   id: member.id, worktreeId: member.id, name: member.name, location: member.location,
-                  isMain: member.isMain, isRegistered: member.id === repo.checkouts.defaultId,
+                  isMain: member.isMain, isRegistered: member.id === checkouts.defaultId,
                   branch: observed.branch, head: observed.head, upstream: observed.upstream,
                   ahead: observed.ahead, behind: observed.behind, files: observed.files,
                   fileCount: observed.fileCount, truncated: observed.truncated,
@@ -291,6 +368,83 @@ export function createDirectoryWorkbench(
               } catch (error) {
                 members[index] = {
                   id: member.id, worktreeId: member.id, name: member.name, location: member.location,
+                  isMain: member.isMain, isRegistered: member.id === checkouts.defaultId,
+                  branch: member.branch, head: member.head, upstream: null,
+                  ahead: null, behind: null, files: [], fileCount: null, truncated: false,
+                  observedRevision: null, status: 'offline',
+                  diagnostics: [error instanceof Error ? error.message : '无法读取该工作树状态。'],
+                  readAt,
+                };
+              }
+            }
+          }));
+          let topologyRevision: string | null = null;
+          try {
+            if ((await localGitIdentityAsync(repoInfo.location)).id === repoInfo.git.id && !topologyMatchesInventory(trees, checkouts)) {
+              topologyRevision = sha256Hex(JSON.stringify([[targetRelative, repoInfo.git.id, sha256Hex(trees), sha256Hex(refs)]]));
+            }
+          } catch { topologyRevision = null; }
+          scope();
+          return { repositories: [{ ...repo, gitId, members, ...(statusTargets.length < checkouts.members.length ? { statusPending: true } : {}) }], topologyPaths: [targetRelative], topologyRevision, truncated: false, diagnostic: null, readAt: new Date().toISOString() };
+        }
+
+        const discovered = await observeDirectoryRepositoriesAsync(directory.rootPath, directory.ref.id);
+        const topologyPaths = [...new Set(['', ...discovered.repositories.map(repo => repo.path)])].slice(0, 128);
+        const topologyPromise = gitTopology(directory, topologyPaths, discovered);
+        const selectedRepos = discovered.repositories;
+        const repositories = selectedRepos.map(repo => {
+          const commonDir = observedCheckoutCommonDir(repo.checkouts);
+          return {
+            ...repo,
+            gitId: commonDir ? 'sha256-' + sha256Hex(commonDir) : null as string | null,
+            members: new Array<CatalogMember>(repo.checkouts.members.length),
+          };
+        });
+        const workItems: Array<{ repoIndex: number; memberIndex: number; repo: typeof selectedRepos[number]; member: typeof selectedRepos[number]['checkouts']['members'][number] }> = [];
+        for (let repoIndex = 0; repoIndex < selectedRepos.length; repoIndex++) {
+          const repo = selectedRepos[repoIndex]!;
+          for (let memberIndex = 0; memberIndex < repo.checkouts.members.length; memberIndex++) {
+            workItems.push({ repoIndex, memberIndex, repo, member: repo.checkouts.members[memberIndex]! });
+          }
+        }
+        let cursor = 0;
+        const missingGitIds = repositories.flatMap((repo, repoIndex) => {
+          if (repo.gitId) return [];
+          const primaryLocation = repo.checkouts.members.find(member => member.id === repo.checkouts.defaultId)?.location ?? repo.checkouts.members[0]?.location;
+          return primaryLocation ? [{ repoIndex, primaryLocation }] : [];
+        });
+        await Promise.all([
+          topologyPromise,
+          ...missingGitIds.map(async item => {
+            try { repositories[item.repoIndex]!.gitId = 'sha256-' + sha256Hex((await localGitIdentityAsync(item.primaryLocation)).commonDir); }
+            catch { repositories[item.repoIndex]!.gitId = null; }
+          }),
+          ...Array.from({ length: Math.min(6, workItems.length) }, async () => {
+            for (;;) {
+              const idx = cursor++;
+              if (idx >= workItems.length) return;
+              const { repoIndex, memberIndex, repo, member } = workItems[idx]!;
+              const readAt = new Date().toISOString();
+              try {
+                const memberSource: CodeSource = {
+                  ...base, allowNonGit: undefined, repositoryId: repo.id, checkoutId: member.id,
+                  worktreeId: member.id, location: member.location, version: member.branch || member.head || '当前文件',
+                  kind: 'worktree', commitHash: null,
+                };
+                const observed = await observeSourceControlAsync(memberSource);
+                repositories[repoIndex]!.members[memberIndex] = {
+                  id: member.id, worktreeId: member.id, name: member.name, location: member.location,
+                  isMain: member.isMain, isRegistered: member.id === repo.checkouts.defaultId,
+                  branch: observed.branch, head: observed.head, upstream: observed.upstream,
+                  ahead: observed.ahead, behind: observed.behind, files: observed.files,
+                  fileCount: observed.fileCount, truncated: observed.truncated,
+                  observedRevision: observed.observedRevision,
+                  status: observed.truncated ? 'partial' : observed.fileCount ? 'ready' : 'clean',
+                  diagnostics: [], readAt,
+                };
+              } catch (error) {
+                repositories[repoIndex]!.members[memberIndex] = {
+                  id: member.id, worktreeId: member.id, name: member.name, location: member.location,
                   isMain: member.isMain, isRegistered: member.id === repo.checkouts.defaultId,
                   branch: member.branch, head: member.head, upstream: null,
                   ahead: null, behind: null, files: [], fileCount: null, truncated: false,
@@ -300,12 +454,11 @@ export function createDirectoryWorkbench(
                 };
               }
             }
-          });
-          await Promise.all(workers);
-          repositories.push({ ...repo, gitId, members });
-        }
+          }),
+        ]);
+        const topology = await topologyPromise;
         scope();
-        return { repositories, topologyPaths, topologyRevision, truncated: discovered.truncated, diagnostic: discovered.diagnostic, readAt: new Date().toISOString() };
+        return { repositories, topologyPaths, topologyRevision: topology.revision, truncated: discovered.truncated, diagnostic: discovered.diagnostic, readAt: new Date().toISOString() };
       }
       case 'open-folder': {
         const source=current(), file=localPath(source,relative());
@@ -313,7 +466,22 @@ export function createDirectoryWorkbench(
         verifyFileSource(source);
         return open(path.dirname(file));
       }
-      case 'directory': {const source=current(),result=readCodeDirectory(source,input.path??'',input.showIgnored===true);verifyFileSource(source);return result;}
+      case 'directory': {
+        if (input.checkoutId === undefined) {
+          if (input.repositoryPath !== undefined) throw invalid();
+          const source = workspaceFileSource(scope());
+          const result = await readWorkspaceDirectory(source, input.path ?? '', input.showIgnored === true);
+          const latest = workspaceFileSource(scope());
+          if (source.location !== latest.location || source.repositoryId !== latest.repositoryId) {
+            throw codeFailure('code_worktree_identity_changed', '文件来源已变化，请刷新。', 409);
+          }
+          return result;
+        }
+        const { source, gitCommonDir } = await currentAsync();
+        const result = await readCodeDirectoryAsync(source, input.path ?? '', input.showIgnored === true, gitCommonDir);
+        await verifyFileSourceAsync(source);
+        return result;
+      }
       case 'search': {
         if (!['name','content'].includes(input.mode)||typeof input.query!=='string') throw invalid();
         const source=current(),result=searchCode(source,input.query,input.mode,input.showIgnored===true);verifyFileSource(source);return result;
@@ -352,13 +520,18 @@ export function createDirectoryWorkbench(
           if (input.checkoutId !== undefined || input.repositoryPath !== undefined) throw invalid();
           const directory = scope();
           const targets = inspectFetchTargets(input.repositories);
-          const discovered = observeDirectoryRepositories(directory.rootPath, directory.ref.id);
-        const topologyPaths = [...new Set(['', ...discovered.repositories.map(repo => repo.path)])].slice(0, 128);
-        const topologyRevision = await gitTopology(directory, topologyPaths, discovered);
           const locations = new Map<string, string>();
-          for (const repo of discovered.repositories) {
-            const primary = repo.checkouts.members.find(member => member.id === repo.checkouts.defaultId)?.location ?? repo.checkouts.members[0]?.location;
-            if (primary) locations.set(repo.id, primary);
+          if (targets.some(target => target.repositoryPath === undefined)) {
+            for (const repo of observeDirectoryRepositories(directory.rootPath, directory.ref.id).repositories) {
+              const primary = repo.checkouts.members.find(member => member.id === repo.checkouts.defaultId)?.location;
+              if (primary) locations.set(repo.id, primary);
+            }
+          }
+          for (const target of targets) if (target.repositoryPath !== undefined) {
+            try {
+              const repo = resolveDirectoryRepository(directory.rootPath, directory.ref.id, target.repositoryPath);
+              if (repo.id === target.repositoryId) locations.set(repo.id, repo.location);
+            } catch { /* A missing or replaced target stays unavailable. */ }
           }
           return createCodeFetchApplication({
             registeredLocation: (_root, repositoryId) => {
@@ -366,7 +539,7 @@ export function createDirectoryWorkbench(
               if (!location) throw codeFailure('code_repository_missing', '代码库不存在或当前不可读取。');
               return location;
             },
-          }).fetch('', { repositories: targets });
+          }).fetch('', { repositories: targets.map(({repositoryPath: _path, ...target}) => target) });
         }
         const before=fetchContext();assertCodeRevision(before.revision,requireRevision());
         return createCodeFetchApplication({registeredLocation:()=>{

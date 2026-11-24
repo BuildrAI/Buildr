@@ -55,6 +55,7 @@ export function CodeSourceControlPage() {
     <SourceControlOperationNotices workspaceId={workspaceId || ''} repositories={observation.repositories} fetchResults={fetchActions.feedback} syncResults={syncActions.results} onViewChanges={(repositoryId, worktreeId) => branches.viewChanges?.(repositoryId, worktreeId)} />
     <SourceControlWorkbench sourceEntryKey={entry ? workspaceId+':'+(entry.nonce||location.key) : undefined} currentSourceSelection={currentSource.selection ? {key:workspaceId+':'+currentSource.selection.sequence,targets:currentSource.selection.targets,preferredTarget:currentSource.selection.preferredTarget} : undefined} onPrioritizeRepository={observation.prioritize} onCurrentSourceSelect={(target:CodeSourceTarget)=>currentSource.select('source-control',[target],target)} active={viewActive} repositories={repositories} defaultRepositories={observation.repositories} reader={observation.reader} readKey={observation.readKey}
       onDiscard={(repository, worktree, file) => void discard.run(repository, worktree, file)} discardPending={discard.pending}
+      liveReadsSuspended={(repository, worktree) => !!actions.state({workspaceId:workspaceId || '', repositoryId:repository.id, worktreeId:worktree.worktreeId, branch:worktree.branch}).gitPending}
       editableWorkspaceId={workspaceId || undefined}
       observation={observation.observation} onRefresh={observation.refresh} onRetry={observation.refresh}
       onClone={workspaceId ? (repositoryId => { void codeApi.repositoryClone(workspaceId, repositoryId).then(result => {

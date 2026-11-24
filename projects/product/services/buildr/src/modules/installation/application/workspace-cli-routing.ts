@@ -4,7 +4,13 @@ import path from 'node:path';
 import process from 'node:process';
 import { execFileSync, spawn } from 'node:child_process';
 
-import { defaultWebDataRoot, resolveDevelopmentLauncherRoot, resolveWebProfile } from '../contracts/web-profile.ts';
+import {
+  DEVELOPMENT_SOURCE_SCHEMA,
+  defaultWebDataRoot,
+  developmentSourceFile,
+  resolveDevelopmentLauncherRoot,
+  resolveWebProfile,
+} from '../contracts/web-profile.ts';
 import { readCurrentInstallationOrigin } from '../infrastructure/installation-origin.ts';
 import { assertMinimumNodeVersion } from '../../../infrastructure/process.ts';
 import { isConfirmedMissingPath, sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
@@ -253,15 +259,22 @@ function cleanSourceEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 
 function developmentInvocation(options: WorkspaceCliRoutingOptions, profiles: Record<ProfileName, WebProfile>, env: NodeJS.ProcessEnv): { command: string; entry: string; env: NodeJS.ProcessEnv } {
   const platform = options.platform ?? process.platform;
+  const sourceRecordFile = developmentSourceFile(profiles.development.dataRoot, platform);
+  const usingSourceRecord = existing(sourceRecordFile);
   const launcherRoot = options.developmentLauncherRoot ?? resolveDevelopmentLauncherRoot(platform, { env, home: options.home });
-  const identityFile = platform === 'darwin' ? path.join(launcherRoot, 'Contents', 'Resources', 'launcher-identity.json') : path.join(launcherRoot, 'launcher-identity.json');
+  const identityFile = usingSourceRecord
+    ? sourceRecordFile
+    : platform === 'darwin' ? path.join(launcherRoot, 'Contents', 'Resources', 'launcher-identity.json') : path.join(launcherRoot, 'launcher-identity.json');
   let identity;
   try { identity = JSON.parse(fs.readFileSync(identityFile, 'utf8')); }
-  catch (error) { throw routingError('development_unavailable', `无法读取已登记的 Buildr Development Dev 来源：${identityFile}。`, String(error)); }
-  if (identity?.schemaVersion !== 'buildr.launcher-identity/v1' || identity.channel !== 'development'
+  catch (error) {
+    throw routingError('development_unavailable', usingSourceRecord ? `无法读取已登记的开发来源：${identityFile}。` : `无法读取已登记的 Buildr Development Dev 来源：${identityFile}。`, String(error));
+  }
+  const expectedSchema = usingSourceRecord ? DEVELOPMENT_SOURCE_SCHEMA : 'buildr.launcher-identity/v1';
+  if (identity?.schemaVersion !== expectedSchema || identity.channel !== 'development'
       || identity.runtimeRole !== 'development' || identity.source !== 'checkout' || identity.platform !== platform
       || typeof identity.sourceRoot !== 'string' || !path.isAbsolute(identity.sourceRoot)) {
-    throw routingError('development_identity_invalid', `Buildr Development Dev 的来源登记无效：${identityFile}。`);
+    throw routingError('development_identity_invalid', usingSourceRecord ? `开发来源登记无效：${identityFile}。` : `Buildr Development Dev 的来源登记无效：${identityFile}。`);
   }
   const clean = cleanSourceEnvironment(env);
   const sourceRoot = realDirectory(identity.sourceRoot);

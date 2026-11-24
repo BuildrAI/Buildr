@@ -230,7 +230,38 @@ export class HarnessWebEndpoint {
       const token=this.cookie(req),remaining=this.sessions.renew(token);
       if(remaining===undefined){
         const nonce=randomBytes(18).toString('base64');
-        this.html(res,`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>Buildr Harness</title>${BOOTSTRAP_ICON_LINKS}</head><body><p id="status">请从 Buildr Harness 启动器打开；已有草稿仍保留。</p><script nonce="${nonce}">async function redeem(){const value=new URLSearchParams(location.hash.slice(1)).get('ticket');history.replaceState(null,'','/');if(!value)return;try{const response=await fetch('/session/ticket',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ticket:value})});if(response.ok)location.replace('/');else document.getElementById('status').textContent='登录票据已失效，请重新从启动器打开；草稿仍保留。';}catch{document.getElementById('status').textContent='网页连接未确认，请核对启动器状态；草稿仍保留。';}}addEventListener('hashchange',redeem);void redeem();</script></body></html>`,nonce);return;
+        this.html(res,`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>Buildr Harness</title>${BOOTSTRAP_ICON_LINKS}</head><body><p id="status">请从 Buildr Harness 启动器打开；已有草稿仍保留。</p><script nonce="${nonce}">
+async function redeem() {
+  const fragment = new URLSearchParams(location.hash.slice(1));
+  const ticket = fragment.get('ticket');
+  const mode = fragment.get('dsh');
+  const workspace = fragment.get('workspace');
+  const target = new URLSearchParams();
+  if (mode === 'chat') target.set('dsh', mode);
+  else if ((mode === 'explorer' || mode === 'source-control') && workspace && workspace.length <= 1024) {
+    target.set('dsh', mode);
+    target.set('workspace', workspace);
+  }
+  history.replaceState(null, '', '/');
+  if (!ticket) return;
+  const status = document.getElementById('status');
+  try {
+    const response = await fetch('/session/ticket', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({ticket}),
+    });
+    if (response.ok) {
+      if (target.size) history.replaceState(null, '', '/#' + target);
+      location.reload();
+    } else status.textContent = '登录票据已失效，请重新从启动器打开；草稿仍保留。';
+  } catch {
+    status.textContent = '网页连接未确认，请核对启动器状态；草稿仍保留。';
+  }
+}
+addEventListener('hashchange', redeem);
+void redeem();
+</script></body></html>`,nonce);return;
       }
       // Refresh the browser cookie to the server-side remaining lifetime so it never outlives the session.
       res.setHeader('set-cookie',`${this.sessions.cookieName()}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.max(1,Math.floor(remaining/1000))}`);

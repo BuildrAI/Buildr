@@ -5,3 +5,11 @@ export function parseContextWindow(text:string):number|null|undefined {
  const result=Number(trimmed.replace(/[kK]$/,''))*(/[kK]$/.test(trimmed)?1000:1);
  return Number.isSafeInteger(result)&&result>0?result:undefined;
 }
+
+/** Optimistic updates must use the same default/limit distinction as the server. */
+export function previewModelContext(model:{contextWindow?:number;defaultContextWindow?:number;reportedContextWindow?:number|null;contextWindowOverride?:number},next:number|null|undefined) {
+ if(next===undefined)return {};
+ const limit=model.reportedContextWindow===undefined?model.contextWindow:model.reportedContextWindow;
+ const baseline=model.defaultContextWindow??(model.contextWindowOverride===undefined?model.contextWindow:undefined);
+ return {contextWindowOverride:next??undefined,contextWindow:next===null?baseline:Math.min(next,limit??next)};
+}

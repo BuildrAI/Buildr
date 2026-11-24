@@ -565,3 +565,74 @@ test('development launcher resolution prefers Buildr Development Dev and falls b
   fs.writeFileSync(preferredIdentity, '{}\n');
   assert.equal(resolveDevelopmentLauncherRoot('win32', { env }), path.join(programs, 'Buildr Development Dev'));
 });
+
+test('development-source.json routes without a launcher and takes precedence over stale launcher metadata', (t) => {
+  const f = fixture(t);
+  const target = workspace(f.root, 'workspace');
+  manage(f, target, 'development');
+  const dev = development(f);
+  fs.rmSync(f.developmentLauncherRoot, { recursive: true, force: true });
+  const sourceRecordFile = path.join(f.dataRoots.development, 'development-source.json');
+  writeJson(sourceRecordFile, {
+    schemaVersion: 'buildr.development-source/v1',
+    channel: 'development',
+    runtimeRole: 'development',
+    source: 'checkout',
+    platform: process.platform,
+    protocolIdentity: 'buildr.web-protocol/v1',
+    sourceRoot: dev.sourceRoot,
+    workspaceRoot: dev.sourceGitRoot,
+    launcherTarget: f.developmentLauncherRoot,
+    buildId: 'source-record-only',
+    version: '9.9.9',
+    developmentRuntime: {
+      executable: process.execPath,
+      version: process.versions.node,
+      identity: `development-host:${fs.realpathSync(process.execPath)}:${process.versions.node}`,
+    },
+  });
+  const plan = inspect(f, undefined, target.root);
+  assert.equal(plan.kind, 'forward');
+  assert.deepEqual(plan.args, [dev.entry, 'version', '--json']);
+
+  // Stale launcher metadata does not override a valid development-source.json.
+  writeJson(dev.launcherFile, {
+    schemaVersion: 'buildr.launcher-identity/v1',
+    channel: 'development',
+    runtimeRole: 'development',
+    source: 'checkout',
+    platform: process.platform,
+    protocolIdentity: 'buildr.web-protocol/v1',
+    sourceRoot: path.join(f.root, 'stale-source'),
+    developmentRuntime: {
+      executable: path.join(f.root, 'stale-node'),
+      version: '0.0.0',
+      identity: 'development-host:/stale:0.0.0',
+    },
+  });
+  const preferredPlan = inspect(f, undefined, target.root);
+  assert.equal(preferredPlan.kind, 'forward');
+  assert.deepEqual(preferredPlan.args, [dev.entry, 'version', '--json']);
+});
+
+test('corrupt or invalid development-source.json fails closed without falling back to a launcher', (t) => {
+  const f = fixture(t);
+  const target = workspace(f.root, 'workspace');
+  manage(f, target, 'development');
+  const dev = development(f);
+  assert.equal(inspect(f, undefined, target.root).kind, 'forward');
+
+  const sourceRecordFile = path.join(f.dataRoots.development, 'development-source.json');
+  fs.writeFileSync(sourceRecordFile, '{broken');
+  assertRoutingFailure(() => inspect(f, undefined, target.root));
+
+  writeJson(sourceRecordFile, {
+    schemaVersion: 'buildr.development-source/v1',
+    channel: 'npm',
+    runtimeRole: 'development',
+    source: 'checkout',
+    platform: process.platform,
+    sourceRoot: dev.sourceRoot,
+  });
+  assertRoutingFailure(() => inspect(f, undefined, target.root));
+});

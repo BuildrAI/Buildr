@@ -17,7 +17,11 @@ test('Magpie connects a verified existing gateway without launching and isolates
   const server=createServer(async(req,res)=>{
     res.setHeader('Content-Type','application/json');
     if(req.url==='/api/hello')return res.end(JSON.stringify({name:valid?'magpie':'unrelated',version:'fixture'}));
-    if(req.url==='/v1/models')return res.end(JSON.stringify({data:empty?[]:[{id,display_name:'GPT Example',context_window:180000,modalities:{input:['text','image']}},{id:'not-a-chat',kind:'image'}]}));
+    if(req.url==='/v1/models')return res.end(JSON.stringify({data:empty?[]:[
+      {id,display_name:'GPT Example',owned_by:'codex',magpie_label:'GPT Example · Codex',context_window:180000,modalities:{input:['text','image']}},
+      {id:'grok/grok-4.7',display_name:'Grok 4.7',context_window:256000},
+      {id:'not-a-chat',kind:'image'},
+    ]}));
     if(req.url==='/v1/magpie/quotas?kept=1'&&req.method==='GET'){
       quotaReads++;
       if(quotaFail)return res.writeHead(503).end('{"error":"upstream sensitive body"}');
@@ -42,7 +46,10 @@ test('Magpie connects a verified existing gateway without launching and isolates
     const custom=await access.accounts.add({provider:'custom',custom:{...config,models:[{id,label:'GPT Example'}]}});
     const source=await access.accounts.add({provider:'magpie',prepareLocalGateway:true});
     assert.equal(launches,0); assert.equal(source.provider,'magpie');assert.equal(source.label,'Magpie');assert.equal(source.status,'ready');
-    assert.deepEqual(source.models.map(x=>[x.id,x.enabled,x.images,x.contextWindow]),[[id,true,true,180000]]);
+    assert.deepEqual(source.models.map(x=>[x.id,x.enabled,x.images,x.contextWindow,x.upstreamProvider,x.upstreamProviderLabel]),[
+      [id,true,true,180000,'codex','Codex'],
+      ['grok/grok-4.7',true,false,256000,'grok','Grok'],
+    ]);
     assert.notEqual(source.id,custom.id);assert.equal(source.quota,undefined);
     await assert.rejects(access.accounts.readGatewayQuota(custom.id,{expectedRevision:custom.revision}),{code:'model_gateway_quota_unavailable'});
     await assert.rejects(access.accounts.readGatewayQuota(source.id,{expectedRevision:'stale'}),{code:'model_revision_conflict'});
@@ -89,6 +96,59 @@ test('wrong/manual gateway does not trigger installation; an explicit prepare ca
   assert.equal(prepare,0);
   assert.equal((await provider.resolveCustom!(undefined,true,signal)).baseUrl,origin+'/v1');assert.equal(prepare,1);
   assert.equal((await provider.resolveCustom!(undefined,true,signal)).baseUrl,origin+'/v1');assert.equal(prepare,1);
+});
+
+test('Magpie handles default-only, unknown and explicit maximums without a model allowlist',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-magpie-context-'));
+  const origin='http://127.0.0.1:49161',sol='codex/gpt-6.2-sol',astra='codex/gpt-6.2-astra',terra='codex/gpt-6.1-terra';
+  const entry=(id:string,window?:number,fields:Record<string,unknown>={})=>({
+    id,owned_by:'codex',context_window:window,context_length:window,max_input_tokens:window,...fields,
+  });
+  const data=[
+    entry(sol,500_000),entry(astra,272_000),entry(terra,500_000),
+    entry('relay/arbitrary',350_000,{owned_by:'relay',max_input_tokens:300_000}),
+    entry('group/default',500_000,{owned_by:'magpie'}),entry('new-model'),
+    entry('explicit-max',250_000,{max_context_window:600_000}),
+  ];
+  const provider=createMagpieModelProvider({root,configuredOrigin:async()=>origin,
+    fetch:async input=>new URL(input instanceof Request?input.url:input).pathname==='/api/hello'?Response.json({name:'magpie',version:'0.1.4708'}):Response.json({data}),
+    installation:{address:async()=>undefined,start:async()=>{throw Error('unexpected launch');},open:async()=>{}}});
+  let access=createModelAccess({root,providers:[provider]});
+  try{
+    const source=await access.accounts.add({provider:'magpie'});
+    const window=(id:string)=>{
+      const model=access.catalog.list().models.find(model=>model.modelId===id)!;
+      return [model.defaultContextWindow,model.reportedContextWindow,model.contextWindow,model.contextWindowOverride];
+    };
+    const inputModels=data.slice(0,-1);
+    for(const row of inputModels)assert.deepEqual(window(row.id),[row.context_window,null,row.context_window,undefined]);
+    const preferences=(models:Array<{id:string;contextWindow:number|null;enabled?:boolean}>)=>
+      access.accounts.preferences(source.id,{expectedRevision:access.accounts.read(source.id).revision,models});
+    await preferences(inputModels.map(row=>({id:row.id,contextWindow:800_000})));
+    for(const row of inputModels){
+      assert.deepEqual(window(row.id),[row.context_window,null,800_000,800_000]);
+      const lease=await access.leases.create({accountId:source.id,modelId:row.id,agentId:'codex',conversationId:'fixture',runId:'fixture'});
+      assert.equal(lease.offering.contextWindow,800_000);
+    }
+    assert.deepEqual(window('explicit-max'),[250_000,600_000,250_000,undefined]);
+    await assert.rejects(preferences([{id:'explicit-max',contextWindow:800_000}]),{code:'model_context_invalid'});
+    await assert.rejects(preferences([{id:sol,contextWindow:10_000_001}]),{code:'model_context_invalid'});
+    await access.close();
+    access=createModelAccess({root,providers:[provider]});
+    await access.accounts.check(source.id);
+    assert.deepEqual(window(terra),[500_000,null,800_000,800_000]);
+    assert.equal(access.catalog.list().models.find(model=>model.modelId==='group/default')?.upstreamProvider,'magpie');
+    assert.equal(access.catalog.list().models.find(model=>model.modelId===sol)?.upstreamProviderLabel,'Codex');
+    data[2]=entry(terra,500_000,{max_context_window:600_000});
+    await access.accounts.check(source.id);
+    assert.deepEqual(window(terra),[500_000,600_000,600_000,800_000]);
+    const clamped=await access.leases.create({accountId:source.id,modelId:terra,agentId:'codex',conversationId:'fixture',runId:'fixture'});
+    assert.equal(clamped.offering.contextWindow,600_000);
+    await assert.rejects(preferences([{id:terra,contextWindow:800_000}]),{code:'model_context_invalid'});
+    await preferences(inputModels.map(row=>({id:row.id,contextWindow:null})));
+    assert.deepEqual(window(terra),[500_000,600_000,500_000,undefined]);
+    for(const row of inputModels.filter(row=>row.id!==terra))assert.deepEqual(window(row.id),[row.context_window,null,row.context_window,undefined]);
+  }finally{await access.close();await rm(root,{recursive:true,force:true});}
 });
 
 test('managed setup refuses a mismatched installed binary without running or replacing it', {skip: !['darwin','linux','win32'].includes(process.platform)||!['arm64','x64'].includes(process.arch)}, async()=>{

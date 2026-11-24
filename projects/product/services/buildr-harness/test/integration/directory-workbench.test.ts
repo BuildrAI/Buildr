@@ -39,6 +39,45 @@ test('directory files are independent of Git and stale writes cannot replace con
   assert.equal(fs.readFileSync(filename,'utf8'),'replacement\n');
 });
 
+test('workspace directory lists only the requested filesystem level without spawning Git', async t => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-workspace-list-'));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  const root = path.join(temp, 'workspace');
+  const nested = path.join(root, 'repositories', 'nested');
+  fs.mkdirSync(nested, { recursive: true });
+  fs.writeFileSync(path.join(nested, 'readme.txt'), 'nested');
+  execFileSync('git', ['-C', root, '-c', 'init.templateDir=', 'init', '-q'], { env: codeGitEnvironment() });
+  const admin = path.join(root, 'relocated');
+  execFileSync('git', ['init', '-q', '--bare', admin], { env: codeGitEnvironment() });
+  if (process.platform !== 'win32') fs.symlinkSync(temp, path.join(root, 'outside'));
+  const host = new HarnessDirectoryHost(path.join(temp, 'profile'));
+  const scope = host.register(root);
+  const run = createDirectoryWorkbench(host);
+  const list = (relative: string) => run('directory', { scopeId: scope.ref.id, scopeRevision: scope.revision, path: relative }) as Promise<{ entries: { path: string }[] }>;
+  const originalPath = process.env.PATH;
+  const bin = path.join(temp, 'bin');
+  fs.mkdirSync(bin);
+  const probe = path.join(bin, 'called');
+  if (process.platform !== 'win32') {
+    fs.writeFileSync(path.join(bin, 'git'), '#!/bin/sh\n: > "${0%/*}/called"\nexit 1\n', { mode: 0o700 });
+    process.env.PATH = bin + path.delimiter + (originalPath ?? '');
+  }
+  try {
+    const rootEntries = (await list('')).entries.map(item => item.path);
+    assert.ok(rootEntries.includes('repositories'));
+    assert.ok(!rootEntries.includes('nested') && !rootEntries.includes('.git'));
+    assert.deepEqual((await list('repositories')).entries.map(item => item.path), ['repositories/nested']);
+    assert.deepEqual((await list('repositories/nested')).entries.map(item => item.path), ['repositories/nested/readme.txt']);
+    await assert.rejects(list('relocated/objects'), { code: 'code_path_forbidden' });
+    await assert.rejects(list('.git'), { code: 'code_path_forbidden' });
+    if (process.platform !== 'win32') await assert.rejects(list('outside'), { code: 'code_path_forbidden' });
+    assert.equal(fs.existsSync(probe), false);
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+  }
+});
+
 test('local Git workbench reads comparisons and commits only the staged tree', async t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'harness-workbench-git-'));
   t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
@@ -253,6 +292,16 @@ test('Git-aware catalog discovery scales beyond 2048 directories, preserves erro
   assert.equal(catalogRepo.members.length, 2);
   const mainMember = catalogRepo.members.find((m: any) => m.isMain);
   const peerMember = catalogRepo.members.find((m: any) => m.branch === 'peer-branch');
+  const defaultStatus = (await call('catalog', { repositoryPath: 'big-repo', primaryStatus: true })).repositories[0];
+  assert.equal(defaultStatus.statusPending, true);
+  assert.deepEqual(defaultStatus.members.map((member: any) => member.id), [mainMember.id]);
+  const preferredStatus = (await call('catalog', { repositoryPath: 'big-repo', primaryStatus: true, preferredCheckoutId: peerMember.id })).repositories[0];
+  assert.equal(preferredStatus.statusPending, true);
+  assert.deepEqual(preferredStatus.members.map((member: any) => member.id), [peerMember.id]);
+  assert.deepEqual(preferredStatus.members[0].files, peerMember.files);
+  assert.equal(preferredStatus.members[0].observedRevision, peerMember.observedRevision);
+  const completeStatus = (await call('catalog', { repositoryPath: 'big-repo' })).repositories[0];
+  assert.deepEqual(completeStatus.members.map((member: any) => member.id), [mainMember.id, peerMember.id]);
   assert.ok(mainMember && peerMember);
   assert.equal(mainMember.fileCount, 1);
   assert.equal(peerMember.fileCount, 2);
@@ -363,4 +412,116 @@ test('Git topology changes on external branches and worktrees, not ordinary file
   git('worktree', 'remove', tree);
   assert.equal(await topology(), branch);
   await assert.rejects(call('git-topology', { repositoryPaths: ['../outside'] }), { code: 'code_path_forbidden' });
+});
+
+test('repository inventory uses in-scope registrations and resumes ordinary shallow discovery without losing a page', async t => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'harness-progressive-')));
+  t.after(() => fs.rmSync(base,{recursive:true,force:true}));
+  const {createDirectoryRepositoryDiscovery} = await import('../../src/application/directory-checkouts.ts');
+  const root = path.join(base,'workspace');
+  fs.mkdirSync(path.join(root,'.buildr'),{recursive:true});
+  fs.mkdirSync(path.join(root,'repositories'));
+  fs.writeFileSync(path.join(root,'.buildr/workspace.yml'),'schemaVersion: buildr.workspace/v1\nid: verified\n');
+  fs.writeFileSync(path.join(root,'repositories/manifest.yml'),JSON.stringify({schemaVersion:'buildr.repositories/v1',repositories:{one:{workspaceId:'verified',name:'已登记',source:{path:'repositories/deep/repo'}},alpha:{workspaceId:'verified',code:'svc-alpha',name:'核心服务',source:{path:'repositories/svc-alpha'}},outside:{workspaceId:'verified',source:{path:'../escape'}}}}));
+  const scope = {ref:{sourceId:'buildr',id:'verified'},rootPath:root,selectedPath:root,revision:'one'};
+  let time = 1000;
+  const discover = createDirectoryRepositoryDiscovery(() => time);
+  const registered = discover(scope);
+  assert.deepEqual(registered.repositories,[{path:'repositories/deep/repo',code:'repo',name:'已登记'},{path:'repositories/svc-alpha',code:'svc-alpha',name:'核心服务'}]);
+  assert.equal(registered.registered,true); assert.ok(registered.nextCursor); assert.equal(registered.limited,false);
+  const local = {...scope,ref:{sourceId:'harness-local',id:'local'}};
+  for (const relative of ['shallow','group/deeper/repo']) {
+    const dir = path.join(root,relative); fs.mkdirSync(dir,{recursive:true});
+    execFileSync('git',['-C',dir,'-c','init.templateDir=','init','-q'],{env:codeGitEnvironment()});
+  }
+  const first = discover(local);
+  assert.deepEqual(first.repositories,[{path:'shallow',code:'shallow',name:'shallow'}]); assert.equal(first.registered,false); assert.ok(first.nextCursor);
+  assert.throws(() => discover(scope,first.nextCursor!), {code:'code_directory_discovery_expired'});
+  const second = discover(local, first.nextCursor!);
+  assert.deepEqual(second.repositories,[{path:'group/deeper/repo',code:'repo',name:'repo'}]);
+  assert.equal(second.registered,false);
+  assert.deepEqual(discover(local,first.nextCursor!), second);
+  const run = createDirectoryWorkbench({resolveDirectory:() => local});
+  const call = (operation:string,input={}) => run(operation,{scopeId:'local',scopeRevision:'one',...input}) as Promise<any>;
+  assert.equal((await call('catalog',{repositoryPath:'group/deeper/repo'})).repositories[0].members[0].status,'clean');
+  assert.equal((await call('catalog',{repositoryPath:'group/deeper/repo'})).repositories.length,1);
+  await assert.rejects(call('catalog',{repositoryPath:'../escape'}),{code:'code_path_forbidden'});
+  time += 6*60_000;
+  assert.throws(() => discover(local,first.nextCursor!), {code:'code_directory_discovery_expired'});
+});
+
+test('async git identity, discovery artifact filtering, single-repo topologyRevision and explorer directory listing behave consistently', async t => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'harness-async-perf-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const { localGitIdentity, localGitIdentityAsync } = await import('../../src/workbench/local-git.ts');
+
+  const workspace = path.join(root, 'workspace');
+  const serviceA = path.join(workspace, 'services', 'java-svc');
+  const nestedRepo = path.join(serviceA, 'extra', 'nested');
+  const plainDir = path.join(workspace, 'plain');
+  fs.mkdirSync(serviceA, { recursive: true });
+  fs.mkdirSync(nestedRepo, { recursive: true });
+  fs.mkdirSync(plainDir, { recursive: true });
+
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync('git', ['-C', cwd, ...args], { env: codeGitEnvironment(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+
+  git(serviceA, '-c', 'init.templateDir=', 'init', '-q', '-b', 'main');
+  git(serviceA, 'config', 'user.name', 'Perf Tester');
+  git(serviceA, 'config', 'user.email', 'perf@example.invalid');
+  git(serviceA, 'config', 'commit.gpgSign', 'false');
+  fs.writeFileSync(path.join(serviceA, 'pom.xml'), '<project/>\n');
+  fs.writeFileSync(path.join(serviceA, '.gitignore'), 'target/\n.idea/\nlogs/\n');
+  git(serviceA, 'add', '.');
+  git(serviceA, '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'init java svc');
+
+  // Create >2100 build/IDE directories inside target/.idea/logs that discovery must skip without truncation.
+  for (let i = 0; i < 2120; i++) {
+    fs.mkdirSync(path.join(serviceA, 'target', 'classes', `pkg_${i}`), { recursive: true });
+  }
+  fs.mkdirSync(path.join(serviceA, '.idea', 'modules'), { recursive: true });
+  fs.mkdirSync(path.join(serviceA, 'logs', 'archive'), { recursive: true });
+
+  git(nestedRepo, '-c', 'init.templateDir=', 'init', '-q', '-b', 'main');
+  git(nestedRepo, 'config', 'user.name', 'Perf Tester');
+  git(nestedRepo, 'config', 'user.email', 'perf@example.invalid');
+  git(nestedRepo, 'config', 'commit.gpgSign', 'false');
+  fs.writeFileSync(path.join(nestedRepo, 'readme.md'), 'nested\n');
+  git(nestedRepo, 'add', '.');
+  git(nestedRepo, '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'init nested');
+
+  // 1. localGitIdentity === localGitIdentityAsync and matching errors for subdir / non-git
+  assert.deepEqual(await localGitIdentityAsync(serviceA), localGitIdentity(serviceA));
+  await assert.rejects(() => localGitIdentityAsync(plainDir), (err: any) => err?.code === 'code_checkout_unavailable');
+  await assert.rejects(() => localGitIdentityAsync(path.join(serviceA, 'extra')), (err: any) => err?.code === 'code_checkout_unavailable');
+
+  // 2. Non-git workspace root with nested repositories: no 2048 truncation, root '' error does not null out topologyRevision
+  const host = new HarnessDirectoryHost(path.join(root, 'profile'));
+  const scope = host.register(workspace);
+  const run = createDirectoryWorkbench(host);
+  const call = (operation: string, input: object = {}) =>
+    run(operation, { scopeId: scope.ref.id, scopeRevision: scope.revision, ...input }) as Promise<any>;
+
+  const checkouts = await call('checkouts');
+  assert.equal(checkouts.truncated, false);
+  assert.deepEqual(checkouts.repositories.map((r: any) => r.path).sort(), ['services/java-svc', 'services/java-svc/extra/nested']);
+
+  const fullCatalog = await call('catalog');
+  assert.equal(fullCatalog.truncated, false);
+  assert.ok(fullCatalog.topologyRevision);
+
+  // 3. Single-repo catalog topologyRevision matches git-topology repositoryRevisions[0].revision
+  const singleCatalog = await call('catalog', { repositoryPath: 'services/java-svc' });
+  assert.equal(singleCatalog.repositories.length, 1);
+  const topo = await call('git-topology', { repositoryPaths: ['services/java-svc'] });
+  assert.equal(singleCatalog.topologyRevision, topo.repositoryRevisions[0].revision);
+
+  // 4. Async directory listing works for both non-git root and git checkout (and still exposes ignored target when showIgnored=true)
+  const rootListing = await call('directory', { path: '' });
+  assert.ok(rootListing.entries.some((e: any) => e.path === 'plain' && e.kind === 'directory'));
+  const svcRepo = singleCatalog.repositories[0];
+  const hiddenDefault = await call('directory', { repositoryPath: 'services/java-svc', checkoutId: svcRepo.checkouts.defaultId, path: '' });
+  assert.equal(hiddenDefault.entries.some((e: any) => e.path === 'target'), false);
+  const shownIgnored = await call('directory', { repositoryPath: 'services/java-svc', checkoutId: svcRepo.checkouts.defaultId, path: '', showIgnored: true });
+  assert.equal(shownIgnored.entries.some((e: any) => e.path === 'target'), true);
 });

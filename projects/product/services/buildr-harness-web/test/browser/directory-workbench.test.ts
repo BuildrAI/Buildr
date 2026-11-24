@@ -52,6 +52,12 @@ test('production Harness browses, edits, reviews and commits with no Development
   git('config', 'commit.gpgSign', 'false');
   fs.writeFileSync(path.join(repo, 'note.txt'), 'before\n');
   fs.writeFileSync(path.join(repo, 'untouched.txt'), 'base\n');
+  fs.mkdirSync(path.join(repo, '.git', 'info'), { recursive: true });
+  fs.appendFileSync(path.join(repo, '.git', 'info', 'exclude'), '\n/repositories/\n');
+  const nested = path.join(repo, 'repositories', 'nested-fixture');
+  fs.mkdirSync(nested, { recursive: true });
+  execFileSync('git', ['-C', nested, '-c', 'init.templateDir=', 'init', '-q'], { env: codeGitEnvironment() });
+  fs.writeFileSync(path.join(nested, 'nested.txt'), 'nested filesystem proof\n');
   git('add', '--', 'note.txt', 'untouched.txt');
   git('commit', '-qm', 'initial test revision');
   git('branch', 'feature/branch-ui');
@@ -73,8 +79,58 @@ test('production Harness browses, edits, reviews and commits with no Development
   const port = (probe.address() as { port: number }).port;
   await new Promise<void>((resolve, reject) => probe.close(error => error ? reject(error) : resolve()));
   const ready = await client.web.enable({ port }); assert.equal(ready.ready, true);
-  const login = await client.web.login();
   browser = await chromium.launch({ headless: true });
+  const tool = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const workspaceId = executionScopeKey(scope.ref);
+  const toolUrl = async (kind: string) => {
+    const url = new URL((await client!.web.login()).url);
+    const fragment = new URLSearchParams(url.hash.slice(1));
+    fragment.set('dsh', kind);
+    fragment.set('workspace', workspaceId);
+    url.hash = fragment.toString();
+    return url.href;
+  };
+  const chatRequests: string[] = [];
+  tool.on('request', request => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === '/api/v1/harness/scopes' || pathname === '/api/v1/harness/directories') chatRequests.push(pathname);
+  });
+  try {
+    // Cold WebView-equivalent partition: the bootstrap must retain the tool through redemption.
+    await tool.goto(await toolUrl('explorer'));
+    await tool.locator('.harness-dsh-tool').getByText('note.txt', { exact: true }).first().waitFor();
+    assert.equal(new URL(tool.url()).hash, '#' + new URLSearchParams({ dsh: 'explorer', workspace: workspaceId }));
+    // The authenticated entry keeps its target and shows the current worktree
+    // before a deliberately delayed full catalog read completes.
+    let finishBackground!: () => void;
+    const background = new Promise<void>(resolve => { finishBackground = resolve; });
+    const catalogRoute = '**/api/v1/harness/directory-workbench/catalog';
+    const rootCatalogInputs: Array<{ repositoryPath?: string; primaryStatus?: boolean }> = [];
+    await tool.route(catalogRoute, async route => {
+      const input = route.request().postDataJSON();
+      if (input.repositoryPath === '') {
+        rootCatalogInputs.push(input);
+        if (!input.primaryStatus) await background;
+      }
+      await route.continue();
+    });
+    try {
+      await tool.goto(await toolUrl('source-control'));
+      const source = tool.locator('.harness-dsh-tool .source-control-workbench');
+      await source.locator('.source-control-commit-panel').waitFor();
+      await source.locator('.source-control-list').getByText('untouched.txt', { exact: true }).waitFor();
+      await source.getByText('正在读取其余工作树…', { exact: true }).waitFor();
+      assert.equal(rootCatalogInputs[0]?.primaryStatus, true);
+      assert.equal(new URL(tool.url()).hash, '#' + new URLSearchParams({ dsh: 'source-control', workspace: workspaceId }));
+    } finally {
+      finishBackground();
+      await tool.unrouteAll({ behavior: 'wait' });
+    }
+    assert.deepEqual(chatRequests, []);
+  } finally {
+    await tool.close();
+  }
+  const login = await client.web.login();
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await page.goto(login.url);
   const rail = page.locator('.ac-collapsed-rail');
@@ -134,6 +190,12 @@ test('production Harness browses, edits, reviews and commits with no Development
   await workspace.getByRole('navigation', { name: '工作区内容' }).waitFor();
   if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await page.screenshot({ path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'workspace-home.png') });
 
+  const catalogRequests: string[] = [];
+  const observeCatalog = (request: { url(): string }) => {
+    const operation = new URL(request.url()).pathname.split('/').at(-1);
+    if (request.url().includes('/directory-workbench/') && ['inventory', 'catalog', 'git-topology'].includes(operation ?? '')) catalogRequests.push(operation!);
+  };
+  page.on('request', observeCatalog);
   // Explorer: right-docked tree, single ObjectTabStrip, hidden ReadingToggle when no files open, CodeMirror FileEditingPane + conflict handling
   await pick('资源管理器');
   const explorer = workspace.locator('.harness-directory-explorer');
@@ -143,7 +205,16 @@ test('production Harness browses, edits, reviews and commits with no Development
   assert.equal(await explorer.locator('.repository-file-pane .repository-file-tabs').count(), 0, '不应出现重复的内置文件页签栏');
   assert.equal(await explorer.locator('.code-reading-toggle').count(), 0, '无打开文件且目录展开时不应显示冗余切换按钮');
   assert.equal(await explorer.locator('.code-file-tabstrip').count(), 1);
-  await explorer.locator('.repository-tree-file[data-file-path="untouched.txt"] .repository-status-M').waitFor();
+  await explorer.locator('.repository-tree-file[data-file-path="untouched.txt"]').waitFor();
+  const tree = explorer.getByRole('tree');
+  assert.equal(await tree.getByText('nested-fixture', { exact: true }).count(), 0);
+  await tree.getByText('repositories', { exact: true }).click();
+  await tree.getByText('nested-fixture', { exact: true }).click();
+  await tree.locator('[data-file-path="repositories/nested-fixture/nested.txt"]').click();
+  await explorer.locator('.cm-content').getByText('nested filesystem proof').waitFor();
+  await explorer.getByRole('button', { name: '关闭文件 nested.txt', exact: true }).click();
+  assert.deepEqual(catalogRequests, [], '默认目录浏览和文件打开不读取 Git 清单或状态');
+  page.off('request', observeCatalog);
   if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await page.screenshot({ path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'workspace-explorer-empty.png') });
 
   await explorer.locator('.repository-tree-file[data-file-path="note.txt"]').click();
@@ -155,8 +226,7 @@ test('production Harness browses, edits, reviews and commits with no Development
   assert.equal(fs.readFileSync(path.join(repo, 'note.txt'), 'utf8'), 'changed in real Harness\n');
   if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await page.screenshot({ path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'workspace-explorer-editing.png') });
 
-  // Keep unsaved edit across workspace module open/close and tab switching
-  await replaceCodeMirrorText(page, explorer, 'must not overwrite\n');
+  // Switching modules preserves the file and its editor.
   await pick('源代码管理');
   const plus = workspace.getByRole('button', { name: '打开工作区模块', exact: true });
   const home = workspace.getByRole('navigation', { name: '工作区内容' });
@@ -168,17 +238,28 @@ test('production Harness browses, edits, reviews and commits with no Development
   assert.equal(await moduleTab('资源管理器').getAttribute('aria-selected'), 'false');
   assert.equal(await moduleTab('源代码管理').getAttribute('aria-selected'), 'true');
   await moduleTab('源代码管理').press('ArrowLeft');
-  assert.match(await explorer.locator('.file-editing-pane .cm-content').innerText(), /must not overwrite/);
+  assert.match(await explorer.locator('.file-editing-pane .cm-content').innerText(), /changed in real Harness/);
   await workspace.getByRole('button', { name: '关闭源代码管理标签', exact: true }).click();
   assert.equal(await moduleTab('源代码管理').count(), 0);
-  assert.match(await explorer.locator('.file-editing-pane .cm-content').innerText(), /must not overwrite/);
+  assert.match(await explorer.locator('.file-editing-pane .cm-content').innerText(), /changed in real Harness/);
 
-  // External write triggers 3-way conflict modal; adopt disk version cleanly
-  fs.writeFileSync(path.join(repo, 'note.txt'), 'external version\n');
-  await explorer.locator('.file-editing-pane .cm-content').click();
-  await explorer.locator('.file-editing-header').click();
+  // Keep the real save in flight until the competing disk write has happened.
+  const saveRoute = '**/directory-workbench/save';
+  let releaseSave!: () => void;
+  const diskWrite = new Promise<void>(resolve => { releaseSave = resolve; });
+  let observeSave!: () => void;
+  const saveObserved = new Promise<void>(resolve => { observeSave = resolve; });
+  await page.route(saveRoute, async route => { observeSave(); await diskWrite; await route.continue(); });
+  try {
+    await replaceCodeMirrorText(page, explorer, 'must not overwrite\n');
+    await explorer.locator('.file-editing-header').click();
+    await saveObserved;
+    // External write triggers 3-way conflict modal; adopt disk version cleanly
+    fs.writeFileSync(path.join(repo, 'note.txt'), 'external version\n');
+  } finally { releaseSave(); }
   const conflictModal = page.getByRole('dialog', { name: '处理文件保存冲突' });
   await conflictModal.waitFor();
+  await page.unroute(saveRoute);
   await conflictModal.getByRole('button', { name: '采用磁盘版本', exact: true }).click();
   await page.locator('.ant-popover').getByRole('button', { name: '采用磁盘版本', exact: true }).click();
   await explorer.locator('.file-editing-save-state', { hasText: '已保存' }).waitFor();
@@ -192,6 +273,9 @@ test('production Harness browses, edits, reviews and commits with no Development
   await scm.locator('.source-control-commit-panel').waitFor();
   assert.equal(await scm.locator('.harness-local-commit').count(), 0);
   assert.equal(await scm.locator('.source-control-diagnostics').filter({ hasText: '代码库读取达到上限' }).count(), 0, '不应误报代码库读取达到上限');
+  await scm.getByRole('button', {name:'查找更多仓库',exact:true}).click();
+  await scm.getByRole('button', {name:'查找更多仓库',exact:true}).waitFor({state:'hidden'});
+  await scm.locator('.source-control-commit-panel').waitFor();
   assert.equal(await scm.locator('.source-control-status-unknown, [data-file-state="unknown"]').count(), 0, '所有工作树应具备完整状态观察，不显示问号未知状态');
 
   // Linked worktree shows real branch & status right away
@@ -266,7 +350,7 @@ test('production Harness browses, edits, reviews and commits with no Development
   await scm.getByRole('button', { name: '在资源管理器打开', exact: true }).click();
   const fileTabs = workspace.getByRole('tablist', { name: '打开的文件' });
   await fileTabs.getByRole('tab', { name: 'linked-review · note.txt', exact: true }).waitFor();
-  await fileTabs.getByRole('tab', { name: 'repo · note.txt', exact: true }).click();
+  await fileTabs.getByRole('tab', { name: 'repo · 工作空间目录 · note.txt', exact: true }).click();
   await explorer.locator('.file-editing-pane').waitFor();
   assert.match(await explorer.locator('.file-editing-pane .cm-content').innerText(), /external version/);
 

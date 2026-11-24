@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
 
 import { defaultWebDataRoot } from '../../modules/installation/contracts/web-profile.ts';
 import { createAgentRuntimeFacet } from './preview-reuse-agent-runtime.ts';
@@ -132,12 +133,45 @@ export function parsePreviewReuseSelection(value: string, registry: readonly Pre
   };
 }
 
+function isTestEnvironmentIsolation(env: NodeJS.ProcessEnv): boolean {
+  return env.BUILDR_TEST_STATE_REQUIRED === '1'
+    || Boolean(env.BUILDR_TEST_LOCAL_STATE_ROOT)
+    || Boolean(env.NODE_TEST_CONTEXT);
+}
+
+function isPlatformAbsolute(value: string, platform: NodeJS.Platform): boolean {
+  return platform === 'win32' ? path.win32.isAbsolute(value) : path.posix.isAbsolute(value);
+}
+
+function resolvePreviewReuseHome(
+  options: { env?: NodeJS.ProcessEnv; home?: string; platform?: NodeJS.Platform },
+): string | undefined {
+  if (options.home) return options.home;
+  const env = options.env ?? process.env;
+  const platform = options.platform ?? process.platform;
+  if (!isTestEnvironmentIsolation(env)) {
+    const hostHome = env.BUILDR_HOST_HOME?.trim();
+    if (hostHome && isPlatformAbsolute(hostHome, platform)) return hostHome;
+  }
+  const rawHome = platform === 'win32' ? (env.USERPROFILE ?? env.HOME) : env.HOME;
+  const envHome = rawHome?.trim();
+  return envHome && isPlatformAbsolute(envHome, platform) ? envHome : undefined;
+}
+
+export function previewReuseSourceRoot(
+  source: PreviewReuseSourceId,
+  options: { env?: NodeJS.ProcessEnv; home?: string; platform?: NodeJS.Platform } = {},
+): string {
+  if (source !== 'development') throw previewReuseError(`预览沿用来源不受支持：${source}。`, 'preview_reuse_source_unavailable', { source });
+  const home = resolvePreviewReuseHome(options);
+  return defaultWebDataRoot(source, home ? { ...options, home } : options);
+}
+
 export function resolvePreviewReuseSource(
   source: PreviewReuseSourceId,
   options: { env?: NodeJS.ProcessEnv; home?: string; platform?: NodeJS.Platform } = {},
 ): PreviewReuseSource {
-  if (source !== 'development') throw previewReuseError(`预览沿用来源不受支持：${source}。`, 'preview_reuse_source_unavailable', { source });
-  const root = defaultWebDataRoot(source, options);
+  const root = previewReuseSourceRoot(source, options);
   const stat = fs.statSync(root, { throwIfNoEntry: false });
   if (!stat?.isDirectory()) throw previewReuseError('预览沿用来源 development 不可用：开发版应用数据根不存在。如无需沿用，可显式使用 --reuse none 启动。', 'preview_reuse_source_unavailable', { source });
   try { fs.accessSync(root, fs.constants.R_OK | fs.constants.X_OK); }

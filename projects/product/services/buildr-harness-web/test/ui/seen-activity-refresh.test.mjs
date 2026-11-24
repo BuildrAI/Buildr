@@ -3,7 +3,7 @@ import test from 'node:test';
 import { registerHooks } from 'node:module';
 registerHooks({resolve(specifier,context,next){
     const sourceSpecifier=specifier.replace(/\.(?:tsx?|jsx?)$/,'').replace(/\/index$/,'');if(context.parentURL?.endsWith('/seen-activity-refresh.ts')&&sourceSpecifier === './conversation-activity')return next(new URL('./conversation-activity.ts',context.parentURL).href,context);return next(specifier,context);}});
-const {createStreamingSeenScheduler,findDisplayedUnseenConversation,findSeenFallbackTarget,isConversationViewVisible,refreshSeenActivity}=await import('../../src/features/agent-conversations/seen-activity-refresh.ts');
+const {createStreamingSeenScheduler,findDisplayedUnseenConversation,findSeenFallbackTarget,isConversationViewVisible,refreshSeenActivity,resolveSeenRefreshTarget,seenAttemptKey}=await import('../../src/features/agent-conversations/seen-activity-refresh.ts');
 const {latestVisibleConversationMessage}=await import('../../src/features/agent-conversations/conversation-notices.ts');
 const unseen={id:'chat',workspaceId:'one',run:{status:'completed'},activity:{version:4,seenThrough:3,pendingDecisionCount:0}};
 test('查看确认立即读取新统计，不等待慢的旧观察且拒绝其迟到覆盖',async()=>{
@@ -127,4 +127,124 @@ test('activityRows 漏掉待查看条目时从当前有效列表缓存补查并�
   );
   assert.equal(triggered,true);
   assert.equal(refreshed,1);
+});
+
+test('seenAttemptKey 区分流式与终态并忽略已读或无版本对话',()=>{
+  assert.equal(seenAttemptKey({workspaceId:'one',id:'chat',run:{status:'completed'},activity:{version:4,seenThrough:4}}),null);
+  assert.equal(seenAttemptKey({workspaceId:'one',id:'chat',run:{status:'completed'}}),null);
+  const runningKey=seenAttemptKey({workspaceId:'one',id:'chat',run:{status:'running'},activity:{version:4,seenThrough:3}});
+  const settledKey=seenAttemptKey({workspaceId:'one',id:'chat',run:{status:'completed'},activity:{version:4,seenThrough:3}});
+  assert.ok(runningKey);
+  assert.ok(settledKey);
+  assert.notEqual(runningKey,settledKey);
+});
+
+test('flushMatching 仅对已验证同版本流式挂起项立即冲刷终态，不抢标未验证新版本',async()=>{
+  let nextTimerId=1,cancelled=0;
+  const timers=new Map(),sent=[];
+  const scheduler=createStreamingSeenScheduler({
+    send:async value=>{sent.push({version:value.activity.version,status:value.run?.status});return true;},
+    intervalMs:1500,
+    now:()=>1000,
+    schedule:cb=>{const id=nextTimerId++;timers.set(id,cb);return id;},
+    cancel:id=>{cancelled++;timers.delete(id);},
+  });
+
+  await scheduler.notify({...unseen,run:{status:'running'},activity:{version:4,seenThrough:3}});
+  await scheduler.notify({...unseen,run:{status:'running'},activity:{version:5,seenThrough:3}});
+  assert.deepEqual(sent,[{version:4,status:'running'}]);
+  assert.equal(timers.size,1);
+
+  assert.equal(scheduler.flushMatching({...unseen,run:{status:'completed'},activity:{version:6,seenThrough:3}}),null);
+  assert.equal(timers.size,1,'newer unverified terminal version must wait for visibility check');
+
+  const pending=scheduler.flushMatching({...unseen,run:{status:'completed'},activity:{version:5,seenThrough:3}});
+  assert.ok(pending);
+  assert.equal(await pending,true);
+  assert.equal(cancelled,1);
+  assert.deepEqual(sent,[{version:4,status:'running'},{version:5,status:'completed'}]);
+  assert.equal(scheduler.flushMatching({...unseen,run:{status:'completed'},activity:{version:5,seenThrough:3}}),null);
+});
+
+test('调度器在失败后按退避自动重试并受 shouldRetry 与主动 notify 控制',async()=>{
+  let nextTimerId=1,cancelled=0,allowRetry=true,shouldFail=true;
+  const timers=new Map(),delays=[],attempts=[];
+  const scheduler=createStreamingSeenScheduler({
+    send:async value=>{
+      attempts.push(value.activity.version);
+      if(shouldFail)return false;
+      return true;
+    },
+    intervalMs:1500,
+    retryDelayMs:3000,
+    maxRetries:3,
+    shouldRetry:()=>allowRetry,
+    now:()=>1000,
+    schedule:(cb,ms)=>{const id=nextTimerId++;timers.set(id,cb);delays.push(ms);return id;},
+    cancel:id=>{cancelled++;timers.delete(id);},
+  });
+
+  const ok1=await scheduler.notify({...unseen,run:{status:'completed'},activity:{version:4,seenThrough:3}});
+  assert.equal(ok1,false);
+  assert.deepEqual(attempts,[4]);
+  assert.deepEqual(delays,[3000]);
+
+  const firstRetry=timers.get(1);timers.delete(1);firstRetry();
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.deepEqual(attempts,[4,4]);
+  assert.deepEqual(delays,[3000,6000]);
+
+  const secondRetry=timers.get(2);timers.delete(2);secondRetry();
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.deepEqual(attempts,[4,4,4]);
+  assert.deepEqual(delays,[3000,6000,12000]);
+
+  const thirdRetry=timers.get(3);timers.delete(3);thirdRetry();
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.deepEqual(attempts,[4,4,4,4]);
+  assert.equal(timers.size,0,'stops scheduling after maxRetries');
+
+  // 主动 notify 重置失败计数；若 shouldRetry 为 false 则不再调度重试
+  allowRetry=false;
+  await scheduler.notify({...unseen,run:{status:'completed'},activity:{version:4,seenThrough:3}});
+  assert.deepEqual(attempts,[4,4,4,4,4]);
+  assert.equal(timers.size,0);
+
+  // 抛错也触发重试并在成功后清零退避
+  allowRetry=true;
+  const throwing=createStreamingSeenScheduler({
+    send:async value=>{
+      attempts.push(value.activity.version);
+      if(attempts.length===6)throw new Error('network');
+    },
+    retryDelayMs:3000,
+    maxRetries:3,
+    schedule:(cb,ms)=>{const id=nextTimerId++;timers.set(id,cb);delays.push(ms);return id;},
+    cancel:id=>{cancelled++;timers.delete(id);},
+  });
+  const okThrow=await throwing.notify({...unseen,run:{status:'completed'},activity:{version:5,seenThrough:4}});
+  assert.equal(okThrow,false);
+  const retryThrow=timers.get(nextTimerId-1);timers.delete(nextTimerId-1);retryThrow();
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.equal(timers.size,0);
+  assert.equal(cancelled>=0,true);
+});
+
+test('resolveSeenRefreshTarget 使用当前终态补齐状态判断是否刷新，流式阶段仍零额外读取',async()=>{
+  const sentStreaming={...unseen,run:{status:'running'},activity:{version:4,seenThrough:3}};
+  const currentCompleted={...unseen,run:{status:'completed'},activity:{version:4,seenThrough:4}};
+  const target=resolveSeenRefreshTarget(sentStreaming,currentCompleted);
+  assert.equal(target.run?.status,'completed');
+  assert.equal(target.activity?.seenThrough,3);
+
+  let refreshed=0;
+  const triggered=await refreshSeenActivity(target,undefined,()=>{},async()=>{refreshed++;});
+  assert.equal(triggered,true);
+  assert.equal(refreshed,1);
+
+  const stillRunning=resolveSeenRefreshTarget(sentStreaming,{...sentStreaming,activity:{version:4,seenThrough:4}});
+  let runningRefreshed=0;
+  const runningTriggered=await refreshSeenActivity(stillRunning,undefined,()=>{},async()=>{runningRefreshed++;});
+  assert.equal(runningTriggered,false);
+  assert.equal(runningRefreshed,0);
 });

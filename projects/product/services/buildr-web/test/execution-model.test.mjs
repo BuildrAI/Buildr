@@ -75,3 +75,17 @@ test('直接执行模型排除无网关推理与执行器独占来源，并优�
   const groups = executionModelGroups(options);
   assert.deepEqual(groups.map(group => [group.id, group.label]), [['gateway-source', 'NewVendor']]);
 });
+
+test('执行模型分组将 Magpie 按上游供应商分组并保持自身分组不重复后缀', () => {
+  const options = executionModelOptions([
+    model({accountId: 'magpie', provider: 'magpie', accountLabel: 'Magpie', modelId: 'codex/gpt-6.2-sol', label: 'GPT-6.2-Sol', upstreamProvider: 'codex', upstreamProviderLabel: 'Codex'}),
+    model({accountId: 'magpie', provider: 'magpie', accountLabel: 'Magpie', modelId: 'grok/grok-4.7', label: 'Grok 4.7'}),
+    model({accountId: 'magpie', provider: 'magpie', accountLabel: 'Magpie', modelId: 'group/default', label: 'Default', upstreamProvider: 'magpie', upstreamProviderLabel: 'Magpie'}),
+  ]);
+  const groups = executionModelGroups(options);
+  assert.deepEqual(groups.map(group => [group.id, group.label, group.options.map(o => o.label)]), [
+    ['magpie::codex', 'Codex · Magpie', ['GPT-6.2-Sol · Magpie']],
+    ['magpie::grok', 'Grok · Magpie', ['Grok 4.7 · Magpie']],
+    ['magpie', 'Magpie', ['Default · Magpie']],
+  ]);
+});

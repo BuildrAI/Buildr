@@ -1,12 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { codeFailure, codeGit, gitCommonDirectory, relativeCodePath, type CodeSource } from './code-file-reader.ts';
+import { codeFailure, codeGit, relativeCodePath, type CodeSource } from './code-file-reader.ts';
 import { assertCodeRevision, assertSourceControlPath, codeRevision, observeSourceControl } from './source-control-git-reader.ts';
 import { runCodeGitMutation } from './code-git-mutation-runner.ts';
 import { acquireCodeGitOperation } from './code-git-operation-lock.ts';
 import { sameFilesystemPath } from './filesystem-path-identity.ts';
-import { observeGitCheckoutReadIdentity } from './checkout-read-identity.ts';
+import {
+  inspectGitCheckoutReadIdentity,
+  inspectGitCheckoutReadIdentityAsync,
+  type GitCheckoutIdentityInspection,
+} from './checkout-read-identity.ts';
 
 const limit = 16 * 1024 * 1024;
 const text = (source: CodeSource, args: string[]) => codeGit(source.location, args).toString('utf8').trim();
@@ -15,21 +19,25 @@ const unsafe = (message: string) => codeFailure('code_local_git_unavailable', me
 const unavailable = (message: string) => codeFailure('code_checkout_unavailable', message, 409);
 const oid = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 
+export type LocalGitIdentity = { id: string; gitDir: string; commonDir: string; isMain: boolean };
+
+function resolveLocalGitIdentity(result: GitCheckoutIdentityInspection): LocalGitIdentity {
+  if (!result.ok) {
+    throw unavailable(result.reason === 'subdirectory'
+      ? '当前目录是仓库子目录。请明确选择 Git 工作树根目录后使用源代码管理。'
+      : '当前目录不是可读取的 Git 工作树；资源管理器仍可使用。');
+  }
+  const { id, gitDirectory, commonDirectory } = result.identity;
+  return { id, gitDir: gitDirectory, commonDir: commonDirectory, isMain: sameFilesystemPath(gitDirectory, commonDirectory) };
+}
+
 /** Choosing a subdirectory or one linked checkout does not authorize its parent or other worktrees. */
-export function localGitIdentity(root: string) {
-  let rootOutput: string, gitDir: string;
-  try {
-    const output = codeGit(root, ['rev-parse', '--show-toplevel', '--absolute-git-dir']).toString().trim();
-    const rows = output.split('\n');
-    if (rows.length !== 2) throw new Error('unexpected git location');
-    [rootOutput, gitDir] = rows;
-  } catch { throw unavailable('当前目录不是可读取的 Git 工作树；资源管理器仍可使用。'); }
-  if (!sameFilesystemPath(root, rootOutput)) throw unavailable('当前目录是仓库子目录。请明确选择 Git 工作树根目录后使用源代码管理。');
-  gitDir = fs.realpathSync(gitDir);
-  const commonDir = gitCommonDirectory(root);
-  const identity = observeGitCheckoutReadIdentity(root);
-  if(!sameFilesystemPath(gitDir,identity.gitDirectory)||!sameFilesystemPath(commonDir,identity.commonDirectory)) throw unavailable('Git 工作树身份已变化。');
-  return { id: identity.id, gitDir, commonDir, isMain: sameFilesystemPath(gitDir, commonDir) };
+export function localGitIdentity(root: string): LocalGitIdentity {
+  return resolveLocalGitIdentity(inspectGitCheckoutReadIdentity(root));
+}
+
+export async function localGitIdentityAsync(root: string): Promise<LocalGitIdentity> {
+  return resolveLocalGitIdentity(await inspectGitCheckoutReadIdentityAsync(root));
 }
 
 function indexBytes(index: string): Buffer | null {

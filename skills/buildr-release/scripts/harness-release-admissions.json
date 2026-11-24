@@ -36,24 +36,6 @@
       "sha256": "b2a97d9b8887a25078605d5f378b9998ed1767cff0c6547e33b4eecf7fb53968",
       "integrity": "sha512-Gi4nBmEdwCWirrLzYiD0z1tBGkL0cUi7mTcqaNS+A7A114cUXfM/d9cXGVwPu5SSTD9qifr7o3qVtpTCdMTKsQ==",
       "proofSha256": "bbaaaacc231e74c6361b1a44efb7c7982c0d0a1c226a41fde69fc4c18a104b99"
-    },
-    {
-      "target": "harness",
-      "version": "0.1.0-rc.3",
-      "sourceCommit": "a2f3a270dd53d237707d79f323d58c771cb07c36",
-      "sourceTree": "ee4348a6f41bb0b958be22eaf984ecd59def5c1d",
-      "sha256": "593e03500389727b89f0605579be3754c22e02d0cc911713d41f52c630650120",
-      "integrity": "sha512-ZdurJ6i/2cSXVhPozDgKPwaiPdnCnGJXDmSjd+Qpru4z7mC4taC7NPPaSG39mLes1781ih+wNkXCusSnlKmhHg==",
-      "proofSha256": "3770dc630226eba3b7a73a9de4f5c1cb2a51a2a5b87af531e9d8cdba044f54ff"
-    },
-    {
-      "target": "dsh-buildr-harness",
-      "version": "0.1.0-rc.3",
-      "sourceCommit": "a2f3a270dd53d237707d79f323d58c771cb07c36",
-      "sourceTree": "ee4348a6f41bb0b958be22eaf984ecd59def5c1d",
-      "sha256": "5c4356d7dc5c8ab689ca42c3e018ce182df450221a081bfc49dba3f9ef26099e",
-      "integrity": "sha512-5Z4FFUMLRqE70ZIV+qlywLRCT2X5RxXJKv+hid+3NAUPWgS3Z84mDjO40KnYYaVytpOEkn+CBzLLKWM8D7fL6g==",
-      "proofSha256": "1c8b3786ef6aa97dd61efcc7e6fc681849b6ae2d5f039d2d71fc23ee8d03d551"
     }
   ]
 }

@@ -14,6 +14,7 @@
 .global-source-sidebar .repository-browser-tree { width:100%; flex:1; max-height:none; min-height:0; }
 .global-source-sidebar .repository-tree-body { padding-inline:5px; }
 .global-source-sidebar .repository-tree-body .ant-tree-indent-unit { width:11px; }
+.global-source-sidebar .repository-tree-heading { padding:8px 10px 6px 10px; min-height:36px; }
 .global-source-sidebar .repository-file-search { padding-inline:10px; }
 .global-source-divider { flex:0 0 9px; height:calc(100% - 43px); margin:43px -4.5px 0; }
 .global-source-dock.is-resizing .global-source-divider::before { background:var(--soft-primary); }
@@ -53,3 +54,20 @@
   .code-file-tabstrip>.ant-btn { font-size:var(--font-size-meta); padding-inline:4px; }
   .code-explorer-stage .repository-reader-toolbar,.code-explorer-stage .repository-reader-footer { flex-wrap:wrap; }
 }
+
+/* File browsing controls share the same inset as the file search. */
+.directory-browse-source { flex:none; padding:0 10px 8px; gap:6px; }
+.directory-browse-source-row { display:flex; align-items:center; justify-content:space-between; gap:6px; min-width:0; min-height:24px; }
+.directory-browse-source-current { display:flex; align-items:center; gap:6px; min-width:0; color:var(--soft-muted); font-size:var(--font-size-meta); }
+.directory-browse-source.is-selected .directory-browse-source-current { color:var(--soft-ink); font-weight:500; }
+.directory-browse-source-current > .anticon { flex:none; color:var(--soft-muted); }
+.directory-browse-source-current > span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.directory-browse-source-actions { display:inline-flex; align-items:center; gap:2px; flex:none; }
+.directory-browse-source-actions .ant-btn { height:22px; font-size:var(--font-size-meta); color:var(--soft-muted); }
+.directory-browse-source-toggle.ant-btn { padding-inline:6px; margin-inline-end:-6px; }
+.directory-browse-source.is-selected .directory-browse-source-toggle.ant-btn { margin-inline-end:0; }
+.directory-browse-source-clear.ant-btn { width:22px; min-width:22px; padding:0; margin-inline-end:-4px; }
+.directory-browse-source-actions .ant-btn:not(:disabled):hover,
+.directory-browse-source-toggle.ant-btn[aria-expanded="true"] { color:var(--soft-ink); background:color-mix(in srgb,var(--soft-ink,#252a31) 6%,transparent); }
+.directory-browse-source-fields { display:grid; gap:6px; padding:8px; border:1px solid var(--soft-line); border-radius:6px; background:var(--soft-sidebar,#f6f7f8); }
+.directory-browse-source-fields > label { display:grid; grid-template-columns:3.25em minmax(0,1fr); align-items:center; gap:6px; color:var(--soft-muted); font-size:var(--font-size-meta); }

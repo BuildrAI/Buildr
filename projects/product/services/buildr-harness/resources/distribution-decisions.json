@@ -202,6 +202,16 @@
       "reason": "Buildr Development 自有组件随该版本按 MIT 公开分发，替代未在 npm 公开的 RC.64。"
     },
     {
+      "name": "@buildr-ai/buildr",
+      "version": "0.1.0-rc.66",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation 3f5be826-8f8a-d157-7fbe-0496ed264386 (2026-11-25)"
+      },
+      "reason": "Buildr Development 自有组件随该版本按 MIT 公开分发批准。"
+    },
+    {
       "name": "@chevrotain/cst-dts-gen",
       "version": "13.2.0",
       "disposition": "approved",
@@ -3100,6 +3110,16 @@
         "source": "Buildr conversation c165e370-9b76-224d-4aba-96429b300803 (2026-11-18)"
       },
       "reason": "随 Buildr 产品主体或前端编译静态产物分发的开源依赖批准（外部智能体程序与 SDK 已改为用户按需安装）。"
+    },
+    {
+      "name": "yaml",
+      "version": "2.9.1",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation 3f5be826-8f8a-d157-7fbe-0496ed264386 (2026-11-25)"
+      },
+      "reason": "随 Buildr 产品主体或独立 Harness 分发的开源依赖批准（ISC，用于目录仓库分批发现，延续 yaml@2.9.0 批准）。"
     }
   ]
 }

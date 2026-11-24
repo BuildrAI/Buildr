@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {accountBillingUrl,accountQuotaView,accountQuotaWarning,accountSourceName,OPENAI_BILLING_URL,quotaOverviewAccounts,quotaResetCountdown} from '../../src/features/agent-conversations/account-quota-view.ts';
+import {accountBillingUrl,accountQuotaView,accountQuotaWarning,accountSourceName,formatQuotaPercent,magpieQuotaOverviewGroups,OPENAI_BILLING_URL,quotaOverviewAccounts,quotaResetCountdown} from '../../src/features/agent-conversations/account-quota-view.ts';
 import {modelSourceViews} from '../../src/features/agent-conversations/account-model-view.ts';
 const now=Date.parse('2026-10-30T00:00:00Z');
 const account={id:'a',identity:'i',provider:'deepseek',label:'DeepSeek',accountLabel:'已登录账号',revision:'r',enabled:false,status:'ready',models:[],observedAt:new Date(now).toISOString()};
@@ -92,4 +92,26 @@ test('额度重置统一显示中文倒计时，绝对时间仅作悬停详情',
  assert.equal(quotaResetCountdown('2026-11-16T00:00:30Z',base),'1 分钟后重置');
  assert.equal(quotaResetCountdown(undefined,base),undefined);
  assert.equal(quotaResetCountdown('not-a-date',base),undefined);
+});
+
+test('额度百分比最多保留两位小数且整数不补零，Magpie 浮窗按上游供应商分组排序且不合计多账号',()=>{
+ assert.equal(formatQuotaPercent(99),'99');
+ assert.equal(formatQuotaPercent(0),'0');
+ assert.equal(formatQuotaPercent(59.2),'59.2');
+ assert.equal(formatQuotaPercent(50.91575091575091),'50.92');
+ assert.equal(formatQuotaPercent(50.9001),'50.9');
+ const groups=magpieQuotaOverviewGroups({
+  readAt:'2026-11-24T00:00:00Z',
+  accounts:[
+   {provider:'qoder',providerLabel:'Qoder',accountLabel:'c•••@newhope.cn',plan:'teams',windows:[{label:'Credits',remainingPercent:50.91575091575091}]},
+   {provider:'codex',providerLabel:'Codex',accountLabel:'a•••@gmail.com',plan:'prolite',balance:'73523.98 credits',windows:[{label:'7 days',remainingPercent:92}]},
+   {provider:'codex',providerLabel:'Codex',accountLabel:'b•••@gmail.com',windows:[{label:'7 days',remainingPercent:50}]},
+   {provider:'magpie',providerLabel:'Magpie',windows:[{label:'Pool',remainingPercent:80}]},
+  ],
+ });
+ assert.deepEqual(groups.map(group=>[group.provider,group.label,group.accounts.length]),[
+  ['codex','Codex · Magpie',2],
+  ['magpie','Magpie',1],
+  ['qoder','Qoder · Magpie',1],
+ ]);
 });
