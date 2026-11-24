@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Alert, Button, Empty, Spin } from 'antd';
 import { ApartmentOutlined, CloseOutlined, FolderOpenOutlined, PlusOutlined } from '@ant-design/icons';
 import { FileEditingProvider } from '../../workbench/editor/FileEditingContext';
@@ -21,11 +21,13 @@ import {
   type DirectoryScope,
   type DirectorySelection,
 } from './api';
-import { DirectoryExplorer, type DirectoryOpenRequest } from './DirectoryExplorer';
-import { DirectorySourceControl } from './DirectorySourceControl';
+import type { DirectoryOpenRequest } from './DirectoryExplorer';
 import { loadDirectoryCatalog } from './directory-catalog';
 import {desktopNotify} from '../../dsh-desktop';
 import './directory-workbench.css';
+
+const DirectoryExplorer = lazy(async () => ({ default: (await import('./DirectoryExplorer')).DirectoryExplorer }));
+const DirectorySourceControl = lazy(async () => ({ default: (await import('./DirectorySourceControl')).DirectorySourceControl }));
 
 const unfinishedWorkspaces = new WorkspaceFileEditingStores();
 const recentCatalogs = new Map<string, DirectoryCatalog>();
@@ -96,7 +98,7 @@ function WorkspaceContent({ contents, active, tabs, setTabs, scope }: {
       const paneActive = active && !home && id === selectedContent;
       return <section className="harness-directory-workbench-pane" key={id} id={prefix + '-pane-' + id} role="tabpanel" aria-labelledby={prefix + '-tab-' + id} hidden={home || id !== selectedContent}>
         <WorkspaceViewActiveContext.Provider value={paneActive}>
-          {find(id).render(paneActive)}
+          <Suspense fallback={<ToolLoading title={find(id).title} />}>{find(id).render(paneActive)}</Suspense>
         </WorkspaceViewActiveContext.Provider>
       </section>;
     })}
@@ -168,9 +170,19 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
   const base = useMemo(() => directoryClient(scope, workspaceId), [scope, workspaceId]);
   const catalogRef = useRef<DirectoryCatalog | null>(recentCatalogs.get(catalogKey) ?? null);
   const priority = useRef<string | undefined>(undefined);
-  const load = useCallback((input: typeof noInput, signal: AbortSignal, publish: (value: DirectoryCatalog) => void) =>
-    loadDirectoryCatalog(base, catalogRef.current, !!input.more, !!input.keepDiscovery, () => priority.current, signal, publish), [base]);
+  const selectedRef = useRef(selected); selectedRef.current = selected;
   const observingGit = active && (module === 'source-control' || !module && !tabs.home && tabs.selected === 'source-control');
+  const readingGit = useRef(observingGit); readingGit.current = observingGit;
+  const load = useCallback((input: typeof noInput, signal: AbortSignal, publish: (value: DirectoryCatalog) => void) => {
+    const previous = catalogRef.current;
+    const selectedRepository = previous?.repositories.find(repo => repo.id === selectedRef.current?.repositoryId);
+    return loadDirectoryCatalog(base, previous, !!input.more, !!input.keepDiscovery,
+      () => priority.current ?? selectedRepository?.path, signal, publish,
+      readingGit.current ? path => {
+        const preferredCheckoutId = path === selectedRepository?.path ? selectedRef.current?.checkoutId : undefined;
+        return preferredCheckoutId ? { preferredCheckoutId } : {};
+      } : undefined);
+  }, [base]);
   const [choosingCheckout, setChoosingCheckout] = useState(false);
   const catalogEnabled = observingGit || (active && (choosingCheckout || Boolean(reveal?.checkout)));
   const catalog = useSourceControlRead(catalogKey, noInput, load, catalogEnabled, '', recentCatalogs);
@@ -291,6 +303,7 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
     else open(checkout ?? null, target.path);
   }, [open, module, workspaceId, scope.revision]);
   const selectSource = useCallback((target: DirectorySelection | null) => {
+    priority.current = undefined;
     setSelected(target);
   }, []);
 
@@ -346,11 +359,16 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
   </FileEditingProvider>;
 }
 
-function ModuleContents({module,...props}: Parameters<typeof WorkspaceContent>[0] & {module?: 'explorer'|'source-control'}) {
-  if(!module)return <WorkspaceContent {...props}/>;
-  return <section className="harness-directory-workbench-pane" aria-label={props.contents.find(content=>content.id===module)?.title}>
+function ToolLoading({ title }: { title: string }) {
+  return <div className="harness-workspace-loading" role="status"><Spin size="small" /> 正在打开{title}…</div>;
+}
+
+function ModuleContents({ module, ...props }: Parameters<typeof WorkspaceContent>[0] & { module?: 'explorer' | 'source-control' }) {
+  if (!module) return <WorkspaceContent {...props} />;
+  const content = props.contents.find(item => item.id === module)!;
+  return <section className="harness-directory-workbench-pane" aria-label={content.title}>
     <WorkspaceViewActiveContext.Provider value={props.active}>
-      {props.contents.find(content=>content.id===module)?.render(props.active)}
+      <Suspense fallback={<ToolLoading title={content.title} />}>{content.render(props.active)}</Suspense>
     </WorkspaceViewActiveContext.Provider>
   </section>;
 }

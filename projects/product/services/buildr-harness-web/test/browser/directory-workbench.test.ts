@@ -79,8 +79,58 @@ test('production Harness browses, edits, reviews and commits with no Development
   const port = (probe.address() as { port: number }).port;
   await new Promise<void>((resolve, reject) => probe.close(error => error ? reject(error) : resolve()));
   const ready = await client.web.enable({ port }); assert.equal(ready.ready, true);
-  const login = await client.web.login();
   browser = await chromium.launch({ headless: true });
+  const tool = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const workspaceId = executionScopeKey(scope.ref);
+  const toolUrl = async (kind: string) => {
+    const url = new URL((await client!.web.login()).url);
+    const fragment = new URLSearchParams(url.hash.slice(1));
+    fragment.set('dsh', kind);
+    fragment.set('workspace', workspaceId);
+    url.hash = fragment.toString();
+    return url.href;
+  };
+  const chatRequests: string[] = [];
+  tool.on('request', request => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === '/api/v1/harness/scopes' || pathname === '/api/v1/harness/directories') chatRequests.push(pathname);
+  });
+  try {
+    // Cold WebView-equivalent partition: the bootstrap must retain the tool through redemption.
+    await tool.goto(await toolUrl('explorer'));
+    await tool.locator('.harness-dsh-tool').getByText('note.txt', { exact: true }).first().waitFor();
+    assert.equal(new URL(tool.url()).hash, '#' + new URLSearchParams({ dsh: 'explorer', workspace: workspaceId }));
+    // The authenticated entry keeps its target and shows the current worktree
+    // before a deliberately delayed full catalog read completes.
+    let finishBackground!: () => void;
+    const background = new Promise<void>(resolve => { finishBackground = resolve; });
+    const catalogRoute = '**/api/v1/harness/directory-workbench/catalog';
+    const rootCatalogInputs: Array<{ repositoryPath?: string; primaryStatus?: boolean }> = [];
+    await tool.route(catalogRoute, async route => {
+      const input = route.request().postDataJSON();
+      if (input.repositoryPath === '') {
+        rootCatalogInputs.push(input);
+        if (!input.primaryStatus) await background;
+      }
+      await route.continue();
+    });
+    try {
+      await tool.goto(await toolUrl('source-control'));
+      const source = tool.locator('.harness-dsh-tool .source-control-workbench');
+      await source.locator('.source-control-commit-panel').waitFor();
+      await source.locator('.source-control-list').getByText('untouched.txt', { exact: true }).waitFor();
+      await source.getByText('正在读取其余工作树…', { exact: true }).waitFor();
+      assert.equal(rootCatalogInputs[0]?.primaryStatus, true);
+      assert.equal(new URL(tool.url()).hash, '#' + new URLSearchParams({ dsh: 'source-control', workspace: workspaceId }));
+    } finally {
+      finishBackground();
+      await tool.unrouteAll({ behavior: 'wait' });
+    }
+    assert.deepEqual(chatRequests, []);
+  } finally {
+    await tool.close();
+  }
+  const login = await client.web.login();
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await page.goto(login.url);
   const rail = page.locator('.ac-collapsed-rail');

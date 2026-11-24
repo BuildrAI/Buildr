@@ -81,6 +81,11 @@ export function attachHarnessGuest(mount: HTMLElement, bridge: DesktopBridge, on
     const mode = new URLSearchParams({ dsh: options?.tool?.kind ?? 'chat' });
     if (options?.tool) mode.set('workspace', options.tool.workspaceId);
     const modeHash = '#' + mode;
+    // Older Harness builds discard the presentation fragment on redemption.
+    // The trusted-document fallback below still opens the requested tool there.
+    const ticket = new URLSearchParams(destination.hash.slice(1));
+    for (const [key, value] of mode) ticket.set(key, value);
+    destination.hash = ticket.toString();
     const isTrusted = () => {
       try {
         const current = new URL(view.getURL());
@@ -122,7 +127,9 @@ export function attachHarnessGuest(mount: HTMLElement, bridge: DesktopBridge, on
         })();
         return;
       }
-      if (request && (!options?.tool || request.kind === 'reveal' || request.kind === 'link' || request.kind === 'tool-ready')) options?.onMessage?.(request);
+      if (!request) return;
+      if (options?.tool && request.kind === 'tool-ready') ready(true);
+      if (!options?.tool || request.kind === 'reveal' || request.kind === 'link' || request.kind === 'tool-ready') options?.onMessage?.(request);
     });
     let started = false;
     view.addEventListener('dom-ready', () => {
@@ -161,7 +168,7 @@ export function attachHarnessGuest(mount: HTMLElement, bridge: DesktopBridge, on
       } catch { /* The incumbent page stays usable during a backend handoff. */ }
       finally { if (keepWatching && !abort.signal.aborted) probeTimer = setTimeout(() => { void probe(); }, 8000); }
     };
-    const ready = () => {
+    const ready = (toolReady = false) => {
       if (!abort.signal.aborted && isTrusted()) {
         if (!released) {
           void view.executeJavaScript(`if (window.__buildrDshEdited === undefined) {
@@ -171,12 +178,17 @@ export function attachHarnessGuest(mount: HTMLElement, bridge: DesktopBridge, on
           }`).catch(() => {});
           if (!watching) { watching = true; probeTimer = setTimeout(() => { void probe(); }, 8000); }
         }
-        view.clearHistory(); clearTimeout(timeout); onState(); options?.onControl?.(send);
+        if (!options?.tool || toolReady) {
+          view.clearHistory();
+          clearTimeout(timeout);
+          onState();
+        }
+        options?.onControl?.(send);
         options?.onRefresh?.({ lease: reserved.lease, reload });
       }
     };
     view.addEventListener('did-start-navigation', dismissPreview);
-    view.addEventListener('did-navigate-in-page', ready);
+    view.addEventListener('did-navigate-in-page', () => ready());
     view.addEventListener('did-finish-load', () => {
       if (!started || abort.signal.aborted) return;
       try {

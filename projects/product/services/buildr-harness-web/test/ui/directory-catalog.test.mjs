@@ -33,6 +33,49 @@ test('directory names publish before scoped reads; a later click takes the next 
   assert.deepEqual(calls,['slow','fast','last','third','nested']);
 });
 
+test('publishes the preferred checkout before completing the rest of its repository', async () => {
+  const snapshots = [];
+  const calls = [];
+  let finish;
+  const full = response('repo');
+  const member = id => ({ id, files: [], truncated: false });
+  const complete = { ...full.repositories[0], members: [member('default'), member('chosen')] };
+  const request = async (operation, input) => {
+    if (operation === 'inventory') return { repositories: [hint('repo')], readAt: 'now', nextCursor: null };
+    calls.push(input);
+    if (input.primaryStatus) return { ...full, repositories: [{ ...complete, members: [member('chosen')], statusPending: true }] };
+    return await new Promise(resolve => { finish = () => resolve({ ...full, repositories: [complete] }); });
+  };
+  const signal = new AbortController().signal;
+  const loading = loadDirectoryCatalog(request, null, false, false, () => 'repo', signal,
+    value => snapshots.push(value), () => ({ preferredCheckoutId: 'chosen' }));
+  await drain();
+  assert.deepEqual(calls, [{ repositoryPath: 'repo', primaryStatus: true, preferredCheckoutId: 'chosen' }, { repositoryPath: 'repo' }]);
+  assert.deepEqual(snapshots.at(-1).repositories[0].members.map(item => item.id), ['chosen']);
+  assert.equal(snapshots.at(-1).repositories[0].statusPending, true);
+  finish();
+  const settled = (await loading).repositories[0];
+  assert.deepEqual(settled.members.map(item => item.id), ['default', 'chosen']);
+  assert.equal(settled.statusPending, undefined);
+});
+
+test('continuing discovery finishes repository status left pending by the previous read', async () => {
+  const calls = [];
+  const root = response('root').repositories[0];
+  const pending = { ...response('pending').repositories[0], pending: true };
+  const previous = { nextCursor: 'more', repositories: [{ ...root, statusPending: true }, pending] };
+  const request = async (operation, input) => {
+    if (operation === 'inventory') return { repositories: [hint('nested')], readAt: 'now', nextCursor: null };
+    calls.push(input.repositoryPath);
+    return response(input.repositoryPath);
+  };
+  const signal = new AbortController().signal;
+  const result = await loadDirectoryCatalog(request, previous, true, false, () => undefined, signal, () => {});
+  assert.deepEqual(calls.sort(), ['nested', 'pending', 'root']);
+  assert.deepEqual(result.repositories.map(item => item.path), ['root', 'pending', 'nested']);
+  assert.ok(result.repositories.every(item => !item.pending && !item.statusPending));
+});
+
 test('multi-repo explorer keeps tree collapsed and loads only expanded directories on demand', () => {
   assert.equal(shouldCollapseExplorerTree(1, 29, []), true);
   assert.equal(shouldCollapseExplorerTree(1, 29, ['repositories/freshx-pigs']), false);

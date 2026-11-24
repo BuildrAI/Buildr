@@ -1,7 +1,9 @@
 import type { DirectoryCatalog, DirectoryCatalogRepository, DirectoryInventory, DirectoryRequest } from './api';
 
 /** Inventory and Git results are independent. Only a scoped Git response may supply a usable checkout identity. */
-export async function loadDirectoryCatalog(request: DirectoryRequest, previous: DirectoryCatalog | null, more: boolean, keepDiscovery: boolean, preferred: () => string | undefined, signal: AbortSignal, publish: (data: DirectoryCatalog) => void): Promise<DirectoryCatalog> {
+export async function loadDirectoryCatalog(request: DirectoryRequest, previous: DirectoryCatalog | null, more: boolean, keepDiscovery: boolean, preferred: () => string | undefined, signal: AbortSignal, publish: (data: DirectoryCatalog) => void,
+  primaryStatus?: (repositoryPath: string) => { preferredCheckoutId?: string },
+): Promise<DirectoryCatalog> {
   const cursor = more ? previous?.nextCursor : undefined;
   if (more && !cursor) return previous!;
   const inventory = keepDiscovery && previous ? {repositories:previous.repositories, nextCursor:previous.nextCursor ?? null,
@@ -18,23 +20,42 @@ export async function loadDirectoryCatalog(request: DirectoryRequest, previous: 
     diagnostic:inventory.diagnostic, truncated:[...paths.values()].some(repo => repo.checkouts.truncated || repo.members.some(member => member.truncated)), readAt});
   publish(snapshot());
   const remaining = new Set(more ? inventory.repositories.map(repo => repo.path) : paths.keys());
-  await Promise.all(Array.from({length:Math.min(2, remaining.size)}, async () => {
-    while (remaining.size) {
+  const background = new Set<string>();
+  if (more) {
+    // Continuing discovery cancels the previous read. Carry its unfinished work forward.
+    for (const repo of paths.values()) {
+      if (remaining.has(repo.path)) continue;
+      if (repo.pending) remaining.add(repo.path);
+      else if (repo.statusPending) background.add(repo.path);
+    }
+  }
+  await Promise.all(Array.from({length:Math.min(2, remaining.size + background.size)}, async () => {
+    while (remaining.size || background.size) {
       signal.throwIfAborted();
       const requested = preferred();
-      const path = requested !== undefined && remaining.has(requested) ? requested : remaining.values().next().value!;
-      remaining.delete(path);
+      const queue = requested !== undefined && background.has(requested) ? background : remaining.size ? remaining : background;
+      const path = requested !== undefined && queue.has(requested) ? requested : queue.values().next().value!;
+      const complete = queue === background;
+      queue.delete(path);
       const repo = paths.get(path)!;
+      // A complete snapshot already supplies the first paint during a refresh.
+      const primary = !complete && primaryStatus && (!repo.members.length || repo.statusPending);
       try {
-        const result = await request<DirectoryCatalog>('catalog', {repositoryPath:path}, signal);
+        const result = await request<DirectoryCatalog>('catalog', {
+          repositoryPath:path,
+          ...(primary ? { primaryStatus:true, ...primaryStatus(path) } : {}),
+        }, signal);
         signal.throwIfAborted();
         const verified = result.repositories.find(item => item.path === path);
         if (!verified) throw new Error('未返回所选仓库。');
         paths.set(path, {...verified, code:repo.code ?? verified.code, name:repo.name, readAt:result.readAt, topologyRevision:result.topologyRevision});
+        if (primary && verified.statusPending) background.add(path);
       } catch (error) {
         signal.throwIfAborted();
-        paths.set(path, {...repo, gitId:null, pending:false, members:repo.members.map(member => ({...member, status:'offline'})),
-          error:error instanceof Error ? error.message : '仓库暂不可读取。'});
+        const message = error instanceof Error ? error.message : '仓库暂不可读取。';
+        paths.set(path, complete
+          ? {...repo, error:message}
+          : {...repo, gitId:null, pending:false, members:repo.members.map(member => ({...member, status:'offline'})), error:message});
       }
       publish(snapshot());
     }

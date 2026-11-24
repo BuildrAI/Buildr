@@ -44,7 +44,7 @@ import type { CodeGeneration } from '../workbench/code-generation.ts';
 const operations = {
   checkouts: [],
   inventory: ['cursor'],
-  catalog: ['repositoryPath'],
+  catalog: ['repositoryPath', 'primaryStatus', 'preferredCheckoutId'],
   'git-topology': ['repositoryPaths'],
   'open-folder': ['path'],
   directory: ['path','showIgnored'],
@@ -112,7 +112,7 @@ function inspectInput(operation: string, input: Record<string, unknown>) {
   const allowed = new Set<string>(['scopeId','scopeRevision','checkoutId','repositoryPath',...operations[operation as DirectoryWorkbenchOperation]]);
   if (Object.keys(input).some(key=>!allowed.has(key))) throw invalid();
   for (const [key,value] of Object.entries(input)) {
-    if (key==='showIgnored') { if (typeof value!=='boolean') throw invalid(); continue; }
+    if (key==='showIgnored' || key==='primaryStatus') { if (typeof value!=='boolean') throw invalid(); continue; }
     if (['page','line','limit'].includes(key)) { if (!Number.isSafeInteger(value)) throw invalid(); continue; }
     if (key==='repositoryPaths') {
       if (!Array.isArray(value) || value.length > 128 || value.some(item => typeof item !== 'string' || Buffer.byteLength(item)>4096)) throw invalid();
@@ -318,6 +318,7 @@ export function createDirectoryWorkbench(
         const directory = scope();
         const base = await fileSourceAsync(directory);
         const targetRelative = input.repositoryPath !== undefined ? relativeCodePath(input.repositoryPath, true) : null;
+        if ((input.primaryStatus !== undefined && targetRelative === null) || (input.preferredCheckoutId !== undefined && !input.primaryStatus)) throw invalid();
         type CatalogMember = {
           id: string; worktreeId: string; name: string; location: string; isMain: boolean; isRegistered: boolean;
           branch: string | null; head: string | null; upstream: string | null; ahead: number | null; behind: number | null;
@@ -336,13 +337,16 @@ export function createDirectoryWorkbench(
           const baseName = path.basename(repoInfo.location);
           const repo = { id: repoInfo.id, path: targetRelative, code: baseName, name: baseName, checkouts };
           const gitId = 'sha256-' + sha256Hex(repoInfo.git.commonDir);
-          const members: CatalogMember[] = new Array(checkouts.members.length);
+          const primary = checkouts.members.find(member => member.id === input.preferredCheckoutId)
+            ?? checkouts.members.find(member => member.id === checkouts.defaultId) ?? checkouts.members[0];
+          const statusTargets = input.primaryStatus && primary ? [primary] : checkouts.members;
+          const members: CatalogMember[] = new Array(statusTargets.length);
           let cursor = 0;
-          await Promise.all(Array.from({ length: Math.min(6, checkouts.members.length) }, async () => {
+          await Promise.all(Array.from({ length: Math.min(6, statusTargets.length) }, async () => {
             for (;;) {
               const index = cursor++;
-              if (index >= checkouts.members.length) return;
-              const member = checkouts.members[index]!;
+              if (index >= statusTargets.length) return;
+              const member = statusTargets[index]!;
               const readAt = new Date().toISOString();
               try {
                 const memberSource: CodeSource = {
@@ -381,7 +385,7 @@ export function createDirectoryWorkbench(
             }
           } catch { topologyRevision = null; }
           scope();
-          return { repositories: [{ ...repo, gitId, members }], topologyPaths: [targetRelative], topologyRevision, truncated: false, diagnostic: null, readAt: new Date().toISOString() };
+          return { repositories: [{ ...repo, gitId, members, ...(statusTargets.length < checkouts.members.length ? { statusPending: true } : {}) }], topologyPaths: [targetRelative], topologyRevision, truncated: false, diagnostic: null, readAt: new Date().toISOString() };
         }
 
         const discovered = await observeDirectoryRepositoriesAsync(directory.rootPath, directory.ref.id);

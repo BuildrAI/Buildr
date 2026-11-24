@@ -292,6 +292,16 @@ test('Git-aware catalog discovery scales beyond 2048 directories, preserves erro
   assert.equal(catalogRepo.members.length, 2);
   const mainMember = catalogRepo.members.find((m: any) => m.isMain);
   const peerMember = catalogRepo.members.find((m: any) => m.branch === 'peer-branch');
+  const defaultStatus = (await call('catalog', { repositoryPath: 'big-repo', primaryStatus: true })).repositories[0];
+  assert.equal(defaultStatus.statusPending, true);
+  assert.deepEqual(defaultStatus.members.map((member: any) => member.id), [mainMember.id]);
+  const preferredStatus = (await call('catalog', { repositoryPath: 'big-repo', primaryStatus: true, preferredCheckoutId: peerMember.id })).repositories[0];
+  assert.equal(preferredStatus.statusPending, true);
+  assert.deepEqual(preferredStatus.members.map((member: any) => member.id), [peerMember.id]);
+  assert.deepEqual(preferredStatus.members[0].files, peerMember.files);
+  assert.equal(preferredStatus.members[0].observedRevision, peerMember.observedRevision);
+  const completeStatus = (await call('catalog', { repositoryPath: 'big-repo' })).repositories[0];
+  assert.deepEqual(completeStatus.members.map((member: any) => member.id), [mainMember.id, peerMember.id]);
   assert.ok(mainMember && peerMember);
   assert.equal(mainMember.fileCount, 1);
   assert.equal(peerMember.fileCount, 2);

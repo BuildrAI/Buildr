@@ -311,8 +311,9 @@ export function SourceControlWorkbench({ active = true, repositories, defaultRep
   }
   useEffect(() => {
     if (!active || !pendingRepositoryId || pendingRepository?.pending) return;
-    const main = pendingRepository?.worktrees.find(worktree => worktree.isMain && worktree.status !== 'offline');
-    if (pendingRepository && main) pickWorktree(pendingRepository, main);
+    const available = pendingRepository?.worktrees.filter(worktree => worktree.status !== 'offline');
+    const selected = available?.find(worktree => worktree.isRegistered) ?? available?.find(worktree => worktree.isMain);
+    if (pendingRepository && selected) pickWorktree(pendingRepository, selected);
   }, [active, pendingRepositoryId, pendingRepository]);
   function pickPending(repository: SourceControlRepository) {
     rememberReading();

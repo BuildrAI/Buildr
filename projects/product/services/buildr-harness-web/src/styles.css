@@ -36,4 +36,5 @@ html,body,#root{height:100%;margin:0;min-width:360px;font-family:ui-sans-serif,-
 
 .harness-dsh-tool { height: 100dvh; min-height: 0; display: flex; flex-direction: column; }
 .harness-dsh-tool > .harness-directory-workbench { flex: 1; }
+.harness-dsh-tool-loading { flex: 1; min-height: 100dvh; display: grid; place-content: center; }
 .harness-dsh-link-fallback { position: fixed; z-index: 1300; inset: 8px 8px auto; }

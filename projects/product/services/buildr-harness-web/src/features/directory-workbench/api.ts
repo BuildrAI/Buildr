@@ -32,7 +32,7 @@ export type DirectoryCatalogMember = {
   diagnostics: string[];
   readAt: string;
 };
-export type DirectoryCatalogRepository = DirectoryRepository & { gitId: string | null; members: DirectoryCatalogMember[]; pending?: boolean; error?: string; readAt?: string; topologyRevision?: string | null };
+export type DirectoryCatalogRepository = DirectoryRepository & { gitId: string | null; members: DirectoryCatalogMember[]; pending?: boolean; statusPending?: boolean; error?: string; readAt?: string; topologyRevision?: string | null };
 export type DirectoryInventory = { repositories: Array<{path: string; code?: string; name: string}>; nextCursor: string | null; limited: boolean; registered?: boolean; diagnostic: string | null; readAt: string };
 export type DirectoryCatalog = { nextCursor?: string | null; limited?: boolean; registered?: boolean; repositories: DirectoryCatalogRepository[]; topologyPaths?: string[]; topologyRevision?: string | null; truncated: boolean; diagnostic: string | null; readAt: string };
 export type DirectorySelection = { repositoryId: string; checkoutId: string };
@@ -79,7 +79,7 @@ export const post = async <T,>(route: string, input: object, signal?: AbortSigna
 };
 
 export const directoryClient = (scope: DirectoryScope, workspaceId: string, checkoutId?: string, repositoryPath?: string): DirectoryRequest =>
-  (operation, input = {}, signal) => post('/api/v1/harness/directory-workbench/' + operation, { ...input, workspaceId, scopeRevision: scope.revision, checkoutId, repositoryPath }, signal);
+  (operation, input = {}, signal) => post('/api/v1/harness/directory-workbench/' + operation, { ...input, workspaceId, scopeRevision: scope.revision, checkoutId, ...(repositoryPath === undefined ? {} : { repositoryPath }) }, signal);
 
 export const observeWorkspaceDirectory = (workspaceId: string, signal: AbortSignal) =>
   post<DirectoryScope>('/api/v1/harness/directory-workbench/scope', { workspaceId }, signal);

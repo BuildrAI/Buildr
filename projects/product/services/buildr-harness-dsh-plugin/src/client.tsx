@@ -102,7 +102,7 @@ function Guest({ bridge, tool, onMessage, onControl, onRefresh, canPreviewImage 
   return <div style={{ minHeight: 0, position: 'relative', flex: 1 }}>
     <div ref={mount} style={{ position: 'absolute', inset: 0 }} />
     {!state.ready && <div role={state.error ? 'alert' : 'status'} style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', padding: 20, background: 'Canvas', gap: 8 }}>
-      {state.error ? (messages[state.error] ?? messages['harness-unavailable']) : `正在打开 ${label}…`}
+      {state.error ? (messages[state.error] ?? messages['harness-unavailable']) : `正在打开${kind ? toolTabTitle(kind) : ' ' + label}…`}
       {state.error && <button type="button" onClick={retry}>重新检查</button>}
     </div>}
   </div>;

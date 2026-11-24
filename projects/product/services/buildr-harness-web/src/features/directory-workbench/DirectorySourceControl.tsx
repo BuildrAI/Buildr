@@ -281,13 +281,17 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
         simulated: false,
         services: [],
         worktrees,
-        worktreeCount: worktrees.length,
+        worktreeCount: repo.checkouts.members.length,
         _isRoot: repo.path === '',
       }];
     });
     mapped.sort((a, b) => Number(b._isRoot) - Number(a._isRoot) || Number(sourceControlRepositoryHasChanges(b)) - Number(sourceControlRepositoryHasChanges(a)) || a.code.localeCompare(b.code));
     return mapped.map(({ _isRoot: _, ...repo }) => repo);
   }, [catalog, scope.name, version]);
+  const defaultRepositories = useMemo(() => {
+    const byId = new Map(repositories.map(repository => [repository.id, repository]));
+    return (catalog?.repositories ?? []).flatMap(repo => byId.get(repo.id) ?? []);
+  }, [catalog, repositories]);
 
   const reader = useMemo<SourceControlReader>(() => ({
     history: (input, signal) => requestForRef.current(input.worktreeId ? { repositoryId: input.repositoryId!, checkoutId: input.worktreeId } : null)('history', input, signal),
@@ -619,6 +623,7 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
     ?? selectedRepositoryForModal?.worktrees.find(w => w.isMain)
     ?? selectedRepositoryForModal?.worktrees[0];
 
+  const worktreeStatusPending = catalog?.repositories.some(repo => repo.statusPending);
   const showInlineDiscoverMore = Boolean(catalog?.nextCursor && (!catalog?.registered || !repositories.length));
   const showMenuDiscoverMore = Boolean(catalog?.nextCursor && catalog?.registered && repositories.length > 0);
   const discoveryControl = showInlineDiscoverMore
@@ -636,7 +641,7 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
       sidebarOnRight
       active={active}
       repositories={repositories}
-      defaultRepositories={repositories}
+      defaultRepositories={defaultRepositories}
       scene={scene}
       reader={reader}
       readKey={scope.ref.id + ':' + scope.revision}
@@ -650,7 +655,8 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
       currentSourceSelection={explicitSelection?.checkoutId ? { key: explicitSelection.checkoutId, targets, preferredTarget: targets[0] } : null}
       onCurrentSourceSelect={onSelectCheckout}
       onPrioritizeRepository={id => { const repository = catalog?.repositories.find(item => item.id === id); if (repository) prioritizeRepository(repository.path); }}
-      catalogFeedback={discoveryControl}
+      catalogFeedback={<>{discoveryControl}{worktreeStatusPending && catalogLoading &&
+        <p className="source-control-catalog-note" role="status">正在读取其余工作树…</p>}</>}
       onRefresh={() => refreshCatalog()}
       onRetry={() => refreshCatalog()}
       onScene={setScene}
@@ -665,7 +671,7 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
       catalogActions={<Dropdown open={active && catalogMenuOpen} onOpenChange={setCatalogMenuOpen} trigger={['click']} placement="bottomRight" menu={{
         'aria-label': '源代码管理操作菜单',
         items: [
-          { key: 'sync', icon: <SyncOutlined aria-hidden spin={syncing} />, label: syncing ? '正在同步…' : '全部同步', disabled: fetching || syncing || !repositories.length },
+          { key: 'sync', icon: <SyncOutlined aria-hidden spin={syncing} />, label: syncing ? '正在同步…' : '全部同步', disabled: fetching || syncing || worktreeStatusPending || !repositories.length },
           { key: 'fetch', icon: <CloudDownloadOutlined aria-hidden spin={fetching} />, label: fetching ? '正在获取远程…' : '全部获取远程', disabled: fetching || syncing || !repositories.length },
           ...(showMenuDiscoverMore ? [
             { type: 'divider' as const },
