@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { gzipSync } from 'node:zlib';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { runReleaseOperation } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
 import { normalizeReleaseTargets } from '../../../../../../skills/buildr-release/scripts/release-targets.ts';
 import { containsCredentialMaterial } from '../../../../../../skills/buildr-release/scripts/release-authority.ts';
@@ -168,15 +168,28 @@ function repositorySeed(changes: { mainRuntime?: boolean; omitSourcePatch?: bool
   return root;
 }
 
-function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boolean; mutateAggregate?: (value: any) => void; localPackage?: boolean } = {}): any {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-package-selection-operation-')));
+type PreparedFixture = {
+  root: string;
+  snapshot: string;
+  task: { taskId: string; status: string; title: string };
+  candidateDispatches: number;
+  pluginSourceReads: number;
+};
+
+function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boolean; mutateAggregate?: (value: any) => void; localPackage?: boolean } = {}, prepared?: PreparedFixture): any {
+  const root = prepared?.root ?? fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-package-selection-operation-')));
+  if (prepared) assert.equal(fs.existsSync(root), false, 'The preceding case must dispose of its working copy.');
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const workspace = path.join(root, 'workspace'), remote = path.join(root, 'remote.git');
   const repo = path.join(workspace, '.worktrees', taskId), providerFile = path.join(workspace, '.git/buildr/task-worktrees', taskId + '.json');
-  const seed = repositorySeed(changes);
-  fs.cpSync(path.join(seed, 'workspace'), workspace, { recursive: true });
-  fs.cpSync(path.join(seed, 'remote.git'), remote, { recursive: true });
-  git(workspace, ['remote', 'set-url', 'origin', remote]);
+  if (prepared) {
+    fs.cpSync(prepared.snapshot, root, { recursive: true, force: false, errorOnExist: true, verbatimSymlinks: true });
+  } else {
+    const seed = repositorySeed(changes);
+    fs.cpSync(path.join(seed, 'workspace'), workspace, { recursive: true });
+    fs.cpSync(path.join(seed, 'remote.git'), remote, { recursive: true });
+    git(workspace, ['remote', 'set-url', 'origin', remote]);
+  }
   const baseline = git(workspace, ['rev-parse', 'main']);
   const selectedSource = git(workspace, ['rev-parse', 'HEAD']);
   const peerBytes = Buffer.from(peerArchiveSeed);
@@ -185,14 +198,15 @@ function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boo
   const file = path.join(workspace, '.git/buildr/release-operations', selectionId + '.json');
   // These recovery scenarios own historical remote-produced operations.
   // A new independent plugin operation defaults to local production.
-  if (!changes.localPackage) {
+  if (!prepared && !changes.localPackage) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify({ schemaVersion: 'buildr.release-operation-input/v2', workspace, version: null,
       targets: normalizeReleaseTargets({ packages: 'dsh-plugin', pluginVersion }), sources: [], candidate: null, publication: null }));
   }
   const state = () => JSON.parse(fs.readFileSync(file, 'utf8'));
-  let task: any = null, worktreeCreated = false, candidateVisible = false, candidateDispatches = 0, pluginDispatches = 0;
-  let merges = 0, mainReads = 0, unpublishedReads = 0, pluginSourceReads = 0, postMainReads = 0, pr: any = null, postMainSource = '';
+  let task: any = prepared ? { ...prepared.task } : null, worktreeCreated = Boolean(prepared), candidateVisible = Boolean(prepared);
+  let candidateDispatches = prepared?.candidateDispatches ?? 0, pluginDispatches = 0;
+  let merges = 0, mainReads = 0, unpublishedReads = 0, pluginSourceReads = prepared?.pluginSourceReads ?? 0, postMainReads = 0, pr: any = null, postMainSource = '';
   let mainGate = 'ready', mainReadbackFailed = false, loseMergeResponse = false, elapsed = 0;
   let closeoutFailure: string | null = null, taskCompletions = 0, cleanupCalls = 0;
   const events: string[] = [], requests: any[] = [];
@@ -358,13 +372,41 @@ releaseSelectionTest('unknown main merge response is read back before continuati
 });
 
 releaseSelectionTest('candidate-only closeout resumes failed record owners and cleanup without another Candidate read or execution', async t => {
-  for (const stage of ['materials-write', 'materials-record', 'verification-record', 'task-response', 'cleanup', 'cleanup-evidence']) await t.test(stage, async () => {
-    const data = fixture(t);
-    assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'candidate-dispatch-unconfirmed'); data.revealCandidate();
+  const checkpoint = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-package-selection-closeout-'));
+  t.after(() => fs.rmSync(checkpoint, { recursive: true, force: true }));
+  let prepared: PreparedFixture | undefined;
+  async function exerciseCloseout(stage: string, data: ReturnType<typeof fixture>): Promise<void> {
+    if (!prepared) {
+      assert.equal(stage, 'materials-write');
+      assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'candidate-dispatch-unconfirmed'); data.revealCandidate();
+      const invoke = data.dependencies.invokeRetainedController;
+      data.dependencies.invokeRetainedController = (controller: any, args: string[]) => {
+        if (args.slice(0, 3).join(' ') === 'task materials inspect') {
+          data.dependencies.invokeRetainedController = invoke;
+          assert.equal(data.state().preparation.status, 'verified');
+          assert.equal(data.task().status, 'active');
+          assert.equal(data.preparationRecords.calls.length, 0);
+          const root = path.dirname(data.workspace), snapshot = path.join(checkpoint, 'prepared');
+          // Frozen records and Git worktree pointers bind absolute paths. Restore
+          // a fresh copy at that same location for each serial subtest.
+          const operationLock = path.join(data.workspace, '.git/buildr/release-operations', `${selectionId}.json.lock`);
+          assert.equal(fs.readFileSync(operationLock, 'utf8').trim(), String(process.pid));
+          fs.cpSync(root, snapshot, { recursive: true, verbatimSymlinks: true, filter: source => source !== operationLock });
+          const { candidateDispatches, pluginSourceReads } = data.counts();
+          assert.equal(candidateDispatches, 1); assert.equal(pluginSourceReads, 1);
+          prepared = { root, snapshot, task: { ...data.task() }, candidateDispatches, pluginSourceReads };
+        }
+        return invoke(controller, args);
+      };
+    }
     if (stage.startsWith('materials-') || stage === 'verification-record') data.preparationRecords.fail(stage, stage !== 'verification-record');
     else data.failCloseout(stage);
     const failed = await runReleaseOperation({ ...data.options, stopAfter: 'candidate' }, data.dependencies);
-    assert.match(failed.status, /^candidate-(?:materials|report|task|cleanup)-closeout-required$/u);
+    const failedOwner = stage.startsWith('materials-') ? 'materials'
+      : stage === 'verification-record' ? 'report' : stage === 'task-response' ? 'task' : 'cleanup';
+    assertReleaseStatus(failed, `candidate-${failedOwner}-closeout-required`);
+    assert.ok(prepared, 'The first case must reach the verified checkpoint before closeout.');
+    assert.equal(data.counts().pluginSourceReads, prepared.pluginSourceReads);
     const reads = data.counts().pluginSourceReads, source = data.state().sourceCommit;
     const recovered = await runReleaseOperation({ ...data.options, action: 'resume' }, data.dependencies);
     assertReleaseStatus(recovered, 'candidate-verified'); assert.equal(data.task().status, 'completed');
@@ -379,6 +421,15 @@ releaseSelectionTest('candidate-only closeout resumes failed record owners and c
     assert.equal(data.preparationRecords.calls.filter((args: string[]) => args[1] === 'materials' && args[2] === 'record').length, 1);
     const inspected = await runReleaseOperation({ ...data.options, action: 'inspect' }, data.dependencies);
     assertReleaseStatus(inspected, 'inspected'); assert.equal(data.counts().candidateDispatches, 1);
+  }
+  for (const stage of ['materials-write', 'materials-record', 'verification-record', 'task-response', 'cleanup', 'cleanup-evidence']) await t.test(stage, async (subtest: TestContext) => {
+    const data = fixture(subtest, {}, prepared);
+    try {
+      await exerciseCloseout(stage, data);
+    } finally {
+      // Dispose before the next subtest restores the fixed fixture location.
+      fs.rmSync(path.dirname(data.workspace), { recursive: true, force: true });
+    }
   });
 });
 
