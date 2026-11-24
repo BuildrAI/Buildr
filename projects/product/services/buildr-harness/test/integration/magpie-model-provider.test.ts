@@ -91,53 +91,54 @@ test('wrong/manual gateway does not trigger installation; an explicit prepare ca
   assert.equal((await provider.resolveCustom!(undefined,true,signal)).baseUrl,origin+'/v1');assert.equal(prepare,1);
 });
 
-test('Magpie preserves Codex defaults and uses confirmed long-context limits without widening other routes',async()=>{
+test('Magpie handles default-only, unknown and explicit maximums without a model allowlist',async()=>{
   const root=await mkdtemp(join(tmpdir(),'buildr-magpie-context-'));
   const origin='http://127.0.0.1:49161',sol='codex/gpt-6.2-sol',astra='codex/gpt-6.2-astra',terra='codex/gpt-6.1-terra';
-  const entry=(id:string,window:number,fields:Record<string,unknown>={})=>({
+  const entry=(id:string,window?:number,fields:Record<string,unknown>={})=>({
     id,owned_by:'codex',context_window:window,context_length:window,max_input_tokens:window,...fields,
   });
   const data=[
     entry(sol,500_000),entry(astra,272_000),entry(terra,500_000),
-    entry('relay/gpt-6.2-sol',500_000,{owned_by:'relay'}),
-    entry('group/default',500_000),
+    entry('relay/arbitrary',350_000,{owned_by:'relay',max_input_tokens:300_000}),
+    entry('group/default',500_000,{owned_by:'magpie'}),entry('new-model'),
+    entry('explicit-max',250_000,{max_context_window:600_000}),
   ];
   const provider=createMagpieModelProvider({root,configuredOrigin:async()=>origin,
     fetch:async url=>new URL(url).pathname==='/api/hello'?Response.json({name:'magpie',version:'0.1.4708'}):Response.json({data}),
     installation:{address:async()=>undefined,start:async()=>{throw Error('unexpected launch');},open:async()=>{}}});
-  const access=createModelAccess({root,providers:[provider]});
+  let access=createModelAccess({root,providers:[provider]});
   try{
     const source=await access.accounts.add({provider:'magpie'});
     const window=(id:string)=>{
       const model=access.catalog.list().models.find(model=>model.modelId===id)!;
-      return [model.contextWindow,model.reportedContextWindow];
+      return [model.defaultContextWindow,model.reportedContextWindow,model.contextWindow,model.contextWindowOverride];
     };
-    assert.deepEqual(window(sol),[500_000,1_000_000]);
-    assert.deepEqual(window(astra),[272_000,1_000_000]);
-    for(const id of [terra,'relay/gpt-6.2-sol','group/default'])assert.deepEqual(window(id),[500_000,500_000]);
-    const preferences=(models:Array<{id:string;contextWindow:number|null}>)=>
+    const inputModels=data.slice(0,-1);
+    for(const row of inputModels)assert.deepEqual(window(row.id),[row.context_window,null,row.context_window,undefined]);
+    const preferences=(models:Array<{id:string;contextWindow:number|null;enabled?:boolean}>)=>
       access.accounts.preferences(source.id,{expectedRevision:access.accounts.read(source.id).revision,models});
-    await preferences([{id:sol,contextWindow:800_000},{id:astra,contextWindow:800_000}]);
-    for(const id of [sol,astra]){
-      assert.deepEqual(window(id),[800_000,1_000_000]);
-      const lease=await access.leases.create({accountId:source.id,modelId:id,agentId:'codex',conversationId:'fixture',runId:'fixture'});
+    await preferences(inputModels.map(row=>({id:row.id,contextWindow:800_000})));
+    for(const row of inputModels){
+      assert.deepEqual(window(row.id),[row.context_window,null,800_000,800_000]);
+      const lease=await access.leases.create({accountId:source.id,modelId:row.id,agentId:'codex',conversationId:'fixture',runId:'fixture'});
       assert.equal(lease.offering.contextWindow,800_000);
     }
-    await assert.rejects(preferences([{id:sol,contextWindow:1_001_000}]),{code:'model_context_invalid'});
-    await preferences([{id:sol,contextWindow:null},{id:astra,contextWindow:null}]);
-    assert.deepEqual(window(sol),[500_000,1_000_000]);
-    assert.deepEqual(window(astra),[272_000,1_000_000]);
-    data[0]=entry(sol,500_000,{max_context_window:600_000});
-    data[1]=entry(astra,240_000);
+    assert.deepEqual(window('explicit-max'),[250_000,600_000,250_000,undefined]);
+    await assert.rejects(preferences([{id:'explicit-max',contextWindow:800_000}]),{code:'model_context_invalid'});
+    await assert.rejects(preferences([{id:sol,contextWindow:10_000_001}]),{code:'model_context_invalid'});
+    await access.close();
+    access=createModelAccess({root,providers:[provider]});
     await access.accounts.check(source.id);
-    assert.deepEqual(window(sol),[500_000,600_000]);
-    assert.deepEqual(window(astra),[240_000,240_000]);
-    await assert.rejects(preferences([{id:sol,contextWindow:800_000}]),{code:'model_context_invalid'});
-    data[0]=entry(sol,500_000,{max_input_tokens:480_000});
-    data[1]=entry(astra,272_000,{owned_by:'relay'});
+    assert.deepEqual(window(terra),[500_000,null,800_000,800_000]);
+    data[2]=entry(terra,500_000,{max_context_window:600_000});
     await access.accounts.check(source.id);
-    assert.deepEqual(window(sol),[500_000,500_000],'independent input capacity blocks default-based expansion');
-    assert.deepEqual(window(astra),[272_000,272_000],'id alone is not provider evidence');
+    assert.deepEqual(window(terra),[500_000,600_000,600_000,800_000]);
+    const clamped=await access.leases.create({accountId:source.id,modelId:terra,agentId:'codex',conversationId:'fixture',runId:'fixture'});
+    assert.equal(clamped.offering.contextWindow,600_000);
+    await assert.rejects(preferences([{id:terra,contextWindow:800_000}]),{code:'model_context_invalid'});
+    await preferences(inputModels.map(row=>({id:row.id,contextWindow:null})));
+    assert.deepEqual(window(terra),[500_000,600_000,500_000,undefined]);
+    for(const row of inputModels.filter(row=>row.id!==terra))assert.deepEqual(window(row.id),[row.context_window,null,row.context_window,undefined]);
   }finally{await access.close();await rm(root,{recursive:true,force:true});}
 });
 

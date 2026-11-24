@@ -44,7 +44,10 @@ export interface ModelOffering {
   kind?: 'model' | 'combination';
   family?: string;
   enabled?: boolean;
-  reportedContextWindow?: number;
+  /** null means this source explicitly reports no known maximum; omission preserves legacy fallback. */
+  reportedContextWindow?: number | null;
+  /** Default before user overrides, projected from the raw offering. */
+  defaultContextWindow?: number;
   contextWindowOverride?: number;
   defaultServiceTier?: string;
   /** Platform-reported per-request credit multiplier (for example Qoder `price_factor`). */

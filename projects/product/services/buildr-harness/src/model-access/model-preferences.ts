@@ -6,10 +6,15 @@ export function modelLeaseIdentity(accountId:string,accountIdentity:string,model
   return createHash('sha256').update(JSON.stringify([accountId,accountIdentity,modelId,conversationId,agentId,configuration])).digest('hex');
 }
 
+/** Undefined on legacy rows falls back to contextWindow; null deliberately does not. */
+export function modelContextLimit(model:ModelOffering):number|null|undefined {
+  return model.reportedContextWindow===undefined ? model.contextWindow : model.reportedContextWindow;
+}
+
 export function effectiveModel(model:ModelOffering,preference:ModelPreference|undefined):ModelOffering {
-  const reported=model.reportedContextWindow??model.contextWindow;
+  const reported=modelContextLimit(model);
   const requested=preference?.contextWindow;
-  return {...model,enabled:preference?.enabled??false,reportedContextWindow:reported,
+  return {...model,enabled:preference?.enabled??false,reportedContextWindow:reported,defaultContextWindow:model.contextWindow,
     contextWindowOverride:requested,contextWindow:requested===undefined?model.contextWindow:Math.min(requested,reported??requested)};
 }
 export function selectedOffering(model:ModelOffering,tierId?:string):ModelOffering {

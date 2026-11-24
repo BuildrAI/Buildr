@@ -287,7 +287,7 @@ Codex 按上游目录的 `service_tiers` 与 `additional_speed_tiers` 发现可�
 
 ### 上下文窗口观察与用量
 
-模型页使用供应商模型目录的窗口观察：Codex读取`/codex/models`的`context_window`默认值与`max_context_window`最大值，DeepSeek读取`/models`的`context_window`，Qoder读取平台`/models`配置的`context_config`默认值和全部可选窗口范围，Devin读取`GetCliModelConfigs`的模型与档位配置。该值表示当前供应商可用窗口，不声称是模型理论能力。模型目录观察缓存于本机模型账号元数据，手动设置另存偏好；显示值按千截断，未编辑不自动保存截断值。恢复默认移除手动覆盖，回到供应商报告值。档位容量与用户配置共同决定生效值。
+模型页使用供应商模型目录的窗口观察：Codex读取`/codex/models`的`context_window`默认值与`max_context_window`最大值，DeepSeek读取`/models`的`context_window`，Qoder读取平台`/models`配置的`context_config`默认值和全部可选窗口范围，Devin读取`GetCliModelConfigs`的模型与档位配置。Magpie 将 `context_window` 视为默认，`max_context_window` 明确报告时才作为上限；缺少上限时可以手动配置，界面标明上游未确认。目录默认值与执行生效值分别展示，已知上限降低时保留手动偏好但限制生效值。这些值不声称是模型理论能力。模型目录观察缓存于本机模型账号元数据，手动设置另存偏好；显示值按千截断，未编辑不自动保存截断值。恢复默认移除手动覆盖，回到供应商报告值。档位容量与用户配置共同决定生效值。
 
 程序检查仅核验程序与独立配置，不等待账号或在线模型目录。账号观察及模型刷新仍由模型页负责，使用Qoder其他供应商模型时仍遵守厂家基础登录要求。
 

@@ -39,20 +39,6 @@ async function hello(fetcher: typeof fetch, origin: string, signal?: AbortSignal
   catch { return undefined; }
 }
 const integer = (n: unknown, max = 10_000_000) => typeof n === 'number' && Number.isSafeInteger(n) && n > 0 && n <= max ? n : undefined;
-// https://learn.chatgpt.com/docs/models documents both Codex defaults and the
-// 1M override for these exact models. Do not substitute the API's 1050K limit.
-const codexLongContextDefaults = new Map([
-  ['codex/gpt-6.2-sol', 500_000],
-  ['codex/gpt-6.2-astra', 272_000],
-]);
-function reportedContextWindow(row: Record<string, unknown>, id: string, defaultWindow: number | undefined) {
-  if (row.max_context_window != null) return integer(row.max_context_window);
-  if (defaultWindow === undefined || row.owned_by !== 'codex' || codexLongContextDefaults.get(id) !== defaultWindow) return;
-  // Magpie 0.1.4708 mirrors the default into these two fields. If they
-  // disagree with it, do not infer that this route allows a larger window.
-  if ([row.context_length, row.max_input_tokens].some(value => value != null && value !== defaultWindow)) return;
-  return 1_000_000;
-}
 async function configuredOrigin(): Promise<string | undefined> {
   const home = process.env.BUILDR_HOST_HOME || homedir();
   const file = join(process.env.XDG_CONFIG_HOME || join(home, '.config'), 'magpie', 'settings.json');
@@ -71,12 +57,14 @@ function offerings(value: unknown[]): ModelOffering[] {
     const label = string(row.display_name)?.trim().slice(0,160) || id;
     const input = record(row.modalities).input;
     const defaultWindow = integer(row.context_window);
-    const maxWindow = reportedContextWindow(row, id, defaultWindow);
+    // Only an explicit maximum is a total-window cap. Do not promote the
+    // default or the separate max_input_tokens count into that cap.
+    const maxWindow = integer(row.max_context_window) ?? null;
     const contextWindow = defaultWindow !== undefined ? Math.min(defaultWindow, maxWindow ?? defaultWindow) : undefined;
     const maxOutputTokens = integer(row.max_output_tokens);
     const efforts = [...new Set((Array.isArray(row.reasoning_levels) ? row.reasoning_levels : []).filter((item): item is string => typeof item === 'string' && /^(none|minimal|low|medium|high|xhigh|max|ultra)$/.test(item)))];
     out.set(id, {id, label, images: Array.isArray(input) && input.includes('image'), tools: row.supports_tools !== false,
-      ...(contextWindow ? {contextWindow} : {}), ...(maxWindow ? {reportedContextWindow:maxWindow} : {}),
+      ...(contextWindow ? {contextWindow} : {}), reportedContextWindow:maxWindow,
       ...(maxOutputTokens ? {maxOutputTokens} : {}),
       ...(efforts.length ? {reasoningEfforts:efforts.map(id=>({id,label:id}))} : {})});
     if (out.size >= 1000) break;

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { once } from 'node:events';
 import { lstatSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { ModelAccessError, type CatalogModel, type CustomProviderConfig, type CustomProviderConfigureInput, type CustomProviderDiscoveryInput, type CustomProviderDiscoveryResult, type ModelAccessOptions, type ModelAccountAddInput, type ModelAccountView, type ModelGatewayLease, type ModelLeaseInput, type ModelOffering, type ModelProvider, type ModelProviderObservation, type ModelProviderRuntime, type ModelProtocol, type ProtocolJson } from './contracts.ts';
-import { effectiveModel, selectedOffering, modelConfiguration, modelLeaseIdentity } from './model-preferences.ts';
+import { effectiveModel, modelContextLimit, selectedOffering, modelConfiguration, modelLeaseIdentity } from './model-preferences.ts';
 import type {ModelPreference,ModelPreferenceUpdate} from './contracts.ts';
 import { customProtocolLabel, normalizeCustomBaseUrl, normalizeCustomConfiguration, normalizeCustomLabel, normalizeCustomProtocol } from './providers/custom.ts';
 import { translateRequest, translateResponse, type OpaqueReasoning } from './protocols.ts';
@@ -35,7 +35,7 @@ const selectionEfforts = (values: Array<{ id: string; label: string }> | undefin
 const selectionTiers = (values: ModelOffering['serviceTiers']) => (values ?? []).map(tier => ({ id: tier.id, label: tier.label, contextWindow: tier.contextWindow, defaultReasoningEffort: tier.defaultReasoningEffort, reasoningEfforts: selectionEfforts(tier.reasoningEfforts) })).sort(byId);
 /** Stable snapshot for revision changes; observable quota and timestamps stay outside selection identity. */
 const selectionModels = (models: ModelOffering[]) => models.map(model => ({
-  id: model.id, label: model.label, contextWindow: model.contextWindow, reportedContextWindow: model.reportedContextWindow,
+  id: model.id, label: model.label, contextWindow: model.contextWindow, reportedContextWindow: model.reportedContextWindow, defaultContextWindow:model.defaultContextWindow,
   contextWindowOverride: model.contextWindowOverride, maxOutputTokens: model.maxOutputTokens, images: model.images, tools: model.tools,
   enabled: model.enabled, kind: model.kind, family: model.family, defaultReasoningEffort: model.defaultReasoningEffort,
   reasoningEfforts: selectionEfforts(model.reasoningEfforts), defaultServiceTier: model.defaultServiceTier,
@@ -767,9 +767,9 @@ export class ModelAccessApplication {
       seen.add(update.id);const preference=next[model.id]??{enabled:false};
       if(update.enabled!==undefined){if(typeof update.enabled!=='boolean')throw new ModelAccessError('model_preferences_invalid','模型开关无效。',400);preference.enabled=update.enabled;}
       if(update.contextWindow!==undefined){
-        const value=update.contextWindow,limit=model.reportedContextWindow??model.contextWindow;
+        const value=update.contextWindow,limit=modelContextLimit(model);
         if(value===null)delete preference.contextWindow;
-        else {if(!Number.isSafeInteger(value)||value<1||value>10000000||limit!==undefined&&value>limit)throw new ModelAccessError('model_context_invalid','上下文必须为正整数，且不能超过可配置上限。',400);preference.contextWindow=value;}
+        else {if(!Number.isSafeInteger(value)||value<1||value>10000000||limit!=null&&value>limit)throw new ModelAccessError('model_context_invalid','上下文必须为正整数，且不能超过可配置上限。',400);preference.contextWindow=value;}
       }
       Object.defineProperty(next,model.id,{value:preference,enumerable:true,writable:true,configurable:true});
     }

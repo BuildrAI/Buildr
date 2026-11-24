@@ -11,6 +11,7 @@ import {DrawerShell} from '../../components/DrawerShell.tsx';
 import {useAgentConversations} from './AgentConversationsContext.tsx';
 import {AgentProgramPreparation} from './AgentProgramPreparation.tsx';
 import {type AccountSelection} from './AccountModelManager.tsx';
+import {previewModelContext} from './context-window.ts';
 import {MagpieQuotaPanel} from './MagpieQuotaPanel.tsx';
 import {AgentModelSetup} from './AgentModelSetup.tsx';
 import {modelSourceViews,newModelSourceProvider} from './account-model-view.ts';
@@ -233,9 +234,7 @@ export function AgentConnectionSettings({inMain=false}: {inMain?:boolean}={}){
      const row=rows.find(item=>item.modelId===model.id);
      if(!row)return model;
      const enabled=row.enabled??model.enabled;
-     const reported=model.reportedContextWindow??model.contextWindow;
-     const override=row.contextWindow===undefined?model.contextWindowOverride:row.contextWindow===null?undefined:row.contextWindow;
-     return {...model,enabled,contextWindowOverride:override,contextWindow:override===undefined?reported:Math.min(override,reported??override)};
+     return {...model,enabled,...previewModelContext(model,row.contextWindow)};
     })};
    }));
    preferenceQueue.current=preferenceQueue.current.then(async()=>{
