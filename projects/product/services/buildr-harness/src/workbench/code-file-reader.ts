@@ -139,29 +139,51 @@ export function readCodeDirectory(source:CodeSource,relative='',showIgnored=fals
   }
   return finalizeDirectoryListing(source, relative, entries, enumerationTruncated, showIgnored);
 }
+/** Filesystem-only view. Keep Git administration paths out without spawning Git. */
+export async function readWorkspaceDirectory(source: CodeSource, relative: string, showIgnored: boolean) {
+  relativeCodePath(relative, true);
+  const candidate = await localPathAsync(source, relative, '');
+  for (let directory = candidate; ; directory = path.dirname(directory)) {
+    if (path.basename(directory).toLowerCase() === '.git') {
+      throw codeFailure('code_path_forbidden', '不能读取 Git 管理目录。', 403);
+    }
+    // A separate/bare Git directory, or a relocated administrative worktree directory.
+    const [head, objects, refs, common] = await Promise.all(['HEAD', 'objects', 'refs', 'commondir'].map(name =>
+      fs.promises.lstat(path.join(directory, name)).catch(error => {
+        if (['ENOENT', 'ENOTDIR'].includes(error.code)) return null;
+        throw error;
+      })));
+    if (head && ((objects && refs) || common)) {
+      throw codeFailure('code_path_forbidden', '不能读取 Git 管理目录。', 403);
+    }
+    if (path.dirname(directory) === directory) break;
+  }
+  return listLocalDirectory(source, candidate, relative, showIgnored, false);
+}
+
+async function listLocalDirectory(source: CodeSource, dir: string, relative: string, showIgnored: boolean, useGitIgnore: boolean) {
+  if (!(await fs.promises.stat(dir)).isDirectory()) throw codeFailure('code_directory_expected', '所选路径不是目录。');
+  const handle = await fs.promises.opendir(dir);
+  const entries: DirectoryEntry[] = [];
+  let truncated = false;
+  for await (const item of handle) {
+    if (entries.length >= CODE_LIMITS.entries * 2) { truncated = true; break; }
+    entries.push({ name: item.name, path: relative ? `${relative}/${item.name}` : item.name,
+      kind: item.isSymbolicLink() ? 'link' : item.isDirectory() ? 'directory' : 'file', ignored: false });
+  }
+  const paths = entries.map(entry => entry.path);
+  const ignored = useGitIgnore ? await ignoredPathsAsync(source.location, paths) : applyFallbackIgnored(paths, new Set());
+  for (const entry of entries) entry.ignored = ignored.has(entry.path);
+  return finalizeDirectoryListing(source, relative, entries, truncated, showIgnored);
+}
+
 export async function readCodeDirectoryAsync(source: CodeSource, relative = '', showIgnored = false, preVerifiedGitCommonDir?: string) {
   relativeCodePath(relative, true);
-  let entries: DirectoryEntry[] = [], enumerationTruncated = false;
-  if (source.commitHash) {
-    const tree = source.commitHash + (relative ? ':' + relative : '');
-    entries = formatCommitTreeEntries(await codeGitAsync(source.location, ['ls-tree', '-z', tree], 4 * 1024 * 1024), relative);
-  } else {
-    const dir = await localPathAsync(source, relative, preVerifiedGitCommonDir);
-    if (!(await fs.promises.stat(dir)).isDirectory()) throw codeFailure('code_directory_expected', '所选路径不是目录。');
-    const handle = await fs.promises.opendir(dir), names: fs.Dirent[] = [];
-    let closed = false;
-    try {
-      for await (const item of handle) {
-        if (names.length >= CODE_LIMITS.entries * 2) { enumerationTruncated = true; closed = true; break; }
-        names.push(item);
-      }
-    } finally {
-      if (closed) { /* for-await breaks after closing dir handle, ignore if already closed */ }
-      else { try { await handle.close(); } catch { /* already closed */ } }
-    }
-    entries = names.map(item => ({ name: item.name, path: relative ? relative + '/' + item.name : item.name, kind: item.isSymbolicLink() ? 'link' : item.isDirectory() ? 'directory' : 'file', ignored: false }));
-    const ignored = await ignoredPathsAsync(source.location, entries.map(e => e.path));
-    for (const entry of entries) entry.ignored = ignored.has(entry.path);
+  if (!source.commitHash) {
+    const directory = await localPathAsync(source, relative, preVerifiedGitCommonDir);
+    return listLocalDirectory(source, directory, relative, showIgnored, true);
   }
-  return finalizeDirectoryListing(source, relative, entries, enumerationTruncated, showIgnored);
+  const tree = source.commitHash + (relative ? ':' + relative : '');
+  const entries = formatCommitTreeEntries(await codeGitAsync(source.location, ['ls-tree', '-z', tree], 4 * 1024 * 1024), relative);
+  return finalizeDirectoryListing(source, relative, entries, false, showIgnored);
 }

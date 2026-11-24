@@ -39,6 +39,45 @@ test('directory files are independent of Git and stale writes cannot replace con
   assert.equal(fs.readFileSync(filename,'utf8'),'replacement\n');
 });
 
+test('workspace directory lists only the requested filesystem level without spawning Git', async t => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-workspace-list-'));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  const root = path.join(temp, 'workspace');
+  const nested = path.join(root, 'repositories', 'nested');
+  fs.mkdirSync(nested, { recursive: true });
+  fs.writeFileSync(path.join(nested, 'readme.txt'), 'nested');
+  execFileSync('git', ['-C', root, '-c', 'init.templateDir=', 'init', '-q'], { env: codeGitEnvironment() });
+  const admin = path.join(root, 'relocated');
+  execFileSync('git', ['init', '-q', '--bare', admin], { env: codeGitEnvironment() });
+  if (process.platform !== 'win32') fs.symlinkSync(temp, path.join(root, 'outside'));
+  const host = new HarnessDirectoryHost(path.join(temp, 'profile'));
+  const scope = host.register(root);
+  const run = createDirectoryWorkbench(host);
+  const list = (relative: string) => run('directory', { scopeId: scope.ref.id, scopeRevision: scope.revision, path: relative }) as Promise<{ entries: { path: string }[] }>;
+  const originalPath = process.env.PATH;
+  const bin = path.join(temp, 'bin');
+  fs.mkdirSync(bin);
+  const probe = path.join(bin, 'called');
+  if (process.platform !== 'win32') {
+    fs.writeFileSync(path.join(bin, 'git'), '#!/bin/sh\n: > "${0%/*}/called"\nexit 1\n', { mode: 0o700 });
+    process.env.PATH = bin + path.delimiter + (originalPath ?? '');
+  }
+  try {
+    const rootEntries = (await list('')).entries.map(item => item.path);
+    assert.ok(rootEntries.includes('repositories'));
+    assert.ok(!rootEntries.includes('nested') && !rootEntries.includes('.git'));
+    assert.deepEqual((await list('repositories')).entries.map(item => item.path), ['repositories/nested']);
+    assert.deepEqual((await list('repositories/nested')).entries.map(item => item.path), ['repositories/nested/readme.txt']);
+    await assert.rejects(list('relocated/objects'), { code: 'code_path_forbidden' });
+    await assert.rejects(list('.git'), { code: 'code_path_forbidden' });
+    if (process.platform !== 'win32') await assert.rejects(list('outside'), { code: 'code_path_forbidden' });
+    assert.equal(fs.existsSync(probe), false);
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+  }
+});
+
 test('local Git workbench reads comparisons and commits only the staged tree', async t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'harness-workbench-git-'));
   t.after(()=>fs.rmSync(root,{recursive:true,force:true}));

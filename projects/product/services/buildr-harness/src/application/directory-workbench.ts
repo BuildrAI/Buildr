@@ -25,7 +25,7 @@ import { openDirectory } from '../workbench/open-directory.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import type { HarnessDirectory, HarnessDirectoryHost } from './directory-host.ts';
 import { DIRECTORY_SOURCE_ID } from './directory-host.ts';
-import { codeFailure, codeGit, codeGitAsync, gitCommonDirectory, gitCommonDirectoryAsync, localPath, readCodeDirectoryAsync, relativeCodePath, type CodeSource } from '../workbench/code-file-reader.ts';
+import { codeFailure, codeGit, codeGitAsync, gitCommonDirectory, gitCommonDirectoryAsync, localPath, readCodeDirectoryAsync, readWorkspaceDirectory, relativeCodePath, type CodeSource } from '../workbench/code-file-reader.ts';
 import { isCodeImagePath, readCodeFile } from '../workbench/code-file-content.ts';
 import { searchCode } from '../workbench/code-search.ts';
 import { editableSourceRevision, readEditableFile, saveObservedEditableFile } from '../workbench/editable-file.ts';
@@ -171,6 +171,11 @@ async function gitTopology(directory: HarnessDirectory, paths: readonly string[]
   }));
   const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
   return {revision:inventoryChanged ? null : digest(observed), repositoryRevisions:observed.map(row => ({path:row[0] as string, revision:digest([row])}))};
+}
+
+function workspaceFileSource(scope: HarnessDirectory): CodeSource {
+  if (scope.rootPath.split(path.sep).some(segment => segment.toLowerCase() === '.git')) throw codeFailure('code_path_forbidden', '不能打开 Git 管理目录。', 403);
+  return { repositoryId: scope.ref.id, checkoutId: scope.ref.id, location: scope.rootPath, version: '当前文件', kind: 'default', commitHash: null, worktreeGroupId: null, taskId: null, allowNonGit: true };
 }
 
 function fileSource(scope: HarnessDirectory): CodeSource {
@@ -458,6 +463,16 @@ export function createDirectoryWorkbench(
         return open(path.dirname(file));
       }
       case 'directory': {
+        if (input.checkoutId === undefined) {
+          if (input.repositoryPath !== undefined) throw invalid();
+          const source = workspaceFileSource(scope());
+          const result = await readWorkspaceDirectory(source, input.path ?? '', input.showIgnored === true);
+          const latest = workspaceFileSource(scope());
+          if (source.location !== latest.location || source.repositoryId !== latest.repositoryId) {
+            throw codeFailure('code_worktree_identity_changed', '文件来源已变化，请刷新。', 409);
+          }
+          return result;
+        }
         const { source, gitCommonDir } = await currentAsync();
         const result = await readCodeDirectoryAsync(source, input.path ?? '', input.showIgnored === true, gitCommonDir);
         await verifyFileSourceAsync(source);

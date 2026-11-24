@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Alert, App, Button, Empty, Select, Spin, Tag } from 'antd';
+import { Alert, App, Button, Select, Spin, Tag } from 'antd';
 import { InfoCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useFileEditingContext } from '../../workbench/editor/FileEditingContext';
 import { FileEditingPane } from '../../workbench/editor/FileEditingPane';
@@ -27,7 +27,7 @@ import {
   type EditableFileSnapshot,
   type WorkbenchFile,
 } from './api';
-import { collectExplorerLoadTargets, shouldCollapseExplorerTree } from './directory-catalog';
+import { collectExplorerLoadTargets } from './directory-catalog';
 
 export type DirectoryOpenRequest = { source: DirectorySelection | null; path: string; line?: number; nonce: number };
 
@@ -72,7 +72,7 @@ function resolveRelativePath(documentPath: string, href: string): string | null 
 const folderKey = (browserId: string, relative: string) => `${browserId}::${relative}`;
 const sourceName = (location: string, fallback: string) => location.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean).at(-1) || fallback;
 
-export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catalogError, catalogLoading, refreshCatalog, prioritizeRepository, source, requestFor, active, opened, onSaved, initialTreeOpen }: {
+export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catalogError, catalogLoading, refreshCatalog, prioritizeRepository, choosingCheckout, onChooseCheckout, requestFor, active, opened, onSaved, initialTreeOpen }: {
   workspaceId: string;
   scope: DirectoryScope;
   scopeKey: string;
@@ -81,7 +81,8 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
   catalogLoading: boolean;
   refreshCatalog(): Promise<void>;
   prioritizeRepository?(repositoryPath: string): void;
-  source: DirectorySelection | null;
+  choosingCheckout: boolean;
+  onChooseCheckout(value: boolean): void;
   requestFor: (selection: DirectorySelection | null) => DirectoryRequest;
   active: boolean;
   initialTreeOpen?: boolean;
@@ -96,77 +97,23 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
   const [ignored, setIgnored] = useState(false);
 
   const repos = catalog?.repositories ?? [];
-  const [repoScope, setRepoScope] = useState<string[] | undefined>(undefined);
-  const [worktreeScope, setWorktreeScope] = useState<string | undefined | null>(undefined);
-
-  const allSources = useMemo<BrowserSource[]>(() => {
-    if (!repos.length) {
-      return [{
-        id: scope.ref.id,
-        repositoryId: scope.ref.id,
-        repositoryPath: '',
-        checkoutId: null,
-        name: scope.name || sourceName(scope.rootPath, '当前目录'),
-        locationLabel: '当前目录',
-        location: scope.rootPath,
-        selection: null,
-      }];
-    }
-    return repos.flatMap(repo => {
-      const displayCode = repo.path ? (repo.code || repo.name) : (scope.name || repo.code || repo.name);
-      const displayName = repo.path ? repo.name : (scope.name || repo.name);
-      const code = codeRepositoryCode({ name: displayName, code: displayCode });
-      const fullName = codeRepositoryLabel({ name: displayName, code: displayCode });
-      return repo.members.map(member => ({
-        id: member.id,
-        repositoryId: repo.id,
-        repositoryPath: repo.path,
-        checkoutId: member.id,
-        name: repos.length > 1 ? code : (member.isMain ? code : member.name),
-        fullName,
-        locationLabel: member.isMain ? '主工作树' : member.name,
-        location: member.location,
-        branch: member.branch,
-        selection: { repositoryId: repo.id, checkoutId: member.id },
-      }));
-    });
-  }, [repos, scope.name, scope.ref.id, scope.rootPath]);
-
-  const effectiveRepoScope = useMemo(() => {
-    const valid = new Set(repos.map(r => r.path));
-    return (repoScope ?? []).filter(repoPath => valid.has(repoPath));
-  }, [repos, repoScope]);
-
-  const defaultSource = useMemo(() => {
-    if (source?.checkoutId) {
-      const matched = allSources.find(item => item.repositoryId === source.repositoryId && item.checkoutId === source.checkoutId);
-      if (matched) return matched;
-    }
-    const rootRepo = repos.find(item => item.path === '') ?? repos[0];
-    if (rootRepo) {
-      const def = allSources.find(item => item.repositoryId === rootRepo.id && item.checkoutId === rootRepo.checkouts.defaultId)
-        ?? allSources.find(item => item.repositoryId === rootRepo.id);
-      if (def) return def;
-    }
-    return allSources[0];
-  }, [allSources, repos, source?.checkoutId, source?.repositoryId]);
-
-  const singleRepoPath = repos.length === 1 ? repos[0].path : effectiveRepoScope.length === 1 ? effectiveRepoScope[0] : undefined;
-  const singleRepo = singleRepoPath !== undefined ? repos.find(r => r.path === singleRepoPath) : undefined;
-  const singleRepoId = singleRepo?.id;
-  const visibleSources = useMemo<BrowserSource[]>(() => {
-    if (!repos.length) return allSources;
-    let filtered = allSources;
-    if (effectiveRepoScope.length) filtered = filtered.filter(item => effectiveRepoScope.includes(item.repositoryPath));
-    if (worktreeScope === null) return filtered;
-    const targetWtId = worktreeScope ?? (repos.length === 1 ? defaultSource?.checkoutId ?? undefined : undefined);
-    if (targetWtId) {
-      const matched = filtered.filter(item => item.checkoutId === targetWtId);
-      if (matched.length) return matched;
-    }
-    return filtered;
-  }, [allSources, defaultSource?.checkoutId, effectiveRepoScope, repos.length, worktreeScope]);
-  const defaultCollapsedTree = shouldCollapseExplorerTree(visibleSources.length, repos.length, effectiveRepoScope);
+  const [repositoryPath, setRepositoryPath] = useState<string>();
+  const [checkout, setCheckout] = useState<DirectorySelection | null>(null);
+  const root = useMemo<BrowserSource>(() => ({
+    id: `workspace:${scope.ref.id}`, repositoryId: scope.ref.id, repositoryPath: '', checkoutId: null,
+    name: scope.name || sourceName(scope.rootPath, '工作空间目录'), locationLabel: '工作空间目录',
+    location: scope.rootPath, selection: null,
+  }), [scope.ref.id, scope.name, scope.rootPath]);
+  const allSources = useMemo<BrowserSource[]>(() => [root, ...repos.flatMap(repo => repo.members.map(member => ({
+    id: member.id, repositoryId: repo.id, repositoryPath: repo.path, checkoutId: member.id,
+    name: member.isMain ? (repo.code || repo.name) : member.name,
+    fullName: codeRepositoryLabel(repo), locationLabel: member.isMain ? '主工作树' : member.name,
+    location: member.location, branch: member.branch,
+    selection: { repositoryId: repo.id, checkoutId: member.id },
+  })))], [root, repos]);
+  const checkoutSource = checkout ? allSources.find(item => item.repositoryId === checkout.repositoryId && item.checkoutId === checkout.checkoutId) : undefined;
+  const visibleSources = checkout ? (checkoutSource ? [checkoutSource] : []) : [root];
+  const defaultCollapsedTree = false;
 
   const [tabs, setTabs] = useState<DirectoryTab[]>([]);
   const [activeKey, setActiveKey] = useState('');
@@ -216,7 +163,7 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
   }, [ignored]);
 
   const openFile = useCallback((browserId: string, relative: string, line?: number, matchQuery?: string) => {
-    const src = allSourcesRef.current.find(item => item.id === browserId) ?? allSourcesRef.current[0];
+    const src = allSourcesRef.current.find(item => item.id === browserId);
     if (!src || !relative) return;
     const key = JSON.stringify([scopeKey, src.id, relative]);
     setPage(undefined);
@@ -250,10 +197,10 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
       : allSources[0];
     if (!target) return;
     handledNonce.current = opened.nonce;
-    if (repos.length > 1) setRepoScope(prev => prev?.length && !prev.includes(target.repositoryPath) ? [...prev, target.repositoryPath] : prev);
-    if (target.checkoutId) setWorktreeScope(prev => prev === null ? null : target.checkoutId);
+    setCheckout(target.selection);
+    setRepositoryPath(target.selection ? target.repositoryPath : undefined);
     openFile(target.id, opened.path, opened.line);
-  }, [allSources, openFile, opened, repos.length]);
+  }, [allSources, openFile, opened]);
 
   const visibleIdsSignature = visibleSources.map(item => item.id).join(',');
   const expandedKeysKey = expandedKeys.join('|');
@@ -269,13 +216,14 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
   }, [scopeKey, ignored]);
 
   useEffect(() => {
+    if (!active) return;
     const targets = collectExplorerLoadTargets({
       collapsed: defaultCollapsedTree,
       visibleBrowserIds: visibleSourcesRef.current.map(src => src.id),
       expandedKeys,
     });
     for (const target of targets) void loadDirectory(target.browserId, target.relative, false);
-  }, [defaultCollapsedTree, visibleIdsSignature, expandedKeysKey, ignored, scopeKey, loadDirectory]);
+  }, [active, defaultCollapsedTree, visibleIdsSignature, expandedKeysKey, ignored, scopeKey, loadDirectory]);
 
   const refreshDirectories = useCallback(async () => {
     const targets = collectExplorerLoadTargets({
@@ -291,11 +239,11 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
     setFolders(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => keepKeys.has(key))));
     setFolderErrors(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => keepKeys.has(key))));
     await Promise.all([
-      refreshCatalog().catch(() => {}),
+      ...(checkout ? [refreshCatalog().catch(() => {})] : []),
       ...targets.map(target => loadDirectory(target.browserId, target.relative, true)),
     ]);
     bump(v => v + 1);
-  }, [defaultCollapsedTree, expandedKeys, loadDirectory, refreshCatalog]);
+  }, [checkout, defaultCollapsedTree, expandedKeys, loadDirectory, refreshCatalog]);
 
   // Search across visible sources (if single source, send to its request; otherwise sequentially/concurrently)
   const searchLoader = useCallback(async (input: { query: string; mode: 'name' | 'content'; showIgnored: boolean; sourcesKey: string }, signal: AbortSignal) => {
@@ -462,7 +410,10 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
     const duplicate = tabs.some(other => other.key !== tab.key && (other.path.split('/').at(-1) ?? other.path) === name);
     const src = allSources.find(item => item.id === tab.browserId);
     const folderLabel = src ? sourceName(src.location, src.locationLabel) : '';
-    const disambiguation = duplicate ? (repos.length > 1 && src ? `${src.name} · ${folderLabel}` : folderLabel) : '';
+    const sameLocation = src && tabs.some(other => other.browserId !== tab.browserId
+      && other.path.split('/').at(-1) === name
+      && allSources.find(item => item.id === other.browserId)?.location === src.location);
+    const disambiguation = duplicate ? (sameLocation ? `${folderLabel} · ${src.locationLabel}` : folderLabel) : '';
     return {
       key: tab.key,
       kind: /\.md$/i.test(tab.path) ? 'doc' as const : 'svc' as const,
@@ -479,33 +430,24 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
     const displayName = repo.path ? repo.name : (scope.name || repo.name);
     return { value: repo.path, label: codeRepositoryCode({ name: displayName, code: displayCode }), title: codeRepositoryLabel({ name: displayName, code: displayCode }) };
   });
-  const worktreeMembers = useMemo(() => singleRepo?.members ?? [], [singleRepo]);
-  const selectedWorktree = singleRepoId && visibleSources.length === 1 ? worktreeMembers.find(m => m.id === visibleSources[0].checkoutId) : undefined;
-  const worktreeOptions = worktreeMembers.map(member => ({
-    value: member.id,
-    label: member.isMain ? '主工作树' : member.name,
-    role: [member.isMain ? 'Git 主工作树' : '独立工作树', member.branch, member.status === 'offline' ? '暂不可用' : ''].filter(Boolean).join(' · '),
-    title: member.location,
-  }));
-
-  const contextControl = repos.length > 0 ? <section className="code-root-selectors" aria-label="代码库与工作树筛选">
-    {repos.length > 1 && <Select mode="multiple" optionFilterProp="title" allowClear maxTagCount={1} classNames={{ popup: { root: 'code-source-picker-popup' } }} aria-label="筛选代码库" placeholder="全部代码库" value={effectiveRepoScope} onChange={paths => {
-      setRepoScope(paths);
-      setWorktreeScope(undefined);
-      const pendingPath = paths.find(p => repos.find(r => r.path === p)?.pending);
-      if (pendingPath !== undefined) prioritizeRepository?.(pendingPath);
-    }} options={repositoryOptions} popupRender={selectPopupGuard} />}
-    <Select allowClear showSearch optionFilterProp="label" classNames={{ popup: { root: 'code-source-picker-popup' } }} aria-label="筛选工作树" placeholder={singleRepoId ? '全部工作树' : '先选择一个代码库'} disabled={!singleRepoId} value={selectedWorktree?.id} onChange={id => setWorktreeScope(id ?? null)} options={worktreeOptions} popupRender={selectPopupGuard}
-      optionRender={option => <div className="code-worktree-option" data-code-worktree-id={option.value} title={option.data.title}><span>{option.data.label}</span>{option.data.role && <small>{option.data.role}</small>}</div>} />
-    <small>{repos.length > 1 ? '选择代码库和工作树，查看对应文件' : '切换工作树或留空查看全部'}</small>
-  </section> : null;
-
+  const selectedRepo = repos.find(repo => repo.path === repositoryPath);
+  const contextControl = <section className="code-root-selectors" aria-label="浏览来源">
+    {!choosingCheckout ? <Button size="small" type="link" onClick={() => onChooseCheckout(true)}>选择工作树</Button> : <>
+      <Button size="small" type="link" onClick={() => { setCheckout(null); setRepositoryPath(undefined); onChooseCheckout(false); }}>返回工作空间目录</Button>
+      <Select showSearch optionFilterProp="title" aria-label="选择代码库" placeholder="选择代码库" value={repositoryPath} loading={catalogLoading}
+        onChange={value => { setRepositoryPath(value); prioritizeRepository?.(value); }} options={repositoryOptions} popupRender={selectPopupGuard} />
+      <Select showSearch optionFilterProp="label" aria-label="选择工作树" placeholder="选择工作树" disabled={!selectedRepo} loading={Boolean(selectedRepo?.pending)}
+        value={checkout?.repositoryId === selectedRepo?.id ? checkout?.checkoutId : undefined}
+        onChange={id => { if (selectedRepo) setCheckout({ repositoryId: selectedRepo.id, checkoutId: id }); }}
+        options={selectedRepo?.members.map(member => ({ value: member.id, label: member.isMain ? '主工作树' : member.name, title: member.location }))} popupRender={selectPopupGuard} />
+    </>}
+  </section>;
   const inScope = Boolean(!activeTab || visibleSources.some(src => src.id === activeTab.browserId));
   const includeActive = () => {
-    if (!activeTab) return;
-    const targetRepoPath = activeSource?.repositoryPath ?? repos.find(r => r.id === activeTab.repositoryId)?.path;
-    if (repos.length > 1 && targetRepoPath !== undefined) setRepoScope(prev => prev?.length ? [...new Set([...prev, targetRepoPath])] : [targetRepoPath]);
-    setWorktreeScope(activeTab.checkoutId ?? null);
+    if (!activeSource) return;
+    setCheckout(activeSource.selection);
+    setRepositoryPath(activeSource.selection ? activeSource.repositoryPath : undefined);
+    if (activeSource.selection) onChooseCheckout(true);
   };
 
   const openActiveFolder = activeTab && file && !read.error
@@ -532,10 +474,9 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
         <ObjectTabStrip panelId={panelId} className="code-open-files" label="打开的文件" tabs={fileTabs} active={activeTab?.key} onActivate={key => { setActiveKey(key); setPage(undefined); }} onClose={closeTab} />
         {(tabs.length > 0 || treeHidden) && <ReadingToggle iconOnly className="code-reading-toggle" expanded={treeHidden} onToggle={() => setTreeHidden(value => !value)} />}
       </div>
-      {catalogError && <Alert type="warning" message={catalogError} action={<Button onClick={() => void refreshCatalog()}>重试</Button>} />}
+      {choosingCheckout && catalogError && <Alert type="warning" message={catalogError} action={<Button onClick={() => void refreshCatalog()}>重试</Button>} />}
       {activeTab && !inScope && <div className="code-range-outside">当前文件不在筛选范围内。<Button type="link" size="small" onClick={includeActive}>加入范围</Button></div>}
-      {catalogLoading && !catalog && <div className="repository-reading-empty"><Spin /> 正在读取目录…</div>}
-      {catalog && repos.length > 0 && visibleSources.length === 0 && repos.some(repo => repo.pending) && <div className="repository-reading-empty"><Spin size="small" /> 正在核对仓库…</div>}
+      {checkout && !checkoutSource && <Alert type="warning" message={catalogLoading ? '正在核对所选工作树…' : '所选工作树暂不可读取，请重新选择。'} />}
       <div className="object-tab-panel" id={panelId} role={activeTab ? 'tabpanel' : undefined} aria-labelledby={activeTab ? tabElementId(panelId, activeTab.key) : undefined} tabIndex={activeTab ? 0 : undefined}>
         <RepositoryFileBrowser
           global
@@ -607,7 +548,7 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
           treeNotice={<>
             {(searchPartial || partialTree) && <div className="code-tree-coverage" role="status"><InfoCircleOutlined /><span>{searchPartial ? '搜索未完整返回。每个工作树最多 100 个文件、200 条匹配行，请缩小关键词或范围。' : '目录达到读取上限，显示部分文件。'}</span></div>}
             <CodeExplorerNotices notices={[
-              { kind: 'sources', title: '部分来源信息未能确认', details: [catalogError, catalog?.diagnostic || ''].filter(Boolean) },
+              { kind: 'sources', title: '部分来源信息未能确认', details: choosingCheckout ? [catalogError, catalog?.diagnostic || ''].filter(Boolean) : [] },
               { kind: 'search', title: '部分搜索范围未完整读取', details: [searchRead.error, ...searchDiagnosticDetails].filter(Boolean) },
               { kind: 'directories', title: '部分目录暂不可读取', details: directoryFailureDetails },
             ]} onRetry={kind => {
@@ -617,7 +558,6 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
             }} />
           </>}
         />
-        {!catalogLoading && repos.length === 0 && !visibleSources.length && <Empty description="没有可读取的目录内容" />}
       </div>
     </div>
     <CodeTreePane side="right" hidden={treeHidden} onHost={setHost} storageKey={`buildr.harness.tree-width.${workspaceId}`} />
