@@ -399,3 +399,79 @@ test('repository inventory uses in-scope registrations and resumes ordinary shal
   time += 6*60_000;
   assert.throws(() => discover(local,first.nextCursor!), {code:'code_directory_discovery_expired'});
 });
+
+test('async git identity, discovery artifact filtering, single-repo topologyRevision and explorer directory listing behave consistently', async t => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'harness-async-perf-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const { localGitIdentity, localGitIdentityAsync } = await import('../../src/workbench/local-git.ts');
+
+  const workspace = path.join(root, 'workspace');
+  const serviceA = path.join(workspace, 'services', 'java-svc');
+  const nestedRepo = path.join(serviceA, 'extra', 'nested');
+  const plainDir = path.join(workspace, 'plain');
+  fs.mkdirSync(serviceA, { recursive: true });
+  fs.mkdirSync(nestedRepo, { recursive: true });
+  fs.mkdirSync(plainDir, { recursive: true });
+
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync('git', ['-C', cwd, ...args], { env: codeGitEnvironment(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+
+  git(serviceA, '-c', 'init.templateDir=', 'init', '-q', '-b', 'main');
+  git(serviceA, 'config', 'user.name', 'Perf Tester');
+  git(serviceA, 'config', 'user.email', 'perf@example.invalid');
+  git(serviceA, 'config', 'commit.gpgSign', 'false');
+  fs.writeFileSync(path.join(serviceA, 'pom.xml'), '<project/>\n');
+  fs.writeFileSync(path.join(serviceA, '.gitignore'), 'target/\n.idea/\nlogs/\n');
+  git(serviceA, 'add', '.');
+  git(serviceA, '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'init java svc');
+
+  // Create >2100 build/IDE directories inside target/.idea/logs that discovery must skip without truncation.
+  for (let i = 0; i < 2120; i++) {
+    fs.mkdirSync(path.join(serviceA, 'target', 'classes', `pkg_${i}`), { recursive: true });
+  }
+  fs.mkdirSync(path.join(serviceA, '.idea', 'modules'), { recursive: true });
+  fs.mkdirSync(path.join(serviceA, 'logs', 'archive'), { recursive: true });
+
+  git(nestedRepo, '-c', 'init.templateDir=', 'init', '-q', '-b', 'main');
+  git(nestedRepo, 'config', 'user.name', 'Perf Tester');
+  git(nestedRepo, 'config', 'user.email', 'perf@example.invalid');
+  git(nestedRepo, 'config', 'commit.gpgSign', 'false');
+  fs.writeFileSync(path.join(nestedRepo, 'readme.md'), 'nested\n');
+  git(nestedRepo, 'add', '.');
+  git(nestedRepo, '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'init nested');
+
+  // 1. localGitIdentity === localGitIdentityAsync and matching errors for subdir / non-git
+  assert.deepEqual(await localGitIdentityAsync(serviceA), localGitIdentity(serviceA));
+  await assert.rejects(() => localGitIdentityAsync(plainDir), (err: any) => err?.code === 'code_checkout_unavailable');
+  await assert.rejects(() => localGitIdentityAsync(path.join(serviceA, 'extra')), (err: any) => err?.code === 'code_checkout_unavailable');
+
+  // 2. Non-git workspace root with nested repositories: no 2048 truncation, root '' error does not null out topologyRevision
+  const host = new HarnessDirectoryHost(path.join(root, 'profile'));
+  const scope = host.register(workspace);
+  const run = createDirectoryWorkbench(host);
+  const call = (operation: string, input: object = {}) =>
+    run(operation, { scopeId: scope.ref.id, scopeRevision: scope.revision, ...input }) as Promise<any>;
+
+  const checkouts = await call('checkouts');
+  assert.equal(checkouts.truncated, false);
+  assert.deepEqual(checkouts.repositories.map((r: any) => r.path).sort(), ['services/java-svc', 'services/java-svc/extra/nested']);
+
+  const fullCatalog = await call('catalog');
+  assert.equal(fullCatalog.truncated, false);
+  assert.ok(fullCatalog.topologyRevision);
+
+  // 3. Single-repo catalog topologyRevision matches git-topology repositoryRevisions[0].revision
+  const singleCatalog = await call('catalog', { repositoryPath: 'services/java-svc' });
+  assert.equal(singleCatalog.repositories.length, 1);
+  const topo = await call('git-topology', { repositoryPaths: ['services/java-svc'] });
+  assert.equal(singleCatalog.topologyRevision, topo.repositoryRevisions[0].revision);
+
+  // 4. Async directory listing works for both non-git root and git checkout (and still exposes ignored target when showIgnored=true)
+  const rootListing = await call('directory', { path: '' });
+  assert.ok(rootListing.entries.some((e: any) => e.path === 'plain' && e.kind === 'directory'));
+  const svcRepo = singleCatalog.repositories[0];
+  const hiddenDefault = await call('directory', { repositoryPath: 'services/java-svc', checkoutId: svcRepo.checkouts.defaultId, path: '' });
+  assert.equal(hiddenDefault.entries.some((e: any) => e.path === 'target'), false);
+  const shownIgnored = await call('directory', { repositoryPath: 'services/java-svc', checkoutId: svcRepo.checkouts.defaultId, path: '', showIgnored: true });
+  assert.equal(shownIgnored.entries.some((e: any) => e.path === 'target'), true);
+});

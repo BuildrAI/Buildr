@@ -4,16 +4,28 @@ import { randomUUID } from 'node:crypto';
 import { parse } from 'yaml';
 import { executionScopeRef } from '../execution-contracts.ts';
 import type { HarnessDirectory } from './directory-host.ts';
-import { codeFailure, codeGit, fallbackIgnored, relativeCodePath } from '../workbench/code-file-reader.ts';
+import { codeFailure, codeGit, codeGitAsync, fallbackIgnored, relativeCodePath } from '../workbench/code-file-reader.ts';
 import { normalizeFilesystemPath, sameFilesystemPath } from '../workbench/filesystem-path-identity.ts';
-import { readGitWorktreeRecords } from '../workbench/git-worktree-list.ts';
-import { localGitIdentity } from '../workbench/local-git.ts';
+import { parseGitWorktreeRecord, readGitWorktreeRecords } from '../workbench/git-worktree-list.ts';
+import { localGitIdentity, localGitIdentityAsync, type LocalGitIdentity } from '../workbench/local-git.ts';
 import { SOURCE_CONTROL_LIMITS } from '../workbench/source-control-git-reader.ts';
 
 const lexicalPath = (a:string,b:string) => normalizeFilesystemPath(a)===normalizeFilesystemPath(b);
 const missing = () => codeFailure('code_worktree_identity_changed', '所选工作树不再属于此仓库或身份已变化；未切换到其他目录。', 409);
 
-function checkMember(location: string, anchor: ReturnType<typeof localGitIdentity>) {
+/** Additional build/IDE artifact directories excluded only during repository discovery, never from explorer directory listings. */
+const discoveryIgnored = new Set([
+  ...fallbackIgnored,
+  'target', '.gradle', '.idea', '.vscode', '.next', '.nuxt', '.cache',
+  '__pycache__', '.venv', 'venv', 'Pods', 'DerivedData', 'coverage', 'logs',
+]);
+
+const checkoutCommonDirs = new WeakMap<object, string>();
+export function observedCheckoutCommonDir(checkouts: object): string | undefined {
+  return checkoutCommonDirs.get(checkouts);
+}
+
+function checkMember(location: string, anchor: LocalGitIdentity) {
   const root = fs.realpathSync(location);
   if (!lexicalPath(root, location)) throw missing();
   const git = localGitIdentity(root);
@@ -21,8 +33,16 @@ function checkMember(location: string, anchor: ReturnType<typeof localGitIdentit
   return { root, git };
 }
 
+async function checkMemberAsync(location: string, anchor: LocalGitIdentity) {
+  const root = await fs.promises.realpath(location);
+  if (!lexicalPath(root, location)) throw missing();
+  const git = await localGitIdentityAsync(root);
+  if (!sameFilesystemPath(git.commonDir, anchor.commonDir)) throw missing();
+  return { root, git };
+}
+
 export function observeDirectoryCheckouts(root: string) {
-  let anchor: ReturnType<typeof localGitIdentity>;
+  let anchor: LocalGitIdentity;
   try { anchor = localGitIdentity(root); }
   catch (error) { return { defaultId: null, members: [], truncated: false, diagnostic: (error as Error).message }; }
   const records = readGitWorktreeRecords(root);
@@ -31,13 +51,59 @@ export function observeDirectoryCheckouts(root: string) {
   const ordered = [records.find(record => sameFilesystemPath(record.declared, root))!, ...records.filter(record => !sameFilesystemPath(record.declared, root))];
   const members = ordered.slice(0, SOURCE_CONTROL_LIMITS.worktrees).flatMap(record => {
     try {
+      if (sameFilesystemPath(record.declared, root)) {
+        const location = fs.realpathSync(record.declared);
+        if (!lexicalPath(location, record.declared)) throw missing();
+        return [{ id: anchor.id, location, name: path.basename(location), branch: record.branch, head: record.head, isMain: anchor.isMain }];
+      }
       const { root: location, git } = checkMember(record.declared, anchor);
       return [{ id: git.id, location, name: path.basename(location), branch: record.branch, head: record.head, isMain: git.isMain }];
     } catch { return []; }
   });
   if (localGitIdentity(root).id !== anchor.id || !members.some(member => member.id === anchor.id)) throw missing();
-  return { defaultId: anchor.id, members, truncated: ordered.length > SOURCE_CONTROL_LIMITS.worktrees,
+  const result = { defaultId: anchor.id, members, truncated: ordered.length > SOURCE_CONTROL_LIMITS.worktrees,
     diagnostic: members.length < Math.min(ordered.length, SOURCE_CONTROL_LIMITS.worktrees) ? '部分 Git 工作树目录已失效或暂不可读。' : null };
+  checkoutCommonDirs.set(result, anchor.commonDir);
+  return result;
+}
+
+export async function observeDirectoryCheckoutsAsync(
+  root: string,
+  preObserved?: { anchor?: LocalGitIdentity; worktreeOutput?: Buffer },
+) {
+  let anchor: LocalGitIdentity;
+  try { anchor = preObserved?.anchor ?? await localGitIdentityAsync(root); }
+  catch (error) { return { defaultId: null, members: [], truncated: false, diagnostic: (error as Error).message }; }
+  const rawWorktrees = preObserved?.worktreeOutput ?? await codeGitAsync(root, ['worktree', 'list', '--porcelain', '-z'], 8 * 1024 * 1024);
+  const records = rawWorktrees.toString('utf8').split('\0\0').filter(Boolean).map(parseGitWorktreeRecord);
+  if (!records.some(record => sameFilesystemPath(record.declared, root))) throw missing();
+  const ordered = [records.find(record => sameFilesystemPath(record.declared, root))!, ...records.filter(record => !sameFilesystemPath(record.declared, root))];
+  const bounded = ordered.slice(0, SOURCE_CONTROL_LIMITS.worktrees);
+  const slots: Array<{ id: string; location: string; name: string; branch: string | null; head: string | null; isMain: boolean } | null> = new Array(bounded.length).fill(null);
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(6, bounded.length) }, async () => {
+    for (;;) {
+      const index = cursor++;
+      if (index >= bounded.length) return;
+      const record = bounded[index]!;
+      try {
+        if (sameFilesystemPath(record.declared, root)) {
+          const location = await fs.promises.realpath(record.declared);
+          if (!lexicalPath(location, record.declared)) throw missing();
+          slots[index] = { id: anchor.id, location, name: path.basename(location), branch: record.branch, head: record.head, isMain: anchor.isMain };
+        } else {
+          const { root: location, git } = await checkMemberAsync(record.declared, anchor);
+          slots[index] = { id: git.id, location, name: path.basename(location), branch: record.branch, head: record.head, isMain: git.isMain };
+        }
+      } catch { slots[index] = null; }
+    }
+  }));
+  const members = slots.filter((item): item is NonNullable<typeof item> => item !== null);
+  if ((await localGitIdentityAsync(root)).id !== anchor.id || !members.some(member => member.id === anchor.id)) throw missing();
+  const result = { defaultId: anchor.id, members, truncated: ordered.length > SOURCE_CONTROL_LIMITS.worktrees,
+    diagnostic: members.length < bounded.length ? '部分 Git 工作树目录已失效或暂不可读。' : null };
+  checkoutCommonDirs.set(result, anchor.commonDir);
+  return result;
 }
 
 export function resolveDirectoryCheckout(root: string, id: string) {
@@ -54,23 +120,56 @@ export function resolveDirectoryCheckout(root: string, id: string) {
   throw missing();
 }
 
+export async function resolveDirectoryCheckoutAsync(root: string, id: string, preObservedAnchor?: LocalGitIdentity) {
+  const anchor = preObservedAnchor ?? await localGitIdentityAsync(root);
+  if (anchor.id === id) {
+    const real = await fs.promises.realpath(root);
+    if (!lexicalPath(real, root)) throw missing();
+    return { root: real, git: anchor };
+  }
+  const rawWorktrees = await codeGitAsync(root, ['worktree', 'list', '--porcelain', '-z'], 8 * 1024 * 1024);
+  const records = rawWorktrees.toString('utf8').split('\0\0').filter(Boolean).map(parseGitWorktreeRecord);
+  if (!records.some(record => sameFilesystemPath(record.declared, root))) throw missing();
+  const ranked = records.filter(record => !sameFilesystemPath(record.declared, root)).slice(0, SOURCE_CONTROL_LIMITS.worktrees - 1).map(record => record.declared);
+  for (const location of ranked) {
+    const member = await checkMemberAsync(location, anchor).catch(() => null);
+    if (member?.git.id === id) {
+      if ((await localGitIdentityAsync(root)).id !== anchor.id) throw missing();
+      return member;
+    }
+  }
+  throw missing();
+}
+
 const maxDirectories = 2048;
 
-function discoverGitCandidateDirectories(location: string): string[] {
+function parseCandidateDirectories(statusOutput: string, indexOutput: string): string[] {
   const candidates = new Set<string>();
-  const statusOutput = codeGit(location, ['status', '--porcelain=v2', '--ignored=matching', '--untracked-files=normal', '-z'], 16 * 1024 * 1024).toString('utf8');
   for (const record of statusOutput.split('\0')) {
     if (!record || (!record.startsWith('? ') && !record.startsWith('! '))) continue;
     const entry = record.slice(2);
     if (entry.endsWith('/')) candidates.add(entry.slice(0, -1));
   }
-  const indexOutput = codeGit(location, ['ls-files', '--stage', '-z'], 32 * 1024 * 1024).toString('utf8');
   for (const record of indexOutput.split('\0')) {
     if (!record.startsWith('160000 ')) continue;
     const tab = record.indexOf('\t');
     if (tab > 0) candidates.add(record.slice(tab + 1));
   }
   return [...candidates].filter(Boolean);
+}
+
+function discoverGitCandidateDirectories(location: string): string[] {
+  const statusOutput = codeGit(location, ['status', '--porcelain=v2', '--ignored=matching', '--untracked-files=normal', '-z'], 16 * 1024 * 1024).toString('utf8');
+  const indexOutput = codeGit(location, ['ls-files', '--stage', '-z'], 32 * 1024 * 1024).toString('utf8');
+  return parseCandidateDirectories(statusOutput, indexOutput);
+}
+
+async function discoverGitCandidateDirectoriesAsync(location: string): Promise<string[]> {
+  const [statusBuf, indexBuf] = await Promise.all([
+    codeGitAsync(location, ['status', '--porcelain=v2', '--ignored=matching', '--untracked-files=normal', '-z'], 16 * 1024 * 1024),
+    codeGitAsync(location, ['ls-files', '--stage', '-z'], 32 * 1024 * 1024),
+  ]);
+  return parseCandidateDirectories(statusBuf.toString('utf8'), indexBuf.toString('utf8'));
 }
 
 /** Discover Git roots in the selected directory, not Development registrations. */
@@ -102,7 +201,7 @@ export function observeDirectoryRepositories(root: string, scopeId: string) {
             for (const sub of discoverGitCandidateDirectories(location)) {
               if (++entries >= 32768) { truncated = true; break; }
               const segments = sub.split('/');
-              if (segments.some(segment => !segment || segment === '.' || segment === '..' || segment.toLowerCase() === '.git' || fallbackIgnored.has(segment))) continue;
+              if (segments.some(segment => !segment || segment === '.' || segment === '..' || segment.toLowerCase() === '.git' || discoveryIgnored.has(segment))) continue;
               const childLocation = path.join(location, sub);
               const normalizedChild = normalizeFilesystemPath(childLocation);
               if (skipLocations.has(normalizedChild) || queuedLocations.has(normalizedChild)) continue;
@@ -120,7 +219,7 @@ export function observeDirectoryRepositories(root: string, scopeId: string) {
       const directory = fs.opendirSync(location);
       try {
         for (let entry; entries++ < 32768 && (entry = directory.readSync());) {
-          if (!entry.isDirectory() || entry.name.toLowerCase()==='.git' || fallbackIgnored.has(entry.name)) continue;
+          if (!entry.isDirectory() || entry.name.toLowerCase()==='.git' || discoveryIgnored.has(entry.name)) continue;
           const normalizedChild = normalizeFilesystemPath(path.join(location, entry.name));
           if (skipLocations.has(normalizedChild) || queuedLocations.has(normalizedChild)) continue;
           if (visited + queue.length >= maxDirectories) { truncated = true; continue; }
@@ -132,6 +231,107 @@ export function observeDirectoryRepositories(root: string, scopeId: string) {
   }
   if(entries>=32768) truncated = true;
   return {repositories, truncated, diagnostic:unavailable?'部分目录或仓库暂不可核对。':!repositories.length&&!truncated?'当前目录范围没有发现 Git 仓库。':null};
+}
+
+export async function observeDirectoryRepositoriesAsync(root: string, scopeId: string) {
+  const queue = [''], seen = new Set<string>(), skipLocations = new Set<string>(), queuedLocations = new Set<string>([normalizeFilesystemPath(root)]);
+  const repositories: Array<{id:string;path:string;name:string;checkouts:ReturnType<typeof observeDirectoryCheckouts>}> = [];
+  let visited = 0, entries = 0, truncated = false, unavailable = false;
+  while (queue.length && !truncated) {
+    const availableSlots = Math.min(8, queue.length, maxDirectories - visited);
+    if (availableSlots <= 0 || repositories.length >= SOURCE_CONTROL_LIMITS.repositories || entries >= 32768) {
+      truncated = true;
+      break;
+    }
+    const batch = queue.splice(0, availableSlots);
+    visited += batch.length;
+    const batchResults = await Promise.all(batch.map(async relative => {
+      const location = path.join(root, relative);
+      const normalized = normalizeFilesystemPath(location);
+      if (relative && skipLocations.has(normalized)) return null;
+      try {
+        const real = await fs.promises.realpath(location);
+        if (!lexicalPath(real, location)) return { kind: 'unavailable' as const };
+        const marker = await fs.promises.lstat(path.join(location, '.git')).catch(() => null);
+        if (marker && (marker.isDirectory() || marker.isFile())) {
+          try {
+            const git = await localGitIdentityAsync(location);
+            const [checkouts, candidates] = await Promise.all([
+              observeDirectoryCheckoutsAsync(location, { anchor: git }),
+              discoverGitCandidateDirectoriesAsync(location).then(list => ({ ok: true as const, list })).catch(() => ({ ok: false as const, list: [] as string[] })),
+            ]);
+            if (candidates.ok) {
+              return { kind: 'git' as const, relative, location, normalized, git, checkouts, subDirs: candidates.list };
+            }
+            const children = await readNonGitChildrenAsync(location);
+            return { kind: 'git-fallback' as const, relative, location, normalized, git, checkouts, children };
+          } catch {
+            // Fall through to non-Git walk if Git identity failed, matching sync behavior.
+          }
+        }
+        const children = await readNonGitChildrenAsync(location);
+        return { kind: 'dir' as const, relative, location, children, unavailableMarker: Boolean(marker && (marker.isDirectory() || marker.isFile())) };
+      } catch {
+        return { kind: 'unavailable' as const };
+      }
+    }));
+
+    for (const item of batchResults) {
+      if (!item) continue;
+      if (item.kind === 'unavailable') { unavailable = true; continue; }
+      if (item.kind === 'dir' && item.unavailableMarker) unavailable = true;
+      if (item.kind === 'git' || item.kind === 'git-fallback') {
+        if (!seen.has(item.git.commonDir)) {
+          if (repositories.length >= SOURCE_CONTROL_LIMITS.repositories) { truncated = true; break; }
+          seen.add(item.git.commonDir);
+          skipLocations.add(item.normalized);
+          for (const member of item.checkouts.members) skipLocations.add(normalizeFilesystemPath(member.location));
+          repositories.push({ id: item.relative ? item.git.id : scopeId, path: item.relative, name: path.basename(item.location), checkouts: item.checkouts });
+        }
+        if (item.kind === 'git') {
+          for (const sub of item.subDirs) {
+            if (++entries >= 32768) { truncated = true; break; }
+            const segments = sub.split('/');
+            if (segments.some(segment => !segment || segment === '.' || segment === '..' || segment.toLowerCase() === '.git' || discoveryIgnored.has(segment))) continue;
+            const childLocation = path.join(item.location, sub);
+            const normalizedChild = normalizeFilesystemPath(childLocation);
+            if (skipLocations.has(normalizedChild) || queuedLocations.has(normalizedChild)) continue;
+            if (visited + queue.length >= maxDirectories) { truncated = true; continue; }
+            queuedLocations.add(normalizedChild);
+            queue.push(item.relative ? item.relative + '/' + sub : sub);
+          }
+          continue;
+        }
+      }
+      for (const name of item.children) {
+        if (entries++ >= 32768) { truncated = true; break; }
+        if (name.toLowerCase() === '.git' || discoveryIgnored.has(name)) continue;
+        const normalizedChild = normalizeFilesystemPath(path.join(item.location, name));
+        if (skipLocations.has(normalizedChild) || queuedLocations.has(normalizedChild)) continue;
+        if (visited + queue.length >= maxDirectories) { truncated = true; continue; }
+        queuedLocations.add(normalizedChild);
+        queue.push(item.relative ? item.relative + '/' + name : name);
+      }
+    }
+  }
+  if (entries >= 32768) truncated = true;
+  return { repositories, truncated, diagnostic: unavailable ? '部分目录或仓库暂不可核对。' : !repositories.length && !truncated ? '当前目录范围没有发现 Git 仓库。' : null };
+}
+
+async function readNonGitChildrenAsync(location: string): Promise<string[]> {
+  const directory = await fs.promises.opendir(location);
+  const children: string[] = [];
+  let closed = false;
+  try {
+    let count = 0;
+    for await (const entry of directory) {
+      if (count++ >= 32768) { closed = true; break; }
+      if (entry.isDirectory()) children.push(entry.name);
+    }
+  } finally {
+    if (!closed) { try { await directory.close(); } catch { /* already closed */ } }
+  }
+  return children;
 }
 
 export type DirectoryRepositoryHint = { path: string; name: string };
@@ -170,7 +370,7 @@ function registeredHints(directory: HarnessDirectory): DirectoryRepositoryHint[]
         const relative = item.source.path === '.' ? '' : relativeCodePath(item.source.path, true);
         return [{path:relative, name:typeof item.name === 'string' && item.name.trim() ? item.name : path.basename(relative || directory.rootPath)}];
       } catch { return []; }
-    });
+    }).sort((a, b) => Number(a.path !== '') - Number(b.path !== ''));
   } catch { return null; }
 }
 
@@ -209,7 +409,7 @@ export function createDirectoryRepositoryDiscovery(now = Date.now) {
     const candidate = (parent: ScanItem, relative: string) => {
       if (++scan.entries >= discoveryEntryLimit) { scan.limited = true; return; }
       const pieces = relative.split('/');
-      if (pieces.some(piece => !piece || piece === '.' || piece === '..' || piece.toLowerCase() === '.git' || fallbackIgnored.has(piece))) return;
+      if (pieces.some(piece => !piece || piece === '.' || piece === '..' || piece.toLowerCase() === '.git' || discoveryIgnored.has(piece))) return;
       const next = parent.path ? parent.path + '/' + relative : relative;
       if (scan.seen.has(next)) return;
       if (scan.seen.size >= discoveryDirectoryLimit) { scan.limited = true; return; }
@@ -266,5 +466,16 @@ export function resolveDirectoryRepository(root: string, scopeId: string, reposi
     if ((!marker.isFile()&&!marker.isDirectory()) || !lexicalPath(fs.realpathSync(location),location)) throw missing();
     const git=localGitIdentity(location);
     return {location, id: relative ? git.id : scopeId};
+  } catch { throw missing(); }
+}
+
+export async function resolveDirectoryRepositoryAsync(root: string, scopeId: string, repositoryPath: string) {
+  const relative = relativeCodePath(repositoryPath, true), location = path.join(root, relative);
+  try {
+    const marker = await fs.promises.lstat(path.join(location, '.git'));
+    const real = await fs.promises.realpath(location);
+    if ((!marker.isFile() && !marker.isDirectory()) || !lexicalPath(real, location)) throw missing();
+    const git = await localGitIdentityAsync(location);
+    return { location, id: relative ? git.id : scopeId, git };
   } catch { throw missing(); }
 }

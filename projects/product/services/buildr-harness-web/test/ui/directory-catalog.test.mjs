@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadDirectoryCatalog } from '../../src/features/directory-workbench/directory-catalog.ts';
+import { collectExplorerLoadTargets, loadDirectoryCatalog, shouldCollapseExplorerTree } from '../../src/features/directory-workbench/directory-catalog.ts';
 
 const hint = path => ({path,name:path});
 const response = path => ({readAt:'later',repositories:[{...hint(path),id:'actual:'+path,gitId:'git:'+path,checkouts:{defaultId:path,members:[],truncated:false},members:[]}]});
@@ -31,4 +31,23 @@ test('directory names publish before scoped reads; a later click takes the next 
   const more = await continuation;
   assert.deepEqual(more.repositories.map(repo => repo.path),['slow','fast','third','last','nested']);
   assert.deepEqual(calls,['slow','fast','last','third','nested']);
+});
+
+test('multi-repo explorer keeps tree collapsed and loads only expanded directories on demand', () => {
+  assert.equal(shouldCollapseExplorerTree(1, 29, []), true);
+  assert.equal(shouldCollapseExplorerTree(1, 29, ['repositories/freshx-pigs']), false);
+  assert.equal(shouldCollapseExplorerTree(1, 1, []), false);
+
+  assert.deepEqual(
+    collectExplorerLoadTargets({ collapsed: true, visibleBrowserIds: ['r1', 'r2', 'r3'], expandedKeys: [] }),
+    [],
+  );
+  assert.deepEqual(
+    collectExplorerLoadTargets({ collapsed: true, visibleBrowserIds: ['r1', 'r2'], expandedKeys: ['r2::', 'r2::src', 'hidden::src'] }),
+    [{ browserId: 'r2', relative: '' }, { browserId: 'r2', relative: 'src' }],
+  );
+  assert.deepEqual(
+    collectExplorerLoadTargets({ collapsed: false, visibleBrowserIds: ['r1'], expandedKeys: ['r1::', 'r1::docs'] }),
+    [{ browserId: 'r1', relative: '' }, { browserId: 'r1', relative: 'docs' }],
+  );
 });

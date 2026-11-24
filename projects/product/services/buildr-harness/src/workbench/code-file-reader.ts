@@ -37,40 +37,99 @@ export async function gitCommonDirectoryAsync(root: string): Promise<string> {
   return fs.promises.realpath(path.resolve(root, value));
 }
 const metadataLocations=new WeakMap<CodeSource,string>();
+function verifyResolvedPath(source: CodeSource, real: string, metadata: string) {
+  if (!insideFilesystemPath(source.location, real)) throw codeFailure('code_path_forbidden', '符号链接指向所选代码库之外。', 403);
+  const actualRelative = path.relative(source.location, real);
+  if (actualRelative.split(path.sep).some(p => p.toLowerCase() === '.git') || (metadata && insideFilesystemPath(metadata, real))) {
+    throw codeFailure('code_path_forbidden', '不能读取 Git 管理目录。', 403);
+  }
+  return real;
+}
 export function localPath(source:CodeSource,relative:string) {
   const root=source.location;
   const candidate=path.join(root,relative);
   let real:string; try { real=fs.realpathSync(candidate); } catch { throw codeFailure('code_file_missing','所选目录或文件不存在，或当前不可读取。',404); }
   if (!insideFilesystemPath(root,real)) throw codeFailure('code_path_forbidden','符号链接指向所选代码库之外。',403);
-  const actualRelative=path.relative(root,real);
   let metadata=metadataLocations.get(source);if (metadata === undefined) {
     try { metadata = gitCommonDirectory(root); }
     catch (error) { if (!source.allowNonGit) throw error; metadata = ''; }
     metadataLocations.set(source, metadata);
   }
-  if(actualRelative.split(path.sep).some(p=>p.toLowerCase()==='.git')||(metadata&&insideFilesystemPath(metadata,real)))throw codeFailure('code_path_forbidden','不能读取 Git 管理目录。',403);
-  return real;
+  return verifyResolvedPath(source, real, metadata);
+}
+export async function localPathAsync(source: CodeSource, relative: string, preVerifiedGitCommonDir?: string): Promise<string> {
+  const root = source.location;
+  const candidate = path.join(root, relative);
+  let real: string;
+  try { real = await fs.promises.realpath(candidate); }
+  catch { throw codeFailure('code_file_missing', '所选目录或文件不存在，或当前不可读取。', 404); }
+  if (!insideFilesystemPath(root, real)) throw codeFailure('code_path_forbidden', '符号链接指向所选代码库之外。', 403);
+  let metadata = metadataLocations.get(source);
+  if (metadata === undefined) {
+    if (preVerifiedGitCommonDir !== undefined) {
+      metadata = preVerifiedGitCommonDir;
+    } else {
+      try { metadata = await gitCommonDirectoryAsync(root); }
+      catch (error) { if (!source.allowNonGit) throw error; metadata = ''; }
+    }
+    metadataLocations.set(source, metadata);
+  }
+  return verifyResolvedPath(source, real, metadata);
 }
 export const fallbackIgnored = new Set(['node_modules','dist','build','web-dist','.worktrees','.buildr']);
+function applyFallbackIgnored(paths: string[], ignored: Set<string>) {
+  for (const value of paths) if (value.split('/').some(p => fallbackIgnored.has(p))) ignored.add(value);
+  return ignored;
+}
 function ignoredPaths(root:string,paths:string[]) {
   const ignored=new Set<string>();
-  try {
-    const output=execFileSync('git',['-C',root,'check-ignore','--no-index','-z','--stdin'],{env:{...codeGitEnvironment(),GIT_OPTIONAL_LOCKS:'0'},input:Buffer.from(paths.join('\0')+'\0'),timeout:1500,maxBuffer:2*1024*1024,stdio:['pipe','pipe','ignore']});
-    for(const item of output.toString().split('\0'))if(item)ignored.add(item);
-  } catch { /* No ignored matches is git status 1; common build directories remain bounded. */ }
-  for(const value of paths)if(value.split('/').some(p=>fallbackIgnored.has(p)))ignored.add(value);
-  return ignored;
+  if (paths.length) {
+    try {
+      const output=execFileSync('git',['-C',root,'check-ignore','--no-index','-z','--stdin'],{env:{...codeGitEnvironment(),GIT_OPTIONAL_LOCKS:'0'},input:Buffer.from(paths.join('\0')+'\0'),timeout:1500,maxBuffer:2*1024*1024,stdio:['pipe','pipe','ignore']});
+      for(const item of output.toString().split('\0'))if(item)ignored.add(item);
+    } catch { /* No ignored matches is git status 1; common build directories remain bounded. */ }
+  }
+  return applyFallbackIgnored(paths, ignored);
+}
+async function ignoredPathsAsync(root: string, paths: string[]): Promise<Set<string>> {
+  const ignored = new Set<string>();
+  if (paths.length) {
+    await new Promise<void>(resolve => {
+      const child = execFile('git', ['-C', root, 'check-ignore', '--no-index', '-z', '--stdin'], {
+        env: { ...codeGitEnvironment(), GIT_OPTIONAL_LOCKS: '0' },
+        timeout: 1500,
+        maxBuffer: 2 * 1024 * 1024,
+        encoding: 'buffer',
+      }, (error, stdout) => {
+        if (!error && stdout) {
+          for (const item of stdout.toString('utf8').split('\0')) if (item) ignored.add(item);
+        }
+        resolve();
+      });
+      child.stdin?.end(Buffer.from(paths.join('\0') + '\0'));
+    });
+  }
+  return applyFallbackIgnored(paths, ignored);
+}
+function formatCommitTreeEntries(bytes: Buffer, relative: string): DirectoryEntry[] {
+  return bytes.toString().split('\0').filter(Boolean).map(line => {
+    const separator = line.indexOf('\t'), meta = line.slice(0, separator), name = line.slice(separator + 1);
+    const [mode, type] = meta.split(' ');
+    return { name, path: relative ? relative + '/' + name : name, kind: mode === '120000' || mode === '160000' ? 'link' : type === 'tree' ? 'directory' : 'file', ignored: false };
+  });
+}
+function finalizeDirectoryListing(source: CodeSource, relative: string, entries: DirectoryEntry[], enumerationTruncated: boolean, showIgnored: boolean) {
+  const filtered = entries
+    .filter(e => e.name.toLowerCase() !== '.git' && (showIgnored || !e.ignored))
+    .sort((a, b) => Number(a.kind !== 'directory') - Number(b.kind !== 'directory') || a.name.localeCompare(b.name));
+  return { source, path: relative, entries: filtered.slice(0, CODE_LIMITS.entries), truncated: enumerationTruncated || filtered.length > CODE_LIMITS.entries, limit: CODE_LIMITS.entries, observedAt: new Date().toISOString() };
 }
 export function readCodeDirectory(source:CodeSource,relative='',showIgnored=false) {
   relativeCodePath(relative,true);
   let entries:DirectoryEntry[]=[],enumerationTruncated=false;
   if (source.commitHash) {
     const tree=source.commitHash+(relative?':'+relative:'');
-    const bytes=codeGit(source.location,['ls-tree','-z',tree],4*1024*1024);
-    entries=bytes.toString().split('\0').filter(Boolean).map(line=>{
-      const separator=line.indexOf('\t'),meta=line.slice(0,separator),name=line.slice(separator+1); const [mode,type]=meta.split(' ');
-      return {name,path:relative?relative+'/'+name:name,kind:mode==='120000'||mode==='160000'?'link':type==='tree'?'directory':'file',ignored:false};
-    });
+    entries=formatCommitTreeEntries(codeGit(source.location,['ls-tree','-z',tree],4*1024*1024), relative);
   } else {
     const dir=localPath(source,relative); if(!fs.statSync(dir).isDirectory())throw codeFailure('code_directory_expected','所选路径不是目录。');
     const handle=fs.opendirSync(dir),names:fs.Dirent[]=[];
@@ -78,7 +137,31 @@ export function readCodeDirectory(source:CodeSource,relative='',showIgnored=fals
     entries=names.map(item=>({name:item.name,path:relative?relative+'/'+item.name:item.name,kind:item.isSymbolicLink()?'link':item.isDirectory()?'directory':'file',ignored:false}));
     const ignored=ignoredPaths(source.location,entries.map(e=>e.path));for(const entry of entries)entry.ignored=ignored.has(entry.path);
   }
-  entries=entries.filter(e=>e.name.toLowerCase()!=='.git'&&(showIgnored||!e.ignored));
-  entries.sort((a,b)=>Number(a.kind!=='directory')-Number(b.kind!=='directory')||a.name.localeCompare(b.name));
-  return {source,path:relative,entries:entries.slice(0,CODE_LIMITS.entries),truncated:enumerationTruncated||entries.length>CODE_LIMITS.entries,limit:CODE_LIMITS.entries,observedAt:new Date().toISOString()};
+  return finalizeDirectoryListing(source, relative, entries, enumerationTruncated, showIgnored);
+}
+export async function readCodeDirectoryAsync(source: CodeSource, relative = '', showIgnored = false, preVerifiedGitCommonDir?: string) {
+  relativeCodePath(relative, true);
+  let entries: DirectoryEntry[] = [], enumerationTruncated = false;
+  if (source.commitHash) {
+    const tree = source.commitHash + (relative ? ':' + relative : '');
+    entries = formatCommitTreeEntries(await codeGitAsync(source.location, ['ls-tree', '-z', tree], 4 * 1024 * 1024), relative);
+  } else {
+    const dir = await localPathAsync(source, relative, preVerifiedGitCommonDir);
+    if (!(await fs.promises.stat(dir)).isDirectory()) throw codeFailure('code_directory_expected', '所选路径不是目录。');
+    const handle = await fs.promises.opendir(dir), names: fs.Dirent[] = [];
+    let closed = false;
+    try {
+      for await (const item of handle) {
+        if (names.length >= CODE_LIMITS.entries * 2) { enumerationTruncated = true; closed = true; break; }
+        names.push(item);
+      }
+    } finally {
+      if (closed) { /* for-await breaks after closing dir handle, ignore if already closed */ }
+      else { try { await handle.close(); } catch { /* already closed */ } }
+    }
+    entries = names.map(item => ({ name: item.name, path: relative ? relative + '/' + item.name : item.name, kind: item.isSymbolicLink() ? 'link' : item.isDirectory() ? 'directory' : 'file', ignored: false }));
+    const ignored = await ignoredPathsAsync(source.location, entries.map(e => e.path));
+    for (const entry of entries) entry.ignored = ignored.has(entry.path);
+  }
+  return finalizeDirectoryListing(source, relative, entries, enumerationTruncated, showIgnored);
 }

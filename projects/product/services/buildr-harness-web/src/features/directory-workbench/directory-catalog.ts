@@ -41,3 +41,33 @@ export async function loadDirectoryCatalog(request: DirectoryRequest, previous: 
   }));
   return {...snapshot(), topologyPaths:[...paths.values()].filter(repo => repo.checkouts.defaultId && !repo.error).map(repo => repo.path)};
 }
+
+export function shouldCollapseExplorerTree(visibleSourceCount: number, totalRepoCount: number, selectedRepoPaths: readonly string[]): boolean {
+  return visibleSourceCount > 1 || (totalRepoCount > 1 && selectedRepoPaths.length !== 1);
+}
+
+export function collectExplorerLoadTargets(input: {
+  collapsed: boolean;
+  visibleBrowserIds: readonly string[];
+  expandedKeys: readonly string[];
+}): Array<{ browserId: string; relative: string }> {
+  const visible = new Set(input.visibleBrowserIds);
+  const targets: Array<{ browserId: string; relative: string }> = [];
+  const seen = new Set<string>();
+  const add = (browserId: string, relative: string) => {
+    if (!visible.has(browserId)) return;
+    const key = `${browserId}::${relative}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    targets.push({ browserId, relative });
+  };
+  if (!input.collapsed) {
+    for (const browserId of input.visibleBrowserIds) add(browserId, '');
+  }
+  for (const key of input.expandedKeys) {
+    const sep = key.indexOf('::');
+    if (sep < 0) continue;
+    add(key.slice(0, sep), key.slice(sep + 2));
+  }
+  return targets;
+}

@@ -28,6 +28,7 @@ import {desktopNotify} from '../../dsh-desktop';
 import './directory-workbench.css';
 
 const unfinishedWorkspaces = new WorkspaceFileEditingStores();
+const recentCatalogs = new Map<string, DirectoryCatalog>();
 
 type Content = { id: string; title: string; icon?: ReactNode; render(active: boolean): ReactNode };
 
@@ -163,12 +164,13 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
   const [opened, setOpened] = useState<DirectoryOpenRequest>();
   const [version, bump] = useState(0);
   const [selected, setSelected] = useState<DirectorySelection | null>();
+  const catalogKey = workspaceId + ':' + scope.ref.id + ':' + scope.revision;
   const base = useMemo(() => directoryClient(scope, workspaceId), [scope, workspaceId]);
-  const catalogRef = useRef<DirectoryCatalog | null>(null);
+  const catalogRef = useRef<DirectoryCatalog | null>(recentCatalogs.get(catalogKey) ?? null);
   const priority = useRef<string | undefined>(undefined);
   const load = useCallback((input: typeof noInput, signal: AbortSignal, publish: (value: DirectoryCatalog) => void) =>
     loadDirectoryCatalog(base, catalogRef.current, !!input.more, !!input.keepDiscovery, () => priority.current, signal, publish), [base]);
-  const catalog = useSourceControlRead(scope.ref.id + ':' + scope.revision, noInput, load, active);
+  const catalog = useSourceControlRead(catalogKey, noInput, load, active, '', recentCatalogs);
   const repos = catalog.data?.repositories ?? [];
   catalogRef.current = catalog.data;
   const refreshCatalog = catalog.refresh;
@@ -295,6 +297,7 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
               catalogError={catalog.error}
               catalogLoading={catalog.loading}
               refreshCatalog={refreshCatalog}
+              prioritizeRepository={repositoryPath => { priority.current = repositoryPath; }}
               source={current}
               requestFor={requestFor}
               active={paneActive}
