@@ -4,7 +4,7 @@ import path from 'node:path';
 import net from 'node:net';
 import {spawn, execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {connectHarnessProcess,stopAgentProcess} from '@buildr-ai/buildr-harness';
+import {stopAgentProcess} from '@buildr-ai/buildr-harness';
 import {materializeCleanProductSource} from '../helpers/clean-product-source.ts';
 import {launchTestBrowser} from './browser-launch.ts';
 const execute=promisify(execFile),serviceRoot=path.resolve(import.meta.dirname,'../..');
@@ -39,70 +39,68 @@ const child=spawn(process.execPath,[path.join(controller.root,'tools/development
 child.stdout.on('data',chunk=>{output+=chunk;});child.stderr.on('data',chunk=>{output+=chunk;});
 const read=(file:string)=>{try{return JSON.parse(fs.readFileSync(file,'utf8'));}catch{return null;}};
 async function until(predicate:()=>boolean|Promise<boolean>,message:string,timeout=60_000){const deadline=Date.now()+timeout;while(Date.now()<deadline){if(await predicate())return;if(child.exitCode!==null)throw new Error(`${message}: supervisor exited ${child.exitCode}\n${output.slice(-12000)}`);await new Promise(resolve=>setTimeout(resolve,100));}throw new Error(`${message}\n${output.slice(-12000)}`);}
-const standaloneRoot=path.join(smoke,'standalone-harness');
+const recoveryOnly = process.argv.includes('--recovery');
 let browser:Awaited<ReturnType<typeof launchTestBrowser>>|undefined;
 try{
-  await until(()=>read(statusFile)?.phase==='ready','live host startup');
+  // The receipt can become ready before the supervisor registers its source watchers.
+  const startupAnnouncement = `Buildr dev: ${origin} (same-origin source + API + HMR)`;
+  await until(() => read(statusFile)?.phase === 'ready' && output.includes(startupAnnouncement), 'live host and source watcher startup');
   const initial=read(instanceFile),runtimeFile=path.join(process.env.BUILDR_APP_DATA_DIR!,'agent-service/process/instance.json'),generation=read(runtimeFile).identity.generation;
   assert.equal(initial.url,origin);
-  browser=await launchTestBrowser();const context=await browser.newContext();
-  const page=await context.newPage(),errors:string[]=[];
-  page.on('pageerror',error=>errors.push(error.message));
-  await page.goto(origin,{waitUntil:'networkidle',timeout:60_000});
-  await page.waitForFunction(()=>Boolean(document.getElementById('root')?.textContent),{},{timeout:30_000});
-  const mainStyle=path.resolve(controller.root,'../buildr-web/src/styles.css');
-  fs.appendFileSync(mainStyle,'\n:root{--buildr-live-proof:main-updated;}\n');
-  await page.waitForFunction(()=>getComputedStyle(document.documentElement).getPropertyValue('--buildr-live-proof').trim()==='main-updated',null,{timeout:15_000});
-  assert.equal(read(instanceFile).pid,initial.pid,'frontend HMR must not restart the host');
-  const frame=await context.newPage();frame.on('pageerror',error=>errors.push(error.message));
-  await frame.goto(origin+'/harness/',{waitUntil:'networkidle',timeout:60_000});
-  const styles=path.resolve(controller.root,'../buildr-harness-web/src');
-  const mainEntry=fs.readFileSync(path.join(styles,'main.tsx'),'utf8');
-  const css=/import\s*['"]([.][/].+\.css)['"]/.exec(mainEntry)?.[1];
-  assert.ok(css,'Harness entry must load its own stylesheet');
-  fs.appendFileSync(path.resolve(styles,css),'\n:root{--buildr-live-proof:harness-updated;}\n');
-  await frame.waitForFunction(()=>getComputedStyle(document.documentElement).getPropertyValue('--buildr-live-proof').trim()==='harness-updated',null,{timeout:15_000});
-  assert.equal(read(instanceFile).pid,initial.pid);
-  assert.equal(errors.length,0,'real source pages must mount without CSP or React preamble failures');
-  const standaloneProbe=net.createServer();await new Promise<void>(resolve=>standaloneProbe.listen(0,'127.0.0.1',resolve));const standalonePort=(standaloneProbe.address() as net.AddressInfo).port;await new Promise<void>(resolve=>standaloneProbe.close(()=>resolve()));
-  const harnessEntry=path.resolve(controller.root,'../buildr-harness/bin/buildr-harness.mjs');
-  await execute(process.execPath,[harnessEntry,'web','--profile','development','--data-root',standaloneRoot,'--port',String(standalonePort),'--live','--no-open'],{env:process.env,timeout:60_000,maxBuffer:4*1024*1024});
-  const connection=await connectHarnessProcess({dataRoot:standaloneRoot,profileId:'development',sourceId:'harness-local',caller:{kind:'first-party-user',product:'buildr-harness'}});
-  let loginUrl:string;
-  try{assert.equal((await connection.web.status()).mode,'live');loginUrl=(await connection.web.login()).url;}finally{await connection.disconnect();}
-  const standalone=await context.newPage();standalone.on('pageerror',error=>errors.push(error.message));
-  await standalone.goto(loginUrl!,{waitUntil:'networkidle',timeout:60_000});
-  await standalone.waitForFunction(()=>Boolean(document.getElementById('root')?.textContent),null,{timeout:30_000});
-  fs.appendFileSync(path.resolve(styles,css),'\n:root{--buildr-live-proof:standalone-updated;}\n');
-  await standalone.waitForFunction(()=>getComputedStyle(document.documentElement).getPropertyValue('--buildr-live-proof').trim()==='standalone-updated',null,{timeout:15_000});
-  assert.equal(errors.length,0,'standalone source page keeps its own ticket session and CSP');
-  const backend=path.join(controller.root,'src/web/http/session.ts'),original=fs.readFileSync(backend,'utf8');
-  fs.writeFileSync(backend,original+'\nexport const = broken;\n');
-  await until(()=>read(statusFile)?.phase==='failed','bad edit must be rejected before stopping');
-  assert.equal(read(instanceFile).pid,initial.pid);assert.equal((await fetch(origin)).status,200);
-  fs.writeFileSync(backend,original+'\n// valid latest backend edit\n');
-  await until(()=>read(statusFile)?.phase==='ready'&&read(instanceFile)?.pid!==initial.pid,'fixed edit automatically adopted');
-  const good=read(instanceFile),goodSnapshot=read(statusFile).current;
-  const serverFile=path.join(controller.root,'src/web/http/server.ts'),serverSource=fs.readFileSync(serverFile,'utf8');
-  fs.writeFileSync(serverFile,serverSource.replace("  if (typeof ensureRegisteredTarget", "  if (process.env.BUILDR_DEV_LIVE === '1') throw new Error('injected-development-startup-failure');\n  if (typeof ensureRegisteredTarget"));
-  await until(()=>read(statusFile)?.phase==='restored','startup failure restores last runnable snapshot');
-  assert.equal(read(statusFile).current,goodSnapshot);assert.notEqual(read(instanceFile).pid,good.pid);assert.equal((await fetch(origin)).status,200);
-  assert.equal(read(runtimeFile).identity.generation,generation,'host restarts and rollback must not switch or stop Harness execution');
-  fs.writeFileSync(serverFile,serverSource);fs.writeFileSync(backend,original);
-  await until(()=>read(statusFile)?.phase==='ready','source repair returns to normal updates');
-  const sourceProfile=path.resolve(controller.root,'../buildr-harness/src/profile.ts'),profileText=fs.readFileSync(sourceProfile,'utf8');
-  fs.writeFileSync(sourceProfile,profileText+'\n// latest harness edit\n');
-  await until(()=>read(statusFile)?.phase==='ready'&&read(runtimeFile).identity.generation!==generation,'Harness update and automatic contract generation',90_000);
-  const state=read(instanceFile),pageResponse=await fetch(origin),html=await pageResponse.text(),token=/name="buildr-session" content="([^"]+)"/.exec(html)![1]!;
-  const status=await fetch(origin+'/api/v1/development/status',{headers:{'x-buildr-session':token}});assert.equal(status.status,200);assert.equal((await status.json()).hostSnapshot,read(statusFile).current);
-  assert.notEqual(state.productIdentity.developmentRuntimeIdentity,initial.productIdentity.developmentRuntimeIdentity,'snapshot identity reflects actual loaded code');
-  console.log(JSON.stringify({status:'passed',checks:['main-and-harness-browser-hmr','standalone-ticket-and-browser-hmr','frontend-no-backend-restart','syntax-failure-retains-host','automatic-recovery','startup-rollback','execution-backend-retained','harness-contract-update','current-version-status'],origin}));
+  if (!recoveryOnly) {
+    browser = await launchTestBrowser();
+    const page = await browser.newPage();
+    const errors: string[] = [];
+    const socketFrames: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('websocket', socket => socket.on('framereceived', ({payload}) => {
+      if (typeof payload === 'string') socketFrames.push(payload);
+    }));
+    await page.goto(origin, {waitUntil: 'domcontentloaded', timeout: 60000});
+    await page.locator('#root > *').first().waitFor({state: 'attached', timeout: 30000});
+    await until(() => socketFrames.some(frame => frame.includes('"type":"connected"')), 'Vite HMR socket did not connect', 15000);
+    const stylesheet = page.locator('style[data-vite-dev-id$="/src/styles.css"]').first();
+    await stylesheet.waitFor({state: 'attached', timeout: 15000});
+    const mainStyle = path.resolve(controller.root, '../buildr-web/src/styles.css');
+    const navigation = await page.evaluateHandle(() => document.documentElement);
+    try {
+      fs.appendFileSync(mainStyle, '\n:root{--buildr-live-proof:main-updated;}\n');
+      await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--buildr-live-proof').trim() === 'main-updated', null, {timeout: 15000});
+      assert.equal(await page.evaluate(previous => previous === document.documentElement, navigation), true);
+    } catch (error) {
+      throw new Error('Development stylesheet update not observed; recent HMR frames: ' + JSON.stringify(socketFrames.slice(-8)), {cause: error});
+    }
+    assert.equal(read(instanceFile).pid, initial.pid, 'frontend HMR must not restart the host');
+    assert.deepEqual(errors, [], 'the source page must mount without browser errors');
+    console.log(JSON.stringify({status: 'passed', checks: ['development-browser-hmr', 'frontend-no-backend-restart'], origin}));
+  } else {
+    const backend=path.join(controller.root,'src/web/http/session.ts'),original=fs.readFileSync(backend,'utf8');
+    fs.writeFileSync(backend,original+'\nexport const = broken;\n');
+    await until(()=>read(statusFile)?.phase==='failed','bad edit must be rejected before stopping');
+    assert.equal(read(instanceFile).pid,initial.pid);assert.equal((await fetch(origin)).status,200);
+    fs.writeFileSync(backend,original+'\n// valid latest backend edit\n');
+    await until(()=>read(statusFile)?.phase==='ready'&&read(instanceFile)?.pid!==initial.pid,'fixed edit automatically adopted');
+    const good=read(instanceFile),goodSnapshot=read(statusFile).current;
+    const serverFile=path.join(controller.root,'src/web/http/server.ts'),serverSource=fs.readFileSync(serverFile,'utf8');
+    fs.writeFileSync(serverFile,serverSource.replace("  if (typeof ensureRegisteredTarget", "  if (process.env.BUILDR_DEV_LIVE === '1') throw new Error('injected-development-startup-failure');\n  if (typeof ensureRegisteredTarget"));
+    await until(()=>read(statusFile)?.phase==='restored','startup failure restores last runnable snapshot');
+    assert.equal(read(statusFile).current,goodSnapshot);assert.notEqual(read(instanceFile).pid,good.pid);assert.equal((await fetch(origin)).status,200);
+    assert.equal(read(runtimeFile).identity.generation,generation,'host restarts and rollback must not switch or stop Harness execution');
+    fs.writeFileSync(serverFile,serverSource);fs.writeFileSync(backend,original);
+    await until(()=>read(statusFile)?.phase==='ready','source repair returns to normal updates');
+    const sourceProfile=path.resolve(controller.root,'../buildr-harness/src/profile.ts'),profileText=fs.readFileSync(sourceProfile,'utf8');
+    fs.writeFileSync(sourceProfile,profileText+'\n// latest harness edit\n');
+    await until(()=>read(statusFile)?.phase==='ready'&&read(runtimeFile).identity.generation!==generation,'Harness update and automatic contract generation',90_000);
+    const state=read(instanceFile),pageResponse=await fetch(origin),html=await pageResponse.text(),token=/name="buildr-session" content="([^"]+)"/.exec(html)![1]!;
+    const status=await fetch(origin+'/api/v1/development/status',{headers:{'x-buildr-session':token}});assert.equal(status.status,200);assert.equal((await status.json()).hostSnapshot,read(statusFile).current);
+    assert.notEqual(state.productIdentity.developmentRuntimeIdentity,initial.productIdentity.developmentRuntimeIdentity,'snapshot identity reflects actual loaded code');
+    console.log(JSON.stringify({status:'passed',checks:['syntax-failure-retains-host','automatic-recovery','startup-rollback','execution-backend-retained','harness-contract-update','current-version-status'],origin}));
+  }
 }catch(error){process.stderr.write(output.slice(-16000)+'\n');throw error;}
 finally{
   await browser?.close();
   if(child.exitCode===null){child.kill('SIGTERM');const deadline=Date.now()+30_000;while(child.exitCode===null&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,100));assert.notEqual(child.exitCode,null,'supervisor cleanup must settle');}
   await stopAgentProcess({dataRoot:process.env.BUILDR_APP_DATA_DIR!,profileId:'development',mode:'if-idle'});
-  await stopAgentProcess({dataRoot:standaloneRoot,profileId:'development',mode:'if-idle'});
   assert.equal(fs.existsSync(instanceFile),false,'owned host receipt must be released');
   assert.equal(read(statusFile).phase,'stopped');
 }

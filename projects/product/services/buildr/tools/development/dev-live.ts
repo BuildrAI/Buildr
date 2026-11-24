@@ -174,8 +174,13 @@ export async function runDevelopmentLive(args: string[] = []) {
   try {
     // Prepare DTOs/package before freezing code. No first-run frontend production
     // build is needed to extract a session: the host now renders source directly.
-    queue = new DevelopmentUpdates(update, failed);
-    await update(new Set(['initial']), () => !stopping);
+    // Start the native watchers before preparing the initial host so its first
+    // ready state cannot race with the watcher's asynchronous startup.
+    let initialUpdate: Promise<void>;
+    queue = new DevelopmentUpdates(async (changes, current) => {
+      await initialUpdate;
+      if (current() && !stopping) await update(changes, current);
+    }, failed);
     for (const [root, kind] of [[path.join(serviceRoot, 'src'), 'host'], [path.join(serviceRoot, 'bin'), 'host'], [path.join(agentRoot, 'src'), 'harness'], [path.join(agentRoot, 'tools'), 'harness']] as const) {
       watchers.push(fs.watch(root, {recursive: true}, () => queue!.request(kind)));
     }
@@ -184,6 +189,8 @@ export async function runDevelopmentLive(args: string[] = []) {
         if (['package.json', 'package-lock.json', 'tsconfig.json'].includes(String(filename))) queue!.request('harness');
       }));
     }
+    initialUpdate = update(new Set(['initial']), () => !stopping);
+    await initialUpdate;
     observer = setInterval(() => {
       if (fs.existsSync(paths.activation)) {if (!paused) {paused = true; publish('suspended');}}
       else if (paused) {paused = false; queue!.request('resume');}
