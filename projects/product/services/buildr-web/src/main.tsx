@@ -3,15 +3,18 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { App as AntdApp, ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { App } from './App';
+import { desktopToolPage, DevelopmentDesktopToolPage, initDevelopmentDesktopMode } from './app/dsh-desktop';
 import { ConfirmModalHost } from './lib/ConfirmModalHost';
 import { softProductTheme } from './theme';
 import 'antd/dist/reset.css';
 import './styles.css';
 
+initDevelopmentDesktopMode();
+const desktopTool = desktopToolPage();
 const root = document.getElementById('root');
 if (!root) throw new Error('缺少 #root');
 // Keep App's existing page tree and retained workspace shell under one data route.
-const router = createBrowserRouter([{ path: '*', element: <App /> }]);
+const router = desktopTool ? null : createBrowserRouter([{ path: '*', element: <App /> }]);
 
 // Production Buildr Web hosts a single long-lived shell; avoid StrictMode double-mount
 // races with imperative legacy page renderers under browser smoke.
@@ -23,7 +26,9 @@ createRoot(root).render(
   >
     <AntdApp>
       <ConfirmModalHost />
-      <RouterProvider router={router} />
+      {desktopTool
+        ? <DevelopmentDesktopToolPage tool={desktopTool.kind} workspaceId={desktopTool.workspaceId} />
+        : <RouterProvider router={router!} />}
     </AntdApp>
   </ConfigProvider>,
 );

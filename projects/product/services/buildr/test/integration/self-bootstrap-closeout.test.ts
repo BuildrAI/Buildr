@@ -773,3 +773,64 @@ test('DSH 原生重开仅采用可验证的宿主绑定和本次加载回执', {
   assert.deepEqual(control.reopen(secondQuit.verified,'new'),{status:'opened-load-unconfirmed',desktopLoaded:false});
   assert.equal(exits,2); assert.equal(starts,2);
 });
+
+test('DSH 开发插件自举同时识别并按交付范围更新 Buildr Development Dev 插件', async t => {
+  const { isDshDevelopmentPluginInput, updateDshDevelopmentPlugin } = await import('../../../../../../skills/buildr-self-bootstrap-sync/scripts/dsh-development-plugin.mjs');
+  const f = fixture(t);
+  const home = path.join(f.root, 'dsh-home');
+  const owner = path.join(f.root, '.buildr/local/buildr-development-dsh-plugin');
+  const profile = path.join(home, '.dsh/profiles/desktop');
+  const name = '@buildr-ai/buildr-development-dsh-plugin-dev';
+  const installed = path.join(profile, 'node_modules', name);
+  const hostCli = path.join(f.root, 'bin/dsh');
+  fs.mkdirSync(path.dirname(hostCli), { recursive: true }); fs.writeFileSync(hostCli, '');
+  fs.mkdirSync(owner, { recursive: true });
+  fs.mkdirSync(installed, { recursive: true });
+  const initialArchive = path.join(owner, 'buildr-development-dsh-plugin-dev-initial.tgz');
+  fs.writeFileSync(initialArchive, 'v1');
+  fs.mkdirSync(path.join(profile, 'node_modules'), { recursive: true });
+  fs.writeFileSync(path.join(profile, 'package.json'), JSON.stringify({ dependencies: { [name]: `file:${path.relative(profile, initialArchive)}` } }));
+  const payloads: Record<string, Record<string, string>> = {
+    [initialArchive]: { 'package.json': JSON.stringify({ name }), 'cordis.patch.yml': 'v1', 'lib/client.js': 'client1', 'lib/index.js': 'index1', 'lib/launcher.js': 'launcher1' },
+  };
+  const writeInstalled = (files: Record<string, string>) => {
+    for (const [rel, body] of Object.entries(files)) {
+      const target = path.join(installed, rel);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, body);
+    }
+  };
+  writeInstalled(payloads[initialArchive]);
+  const run = (_exe: string, args: string[], id: string) => {
+    if (id === 'dsh-host-version') return { status: 0, stdout: '0.2.2-rc.5\n' };
+    if (id === 'dsh-processes') return { status: 0, stdout: 'login\n' };
+    if (id.startsWith('dsh-verify-')) {
+      const file = args[2].replace(/^package\//, '');
+      return { status: 0, stdout: Buffer.from(payloads[args[1]][file]) };
+    }
+    if (id === 'dsh-build-plugin') {
+      const staging = args[1];
+      const tgz = path.join(staging, 'buildr-ai-buildr-development-dsh-plugin-dev-0.1.0-dev.tgz');
+      fs.writeFileSync(tgz, 'v2');
+      payloads[path.join(owner, `buildr-development-dsh-plugin-dev-${crypto.createHash('sha256').update('v2').digest('hex')}.tgz`)] = {
+        'package.json': JSON.stringify({ name }), 'cordis.patch.yml': 'v2', 'lib/client.js': 'client2', 'lib/index.js': 'index2', 'lib/launcher.js': 'launcher2',
+      };
+      return { status: 0, stdout: JSON.stringify({ name, version: '0.1.0-dev', path: tgz }) + '\n' };
+    }
+    if (id === 'dsh-install-plugin') {
+      const tgz = args.at(-1)!;
+      writeInstalled(payloads[tgz]);
+      fs.writeFileSync(path.join(profile, 'package.json'), JSON.stringify({ dependencies: { [name]: `file:${path.relative(profile, tgz)}` } }));
+      return { status: 0, stdout: '' };
+    }
+    assert.fail(id);
+  };
+  assert.equal(isDshDevelopmentPluginInput('projects/product/services/buildr-development-dsh-plugin/src/client.tsx'), true);
+  assert.equal(isDshDevelopmentPluginInput('projects/product/services/buildr-development-dsh-plugin/test/desktop-acceptance.md'), false);
+  const res = updateDshDevelopmentPlugin({
+    root: f.root, nodeExecutable: process.execPath, run, environment: { HOME: home }, platform: 'darwin', hostCli,
+    files: ['projects/product/services/buildr-development-dsh-plugin/src/client.tsx'],
+  });
+  assert.equal(res.status, 'installed', JSON.stringify(res));
+  assert.equal('desktopLoaded' in res ? res.desktopLoaded : undefined, false);
+});

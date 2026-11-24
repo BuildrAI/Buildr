@@ -7,8 +7,9 @@ import {inspectArtifactDistribution} from '../../../projects/product/services/bu
 const repo = path.resolve(import.meta.dirname, '../../..');
 const services = path.join(repo, 'projects/product/services');
 const targets = {
-  harness: {name:'@buildr-ai/buildr-harness', directory:'buildr-harness', builder:'tools/pack-local.ts', filename:'buildr-ai-buildr-harness'},
-  'dsh-buildr-harness': {name:'@buildr-ai/dsh-buildr-harness', directory:'buildr-harness-dsh-plugin', builder:'tools/build-dev.ts', filename:'buildr-ai-dsh-buildr-harness'},
+  harness: {name:'@buildr-ai/buildr-harness', directory:'buildr-harness', builder:'tools/pack-local.ts', filename:'buildr-ai-buildr-harness', requiresPackage: null},
+  'dsh-buildr-harness': {name:'@buildr-ai/dsh-buildr-harness', directory:'buildr-harness-dsh-plugin', builder:'tools/build-dev.ts', filename:'buildr-ai-dsh-buildr-harness', requiresPackage: '@buildr-ai/buildr-harness'},
+  'dsh-buildr-development': {name:'@buildr-ai/dsh-buildr-development', directory:'buildr-development-dsh-plugin', builder:'tools/build-dev.ts', filename:'buildr-ai-dsh-buildr-development', requiresPackage: '@buildr-ai/buildr'},
 } as const;
 export type Target = keyof typeof targets;
 const versionPattern = /^\d+\.\d+\.\d+(?:-rc\.[1-9]\d*)?$/;
@@ -46,7 +47,7 @@ function artifact(dir: string, value: Candidate) {
     : ['lib/index.js','lib/launcher.js','lib/client.js','cordis.patch.yml','LICENSE','README.md'];
   if (required.some(name => !names.includes('package/'+name)) || names.some(n => /\/node_modules\/@(?:anthropic-ai|qoder-ai|deepseek-ai)\//.test(n))) throw Error('candidate-payload-invalid');
   if (!harness && (metadata.engines?.dsh !== '>=0.2.0-0 <0.3.0-0' || metadata.dependencies || metadata.dsh?.manifestVersion !== 1 ||
-      metadata.buildrCompatibility?.requires?.[0]?.packageName !== targets.harness.name || !packageFile(file,'package/cordis.patch.yml').includes(`name: '${target.name}'`))) throw Error('candidate-plugin-contract-invalid');
+      metadata.buildrCompatibility?.requires?.[0]?.packageName !== target.requiresPackage || !packageFile(file,'package/cordis.patch.yml').includes(`name: '${target.name}'`))) throw Error('candidate-plugin-contract-invalid');
   return {file, metadata};
 }
 
@@ -85,7 +86,7 @@ function prepare(target: Target, version: string, dir: string, rehearsal: boolea
 if (import.meta.main) {
   const [command, ...args] = process.argv.slice(2);
   if (!command || command === '--help') {
-    console.log('harness-release.ts prepare <harness|dsh-buildr-harness> <version> <artifact-directory> [--rehearsal]\n'+
+    console.log('harness-release.ts prepare <harness|dsh-buildr-harness|dsh-buildr-development> <version> <artifact-directory> [--rehearsal]\n'+
       'harness-release.ts inspect <artifact-directory>');
   } else if (command === 'prepare' && (args.length === 3 || args.length === 4 && args[3] === '--rehearsal')) {
     console.log(JSON.stringify(prepare(args[0] as Target,args[1]!,path.resolve(args[2]!),args[3]==='--rehearsal'),null,2));

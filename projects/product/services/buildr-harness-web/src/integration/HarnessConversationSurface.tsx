@@ -23,6 +23,7 @@ type Props = {
   full: boolean;
   view: 'conversation' | 'history';
   headerAction?: ReactNode;
+  onReturnToHost?: () => void;
   command: HarnessConversationCommand | null;
   sequence: number;
   files: HarnessDirectoryFiles;
@@ -116,6 +117,6 @@ function Surface(props: Props) {
     }
   }, [props.command, props.sequence, context.newConversation, context.openConversation, context.openHistory, context.openQuotaSettings, context.setSettings, context.startTextConversation]);
   return <div className="harness-conversation-surface">
-    <ConversationWorkspace development headerAction={props.headerAction} workspaces={props.workspaces} defaultWorkspaceId={props.defaultWorkspaceId}/>
+    <ConversationWorkspace development headerAction={props.headerAction} onReturnToHost={props.onReturnToHost} workspaces={props.workspaces} defaultWorkspaceId={props.defaultWorkspaceId}/>
   </div>;
 }

@@ -5,6 +5,7 @@ import {ApartmentOutlined, CloseOutlined, FolderOpenOutlined, PlusOutlined} from
 import {WorkspacePanelIcon} from '../../../buildr-harness-web/src/shell';
 import {useAgentConversations} from '../features/harness-ui/AgentConversationsContext';
 import {WorkEnvironmentVisibleContext} from './work-environment-visibility';
+import {toggleDesktopRightSidebar, useDesktopNativeSidebar} from './dsh-desktop';
 import './development-harness-shell.css';
 
 const tools = {
@@ -33,12 +34,14 @@ export function DevelopmentHarnessShell({header, children, conversation, workspa
   const modeTransition = useRef(false);
   const lastWorkspace = useRef(workspaceId);
   const expectedToolRoute = useRef<string | null>(null);
+  const desktopSidebar = useDesktopNativeSidebar();
   const workbench = context.open && context.full;
+  const effectiveToolsOpen = toolsOpen && !desktopSidebar;
   const scopeId = context.conversation?.workspaceId;
   const codePath = workspaceId ? `/workspaces/${workspaceId}/code/` : '';
   const fileScopeReady = Boolean(workspaceId && (!scopeId || scopeId === workspaceId));
   const routeTool = codePath && location.pathname.startsWith(codePath) ? Object.keys(tools).find(key => codePath + key === location.pathname) as Tool | undefined : undefined;
-  const showCode = workbench && toolsOpen && !launcher && fileScopeReady && Boolean(routeTool);
+  const showCode = workbench && effectiveToolsOpen && !launcher && fileScopeReady && Boolean(routeTool);
   const showEngineering = !workbench || showCode;
 
   useLayoutEffect(() => {
@@ -108,18 +111,21 @@ export function DevelopmentHarnessShell({header, children, conversation, workspa
     }
     setTabs(next);
   };
-  const label = toolsOpen ? '收起对话工作区' : '打开对话工作区';
-  const headerAction = workbench ? <Button type="text" className="harness-workspace-toggle" title={label} aria-label={label}
-    aria-expanded={toolsOpen} aria-controls="development-conversation-workspace" icon={<WorkspacePanelIcon open={toolsOpen}/>} onClick={() => setToolsOpen(open => !open)} /> : null;
+  const label = effectiveToolsOpen ? '收起对话工作区' : '打开对话工作区';
+  const headerAction = workbench ? (desktopSidebar
+    ? <Button type="text" className="harness-workspace-toggle" title="切换 DSH 工作区侧栏" aria-label="切换 DSH 工作区侧栏"
+      icon={<WorkspacePanelIcon open={false}/>} onClick={toggleDesktopRightSidebar} />
+    : <Button type="text" className="harness-workspace-toggle" title={label} aria-label={label}
+      aria-expanded={effectiveToolsOpen} aria-controls="development-conversation-workspace" icon={<WorkspacePanelIcon open={effectiveToolsOpen}/>} onClick={() => setToolsOpen(open => !open)} />) : null;
 
   return <div className={'development-work-environment-shell app-shell' + (workbench ? ' is-workbench' : ' is-workspace')
-    + (workbench && toolsOpen ? ' has-workbench-tools' : '') + (!context.open ? ' is-conversation-collapsed' : '') + (context.side === 'left' ? ' is-conversation-left' : '')}
+    + (workbench && effectiveToolsOpen ? ' has-workbench-tools' : '') + (!context.open ? ' is-conversation-collapsed' : '') + (context.side === 'left' ? ' is-conversation-left' : '')}
     style={{'--development-conversation-width': `${context.width}px`} as CSSProperties}>
     {header({mode: workbench ? 'workbench' : 'workspace', onModeChange: selectMode})}
     <div className="development-shell-body">
       <div className="development-conversation-slot">{conversation(headerAction)}</div>
-      <section className="development-engineering-region" id="development-conversation-workspace" aria-label={workbench ? '对话工作区' : '工作空间管理'} hidden={workbench && !toolsOpen}>
-        {workbench && toolsOpen && <><header className="harness-workspace-bar">
+      <section className="development-engineering-region" id="development-conversation-workspace" aria-label={workbench ? '对话工作区' : '工作空间管理'} hidden={workbench && !effectiveToolsOpen}>
+        {workbench && effectiveToolsOpen && <><header className="harness-workspace-bar">
           {tabs.length ? <div className="harness-workspace-tabs" aria-label="已打开的工作区模块">{tabs.map(id => <div key={id} className={'harness-workspace-tab' + (!launcher && id === tool ? ' is-active' : '')}>
             <button type="button" className="development-tool-tab" aria-label={tools[id].title} aria-pressed={!launcher && id === tool} onClick={() => activateTool(id)}>{tools[id].icon}<span>{tools[id].title}</span></button>
             <Button type="text" size="small" aria-label={'关闭' + tools[id].title + '标签'} icon={<CloseOutlined/>} onClick={() => closeTool(id)} />

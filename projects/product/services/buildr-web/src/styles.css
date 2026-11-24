@@ -2176,3 +2176,8 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: var(--font
 .workspace-lifecycle-directory-summary > div { flex:1; min-width:0; }
 
 .workspace-preparation-details {max-height:180px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size: var(--font-size-body);}
+
+.development-dsh-link-fallback { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 1200; max-width: min(640px, calc(100vw - 32px)); box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16); }
+.development-dsh-tool { height: 100dvh; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: auto; background: var(--soft-bg, #fff); }
+.development-dsh-tool > .code-source-control-page,
+.development-dsh-tool > .code-explorer-page { flex: 1; min-height: 0; }

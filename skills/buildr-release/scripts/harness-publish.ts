@@ -40,6 +40,9 @@ const proof=assertAdmittedHarnessOriginal(candidate,fs.readFileSync(path.join(di
 if(candidate.target==='dsh-buildr-harness'){
   const provider=await query('@buildr-ai/buildr-harness',proof.harnessVersion);
   if(!provider||provider.dist.integrity!==proof.harnessIntegrity||!provider.buildrCompatibility?.provides?.some((item:any)=>item.feature==='desktop-entry'&&item.contracts?.includes('buildr.harness-desktop-web/v1'))) throw Error('verified-harness-peer-not-published');
+} else if(candidate.target==='dsh-buildr-development'){
+  const provider=await query('@buildr-ai/buildr',proof.buildrVersion);
+  if(!provider||provider.dist.integrity!==proof.buildrIntegrity) throw Error('verified-buildr-peer-not-published');
 }
 const verifyPublished=(metadata:any)=>{if(metadata.dist.integrity!==candidate.integrity)throw Error('published-package-bytes-differ');};
 const before=await query(candidate.packageName,candidate.version);
@@ -64,13 +67,14 @@ verifyPublished(after);
 const tagName=candidate.version.includes('-rc.')?'next':'latest';
 const tagResponse=await fetch(registry+'-/package/'+encodeURIComponent(candidate.packageName)+'/dist-tags',{signal:AbortSignal.timeout(15000)});
 if(!tagResponse.ok||(await tagResponse.json())[tagName]!==candidate.version)throw Error('publication-tag-readback-required');
-if(candidate.target==='dsh-buildr-harness'){
-  const tag=`dsh-buildr-harness-v${candidate.version}`;
+if(candidate.target==='dsh-buildr-harness'||candidate.target==='dsh-buildr-development'){
+  const tag=`${candidate.target}-v${candidate.version}`;
+  const title=candidate.target==='dsh-buildr-development'?`DSH Buildr Development ${candidate.version}`:`DSH Buildr Harness ${candidate.version}`;
   const gh=(...args:string[])=>execFileSync('gh',[...args,'--repo',REPO],{encoding:'utf8',timeout:60000});
   let release=await github(`releases/tags/${tag}`);
   if(!release){
     if(mode==='readback')throw Error('github-release-absent: use approved publish mode after npm readback');
-    gh('release','create',tag,file,'--target',candidate.sourceCommit,'--title',`DSH Buildr Harness ${candidate.version}`,
+    gh('release','create',tag,file,'--target',candidate.sourceCommit,'--title',title,
       '--notes',`npm: ${candidate.packageName}@${candidate.version}\n\nSHA-256: ${candidate.sha256}\n\n实测 DSH Desktop: ${proof.dshVersion}`,
       ...(candidate.version.includes('-rc.')?['--prerelease']:[]));
     release=await github(`releases/tags/${tag}`);

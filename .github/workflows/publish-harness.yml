@@ -11,6 +11,7 @@ on:
         options:
           - harness
           - dsh-buildr-harness
+          - dsh-buildr-development
       version:
         description: Exact approved package version (required for publish/readback)
         required: false

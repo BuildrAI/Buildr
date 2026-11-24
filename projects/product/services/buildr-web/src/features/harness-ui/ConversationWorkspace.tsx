@@ -12,6 +12,7 @@ import type {ConversationView} from './types';
 import {ConversationTaskLink} from './ConversationTaskLink';
 import {BuildrParticipation} from './BuildrParticipation';
 import {conversationTaskLinks} from './conversation-associations';
+import {desktopReturnToHost, revealDesktopExplorerFile} from '../../app/dsh-desktop';
 import './harness-ui.css';
 
 const UUID_SCOPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -76,6 +77,7 @@ export function ConversationWorkspace({defaultWorkspaceId, workspaces, headerAct
         if(!latest||latest.located.absolute!==known.located.absolute||latest.file.checkoutId!==known.file.checkoutId||latest.file.repositoryId!==known.file.repositoryId)throw new Error('文件来源已变化，请重新定位。');
         signal.throwIfAborted();
         const {observed,located,file,observation}=latest;
+        if (revealDesktopExplorerFile(observed.workspaceId, { path: file.path, line: file.line, checkout: { repositoryId: file.repositoryId, checkoutId: file.checkoutId } })) return;
         const observationId=offerCodeOpen(observed.workspaceId,file,located.catalog,observation,located.partial);
         const {navigate,location,context}=current.current;
         navigate(`/workspaces/${encodeURIComponent(observed.workspaceId)}/code/explorer`,{state:{revealFileTree:true,codeEntry:{taskId:observed.taskId,file,observationId,from:{pathname:location.pathname,search:location.search,hash:location.hash,state:location.state}}}});
@@ -123,7 +125,7 @@ export function ConversationWorkspace({defaultWorkspaceId, workspaces, headerAct
   };
   return <section data-selected-workspace={context.conversation?.workspaceId} data-selected-conversation={context.conversation?.id}
     className={'development-harness-frame in-shell' + (context.full ? ' is-full' : '') + (!context.open ? ' is-collapsed' : '')}>
-    <HarnessConversationSurface headerAction={headerAction} workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} open={context.open} full={context.full} view={context.view}
+    <HarnessConversationSurface headerAction={headerAction} onReturnToHost={desktopReturnToHost()} workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} open={context.open} full={context.full} view={context.view}
       command={context.command} sequence={context.sequence} files={files} host={host}
       onOpenChange={context.setOpen} onSideChange={context.setSide} onWidthChange={context.setWidth}
       onConversationChange={onConversationChange} onViewChange={context.setView} onResult={context.reply}/>

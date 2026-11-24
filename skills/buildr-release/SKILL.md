@@ -16,9 +16,9 @@ description: 准备、检查、发布或恢复 Buildr Development 主包版本�
 
 默认是 **Buildr Development**（`@buildr-ai/buildr`，目标 `buildr`），主包包含所需 Harness，不等于独立发布 Harness。仅在明确指定时处理 DSH 插件或联合发布；独立 Harness 与其 DSH 插件必须显式选择专属目标，不沿用旧插件选择。分发许可和支持平台以准确原包证据为准，不以替身、源码声明或另一平台结果代替。
 
-## 独立 Harness 首发与更新
+## 独立 Harness 与 DSH 插件首发及更新
 
-独立目标为 `harness`（`@buildr-ai/buildr-harness`）和 `dsh-buildr-harness`（`@buildr-ai/dsh-buildr-harness`）。从规范检出的仓库根以项目 Node 运行 `node skills/buildr-release/scripts/harness-release.ts --help`，按[独立目标流程](../../projects/product/knowledge/docs/flows/open-source-release.md#独立-harness-与-dsh-buildr-harness)准备/读取原包、验包、交接和受保护公开。未提交实现的本机 `--rehearsal` 永不进入公开。两个目标分别验收和记录，不要求 Development 跟发。`readback` 不发起 npm 上传；公开边界与发布环境审批保持独立。
+独立目标为 `harness`（`@buildr-ai/buildr-harness`）、`dsh-buildr-harness`（`@buildr-ai/dsh-buildr-harness`）和 `dsh-buildr-development`（`@buildr-ai/dsh-buildr-development`）。从规范检出的仓库根以项目 Node 运行 `node skills/buildr-release/scripts/harness-release.ts --help`，按[独立目标流程](../../projects/product/knowledge/docs/flows/open-source-release.md#独立-harness-与-dsh-插件)准备/读取原包、验包、交接和受保护公开。未提交实现的本机 `--rehearsal` 永不进入公开。各个独立目标分别验收和记录，不要求 Development 跟发。`readback` 不发起 npm 上传；公开边界与发布环境审批保持独立。
 
 ## 日常执行顺序
 

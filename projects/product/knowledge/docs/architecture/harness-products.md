@@ -63,7 +63,7 @@ Node 最低要求仍为 `24.15.0`；原生程序管理、真实模型账号和�
 
 ## DSH 插件组合
 
-DSH 是一个可选的生态宿主，也可以是 Harness 选择的原生执行入口；这两种角色不同。插件接入不复制对话权威，不把两套编排施加给同一执行；现有 `dsh-plugin` 继续服务 Development Web。[DSH Buildr Harness](../../../services/buildr-harness-dsh-plugin/README.md) 是独立发行目标 `@buildr-ai/dsh-buildr-harness`，使用核验后的本机正式 Harness；本机开发入口 Buildr Harness Dev 使用明确绑定的开发域。DSH 0.2.x 的宿主范围与实际桌面验收版本分开记录。日常兼容激活不需要重装插件；已有交互的页面先保留现场并提示刷新。
+DSH 是一个可选的生态宿主，也可以是 Harness 选择的原生执行入口；这两种角色不同。插件接入不复制对话权威，不把两套编排施加给同一执行。[DSH Buildr Development](../../../services/buildr-development-dsh-plugin/README.md) 是独立发行目标 `@buildr-ai/dsh-buildr-development`（开发变体 `@buildr-ai/buildr-development-dsh-plugin-dev`），采用零 DSH SDK 依赖与 `<webview>` 架构呈现完整 Buildr Development Web；仓库内现有 `dsh-plugin` 仅作历史兼容保留。[DSH Buildr Harness](../../../services/buildr-harness-dsh-plugin/README.md) 是独立发行目标 `@buildr-ai/dsh-buildr-harness`，使用核验后的本机正式 Harness；本机开发入口 Buildr Harness Dev 使用明确绑定的开发域。两者在 DSH 中按各自包名、侧栏槽位与通道前缀隔离并存。DSH 0.2.x 的宿主范围与实际桌面验收版本分开记录。日常兼容激活不需要重装插件；已有交互的页面先保留现场并提示刷新。
 
 既有拆分规范见[产品边界](../../../openspec/specs/harness-product/spec.md)、[网页装配](../../../openspec/specs/harness-web-composition/spec.md)和[独立发行](../../../openspec/specs/harness-independent-distribution/spec.md)；目录工作台和共享视图的本次演进见[工作台变更](../../../openspec/changes/archive/2026-11-20-harness-directory-workbench/proposal.md)。本页描述当前源码能力，不把候选实现当作所有渠道已交付。
 

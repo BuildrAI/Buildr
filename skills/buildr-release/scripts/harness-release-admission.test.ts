@@ -7,10 +7,11 @@ import {checkHarnessNpmAuthority} from './harness-npm-authority.ts';
 
 const admissions = fs.readFileSync(path.join(import.meta.dirname,'harness-release-admissions.json'),'utf8');
 const [original] = parseAdmissions(admissions);
+const firstPair = JSON.stringify({ schemaVersion: 'buildr.harness-release-admissions/v1', admissions: parseAdmissions(admissions).slice(0, 2) });
 const repo = 'BuildrAI/Buildr';
 const base = '1'.repeat(40), head = '2'.repeat(40), dev = '3'.repeat(40);
 const event = {pull_request:{base:{ref:'main',sha:base,repo:{full_name:repo}},head:{ref:'codex/release-harness-first-rc1',sha:head,repo:{full_name:repo}}}};
-function evidence({paths = firstReleasePaths, tree = original!.sourceTree, liveMain = base, raw = admissions, ancestor = true, setupAdmitted = false} = {}) {
+function evidence({paths = firstReleasePaths, tree = original!.sourceTree, liveMain = base, raw = firstPair, ancestor = true, setupAdmitted = false} = {}) {
   return (args: string[]) => {
     if (args[0]==='diff') return paths.join('\0')+'\0';
     if (args[0]==='show') return args[1]?.startsWith(`${base}:`) ? admissions : raw;
@@ -34,20 +35,23 @@ test('RC PR admits only the exact pair, from retained dev data, and only the lis
   assert.throws(()=>verifyHarnessFirstReleasePR(fork,repo,'.',evidence()),/pr-identity-invalid/);
 });
 test('duplicate candidates and non-RC evidence cannot substitute for first release pair',()=>{
-  const value=JSON.parse(admissions);value.admissions[1]=value.admissions[0];
+  const value=JSON.parse(firstPair);value.admissions[1]=value.admissions[0];
   assert.throws(()=>parseAdmissions(JSON.stringify(value)),/admission-duplicate/);
-  const next=JSON.parse(admissions);next.admissions[0].version='0.1.0-rc.2';
+  const next=JSON.parse(firstPair);next.admissions[0].version='0.1.0-rc.3';
   assert.throws(()=>verifyHarnessFirstReleasePR(event,repo,'.',evidence({raw:JSON.stringify(next)})),/first-release-pair-invalid/);
+  const devPlugin = JSON.parse(firstPair);
+  devPlugin.admissions.push({ ...original, target: 'dsh-buildr-development', version: '0.1.0-rc.1' });
+  assert.equal(parseAdmissions(JSON.stringify(devPlugin)).length, 3);
 });
 
 const setup = structuredClone(event);
 setup.pull_request.head.ref = 'codex/release-harness-admission-trusted-publishing';
 const update = structuredClone(event);
-update.pull_request.head.ref = 'codex/release-harness-admission-v0.1.0-rc.2';
+update.pull_request.head.ref = 'codex/release-harness-admission-v0.1.0-rc.3';
 const dataPaths = ['skills/buildr-release/scripts/harness-release-admissions.json'];
 function nextAdmissions() {
   const update = JSON.parse(admissions);
-  update.admissions.push({...original, version:'0.1.0-rc.2', sha256:'a'.repeat(64)});
+  update.admissions.push({...original, version:'0.1.0-rc.3', sha256:'a'.repeat(64)});
   return update;
 }
 test('trusted publishing setup cannot change the candidate data or admit a new version', () => {
@@ -58,10 +62,10 @@ test('trusted publishing setup cannot change the candidate data or admit a new v
 test('follow-up admission appends only the selected version, without product or workflow changes', () => {
   const candidate = nextAdmissions();
   const valid = {paths:dataPaths, raw:JSON.stringify(candidate)};
-  assert.deepEqual(verifyHarnessReleaseAdmissionPR(update, repo, '.', evidence(valid)).targets, [{target:'harness',version:'0.1.0-rc.2'}]);
+  assert.deepEqual(verifyHarnessReleaseAdmissionPR(update, repo, '.', evidence(valid)).targets, [{target:'harness',version:'0.1.0-rc.3'}]);
   assert.throws(() => verifyHarnessReleaseAdmissionPR(update, repo, '.', evidence({...valid, paths:[...dataPaths, '.github/workflows/publish-harness.yml']})), /paths-invalid/);
   assert.throws(() => verifyHarnessReleaseAdmissionPR(update, repo, '.', evidence({...valid, ancestor:false})), /source-not-retained/);
-  candidate.admissions.at(-1).version = '0.1.0-rc.3';
+  candidate.admissions.at(-1).version = '0.1.0-rc.4';
   assert.throws(() => verifyHarnessReleaseAdmissionPR(update, repo, '.', evidence({...valid, raw:JSON.stringify(candidate)})), /version-mismatch/);
   candidate.admissions[0].proofSha256 = 'a'.repeat(64);
   assert.throws(() => verifyHarnessReleaseAdmissionPR(update, repo, '.', evidence({...valid, raw:JSON.stringify(candidate)})), /not-append-only/);
@@ -80,7 +84,7 @@ const hosted = {
   ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'fake-request-token',
 };
 test('authority checks each exact package with no upload or credential in the result', async () => {
-  for (const [target, name] of [['harness', '@buildr-ai/buildr-harness'], ['dsh-buildr-harness', '@buildr-ai/dsh-buildr-harness']]) {
+  for (const [target, name] of [['harness', '@buildr-ai/buildr-harness'], ['dsh-buildr-harness', '@buildr-ai/dsh-buildr-harness'], ['dsh-buildr-development', '@buildr-ai/dsh-buildr-development']]) {
     let calls = 0;
     const result = await checkHarnessNpmAuthority({...hosted, RELEASE_TARGET:target}, async (input, options) => {
       const url = new URL(String(input));

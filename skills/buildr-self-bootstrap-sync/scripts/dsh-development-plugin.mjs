@@ -4,15 +4,36 @@ import path from 'node:path';
 import { dshDesktopContinuity } from './dsh-desktop-continuity.mjs';
 import { developmentWebDataRoot } from './development-web-continuity.mjs';
 
-const service = 'projects/product/services/buildr-harness-dsh-plugin';
-const name = '@buildr-ai/buildr-harness-dsh-plugin-dev';
+const PLUGINS = [
+  {
+    id: 'harness',
+    service: 'projects/product/services/buildr-harness-dsh-plugin',
+    name: '@buildr-ai/buildr-harness-dsh-plugin-dev',
+    ownerDir: '.buildr/local/buildr-harness-dsh-plugin',
+    archivePrefix: 'buildr-harness-dsh-plugin-dev-',
+    supportsContinuity: true,
+  },
+  {
+    id: 'development',
+    service: 'projects/product/services/buildr-development-dsh-plugin',
+    name: '@buildr-ai/buildr-development-dsh-plugin-dev',
+    ownerDir: '.buildr/local/buildr-development-dsh-plugin',
+    archivePrefix: 'buildr-development-dsh-plugin-dev-',
+    supportsContinuity: false,
+  },
+];
+
 const hostVersion = '0.2.2-rc.5';
 const cli = '/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh';
 
-export function isDshDevelopmentPluginInput(file) {
-  return file.startsWith(`${service}/src/`) || [
+function isPluginInput(plugin, file) {
+  return file.startsWith(`${plugin.service}/src/`) || [
     'package.json', 'cordis.patch.yml', 'tools/build-dev.ts', 'LICENSE',
-  ].some(input => file === `${service}/${input}`);
+  ].some(input => file === `${plugin.service}/${input}`);
+}
+
+export function isDshDevelopmentPluginInput(file) {
+  return PLUGINS.some(plugin => isPluginInput(plugin, file));
 }
 
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
@@ -24,34 +45,22 @@ const readFile = file => {
 const inside = (parent, file) => file.startsWith(parent + path.sep);
 const blocked = reason => ({ status: 'blocked', reason });
 
-/** Called only by the retained checkout's self-bootstrap runner, under its lock. */
-export function updateDshDevelopmentPlugin({ root, nodeExecutable, run, environment, platform = process.platform, hostCli = cli, restartDsh = false, continuity = dshDesktopContinuity }) {
-  if (platform !== 'darwin') return { status: 'skipped', reason: '本机没有受支持的 macOS DSH 桌面入口。' };
-  const home = environment.BUILDR_HOST_HOME || environment.HOME;
-  if (!home || !path.isAbsolute(home)) return blocked('无法确认 DSH 的宿主主目录。');
-  const dshHome = path.join(home, '.dsh');
-  const profile = path.join(dshHome, 'profiles', 'desktop');
-  const manifest = path.join(profile, 'package.json');
-  const ownerRoot = path.join(root, '.buildr/local/buildr-harness-dsh-plugin');
-  const installed = path.join(profile, 'node_modules', name);
-  const env = { ...environment, HOME: home, DSH_HOME: dshHome, PATH: `${path.dirname(nodeExecutable)}${path.delimiter}${environment.PATH || '/usr/bin:/bin'}` };
-  const appExited = () => {
-    const check = run('/bin/ps', ['-axo', 'comm='], 'dsh-processes', env);
-    return check.status === 0 && Boolean(String(check.stdout).trim()) && !/DeepSeek Harness|dsh-desktop-host/i.test(String(check.stdout));
-  };
+function updateSinglePlugin(plugin, { root, nodeExecutable, run, environment, platform, hostCli, restartDsh, continuity, home, dshHome, profile, manifest, env, appExited }) {
+  const ownerRoot = path.join(root, plugin.ownerDir);
+  const installed = path.join(profile, 'node_modules', plugin.name);
   let archive;
   const readBinding = () => {
     const bytes = readFile(manifest);
-    const spec = JSON.parse(bytes).dependencies?.[name];
+    const spec = JSON.parse(bytes).dependencies?.[plugin.name];
     if (spec === undefined) return null;
     if (typeof spec !== 'string' || !spec.startsWith('file:')) throw new Error('已安装的开发插件不是本工作空间的本地包。');
-    const archive = path.resolve(profile, spec.slice(5));
-    if (!inside(ownerRoot, archive) || !archive.endsWith('.tgz') || !securePath(archive) || !fs.lstatSync(archive).isFile()) throw new Error('已安装的开发插件不属于当前工作空间。');
-    if (JSON.parse(readFile(path.join(installed, 'package.json'))).name !== name) throw new Error('无法确认已安装的 DSH 开发插件身份。');
-    return { digest: hash(bytes), archive };
+    const resolved = path.resolve(profile, spec.slice(5));
+    if (!inside(ownerRoot, resolved) || !resolved.endsWith('.tgz') || !securePath(resolved) || !fs.lstatSync(resolved).isFile()) throw new Error('已安装的开发插件不属于当前工作空间。');
+    if (JSON.parse(readFile(path.join(installed, 'package.json'))).name !== plugin.name) throw new Error('无法确认已安装的 DSH 开发插件身份。');
+    return { digest: hash(bytes), archive: resolved };
   };
-  const matches = archive => ['package.json', 'cordis.patch.yml', 'lib/client.js', 'lib/index.js', 'lib/launcher.js'].every(file => {
-    const expected = run('/usr/bin/tar', ['-xOzf', archive, `package/${file}`], `dsh-verify-${file}`, env, { binary: true }, false);
+  const matches = targetArchive => ['package.json', 'cordis.patch.yml', 'lib/client.js', 'lib/index.js', 'lib/launcher.js'].every(file => {
+    const expected = run('/usr/bin/tar', ['-xOzf', targetArchive, `package/${file}`], `dsh-verify-${file}`, env, { binary: true }, false);
     return expected.status === 0 && readFile(path.join(installed, file)).equals(Buffer.from(expected.stdout));
   });
   let staging;
@@ -60,17 +69,18 @@ export function updateDshDevelopmentPlugin({ root, nodeExecutable, run, environm
     const initial = readBinding();
     if (!initial) return { status: 'skipped', reason: '未发现已安装的 DSH 开发插件。' };
     const host = fs.existsSync(hostCli) && securePath(hostCli) && run(hostCli, ['--version'], 'dsh-host-version', env);
-    if (!host || host.status !== 0 || String(host.stdout).trim() !== hostVersion)
+    if (!host || host.status !== 0 || String(host.stdout).trim() !== hostVersion) {
       return blocked('当前 DSH 桌面版本不在开发插件支持范围内。');
+    }
     if (!matches(initial.archive)) return blocked('已装插件与工作空间绑定的旧包不一致，未覆盖。');
     staging = fs.mkdtempSync(path.join(ownerRoot, 'prepare-'));
-    const build = run(nodeExecutable, [path.join(root, service, 'tools/build-dev.ts'), staging], 'dsh-build-plugin', env);
+    const build = run(nodeExecutable, [path.join(root, plugin.service, 'tools/build-dev.ts'), staging], 'dsh-build-plugin', env);
     if (build.status !== 0) return blocked('构建 DSH 开发插件失败，未更改安装。');
     const output = JSON.parse(String(build.stdout).trim().split('\n').at(-1));
-    if (output.name !== name || path.dirname(output.path) !== staging || !output.path.endsWith('.tgz')) return blocked('DSH 候选包身份不匹配。');
+    if (output.name !== plugin.name || path.dirname(output.path) !== staging || !output.path.endsWith('.tgz')) return blocked('DSH 候选包身份不匹配。');
     const bytes = readFile(output.path);
     const identity = hash(bytes);
-    archive = path.join(ownerRoot, `buildr-harness-dsh-plugin-dev-${identity}.tgz`);
+    archive = path.join(ownerRoot, `${plugin.archivePrefix}${identity}.tgz`);
     if (!fs.existsSync(archive)) fs.copyFileSync(output.path, archive, fs.constants.COPYFILE_EXCL);
     if (hash(readFile(archive)) !== identity) return blocked('DSH 候选包已变化，未更改安装。');
     if (matches(archive)) return { status: 'unchanged', archive, desktopLoaded: false };
@@ -79,7 +89,9 @@ export function updateDshDevelopmentPlugin({ root, nodeExecutable, run, environm
     if (!originalUnchanged()) return blocked('DSH 安装配置或插件文件在准备期间已变化，未覆盖。');
     let continuityController, verified;
     if (!appExited()) {
-      if (!restartDsh) return { status: 'pending', archive, reason: 'DSH 桌面仍在运行或未确认已退出；候选包已准备。' };
+      if (!restartDsh || !plugin.supportsContinuity) {
+        return { status: 'pending', archive, reason: 'DSH 桌面仍在运行或未确认已退出；候选包已准备。' };
+      }
       continuityController = continuity({ root, home, nodeExecutable, dataRoot: developmentWebDataRoot(environment, platform, home), run, env, exited: appExited });
       const quit = continuityController.quit(entryDigest(), originalUnchanged);
       if (quit.status !== 'exited') return { status: 'pending', archive, desktop: quit.status, reason: '未能确认同源 DSH 实例已正常退出；候选包已准备，未换包。' };
@@ -89,11 +101,14 @@ export function updateDshDevelopmentPlugin({ root, nodeExecutable, run, environm
     let result;
     try { result = run(hostCli, ['plugin', '--profile', 'desktop', 'add', '--ignore-scripts', archive], 'dsh-install-plugin', env, { timeout: 120000 }); }
     catch { result = { status: 1, errorCode: 'unknown' }; }
-    // Reconcile even if the CLI exits nonzero; never repeat an uncertain installation.
     const after = readBinding();
     if (after?.archive !== archive || !matches(archive)) {
       const restored = verified && !result.signal && !result.errorCode && originalUnchanged() ? continuityController.reopen(verified, entryDigest()) : null;
-      return { ...blocked(result.status === 0 ? 'DSH 安装结果回读不一致。' : 'DSH 换装未确认；已回读配置，不自动重试。'), archive, ...(verified ? { desktop: restored?.status || 'exited', desktopLoaded: false } : {}) };
+      return {
+        ...blocked(result.status === 0 ? 'DSH 安装结果回读不一致。' : 'DSH 换装未确认；已回读配置，不自动重试。'),
+        archive,
+        ...(verified ? { desktop: restored?.status || 'exited', desktopLoaded: false } : {}),
+      };
     }
     if (verified && (result.signal || result.errorCode)) {
       return { status: 'installed', archive, desktop: 'install-result-unconfirmed', desktopLoaded: false };
@@ -108,4 +123,64 @@ export function updateDshDevelopmentPlugin({ root, nodeExecutable, run, environm
   } finally {
     if (staging) fs.rmSync(staging, { recursive: true, force: true });
   }
+}
+
+/** Called only by the retained checkout's self-bootstrap runner, under its lock. */
+export function updateDshDevelopmentPlugin({
+  root,
+  nodeExecutable,
+  run,
+  environment,
+  platform = process.platform,
+  hostCli = cli,
+  restartDsh = false,
+  continuity = dshDesktopContinuity,
+  files = /** @type {string[] | null} */ (null),
+}) {
+  if (platform !== 'darwin') return { status: 'skipped', reason: '本机没有受支持的 macOS DSH 桌面入口。' };
+  const home = environment.BUILDR_HOST_HOME || environment.HOME;
+  if (!home || !path.isAbsolute(home)) return blocked('无法确认 DSH 的宿主主目录。');
+  const dshHome = path.join(home, '.dsh');
+  const profile = path.join(dshHome, 'profiles', 'desktop');
+  const manifest = path.join(profile, 'package.json');
+  const env = { ...environment, HOME: home, DSH_HOME: dshHome, PATH: `${path.dirname(nodeExecutable)}${path.delimiter}${environment.PATH || '/usr/bin:/bin'}` };
+  const appExited = () => {
+    const check = run('/bin/ps', ['-axo', 'comm='], 'dsh-processes', env);
+    return check.status === 0 && Boolean(String(check.stdout).trim()) && !/DeepSeek Harness|dsh-desktop-host/i.test(String(check.stdout));
+  };
+
+  const selected = Array.isArray(files) && files.length
+    ? PLUGINS.filter(plugin => files.some(file => isPluginInput(plugin, file)))
+    : PLUGINS;
+  if (!selected.length) return { status: 'skipped', reason: '未命中任何 DSH 开发插件构建输入。' };
+
+  const results = selected.map(plugin => ({
+    plugin: plugin.name,
+    ...updateSinglePlugin(plugin, { root, nodeExecutable, run, environment, platform, hostCli, restartDsh, continuity, home, dshHome, profile, manifest, env, appExited }),
+  }));
+  const active = results.filter(item => item.status !== 'skipped');
+  if (!active.length) {
+    const { plugin: _ignored, ...skipped } = results[0];
+    return skipped;
+  }
+  if (active.length === 1) {
+    const { plugin: _ignored, ...single } = active[0];
+    return single;
+  }
+  const blockedResult = active.find(item => item.status === 'blocked');
+  if (blockedResult) return { status: 'blocked', reason: blockedResult.reason, plugins: results };
+  const pendingResult = active.find(item => item.status === 'pending');
+  if (pendingResult) return { status: 'pending', reason: pendingResult.reason, archive: pendingResult.archive, plugins: results };
+  const installedResults = active.filter(item => item.status === 'installed');
+  if (installedResults.length) {
+    const lastInstalled = installedResults.at(-1);
+    return {
+      status: 'installed',
+      archive: lastInstalled.archive,
+      desktopLoaded: installedResults.some(item => item.desktopLoaded),
+      ...('desktop' in lastInstalled ? { desktop: lastInstalled.desktop } : {}),
+      plugins: results,
+    };
+  }
+  return { status: 'unchanged', archive: active.at(-1).archive, desktopLoaded: false, plugins: results };
 }
