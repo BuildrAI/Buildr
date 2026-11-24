@@ -18,8 +18,8 @@ const baseEvent: DesktopKeyboardInput = {
 };
 
 test('right-sidebar tool tab titles omit any Buildr prefix', () => {
-  assert.equal(toolTabTitle('explorer'), '资源管理器');
-  assert.equal(toolTabTitle('source-control'), '源代码管理');
+  assert.equal(toolTabTitle('explorer'), '文件');
+  assert.equal(toolTabTitle('source-control'), '代码库');
 });
 
 test('resolveRefreshBinding follows host page.refresh setting or platform default', () => {

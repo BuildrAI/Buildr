@@ -176,29 +176,34 @@ test('production Harness browses, edits, reviews and commits with no Development
   assert.equal(fs.readFileSync(path.join(repo, 'note.txt'), 'utf8'), 'changed in real Harness\n');
   if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await page.screenshot({ path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'workspace-explorer-editing.png') });
 
+  // Switching modules preserves the file and its editor.
+  await pick('源代码管理');
+  const plus = workspace.getByRole('button', { name: '打开工作区模块', exact: true });
+  const home = workspace.getByRole('navigation', { name: '工作区内容' });
+  await plus.click();
+  await home.getByRole('button', { name: '资源管理器', exact: true }).waitFor();
+  await home.getByRole('button', { name: '源代码管理', exact: true }).waitFor();
+  await home.getByRole('button', { name: '源代码管理', exact: true }).click();
+  assert.equal(await workspace.getByRole('tablist', { name: '已打开的工作区模块' }).getByRole('tab').count(), 2);
+  assert.equal(await moduleTab('资源管理器').getAttribute('aria-selected'), 'false');
+  assert.equal(await moduleTab('源代码管理').getAttribute('aria-selected'), 'true');
+  await moduleTab('源代码管理').press('ArrowLeft');
+  assert.match(await explorer.locator('.file-editing-pane .cm-content').innerText(), /changed in real Harness/);
+  await workspace.getByRole('button', { name: '关闭源代码管理标签', exact: true }).click();
+  assert.equal(await moduleTab('源代码管理').count(), 0);
+  assert.match(await explorer.locator('.file-editing-pane .cm-content').innerText(), /changed in real Harness/);
+
   // Keep the real save in flight until the competing disk write has happened.
   const saveRoute = '**/directory-workbench/save';
   let releaseSave!: () => void;
   const diskWrite = new Promise<void>(resolve => { releaseSave = resolve; });
-  await page.route(saveRoute, async route => { await diskWrite; await route.continue(); });
+  let observeSave!: () => void;
+  const saveObserved = new Promise<void>(resolve => { observeSave = resolve; });
+  await page.route(saveRoute, async route => { observeSave(); await diskWrite; await route.continue(); });
   try {
     await replaceCodeMirrorText(page, explorer, 'must not overwrite\n');
-    await pick('源代码管理');
-    const plus = workspace.getByRole('button', { name: '打开工作区模块', exact: true });
-    const home = workspace.getByRole('navigation', { name: '工作区内容' });
-    await plus.click();
-    await home.getByRole('button', { name: '资源管理器', exact: true }).waitFor();
-    await home.getByRole('button', { name: '源代码管理', exact: true }).waitFor();
-    await home.getByRole('button', { name: '源代码管理', exact: true }).click();
-    assert.equal(await workspace.getByRole('tablist', { name: '已打开的工作区模块' }).getByRole('tab').count(), 2);
-    assert.equal(await moduleTab('资源管理器').getAttribute('aria-selected'), 'false');
-    assert.equal(await moduleTab('源代码管理').getAttribute('aria-selected'), 'true');
-    await moduleTab('源代码管理').press('ArrowLeft');
-    assert.match(await explorer.locator('.file-editing-pane .cm-content').innerText(), /must not overwrite/);
-    await workspace.getByRole('button', { name: '关闭源代码管理标签', exact: true }).click();
-    assert.equal(await moduleTab('源代码管理').count(), 0);
-    assert.match(await explorer.locator('.file-editing-pane .cm-content').innerText(), /must not overwrite/);
-
+    await explorer.locator('.file-editing-header').click();
+    await saveObserved;
     // External write triggers 3-way conflict modal; adopt disk version cleanly
     fs.writeFileSync(path.join(repo, 'note.txt'), 'external version\n');
   } finally { releaseSave(); }

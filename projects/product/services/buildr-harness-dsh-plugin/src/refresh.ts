@@ -35,7 +35,7 @@ export const TOOL_LABELS: Record<Tool, string> = {
 
 /** Right-sidebar tabs render short tool names without any Buildr prefix. */
 export function toolTabTitle(kind: Tool): string {
-  return TOOL_LABELS[kind];
+  return kind === 'explorer' ? '文件' : '代码库';
 }
 
 export function detectDesktopPlatform(platform?: string): 'macos' | 'windows' | 'linux' {

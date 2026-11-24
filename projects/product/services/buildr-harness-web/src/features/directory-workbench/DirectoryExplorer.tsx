@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Alert, App, Button, Select, Spin, Tag } from 'antd';
-import { InfoCircleOutlined, ReloadOutlined } from '@ant-design/icons';
+import { FolderOpenOutlined, InfoCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useFileEditingContext } from '../../workbench/editor/FileEditingContext';
 import { FileEditingPane } from '../../workbench/editor/FileEditingPane';
 import type { MarkdownReadingPosition } from '../../workbench/editor/markdown-reading-position';
@@ -431,16 +431,24 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
     return { value: repo.path, label: codeRepositoryCode({ name: displayName, code: displayCode }), title: codeRepositoryLabel({ name: displayName, code: displayCode }) };
   });
   const selectedRepo = repos.find(repo => repo.path === repositoryPath);
-  const contextControl = <section className="code-root-selectors" aria-label="浏览来源">
-    {!choosingCheckout ? <Button size="small" type="link" onClick={() => onChooseCheckout(true)}>选择工作树</Button> : <>
-      <Button size="small" type="link" onClick={() => { setCheckout(null); setRepositoryPath(undefined); onChooseCheckout(false); }}>返回工作空间目录</Button>
-      <Select showSearch optionFilterProp="title" aria-label="选择代码库" placeholder="选择代码库" value={repositoryPath} loading={catalogLoading}
-        onChange={value => { setRepositoryPath(value); prioritizeRepository?.(value); }} options={repositoryOptions} popupRender={selectPopupGuard} />
-      <Select showSearch optionFilterProp="label" aria-label="选择工作树" placeholder="选择工作树" disabled={!selectedRepo} loading={Boolean(selectedRepo?.pending)}
+  const contextControl = <section className="code-root-selectors directory-browse-source" aria-label="浏览来源">
+    <div className="directory-browse-source-row">
+      <span className="directory-browse-source-current" title={checkoutSource?.location || scope.rootPath}>
+        <FolderOpenOutlined aria-hidden /><span>{checkout ? checkoutSource?.locationLabel || '所选工作树' : '工作空间目录'}</span>
+      </span>
+      <Button size="small" type="text" aria-expanded={choosingCheckout} onClick={() => {
+        if (choosingCheckout) { setCheckout(null); setRepositoryPath(undefined); }
+        onChooseCheckout(!choosingCheckout);
+      }}>{choosingCheckout ? (checkout ? '返回工作空间目录' : '取消选择') : '选择工作树'}</Button>
+    </div>
+    {choosingCheckout && <div className="directory-browse-source-fields">
+      <label><span>代码库</span><Select showSearch optionFilterProp="title" aria-label="选择代码库" placeholder="选择代码库" value={repositoryPath} loading={catalogLoading}
+        onChange={value => { setRepositoryPath(value); prioritizeRepository?.(value); }} options={repositoryOptions} popupRender={selectPopupGuard} /></label>
+      <label><span>工作树</span><Select showSearch optionFilterProp="label" aria-label="选择工作树" placeholder={selectedRepo?.pending ? '正在核对' : '选择工作树'} disabled={!selectedRepo || Boolean(selectedRepo.pending)} loading={Boolean(selectedRepo?.pending)}
         value={checkout?.repositoryId === selectedRepo?.id ? checkout?.checkoutId : undefined}
         onChange={id => { if (selectedRepo) setCheckout({ repositoryId: selectedRepo.id, checkoutId: id }); }}
-        options={selectedRepo?.members.map(member => ({ value: member.id, label: member.isMain ? '主工作树' : member.name, title: member.location }))} popupRender={selectPopupGuard} />
-    </>}
+        options={selectedRepo?.members.map(member => ({ value: member.id, label: member.isMain ? '主工作树' : member.name, title: member.location }))} popupRender={selectPopupGuard} /></label>
+    </div>}
   </section>;
   const inScope = Boolean(!activeTab || visibleSources.some(src => src.id === activeTab.browserId));
   const includeActive = () => {
@@ -498,6 +506,7 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
           selectedPath={activeTab?.path ?? ''}
           selectionKey={activeTab?.key}
           context={contextControl}
+          contextInTree
           location={file?.source.location || activeSource?.location || scope.rootPath}
           version={file?.source.version || activeSource?.branch || '当前文件'}
           focusLine={activeTab?.line}

@@ -1,7 +1,7 @@
 import { label, panelId as PANEL, released } from './channel.ts';
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentType } from 'react';
 import { attachHarnessGuest, desktopBridge, desktopKeyboard, type DesktopBridge } from './guest.ts';
-import { detectDesktopPlatform, resolveRefreshBinding, shouldRefreshCenterHarness, toolTabTitle, type ShortcutCatalogEntry } from './refresh.ts';
+import { detectDesktopPlatform, resolveRefreshBinding, shouldRefreshCenterHarness, TOOL_LABELS, toolTabTitle, type ShortcutCatalogEntry } from './refresh.ts';
 import { linkDestination, liveCarrier, preferredCarrier, sessionSelection, shouldNotifyChatActive, toolAddress, toolId, workspaceDisplayName, type GuestMessage, type Reveal, type Scope, type SessionCatalog, type Tool } from './workspace.ts';
 
 const ANCHOR = '--buildr-harness-dsh';
@@ -326,7 +326,7 @@ export function apply(ctx: Context) {
         const id = toolId(kind);
         return ctx.sidebarRightTabs.register({ id, kind: id, title: () => toolTabTitle(kind), patterns: [toolAddress(kind)],
           canOpen: (address: string) => address === toolAddress(kind), keepMounted: true,
-          ...(visible ? { guide: [{ id, title: () => toolTabTitle(kind), icon: guideIcons[kind], order: kind === 'explorer' ? 5 : 6 }] } : {}) });
+          ...(visible ? { guide: [{ id, title: () => TOOL_LABELS[kind], icon: guideIcons[kind], order: kind === 'explorer' ? 5 : 6 }] } : {}) });
       });
     };
     syncToolEntries(false);

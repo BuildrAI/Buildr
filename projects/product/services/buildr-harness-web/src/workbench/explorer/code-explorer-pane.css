@@ -53,3 +53,12 @@
   .code-file-tabstrip>.ant-btn { font-size:var(--font-size-meta); padding-inline:4px; }
   .code-explorer-stage .repository-reader-toolbar,.code-explorer-stage .repository-reader-footer { flex-wrap:wrap; }
 }
+
+/* File browsing controls share the same inset as the file search. */
+.directory-browse-source { flex:none; padding:0 10px 8px; }
+.directory-browse-source-row { display:flex; align-items:center; justify-content:space-between; gap:6px; min-width:0; }
+.directory-browse-source-current { display:flex; align-items:center; gap:6px; min-width:0; color:var(--soft-muted); font-size:var(--font-size-code); }
+.directory-browse-source-current > span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.directory-browse-source-row > .ant-btn { flex:none; color:var(--soft-primary); }
+.directory-browse-source-fields { display:grid; gap:6px; }
+.directory-browse-source-fields > label { display:grid; grid-template-columns:3.5em minmax(0,1fr); align-items:center; gap:6px; color:var(--soft-muted); font-size:var(--font-size-meta); }
