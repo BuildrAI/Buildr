@@ -730,7 +730,8 @@ test('standalone nests visible child conversations in reminders and history', {t
   fs.mkdirSync(work);
   const coreRoot = path.resolve(import.meta.dirname, '../../../buildr-harness');
   agentRuntimePackageTree(coreRoot).materialize(packageRoot);
-  fs.copyFileSync(path.join(coreRoot, 'test/integration/fixtures/agent-process-entry.mjs'), path.join(packageRoot, 'build/browser-fixture.mjs'));
+  const fixture = fs.readFileSync(path.join(coreRoot, 'test/integration/fixtures/agent-process-entry.mjs'), 'utf8');
+  fs.writeFileSync(path.join(packageRoot, 'build/browser-fixture.mjs'), fixture.replace("label:'Fixture',images:false", "label:'Fixture',images:true"));
   fs.writeFileSync(path.join(packageRoot, 'build/fixture-version.json'), '{"version":"child-list-browser"}');
   const runtime = prepareAgentRuntime({dataRoot, packageRoot, entry: 'build/browser-fixture.mjs'});
   const client = cleanupClient = await connectHarnessProcess({dataRoot, profileId, runtime, sourceId: 'harness-local', caller: {kind: 'first-party-user', product: 'buildr-harness'}});
@@ -746,14 +747,20 @@ test('standalone nests visible child conversations in reminders and history', {t
   const context = await browser.newContext({viewport: {width: 500, height: 800}, reducedMotion: 'reduce'});
   // Both results are still unseen. The newer child normally sorts first,
   // and the reminder and expanded list group it immediately below its parent.
-  const sendLayoutFixture = async (draft: {id: string; revision: string}, text: string) => {
-    const input = {expectedRevision: draft.revision, connectionId: 'first', model: 'fixture', modelAccountId: account.id, modelAccountIdentity: account.identity, text};
+  const sendLayoutFixture = async (draft: {id: string; revision: string}, text: string, attachmentIds?: string[]) => {
+    const input = {expectedRevision: draft.revision, connectionId: 'first', model: 'fixture', modelAccountId: account.id, modelAccountIdentity: account.identity, text, attachmentIds};
     const preview = await client.operations.conversations.prepareSend(scope, draft.id, input);
     await client.operations.conversations.send(scope, draft.id, {...input, previewToken: preview.token, clientRequestId: randomUUID()});
     return until(() => client.operations.conversations.read(scope, draft.id), view => view.run?.status === 'completed', text);
   };
-  const layoutParent = await sendLayoutFixture(await client.operations.conversations.create(scope, {title: '层级验证父对话'}), 'layout parent');
+  const parentDraft = await client.operations.conversations.create(scope, {title: '层级验证父对话'});
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMIyOv5DwAEpgJKOom3cgAAAABJRU5ErkJggg==', 'base64');
+  const doc = Buffer.from('Original document contents.');
+  const image = await client.operations.conversations.addAttachment(scope, parentDraft.id, {expectedRevision: parentDraft.revision, name: 'original.png', mimeType: 'image/png', bytes: png});
+  const document = await client.operations.conversations.addAttachment(scope, parentDraft.id, {expectedAttachmentRevision: image.attachmentRevision, name: 'original.txt', mimeType: 'text/plain', bytes: doc});
+  const layoutParent = await sendLayoutFixture({...parentDraft,revision:document.revision}, 'layout parent', [image.id, document.id]);
   const layoutChild = await sendLayoutFixture(await client.operations.conversations.createChild(scope, layoutParent.id, {expectedRevision: layoutParent.revision, clientRequestId: randomUUID()}), 'layout child');
+  await context.grantPermissions(['clipboard-read','clipboard-write']);
   const layoutPage = await context.newPage();
   const activityResponse = layoutPage.waitForResponse(response => response.url().includes('/activity-summary') && response.ok());
   await layoutPage.goto((await client.web.login()).url);
@@ -809,6 +816,35 @@ test('standalone nests visible child conversations in reminders and history', {t
   await child.waitFor();
   assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
   assert.equal(await toggle.getAttribute('aria-disabled'), 'true', 'current child keeps its ancestors open');
+
+  // The production clipboard path must restore original attachments in a different draft.
+  await layoutPage.setViewportSize({width: 1200,height: 800});
+  const parent = layoutPage.locator(`.ac-history [data-conversation-id="${layoutParent.id}"]`);
+  if (!await parent.isVisible()) await layoutRail.click();
+  await parent.click();
+  const prompt = layoutPage.locator('.ac-turn-prompt').filter({hasText:'layout parent'});
+  await prompt.hover();
+  await prompt.getByRole('button',{name:'复制消息',exact:true}).click();
+  await prompt.getByRole('button',{name:'已复制',exact:true}).waitFor();
+  assert.ok(await layoutPage.evaluate(async()=> (await navigator.clipboard.read()).some(item=>item.types.includes('text/html'))), 'attachment copy retains rich clipboard marker');
+  if (!await parent.isVisible()) await layoutRail.click();
+  await parent.waitFor({state:'visible',timeout:5000});
+  if (!await child.isVisible()) await toggle.click({timeout:5000});
+  await child.click();
+  const composer = layoutPage.locator(`.ac-panel[data-conversation-id="${layoutChild.id}"] .ac-composer`);
+  const input = composer.getByRole('textbox',{name:'对话输入',exact:true});
+  await input.fill('draft: ');
+  await input.press('End');
+  const uploads: Buffer[] = [];
+  layoutPage.on('request', request => {
+    if (request.method() === 'POST' && request.url().endsWith(`/conversations/${layoutChild.id}/attachments`)) uploads.push(request.postDataBuffer()!);
+  });
+  await input.press('ControlOrMeta+v');
+  await composer.getByRole('button',{name:'移除文档 original.txt',exact:true}).waitFor({state:'attached',timeout:5000}).catch(async error=>{t.diagnostic(JSON.stringify({errors:await layoutPage.locator('.ant-alert-message').allTextContents(),uploads:uploads.length}));throw error;});
+  assert.equal(await input.inputValue(),'draft: layout parent');
+  assert.deepEqual(await composer.locator('.ac-image-thumbnail').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('title'))), ['original.png','original.txt']);
+  assert.deepEqual(uploads,[png,doc]);
+  assert.equal((await client.operations.conversations.read(scope,layoutChild.id)).entries.length,layoutChild.entries.length,'pasting does not send a new message');
 
   await context.close();
 });

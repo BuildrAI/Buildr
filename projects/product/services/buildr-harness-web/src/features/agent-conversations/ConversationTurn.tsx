@@ -1,13 +1,12 @@
 import { DownOutlined, RightOutlined } from '@ant-design/icons';
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { CopyButton } from '../../components/CopyButton.tsx';
 import { ConversationExecutionIndicator } from './ConversationExecutionIndicator.tsx';
 import { locateConversationContent } from './conversation-reading.ts';
 
 type Props = {
   id: string;
   runId?: string;
-  prompt?: { id: string; text: string; images?: ReactNode; diagnostic?: ReactNode };
+  prompt?: { id: string; text: string; images?: ReactNode; copyAction?: ReactNode; diagnostic?: ReactNode };
   identity?: string;
   executing?: boolean;
   startedAt?: string;
@@ -58,7 +57,7 @@ export function ConversationTurn({ id, runId, prompt, identity, executing = fals
             {long && <button type="button" className="ac-turn-prompt-toggle" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? '收起内容' : '展开内容'}</button>}
             {prompt.diagnostic}
           </div>
-          {prompt.text && <span className="ac-reply-actions ac-user-actions"><CopyButton type="text" text={prompt.text} ariaLabel="复制消息" failureMessage="复制失败，请手动选择文字。" /></span>}
+          {prompt.copyAction}
         </article>}
       </div>
       {showIdentity && <div className="ac-turn-identity">
