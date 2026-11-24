@@ -85,3 +85,7 @@ export function linkDestination(preference: unknown, external: boolean, native: 
 export function sessionSelection(expected: string | undefined, selected: string | undefined): 'align' | 'leave' {
   return expected !== undefined && selected === expected ? 'align' : 'leave';
 }
+
+export function shouldNotifyChatActive(panelActive: boolean, visibilityState: string): boolean {
+  return panelActive && visibilityState === 'visible';
+}

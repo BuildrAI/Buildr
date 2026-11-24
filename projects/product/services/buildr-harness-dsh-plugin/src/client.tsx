@@ -2,7 +2,7 @@ import { label, panelId as PANEL, released } from './channel.ts';
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentType } from 'react';
 import { attachHarnessGuest, desktopBridge, desktopKeyboard, type DesktopBridge } from './guest.ts';
 import { detectDesktopPlatform, resolveRefreshBinding, shouldRefreshCenterHarness, toolTabTitle, type ShortcutCatalogEntry } from './refresh.ts';
-import { linkDestination, liveCarrier, preferredCarrier, sessionSelection, toolAddress, toolId, type GuestMessage, type Reveal, type Scope, type SessionCatalog, type Tool } from './workspace.ts';
+import { linkDestination, liveCarrier, preferredCarrier, sessionSelection, shouldNotifyChatActive, toolAddress, toolId, type GuestMessage, type Reveal, type Scope, type SessionCatalog, type Tool } from './workspace.ts';
 
 const ANCHOR = '--buildr-harness-dsh';
 const KEY = released ? 'buildr.harness-dsh.released.carriers.v1' : 'buildr.harness-dsh.carriers.v1';
@@ -247,12 +247,15 @@ export function apply(ctx: Context) {
   }
   function Shell() {
     const observed = useSyncExternalStore(store.subscribe, store.getSnapshot);
+    useEffect(() => {
+      if (observed.opened) sendToChat?.({ active: observed.active });
+    }, [observed.opened, observed.active]);
     if (!observed.opened) return null;
     return <section aria-label={label} className="buildr-harness-dsh-center" hidden={!observed.active} style={observed.active ? {
       position: 'fixed', ...{ positionAnchor: ANCHOR, top: 'max(anchor(top), var(--dsh-frame-top-clearance, 0px))', bottom: 'anchor(bottom)', left: 'anchor(left)', width: 'anchor-size(width)' },
       pointerEvents: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--dsw-alias-bg-base, Canvas)', color: 'CanvasText',
     } : { display: 'none' }}>
-      <Guest bridge={bridge!} onMessage={accept} onControl={fn => { sendToChat = fn; tellGuest(); }} onRefresh={handle => { chatRefresh = handle; }} />
+      <Guest bridge={bridge!} onMessage={accept} onControl={fn => { sendToChat = fn; tellGuest(); fn({ active: state.active }); }} onRefresh={handle => { chatRefresh = handle; }} />
     </section>;
   }
   ctx.effect(() => {
@@ -373,8 +376,13 @@ export function apply(ctx: Context) {
           window.addEventListener('keydown', onKeyDown);
           return () => window.removeEventListener('keydown', onKeyDown);
         })();
+    const notifyChatActive = () => {
+      if (shouldNotifyChatActive(state.active, document.visibilityState)) sendToChat?.({ active: true });
+    };
+    window.addEventListener('focus', notifyChatActive);
+    document.addEventListener('visibilitychange', notifyChatActive);
     const stop = [store.subscribe(() => { syncSlots(); tellGuest(); }), layout.panelInfo.subscribe(() => { syncPanel(); tellGuest(); }), sessions.list.subscribe(align), workspaces.list.subscribe(align), uiSession.adapter.current.subscribe(syncSession), sidebarRight.mounted.subscribe(tellGuest),
-      stopRefresh, () => { document.removeEventListener('click', nativeRow, true); document.removeEventListener('keydown', nativeRow, true); }];
+      stopRefresh, () => { window.removeEventListener('focus', notifyChatActive); document.removeEventListener('visibilitychange', notifyChatActive); document.removeEventListener('click', nativeRow, true); document.removeEventListener('keydown', nativeRow, true); }];
     syncPanel();
     return () => {
       syncToolEntries = () => {};

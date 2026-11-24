@@ -1,4 +1,4 @@
-import { createStreamingSeenScheduler, findDisplayedUnseenConversation, refreshSeenActivity } from './seen-activity-refresh.ts';
+import { createStreamingSeenScheduler, findDisplayedUnseenConversation, refreshSeenActivity, resolveSeenRefreshTarget } from './seen-activity-refresh.ts';
 import { recordSeenActivity, type SeenActivityMap } from './conversation-seen-hold.ts';
 import { createVisiblePoller } from '../../lib/visible-poller.ts';
 import { activityPollMs } from './activity-polling.ts';
@@ -356,13 +356,25 @@ export function AgentConversationsProvider({children, client = agentConversation
     }).catch(()=>{ /* A global refresh will retry discovery; do not alarm an ended run. */ });
     return()=>controller.abort();
   },[activityRows,streamError,client,apply,getSelection,isSelectionCurrent]);
+  const refreshPendingRef=useRef(refreshPending);refreshPendingRef.current=refreshPending;
   useEffect(()=>{
+    let hostActive:boolean|undefined;
     const readCurrent=()=>{
       const before=conversationRef.current;if(!before||document.visibilityState==='hidden')return;
       const selection=getSelection();
       void client.read(before.workspaceId,before.id).then(next=>{if(isSelectionCurrent(selection))apply(next,before.revision);}).catch(()=>{});
     };
-    window.addEventListener('focus',readCurrent);document.addEventListener('visibilitychange',readCurrent);return()=>{window.removeEventListener('focus',readCurrent);document.removeEventListener('visibilitychange',readCurrent);};
+    const onHost=(event:Event)=>{
+      const active=(event as CustomEvent).detail?.active;
+      if(typeof active!=='boolean')return;
+      if(active&&hostActive!==true){
+        readCurrent();
+        if(document.visibilityState!=='hidden')void refreshPendingRef.current().catch(()=>{});
+      }
+      hostActive=active;
+    };
+    window.addEventListener('focus',readCurrent);document.addEventListener('visibilitychange',readCurrent);window.addEventListener('buildr-dsh-host',onHost);
+    return()=>{window.removeEventListener('focus',readCurrent);document.removeEventListener('visibilitychange',readCurrent);window.removeEventListener('buildr-dsh-host',onHost);};
   },[client,apply,getSelection,isSelectionCurrent]);
   const observationKey=conversationObservationKey(conversation);
   const previousObservationKey=useRef<string|null>(null);
@@ -404,7 +416,15 @@ export function AgentConversationsProvider({children, client = agentConversation
       if (event.type !== 'snapshot') failures = 0;
       setReconnecting(false);
       const snapshot=event.payload.conversation;
-      if(snapshot){const signature=[snapshot.workspaceId,snapshot.id,snapshot.run?.status||'',...snapshot.requests.map(request=>request.id)].join(':');if(signature!==attentionSignature.current){attentionSignature.current=signature;void refreshPending().catch(()=>{});}}
+      if(snapshot){
+        const signature=[snapshot.workspaceId,snapshot.id,snapshot.run?.status||'',...snapshot.requests.map(request=>request.id)].join(':');
+        if(signature!==attentionSignature.current){
+          attentionSignature.current=signature;
+          const flushed=seenSchedulerRef.current?.flushMatching(snapshot);
+          if(flushed)void flushed.finally(()=>{void refreshPending().catch(()=>{});});
+          else void refreshPending().catch(()=>{});
+        }
+      }
       if(!needsConversationObservation(conversationRef.current))finish();
     };
     // Every dropped connection first reconciles current facts. A missed final
@@ -510,34 +530,51 @@ export function AgentConversationsProvider({children, client = agentConversation
   const setOpen = useCallback((value: boolean) => { if (standalone && !value) return; setVisibility(value); if (!value) { setFull(false); return; } savePanel(value,scopeRef.current,fullRef.current,viewRef.current); }, [standalone,setVisibility,setFull]);
   const openHistory=useCallback((workspaceId:string|null=null,options:VisibilityOptions={})=>{setHistoryWorkspaceId(workspaceId);if(!options.preserveVisibility)setVisibility(true);setView('history');},[setVisibility,setView]);
   const openGlobal=useCallback(()=>openHistory(null),[openHistory]);
-  const seenInFlight=useRef(new Set<string>());
+  const seenInFlight=useRef(new Map<string,Promise<boolean>>());
   const [seenActivities,setSeenActivities]=useState<SeenActivityMap>({});
   const displayedActivity=useRef(activityRows);displayedActivity.current=activityRows;
-  const sendSeen=useCallback(async(value:ConversationView)=>{
-    const version=value.activity?.version;if(version===undefined||version<=(value.activity?.seenThrough??0)||!client.seen)return;
-    const key=value.workspaceId+':'+value.id+':'+version;if(seenInFlight.current.has(key))return;seenInFlight.current.add(key);
-    try{
-      const result=await client.seen(value,version),previous=conversationRef.current;
-      setSeenActivities(current=>recordSeenActivity(current,value.workspaceId,value.id,result.activity));
-      if(previous?.id===value.id&&previous.workspaceId===value.workspaceId){
-        const next={...previous,activity:previous.activity&&previous.activity.version>result.activity.version?{...previous.activity,seenThrough:Math.max(previous.activity.seenThrough,result.activity.seenThrough)}:result.activity};
-        conversationRef.current=next;setConversation(next);
-      }
-      const validVersions=new Set<number|string>([tickTracker.current.global,'global:'+tickTracker.current.global,'workspace:'+(tickTracker.current.workspaces[value.workspaceId]??0)]);
-      const beforeGlobal=tickTracker.current.global,beforeWorkspace=tickTracker.current.workspaces[value.workspaceId]??0;
-      const refreshed=await refreshSeenActivity(value,findDisplayedUnseenConversation(value.workspaceId,value.id,displayedActivity.current,historyCache.pages.values(),validVersions),()=>{
-        ++activityGeneration.current;activityRead.current=null;
-      },refreshActivity);
-      if(refreshed){
-        if(tickTracker.current.global===beforeGlobal)bumpGlobalTick();
-        if((tickTracker.current.workspaces[value.workspaceId]??0)===beforeWorkspace)bumpWorkspaceTicks([value.workspaceId]);
-      }
-    }catch(error){setActivityError(error instanceof Error?error.message:'查看状态尚未保存。');}finally{seenInFlight.current.delete(key);}
+  const sendSeen=useCallback(async(value:ConversationView):Promise<boolean>=>{
+    const version=value.activity?.version;if(version===undefined||version<=(value.activity?.seenThrough??0)||!client.seen)return true;
+    const key=value.workspaceId+':'+value.id+':'+version;
+    const existing=seenInFlight.current.get(key);
+    if(existing)return existing;
+    const pending=(async()=>{
+      try{
+        const result=await client.seen!(value,version),previous=conversationRef.current;
+        const refreshTarget=resolveSeenRefreshTarget(value,previous);
+        setSeenActivities(current=>recordSeenActivity(current,value.workspaceId,value.id,result.activity));
+        if(previous?.id===value.id&&previous.workspaceId===value.workspaceId){
+          const next={...previous,activity:previous.activity&&previous.activity.version>result.activity.version?{...previous.activity,seenThrough:Math.max(previous.activity.seenThrough,result.activity.seenThrough)}:result.activity};
+          conversationRef.current=next;setConversation(next);
+        }
+        const validVersions=new Set<number|string>([tickTracker.current.global,'global:'+tickTracker.current.global,'workspace:'+(tickTracker.current.workspaces[value.workspaceId]??0)]);
+        const beforeGlobal=tickTracker.current.global,beforeWorkspace=tickTracker.current.workspaces[value.workspaceId]??0;
+        const refreshed=await refreshSeenActivity(refreshTarget,findDisplayedUnseenConversation(value.workspaceId,value.id,displayedActivity.current,historyCache.pages.values(),validVersions),()=>{
+          ++activityGeneration.current;activityRead.current=null;
+        },refreshActivity);
+        if(refreshed){
+          if(tickTracker.current.global===beforeGlobal)bumpGlobalTick();
+          if((tickTracker.current.workspaces[value.workspaceId]??0)===beforeWorkspace)bumpWorkspaceTicks([value.workspaceId]);
+        }
+        return true;
+      }catch(error){setActivityError(error instanceof Error?error.message:'查看状态尚未保存。');return false;}
+      finally{seenInFlight.current.delete(key);}
+    })();
+    seenInFlight.current.set(key,pending);
+    return pending;
   },[client,historyCache,refreshActivity,bumpGlobalTick,bumpWorkspaceTicks]);
   const sendSeenRef=useRef(sendSeen);sendSeenRef.current=sendSeen;
   const seenSchedulerRef=useRef<ReturnType<typeof createStreamingSeenScheduler>|null>(null);
   if(!seenSchedulerRef.current){
-    seenSchedulerRef.current=createStreamingSeenScheduler({send:value=>sendSeenRef.current(value)});
+    seenSchedulerRef.current=createStreamingSeenScheduler({
+      send:value=>sendSeenRef.current(value),
+      shouldRetry:value=>{
+        const current=conversationRef.current;
+        if(!current||current.workspaceId!==value.workspaceId||current.id!==value.id)return false;
+        const version=value.activity?.version;
+        return version!==undefined&&version>(current.activity?.seenThrough??0)&&(current.activity?.version??version)<=version;
+      },
+    });
   }
   useEffect(()=>{
     const scheduler=seenSchedulerRef.current!;
@@ -550,7 +587,7 @@ export function AgentConversationsProvider({children, client = agentConversation
     };
   },[]);
   useEffect(()=>()=>{void seenSchedulerRef.current?.flush();},[scope?.workspaceId,scope?.conversationId]);
-  const markSeen=useCallback((value:ConversationView)=>seenSchedulerRef.current!.notify(value),[]);
+  const markSeen=useCallback((value:ConversationView)=>seenSchedulerRef.current!.notify(value).then(()=>undefined),[]);
   const toggleView=useCallback((target:'conversation'|'history')=>{const next=nextConversationPanel(open,view,target);if(target==='history'&&next.open)setHistoryWorkspaceId(null);setView(next.view);setOpen(next.open);},[open,view,setOpen,setView]);
   const toggle=useCallback(()=>setOpen(!open),[open,setOpen]);
   const shell=useMemo(()=>({open,view,full,pending,openGlobal,toggle,toggleView,setSettings,newConversation}),[open,view,full,pending,openGlobal,toggle,toggleView,newConversation]);

@@ -65,7 +65,7 @@ import { conversationSubagents, subagentWaitingLabel } from './conversation-suba
 import { ConversationProcessBlock } from './ConversationProcessBlock.tsx';
 import {modelPreferenceFromChoice,preferredConversationChoice,readConversationModelPreference,readConversationModulePreference,rememberConversationAgent,rememberConversationPermission,rememberedConversationPermission,writeConversationModelPreference,writeConversationModulePreference} from './conversation-preferences.ts';
 import {isQuietAutomaticContinuation,conversationSystemNoticeText,visibleConversationEntries,conversationModelWarning,conversationActionError,conversationHandoffReceipt,conversationNativeSessionDiagnostic,conversationNativeSessionIssue,conversationNativeSessionSummary,latestVisibleConversationMessage} from './conversation-notices.ts';
-import { findSeenFallbackTarget, isConversationViewVisible } from './seen-activity-refresh.ts';
+import { findSeenFallbackTarget, isConversationViewVisible, seenAttemptKey } from './seen-activity-refresh.ts';
 import { revealConversationAnswer } from './conversation-reading.ts';
 import './agent-conversations.css';
 import {AgentConnectionSettings} from './AgentConnectionSettings';
@@ -802,8 +802,10 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     const element=stream.current;
     if(!chat||!element||!conversationVisible)return;
     const latest=latestVisibleConversationMessage(chat.entries);
-    const check=()=>{
-      if(document.visibilityState!=='visible'||!latest||!element.getClientRects().length)return;
+    const key=seenAttemptKey(chat);
+    let activeFrame=0;
+    const check=(forceRetry=false)=>{
+      if(document.visibilityState!=='visible'||!latest||!key||!element.getClientRects().length)return;
       let message=Array.from(element.querySelectorAll<HTMLElement>('[data-entry-id]')).find(node=>node.dataset.entryId===latest.id);
       if(!message||!message.getClientRects().length){
         const fallback=findSeenFallbackTarget(latest,visibleEntries,chat.run,chat.retainedRuns,expandedGroupsRef.current);
@@ -816,14 +818,19 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
       if(!message)return;
       const bounds=element.getBoundingClientRect(),rect=message.getBoundingClientRect();
       if(rect.top>=bounds.bottom||rect.bottom<=bounds.top||rect.width===0)return;
-      const key=chat.workspaceId+':'+chat.id+':'+chat.activity?.version;
-      if(seenAttempt.current===key)return;
+      if(!forceRetry&&seenAttempt.current===key)return;
       seenAttempt.current=key;void context.markSeen(chat);
     };
-    const frame=requestAnimationFrame(check);
-    const observer=new ResizeObserver(check);observer.observe(element);if(streamContent.current)observer.observe(streamContent.current);
-    element.addEventListener('scroll',check);document.addEventListener('visibilitychange',check);window.addEventListener('focus',check);
-    return()=>{cancelAnimationFrame(frame);observer.disconnect();element.removeEventListener('scroll',check);document.removeEventListener('visibilitychange',check);window.removeEventListener('focus',check);};
+    const checkPassive=()=>check(false),checkRetry=()=>check(true);
+    const onHost=(event:Event)=>{
+      if((event as CustomEvent).detail?.active!==true)return;
+      checkRetry();
+      if(!activeFrame)activeFrame=requestAnimationFrame(()=>{activeFrame=0;checkRetry();});
+    };
+    const frame=requestAnimationFrame(checkPassive);
+    const observer=new ResizeObserver(checkPassive);observer.observe(element);if(streamContent.current)observer.observe(streamContent.current);
+    element.addEventListener('scroll',checkPassive);document.addEventListener('visibilitychange',checkRetry);window.addEventListener('focus',checkRetry);window.addEventListener('buildr-dsh-host',onHost);
+    return()=>{cancelAnimationFrame(frame);if(activeFrame)cancelAnimationFrame(activeFrame);observer.disconnect();element.removeEventListener('scroll',checkPassive);document.removeEventListener('visibilitychange',checkRetry);window.removeEventListener('focus',checkRetry);window.removeEventListener('buildr-dsh-host',onHost);};
   },[chat,visibleEntries,conversationVisible,context.markSeen]);
   const run=chat?.run;
   const failedRunInputStatus=run?.status==='failed'

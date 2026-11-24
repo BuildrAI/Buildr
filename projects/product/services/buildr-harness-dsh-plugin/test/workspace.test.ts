@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHANNEL, linkDestination, liveCarrier, matchingCarriers, parseGuestMessage, preferredCarrier, sessionSelection, sameDirectory, toolAddress, type Session, type SessionCatalog } from '../src/workspace.ts';
+import { CHANNEL, linkDestination, liveCarrier, matchingCarriers, parseGuestMessage, preferredCarrier, sessionSelection, shouldNotifyChatActive, sameDirectory, toolAddress, type Session, type SessionCatalog } from '../src/workspace.ts';
 
 const scope = { id: 'work', path: '/fixtures/repo' };
 const message = (data: object) => parseGuestMessage(CHANNEL+JSON.stringify(data));
@@ -87,4 +87,11 @@ test('only the carrier handoff acknowledges internal navigation', () => {
   assert.equal(sessionSelection('carrier','other'),'leave');
   assert.equal(sessionSelection(undefined,'carrier'),'leave');
   assert.equal(sessionSelection(undefined,undefined),'leave');
+});
+
+test('only notifies the chat guest active when both the panel and host document are visible', () => {
+  assert.equal(shouldNotifyChatActive(true, 'visible'), true);
+  assert.equal(shouldNotifyChatActive(false, 'visible'), false);
+  assert.equal(shouldNotifyChatActive(true, 'hidden'), false);
+  assert.equal(shouldNotifyChatActive(false, 'hidden'), false);
 });
