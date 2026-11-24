@@ -13,30 +13,52 @@ export function parsePreviewImage(value: unknown, now: number): PreviewImage | u
 export function openImagePreview(image: PreviewImage, focusReturn: HTMLElement): () => void {
   const dialog = document.createElement('dialog');
   dialog.setAttribute('aria-label', '图片预览');
-  Object.assign(dialog.style, { boxSizing: 'border-box', width: '100vw', height: '100vh', maxWidth: 'none', maxHeight: 'none',
-    margin: '0', padding: '0', border: '0', background: 'rgba(12, 16, 24, .82)', color: 'white', overflow: 'hidden' });
-  const header = document.createElement('header');
-  Object.assign(header.style, { position: 'absolute', zIndex: '1', inset: '0 0 auto', padding: '12px 18px', display: 'flex', gap: '10px', alignItems: 'center', background: 'rgba(12, 16, 24, .86)' });
-  const caption = document.createElement('span'); caption.textContent = image.name;
-  Object.assign(caption.style, { flex: '1', minWidth: '0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
-  const zoom = document.createElement('button'); zoom.type = 'button'; zoom.textContent = '实际大小';
-  const close = document.createElement('button'); close.type = 'button'; close.textContent = '关闭预览'; close.autofocus = true;
+  Object.assign(dialog.style, {
+    position: 'fixed', inset: '0', boxSizing: 'border-box', width: '100%', height: '100%',
+    maxWidth: 'none', maxHeight: 'none', margin: '0', border: '0', overflow: 'hidden',
+    padding: 'max(48px, var(--dsh-frame-top-clearance, 0px)) clamp(12px, 3vw, 32px) 16px',
+    background: 'rgba(12, 16, 24, .90)', color: '#f5f7fa',
+    font: '13px/1.4 system-ui, sans-serif',
+    display: 'grid', gridTemplateRows: 'minmax(0, 1fr) auto', gap: '12px',
+  });
+  const toolbar = document.createElement('footer');
+  Object.assign(toolbar.style, {
+    justifySelf: 'center', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center',
+    gap: '8px', maxWidth: '100%', boxSizing: 'border-box', padding: '6px 8px', borderRadius: '12px',
+    border: '1px solid rgba(255,255,255,.16)', background: '#222936',
+  });
+  const caption = document.createElement('span'); caption.textContent = image.name; caption.title = image.name;
+  Object.assign(caption.style, { minWidth: '0', maxWidth: 'min(220px, 42vw)', paddingInline: '6px',
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#e2e7ef' });
+  const button = (text: string) => {
+    const control = document.createElement('button');
+    control.type = 'button'; control.textContent = text;
+    Object.assign(control.style, { appearance: 'none', boxSizing: 'border-box', minHeight: '32px',
+      border: '1px solid rgba(255,255,255,.2)', borderRadius: '7px', padding: '4px 12px',
+      background: '#343e4e', color: '#f5f7fa', font: 'inherit', cursor: 'pointer' });
+    return control;
+  };
+  const zoom = button('实际大小');
+  const close = button('关闭预览'); close.autofocus = true;
   const stage = document.createElement('div');
-  Object.assign(stage.style, { position: 'absolute', inset: '56px 0 0', overflow: 'auto', display: 'grid', placeItems: 'center', padding: '16px', boxSizing: 'border-box' });
+  Object.assign(stage.style, { position: 'relative', minWidth: '0', minHeight: '0', overflow: 'hidden' });
   const bitmap = document.createElement('img'); bitmap.alt = image.name;
-  Object.assign(bitmap.style, { display: 'block', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', minHeight: '0' });
+  Object.assign(bitmap.style, { position: 'absolute', inset: '0', margin: 'auto', display: 'block',
+    width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' });
   bitmap.addEventListener('error', () => { stage.textContent = '图片无法在 DSH 中显示。'; zoom.disabled = true; });
   bitmap.src = image.source;
   let actual = false;
   zoom.onclick = () => {
     actual = !actual; zoom.textContent = actual ? '适应窗口' : '实际大小';
-    stage.style.display = actual ? 'block' : 'grid';
+    stage.style.overflow = actual ? 'auto' : 'hidden';
+    bitmap.style.position = actual ? 'static' : 'absolute';
     bitmap.style.maxWidth = bitmap.style.maxHeight = actual ? 'none' : '100%';
+    stage.scrollTo(0, 0);
   };
   close.onclick = () => dialog.close();
   stage.onclick = event => { if (event.target === stage) dialog.close(); };
   dialog.addEventListener('close', () => { dialog.remove(); if (focusReturn.isConnected) focusReturn.focus(); }, { once: true });
-  header.append(caption, zoom, close); stage.append(bitmap); dialog.append(header, stage); document.body.append(dialog);
+  toolbar.append(caption, zoom, close); stage.append(bitmap); dialog.append(stage, toolbar); document.body.append(dialog);
   try { dialog.showModal(); }
   catch (error) { dialog.remove(); throw error; }
   return () => { if (dialog.open) dialog.close(); };
