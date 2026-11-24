@@ -9,7 +9,13 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildLauncher, DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT } from './build.ts';
 import { sameFilesystemPath } from '../../../src/infrastructure/filesystem/filesystem-path-identity.ts';
-import { resolveWebProfile } from '../../../src/modules/installation/contracts/web-profile.ts';
+import {
+  DEVELOPMENT_SOURCE_SCHEMA,
+  defaultWebDataRoot,
+  developmentSourceFile,
+  oppositeWebProfile,
+  resolveWebProfile,
+} from '../../../src/modules/installation/contracts/web-profile.ts';
 import { prepareDevelopmentWeb } from '../../development/prepare-development-web.ts';
 import {withDevelopmentUpdate} from '../../development/dev-update.ts';
 
@@ -69,6 +75,143 @@ function legacyTargetPaths(platform: any, channel: any, installRoot: any = defau
 }
 function appDataRoot(platform: any = process.platform): any  {
   return resolveWebProfile({ channel: 'development', runtime: { role: 'development' } }, { platform }).dataRoot;
+}
+function buildDevelopmentSourceRecord(identity: any, target: any): any {
+  return {
+    schemaVersion: DEVELOPMENT_SOURCE_SCHEMA,
+    channel: 'development',
+    runtimeRole: 'development',
+    source: 'checkout',
+    platform: identity.platform,
+    protocolIdentity: identity.protocolIdentity,
+    sourceRoot: identity.sourceRoot,
+    workspaceRoot: identity.workspaceRoot ?? null,
+    launcherTarget: target,
+    buildId: identity.buildId,
+    version: identity.version,
+    checkout: identity.checkout ?? null,
+    updatedAt: identity.builtAt,
+    developmentRuntime: identity.developmentRuntime,
+  };
+}
+function writeDevelopmentSourceRecord(dataRoot: string, target: string, identity: any): string {
+  const file = developmentSourceFile(dataRoot, identity.platform);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temp = path.join(path.dirname(file), `.development-source-${crypto.randomUUID()}.tmp`);
+  try {
+    fs.writeFileSync(temp, `${JSON.stringify(buildDevelopmentSourceRecord(identity, target), null, 2)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    fs.renameSync(temp, file);
+    return file;
+  } finally {
+    if (fs.existsSync(temp)) fs.rmSync(temp, { force: true });
+  }
+}
+function readDevelopmentSourceRecord(dataRoot: string, platform: any = process.platform): any {
+  const file = developmentSourceFile(dataRoot, platform);
+  const present = Boolean(fs.lstatSync(file, { throwIfNoEntry: false }));
+  if (!present) {
+    return { file, present: false, owned: false, valid: false, record: null, diagnostic: null };
+  }
+  let record: any = null;
+  try { record = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+  const owned = Boolean(
+    record
+    && record.schemaVersion === DEVELOPMENT_SOURCE_SCHEMA
+    && record.channel === 'development'
+    && record.runtimeRole === 'development'
+    && record.source === 'checkout'
+    && (!record.platform || record.platform === platform)
+    && typeof record.sourceRoot === 'string'
+    && path.isAbsolute(record.sourceRoot),
+  );
+  return {
+    file,
+    present: true,
+    owned,
+    valid: owned,
+    record,
+    diagnostic: owned ? null : { code: 'development.source_record_ownership_unproven', message: `开发来源登记无效或归属无法证明，已保留：${file}` },
+  };
+}
+function removeOwnedDevelopmentSourceRecord(dataRoot: string, platform: any, scopedTargets: string[], ownedTargets: string[], removed: any[], preserved: any[]): void {
+  const observed = readDevelopmentSourceRecord(dataRoot, platform);
+  if (!observed.present) return;
+  if (!observed.owned) {
+    preserved.push(observed.diagnostic);
+    return;
+  }
+  const targetRef = observed.record?.launcherTarget;
+  const matchesTarget = typeof targetRef === 'string' && path.isAbsolute(targetRef)
+    ? ownedTargets.some((candidate) => sameFilesystemPath(candidate, targetRef))
+      || (scopedTargets.some((candidate) => sameFilesystemPath(candidate, targetRef)) && !fs.existsSync(targetRef))
+    : ownedTargets.length > 0;
+  if (!matchesTarget) {
+    preserved.push({ code: 'development.source_record_ownership_unproven', message: `开发来源登记指向其他安装目标，已保留：${observed.file}` });
+    return;
+  }
+  fs.rmSync(observed.file, { force: true });
+  removed.push(observed.file);
+}
+export function inspectGlobalCliCompatibility({
+  platform = process.platform,
+  developmentDataRoot = appDataRoot(platform),
+  releasedDataRoot,
+}: any = {}): any {
+  const resolvedDevRoot = path.resolve(developmentDataRoot);
+  const devProfile = resolveWebProfile({ channel: 'development', runtime: { role: 'development' } }, { platform, dataRoot: resolvedDevRoot });
+  const defaultDevRoot = defaultWebDataRoot('development', { platform });
+  const peerReleasedRoot = releasedDataRoot
+    ? path.resolve(releasedDataRoot)
+    : sameFilesystemPath(resolvedDevRoot, defaultDevRoot)
+      ? oppositeWebProfile(devProfile, { channel: 'development', runtime: { role: 'development' } }, { platform }).dataRoot
+      : path.join(resolvedDevRoot, '.peer', 'released');
+  const registryFile = path.join(peerReleasedRoot, 'product-installations.json');
+  let registry: any = null;
+  try { registry = JSON.parse(fs.readFileSync(registryFile, 'utf8')); } catch {}
+  const installations: any[] = Array.isArray(registry?.installations) ? registry.installations : [];
+  const selected = installations.findLast((item: any) =>
+    item?.origin?.channel === 'npm' && typeof item?.entryPath === 'string' && path.isAbsolute(item.entryPath) && fs.existsSync(item.entryPath));
+  if (!selected) {
+    return { status: 'absent', registryFile, version: null, entryPath: null, routerFile: null, warning: null };
+  }
+  const version = selected.origin?.version ?? null;
+  const entryPath = selected.entryPath;
+  const routerFile = path.resolve(path.dirname(entryPath), '..', 'runtime', 'workspace-cli-router.cjs');
+  let content = '';
+  if (fs.existsSync(routerFile)) {
+    try { content = fs.readFileSync(routerFile, 'utf8'); } catch {}
+  }
+  if (content.includes(DEVELOPMENT_SOURCE_SCHEMA)) {
+    return { status: 'compatible', registryFile, version, entryPath, routerFile, warning: null };
+  }
+  if (content.includes('Buildr Development Dev')) {
+    return {
+      status: 'launcher_only',
+      registryFile,
+      version,
+      entryPath,
+      routerFile,
+      warning: {
+        code: 'development.global_cli_routing_legacy_discovery',
+        severity: 'warning',
+        message: `检测到本机全局 npm buildr（${version || 'unknown'}）仅支持桌面启动器路径发现，尚未支持固定数据目录来源（development-source.json）。`,
+        suggestion: '请执行 `buildr update` 更新全局 npm Buildr，以避免未来桌面应用改名时影响外部命令行工具。',
+      },
+    };
+  }
+  return {
+    status: 'incompatible',
+    registryFile,
+    version,
+    entryPath,
+    routerFile: fs.existsSync(routerFile) ? routerFile : null,
+    warning: {
+      code: 'development.global_cli_routing_incompatible',
+      severity: 'warning',
+      message: `检测到本机全局 npm buildr（${version || 'unknown'}）尚未支持当前开发来源发现协议；开发版应用内智能体会话直连本机源码不受影响，但外部终端及其他命令行工具调用全局 buildr 操作开发版工作空间时可能失败。`,
+      suggestion: '请执行 `buildr update`（RC 轨可运行 `buildr update --track candidate`）更新全局 npm Buildr。',
+    },
+  };
 }
 function runningInstance(platform: any = process.platform): any  { try { return JSON.parse(fs.readFileSync(path.join(appDataRoot(platform), 'instance.json'), 'utf8')); } catch { return null; } }
 function identityPath(target: any, platform: any): any  { return platform === 'darwin' ? path.join(target, 'Contents', 'Resources', 'launcher-identity.json') : path.join(target, 'launcher-identity.json'); }
@@ -193,31 +336,44 @@ function removeOwnedShortcut(observation: any, removed: any, preserved: any): an
   fs.rmSync(observation.target, { force: true });
   removed.push(observation.target);
 }
-export function launcherStatus({ platform = process.platform, channel = 'development', installRoot }: any = {}): any  {
+export function launcherStatus({ platform = process.platform, channel = 'development', installRoot, dataRoot, releasedDataRoot }: any = {}): any  {
   assertDevelopmentChannel(channel);
+  const resolvedDataRoot = dataRoot ? path.resolve(dataRoot) : appDataRoot(platform);
   const target: any = targetPath(platform, channel, installRoot);
   const instance: any = runningInstance(platform);
   const current: any = ownedLauncher(target, platform, channel);
   const legacyObservations: any[] = legacyTargetPaths(platform, channel, installRoot).map((itemTarget) => ownedLauncher(itemTarget, platform, channel));
   const legacy: any = legacyObservations.find((item) => item.present) ?? legacyObservations[0];
   const diagnostics: any = [current.diagnostic, ...legacyObservations.map((item) => item.diagnostic), ...launcherDiagnostics(current.identity)].filter(Boolean);
+  const sourceObservation = readDevelopmentSourceRecord(resolvedDataRoot, platform);
+  const globalCliCompatibility = inspectGlobalCliCompatibility({ platform, developmentDataRoot: resolvedDataRoot, releasedDataRoot });
+  const warnings = globalCliCompatibility.warning ? [globalCliCompatibility.warning] : [];
   return {
     schemaVersion: 'buildr.launcher-status/v1',
     platform,
     channel,
-    dataRoot: appDataRoot(platform),
+    dataRoot: resolvedDataRoot,
     target,
     present: current.present,
     installed: current.owned,
     identity: current.identity,
+    developmentSource: {
+      file: sourceObservation.file,
+      present: sourceObservation.present,
+      valid: sourceObservation.valid,
+      sourceRoot: sourceObservation.record?.sourceRoot ?? null,
+    },
     legacy: { target: legacy.target, present: legacy.present, owned: legacy.owned, identity: legacy.identity, diagnostic: legacy.diagnostic },
     diagnostics,
+    globalCliCompatibility,
+    warnings,
     runningInstance: instance ? { url: instance.url, pid: instance.pid, launcherIdentity: instance.launcherIdentity ?? null } : null,
   };
 }
-export async function installLauncher({ platform = process.platform, channel = 'development', installRoot, runtime = process.execPath, stopInstance = true }: any = {}): Promise<any>  {
+export async function installLauncher({ platform = process.platform, channel = 'development', installRoot, dataRoot, releasedDataRoot, runtime = process.execPath, stopInstance = true }: any = {}): Promise<any>  {
   assertDevelopmentChannel(channel);
   if (!['darwin', 'win32'].includes(platform)) throw new Error(`Unsupported launcher platform: ${platform}`);
+  const resolvedDataRoot = dataRoot ? path.resolve(dataRoot) : appDataRoot(platform);
   const target: any = targetPath(platform, channel, installRoot);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const identity: any = buildIdentity(platform, channel);
@@ -259,6 +415,7 @@ export async function installLauncher({ platform = process.platform, channel = '
       if (fs.existsSync(backup)) fs.renameSync(backup, target);
       throw error;
     }
+    writeDevelopmentSourceRecord(resolvedDataRoot, target, identity);
     const removed: any[] = [];
     const preserved: any[] = [];
     for (const entry of legacyEntries) {
@@ -267,14 +424,15 @@ export async function installLauncher({ platform = process.platform, channel = '
     }
     for (const shortcut of legacyShortcutsBefore) removeOwnedShortcut(shortcut, removed, preserved);
     return {
-      ...launcherStatus({ platform, channel, installRoot }),
+      ...launcherStatus({ platform, channel, installRoot, dataRoot: resolvedDataRoot, releasedDataRoot }),
       previous: fs.existsSync(backup) ? backup : null,
       migration: { removed, preserved: preserved.filter(Boolean) },
     };
   } finally { fs.rmSync(staging, { recursive: true, force: true }); }
 }
-export async function uninstallLauncher({ platform = process.platform, channel = 'development', installRoot }: any = {}): Promise<any>  {
+export async function uninstallLauncher({ platform = process.platform, channel = 'development', installRoot, dataRoot, releasedDataRoot }: any = {}): Promise<any>  {
   assertDevelopmentChannel(channel);
+  const resolvedDataRoot = dataRoot ? path.resolve(dataRoot) : appDataRoot(platform);
   const target: any = targetPath(platform, channel, installRoot);
   const current: any = ownedLauncher(target, platform, channel);
   const currentPrevious: any = ownedLauncher(`${target}.previous`, platform, channel);
@@ -290,15 +448,19 @@ export async function uninstallLauncher({ platform = process.platform, channel =
   const legacyShortcuts: any[] = platform === 'win32'
     ? legacyEntries.filter((entry) => entry.current.owned).map((entry) => inspectWindowsShortcut(entry.name, entry.current.target))
     : [];
-  if ([current, currentPrevious, ...legacyEntries.flatMap((entry) => [entry.current, entry.previous])].some((item: any) => item.owned)) {
+  const allObservations = [current, currentPrevious, ...legacyEntries.flatMap((entry) => [entry.current, entry.previous])];
+  const ownedTargets = allObservations.filter((item: any) => item.owned).map((item: any) => item.target);
+  if (ownedTargets.length > 0) {
     await stopOwnedInstance({ channel, failOnUnknown: true });
   }
   const removed: any[] = [];
   const preserved: any[] = [];
-  for (const observation of [current, currentPrevious, ...legacyEntries.flatMap((entry) => [entry.current, entry.previous])]) removeOwnedPath(observation, removed, preserved);
+  for (const observation of allObservations) removeOwnedPath(observation, removed, preserved);
   for (const observation of [currentShortcut, ...legacyShortcuts].filter(Boolean)) removeOwnedShortcut(observation, removed, preserved);
+  const scopedTargets = [target, ...legacyTargetPaths(platform, channel, installRoot)];
+  removeOwnedDevelopmentSourceRecord(resolvedDataRoot, platform, scopedTargets, ownedTargets, removed, preserved);
   return {
-    ...launcherStatus({ platform, channel, installRoot }),
+    ...launcherStatus({ platform, channel, installRoot, dataRoot: resolvedDataRoot, releasedDataRoot }),
     installed: false,
     removed: removed.length > 0,
     removedTargets: removed,
@@ -316,6 +478,10 @@ async function runManagement(args: any): Promise<any>  {
     result.webPreparation = { status: preparation!.status, timings: preparation!.timings };
     const profile = resolveWebProfile({channel: 'development', runtime: {role: 'development'}});
     result.agentService = await activateAgentServiceRuntime({dataRoot: profile.dataRoot, profileId: profile.profile ?? 'development'});
+    if (result.globalCliCompatibility?.status === 'incompatible' && result.globalCliCompatibility.warning) {
+      const warning = result.globalCliCompatibility.warning;
+      process.stderr.write(`[warning] ${warning.code}: ${warning.message} ${warning.suggestion}\n`);
+    }
   }
   console.log(JSON.stringify(result, null, 2));
 }

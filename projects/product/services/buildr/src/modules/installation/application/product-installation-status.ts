@@ -14,7 +14,14 @@ import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesyste
 import { buildrWebDataRoot, parseWorkspaceManifest, readWorkspaceRegistryFile } from '../../workspace/module.ts';
 import { resolveApplicationPayloadRoot } from '../../../infrastructure/product-resources/index.ts';
 import { npmLauncherStatus } from '../infrastructure/npm-launcher.ts';
-import { defaultWebDataRoot, oppositeWebProfile, resolveDevelopmentLauncherRoot, resolveWebProfile } from '../contracts/web-profile.ts';
+import {
+  DEVELOPMENT_SOURCE_SCHEMA,
+  defaultWebDataRoot,
+  developmentSourceFile,
+  oppositeWebProfile,
+  resolveDevelopmentLauncherRoot,
+  resolveWebProfile,
+} from '../contracts/web-profile.ts';
 
 function readJson(file: any) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
@@ -52,14 +59,33 @@ function registeredChannel(observed: any, channel: any) {
 }
 
 function developmentLauncherIdentity(options: any = {}) {
+  const sourceFile = !options.developmentLauncherRoot
+    ? developmentSourceFile(options.developmentDataRoot || defaultWebDataRoot('development', options.webProfileOptions || {}), process.platform)
+    : null;
+  const useSourceRecord = Boolean(sourceFile && fs.lstatSync(sourceFile, { throwIfNoEntry: false }));
   const target = options.developmentLauncherRoot || resolveDevelopmentLauncherRoot(process.platform);
-  const file = process.platform === 'darwin'
-    ? path.join(target, 'Contents', 'Resources', 'launcher-identity.json')
-    : path.join(target, 'launcher-identity.json');
+  const file = useSourceRecord
+    ? sourceFile!
+    : process.platform === 'darwin'
+      ? path.join(target, 'Contents', 'Resources', 'launcher-identity.json')
+      : path.join(target, 'launcher-identity.json');
   const identity = readJson(file);
-  if (!identity) return absent('development', file, 'development launcher identity is not present');
-  if (identity.schemaVersion !== 'buildr.launcher-identity/v1' || identity.channel !== 'development') {
-    return { channel: 'development', status: 'invalid', location: file, identity: null, runtime: null, reason: 'development launcher ownership identity is invalid' };
+  if (!identity) {
+    if (useSourceRecord) {
+      return { channel: 'development', status: 'invalid', location: file, identity: null, runtime: null, reason: 'development source registration is invalid' };
+    }
+    return absent('development', file, 'development launcher identity is not present');
+  }
+  const expectedSchema = useSourceRecord ? DEVELOPMENT_SOURCE_SCHEMA : 'buildr.launcher-identity/v1';
+  if (identity.schemaVersion !== expectedSchema || identity.channel !== 'development') {
+    return {
+      channel: 'development',
+      status: 'invalid',
+      location: file,
+      identity: null,
+      runtime: null,
+      reason: useSourceRecord ? 'development source registration ownership identity is invalid' : 'development launcher ownership identity is invalid',
+    };
   }
   const developmentRuntime = identity.developmentRuntime || identity.nodeRuntime || null;
   let source: any = null;
@@ -89,7 +115,7 @@ function developmentLauncherIdentity(options: any = {}) {
       applicationPayloadDigest: identity.applicationPayloadDigest || null,
       ownershipIdentity: identity.ownershipIdentity || identity.buildId || null,
       sourceRoot: identity.sourceRoot || null,
-      sourceCommit: identity.checkout?.head || null,
+      sourceCommit: identity.checkout?.head || identity.sourceCommit || null,
     },
     runtime: developmentRuntime ? { role: 'development', version: developmentRuntime.version || null, executable: developmentRuntime.executable || null, identity: developmentRuntime.identity || null } : null,
     reason: sourceReady ? null : `当前登记的开发来源无法证明：${source?.blockingReasons?.join('; ') || '来源目录不可读取或不是有效的 Buildr 开发源码。'}`,
@@ -335,9 +361,6 @@ export function buildInstallationInventory(productRoot: any, options: any = {}) 
   const npm = current.channel === 'npm'
     ? { channel: 'npm', status: 'current', location: current.receipt?.file || productRoot, identity: current, runtime: runtimeIdentityForOrigin(current), reason: null }
     : knownNpm;
-  const development = current.channel === 'development'
-    ? { channel: 'development', status: 'current', location: current.sourceRoot, identity: current, runtime: runtimeIdentityForOrigin(current), reason: null }
-    : developmentLauncherIdentity(options);
   const currentInstallation = {
     channel: current.channel,
     status: current.channel === 'unknown' ? 'unknown' : 'current',
@@ -375,6 +398,9 @@ export function buildInstallationInventory(productRoot: any, options: any = {}) 
       dataRoot: defaultWebDataRoot('development', profileOptions),
     });
   }
+  const development = current.channel === 'development'
+    ? { channel: 'development', status: 'current', location: current.sourceRoot, identity: current, runtime: runtimeIdentityForOrigin(current), reason: null }
+    : developmentLauncherIdentity({ ...options, developmentDataRoot: options.developmentDataRoot || developmentProfile.dataRoot });
   const instances: Record<string, any> = {
     released: annotateInstanceProfile(inspectCurrentInstance({ dataRoot: releasedProfile.dataRoot, pidProbe: options.pidProbe }), 'released'),
     development: annotateInstanceProfile(inspectCurrentInstance({ dataRoot: developmentProfile.dataRoot, pidProbe: options.pidProbe }), 'development'),

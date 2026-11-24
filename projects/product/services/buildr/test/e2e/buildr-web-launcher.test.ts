@@ -187,6 +187,13 @@ test('Buildr Development Dev使用staging安全切换并只清理可证明所有
   assert.equal(first.identity.webPort, 4458);
   assert.equal(first.identity.sourceRoot, PRODUCT_ROOT);
   assert.ok(first.identity.developmentRuntime?.executable);
+  assert.equal(first.developmentSource.present, true);
+  assert.equal(first.developmentSource.valid, true);
+  assert.equal(first.developmentSource.sourceRoot, PRODUCT_ROOT);
+  const sourceRecord = JSON.parse(fs.readFileSync(first.developmentSource.file, 'utf8'));
+  assert.equal(sourceRecord.schemaVersion, 'buildr.development-source/v1');
+  assert.equal(sourceRecord.launcherTarget, first.target);
+  assert.equal(sourceRecord.sourceRoot, PRODUCT_ROOT);
   assert.equal(fs.existsSync(path.join(first.target, 'Contents', 'MacOS', 'node')), false);
   assert.equal(fs.existsSync(path.join(root, 'Buildr Web Dev.app')), false);
   assert.equal(fs.existsSync(path.join(root, 'Buildr Dev.app')), false);
@@ -205,6 +212,8 @@ test('Buildr Development Dev使用staging安全切换并只清理可证明所有
 
   const removed: any = await uninstallLauncher({ platform: 'darwin', channel: 'development', installRoot: root });
   assert.equal(removed.removed, true);
+  assert.equal(removed.developmentSource.present, false);
+  assert.equal(fs.existsSync(first.developmentSource.file), false);
   assert.equal(fs.existsSync(first.target), false);
   assert.ok(fs.existsSync(path.join(official, 'official-sentinel')));
 });
@@ -217,10 +226,53 @@ test('Buildr Development Dev保留ownership不可证明的旧入口与当前目�
   fs.writeFileSync(path.join(foreignLegacy, 'foreign-sentinel'), 'keep');
   const installed: any = await installLauncher({ platform: 'darwin', channel: 'development', installRoot: root, runtime: process.execPath, stopInstance: false });
   assert.deepEqual(installed.migration.preserved.map((item: any) => item.code), ['launcher.ownership_unproven']);
-  await uninstallLauncher({ platform: 'darwin', channel: 'development', installRoot: root });
+  // Preserve foreign-owned development-source.json pointing to a different launcher target.
+  const sourceRecord = JSON.parse(fs.readFileSync(installed.developmentSource.file, 'utf8'));
+  sourceRecord.launcherTarget = path.join(root, 'Other.app');
+  fs.writeFileSync(installed.developmentSource.file, JSON.stringify(sourceRecord, null, 2));
+  const afterUninstall: any = await uninstallLauncher({ platform: 'darwin', channel: 'development', installRoot: root });
+  assert.equal(fs.existsSync(installed.developmentSource.file), true);
+  assert.ok(afterUninstall.preserved.some((item: any) => item.code === 'development.source_record_ownership_unproven'));
   assert.equal(fs.readFileSync(path.join(foreignLegacy, 'foreign-sentinel'), 'utf8'), 'keep');
   const foreignCurrent: any = path.join(root, 'Buildr Development Dev.app');
   fs.mkdirSync(foreignCurrent, { recursive: true });
   fs.writeFileSync(path.join(foreignCurrent, 'foreign-sentinel'), 'keep');
   await assert.rejects(() => installLauncher({ platform: 'darwin', channel: 'development', installRoot: root, runtime: process.execPath, stopInstance: false }), /Refusing to replace launcher without matching Buildr ownership/);
+});
+
+test('Buildr Development Dev检测配对发布版全局npm CLI路由兼容性且保持非阻断与隔离', async (t: any) => {
+  const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-launcher-cli-compat-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const appData = process.env.BUILDR_APP_DATA_DIR!;
+  const releasedPeer = path.join(appData, '.peer', 'released');
+  const npmPkg = path.join(root, 'global-npm');
+  const npmEntry = path.join(npmPkg, 'bin', 'buildr.mjs');
+  const routerFile = path.join(npmPkg, 'runtime', 'workspace-cli-router.cjs');
+  fs.mkdirSync(path.dirname(npmEntry), { recursive: true });
+  fs.mkdirSync(path.dirname(routerFile), { recursive: true });
+  fs.mkdirSync(releasedPeer, { recursive: true });
+  fs.writeFileSync(npmEntry, '#!/usr/bin/env node\n');
+
+  // Absent when no npm installation exists in paired released root.
+  const absentStatus: any = launcherStatus({ platform: 'darwin', channel: 'development', installRoot: root });
+  assert.equal(absentStatus.globalCliCompatibility.status, 'absent');
+  assert.deepEqual(absentStatus.warnings, []);
+
+  // Legacy router referencing only Buildr Web Dev triggers non-blocking incompatibility warning.
+  fs.writeFileSync(routerFile, 'const old = "/Applications/Buildr Web Dev.app";\n');
+  fs.writeFileSync(path.join(releasedPeer, 'product-installations.json'), JSON.stringify({
+    schemaVersion: 'buildr.product-installation-registry/v1',
+    installations: [{ origin: { channel: 'npm', version: '0.1.0-rc.63' }, entryPath: npmEntry }],
+  }));
+  const installed: any = await installLauncher({ platform: 'darwin', channel: 'development', installRoot: root, runtime: process.execPath, stopInstance: false });
+  assert.equal(installed.installed, true);
+  assert.equal(installed.globalCliCompatibility.status, 'incompatible');
+  assert.equal(installed.globalCliCompatibility.version, '0.1.0-rc.63');
+  assert.equal(installed.warnings[0].code, 'development.global_cli_routing_incompatible');
+
+  // Compatible router recognizing buildr.development-source/v1 clears warning.
+  fs.writeFileSync(routerFile, 'const schema = "buildr.development-source/v1";\n');
+  const compatibleStatus: any = launcherStatus({ platform: 'darwin', channel: 'development', installRoot: root });
+  assert.equal(compatibleStatus.globalCliCompatibility.status, 'compatible');
+  assert.deepEqual(compatibleStatus.warnings, []);
 });

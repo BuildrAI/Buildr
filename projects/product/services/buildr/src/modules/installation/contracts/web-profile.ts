@@ -7,6 +7,14 @@ import process from 'node:process';
 
 export const WEB_PROFILE_SCHEMA = 'buildr.web-profile/v1';
 export const WEB_PROFILE_NAMES = Object.freeze(['released', 'development']);
+export const DEVELOPMENT_SOURCE_SCHEMA = 'buildr.development-source/v1';
+export const DEVELOPMENT_SOURCE_FILENAME = 'development-source.json';
+
+export function developmentSourceFile(dataRoot: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32'
+    ? path.win32.join(dataRoot, DEVELOPMENT_SOURCE_FILENAME)
+    : path.join(dataRoot, DEVELOPMENT_SOURCE_FILENAME);
+}
 
 function sha256(value: any) {
   return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;

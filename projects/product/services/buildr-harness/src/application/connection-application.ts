@@ -172,6 +172,7 @@ export class ConnectionApplication {
   private readonly options: {
     repository: ConversationRepository;
     root: string;
+    profileId?: string;
     executors: AgentExecutor[];
     environment: Record<string, string>;
     /** Account-owned config for model-bound executions, separate from program bindings. */
@@ -188,7 +189,7 @@ export class ConnectionApplication {
   };
   constructor(options: ConnectionApplication['options']) {
     this.options = options;
-    this.storage = new ExecutorStorage(options.root);
+    this.storage = new ExecutorStorage(options.root, { profileId: options.profileId });
     this.executors = new Map(options.executors.map(executor => {
       if (!/^[a-z][a-z0-9-]*$/.test(executor.descriptor.id)) fail('agent_provider_invalid', '执行者标识无效。');
       return [executor.descriptor.id, executor];

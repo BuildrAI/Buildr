@@ -780,6 +780,7 @@ export interface AgentServiceOptions {
   continuationPolicy?(scope: string): boolean;
   modelProviders?: ModelProvider[];
   dataRoot: string;
+  profileId?: string;
   executors?: AgentExecutor[];
   environment?: Record<string, string | undefined>;
   /** Native program discovery/install port; credentials remain in executor-owned configs. */
