@@ -25,11 +25,11 @@
   },
   "publicationApproved": true,
   "publicationApproval": {
-    "version": "0.1.0-rc.2",
+    "version": "0.1.0-rc.3",
     "platform": "darwin",
     "architectures": [
       "arm64"
     ],
-    "authority": "Buildr 发行对话 422cb3d8-db73-5fb3-a3cf-a852346af7f7：本批三产品 RC，独立 Harness 延续 macOS arm64 验收范围。"
+    "authority": "Buildr 发行对话 3f5be826-8f8a-d157-7fbe-0496ed264386：本批三产品 RC，独立 Harness 0.1.0-rc.3 延续 macOS arm64 验收范围。"
   }
 }
