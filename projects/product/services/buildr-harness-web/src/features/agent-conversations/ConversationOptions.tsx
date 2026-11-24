@@ -8,7 +8,7 @@ import { type ConnectionView, type CatalogModel } from './types.ts';
 import { contextReportWindow, contextUsedPercent, conversationUsageReport } from './conversation-state.ts';
 import { ContextUsageSummary } from './ContextUsageSummary.tsx';
 import {rememberReasoningEffort,restoreReasoningChoice} from './conversation-preferences.ts';
-import {executionAgentName,modelSourceName,nextServiceTier,conversationTierChoice,conversationReasoningSelection,selectedConversationModel,catalogConversationOption,magpieModelLabel,type ConversationChoice} from './conversation-options.ts';
+import {executionAgentName,modelSourceName,nextServiceTier,conversationTierChoice,conversationReasoningSelection,selectedConversationModel,catalogSourceName,conversationModelGroups,magpieModelLabel,type ConversationChoice} from './conversation-options.ts';
 import {preparedAgentConnections} from '../../lib/model-picker.ts';
 
 type Props = {
@@ -19,11 +19,6 @@ type Props = {
   showAgent?:boolean;
   onChange(value:ConversationChoice,remember?:boolean):void;
 };
-
-/** Custom suppliers show the user-given name; built-in sources prefer server presentation. */
-function catalogSourceName(source:CatalogModel):string {
-  return source.provider==='custom'?(source.accountLabel||'自定义供应商'):(source.presentation?.quotaLabel||source.presentation?.sourceLabel||modelSourceName(source.provider));
-}
 
 export function ConversationOptions({connections,modelCatalog,value,disabled,onChange,showAgent=true}:Props) {
   const context=useOptionalAgentConversations();
@@ -41,7 +36,7 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
   const reportSource=usageReport&&shared.find(item=>item.accountId===usageReport.modelAccountId&&item.modelId===usageReport.model&&(!usageReport.modelAccountIdentity||item.accountIdentity===usageReport.modelAccountIdentity));
   const reportLabel=usageReport?(reportSource?catalogSourceName(reportSource)+' / '+reportSource.label:usageReport.model||usageReport.modelSourceLabel||modelSourceName(usageReport.provider??'')):undefined;
   const candidates=shared.filter(item=>item.enabled!==false||item.accountId===value.modelAccountId&&item.modelId===value.model);
-  const groups=Array.from(new Set(candidates.map(item=>item.accountId))).map(id=>{const source=candidates.find(item=>item.accountId===id)!;const name=catalogSourceName(source);return {id,label:name+(new Set(candidates.filter(item=>catalogSourceName(item)===name).map(item=>item.accountId)).size>1?' · '+source.accountLabel:'')};});
+  const groups=conversationModelGroups(original,candidates);
   const nativeFallback=false; // The shared catalog is authoritative, including disabled sources.
   const connection=original&&(!value.model||value.modelAccountId||effectiveShared)?{...original,models:effectiveShared?[{...effectiveShared,id:effectiveShared.modelId,isDefault:true}]:[]}:original;
   const model=selectedConversationModel(connection,value.model);
@@ -55,7 +50,7 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
     <Popover trigger={['hover','click']} placement="top" content={<ContextUsageSummary configuredWindow={configuredWindow} report={usageReport} reportWindow={reportWindow} reportLabel={reportLabel}/>}><Button type="text" size="small" className="ac-context-trigger" aria-label="上下文窗口与用量"><Progress type="circle" size={14} strokeWidth={15} percent={usedPercent??0} showInfo={false}/></Button></Popover>
     <ModelPicker selectedKey={selectedShared?'shared:'+selectedShared.accountId+'::'+selectedShared.modelId:value.modelAccountId?'shared:'+value.modelAccountId+'::'+value.model:value.model||''} modelLabel={modelLabel} defaultLabel={value.model?defaultModel?.label:'请选择模型'} reasoning={reasoning} disabled={disabled} unavailable={unavailable} resetKey={value.connectionId}
       tierSwitchable={!!selectedShared?.serviceTiers&&selectedShared.serviceTiers.length>1} tierDisabled={disabled||selectedShared?.enabled===false||!selectedShared?.available} tierLabel={tier?.label} accelerated={accelerated}
-      groups={[...(original?.models.length&&nativeFallback?[{id:'native',label:'原生账号',options:[{value:'',label:'原生默认模型'},...original.models.map(item=>({value:item.id,label:item.label}))]}]:[]),...groups.map(group=>({...group,options:candidates.filter(item=>item.accountId===group.id).map(item=>catalogConversationOption(original,item))}))]}
+      groups={[...(original?.models.length&&nativeFallback?[{id:'native',label:'原生账号',options:[{value:'',label:'原生默认模型'},...original.models.map(item=>({value:item.id,label:item.label}))]}]:[]),...groups]}
       onCycleTier={()=>{if(selectedShared){const next=nextServiceTier(selectedShared.serviceTiers,value.serviceTier,selectedShared.defaultServiceTier);onChange(conversationTierChoice(value,selectedShared,next),true);}}}
       onSelectModel={model=>{const source=shared.find(item=>'shared:'+item.accountId+'::'+item.modelId===model);const next={...value,model:source?.modelId||model||undefined,modelAccountId:source?.accountId,modelAccountRevision:source?.accountRevision,modelAccountIdentity:source?.accountIdentity,serviceTier:source?.defaultServiceTier,reasoningEffort:undefined};onChange(restoreReasoningChoice(next,original,shared),true);}}
       onSelectEffort={effort=>{rememberReasoningEffort({...value,model:nativeModelId,...(selectedShared?{modelAccountId:selectedShared.accountId,modelAccountIdentity:selectedShared.accountIdentity}:{})},effort);onChange({...value,reasoningEffort:effort},true);}}/>

@@ -1,4 +1,4 @@
-import {modelSourceName,reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts} from './model-picker.ts';
+import {magpieSourceGroupLabel,magpieUpstreamProvider,modelSourceName,reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts} from './model-picker.ts';
 
 export type ExecutionReasoningEffort = {id: string; label: string};
 export type ExecutionServiceTier = {id: string; label: string; reasoningEfforts?: ExecutionReasoningEffort[]; defaultReasoningEffort?: string};
@@ -17,6 +17,8 @@ export type ExecutionModelSource = {
   accountRevision: string;
   defaultServiceTier?: string;
   provider?: string;
+  upstreamProvider?: string;
+  upstreamProviderLabel?: string;
   sharing?: {kind: 'gateway'} | {kind: 'executor-exclusive'; executors: string[]; reason: string};
   inference?: 'gateway' | 'none';
   presentation?: {vendorLabel: string; sourceLabel?: string; quotaLabel?: string};
@@ -37,6 +39,8 @@ export type ExecutionModelOption = {
   serviceTier?: string;
   reasoningEffort?: string;
   provider?: string;
+  upstreamProvider?: string;
+  upstreamProviderLabel?: string;
   sourceLabel?: string;
   accountLabel?: string;
   modelLabel?: string;
@@ -66,6 +70,8 @@ export function executionModelOptions(models: readonly ExecutionModelSource[]): 
         accountRevision: model.accountRevision,
         serviceTier: model.defaultServiceTier,
         provider: model.provider,
+        ...(model.upstreamProvider ? {upstreamProvider: model.upstreamProvider} : {}),
+        ...(model.upstreamProviderLabel ? {upstreamProviderLabel: model.upstreamProviderLabel} : {}),
         ...(sourceLabel ? {sourceLabel} : {}),
         accountLabel: model.accountLabel,
         modelLabel: model.label,
@@ -112,10 +118,41 @@ export function executionModelGroups(options: readonly ExecutionModelOption[]) {
     option.provider === 'custom'
       ? (option.accountLabel || '自定义供应商')
       : (option.sourceLabel || modelSourceName(option.provider ?? option.accountLabel ?? option.accountId));
-  return Array.from(new Set(options.map(item => item.accountId))).map(id => {
-    const source = options.find(item => item.accountId === id)!;
-    const name = sourceName(source);
-    const duplicate = new Set(options.filter(item => sourceName(item) === name).map(item => item.accountId)).size > 1;
-    return {id, label: name + (duplicate ? ' · ' + source.accountLabel : ''), options: options.filter(item => item.accountId === id).map(item => ({value: item.key, label: (item.modelLabel ?? item.label) + (item.creditFactor === undefined ? '' : ` · ${item.creditFactor.toFixed(2)}x`), disabled: !item.available}))};
-  });
+  const nonMagpieCounts = new Map<string, Set<string>>();
+  for (const item of options) {
+    if (item.provider === 'magpie') continue;
+    const name = sourceName(item);
+    const ids = nonMagpieCounts.get(name) ?? new Set<string>();
+    ids.add(item.accountId);
+    nonMagpieCounts.set(name, ids);
+  }
+  const groups = new Map<string, {id: string; label: string; options: Array<{value: string; label: string; disabled: boolean}>}>();
+  for (const item of options) {
+    let id = item.accountId;
+    let label = '';
+    if (item.provider === 'magpie') {
+      const upstream = magpieUpstreamProvider(item);
+      id = upstream ? `${item.accountId}::${upstream.id}` : item.accountId;
+      label = magpieSourceGroupLabel(upstream?.label);
+    } else {
+      const name = sourceName(item);
+      const duplicate = (nonMagpieCounts.get(name)?.size ?? 0) > 1;
+      label = name + (duplicate ? ' · ' + item.accountLabel : '');
+    }
+    let group = groups.get(id);
+    if (!group) {
+      group = {id, label, options: []};
+      groups.set(id, group);
+    }
+    const baseLabel = item.modelLabel ?? item.label;
+    const modelLabel = item.provider === 'magpie'
+      ? (baseLabel.endsWith(' · Magpie') ? baseLabel : `${baseLabel} · Magpie`)
+      : baseLabel;
+    group.options.push({
+      value: item.key,
+      label: modelLabel + (item.creditFactor === undefined ? '' : ` · ${item.creditFactor.toFixed(2)}x`),
+      disabled: !item.available,
+    });
+  }
+  return [...groups.values()];
 }

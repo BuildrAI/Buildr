@@ -1,4 +1,4 @@
-import {reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts,modelSourceName,executionAgentName,tierReasoningEffort} from '../../lib/model-picker.ts';
+import {reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts,modelSourceName,executionAgentName,tierReasoningEffort,magpieUpstreamProvider,magpieSourceGroupLabel,type ModelPickerGroup} from '../../lib/model-picker.ts';
 export {reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts,modelSourceName,executionAgentName,nextServiceTier,tierReasoningEffort} from '../../lib/model-picker.ts';
 import type {ConnectionView, ConversationRun, SendDraft, CatalogModel} from './types.ts';
 
@@ -35,6 +35,11 @@ export function catalogModelCompatibility(connection:CompatibilityTarget,item:Co
 
 export function magpieModelLabel(label:string):string { return label.endsWith(' · Magpie')?label:label+' · Magpie'; }
 
+/** Custom suppliers show the user-given name; built-in sources prefer server presentation. */
+export function catalogSourceName(source:Pick<CatalogModel,'provider'|'accountLabel'|'presentation'>):string {
+  return source.provider==='custom'?(source.accountLabel||'自定义供应商'):(source.presentation?.quotaLabel||source.presentation?.sourceLabel||modelSourceName(source.provider));
+}
+
 /** Disabled choices keep their actual model name; compatibility is not a name suffix. */
 export function catalogConversationOption(connection:CompatibilityTarget,item:CatalogModel) {
   const compatibility=catalogModelCompatibility(connection,item);
@@ -42,6 +47,38 @@ export function catalogConversationOption(connection:CompatibilityTarget,item:Ca
     label:item.provider==='magpie'?magpieModelLabel(item.label):item.creditFactor!==undefined?`${item.label} · ${item.creditFactor.toFixed(2)}x`:item.label,
     disabled:!item.available||!compatibility.compatible,
     ...(!compatibility.compatible&&compatibility.reason?{title:compatibility.reason}:{})};
+}
+
+/** Group conversation models by source account, splitting Magpie models by upstream provider. */
+export function conversationModelGroups(connection:CompatibilityTarget,candidates:readonly CatalogModel[]):ModelPickerGroup[] {
+  const nonMagpieNameCount=new Map<string,Set<string>>();
+  for(const item of candidates){
+    if(item.provider==='magpie')continue;
+    const name=catalogSourceName(item);
+    const ids=nonMagpieNameCount.get(name)??new Set<string>();
+    ids.add(item.accountId);
+    nonMagpieNameCount.set(name,ids);
+  }
+  const groups=new Map<string,ModelPickerGroup>();
+  for(const item of candidates){
+    let id=item.accountId;
+    let label='';
+    if(item.provider==='magpie'){
+      const upstream=magpieUpstreamProvider(item);
+      id=upstream?`${item.accountId}::${upstream.id}`:item.accountId;
+      label=magpieSourceGroupLabel(upstream?.label);
+    }else{
+      const name=catalogSourceName(item);
+      label=name+((nonMagpieNameCount.get(name)?.size??0)>1?' · '+item.accountLabel:'');
+    }
+    let group=groups.get(id);
+    if(!group){
+      group={id,label,options:[]};
+      groups.set(id,group);
+    }
+    group.options.push(catalogConversationOption(connection,item));
+  }
+  return [...groups.values()];
 }
 export type ConversationChoice = Pick<SendDraft,'connectionId'|'model'|'reasoningEffort'|'serviceTier'|'modelAccountId'|'modelAccountRevision'|'modelAccountIdentity'>;
 export type PermissionMode=NonNullable<SendDraft['permissionMode']>;

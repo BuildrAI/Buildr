@@ -37,7 +37,9 @@ const selectionTiers = (values: ModelOffering['serviceTiers']) => (values ?? [])
 const selectionModels = (models: ModelOffering[]) => models.map(model => ({
   id: model.id, label: model.label, contextWindow: model.contextWindow, reportedContextWindow: model.reportedContextWindow, defaultContextWindow:model.defaultContextWindow,
   contextWindowOverride: model.contextWindowOverride, maxOutputTokens: model.maxOutputTokens, images: model.images, tools: model.tools,
-  enabled: model.enabled, kind: model.kind, family: model.family, defaultReasoningEffort: model.defaultReasoningEffort,
+  enabled: model.enabled, kind: model.kind, family: model.family,
+  upstreamProvider: model.upstreamProvider, upstreamProviderLabel: model.upstreamProviderLabel,
+  defaultReasoningEffort: model.defaultReasoningEffort,
   reasoningEfforts: selectionEfforts(model.reasoningEfforts), defaultServiceTier: model.defaultServiceTier,
   serviceTiers: selectionTiers(model.serviceTiers),
 })).sort(byId);

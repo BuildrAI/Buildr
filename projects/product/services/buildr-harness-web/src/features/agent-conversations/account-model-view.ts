@@ -5,6 +5,7 @@ import {
   fallbackVendorName,
   isAlwaysVisibleLegacyProvider,
   isLegacyDuplicateEmptySource,
+  magpieUpstreamProvider,
   missingLegacyPlaceholderSource,
 } from '../../lib/model-picker.ts';
 import {accountBillingLink,accountSourceName,balanceLines,compareSourceNames,quotaWindowCredits} from './account-quota-view.ts';
@@ -12,6 +13,15 @@ import type {ModelAccount,ConnectionView} from './types.ts';
 import type {ManagedModel,ModelSourceView} from './AccountModelManager.tsx';
 const waiting=(value:{state:string}|undefined)=>!!value&&['initializing','waiting-browser','checking'].includes(value.state);
 export function newModelSourceProvider(id:string):string|undefined{return fallbackNewModelSourceProvider(id);}
+export function inferModelFamily(label:string):string {
+  const trimmed=label.trim();
+  if(!trimmed)return '其他';
+  const tokens=trimmed.split(/[\s\-\u2010-\u2015_/]+/).filter(Boolean);
+  const head=tokens[0]??'';
+  const stripped=head.replace(/^([A-Za-z]{2,})\d+(?:\.\d+)*$/,'$1');
+  if(tokens.length===1&&stripped===head)return '其他';
+  return stripped||'其他';
+}
 function resetLabel(value?:string):string {if(!value)return '重置时间未提供';const ms=Date.parse(value);return Number.isFinite(ms)?`${new Date(ms).toLocaleString()} 重置`:'重置时间未提供';}
 export function modelSourceViews(accounts:ModelAccount[],connections:ConnectionView[],includeDisabled=false):ModelSourceView[]{
  // A source that owns its credentials has exactly one row whose id is the provider id
@@ -24,7 +34,10 @@ export function modelSourceViews(accounts:ModelAccount[],connections:ConnectionV
   const loginMessage=login?.diagnostic||(login?.state==='checking'?'正在核对登录结果，模型与额度会自动更新。':undefined);
   const rawLabel=account.accountLabel||account.label,plan=account.quota?.planLabel;
   const accountLabel=plan&&rawLabel.endsWith(' · '+plan)?rawLabel.slice(0,-(' · '+plan).length):rawLabel;
-  const models:ManagedModel[]=account.models.map(model=>({id:model.id,label:model.label,family:model.family||model.label.split(/[ -]/)[0]||'其他',contextWindow:model.contextWindow,contextOverride:model.contextWindowOverride,reportedContextWindow:model.reportedContextWindow,defaultContextWindow:model.defaultContextWindow,images:model.images,tools:model.tools,enabled:model.enabled!==false,available:true,efforts:model.reasoningEfforts,defaultEffort:model.defaultReasoningEffort,modes:model.serviceTiers?.map(tier=>tier.label),creditFactor:model.creditFactor}));
+  const models:ManagedModel[]=account.models.map(model=>{
+    const upstream=account.provider==='magpie'?magpieUpstreamProvider(model):undefined;
+    return {id:model.id,label:model.label,family:model.family||inferModelFamily(model.label),...(upstream?{upstreamProvider:upstream.id,upstreamProviderLabel:upstream.label}:{}),contextWindow:model.contextWindow,contextOverride:model.contextWindowOverride,reportedContextWindow:model.reportedContextWindow,defaultContextWindow:model.defaultContextWindow,images:model.images,tools:model.tools,enabled:model.enabled!==false,available:true,efforts:model.reasoningEfforts,defaultEffort:model.defaultReasoningEffort,modes:model.serviceTiers?.map(tier=>tier.label),creditFactor:model.creditFactor};
+  });
   const windows=account.quota?.available?(account.quota.windows?.map(window=>({id:window.id,label:window.label,groupLabel:window.groupLabel,remainingPercent:window.remainingPercent,resetsAt:window.resetsAt,resetLabel:resetLabel(window.resetsAt),balanceLabel:quotaWindowCredits(window)}))??(typeof account.quota.remainingPercent==='number'?[{id:'account',label:'账号额度',remainingPercent:account.quota.remainingPercent,resetsAt:account.quota.resetsAt,resetLabel:resetLabel(account.quota.resetsAt)}]:[])):[];
   const custom=account.provider==='custom';
   const observedAt=custom||account.authType==='api-key'?(account.quota?.observedAt??account.observedAt):account.quota?.observedAt;

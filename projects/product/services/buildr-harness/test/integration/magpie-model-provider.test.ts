@@ -17,7 +17,11 @@ test('Magpie connects a verified existing gateway without launching and isolates
   const server=createServer(async(req,res)=>{
     res.setHeader('Content-Type','application/json');
     if(req.url==='/api/hello')return res.end(JSON.stringify({name:valid?'magpie':'unrelated',version:'fixture'}));
-    if(req.url==='/v1/models')return res.end(JSON.stringify({data:empty?[]:[{id,display_name:'GPT Example',context_window:180000,modalities:{input:['text','image']}},{id:'not-a-chat',kind:'image'}]}));
+    if(req.url==='/v1/models')return res.end(JSON.stringify({data:empty?[]:[
+      {id,display_name:'GPT Example',owned_by:'codex',magpie_label:'GPT Example · Codex',context_window:180000,modalities:{input:['text','image']}},
+      {id:'grok/grok-4.7',display_name:'Grok 4.7',context_window:256000},
+      {id:'not-a-chat',kind:'image'},
+    ]}));
     if(req.url==='/v1/magpie/quotas?kept=1'&&req.method==='GET'){
       quotaReads++;
       if(quotaFail)return res.writeHead(503).end('{"error":"upstream sensitive body"}');
@@ -42,7 +46,10 @@ test('Magpie connects a verified existing gateway without launching and isolates
     const custom=await access.accounts.add({provider:'custom',custom:{...config,models:[{id,label:'GPT Example'}]}});
     const source=await access.accounts.add({provider:'magpie',prepareLocalGateway:true});
     assert.equal(launches,0); assert.equal(source.provider,'magpie');assert.equal(source.label,'Magpie');assert.equal(source.status,'ready');
-    assert.deepEqual(source.models.map(x=>[x.id,x.enabled,x.images,x.contextWindow]),[[id,true,true,180000]]);
+    assert.deepEqual(source.models.map(x=>[x.id,x.enabled,x.images,x.contextWindow,x.upstreamProvider,x.upstreamProviderLabel]),[
+      [id,true,true,180000,'codex','Codex'],
+      ['grok/grok-4.7',true,false,256000,'grok','Grok'],
+    ]);
     assert.notEqual(source.id,custom.id);assert.equal(source.quota,undefined);
     await assert.rejects(access.accounts.readGatewayQuota(custom.id,{expectedRevision:custom.revision}),{code:'model_gateway_quota_unavailable'});
     await assert.rejects(access.accounts.readGatewayQuota(source.id,{expectedRevision:'stale'}),{code:'model_revision_conflict'});
@@ -130,6 +137,8 @@ test('Magpie handles default-only, unknown and explicit maximums without a model
     access=createModelAccess({root,providers:[provider]});
     await access.accounts.check(source.id);
     assert.deepEqual(window(terra),[500_000,null,800_000,800_000]);
+    assert.equal(access.catalog.list().models.find(model=>model.modelId==='group/default')?.upstreamProvider,'magpie');
+    assert.equal(access.catalog.list().models.find(model=>model.modelId===sol)?.upstreamProviderLabel,'Codex');
     data[2]=entry(terra,500_000,{max_context_window:600_000});
     await access.accounts.check(source.id);
     assert.deepEqual(window(terra),[500_000,600_000,600_000,800_000]);

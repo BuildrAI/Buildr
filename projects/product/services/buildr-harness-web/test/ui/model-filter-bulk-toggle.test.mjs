@@ -20,6 +20,15 @@ test('bulk status and changes use the same search, status and family intersectio
  const offline=modelBulkSelection(rows,'alt','all','Claude');
  assert.equal(offline.filtered.length,1);
  assert.deepEqual([offline.enable,offline.disable],[[],[]]);
+ const magpieRows=[
+  {...row('codex/gpt','GPT-6.2-Sol','GPT',true),upstreamProvider:'codex',upstreamProviderLabel:'Codex'},
+  {...row('grok/g47','Grok 4.7','Grok',false),upstreamProvider:'grok',upstreamProviderLabel:'Grok'},
+  {...row('qoder/ult','Ultimate','其他',false),upstreamProvider:'qoder',upstreamProviderLabel:'Qoder'},
+ ];
+ const onlyGrok=modelBulkSelection(magpieRows,'','all','all','grok');
+ assert.deepEqual(onlyGrok.filtered.map(item=>item.id),['grok/g47']);
+ assert.deepEqual(onlyGrok.enable,[{sourceId:'magpie',modelId:'grok/g47',enabled:true}]);
+ assert.deepEqual(modelBulkSelection(magpieRows,'qoder','all','all','all').filtered.map(item=>item.id),['qoder/ult']);
 });
 
 const account=(revision,id='magpie',models=[])=>({id,revision,models});

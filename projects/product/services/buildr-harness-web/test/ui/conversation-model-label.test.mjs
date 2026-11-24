@@ -97,10 +97,21 @@ test('服务端展示元数据优先于历史兜底名称，离线历史仍保�
 });
 
 test('only Magpie choices append the source, without changing their selection IDs',async()=>{
- const {catalogConversationOption}=await import('../../src/features/agent-conversations/conversation-options.ts');
+ const {catalogConversationOption,conversationModelGroups}=await import('../../src/features/agent-conversations/conversation-options.ts');
  const base={accountId:'direct',modelId:'gpt-6.2-sol',provider:'codex',label:'GPT‑6.2 Sol',available:true};
- const magpie={...base,accountId:'magpie-account',provider:'magpie',modelId:'codex/gpt-6.2-sol'};
+ const magpie={...base,accountId:'magpie-account',provider:'magpie',modelId:'codex/gpt-6.2-sol',upstreamProvider:'codex',upstreamProviderLabel:'Codex'};
+ const grok={accountId:'magpie-account',modelId:'grok/grok-4.7',provider:'magpie',label:'Grok 4.7',available:true};
+ const qoder={accountId:'magpie-account',modelId:'qoder/ultimate',provider:'magpie',label:'Ultimate',available:true,upstreamProvider:'qoder',upstreamProviderLabel:'Qoder'};
+ const own={accountId:'magpie-account',modelId:'group/default',provider:'magpie',label:'Default',available:true,upstreamProvider:'magpie',upstreamProviderLabel:'Magpie'};
  assert.deepEqual(catalogConversationOption('codex',base),{value:'shared:direct::gpt-6.2-sol',label:'GPT‑6.2 Sol',disabled:false});
  assert.deepEqual(catalogConversationOption('codex',magpie),{value:'shared:magpie-account::codex/gpt-6.2-sol',label:'GPT‑6.2 Sol · Magpie',disabled:false});
  assert.equal(catalogConversationOption('codex',{...magpie,available:false}).disabled,true);
+ const groups=conversationModelGroups('codex',[base,magpie,grok,qoder,own]);
+ assert.deepEqual(groups.map(group=>[group.label,group.options.map(option=>[option.value,option.label])]),[
+  ['ChatGPT',[['shared:direct::gpt-6.2-sol','GPT‑6.2 Sol']]],
+  ['Codex · Magpie',[['shared:magpie-account::codex/gpt-6.2-sol','GPT‑6.2 Sol · Magpie']]],
+  ['Grok · Magpie',[['shared:magpie-account::grok/grok-4.7','Grok 4.7 · Magpie']]],
+  ['Qoder · Magpie',[['shared:magpie-account::qoder/ultimate','Ultimate · Magpie']]],
+  ['Magpie',[['shared:magpie-account::group/default','Default · Magpie']]],
+ ]);
 });

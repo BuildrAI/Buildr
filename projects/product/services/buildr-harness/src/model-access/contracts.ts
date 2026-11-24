@@ -43,6 +43,10 @@ export interface ModelOffering {
   defaultReasoningEffort?: string;
   kind?: 'model' | 'combination';
   family?: string;
+  /** Upstream provider key reported by a multi-provider gateway (e.g. Magpie `owned_by`). */
+  upstreamProvider?: string;
+  /** Display label for the gateway's upstream provider (e.g. `Codex`, `Grok`, `Qoder`). */
+  upstreamProviderLabel?: string;
   enabled?: boolean;
   /** null means this source explicitly reports no known maximum; omission preserves legacy fallback. */
   reportedContextWindow?: number | null;

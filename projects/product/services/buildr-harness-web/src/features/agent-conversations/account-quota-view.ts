@@ -3,6 +3,7 @@ import {
   fallbackApiKeySourceName,
   fallbackBillingLink,
   fallbackKnownSourceName,
+  magpieSourceGroupLabel,
 } from '../../lib/model-picker.ts';
 import type { ModelAccount } from './types.ts';
 
@@ -19,6 +20,13 @@ export type AccountQuotaLine = {
   resetsAt?: string;
 };
 const sourceNameOrder = new Intl.Collator('zh-Hans-CN', { sensitivity: 'base', numeric: true });
+const percentFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2, useGrouping: false });
+export function formatQuotaPercent(value: number): string {
+  if (!Number.isFinite(value)) return '0';
+  const clamped = Math.min(100, Math.max(0, value));
+  const rounded = Math.round(clamped * 100) / 100;
+  return percentFormatter.format(rounded === 0 ? 0 : rounded);
+}
 function formatBalance(value: string): string {
   const amount = Number(value);
   return value.trim() && Number.isFinite(amount)
@@ -85,9 +93,9 @@ export function accountQuotaView(account: ModelAccount, now = Date.now(), compac
     lines.push(...balanceLines(quota.balances, compact).map(text => ({ kind: 'balance' as const, label: '账户余额', text })));
     lines.push(...(quota.windows ?? []).map(window => {
       const credits = quotaWindowCredits(window, compact);
-      return { kind: 'window' as const, label: window.label, groupLabel: window.groupLabel, percent: window.remainingPercent, ...(credits ? { credits } : {}), text: `${window.label} · 剩余 ${window.remainingPercent}%`, resetsAt: window.resetsAt };
+      return { kind: 'window' as const, label: window.label, groupLabel: window.groupLabel, percent: window.remainingPercent, ...(credits ? { credits } : {}), text: `${window.label} · 剩余 ${formatQuotaPercent(window.remainingPercent)}%`, resetsAt: window.resetsAt };
     }));
-    if (!lines.length && typeof quota.remainingPercent === 'number') lines.push({ kind: 'window', label: '供应商额度', percent: quota.remainingPercent, text: `供应商额度 · 剩余 ${quota.remainingPercent}%`, resetsAt: quota.resetsAt });
+    if (!lines.length && typeof quota.remainingPercent === 'number') lines.push({ kind: 'window', label: '供应商额度', percent: quota.remainingPercent, text: `供应商额度 · 剩余 ${formatQuotaPercent(quota.remainingPercent)}%`, resetsAt: quota.resetsAt });
     if (!lines.length && quota.summary) lines.push({ kind: 'summary', text: quota.summary });
   }
   if (!lines.length) lines.push({ kind: 'summary', text: quota?.summary || '额度暂不可读取' });
@@ -120,4 +128,40 @@ export function groupQuotaWindows<T extends { groupLabel?: string }>(windows: re
     else groups.set(window.groupLabel, [window]);
   }
   return [...groups];
+}
+
+export type GatewayQuotaSnapshot = {
+  readAt: string;
+  accounts: Array<{
+    provider: string;
+    providerLabel: string;
+    accountLabel?: string;
+    plan?: string;
+    balance?: string;
+    observedAt?: string;
+    unavailable?: boolean;
+    windows: Array<{ label: string; remainingPercent?: number; resetsAt?: string }>;
+  }>;
+};
+
+export type MagpieQuotaOverviewGroup = {
+  provider: string;
+  label: string;
+  accounts: GatewayQuotaSnapshot['accounts'];
+};
+
+export function magpieQuotaOverviewGroups(snapshot: GatewayQuotaSnapshot): MagpieQuotaOverviewGroup[] {
+  const groups = new Map<string, GatewayQuotaSnapshot['accounts']>();
+  for (const account of snapshot.accounts) {
+    const list = groups.get(account.provider) ?? [];
+    list.push(account);
+    groups.set(account.provider, list);
+  }
+  return [...groups.entries()]
+    .map(([provider, accounts]) => ({
+      provider,
+      label: magpieSourceGroupLabel(accounts[0]?.providerLabel || provider),
+      accounts,
+    }))
+    .sort((left, right) => compareSourceNames(left.label, right.label) || left.provider.localeCompare(right.provider));
 }

@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {modelSourceViews,newModelSourceProvider} from '../../src/features/agent-conversations/account-model-view.ts';
+import {inferModelFamily,modelSourceViews,newModelSourceProvider} from '../../src/features/agent-conversations/account-model-view.ts';
 const group={id:'chatgpt',label:'ChatGPT'};
 const subscription={id:'native-codex',identity:'subscription',provider:'native-codex',connectionId:'codex',label:'Codex / ChatGPT',authType:'oauth',group,modeLabel:'订阅',revision:'r1',enabled:true,status:'ready',accountLabel:'订阅账号',models:[{id:'gpt-sub',label:'GPT 订阅',images:false,tools:true,enabled:true}]};
 const api={id:'api',identity:'api',provider:'openai',label:'ChatGPT',authType:'api-key',group,modeLabel:'API Key',revision:'r2',enabled:true,status:'ready',credentialConfigured:true,accountLabel:'ChatGPT API',models:[{id:'gpt-api',label:'GPT API',images:false,tools:true,enabled:true}]};
@@ -200,4 +200,33 @@ test('Qoder 独立订阅账号不依赖 Qoder 智能体接入即可展示登录�
  assert.equal(waiting.loginPending,true);
  assert.equal(waiting.loginUrl,'https://qoder.com/device');
  assert.equal(waiting.diagnostic,undefined);
+});
+
+test('Magpie 模型系列将单体名称归入其他并合并带版本号前缀，同时保留上游供应商属性',()=>{
+ for(const label of ['Ultimate','Fast','Efficient','Sonus','Cantus']){
+  assert.equal(inferModelFamily(label),'其他',`${label} 不应独立成系列`);
+ }
+ assert.equal(inferModelFamily('Qwen4-Max'),'Qwen');
+ assert.equal(inferModelFamily('Qwen3.8-Max'),'Qwen');
+ assert.equal(inferModelFamily('Qwen3.8-Flash'),'Qwen');
+ assert.equal(inferModelFamily('GPT\u20116.2 Sol'),'GPT');
+ assert.equal(inferModelFamily('Grok 4.7 @ 500k'),'Grok');
+ assert.equal(inferModelFamily('GLM-5.4'),'GLM');
+ assert.equal(inferModelFamily('DeepSeek-V4-Pro'),'DeepSeek');
+ const magpie={
+  id:'magpie-1',provider:'magpie',label:'Magpie',revision:'r1',enabled:true,status:'ready',
+  custom:{protocol:'responses',baseUrl:'http://127.0.0.1:65120/v1',useApiKey:false,models:[]},
+  models:[
+   {id:'qoder/ultimate',label:'Ultimate',images:false,tools:true,enabled:true,upstreamProvider:'qoder',upstreamProviderLabel:'Qoder'},
+   {id:'qoder/qmodel_latest',label:'Qwen4-Max',images:false,tools:true,enabled:true},
+   {id:'group/default',label:'Default',images:false,tools:true,enabled:true,upstreamProvider:'magpie',upstreamProviderLabel:'Magpie'},
+  ],
+ };
+ const view=modelSourceViews([magpie],[]).find(item=>item.id==='magpie-1');
+ assert.ok(view);
+ assert.deepEqual(view.models.map(item=>[item.id,item.family,item.upstreamProvider,item.upstreamProviderLabel]),[
+  ['qoder/ultimate','其他','qoder','Qoder'],
+  ['qoder/qmodel_latest','Qwen','qoder','Qoder'],
+  ['group/default','其他',undefined,undefined],
+ ]);
 });
