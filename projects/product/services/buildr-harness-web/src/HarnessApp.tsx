@@ -132,6 +132,9 @@ function Workspace({standalone,environment,desktop}:{standalone:boolean;environm
   const [environmentOpen,setEnvironmentOpen]=useState(false);
   const [reveal,setReveal]=useState<{workspaceId:string;revision:string;path:string;line?:number}>();
   const workspaceRef=useRef(workbenchWorkspaceId);workspaceRef.current=workbenchWorkspaceId;
+  const scopesRef=useRef(scopes);scopesRef.current=scopes;
+  const currentWorkspaceName=scopes.find(scope=>scope.id===workbenchWorkspaceId)?.name?.trim();
+  const observedScopeRef=useRef<{id:string;path:string;name?:string}|null>(null);
   const [nativeSidebar,setNativeSidebar]=useState(false);
   useEffect(()=>{
     if(!desktop)return;
@@ -141,15 +144,27 @@ function Workspace({standalone,environment,desktop}:{standalone:boolean;environm
   },[desktop]);
   useEffect(()=>{
     if(!desktop)return;
+    observedScopeRef.current=null;
     setNativeSidebar(false);
     desktopNotify({kind:'workspace',scope:null});
     if(!workbenchWorkspaceId)return;
     const abort=new AbortController();
     void observeWorkspaceDirectory(workbenchWorkspaceId,abort.signal).then(scope=>{
-      if(!abort.signal.aborted)desktopNotify({kind:'workspace',scope:{id:workbenchWorkspaceId,path:scope.rootPath}});
+      if(abort.signal.aborted)return;
+      const resolvedName=scope.name?.trim()||scopesRef.current.find(item=>item.id===workbenchWorkspaceId)?.name?.trim()||(workbenchWorkspaceId==='@default'?'默认工作空间':undefined);
+      const next={id:workbenchWorkspaceId,path:scope.rootPath,...(resolvedName?{name:resolvedName}:{})};
+      observedScopeRef.current=next;
+      desktopNotify({kind:'workspace',scope:next});
     }).catch(()=>{});
     return()=>abort.abort();
   },[desktop,workbenchWorkspaceId]);
+  useEffect(()=>{
+    const current=observedScopeRef.current;
+    if(!desktop||!workbenchWorkspaceId||!currentWorkspaceName||!current||current.id!==workbenchWorkspaceId||current.name===currentWorkspaceName)return;
+    const next={id:current.id,path:current.path,name:currentWorkspaceName};
+    observedScopeRef.current=next;
+    desktopNotify({kind:'workspace',scope:next});
+  },[desktop,workbenchWorkspaceId,currentWorkspaceName]);
   const effectiveEnvironmentOpen=standalone?environmentOpen&&!context.settings&&!nativeSidebar:undefined;
   const layout=useMemo(
     ()=>resolveHarnessThreePaneLayout({

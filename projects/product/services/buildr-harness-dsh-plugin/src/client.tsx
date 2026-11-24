@@ -2,7 +2,7 @@ import { label, panelId as PANEL, released } from './channel.ts';
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentType } from 'react';
 import { attachHarnessGuest, desktopBridge, desktopKeyboard, type DesktopBridge } from './guest.ts';
 import { detectDesktopPlatform, resolveRefreshBinding, shouldRefreshCenterHarness, toolTabTitle, type ShortcutCatalogEntry } from './refresh.ts';
-import { linkDestination, liveCarrier, preferredCarrier, sessionSelection, shouldNotifyChatActive, toolAddress, toolId, type GuestMessage, type Reveal, type Scope, type SessionCatalog, type Tool } from './workspace.ts';
+import { linkDestination, liveCarrier, preferredCarrier, sessionSelection, shouldNotifyChatActive, toolAddress, toolId, workspaceDisplayName, type GuestMessage, type Reveal, type Scope, type SessionCatalog, type Tool } from './workspace.ts';
 
 const ANCHOR = '--buildr-harness-dsh';
 const KEY = released ? 'buildr.harness-dsh.released.carriers.v1' : 'buildr.harness-dsh.carriers.v1';
@@ -34,9 +34,12 @@ interface Context {
 }
 export const inject = ['slots', 'layout', 'sessions', 'workspaces', 'uiWorkspace', 'uiSession', 'sidebarRight', 'sidebarRightTabs', 'configForms'];
 
-function Mark({ size }: { size: number }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={1.7}>
-    <path d="M4 5h16v14H4zM4 9h16M10 9v10m3-6 2 2-2 2" strokeLinejoin="round" strokeLinecap="round" />
+function Mark({ size = 18 }: { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="none" style={{ flexShrink: 0, display: 'block' }}>
+    <path d="M3.5 5.1c0-.5.27-.96.7-1.2l3.6-2.02c.4-.22.9.07.9.53v19.18c0 .46-.5.75-.9.53l-3.6-2.02c-.43-.24-.7-.7-.7-1.2Z" fill="#14b3a4" />
+    <path d="M20.5 5.1c0-.5-.27-.96-.7-1.2l-3.6-2.02c-.4-.22-.9.07-.9.53v19.18c0 .46.5.75.9.53l3.6-2.02c.43-.24.7-.7.7-1.2Z" fill="#1f92f6" />
+    <path d="M3.8 12l2.6-2.6h6.55L9.65 14.6H6.4Z" fill="#e59e04" />
+    <path d="M14.35 9.4h3.25l2.6 2.6-2.6 2.6h-6.55Z" fill="#f8af08" />
   </svg>;
 }
 type IconProps = { size?: number; className?: string };
@@ -103,7 +106,6 @@ function Guest({ bridge, tool, onMessage, onControl, onRefresh }: { bridge: Desk
     </div>}
   </div>;
 }
-function Anchor() { return <div style={{ height: '100%', width: '100%', ...{ anchorName: ANCHOR } }} />; }
 
 export function apply(ctx: Context) {
   const bridge = desktopBridge();
@@ -194,7 +196,10 @@ export function apply(ctx: Context) {
       if (state.scope?.id !== message.scope?.id || state.scope?.path !== message.scope?.path) {
         pendingFile = undefined;
         publish({ ...state, scope: message.scope, carrier: undefined }); align();
-      } else tellGuest();
+      } else {
+        if (state.scope?.name !== message.scope?.name) publish({ ...state, scope: message.scope });
+        tellGuest();
+      }
       return;
     }
     const native = mountAvailable() && ctx.sidebarRightTabs.get('browser') !== undefined;
@@ -257,6 +262,40 @@ export function apply(ctx: Context) {
     } : { display: 'none' }}>
       <Guest bridge={bridge!} onMessage={accept} onControl={fn => { sendToChat = fn; tellGuest(); fn({ active: state.active }); }} onRefresh={handle => { chatRefresh = handle; }} />
     </section>;
+  }
+  function Anchor() {
+    const observed = useSyncExternalStore(store.subscribe, store.getSnapshot);
+    const darwin = typeof document !== 'undefined' && document.documentElement.dataset.platform === 'darwin';
+    const workspaceName = workspaceDisplayName(observed.scope);
+    return <div style={{ height: '100%', width: '100%', ...{ anchorName: ANCHOR } }}>
+      {darwin && <header className="buildr-harness-dsh-topbar" data-window-drag="" style={{
+        height: 'var(--dsh-frame-top-clearance, 48px)', boxSizing: 'border-box',
+        display: 'flex', alignItems: 'center', gap: 8,
+        paddingInlineStart: 'max(16px, var(--dsh-frame-leading-clearance, 0px))', paddingInlineEnd: 16,
+        background: 'var(--dsw-alias-bg-base, Canvas)',
+        borderBottom: '0.5px solid var(--dsw-alias-border-l3, rgba(0, 0, 0, 0.08))',
+        color: 'var(--dsw-alias-label-primary, CanvasText)', fontSize: 13, lineHeight: '20px',
+        userSelect: 'none', WebkitUserSelect: 'none', overflow: 'hidden',
+      }}>
+        <Mark size={16} />
+        <span style={{ fontWeight: 500, flexShrink: 0, whiteSpace: 'nowrap' }}>Buildr Harness</span>
+        {!released && <span style={{
+          fontSize: 10, lineHeight: '16px', fontWeight: 500, flexShrink: 0,
+          padding: '0 5px', borderRadius: 4,
+          color: 'var(--dsw-alias-label-secondary, GrayText)',
+          background: 'var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06))',
+        }}>Dev</span>}
+        {workspaceName && <>
+          <span aria-hidden="true" style={{ color: 'var(--dsw-alias-label-tertiary, GrayText)', flexShrink: 0 }}>/</span>
+          <span className="buildr-harness-dsh-workspace"
+            title={observed.scope?.path ? `${workspaceName} (${observed.scope.path})` : workspaceName}
+            style={{
+              color: 'var(--dsw-alias-label-secondary, GrayText)', maxWidth: 260, minWidth: 0,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>{workspaceName}</span>
+        </>}
+      </header>}
+    </div>;
   }
   ctx.effect(() => {
     const stable = [
