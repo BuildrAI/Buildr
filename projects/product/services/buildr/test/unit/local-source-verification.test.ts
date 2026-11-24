@@ -103,7 +103,7 @@ test('changed-path observation compares the recorded source with the observed he
   assert.deepEqual(calls, [['original', 'new']]);
   assert.deepEqual(result.missingStepIds, []);
 });
-test('a fingerprint mismatch requires rerun even when changed paths do not affect ownership', async () => {
+test('unrelated changes do not invalidate a broad content fingerprint', async () => {
   const previous = { key: 'sha256-old', stepId: 'integration-connections', contentIdentity: 'sha256-old-content',
     recipeIdentity: 'sha256-recipe', environmentIdentity: 'sha256-environment' };
   const current = { ...previous, key: 'sha256-new', contentIdentity: 'sha256-new-content' };
@@ -119,9 +119,9 @@ test('a fingerprint mismatch requires rerun even when changed paths do not affec
     inputsFor: () => current,
   };
   const reused = await prepareLocalSourceVerification({ repo: '/source', roundId: 'round' }, fixture);
-  assert.equal(reused.status, 'local-verification-required');
-  assert.deepEqual(reused.missingStepIds, ['integration-connections']);
-  assert.deepEqual(reused.invalidatedStepIds, ['integration-connections']);
+  assert.equal(reused.status, 'ready');
+  assert.deepEqual(reused.missingStepIds, []);
+  assert.deepEqual(reused.invalidatedStepIds, []);
 
   const affected = await prepareLocalSourceVerification({ repo: '/source', roundId: 'round' }, {
     ...fixture,

@@ -25,7 +25,7 @@ export async function verifySourceBeforeFreeze(input: {
   const sourceFile = path.resolve(workspace, options.sourceVerification
     ?? `projects/product/services/buildr/build/verification/candidate-rounds/${roundId}.json`);
   const observe = () => (dependencies.prepareSource ?? prepareLocalSourceVerification)({
-    repo, sourceFile, roundId, base, platform, packages: ['buildr'], selectedStepIds,
+    repo, sourceFile, roundId, base, platform, packages: ['buildr'], selectedStepIds, transport: 'file',
   });
   const before = await observe();
   if (before.status === 'ready') return before;

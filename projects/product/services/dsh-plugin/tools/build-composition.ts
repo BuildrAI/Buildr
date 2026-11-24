@@ -23,12 +23,8 @@ async function treeFiles(base: string, directory = base): Promise<Array<{ path: 
   }
   return result.sort((a, b) => a.path.localeCompare(b.path));
 }
-export function compositionPatch(entryId: string, entryName: string, host: string, _trajectory: string, clients: readonly { entryId: string; name: string; directory: string }[]): string {
+export function compositionPatch(entryId: string, entryName: string, host: string, _trajectory: string, _clients: readonly { entryId: string; name: string; directory: string }[]): string {
   const rows = [
-    ...Object.entries(ROOT_MODULES).filter(([id]) => id !== 'agent-loop').flatMap(([id, name]) => [`- id: ${id}`, `  name: '${name}'`, '  disabled: true']),
-    ...PRESET_IDS.flatMap(id => [`- id: ${id}`, `  name: '${PRESET_MODULE}'`, '  disabled: true']),
-    '- id: ui-trajectory', "  name: '@deepseek-ai/dsh-client-ui-trajectory'", '  disabled: true',
-    ...clients.flatMap(client => [`- id: ${client.entryId}`, `  name: '${client.name}'`, '  disabled: true']),
     '- insert:',
     `    - id: ${COMPOSITION_OWNER_ID}`, `      name: './${host}/index.js'`, '      disabled: false',
     // The public declaration is also the identity targeted by existing user configuration patches.
@@ -87,7 +83,7 @@ export async function buildComposition(args: string[]): Promise<{ output: string
   }, null, 2) + '\n');
   const req = createSdkRequire(sdk);
   const ts = req('typescript');
-  const program = ts.createProgram(['index.ts', 'preset-owner.ts', 'definition.ts', 'configuration-owner.ts'].map(file => path.join(root, 'plugin/composition', file)), {
+  const program = ts.createProgram(['index.ts', 'preset-owner.ts', 'definition.ts', 'configuration-owner.ts', 'compatibility.ts', 'circuit-breaker.ts'].map(file => path.join(root, 'plugin/composition', file)), {
     target: ts.ScriptTarget.ES2024, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler,
     strict: true, skipLibCheck: true, noUncheckedIndexedAccess: true, exactOptionalPropertyTypes: true,
     noUnusedLocals: true, noUnusedParameters: true, allowImportingTsExtensions: true, noEmit: true,
@@ -121,7 +117,7 @@ export async function buildComposition(args: string[]): Promise<{ output: string
     peerDependenciesMeta: { '@deepseek-ai/dsh': { optional: true } }, dependencies: metadata.dependencies };
   await writeFile(path.join(output, 'package.json'), JSON.stringify(manifest, null, 2) + '\n');
   await cp(path.join(root, 'LICENSE'), path.join(output, 'LICENSE'));
-  await writeFile(path.join(output, 'README.md'), '# Buildr DSH 增强插件\n\n通过官方插件管理器正常安装、停用和卸载。增强组件只在本组合层启用；根配置及预设从当前官方与用户声明在内存派生，不持久写入私有模块引用。停用恢复官方组件，已有会话和事件保持。支持 DSH 0.2.x 稳定版与预发布版；软件开发工具包（SDK）构建来源仍精确核验，版本范围不代表每个宿主版本均完成桌面验收。\n');
+  await writeFile(path.join(output, 'README.md'), '# Buildr DSH 增强插件\n\n通过官方插件管理器正常安装、停用和卸载。增强组件只在运行期契约探测通过后在内存启用；若宿主接口不兼容、激活异常或触发启动熔断，会自动降级放行 DSH 原生组件并保持基础侧栏入口可用。根配置及预设从当前官方与用户声明在内存派生，不持久写入私有模块引用。停用恢复官方组件，已有会话和事件保持。支持 DSH 0.2.x 稳定版与预发布版；软件开发工具包（SDK）构建来源仍精确核验，版本范围不代表每个宿主版本均完成桌面验收。\n');
   await writeFile(path.join(output, 'composition.json'), JSON.stringify({ schemaVersion: COMPOSITION_SCHEMA, upstream: receipt.baseline,
     patchSha256: receipt.patchSha256, files: await treeFiles(output), runtimeValidated: false }, null, 2) + '\n');
   return { output, package: metadata.name };

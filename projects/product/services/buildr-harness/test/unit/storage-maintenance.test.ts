@@ -6,12 +6,13 @@ import {syncBuiltinESMExports} from 'node:module';
 import {StorageMaintenance} from '../../src/process/storage-maintenance.ts';
 import type {AgentRuntimeUnit} from '../../src/execution-contracts.ts';
 
-test('maintenance backs off after expensive passes and avoids overlapping or repeating inventory',t=>{
+test('maintenance backs off after expensive passes and avoids overlapping or repeating inventory',async t=>{
   t.mock.timers.enable({apis:['Date','setTimeout'],now:1000});
   const workers:Array<{worker:EventEmitter;data:any}>=[];
   class FakeWorker extends EventEmitter {
     constructor(_entry:URL,options:{workerData:unknown}){super();workers.push({worker:this,data:options.workerData});}
     unref(){}
+    ref(){}
   }
   const patched=t.mock.method(workerThreads,'Worker',function(entry:URL,options:{workerData:unknown}){return new FakeWorker(entry,options);} as unknown as typeof workerThreads.Worker);
   syncBuiltinESMExports();t.after(()=>{patched.mock.restore();syncBuiltinESMExports();});
@@ -40,8 +41,16 @@ test('maintenance backs off after expensive passes and avoids overlapping or rep
   t.mock.timers.tick(1);
   assert.equal(workers.length, 4);
   assert.equal(workers[3].data.nativeOnly, true);
-  maintenance.close();
+  const closing = new Int32Array(workers[3].data.closing);
+  assert.equal(Atomics.load(closing, 0), 0);
+  let drained=false;
+  const closed=maintenance.close().then(()=>{drained=true;});
+  assert.equal(Atomics.load(closing, 0), 1, 'the worker sees shutdown before beginning the next phase');
+  await Promise.resolve();
+  assert.equal(drained,false,'shutdown waits for the active worker to release its resources');
   workers[3].worker.emit('exit', 0);
+  await closed;
+  assert.equal(drained,true);
   t.mock.timers.tick(60000);
   assert.equal(workers.length, 4);
 });

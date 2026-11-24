@@ -110,7 +110,12 @@ test('a prepared executor without its own model login uses the selected account,
     }
     assert.deepEqual(calls.map(call=>call.account),[first.id,first.id,second.id,second.id,first.id,first.id]);
     const final=service.conversations.read('workspace',conversation.id);assert.equal(final.participants.length,2);assert.equal(final.run?.modelAccountId,first.id);assert.equal(contexts.size,2);
-    assert.equal(opens.filter(input=>input.gateway).length,2);assert.ok(opens.filter(input=>input.gateway).every(input=>input.configRoot.includes('model-bindings')));
+    // An idle gateway may have closed and reopened while another account ran.
+    // Bindings, rather than the number of process opens, prove isolation.
+    const gatewayRoots = new Set(opens.filter(input=>input.gateway).map(input=>input.configRoot));
+    assert.equal(gatewayRoots.size,2);
+    assert.ok([...gatewayRoots].every(root=>root.includes('model-bindings')));
+    assert.deepEqual(new Set(Array.from(contextSources.values(),input=>input.configRoot)),gatewayRoots);
     assert.equal(JSON.stringify(final).includes('apiKey'),false);
     const account=service.models.accounts.read(first.id);
     const adjusted=await service.models.accounts.preferences(first.id,{expectedRevision:account.revision,models:[{id:'same-model',contextWindow:128000}]});

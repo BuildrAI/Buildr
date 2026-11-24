@@ -60,9 +60,10 @@ function fixture(settings: { remap?: boolean; failFork?: boolean; modelBacked?: 
     for(let i=0;i<300;i++){const view=read(id);if(view.run?.status==='completed'&&view.titleState?.status!=='generating')return view;await new Promise(resolve=>setTimeout(resolve,2));}
     assert.fail('conversation did not settle: '+JSON.stringify(read(id)));
   };
-  const send=async(id:string,text:string,attachmentIds?:string[])=>{
+  const send=async(id:string,text:string,attachmentIds?:string[], expectedParticipant?: string)=>{
     const draft={expectedRevision:read(id).revision,connectionId:'local',text,attachmentIds,...(accountId?{modelAccountId:accountId,model:'model'}:{})};
     const preview=service.conversations.prepareSend('workspace',id,draft);
+    if(expectedParticipant)assert.equal(preview.participantId,expectedParticipant,'the original fork participant must be selected before native resume');
     service.conversations.send('workspace',id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
     return await settle(id);
   };
@@ -167,11 +168,21 @@ test('an unused model-backed fork releases its idle private process and later re
     const native=child.participants.at(-1)!.contextId,closed=f.closes;
     await f.service.releaseIdleSources({workspaceId:'workspace',id:child.id});
     assert.equal(f.closes,closed+1);assert.equal(f.read(child.id).run,undefined);
-    const continued=await f.send(child.id,'new branch instruction');
+    const continued=await f.send(child.id,'new branch instruction',undefined,child.participants.at(-1)!.id);
     assert.equal(continued.run?.status,'completed');
     assert.equal(continued.participants.at(-1)!.contextId,native);
     assert.equal(continued.entries.filter(item=>item.role==='user').length,2);
-    assert.equal(f.read(original.id).revision,source.revision);
+    // The source can independently persist release of its idle runtime while
+    // the fork sends. That must not change the source transcript or ownership.
+    const after=f.read(original.id);
+    const { resourcesReleased: beforeRelease, ...beforeRun } = source.run!;
+    const { resourcesReleased: afterRelease, ...afterRun } = after.run!;
+    assert.deepEqual(afterRun,beforeRun);
+    if(beforeRelease)assert.equal(afterRelease,true);
+    assert.deepEqual(after.entries,source.entries);
+    assert.deepEqual(after.participants,source.participants);
+    assert.deepEqual(after.requests,source.requests);
+    assert.equal(after.title,source.title);
   }finally{await f.close();}
 });
 

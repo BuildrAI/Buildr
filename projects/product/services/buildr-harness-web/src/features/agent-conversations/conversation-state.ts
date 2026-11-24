@@ -1,4 +1,5 @@
 import type { ConversationView, ConversationEntry, ConversationEvent, ConversationRun, ConversationTaskLink, CatalogModel } from './types.ts';
+import { conversationLiveUnknownReason } from './conversation-notices.ts';
 
 /** User-confirmed attention settlement for a retained unknown run; real in-flight work and valid questions stay protected. */
 export function canSettleRetainedRun(conversation: ConversationView | null, run: ConversationRun | undefined): boolean {
@@ -39,8 +40,18 @@ export function conversationRecoveryAction(conversation: ConversationView | null
 /** A successful observation may confirm that the result is still unknown. */
 export function conversationObservationFeedback(run?: ConversationRun): string {
   if (!run) return '读取完成：当前没有待处理的执行。';
+  if (run.status === 'unknown' && /自动续行次数已达上限/.test(run.diagnostic ?? '')) {
+    return run.resourcesReleased
+      ? '读取完成：后台自动续行已达上限，本轮已暂停并释放后台连接。可继续核对成果并接续原目标。'
+      : '读取完成：后台自动续行已达上限，本轮已暂停，正在释放或核对后台连接。';
+  }
   if (run.resourcesReleased && (run.status === 'unknown' || run.status === 'tools-active' || run.tools.some(tool => tool.status !== 'completed'))) return '读取完成：后台连接已释放，但未读到本轮结束记录。可发送新要求继续，不会重做原操作。';
-  if (run.status === 'unknown') return '读取完成：仍无法读取原执行状态，记录已保留。可发送新要求，不会重做原操作。';
+  if (run.status === 'unknown') {
+    if (run.stopRequested) return '读取完成：已请求停止，但尚未确认结束；记录已保留，可继续原任务。';
+    const reason = conversationLiveUnknownReason(run.diagnostic);
+    if (reason) return `读取完成：${reason} 可点击“停止”结束本轮后再继续，记录已保留。`;
+    return '读取完成：仍无法读取原执行状态，记录已保留；若长时间无进展可点击“停止”后再继续。';
+  }
   if (run.status === 'tools-active' && run.tools.some(tool => tool.status === 'running') && !run.tools.some(tool => tool.status === 'unknown')) return '读取完成：后台命令仍在运行。';
   if (run.status === 'tools-active' || run.tools.some(tool => tool.status !== 'completed')) return '读取完成：尚未取得部分命令的结束记录，请查看命令状态。';
   const labels: Record<ConversationRun['status'], string> = {starting:'正在准备执行',running:'仍在执行','waiting-approval':'仍在等待授权','waiting-question':'仍在等待你的回答',stopping:'正在停止',stopped:'已确认停止',completed:'本轮已结束',failed:'本轮执行失败',unknown:'执行状态待确认','tools-active':'仍有命令尚未确认结束'};

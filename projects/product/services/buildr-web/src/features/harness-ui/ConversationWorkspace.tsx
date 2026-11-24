@@ -1,11 +1,11 @@
-import {useCallback, useMemo, useRef} from 'react';
+import {useCallback, useMemo, useRef, useState, type ReactNode} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
-import {HarnessConversationSurface, type HarnessConversationHost, type HarnessDirectoryFiles} from '../../../../buildr-harness-web/src/conversation';
+import {HarnessConversationSurface, LocalFilePreviewModal, conversationFileLink, type HarnessConversationHost, type HarnessDirectoryFiles, type HarnessFileContent, type ConversationFilePreview} from '../../../../buildr-harness-web/src/conversation';
 import {resolveTaskBriefReference, taskBriefHref} from '../../lib/taskBriefLinks';
 import {readExplorerFile} from '../code/code-file-read';
 import {offerCodeOpen} from '../code/code-open-observation';
 import {codeApi} from '../code/api/code-api';
-import type {ApiError} from '../../api';
+import {api, type ApiError} from '../../api';
 import {conversationAbsoluteFile, conversationFileTarget} from './conversation-files';
 import {useAgentConversations} from './AgentConversationsContext';
 import type {ConversationView} from './types';
@@ -14,65 +14,96 @@ import {BuildrParticipation} from './BuildrParticipation';
 import {conversationTaskLinks} from './conversation-associations';
 import './harness-ui.css';
 
+const UUID_SCOPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 async function locate(workspaceId:string,cwd:string,path:string,taskId:string|undefined,signal:AbortSignal){
   const absolute=conversationAbsoluteFile(cwd,path);
   if(!absolute)throw new Error('不能确认文件的准确工程来源。');
-  try {
-    const catalog=await codeApi.targetRepositories(workspaceId,absolute,signal);
+  if(UUID_SCOPE.test(workspaceId)){
+    try {
+      const catalog=await codeApi.targetRepositories(workspaceId,absolute,signal);
+      const target=conversationFileTarget(cwd,path,catalog);
+      if(target)return {kind:'repo' as const,absolute,target,catalog,partial:true};
+    } catch (error) {
+      if((error as ApiError).code!=='code_target_unconfirmed')throw error;
+    }
+    const catalog=await codeApi.repositories(workspaceId,taskId,signal);
     const target=conversationFileTarget(cwd,path,catalog);
-    if(target)return {target,catalog,partial:true};
-  } catch (error) {
-    if((error as ApiError).code!=='code_target_unconfirmed')throw error;
+    if(target)return {kind:'repo' as const,absolute,target,catalog,partial:false};
   }
-  const catalog=await codeApi.repositories(workspaceId,taskId,signal);
-  const target=conversationFileTarget(cwd,path,catalog);
-  if(!target)throw new Error('不能确认文件的准确工程来源。');
-  return {target,catalog,partial:false};
+  return {kind:'local' as const,absolute};
+}
+
+function readLocalFile(path:string,cwd:string,signal?:AbortSignal){
+  return api('/api/v1/conversation-file',{method:'POST',body:JSON.stringify({path,cwd}),signal}) as Promise<HarnessFileContent>;
 }
 
 type Workspace = {id: string; name: string; rootPath: string};
-export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {defaultWorkspaceId: string | null; workspaces: Workspace[]}) {
+export function ConversationWorkspace({defaultWorkspaceId, workspaces, headerAction}: {defaultWorkspaceId: string | null; workspaces: Workspace[]; headerAction?: ReactNode}) {
   const context = useAgentConversations();
   const navigate = useNavigate(), location = useLocation();
+  const [previewFile, setPreviewFile] = useState<ConversationFilePreview | null>(null);
   const current = useRef({context, navigate, location});
   current.current = {context, navigate, location};
   const selected=useRef<string|null>(null);
   const opening=useRef<AbortController|null>(null);
   const onConversationChange=useCallback((conversation: ConversationView | null)=>{
     const key=conversation?conversation.workspaceId+':'+conversation.id:null;
-    if(selected.current!==key){selected.current=key;opening.current?.abort();}
+    if(selected.current!==key){selected.current=key;opening.current?.abort();setPreviewFile(null);}
     current.current.context.setConversation(conversation);
   },[]);
   const files = useMemo<HarnessDirectoryFiles>(() => ({
     async readFile(conversation, path, signal) {
       const observed = await current.current.context.api.read(conversation.workspaceId, conversation.id, signal);
-      const {target}=await locate(observed.workspaceId,observed.cwd,path,observed.taskId,signal);
-      return codeApi.explorerFile(observed.workspaceId,target,signal);
+      const located = await locate(observed.workspaceId,observed.cwd,path,observed.taskId,signal);
+      if (located.kind === 'repo') return codeApi.explorerFile(observed.workspaceId,located.target,signal);
+      return readLocalFile(located.absolute,observed.cwd,signal);
     },
-    async openFile(conversation, path, literal, linkSignal) {
+    async findExplorerFile(conversation,reference,signal) {
+      const {path,line}=conversationFileLink(reference,false);
+      const resolve=async()=>{
+        const observed=await current.current.context.api.read(conversation.workspaceId,conversation.id,signal);
+        const located=await locate(observed.workspaceId,observed.cwd,path,observed.taskId,signal);
+        if(located.kind!=='repo')return null;
+        const file={...located.target,line};
+        const observation=await readExplorerFile(observed.workspaceId,file,signal,{editorFile:codeApi.editorFile,file:codeApi.explorerFile});
+        return {observed,located,file,observation};
+      };
+      const known=await resolve();
+      if(!known)return null;
+      return async()=>{
+        const latest=await resolve();
+        if(!latest||latest.located.absolute!==known.located.absolute||latest.file.checkoutId!==known.file.checkoutId||latest.file.repositoryId!==known.file.repositoryId)throw new Error('文件来源已变化，请重新定位。');
+        signal.throwIfAborted();
+        const {observed,located,file,observation}=latest;
+        const observationId=offerCodeOpen(observed.workspaceId,file,located.catalog,observation,located.partial);
+        const {navigate,location,context}=current.current;
+        navigate(`/workspaces/${encodeURIComponent(observed.workspaceId)}/code/explorer`,{state:{revealFileTree:true,codeEntry:{taskId:observed.taskId,file,observationId,from:{pathname:location.pathname,search:location.search,hash:location.hash,state:location.state}}}});
+        context.setFull(false);
+      };
+    },
+    async openFile(conversation, reference, literal, linkSignal) {
       opening.current?.abort();
       const request = new AbortController();
       const signal = linkSignal ? AbortSignal.any([request.signal, linkSignal]) : request.signal;
       opening.current = request;
       try {
         const observed = await current.current.context.api.read(conversation.workspaceId, conversation.id, signal);
-        const suffix = literal ? null : path.match(/(?::|#L)([1-9][0-9]*)$/);
-        const {target,catalog,partial}=await locate(observed.workspaceId,observed.cwd,suffix ? path.slice(0,suffix.index) : path,observed.taskId,signal);
-        const line = suffix ? Number(suffix[1]) : undefined;
-        if (line !== undefined && !Number.isSafeInteger(line)) throw new Error('文件行号无效。');
-        const file = {...target, line};
-        const observation = await readExplorerFile(observed.workspaceId, file, signal, {editorFile:codeApi.editorFile,file:codeApi.explorerFile});
+        const {path,fragment,line} = conversationFileLink(reference,literal);
+        const located = await locate(observed.workspaceId,observed.cwd,path,observed.taskId,signal);
+        const value = located.kind==='repo' && !/\.html?$/i.test(path)
+          ? await readExplorerFile(observed.workspaceId, located.target, signal, {editorFile:codeApi.editorFile,file:codeApi.explorerFile})
+          : await readLocalFile(located.absolute, observed.cwd, signal);
         signal.throwIfAborted();
-        const observationId = offerCodeOpen(observed.workspaceId, file, catalog, observation, partial);
-        const {navigate, location, context} = current.current;
-        navigate(`/workspaces/${encodeURIComponent(observed.workspaceId)}/code/explorer`, {state: {codeEntry: {file, observationId, from: {pathname: location.pathname, search: location.search, hash: location.hash, state: location.state}}}});
-        context.setFull(false);
+        setPreviewFile({path:located.absolute,value:{...value,path:located.kind==='repo'&&!/\.html?$/i.test(path)?located.absolute:value.path},fragment,line});
+        return false;
       } finally {
         if (opening.current === request) opening.current = null;
       }
     },
   }), []);
   const host: HarnessConversationHost = {
+    modeSwitchInHost: true,
     diagramRendererPath: '/mermaid-renderer.html',
     requestLayout(action, full) {
       if (action === 'collapse') context.setOpen(false);
@@ -92,9 +123,10 @@ export function ConversationWorkspace({defaultWorkspaceId, workspaces}: {default
   };
   return <section data-selected-workspace={context.conversation?.workspaceId} data-selected-conversation={context.conversation?.id}
     className={'development-harness-frame in-shell' + (context.full ? ' is-full' : '') + (!context.open ? ' is-collapsed' : '')}>
-    <HarnessConversationSurface workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} open={context.open} full={context.full} view={context.view}
+    <HarnessConversationSurface headerAction={headerAction} workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} open={context.open} full={context.full} view={context.view}
       command={context.command} sequence={context.sequence} files={files} host={host}
       onOpenChange={context.setOpen} onSideChange={context.setSide} onWidthChange={context.setWidth}
       onConversationChange={onConversationChange} onViewChange={context.setView} onResult={context.reply}/>
+    <LocalFilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)}/>
   </section>;
 }

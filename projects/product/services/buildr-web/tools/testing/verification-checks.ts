@@ -7,6 +7,7 @@ export const serviceVerificationChecks = [
   {
     id: 'frontend-logic', type: 'Unit', name: 'Buildr Web complete isolated logic and UI assembly tests',
     sourcePaths: ['src/**', 'tools/**', 'package.json'], testFiles: ['test/*.test.mjs'],
+    resourceDemand: { workers: 2, processes: 2 },
     command: { file: process.execPath, args: [path.join(root, 'tools/run-logic-tests.mjs')], cwd: '.' },
   },
   {

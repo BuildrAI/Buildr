@@ -66,7 +66,7 @@ function createFirstProject(target: string, catalog: any): void {
   const created = JSON.parse(result.stdout);
   assert.equal(created.migrationRequired, false);
   assert.equal(created.projects[0].code, 'first');
-  assert.ok(fs.existsSync(path.join(target, 'projects/first/AGENTS.md')));
+  assert.equal(fs.existsSync(path.join(target, 'projects/first/AGENTS.md')), false);
 }
 
 try {
@@ -84,18 +84,21 @@ try {
   assert.match(output(result), /--source-only cannot be combined/);
   assert.equal(fs.existsSync(registryFile), false, 'invalid initialization must not create a local registry');
 
-  for (const identity of [null, 'dsh', 'new-host']) {
-    const standardRoot = path.join(root, identity ?? 'default');
-    result = run(['init', ...(identity === null ? [] : ['--agent', identity]), '--target', standardRoot, '--name', 'standard', '--description', 'Standard onboarding fixture']);
+  // Exercise the CLI default separately from the explicit Codex journey below.
+  // Known and unknown host IDs share this adapter; the selection matrix is
+  // covered by runtime-standard-selection.test.ts without provisioning Workspaces.
+  {
+    const standardRoot = path.join(root, 'default');
+    result = run(['init', '--target', standardRoot, '--name', 'standard', '--description', 'Standard onboarding fixture']);
     assert.equal(result.status, 0, output(result));
     assertRegistered(standardRoot);
     freshCatalog(standardRoot);
     assert.ok(fs.existsSync(path.join(standardRoot, '.agents', 'skills', 'buildr', 'SKILL.md')));
     assert.ok(fs.existsSync(path.join(standardRoot, '.agents', 'skills', 'task-triage', 'SKILL.md')));
-    const checked = run(['doctor', ...(identity === null ? [] : ['--agent', identity]), '--target', standardRoot, '--json']);
+    const checked = run(['doctor', '--target', standardRoot, '--json']);
     assert.equal(checked.status, 0, output(checked));
     const report = JSON.parse(checked.stdout);
-    assert.equal(report.agentRuntime.runtimeId, identity);
+    assert.equal(report.agentRuntime.runtimeId, null);
     assert.equal(report.agentRuntime.adapterId, 'agents-standard');
     assert.equal(report.health.ready, true, JSON.stringify(report.findings));
   }

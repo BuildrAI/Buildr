@@ -57,10 +57,12 @@ function warnRecoveryFailure(error: unknown): void {
 export function createRuntime(options: { agentRuntime?: import('@buildr-ai/buildr-harness').AgentRuntimeUnit } = {}): any  {
   const runtime = createRuntimeInfrastructure();
   const registry = createModuleRegistry();
+  let profileProductIdentity: ReturnType<typeof readCurrentProductIdentity> | undefined;
+  const readProfileProductIdentity = () => (profileProductIdentity ??= readCurrentProductIdentity({ includeRuntimeIdentity: false }));
   registry.install(createDevelopmentCliModule());
   registry.install(createAgentAssetsRuntimeModule());
   registry.install(createWorkspaceModule(runtime, {
-    readProductIdentity: readCurrentProductIdentity,
+    readProductIdentity: readProfileProductIdentity,
     webProfileContract,
     agentRuntimeCapability: AGENT_ASSETS_RUNTIME,
   }));
@@ -79,7 +81,7 @@ export function createRuntime(options: { agentRuntime?: import('@buildr-ai/build
   registry.install(createChangeModule(runtime));
   registry.install(createAgentServiceModule({ readLocalInstance: readLocalBuildrWebInstance, readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, ...(options.agentRuntime ? { runtime: options.agentRuntime } : {}) }));
   registry.install(createCodeModule({generateModel: input => registry.provide(AGENT_SERVICE_APPLICATION).generate(input)}));
-  registry.install(createConnectionSkillsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
+  registry.install(createConnectionSkillsModule({ readProductIdentity: readProfileProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
   registry.install(SERVICE_RUNTIME_MODULE);
   registry.install(createMySqlQueryModule());
   registry.provide(TASK_CHANGE_BINDER).bindChangeResolver(registry.provide(CHANGE_APPLICATION));

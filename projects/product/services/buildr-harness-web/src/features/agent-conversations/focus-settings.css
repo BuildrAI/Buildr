@@ -1,8 +1,63 @@
-.ac-focus-settings{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;background:var(--soft-surface);color:var(--soft-ink)}
-.ac-focus-settings-header{display:flex;align-items:center;gap:18px;padding:13px 22px;border-bottom:1px solid var(--soft-line);flex:none}
-.ac-focus-settings-header .ant-btn{color:var(--soft-primary);font-weight:500}
-.ac-focus-settings-header h1{font-size:var(--font-size-heading);margin:0 0 3px}
-.ac-focus-settings-header p{font-size:var(--font-size-secondary);color:var(--soft-muted);margin:0}
-.ac-focus-settings-content{overflow:auto;flex:1;min-height:0;background:var(--soft-bg)}
-.ac-focus-settings-content .ams-setup{margin:0}
-@media(max-width:760px){.ac-focus-settings-header{padding:9px 12px;gap:8px}}
+.ac-focus-settings{display:flex;flex:1;min-width:0;min-height:0;background:var(--soft-surface);color:var(--soft-ink)}
+.ac-focus-settings-nav{flex:0 0 188px;display:flex;flex-direction:column;padding:18px 12px 16px;background:#f2f5f4;border-right:1px solid var(--soft-line);min-height:0;overflow-y:auto;scrollbar-width:thin}
+.ac-focus-settings-nav-title{padding:4px 10px 14px}
+.ac-focus-settings-nav-title h1{margin:0;font-size:var(--font-size-heading);line-height:1.35;font-weight:650;letter-spacing:-.2px;color:var(--soft-ink)}
+.ac-focus-settings-nav-list{display:flex;flex-direction:column;gap:4px}
+.ac-focus-settings-nav-item{display:flex;align-items:center;gap:9px;width:100%;height:36px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--soft-ink);font:inherit;font-size:var(--font-size-body);font-weight:500;text-align:left;cursor:pointer;transition:background-color .14s,color .14s}
+.ac-focus-settings-nav-item .anticon{font-size:var(--icon-size-regular);color:var(--soft-muted);flex:none}
+.ac-focus-settings-nav-label{flex:1;min-width:0}
+.ac-focus-settings-nav-item:hover{background:#e7eeea;color:var(--soft-ink)}
+.ac-focus-settings-nav-item.is-active{background:#e3eee8;color:var(--soft-primary);font-weight:600;box-shadow:inset 0 0 0 1px #c3d9ce}
+.ac-focus-settings-nav-item.is-active .anticon{color:var(--soft-primary)}
+.ac-focus-settings-nav-item:focus-visible{outline:2px solid var(--soft-primary);outline-offset:1px}
+.ac-focus-settings-nav-footer{margin-top:auto;padding:12px 10px 0;color:var(--soft-muted);font-size:var(--font-size-meta);line-height:1.6}
+.ac-focus-settings-main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--soft-surface)}
+.ac-focus-settings-topbar{display:flex;align-items:center;justify-content:space-between;height:44px;padding:0 24px;border-bottom:1px solid var(--soft-line);background:var(--soft-surface);flex:none}
+.ac-focus-settings-crumb{font-size:var(--font-size-subheading);font-weight:600;color:var(--soft-ink)}
+.ac-focus-settings-close.ant-btn{color:var(--soft-muted)}
+.ac-focus-settings-close.ant-btn:hover{color:var(--soft-ink);background:#eef2f0}
+.ac-focus-settings-scroll{flex:1;min-height:0;overflow-y:auto;padding:28px 40px 44px;scrollbar-width:thin;background:var(--soft-surface)}
+.ac-focus-settings-scroll.is-master-detail{padding:0;overflow:hidden;display:flex;flex-direction:column}
+.ac-focus-settings-body{width:100%;max-width:920px;margin:0}
+.ac-focus-settings-body.is-system-prompt{max-width:840px}
+.ac-focus-settings .ams-setup{margin:0}
+.ac-focus-settings-body:not(.is-accounts) .ams-executors,.ac-focus-settings-body:not(.is-accounts) .ams-notifications{padding:0}
+.ac-focus-settings .ac-program-updates{margin-block:0}
+.ac-focus-settings-body.is-accounts{display:flex;flex-direction:column;flex:1;min-height:0;height:100%;max-width:none;margin:0}
+.ac-focus-settings-body.is-accounts>.ant-alert{margin:16px 24px 0;flex:none}
+.ac-focus-settings-body.is-accounts .ams-setup,.ac-focus-settings-body.is-accounts .ams-accounts{display:flex;flex-direction:column;flex:1;min-height:0;height:100%;padding:0;margin:0}
+.ac-focus-settings .account-model-manager{display:flex;flex:1;min-height:0;height:100%;margin:0;background:var(--soft-surface)}
+.ac-focus-settings .amm-source-list{flex:0 0 216px;height:100%;overflow-y:auto;scrollbar-width:thin;padding:18px 10px;background:#f8faf9;border-right:1px solid var(--soft-line)}
+.ac-focus-settings .amm-source-heading{margin:2px 8px 10px}
+.ac-focus-settings .amm-add-provider{margin:0 4px 10px}
+.ac-focus-settings .amm-show-disabled{margin:0 8px 10px}
+.ac-focus-settings .amm-source-group-label{margin:12px 8px 4px;font-size:var(--font-size-meta);letter-spacing:.2px}
+.ac-focus-settings .amm-source-list>button{width:100%;min-height:44px;padding:8px 9px;margin-bottom:3px;border-radius:8px;gap:9px;background:transparent;border:0;transition:background-color .14s,box-shadow .14s,color .14s}
+.ac-focus-settings .amm-source-list>button:hover{background:#eef3f0}
+.ac-focus-settings .amm-source-list>button.active{background:#fff;color:var(--soft-primary);box-shadow:inset 0 0 0 1px #c3d9ce,0 1px 2px rgba(24,39,34,.05)}
+.ac-focus-settings .amm-source-list>button>span:nth-child(2){min-width:0;font-size:var(--font-size-body)}
+.ac-focus-settings .amm-source-list small{max-width:124px;margin-top:2px}
+.ac-focus-settings .amm-provider-mark{width:26px;height:26px;flex-basis:26px;border-radius:7px;font-size:var(--icon-size-small)}
+.ac-focus-settings .amm-nav-note{margin:20px 8px 0;line-height:1.65}
+.ac-focus-settings .amm-main{flex:1;min-width:0;height:100%;overflow-y:auto;scrollbar-width:thin;padding:24px 36px 44px;background:var(--soft-surface)}
+.ac-focus-settings .amm-main>*{max-width:920px}
+@media(max-width:760px){
+ .ac-focus-settings{flex-direction:column}
+ .ac-focus-settings-nav{flex:none;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border-right:0;border-bottom:1px solid var(--soft-line);overflow:visible}
+ .ac-focus-settings-nav-title{padding:0 6px 0 0}
+ .ac-focus-settings-nav-title h1{font-size:var(--font-size-subheading)}
+ .ac-focus-settings-nav-list{flex-direction:row;overflow-x:auto;flex:1;min-width:0}
+ .ac-focus-settings-nav-item{width:auto;flex:none;height:32px;padding:0 10px}
+ .ac-focus-settings-nav-footer{display:none}
+ .ac-focus-settings-topbar{height:40px;padding:0 12px}
+ .ac-focus-settings-scroll{padding:16px}
+ .ac-focus-settings-scroll.is-master-detail{overflow-y:auto;display:block}
+ .ac-focus-settings-body.is-accounts,.ac-focus-settings-body.is-accounts .ams-setup,.ac-focus-settings-body.is-accounts .ams-accounts{height:auto;display:block}
+ .ac-focus-settings .account-model-manager{display:block;height:auto;min-height:0}
+ .ac-focus-settings .amm-source-list{display:flex;flex-wrap:nowrap;align-items:center;overflow-x:auto;height:auto;flex:none;padding:10px 12px;gap:6px;border-right:0;border-bottom:1px solid var(--soft-line)}
+ .ac-focus-settings .amm-source-heading,.ac-focus-settings .amm-source-group-label,.ac-focus-settings .amm-nav-note,.ac-focus-settings .amm-source-list>button small,.ac-focus-settings .amm-source-list>button i{display:none}
+ .ac-focus-settings .amm-add-provider{flex:none;margin:0}
+ .ac-focus-settings .amm-show-disabled{flex:none;margin:0 4px;white-space:nowrap}
+ .ac-focus-settings .amm-source-list>button{width:auto;flex:none;min-height:36px;padding:6px 10px;margin:0}
+ .ac-focus-settings .amm-main{height:auto;overflow:visible;padding:18px 16px 32px}
+}

@@ -10,27 +10,28 @@ import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.ts';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.ts';
 import {
-  runBuildr as run,
-  runBuildrJson as json,
+  runBuildr as realRun,
+  runBuildrJson as realJson,
   taskRecordFixture as fixture,
 } from '../helpers/task-record-system-fixture.ts';
+import { runCliInProcess, runCliJsonInProcess } from '../helpers/in-process-cli.ts';
 
 after(() => cleanupLocalTaskLifecycleSystemContext());
 
-test('Task Record target 必须是 canonical Workspace，不能是 linked worktree checkout', (t: any) => {
+test('Task Record target 必须是 canonical Workspace，不能是 linked worktree checkout', async (t: any) => {
   const { base, root }: any = fixture(t, 'task-canonical');
-  run(['task', 'create', 'canonical-task', '--title', 'Canonical', '--intent', '写入 retained root', '--target', root]);
+  realRun(['task', 'create', 'canonical-task', '--title', 'Canonical', '--intent', '写入 retained root', '--target', root]);
   assert.equal(spawnSync('git', ['init', '--initial-branch=main'], { cwd: root, encoding: 'utf8' }).status, 0);
   spawnSync('git', ['config', 'user.email', 'buildr-test@example.com'], { cwd: root }); spawnSync('git', ['config', 'user.name', 'Buildr Test'], { cwd: root });
   spawnSync('git', ['add', '.'], { cwd: root }); assert.equal(spawnSync('git', ['commit', '-m', 'fixture'], { cwd: root, encoding: 'utf8' }).status, 0);
   const worktree: any = path.join(base, 'linked-task');
   const added: any = spawnSync('git', ['worktree', 'add', '-b', 'codex/linked-task', worktree, 'HEAD'], { cwd: root, encoding: 'utf8' }); assert.equal(added.status, 0, added.stderr);
-  const blocked: any = json(['task', 'create', 'linked-task', '--title', '错误目标', '--intent', '不得写入 worktree', '--target', worktree], 1);
+  const blocked: any = await runCliJsonInProcess(['task', 'create', 'linked-task', '--title', '错误目标', '--intent', '不得写入 worktree', '--target', worktree], 1);
   assert.equal(blocked.diagnostic.code, 'task_record_workspace_not_canonical'); assert.equal(fs.existsSync(path.join(worktree, '.buildr', 'tasks', 'linked-task')), false);
   const standalone: any = path.join(base, '.worktrees', 'standalone-workspace');
-  run(['init', '--target', standalone, '--name', 'standalone', '--description', 'non-Git canonical workspace']);
-  assert.equal(json(['task', 'create', 'standalone-task', '--title', '独立 Workspace', '--intent', '目录名不决定 authority', '--target', standalone]).status, 'created');
-  const uninitialized: any = json(['task', 'create', 'missing-root', '--title', '错误目标', '--intent', '未初始化', '--target', path.join(root, 'not-a-workspace')], 1);
+  await runCliInProcess(['init', '--target', standalone, '--name', 'standalone', '--description', 'non-Git canonical workspace'], 0);
+  assert.equal((await runCliJsonInProcess(['task', 'create', 'standalone-task', '--title', '独立 Workspace', '--intent', '目录名不决定 authority', '--target', standalone])).status, 'created');
+  const uninitialized: any = await runCliJsonInProcess(['task', 'create', 'missing-root', '--title', '错误目标', '--intent', '未初始化', '--target', path.join(root, 'not-a-workspace')], 1);
   assert.equal(uninitialized.diagnostic.code, 'task_record_workspace_invalid');
 });
 
@@ -231,7 +232,7 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
   assert.equal(response.body.record.resultHistory[0].result.summary, '页面确认完成');
   response = await request(taskEndpoint); assert.equal(response.body.record.resultHistory[0].reason, '用户更正阶段完成为整体进行中');
 
-  const other: any = path.join(base, 'other-workspace'); run(['init', '--target', other, '--name', 'other', '--description', 'other fixture', '--profile', 'team']);
+  const other: any = path.join(base, 'other-workspace'); await runCliInProcess(['init', '--target', other, '--name', 'other', '--description', 'other fixture', '--profile', 'team'], 0);
   let registry: any = runtime.listRegisteredWorkspaces(); registry = runtime.registerLocalWorkspace({ rootPath: other, revision: registry.revision }); const otherId: any = registry.workspaces.find((item: any) => item.rootPath === other).workspace.id;
   response = await request(`${url}/api/v1/workspaces/${otherId}/tasks`); assert.deepEqual(response.body.tasks, []);
 });

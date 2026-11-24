@@ -219,6 +219,7 @@ export function createReleaseTransactionEvidence({ context, publish, outcome, pu
     attempt: {
       runId: publish.runId,
       runAttempt: publish.runAttempt,
+      ...(publicFacts?.npmAttempted !== undefined ? { npmAttempted: publicFacts.npmAttempted } : {}),
       steps: publicFacts?.steps ?? attemptSteps({ tagCommit, registryPublished: publicFacts?.registryPublished, githubRelease: publicFacts?.githubRelease, registrySmoke: publicFacts?.registrySmoke ?? (outcome === 'passed' ? 'passed' : 'unknown') }),
       ...(publicFacts?.effects ? { effects: publicFacts.effects } : {}),
       recovery: recoveryClass({ outcome, tagCommit, registryPublished: publicFacts?.registryPublished, conflict: publicFacts?.conflict === true, requested: publicFacts?.recoveryClass }),
@@ -234,11 +235,12 @@ export function validateReleaseTransactionEvidence(value: any): any  {
   closed(value, ['schemaVersion', 'status', 'context', 'publish', 'release', 'attempt', 'observedAt', 'aggregateEligible', 'identity'], 'release transaction evidence');
   if (value.schemaVersion !== releaseTransactionEvidenceSchema || !DIGEST.test(value.identity || '')) throw new Error('Release transaction evidence schema/identity is invalid.');
   closed(value.release, ['tag', 'tagCommit', 'npmVersion', 'npmDistTag', 'registryPublished', 'registryIntegrity', 'registryObservation', 'githubRelease', 'registrySmoke'], 'release transaction evidence release');
-  closed(value.attempt, ['runId', 'runAttempt', 'steps', 'effects', 'recovery'], 'release transaction evidence attempt');
+  closed(value.attempt, ['runId', 'runAttempt', 'steps', 'effects', 'recovery', 'npmAttempted'], 'release transaction evidence attempt');
   if (value.attempt.runId !== value.publish.runId || value.attempt.runAttempt !== value.publish.runAttempt || !Array.isArray(value.attempt.steps)) throw new Error('Release transaction attempt identity is invalid.');
   if (value.attempt.recovery !== null && !['same-attempt', 'new-attempt', 'blocked-new-version'].includes(value.attempt.recovery)) throw new Error('Release transaction recovery class is invalid.');
   if (value.release.tag !== `v${value.release.npmVersion}`) throw new Error('Release transaction evidence tag/version mismatch.');
   if (value.release.registryIntegrity !== null && !/^sha512-[A-Za-z0-9+/]+={0,2}$/u.test(value.release.registryIntegrity)) throw new Error('Release transaction evidence Registry integrity is invalid.');
+  if (Object.hasOwn(value.attempt, 'npmAttempted') && ![true, false, null].includes(value.attempt.npmAttempted)) throw new Error('Invalid npm attempt observation.');
   const recreated: any = createReleaseTransactionEvidence({
     context: value.context,
     publish: value.publish,
@@ -253,6 +255,7 @@ export function validateReleaseTransactionEvidence(value: any): any  {
       githubRelease: value.release.githubRelease,
       registrySmoke: value.release.registrySmoke,
       recoveryClass: value.attempt.recovery,
+      npmAttempted: value.attempt.npmAttempted,
       steps: value.attempt.steps,
       ...(value.attempt.effects ? { effects: value.attempt.effects } : {}),
     },

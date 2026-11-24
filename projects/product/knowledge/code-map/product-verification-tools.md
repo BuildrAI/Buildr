@@ -41,7 +41,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [candidate-ci-evidence.ts](../../services/buildr/test/verification/candidate-ci-evidence.ts) — 检查证据齐全性以及源码、登记、作业和唯一压缩包身份
   - [candidate-repair.ts](../../services/buildr/test/verification/candidate-repair.ts) — 同轮原包补验保留成功、只补失败及缺项；核对原字节、真实平台和最低宿主，保留原始来源
   - [candidate-repair-cli.ts](../../services/buildr/test/verification/candidate-repair-cli.ts) — 受控原运行、真实包读取，生成缺项矩阵及保留证据；采用不变 DSH 原包与精确对端证明
-  - [browser-selector-dispatcher.ts](../../services/buildr/test/verification/browser-selector-dispatcher.ts) — 选择页面检查并准备隔离 `web-dist`；对话场景可选单组，完整运行按资源预算调度共享队列中的场景组
+  - [browser-selector-dispatcher.ts](../../services/buildr/test/verification/browser-selector-dispatcher.ts) — 选择页面检查并准备隔离 `web-dist`，按改动路径精确映射浏览器检查选择器
   - `release/`
     - [browser-candidate.ts](../../services/buildr/test/verification/release/browser-candidate.ts) — 校验唯一候选压缩包（Candidate Tarball）、解包并直接托管包内 `web-dist`，执行核心旅程及清理；测试驱动仍来自当前源码，不替代安装后全部行为验收
     - [verify-pr-candidate.ts](../../services/buildr/test/verification/release/verify-pr-candidate.ts) — 生成受控候选矩阵并汇总源码、平台、原包及插件证明
@@ -52,20 +52,12 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
     - [quality.ts](../../services/buildr/test/verification/docs/quality.ts) — 检查文档相对链接存在且不越出产品根；不判断正文语义
 - [services/buildr/package.json](../../services/buildr/package.json) — 稳定命令、生成物准备、测试及公开包导出
 - [services/buildr-web/package.json](../../services/buildr-web/package.json) — 前端构建及独立逻辑测试入口
-- **`services/buildr-web/test/browser/`** — 对话浏览器场景按职责分文件；完整运行最多启动两个受资源预算约束的工作进程（Worker），从共享队列动态领取组，在各自现场复用浏览器和服务，每组重新隔离页面与测试数据。单组可通过 `BUILDR_AGENT_JOURNEY_PART` 选择；组失败保留失败结果，受污染现场不再领取其他组。
-  - [agent-conversation-fixture.ts](../../services/buildr-web/test/browser/agent-conversation-fixture.ts) — 每组的对话接口替身、测试数据、页面操作与清理
-  - [agent-conversation-groups.ts](../../services/buildr-web/test/browser/agent-conversation-groups.ts) — 可选场景组、工作进程数量、逐组执行与失败汇总
-  - [agent-conversation-queue.ts](../../services/buildr-web/test/browser/agent-conversation-queue.ts) — 共享队列的原子领取、已尝试标记和未完成组检查；标记不代表通过
-  - [agent-conversation-isolation.ts](../../services/buildr-web/test/browser/agent-conversation-isolation.ts) — 限制未模拟的服务端写入并重置允许的最近访问，异常时停止复用现场
-  - [agent-conversations-journey.ts](../../services/buildr-web/test/browser/agent-conversations-journey.ts) — 选择场景组，为每组装配和释放独立夹具
-  - [agent-conversations-setup-scenarios.ts](../../services/buildr-web/test/browser/agent-conversations-setup-scenarios.ts) — 导航、对话入口与基础交互
-  - [agent-conversations-history-scenarios.ts](../../services/buildr-web/test/browser/agent-conversations-history-scenarios.ts) — 对话记录、展示与恢复
-  - [agent-conversations-handoff-scenarios.ts](../../services/buildr-web/test/browser/agent-conversations-handoff-scenarios.ts) — 执行者交接、异常后的继续与重试
-  - [agent-conversations-tasks-scenarios.ts](../../services/buildr-web/test/browser/agent-conversations-tasks-scenarios.ts) — 任务对话入口、草稿与并发交互
-  - [agent-conversations-models-scenarios.ts](../../services/buildr-web/test/browser/agent-conversations-models-scenarios.ts) — 模型与推理强度、执行操作及窄屏交互
-  - [agent-conversations-recovery-scenarios.ts](../../services/buildr-web/test/browser/agent-conversations-recovery-scenarios.ts) — 未知执行状态核对与事件流断线恢复
-  - [agent-conversations-selection-scenarios.ts](../../services/buildr-web/test/browser/agent-conversations-selection-scenarios.ts) — 新建草稿、跨工作空间选择与首次发送
-  - [agent-conversations-video-scenarios.ts](../../services/buildr-web/test/browser/agent-conversations-video-scenarios.ts) — 视频输入、发送、播放与错误处理
+- **`services/buildr-web/test/browser/`** — Buildr Web 核心浏览器端到端冒烟旅程模块
+  - [code-explorer-journey.ts](../../services/buildr-web/test/browser/code-explorer-journey.ts) — 代码资源管理器检索、阅读与页签核心冒烟场景
+  - [source-control-journey.ts](../../services/buildr-web/test/browser/source-control-journey.ts) — 源代码管理差异、提交与历史核对核心冒烟场景
+  - [task-list-journey.ts](../../services/buildr-web/test/browser/task-list-journey.ts) — 任务列表筛选、详情节点、编辑与放弃核心冒烟场景
+  - [task-materials-journey.ts](../../services/buildr-web/test/browser/task-materials-journey.ts) — 任务说明正文、Mermaid、材料分类及独立审查验证核心冒烟场景
+  - [primary-navigation-controls.ts](../../services/buildr-web/test/browser/primary-navigation-controls.ts) — 浏览器端到端导航栏辅助操作
 - **`skills/buildr-release/scripts/`（工作空间根）** — 发布协调、产包及恢复；检查仍由验证框架承担
   - [release-orchestration-runner.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/release-orchestration-runner.ts) — 正常准备、只读逐包运行观察、授权公开及恢复入口
   - [candidate-run-observation.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/candidate-run-observation.ts) — 同轮原包就绪、准确字节交接及远端作业／步骤耗时投影；未知只观察，不产包或派发
@@ -107,7 +99,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
 
 ## 前端与产品行为：从要证明的结果定位测试
 
-四服务完整单元测试（Unit Test）由 `services/buildr` 的 `npm test` 聚合；`npm run check` 覆盖推送前全部静态检查（Static Check）与单元测试（Unit Test）。另外提供 `test:static`、`test:integration`、`test:e2e` 和 `test:related`，所有入口均可通过 `--plan` 查看集合、`--check <id>` 显式指定检查。相关选择不要求正式任务或先有比较基线；已知具体检查可直接指定，选择完整性仍由智能体（Agent）对照目标判断。原包消费与准确双包验证保留其实际环境要求，不构成第五类。各入口范围见[产品测试架构](../docs/architecture/verification-framework.md#公开入口)。
+已登记服务完整单元测试（Unit Test）由 `services/buildr` 的 `npm test` 聚合；`npm run check` 覆盖推送前全部静态检查（Static Check）与单元测试（Unit Test）。另外提供 `test:static`、`test:integration`、`test:e2e` 和 `test:related`，所有入口均可通过 `--plan` 查看集合、`--check <id>` 显式指定检查。相关选择不要求正式任务或先有比较基线；已知具体检查可直接指定，选择完整性仍由智能体（Agent）对照目标判断。原包消费与准确双包验证保留其实际环境要求，不构成第五类。各入口范围见[产品测试架构](../docs/architecture/verification-framework.md#公开入口)。
 
 - **`services/buildr-web/test/`** — 前端逻辑的独立测试集合
   - [parentCoordination.test.mjs](../../services/buildr-web/test/parentCoordination.test.mjs) — 父任务确认的默认拒绝、子任务处置和版本保留，不启动网页
@@ -117,7 +109,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - `unit/`
     - [verification-changed-paths.test.ts](../../services/buildr/test/unit/verification-changed-paths.test.ts) — 受影响路径必须选中必要步骤，选择成功与实际测试通过分别核对
   - `static/`
-    - [verification-entrypoints.test.ts](../../services/buildr/test/static/verification-entrypoints.test.ts) — 测试族（Testing Family）的完整入口与声明范围对应，包括四服务及四类检查的完整范围
+    - [verification-entrypoints.test.ts](../../services/buildr/test/static/verification-entrypoints.test.ts) — 测试族（Testing Family）的完整入口与声明范围对应，包括已登记服务及四类检查的完整范围
   - `integration/`
     - [source-control-observations.test.ts](../../services/buildr/test/integration/source-control-observations.test.ts) — 真实 Git／文件与受控监听传输的归属、忽略和批处理矩阵
     - [source-control-native-observations.test.ts](../../services/buildr/test/integration/source-control-native-observations.test.ts) — 独立真实原生事件通道，追踪并原样转发回调，绝不注入通知
@@ -129,7 +121,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
     - [application-payload-release.test.ts](../../services/buildr/test/e2e/application-payload-release.test.ts) — 准确原包安装、登记和实际用户命令及网页流程
     - [task-verification-product.test.ts](../../services/buildr/test/e2e/task-verification-product.test.ts) — 真实命令行（CLI）报告登记与读取，以及被拒绝写入的错误投射
     - [buildr-web-browser.test.ts](../../services/buildr/test/e2e/buildr-web-browser.test.ts) — 隔离服务、浏览器（Browser）和测试现场的组装、选择与清理
-    - [workbench-journey.ts](../../services/buildr/test/e2e/workbench-journey.ts) — 实际页面回应、并发冲突后的重读保存、偏好恢复与资料阅读旅程
+    - [workbench-journey.ts](../../services/buildr/test/e2e/workbench-journey.ts) — 工作概览活跃/待回应交互与跨空间隔离冒烟测试
 
 新候选从已登记的 `.github/workflows/verify.yml` 的 `local-package` 入口调用 `.github/workflows/verify-package.yml`：主包和独立插件仅校验并保全原包及证明，对端冒烟显式可选；其他入口保留开发反馈、合入检查与旧模型接续。`skills/buildr-release/scripts/local-plugin-preparation.ts` 统一独立／联合插件本机准备，插件服务的 `tools/ensure-release-sdk.ts` 校验复用或新建 SDK。本机生产唯一原包并执行通用和本机平台验收，两端保持真实来源及最低 Node 证明；另一系统源码专项不再作为每次发布自动全量前置。历史分片名称中的 `macos` 不代表通用检查只能在 macOS 执行，实际归属以 `platformScope` 为准。新主包在本机由 `candidate-ci-evidence.ts` 核验源码、原包、环境与原始来源后冻结汇总，保全采用 `local-consumption-record.ts` 核对；旧交接和独立验证源保留原推导。不能用本机成功替代对端尚未执行的验包。
 

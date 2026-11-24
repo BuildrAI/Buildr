@@ -14,7 +14,7 @@ import type {ApiError} from '../../api/index.ts';
 import './conversation-children.css';
 
 export type ConversationChildActions={create:()=>void};
-type Props={parent:ConversationView;workspaces:ConversationWorkspace[];ref?:Ref<ConversationChildActions>};
+type Props={parent:ConversationView;parentVisible?:boolean;workspaces:ConversationWorkspace[];ref?:Ref<ConversationChildActions>};
 function ChildWindow({summary,visible,workspaces,onClose,onUpdate}:{summary:ConversationView;visible:boolean;workspaces:ConversationWorkspace[];onClose:()=>void;onUpdate:(value:ConversationView)=>void}) {
   const host=useAgentConversations(),value=useChildConversation(host,summary,visible,onClose,onUpdate);
   return <div className="ac-child-window" hidden={!visible} role="dialog" aria-modal="false" aria-label={'子对话：'+(value.conversation?.title||summary.title)} data-child-window={summary.id}
@@ -23,14 +23,15 @@ function ChildWindow({summary,visible,workspaces,onClose,onUpdate}:{summary:Conv
   </div>;
 }
 
-export function ConversationChildWindows({parent,workspaces,ref}:Props) {
+export function ConversationChildWindows({parent,parentVisible,workspaces,ref}:Props) {
   const host=useAgentConversations(),{api}=host;
+  const hostVisible=parentVisible??(host.open&&host.view==='conversation');
   const [rows,setRows]=useState<ConversationView[]>([]),[cursor,setCursor]=useState<string>();
   const [active,setActive]=useState<string|null>(null),[visited,setVisited]=useState<string[]>([]);
   const [creating,setCreating]=useState(false),[error,setError]=useState(''),[loading,setLoading]=useState(false);
   const [windowTarget,setWindowTarget]=useState<HTMLElement|null>(null);
   // Keep floating panels out of the header's layout and descendant styles.
-  const attach=useCallback((node:HTMLDivElement|null)=>setWindowTarget(node?.closest<HTMLElement>('.ac-panel')??null),[]);
+  const attach=useCallback((node:HTMLDivElement|null)=>setWindowTarget(node?.closest<HTMLElement>('.ac-conversation-split')??node?.closest<HTMLElement>('.ac-panel')??null),[]);
   const busy=useRef(false),live=useRef(true),paging=useRef(false),parentRef=useRef(parent);parentRef.current=parent;
   const profile=document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content')||'local';
   const storageKey=childCreationStorageKey(parent,profile);
@@ -94,7 +95,7 @@ export function ConversationChildWindows({parent,workspaces,ref}:Props) {
     </div>
     {windowTarget&&createPortal(<>
       {error&&<Alert className="ac-child-error" type="warning" message={error} closable onClose={()=>setError('')} action={<Button type="text" size="small" icon={<ReloadOutlined/>} aria-label={attempt?'重试创建子对话':'刷新子对话'} onClick={()=>attempt?void create():void read().then(()=>setError('')).catch(()=>{})}/>}/>}
-      {rows.filter(row=>visited.includes(row.id)).map(row=><ChildWindow key={row.id} summary={row} visible={active===row.id&&host.open&&host.view==='conversation'} workspaces={workspaces} onClose={collapse} onUpdate={update}/>)}
+      {rows.filter(row=>visited.includes(row.id)).map(row=><ChildWindow key={row.id} summary={row} visible={active===row.id&&hostVisible} workspaces={workspaces} onClose={collapse} onUpdate={update}/>)}
     </>,windowTarget)}
   </div>;
 }

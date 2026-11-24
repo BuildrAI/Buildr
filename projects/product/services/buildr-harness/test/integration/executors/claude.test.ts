@@ -20,7 +20,7 @@ function binary():string {
   const root=path.dirname(createRequire(import.meta.url).resolve(name+'/package.json'));
   return path.join(root,process.platform==='win32'?'claude.exe':'claude');
 }
-async function fixture(t:test.TestContext,scenario:'text'|'tool'|'question'|'child'|'background'|'background-followup'|'skill'|'compact'|'dangerous'|'error'='text',usageIn:'start'|'delta'='start'){
+async function fixture(t:test.TestContext,scenario:'text'|'tool'|'question'|'child'|'child-background'|'background'|'background-followup'|'skill'|'compact'|'dangerous'|'error'='text',usageIn:'start'|'delta'='start'){
   const root=await realpath(await mkdtemp(path.join(tmpdir(),'buildr-claude-'))),cwd=path.join(root,'workspace');
   await mkdir(cwd);
   await writeFile(path.join(cwd,'AGENTS.md'),'BUILDR_CLAUDE_RULE_FIXTURE：只执行已授权动作。\n');
@@ -28,13 +28,13 @@ async function fixture(t:test.TestContext,scenario:'text'|'tool'|'question'|'chi
   await mkdir(path.join(cwd,'.claude/skills/buildr-fixture-skill'),{recursive:true});
   await writeFile(path.join(cwd,'.claude/skills/buildr-fixture-skill/SKILL.md'),'---\nname: buildr-fixture-skill\ndescription: BUILDR_CLAUDE_SKILL_FIXTURE\n---\nBUILDR_CLAUDE_SKILL_BODY：本机验证用技能。\n');
   const bodies:any[]=[],classes:string[]=[];
-  const received=Promise.withResolvers<void>(),release=Promise.withResolvers<void>();
+  const received=Promise.withResolvers<void>(),release=Promise.withResolvers<void>(),childStarted=Promise.withResolvers<void>(),startChild=Promise.withResolvers<void>();
   const server=createServer(async(req,res)=>{
     if(new URL(req.url!,'http://local').pathname!=='/v1/messages'){res.writeHead(404).end();return;}
     let raw='';for await(const chunk of req)raw+=chunk;
     const body=JSON.parse(raw);bodies.push(body);classes.push(String(req.headers['x-claude-code-request-class']??''));
     const messages=JSON.stringify(body.messages);
-    const taskFollowup=scenario==='background-followup'&&body.stream&&messages.includes('<task-notification>');
+    const taskFollowup=['background-followup','child-background'].includes(scenario)&&body.stream&&messages.includes('<task-notification>');
     if((messages.includes('HOLD_FIXTURE')&&bodies.length===1)||taskFollowup){
       received.resolve();await release.promise;
       if(res.destroyed)return;
@@ -42,8 +42,9 @@ async function fixture(t:test.TestContext,scenario:'text'|'tool'|'question'|'chi
     if(scenario==='error'){res.writeHead(401,{'content-type':'application/json'}).end(JSON.stringify({type:'error',error:{type:'authentication_error',message:'Fixture key rejected'}}));return;}
     const hasResult=body.messages.some((m:any)=>Array.isArray(m.content)&&m.content.some((p:any)=>p.type==='tool_result'));
     const child=Boolean(req.headers['x-claude-code-agent-id']);
-    const tool=scenario==='skill'?'Skill':scenario==='child'?child?'Bash':'Agent':scenario.startsWith('background')||scenario==='tool'||scenario==='dangerous'?'Bash':'AskUserQuestion';
-    const input=tool==='Skill'?{skill:'buildr-fixture-skill'}:tool==='Agent'?{subagent_type:'general-purpose',description:'Read-only child fixture',prompt:'Run the read-only fixture command, then finish.',model:'haiku'}
+    if(scenario==='child-background'&&child){childStarted.resolve();await startChild.promise;if(res.destroyed)return;}
+    const tool=scenario==='skill'?'Skill':scenario.startsWith('child')?child?'Bash':'Agent':scenario.startsWith('background')||scenario==='tool'||scenario==='dangerous'?'Bash':'AskUserQuestion';
+    const input=tool==='Skill'?{skill:'buildr-fixture-skill'}:tool==='Agent'?{subagent_type:'general-purpose',description:'Read-only child fixture',prompt:'Run the read-only fixture command, then finish.',model:'haiku',...(scenario==='child-background'?{run_in_background:true}:{})}
       :tool==='Bash'?scenario.startsWith('background')?{command:scenario==='background-followup'?'sleep 2':'sleep 10',description:'Bounded background fixture',run_in_background:true}:scenario==='dangerous'?{command:'rm -rf "$(cat buildr-claude-target-path.txt)"',description:'Dangerous removal fixture'}:{command:'printf buildr-claude-ok',description:'Read-only fixture command'}
       :{questions:[{question:'选择验收方式？',header:'验收',multiSelect:false,options:[{label:'自动测试',description:'使用测试'},{label:'手工',description:'人工检查'}]}]};
     const title=JSON.stringify(body.messages).includes('只为以下引用资料生成');
@@ -70,12 +71,12 @@ async function fixture(t:test.TestContext,scenario:'text'|'tool'|'question'|'chi
   const options={connectionId:'claude-code',configRoot,executable:binary(),environment:{PATH:process.env.PATH??'',HOME:root},gateway:{identity:'fixture',baseUrl:`http://127.0.0.1:${port}/v1`,apiKey:'fixture-private-key',models:[{id:'fixture-model',label:'Fixture',contextWindow:32768,maxOutputTokens:4096,vision:true,tools:true}]}};
   const runtime=await createClaudeExecutor().open(options),runtimes=[runtime];
   t.after(async()=>{
-    release.resolve();const results=await Promise.allSettled(runtimes.map(runtime=>runtime.close()));
+    release.resolve();startChild.resolve();const results=await Promise.allSettled(runtimes.map(runtime=>runtime.close()));
     server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));await rm(root,{recursive:true,force:true});
     const failures=results.filter((value):value is PromiseRejectedResult=>value.status==='rejected');
     if(failures.length)throw new AggregateError(failures.map(value=>value.reason),'Fixture runtime cleanup failed');
   });
-  return {root,cwd,runtime,bodies,classes,configRoot,options,received:received.promise,release:()=>release.resolve(),async reopen(){const next=await createClaudeExecutor().open(options);runtimes.push(next);return next;}};
+  return {root,cwd,runtime,bodies,classes,configRoot,options,received:received.promise,childStarted:childStarted.promise,startChild:()=>startChild.resolve(),release:()=>release.resolve(),async reopen(){const next=await createClaudeExecutor().open(options);runtimes.push(next);return next;}};
 }
 test('Claude real SDK and native CLI use only the selected local model and preserve history', {timeout:60000}, async t=>{
   const f=await fixture(t),contextRef=await f.runtime.createContext({cwd:f.cwd}),events:ExecutorEvent[]=[];
@@ -271,6 +272,29 @@ test('Claude stop does not leave acknowledged supplementary input running behind
   f.release();await bounded(work,10000);await bounded(supplement,10000);
   assert.ok(['stopped','unknown','running'].includes(observed.status),`Unexpected stop state: ${observed.status}`);
   assert.equal(f.bodies.length,1,'interrupt alone must not let queued work reach the model');
+});
+test('Claude background Agent keeps the original round running across child completion and return', {timeout:60000}, async t=>{
+  const f=await fixture(t,'child-background'),contextRef=await f.runtime.createContext({cwd:f.cwd});
+  const waiting=Promise.withResolvers<void>(), settled=Promise.withResolvers<void>();
+  const events:ExecutorEvent[]=[]; let firstResult=false;
+  const send=f.runtime.send({contextRef,cwd:f.cwd,text:'Review with a background child.',images:[],clientRequestId:'child-background',permissionMode:'full-access',onEvent:event=>{
+    events.push(event);
+    if(event.type==='completed')firstResult=true;
+    if(event.type==='observation'&&firstResult&&event.observation.status==='running'&&event.observation.waitingSubagents?.includes('call-fixture'))waiting.resolve();
+    if(event.type==='observation'&&firstResult&&event.observation.status==='idle')settled.resolve();
+  }});
+  void send.catch(()=>{});
+  await bounded(f.childStarted,12000);
+  await bounded(waiting.promise,12000);
+  assert.equal((await f.runtime.observe({contextRef})).status,'running');
+  f.startChild();
+  await bounded(f.received,12000);
+  f.release();
+  await bounded(settled.promise,12000);
+  await send;
+  assert.ok(events.some(event=>event.type==='item'&&event.item.subagent?.key==='call-fixture'&&event.item.subagent.status==='completed'));
+  assert.ok(events.some(event=>event.type==='item'&&event.item.subagent?.key==='call-fixture'&&event.item.text==='fixture complete'),'the child reply enriches the native notification');
+  assert.ok(events.some(event=>event.type==='item'&&event.item.parentToolId==='call-fixture'&&event.item.id==='call-child'));
 });
 test('Claude native background Bash remains controllable after its main answer', {timeout:60000}, async t=>{
   const f=await fixture(t,'background'),contextRef=await f.runtime.createContext({cwd:f.cwd});let executionRef:any;

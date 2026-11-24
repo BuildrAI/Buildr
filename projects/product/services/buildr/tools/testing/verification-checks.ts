@@ -6,7 +6,7 @@ const node = (script: string, ...args: string[]) => ({ file: process.execPath, a
 
 /** Generated inputs are explicit preparation, shared once by checks in one execution. */
 export const sharedCheckPreparation = [
-  node('tools/development/prepare-development-agent.ts'),
+  node('tools/development/prepare-development-agent.ts', '--reuse-build'),
   ...['task-dto', 'task-professional-dto', 'runtime-system-dto', 'workbench-dto', 'workspace-agent-assets-dto']
     .map(name => node(`tools/codegen/contracts/${name}.ts`)),
   node('tools/testing/test-context-build.ts', 'generate'),
@@ -16,8 +16,8 @@ export const serviceVerificationChecks = [
   {id:'development-live-browser',type:'E2E',name:'Stable same-origin source updates, browser HMR and controlled recovery',
     sourcePaths:['tools/development/dev-*','src/web/http/**','services/buildr-web/vite.config.ts','services/buildr-harness-web/tools/dev-server.mjs','services/buildr-harness/src/process/web-*.ts'],
     command:node('tools/development/run-isolated-workspace-check.ts','--script',path.join(root,'test/e2e/development-live.ts')),
-    timeoutMs:300000,prepare:sharedCheckPreparation},
- {id:'harness-frame-browser',type:'E2E',name:'Development composes the complete Harness conversation',sourcePaths:['src/web/http/**','services/buildr-web/src/features/harness-ui/**','services/buildr-harness-web/src/**'],command:{file:process.execPath,args:['tools/development/run-isolated-workspace-check.ts','--script','test/e2e/harness-frame.ts'],cwd:'.'},timeoutMs:180000},
+    resources:['browser-runtime'],schedulingCostMs:90000,timeoutMs:300000,prepare:sharedCheckPreparation},
+ {id:'harness-frame-browser',type:'E2E',name:'Development composes the complete Harness conversation',sourcePaths:['src/web/http/**','services/buildr-web/src/features/harness-ui/**','services/buildr-harness-web/src/**'],command:{file:process.execPath,args:['tools/development/run-isolated-workspace-check.ts','--script','test/e2e/harness-frame.ts'],cwd:'.'},resources:['browser-runtime'],schedulingCostMs:60000,timeoutMs:180000},
   {
     id: 'harness-products-consumption', type: 'E2E', name: 'Real Harness and Development package coexistence and retained restart',
     sourcePaths: ['src/**', 'services/buildr-harness/**', 'services/buildr-harness/**', 'services/buildr-harness-web/**', 'services/buildr-harness-web/**'],

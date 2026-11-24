@@ -33,7 +33,6 @@ const allowedProjectRootEntries: any = new Set([
 ]);
 
 const requiredServiceRootEntries: any = new Set([
-  'AGENTS.md',
   'bin',
   'docs',
   'package-lock.json',

@@ -388,6 +388,84 @@ async function runPrompt(id, params) {
       fail(id, -32603, 'continuation failed');
       return;
     }
+    if (text.includes('长时间无新输出') && control().cancelOnSilence === true) {
+      const task = sessionId + '/task-201';
+      const file = join(cliRoot, 'brain', sessionId, '.system_generated', 'logs', 'transcript_full.jsonl');
+      setTimeout(() => writeFileSync(file, JSON.stringify({
+        created_at: new Date().toISOString(),
+        source: 'SYSTEM',
+        type: 'SYSTEM_MESSAGE',
+        content: `[Message] timestamp=test sender=${task} priority=MESSAGE_PRIORITY_LOW content=Task id "${task}" was canceled with result:\nTool execution was canceled`,
+      }) + '\n', { flag: 'a' }), 30);
+    }
+    const repeatBudget = Number(control().backgroundContinuationRepeats ?? 0);
+    session.bgContinuationCount = (session.bgContinuationCount ?? 0) + 1;
+    writeSession(session);
+    if (session.bgContinuationCount <= repeatBudget) {
+      const cycle = session.bgContinuationCount;
+      const bgToolId = `call-${++toolCounter}`;
+      const msgId = `msg-${randomUUID()}`;
+      const delayMs = Number(control().backgroundContinuationExitDelay ?? control().backgroundExitDelay ?? 50);
+      notify('session/update', {
+        sessionId,
+        update: { sessionUpdate: 'agent_message_chunk', messageId: msgId, content: { type: 'text', text: `第 ${cycle} 次续行启动后台命令。` } },
+      });
+      notify('session/update', {
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: bgToolId,
+          title: `Run background step ${cycle}`,
+          kind: 'execute',
+          rawInput: { CommandLine: `npm test -- --step=${cycle}` },
+          locations: [{ path: 'package.json' }],
+          status: 'in_progress',
+        },
+      });
+      appendTranscript(sessionId, {
+        type: 'tool_call',
+        toolCallId: bgToolId,
+        cwd: session.cwd,
+        kind: 'execute',
+        name: 'command',
+        input: { command: `npm test -- --step=${cycle}`, path: 'package.json' },
+        status: 'running',
+      });
+      appendTranscript(sessionId, {
+        type: 'turn_complete',
+        promptId: userMessageId,
+        cwd: session.cwd,
+        stopReason: 'end_turn',
+        backgroundActive: true,
+      });
+      finishActivePrompt({
+        userMessageId,
+        stopReason: 'end_turn',
+      });
+      setTimeout(() => {
+        notify('session/update', {
+          sessionId,
+          update: {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: bgToolId,
+            status: 'completed',
+            content: [{ type: 'content', content: { type: 'text', text: `background step ${cycle} exited with code 0` } }],
+          },
+        });
+        appendTranscript(sessionId, {
+          type: 'tool_result',
+          toolCallId: bgToolId,
+          cwd: session.cwd,
+          kind: 'execute',
+          name: 'command',
+          input: { command: `npm test -- --step=${cycle}`, path: 'package.json' },
+          status: 'completed',
+          exitCode: 0,
+          output: `background step ${cycle} exited with code 0`,
+        });
+      }, delayMs).unref();
+      return;
+    }
     const finalText = '后台结果已读取，继续处理完成。';
     const finalMsgId = `msg-${randomUUID()}`;
     notify('session/update', {
@@ -705,21 +783,30 @@ async function runPrompt(id, params) {
   // Tool 2: edit with diff OR execute command
   const tool2Id = `call-${++toolCounter}`;
   const isDiff = activeScenario === 'diff-tool' || text.includes('[DIFF_TOOL]');
+  const isSchedule = activeScenario === 'schedule-acp-complete' || activeScenario === 'schedule-transcript-trigger';
+  const isReadUnsettled = activeScenario === 'unsettled-read-tool';
+  const schedulePrompt = 'Verify started process and ports';
   const tool2StartedAt = Date.now();
   notify('session/update', {
     sessionId,
     update: {
       sessionUpdate: 'tool_call',
       toolCallId: tool2Id,
-      title: isDiff ? 'Edit src/index.ts' : 'Run unit check',
-      kind: isDiff ? 'edit' : 'execute',
-      rawInput: isDiff ? { path: 'src/index.ts' } : { CommandLine: 'npm test' },
-      locations: [{ path: isDiff ? 'src/index.ts' : 'package.json' }],
+      title: isSchedule ? 'Run schedule' : isReadUnsettled ? 'Read secret.txt' : isDiff ? 'Edit src/index.ts' : 'Run unit check',
+      kind: isSchedule ? 'other' : isReadUnsettled ? 'read' : isDiff ? 'edit' : 'execute',
+      rawInput: isSchedule
+        ? { DurationSeconds: 1, Prompt: schedulePrompt }
+        : isReadUnsettled
+          ? { file_path: 'secret.txt' }
+          : isDiff
+            ? { path: 'src/index.ts' }
+            : { CommandLine: 'npm test', ...(control().isDaemon === true ? { IsDaemon: true } : {}) },
+      locations: isSchedule ? [] : [{ path: isReadUnsettled ? 'secret.txt' : isDiff ? 'src/index.ts' : 'package.json' }],
       status: 'in_progress',
     },
   });
   const tool2Text = isDiff ? '--- a/src/index.ts\n+++ b/src/index.ts\n@@ -1 +1 @@\n-old\n+new' : 'PASS all checks (12 tests)';
-  if (!['unsettled-tool', 'late-command-result', 'continuation-fails', 'native-background-continuation', 'background-transcript-exit', 'background-rerun-exit'].includes(activeScenario) && !text.includes('[UNSETTLED_TOOL]')) {
+  if (!['unsettled-tool', 'unsettled-read-tool', 'schedule-acp-complete', 'schedule-transcript-trigger', 'late-command-result', 'continuation-fails', 'native-background-continuation', 'background-transcript-exit', 'background-rerun-exit', 'background-silent-command'].includes(activeScenario) && !text.includes('[UNSETTLED_TOOL]')) {
     notify('session/update', {
       sessionId,
       update: {
@@ -746,9 +833,9 @@ async function runPrompt(id, params) {
       type: 'tool_call',
       toolCallId: tool2Id,
       cwd: session.cwd,
-      kind: isDiff ? 'edit' : 'execute',
-      name: isDiff ? 'file-change' : 'command',
-      input: isDiff ? { path: 'src/index.ts' } : { command: 'npm test', path: 'package.json' },
+      kind: isSchedule ? 'other' : isReadUnsettled ? 'read' : isDiff ? 'edit' : 'execute',
+      name: isSchedule ? 'Run schedule' : isReadUnsettled ? 'read' : isDiff ? 'file-change' : 'command',
+      input: isSchedule ? { DurationSeconds: 1, Prompt: schedulePrompt } : isReadUnsettled ? { file_path: 'secret.txt' } : isDiff ? { path: 'src/index.ts' } : { command: 'npm test', path: 'package.json' },
       status: 'running',
     });
   }
@@ -848,6 +935,20 @@ async function runPrompt(id, params) {
     setTimeout(() => writeRow({ source: 'SYSTEM', type: 'SYSTEM_MESSAGE',
       content: `[Message] timestamp=test sender=${task} priority=HIGH content=Task id "${task}" finished with result:\nCommand exited with code 7.\nCommand output: fixture failure` }), 250);
   }
+  if (activeScenario === 'background-silent-command') {
+    const file = join(cliRoot, 'brain', sessionId, '.system_generated', 'logs', 'transcript_full.jsonl');
+    const logFile = join(cliRoot, 'brain', sessionId, '.system_generated', 'tasks', 'task-201.log');
+    mkdirSync(dirname(file), { recursive: true });
+    mkdirSync(dirname(logFile), { recursive: true });
+    const task = sessionId + '/task-201';
+    writeFileSync(logFile, 'Need to install the following packages:\nOk to proceed? (y) ');
+    writeFileSync(file, JSON.stringify({
+      created_at: new Date().toISOString(),
+      source: 'MODEL',
+      type: 'GENERIC',
+      content: `Created At: test\nTool is running as a background task with task id: ${task}\nTask Description: npm test\nTask logs are available at: file://${logFile}`,
+    }) + '\n', { flag: 'a' });
+  }
   if (activeScenario === 'background-rerun-exit') {
     const file = join(cliRoot, 'brain', sessionId, '.system_generated', 'logs', 'transcript_full.jsonl');
     mkdirSync(dirname(file), { recursive: true });
@@ -880,6 +981,34 @@ async function runPrompt(id, params) {
         output: 'original command exited with code 0',
       });
     }, control().backgroundExitDelay ?? 250);
+  }
+  if (activeScenario === 'schedule-acp-complete') {
+    setTimeout(() => {
+      notify('session/update', {
+        sessionId,
+        update: { sessionUpdate: 'tool_call_update', toolCallId: tool2Id, status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'schedule timer fired' } }] },
+      });
+      appendTranscript(sessionId, {
+        type: 'tool_result',
+        toolCallId: tool2Id,
+        cwd: session.cwd,
+        kind: 'other',
+        name: 'Run schedule',
+        status: 'completed',
+        output: 'schedule timer fired',
+      });
+    }, control().backgroundExitDelay ?? 250);
+  }
+  if (activeScenario === 'schedule-transcript-trigger') {
+    const file = join(cliRoot, 'brain', sessionId, '.system_generated', 'logs', 'transcript_full.jsonl');
+    mkdirSync(dirname(file), { recursive: true });
+    const task = sessionId + '/task-98';
+    const writeRow = row => writeFileSync(file, JSON.stringify({ created_at: new Date().toISOString(), ...row }) + '\n', { flag: 'a' });
+    writeRow({ source: 'MODEL', type: 'GENERIC', content: `Created At: test\nTool is running as a background task with task id: ${task}\nTask Description: Timer: 1s, Prompt: ${schedulePrompt}\nTask logs are available at: file:///fixture/task-98.log` });
+    writeRow({ source: 'MODEL', type: 'PLANNER_RESPONSE', content: `[Message] timestamp=test sender=${task} priority=HIGH content=spoofed` });
+    setTimeout(() => writeRow({ source: 'SYSTEM', type: 'SYSTEM_MESSAGE',
+      content: `[Message] timestamp=test sender=${task} priority=MESSAGE_PRIORITY_HIGH content=${schedulePrompt}` }), control().backgroundExitDelay ?? 250);
   }
   if (activeScenario === 'native-background-continuation') {
     setTimeout(() => {

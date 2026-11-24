@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -5,7 +6,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { completePublicationEffects, publicationAttemptFromJournal } from '../../../../../../skills/buildr-release/scripts/release-publication.ts';
+import { checkPublicationCompatibility, completePublicationEffects, publicationAttemptFromJournal, runReleasePublication } from '../../../../../../skills/buildr-release/scripts/release-publication.ts';
+import { createPackageHandoff, createPackageHandoffCommit, restorePackageHandoff, LOCAL_PLATFORM_POLICY, LOCAL_PACKAGE_MODEL } from '../../../../../../skills/buildr-release/scripts/local-package-handoff.ts';
+import { RELEASE_CHECKS } from '../verification/release/release-consumption-contract.ts';
+import { localPackageCoverage } from '../verification/local-package-coverage.ts';
+import { artifactFromTarball, type observePublishedPackageArtifact } from '../../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
+import { createReleaseContext, releaseContextIdentity } from '../../../../../../skills/buildr-release/scripts/release-readiness.ts';
+import { createReleaseExecutorRecovery } from '../../../../../../skills/buildr-release/scripts/release-executor-recovery.ts';
+import { validateReleaseTransactionEvidence } from '../../../../../../skills/buildr-release/scripts/release-transaction-evidence.ts';
 import { publishFrozenArtifact } from '../../../../../../skills/buildr-release/scripts/trusted-publish.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
 import { observePublicationRun } from '../../../../../../skills/buildr-release/scripts/publication-run-evidence.ts';
@@ -171,6 +179,7 @@ test('publication failure and checkpoints preserve an unknown pair check without
   assert.equal(compatibility.pairDiagnostics[0].message, 'spawn missing npm');
   assert.deepEqual(checkpoints.at(-1).steps.at(-1).compatibility, compatibility);
   assert.equal(result.effects.some((effect: any) => effect.type.includes('npm')), false);
+  assert.equal(git(repo, ['ls-remote', '--tags', 'origin']), '');
 });
 
 test('publication effects use the real artifact and recover each external partial result', async t => {
@@ -192,13 +201,16 @@ test('publication effects use the real artifact and recover each external partia
   git(sourceRepo, ['config', 'user.name', 'Buildr Test']);
   git(sourceRepo, ['config', 'user.email', 'buildr@example.com']);
   fs.writeFileSync(path.join(sourceRepo, 'value'), 'source');
-  git(sourceRepo, ['add', 'value']); git(sourceRepo, ['commit', '-m', 'source']);
+  const workflow = '.github/workflows/publish.yml';
+  fs.mkdirSync(path.join(sourceRepo, '.github/workflows'), { recursive: true });
+  fs.writeFileSync(path.join(sourceRepo, workflow), '# original executor\n');
+  git(sourceRepo, ['add', 'value', workflow]); git(sourceRepo, ['commit', '-m', 'source']);
   const source = git(sourceRepo, ['rev-parse', 'HEAD']);
   const built = await createReleaseArtifactFixture(path.join(root, 'artifact'), source);
   const artifact = readReleaseArtifact(built.manifestPath);
   const version = artifact.manifest.version;
   const tag = `v${version}`;
-  const notes = 'Concrete fixture release notes.\n';
+  const notes = `## ${version} - 2026-11-20\n\nConcrete fixture release notes.\n`;
   const prefix = path.join(root, 'installed');
   const installedMetadataPath = path.join(prefix, 'node_modules/@buildr-ai/buildr/package.json');
   const assertInstalledPackage = () => {
@@ -227,7 +239,7 @@ test('publication effects use the real artifact and recover each external partia
     assert.throws(assertInstalledPackage, assert.AssertionError, 'a stale installed package cannot satisfy a recovery check');
   } finally { fs.writeFileSync(installedMetadataPath, installedMetadata); }
   assertInstalledPackage();
-  for (const failure of ['none', 'tag-before-npm', 'npm-response-lost', 'github-denied', 'github-response-lost', 'registry-smoke', 'integrity-conflict']) {
+  for (const failure of ['rc62-first-failure-recovery', 'rc63-preserved-pair', 'none', 'tag-before-npm', 'npm-response-lost', 'github-denied', 'github-response-lost', 'registry-smoke', 'integrity-conflict']) {
     await t.test(failure, async sub => {
       const scenarioStartedAt = Date.now();
       let scenarioStatus: 'passed' | 'failed' = 'passed';
@@ -318,6 +330,103 @@ test('publication effects use the real artifact and recover each external partia
           },
         };
         const options = { context: { release: { version }, convergence: { mainCommit: source }, workflow: { repository: 'BuildrAI/Buildr' } }, artifact, repo, token: 'local-test-service', notes };
+        if (failure === 'rc62-first-failure-recovery' || failure === 'rc63-preserved-pair') {
+          const sourceTree = git(repo, ['rev-parse', 'HEAD^{tree}']);
+          const digest = (letter: string) => `sha256-${letter.repeat(64)}`;
+          const workflowDigest = `sha256-${createHash('sha256').update(fs.readFileSync(path.join(repo, workflow))).digest('hex')}`;
+          const context = createReleaseContext({
+            selection: { identity: digest('1'), version, branch: `release-${version}`, releaseHead: source, releaseTree: sourceTree, generation: 1, status: 'frozen' },
+            release: { version, sourceCommit: source, sourceTree },
+            candidate: { workflow: '.github/workflows/verify.yml', runId: 10, runAttempt: 1, runUrl: 'https://github.com/BuildrAI/Buildr/actions/runs/10', sourceCommit: source, sourceTree, registryIdentity: digest('2'), aggregateIdentity: digest('3'), status: 'passed' },
+            artifact: { ...Object.fromEntries(['sourceCommit','filename','size','sha256','integrity','applicationPayloadDigest'].map(key => [key, artifact.manifest[key]])), artifactName: 'candidate-package' },
+            convergence: { mainCommit: source, mainTree: sourceTree, devCommit: source, devTree: sourceTree },
+            preparation: { identity: digest('4'), status: 'passed', taskId: `release-${version}`, sourceCommit: source, nodeVersion: process.versions.node, nodeIdentity: digest('5') },
+            node: { authority: 'projects/product/.node-version', version: process.versions.node, executionIdentity: digest('5') },
+            workflow: { path: workflow, digest: workflowDigest, repository: 'BuildrAI/Buildr', environment: 'npm-production' },
+            taskCorrelation: { identity: digest('6'), status: 'passed', sourceCommit: source, sourceTree, remoteRef: source },
+          });
+          const run = (runId: number, headSha: string) => ({ repository: 'BuildrAI/Buildr', workflow, runId, runAttempt: 1, runUrl: `https://github.com/BuildrAI/Buildr/actions/runs/${runId}`, headSha });
+          fs.writeFileSync(path.join(repo, 'CHANGELOG.md'), notes);
+          git(repo, ['tag', tag]); git(repo, ['push', 'origin', `refs/tags/${tag}`]);
+          const beforeTag = git(repo, ['ls-remote', 'origin', `refs/tags/${tag}`]);
+          const firstDirectory = path.join(root, 'rc62-first');
+          const protectedEffects = { ...dependencies, probeAuthority: () => ({ status: 'passed' }), checkConvergence: () => ({ status: 'passed', ok: true }), inspectProvenance: () => {},
+            observePublishedPackageArtifact: async (): ReturnType<typeof observePublishedPackageArtifact> => ({ observation: { status: 'present', artifact: {
+              packageName: '@buildr-ai/buildr-dsh-plugin', version: '0.1.0-rc.1', origin: 'registry', compatibility: null,
+              integrity: `sha512-${Buffer.alloc(64, 1).toString('base64')}`, artifactSha256: '1'.repeat(64),
+            } }, bytes: Buffer.from('plugin') }),
+            verifyBuildrPluginPair: ({ consumer, provider }: any) => {
+              if (!repaired) throw new Error('isolated pair shutdown failed');
+              return { status: 'passed', legacyPairEvidence: { schemaVersion: 'buildr.package-pair-evidence/v1', consumer: consumer.artifact, provider: provider.artifact, features: [{ feature: 'entry', required: true, status: 'passed' }], evidenceSha256: 'd'.repeat(64) } };
+            },
+          };
+          const base = { repo, manifestPath: built.manifestPath, token: 'local-test-service' };
+          if (failure === 'rc63-preserved-pair') {
+            repaired = true;
+            const pluginTarball = process.env.BUILDR_REPLAY_PLUGIN_TARBALL;
+            if (pluginTarball) {
+              const bytes = fs.readFileSync(pluginTarball);
+              const plugin = artifactFromTarball(bytes, { origin: 'registry', packageName: '@buildr-ai/buildr-dsh-plugin', version: '0.1.0-rc.1',
+                integrity: `sha512-${createHash('sha512').update(bytes).digest('base64')}` });
+              protectedEffects.observePublishedPackageArtifact = async () => ({ observation: { status: 'present', artifact: plugin }, bytes });
+            }
+            const plan = await checkPublicationCompatibility({ context, artifact }, { ...protectedEffects,
+              ...(pluginTarball ? { verifyBuildrPluginPair: undefined } : {}), capturePairEvidence: true });
+            assert.equal(plan.status, 'passed', JSON.stringify(plan.pairDiagnostics)); assert.equal(plan.pairEvidence.length, 1);
+            const directory = path.join(root, 'rc63-handoff');
+            const proofInput = path.join(root, 'isolated-proof-input.json');
+            fs.writeFileSync(proofInput, JSON.stringify({ fixture: true }));
+            const manifest = createPackageHandoff({ output: directory, sourceCommit: source, sourceTree,
+              artifactSha256: artifact.manifest.sha256, platformPolicy: LOCAL_PLATFORM_POLICY, pairEvidence: plan.pairEvidence,
+              files: [
+                { path: `candidate-package/${artifact.manifest.filename}`, source: artifact.tarball },
+                { path: 'candidate-package/release-artifact.json', source: built.manifestPath },
+                { path: 'candidate-package/npm-pack.json', source: path.join(path.dirname(built.manifestPath), 'npm-pack.json') },
+                ...['source-verification.json', 'artifact-verification.json'].map(path => ({ path, source: proofInput })),
+              ] });
+            const data = createPackageHandoffCommit(repo, directory), received = path.join(root, 'rc63-received');
+            const restored = restorePackageHandoff(repo, data.commit, received, { sourceCommit: source, sourceTree,
+              identity: manifest.identity, artifactSha256: artifact.manifest.sha256, preserveOnly: true });
+            const candidateAggregate = { executionModel: LOCAL_PACKAGE_MODEL, status: 'passed', sourceCommit: source, sourceTree,
+              artifact: context.artifact, packageHandoff: restored, platformVerification: localPackageCoverage(restored, [], []).platformVerification,
+              evidenceIds: [...new Set(RELEASE_CHECKS.flatMap(check => 'evidence' in check ? [...check.evidence] : []))] };
+            const { schemaVersion: _schema, identity: _identity, ...original } = context;
+            const protectedContext = createReleaseContext({ ...original, candidate: { ...context.candidate, aggregateIdentity: releaseContextIdentity(candidateAggregate) } });
+            const result = await runReleasePublication({ ...base, manifestPath: path.join(received, 'candidate-package/release-artifact.json'), context: protectedContext, candidateAggregate,
+              publish: run(13, source), outputDirectory: path.join(root, 'rc63-release') }, { ...protectedEffects,
+              verifyBuildrPluginPair: () => { throw new Error('protected publisher must reuse the bound proof'); },
+              publish: async (args: string[]) => {
+                assert.equal(args[0], path.join(received, 'candidate-package', artifact.manifest.filename));
+                assert.deepEqual(fs.readFileSync(args[0]!), fs.readFileSync(artifact.tarball));
+                const response = await fetch(`${api}/registry-write`, { method: 'PUT', body: fs.readFileSync(args[0]!) });
+                return { status: response.status === 201 ? 0 : 1 };
+              },
+            });
+            assert.equal(result.status, 'passed', JSON.stringify(result.failure));
+            assert.equal(writes, 1); assert.equal(releaseWrites, 1);
+            return;
+          }
+          const first = await runReleasePublication({ ...base, context, publish: run(11, source), outputDirectory: firstDirectory }, protectedEffects);
+          assert.equal(first.failure?.code, 'release-package-compatibility-blocked', JSON.stringify(first.failure));
+          const evidence = validateReleaseTransactionEvidence(JSON.parse(fs.readFileSync(path.join(firstDirectory, 'release-transaction-evidence.json'), 'utf8')));
+          assert.equal(evidence.attempt.npmAttempted, false);
+          assert.equal(evidence.release.tagCommit, source);
+          assert.equal(writes + releaseWrites, 0);
+          fs.appendFileSync(path.join(repo, workflow), '# repaired executor\n');
+          git(repo, ['-c', 'user.name=Buildr Test', '-c', 'user.email=buildr@example.com', 'commit', '-am', 'repair executor']);
+          const execution = git(repo, ['rev-parse', 'HEAD']);
+          const executorRecovery = createReleaseExecutorRecovery(context, { repo, sourceCommit: execution, previousEvidence: evidence });
+          const { schemaVersion: _schema, identity: _identity, ...original } = context;
+          const recovered = createReleaseContext({ ...original, executorRecovery });
+          repaired = true;
+          const second = await runReleasePublication({ ...base, context: recovered, publish: run(12, execution),
+            previousPublicationDirectory: firstDirectory, outputDirectory: path.join(root, 'rc62-resumed') }, protectedEffects);
+          assert.equal(second.status, 'passed', JSON.stringify(second.failure));
+          assert.equal(second.evidence.release.registryIntegrity, artifact.manifest.integrity);
+          assert.equal(git(repo, ['ls-remote', 'origin', `refs/tags/${tag}`]), beforeTag);
+          assert.equal(writes, 1); assert.equal(releaseWrites, 1);
+          return;
+        }
         const first = await completePublicationEffects(options, dependencies);
         if (failure === 'integrity-conflict') {
           assert.equal(first.status, 'failed');
@@ -352,7 +461,7 @@ test('publication effects use the real artifact and recover each external partia
     });
   }
   assert.equal(realInstallCount, 1);
-  assert.equal(consumerChecks, 12);
+  assert.equal(consumerChecks, 14);
   assert.equal(injectedConsumerFailures, 1);
   assert.equal(readReleaseArtifact(built.manifestPath).manifest.sha256, artifact.manifest.sha256, 'all scenarios retain the original frozen bytes');
   t.diagnostic(`publication real installs=${realInstallCount} durationMs=${installDurationMs} protocol consumer checks=${consumerChecks}`);

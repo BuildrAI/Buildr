@@ -7,7 +7,8 @@ import test, { after } from 'node:test';
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.ts';
-import { runBuildr, runBuildrJson, taskRecordFixture } from '../helpers/task-record-system-fixture.ts';
+import { runBuildr, runBuildrJson as realJson, taskRecordFixture } from '../helpers/task-record-system-fixture.ts';
+import { runCliInProcess, runCliJsonInProcess } from '../helpers/in-process-cli.ts';
 import { TASK_HTTP_SCHEMAS, TASK_HTTP_VALIDATORS } from '../../src/modules/task/interfaces/http/task-http-schema.ts';
 
 after(() => cleanupLocalTaskLifecycleSystemContext());
@@ -26,11 +27,11 @@ test('真实CLI与HTTP共享只读提交结果、闭合输入与错误边界', a
   git(['-c', 'commit.gpgSign=false', 'commit', '--allow-empty', '-m', 'feat: task association', '-m', 'Actual body\n\nBuildr-Task: task-git']);
   const hash = git(['rev-parse', 'HEAD']);
   const before = runtime.readTask(root, 'task-git');
-  const cli = runBuildrJson(['task', 'commits', 'task-git', '--target', root]);
+  const cli = realJson(['task', 'commits', 'task-git', '--target', root]);
   assert.equal(cli.schemaVersion, 'buildr.task-commits/v1');
   assert.equal(cli.status, 'complete', `task commits returned ${cli.status}: ${JSON.stringify({ diagnostics: cli.diagnostics, repositories: cli.repositories, coverage: cli.coverage })}`);
   assert.deepEqual(cli.commits.map((item: { hash: string }) => item.hash), [hash]);
-  const help = runBuildr(['task', 'commits', '--help']).stdout;
+  const help = (await runCliInProcess(['task', 'commits', '--help'], 0)).stdout;
   assert.match(help, /buildr task commits <task-id>/);
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
   t.after(() => new Promise<void>(resolve => instance.server.close(() => resolve())));
@@ -55,7 +56,7 @@ test('真实CLI与HTTP共享只读提交结果、闭合输入与错误边界', a
   for (const query of ['?limit=2', '?taskId=another', '?path=/tmp', '?repository=outside']) assert.equal((await fetch(endpoint + query)).status, 400);
   assert.equal((await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/unknown/commits`)).status, 404);
   assert.equal((await fetch(endpoint, { method: 'POST' })).status, 404);
-  const unknown = runBuildrJson(['task', 'commits', 'unknown', '--target', root], 1);
+  const unknown = await runCliJsonInProcess(['task', 'commits', 'unknown', '--target', root], 1);
   assert.equal(unknown.schemaVersion, 'buildr.cli-error/v1');
   assert.equal(runtime.readTask(root, 'task-git').recordDigest, before.recordDigest);
   assert.equal(git(['rev-parse', 'HEAD']), hash); assert.deepEqual(cli.effects, []);
@@ -87,11 +88,12 @@ test('组合任务CLI与HTTP共享直接子任务提交、文件及差异，关�
   }
   const parent = delivered('parent-git', 'parent.txt'), childA = delivered('child-a', 'child-a.txt'), childB = delivered('child-b', 'child-b.txt');
   const grandchild = delivered('grandchild', 'grandchild.txt');
-  const cli = runBuildrJson(['task', 'commits', 'parent-git', '--target', root]);
+  const cli = await runCliJsonInProcess(['task', 'commits', 'parent-git', '--target', root]);
   assert.equal(cli.status, 'complete');
   assert.deepEqual(new Set(cli.commits.map((item: { hash: string }) => item.hash)), new Set([parent, childA, childB]));
   assert.deepEqual(new Set(cli.commits.map((item: { taskId: string; taskTitle: string }) => `${item.taskId}:${item.taskTitle}`)), new Set(['parent-git:整体交付', 'child-a:子任务甲', 'child-b:子任务乙']));
-  assert.deepEqual(runBuildrJson(['task', 'commits', 'child-b', '--target', root]).commits.map((item: { hash: string }) => item.hash), [childB]);
+  assert.deepEqual((await runCliJsonInProcess(['task', 'commits', 'child-b', '--target', root])).commits.map((item: { hash: string }) => item.hash), [childB]);
+  assert.equal(runBuildr(['task', 'commits', '--help']).status, 0);
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
   t.after(() => new Promise<void>(resolve => instance.server.close(() => resolve())));
   const { url, initialWorkspaceId } = await instance.ready;

@@ -87,9 +87,13 @@ test('Project HTTP API 复用本机安全边界、CAS 与 prompt-only 创建', a
   const detail: any = await fetch(`${apiBase}/projects/demo`).then((response: any) => response.json());
   assert.equal(detail.project.name, 'Demo');
 
-  const agentsDoc: any = await fetch(`${apiBase}/projects/demo/documents/AGENTS.md`).then((response: any) => response.json());
+  const readRule = () => fetch(`${apiBase}/projects/demo/documents/AGENTS.md`).then(response => response.json());
+  assert.equal((await readRule()).exists, false);
+  const userRule = '# Demo 独有规则\n';
+  fs.writeFileSync(path.join(root, 'projects/demo/AGENTS.md'), userRule);
+  const agentsDoc = await readRule();
   assert.equal(agentsDoc.exists, true);
-  assert.match(agentsDoc.content, /AGENTS\.md|Project|项目/);
+  assert.equal(agentsDoc.content, userRule);
   const readmeDoc: any = await fetch(`${apiBase}/projects/demo/documents/README.md`).then((response: any) => response.json());
   assert.equal(readmeDoc.exists, false);
   assert.equal(readmeDoc.content, null);

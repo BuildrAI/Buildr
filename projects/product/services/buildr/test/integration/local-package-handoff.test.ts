@@ -1,3 +1,5 @@
+import { readProtectedPairEvidence } from '../../../../../../skills/buildr-release/scripts/release-publication.ts';
+import { releaseContextIdentity } from '../../../../../../skills/buildr-release/scripts/release-readiness.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -379,9 +381,14 @@ test('rules are frozen before transport and cannot be silently replaced on scope
 test('preflight adopts existing proof through plan/aggregate then the formal consumer; stale success cannot hide a later failure', t => {
   const f = fixture(t), directory = path.join(f.root, 'preflight'), commands: string[] = [];
   const rules = currentVerificationRules(f.repo, null, 'buildr', LOCAL_PLATFORM_POLICY);
+  const identity = (packageName: string, artifactSha256: string) => ({ packageName, artifactSha256,
+    version: '0.1.0-rc.63', integrity: `sha512-${Buffer.alloc(64, 1).toString('base64')}` });
+  const pairEvidence = [{ schemaVersion: 'buildr.package-pair-evidence/v1',
+    provider: identity('@buildr-ai/buildr', hash(f.data)), consumer: identity('@buildr-ai/buildr-dsh-plugin', 'c'.repeat(64)),
+    features: [{ feature: 'entry', required: true, status: 'passed' }], evidenceSha256: 'd'.repeat(64) }];
   const handoff = createPackageHandoff({ output: path.join(f.root, 'preflight-handoff'), sourceCommit: f.sourceCommit,
     sourceTree: f.sourceTree, platform: 'darwin', artifactSha256: hash(f.data), files: f.files,
-    platformPolicy: LOCAL_PLATFORM_POLICY, verificationRules: rules });
+    platformPolicy: LOCAL_PLATFORM_POLICY, verificationRules: rules, pairEvidence });
   const artifact = { sourceCommit: f.sourceCommit, filename: 'package.tgz', size: f.data.length,
     sha256: hash(f.data), integrity: 'sha512-YQ==', applicationPayloadDigest: `sha256-${'e'.repeat(64)}` };
   const platformVerification = localPackageCoverage(handoff, [], []).platformVerification;
@@ -391,6 +398,10 @@ test('preflight adopts existing proof through plan/aggregate then the formal con
     timing: { aggregation: { startedAt: '2026-01-01T00:00:00.000Z', finishedAt: '2026-01-01T00:00:01.000Z', elapsedMs: 1 } },
     evidenceIds: [...new Set(RELEASE_CHECKS.flatMap(check => 'evidence' in check ? [...check.evidence] : []))]
       .filter(id => !platformVerification.optionalEvidenceIds.includes(id)) };
+  const context = { release: { sourceCommit: f.sourceCommit, sourceTree: f.sourceTree }, candidate: { aggregateIdentity: releaseContextIdentity(aggregate) } };
+  assert.deepEqual(readProtectedPairEvidence(aggregate, context, artifact), pairEvidence);
+  assert.throws(() => readProtectedPairEvidence({ ...aggregate, status: 'failed' }, context, artifact), /aggregate identity mismatch/);
+  assert.throws(() => readProtectedPairEvidence(aggregate, context, { ...artifact, sha256: '0'.repeat(64) }), /frozen contract/);
   const options = { repo: f.repo, sourceCommit: f.sourceCommit, sourceTree: f.sourceTree, directory, handoff,
     artifactDirectory: '/explicit-original', sourcePacket: '/explicit-source', artifactPacket: '/explicit-proof' };
   let fail = false;
@@ -414,7 +425,7 @@ test('preflight adopts existing proof through plan/aggregate then the formal con
   assert.equal(local.status, 'passed');
   const creation: Parameters<typeof createPackageHandoff>[0] = { output: path.join(f.root, 'frozen-consumption'), sourceCommit: f.sourceCommit, sourceTree: f.sourceTree,
     platform: 'darwin' as const, artifactSha256: hash(f.data), files: f.files, platformPolicy: LOCAL_PLATFORM_POLICY,
-    verificationRules: rules, consume: () => local.consumption };
+    verificationRules: rules, pairEvidence, consume: () => local.consumption };
   const frozen = createPackageHandoff(creation);
   assert.deepEqual(freezeLocalConsumption(frozen, { ...aggregate, packageHandoff: frozen }), local.consumption,
     'an explicitly repeated preflight may consume the final handoff without nesting its summary');
@@ -425,6 +436,7 @@ test('preflight adopts existing proof through plan/aggregate then the formal con
   const remote = { handoff: restored, repo: f.repo, artifact, sourceCommit: f.sourceCommit, sourceTree: f.sourceTree,
     workflow: { runId: '123', runAttempt: '2' } };
   const adopted = adoptLocalConsumption(remote);
+  assert.deepEqual(readProtectedPairEvidence(adopted, { ...context, candidate: { aggregateIdentity: releaseContextIdentity(adopted) } }, artifact), pairEvidence);
   assert.equal(adopted.workflow.aggregateAttempt, 2);
   assert.equal(adopted.preservedConsumption.origin, 'local');
   assert.deepEqual(adopted.workflow.evidenceAttempts, [], 'preserving local proof is not a remote test execution');
@@ -501,4 +513,18 @@ test('production executes the frozen checkout builder and an interrupted verific
   assert.ok(commands.includes(path.join(f.repo, 'skills/buildr-release/scripts/local-package-build.ts')));
   assert.equal(receipts[0].artifactSha256, artifact.manifest.sha256);
   assert.equal(f.git('status', '--porcelain').includes('source.txt'), false);
+});
+
+test('plugin SDK preparation waits for the asynchronous executor result', async t => {
+  const f = fixture(t);
+  const commands: string[] = [];
+  await assert.rejects(prepareLocalPlugin({ repo: f.repo, sourceCommit: f.sourceCommit, roundId: 'fixture',
+    plan: {}, peer: {}, peerFile: '/unused' }, {
+    async execute(_node: string, [file]: string[]) {
+      await Promise.resolve();
+      commands.push(path.basename(file));
+      return { status: 1, stderr: 'fixture SDK failure\n' };
+    },
+  }), /ensure-release-sdk\.ts failed/);
+  assert.deepEqual(commands, ['ensure-release-sdk.ts']);
 });

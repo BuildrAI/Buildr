@@ -106,7 +106,45 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
         try { await (await resolve()).pushback.migrateGlobal(GROKBOT_CREDENTIAL_ID, legacy); }
         catch { console.warn('[agent_pushback_migration] 既有全局通知配置迁移未完成，保留原配置等待重试。'); }
       })();
-      const start = async () => { await connect(); await migrateLegacyWebhook(); };
+      let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+      const observationInterval = 15_000;
+      let retryDelay = 0;
+      const scheduleReconnect = (delay: number) => {
+        clearTimeout(reconnectTimer);
+        if (closed) return;
+        reconnectTimer = setTimeout(() => void maintainHostConnection(), delay);
+        reconnectTimer.unref();
+      };
+      const maintainHostConnection = async () => {
+        clearTimeout(reconnectTimer);
+        try {
+          // The independent Harness does not call Buildr Web. Observing the
+          // coordinator here also registers the host after a generation change.
+          await (await connect()).lifecycle.identity();
+          retryDelay = 0;
+          await migrateLegacyWebhook();
+        } catch {
+          if (closed) return;
+          if (retryDelay === 0) console.warn('执行后台连接未完成，将自动重试。已有工作记录保留。');
+          retryDelay = retryDelay === 0 ? 1_000 : Math.min(retryDelay * 2, observationInterval);
+        }
+        scheduleReconnect(retryDelay || observationInterval);
+      };
+      const start = async () => {
+        clearTimeout(reconnectTimer);
+        try {
+          await (await connect()).lifecycle.identity();
+          retryDelay = 0;
+          await migrateLegacyWebhook();
+          scheduleReconnect(observationInterval);
+        } catch (error) {
+          if (!closed) {
+            retryDelay = 1_000;
+            scheduleReconnect(retryDelay);
+          }
+          throw error;
+        }
+      };
       // 运行单元不一致或存在待切换单元时，响应契约差异来自版本对齐窗口而非违约。
       const runtimeAligning = async () => {
         const connection = await connect();
@@ -142,6 +180,7 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
       };
       const close = async () => {
         closed=true;
+        clearTimeout(reconnectTimer);
         initialization.abort(new AgentServiceError('agent_process_client_closed','本机主程序连接已释放。',503));
         const active=connection;connection=undefined;connected=undefined;
         try { await active?.then(value=>value.disconnect()); }
@@ -168,7 +207,7 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
           .filter((entry: any) => entry.workspace?.id && entry.status !== 'identity_conflict')
           .map((entry: any) => ({ id: entry.workspace.id, name: entry.workspace.name ?? entry.workspace.id })),
       });
-      return { provides: { [AGENT_SERVICE_APPLICATION]: { start, close, status:async()=>(await connect()).lifecycle.status(), runtimeStatus, generate: async (input: Parameters<AgentOperations['models']['generate']>[0]) => (await resolve()).models.generate(input) } }, contributions: { cli: createAgentCliContributions(options.readLocalInstance), http: [agentHttp, programmaticHttp] }, lifecycle: { start: async () => { void start().catch(() => { console.warn('执行后台连接未完成，已有工作记录保留。'); }); }, stop: close } };
+      return { provides: { [AGENT_SERVICE_APPLICATION]: { start, close, status:async()=>(await connect()).lifecycle.status(), runtimeStatus, generate: async (input: Parameters<AgentOperations['models']['generate']>[0]) => (await resolve()).models.generate(input) } }, contributions: { cli: createAgentCliContributions(options.readLocalInstance), http: [agentHttp, programmaticHttp] }, lifecycle: { start: async () => { void maintainHostConnection(); }, stop: close } };
     },
   };
 }

@@ -1,3 +1,4 @@
+import type { AgentModelGatewayQuotaModelGatewayQuota } from '../../../../build/generated/agent-service-http-dto';
 import type { HarnessSystemPromptSystemPrompt, HarnessSystemPromptInputSystemPromptInput } from '../../../../build/generated/agent-service-http-dto';
 import { timeAttachmentStage } from './attachment-timing.ts';
 import { conversationStopAllObservedScope, stopConversationWithRecovery, stopAllWithRecovery } from '../conversation-stop.ts';
@@ -94,6 +95,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     defaultWorkspace(signal?: AbortSignal) { return request<{rootPath: string}>(appPath+'/default-workspace', {signal}); },
     modelAccount(id:string) {return request<ModelAccount>(appPath+'/model-accounts/'+encodeURIComponent(id));},
     modelAccounts(signal?:AbortSignal,includeDisabled=false) {return read<{accounts:ModelAccount[];providers:ModelProviderView[]}>(appPath+'/model-accounts'+(includeDisabled?'?includeDisabled=true':''),signal);},
+    modelGatewayQuota(id:string,revision:string,signal?:AbortSignal) {return read<AgentModelGatewayQuotaModelGatewayQuota>(appPath+'/model-accounts/'+encodeURIComponent(id)+'/gateway-quota?revision='+encodeURIComponent(revision),signal);},
     modelAccountUsage(id:string) {return request<{references:number}>(appPath+'/model-accounts/'+encodeURIComponent(id)+'/usage');},
     modelCatalog(signal?:AbortSignal) {
       // Independently cancellable callers must not cancel a shared read.
@@ -101,9 +103,11 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       if(!catalogRead){const pending=fetchModelCatalog().finally(()=>{if(catalogRead===pending)catalogRead=undefined;});catalogRead=pending;}
       return catalogRead;
     },
+    addMagpie(input:{baseUrl?:string;prepareLocalGateway?:boolean}) {return changeModels<ModelAccount>(appPath+'/model-accounts',post({provider:'magpie',prepareLocalGateway:input.prepareLocalGateway,...(input.baseUrl?{custom:{label:'Magpie',baseUrl:input.baseUrl,protocol:'responses',useApiKey:false}}:{})}));},
+    openModelSettings(account:ModelAccount) {return request<ModelAccount>(appPath+'/model-accounts/'+encodeURIComponent(account.id)+'/open-settings',post({expectedRevision:account.revision}));},
     addModelAccount(provider:string) {return changeModels<ModelAccount>(appPath+'/model-accounts',post({provider}));},
     addCustomModelAccount(input:CustomProviderConfigInput) {return changeModels<ModelAccount>(appPath+'/model-accounts',post({provider:'custom',custom:input}));},
-    configureCustomModelAccount(account:ModelAccount,input:CustomProviderConfigInput) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+encodeURIComponent(account.id)+'/custom',post({expectedRevision:account.revision,...input}));},
+    configureCustomModelAccount(account:ModelAccount,input:CustomProviderConfigInput&{prepareLocalGateway?:boolean}) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+encodeURIComponent(account.id)+'/custom',post({expectedRevision:account.revision,...input}));},
     discoverCustomModels(input:CustomDiscoveryInput,signal?:AbortSignal) {return request<CustomDiscoveryResult>(appPath+'/model-custom/discovery',{...post(input),signal});},
     readSystemPrompt() { return request<HarnessSystemPromptSystemPrompt>(appPath+'/system-prompt'); },
     saveSystemPrompt(input:HarnessSystemPromptInputSystemPromptInput) { return request<HarnessSystemPromptSystemPrompt>(appPath+'/system-prompt',post(input)); },

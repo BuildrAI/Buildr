@@ -4,9 +4,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {fileURLToPath} from 'node:url';
 import {createAgentService} from '../../src/index.ts';
-import {AgentServiceError,RETIRED_EXECUTION_DIAGNOSTIC} from '../../src/domain/agent-state.ts';
-import {ExecutorInputRejected,type AgentExecutor,type AgentRuntime,type ExecutorObservation,type AgentServiceOptions} from '../../src/contracts.ts';
+import {AgentServiceError,BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC,RETIRED_EXECUTION_DIAGNOSTIC} from '../../src/domain/agent-state.ts';
+import {createAntigravityExecutor} from '../../src/executors/antigravity/index.ts';
+import {ExecutorInputRejected,type AgentExecutor,type AgentProgramManager,type AgentRuntime,type ExecutorObservation,type AgentServiceOptions} from '../../src/contracts.ts';
 import type {ModelProvider} from '../../src/model-access/contracts.ts';
 import {ConversationRepository} from '../../src/persistence/conversation-repository.ts';
 import {PendingSendRepository} from '../../src/persistence/pending-send-repository.ts';
@@ -769,4 +771,254 @@ test('retired execution automatically continues on dead previous generation when
    assert.match(resumedSends[0]!.text,/系统自动恢复[\s\S]*服务重启[\s\S]*仍可能未知/);
   }finally{await successor.close();}
  }finally{await f.close();}
+});
+
+test('antigravity continuation limit pauses cleanly, releases idle resources without auto-recovery, survives retirement, and continues manually', { timeout: 25_000 }, async t => {
+ const fixtureSource = fileURLToPath(new URL('./executors/fixtures/antigravity-acp.mjs', import.meta.url));
+ const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agy-limit-lifecycle-')));
+ const dataRoot = path.join(root, 'profile');
+ const workspaceRoot = path.join(root, 'workspace');
+ const binDir = path.join(root, 'managed-bin');
+ const executable = path.join(binDir, 'antigravity-acp.mjs');
+ const connectionRoot = path.join(dataRoot, 'agent-service', 'connections', 'antigravity');
+ const cliDir = path.join(connectionRoot, 'home', '.gemini', 'antigravity-cli');
+ const keyringFile = path.join(cliDir, 'fixture-keyring.json');
+ const controlFile = path.join(cliDir, 'fixture-control.json');
+ fs.mkdirSync(workspaceRoot, { recursive: true });
+ fs.mkdirSync(binDir, { recursive: true });
+ fs.mkdirSync(cliDir, { recursive: true });
+ fs.copyFileSync(fixtureSource, executable);
+ fs.chmodSync(executable, 0o755);
+ fs.writeFileSync(controlFile, JSON.stringify({
+  scenario: 'late-command-result',
+  autoAllow: true,
+  backgroundContinuationRepeats: 3,
+  backgroundExitDelay: 40,
+ }, null, 2) + '\n');
+ fs.writeFileSync(keyringFile, JSON.stringify({
+  authenticated: true,
+  methodId: 'oauth-personal',
+  email: 'dev@example.com',
+  tier: { id: 'g1-pro-tier', name: 'Google AI Pro' },
+ }, null, 2) + '\n');
+
+ const programManager: AgentProgramManager = {
+  async discover(input) {
+   if (input.provider === 'antigravity') {
+    return {
+     candidates: [{ executable, source: 'managed', label: 'Antigravity CLI (Managed)', version: '1.5.8', compatible: true }],
+     installation: { label: 'Antigravity CLI', version: '1.5.8', url: 'https://antigravity.google/docs/getting-started?tab=cli', canInstall: true },
+    };
+   }
+   return { candidates: [], installation: { label: input.provider, version: '0.0.0', url: 'https://example.invalid', canInstall: false } };
+  },
+  async install() { return executable; },
+ };
+ const environment: Record<string, string> = { PATH: process.env.PATH ?? '', HOME: root };
+ const wait = async <T>(read: () => T, predicate: (value: T) => boolean, label: string, timeoutMs = 15_000): Promise<T> => {
+  const deadline = Date.now() + timeoutMs;
+  let value = read();
+  while (!predicate(value)) {
+   if (Date.now() >= deadline) assert.fail(`Timed out waiting for ${label}: ${JSON.stringify(value)}`);
+   await new Promise(resolve => setTimeout(resolve, 25));
+   value = read();
+  }
+  return value;
+ };
+
+ t.after(() => { fs.rmSync(root, { recursive: true, force: true }); });
+
+ const service = createAgentService({
+  dataRoot,
+  environment,
+  programManager,
+  autoContinueInterrupted: true,
+  executors: [createAntigravityExecutor({ maxBackgroundContinuations: 1 })],
+  resolveWorkspace: () => ({ rootPath: workspaceRoot }),
+  assertTask() {},
+ });
+ try {
+  await service.connections.connect('antigravity', {
+   expectedRevision: service.connections.read('antigravity').revision,
+   executable,
+  });
+  await service.connections.check('antigravity');
+
+  const created = await service.conversations.create('workspace', {});
+  const draft = {
+   expectedRevision: created.revision,
+   connectionId: 'antigravity',
+   modelAccountId: 'native-antigravity',
+   model: 'gemini-2.5-pro',
+   text: '长后台流程直到自动续行触顶',
+  };
+  const preview = service.conversations.prepareSend('workspace', created.id, draft);
+  service.conversations.send('workspace', created.id, { ...draft, previewToken: preview.token, clientRequestId: randomUUID() });
+
+  const paused = await wait(
+   () => service.conversations.read('workspace', created.id),
+   view => view.run?.status === 'unknown' && view.run?.resourcesReleased === true,
+   'limit-paused released run',
+  );
+  const originalRunId = paused.run!.id;
+  assert.equal(paused.run?.diagnostic, BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC);
+  assert.notEqual(paused.run?.interrupted, true);
+  assert.ok(paused.run!.tools.length >= 2 && paused.run!.tools.every(tool => tool.status === 'completed'));
+
+  // Give microtasks/timers a moment and ensure autoContinueInterrupted never auto-restarts it.
+  await new Promise(resolve => setTimeout(resolve, 150));
+  await service.conversations.recoverInterrupted();
+  const afterRecover = await service.conversations.observe('workspace', created.id);
+  assert.equal(afterRecover.run?.id, originalRunId);
+  assert.equal(afterRecover.run?.diagnostic, BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC);
+  assert.notEqual(afterRecover.run?.interrupted, true);
+  assert.equal(afterRecover.retainedRuns?.length ?? 0, 0);
+
+  const repo = new ConversationRepository(path.join(dataRoot, 'agent-service'));
+  try {
+   assert.equal(repo.readConversation(created.id)?.interruption, undefined);
+  } finally {
+   repo.stopReadModels();
+  }
+
+  await service.close();
+
+  fs.writeFileSync(controlFile, JSON.stringify({
+   scenario: '',
+   autoAllow: true,
+   backgroundContinuationRepeats: 0,
+  }, null, 2) + '\n');
+
+  const successor = createAgentService({
+   dataRoot,
+   environment,
+   programManager,
+   autoContinueInterrupted: true,
+   generationAlive: () => false,
+   executors: [createAntigravityExecutor({ maxBackgroundContinuations: 1 })],
+   resolveWorkspace: () => ({ rootPath: workspaceRoot }),
+   assertTask() {},
+  });
+  try {
+   await successor.conversations.recoverInterrupted();
+   const crossRead = successor.conversations.read('workspace', created.id);
+   assert.equal(crossRead.run?.id, originalRunId);
+   assert.equal(crossRead.run?.diagnostic, BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC);
+   assert.notEqual(crossRead.run?.interrupted, true);
+
+   const summary = successor.conversations.listAll(['workspace']).conversations.find(c => c.id === created.id);
+   assert.equal(summary?.run?.diagnostic, BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC);
+   assert.notEqual(summary?.run?.interrupted, true);
+
+   const crossObserved = await successor.conversations.observe('workspace', created.id);
+   assert.equal(crossObserved.run?.id, originalRunId);
+   assert.equal(crossObserved.run?.diagnostic, BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC);
+   assert.notEqual(crossObserved.run?.interrupted, true);
+
+   const continueDraft = {
+    expectedRevision: crossObserved.revision,
+    connectionId: 'antigravity',
+    continueRunId: originalRunId,
+    text: '',
+    modelAccountId: crossObserved.run!.modelAccountId,
+    modelAccountIdentity: crossObserved.run!.modelAccountIdentity,
+    model: crossObserved.run!.model,
+    serviceTier: crossObserved.run!.serviceTier,
+    reasoningEffort: crossObserved.run!.reasoningEffort,
+    permissionMode: crossObserved.run!.permissionMode,
+   };
+   const continuePreview = successor.conversations.prepareSend('workspace', created.id, continueDraft);
+   assert.equal(continuePreview.fits, true);
+   successor.conversations.send('workspace', created.id, {
+    ...continueDraft,
+    previewToken: continuePreview.token,
+    clientRequestId: randomUUID(),
+   });
+
+   const finished = await wait(
+    () => successor.conversations.read('workspace', created.id),
+    view => view.run?.id !== originalRunId && view.run?.status === 'completed',
+    'manual continuation completion',
+   );
+   assert.equal(finished.run?.continuedFrom?.runId, originalRunId);
+   const prompts = fs.readFileSync(path.join(cliDir, 'fixture-prompts.jsonl'), 'utf8')
+    .trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as { text: string });
+   assert.match(prompts.at(-1)!.text, /后台自动续行次数达到上限[\s\S]*不要重复执行已经完成的命令/);
+  } finally {
+   await successor.close();
+  }
+ } finally {
+  await service.close().catch(() => {});
+ }
+});
+
+test('releaseRetiredWork and successor observation preserve BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC without auto-recovery', async () => {
+ const f = await fixture();
+ try {
+  const started = await f.start('uncertain');
+  const originalRunId = started.run!.id;
+  const repo = new ConversationRepository(path.join(f.root, 'agent-service'));
+  try {
+   const stored = repo.readConversation(started.id)!;
+   stored.view.run!.status = 'unknown';
+   stored.view.run!.resourcesReleased = false;
+   stored.view.run!.interrupted = undefined;
+   stored.view.run!.diagnostic = BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC;
+   stored.view.run!.tools = [{ id: 'cmd-1', label: 'command', status: 'completed' }];
+   delete stored.interruption;
+   const prevRev = stored.view.revision;
+   stored.view.revision = randomUUID();
+   repo.saveConversation(stored, prevRev);
+  } finally {
+   repo.stopReadModels();
+  }
+
+  f.forgetExecution();
+  await f.service.releaseRetiredWork();
+  const retiredView = f.service.conversations.read('workspace', started.id);
+  assert.equal(retiredView.run?.resourcesReleased, true);
+  assert.equal(retiredView.run?.executionState, 'unknown');
+  assert.equal(retiredView.run?.diagnostic, BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC);
+  assert.notEqual(retiredView.run?.interrupted, true);
+  await f.service.close();
+
+  const resumedSends: string[] = [];
+  const capabilities = { text: true, images: false, approval: false, questions: false, stop: true, resume: true, maxInputBytes: 65536 };
+  const successor = createAgentService({
+   dataRoot: f.root,
+   autoContinueInterrupted: true,
+   generationAlive: () => false,
+   executors: [{
+    descriptor: { id: 'local', label: 'Local', capabilities },
+    async open() {
+     return {
+      closed: false, bindingIdentity: 'resource-fixture', capabilities,
+      inspectAccount: async () => ({ status: 'ready' as const }),
+      models: async () => [{ id: 'model', label: 'Model' }],
+      beginLogin: async () => {}, cancelLogin: async () => {},
+      createContext: async () => ({ id: randomUUID() }),
+      resumeContext: async () => {}, readHistory: async () => [],
+      async send(input) { resumedSends.push(input.text); },
+      observe: async () => ({ status: 'idle' as const, tools: [], requests: [] }),
+      reply: async () => {}, stop: async () => ({ status: 'stopped' as const, tools: [] }), close: async () => {},
+     };
+    },
+   }],
+   modelProviders: [{ id: 'fixture', label: 'Fixture', async open() { return { protocol: 'chat-completions' as const, inspect: async () => ({ status: 'ready' as const, models: [{ id: 'model', label: 'Model', images: false, tools: true }] }), beginLogin: async () => {}, cancelLogin: async () => {}, infer: async () => { throw Error('unused'); }, close: async () => {} }; } }],
+   resolveWorkspace: () => ({ rootPath: f.root }),
+   assertTask() {},
+  });
+  try {
+   await successor.conversations.recoverInterrupted();
+   const after = await successor.conversations.observe('workspace', started.id);
+   assert.equal(resumedSends.length, 0);
+   assert.equal(after.run?.id, originalRunId);
+   assert.equal(after.run?.diagnostic, BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC);
+   assert.notEqual(after.run?.interrupted, true);
+  } finally {
+   await successor.close();
+  }
+ } finally {
+  await f.close();
+ }
 });

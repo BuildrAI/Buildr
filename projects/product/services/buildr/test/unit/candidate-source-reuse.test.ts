@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 import test from 'node:test';
 import { CANDIDATE_CI_SHARDS, verificationStepById } from '../verification/registry.ts';
@@ -59,6 +62,30 @@ test('external pull requests cannot import passing claims to skip source executi
   assert.throws(() => candidateSourceImportFromEnvironment({ GITHUB_EVENT_NAME: 'pull_request', BUILDR_SOURCE_VERIFICATION: encoded }), /controlled manual/);
   assert.deepEqual(candidateSourceImportFromEnvironment({ GITHUB_EVENT_NAME: 'workflow_dispatch', BUILDR_SOURCE_VERIFICATION: encoded }), bundle([record('unit')]));
   assert.deepEqual(candidateSourceImportFromEnvironment({}), bundle());
+});
+
+test('frozen handoff files carry complete source evidence above the dispatch limit', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-source-packet-'));
+  try {
+    const original = bundle([{
+      ...record('unit'),
+      result: { status: 'passed', fixture: Array.from({ length: 720 }, (_, i) =>
+        crypto.createHash('sha512').update(`source-proof-fixture-${i}`).digest('hex')).join('') },
+    }]);
+    assert.throws(() => encodeCandidateSourceImport(original), /workflow input budget/);
+    const transport = encodeCandidateSourceImport(original, 'file');
+    assert.ok(transport.length > MAX_SOURCE_IMPORT_CHARACTERS);
+    assert.throws(() => decodeCandidateSourceImport(transport), /input budget/);
+    const file = path.join(root, 'proof.json');
+    fs.writeFileSync(file, JSON.stringify({ transport }));
+    const env = { BUILDR_SOURCE_VERIFICATION_FILE: file, GITHUB_EVENT_NAME: 'workflow_dispatch' };
+    assert.deepEqual(candidateSourceImportFromEnvironment(env), original);
+    assert.throws(() => candidateSourceImportFromEnvironment({ ...env, GITHUB_EVENT_NAME: 'pull_request' }), /controlled manual/);
+    const bomb = gzipSync('x'.repeat(2 * 1024 * 1024 + 1)).toString('base64');
+    assert.throws(() => decodeCandidateSourceImport(bomb, 'file'), /byte budget/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('closed source shard coverage can be reused while missing, failed and other-platform results remain selected', () => {

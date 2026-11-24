@@ -1,0 +1,11 @@
+{
+  "name": "@buildr-ai/buildr-harness-dsh-plugin-source",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "build:dev": "../buildr/tools/development/run-development-node tools/build-dev.ts",
+    "test": "../buildr/tools/development/run-development-node --test test/*.test.ts"
+  }
+}

@@ -153,21 +153,6 @@ skills:
     state: installed
     runtimePath: openspec-archive-change
     resource: resources/workspace/skills/openspec/openspec-archive-change
-  - id: task-retrospective
-    assetIdentity: buildr:skill:task-retrospective
-    sourceIdentity: package:skills/buildr/task-retrospective
-    source: buildr
-    path: buildr/task-retrospective
-    description: 用户明确要求复盘已完成或已放弃的正式Task，查看本机复盘文档，或在阅读后决定是否继续行动时使用；只基于当前可见事实生成本机Markdown并维护Task上的待决策/已决策状态。
-    enabled: true
-    required: false
-    state: installed
-    runtimePath: task-retrospective
-    requires:
-      - capability: buildr.task-record
-        version: 4
-        mode: required
-    resource: resources/workspace/skills/buildr/task-retrospective
   - id: capability-adaptation
     assetIdentity: buildr:skill:capability-adaptation
     sourceIdentity: package:skills/buildr/capability-adaptation
@@ -198,26 +183,12 @@ skills:
       - capability: buildr.task-verification
         version: 4
     resource: resources/workspace/skills/buildr/project-verification
-  - id: terminology-governance
-    assetIdentity: buildr:skill:terminology-governance
-    sourceIdentity: package:skills/buildr/terminology-governance
-    source: buildr
-    path: buildr/terminology-governance
-    description: 确立或维护长期术语定义、解决影响结论的术语歧义，或需要正式术语对齐结果时使用。
-    enabled: true
-    required: false
-    state: installed
-    runtimePath: terminology-governance
-    provides:
-      - capability: buildr.terminology-governance
-        version: 1
-    resource: resources/workspace/skills/buildr/terminology-governance
   - id: current-knowledge-maintenance
     assetIdentity: buildr:skill:current-knowledge-maintenance
     sourceIdentity: package:skills/buildr/current-knowledge-maintenance
     source: buildr
     path: buildr/current-knowledge-maintenance
-    description: 理解或探索项目与服务、建设结构化项目知识，检查维护已有说明、视图和代码地图，或处理开发中的知识影响时使用。
+    description: 建设、更新或核对长期项目知识、代码地图与术语表时使用；普通项目问答不写资料。
     enabled: true
     required: false
     state: installed
@@ -225,17 +196,15 @@ skills:
     provides:
       - capability: buildr.current-knowledge-maintenance
         version: 4
-    requires:
       - capability: buildr.terminology-governance
         version: 1
-        mode: optional
     resource: resources/workspace/skills/buildr/current-knowledge-maintenance
   - id: task-manager
     assetIdentity: buildr:skill:task-manager
     sourceIdentity: package:skills/buildr/task-manager
     source: buildr
     path: buildr/task-manager
-    description: 在已初始化的 Buildr 工作空间中，用户授权修复、优化、开始或继续代码、文档、配置、规则或技能修改，或要求维护任务与进展时使用；先登记或接续任务，纯只读咨询不创建任务。
+    description: 用户授权修复、优化或继续修改时，登记或接续任务；也用于维护进展及按明确要求复盘已结束的任务。纯咨询不建任务。
     enabled: true
     required: false
     state: installed
@@ -290,17 +259,6 @@ skills:
     state: installed
     runtimePath: ui-prototype
     resource: resources/workspace/skills/buildr/ui-prototype
-  - id: agent-first-design
-    assetIdentity: buildr:skill:agent-first-design
-    sourceIdentity: package:skills/buildr/agent-first-design
-    source: buildr
-    path: buildr/agent-first-design
-    description: 设计或改造引入智能体交付产品结果的软件，或审视智能体工作系统的职责、工作流与门禁时使用；围绕产物和真实现场划分职责。仅使用智能体开发普通软件时不自动适用。
-    enabled: true
-    required: false
-    state: installed
-    runtimePath: agent-first-design
-    resource: resources/workspace/skills/buildr/agent-first-design
   - id: ux-design-laws
     assetIdentity: buildr:skill:ux-design-laws
     sourceIdentity: package:skills/buildr/ux-design-laws
@@ -323,17 +281,6 @@ skills:
     state: installed
     runtimePath: code-architecture
     resource: resources/workspace/skills/buildr/code-architecture
-  - id: code-map
-    assetIdentity: buildr:skill:code-map
-    sourceIdentity: package:skills/buildr/code-map
-    source: buildr
-    path: buildr/code-map
-    description: 建设、更新或检查代码地图时使用；依据真实职责、目录与文件解释实现组织，并核对受影响的来源与关联。
-    enabled: true
-    required: false
-    state: installed
-    runtimePath: code-map
-    resource: resources/workspace/skills/buildr/code-map
   - id: archify
     assetIdentity: buildr:skill:archify
     sourceIdentity: workspace:skills/buildr/archify
@@ -346,17 +293,6 @@ skills:
     runtimePath: archify
     customizedFrom: archify
     customizedSourceIdentity: package:skills/buildr/archify
-  - id: frontend-development
-    assetIdentity: buildr:skill:frontend-development
-    sourceIdentity: package:skills/buildr/frontend-development
-    source: buildr
-    path: buildr/frontend-development
-    description: 开发或修改前端页面、交互和样式时使用；复用已有组件与主题，隔离数据和业务操作，保持正式页面与已获授权原型一致。不自动制作原型。
-    enabled: true
-    required: false
-    state: installed
-    runtimePath: frontend-development
-    resource: resources/workspace/skills/buildr/frontend-development
   - id: project-composition-maintenance
     assetIdentity: buildr:skill:project-composition-maintenance
     sourceIdentity: package:skills/buildr/project-composition-maintenance
@@ -368,17 +304,6 @@ skills:
     state: installed
     runtimePath: project-composition-maintenance
     resource: resources/workspace/skills/buildr/project-composition-maintenance
-  - id: feature-design
-    assetIdentity: buildr:skill:feature-design
-    sourceIdentity: package:skills/buildr/feature-design
-    source: buildr
-    path: buildr/feature-design
-    description: 讨论或逐步设计新功能、收敛较大需求或接续已有方案时使用；基于真实产品形成可评审的小范围成果，不用于已定设计的局部实现。
-    enabled: true
-    required: false
-    state: installed
-    runtimePath: feature-design
-    resource: resources/workspace/skills/buildr/feature-design
   - id: nacos-connection
     assetIdentity: buildr:skill:nacos-connection
     sourceIdentity: package:skills/connections/nacos-connection
@@ -491,7 +416,7 @@ contracts:
 bindings:
   - capability: buildr.terminology-governance
     version: 1
-    provider: terminology-governance
+    provider: current-knowledge-maintenance
   - capability: buildr.task-finish
     version: 1
     provider: task-finish

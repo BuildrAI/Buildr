@@ -41,12 +41,13 @@ function Workspace() {
 }
 function Broken() {throw new Error('first render fixture error');}
 const root = createRoot(document.getElementById('root'));
-function render(mode, controlledOpen) {
+function render(mode, controlledOpen, resizable = false) {
   const environment = mode === 'none' ? undefined : {
     id: mode, title: '样例环境', Workspace: mode === 'broken' ? Broken : Workspace,
   };
   root.render(h(HarnessShell, {environment, environmentOpen: controlledOpen,
-    onEnvironmentOpenChange: controlledOpen === undefined ? undefined : open => render(mode, open),
+    resizable,
+    onEnvironmentOpenChange: controlledOpen === undefined ? undefined : open => render(mode, open, resizable),
   }, h(Conversation)));
 }
 window.fixture = {render, stats,breakContext:()=>breakContext()};
@@ -184,5 +185,68 @@ test('Harness shell composes an optional environment without owning or remountin
     assert.equal(await envInput.inputValue(), '宿主控制的工程草稿');
     assert.equal(await input.evaluate(node => node === (window as any).originalInput), true);
     assert.equal(await input.inputValue(), '环境失败后继续输入');
+  });
+
+  await t.test('resizable shell exposes unified divider, supports drag/keyboard/double-click reset, and preserves conversation DOM', async () => {
+    await page.setViewportSize({width: 1200, height: 800});
+    await page.evaluate(() => (window as any).fixture.render('working', false, true));
+    const divider = page.getByRole('separator', {name: '调整对话与工作区宽度', exact: true});
+    assert.equal(await divider.count(), 0);
+    const fullBox = await page.locator('.harness-conversation-region').boundingBox();
+    assert.ok(fullBox && Math.abs(fullBox.width - 1200) <= 1);
+
+    await input.fill('可拖拽外壳草稿');
+    await page.locator('#reading').evaluate(node => {node.scrollTop = 188;});
+    await input.evaluate(node => {(window as any).resizableInput = node;});
+
+    await page.getByRole('button', {name: '打开样例环境', exact: true}).click();
+    const envInput = page.getByRole('textbox', {name: '环境输入', exact: true});
+    await envInput.fill('可调宽环境状态');
+    await divider.waitFor({state: 'visible'});
+    assert.equal(await divider.evaluate(node => node.classList.contains('split-divider')), true);
+    assert.equal(await divider.getAttribute('aria-orientation'), 'vertical');
+
+    const initialConv = await page.locator('.harness-conversation-region').boundingBox();
+    const initialEnv = await page.getByRole('region', {name: '样例环境', exact: true}).boundingBox();
+    assert.ok(initialConv && initialEnv && Math.abs(initialConv.width - 720) <= 2 && Math.abs(initialEnv.width - 480) <= 2);
+
+    const box = await divider.boundingBox();
+    assert.ok(box);
+    const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+    await page.mouse.click(cx, cy);
+    const afterClickConv = await page.locator('.harness-conversation-region').boundingBox();
+    assert.ok(afterClickConv && Math.abs(afterClickConv.width - initialConv.width) <= 1, 'plain click must not resize');
+
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx - 120, cy, {steps: 5});
+    await page.mouse.up();
+    const draggedConv = await page.locator('.harness-conversation-region').boundingBox();
+    const draggedEnv = await page.getByRole('region', {name: '样例环境', exact: true}).boundingBox();
+    assert.ok(draggedConv && draggedEnv && Math.abs(draggedConv.width - 600) <= 4 && Math.abs(draggedEnv.width - 600) <= 4);
+
+    await divider.focus();
+    await divider.press('ArrowRight');
+    const nudgedConv = await page.locator('.harness-conversation-region').boundingBox();
+    assert.ok(nudgedConv && Math.abs(nudgedConv.width - 616) <= 4);
+
+    await divider.dblclick();
+    const resetConv = await page.locator('.harness-conversation-region').boundingBox();
+    assert.ok(resetConv && Math.abs(resetConv.width - 720) <= 2);
+
+    await page.setViewportSize({width: 390, height: 844});
+    const verticalDivider = page.getByRole('separator', {name: '调整对话与工作区高度', exact: true});
+    await verticalDivider.waitFor({state: 'visible'});
+    assert.equal(await verticalDivider.getAttribute('aria-orientation'), 'horizontal');
+    const narrowConv = await page.locator('.harness-conversation-region').boundingBox();
+    const narrowEnv = await page.getByRole('region', {name: '样例环境', exact: true}).boundingBox();
+    assert.ok(narrowConv && narrowEnv && narrowEnv.y >= narrowConv.y + narrowConv.height - 1);
+    assert.ok(narrowEnv.x >= 0 && narrowEnv.x + narrowEnv.width <= 390);
+
+    await page.setViewportSize({width: 1200, height: 800});
+    assert.equal(await input.evaluate(node => node === (window as any).resizableInput), true);
+    assert.equal(await input.inputValue(), '可拖拽外壳草稿');
+    assert.equal(await page.locator('#reading').evaluate(node => node.scrollTop), 188);
+    assert.equal(await envInput.inputValue(), '可调宽环境状态');
   });
 });

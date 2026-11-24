@@ -13,7 +13,7 @@ import { discoverHomeStorage } from '../storage/home-discovery.ts';
 import { cloneViewReferences } from '../storage/clone-views.ts';
 import { runtimeObjectCandidates, runtimeObjectUnreferenced, type RuntimeObjectScanOptions } from '../storage/runtime-objects.ts';
 import { runtimeSharingCandidates, shareRetainedRuntime } from '../process/runtime-sharing.ts';
-import { reanchorProtectedRuntimeInodes, retainedRuntimeCandidates, retireRuntimeRecords, runtimeUnreferenced } from '../process/cleanup.ts';
+import { reanchorProtectedRuntimeInodes, retainedRuntimeCandidates, retainedRuntimeNodeCandidates, retireRuntimeRecords, runtimeNodeUnreferenced, runtimeUnreferenced } from '../process/cleanup.ts';
 import { observeStorageUse, orphanReclaimCandidates, ownStorageDirectory, probeTempCandidates, removeStorageCandidate, removeDiagnosticFileBatch, removeDiagnosticDatabaseFamily, removeNativeSessionBatch, removeRuntimeObjectBatch, safeStoragePath, safeStorageResource, type StorageCandidate } from '../storage/files.ts';
 import { defaultHostTempRoots, hostTempArtifactCandidates, testArtifactCandidates, testArtifactUnreferenced } from '../storage/test-artifacts.ts';
 import { harnessWebBundleCandidates, harnessWebBundleUnreferenced } from '../storage/web-bundles.ts';
@@ -32,10 +32,11 @@ export interface AgentStoragePlan {
 
 /** Batch migration of the known old npm cache class. The worker and direct
  * maintenance use the same references, lock, occupancy and final identity proof. */
-export async function mergeLegacyNpmCaches(plan:AgentStoragePlan,budgetMs=30000) {
+export async function mergeLegacyNpmCaches(plan:AgentStoragePlan,budgetMs=30000,cancelled=()=>false) {
   const root=path.join(plan.dataRoot,'agent-service'),repository=new ConversationRepository(root);
   const deadline=Date.now()+Math.max(100,Math.min(budgetMs,30000)),results=[];
   for(const item of plan.items){
+    if(cancelled()) break;
     if(item.kind!=='cache'||!['home/.npm/_cacache','cache/npm/_cacache'].includes(path.relative(item.ownerRoot,item.path).split(path.sep).join('/')))continue;
     let lock:ReturnType<typeof claim>|undefined;
     try {
@@ -150,6 +151,7 @@ function inventoryAgentStorage(
   try {
     if (needs('runtime')) result.items.push(...retainedRuntimeCandidates(dataRoot, use, undefined, Date.now(), false, protectedInodes));
     if (needs('runtime-share')) result.items.push(...runtimeSharingCandidates(dataRoot, use));
+    if (needs('runtime-node')) result.items.push(...retainedRuntimeNodeCandidates(dataRoot, use, now));
     if (needs('runtime-object')) result.items.push(...runtimeObjectCandidates(root, use, now, targets ? { targets: targetSet('runtime-object') } : input.runtimeObjectBudget));
     if (needs('web-bundle')) result.items.push(...harnessWebBundleCandidates(dataRoot, use, cutoff, now, targetSet('web-bundle')));
   }
@@ -183,7 +185,7 @@ function inventoryAgentStorage(
 
 /** Execute only objects still present, eligible and unchanged in a fresh inventory.
  * Native sessions additionally require this caller's explicit confirmation. */
-export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, options:{budgetMs?:number;confirmNativeSessions?:boolean;now?:number}={}) {
+export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, options:{budgetMs?:number;confirmNativeSessions?:boolean;now?:number;cancelled?:()=>boolean}={}) {
   if (plan.schemaVersion !== 1 || !path.isAbsolute(plan.dataRoot) || !Array.isArray(plan.items)) throw new Error('agent_storage_plan_invalid');
   const root = path.join(plan.dataRoot, 'agent-service');
   if (!safeStoragePath(plan.dataRoot, root)) throw new Error('agent_storage_root_unsafe');
@@ -259,9 +261,10 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
         : retained ?? (Date.now() > deadline ? 'storage_batch_deferred' : 'storage_recheck_retained'), sizeBytes: item.sizeBytes });
     }
   }
-  const runtimeRank = (kind: StorageCandidate['kind']) => kind === 'runtime' || kind === 'runtime-share' || kind === 'runtime-object' ? 1 : 0;
+  const runtimeRank = (kind: StorageCandidate['kind']) => kind === 'runtime' || kind === 'runtime-share' || kind === 'runtime-object' || kind === 'runtime-node' ? 1 : 0;
   const pending=plan.items.filter(item=>item.eligible&&item.kind!=='native-session'&&item.kind!=='native-home').sort((a,b)=>runtimeRank(a.kind)-runtimeRank(b.kind)||b.sizeBytes-a.sizeBytes),handled=new Set<string>();
   for (const expected of pending) {
+    if (options.cancelled?.()) break;
     if(handled.has(expected.path))continue;
     const item = candidates.get(expected.kind + ":" + expected.path);
     let reason = !item ? 'storage_no_longer_candidate' : item.kind !== expected.kind || item.identity !== expected.identity ? 'storage_changed' : item.reason;
@@ -352,7 +355,7 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
             ? () => { sharedInodes?.(); if (runtimeDataRoot === plan.dataRoot) reanchorProtectedProgramInodes(root); return observeStorageUse(); }
             : observeStorageUse;
           removed = item.kind === 'runtime-share' ? shareRetainedRuntime(root, item, deadline, observeCandidate) : removeStorageCandidate(root, item, observeCandidate, directory => item.orphanReclaim ? true : item.retire ? cacheUnreferenced(item) : item.kind === 'runtime'
-            ? runtimeUnreferenced(runtimeDataRoot, item.path) : item.kind === 'shared-cache' ? sharedCacheReclaimable(root,item,observeStorageUse(),cacheStorageDependencies(root,repository)) : item.kind === 'program-package' ? programPackageUnreferenced(root, item.path) : item.kind === 'runtime-object' ? runtimeObjectUnreferenced(directory, path.basename(item.path)) : item.kind === 'web-bundle' ? harnessWebBundleUnreferenced(plan.dataRoot, directory, item.path, options.now) : item.kind === 'test-artifact' ? testArtifactUnreferenced(directory, item.path) : item.kind !== 'diagnostic' || diagnosticUnreferenced(item, diagnosticReferences(item)), allowedBoundaries, sharedInodes);
+            ? runtimeUnreferenced(runtimeDataRoot, item.path) : item.kind === 'runtime-node' ? runtimeNodeUnreferenced(runtimeDataRoot, item.path) : item.kind === 'shared-cache' ? sharedCacheReclaimable(root,item,observeStorageUse(),cacheStorageDependencies(root,repository)) : item.kind === 'program-package' ? programPackageUnreferenced(root, item.path) : item.kind === 'runtime-object' ? runtimeObjectUnreferenced(directory, path.basename(item.path)) : item.kind === 'web-bundle' ? harnessWebBundleUnreferenced(plan.dataRoot, directory, item.path, options.now) : item.kind === 'test-artifact' ? testArtifactUnreferenced(directory, item.path) : item.kind !== 'diagnostic' || diagnosticUnreferenced(item, diagnosticReferences(item)), allowedBoundaries, sharedInodes);
           if (removed && item.kind === 'runtime') {
             try { retireRuntimeRecords(runtimeDataRoot, item.path); } catch { current.diagnostics.push('runtime_metadata_retained:' + item.path); }
           }

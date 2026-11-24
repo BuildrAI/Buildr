@@ -25,8 +25,13 @@ export function fixture(t: test.TestContext, format = 'sha1') {
   const initial = copyCodeSyncRepositories(base, format);
   let registered = root;
   const app = createCodeApplication({ assetCatalog: () => ({ repositories: [{ id: 'repo', code: 'repo', name: 'Sync Fixture', source: { type: 'workspace', path: registered } }], services: [], projects: [] }), resolveSourceRoot: (_root, source) => source.path, readTaskScope: () => ({ projects: [], services: [] }), readGitWorktreeEvidence: () => null });
-  const input = () => ({ repositoryId: 'repo', worktreeId: app.sourceControl(root).repositories[0].worktrees.find(item => item.isRegistered)!.worktreeId });
-  const request = () => ({ ...input(), expectedRevision: app.syncContext(root, input()).revision });
+  // The fixture already knows which checkout is registered. The application
+  // still verifies that identity; no listing or diff previews are needed here.
+  const input = () => ({ repositoryId: 'repo', worktreeId: observeGitCheckoutReadIdentity(registered).id });
+  const request = () => {
+    const location = input();
+    return { ...location, expectedRevision: app.syncContext(root, location).revision };
+  };
   const peerCommit = (file = 'remote.txt', content = 'remote\n') => { write(file, content, peer); const head = commitAt(peer, 'remote change'); gitAt(peer, 'push', 'origin', 'main'); return head; };
   const isolated = (run: typeof runCodeGitMutation) => createCodeSyncApplication({ source: (_root, location) => {
     const identity = observeGitCheckoutReadIdentity(registered);

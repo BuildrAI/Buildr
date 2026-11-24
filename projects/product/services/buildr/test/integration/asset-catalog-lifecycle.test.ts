@@ -57,7 +57,7 @@ test('fresh initialization creates a current empty catalog and accepts the first
   assert.equal(authorized, 1);
   assert.equal(response.body.migrationRequired, false);
   assert.equal(response.body.projects[0].code, 'first');
-  assert.ok(fs.existsSync(path.join(root, 'projects/first/AGENTS.md')));
+  assert.equal(fs.existsSync(path.join(root, 'projects/first/AGENTS.md')), false);
   const files = ['.buildr/workspace.yml', 'projects/manifest.yml', 'services/manifest.yml', 'repositories/manifest.yml'];
   const bytes = files.map(file => fs.readFileSync(path.join(root, file)));
   runtime.initializeWorkspace({ targetRoot: root, name: 'reinitialized', description: 'Preserve registered assets', profile: 'team', agent: null, sourceOnly: true });
@@ -190,6 +190,7 @@ test('global service documents preserve rule access and reject escaping symlinks
   fs.writeFileSync(path.join(root, 'services/api/AGENTS.md'), '# API\n\n服务级规则占位。\n');
   assert.match(runtime.catalogServiceDocument(root, c.services[0].id, 'AGENTS.md').content, /服务级规则占位/);
   assert.throws(() => runtime.catalogServiceDocument(root, c.services[0].id, '../manifest.yml'), /范围内/);
+  fs.writeFileSync(path.join(root, 'projects/demo/AGENTS.md'), '# 用户规则\n');
   fs.symlinkSync(path.join(root, 'projects/demo/AGENTS.md'), path.join(root, 'services/api/README.md'));
   assert.throws(() => runtime.catalogServiceDocument(root, c.services[0].id, 'README.md'), (e: any) => e.code === 'service_document_path_forbidden');
 });
@@ -232,6 +233,7 @@ test('delete service and project uses observed revision and preserves all physic
   assert.equal(c.services.length, 0); assert.equal(c.repositories.length, 1);
   assert.ok(c.projects.every((p: any) => !p.serviceIds.includes(serviceId)));
   assert.deepEqual(fs.readFileSync(file), bytes);
+  fs.writeFileSync(path.join(root, 'projects/other-delete/AGENTS.md'), '# 用户保留的规则\n');
   c = runtime.deleteCatalogAsset(root, 'project', 'other-delete', { revision: c.revision });
   assert.equal(c.projects.length, 1); assert.ok(fs.existsSync(path.join(root, 'projects/other-delete/AGENTS.md')));
   assert.equal(c.repositories.length, 1);

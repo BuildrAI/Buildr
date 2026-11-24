@@ -8,7 +8,7 @@ import { verificationSteps, resolveVerificationExecutionProfile, verificationSte
 import { estimateVerificationPlan } from './planner.ts';
 import { preparationContentDigest } from '../../tools/verification/candidate-preparation-reuse.ts';
 import { withExclusiveFileLock } from '../../src/infrastructure/filesystem/exclusive-file-lock.ts';
-import { collectVerificationSourceInputs } from './verification-source-inputs.ts';
+import { collectVerificationSourceInputs, createVerificationSourceInputReader, selectVerificationSourceInputs } from './verification-source-inputs.ts';
 import { resolveVerificationBase } from './changed-paths.ts';
 import { resolveNodeTestFiles } from './test-files.ts';
 import { portableVerificationExecutor, portableVerificationPreparations } from './verification-portable-inputs.ts';
@@ -28,7 +28,7 @@ export interface VerificationReuseSnapshot {
   inputIdentities?: Record<string, ReuseDigest>;
   stepInputs?: Record<string, { contentIdentity: ReuseDigest; recipeIdentity: ReuseDigest; fallback: boolean; unavailable: boolean; unresolved?: string[] }>;
   proofInputs?: Record<string, NonNullable<VerificationReuseSnapshot['stepInputs']>[string] & { selectionIdentity: ReuseDigest }>;
-  historicalInputs?: (commit: string, legacyDeclarations?: boolean) => ReturnType<typeof collectVerificationSourceInputs> | null;
+  historicalInputs?: (commit: string, legacyDeclarations?: boolean, step?: VerificationReuseStep) => ReturnType<typeof collectVerificationSourceInputs> | null;
 }
 export interface VerificationReuseIdentity {
   key: ReuseDigest; stepId: string; contentIdentity: ReuseDigest; recipeIdentity: ReuseDigest; environmentIdentity: ReuseDigest; gitIdentity?: ReuseDigest;
@@ -126,15 +126,25 @@ export function collectVerificationReuseSnapshot(options: VerificationReuseOptio
   const steps = [...declared, ...declared.filter(step => !step.parentId).flatMap(step => verificationFileSteps(step, productRoot))
     .filter(step => !declaredIds.has(step.id))];
   const sourceInputs = collectVerificationSourceInputs(repositoryRoot, productRoot, steps);
-  const history = new Map<string, ReturnType<typeof collectVerificationSourceInputs> | null>();
-  const historicalInputs = (commit: string, legacyDeclarations = false) => {
+  type HistoricalReader = ReturnType<typeof createVerificationSourceInputReader>;
+  type HistoricalInputs = ReturnType<typeof collectVerificationSourceInputs>;
+  const history = new Map<string, { reader: HistoricalReader; selections: Map<VerificationReuseStep | undefined, HistoricalInputs> } | null>();
+  const historicalInputs = (commit: string, legacyDeclarations = false, step?: VerificationReuseStep) => {
     const key = commit + ':' + legacyDeclarations;
     if (!history.has(key)) {
       if (history.size >= 16) return null;
-      try { history.set(key, collectVerificationSourceInputs(repositoryRoot, productRoot, steps, commit, legacyDeclarations)); }
+      try { history.set(key, { reader: createVerificationSourceInputReader(repositoryRoot, productRoot, commit, undefined, { legacyDeclarations }), selections: new Map() }); }
       catch { history.set(key, null); }
     }
-    return history.get(key)!;
+    const cached = history.get(key);
+    if (!cached) return null;
+    const selection = cached.selections.get(step);
+    if (selection) return selection;
+    try {
+      const value = selectVerificationSourceInputs(cached.reader, repositoryRoot, step ? [step] : steps);
+      cached.selections.set(step, value);
+      return value;
+    } catch { return null; }
   };
   const inputNames = [...new Set([liveMysqlInput, ...[...(options.steps ?? verificationSteps), ...(options.step ? [options.step] : [])]
     .flatMap((step: VerificationReuseStep) => step.reuse && step.reuse.inputs || [])])].sort();
@@ -252,8 +262,9 @@ export function validateVerificationReuseRecord(record: unknown, options: Verifi
     if (verificationInputApplicability(value.identity, identity).applicable) return true;
     // Old records remain original execution evidence. Authenticate their broad
     // input digest against immutable source before comparing the narrower inputs.
-    if (!identity || !step.reuse || step.reuse.git || !snapshot.historicalInputs) return false;
-    const original = snapshot.historicalInputs(origin.sourceCommit);
+    if (!identity || value.identity.environmentIdentity !== identity.environmentIdentity
+      || !step.reuse || step.reuse.git || !snapshot.historicalInputs) return false;
+    const original = snapshot.historicalInputs(origin.sourceCommit, false, step);
     if (!original) return false;
     const historical = { ...snapshot, ...original, environment: value.environment };
     if (JSON.stringify(createVerificationReuseIdentity(step, historical)) !== JSON.stringify(identity)) return false;
@@ -262,7 +273,7 @@ export function validateVerificationReuseRecord(record: unknown, options: Verifi
     if (authentic(historical)) return true;
     // Authenticate pre-partition records against their immutable original map;
     // compare applicability above using today's inputs, never rewrite the proof.
-    const legacy = snapshot.historicalInputs(origin.sourceCommit, true);
+    const legacy = snapshot.historicalInputs(origin.sourceCommit, true, step);
     return Boolean(legacy && authentic({ ...snapshot, ...legacy, environment: value.environment }));
   } catch { return false; }
 }
@@ -318,12 +329,26 @@ export function collectVerificationReuseBundle(options: VerificationReuseOptions
   return { schemaVersion: VERIFICATION_REUSE_BUNDLE_SCHEMA, records: records.sort((a, b) => a.identity.key.localeCompare(b.identity.key)) };
 }
 
-export function createVerificationReuseStore(options: VerificationReuseOptions & { imports?: VerificationReuseBundle[]; portableImports?: boolean }) {
+/** Budget optional local history, not exact-key results or explicit imports.
+ * One synchronous proof already in progress is allowed to finish. */
+export function createLocalHistoryBudget(limitMs = 5_000, now = () => performance.now()) {
+  let elapsedMs = 0, limited = false;
+  return {
+    observe<T>(read: () => T): T | null {
+      if (elapsedMs >= limitMs) { limited = true; return null; }
+      const start = now();
+      try { return read(); } finally { elapsedMs += now() - start; }
+    },
+    stats: () => ({ elapsedMs: Math.round(elapsedMs), limited }),
+  };
+}
+
+export function createVerificationReuseStore(options: VerificationReuseOptions & { imports?: VerificationReuseBundle[]; portableImports?: boolean; historyBudget?: ReturnType<typeof createLocalHistoryBudget> }) {
   const directory = resolveVerificationReuseDirectory(options);
   const snapshot = options.snapshot ?? collectVerificationReuseSnapshot(options);
   const staged = new Map<string, VerificationReuseRecord>();
   const generations = new Map<string, string | null>(), invalidKeys = new Set<string>();
-  let historicalRecords: VerificationReuseRecord[] | undefined;
+  let historicalRecords: Map<string, VerificationReuseRecord[]> | undefined;
   let available = true;
   const fileFor = (key: string) => path.join(directory, `${key}.json`);
   const markerFor = (key: string): { generation: string | null; invalidatedAt: number; accepted?: ReuseDigest } => {
@@ -376,8 +401,37 @@ export function createVerificationReuseStore(options: VerificationReuseOptions &
       }); } catch { available = false; }
     }
   };
+  const historicalFor = (id: string) => {
+    if (!historicalRecords) {
+      historicalRecords = new Map();
+      try {
+        for (const file of fs.readdirSync(directory).filter(file => /^sha256-[a-f0-9]{64}\.json$/u.test(file)).sort().slice(0, 4096)) {
+          try {
+            const target = path.join(directory, file);
+            if (fs.statSync(target).size > 2 * 1024 * 1024) continue;
+            const record: VerificationReuseRecord = JSON.parse(fs.readFileSync(target, 'utf8'));
+            if (record?.schemaVersion !== VERIFICATION_REUSE_RECORD_SCHEMA || typeof record.identity?.stepId !== 'string') continue;
+            const group = historicalRecords.get(record.identity.stepId) ?? [];
+            group.push(record);
+            historicalRecords.set(record.identity.stepId, group);
+          } catch { /* Corrupt or concurrently removed records are not evidence. */ }
+        }
+      } catch { /* An unavailable cache cannot create an old proof. */ }
+    }
+    return historicalRecords.get(id) ?? [];
+  };
+  const readHistory = snapshot.historicalInputs;
+  const localSnapshot = options.historyBudget && readHistory
+    ? { ...snapshot, historicalInputs: (...args: Parameters<typeof readHistory>) => options.historyBudget!.observe(() => readHistory(...args)) }
+    : snapshot;
+  const newestFirst = (a: VerificationReuseRecord, b: VerificationReuseRecord) =>
+    String(b.origin?.finishedAt ?? '').localeCompare(String(a.origin?.finishedAt ?? ''));
   return {
     snapshot, directory,
+    priorFor(id: string): VerificationReuseRecord | undefined {
+      return [...historicalFor(id), ...(options.imports ?? []).flatMap(bundle => bundle.records)
+        .filter(record => record?.identity?.stepId === id)].sort(newestFirst)[0];
+    },
     cacheAvailable: () => available,
     isCurrent(record: VerificationReuseRecord): boolean { return acceptsMarker(record); },
     isCurrentFresh(record: VerificationReuseRecord): boolean {
@@ -398,21 +452,10 @@ export function createVerificationReuseStore(options: VerificationReuseOptions &
         && validateVerificationReuseRecord(record, { ...options, snapshot, step, ...(portableCommon ? { runner: undefined } : { runner: snapshot.environment.platform }),
           ...(options.portableImports ? {} : { arch: snapshot.environment.arch, environment: snapshot.environment }) })) ?? null;
       if (imported) return imported;
-      if (!historicalRecords) {
-        historicalRecords = [];
-        try {
-          for (const file of fs.readdirSync(directory).filter(file => /^sha256-[a-f0-9]{64}\.json$/u.test(file)).sort().slice(0, 4096)) {
-            try {
-              const target = path.join(directory, file);
-              if (fs.statSync(target).size <= 2 * 1024 * 1024) historicalRecords.push(JSON.parse(fs.readFileSync(target, 'utf8')));
-            } catch { /* Corrupt or concurrently removed records are not evidence. */ }
-          }
-        } catch { /* An unavailable cache cannot create an old proof. */ }
-      }
-      return historicalRecords.filter(record => record?.identity?.stepId === step.id)
+      return [...historicalFor(step.id)]
         .sort((a, b) => Number(b.origin?.sourceCommit === snapshot.sourceCommit) - Number(a.origin?.sourceCommit === snapshot.sourceCommit)
-          || String(b.origin?.finishedAt ?? '').localeCompare(String(a.origin?.finishedAt ?? ''))).slice(0, 8)
-        .find(record => acceptsMarker(record) && validateVerificationReuseRecord(record, { ...options, snapshot, step,
+          || newestFirst(a, b)).slice(0, 8)
+        .find(record => acceptsMarker(record) && validateVerificationReuseRecord(record, { ...options, snapshot: localSnapshot, step,
           runner: snapshot.environment.platform, arch: snapshot.environment.arch, environment: snapshot.environment })) ?? null;
     },
     invalidate,
@@ -453,21 +496,19 @@ export function createVerificationReuseStore(options: VerificationReuseOptions &
 
 /** Read-only explanation. Historical candidates explain misses; only lookup's
  * fully validated result can authorize reuse. No result is created here. */
-export function inspectVerificationReusePlan(plan: any, options: VerificationReuseOptions & { force?: boolean; imports?: VerificationReuseBundle[] } ): any {
+export function inspectVerificationReusePlan(plan: any, options: VerificationReuseOptions & {
+  force?: boolean; imports?: VerificationReuseBundle[];
+  store?: ReturnType<typeof createVerificationReuseStore>; hits?: Map<string, VerificationReuseRecord>;
+  historyBudget?: ReturnType<typeof createLocalHistoryBudget>;
+}): any {
   const snapshot = options.snapshot ?? collectVerificationReuseSnapshot({ ...options, steps: plan.steps });
-  const store = createVerificationReuseStore({ ...options, snapshot, steps: plan.steps, readOnly: true });
-  const historical: any[] = [...(options.imports ?? []).flatMap(bundle => bundle.records)];
-  try {
-    const files = fs.readdirSync(store.directory).filter(file => /^sha256-[a-f0-9]{64}\.json$/u.test(file)).sort();
-    for (const file of files.slice(0, 4096)) {
-      try { const target = path.join(store.directory, file); if (fs.statSync(target).size <= 65536) historical.push(JSON.parse(fs.readFileSync(target, 'utf8'))); } catch { /* Diagnostic miss only. */ }
-    }
-  } catch { /* Missing cache is an ordinary first run. */ }
+  const historyBudget = options.historyBudget ?? createLocalHistoryBudget();
+  const store = options.store ?? createVerificationReuseStore({ ...options, snapshot, steps: plan.steps, readOnly: true, historyBudget });
   let workMs = 0, reusedOriginalMs = 0;
   const steps = plan.steps.map((step: any) => {
-    const identity = createVerificationReuseIdentity(step, snapshot), record = options.force ? null : store.lookup(step);
-    const prior = historical.filter(value => value?.schemaVersion === VERIFICATION_REUSE_RECORD_SCHEMA && value.identity?.stepId === step.id)
-      .sort((a, b) => String(b.origin?.finishedAt ?? '').localeCompare(String(a.origin?.finishedAt ?? '')))[0];
+    const identity = createVerificationReuseIdentity(step, snapshot);
+    const record = options.force ? null : options.hits ? options.hits.get(step.id) : store.lookup(step);
+    const prior = record ?? store.priorFor(step.id);
     const reasons: string[] = [];
     if (record) reasons.push('matching-complete-result');
     else if (options.force) reasons.push('explicit-force');
@@ -480,7 +521,8 @@ export function inspectVerificationReusePlan(plan: any, options: VerificationReu
       if (!reasons.length) reasons.push('prior-result-invalid-or-revoked');
     }
     const observed = prior?.environment?.platform === snapshot.environment.platform && prior?.environment?.arch === snapshot.environment.arch
-      && Number.isFinite(prior?.result?.durationMs) && prior.result.durationMs >= 0 ? prior.result.durationMs : null;
+      && prior.result?.durationSource !== 'parent-run-upper-bound'
+      && Number.isFinite(prior.result?.durationMs) && prior.result.durationMs > 0 ? prior.result.durationMs : null;
     const estimate = Math.max(0, Number(observed ?? step.schedulingCostMs ?? 0));
     const durationMs = record ? 0 : Number.isFinite(estimate) ? estimate : 0;
     workMs += durationMs; reusedOriginalMs += record?.result.durationMs ?? 0;
@@ -494,7 +536,7 @@ export function inspectVerificationReusePlan(plan: any, options: VerificationReu
   const durations = new Map(steps.map((step: any) => [step.id, step.estimatedDurationMs]));
   const limits = resolveVerificationExecutionProfile((options.env ?? process.env).BUILDR_VERIFICATION_PROFILE, options.env ?? process.env).limits;
   const estimate = estimateVerificationPlan({ ...plan, steps: plan.steps.map((step: any) => ({ ...step, estimatedDurationMs: durations.get(step.id) })) }, { concurrency: limits });
-  return { schemaVersion: 'buildr.verification-reuse-plan/v1', steps,
+  return { schemaVersion: 'buildr.verification-reuse-plan/v1', steps, history: historyBudget.stats(),
     estimate: { source: 'prior-runs-and-scheduling-estimates', remainingWorkMs: workMs, dependencyCriticalPathMs: estimate.dependencyCriticalPath.durationMs,
       resourceLowerBoundMs: estimate.minimumFeasibleDurationMs, limitingConstraints: estimate.limitingConstraints,
       reusedOriginalMs, executedCount: steps.filter((step: any) => step.disposition === 'execute').length,
@@ -520,7 +562,8 @@ export function createVerificationPlanReuse(plan: any, options: any): any {
   if (env.BUILDR_VERIFICATION_REUSE_IMPORT) imports.push(readVerificationReuseBundle(env.BUILDR_VERIFICATION_REUSE_IMPORT));
   const snapshotOptions = { productRoot: options.productRoot, projectRoot: options.projectRoot, env, steps };
   const snapshot = collectVerificationReuseSnapshot(snapshotOptions);
-  const store = createVerificationReuseStore({ ...snapshotOptions, snapshot, imports, portableImports: config.portableImports === true });
+  const historyBudget = options.localHistoryBudget ?? createLocalHistoryBudget();
+  const store = createVerificationReuseStore({ ...snapshotOptions, snapshot, imports, portableImports: config.portableImports === true, historyBudget });
   const force = config.force === true || env.BUILDR_VERIFICATION_FORCE === '1';
   const hits = new Map<string, VerificationReuseRecord>();
   for (const step of steps) {
@@ -531,7 +574,7 @@ export function createVerificationPlanReuse(plan: any, options: any): any {
   }
   return {
     hits,
-    explanation: inspectVerificationReusePlan({ ...plan, steps: checks }, { ...snapshotOptions, snapshot, force, imports }),
+    explanation: inspectVerificationReusePlan({ ...plan, steps: checks }, { ...snapshotOptions, snapshot, force, imports, store, hits, historyBudget }),
     async executeFiles(step: VerificationReuseStep, execute: any, context: any): Promise<any> {
       const files = filesByCheck.get(step.id) ?? [];
       if (!files.length) return execute(step, context);

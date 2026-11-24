@@ -1,0 +1,5 @@
+.scoped-search-picker { display:inline-flex; flex:none; max-width:105px; align-items:center; border-inline-start:1px solid var(--soft-line,#e1e5e9); }
+.scoped-search-picker .ant-btn { min-width:0; gap:5px; color:var(--soft-muted,#68717b); }
+.scoped-search-picker .anticon { flex:none; font-size:var(--icon-size-tiny); }
+.scoped-search-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.scoped-search-picker.is-icon-only .ant-btn { width:24px; padding-inline:0; }

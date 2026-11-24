@@ -43,7 +43,7 @@ test('sync preparation failures do not suppress valid commits or swallow commit 
     const app = createCodeCommitApplication({ source: () => current, prepareCommitSync: () => { if (failure === 'prepare') throw Error('fixture sync preparation unavailable'); return async () => { throw Error('fixture sync observation unavailable'); }; } });
     const stale = f.request('one local commit', 'commit-sync'); f.write('same.txt', 'later\n');
     await assert.rejects(app.commitChanges(f.root, stale), hasCode('code_source_changed'));
-    await assert.rejects(app.commitChanges(f.root, { ...f.request('one local commit', 'commit-sync'), message: '' }), hasCode('code_commit_input_invalid'));
+    await assert.rejects(app.commitChanges(f.root, { ...stale, message: '' }), hasCode('code_commit_input_invalid'));
     assert.equal(f.git('rev-list', '--count', 'HEAD'), '1');
     const result = await app.commitChanges(f.root, f.request('one local commit', 'commit-sync'));
     assert.equal(result.commit.completed, true); assert.equal(result.sync?.status, failure === 'prepare' ? 'unavailable' : 'unknown'); assert.equal(result.sync?.fetch.status, failure === 'prepare' ? 'not-requested' : 'unknown'); assert.equal(f.git('rev-list', '--count', 'HEAD'), '2'); assert.equal(f.git('rev-parse', 'HEAD'), result.commit.hash); assert.equal(f.git('status', '--porcelain'), '');

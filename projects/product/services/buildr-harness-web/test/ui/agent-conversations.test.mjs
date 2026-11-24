@@ -815,6 +815,8 @@ test('输入框支持原生追加，问题卡片始终回复原轮',async()=>{
  assert.ok(source.includes('context.api.send('));
  assert.ok(source.includes('context.api.supplement('),'running input must use native supplement');
  assert.ok(source.includes('sameRunOnly:true'),'native rejection must not silently start a new round');
+ assert.ok(!source.includes('上条追加消息已确认接收，无需重复发送。'),'successful supplement must settle without a notice');
+ assert.ok(!source.includes('消息已进入当前执行，并已确认原生接收。'),'confirmed supplement must settle without a notice');
  const reply=source.slice(source.indexOf('const reply=async'),source.indexOf('const renderQuestion='));
  assert.ok(reply.includes('context.api.reply('));
  assert.ok(!reply.includes('prepare('),'card replies must not switch to a new turn when model selection changes');
@@ -833,7 +835,10 @@ test('核对完成必须明确反馈未知、已释放与真实终态，不能�
  const unknown={status:'unknown',tools:[],resourcesReleased:true};
  assert.match(conversationObservationFeedback(unknown),/读取完成.*后台连接已释放.*未读到.*结束记录/);
  assert.doesNotMatch(conversationObservationFeedback(unknown),/已确认停止|执行成功/);
- assert.match(conversationObservationFeedback({...unknown,resourcesReleased:false}),/仍无法读取原执行状态/);
+ assert.match(conversationObservationFeedback({...unknown,resourcesReleased:false}),/仍无法读取原执行状态.*停止/);
+ assert.doesNotMatch(conversationObservationFeedback({...unknown,resourcesReleased:false}),/可发送新要求/);
+ assert.match(conversationObservationFeedback({...unknown,resourcesReleased:false,diagnostic:'Antigravity 正文已结束，但仍有工具缺少完成回执；未报告为完整成功。'}),/仍有工具缺少完成回执.*点击“停止”/);
+ assert.doesNotMatch(conversationObservationFeedback({...unknown,resourcesReleased:false,diagnostic:'Antigravity 正文已结束，但仍有工具缺少完成回执；未报告为完整成功。'}),/可发送新要求/);
  assert.match(conversationObservationFeedback({status:'running',tools:[]}),/仍在执行/);
  assert.match(conversationObservationFeedback({status:'stopped',tools:[]}),/已确认停止/);
  assert.match(conversationObservationFeedback({status:'completed',tools:[]}),/本轮已结束/);
@@ -1024,4 +1029,15 @@ test('登录尝试终态自动使共享账号与模型目录只读缓存失效',
   assert.equal(requests.at(-1),base+'/model-catalog','登录完成后应清掉目录 revision 快照以拉取最新模型');
   staleAccountsRelease.resolve({accounts:[],providers:[]});
   await Promise.all([staleRead,sharedRead]);
+});
+
+test('后台自动续行上限暂停已释放时提供继续原任务出口并准确反馈核对结论',async()=>{
+ const {canContinueConversation,canCloseUncertainConversation,conversationRecoveryAction,conversationObservationFeedback}=await import('../../src/features/agent-conversations/conversation-state.ts');
+ const pausedRun={...conversation.run,status:'unknown',accepted:true,stopRequested:false,resourcesReleased:true,executionState:'unknown',diagnostic:'后台结果已取得，但自动续行次数已达上限；未报告为完成。',tools:[{id:'cmd-1',status:'completed'}]};
+ const view={...conversation,requests:[],retainedRuns:[],run:pausedRun};
+ assert.equal(canContinueConversation(view),true);
+ assert.equal(canCloseUncertainConversation(view),true);
+ assert.deepEqual(conversationRecoveryAction(view),{kind:'recover',label:'继续原任务'});
+ assert.match(conversationObservationFeedback(pausedRun),/读取完成：后台自动续行已达上限，本轮已暂停并释放后台连接/);
+ assert.match(conversationObservationFeedback({...pausedRun,resourcesReleased:false}),/正在释放或核对后台连接/);
 });

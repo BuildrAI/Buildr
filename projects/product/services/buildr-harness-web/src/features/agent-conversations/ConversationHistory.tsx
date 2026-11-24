@@ -4,16 +4,18 @@ import { useConversationDraftPresenceDetail, useConversationDraftSubmittedIds } 
 import { ConversationExecutionSummary } from './ConversationExecutionSummary.tsx';
 import { conversationModelSourceLabel, conversationModelLabel } from './conversation-model-label.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Empty, Input, Select } from 'antd';
-import { ArrowLeftOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { Alert, Button, Empty, Tooltip } from 'antd';
+import { ArrowLeftOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext.tsx';
 import { ConversationActivityStatus } from './ConversationActivityStatus.tsx';
 import { activityState, sendActivity, conversationMetadata, copyConversationIdTitle } from './conversation-activity.ts';
 import type { ExecutionFilter } from './ConversationExecutionStats.tsx';
+import { ScopedSearch } from '../../workbench/ui/ScopedSearch.tsx';
 import { CopyButton } from '../../components/CopyButton.tsx';
 import { DEFAULT_HISTORY_GROUP, historyGroupOrder, moveHistoryGroup, writeHistoryGroupPreference } from './conversation-history-groups.ts';
 import { useHistoryGroupPreference } from './useHistoryGroupPreference.ts';
 import type { ConversationSummary } from './types.ts';
+import { conversationChildIndent, type ConversationHistoryBranch } from './conversation-children.ts';
 import { ConversationHistoryGroup } from './ConversationHistoryGroup.tsx';
 import { useConversationHistoryPage } from './useConversationHistoryPage.ts';
 import { useDebouncedValue } from './useDebouncedValue.ts';
@@ -37,7 +39,7 @@ function DraftStatusBadge({visible,immediateHide}:{visible:boolean;immediateHide
   if(!visible&&!leaving)return null;
   return <span className={'ac-draft-status'+(leaving&&!visible?' is-leaving':'')} aria-hidden={leaving&&!visible?true:undefined}>有草稿</span>;
 }
-export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWorkspaceId,keepHistoryOpen=false,hiddenBySettings=false}:{workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;keepHistoryOpen?:boolean;hiddenBySettings?:boolean}) {
+export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWorkspaceId,keepHistoryOpen=false,hiddenBySettings=false,headerAction}:{workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;keepHistoryOpen?:boolean;hiddenBySettings?:boolean;headerAction?:import('react').ReactNode}) {
   const context=useAgentConversations();
   const showBackToConversation=!keepHistoryOpen;
   const presence=useConversationDraftPresenceDetail();
@@ -95,15 +97,26 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   },[scopeKey]);
   const modelName=(id:string)=>conversationModelLabel(id,context.connections,context.modelCatalog);
   const workspaceName=(id:string)=>id===DEFAULT_HISTORY_GROUP?'默认':workspaces.find(item=>item.id===id)?.name||id;
-  const renderRow=(row:ConversationSummary)=>{
+  const renderRow=(row:ConversationSummary,depth:number,branch?:ConversationHistoryBranch,toggle?:()=>void)=>{
     const meta=conversationMetadata(row,undefined,row.run?.model?conversationModelLabel(row.run.model,context.connections,context.modelCatalog,{modelAccountId:row.run.modelAccountId}):undefined);
-    return <div key={row.workspaceId+':'+row.id} className={'ac-history-row'+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
-      <button type="button" className="ac-history-row-main" data-conversation-id={row.id} onClick={()=>{context.setSettings(false);void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true,preserveHistoryView:keepHistoryOpen});}}>
-        <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/><DraftStatusBadge visible={shouldShowConversationDraft(row,settledDraftIds)} immediateHide={activityState(row)!==null}/></span>
+    const openRow=()=>{context.setSettings(false);void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true,preserveHistoryView:keepHistoryOpen});};
+    return <div key={row.workspaceId+':'+row.id} style={conversationChildIndent(depth)} className={'ac-history-row'+(depth?' ac-conversation-child-row':'')+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
+      <Tooltip title={meta || null} trigger={['hover', 'focus']} mouseEnterDelay={0.55} mouseLeaveDelay={0.25} placement="right">
+      <div className="ac-history-row-main" data-conversation-id={row.id} onClick={event=>{if(event.target instanceof Element&&event.target.closest('button'))return;openRow();}}>
+        <span className="ac-history-row-title">
+          <span className="ac-history-row-heading">
+            <button type="button" className="ac-history-row-open" aria-description={meta || undefined} onClick={openRow}><strong title={meta ? undefined : row.title}>{row.title}</strong></button>
+            {branch&&<button type="button" className="ac-history-child-toggle" aria-expanded={branch.expanded} aria-disabled={branch.forced||undefined}
+              aria-label={`${branch.expanded?'收起':'展开'}「${row.title}」的 ${branch.count} 个子对话`} title={branch.forced?'为保留当前对话或搜索结果，暂时保持展开':`${branch.count} 个已加载的子对话`} onClick={toggle}>
+              <RightOutlined aria-hidden="true" rotate={branch.expanded?90:0}/><span>{branch.count}</span>
+            </button>}
+          </span>
+          <ConversationActivityStatus state={activityState(row)}/><DraftStatusBadge visible={shouldShowConversationDraft(row,settledDraftIds)} immediateHide={activityState(row)!==null}/>
+        </span>
         {sendActivity(row)?.reason&&<span className="ac-send-reason">{sendActivity(row)?.reason}</span>}
         {row.searchSnippet&&<span className="ac-history-row-snippet" title={row.searchSnippet}>{row.searchSnippet}</span>}
-        {meta&&<small><span className="ac-history-meta" title={meta}>{meta}</span></small>}
-      </button>
+      </div>
+      </Tooltip>
       <CopyButton type="text" className="ac-history-row-copy" text={row.id} ariaLabel="复制对话 ID" title={copyConversationIdTitle(row.id)} failureMessage="复制失败，请手动选择对话 ID 复制。"/>
     </div>;
   };
@@ -116,7 +129,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
     if(index>=movable.length-1)return;
     reorder(id,movable[index+2]??'end');
   };
-  const sortGroup=(id:string)=><ConversationHistoryGroup key={id+scopeKey} workspaceId={id} name={workspaceName(id)} query={searchQuery} hidden={hidden} agent={agent} model={model} draftConversationIds={workspaceConversationDraftIds(id,settledDraftIds,presence,activeEditingScope)} activeViewingId={activeEditingScope?.workspaceId===id?activeEditingScope.conversationId:null} renderRow={renderRow} onResult={reportGroup}
+  const sortGroup=(id:string)=><ConversationHistoryGroup key={id+scopeKey} workspaceId={id} name={workspaceName(id)} query={searchQuery} hidden={hidden} agent={agent} model={model} draftConversationIds={workspaceConversationDraftIds(id,settledDraftIds,presence,activeEditingScope)} activeViewingId={activeEditingScope?.workspaceId===id?activeEditingScope.conversationId:null} selectedId={context.scope?.workspaceId===id?context.scope.conversationId:undefined} renderRow={renderRow} onResult={reportGroup}
     onNew={!hidden?()=>{
       context.setSettings(false);
       context.newConversation({scope:{workspaceId:id},preserveVisibility:true,preserveHistoryView:keepHistoryOpen});
@@ -137,9 +150,15 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   });
   const empty=groupsSettled&&visibleGroups.every(id=>groupResults.values[id]?.total===0);
   return <section className="ac-history" aria-label="对话列表" hidden={hiddenBySettings}>
-    <header className="ac-thread-header">{showBackToConversation&&<Button type="text" icon={<ArrowLeftOutlined/>} aria-label="返回当前对话" title="返回当前对话" onClick={()=>context.setView('conversation')}/>}<strong>对话列表</strong>{!context.open&&<Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" title="新建对话" onClick={()=>context.newConversation({preserveVisibility:true,preserveHistoryView:keepHistoryOpen})}/>}</header>
     <div className="ac-history-body">
-      <div className="ac-history-toolbar"><Input allowClear prefix={<SearchOutlined/>} aria-label="搜索对话" placeholder="搜索对话" value={query} onChange={event=>setQuery(event.target.value)}/><Select aria-label="对话列表工作空间" value={workspaceId} options={[{value:'',label:'全部工作空间'},...workspaces.map(item=>({value:item.id,label:item.name}))]} onChange={value=>{setWorkspaceId(value);setFilter(null);}}/></div>
+      <div className="ac-history-toolbar">
+        {showBackToConversation&&<Button type="text" icon={<ArrowLeftOutlined/>} aria-label="返回当前对话" title="返回当前对话" onClick={()=>context.setView('conversation')}/>}
+        <ScopedSearch label="搜索对话" placeholder="搜索对话" query={query} onQueryChange={setQuery} scopeLabel="对话列表工作空间"
+          scope={workspaceId} options={[{value:'',label:'全部工作空间'},...workspaces.map(item=>({value:item.id,label:item.name}))]}
+          onScopeChange={value=>{setWorkspaceId(value);setFilter(null);}} />
+        {!context.open&&<Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" title="新建对话" onClick={()=>context.newConversation({preserveVisibility:true,preserveHistoryView:keepHistoryOpen})}/>}
+        {headerAction}
+      </div>
       
       <ConversationExecutionSummary stats={stats} stale={!!error} filter={filter} onFilter={setFilter} sourceLabel={id=>conversationModelSourceLabel(id,context.modelCatalog)} modelLabel={(id,accountId)=>conversationModelLabel(id,context.connections,context.modelCatalog,{modelAccountId:accountId})}/>
       {filter&&<div className="ac-execution-filter"><span>执行中 · {filter.kind==='model'?modelName(filter.value):filter.value}</span><Button type="link" size="small" onClick={()=>setFilter(null)}>清除筛选</Button></div>}

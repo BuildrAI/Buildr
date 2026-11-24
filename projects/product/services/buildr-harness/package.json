@@ -19,6 +19,11 @@
     },
     "./http-dto": {
       "types": "./build/http-dto.d.ts"
+    },
+    "./workbench": {
+      "types": "./build/workbench.d.ts",
+      "import": "./build/workbench.js",
+      "default": "./build/workbench.js"
     }
   },
   "files": [

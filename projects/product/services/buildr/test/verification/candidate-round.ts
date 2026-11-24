@@ -103,6 +103,21 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
   const before = options.inspectOnly && ![...records.values()].some(record => record.result?.inputIdentity || record.result?.roundFiles?.length) ? null : observe();
   const inputsFor = (step: any, snapshot: any) => dependencies.inputsFor ? dependencies.inputsFor(step)
     : snapshot ? createVerificationReuseIdentity(step, snapshot) : null;
+  const applicability = (record: any, step: any, snapshot: any, affected: boolean | null | undefined) => {
+    const previous = record?.result?.inputIdentity;
+    const current = inputsFor(step, snapshot);
+    if (strict && affected === false && !dependencies.inputsFor
+      && !verificationInputApplicability(previous, current).applicable) {
+      const original = snapshot?.historicalInputs?.(record.origin.sourceCommit);
+      const committed = snapshot?.historicalInputs?.(sourceCommit);
+      if (!original || !committed
+        || !verificationInputApplicability(previous, inputsFor(step, { ...snapshot, ...original })).applicable
+        || !verificationInputApplicability(current, inputsFor(step, { ...snapshot, ...committed })).applicable) {
+        return verificationInputApplicability(previous, current);
+      }
+    }
+    return verificationInputApplicabilityForSourceChange(previous, current, affected);
+  };
   const fileKey = (step: any, snapshot: any) => inputsFor(step, snapshot)?.key ?? null;
   const priorFiles = new Map<string, any>();
   const hits = new Map<string, any>();
@@ -122,11 +137,11 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
         && record.environment.nodeVersion === process.versions.node) hits.set(step.id, record);
       continue;
     }
-    if (strict && (!sourceCommit || !record?.origin?.sourceCommit || !record.result?.inputIdentity?.key
+    if (strict && (!sourceCommit || !record?.origin?.sourceCommit
       || record.environment.platform !== process.platform || record.environment.arch !== process.arch
       || record.environment.nodeVersion !== process.versions.node)) continue;
     const members = filesByCheck.get(step.id) ?? [];
-    for (const file of strict ? [] : members) {
+    for (const file of members) {
       const matches = record?.result?.roundFiles?.filter((item: any) => item.file === file.executor.files[0]) ?? [];
       const prior = matches.length === 1 ? matches[0] : null;
       const inputKey = fileKey(file, before);
@@ -136,7 +151,7 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
     }
     const { affected, ...change } = changes(record, step);
     const identity = step.reuse && affected !== true && affected !== null
-      ? verificationInputApplicabilityForSourceChange(record?.result?.inputIdentity, inputsFor(step, before), strict ? undefined : affected) : null;
+      ? applicability(record, step, before, affected) : null;
     const applicable = (!strict || identity?.applicable === true) && affected !== true && affected !== null && identity?.applicable !== false;
     if (passedRoundRecord(record, roundId, step, plan.runner ?? process.platform) && !applicable) {
       causes.set(step.id, change.reasons.length ? change : { reasons: identity?.reasons ?? ['inputs-unavailable'] });
@@ -144,7 +159,7 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
     const completeFiles = affected === false || members.length > 0 && members.every(file => priorFiles.has(file.id))
       && record?.result?.roundFiles?.length === members.length;
     if (applicable && passedRoundRecord(record, roundId, step, plan.runner ?? process.platform)
-      && (strict || !record.result.roundFiles || completeFiles)) hits.set(step.id, record);
+      && (!record.result.roundFiles || completeFiles)) hits.set(step.id, record);
   }
   if (strict) {
     let changed: boolean;
@@ -205,7 +220,8 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
           const prior = hits.get(result.id);
           if (retained.has(result.id)) continue;
           const current = step?.reuse ? inputsFor(step, after) : null;
-          if (step?.reuse && !verificationInputApplicabilityForSourceChange(prior?.result?.inputIdentity, current, strict ? undefined : changes(prior, step).affected).applicable) {
+          if (step?.reuse && (!verificationInputApplicability(inputsFor(step, before), current).applicable
+            || !applicability(prior, step, after, changes(prior, step).affected).applicable)) {
             Object.assign(result, { status: 'failed', exitCode: 1, failureCode: 'candidate-reused-input-drift' });
           }
           continue;

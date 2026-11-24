@@ -212,3 +212,14 @@ test('owned generated-input preparation hands off commands only after complete s
   for (const preparation of registered.preparations) assert.ok(commands.has(JSON.stringify([preparation.file, preparation.args, preparation.cwd])));
   for (const result of commands.values()) assert.equal((await result).reusedFrom.preparation, 'owned');
 });
+
+test('source admission rejects infeasible work before starting preparation', () => {
+  const plan = { steps: [{ id: 'typecheck' }] };
+  const calls: string[] = [];
+  assert.throws(() => prepareSourceVerificationEnvironment(plan, {}, {
+    inspectReuse() { calls.push('inspect'); return { steps: [{ id: 'typecheck', disposition: 'execute' }] }; },
+    assertAdmission() { calls.push('admission'); throw new Error('fixture capacity insufficient'); },
+    prepareEnvironment() { calls.push('prepare'); },
+  }), /fixture capacity insufficient/);
+  assert.deepEqual(calls, ['inspect', 'admission']);
+});

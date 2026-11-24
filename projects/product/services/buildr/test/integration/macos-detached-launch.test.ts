@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { stopAgentProcess } from '@buildr-ai/buildr-harness';
 import { launchDetachedProcess, parseLaunchctlPrint } from '../../src/infrastructure/detached-launch.ts';
 import { buildLauncher } from '../../tools/build/launcher/build.ts';
 
@@ -103,7 +104,7 @@ test('launchDetachedProcess 在真实 macOS 通过 launchd 启动独立 coalitio
   assert.notEqual(afterPrint.status, 0, 'bootout must unload temporary launchd job');
 });
 
-test('Buildr Web Dev.app macOS 入口在真实 launchd 模式下以独立作业运行并保留私有辅助 PATH', { skip: process.platform !== 'darwin' }, async (t) => {
+test('Buildr Development Dev.app macOS 入口在真实 launchd 模式下以独立作业运行并保留私有辅助 PATH', { skip: process.platform !== 'darwin' }, async (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-macos-app-launchd-'));
   const home = path.join(base, 'home');
   const jobsDir = path.join(home, 'Library', 'Logs', 'Buildr Dev', 'launchd-jobs');
@@ -133,7 +134,7 @@ test('Buildr Web Dev.app macOS 入口在真实 launchd 模式下以独立作业�
   fs.writeFileSync(path.join(sourceRoot, 'resources/manifest.yml'), 'fixture\n');
   fs.writeFileSync(
     path.join(sourceRoot, 'bin/buildr.mjs'),
-    `import fs from 'node:fs';fs.writeFileSync(${JSON.stringify(observation)},JSON.stringify({pid:process.pid,ppid:process.ppid,args:process.argv.slice(2),path:process.env.PATH,identity:process.env.BUILDR_LAUNCHER_IDENTITY}));\n`,
+    `import fs from 'node:fs';fs.writeFileSync(${JSON.stringify(observation)},JSON.stringify({pid:process.pid,ppid:process.ppid,execPath:process.execPath,hostNode:process.env.BUILDR_HOST_NODE,hostNodeVersion:process.env.BUILDR_HOST_NODE_VERSION,args:process.argv.slice(2),path:process.env.PATH,identity:process.env.BUILDR_LAUNCHER_IDENTITY}));\n`,
   );
 
   buildLauncher({
@@ -160,7 +161,7 @@ test('Buildr Web Dev.app macOS 入口在真实 launchd 模式下以独立作业�
     },
   });
 
-  const wrapper = path.join(output, 'Buildr Web Dev.app/Contents/MacOS/Buildr');
+  const wrapper = path.join(output, 'Buildr Development Dev.app/Contents/MacOS/Buildr');
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     HOME: home,
@@ -176,7 +177,13 @@ test('Buildr Web Dev.app macOS 入口在真实 launchd 模式下以独立作业�
   while (!fs.existsSync(observation) && Date.now() < deadline) await new Promise(r => setTimeout(r, 25));
   assert.equal(fs.existsSync(observation), true);
   const observed = JSON.parse(fs.readFileSync(observation, 'utf8'));
+  const expectedSharedNode = path.join(home, 'Library', 'Application Support', 'Buildr', 'runtime', 'node');
   assert.equal(observed.ppid, 1);
+  assert.equal(fs.realpathSync(observed.execPath), fs.realpathSync(expectedSharedNode));
+  assert.equal(fs.lstatSync(expectedSharedNode).nlink, 1);
+  assert.equal(fs.lstatSync(expectedSharedNode).mode & 0o222, 0);
+  assert.equal(observed.hostNode, process.execPath);
+  assert.equal(observed.hostNodeVersion, process.versions.node);
   assert.deepEqual(observed.args, ['web', '--port', '4458', '--no-open']);
   assert.deepEqual(observed.path.split(path.delimiter), [
     path.join(sourceRoot, 'tools/development/programs'),
@@ -224,4 +231,44 @@ test('runDetachedCloseout 在真实 launchd 模式下独立运行自举 worker �
   const observed = JSON.parse(fs.readFileSync(workerObserved, 'utf8'));
   assert.equal(observed.ppid, 1);
   assert.deepEqual(observed.args, ['--check', 'yes']);
+});
+
+test('stopAgentProcess 在真实 macOS 停服后自动注销并清理已退出的 launchd 作业', { skip: process.platform !== 'darwin' }, async (t) => {
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-macos-stop-prune-'));
+  const jobsDir = path.join(dataRoot, 'agent-service', 'process', 'launchd-jobs');
+  let handle: ReturnType<typeof launchDetachedProcess> | null = null;
+  t.after(() => {
+    try { handle?.bootout(); } catch { /* Best-effort cleanup. */ }
+    fs.rmSync(dataRoot, { recursive: true, force: true });
+  });
+
+  handle = launchDetachedProcess({
+    command: process.execPath,
+    args: ['-e', 'process.exit(0)'],
+    cwd: dataRoot,
+    labelPrefix: 'it-stop-prune',
+    stateDir: jobsDir,
+  }, {
+    env: { ...process.env, BUILDR_DETACHED_ISOLATION: 'launchd' },
+  });
+
+  assert.equal(handle.isolationMode, 'launchd');
+  assert.ok(handle.jobLabel);
+  assert.ok(handle.domainTarget);
+
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline && handle.pollStatus().running) {
+    await new Promise(r => setTimeout(r, 25));
+  }
+  assert.equal(handle.pollStatus().running, false);
+  const beforePrint = spawnSync('/bin/launchctl', ['print', `${handle.domainTarget}/${handle.jobLabel}`], { encoding: 'utf8' });
+  assert.equal(beforePrint.status, 0, 'exited launchd job remains registered until pruned');
+  assert.deepEqual(fs.readdirSync(jobsDir), [`${handle.jobLabel}.json`]);
+
+  await stopAgentProcess({ dataRoot });
+
+  const afterPrint = spawnSync('/bin/launchctl', ['print', `${handle.domainTarget}/${handle.jobLabel}`], { encoding: 'utf8' });
+  assert.notEqual(afterPrint.status, 0, 'stopAgentProcess must boot out exited launchd jobs');
+  assert.deepEqual(fs.readdirSync(jobsDir), []);
+  handle = null;
 });

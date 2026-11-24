@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { claim, clearProcessRecord, controlRoot, live, readPrivate, readProcessInstances, readProcessRecord, removeProcessInstance, writePrivate } from './ownership.ts';
-import { validateRuntimeContents } from './runtime-unit.ts';
+import { runtimeNodesRoot, validateRuntimeContents, verifyStableRuntimeNode } from './runtime-unit.ts';
 import { observeStorageUse, reanchorSharedDentries, removeStorageCandidate, safeStoragePath, storageCandidate, type StorageCandidate, type StorageUse } from '../storage/files.ts';
 import type { AgentRuntimeUnit } from '../execution-contracts.ts';
 
@@ -97,6 +97,37 @@ export function retainedRuntimeCandidates(dataRoot: string, use: StorageUse, kee
   return items;
 }
 
+export function runtimeNodeUnreferenced(_dataRoot: string, directory: string): boolean {
+  const nodeDigest = path.basename(directory);
+  return /^[a-f0-9]{64}$/.test(nodeDigest);
+}
+
+/** Inventory legacy per-Node-digest directories eligible for safe reclamation after 24h grace and zero open references. */
+export function retainedRuntimeNodeCandidates(dataRoot: string, use: StorageUse, now = Date.now(), _keep?: AgentRuntimeUnit): StorageCandidate[] {
+  const root = runtimeNodesRoot(dataRoot);
+  const agentRoot = path.join(path.resolve(dataRoot), 'agent-service');
+  if (!fs.existsSync(root) || !safeStoragePath(agentRoot, root)) return [];
+  const nodeName = process.platform === 'win32' ? 'node.exe' : 'node';
+  return fs.readdirSync(root)
+    .filter(name => /^[a-f0-9]{64}$/.test(name))
+    .map(nodeDigest => {
+      const directory = path.join(root, nodeDigest);
+      const item = storageCandidate(agentRoot, 'runtime-node', directory, directory, use, now - day);
+      if (item.eligible) {
+        try {
+          if (!verifyStableRuntimeNode(dataRoot, path.join(directory, nodeName), nodeDigest)) {
+            item.eligible = false;
+            item.reason = 'runtime_node_contents_unknown';
+          }
+        } catch {
+          item.eligible = false;
+          item.reason = 'runtime_node_contents_unknown';
+        }
+      }
+      return item;
+    });
+}
+
 /** Called only after the shared storage lock and fresh system/file observation. */
 export function retireRuntimeRecords(dataRoot: string, directory: string): void {
   const digest = path.basename(directory);
@@ -115,13 +146,15 @@ export function retireRuntimeRecords(dataRoot: string, directory: string): void 
 }
 
 /** Housekeeping failure retains disk data and never changes execution or session facts. */
-export function cleanupStoppedProcesses(dataRoot: string, keep: AgentRuntimeUnit, reconcile = false): void {
+export function cleanupStoppedProcesses(dataRoot: string, keep: AgentRuntimeUnit, reconcile = false, cancelled = () => false): void {
   // Preserve the existing timely reaping of normal, authenticated shutdowns.
   if (!reconcile && !readProcessInstances(dataRoot).some(record => confirmedStop(dataRoot,record))) return;
   const root = path.join(dataRoot, 'agent-service');
   reanchorProtectedRuntimeInodes(dataRoot, keep);
   const use = observeStorageUse();
+  if (cancelled()) return;
   for (const item of retainedRuntimeCandidates(dataRoot, use, keep, Date.now(), !reconcile).filter(item => item.eligible)) {
+    if (cancelled()) break;
     let lock: ReturnType<typeof claim> | undefined;
     try {
       lock = claim(dataRoot, 'storage');

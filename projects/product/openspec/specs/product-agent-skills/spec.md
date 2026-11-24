@@ -465,22 +465,6 @@ Buildr package MUST 提供 id 为 `ui-prototype` 的 optional workspace Skill，
 - **THEN** Skill MUST 不声明 `provides` 或 `requires` capability
 - **AND** MUST 明确区别于正式设计、正式行为规范（Specification）和上线交付；MUST 允许隔离位置的源码复用与候选预览构建，且保持模拟操作与真实副作用隔离
 
-### Requirement: 产品必须提供按需的智能体优先设计技能
-Buildr MUST 提供可选 `agent-first-design` 技能（Skill），在用户设计或改造智能体参与产品交付的软件，或审视智能体工作系统的职责、工作流及门禁时提供已确认范式、关系图和判断方法。技能 MUST 不成为普通开发或收尾的统一前置，也不引入新规则、评分或审批门禁。发现描述与正文 MUST 区分使用智能体开发软件和引入智能体交付产品结果；渐进演进时只指导相关部分，并保留既有业务、安全及授权边界。
-
-#### Scenario: 审视职责与流程
-- **WHEN** 用户要求判断智能体、技能、工具、接口与应用应该各自负责什么
-- **THEN** 技能 MUST 先围绕目标和真实现场选择现有能力，再判断必要的新软件能力，不预建接口清单。
-
-#### Scenario: 普通任务
-- **WHEN** 用户只是执行既有任务或普通收尾
-- **THEN** 既有技能 MUST 不强制加载设计技能，也不要求额外评审或结果对象。
-
-#### Scenario: 普通软件渐进引入智能体
-- **WHEN** 原有产品开始引入智能体帮助用户完成业务目标
-- **THEN** 技能 MUST 指导相关部分的职责和能力设计，不要求整个产品同时改造
-- **AND** 普通业务逻辑 MUST 保持适用的确定性规则与安全约束
-
 ### Requirement: 设计方法必须连接真实实践及当前实现说明
 设计技能 MUST保存完整已确认范式，说明技能可沉淀可调整的工作流（Workflow）；案例 MUST区分真实观察、候选建议与限制。收尾的真实参与者与职责 MUST继续由统一实现说明维护，不复制另一份模块权威。
 
@@ -507,17 +491,6 @@ Buildr MUST 提供可选 `agent-first-design` 技能（Skill），在用户设�
 - **WHEN** 多入口已对齐同一成果，但质量、验证或约定交付仍未满足
 - **THEN** 技能 MUST 依据目标继续处理，不能仅凭版本一致宣称完成
 
-### Requirement: 智能体优先设计必须明确对象与改造完整性
-agent-first-design MUST区分研发协作和被开发产品设计；只有智能体参与的工作系统或明确选择该设计方向的产品才使用本方法。传统业务软件 MUST不因位于 Buildr 工作空间而强制改变职责。
-
-#### Scenario: 传统业务软件
-- **WHEN** 集鲜订单或结算系统未选择智能体优先产品设计
-- **THEN** 保留其确定性业务职责，不强制加载设计方法
-
-#### Scenario: 职责改造
-- **WHEN** 修改一个模块的方法与职责
-- **THEN** 检查入口、消费者、契约、测试及当前说明，退役无用旧依赖
-
 ### Requirement: Package 不得投射 Task Development 或旧 Finish Skill 依赖
 Buildr package MUST不再提供`task-development` Skill、`buildr.task-development` contract/provider/binding，也 MUST不在OpenSpec、Current Knowledge、Release或Task Skills中要求Task Planning Identity、Development Receipt、Task Candidate或旧Finish Application。
 
@@ -533,19 +506,6 @@ Task Triage与Buildr OpenSpec propose、update、apply contributions MUST在新�
 - **WHEN** 用户明确拒绝本次UI Prototype
 - **THEN** Agent MUST继续当前Task或OpenSpec工作
 - **AND** MUST不创建原型状态或流程门禁
-
-### Requirement: 产品必须投射纯任务复盘Skill
-Buildr package MUST继续投射可选`task-retrospective` Skill，指导Agent按用户明确要求生成固定本机Markdown、登记Task Record文档事实和处理缺失数据。该Skill MUST不提供独立capability，不调用内部Driver，不维护处置队列或专用来源关系。
-
-#### Scenario: 用户明确要求复盘
-- **WHEN** Agent runtime发现终态Task复盘意图
-- **THEN** Agent MUST读取纯Skill并组合当前Task与真实工具
-- **AND** provider缺失 MUST不成为问题，因为不存在可替换Retrospective Application能力
-
-#### Scenario: 用户接受后续行动
-- **WHEN** 用户明确决定复用或创建普通Task
-- **THEN** Skill MUST把精确Task effects交给Task Manager
-- **AND** MUST不创建专用relation、action item或自动修改其他资产
 
 ### Requirement: 用户体验设计法则技能必须从真实设计现场形成建议
 Buildr MUST 提供可选内置 `ux-design-laws` Skill，在用户设计或审查界面、交互流程、信息层级、操作反馈，或比较多个设计方案时，要求 Agent 先核对主要用户、首要任务、使用环境、平台、输入方式和可访问的真实界面材料，再形成设计判断。
@@ -582,7 +542,7 @@ Buildr MUST 提供可选内置 `ux-design-laws` Skill，在用户设计或审查
 - **THEN** Agent MUST 说明每个方案的用户收益、代价和适用条件，并给出基于当前目标的推荐
 
 ### Requirement: 法则建议必须可行动且可验证
-`ux-design-laws` Skill MUST 让每个重要建议包含具体证据、用户影响、一至三条相关法则、具体设计动作、权衡和验证方法，并默认只返回最重要的三至五项。
+`ux-design-laws` Skill MUST 让重要建议说明具体观察、用户影响、改法和验证依据；法则和权衡仅在改变判断时展开。MUST NOT 为满足固定条数或模板栏目而重复建议。
 
 #### Scenario: 输出界面审查结果
 - **WHEN** Agent 完成界面审查
@@ -645,13 +605,6 @@ Buildr MUST 提供可选内置 `ux-design-laws` Skill，在用户设计或审查
 - **WHEN** 同步已返回最终诊断或已有组合验证仍覆盖当前成果
 - **THEN** 指引 MUST消费已有结果，只在缺失、相关变化或明确未解决风险时补查；资源修改只核对实际影响的初始化、更新、安装或发布边界
 
-### Requirement: 产品提供可选前端开发技能
-Buildr MUST 随包提供 id 为 `frontend-development` 的可选前端开发技能（Skill），通过既有同步、卸载、同名重载及运行时（Runtime）投射方式发现和使用；MUST 不创建强制能力依赖、专用状态或审批门禁。新技能（Skill）MUST 与已有代码架构、体验设计及原型职责互补，不要求用户逐次手动指定才保持适用范围内的一致开发方式。
-
-#### Scenario: 安装和重载
-- **WHEN** 当前工作空间（Workspace）启用该可选技能（Skill），或提供同名实现
-- **THEN** Buildr MUST 按既有选择与投射语义使用它；卸载 MUST 不阻止无关任务推进
-
 ### Requirement: 实现完成阶段必须指引登记任务验证报告
 产品内置的 `openspec-apply-change` 贡献与 `task-finish` 指引 MUST 明确：Agent 在实现完成、交付或任务完成（`completed`）之前，把当前已执行且仍适用的检查经 Task Verification 登记为正式报告；`completed` 之后不再写入，Agent MUST NOT 在完成任务后补救同一份报告。
 
@@ -664,41 +617,6 @@ Buildr MUST 随包提供 id 为 `frontend-development` 的可选前端开发技�
 - **WHEN** Agent 收尾任务且存在已执行而未登记的检查
 - **THEN** `task-finish` 指引 MUST 在 `task complete` 之前完成验证报告登记
 - **AND** MUST NOT 引导 Agent 先把任务置为 completed 再补登记
-
-### Requirement: Buildr提供可选的功能设计技能
-
-Buildr MUST 随包提供可选的 `feature-design` 技能（Skill），使智能体（Agent）能够按自然语言意图发现功能讨论、较大需求收敛及已有方案接续能力。该技能（Skill）MUST 组合适用的专业设计方法，保持无应用状态、无固定阶段门禁；MUST NOT 仅因同时使用多个技能（Skill）新增能力契约（Capability Contract）或强制协作依赖。
-
-#### Scenario: 用户希望逐步设计较大功能
-- **WHEN** 用户要求讨论较大功能或继续已有方案
-- **THEN** 智能体（Agent）MUST 能发现功能设计技能（Skill），基于真实产品及已有决定收敛本轮目标和可评审成果
-- **AND** 技能（Skill）MUST 保留用户已授权范围，不自动展开所有未来模块
-
-#### Scenario: 用户没有安装可选技能
-- **WHEN** 工作空间（Workspace）没有安装功能设计技能（Skill）
-- **THEN** 其他已有专业工作 MUST 保持可继续，不得因缺少该技能（Skill）产生统一就绪门禁
-
-### Requirement: 功能设计按真实问题逐步形成可评审成果
-
-功能设计技能（Skill）MUST 要求区分已确认事实、建议和未知项，说明本轮要解决的问题、结果及必要边界。存在对象关系、执行或权限边界、环境隔离、导航或交互等实质选择时，MUST 按当前判断需要组合可视化与专业方法；图示 MUST 表达实际关系及边界，原型（UI Prototype）MUST 在已有制作授权内交给原型技能（Skill）处理，保留真实产品入口及关键状态。涉及多种技术时，MUST 按真实目标选择有代表性的首例检验抽象，不强制穷举或实现全部技术。确认设计、图示或原型（UI Prototype）MUST NOT 被推定为新的实现授权；既有同范围实现授权 MUST 继续有效。
-
-#### Scenario: 设计外部系统接入首例
-- **WHEN** 用户希望接入多种外部系统，本轮先讨论一种数据库连接
-- **THEN** 智能体（Agent）MUST 先收敛本轮使用路径，明确对象、当前事实来源、执行位置及环境隔离边界
-- **AND** 其他技术 MUST 仅按本轮需要检验差异，不自动扩展为全部接入实现
-
-#### Scenario: 用户已授权图示和原型讨论
-- **WHEN** 用户要求用架构图和原型（UI Prototype）解释方案
-- **THEN** 智能体（Agent）MUST 按实际问题采用相应制作能力，并把界面变化放回现有产品导航和关键状态供评审
-- **AND** 图示和原型（UI Prototype）MUST 明确区分拟议能力与当前实现
-
-#### Scenario: 用户认可建议但尚未授权实现
-- **WHEN** 用户仅认可设计建议或采用原型（UI Prototype），没有对应实现授权
-- **THEN** 智能体（Agent）MUST 停在已授权设计成果，不修改正式功能或操作外部系统
-
-#### Scenario: 同范围实现已有明确授权
-- **WHEN** 用户此前已明确授权同一目标的实现，范围及副作用没有变化
-- **THEN** 智能体（Agent）MUST 按既有授权接续适用实现工作，不因使用功能设计技能（Skill）重复索要授权
 
 ### Requirement: 核心规则要求渐进简明沟通与引导
 

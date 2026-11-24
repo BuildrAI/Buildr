@@ -62,6 +62,7 @@ export type WorkspaceDocument = { path?: string; name: string; exists: boolean; 
       || resource.startsWith('/api/v1/update/')
       || resource.startsWith('/api/v1/installation/')
       || resource === '/api/v1/prompts/workspace-create'
+      || resource === '/api/v1/conversation-file'
     ) {
       return resource;
     }

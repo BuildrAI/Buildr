@@ -11,8 +11,11 @@ import { visibleCodeDirectoryKeys } from '../code-expanded-directories';
 import { readExplorerFile, type ExplorerCodeFile } from '../code-file-read';
 import { planCodeDirectoryRefresh, removedCodeDirectoryPaths, type CodeDirectoryObservation } from '../code-directory-refresh';
 import { takeCodeOpen } from '../code-open-observation';
+import { resolveCodeEntryRestore, type CodeEntryRestoreReason } from '../code-entry-restore';
 const failure=(error:unknown)=>error instanceof Error?error.message:'当前内容不可读取。';
 type CachedCodeFile=ExplorerCodeFile;
+export type CodeEntryRecoveryReason = CodeEntryRestoreReason | 'recovered';
+export type CodeEntryRecovery = { reason: CodeEntryRecoveryReason; repositoryId: string; path: string; successor: { repositoryId: string; checkoutId: string } | null };
 export function useCodeExplorer(workspaceId:string,workspaceRoot:string|null|undefined,viewActive=true,entryKey?:string,hasInitialObservation=false) {
   const sourceChoice=useCodeSourceSelection(workspaceId);
   const appliedSourceSequence=useRef(0),explicitEntry=useRef<string|undefined>(undefined);
@@ -35,6 +38,7 @@ export function useCodeExplorer(workspaceId:string,workspaceRoot:string|null|und
   const [searchRefresh,setSearchRefresh]=useState(0);
   const [searchResults,setSearchResults]=useState<Array<CodeSearch & {browserId:string;repositoryId:string}>>([]),[searchLoading,setSearchLoading]=useState(false),[searchErrors,setSearchErrors]=useState<string[]>([]);
   const [entry,setEntry]=useState<CodeTaskEntry|null>(null);
+  const [entryRecovery,setEntryRecovery]=useState<CodeEntryRecovery|null>(null);
   const controllers=useRef(new Set<AbortController>()),epoch=useRef(0),pending=useRef(new Map<string,Promise<void>>());
   const entrySequence=useRef(0),sourceIntentSequence=useRef(0),fileSequence=useRef(new Map<string,number>()),directorySequence=useRef(new Map<string,number>());
   const catalogSequence=useRef(0);
@@ -59,7 +63,7 @@ export function useCodeExplorer(workspaceId:string,workspaceRoot:string|null|und
   const filterOptions=codeFilterOptions(orderedCatalog,scope,worktreeScope);
   const selectedIds=[...new Set(sources.map(item=>item.source.repositoryId))];
   const selectedLocationsKey=JSON.stringify(sources.map(item=>item.id));
-  const current=useRef({directories,files,catalog,tabs,sources,scope,worktreeScope,entry,activeKey,viewActive});current.current={directories,files,catalog,tabs,sources,scope,worktreeScope,entry,activeKey,viewActive};
+  const current=useRef({directories,files,catalog,tabs,sources,scope,worktreeScope,entry,entryRecovery,activeKey,viewActive});current.current={directories,files,catalog,tabs,sources,scope,worktreeScope,entry,entryRecovery,activeKey,viewActive};
   const run=useCallback(async<T,>(operation:(signal:AbortSignal)=>Promise<T>):Promise<T>=>{
     const controller=new AbortController();controllers.current.add(controller);
     try{return await operation(controller.signal);}finally{controllers.current.delete(controller);}
@@ -149,7 +153,7 @@ export function useCodeExplorer(workspaceId:string,workspaceRoot:string|null|und
     finally{if(isCurrent())setLoading(previous=>previous.filter(key=>key!==tab.key));}
   },[workspaceId,run]);
   const open=useCallback((source:CodeLocation,path:string,line?:number,force=false,matchQuery?:string,observed?:CachedCodeFile)=>{
-    ++entrySequence.current;++sourceIntentSequence.current;
+    ++entrySequence.current;++sourceIntentSequence.current;setEntryRecovery(null);
     source=canonicalCodeLocation(source);
     if(source.checkoutId&&!source.commitHash)sourceChoice.select('explorer',[{repositoryId:source.repositoryId,checkoutId:source.checkoutId}],{repositoryId:source.repositoryId,checkoutId:source.checkoutId});
     const tab={...source,path,line,matchQuery,focusRequest:line?++focusSequence.current:undefined,key:codeFileKey(source,path)};
@@ -165,8 +169,27 @@ export function useCodeExplorer(workspaceId:string,workspaceRoot:string|null|und
     const parents=path.split('/').slice(0,-1),browserId=codeBrowserKey(source);void loadDirectory(browserId,'',false,source);
     parents.forEach((_,index)=>void loadDirectory(browserId,parents.slice(0,index+1).join('/'),false,source));
   },[loadFile,loadDirectory,sourceChoice.select]);
+  const recoverEntry=useCallback((checkoutId?:string)=>{
+    const recovery=current.current.entryRecovery,entry=current.current.entry,catalog=current.current.catalog;
+    if(!recovery||!entry?.file||!catalog)return;
+    // The notice may outlive a catalog refresh; never open the frozen identity.
+    const restore=resolveCodeEntryRestore(catalog,recovery.repositoryId,entry.file,entry.taskId);
+    const chosen=checkoutId
+      ?catalog.worktrees.find(member=>member.repositoryId===recovery.repositoryId&&member.id===checkoutId&&member.available)
+      :restore.successor;
+    if(!chosen){
+      setEntryRecovery({...recovery,reason:restore.reason,successor:restore.successor?{repositoryId:restore.successor.repositoryId,checkoutId:restore.successor.id}:null});
+      return;
+    }
+    const target={repositoryId:chosen.repositoryId,checkoutId:chosen.id};
+    setEntryRecovery(null);
+    setScope(previous=>previous.includes(target.repositoryId)?previous:[...previous,target.repositoryId]);
+    setWorktreeScope('checkout:'+target.checkoutId);
+    setOrigin('使用当前工作树恢复已打开文件');
+    open({...target,commitHash:entry.file.commitHash},entry.file.path,entry.file.line);
+  },[open]);
   const applyEntry=useCallback(async(next:CodeTaskEntry)=>{
-    ++sourceIntentSequence.current;setEntry(next);setCatalogError('');const version=epoch.current,sequence=++entrySequence.current,catalogRequest=++catalogSequence.current,sharedSequence=sourceChoice.getSelection()?.sequence||0;
+    ++sourceIntentSequence.current;setEntry(next);setCatalogError('');setEntryRecovery(null);const version=epoch.current,sequence=++entrySequence.current,catalogRequest=++catalogSequence.current,sharedSequence=sourceChoice.getSelection()?.sequence||0;
     try{
       const observation=takeCodeOpen(workspaceId,next);
       const value=observation?.catalog ?? await run(signal=>codeApi.repositories(workspaceId,next.taskId,signal));
@@ -185,6 +208,21 @@ export function useCodeExplorer(workspaceId:string,workspaceRoot:string|null|und
         const repositoryId=resolved[0].id;
         const possible=value.worktrees.filter(member=>member.repositoryId===repositoryId&&value.selectedWorktreeGroupIds.includes(member.groupId));
         const member=next.file.checkoutId?value.worktrees.find(item=>item.repositoryId===repositoryId&&item.id===next.file!.checkoutId):possible.length===1?possible[0]:undefined;
+        // A recreated checkout has a new identity at the same path. Never open the
+        // persisted identity as if it still existed; offer only an unambiguous successor.
+        if(!member&&next.file.checkoutId){
+          const restore=resolveCodeEntryRestore(value,repositoryId,next.file,next.taskId);
+          if(next.file.commitHash&&restore.successor){
+            // A historical read is bound to its commit, not to the replaced checkout.
+            if(!value.selectedRepositoryIds.includes(repositoryId))setScope([...value.selectedRepositoryIds,repositoryId]);
+            setWorktreeScope('checkout:'+restore.successor.id);
+            open({repositoryId,checkoutId:restore.successor.id,commitHash:next.file.commitHash},next.file.path,next.file.line,true);
+            setEntryRecovery({reason:'recovered',repositoryId,path:next.file.path,successor:null});
+            return;
+          }
+          setEntryRecovery({reason:restore.reason,repositoryId,path:next.file.path,successor:restore.successor?{repositoryId:restore.successor.repositoryId,checkoutId:restore.successor.id}:null});
+          return;
+        }
         if(!member&&!next.file.checkoutId&&!next.file.commitHash){setCatalogError('任务文件的工作树无法唯一确定，请从目录选择实际来源。');return;}
         if(!value.selectedRepositoryIds.includes(repositoryId))setScope([...value.selectedRepositoryIds,repositoryId]);
         if(member)setWorktreeScope(observation?.partial?'checkout:'+member.id:member.groupId);
@@ -210,7 +248,7 @@ export function useCodeExplorer(workspaceId:string,workspaceRoot:string|null|und
   },[workspaceId,run,open,publishFilters,sourceChoice.getSelection,sourceChoice.select]);
   const clearEntry=useCallback(()=>{
     if(!current.current.entry)return;
-    setEntry(null);setCatalogError('');const version=epoch.current,sequence=++entrySequence.current;
+    setEntry(null);setEntryRecovery(null);setCatalogError('');const version=epoch.current,sequence=++entrySequence.current;
     // A direct navigation can supersede a cold entry before its catalog arrives.
     if(current.current.catalog)return;
     const catalogRequest=++catalogSequence.current;
@@ -301,8 +339,8 @@ export function useCodeExplorer(workspaceId:string,workspaceRoot:string|null|und
       }
     })().finally(()=>{automaticRunning.current=false;});
   },[viewActive,selectedLocationsKey,sourceControl.versions,loadDirectory,loadFile,directoryKey,directories]);
-  return {catalog:orderedCatalog,catalogError,scope,worktreeScope,origin,locations,sources,filterOptions,directories,directoryErrors,tabs,active,selectionRequest,files,fileErrors,loading,showIgnored,searchResults,searchLoading,searchErrors,entry,selectedIds,sourceControl,
-    locationFor,directoryKey,loadDirectory,open,applyEntry,clearEntry,search,setShowIgnored,refresh,refreshCatalog,refreshFile,setExpandedDirectories,readPage,
+  return {catalog:orderedCatalog,catalogError,scope,worktreeScope,origin,locations,sources,filterOptions,directories,directoryErrors,tabs,active,selectionRequest,files,fileErrors,loading,showIgnored,searchResults,searchLoading,searchErrors,entry,entryRecovery,selectedIds,sourceControl,
+    locationFor,directoryKey,loadDirectory,open,applyEntry,clearEntry,recoverEntry,search,setShowIgnored,refresh,refreshCatalog,refreshFile,setExpandedDirectories,readPage,
     setSourceFilters:(ids:string[],id:string)=>{
       ++entrySequence.current;++sourceIntentSequence.current;
       const latest=latestCatalog.current||current.current.catalog;

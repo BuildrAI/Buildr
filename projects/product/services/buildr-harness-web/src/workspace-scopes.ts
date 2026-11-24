@@ -5,3 +5,6 @@ export function scopeDisplayName(scope:{ref:ScopeRef;name?:string;authority:stri
   if(scope.ref.sourceId==='buildr'&&scope.ref.id==='@default')return '默认工作空间';
   return `${scope.ref.sourceId} / ${scope.ref.id}${scope.authority==='offline'?'（来源离线）':''}`;
 }
+
+export const workspaceScopeKey=(ref:{sourceId:string;id:string})=>'scope:'+btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify([ref.sourceId,ref.id])))).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
+export const canonicalScopeKey=(ref:{sourceId:string;id:string})=>ref.sourceId==='buildr'?ref.id:workspaceScopeKey(ref);

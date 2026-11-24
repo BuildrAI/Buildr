@@ -648,3 +648,28 @@ test('worker sourceControl batches multi-worktree verification and only re-reads
     syncBuiltinESMExports();
   }
 });
+
+test('light inventory avoids live clone reads; scoped scans revalidate registration and read only the target clone state', async t => {
+  const f=fixture(t); f.write('a.txt','a'); f.commit('initial');
+  let revision='one', parses=0, cloneFailed=false, drift=false;
+  const cloneReads:string[]=[];
+  const catalog={...f.catalog,repositories:[...f.catalog.repositories,{id:'other',name:'Other',code:'other',source:{type:'workspace',path:path.join(f.base,'other')}}]};
+  const app=createCodeApplication({assetRegistration:()=>{parses++;return structuredClone(catalog);},assetCatalog:()=>{throw Error('unexpected broad live read');},
+    assetCatalogVersion:()=>revision,resolveSourceRoot:(_root,source)=>source.path,readTaskScope:()=>({projects:[],services:[]}),readGitWorktreeEvidence:()=>null,
+    repositoryCloneStatusForSource:(_root,id)=>{cloneReads.push(id);if(drift) revision='three';return {state:cloneFailed?'failed':null,diagnostic:null,startedAt:null};}});
+  const inventory=app.sourceControlInventory(f.root);
+  assert.deepEqual(inventory.repositories.map(item=>[item.id,item.fileCount,item.clone]),[['repo-one',null,null],['other',null,null]]);
+  assert.equal(parses,1); assert.deepEqual(cloneReads,[]);
+  assert.equal((await app.sourceControlInWorker(f.root,f.input)).repositories[0].status,'complete');
+  assert.deepEqual(cloneReads,['repo-one','repo-one']); assert.equal(parses,1);
+  cloneFailed=true;
+  assert.equal((await app.sourceControlInWorker(f.root,f.input)).repositories[0].clone?.state,'failed');
+  assert.deepEqual(cloneReads,['repo-one','repo-one','repo-one']); assert.equal(parses,1);
+  cloneFailed=false; drift=true; revision='two';
+  const changed=await app.sourceControlInWorker(f.root,f.input);
+  assert.equal(changed.repositories[0].available,false);
+  assert.ok(changed.diagnostics.some(item=>item.code==='code_worktree_identity_changed'));
+  assert.equal(parses,2);
+  drift=false; catalog.repositories[0].name='Changed';
+  assert.equal(app.sourceControlInventory(f.root).repositories[0].name,'Changed'); assert.equal(parses,3);
+});

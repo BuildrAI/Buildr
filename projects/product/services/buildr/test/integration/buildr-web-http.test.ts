@@ -156,6 +156,7 @@ test('对话图片通过路径作用域 cookie 读取本机文件并拒绝非图
   fs.writeFileSync(imagePath, image);
   fs.writeFileSync(path.join(base, 'notes.txt'), 'text');
   const document = await fetch(`${url}/`);
+  const setCookies = document.headers.getSetCookie();
   const cookie = String(document.headers.get('set-cookie') || '').split(';')[0];
   assert.match(cookie, /^buildr-image=/);
   const headers = { cookie };
@@ -166,6 +167,34 @@ test('对话图片通过路径作用域 cookie 读取本机文件并拒绝非图
   assert.equal((await fetch(`${url}/api/v1/conversation-image?path=${encodeURIComponent(imagePath)}`)).status, 403);
   assert.equal((await fetch(`${url}/api/v1/conversation-image?path=${encodeURIComponent(path.join(base, 'notes.txt'))}`, { headers })).status, 415);
   assert.equal((await fetch(`${url}/api/v1/conversation-image?path=${encodeURIComponent(path.join(base, 'missing.png'))}`, { headers })).status, 404);
+
+  const fileCookie = setCookies.find(entry => entry.startsWith('buildr-file='))?.split(';')[0] ?? '';
+  assert.match(fileCookie, /^buildr-file=/);
+  const htmlPath = path.join(base, 'prototype.html');
+  const htmlBody = '<!doctype html><html><body><!-- buildr:ui-prototype --><div>' + 'a'.repeat(1024 * 1024 + 512) + '</div></body></html>';
+  fs.writeFileSync(htmlPath, htmlBody);
+  const previewRes = await fetch(`${url}/api/v1/conversation-file`, {
+    method: 'POST',
+    headers: { origin: url, 'content-type': 'application/json', 'x-buildr-session': sessionToken },
+    body: JSON.stringify({ path: htmlPath }),
+  });
+  assert.equal(previewRes.status, 200);
+  const previewJson = await previewRes.json();
+  assert.equal(previewJson.kind, 'html');
+  assert.equal(previewJson.truncated, true);
+  assert.equal(previewJson.htmlUrl, `/api/v1/conversation-file/html?path=${encodeURIComponent(previewJson.path)}`);
+  assert.equal((await fetch(`${url}/api/v1/conversation-file`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-buildr-session': sessionToken }, body: JSON.stringify({ path: htmlPath }) })).status, 403);
+  assert.equal((await fetch(`${url}/api/v1/conversation-file`, { method: 'POST', headers: { origin: url, 'content-type': 'application/json', 'x-buildr-session': sessionToken }, body: JSON.stringify({ path: htmlPath, bad: 1 }) })).status, 400);
+
+  const htmlRes = await fetch(`${url}${previewJson.htmlUrl}`, { headers: { cookie: fileCookie } });
+  assert.equal(htmlRes.status, 200);
+  assert.equal(await htmlRes.text(), htmlBody);
+  const htmlCsp = htmlRes.headers.get('content-security-policy') || '';
+  assert.match(htmlCsp, /sandbox allow-scripts/);
+  assert.doesNotMatch(htmlCsp, /allow-same-origin/);
+  assert.match(htmlCsp, /connect-src 'none'/);
+  assert.equal((await fetch(`${url}${previewJson.htmlUrl}`)).status, 403);
+  assert.equal((await fetch(`${url}/api/v1/conversation-file/html?path=${encodeURIComponent(path.join(base, 'notes.txt'))}`, { headers: { cookie: fileCookie } })).status, 415);
   assert.equal(sessionToken.length > 20, true);
 });
 

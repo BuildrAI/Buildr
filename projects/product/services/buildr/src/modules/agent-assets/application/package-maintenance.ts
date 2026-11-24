@@ -160,6 +160,10 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
 
     const skillsManifest = readSkillsManifestForWrite(targetRoot);
     const skillsDocument = manifestDocumentFor(skillsManifest);
+    const oldTermProvider = skillsManifest.find((item: any) => item.id === 'terminology-governance');
+    const wasOfficialTermProvider = oldTermProvider?.source === 'buildr' && !oldTermProvider.customizedFrom
+      && oldTermProvider.path === 'buildr/terminology-governance' && oldTermProvider.enabled !== false
+      && oldTermProvider.state === 'installed' && oldTermProvider.provides?.some((item: any) => item.capability === 'buildr.terminology-governance' && item.version === 1);
     retireOrphanedBuiltinSkills({ manifest, receipts, receiptByKey, skillsManifest, targetRoot, builtinReceiptKey, builtinSnapshot, existsDirectory, path, removeDirectory: removePath, removeReceipt, changed, findings, checkOnly });
     const skillsById: any = new Map(skillsManifest.map((skill: any, index: any) => [skill.id, { skill, index }]));
     const contracts: any[] = [...(skillsDocument.contracts || [])];
@@ -270,6 +274,15 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
       }
     }
     if (!checkOnly) {
+      const termDefault = manifest.initialSkillBindings?.find((item: any) => item.capability === 'buildr.terminology-governance' && item.version === 1);
+      const termOwner = skillsManifest.find((item: any) => item.id === termDefault?.provider);
+      if (wasOfficialTermProvider && termOwner?.source === 'buildr' && !termOwner.customizedFrom && termOwner.enabled !== false && termOwner.state === 'installed'
+        && termOwner.provides?.some((item: any) => item.capability === termDefault.capability && item.version === termDefault.version)
+        && findings.some((item: any) => item.type === 'skill' && item.id === oldTermProvider.id && item.status === 'retired' && item.converge)) {
+        for (const binding of bindings) {
+          if (binding.capability === termDefault.capability && binding.version === termDefault.version && binding.provider === oldTermProvider.id) binding.provider = termOwner.id;
+        }
+      }
       const skillsPath = writeSkillsManifest(targetRoot, skillsManifest);
       changed.push(toPosixRelative(targetRoot, skillsPath));
     }

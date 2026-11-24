@@ -1,6 +1,18 @@
 import {Component, createContext, useContext, type ReactNode} from 'react';
 import type {ConversationView} from '../features/agent-conversations/types';
 
+export type HarnessThreePaneHost = {
+  workspaceOpen: boolean;
+  canSplitHistory: boolean;
+  panelWidth?: number;
+  historyWidth: number;
+  historyMinWidth: number;
+  historyMaxWidth: number;
+  defaultHistoryWidth: number;
+  onResizeHistory(width: number, commit: boolean): void;
+  onHistoryDragChange?(dragging: boolean): void;
+};
+
 /** Trusted first-party composition, not a plugin permission boundary. */
 export type HarnessConversationHost = {
   diagramRendererPath?: string;
@@ -8,10 +20,13 @@ export type HarnessConversationHost = {
   renderContext?(conversation: ConversationView, apply: (value: ConversationView, observedRevision?: string) => void): ReactNode;
   /** The assembled host interprets its own objects; ordinary files use HarnessDirectoryFiles. */
   openObject?(reference: string, scopePath: string): void;
+  modeSwitchInHost?: boolean;
   requestLayout?(action: 'collapse' | 'full', full?: boolean): void;
   onWidthChange?(width: number): void;
   /** True when standalone Harness Web owns the viewport without an assembled work environment. */
   standalone?: boolean;
+  /** Optional three-pane layout coordination provided when a resizable work environment is open. */
+  threePane?: HarnessThreePaneHost;
 };
 
 const Host = createContext<HarnessConversationHost>({});

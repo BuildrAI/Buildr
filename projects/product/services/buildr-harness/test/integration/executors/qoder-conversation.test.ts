@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { createQoderExecutor } from '../../../src/executors/qoder/index.ts';
 import { NativeRpc } from '../../../src/executors/native-process.ts';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { ExecutorEvent, PermissionMode } from '../../../src/contracts.ts';
 
 async function fixture(externalModel = false) {
@@ -420,7 +420,7 @@ export const query=()=>{},qodercliAuth=()=>{},getSessionInfo=()=>{},getSessionMe
 export class InMemorySessionStore{};export class ProcessTransport{};
 export async function shutdownDaemon(){fs.writeFileSync(${JSON.stringify(receipt)},'closed');}
 `);
- const rpc=new NativeRpc(process.execPath,[new URL('../../../build/executors/qoder/worker.js',import.meta.url).pathname],{cwd:root,env:{...process.env}});
+ const rpc=new NativeRpc(process.execPath,[fileURLToPath(new URL('../../../build/executors/qoder/worker.js',import.meta.url))],{cwd:root,env:{...process.env}});
  try{
   await rpc.call('initialize',{executable:'fixture',sdkModule:pathToFileURL(module).href});
   await rpc.call('close',{});assert.equal(await readFile(receipt,'utf8'),'closed');

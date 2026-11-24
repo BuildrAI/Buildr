@@ -37,10 +37,10 @@ export class HarnessCallerClient {
     return value;
   }
   async endpoint(record: ProcessRecord, route: string, input?: any): Promise<{route: string; token: string; input: any}> {
-    const eligible = ['/operations', '/events', '/directories', '/host/attach', '/host/detach', '/scope-catalog', '/source-policy', '/web', '/generate', '/cancel-generation'];
+    const eligible = ['/operations', '/events', '/directories', '/directory-workbench', '/host/attach', '/host/detach', '/scope-catalog', '/source-policy', '/web', '/generate', '/cancel-generation'];
     if (!eligible.includes(route)) return {route, token: record.token, input};
     if (!this.supports(record)) {
-      if (['/scope-catalog', '/source-policy', '/web'].includes(route)) throw new AgentServiceError('agent_capability_unavailable', '现有后台未提供多来源发现；未另起后台或扩大权限。', 409);
+      if (['/scope-catalog', '/source-policy', '/web', '/directory-workbench'].includes(route)) throw new AgentServiceError('agent_capability_unavailable', '现有后台未提供多来源发现；未另起后台或扩大权限。', 409);
       return {route, token: record.token, input};
     }
     const session = await this.session(record);

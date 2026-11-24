@@ -85,6 +85,35 @@ test('authenticated v2 callers share sources and exact offline controls, while v
   await until(() => user.operations.conversations.read(sb, cb.id), value => value.run?.status === 'completed');
   await assert.rejects(user.operations.conversations.create(sa, {title: 'not admitted'}), {code: 'agent_host_unavailable'});
 
+  // Locally registered Buildr workspaces remain builtin and usable when Development is offline.
+  const localWsDir = path.join(root, 'local-buildr-workspace');
+  fs.mkdirSync(path.join(localWsDir, '.buildr'), { recursive: true });
+  const localWsId = '77777777-7777-4777-8777-777777777777';
+  fs.writeFileSync(path.join(localWsDir, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: ${localWsId}\nname: 本地独立工作空间\n`);
+  fs.writeFileSync(path.join(localWsDir, 'hello.txt'), 'offline ok\n');
+  fs.writeFileSync(path.join(dataRoot, 'workspace-registry.json'), JSON.stringify({
+    schemaVersion: 'buildr.local-workspace-registry/v1',
+    roots: [localWsDir],
+    lastOpenedRoot: localWsDir,
+  }));
+
+  const localCatalog = await user.scopeCatalog();
+  const localScope = localCatalog.scopes.find(item => item.key === localWsId);
+  assert.equal(localScope?.authority, 'builtin');
+  assert.equal(localScope?.name, '本地独立工作空间');
+  assert.equal(localScope?.rootPath, fs.realpathSync(localWsDir));
+  assert.equal(localCatalog.scopes.find(item => item.key === '@default')?.authority, 'builtin');
+
+  const localChat = await user.operations.conversations.create(localWsId, {title: 'offline buildr workspace'});
+  assert.equal(localChat.cwd, fs.realpathSync(localWsDir));
+  const wbScope = await user.directories.workbench('scope', { workspaceId: localWsId }) as { rootPath: string; revision: string; ref: { id: string } };
+  assert.equal(wbScope.rootPath, fs.realpathSync(localWsDir));
+  const wbDir = await user.directories.workbench('directory', { workspaceId: localWsId, scopeRevision: wbScope.revision }) as { entries: Array<{ path: string }> };
+  assert.ok(wbDir.entries.some(item => item.path === 'hello.txt'));
+  const reusedReg = await user.directories.register(localWsDir);
+  assert.deepEqual(reusedReg.ref, { sourceId: 'buildr', id: localWsId });
+  assert.equal((await user.directories.list()).length, 0);
+
   const record = readProcessRecord(dataRoot)!;
   const session = await request(record.origin, record.token, '/caller/negotiate', {clientRequestId: 'raw-host', contracts: HARNESS_EXECUTION_CONTRACTS, caller: {kind: 'host', sourceId: 'alpha'}});
   await assert.rejects(request(record.origin, session.token, '/v2/operations', {contract: HARNESS_EXECUTION_CONTRACTS.operations,

@@ -27,7 +27,7 @@ export function safeDiagnostic(error: unknown): string {
     antigravity_reasoning_unavailable:'当前 Antigravity 模型不支持所选思考深度，本次模型调用未发出。请改选已支持的档位；原输入已保留。',
     antigravity_permission_unavailable:'当前 Antigravity 接入未能应用所选权限模式，本次模型调用未发出；原输入已保留。',
     antigravity_version_unsupported:'当前接入接受 Antigravity CLI 1.x.x，仍需通过实际连接握手检查。',
-    agent_claude_sdk_missing: '消息未发送：Claude Code 配套组件缺失或无法加载。原消息已保留，请在「智能体与模型」中检查更新并修复 Claude Code。',
+    agent_claude_sdk_missing: '消息未发送：Claude Code 配套组件缺失或无法加载。原消息已保留，请在「设置 → 智能体」中检查更新并修复 Claude Code。',
     agent_claude_version_unsupported:'Claude 执行程序版本不在兼容范围（>=2.1.322 <3），请检查独立程序。',
     agent_claude_execution_failed:'Claude 执行未完成，请查看本轮模型与工具诊断；不会自动更换模型。',
     agent_claude_observation_lost:'Claude 执行观察已中断，正在核对原执行；不会重发原指令。',
@@ -76,6 +76,8 @@ export function safeDiagnostic(error: unknown): string {
 export const BUSY_STATES: ReadonlySet<RunStatus> = new Set(['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown']);
 /** An old generation closed its native process. The run stays unknown and can still be continued. */
 export const RETIRED_EXECUTION_DIAGNOSTIC = '服务退休中断了本轮执行；已有结果保留，可以继续。';
+/** Antigravity hit its automatic background continuation limit cleanly with all observed tools completed. */
+export const BACKGROUND_CONTINUATION_LIMIT_DIAGNOSTIC = '后台结果已取得，但自动续行次数已达上限；未报告为完成。';
 
 export const conversationRuns = (view: Pick<ConversationView, 'run' | 'retainedRuns'>): RunView[] => [...(view.run ? [view.run] : []), ...(view.retainedRuns ?? [])];
 export const unfinishedRun = (run: RunView): boolean => BUSY_STATES.has(run.status) || run.tools.some(tool => tool.status !== 'completed');

@@ -2,7 +2,12 @@ import {agentRuntimeStatus} from '../interfaces/http/runtime-status.ts';
 import {HarnessWebEndpoint} from './web-endpoint.ts';
 import {connectHarnessProcess} from './client.ts';
 import type {AgentProcessConnection} from './client.ts';
-import { HarnessDirectoryHost, DIRECTORY_SOURCE_ID } from '../application/directory-host.ts';
+import { HarnessDirectoryHost, DIRECTORY_SOURCE_ID, observeWorkbenchDirectory } from '../application/directory-host.ts';
+import { BUILDR_SOURCE_ID, LocalWorkspaceAuthority } from '../application/local-workspaces.ts';
+import { previewLocalFile } from '../application/local-file-preview.ts';
+import { createDirectoryWorkbench, directoryWorkbenchWrites, workbenchError } from '../application/directory-workbench.ts';
+import { CodeGeneration } from '../workbench/code-generation.ts';
+import { EDITABLE_FILE_JSON_BYTES } from '../workbench/editable-file.ts';
 import { SourceContinuationPolicies } from './source-policies.ts';
 import { HarnessCallerClient } from './caller-client.ts';
 import { HarnessCallerSessions } from './caller-sessions.ts';
@@ -11,7 +16,7 @@ import type { ServiceEvent } from '../contracts.ts';
 import { conversationEventEncoder } from '../domain/conversation-transfer.ts';
 import path from 'node:path';
 import { conversationControlInstruction } from './conversation-control.ts';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { setTimeout as pause } from 'node:timers/promises';
 import { createAgentService } from '../application/agent-service.ts';
@@ -24,7 +29,7 @@ import { dispatchOperation, validateOperation } from './operations.ts';
 import { authorize, body, json, listen, request, privateToken, keepEventStreamAlive } from './transport.ts';
 import { claim, claimStorage, clearProcessRecord, controlRoot, readPrivate, writePrivate, readProcessRecord, readProcessInstances, writeProcessInstance, generationAlive, live, readLock } from './ownership.ts';
 import type { ProcessBootstrap, ProcessRecord } from './ownership.ts';
-import { validateAgentRuntime, canRunParallel, runtimeSupportsHarnessWeb } from './runtime-unit.ts';
+import { ensureStableRuntimeNode, validateAgentRuntime, canRunParallel, runtimeSupportsHarnessWeb } from './runtime-unit.ts';
 import { launchAgentProcess } from './handoff.ts';
 import { launchDetachedProcess } from './detached-launch.ts';
 import { ConversationRepository } from '../persistence/conversation-repository.ts';
@@ -33,7 +38,6 @@ import { PendingSends } from './pending-sends.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
 import { StorageMaintenance } from './storage-maintenance.ts';
 import { runtimeChange } from './runtime-change.ts';
-import { defaultHarnessWorkspaceRoot } from '../profile.ts';
 
 const RUNTIME_REGISTRATION_WAIT_MS = 30_000;
 const RUNTIME_REGISTRATION_RETRY_MS = 100;
@@ -43,12 +47,14 @@ interface PendingRuntime { runtime: AgentRuntimeUnit; state: 'waiting' | 'switch
 export async function startAgentExecutionServer(options: ProcessBootstrap & { serviceOptions?: Pick<AgentServiceOptions, 'executors' | 'modelProviders' | 'programManager'> }) {
   options = {...options, legacySourceId: options.legacySourceId ?? 'buildr'};
   validateAgentRuntime(options.dataRoot, options.runtime);
+  const runtimeNode = ensureStableRuntimeNode(options.dataRoot, options.runtime);
   let owner = claim(options.dataRoot, 'owner'), ownsMetadata = true;
   let abortStart: (() => Promise<void>) | undefined;
   let cleanupDiagnostics:(()=>void)|undefined;
   try {
-  const directories = new HarnessDirectoryHost(options.dataRoot);
-  const hosts = new AgentHostRegistry(directories, () => defaultHarnessWorkspaceRoot(options.dataRoot));
+  const localWorkspaces = new LocalWorkspaceAuthority(options.dataRoot);
+  const directories = new HarnessDirectoryHost(options.dataRoot, localWorkspaces);
+  const hosts = new AgentHostRegistry(directories, localWorkspaces);
   const sourcePolicies = new SourceContinuationPolicies(options.dataRoot, options.legacySourceId!, () => options.autoContinueInterrupted ?? false);
   const backendChange = runtimeChange(readProcessRecord(options.dataRoot), options.runtime.digest, new Date().toISOString());
   const retainedOwners=new Map(readProcessInstances(options.dataRoot).map(record=>[record.identity.generation,record.identity]));
@@ -56,7 +62,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     const target=await recipient(scope,id,control.generation);
     if(target)return forward(target,'/operations',{contract:AGENT_EXECUTION_CONTRACTS.operations,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,operation:action==='stop'?'conversations.stop':action==='release-question-wait'?'conversations.releaseQuestionWait':'conversations.observeRun',args:[scope,id,control]});
     return action==='stop'?service.conversations.stop(scope,id,control):action==='release-question-wait'?service.conversations.releaseQuestionWait(scope,id,control):service.conversations.observeRun(scope,id,control);
-  }, conversationControl:(scope,id)=>conversationControlInstruction({dataRoot:options.dataRoot,profileId:options.profileId,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,scope,conversationId:id},options.runtime.node), generationAlive: generation => generationAlive(options.dataRoot, generation), generationReleased:generation=>{
+  }, conversationControl:(scope,id)=>conversationControlInstruction({dataRoot:options.dataRoot,profileId:options.profileId,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,scope,conversationId:id},runtimeNode), generationAlive: generation => generationAlive(options.dataRoot, generation), generationReleased:generation=>{
     const prior=readProcessInstances(options.dataRoot).find(record=>record.identity.generation===generation);
     if(prior)retainedOwners.set(generation,prior.identity);
     const owner=prior?.identity??retainedOwners.get(generation);
@@ -69,7 +75,8 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   } });
   const repository = new ConversationRepository(path.join(options.dataRoot, 'agent-service'));
   service.models.startRefreshing();
-  abortStart = () => service.close();
+  const directoryGeneration = new CodeGeneration(input => service.models.generate(input));
+  abortStart = async () => { directoryGeneration.close(); await service.close(); };
   const instanceId = randomUUID(), pendingFile = path.join(controlRoot(options.dataRoot), 'pending.json');
   function savePending(value: unknown): void {
     const storage = claimStorage(options.dataRoot);
@@ -199,12 +206,12 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     const caller = isV2 ? callers.authenticate(req) : undefined;
     if (!caller) authorize(req, options.token);
     const route = isV2 ? req.url!.slice(3) : req.url;
-    if (caller && !['/operations', '/events', '/directories', '/host/attach', '/host/detach', '/scope-catalog', '/source-policy', '/web', '/caller-close', '/generate', '/cancel-generation'].includes(route!)) throw new AgentServiceError('agent_caller_operation_denied', '调用连接没有后台管理权限。', 403);
+    if (caller && !['/operations', '/events', '/directories', '/directory-workbench', '/host/attach', '/host/detach', '/scope-catalog', '/source-policy', '/web', '/caller-close', '/generate', '/cancel-generation'].includes(route!)) throw new AgentServiceError('agent_caller_operation_denied', '调用连接没有后台管理权限。', 403);
     if (req.method === 'GET' && route === '/identity') { json(res, 200, identity); return; }
     if (req.method === 'GET' && route === '/status') { json(res, 200, status()); return; }
     if (req.method !== 'POST') throw new AgentServiceError('agent_process_operation_invalid', '不支持的执行后台入口。', 404);
     const attachmentUpload = route === '/operations' && req.headers['x-buildr-operation'] === 'conversations.addAttachment';
-    const input = await body(req, attachmentUpload ? 46 * 1024 * 1024 : undefined);
+    const input = await body(req, attachmentUpload ? 46 * 1024 * 1024 : route === '/directory-workbench' && caller?.caller.kind === 'first-party-user' && caller.caller.product === 'buildr-harness' ? EDITABLE_FILE_JSON_BYTES : undefined);
     if (attachmentUpload && input.operation !== 'conversations.addAttachment') throw new AgentServiceError('agent_process_operation_invalid', '附件传输操作不匹配。');
     if (route === '/caller/negotiate') {
       // This path remains owner-token-only; caller tokens cannot issue identities.
@@ -259,8 +266,16 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if (!caller) throw new AgentServiceError('agent_caller_contract_unsupported', '范围发现需要显式新版调用连接。', 409);
       const keys = new Set(repository.listScopeKeys());
       for (const directory of directories.list()) keys.add(executionScopeKey(directory.ref));
+      const builtinWorkspaces = localWorkspaces.listRegistered();
+      const builtinBuildrIds = new Set<string>();
       const registered = new Set(hosts.sources());
       const labels = new Map<string,string>(), rootPaths = new Map<string,string>();
+      for (const workspace of builtinWorkspaces) {
+        keys.add(workspace.ref.id);
+        builtinBuildrIds.add(workspace.ref.id);
+        labels.set(executionScopeKey(workspace.ref), workspace.name);
+        rootPaths.set(executionScopeKey(workspace.ref), workspace.rootPath);
+      }
       await Promise.all([...registered].filter(source => callers.isFirstParty(caller) || caller.caller.kind === 'host' && caller.caller.sourceId === source).map(async sourceId => {
         try {
           const result = await hosts.listExecutionScopes({sourceId});
@@ -273,19 +288,80 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
           }
         } catch { registered.delete(sourceId); }
       }));
+      if (builtinWorkspaces.length > 0 && !registered.has(BUILDR_SOURCE_ID)) keys.add('@default');
+      if (keys.has('@default') && !registered.has(BUILDR_SOURCE_ID)) {
+        const defaultScope = localWorkspaces.defaultWorkspaceSummary();
+        builtinBuildrIds.add('@default');
+        labels.set(executionScopeKey(defaultScope.ref), defaultScope.name);
+        rootPaths.set(executionScopeKey(defaultScope.ref), defaultScope.rootPath);
+      }
       const scopes = [...keys].filter(key => callers.canRead(caller, key)).map(key => {
         const ref = executionScopeRef(key, 'buildr');
-        return {key, ref, ...(labels.has(executionScopeKey(ref))?{name:labels.get(executionScopeKey(ref))}:{}), ...(rootPaths.has(executionScopeKey(ref))?{rootPath:rootPaths.get(executionScopeKey(ref))}:{}), authority: ref.sourceId === DIRECTORY_SOURCE_ID ? 'builtin' : registered.has(ref.sourceId) ? 'registered' : 'offline'};
+        const authority = ref.sourceId === DIRECTORY_SOURCE_ID
+          ? 'builtin'
+          : registered.has(ref.sourceId)
+            ? 'registered'
+            : ref.sourceId === BUILDR_SOURCE_ID && builtinBuildrIds.has(ref.id)
+              ? 'builtin'
+              : 'offline';
+        return {key, ref, ...(labels.has(executionScopeKey(ref))?{name:labels.get(executionScopeKey(ref))}:{}), ...(rootPaths.has(executionScopeKey(ref))?{rootPath:rootPaths.get(executionScopeKey(ref))}:{}), authority};
       });
       json(res, 200, {scopes}); return;
+    }
+    if (route === '/directory-workbench') {
+      if (!caller || caller.caller.kind!=='first-party-user'||caller.caller.product!=='buildr-harness') throw new AgentServiceError('agent_caller_operation_denied','目录工作台需要本机 Harness 网页身份。',403);
+      if (directoryWorkbenchWrites(input.operation) && (closing || retiring || !accepting)) throw new AgentServiceError('agent_process_switching','当前后台不接受新写入；输入已保留。',503);
+      if (typeof input.operation!=='string'||!input.input||typeof input.input!=='object'||Array.isArray(input.input)||Object.keys(input).some(key=>!['operation','input'].includes(key))) throw new AgentServiceError('agent_directory_workbench_input_invalid','工作台请求无效。',400);
+      try {
+        const {workspaceId,...fields}=input.input;
+        if(workspaceId===undefined && input.operation!=='scope') {
+          json(res,200,await createDirectoryWorkbench(directories, { generation: directoryGeneration })(input.operation,fields));return;
+        }
+        if(typeof workspaceId!=='string'||!workspaceId||workspaceId.length>2048||workspaceId.includes('\0')||
+          (input.operation==='scope'?Object.keys(fields).length!==0:Object.hasOwn(fields,'scopeId')))
+          throw new AgentServiceError('agent_directory_workbench_input_invalid','工作空间引用无效。',400);
+        const ref=callers.scope(caller,workspaceId);
+        if(workspaceId!==(ref.sourceId==='buildr'?ref.id:executionScopeKey(ref)))
+          throw new AgentServiceError('agent_directory_workbench_input_invalid','请选择准确的工作空间。',400);
+        const local=ref.sourceId===DIRECTORY_SOURCE_ID?directories.resolveDirectory({ref}):null;
+        const trusted=local??await hosts.resolveExecutionScope({ref}).catch(error=>{
+          if(error instanceof AgentServiceError&&error.code==='agent_host_unavailable')
+            throw new AgentServiceError('agent_workbench_scope_unavailable','此工作空间的目录来源暂不可用。',503);
+          throw error;
+        });
+        if(trusted?.ref?.id!==ref.id||trusted.ref.sourceId!==ref.sourceId||typeof trusted.rootPath!=='string'||!path.isAbsolute(trusted.rootPath)||!trusted.revision)
+          throw new AgentServiceError('agent_workbench_scope_unavailable','无法确认此工作空间的目录。',409);
+        const observed=observeWorkbenchDirectory(trusted.rootPath);
+        if(observed.rootPath!==trusted.rootPath)
+          throw new AgentServiceError('agent_scope_binding_changed','工作空间目录身份已变化，请重新读取。',409);
+        const localWorkspaceName = ref.sourceId === BUILDR_SOURCE_ID
+          ? (ref.id === '@default' ? '默认工作空间' : localWorkspaces.listRegistered().find(item => item.ref.id === ref.id)?.name)
+          : undefined;
+        const scope={ref:{...ref,id:executionScopeKey(ref)},rootPath:observed.rootPath,selectedPath:trusted.rootPath,name:local?.name??localWorkspaceName,
+          revision:createHash('sha256').update(JSON.stringify([ref,trusted.revision,observed.revision])).digest('hex')};
+        if(input.operation==='scope'){json(res,200,scope);return;}
+        const resolveDirectory=()=>{
+          if(fields.scopeRevision!==scope.revision||observeWorkbenchDirectory(trusted.rootPath).revision!==observed.revision)
+            throw new AgentServiceError('agent_scope_binding_changed','工作空间目录身份已变化，请重新读取。',409);
+          if(local)directories.resolveDirectory({ref,expectedRevision:local.revision});
+          if(directoryWorkbenchWrites(input.operation)&&(closing||retiring||!accepting))
+            throw new AgentServiceError('agent_process_switching','当前后台不接受新写入；输入已保留。',503);
+          return scope;
+        };
+        json(res,200,await createDirectoryWorkbench({resolveDirectory}, { generation: directoryGeneration })(input.operation,{...fields,scopeId:scope.ref.id}));
+      }
+      catch (error) { workbenchError(error); }
+      return;
     }
     if (route === '/directories') {
       if (input.sourceId !== DIRECTORY_SOURCE_ID) throw new AgentServiceError('agent_host_source_mismatch', '此入口不是目录宿主。', 409);
       if (input.operation === 'list') { json(res, 200, directories.list()); return; }
       if(input.operation==='preview'){
         const record=typeof input.conversationId==='string'?repository.readConversation(input.conversationId):undefined;
-        if(!record?.hostScope||executionScopeRef(record.view.workspaceId,'buildr').sourceId!==DIRECTORY_SOURCE_ID)throw new AgentServiceError('agent_directory_file_forbidden','仅能读取准确目录对话的来源文件。',403);
-        json(res,200,await directories.preview({ref:record.hostScope.ref,expectedRevision:record.hostScope.revision,path:input.path}));return;
+        if(!record)throw new AgentServiceError('agent_directory_file_forbidden','仅能读取已存在对话的来源文件。',403);
+        if(caller&&!callers.canRead(caller,record.view.workspaceId))throw new AgentServiceError('agent_caller_scope_denied','此调用连接没有该范围的读取权限。',403);
+        const baseDir=record.view.cwd||record.hostScope?.rootPath;
+        json(res,200,await previewLocalFile({path:input.path,cwd:baseDir}));return;
       }
       if (input.operation !== 'register' || typeof input.path !== 'string') throw new AgentServiceError('agent_process_input_invalid', '目录操作无效。');
       if (closing || retiring || !accepting) throw new AgentServiceError('agent_process_switching', '目录登记暂不可写，输入已保留。', 503);
@@ -513,7 +589,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       json(res, 200, result);
     } finally { inflight--; }
   });
-  abortStart = async () => { await web.close(); await webConnection?.then(value=>value.disconnect()); await channel.close(); await service.close(); };
+  abortStart = async () => { directoryGeneration.close(); await web.close(); await webConnection?.then(value=>value.disconnect()); await channel.close(); await service.close(); };
   const processRecord = (): ProcessRecord => ({identity,origin:channel.origin,token:options.token,retiring,...(backendChange ? {backendChange} : {})});
   writeProcessInstance(options.dataRoot, processRecord());
   writePrivate(path.join(controlRoot(options.dataRoot), 'instance.json'), processRecord());
@@ -523,14 +599,19 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (closeWork) return closeWork;
     diagnostics({event:'service-close-request',reason});
     closing = true; accepting = false;
-    storageMaintenance.close();
+    const storageDrained = storageMaintenance.close();
+    directoryGeneration.close();
     let confirmed=false;
     closeWork = (async () => {
       try {
         for (const controller of generations.values()) controller.abort();
+        await storageDrained;
+        diagnostics({event:'service-close-progress',phase:'storage-drained'});
         await web.close();
         await webConnection?.then(value=>value.disconnect()).catch(()=>{});
+        diagnostics({event:'service-close-progress',phase:'web-closed'});
         await service.close();
+        diagnostics({event:'service-close-progress',phase:'service-closed'});
         await Promise.all([...forwardingClients.values()].map(client => client.close()));
         await new Promise<void>(resolve => setImmediate(resolve));
         const activity = service.activity();
@@ -712,7 +793,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     // The short-lived successor coordinator owns the handoff after this process exits.
     try {
       const coordinator = launchDetachedProcess({
-        command: options.runtime.node,
+        command: runtimeNode,
         args: [path.join(options.runtime.directory, 'build/process/handoff.js'), handoff],
         labelPrefix: 'harness-handoff',
         stateDir: path.join(controlRoot(options.dataRoot), 'launchd-jobs'),

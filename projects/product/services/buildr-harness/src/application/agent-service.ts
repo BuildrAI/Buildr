@@ -96,7 +96,7 @@ export function createAgentService(options: AgentServiceOptions) {
     return typeof digest === 'string' ? digest : undefined;
   });
   const preparations = new PreparationApplication(connections, programManager, generation, now);
-  const providerList = options.modelProviders ?? createDefaultModelProviders({ connections, programManager, readAccountIdentity: accountId => models.accounts.read(accountId).identity, now });
+  const providerList = options.modelProviders ?? createDefaultModelProviders({ connections, programManager, magpieRoot:path.join(root,'magpie'), readAccountIdentity: accountId => models.accounts.read(accountId).identity, now });
   const noBackgroundRefreshProviders = new Set<string>();
   const startupRefreshProviders = new Set(providerList.filter(provider => provider.refreshOnStart).map(provider => provider.id));
   const registeredProviderIds = new Set(providerList.map(provider => provider.id));
@@ -241,7 +241,7 @@ export function createAgentService(options: AgentServiceOptions) {
       if(connection&&(!connection.enabled||connection.loginAttempt?.state.match(/^(initializing|waiting-browser|checking)$/)))return false;
       return account.status==='failed'||account.status==='expired'||account.status==='not-authenticated'&&!!account.observedAt;
     });
-    const diagnostic=discoveryDiagnostic||(failed?'部分供应商核对失败或登录已失效，请在智能体与模型中查看。':undefined);
+    const diagnostic=discoveryDiagnostic||(failed?'部分供应商核对失败或登录已失效，请在「设置 → 模型」中查看。':undefined);
     return {...result,hasSnapshot,...(diagnostic?{diagnostic}:{})};
   };
   const conversations = new ConversationApplication({ backendChange:options.backendChange, conversationControl:options.conversationControl, controlSupersededRun:options.controlSupersededRun, repository, connections, modelAccess: {...models, accounts: {...models.accounts, check: checkModelAccount}}, events, root, generation, now, host: new HostContext(options), get autoContinueInterrupted() { return options.autoContinueInterrupted; }, continuationPolicy: options.continuationPolicy, generationAlive: options.generationAlive, generationReleased:options.generationReleased, ...(options.titleTimeoutMs === undefined ? {} : { titleTimeoutMs: options.titleTimeoutMs }) });

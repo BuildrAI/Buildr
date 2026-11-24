@@ -1,4 +1,5 @@
 import { DIRECTORY_SOURCE_ID } from '../application/directory-host.ts';
+import { BUILDR_SOURCE_ID, type LocalWorkspaceAuthority } from '../application/local-workspaces.ts';
 import fs from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import type { AgentHostCapabilities, ExecutionScopeRef } from '../execution-contracts.ts';
@@ -28,7 +29,12 @@ export class AgentHostRegistry implements AgentHostCapabilities {
   private peers = new Map<string, HostPeer>();
   private readonly directoryHost?: AgentHostCapabilities;
   private readonly defaultWorkspaceRoot?: () => string;
-  constructor(directoryHost?: AgentHostCapabilities, defaultWorkspaceRoot?: () => string) { this.directoryHost = directoryHost; this.defaultWorkspaceRoot = defaultWorkspaceRoot; }
+  private readonly localWorkspaces?: LocalWorkspaceAuthority;
+  constructor(directoryHost?: AgentHostCapabilities, fallback?: (() => string) | LocalWorkspaceAuthority) {
+    this.directoryHost = directoryHost;
+    if (typeof fallback === 'function') this.defaultWorkspaceRoot = fallback;
+    else this.localWorkspaces = fallback;
+  }
   validatePeer(value: HostPeer): void {
     if (!value || typeof value.sourceId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(value.sourceId) || typeof value.peerId !== 'string' || typeof value.token !== 'string' || value.token.length < 32) throw new AgentServiceError('agent_host_peer_invalid', '宿主连接身份无效。');
     if (this.directoryHost && value.sourceId === DIRECTORY_SOURCE_ID) throw new AgentServiceError('agent_host_source_reserved', '内置目录来源不能由外部回调接管。', 409);
@@ -64,9 +70,12 @@ export class AgentHostRegistry implements AgentHostCapabilities {
         // credentials or arbitrary response bodies in the failure diagnostic.
       }
     }
-    if (peers.length === 0 && this.defaultWorkspaceRoot && method === 'resolveExecutionScope') {
+    if (method === 'resolveExecutionScope' && sourceId === BUILDR_SOURCE_ID) {
       const scopeInput = input as { ref?: ExecutionScopeRef; expectedRevision?: string };
-      if (scopeInput?.ref?.sourceId === 'buildr' && scopeInput.ref.id === '@default') {
+      if (this.localWorkspaces && scopeInput?.ref) {
+        const resolved = this.localWorkspaces.resolveExecutionScope({ ref: scopeInput.ref, expectedRevision: scopeInput.expectedRevision });
+        if (resolved) return resolved;
+      } else if (this.defaultWorkspaceRoot && scopeInput?.ref?.id === '@default') {
         const rawRoot = this.defaultWorkspaceRoot();
         fs.mkdirSync(rawRoot, { recursive: true });
         const rootPath = fs.realpathSync(rawRoot), info = fs.statSync(rootPath);

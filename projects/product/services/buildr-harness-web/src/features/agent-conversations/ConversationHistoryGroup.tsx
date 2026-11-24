@@ -6,19 +6,27 @@ import { useConversationHistoryPage } from './useConversationHistoryPage.ts';
 import { HISTORY_GROUP_LIMIT } from './conversation-history-groups.ts';
 import { advanceWorkspaceSeenHold, applyConfirmedSeenActivity, invalidateWorkspaceHistoryCache, pinHeldConversationRow, type WorkspaceSeenHoldState } from './conversation-seen-hold.ts';
 import { collapseConversationHistory, createConversationHistoryCache } from './conversation-history-page.ts';
+import { foldConversationHistory, type ConversationHistoryBranch } from './conversation-children.ts';
 import type { ConversationSummary } from './types.ts';
 
 type Props = {
   workspaceId: string; name: string; query: string; hidden: boolean; agent?: string; model?: string; draftConversationIds?: readonly string[]; activeViewingId?: string | null;
   headerProps?: ButtonHTMLAttributes<HTMLButtonElement>; className: string; onDragOver: HTMLAttributes<HTMLElement>['onDragOver']; onDrop: HTMLAttributes<HTMLElement>['onDrop'];
-  renderRow(row: ConversationSummary): ReactNode;
+  selectedId?: string;
+  renderRow(row: ConversationSummary, depth: number, branch?: ConversationHistoryBranch, toggle?: () => void): ReactNode;
   onNew?():void;
   onResult?(workspaceId:string,result:{total?:number;busy:boolean;error:boolean}):void;
 };
-export function ConversationHistoryGroup({workspaceId, name, query, hidden, agent, model, draftConversationIds, activeViewingId, headerProps, renderRow, onResult, onNew, ...section}: Props) {
+export function ConversationHistoryGroup({workspaceId, name, query, hidden, agent, model, draftConversationIds, activeViewingId, selectedId, headerProps, renderRow, onResult, onNew, ...section}: Props) {
   const {api,historyCache:retainedCache,activityTick,activityWorkspaceTicks,seenActivities,conversation,activityRows} = useAgentConversations();
   const [localCache]=useState(createConversationHistoryCache),historyCache=retainedCache??localCache;
   const [expanded, setExpanded] = useState(()=>!historyCache?.collapsed.has(workspaceId)), dragged = useRef(false), contentId = useId();
+  const [openBranches,setOpenBranches]=useState<ReadonlySet<string>>(()=>new Set());
+  const toggleBranch=(id:string)=>setOpenBranches(previous=>{
+    const next=new Set(previous);
+    if(next.has(id))next.delete(id);else next.add(id);
+    return next;
+  });
   const rawVersion=activityWorkspaceTicks?'workspace:'+(activityWorkspaceTicks[workspaceId]??0):'global:'+activityTick;
   const holdRef=useRef<WorkspaceSeenHoldState|null>(null);
   const displayedRef=useRef<{rows:readonly ConversationSummary[];version?:number|string}>({rows:[]});
@@ -48,7 +56,7 @@ export function ConversationHistoryGroup({workspaceId, name, query, hidden, agen
       <span className="ac-history-group-name" title={name}>{name}</span><small>{page ? total : '…'}</small>{!onNew&&<RightOutlined aria-hidden="true" rotate={expanded?90:0}/>}
     </button>{onNew&&<Button type="text" size="small" icon={<PlusOutlined aria-hidden/>} aria-label={`在${name}新建对话`} title={`在「${name}」新建对话`} onClick={onNew}/>}</h3>
     {expanded&&<div id={contentId}>
-      <div className="ac-history-list">{visible.map(renderRow)}</div>
+      <div className="ac-history-list">{foldConversationHistory(visible,openBranches,selectedId,Boolean(query.trim())).map(({row,depth,branch})=>renderRow(row,depth,branch,branch&&!branch.forced?()=>toggleBranch(row.id):undefined))}</div>
       {error && <Alert type="warning" showIcon message={error} action={<Button size="small" onClick={retry}>{retryLabel}</Button>}/>}
       {busy && !page && <Spin size="small"/>}
       {more&&<div className="ac-history-group-actions"><Button type="text" size="small" className="ac-history-expand" disabled={busy||!page?.nextCursor} loading={busy} onClick={loadMore}>加载更多</Button></div>}

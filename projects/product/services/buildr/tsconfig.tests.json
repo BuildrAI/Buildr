@@ -9,6 +9,6 @@
     "src/**/*.ts", "tools/**/*.ts", "test/**/*.ts", "test/**/*.tsx",
     "../buildr-web/test/**/*.ts", "../buildr-web/test/**/*.tsx",
     "../buildr-harness/test/**/*.ts", "../buildr-harness/test/**/*.tsx",
-    "../buildr-harness/test/**/*.ts", "../buildr-harness-web/test/**/*.ts"
+    "../buildr-harness-web/src/env.d.ts", "../buildr-harness-web/test/**/*.ts"
   ]
 }

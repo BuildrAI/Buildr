@@ -76,7 +76,7 @@ bindings:
 
 `buildr.task-verification/v4` 保留既有应用及报告协议，默认由 `project-verification` 提供选择、实际执行和证据判断。`project-testing` 是测试代码与 `verification.yml` 内容的唯一维护者，原 Project Verification Application 继续承担安全读写，Task Verification Application 保存已有任务报告。项目测试地图独立于技能能力配置。
 
-用户可指定任意现有检查、类型、全量或相关范围，由 `project-verification` 根据 description 发现并执行，不要求正式任务或比较基线。开发按目标选齐相关四类检查；收尾按具体项目政策核对推送前完整证明，Buildr 产品要求四服务全量静态检查（Static Check）和单元测试（Unit Test）。有已有正式任务时按实际结果登记报告，无任务直接交付证据。
+用户可指定任意现有检查、类型、全量或相关范围，由 `project-verification` 根据 description 发现并执行，不要求正式任务或比较基线。开发按目标选齐相关四类检查；收尾按具体项目政策核对推送前完整证明，Buildr 产品要求已登记服务全量静态检查（Static Check）和单元测试（Unit Test）。有已有正式任务时按实际结果登记报告，无任务直接交付证据。
 
 `buildr.task-record/v4`是正式任务（Task）记录的薄能力，默认由 `task-manager` 提供。记录的 `brief` 保存独立 Markdown 说明，`intent` 保持一句话目标；正文写入使用已观察版本，详情与列表保持相同摘要而列表不携带正文。旧文件只通过显式产品动作导入并保留原文件，材料应用继续承载方案、实施和交付。todo可暂缺正文，只保存已接受意向，显式activate后才进入active；`open`为todo + active查询态。终态Task可登记固定本机复盘Markdown的SHA-256与`pending-decision|decided`，但复盘字段不保存正文、处置说明、action item、复盘来源或执行计划。Buildr Web只观察和有限维护已有Task，不创建或激活。
 

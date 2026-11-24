@@ -10,7 +10,7 @@ function fixture(t: any, version: string, global: boolean, legacy: boolean) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const project = path.join(root, 'projects', 'example');
   for (const dir of ['openspec/specs', 'openspec/changes', 'knowledge', 'services']) fs.mkdirSync(path.join(project, dir), { recursive: true });
-  for (const file of ['AGENTS.md', 'commands.yml']) fs.writeFileSync(path.join(project, file), '');
+  fs.writeFileSync(path.join(project, 'commands.yml'), '');
   if (global) { fs.mkdirSync(path.join(root, 'services')); fs.writeFileSync(path.join(root, 'services/manifest.yml'), 'schemaVersion: buildr.services/v3\nservices: {}\n'); }
   if (legacy) fs.writeFileSync(path.join(project, 'services/manifest.yml'), 'schemaVersion: buildr.services/v2\nservices: {}\n');
   const exists = (p: string, directory: boolean) => { try { return directory ? fs.statSync(p).isDirectory() : fs.statSync(p).isFile(); } catch { return false; } };
@@ -25,6 +25,7 @@ test('v3 项目使用根级服务清单，不误报旧项目清单缺失', t => 
   assert.deepEqual(r.findings, []);
   assert.equal(r.projects[0].servicesMetadata, 'services/manifest.yml');
   assert.equal(r.projects[0].baseline.servicesMetadata, true);
+  assert.equal(r.projects[0].baseline.agentsFile, false);
 });
 test('v3 根级清单缺失仍告警，旧项目清单不能掩盖', t => {
   const r = fixture(t, 'buildr.projects/v3', false, true);

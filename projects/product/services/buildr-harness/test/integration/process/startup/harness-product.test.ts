@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { activateAgentRuntime, connectHarnessProcess, executionScopeKey, restartAgentProcess } from '../../../../src/index.ts';
 import type { AgentProcessConnection } from '../../../../src/index.ts';
 import { ConversationRepository } from '../../../../src/persistence/conversation-repository.ts';
+import { ensureStableRuntimeNode } from '../../../../src/process/runtime-unit.ts';
 import { acquirePreparedProcessFixture } from '../../../support/prepared-process-fixture.ts';
 import { cleanupProcessFixture, copyPackage, prepareAgentRuntime, until } from '../../../support/process-fixture.ts';
 
@@ -82,6 +84,13 @@ test('ordinary product connection retains the current version; only explicit act
   assert.equal(adopted.currentDigest, next.digest);
   assert.notEqual(adopted.generation, first.generation);
   assert.equal((await ordinary.lifecycle.identity()).generation, adopted.generation);
+  if (process.platform !== 'win32') {
+    const stableNode = ensureStableRuntimeNode(dataRoot, runtime);
+    assert.equal(ensureStableRuntimeNode(dataRoot, next), stableNode);
+    assert.equal(fs.lstatSync(stableNode).nlink, 1);
+    const adoptedCmd = execFileSync('ps', ['-p', String(adopted.pid), '-o', 'command='], { encoding: 'utf8' });
+    assert.ok(adoptedCmd.includes(stableNode), `expected launched command to use stable node ${stableNode}, got: ${adoptedCmd}`);
+  }
 });
 
 test('Harness first cold-start keeps bare historical scopes owned by buildr, not the startup caller', {timeout: 90000}, async t => {

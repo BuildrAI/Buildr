@@ -3,17 +3,21 @@ import { Alert, Button, Empty, Popover, Spin } from 'antd';
 import { DashboardOutlined, ExportOutlined, SettingOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext.tsx';
 import { accountBillingLink, groupQuotaWindows, accountQuotaView, accountQuotaWarning, accountSourceName, quotaOverviewAccounts, quotaResetCountdown } from './account-quota-view.ts';
+import { useGoogleAccountRefresh } from './useGoogleAccountRefresh.ts';
 import type { ModelAccount } from './types.ts';
 import './account-quota-button.css';
 
 type Props = { onClick?(): void; dedicated?:boolean };
-/** Reads shared account snapshots only; opening this never logs in or checks all providers. */
+/** Shows the cached overview first, with a bounded Google-only refresh while visible. */
 export function AccountQuotaButton({ onClick, dedicated=false }: Props) {
   const { api, settings, full, side } = useAgentConversations();
   const [open, setOpen] = useState(false), [accounts, setAccounts] = useState<ModelAccount[]>([]);
   const [loaded, setLoaded] = useState(false), [error, setError] = useState('');
   const dismissed = useRef(false), pointerFocus = useRef(false), entry = useRef<HTMLButtonElement>(null);
   const previewOpen = open && !settings;
+  const refreshSnapshot = useRef<() => Promise<void>>(async () => {});
+  const [googleRefreshFailed, setGoogleRefreshFailed] = useState(false);
+  useGoogleAccountRefresh(previewOpen, api, () => { setGoogleRefreshFailed(false); void refreshSnapshot.current(); }, () => setGoogleRefreshFailed(true));
   const dismiss = () => { dismissed.current = true; setOpen(false); };
   useEffect(() => {
     if (!previewOpen) return;
@@ -29,6 +33,7 @@ export function AccountQuotaButton({ onClick, dedicated=false }: Props) {
         if (!controller.signal.aborted) setError('更新失败，已保留上次额度');
       } finally { pending = false; if (!controller.signal.aborted) setLoaded(true); }
     };
+    refreshSnapshot.current = refresh;
     void refresh();
     const timer = setInterval(() => void refresh(), 5000);
     return () => { controller.abort(); clearInterval(timer); };
@@ -36,6 +41,7 @@ export function AccountQuotaButton({ onClick, dedicated=false }: Props) {
   const visible = quotaOverviewAccounts(accounts);
   const content = <div className="ac-account-quota-overview" data-testid="account-quota-overview">
     {error && <Alert type="warning" showIcon message={error}/>}
+    {googleRefreshFailed && <Alert type="warning" showIcon message="Google AI 刷新未完成，保留上次额度"/>}
     {!loaded && !error ? <Spin size="small"/> : !visible.length && !error ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚无已接入的供应商，点击图标接入"/> : null}
     {visible.map(account => {
       const view = accountQuotaView(account, Date.now(), true), warning = accountQuotaWarning(account);
@@ -64,7 +70,7 @@ export function AccountQuotaButton({ onClick, dedicated=false }: Props) {
         </> : <>
           <strong>{name}</strong>
           <div className="ac-account-quota-value">
-            {billing ? <Button type="default" size="small" href={billing.url} target="_blank" rel="noopener noreferrer" icon={<ExportOutlined/>} title={billing.label}>{billing.label}</Button>
+            {billing ? <Button type="default" size="small" href={billing.url} data-harness-web-link target="_blank" rel="noopener noreferrer" icon={<ExportOutlined/>} title={billing.label}>{billing.label}</Button>
               : view.lines.map((line, index) => <p key={index}>{line.text}{line.resetsAt && <small className="ac-account-quota-reset" title={new Date(line.resetsAt).toLocaleString()}>{quotaResetCountdown(line.resetsAt)}</small>}{line.credits && <span className="ac-account-quota-credits">· {line.credits}</span>}</p>)}
             {warning && <small className="ac-account-quota-warning" title={account.quota?.diagnostic}>{warning}</small>}
           </div>
@@ -78,7 +84,7 @@ export function AccountQuotaButton({ onClick, dedicated=false }: Props) {
       if (!next && document.activeElement === entry.current && !pointerFocus.current) return;
       setOpen(next);
     }}>
-    <Button ref={entry} type="text" className={'ac-conversation-icon '+(dedicated?'ac-quota-entry':'ac-account-settings')} icon={dedicated?<DashboardOutlined aria-hidden="true"/>:<SettingOutlined aria-hidden="true"/>} aria-label={dedicated?'供应商额度':'智能体与模型设置'}
+    <Button ref={entry} type="text" className={'ac-conversation-icon '+(dedicated?'ac-quota-entry':'ac-account-settings')} icon={dedicated?<DashboardOutlined aria-hidden="true"/>:<SettingOutlined aria-hidden="true"/>} aria-label={dedicated?'供应商额度':'设置'}
       onFocus={() => { if (!pointerFocus.current && !dismissed.current && !settings) setOpen(true); }}
       onBlur={() => { pointerFocus.current = false; if (!settings) dismissed.current = false; setOpen(false); }}
       onPointerEnter={() => { if (!pointerFocus.current) dismissed.current = false; }}

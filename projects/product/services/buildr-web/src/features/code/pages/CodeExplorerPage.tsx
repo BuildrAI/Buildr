@@ -9,7 +9,8 @@ import { tabElementId } from '../../../lib/tab-navigation';
 import { RepositoryFileBrowser, type RepositoryPreviewFile, type RepositoryTreeScope } from '../../workspace/components/RepositoryFileBrowser';
 import { CodeTreePane } from '../components/CodeTreePane';
 import { CodeExplorerNotices } from '../components/CodeExplorerNotices';
-import { useCodeExplorer } from '../hooks/useCodeExplorer';
+import { useCodeExplorer, type CodeEntryRecoveryReason } from '../hooks/useCodeExplorer';
+import { codeEntryRestoreCandidates } from '../code-entry-restore';
 import { codeApi } from '../api/code-api';
 import { useEditableFile } from '../hooks/useEditableFile';
 import { useFileEditingContext } from '../../../app/FileEditingContext';
@@ -24,6 +25,20 @@ import { selectPopupGuard } from '../../../lib/select-popup';
 import type { MarkdownRenderOptions } from '../../../markdown';
 import '../code-explorer.css';
 
+type OpenFile = {repositoryId:string;checkoutId?:string|null;path:string;commitHash?:string|null;line?:number};
+const entrySignature=(entry:CodeTaskEntry)=>JSON.stringify([entry.file?.repositoryId||'',entry.file?.checkoutId||'',entry.file?.path||'',entry.file?.commitHash||'',entry.file?.line??null,entry.taskId||'',entry.origin||'',entry.from?.pathname||'']);
+const entryFileMatches=(file:CodeTaskEntry['file']|undefined,active:OpenFile|undefined)=>Boolean(file&&active&&file.path===active.path&&file.checkoutId===active.checkoutId&&(file.repositoryId||'')===active.repositoryId&&(file.commitHash||'')===(active.commitHash||'')&&file.line===active.line);
+
+const entryRecoveryMessage=(reason:CodeEntryRecoveryReason)=>reason==='recovered'
+  ? '原文件所在工作树已不存在，历史版本已改用当前工作树读取。'
+  : reason==='replaced'
+    ? '原文件所在工作树已被重建或移除。可用当前工作树打开同一路径。'
+    : reason==='unconfirmed'
+      ? '暂时无法确认原文件所在工作树（目录读取不完整或工作树关联未确认）。请重试后再判断。'
+      : reason==='ambiguous'
+        ? '原文件所在工作树已被重建或移除。请选择要用于打开该文件的工作树。'
+        : '原文件所在工作树已被重建或移除。当前没有可确认的对应工作树，请选择同代码库的工作树打开。';
+
 export function CodeExplorerPage() {
   const panelId = useId();
   const {workspaceId,workspace,setBreadcrumbParts}=useAppShell();
@@ -35,8 +50,35 @@ export function CodeExplorerPage() {
   const [selection,setSelection]=useState<{key:string;lines:[number,number]|null}>({key:'',lines:null});
   const [readQuery,setReadQuery]=useState('');
   useEffect(()=>{setBreadcrumbParts(['代码','资源管理器']);},[setBreadcrumbParts]);
-  useEffect(()=>{if(processed===location.key)return;setProcessed(location.key);const entry=location.state?.codeEntry as CodeTaskEntry|undefined;if(entry)void state.applyEntry(entry);else state.clearEntry();},[location.key,location.state,processed,state.applyEntry,state.clearEntry]);
   const active=state.active,file=active?state.files[active.key]:undefined;
+  const writtenEntry=useRef(''),syncCursor=useRef<{active:string;location:string}|null>(null);
+  useEffect(()=>{
+    if(processed===location.key)return;
+    setProcessed(location.key);
+    const entry=location.state?.codeEntry as CodeTaskEntry|undefined;
+    // This is the entry we just wrote for the open tab; re-applying it would only reopen it.
+    if(entry&&entrySignature(entry)===writtenEntry.current)return;
+    if(entry){
+      if(location.state?.revealFileTree===true)setTreeHidden(false);
+      void state.applyEntry(entry);
+    }else state.clearEntry();
+  },[location.key,location.state,processed,state.applyEntry,state.clearEntry]);
+  // Keep the history entry describing the file actually open. Otherwise a reload
+  // re-applies the stale entry from an earlier open and the file appears lost.
+  // Only an in-page change is written here: an external navigation brings its own
+  // entry, and a hidden retained page must not navigate the whole app.
+  const activeMember=active&&state.catalog?.worktrees.find(member=>member.repositoryId===active.repositoryId&&member.id===active.checkoutId);
+  useEffect(()=>{
+    const signature=(active?.key||'')+':'+(active?.line??''),previous=syncCursor.current;
+    syncCursor.current={active:signature,location:location.key};
+    if(!viewActive||!previous||previous.active===signature||previous.location!==location.key)return;
+    if(!active?.checkoutId||!activeMember)return;
+    const saved=location.state?.codeEntry as CodeTaskEntry|undefined;
+    if(entryFileMatches(saved?.file,active))return;
+    const entry={...(saved||{}),file:{repositoryId:active.repositoryId,checkoutId:active.checkoutId,path:active.path,commitHash:active.commitHash||undefined,line:active.line},taskId:saved?.taskId,from:saved?.from||{pathname:location.pathname,search:location.search,hash:location.hash,state:location.state}};
+    writtenEntry.current=entrySignature(entry);
+    navigate({pathname:location.pathname,search:location.search,hash:location.hash},{replace:true,state:{...location.state,codeEntry:entry}});
+  },[viewActive,active?.key,active?.line,active?.checkoutId,active?.commitHash,active?.path,activeMember?.id,location.key,location.state,location.pathname,location.search,location.hash,navigate]);
   const openActiveFolder = workspaceId && active?.checkoutId && !active.commitHash
     ? () => codeApi.openFolder(workspaceId, { selector: { kind: 'code', repositoryId: active.repositoryId, checkoutId: active.checkoutId!, path: active.path } })
     : undefined;
@@ -50,6 +92,15 @@ export function CodeExplorerPage() {
   const imageHrefs=useMemo(()=>[...new Set([...markdownContent.matchAll(/!\[[^\]]*\]\(([^\s)]+)(?:\s+[^)]*)?\)/g)].map(match=>match[1]))].slice(0,8),[markdownContent]);
   const selectedRepo=state.catalog?.repositories.find(r=>r.id===active?.repositoryId);
   const selectedMember=state.catalog?.worktrees.find(member=>member.repositoryId===active?.repositoryId&&member.id===active?.checkoutId);
+  const recoverySuccessor=state.entryRecovery?.successor;
+  const recoveryMember=recoverySuccessor?state.catalog?.worktrees.find(member=>member.repositoryId===recoverySuccessor.repositoryId&&member.id===recoverySuccessor.checkoutId):undefined;
+  const recoveryLabel=recoveryMember?codeWorktreeLabel(recoveryMember,state.catalog?.worktrees).name:'';
+  const recoveryCandidates=state.entryRecovery&&state.entry?.file&&state.catalog&&(state.entryRecovery.reason==='ambiguous'||state.entryRecovery.reason==='missing')
+    ?codeEntryRestoreCandidates(state.catalog,state.entryRecovery.repositoryId,state.entry.file,state.entry.taskId).flatMap(member=>{
+      const label=codeWorktreeLabel(member,state.catalog!.worktrees);
+      return [{value:member.id,label:label.name,role:[label.role,member.branch].filter(Boolean).join(' · '),title:member.path}];
+    })
+    :[];
   const treeRepositories=useMemo<RepositoryTreeScope[]>(()=>state.sources.map(({id,source,member})=>{
     const prefix=state.directoryKey(source,'');
     const directories=Object.entries(state.directories).filter(([key])=>key.startsWith(prefix)).map(([,value])=>value);
@@ -138,6 +189,10 @@ export function CodeExplorerPage() {
         {(state.tabs.length > 0 || treeHidden) && <ReadingToggle iconOnly className="code-reading-toggle" expanded={treeHidden} onToggle={()=>setTreeHidden(value=>!value)} />}
       </div>
       {state.catalogError&&<Alert type="warning" message={state.catalogError} action={<Button onClick={()=>void state.refreshCatalog().catch(error=>message.error(String(error)))}>重试</Button>} />}
+      {state.entryRecovery&&<Alert type="warning" showIcon message={entryRecoveryMessage(state.entryRecovery.reason)} description={state.entryRecovery.path} action={state.entryRecovery.reason==='unconfirmed'&&state.entry?<Button size="small" onClick={()=>void state.applyEntry(state.entry!)}>重试</Button>
+        :recoverySuccessor?<Button size="small" onClick={()=>state.recoverEntry()}>{recoveryLabel?'用 '+recoveryLabel+' 打开':'用当前工作树打开'}</Button>
+        :recoveryCandidates.length>0?<Select size="small" style={{minWidth:200}} placeholder="选择工作树打开" aria-label="选择用于恢复文件的工作树" classNames={{popup:{root:'code-source-picker-popup'}}} popupMatchSelectWidth={false} popupRender={selectPopupGuard} value={undefined} onChange={(id:string)=>state.recoverEntry(id)} options={recoveryCandidates} optionRender={option=><div className="code-worktree-option" data-code-worktree-id={option.value} title={option.data.title}><span>{option.data.label}</span>{option.data.role&&<small>{option.data.role}</small>}</div>} />
+        :undefined} />}
       {active&&!inScope&&<div className="code-range-outside">当前文件不在筛选范围内。<Button type="link" size="small" onClick={includeActive}>加入范围</Button></div>}
       {!state.catalog&&!state.catalogError&&<div className="repository-reading-empty"><Spin />正在读取代码库…</div>}
       {state.catalog?.repositories.length===0&&<Empty description="工作空间尚未登记代码库" />}

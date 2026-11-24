@@ -3,6 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
+import { resolveHostNodeExecutable } from '../../../infrastructure/shared-runtime-node.ts';
 import {
   readCurrentInstallationOrigin,
   validateFormalInstallationOriginPayloadBinding,
@@ -72,7 +73,7 @@ export function enrollNpmInstallationFromLifecycle(options: any = {}) {
   const prefix = requiredAbsoluteDirectory(env.npm_config_prefix, 'npm lifecycle global prefix');
   if (!pathIsInside(packageRoot, prefix)) throw new Error('Installed Buildr package root is outside the explicit npm global prefix.');
   const nodeExecutable = requiredAbsoluteFile(env.npm_node_execpath, 'npm lifecycle Host Node');
-  const currentNode = requiredAbsoluteFile(options.runtimeExecutable || process.execPath, 'current Host Node');
+  const currentNode = requiredAbsoluteFile(options.runtimeExecutable || resolveHostNodeExecutable(), 'current Host Node');
   if (!sameFilesystemPath(nodeExecutable, currentNode)) {
     throw new Error('npm lifecycle Host Node does not match the Node executing Buildr postinstall.');
   }

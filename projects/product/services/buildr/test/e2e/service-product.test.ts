@@ -8,11 +8,13 @@ import YAML from 'yaml';
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { copyPreparedGitRepository, copyPreparedLegacyProjectWorkspace } from '../helpers/prepared-fixtures.ts';
+import { runCliInProcess } from '../helpers/in-process-cli.ts';
 
 const PRODUCT_ROOT: any = path.resolve(import.meta.dirname, '../..');
 const BUILDR: any = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
 function run(command: any, args: any, cwd: any = PRODUCT_ROOT): any  { return spawnSync(command, args, { cwd, encoding: 'utf8' }); }
 function runBuildr(args: any): any  { return run(process.execPath, [BUILDR, ...args]); }
+function runBuildrInProcess(args: any): Promise<any> { return runCliInProcess(args, undefined, { cwd: PRODUCT_ROOT }); }
 function setup(t: any): any  {
   const prepared: any = copyPreparedLegacyProjectWorkspace(t, 'legacy-service-product');
   return { base: prepared.base, root: prepared.root };
@@ -42,10 +44,10 @@ test('Service create 写入 v2 Domain、父 UUID 与受控 metadata', (t: any) =
   assert.throws(() => runtime.updateServiceMetadata(root, 'demo', 'api', { revision: list.revision, name: 'stale' }), (error: any) => error.code === 'service_revision_conflict');
 });
 
-test('Git Service 保存 integrationBranch，观察态不进入 Domain', (t: any) => {
+test('Git Service 保存 integrationBranch，观察态不进入 Domain', async (t: any) => {
   const { root }: any = setup(t);
   const { remote }: any = copyPreparedGitRepository(t, 'service-git-source');
-  const result: any = runBuildr(['service', 'create', 'demo/api', remote, '--target', root, '--name', 'API', '--description', '接口', '--type', 'backend', '--integration-branch', 'dev']);
+  const result: any = await runBuildrInProcess(['service', 'create', 'demo/api', remote, '--target', root, '--name', 'API', '--description', '接口', '--type', 'backend', '--integration-branch', 'dev']);
   assert.equal(result.status, 0, result.stderr);
   const runtime: any = createRuntime();
   let detail: any = runtime.serviceDetail(root, 'demo', 'api');
@@ -58,12 +60,12 @@ test('Git Service 保存 integrationBranch，观察态不进入 Domain', (t: any
   assert.equal(stored.currentBranch, undefined);
 });
 
-test('Service attach 只登记外部 Git root，不复制或修改内容', (t: any) => {
+test('Service attach 只登记外部 Git root，不复制或修改内容', async (t: any) => {
   const { root }: any = setup(t);
   const { attached }: any = copyPreparedGitRepository(t, 'service-attach');
   const before: any = { head: run('git', ['rev-parse', 'HEAD'], attached).stdout, status: run('git', ['status', '--porcelain'], attached).stdout, readme: fs.readFileSync(path.join(attached, 'README.md'), 'utf8') };
 
-  const result: any = runBuildr(['service', 'create', 'demo/external', '--attach', attached, '--target', root, '--name', 'External', '--description', 'External service', '--type', 'backend', '--json']);
+  const result: any = await runBuildrInProcess(['service', 'create', 'demo/external', '--attach', attached, '--target', root, '--name', 'External', '--description', 'External service', '--type', 'backend', '--json']);
   assert.equal(result.status, 0, result.stderr);
   const detail: any = JSON.parse(result.stdout);
   assert.equal(detail.service.source.root, 'attached');
@@ -71,15 +73,15 @@ test('Service attach 只登记外部 Git root，不复制或修改内容', (t: a
   assert.equal(detail.sourceLocation.ownership, 'external');
   assert.deepEqual({ head: run('git', ['rev-parse', 'HEAD'], attached).stdout, status: run('git', ['status', '--porcelain'], attached).stdout, readme: fs.readFileSync(path.join(attached, 'README.md'), 'utf8') }, before);
   assert.equal(fs.existsSync(path.join(root, 'projects', 'demo', 'services', 'external')), false);
-  const doctor: any = JSON.parse(runBuildr(['doctor', '--target', root, '--scope', 'projects/demo/services/external', '--json', '--detail', 'full']).stdout);
+  const doctor: any = JSON.parse((await runBuildrInProcess(['doctor', '--target', root, '--scope', 'projects/demo/services/external', '--json', '--detail', 'full'])).stdout);
   assert.equal(doctor.services.find((service: any) => service.name === 'external').exists, true);
   assert.equal(doctor.findings.some((finding: any) => finding.code === 'service.git.missing'), false);
-  const duplicate: any = runBuildr(['service', 'create', 'demo/duplicate', '--attach', attached, '--target', root, '--name', 'Duplicate', '--description', 'Duplicate service']);
+  const duplicate: any = await runBuildrInProcess(['service', 'create', 'demo/duplicate', '--attach', attached, '--target', root, '--name', 'Duplicate', '--description', 'Duplicate service']);
   assert.equal(duplicate.status, 1);
   assert.match(duplicate.stderr, /already registered/);
 });
 
-test('sync 显式迁移 v1 Service registry 并优先使用 branch', (t: any) => {
+test('sync 显式迁移 v1 Service registry 并优先使用 branch', async (t: any) => {
   const { root }: any = setup(t);
   fs.mkdirSync(path.join(root, 'projects', 'demo', 'services', 'api'), { recursive: true });
   const file: any = path.join(root, 'projects', 'demo', 'services', 'manifest.yml');
@@ -88,7 +90,7 @@ test('sync 显式迁移 v1 Service registry 并优先使用 branch', (t: any) =>
   const runtime: any = createRuntime();
   assert.equal(runtime.listServices(root, 'demo').migrationRequired, true);
   assert.equal(fs.readFileSync(file, 'utf8'), before);
-  const result: any = runBuildr(['sync', 'codex', '--target', root]);
+  const result: any = await runBuildrInProcess(['sync', 'codex', '--target', root]);
   assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
   const registry: any = YAML.parse(fs.readFileSync(file, 'utf8'));
   assert.equal(registry.schemaVersion, 'buildr.services/v2');

@@ -1,4 +1,4 @@
-import {useEffect, useLayoutEffect, useMemo, useRef} from 'react';
+import {useEffect, useLayoutEffect, useMemo, useRef, type ReactNode} from 'react';
 import {AgentConversationsProvider, useAgentConversations, type TextConversationActionInput, type TextConversationActionResult} from '../features/agent-conversations/AgentConversationsContext';
 import {ConversationWorkspace} from '../features/agent-conversations/ConversationWorkspace';
 import type {ConversationWorkspace as Workspace} from '../features/agent-conversations/ConversationHistory';
@@ -22,6 +22,7 @@ type Props = {
   open?: boolean;
   full: boolean;
   view: 'conversation' | 'history';
+  headerAction?: ReactNode;
   command: HarnessConversationCommand | null;
   sequence: number;
   files: HarnessDirectoryFiles;
@@ -115,6 +116,6 @@ function Surface(props: Props) {
     }
   }, [props.command, props.sequence, context.newConversation, context.openConversation, context.openHistory, context.openQuotaSettings, context.setSettings, context.startTextConversation]);
   return <div className="harness-conversation-surface">
-    <ConversationWorkspace development workspaces={props.workspaces} defaultWorkspaceId={props.defaultWorkspaceId}/>
+    <ConversationWorkspace development headerAction={props.headerAction} workspaces={props.workspaces} defaultWorkspaceId={props.defaultWorkspaceId}/>
   </div>;
 }

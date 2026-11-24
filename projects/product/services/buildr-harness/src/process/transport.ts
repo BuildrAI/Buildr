@@ -39,10 +39,10 @@ export function json(res: ServerResponse, status: number, value: unknown): void 
 }
 export function failure(res: ServerResponse, error: unknown): void {
   if (res.headersSent) { res.destroy(); return; }
-  const known = error as { code?: string; status?: number };
+  const known = error as { code?: string; status?: number; details?: unknown };
   const internalCode = typeof known.code === 'string' && /^[a-zA-Z][a-zA-Z0-9_]{0,99}$/.test(known.code) ? known.code : undefined;
   const code = typeof known.code === 'string' && /^(?:agent_|model_)[a-z0-9_]+$/.test(known.code) ? known.code : 'agent_process_operation_failed';
-  json(res, typeof known.status === 'number' ? known.status : 500, { error: { code, message: code==='agent_process_operation_failed' ? '执行后台内部检查未完成'+(internalCode?'（'+internalCode+'）':'')+'，原工作与记录已保留。' : safeDiagnostic(error), ...(internalCode?{internalCode}:{}) } });
+  json(res, typeof known.status === 'number' ? known.status : 500, { error: { code, message: code==='agent_process_operation_failed' ? '执行后台内部检查未完成'+(internalCode?'（'+internalCode+'）':'')+'，原工作与记录已保留。' : safeDiagnostic(error), ...(internalCode?{internalCode}:{}), ...(code !== 'agent_process_operation_failed' && known.details !== undefined ? { details: known.details } : {}) } });
 }
 export async function listen(handler: (req: IncomingMessage, res: ServerResponse) => Promise<void>): Promise<{ server: Server; origin: string; close(): Promise<void> }> {
   const server = createServer((req, res) => { void handler(req, res).catch(error => failure(res, error)); });
@@ -86,6 +86,6 @@ export async function request(origin: string, token: string, route: string, valu
   const text = Buffer.concat(chunks).toString('utf8');
   let result: any;
   try { result = JSON.parse(text); } catch { throw new AgentServiceError('agent_process_response_invalid', '执行后台返回无效。', 502); }
-  if ((response.statusCode ?? 500) < 200 || (response.statusCode ?? 500) >= 300) { const error=new AgentServiceError(result?.error?.code ?? 'agent_process_operation_failed', result?.error?.message ?? '执行后台操作未完成。', response.statusCode ?? 500); const internal=result?.error?.internalCode; if(typeof internal==='string'&&/^[a-zA-Z][a-zA-Z0-9_]{0,99}$/.test(internal))Object.assign(error,{internalCode:internal}); throw error; }
+  if ((response.statusCode ?? 500) < 200 || (response.statusCode ?? 500) >= 300) { const error=new AgentServiceError(result?.error?.code ?? 'agent_process_operation_failed', result?.error?.message ?? '执行后台操作未完成。', response.statusCode ?? 500, result?.error?.details); const internal=result?.error?.internalCode; if(typeof internal==='string'&&/^[a-zA-Z][a-zA-Z0-9_]{0,99}$/.test(internal))Object.assign(error,{internalCode:internal}); throw error; }
   return result;
 }

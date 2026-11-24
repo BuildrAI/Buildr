@@ -71,10 +71,11 @@ export function conversationHandoffReceipt(entry:Pick<ConversationEntry,'handoff
 }
 
 /** Receipt and tool outcomes are independent. Failure alone never permits replay. */
-export function conversationFailureImpact(run: Pick<ConversationRun,'status'|'accepted'|'tools'|'diagnostic'>): string | undefined {
+export function conversationFailureImpact(run: Pick<ConversationRun,'status'|'accepted'|'tools'|'diagnostic'>, inputStatus?: ConversationEntry['status']): string | undefined {
   if(run.status!=='failed')return;
   const preflight=/agent_context_binding_mismatch|原生上下文与当前目录或配置身份不匹配|本轮要求未发送|本次.*未发送|消息未发送：Claude Code 配套组件/.test(run.diagnostic??'');
-  const delivery=run.accepted?'本轮已受理，但未完成。':preflight?'本次要求未送达。':'本次要求是否送达尚未确认。';
+  const undelivered=inputStatus==='failed'||inputStatus===undefined&&preflight;
+  const delivery=run.accepted?'本轮已受理，但未完成。':undelivered?'本次要求未送达。':'本次要求是否送达尚未确认。';
   const work=run.tools.some(tool=>tool.status!=='completed')?'仍有工具结果待确认，不会自动重跑。':'';
   return `${delivery}${work}`;
 }
@@ -82,10 +83,25 @@ export function conversationFailureImpact(run: Pick<ConversationRun,'status'|'ac
 /** A released or stop-requested unknown run names its real source; the record and finished work stay. */
 export function conversationUnknownExecutionSummary(run: Pick<ConversationRun,'diagnostic'|'stopRequested'|'tools'>): { reason: string; detail: string } {
   const pending = (run.tools ?? []).filter(tool => tool.status !== 'completed').length;
-  const detail = '记录和已完成的操作都保留。' + (pending ? `另有 ${pending} 条后台命令的结束记录缺失，可能仍在运行；继续时会先核对，不会重跑。` : '');
+  const limitPaused = /自动续行次数已达上限/.test(run.diagnostic ?? '');
+  const detail = limitPaused
+    ? (pending ? `记录和已完成的操作都保留。另有 ${pending} 条后台命令的结束记录缺失，可能仍在运行；继续时会先核对，不会重跑。` : '后台结果已取得，记录和已完成的操作都保留；继续后会核对成果并接续原目标。')
+    : '记录和已完成的操作都保留。' + (pending ? `另有 ${pending} 条后台命令的结束记录缺失，可能仍在运行；继续时会先核对，不会重跑。` : '');
   if (/服务退休中断了本轮执行/.test(run.diagnostic ?? '')) return { reason: '服务重启中断了本轮，结果未能确认。', detail };
+  if (limitPaused) return { reason: '后台自动续行已达上限，本轮已暂停。', detail };
   if (run.stopRequested) return { reason: '已请求停止，但尚未确认结束。', detail };
   return { reason: '本轮执行中断，结果未能确认。', detail };
+}
+
+/** Live unknown notices surface real readable diagnostics instead of hiding them in tooltips. */
+export function conversationLiveUnknownReason(diagnostic?: string, streamError?: string): string | undefined {
+  for (const raw of [diagnostic, streamError]) {
+    const text = raw?.trim();
+    if (!text) continue;
+    if (/[一-鿿]/.test(text)) return text;
+    if (/^qoder_late_native_activity$/i.test(text)) return '原生执行在结束后仍有迟到活动，结果尚未确认。';
+  }
+  return undefined;
 }
 
 export type ConversationFailureReason = { summary: string; action?: string };
@@ -99,8 +115,11 @@ function failureRetrySeconds(diagnostic: string): number | undefined {
 /** 只提炼可公开的原因；原始厂商内容仍留在技术详情中。 */
 export function conversationFailureReason(diagnostic?: string, fault?: Pick<ConversationRun,'fault'>['fault']): ConversationFailureReason {
   const text = diagnostic ?? '';
+  if (/agent_host_unavailable|执行环境提供方暂时不可达|工作对象提供方暂时不可用/.test(text)) {
+    return { summary: '执行环境提供方暂时不可达。' };
+  }
   if (/agent_claude_sdk_missing|Claude Code 配套组件/.test(text)) {
-    return { summary: 'Claude Code 配套组件缺失或无法加载。', action: '请在「智能体与模型」中检查更新并修复 Claude Code。' };
+    return { summary: 'Claude Code 配套组件缺失或无法加载。', action: '请在「设置 → 智能体」中检查更新并修复 Claude Code。' };
   }
   if (/agent_context_binding_mismatch|agent_binding_changed|原生上下文与当前目录或配置身份不匹配|原连接身份不匹配|程序或原配置身份已失配/i.test(text)) {
     return { summary: '原会话与当前执行环境不匹配，无法继续。' };
@@ -167,8 +186,17 @@ export function conversationActionError(error: string, modelWarning: string | un
   return error;
 }
 
-/** Internal recovery instructions stay in source history; the page shows the actual receipt. */
+/** Keep internal entries in the transcript model for run ownership and pagination. */
+function isAutomaticContinuation(entry:Pick<ConversationEntry,'kind'|'role'|'text'>):boolean {
+  return entry.kind==='notice'&&entry.role==='system'&&['系统自动恢复：','系统自动重试：'].some(prefix=>entry.text.startsWith(prefix));
+}
+
+export function isQuietAutomaticContinuation(entry:ConversationEntry):boolean {
+  return Boolean(entry.runId)&&isAutomaticContinuation(entry)&&entry.status!=='failed'&&entry.status!=='unknown'&&!entry.deliveryDiagnostic;
+}
+
+/** Internal instructions stay in source history; the page shows only the receipt. */
 export function conversationSystemNoticeText(entry:Pick<ConversationEntry,'kind'|'role'|'text'|'status'>):string {
-  if(entry.kind!=='notice'||entry.role!=='system'||!entry.text.startsWith('系统自动恢复：'))return entry.text;
+  if(!isAutomaticContinuation(entry))return entry.text;
   return entry.status==='accepted'?'已自动接续上次工作。':entry.status==='failed'?'自动恢复未能接续。':entry.status==='unknown'?'自动恢复是否接续仍待确认。':'正在自动核对并接续上次工作。';
 }

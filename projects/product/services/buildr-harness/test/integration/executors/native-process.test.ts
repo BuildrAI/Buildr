@@ -10,9 +10,12 @@ import { executorEnvironment as executorEnvForTest } from '../../../build/applic
 import { toolEnvironment } from '../../../build/executors/tool-environment.js';
 
 test('native environment isolates credentials while retaining actual proxy settings', () => {
-  const before = { PATH: '/bin', OPENAI_API_KEY: 'secret-a', CODEX_HOME: '/external', QODER_CONFIG_DIR: '/external-qoder', CODEX_APP_SERVER_TOKEN: 'secret-b', HTTPS_PROXY: 'http://127.0.0.1:1234', NODE_OPTIONS: '--require=/external', HOME: '/external-home' };
-  assert.deepEqual(isolatedEnvironment(before, '/owned/home', '/owned/tmp', { CODEX_HOME: '/owned/codex' }), { PATH: '/bin', HTTPS_PROXY: before.HTTPS_PROXY, ...toolEnvironment(before), HOME: '/owned/home', USERPROFILE: '/owned/home', TMPDIR: '/owned/tmp', TMP: '/owned/tmp', TEMP: '/owned/tmp', CODEX_HOME: '/owned/codex' });
+  const before = { PATH: '/bin', OPENAI_API_KEY: 'secret-a', CODEX_HOME: '/external', QODER_CONFIG_DIR: '/external-qoder', CODEX_APP_SERVER_TOKEN: 'secret-b', HTTPS_PROXY: 'http://127.0.0.1:1234', NODE_OPTIONS: '--require=/external', HOME: '/external-home' } as NodeJS.ProcessEnv;
+  assert.deepEqual(isolatedEnvironment(before, '/owned/home', '/owned/tmp', { CODEX_HOME: '/owned/codex' }), { PATH: '/bin', HTTPS_PROXY: before.HTTPS_PROXY, ...toolEnvironment(before), GIT_TERMINAL_PROMPT: '0', npm_config_yes: 'false', HOME: '/owned/home', USERPROFILE: '/owned/home', TMPDIR: '/owned/tmp', TMP: '/owned/tmp', TEMP: '/owned/tmp', CODEX_HOME: '/owned/codex' });
   assert.equal(before.CODEX_HOME, '/external');
+  assert.equal(isolatedEnvironment({ GIT_TERMINAL_PROMPT: '1', npm_config_yes: 'true' }, '/owned/home', '/owned/tmp').GIT_TERMINAL_PROMPT, '1');
+  assert.equal(isolatedEnvironment({ npm_config_yes: 'true' }, '/owned/home', '/owned/tmp').npm_config_yes, 'true');
+  assert.equal(isolatedEnvironment({}, '/owned/home', '/owned/tmp', { GIT_TERMINAL_PROMPT: '1', npm_config_yes: 'true' }).npm_config_yes, 'true');
 });
 test('browser discovery uses official host caches and preserves explicit hermetic or custom paths', () => {
   assert.deepEqual(toolEnvironment({ HOME: '/users/person' }, 'darwin'), { BUILDR_HOST_HOME: '/users/person', PLAYWRIGHT_BROWSERS_PATH: '/users/person/Library/Caches/ms-playwright' });

@@ -17,11 +17,12 @@ type Props = {
   onToggleProcess?: () => void;
   onCollapseProcess?: () => void;
   collapseLabel?: string;
+  summary?: ReactNode;
   children?: ReactNode;
 };
 
 /** Keeps the input and its assistant together while reading this part of the conversation. */
-export function ConversationTurn({ id, runId, prompt, identity, executing = false, startedAt, showExecutionIndicator = true, finishedAt, processExpanded, onToggleProcess, onCollapseProcess, collapseLabel = '收起处理过程', children }: Props) {
+export function ConversationTurn({ id, runId, prompt, identity, executing = false, startedAt, showExecutionIndicator = true, finishedAt, processExpanded, onToggleProcess, onCollapseProcess, collapseLabel = '收起处理过程', summary, children }: Props) {
   const turn = useRef<HTMLElement>(null), body = useRef<HTMLDivElement>(null), content = useRef<HTMLDivElement>(null);
   const [long, setLong] = useState(false), [expanded, setExpanded] = useState(false);
   useLayoutEffect(() => {
@@ -70,6 +71,7 @@ export function ConversationTurn({ id, runId, prompt, identity, executing = fals
             {showExecutionIndicator && startedAt && <ConversationExecutionIndicator startedAt={startedAt} active={executing} finishedAt={finishedAt} />}
           </>}
         </div>}
+      {summary}
     </div>
     <div ref={body} className="ac-turn-content" tabIndex={-1}>{children}</div>
   </section>;

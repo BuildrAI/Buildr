@@ -139,3 +139,20 @@ export function assertImageRequest(request: any, origin: string, sessionToken: s
     error.code = 'origin_forbidden'; error.status = 403; throw error;
   }
 }
+
+/** A path-scoped, HttpOnly cookie lets sandboxed file preview iframes/tabs authenticate without custom headers. */
+export function conversationFileCookie(sessionToken: string) {
+  return `buildr-file=${sessionToken}; Path=/api/v1/conversation-file; HttpOnly; SameSite=Strict`;
+}
+
+export function assertConversationFileRequest(request: any, origin: string, sessionToken: string) {
+  const cookie = String(request.headers.cookie || '').split(';').map(value => value.trim()).find(value => value.startsWith('buildr-file='));
+  if (cookie?.slice('buildr-file='.length) !== sessionToken) {
+    const error: Error & Record<string, any> = new Error('文件预览会话已失效，请刷新页面。');
+    error.code = 'session_forbidden'; error.status = 403; throw error;
+  }
+  if ((request.headers.origin && request.headers.origin !== origin) || request.headers['sec-fetch-site'] === 'cross-site') {
+    const error: Error & Record<string, any> = new Error('本地文件只允许当前 Buildr Web 读取。');
+    error.code = 'origin_forbidden'; error.status = 403; throw error;
+  }
+}

@@ -6,7 +6,8 @@ import type { SourceControlProgress } from './source-control-refresh';
 type Catalog = ReturnType<typeof createSourceControlCatalog>;
 type Options = {
   workspaceId: string;
-  load(taskId: string | undefined, repositoryId: string | undefined, signal: AbortSignal, onProgress?: SourceControlProgress, shared?: boolean): Promise<CodeSourceControlResponse>;
+  load(taskId: string | undefined, repositoryId: string | undefined, signal: AbortSignal, onProgress?: SourceControlProgress, shared?: boolean, preferredRepository?: () => string | undefined): Promise<CodeSourceControlResponse>;
+  selectedRepository?(): string | undefined;
   watch(cursor: string | undefined, signal: AbortSignal): Promise<CodeSourceControlWatchResponse>;
   subscribe?(listener: (notice: SourceControlChangeNotice) => void): () => void;
   cache?: {read(): CodeSourceControlResponse | null; write(data: CodeSourceControlResponse): void};
@@ -19,6 +20,7 @@ const jobKey = (scope: string, repositoryId?: string) => JSON.stringify([scope, 
 /** One workspace owns observation, coalescing and reconnects. Consumers never start their own poll. */
 export function createSourceControlObserver(options: Options) {
   const catalogs = new Map<string, {catalog: Catalog; users: number}>();
+  const priorities = new Map<string, string>();
   const queued = new Map<string, Job>(), running = new Map<string, Job>();
   const listeners = new Set<() => void>();
   const debounceMs = options.debounceMs ?? 180, fallbackMs = options.fallbackMs ?? 300000;
@@ -42,7 +44,7 @@ export function createSourceControlObserver(options: Options) {
   function getCatalog(taskId = '') {
     let entry = catalogs.get(taskId);
     if (!entry) {
-      entry = {catalog: createSourceControlCatalog((repositoryId, signal, onProgress, shared) => options.load(taskId || undefined, repositoryId, signal, onProgress, shared), taskId ? null : options.cache?.read()), users: 0};
+      entry = {catalog: createSourceControlCatalog((repositoryId, signal, onProgress, shared) => options.load(taskId || undefined, repositoryId, signal, onProgress, shared, () => priorities.get(taskId) || (!taskId ? options.selectedRepository?.() : undefined)), taskId ? null : options.cache?.read()), users: 0};
       catalogs.set(taskId, entry);
     }
     return entry.catalog;
@@ -200,10 +202,16 @@ export function createSourceControlObserver(options: Options) {
         entry.users--;
         if (scope && entry.users === 0) {
           for (const [key, job] of queued) if (job.scope === scope) queued.delete(key);
-          entry.catalog.dispose(); catalogs.delete(scope);
+          entry.catalog.dispose(); catalogs.delete(scope); priorities.delete(scope);
         }
       };
     },
+    prioritize(repositoryId: string, taskId?: string) {
+      const scope = taskId || '';
+      priorities.set(scope, repositoryId);
+      reconcile(taskId);
+    },
+    clearPriority() { priorities.clear(); },
     check,
     checkAll,
     reconcile,

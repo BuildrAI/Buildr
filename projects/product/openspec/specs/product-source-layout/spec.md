@@ -119,7 +119,7 @@ Buildr自举Product MUST将治理资产保留在Product Project root，并 MUST�
 #### Scenario: 检查 Buildr Service root
 - **WHEN** verifier扫描`projects/product/services/buildr/`
 - **THEN** 该目录 MUST是`@buildr-ai/buildr` package、运行源码、验证、维护脚本和交付源资产的唯一源码根
-- **AND** Service root MUST提供Service-level `AGENTS.md`
+- **AND** verifier MUST NOT 因缺少可选的 Service-level `AGENTS.md` 而拒绝符合其余布局要求的主程序 Service root
 
 #### Scenario: 检查 DSH 插件 Service root
 - **WHEN** verifier扫描已登记的 DSH 插件 Service

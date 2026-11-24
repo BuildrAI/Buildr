@@ -9,17 +9,29 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { useLegacyAssetCatalog } from '../../helpers/legacy-asset-catalog.ts';
+import { runCliInProcess } from '../../helpers/in-process-cli.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const buildr: any = path.join(productRoot, 'bin', 'buildr.mjs');
 const fixtureRoot: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-managed-integrity-'));
 const workspace: any = path.join(fixtureRoot, 'workspace');
 
-function run(args: any, options: any = {}): any  {
+function spawnRun(args: any, options: any = {}): any  {
   const result: any = spawnSync(process.execPath, [buildr, ...args], {
     cwd: productRoot,
     encoding: 'utf8',
     env: { ...process.env, ...(options.env || {}) },
+  });
+  if (options.expectFailure ? result.status === 0 : result.status !== 0) {
+    throw new Error(`Unexpected command result (${result.status}): buildr ${args.join(' ')}\n${result.stdout}\n${result.stderr}`);
+  }
+  return result;
+}
+
+async function run(args: any, options: any = {}): Promise<any> {
+  const result: any = await runCliInProcess(args, undefined, {
+    cwd: productRoot,
+    ...(options.env ? { env: { ...process.env, ...options.env } } : {}),
   });
   if (options.expectFailure ? result.status === 0 : result.status !== 0) {
     throw new Error(`Unexpected command result (${result.status}): buildr ${args.join(' ')}\n${result.stdout}\n${result.stderr}`);
@@ -49,32 +61,32 @@ function assertNoMutationTransaction(root: any, label: any): any  {
   }
 }
 
-function verifyOptionalBuiltinPreflight(mode: any): any  {
+async function verifyOptionalBuiltinPreflight(mode: any): Promise<any>  {
   const root: any = path.join(fixtureRoot, `optional-${mode}`);
-  run(['init', '--target', root, '--name', `optional-${mode}`]);
-  const skillRoot: any = path.join(root, 'skills', 'buildr', 'task-retrospective');
+  await run(['init', '--target', root, '--name', `optional-${mode}`]);
+  const skillRoot: any = path.join(root, 'skills', 'buildr', 'ui-prototype');
   const skillFile: any = path.join(skillRoot, 'SKILL.md');
   // Official builtin sources are projected from the shared resource store; user drift is
   // declared by dropping the resource projection and materializing local bytes (or none).
   const manifestFile: any = path.join(root, 'skills', 'manifest.yml');
   const document: any = YAML.parse(fs.readFileSync(manifestFile, 'utf8'));
-  const entry: any = document.skills.find((item: any) => item.id === 'task-retrospective');
+  const entry: any = document.skills.find((item: any) => item.id === 'ui-prototype');
   delete entry.resource;
-  if (mode === 'modified') { fs.mkdirSync(skillRoot, { recursive: true }); fs.writeFileSync(skillFile, '---\nname: task-retrospective\ndescription: user modified copy\n---\n\nuser modification\n'); }
+  if (mode === 'modified') { fs.mkdirSync(skillRoot, { recursive: true }); fs.writeFileSync(skillFile, '---\nname: ui-prototype\ndescription: user modified copy\n---\n\nuser modification\n'); }
   fs.writeFileSync(manifestFile, YAML.stringify(document));
   initializeGitBaseline(root);
   const beforeContent: any = mode === 'modified' ? fs.readFileSync(skillFile, 'utf8') : null;
-  const result: any = run(['sync', 'codex', '--target', root]);
+  const result: any = await run(['sync', 'codex', '--target', root]);
   const output: any = `${result.stdout}\n${result.stderr}`;
-  if (!output.includes(`skill:task-retrospective`) || !output.includes(`保持原样`) || !output.includes(mode)) throw new Error(`Optional Builtin ${mode} did not report the preserved ownership unit.`);
+  if (!output.includes(`skill:ui-prototype`) || !output.includes(`保持原样`) || !output.includes(mode)) throw new Error(`Optional Builtin ${mode} did not report the preserved ownership unit.`);
   assertNoMutationTransaction(root, `Optional Builtin ${mode}`);
   if (mode === 'modified' && fs.readFileSync(skillFile, 'utf8') !== beforeContent) throw new Error('Modified optional Builtin content changed during preflight.');
   if (mode === 'missing' && fs.existsSync(skillRoot)) throw new Error('Missing optional Builtin was restored before user decision.');
 }
 
-function verifyComponentConflictPreflight(): any  {
+async function verifyComponentConflictPreflight(): Promise<any>  {
   const root: any = path.join(fixtureRoot, 'component-conflict');
-  run(['init', '--target', root, '--name', 'component-conflict']);
+  await run(['init', '--target', root, '--name', 'component-conflict']);
   fs.rmSync(path.join(root, 'components'), { recursive: true, force: true });
   fs.rmSync(path.join(root, 'commands', 'buildr', 'openspec'), { recursive: true, force: true });
   const skillFile: any = path.join(root, 'skills', 'openspec', 'openspec-propose', 'SKILL.md');
@@ -89,7 +101,7 @@ function verifyComponentConflictPreflight(): any  {
   fs.writeFileSync(manifestFile, YAML.stringify(document));
   initializeGitBaseline(root);
   const beforeContent: any = fs.readFileSync(skillFile, 'utf8');
-  const result: any = run(['sync', 'codex', '--target', root]);
+  const result: any = await run(['sync', 'codex', '--target', root]);
   const output: any = `${result.stdout}\n${result.stderr}`;
   if (!output.includes('optional ownership unit component:openspec 保持原样') || !output.includes('Legacy Component migration')) throw new Error('Optional Component conflict did not report the preserved ownership unit.');
   assertNoMutationTransaction(root, 'Component conflict');
@@ -97,64 +109,64 @@ function verifyComponentConflictPreflight(): any  {
 }
 
 try {
-  verifyOptionalBuiltinPreflight('modified');
-  verifyOptionalBuiltinPreflight('missing');
-  verifyComponentConflictPreflight();
-  run(['init', '--target', workspace, '--name', 'integrity-fixture']);
+  await verifyOptionalBuiltinPreflight('modified');
+  await verifyOptionalBuiltinPreflight('missing');
+  await verifyComponentConflictPreflight();
+  spawnRun(['init', '--target', workspace, '--name', 'integrity-fixture']);
   useLegacyAssetCatalog(workspace); // Retained project/service identity and rollback contracts.
 
   for (const id of ['.', '..']) {
     const before: any = fs.readFileSync(path.join(workspace, 'projects', 'manifest.yml'), 'utf8');
-    run(['project', 'create', id, '--target', workspace], { expectFailure: true });
+    await run(['project', 'create', id, '--target', workspace], { expectFailure: true });
     if (fs.readFileSync(path.join(workspace, 'projects', 'manifest.yml'), 'utf8') !== before) throw new Error(`Invalid Project id mutated registry: ${id}`);
   }
 
   const ruleFile: any = path.join(workspace, 'rules', 'fixture.md');
   fs.mkdirSync(path.dirname(ruleFile), { recursive: true });
   fs.writeFileSync(ruleFile, '# Fixture\n');
-  run(['rules', 'add', 'fixture', '--description', 'fixture rule', '--target', workspace], { expectFailure: true });
-  run(['rules', 'remove', 'fixture', '--target', workspace], { expectFailure: true });
+  await run(['rules', 'add', 'fixture', '--description', 'fixture rule', '--target', workspace], { expectFailure: true });
+  await run(['rules', 'remove', 'fixture', '--target', workspace], { expectFailure: true });
   if (!fs.existsSync(ruleFile)) throw new Error('Retired rules command removed the legacy file.');
   if (fs.existsSync(path.join(workspace, 'rules', 'manifest.yml'))) throw new Error('Retired rules command wrote a manifest.');
 
   const escapedDescription: any = 'line one\nline "two"';
-  run(['commands', 'add', 'fixture-tool', '--purpose', 'fixture', '--description', escapedDescription, '--install-hint', 'https://example.com/tool', '--target', workspace]);
+  await run(['commands', 'add', 'fixture-tool', '--purpose', 'fixture', '--description', escapedDescription, '--install-hint', 'https://example.com/tool', '--target', workspace]);
   const commands: any = YAML.parse(fs.readFileSync(path.join(workspace, 'commands', 'manifest.yml'), 'utf8'));
   if (commands.commands.find((item: any) => item.id === 'fixture-tool')?.description !== escapedDescription) throw new Error('YAML escaped scalar did not round-trip.');
 
   const output: any = path.join(fixtureRoot, 'package-output');
-  run(['package', 'build', '--out', output]);
-  run(['package', 'build', '--out', output]);
+  spawnRun(['package', 'build', '--out', output]);
+  await run(['package', 'build', '--out', output]);
   if (!fs.existsSync(path.join(output, '.buildr-package-output.json'))) throw new Error('Package output receipt is missing.');
   fs.appendFileSync(path.join(output, 'README.md'), '\nmodified\n');
-  run(['package', 'build', '--out', output], { expectFailure: true });
+  await run(['package', 'build', '--out', output], { expectFailure: true });
   if (!fs.readFileSync(path.join(output, 'README.md'), 'utf8').includes('modified')) throw new Error('Modified package output was overwritten.');
   const unowned: any = path.join(fixtureRoot, 'unowned');
   fs.mkdirSync(unowned);
   fs.writeFileSync(path.join(unowned, 'keep.txt'), 'keep');
-  run(['package', 'build', '--out', unowned], { expectFailure: true });
+  await run(['package', 'build', '--out', unowned], { expectFailure: true });
   if (fs.readFileSync(path.join(unowned, 'keep.txt'), 'utf8') !== 'keep') throw new Error('Unowned package output was modified.');
-  run(['package', 'build', '--out', productRoot], { expectFailure: true });
+  await run(['package', 'build', '--out', productRoot], { expectFailure: true });
 
   const projectRemoteA: any = path.join(fixtureRoot, 'project-a.git');
   const projectRemoteB: any = path.join(fixtureRoot, 'project-b.git');
   git(['init', '--bare', projectRemoteA]);
   git(['init', '--bare', projectRemoteB]);
-  run(['project', 'create', 'git-project', '--repo', `file://${projectRemoteA}`, '--target', workspace]);
-  run(['project', 'create', 'git-project', '--repo', `file://${projectRemoteA}`, '--target', workspace]);
+  await run(['project', 'create', 'git-project', '--repo', `file://${projectRemoteA}`, '--target', workspace]);
+  await run(['project', 'create', 'git-project', '--repo', `file://${projectRemoteA}`, '--target', workspace]);
   const projectRegistryBefore: any = fs.readFileSync(path.join(workspace, 'projects', 'manifest.yml'), 'utf8');
-  run(['project', 'create', 'git-project', '--repo', `file://${projectRemoteB}`, '--target', workspace], { expectFailure: true });
+  await run(['project', 'create', 'git-project', '--repo', `file://${projectRemoteB}`, '--target', workspace], { expectFailure: true });
   if (fs.readFileSync(path.join(workspace, 'projects', 'manifest.yml'), 'utf8') !== projectRegistryBefore) throw new Error('Project identity conflict mutated registry.');
 
   const serviceRemoteA: any = path.join(fixtureRoot, 'service-a.git');
   const serviceRemoteB: any = path.join(fixtureRoot, 'service-b.git');
   git(['init', '--bare', serviceRemoteA]);
   git(['init', '--bare', serviceRemoteB]);
-  run(['service', 'create', 'git-project/api', `file://${serviceRemoteA}`, '--target', workspace]);
-  run(['service', 'create', 'git-project/api', `file://${serviceRemoteA}`, '--target', workspace]);
+  await run(['service', 'create', 'git-project/api', `file://${serviceRemoteA}`, '--target', workspace]);
+  await run(['service', 'create', 'git-project/api', `file://${serviceRemoteA}`, '--target', workspace]);
   const serviceManifest: any = path.join(workspace, 'projects', 'git-project', 'services', 'manifest.yml');
   const serviceRegistryBefore: any = fs.readFileSync(serviceManifest, 'utf8');
-  run(['service', 'create', 'git-project/api', `file://${serviceRemoteB}`, '--target', workspace], { expectFailure: true });
+  await run(['service', 'create', 'git-project/api', `file://${serviceRemoteB}`, '--target', workspace], { expectFailure: true });
   if (fs.readFileSync(serviceManifest, 'utf8') !== serviceRegistryBefore) throw new Error('Service identity conflict mutated metadata.');
 
   const serviceRoot: any = path.join(workspace, 'projects', 'git-project', 'services', 'api');
@@ -165,13 +177,13 @@ try {
   git(['commit', '-m', 'service fixture'], serviceRoot);
   const serviceHead: any = git(['rev-parse', 'HEAD'], serviceRoot);
   const serviceStatus: any = git(['status', '--porcelain=v1', '--untracked-files=all'], serviceRoot);
-  run(['sync', 'codex', '--target', workspace], { expectFailure: true, env: { BUILDR_FAULT_AFTER_MUTATION_WRITE: '1' } });
+  spawnRun(['sync', 'codex', '--target', workspace], { expectFailure: true, env: { BUILDR_FAULT_AFTER_MUTATION_WRITE: '1' } });
   if (!fs.existsSync(path.join(serviceRoot, 'keep.txt')) || fs.readFileSync(path.join(serviceRoot, 'keep.txt'), 'utf8') !== 'keep\n') throw new Error('Sync rollback changed nested Service repository content.');
   if (git(['rev-parse', 'HEAD'], serviceRoot) !== serviceHead || git(['status', '--porcelain=v1', '--untracked-files=all'], serviceRoot) !== serviceStatus) throw new Error('Sync rollback changed nested Service repository Git state.');
   assertNoMutationTransaction(workspace, 'Nested Service rollback');
 
-  run(['component', 'uninstall', 'openspec', '--agent', 'codex', '--target', workspace], { expectFailure: true, env: { BUILDR_FAULT_AFTER_MUTATION_WRITE: '1' } });
-  run(['component', 'check', 'openspec', '--target', workspace, '--json']);
+  spawnRun(['component', 'uninstall', 'openspec', '--agent', 'codex', '--target', workspace], { expectFailure: true, env: { BUILDR_FAULT_AFTER_MUTATION_WRITE: '1' } });
+  await run(['component', 'check', 'openspec', '--target', workspace, '--json']);
   if (!fs.existsSync(path.join(workspace, 'components', 'buildr', 'openspec', 'component.yml'))) throw new Error('Component rollback lost installed definition.');
 
   const coreFile: any = path.join(workspace, 'skills', 'buildr', 'git-operations', 'SKILL.md');
@@ -185,16 +197,16 @@ try {
   fs.mkdirSync(path.dirname(coreFile), { recursive: true });
   fs.writeFileSync(coreFile, coreBeforeRestore);
   fs.writeFileSync(coreManifestFile, YAML.stringify(coreDocument));
-  const rollbackFailure: any = run(['builtin', 'restore', 'git-operations', '--target', workspace], { expectFailure: true, env: { BUILDR_FAULT_AFTER_MUTATION_WRITE: '1', BUILDR_FAULT_MUTATION_RESTORE_REMOVE: '1' } });
+  const rollbackFailure: any = spawnRun(['builtin', 'restore', 'git-operations', '--target', workspace], { expectFailure: true, env: { BUILDR_FAULT_AFTER_MUTATION_WRITE: '1', BUILDR_FAULT_MUTATION_RESTORE_REMOVE: '1' } });
   if (!`${rollbackFailure.stdout}\n${rollbackFailure.stderr}`.includes('Rollback failed')) throw new Error('Injected restore removal failure did not preserve a rollback-failed transaction.');
   const failedTransaction: any = fs.readdirSync(path.join(workspace, '.buildr', 'mutations'), { withFileTypes: true }).find((entry: any) => entry.isDirectory());
   if (!failedTransaction) throw new Error('Rollback failure did not preserve its transaction directory.');
-  run(['mutation', 'recover', failedTransaction.name, '--target', workspace]);
+  await run(['mutation', 'recover', failedTransaction.name, '--target', workspace]);
   if (fs.readFileSync(coreFile, 'utf8') !== coreBeforeRestore) throw new Error('Mutation recover did not restore the transaction pre-state.');
-  const repeatedRecover: any = run(['mutation', 'recover', failedTransaction.name, '--target', workspace]);
+  const repeatedRecover: any = await run(['mutation', 'recover', failedTransaction.name, '--target', workspace]);
   if (!repeatedRecover.stdout.includes('已经恢复')) throw new Error('Repeated mutation recover was not reported as a proven no-op.');
-  run(['mutation', 'recover', 'unknown-transaction', '--target', workspace], { expectFailure: true });
-  run(['builtin', 'restore', 'git-operations', '--target', workspace]);
+  await run(['mutation', 'recover', 'unknown-transaction', '--target', workspace], { expectFailure: true });
+  await run(['builtin', 'restore', 'git-operations', '--target', workspace]);
 
   const transactionId: any = 'fixture-transaction';
   const transactionRoot: any = path.join(workspace, '.buildr', 'mutations', transactionId);
@@ -202,11 +214,11 @@ try {
   const journal: any = { schemaVersion: 'buildr.mutation/v1', transactionId, operation: 'fixture', phase: 'rollback-failed', affectedPaths: [], snapshots: [] };
   fs.writeFileSync(path.join(transactionRoot, 'journal.json'), `${JSON.stringify(journal)}\n`);
   fs.writeFileSync(path.join(workspace, '.buildr', 'mutations', 'lock.json'), `${JSON.stringify(journal)}\n`);
-  const doctor: any = run(['doctor', '--agent', 'codex', '--target', workspace, '--json'], { expectFailure: true });
+  const doctor: any = spawnRun(['doctor', '--agent', 'codex', '--target', workspace, '--json'], { expectFailure: true });
   const doctorJson: any = JSON.parse(doctor.stdout);
   if (!doctorJson.findings.some((item: any) => item.code === 'mutation.transaction_incomplete')) throw new Error('Doctor did not report incomplete transaction.');
-  run(['commands', 'remove', 'fixture-tool', '--target', workspace], { expectFailure: true });
-  run(['mutation', 'recover', transactionId, '--target', workspace]);
+  await run(['commands', 'remove', 'fixture-tool', '--target', workspace], { expectFailure: true });
+  await run(['mutation', 'recover', transactionId, '--target', workspace]);
   if (fs.existsSync(path.join(workspace, '.buildr', 'mutations', 'lock.json'))) throw new Error('Mutation recovery did not remove matching lock.');
 
   console.log('Managed data integrity verification passed.');

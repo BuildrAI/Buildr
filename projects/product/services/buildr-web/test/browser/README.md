@@ -17,21 +17,17 @@ tools/development/run-development-npm run browser:prepare
 # 默认使用配套 Chromium；如需其他兼容浏览器，再显式设置 BUILDR_BROWSER_EXECUTABLE。
 # 完整端到端测试（E2E），包括浏览器、命令行和应用生命周期。
 tools/development/run-development-npm run test:e2e
-# 只运行前端服务（Service）拥有的布局检查。
-tools/development/run-development-npm run test:related -- --check e2e-browser:layout
+# 运行指定浏览器核心检查示例。
+tools/development/run-development-npm run test:related -- --check e2e-browser:core
 ```
 
 `BUILDR_NODE` 必须符合项目声明版本；未设置时既有包装入口按 `.node-version` 查找。浏览器检查需要 `buildr` 锁定的 `playwright-core` 和兼容浏览器，不要求安装 Tabbit、Tabbit 命令行（CLI）或任何智能体（Agent）浏览器插件。未指定 `BUILDR_BROWSER_EXECUTABLE` 时使用配套 Chromium，以无头模式（Headless）运行，不扫描个人浏览器；测试执行不下载浏览器。依赖准备、缓存复用和显式路径以[宿主服务说明](../../../buildr/test/e2e/README.md)为准。替换可执行文件仍需实际运行，不能仅凭品牌声称兼容。
 
 入口生成所需数据类型（DTO）和测试辅助产物，构建隔离 `web-dist`，通过真实 HTTP 托管后检查。完整入口只构建一次，各检查组拥有独立临时工作空间（Workspace）、用户配置与浏览器；失败组不会阻止后续无依赖检查组。各用例结束清除页面状态、临时请求拦截和视口设置。用例自己准备其依赖数据，不依赖前一用例成功写入。
 
-`layout` 覆盖 1920、1280、390 宽度的目录信息与操作可达、搜索保留、页面无非预期横向溢出；长文检查真实项目引用、分屏展开后的有界行宽与阅读位置恢复。允许宽表格在自身区域滚动。使用宽松可读范围和实际行为，不固定完整截图或精确样式值。
+`code-explorer` 通过 `code-explorer-journey.ts` 验证文件检索、内容定位、Markdown 阅读与页签管理；`code` 通过 `source-control-journey.ts` 验证工作树差异阅读、提交及历史记录核对。使用 `test:related -- --check e2e-browser:code-explorer --check e2e-browser:code` 可执行这两个独立检查。它们共用不可变前端构建，但临时目录、配置、HTTP 服务、浏览器与清理责任独立。
 
-`code-explorer` 通过 `code-explorer-journey.ts` 验证文件浏览、只读目录、搜索、相对链接、文件身份与返回；`code` 通过源代码管理旅程验证必要的差异读取、编辑、提交、分支与跨入口流程。使用 `test:related -- --check e2e-browser:code-explorer --check e2e-browser:code` 可执行这两个独立检查。它们共用不可变前端构建，但临时目录、配置、HTTP 服务、浏览器与清理责任独立，服从最多两个浏览器检查的资源限制。
-
-源码管理局部失败可设置 `BUILDR_SOURCE_CONTROL_FOCUS`，值为场景名称片段，多个片段以 `|` 分隔，再运行同一 `code` 入口。保留真实源码管理夹具、生产托管及清理，只执行匹配场景；日志列出实际选择，零匹配报错。此诊断结果只证明所选场景，不能当作完整 `code` 回归。
-
-对话局部诊断可同时设置 `BUILDR_AGENT_JOURNEY_PART=handoff` 和 `BUILDR_AGENT_SCENARIO_FOCUS`（场景名称片段，以 `|` 分隔），再运行 `test:related -- --check e2e-browser:agent-conversations`。保留真实夹具、生产托管和清理，只执行匹配场景；零匹配报错，局部结果不代表完整分组通过。
+Embedded Harness 与独立 Harness 对话网页的浏览器验证由 `harness-frame-browser` 与 `harness-standalone-browser` 分别负责。
 
 ## 换用户或工具环境
 

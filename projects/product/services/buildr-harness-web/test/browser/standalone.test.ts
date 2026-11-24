@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
+import {randomUUID} from 'node:crypto';
 import path from 'node:path';
 import {chromium, type Route} from 'playwright-core';
 import {connectHarnessProcess, prepareAgentRuntime, executionScopeKey, stopAgentProcess} from '../../../buildr-harness/src/index.ts';
@@ -130,7 +131,7 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await a.goto(origin);
     assert.equal(await a.locator('.harness-header').count(),0,'no duplicate outer navigation');
     assert.equal(await a.locator('.ac-collapsed-rail').count(),1);
-    assert.equal(await a.locator('.ac-collapsed-rail .ac-current-conversation').count(),0,'standalone rail omits current conversation collapse/expand button');
+    assert.equal(await a.locator('.ac-collapsed-rail .ac-current-conversation').getAttribute('aria-label'),'当前对话','standalone current entry navigates rather than collapsing the conversation');
     await a.locator('.ac-focus-history-pane').waitFor({state:'visible',timeout:10000});
     assert.equal(await a.locator('.ac-focus-history-pane').getByRole('button',{name:'返回当前对话',exact:true}).count(),0,'desktop split omits narrow back button');
     await a.getByRole('button',{name:'更多对话操作',exact:true}).click();
@@ -212,26 +213,49 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await until(() => a.locator('.ac-model-label').innerText(), value => value.includes('Fixture'), 'fixture model selection');
     await a.locator('.ac-collapsed-rail .ac-all-conversations').click();
     await a.locator('.ac-focus-history-pane').waitFor({state:'visible'});
-    const gear=a.getByRole('button',{name:'智能体与模型设置',exact:true});
+    const gear=a.getByRole('button',{name:'设置',exact:true});
     const quota=a.getByRole('button',{name:'供应商额度',exact:true});
-    const settings=a.getByRole('region',{name:'智能体与模型',exact:true});
+    const settings=a.getByRole('region',{name:'设置',exact:true});
     const quotaOverview=a.getByTestId('account-quota-overview');
     await inputA.fill('打开设置前的未发送草稿');
     await gear.hover();
     assert.equal(await quotaOverview.isVisible(),false);
     await gear.click();
     await settings.waitFor();
-    assert.equal(await a.locator('.ac-focus-history-pane').isVisible(),true);
-    await settings.getByRole('tab',{name:'智能体',exact:true}).click();
-    await settings.getByRole('button',{name:'返回对话',exact:true}).click();
+    await settings.getByRole('button',{name:'全部供应商',exact:true}).waitFor();
+    assert.equal(await a.locator('.ac-collapsed-rail').isVisible(),true,'保留最左 52px 图标导轨');
+    assert.equal(await gear.getAttribute('aria-pressed'),'true');
+    assert.equal(await gear.evaluate(node=>node.classList.contains('is-active')),true,'桌面设置态导轨设置图标保持高亮');
+    assert.equal(await a.locator('.ac-collapsed-rail .ac-current-conversation').evaluate(node=>node.classList.contains('is-active')),false,'桌面设置态导轨当前对话不高亮');
+    assert.equal(await a.locator('.ac-collapsed-rail .ac-all-conversations').evaluate(node=>node.classList.contains('is-active')),false,'桌面设置态导轨对话列表不高亮');
+    assert.equal(await a.locator('.ac-focus-history-pane').isVisible(),false,'进入设置时隐藏左侧对话列表');
+    assert.equal(await settings.locator('.ac-focus-settings-nav-item .anticon-right').count(),0,'模型菜单右侧不加箭头');
+    await a.locator('.ac-collapsed-rail').evaluate(async node=>{await Promise.all(node.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{})));await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));});
+    if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await a.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'focus-settings-models.png')});
+    await settings.locator('.ac-focus-settings-nav').getByRole('button',{name:'智能体',exact:true}).click();
+    await settings.locator('.amm-source-list').waitFor({state:'hidden'});
+    await a.locator('.ac-collapsed-rail').evaluate(async node=>{await Promise.all(node.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{})));await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));});
+    if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await a.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'focus-settings-agents.png')});
+    await settings.getByRole('button',{name:'关闭设置',exact:true}).click();
+    await settings.waitFor({state:'hidden'});
+    assert.equal(await a.locator('.ac-focus-history-pane').isVisible(),true,'关闭设置后恢复原本展开的对话列表');
     assert.equal(await inputA.inputValue(),'打开设置前的未发送草稿');
+    await gear.click();
+    await settings.waitFor();
+    await a.keyboard.press('Escape');
+    await settings.waitFor({state:'hidden'});
+    assert.equal(await a.locator('.ac-focus-history-pane').isVisible(),true,'Esc 关闭设置后恢复对话列表');
     await quota.hover();
     await quotaOverview.getByText(/小时.*分钟后重置/).waitFor({state:'visible'});
     assert.match(await quotaOverview.innerText(),/每周窗口.*剩余 5%/s);
     await quotaOverview.screenshot({path:path.join(os.tmpdir(),'conversation-single-quota.png')});
     await quota.click();
+    await settings.waitFor();
+    assert.equal(await settings.locator('.ac-focus-settings-nav').getByRole('button',{name:'模型',exact:true}).getAttribute('aria-current'),'page');
     await settings.getByText('账号与额度',{exact:true}).waitFor();
-    await settings.getByRole('button',{name:'返回对话',exact:true}).click();
+    await a.locator('.ac-collapsed-rail .ac-all-conversations').click();
+    await settings.waitFor({state:'hidden'});
+    await a.locator('.ac-focus-history-pane').waitFor({state:'visible'});
     const group=a.locator('.ac-focus-history-pane [data-history-workspace]').filter({has:a.getByRole('button',{name:'在我的工作空间新建对话',exact:true})});
     await group.locator('.ac-history-group-toggle').click();
     await group.getByRole('button',{name:'在我的工作空间新建对话',exact:true}).click();
@@ -303,16 +327,21 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await historyButton.waitFor({state: 'visible', timeout: 10000});
     assert.equal(await historyButton.locator('.ac-activity-status').innerText(), '待决策');
     const historyStyle = (node: HTMLElement) => {
-      const parent = node.parentElement!, copy = parent.querySelector('.ac-history-row-copy')!, idCount = node.querySelectorAll('.ac-history-id').length, meta = node.querySelector('.ac-history-meta')!;
-      const c = copy.getBoundingClientRect(), m = meta.getBoundingClientRect(), style = getComputedStyle(copy);
-      return {idCount, copyTitle: copy.getAttribute('title') || '', opacity: style.opacity, pointerEvents: style.pointerEvents, metaText: meta.textContent?.trim() || '', metaRight: m.right, copyLeft: c.left, copyMid: c.top + c.height / 2, metaMid: m.top + m.height / 2};
+      const copy = node.parentElement!.querySelector('.ac-history-row-copy')!, style = getComputedStyle(copy);
+      return {copyTitle: copy.getAttribute('title'), opacity: style.opacity, pointerEvents: style.pointerEvents};
     };
-    await b.locator('.ac-history > .ac-thread-header').hover();
-    const historyHidden = await historyButton.evaluate(historyStyle);
-    assert.ok(historyHidden.idCount === 0 && historyHidden.opacity === '0' && historyHidden.pointerEvents === 'none', JSON.stringify(historyHidden));
+    const history = b.getByRole('region', {name:'对话列表', exact:true});
+    assert.equal(await history.locator(':scope > .ac-thread-header').count(), 0);
+    await history.getByRole('textbox', {name:'搜索对话', exact:true}).hover();
+    assert.deepEqual(await historyButton.evaluate(historyStyle), {copyTitle:`复制对话 ID（${conversationId.slice(0, 8)}）`, opacity:'0', pointerEvents:'none'});
+    const modelDescription = await historyButton.locator('.ac-history-row-open').getAttribute('aria-description');
+    assert.ok(modelDescription);
+    assert.ok(!(await historyButton.innerText()).includes(modelDescription));
+    const before = await historyButton.boundingBox();
     await historyButton.hover();
-    const historyOrder = await historyButton.evaluate(historyStyle);
-    assert.ok(historyOrder.idCount === 0 && historyOrder.opacity === '1' && historyOrder.pointerEvents === 'auto' && historyOrder.copyTitle === `复制对话 ID（${conversationId.slice(0, 8)}）` && historyOrder.metaText.length > 0 && historyOrder.metaRight <= historyOrder.copyLeft + 1 && Math.abs(historyOrder.copyMid - historyOrder.metaMid) < 6, JSON.stringify(historyOrder));
+    assert.deepEqual(await historyButton.evaluate(historyStyle), {copyTitle:`复制对话 ID（${conversationId.slice(0, 8)}）`, opacity:'1', pointerEvents:'auto'});
+    await b.getByRole('tooltip').filter({hasText:modelDescription}).waitFor({state:'visible'});
+    assert.deepEqual(await historyButton.boundingBox(), before);
     if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await b.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'history-list-order.png')});
     await historyButton.click();
     await b.getByRole('radio', {name: 'Accepted', exact: true}).waitFor({state: 'visible', timeout: 10000});
@@ -323,7 +352,7 @@ test('standalone production UI sends through real source HTTP, isolates two draf
         value: {writeText: async (text: string) => {(window as any).__copiedId = text;}},
       });
     });
-    await b.locator('.ac-panel > .ac-conversation-view > .ac-thread-header').getByRole('button', {name: '更多对话操作', exact: true}).click();
+    await b.locator('#agent-conversation-panel .ac-stream > .ac-thread-header').getByRole('button', {name: '更多对话操作', exact: true}).click();
     await b.getByRole('menuitem', {name: `复制对话 ID（${conversationId.slice(0, 8)}）`, exact: true}).click();
     assert.equal(await b.evaluate(() => (window as any).__copiedId), conversationId);
     await b.getByText('对话 ID 已复制', {exact: true}).waitFor();
@@ -401,7 +430,7 @@ test('standalone production UI sends through real source HTTP, isolates two draf
         id: 'standalone-mermaid-entry',
         kind: 'message',
         role: 'assistant',
-        text: '![独立版验收图片](proof.png)\n\n[打开本机图片](proof.png)\n\n![目录外图片](../outside.png)\n\n时序图如下：\n\n```mermaid\nsequenceDiagram\n  actor U as 客户\n  participant C as 鲜虾小程序\n  participant B as 鲜虾后端\n  U->>C: 选择微信支付\n  C->>B: 提交下单内容\n  B-->>C: 返回内部支付流水\n```\n',
+        text: '![独立版验收图片](proof.png)\n\n[打开本机图片](proof.png)\n\n![目录外图片](../outside.png)\n\n![缺失图片](missing.png)\n\n时序图如下：\n\n```mermaid\nsequenceDiagram\n  actor U as 客户\n  participant C as 鲜虾小程序\n  participant B as 鲜虾后端\n  U->>C: 选择微信支付\n  C->>B: 提交下单内容\n  B-->>C: 返回内部支付流水\n```\n',
         createdAt: new Date().toISOString(),
       }];
       await route.fulfill({response: fetched, json: body});
@@ -412,7 +441,8 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     const inlineProof=a.getByRole('button',{name:'查看大图：独立版验收图片',exact:true});
     const proofSrc=`data:image/png;base64,${proofImage.toString('base64')}`;
     await a.waitForFunction(()=>[...document.images].some(img=>img.alt==='独立版验收图片'&&img.naturalWidth===1));
-    await a.getByText('图片无法预览：目录外图片',{exact:true}).waitFor();
+    await a.waitForFunction(()=>[...document.images].some(img=>img.alt==='目录外图片'&&img.naturalWidth===1));
+    await a.getByText('图片无法预览：缺失图片',{exact:true}).waitFor();
     await inlineProof.press('Enter');
     const proofDialog=a.getByRole('dialog',{name:'图片预览',exact:true});
     await proofDialog.waitFor();assert.equal(await proofDialog.locator('img').getAttribute('src'),proofSrc);
@@ -519,12 +549,13 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await until(() => a.locator('.ac-transfer-notice').count(), value => value === 0, 'switching back to original Harness and model clears transfer notice without reload');
     assert.equal(fs.readFileSync(path.join(dataRoot, 'native-sends.jsonl'), 'utf8').trim().split('\n').length, 3, 'model and harness switching before send never dispatches native work');
     await a.locator('.ac-collapsed-rail .ac-account-settings').click();
-    await a.getByRole('tab', {name: '智能体', exact: true}).click();
+    const settingsNav = a.locator('#agent-focus-settings .ac-focus-settings-nav');
+    await settingsNav.getByRole('button', {name: '智能体', exact: true}).click();
     await a.locator('.ams-executors').waitFor({state: 'visible', timeout: 10000});
-    await a.getByRole('tab', {name: '模型', exact: true}).click();
+    await settingsNav.getByRole('button', {name: '模型', exact: true}).click();
     await a.getByRole('button', {name: '全部供应商', exact: true}).waitFor({state: 'visible', timeout: 10000});
     await a.getByRole('button', {name: '添加供应商', exact: true}).waitFor({state: 'visible', timeout: 10000});
-    await a.getByRole('tab', {name: '系统提示词', exact: true}).click();
+    await settingsNav.getByRole('button', {name: '系统提示词', exact: true}).click();
     const promptText = a.getByRole('textbox', {name:'系统提示词内容',exact:true});
     const savePromptButton=a.getByRole('button',{name:'保存系统提示词',exact:true});
     const savePrompt=async()=>{
@@ -559,7 +590,7 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await until(()=>promptText.inputValue(),value=>value===defaultPrompt,'default prompt editor restored');
     await savePrompt();
     try {await until(()=>client.operations.systemPrompt.read(),value=>value.enabled&&value.text===value.defaultText,'system prompt restored');} catch(error) {t.diagnostic(JSON.stringify({saved:await client.operations.systemPrompt.read(),requests:promptSaves,ui:await a.locator('section[aria-label="Buildr Harness 系统提示词"]').innerText()}));throw error;}
-    await a.getByRole('tab', {name: '程序接入', exact: true}).click();
+    await a.locator('#agent-focus-settings .ac-focus-settings-nav').getByRole('button', {name: '程序接入', exact: true}).click();
     const newAccess = a.getByRole('button', {name: '新建接入', exact: true});
     await until(() => newAccess.isEnabled(), value => value, 'programmatic settings discovery');
     await newAccess.click();
@@ -632,6 +663,22 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     await narrow.goto(origin);
     await narrow.getByRole('textbox', {name: '对话输入', exact: true}).waitFor({state: 'visible', timeout: 10000});
     assert.equal(await narrow.locator('.ac-history:visible').count(), 0, 'narrow viewport defaults to conversation view even when desktop history preference is open');
+    await narrow.locator('.ac-collapsed-rail .ac-account-settings').click();
+    const narrowSettings = narrow.getByRole('region', {name: '设置', exact: true});
+    await narrowSettings.waitFor({state: 'visible', timeout: 10000});
+    await narrowSettings.getByRole('button', {name: '全部供应商', exact: true}).waitFor({state: 'visible', timeout: 10000});
+    const narrowGear = narrow.locator('.ac-collapsed-rail .ac-account-settings');
+    assert.equal(await narrowGear.getAttribute('aria-pressed'), 'true');
+    assert.equal(await narrowGear.evaluate(node => node.classList.contains('is-active')), true, '窄屏设置态导轨设置图标保持高亮');
+    assert.equal(await narrow.locator('.ac-collapsed-rail .ac-current-conversation').evaluate(node => node.classList.contains('is-active')), false, '窄屏设置态导轨当前对话不高亮');
+    assert.equal(await narrow.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, '窄屏设置无横向溢出');
+    await narrow.locator('.ac-collapsed-rail').evaluate(async node => {
+      await Promise.all(node.getAnimations({subtree: true}).map(animation => animation.finished.catch(() => {})));
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
+    if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await narrow.screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'focus-settings-narrow.png')});
+    await narrow.keyboard.press('Escape');
+    await narrowSettings.waitFor({state: 'hidden', timeout: 10000});
     await narrow.locator('.ac-collapsed-rail .ac-all-conversations').click();
     await narrow.locator('.ac-history').waitFor({state: 'visible', timeout: 10000});
     const backToConversation = narrow.getByRole('button', {name: '返回当前对话', exact: true});
@@ -663,4 +710,105 @@ test('standalone production UI sends through real source HTTP, isolates two draf
     assert.equal(await freshInput.inputValue(),'');
 
     await context.close();
+});
+
+test('standalone nests visible child conversations in reminders and history', {timeout: 60000}, async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-child-list-browser-'));
+  const dataRoot = path.join(root, 'profile'), packageRoot = path.join(root, 'package'), work = path.join(root, 'work');
+  const profileId = 'child-list-browser';
+  let cleanupClient: Awaited<ReturnType<typeof connectHarnessProcess>> | undefined;
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+  t.after(async () => {
+    try {
+      await browser?.close();
+    } finally {
+      await cleanupClient?.disconnect();
+      if (cleanupClient) await stopAgentProcess({dataRoot, profileId, mode: 'stop-owned'});
+      fs.rmSync(root, {recursive: true, force: true});
+    }
+  });
+  fs.mkdirSync(work);
+  const coreRoot = path.resolve(import.meta.dirname, '../../../buildr-harness');
+  agentRuntimePackageTree(coreRoot).materialize(packageRoot);
+  fs.copyFileSync(path.join(coreRoot, 'test/integration/fixtures/agent-process-entry.mjs'), path.join(packageRoot, 'build/browser-fixture.mjs'));
+  fs.writeFileSync(path.join(packageRoot, 'build/fixture-version.json'), '{"version":"child-list-browser"}');
+  const runtime = prepareAgentRuntime({dataRoot, packageRoot, entry: 'build/browser-fixture.mjs'});
+  const client = cleanupClient = await connectHarnessProcess({dataRoot, profileId, runtime, sourceId: 'harness-local', caller: {kind: 'first-party-user', product: 'buildr-harness'}});
+  const connection = await client.operations.connections.read('first');
+  await client.operations.connections.connect('first', {expectedRevision: connection.revision});
+  const added = await client.operations.models.accounts.add({provider: 'fixture-model'});
+  const checked = await client.operations.models.accounts.check(added.id);
+  const account = await client.operations.models.accounts.preferences(checked.id, {expectedRevision: checked.revision, models: [{id: 'fixture', enabled: true}]});
+  await client.operations.models.catalog.list({refresh: true});
+  const scope = executionScopeKey((await client.directories.register(work)).ref);
+  await client.web.enable();
+  browser = await chromium.launch({headless: true});
+  const context = await browser.newContext({viewport: {width: 500, height: 800}, reducedMotion: 'reduce'});
+  // Both results are still unseen. The newer child normally sorts first,
+  // and the reminder and expanded list group it immediately below its parent.
+  const sendLayoutFixture = async (draft: {id: string; revision: string}, text: string) => {
+    const input = {expectedRevision: draft.revision, connectionId: 'first', model: 'fixture', modelAccountId: account.id, modelAccountIdentity: account.identity, text};
+    const preview = await client.operations.conversations.prepareSend(scope, draft.id, input);
+    await client.operations.conversations.send(scope, draft.id, {...input, previewToken: preview.token, clientRequestId: randomUUID()});
+    return until(() => client.operations.conversations.read(scope, draft.id), view => view.run?.status === 'completed', text);
+  };
+  const layoutParent = await sendLayoutFixture(await client.operations.conversations.create(scope, {title: '层级验证父对话'}), 'layout parent');
+  const layoutChild = await sendLayoutFixture(await client.operations.conversations.createChild(scope, layoutParent.id, {expectedRevision: layoutParent.revision, clientRequestId: randomUUID()}), 'layout child');
+  const layoutPage = await context.newPage();
+  const activityResponse = layoutPage.waitForResponse(response => response.url().includes('/activity-summary') && response.ok());
+  await layoutPage.goto((await client.web.login()).url);
+  const layoutRail = layoutPage.locator('.ac-collapsed-rail .ac-all-conversations');
+  const assertChildLayout = async (region: string, attribute: string) => {
+    const parent = layoutPage.locator(`${region} [${attribute}="${layoutParent.id}"]`);
+    const child = layoutPage.locator(`${region} [${attribute}="${layoutChild.id}"]`);
+    await child.waitFor({state: 'visible'});
+    await child.evaluate(async (node: HTMLElement) => {
+      await Promise.all((node.closest('.ant-popover') ?? node).getAnimations({subtree: true}).map(animation => animation.finished.catch(() => {})));
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
+    assert.equal(await parent.evaluate((node, attr) => node.parentElement?.nextElementSibling?.querySelector(`[${attr}]`)?.getAttribute(attr), attribute), layoutChild.id);
+    const parentTitle = await parent.locator('strong').boundingBox();
+    const childTitle = await child.locator('strong').boundingBox();
+    assert.ok(parentTitle && childTitle && childTitle.x >= parentTitle.x + 22 && childTitle.y > parentTitle.y, 'child title is visibly indented below the parent');
+    assert.equal(await child.locator('..').evaluate(node => getComputedStyle(node, '::before').borderInlineStartWidth), '2px');
+    assert.equal(await child.locator('.ac-activity-status').innerText(), '待查看');
+    assert.equal(await child.locator('..').getByRole('button',{name:'复制对话 ID'}).count(), 1);
+  };
+  assert.equal(layoutChild.childOf?.conversationId, layoutParent.id);
+  const listing = await (await activityResponse).json();
+  assert.equal(listing.conversations?.find((row: {id: string}) => row.id === layoutChild.id)?.childOf?.conversationId, layoutParent.id, JSON.stringify(listing.conversations?.map((row: {id: string; workspaceId: string; childOf?: unknown}) => ({id: row.id, workspaceId: row.workspaceId, childOf: row.childOf})) ?? listing));
+  await layoutRail.hover();
+  await assertChildLayout('.ac-activity-menu', 'data-activity-id');
+  if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await layoutPage.locator('.ac-activity-menu').screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'child-activity.png')});
+  await layoutRail.click();
+  const history = layoutPage.getByRole('region', {name:'对话列表',exact:true});
+  const child = history.locator(`[data-conversation-id="${layoutChild.id}"]`);
+  const toggle = history.locator(`[data-conversation-id="${layoutParent.id}"]`).locator('..').locator('.ac-history-child-toggle');
+  await toggle.waitFor();
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+  assert.equal(await toggle.innerText(), '1');
+  assert.equal(await child.count(), 0);
+  await toggle.press('Enter');
+  await assertChildLayout('.ac-history', 'data-conversation-id');
+  if (process.env.BUILDR_HARNESS_SCREENSHOT_DIR) await layoutPage.locator('.ac-history').screenshot({path: path.join(process.env.BUILDR_HARNESS_SCREENSHOT_DIR, 'child-history.png')});
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+  assert.equal(await layoutPage.locator(`.ac-panel[data-conversation-id="${layoutParent.id}"]`).count(), 0, 'expanding does not open the parent');
+  await toggle.click();
+  assert.equal(await child.count(), 0);
+  const search = history.getByRole('textbox', {name:'搜索对话'});
+  await search.fill(layoutChild.id);
+  await child.waitFor();
+  assert.equal(await toggle.count(), 0, 'search does not add a nonmatching parent');
+  await search.clear();
+  await toggle.waitFor();
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+  await toggle.click();
+  await child.click();
+  await layoutPage.locator(`.ac-panel[data-conversation-id="${layoutChild.id}"]`).waitFor();
+  await layoutRail.click();
+  await child.waitFor();
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+  assert.equal(await toggle.getAttribute('aria-disabled'), 'true', 'current child keeps its ancestors open');
+
+  await context.close();
 });

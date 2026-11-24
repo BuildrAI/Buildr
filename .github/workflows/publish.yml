@@ -247,6 +247,13 @@ jobs:
               "--name", `release-evidence-v${process.env.RELEASE_VERSION}-${attempt}`, "--dir", directory], { stdio: "inherit", timeout: 120000 });
             if (result.status !== 0 || result.error) throw new Error("Previous publisher journal remains unknown; npm write will stay blocked");
           '
+      - name: Download Candidate proof for protected publication
+        uses: actions/download-artifact@v7
+        with:
+          name: candidate-aggregate
+          path: ${{ runner.temp }}/candidate-aggregate
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.candidate_run_id }}
       - name: Publish and recover through the shared release checks
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -256,6 +263,7 @@ jobs:
           "${RUNNER_TEMP}/contract/release-context.json"
           "${RUNNER_TEMP}/candidate/release-artifact.json"
           "${RUNNER_TEMP}/contract"
+          "${RUNNER_TEMP}/candidate-aggregate/candidate-ci-aggregate.json"
       - name: Upload temporary release evidence
         if: always()
         uses: actions/upload-artifact@v7

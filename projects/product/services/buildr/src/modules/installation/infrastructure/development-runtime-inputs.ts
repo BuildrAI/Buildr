@@ -41,7 +41,7 @@ export const DEVELOPMENT_RUNTIME_INPUTS = Object.freeze({
     `${service}/tools/build/launcher/`, `${frontend}/src/`, `${frontend}/public/`,
     `${harnessWeb}/src/`, `${harnessWeb}/public/`,
     `${service}/tools/codegen/contracts/`,
-    `${agent}/src/`, `${agent}/resources/`, `${agent}/build/`, `${preparedAgent}/resources/`, `${preparedAgent}/build/`,
+    `${agent}/bin/`, `${agent}/src/`, `${agent}/resources/`, `${agent}/build/`, `${preparedAgent}/resources/`, `${preparedAgent}/build/`,
     `${service}/tools/development/programs/`, `${service}/resources/contracts/`, `${service}/resources/installation/launcher/`,
   ]),
 });

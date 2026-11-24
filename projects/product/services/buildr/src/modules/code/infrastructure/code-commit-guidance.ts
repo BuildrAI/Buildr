@@ -7,15 +7,11 @@ import type { CodeCommitSnapshot } from './code-commit-snapshot.ts';
 import { codeWorktreeTaskKey, readSourceControlTaskAssociations, type WorktreeCatalogDependencies } from './code-worktree-catalog.ts';
 import { enumerateCodeWorktrees } from './code-worktree-reader.ts';
 
+import type { CodeCommitGuidance } from '@buildr-ai/buildr-harness/workbench';
+export type { CodeCommitGuidance };
+
 type Source = { type?: string; root?: string; path: string };
 type TaskContext = { taskId: string; title: string; intent?: string; scope: { projects: string[]; services: Array<{ project: string; service: string }> } };
-export type CodeCommitGuidance = {
-  scopes: Array<{ kind: 'workspace' | 'repository' | 'project' | 'service'; path: string }>;
-  ruleEntrypoints: string[];
-  readableRoots: string[];
-  task: { taskId: string; title: string; intent: string } | null;
-  revision: string;
-};
 export type CodeCommitGuidanceDependencies = WorktreeCatalogDependencies & {
   assetCatalog(root: string): { projects: Array<{ code: string; serviceIds: string[]; source?: Source }>; services: Array<{ id: string; code: string; repositoryId: string; modulePath?: string; legacyRefs?: string[] }> };
   resolveSourceRoot(root: string, source: Source): string;

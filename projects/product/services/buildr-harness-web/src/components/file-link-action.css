@@ -1,0 +1,8 @@
+.harness-file-link-action { position: relative; }
+.harness-file-link-action > button:not([hidden]) {
+  position: absolute; inset-block-start: 100%; inset-inline-start: 0; z-index: 3;
+  background: var(--surface, #fff); color: var(--text, #24382f);
+  border: 1px solid var(--line, #cfdbd3); border-radius: 6px;
+  padding: 5px 9px; white-space: nowrap; font: inherit; cursor: pointer;
+  box-shadow: 0 3px 12px #0002;
+}

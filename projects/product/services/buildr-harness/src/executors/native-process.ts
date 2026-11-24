@@ -39,7 +39,7 @@ export function isolatedEnvironment(
     }
   }
   if (input.BUILDR_MAVEN_REPOSITORY) result.JAVA_TOOL_OPTIONS = '-Dmaven.repo.local="' + input.BUILDR_MAVEN_REPOSITORY.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
-  return { ...result, ...toolEnvironment(input), ...(cacheRoot ? { npm_config_cache: input.npm_config_cache || input.NPM_CONFIG_CACHE || join(cacheRoot, 'npm'), NPM_CONFIG_CACHE: input.npm_config_cache || input.NPM_CONFIG_CACHE || join(cacheRoot, 'npm'), NODE_COMPILE_CACHE: input.NODE_COMPILE_CACHE || join(cacheRoot, 'node-compile'), YARN_CACHE_FOLDER: input.YARN_CACHE_FOLDER || join(cacheRoot, 'yarn') } : {}), HOME: home, USERPROFILE: home, TMPDIR: temporary, TMP: temporary, TEMP: temporary, ...extra };
+  return { ...result, ...toolEnvironment(input), ...(cacheRoot ? { npm_config_cache: input.npm_config_cache || input.NPM_CONFIG_CACHE || join(cacheRoot, 'npm'), NPM_CONFIG_CACHE: input.npm_config_cache || input.NPM_CONFIG_CACHE || join(cacheRoot, 'npm'), NODE_COMPILE_CACHE: input.NODE_COMPILE_CACHE || join(cacheRoot, 'node-compile'), YARN_CACHE_FOLDER: input.YARN_CACHE_FOLDER || join(cacheRoot, 'yarn') } : {}), GIT_TERMINAL_PROMPT: input.GIT_TERMINAL_PROMPT ?? '0', npm_config_yes: input.npm_config_yes ?? 'false', HOME: home, USERPROFILE: home, TMPDIR: temporary, TMP: temporary, TEMP: temporary, ...extra };
 }
 export async function privateDirectories(...directories: string[]): Promise<void> {
   for (const directory of directories) {

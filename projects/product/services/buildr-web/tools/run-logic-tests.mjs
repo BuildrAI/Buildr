@@ -17,7 +17,7 @@ export function logicTestWorkerBudget(value = process.env.BUILDR_VERIFICATION_WO
 export function logicTestArguments(root = serviceRoot, budget = logicTestWorkerBudget()) {
   const files = fs.readdirSync(path.join(root, 'test')).filter(file => file.endsWith('.test.mjs')).sort();
   if (files.length === 0) throw new Error('Buildr Web logic test suite is empty.');
-  return ['--test', `--test-concurrency=${budget}`, ...files.map(file => path.join(root, 'test', file))];
+  return ['--import', path.join(root, 'tools/testing/shared-ui-test-dependencies.mjs'), '--test', `--test-concurrency=${budget}`, ...files.map(file => path.join(root, 'test', file))];
 }
 
 let invokedAsMain = false;

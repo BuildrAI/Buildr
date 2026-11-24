@@ -1,7 +1,7 @@
 schemaVersion: buildr.component/v1
 id: "buildr-self-bootstrap"
 kind: "integration"
-version: "1.3.21"
+version: "1.3.23"
 source: "workspace"
 members:
   rules: []
@@ -10,4 +10,4 @@ members:
   skillContributions: ["components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md"]
 contributions:
   skillFragments: ["task-finish@append=components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md"]
-integrity: ["skills/buildr-self-bootstrap-sync=sha256-69380d7a3367ceeb20b56825e0f55812872167e2410fcdae4e44afdeed02d4d9","components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md=sha256-003d0e04df3aa11159cfe4ea9d479413539203f469957afa459aaa0be31a2f47"]
+integrity: ["skills/buildr-self-bootstrap-sync=sha256-f7cdc96917983a477c47492ae5a41ba92083e423919925fff28c2df2b259522a","components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md=sha256-003d0e04df3aa11159cfe4ea9d479413539203f469957afa459aaa0be31a2f47"]

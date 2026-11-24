@@ -8,7 +8,7 @@ import { type ConnectionView, type CatalogModel } from './types.ts';
 import { contextReportWindow, contextUsedPercent, conversationUsageReport } from './conversation-state.ts';
 import { ContextUsageSummary } from './ContextUsageSummary.tsx';
 import {rememberReasoningEffort,restoreReasoningChoice} from './conversation-preferences.ts';
-import {executionAgentName,modelSourceName,nextServiceTier,conversationTierChoice,conversationReasoningSelection,selectedConversationModel,catalogConversationOption,type ConversationChoice} from './conversation-options.ts';
+import {executionAgentName,modelSourceName,nextServiceTier,conversationTierChoice,conversationReasoningSelection,selectedConversationModel,catalogConversationOption,magpieModelLabel,type ConversationChoice} from './conversation-options.ts';
 import {preparedAgentConnections} from '../../lib/model-picker.ts';
 
 type Props = {
@@ -48,7 +48,7 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
   useEffect(()=>{if(selectedShared&&value.modelAccountIdentity===selectedShared.accountIdentity&&value.modelAccountRevision!==selectedShared.accountRevision)onChange({...value,modelAccountRevision:selectedShared.accountRevision},false);},[selectedShared?.accountRevision,selectedShared?.accountIdentity,value.modelAccountIdentity,value.modelAccountRevision]);
   const defaultModel=selectedConversationModel(connection);
   const reasoning=conversationReasoningSelection(connection,value);
-  const modelLabel=(selectedShared?catalogSourceName(selectedShared)+' / '+selectedShared.label+(selectedShared.enabled===false?'（已停用）':''):undefined)||model?.label||value.model||'请选择模型';
+  const modelLabel=(selectedShared?(selectedShared.provider==='magpie'?magpieModelLabel(selectedShared.label):catalogSourceName(selectedShared)+' / '+selectedShared.label)+(selectedShared.enabled===false?'（已停用）':''):undefined)||model?.label||value.model||'请选择模型';
   const unavailable=disabled||(!original?.models.length&&!shared.some(item=>item.available));
   return <div className="ac-execution-options">
     {showAgent&&<ConversationAgentSelect connections={preparedAgentConnections(connections)} value={value} modelCatalog={shared} disabled={disabled} onChange={onChange}/>}

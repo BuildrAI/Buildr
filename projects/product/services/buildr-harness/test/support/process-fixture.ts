@@ -117,6 +117,17 @@ export async function cleanupProcessFixture({ root, dataRoot, profileId, host, o
     // A failing case still owns cleanup. Check exact private runtime command before signalling.
     const { execFileSync } = await import('node:child_process');
     for (const [pid, record] of owned) if (isLive(pid)) {
+      const directory = path.join(dataRoot, 'agent-service', 'diagnostics');
+      try {
+        const file = path.join(directory, `lifecycle-${pid}-${record.identity.generation}.jsonl`);
+        const last = fs.readFileSync(file, 'utf8').trim().split('\n').slice(-20).flatMap(line => {
+          try {
+            const { event, reason, phase, durationMs, confirmed } = JSON.parse(line);
+            return [{ event, reason, phase, durationMs, confirmed }];
+          } catch { return []; }
+        });
+        process.stderr.write(`[agent-test-cleanup] ${JSON.stringify({ pid, exit: 'pending', last })}\n`);
+      } catch { /* No diagnostic must prevent cleanup. */ }
       const command = execFileSync('ps',['-p',String(pid),'-o','command='],{encoding:'utf8'});
       if (command.includes(record.identity.runtime.entry)) process.kill(pid,'SIGTERM');
     }

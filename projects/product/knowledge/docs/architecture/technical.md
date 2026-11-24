@@ -1,6 +1,6 @@
 # Buildr 怎样实现
 
-本文帮助开发者判断改动属于哪里。当前产品实现为五个服务：`buildr-harness` 拥有执行核心、CLI 与独立发行，`buildr-harness-web` 拥有完整唯一网页；`buildr` / `buildr-web` 拥有 Development 工程业务及工程集成，后者在 `harness-ui` 模块嵌套 Harness 网页；`dsh-plugin` 独立维护现有插件发行。服务不是常驻进程数量，三种未来插件组合也不是本轮新增发行物；见[双产品说明](harness-products.md)。
+本文帮助开发者判断改动属于哪里。`buildr-harness` 拥有执行核心、目录能力和独立发行，`buildr-harness-web` 拥有完整对话和可复用资源管理器、源代码管理；`buildr` / `buildr-web` 拥有 Development 工程应用、CLI 和网页，第一方通过公开入口同页装配 Harness。`dsh-plugin` 维护可选的插件交付方式，不持有工程或对话权威。服务不是常驻进程数量，详见[双产品架构](harness-products.md)。
 
 整体组成见[系统全景图](../../archify/system/buildr-system-overview.html)，下面按调用与写入职责展开。
 

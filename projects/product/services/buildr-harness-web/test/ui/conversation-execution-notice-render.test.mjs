@@ -72,3 +72,29 @@ test('核对结论保留在同一行的可见文案',()=>{
  assert.match(html,/title="[^"]*仍无法读取原执行状态/);
  assert.doesNotMatch(html,/<details|>继续原任务</);
 });
+
+test('后台自动续行达到上限暂停且已释放资源时显示原因与唯一继续原任务按钮',()=>{
+ const run=live({diagnostic:'后台结果已取得，但自动续行次数已达上限；未报告为完成。',resourcesReleased:true,tools:[{id:'cmd-1',label:'command',status:'completed'}]});
+ const html=render({run,onContinue(){}});
+ assert.match(html,/后台自动续行已达上限，本轮已暂停。/);
+ assert.match(html,/后台结果已取得，记录和已完成的操作都保留/);
+ assert.equal((html.match(/>继续原任务</g)||[]).length,1);
+ assert.doesNotMatch(html,/>关闭对话<|>重新读取<|>停止</);
+ assert.doesNotMatch(html,/服务重启中断/);
+});
+
+test('未释放的未知轮存在可读诊断时直接展示真实原因而非暂时无法读取执行状态',()=>{
+ const run=live({diagnostic:'Antigravity 正文已结束，但仍有工具缺少完成回执；未报告为完整成功。',resourcesReleased:false});
+ const html=render({run,onContinue(){}});
+ assert.match(html,/Antigravity 正文已结束，但仍有工具缺少完成回执；未报告为完整成功。/);
+ assert.doesNotMatch(html,/暂时无法读取执行状态/);
+ assert.equal((html.match(/>重新读取</g)||[]).length,1);
+ assert.equal((html.match(/>停止</g)||[]).length,1);
+ assert.doesNotMatch(html,/>继续原任务</);
+});
+
+test('未释放的未知轮收到原始内部诊断码时映射为可读说明',()=>{
+ const html=render({run:live({diagnostic:'qoder_late_native_activity'})});
+ assert.match(html,/原生执行在结束后仍有迟到活动，结果尚未确认。/);
+ assert.doesNotMatch(html,/暂时无法读取执行状态/);
+});

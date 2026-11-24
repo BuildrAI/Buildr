@@ -33,11 +33,13 @@ export function catalogModelCompatibility(connection:CompatibilityTarget,item:Co
   return {compatible:true};
 }
 
+export function magpieModelLabel(label:string):string { return label.endsWith(' · Magpie')?label:label+' · Magpie'; }
+
 /** Disabled choices keep their actual model name; compatibility is not a name suffix. */
 export function catalogConversationOption(connection:CompatibilityTarget,item:CatalogModel) {
   const compatibility=catalogModelCompatibility(connection,item);
   return {value:'shared:'+item.accountId+'::'+item.modelId,
-    label:item.creditFactor!==undefined?`${item.label} · ${item.creditFactor.toFixed(2)}x`:item.label,
+    label:item.provider==='magpie'?magpieModelLabel(item.label):item.creditFactor!==undefined?`${item.label} · ${item.creditFactor.toFixed(2)}x`:item.label,
     disabled:!item.available||!compatibility.compatible,
     ...(!compatibility.compatible&&compatibility.reason?{title:compatibility.reason}:{})};
 }

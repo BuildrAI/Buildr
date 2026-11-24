@@ -5,6 +5,7 @@ import process from 'node:process';
 
 import { spawnCommandSync } from '../../../infrastructure/process.ts';
 import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
+import { resolveHostNodeExecutable } from '../../../infrastructure/shared-runtime-node.ts';
 import { readDevelopmentRuntimeIdentity } from './development-runtime-inputs.ts';
 import {
   readApplicationPayloadManifest,
@@ -118,7 +119,7 @@ function git(root: any, args: any) {
   return result.status === 0 ? String(result.stdout || '').trim() : null;
 }
 
-function developmentOrigin(productRoot: any, metadata: any, { includeWorkingTree = true }: any = {}) {
+function developmentOrigin(productRoot: any, metadata: any, { includeWorkingTree = true, includeRuntimeIdentity = true }: any = {}) {
   const gitRoot = git(productRoot, ['rev-parse', '--show-toplevel']);
   if (!gitRoot) return null;
   let canonicalGitRoot;
@@ -147,7 +148,7 @@ function developmentOrigin(productRoot: any, metadata: any, { includeWorkingTree
     ...createInstallationOrigin(base),
     sourceRoot: canonicalProductRoot,
     gitRoot: canonicalGitRoot,
-    developmentRuntimeIdentity: readDevelopmentRuntimeIdentity(canonicalProductRoot, canonicalGitRoot),
+    ...(includeRuntimeIdentity ? { developmentRuntimeIdentity: readDevelopmentRuntimeIdentity(canonicalProductRoot, canonicalGitRoot) } : {}),
     ...(includeWorkingTree ? { dirty: Boolean(git(productRoot, ['status', '--porcelain=v1', '--untracked-files=normal'])) } : {}),
   };
 }
@@ -208,7 +209,7 @@ export function readCurrentInstallationOrigin(productRoot: any, options: any = {
 }
 
 export function runtimeIdentityForOrigin(origin: any, options: any = {}) {
-  const executable = path.resolve(options.executable || process.execPath);
+  const executable = path.resolve(options.executable || resolveHostNodeExecutable());
   const role = RUNTIME_ROLES.includes(origin?.runtimeRole) ? origin.runtimeRole : 'unknown';
   return Object.freeze({
     role,

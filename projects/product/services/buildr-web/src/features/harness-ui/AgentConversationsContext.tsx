@@ -9,7 +9,7 @@ export type TextConversationActionResult={status:'started';conversation:Conversa
 export type ConversationCommand=HarnessConversationCommand;
 type PanelView = 'conversation' | 'history';
 type PanelState = { open: boolean; full: boolean; view: PanelView };
-type SessionPanelState = { open?: boolean; full?: boolean; view?: PanelView };
+type SessionPanelState = { open?: boolean; full?: boolean; view?: PanelView; pathname?: string };
 
 const PANEL_OPEN_KEY = 'buildr.harness-panel-open';
 const PANEL_FULL_KEY = 'buildr.harness-panel-full';
@@ -23,6 +23,7 @@ function readSessionPanelState(): SessionPanelState {
     const parsed = JSON.parse(sessionStorage.getItem(panelSessionStateKey()) || 'null');
     if (!parsed || typeof parsed !== 'object') return {};
     return {
+      ...(typeof parsed.pathname === 'string' ? { pathname: parsed.pathname } : {}),
       ...(typeof parsed.open === 'boolean' ? { open: parsed.open } : {}),
       ...(typeof parsed.full === 'boolean' ? { full: parsed.full } : {}),
       ...(parsed.view === 'conversation' || parsed.view === 'history' ? { view: parsed.view } : {}),
@@ -34,7 +35,7 @@ function readSessionPanelState(): SessionPanelState {
 
 function writeSessionPanelState(state: PanelState): void {
   try {
-    sessionStorage.setItem(panelSessionStateKey(), JSON.stringify(state));
+    sessionStorage.setItem(panelSessionStateKey(), JSON.stringify({...state, pathname: window.location.pathname}));
   } catch { /* In-memory state stays intact if sessionStorage is unavailable. */ }
 }
 
@@ -49,7 +50,8 @@ function readInitialPanelState(): PanelState {
   const legacyFull = readOptionalPreference(`buildr.agent-conversation.full:${profile}`);
   const explicitOpen = session.open ?? (openRaw === 'true' ? true : openRaw === 'false' ? false : undefined);
   const rawFull = session.full ?? (fullRaw === 'true' ? true : fullRaw === 'false' ? false : legacyFull === null ? conversationEntry : legacyFull === 'true');
-  const full = !catalogEntry && explicitOpen !== false && rawFull;
+  // A saved workbench mode applies to its own page, not unrelated engineering deep links.
+  const full = !catalogEntry && explicitOpen !== false && rawFull && (conversationEntry || session.pathname === window.location.pathname);
   const open = explicitOpen ?? full;
   const candidateView: PanelView = session.view ?? (viewRaw === 'history' || (viewRaw === null && readOptionalPreference(`buildr.agent-conversation.focus-history:${profile}`) === 'true') ? 'history' : 'conversation');
   return { open, full, view: open && full && candidateView === 'history' ? 'history' : 'conversation' };
@@ -107,15 +109,16 @@ function useIntegration(){
  const [conversation,setConversation]=useState<ConversationView|null>(null),[command,setCommand]=useState<ConversationCommand|null>(null),[sequence,setSequence]=useState(0);
  const [modelCatalog,setModelCatalog]=useState<CatalogModel[]>([]),[modelCatalogReady,setModelCatalogReady]=useState(false),[modelCatalogError,setModelCatalogError]=useState('');
  const pending=useRef(new Map<string,{resolve:(result:TextConversationActionResult)=>void;timer:ReturnType<typeof setTimeout>}>());
- const issue=useCallback((value:ConversationCommand)=>{setCommand(value);setSequence(value=>value+1);setOpen(true);},[setOpen]);
+ const dispatchCommand=useCallback((value:ConversationCommand)=>{setCommand(value);setSequence(value=>value+1);},[]);
+ const issue=useCallback((value:ConversationCommand)=>{dispatchCommand(value);setOpen(true);},[dispatchCommand,setOpen]);
  const refreshModelCatalog=useCallback(async()=>{try{const result=await agentConversationsApi.modelCatalog();setModelCatalog(result.models);setModelCatalogReady(result.hasSnapshot??true);setModelCatalogError(result.diagnostic??'');}catch(error){setModelCatalogError(error instanceof Error?error.message:'模型读取失败。');}},[]);
  const openConversation=useCallback(async(workspaceId:string,conversationId:string,_options?:unknown)=>{if(!fullRef.current)setView('conversation');issue({action:'open',workspaceId,conversationId});},[issue,setView]);
  const newConversation=useCallback((options?:{scope?:{workspaceId:string;taskId?:string}|null})=>{if(!fullRef.current)setView('conversation');setOpen(true);if(options?.scope?.workspaceId)issue({action:'new',...options.scope});else issue({action:'new'});},[issue,setOpen,setView]);
  const startTextConversation=useCallback((input:TextConversationActionInput)=>new Promise<TextConversationActionResult>(resolve=>{
    if(pending.current.size){resolve({status:'busy',message:'原工程操作尚未确认，请勿重复提交。'});return;}
-   const requestId=crypto.randomUUID();const timer=setTimeout(()=>{pending.current.delete(requestId);resolve({status:'recovering',reason:'submission-unknown',message:'Harness 的处理结果尚未确认，请到原对话核对，不要重复提交。'});},60000);pending.current.set(requestId,{resolve,timer});issue({action:'start-text',input,requestId});
- }),[issue]);
- const reply=useCallback((id:string,result:TextConversationActionResult)=>{const request=pending.current.get(id);if(!request)return;clearTimeout(request.timer);pending.current.delete(id);request.resolve(result);},[]);
+   const requestId=crypto.randomUUID();const timer=setTimeout(()=>{pending.current.delete(requestId);setOpen(true);resolve({status:'recovering',reason:'submission-unknown',message:'Harness 的处理结果尚未确认，请到原对话核对，不要重复提交。'});},60000);pending.current.set(requestId,{resolve,timer});dispatchCommand({action:'start-text',input,requestId});
+ }),[dispatchCommand,setOpen]);
+ const reply=useCallback((id:string,result:TextConversationActionResult)=>{const request=pending.current.get(id);if(!request)return;clearTimeout(request.timer);pending.current.delete(id);if(result.status==='started'||result.status==='recovering')setOpen(true);request.resolve(result);},[setOpen]);
  const apply=useCallback((value:ConversationView,observedRevision:string)=>setConversation(current=>applyAssociationResult(current,value,observedRevision)),[]);
  const openHistory=useCallback((_workspaceId?:string|null)=>{setView('history');issue({action:'history'});},[issue,setView]);
  return {side,setSide,width,setWidth,connections:[] as {provider:string;label?:string}[],locateParticipation:async(workspaceId:string,conversationId:string,_runId:string)=>openConversation(workspaceId,conversationId),api:agentConversationsApi,open,setOpen,full,setFull,view,setView,settings,setSettings:(value:boolean)=>{setSettingsState(value);if(value)issue({action:'settings'});},openQuotaSettings:()=>{setSettingsState(true);issue({action:'quota'});},conversation,setConversation,scope:conversation?{workspaceId:conversation.workspaceId,conversationId:conversation.id}:null,command,sequence,issue,reply,newConversation,openConversation,openHistory,openGlobal:()=>{setOpen(true);},toggle:()=>setOpen(value=>!value),toggleView:(next:'conversation'|'history')=>{if(next==='history')openHistory();else{setView(next);setOpen(value=>!value);}},apply,modelCatalog,modelCatalogReady,modelCatalogError,refreshModelCatalog,startTextConversation};

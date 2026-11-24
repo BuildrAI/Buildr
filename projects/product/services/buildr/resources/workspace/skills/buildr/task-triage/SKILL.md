@@ -5,7 +5,7 @@ description: 用户授权修复、优化或继续修改代码、文档、配置�
 
 # Task Triage Skill
 
-本 Skill只核对任务事实、作出正交决策并交接专业动作；不复制Worktree、OpenSpec或验证手册，也不建立确定性路由器。
+用户授权持久修改时，先核对任务、工作位置和治理方式。只咨询不进入实施分流；只运行已有检查，直接使用 `project-verification`。
 
 ## 1. 核对任务事实
 
@@ -27,7 +27,7 @@ authority 冲突、授权不明、实际 Git 操作所需的 repository set 不�
 
 只有用户在当前任务中明确确认需要，才在方案已有足够上下文、正式前端实现开始前加载 selected `ui-prototype` Skill。用户拒绝、未确认或直接要求继续时不调用 Skill，正常推进后续流程；不得创建占位文件、waiver、Result、Receipt 或 blocker。UI Prototype 不替代 OpenSpec Change、Planning Review 或正式实现。一旦当前 Task 已生成原型，除非用户明确要求忽略，后续 Agent 必须在正式前端编辑前读取全部相关原型并按其信息架构、布局和交互开发。
 
-用户要求原型且已有正式任务时，接续 `ui-prototype` 的“成果保存与接续”，生成后立即归入任务供评审，不等待实施决定；没有关联变更也通过该技能约定的任务目录展示，不为展示强造变更。后续新建任务时，同样接续此前临时原型。用户决定实施且此前讨论已有未被明确忽略的原型时，在正式前端编辑前由同一技能核对确认版、复用或归入适用位置并验证任务展示。此动作承接已有成果，不重新询问是否生成，也不复制迁移或清理流程；归入展示不等于批准实施，是否创建变更仍按下方语义判断。
+已有正式任务时，生成原型后立即交给 `ui-prototype` 保存并展示；新建任务接续已有临时原型。前端实施前核对并复用确认版，不重复询问，不为展示强造变更。保存不等于批准实施。
 
 ## 2. 两轴决策
 
@@ -113,13 +113,13 @@ authority 冲突、授权不明、实际 Git 操作所需的 repository set 不�
 
 选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。方案审查、实现审查与验证按上述目标、真实方案和风险分别判断（见 `task-review` 与 `project-verification`），不继承此路径选择。
 
-实现型任务按共享实现区域、验证入口或失败影响面分组。工作位置沿用已核对的默认隔离结果，实际Git与owned scope变化时重新判断。Agent直接依据目标、OpenSpec、Git、代码、文件和专业结果推进，不创建研发聚合事实或planning snapshot。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用`project-testing`。开发中由 `project-verification` 依据用户请求、目标与实际调用面选齐相关四类检查并直接执行；不要求用户先提供比较基线或创建测试计划。推送前按具体项目政策核对完整检查，Buildr 产品使用四服务全部静态检查（Static Check）与单元测试（Unit Test）。开发完成后通过 selected `buildr.task-verification/v4` provider 保存已有正式任务的真实报告；独立检查无任务时直接交付证据。triage不把验证报告变成Task完成门禁。
+按共享实现、验证入口或失败影响面分组；复用已核对的工作位置，Git 归属或范围变化时才重判。不创建研发聚合记录或 planning snapshot。缺测试或登记交 `project-testing`，要执行现有检查或取得证据交 `project-verification`。不在分流时排推送清单或把验证报告作为开工门槛。
 
 ## 输出
 
 面向用户说明分流结论、实际影响与下一步；需要结构化交接时，读取[交接字段](references/structured-handoff.md)。
 
-本轮已授权交付实际完成、适用检查已通过且没有后续已授权动作时，答复末尾用一句话说明可通过"收尾"完成提交、集成与资源善后；用户继续提出新要求时直接接续，不把引导变成重复追问或完成门禁。
+未要求交付时，可在改动完成后提示“收尾”；已经授权交付则直接交接 `task-finish`。
 
 ## Guardrails
 

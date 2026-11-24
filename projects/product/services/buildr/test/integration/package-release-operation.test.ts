@@ -227,11 +227,11 @@ test('lost main dispatch response refuses ambiguous matching runs without adopti
   assert.equal(f.counts().dispatches, 0); assert.equal(f.counts().cleanups, 0); assert.equal(f.counts().saved, 0);
 });
 
-function failedPublicationFixture(): any {
+function failedPublicationFixture(attempt = 2): any {
   const f = fixture('buildr,dsh-plugin'), executionCommit = hash('9');
-  const oldRun = { ...f.run('buildr', 201, 'failure'), run_attempt: 2 };
+  const oldRun = { ...f.run('buildr', 201, 'failure'), run_attempt: attempt };
   const failedEvidence = (publicFacts: any = {}) => createReleaseTransactionEvidence({ context: f.owned.buildr.ownerContext, outcome: 'failed',
-    publish: { repository: 'BuildrAI/Buildr', workflow: '.github/workflows/publish.yml', runId: 201, runAttempt: 2,
+    publish: { repository: 'BuildrAI/Buildr', workflow: '.github/workflows/publish.yml', runId: 201, runAttempt: attempt,
       headSha: f.context.convergence.mainCommit, runUrl: 'https://github.com/BuildrAI/Buildr/actions/runs/201' },
     publicFacts: { version: f.targets.versions.buildr, tagCommit: f.context.convergence.mainCommit, registryPublished: false,
       registryObservation: 'absent', effects: [{ type: 'tag-reused', state: 'confirmed' }], ...publicFacts } });
@@ -297,6 +297,17 @@ test('failed original publication stays blocked until explicit recovery preserve
   const resumed = await continuePackageRelease({ action: 'resume', authorized: true, recoverPublication: true }, f.scope, f.dependencies);
   assert.equal(resumed.status, 'publication-running'); assert.equal(f.state.packagePublications.buildr.runId, 202);
   assert.equal(f.dispatches.length, 1); assert.equal(f.state.publicationRecoveryHistory.length, 1);
+});
+
+test('first failed publication before tag creation resumes with the original candidate bytes', async () => {
+  const f = failedPublicationFixture(1);
+  const evidence = f.failedEvidence({ tagCommit: null, npmAttempted: false, effects: [] });
+  f.dependencies.inspectHostedReleaseTransaction = async () => ({ status: 'failed', evidence });
+  f.dependencies.inspectReleaseTag = () => ({ status: 'ready', action: 'create', observed: null });
+  const result = await continuePackageRelease({ action: 'resume', authorized: true, recoverPublication: true }, f.scope, f.dependencies);
+  assert.equal(result.status, 'publication-unknown');
+  assert.equal(f.dispatches.length, 1);
+  assert.equal(f.state.publicationRecoveryHistory[0].evidence.identity, evidence.identity);
 });
 
 test('executor recovery preserves the complete old request for unsafe or unknown observations', async t => {
@@ -435,6 +446,23 @@ test('blocked child execution retains its original stage and code without changi
   assert.equal(blocked.pairDiagnostics[0].consumer.version, old.version);
   const passed = await evaluateObservedPackagePlan(targets, candidates, counterparts, { verifyBuildrPluginPair: () => proof('passed') });
   assert.equal(passed.status, 'passed'); assert.equal(passed.pairDiagnostics, undefined);
+  const retained = proof('passed').legacyPairEvidence;
+  const reused = await evaluateObservedPackagePlan(targets, candidates, counterparts, {
+    boundPairEvidence: [retained], verifyBuildrPluginPair: () => assert.fail('same pair must not execute twice'),
+  });
+  assert.equal(reused.status, 'passed');
+  let calls = 0;
+  const changed = { ...old, artifactSha256: '9'.repeat(64) };
+  const refreshed = await evaluateObservedPackagePlan(targets, candidates,
+    { 'dsh-plugin': { observation: { status: 'present', artifact: changed }, bytes: Buffer.from('changed') } }, {
+      boundPairEvidence: [retained], verifyBuildrPluginPair: () => {
+        calls++;
+        const result = proof('passed');
+        return { ...result, legacyPairEvidence: { ...result.legacyPairEvidence, consumer: changed } };
+      },
+    });
+  assert.equal(calls, 1);
+  assert.equal(refreshed.status, 'passed');
 });
 
 test('new default operations bind targets; an existing selection ID cannot change versions', async t => {

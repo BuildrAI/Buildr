@@ -1,6 +1,6 @@
 # 双产品代码地图
 
-范围：Harness 执行及完整网页，Development 工程现场及网页集成。产品解释见[边界说明](../docs/architecture/harness-products.md)。本地图按源码职责定位，不替代运行或发行验收。
+范围：Harness 执行与目录级工作环境，Development 工程应用及网页组合。产品解释见[边界说明](../docs/architecture/harness-products.md)。本地图按源码职责定位，不替代运行或发行验收。
 
 | 代码位置 | 所属产品与责任 |
 | --- | --- |
@@ -21,13 +21,28 @@
 | `services/buildr/src/modules/agent-service/module.ts` | Development 工程范围权威和公共核心连接装配 |
 | `services/buildr/src/web/http/router.ts` | Development 认证、工程路由及 `/harness/` 网页托管 |
 
+## 目录工作台
+
+- **Harness 后端**（`services/buildr-harness/src/`）
+  - [目录引用](../../services/buildr-harness/src/application/directory-host.ts)：选择来源、记录身份、重新核对准确目录；命中同数据域已登记工作空间时复用原身份。
+  - [本机工作空间解析](../../services/buildr-harness/src/application/local-workspaces.ts)：零依赖读取同数据域 `workspace-registry.json`、工作空间元数据及 `@default` 并核验文件系统身份，支持 Development 离线时的工作空间与工作台独立解析。
+  - [目录工作台](../../services/buildr-harness/src/application/directory-workbench.ts)与[仓库发现](../../services/buildr-harness/src/application/directory-checkouts.ts)：以明确目录为锚，有界发现本机仓库并按实际 Git 登记复核检出，不依赖对话或 Development 的工程登记。
+  - [通用入口](../../services/buildr-harness/src/workbench.ts)：文件读取与编辑保护、打开文件夹、检出身份、分支切换、远程获取/同步/推送；供 Development 的工程应用复用，不启动执行后台。
+  - [本地 Git 动作](../../services/buildr-harness/src/workbench/local-git.ts)：明确暂存、取消暂存和版本保护的本地提交，不隐式推送。
+- **Harness 前端**（`services/buildr-harness-web/src/`）
+  - [独立目录装配](../../services/buildr-harness-web/src/features/directory-workbench/HarnessDirectoryWorkbench.tsx)：提供共享 `FileEditingSessionStore`、全量工作树目录观察、标签持久化与跨工作树跳转；顶部工具栏不渲染多余工作树选择器。
+  - [资源管理器](../../services/buildr-harness-web/src/explorer.ts)与[源代码管理](../../services/buildr-harness-web/src/source-control.ts)：包含右侧可停靠 `CodeTreePane`、`CodeExplorerNotices`、行内 `BranchManagementPopover`、`SourceControlWorktreeMenu`、`HistoryFilters`、`SourceControlCommitPanel`、`useSourceControlDiscard`、`SourceControlDiffEditor`、`SourceControlOperationNotices` 及共享编辑组件（[`workbench-editor.ts`](../../services/buildr-harness-web/src/workbench-editor.ts)）。
+- **Development 复用**（`services/buildr*/src/`）
+  - [工程代码应用](../../services/buildr/src/modules/code/application/code-application.ts)：根据登记与真实检出解析工程范围；文件只读校验证明、提交、说明生成、放弃更改及 Git 观察调用 Harness 通用实现（`@buildr-ai/buildr-harness/workbench`），并保留 `Buildr-Task:` 尾注校验与研发规则提示。
+  - [工程资源管理器](../../services/buildr-web/src/features/code/pages/CodeExplorerPage.tsx)与[工程源代码管理](../../services/buildr-web/src/features/code/pages/CodeSourceControlPage.tsx)：通过 [`buildr-harness-web`](../../services/buildr-harness-web/src/source-control.ts) 入口直接复用共享视图、编辑器与源代码管理组件，仅扩展研发仓库排序、任务作用域深链与项目文档能力。
+
 ## 关键调用链
 
 1. Development 的 harness-ui 准备准确工程范围，经公开 `HarnessConversationSurface` 装配原唯一对话 Provider 和完整对话页面。Harness Web 创建/打开对话并调用公共 HTTP，工程宿主解析准确执行目录和必要上下文。
 2. Harness 将当前对话观察交给装配方；Development 通过可选上下文插槽呈现任务关联和工程参与，按已观察修订写入。不再使用对话 iframe、窗口消息或坐标覆盖；上下文故障与对话控制隔离。
 3. 两种入口都由 Harness 处理模型选择、发送、审批、停止和恢复。Development 只交接明确工程操作，结果未知不重发。文件由 `HarnessDirectoryFiles` 接入，工程对象由宿主回调解释；当前分别接已有代码浏览器与任务导航，跳转前核验来源和对话选择代次。
 4. 第一方前端构建从公开组件入口组合双方；Harness 核心仍将独立完整网页放入 `build/harness-web-dist/`，安装后独立及兼容入口使用所带产物，不依赖相邻源码。当前 Development 启动/路由保持不变，不代表已完成动态插件宿主。
-5. 独立网页从范围发现取得宿主提供的名称；目录工作空间显示保存的名称，未填写时默认目录名，身份仍使用准确来源与范围标识。添加表单填写可选名称、通过受认证的本机选择接口取得目录，不提供手填路径，确认后登记并用于新对话，不初始化 Development 工程资产。Development 外壳独立保存对话展开与专注/分屏布局偏好并承接内嵌流程图顶层放大预览，不接管内层会话记忆。
+5. 独立网页从范围发现取得内置或宿主提供的名称；目录工作空间显示保存的名称，未填写时默认目录名，同数据域已登记本地工作空间与 `@default` 在 Development 未运行时也由 Harness 内置解析并保持原范围身份。添加表单填写可选名称、通过受认证的本机选择接口取得目录，不提供手填路径，确认后登记（命中已有本地工作空间目录时复用原身份）并用于新对话，不初始化 Development 工程资产。Development 外壳独立保存对话展开与专注/分屏布局偏好并承接内嵌流程图顶层放大预览，不接管内层会话记忆。
 
 ## 验证入口
 

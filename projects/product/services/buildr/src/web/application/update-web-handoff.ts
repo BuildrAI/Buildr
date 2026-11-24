@@ -22,6 +22,7 @@ import {
   shouldUsePlatformIsolation,
   type DetachedProcessHandle,
 } from '../../infrastructure/detached-launch.ts';
+import { ensureSharedRuntimeNode, sharedRuntimeNodeLaunchEnv } from '../../infrastructure/shared-runtime-node.ts';
 
 type HandoffDependencies = {
   readNpmUpdateHandoffInstallation(input: NpmWebUpdateInput): any;
@@ -38,7 +39,7 @@ type HandoffDependencies = {
 
 export function updatedWebEnvironment(environment: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env = { ...environment };
-  for (const name of ['BUILDR_INSTALLATION_IDENTITY', 'BUILDR_APPLICATION_PAYLOAD_ROOT', 'BUILDR_NPM_ENTRY_PATH', 'BUILDR_INTERNAL_PRODUCT_REENTRY', 'BUILDR_LOCAL_APP_PREVIEW', 'BUILDR_LAUNCHER_IDENTITY', 'BUILDR_LAUNCHER_NO_OPEN', 'BUILDR_LAUNCHER_NO_NOTIFY', 'BUILDR_WEB_RESTART_ATTEMPT', WEB_HANDOFF_FAILURE_FILE_ENV]) delete env[name];
+  for (const name of ['BUILDR_INSTALLATION_IDENTITY', 'BUILDR_APPLICATION_PAYLOAD_ROOT', 'BUILDR_NPM_ENTRY_PATH', 'BUILDR_INTERNAL_PRODUCT_REENTRY', 'BUILDR_LOCAL_APP_PREVIEW', 'BUILDR_LAUNCHER_IDENTITY', 'BUILDR_LAUNCHER_NO_OPEN', 'BUILDR_LAUNCHER_NO_NOTIFY', 'BUILDR_WEB_RESTART_ATTEMPT', 'BUILDR_HOST_NODE', 'BUILDR_HOST_NODE_VERSION', WEB_HANDOFF_FAILURE_FILE_ENV]) delete env[name];
   return env;
 }
 
@@ -88,13 +89,24 @@ export async function handoffUpdatedBuildrWeb(input: NpmWebUpdateInput, dependen
     if (useIsolated) {
       failureFile = createWebHandoffFailureFilePath(profile);
       const logPath = appendWebHandoffSuccessorLogHeader(profile, label);
+      const dataRoot = typeof profile?.dataRoot === 'string' && profile.dataRoot ? profile.dataRoot : undefined;
+      const sharedNode = ensureSharedRuntimeNode(entry.runtime.executable, {
+        fallbackDataRoot: dataRoot,
+        env: baseEnv,
+        hostNode: entry.runtime.executable,
+      });
+      const isolatedEnv = sharedRuntimeNodeLaunchEnv(
+        { ...baseEnv, [WEB_HANDOFF_FAILURE_FILE_ENV]: failureFile },
+        sharedNode.hostNode,
+        entry.runtime.version,
+      );
       isolatedHandle = launchDetachedProcess({
-        command: entry.runtime.executable,
+        command: sharedNode.executable,
         args,
         cwd: path.dirname(entry.entryPath),
-        env: { ...baseEnv, [WEB_HANDOFF_FAILURE_FILE_ENV]: failureFile },
+        env: isolatedEnv,
         labelPrefix: 'web-update-handoff',
-        stateDir: typeof profile?.dataRoot === 'string' && profile.dataRoot ? path.join(profile.dataRoot, 'launchd-jobs') : undefined,
+        stateDir: dataRoot ? path.join(dataRoot, 'launchd-jobs') : undefined,
         standardOutPath: logPath ?? undefined,
         standardErrorPath: logPath ?? undefined,
       });

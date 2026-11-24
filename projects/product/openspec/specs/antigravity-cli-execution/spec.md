@@ -171,7 +171,11 @@ Buildr 发起退出或切换时，系统 MUST 先暂停该连接的新发送，�
 
 ### Requirement: Antigravity 后台结果必须交回同一轮模型
 
-系统 MUST 区分原生 `session/prompt` 返回 `end_turn` 与该轮真正完成。原生回合结束时仍有运行中的工具或后台任务，系统 MUST 保持该轮未结算，MUST NOT 写入终态或报告 `completed`。后台工作结束后，若原生 harness 保持当前回合开放并继续，系统 MUST 映射该回合并等待其正常结束；原生 harness 已结束当前回合且未继续时，Buildr 对接层 MUST 在同一原生会话发送内部续行，把后台结果交回模型并等待其处理。只有模型在后台结果之后再次结束，且没有活动后台工作或未结工具时，系统才可报告完成。无法建立续行、续行被拒绝或超过有界续行次数时，系统 MUST 保留 `unknown` 并说明后台结果未交回模型，MUST NOT 以 `completed` 冒充完成。内部续行 MUST NOT 作为用户消息进入历史或界面。
+系统 MUST 区分原生 `session/prompt` 返回 `end_turn` 与该轮真正完成。原生回合结束时仍有运行中的命令工具、定时等待工具（如 `schedule` / `Run schedule`）或其他受声明原生后台任务（如 `run_workflow` / `Run run_workflow`），系统 MUST 保持该轮未结算（`status: 'running'` 与 `backgroundWork: true`），MUST NOT 写入终态、置为 `unknown` 或报告 `completed`。后台工作或定时等待到期结束后，若原生 harness 保持当前回合开放并继续，系统 MUST 映射该回合并等待其正常结束；原生 harness 已结束当前回合且未继续时，Buildr 对接层 MUST 根据 ACP 工具完成更新或原生转录回执（包含命令退出记录与 `Timer`/`Cron` 触发记录）在同一原生会话发送内部续行，把结果交回模型并等待其处理。同步类非后台工具（如 `read`、`edit`）缺少回执时仍 MUST 保留为 `unknown`。单轮后台内部续行次数默认上限为 20 次；只有模型在后台结果之后再次结束，且没有活动后台工作或未结工具时，系统才可报告完成。无法建立续行、续行被拒绝或超过有界续行次数时，系统 MUST 保留 `unknown` 并说明后台结果未交回模型或已达续行上限，MUST NOT 以 `completed` 冒充完成。内部续行 MUST NOT 作为用户消息进入历史或界面。
+
+在状态核对重连上下文（`resumeContext`）时，若原回合仍有活动提示或活动后台工作（`pending || backgroundWork`），系统 MUST 保持原会话活跃与原权限模式（`permissionMode`），MUST NOT 因重连未传递原权限模式而关闭正在运行的 `full-access` 原生进程。
+
+当因达到单轮后台自动续行上限而暂停、且当前已不存在待处理模型提示、待回答请求或运行中工具时，执行器 MUST 关闭空闲原生会话进程并允许通过物理进程退出核验后释放控制资源，同时保留上限暂停诊断。
 
 #### Scenario: 后台命令晚于原生回合结束
 
@@ -179,6 +183,23 @@ Buildr 发起退出或切换时，系统 MUST 先暂停该连接的新发送，�
 - **THEN** 系统 MUST 保持该轮运行
 - **AND** 对接层 MUST 在同一原生会话发送内部续行，把命令结果交回模型
 - **AND** 只有在模型处理结果并再次结束后，系统才发出一次 `completed`
+
+#### Scenario: 定时等待晚于原生回合结束并在到期后续行
+
+- **WHEN** `agy` 在 `Run schedule` 定时工具仍运行时返回 `end_turn`
+- **THEN** 系统 MUST 将该轮保持为 `running` 与 `backgroundWork: true`，MUST NOT 标为 `unknown`
+- **AND** 当 `Run schedule` 经 ACP 完成通知或原生转录 `Timer`/`Cron` 系统触发记录完成后，系统 MUST 在同一原生会话发送内部续行交回模型并等待正常完成
+- **AND** 在等待期间用户发送的执行中追加 MUST 能在同一原生会话被正常受理
+
+#### Scenario: 非后台工具缺少回执仍保护为未知
+
+- **WHEN** `agy` 在 `read` 等非后台工具仍为运行中时返回 `end_turn`
+- **THEN** 系统 MUST 保持将该轮置为 `unknown` 并提示存在缺少完成回执的工具，MUST NOT 误判为后台任务
+
+#### Scenario: 状态核对保留原权限模式不误关进程
+
+- **WHEN** 系统对采用 `full-access` 权限模式的执行轮触发状态核对或重新读取
+- **THEN** 重连与恢复上下文 MUST 保留原轮次的 `permissionMode`，MUST NOT 退化为默认模式并关闭仍在执行的原生进程
 
 #### Scenario: 原生 harness 保持当前回合
 
@@ -192,9 +213,17 @@ Buildr 发起退出或切换时，系统 MUST 先暂停该连接的新发送，�
 - **THEN** 系统 MUST 保留 `unknown` 并保留后台结果供查看
 - **AND** 系统 MUST NOT 报告该轮 `completed`
 
+#### Scenario: 达到单轮续行上限后暂停并释放空闲资源
+
+- **WHEN** 单轮后台自动续行次数达到上限且所有当前工具均已取得结果，后台任务再次结束触发续行
+- **THEN** 系统 MUST 将本轮置为 `unknown` 并保留自动续行上限诊断，MUST NOT 再向模型发送新的内部续行
+- **AND** 执行器 MUST 关闭空闲会话进程并允许在核验物理退出后释放本轮控制资源
+
 ### Requirement: Antigravity 执行中追加必须作为同一回合的引导
 
 系统 MUST 在执行中的 Antigravity 回合内接受统一对话的追加输入，并在同一原生会话、同一执行身份下通过 `agy acp` 再发送 `session/prompt`；MUST NOT 为追加另开原生会话、重置执行身份或改用其他模型路径。
+
+当用户发送的执行中追加被原生会话受理后，系统 MUST 重置当前轮次剩余的后台自动续行预算，并保持持久化的续行记录编号在同一执行内单调递增不冲突；被原生拒绝或未确认受理的追加 MUST NOT 重置续行预算。
 
 追加提交后，原 `session/prompt` 可能以 `end_turn` 提前返回但原生回合仍在继续。系统 MUST 只允许当前最新的提示回执或原生完成记录结算回合：被追加取代的原提示提前返回 MUST NOT 使回合被视为完成、MUST NOT 丢失后续工具与正文事件。
 
@@ -208,6 +237,12 @@ Buildr 发起退出或切换时，系统 MUST 先暂停该连接的新发送，�
 - **THEN** 系统 MUST 在同一原生会话追加提示并返回受理回执
 - **AND** 原提示的提前 `end_turn` MUST NOT 结束该回合
 - **AND** 后续工具与正文 MUST 继续映射到同一运行，直到最后一条提示正常结束
+
+#### Scenario: 执行中追加被受理后重置后台自动续行预算
+
+- **WHEN** 本轮已执行若干次后台自动续行，用户在同一执行内发送追加并被原生会话受理
+- **THEN** 本轮的后台自动续行预算 MUST 重置，后续后台命令结束后仍可继续自动续行直至再次达到上限
+- **AND** 会话记录中持久化的续行标识 MUST 保持单调递增不重复
 
 #### Scenario: 多次追加
 
@@ -234,6 +269,7 @@ Buildr 发起退出或切换时，系统 MUST 先暂停该连接的新发送，�
 - **WHEN** 追加提示在受理窗口内收到原生拒绝
 - **THEN** 系统 MUST 报告未受理并保留输入
 - **AND** MUST NOT 结束或重放原回合
+- **AND** MUST NOT 重置当前轮次的后台自动续行预算
 
 ### Requirement: Antigravity 智能标题必须经隔离无工具会话生成简体中文摘要
 
@@ -281,3 +317,12 @@ Antigravity 执行方 MUST 提供独立于工作上下文的辅助智能标题�
 - **WHEN** 用户完成程序身份恢复并在原对话中继续
 - **THEN** 系统 MUST 使用恢复后的受管程序与准确原生会话继续
 - **AND** MUST NOT 自动重放此前未确认完成的输入或工具操作
+
+### Requirement: Google AI 额度和模型须在可见入口按需刷新
+
+额度浮窗和模型设置页 MUST 先显示已有观察，只对已启用且已登录的 Google AI 来源自动检查。打开或恢复可见时，观察已满两分钟或缺失 MUST 检查；持续可见 MUST 五分钟兜底。隐藏或关闭 MUST 停止安排新的检查。两个入口 MUST 按账号合并并发，手动刷新保留。失败时 MUST 保留同账号上次额度和观察时间，不猜测结果。
+
+#### Scenario: 额度浮窗切换到模型页
+
+- **WHEN** 用户打开已有过期观察的额度浮窗，立即进入模型页
+- **THEN** 保持显示上次结果，同时只发起一次该账号的原生检查。

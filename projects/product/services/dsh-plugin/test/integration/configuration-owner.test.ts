@@ -69,8 +69,10 @@ export { NativeConfigurationOwner, withinReload } from ${JSON.stringify(join(roo
   const saved = yaml.load(await readFile(userFile, 'utf8'));
   assert.equal(saved[0].name, '@deepseek-ai/dsh-agent-loop'); assert.equal(saved[0].config.maxParallelToolCalls, 4);
   assert.equal(JSON.stringify(saved).includes('file:///fixture'), false);
+  const beforeReleaseDisabled = entry.options.disabled;
   await owner.serialized(() => owner.release());
   assert.equal(entry.fiber.runtime.callback, stock); assert.equal(entry.fiber.config.maxParallelToolCalls.get(), 4);
+  assert.equal(entry.options.disabled, beforeReleaseDisabled, 'release preserves the original enabled declaration');
   await owner.serialized(() => owner.enhance(entry, 'file:///fixture/enhanced-loop.js'));
   assert.equal(entry.fiber.runtime.callback, enhanced); assert.equal(entry.fiber.config.maxParallelToolCalls.get(), 4);
   await owner.serialized(() => owner.enhance(entry, 'file:///fixture/next-loop.js'));
@@ -86,4 +88,12 @@ export { NativeConfigurationOwner, withinReload } from ${JSON.stringify(join(roo
   const count = seen.length;
   await owner.serialized(() => owner.enhance(entry, 'file:///fixture/enhanced-loop.js'));
   assert.equal(seen.length, count, 'an intentionally disabled source never starts');
+
+  await entry.update({ disabled: false });
+  await owner.serialized(() => owner.enhance(entry, 'file:///fixture/enhanced-loop.js'));
+  const beforeNonRestore = seen.length;
+  await owner.serialized(() => owner.release({ restoreStock: false }));
+  assert.equal(seen.length, beforeNonRestore, 'release with restoreStock=false must not re-initialize stock');
+  assert.equal(entry.options.name, '@deepseek-ai/dsh-agent-loop');
+  assert.equal(entry.options.disabled, false, 'release preserves the explicitly enabled declaration');
 });

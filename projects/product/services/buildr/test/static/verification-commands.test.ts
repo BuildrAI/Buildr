@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import YAML from 'yaml';
 import { verificationSteps, VERIFICATION_EXECUTION_BOUNDARIES } from '../verification/registry.ts';
 
 const root = path.resolve(import.meta.dirname, '../..');
@@ -23,10 +24,14 @@ test('registered checks have exactly one of the four supported types and unique 
   }
 });
 
-test('all four services expose independent source static and unit checks', () => {
-  for (const service of ['buildr', 'buildr-web', 'buildr-harness', 'dsh-plugin']) {
-    const own = verificationSteps.filter((step: any) => step.testing.ownerScope === `service:product/${service}` && step.target === 'source');
-    assert.ok(own.some((step: any) => step.testing.executionBoundary === 'Unit'), `${service}: unit`);
-    assert.ok(own.some((step: any) => step.testing.executionBoundary === 'Static'), `${service}: static`);
+test('each declared service has source checks for its declared boundary', () => {
+  const { testing } = YAML.parse(fs.readFileSync(path.resolve(root, '../../verification.yml'), 'utf8'));
+  for (const [id, boundary] of [['buildr-static', 'Static'], ['buildr-unit', 'Unit']]) {
+    const entry = testing.find((item: { id: string }) => item.id === id);
+    assert.ok(entry?.scope.services.length, `${id}: no declared services`);
+    for (const service of entry.scope.services) {
+      assert.ok(verificationSteps.some((step: { testing: { ownerScope: string; executionBoundary: string }; target: string }) => step.testing.ownerScope === `service:product/${service}`
+        && step.target === 'source' && step.testing.executionBoundary === boundary), `${service}: ${boundary}`);
+    }
   }
 });

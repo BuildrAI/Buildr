@@ -17,6 +17,7 @@ import {
 import type { WebRestartFailure } from './restart-control.ts';
 import { WEB_RESTART_ATTEMPT_ENV } from '../startup-context.ts';
 import { launchDetachedProcess, shouldUsePlatformIsolation } from '../../infrastructure/detached-launch.ts';
+import { ensureSharedRuntimeNode, resolveHostNodeExecutable, sharedRuntimeNodeLaunchEnv } from '../../infrastructure/shared-runtime-node.ts';
 
 type SpawnSuccessorDependencies = {
   spawnProcess?: typeof spawn;
@@ -60,10 +61,21 @@ export function spawnBuildrWebRestartSuccessor(
     const failureFile = createWebHandoffFailureFilePath(webProfile);
     const logPath = appendWebHandoffSuccessorLogHeader(webProfile, label);
     const dataRoot = typeof webProfile?.dataRoot === 'string' && webProfile.dataRoot ? webProfile.dataRoot : null;
+    const hostNode = resolveHostNodeExecutable(env);
+    const sharedNode = ensureSharedRuntimeNode(command, {
+      fallbackDataRoot: dataRoot ?? undefined,
+      env,
+      hostNode,
+    });
+    const isolatedEnv = sharedRuntimeNodeLaunchEnv(
+      { ...env, [WEB_HANDOFF_FAILURE_FILE_ENV]: failureFile },
+      sharedNode.hostNode,
+      process.versions.node,
+    );
     const handle = launchDetachedProcess({
-      command,
+      command: sharedNode.executable,
       args: argsPrefix,
-      env: { ...env, [WEB_HANDOFF_FAILURE_FILE_ENV]: failureFile },
+      env: isolatedEnv,
       labelPrefix: 'web-restart-handoff',
       stateDir: dataRoot ? path.join(dataRoot, 'launchd-jobs') : undefined,
       standardOutPath: logPath ?? undefined,

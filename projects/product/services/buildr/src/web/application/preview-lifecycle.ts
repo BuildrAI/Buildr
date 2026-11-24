@@ -8,8 +8,14 @@ import { stopAgentProcess } from '@buildr-ai/buildr-harness';
 import {
   launchDetachedProcess,
   pruneExitedLaunchdJobs,
+  shouldUsePlatformIsolation,
   type DetachedProcessHandle,
 } from '../../infrastructure/detached-launch.ts';
+import {
+  ensureSharedRuntimeNode,
+  resolveHostNodeExecutable,
+  sharedRuntimeNodeLaunchEnv,
+} from '../../infrastructure/shared-runtime-node.ts';
 
 import { buildrWebDataRoot } from '../../modules/workspace/module.ts';
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.ts';
@@ -658,11 +664,19 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   const ownedOwner: PreviewOwner = reuse ? { ...owner, reuse } : owner;
   writeOwner(runtime, ownedOwner, dataRoot);
   const logFile = path.join(root, 'preview.log');
+  let previewEnv: NodeJS.ProcessEnv = { ...process.env, BUILDR_APP_DATA_DIR: root, BUILDR_LOCAL_APP_PREVIEW: JSON.stringify(ownedOwner), ...(candidateDigest ? { BUILDR_PREVIEW_AGENT_DIGEST: candidateDigest } : {}) };
+  let previewCommand = appInvocation.command;
+  if (shouldUsePlatformIsolation(previewEnv) !== 'direct' && fs.statSync(appInvocation.command, { throwIfNoEntry: false })?.isFile()) {
+    const hostNode = resolveHostNodeExecutable(previewEnv);
+    const sharedNode = ensureSharedRuntimeNode(appInvocation.command, { fallbackDataRoot: root, env: previewEnv, hostNode });
+    previewCommand = sharedNode.executable;
+    previewEnv = sharedRuntimeNodeLaunchEnv(previewEnv, sharedNode.hostNode, process.versions.node);
+  }
   const handle = launchDetachedProcess({
-    command: appInvocation.command,
+    command: previewCommand,
     args: [...appInvocation.argsPrefix, 'web', '--target', environmentRoot, '--port', String(desiredPort), '--no-open'],
     cwd: environmentRoot,
-    env: { ...process.env, BUILDR_APP_DATA_DIR: root, BUILDR_LOCAL_APP_PREVIEW: JSON.stringify(ownedOwner), ...(candidateDigest ? { BUILDR_PREVIEW_AGENT_DIGEST: candidateDigest } : {}) },
+    env: previewEnv,
     labelPrefix: `preview-${instance}`,
     stateDir: path.join(root, 'launchd-jobs'),
     standardOutPath: logFile,

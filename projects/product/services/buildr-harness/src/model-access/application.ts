@@ -4,7 +4,7 @@ import { mkdir, chmod, lstat, readFile, rename, rm, writeFile, unlink } from 'no
 import { join } from 'node:path';
 import { once } from 'node:events';
 import { lstatSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
-import { ModelAccessError, type CatalogModel, type CustomProviderConfig, type CustomProviderConfigureInput, type CustomProviderDiscoveryInput, type CustomProviderDiscoveryResult, type ModelAccessOptions, type ModelAccountView, type ModelGatewayLease, type ModelLeaseInput, type ModelOffering, type ModelProvider, type ModelProviderObservation, type ModelProviderRuntime, type ModelProtocol, type ProtocolJson } from './contracts.ts';
+import { ModelAccessError, type CatalogModel, type CustomProviderConfig, type CustomProviderConfigureInput, type CustomProviderDiscoveryInput, type CustomProviderDiscoveryResult, type ModelAccessOptions, type ModelAccountAddInput, type ModelAccountView, type ModelGatewayLease, type ModelLeaseInput, type ModelOffering, type ModelProvider, type ModelProviderObservation, type ModelProviderRuntime, type ModelProtocol, type ProtocolJson } from './contracts.ts';
 import { effectiveModel, selectedOffering, modelConfiguration, modelLeaseIdentity } from './model-preferences.ts';
 import type {ModelPreference,ModelPreferenceUpdate} from './contracts.ts';
 import { customProtocolLabel, normalizeCustomBaseUrl, normalizeCustomConfiguration, normalizeCustomLabel, normalizeCustomProtocol } from './providers/custom.ts';
@@ -60,7 +60,7 @@ export class ModelAccessApplication {
   private readonly leasesByIdentity = new Map<string, LeaseRecord>();
   private readonly operations = new Map<string, number>();
   private readonly addingSingletons = new Set<string>();
-  private readonly activePreparations = new Set<Promise<void>>();
+  private readonly activePreparations = new Set<Promise<unknown>>();
   private readonly lifetime = new AbortController();
   private ready: Promise<void>;
   private writeChain: Promise<void> = Promise.resolve();
@@ -394,11 +394,20 @@ export class ModelAccessApplication {
     };
   }
   read(id: string) { return this.view(this.current(id)); }
-  async add(input: { provider: string; label?: string; custom?: CustomProviderConfigureInput }) {
+  async add(input: ModelAccountAddInput) {
     await this.ready; if (this.storageError) throw this.storageError;
     if (this.closed || this.metadataReadOnly) throw new ModelAccessError('model_access_closed', '模型供应商配置未能保存。', 503);
     const provider = this.providers.get(input.provider);
     if (!provider || provider.connectionId) throw new ModelAccessError('model_provider_unavailable', '此模型来源由已有账号自动发现。', 404);
+    if (input.prepareLocalGateway && !provider.resolveCustom) throw new ModelAccessError('model_prepare_unsupported', '此模型来源不支持准备本机网关。',400);
+    if (provider.resolveCustom) {
+      if (this.addingSingletons.has(provider.id) || [...this.rows.values()].some(row=>row.provider===provider.id)) throw new ModelAccessError('model_provider_already_configured', '该供应商已接入或正在连接。',409);
+      this.addingSingletons.add(provider.id);
+      const preparation = provider.resolveCustom(input.custom, input.prepareLocalGateway===true, this.lifetime.signal);
+      this.activePreparations.add(preparation);
+      try { return await this.createCustom(provider, await preparation); }
+      finally { this.addingSingletons.delete(provider.id); this.activePreparations.delete(preparation); }
+    }
     if (provider.custom) {
       if (!input.custom) throw new ModelAccessError('model_custom_config_required', '自定义供应商需要填写名称、Base URL 与协议。', 400);
       return await this.createCustom(provider, input.custom);
@@ -452,6 +461,19 @@ export class ModelAccessApplication {
     const row = this.current(id);
     if (row.connectionId) throw new ModelAccessError('model_managed_account', '此账号复用原生登录，请在对应账号入口操作。', 409);
     conflict(row.revision, input.expectedRevision);
+    const provider=this.providers.get(row.provider);
+    if(input.prepareLocalGateway && (!provider?.resolveCustom || !row.custom || normalizeCustomBaseUrl(input.baseUrl)!==row.custom.baseUrl)) {
+      throw new ModelAccessError('model_prepare_unsupported','只能明确启动当前绑定的本机网关。',409);
+    }
+    if(provider?.resolveCustom) {
+      const preparation=provider.resolveCustom(input,input.prepareLocalGateway===true,this.lifetime.signal);
+      this.activePreparations.add(preparation);
+      try {
+        const resolved=await preparation;
+        conflict(this.current(id).revision,input.expectedRevision);
+        return await this.applyCustom(row,{...resolved,expectedRevision:input.expectedRevision});
+      } finally {this.activePreparations.delete(preparation);}
+    }
     return await this.applyCustom(row, input);
   }
   async discoverCustom(input: CustomProviderDiscoveryInput): Promise<CustomProviderDiscoveryResult> {
@@ -477,7 +499,7 @@ export class ModelAccessApplication {
   private async createCustom(provider: ModelProvider, input: CustomProviderConfigureInput): Promise<ModelAccountView> {
     if (this.closed || this.metadataReadOnly) throw new ModelAccessError('model_access_closed', '模型供应商配置未能保存。', 503);
     const label = normalizeCustomLabel(input.label), config = normalizeCustomConfiguration({ baseUrl: input.baseUrl, protocol: input.protocol, ...(input.modelsPath !== undefined ? { modelsPath: input.modelsPath } : {}), useApiKey: input.useApiKey, models: input.models ?? [] });
-    if ([...this.rows.values()].some(row=>row.custom?.baseUrl===config.baseUrl&&row.custom.protocol===config.protocol)) {
+    if ([...this.rows.values()].some(row=>row.provider===provider.id&&row.custom?.baseUrl===config.baseUrl&&row.custom.protocol===config.protocol)) {
       throw new ModelAccessError('model_provider_already_configured', '该端点与协议已接入，请编辑已有供应商。', 409);
     }
     const row: ModelAccountView = { id: randomUUID(), identity: randomUUID(), provider: provider.id, label, revision: randomUUID(), enabled: true, status: 'not-authenticated', credentialConfigured: false, custom: config, models: [] };
@@ -514,9 +536,9 @@ export class ModelAccessApplication {
       row.identity = nextIdentity;
       for (const lease of [...this.leasesByIdentity.values()]) if (lease.input.accountId === row.id) this.release(lease.view.identity);
     }
-    if (observation.curatedModels) {
+    if (observation.curatedModels || (provider.resolveCustom && observation.status==='ready')) {
       const preferences = this.preferences.get(row.id) ?? {};
-      for (const model of observation.models) if (!Object.hasOwn(preferences, model.id)) Object.defineProperty(preferences, model.id, { value: { enabled: false }, enumerable: true, writable: true, configurable: true });
+      for (const model of observation.models) if (!Object.hasOwn(preferences, model.id)) Object.defineProperty(preferences, model.id, { value: { enabled: Boolean(provider.enableDiscoveredModelsByDefault) }, enumerable: true, writable: true, configurable: true });
       this.preferences.set(row.id, preferences); row.models = structuredClone(observation.models);
     }
     if (observation.status === 'ready') row.observedAt = this.now;
@@ -618,8 +640,31 @@ export class ModelAccessApplication {
     } catch { if (this.closed || this.metadataReadOnly || this.operations.get(id) !== operation) return this.view(this.current(id)); before??=this.selectionState(row); if (row.status !== 'ready') row.status = 'failed'; row.diagnostic = '模型供应商检查未完成，已保留上次目录。'; }
     return await this.observed(row, before!);
   }
+  async readGatewayQuota(id:string,input:{expectedRevision:string}) {
+    await this.ready;
+    const row=this.current(id);conflict(row.revision,input.expectedRevision);
+    const unavailable=()=>new ModelAccessError('model_gateway_quota_unavailable','该模型来源当前没有可读的网关额度。',409);
+    if(this.closed||this.metadataReadOnly||!row.enabled||row.sourceEnabled===false||row.provider!=='magpie')throw unavailable();
+    return await this.withRuntimeOp(id,async runtime=>{
+      conflict(this.current(id).revision,input.expectedRevision);
+      if(!runtime.readGatewayQuota)throw unavailable();
+      const quota=await runtime.readGatewayQuota();
+      conflict(this.current(id).revision,input.expectedRevision);
+      return quota;
+    });
+  }
+  async openSettings(id:string,input:{expectedRevision:string}) {
+    await this.ready; const row=this.current(id); conflict(row.revision,input.expectedRevision);
+    if(this.closed||this.metadataReadOnly||!this.providers.get(row.provider)?.resolveCustom||!row.enabled) throw new ModelAccessError('model_settings_unavailable','该模型来源当前不能打开本机设置。',409);
+    await this.withRuntimeOp(id, async runtime=>{
+      conflict(this.current(id).revision,input.expectedRevision);
+      if(!runtime.openSettings)throw new ModelAccessError('model_settings_unavailable','该模型来源没有本机设置。',409);
+      await runtime.openSettings();
+    });
+    return this.view(this.current(id));
+  }
   async login(id: string, input: { expectedRevision: string }) {
-    await this.ready; const row = this.current(id); if(row.connectionId)throw new ModelAccessError('model_managed_account','此账号复用原生登录，请在对应账号入口操作。'); conflict(row.revision, input.expectedRevision);
+    await this.ready; const row = this.current(id); if(this.providers.get(row.provider)?.resolveCustom)throw new ModelAccessError('model_managed_account','请在模型来源自身的设置中登录。',409); if(row.connectionId)throw new ModelAccessError('model_managed_account','此账号复用原生登录，请在对应账号入口操作。'); conflict(row.revision, input.expectedRevision);
     if (row.loginAttempt && ['initializing', 'waiting-browser', 'checking'].includes(row.loginAttempt.state)) return this.view(row);
     const attemptId = randomUUID(); this.operations.set(id,(this.operations.get(id)??0)+1); row.identity=randomUUID(); row.status='not-authenticated';
     for(const lease of [...this.leasesByIdentity.values()]) if(lease.input.accountId===id) this.release(lease.view.identity);
@@ -989,7 +1034,7 @@ export function createModelAccess(options: ModelAccessOptions) {
     resolveModelAlias: (accountId: string, modelId: string) => application.resolveModelAlias(accountId, modelId),
     resolveLegacyModelVariant: (accountId: string, modelId: string) => application.resolveLegacyModelVariant(accountId, modelId),
     ensureLinked: () => application.ensureLinked(), invalidate: (id:string,input?:{abortActive?:boolean}) => application.invalidate(id,input), clearAuthentication: (id: string) => application.clearAuthentication(id),
-    accounts: { list: (input?:{includeDisabled?:boolean}) => application.list(input), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string;custom?:CustomProviderConfigureInput}) => application.add(input), configure: (id:string,input:{expectedRevision:string;apiKey:string}) => application.configure(id,input), configureCustom: (id:string,input:CustomProviderConfigureInput) => application.configureCustom(id,input), discoverCustom: (input:CustomProviderDiscoveryInput) => application.discoverCustom(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input), remove: (id:string,input:{expectedRevision:string}) => application.remove(id,input) },
+    accounts: { list: (input?:{includeDisabled?:boolean}) => application.list(input), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: ModelAccountAddInput) => application.add(input), openSettings: (id:string,input:{expectedRevision:string})=>application.openSettings(id,input), readGatewayQuota:(id:string,input:{expectedRevision:string})=>application.readGatewayQuota(id,input), configure: (id:string,input:{expectedRevision:string;apiKey:string}) => application.configure(id,input), configureCustom: (id:string,input:CustomProviderConfigureInput) => application.configureCustom(id,input), discoverCustom: (input:CustomProviderDiscoveryInput) => application.discoverCustom(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input), remove: (id:string,input:{expectedRevision:string}) => application.remove(id,input) },
     catalog: { list: () => application.catalog() },
     activity: () => application.activity(),
     freezeMetadata: (value = true) => application.freezeMetadata(value),

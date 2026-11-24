@@ -9,6 +9,7 @@ import { taskActionId } from '../../task/application/task-validation.ts';
 import { createGitCommitReader } from '../../task/commits/infrastructure/git-commit-reader.ts';
 import { gitCheckoutReadId, observeGitCheckoutReadIdentityAsync } from '../../../infrastructure/git/checkout-read-identity.ts';
 import { readCodeWorktreeCatalog, readSourceControlTaskAssociations, type WorktreeCatalogDependencies } from '../infrastructure/code-worktree-catalog.ts';
+import type { CodeRepositoryCloneStatus } from './source-control-model.ts';
 import { createSourceControlApplication } from './source-control-application.ts';
 import { createCodeBranchApplication } from './code-branch-application.ts';
 import { createCodeCommitApplication } from './code-commit-application.ts';
@@ -25,6 +26,7 @@ type Task = {scope:{projects:string[];services:Array<{project:string;service:str
 export type CodeInput = {repositoryId:string;checkoutId?:string;worktreeId?:string;path?:string;taskId?:string;commitHash?:string;query?:string;mode?:'name'|'content';showIgnored?:boolean;page?:number;line?:number;matchQuery?:string;expectedRevision?:string};
 export type CodeDependencies = {
   assetCatalog(root:string):Catalog;
+  assetRegistration?(root:string):Catalog;
   assetCatalogVersion?(root:string):string;
   resolveSourceRoot(root:string,source:Repository['source']):string;
   readTaskScope(root:string,id:string):Task['scope'];
@@ -36,13 +38,17 @@ export type CodeDependencies = {
   projectDetail?(root:string,code:string):{project:{id:string;code:string;source:unknown};sourceLocation:{path:string;identity:string}};
   builtinManagedFiles?(root:string,relative?:string):string[];
   projectDocumentImageContext?(root:string,code:string,path:string,content:string):MarkdownImageContext|undefined;
-  repositoryCloneStatus?(root:string,repositoryId:string):{state:'cloning'|'failed'|null;diagnostic:string|null;startedAt:string|null};
+  repositoryCloneStatus?(root:string,repositoryId:string):CodeRepositoryCloneStatus;
+  repositoryCloneStatusForSource?(root:string,repositoryId:string,source:Repository['source']):CodeRepositoryCloneStatus;
   repositoryCloneRequest?(root:string,repositoryId:string):{status:'started'|'already-running'|'ready'|'unavailable';diagnostic:string|null};
   openDirectory?: typeof import('../../../infrastructure/filesystem/open-directory.ts').openDirectory;
 };
 export function createCodeApplication(dependencies:CodeDependencies) {
-  function assertRepositoryPrepared(root: string, repositoryId: string) {
-    const clone = dependencies.repositoryCloneStatus?.(root, repositoryId);
+  function cloneStatus(root: string, repository: Repository) {
+    return dependencies.repositoryCloneStatusForSource ? dependencies.repositoryCloneStatusForSource(root, repository.id, repository.source) : dependencies.repositoryCloneStatus?.(root, repository.id);
+  }
+  function assertRepositoryPrepared(root: string, repositoryId: string, repository?: Repository) {
+    const clone = repository ? cloneStatus(root, repository) : dependencies.repositoryCloneStatus?.(root, repositoryId);
     if (clone?.state) throw codeFailure('code_repository_unavailable', clone.diagnostic || '代码库正在克隆，尚未准备完成。', 409);
   }
   // Scope observations belong to one read, never to the lifetime of this application.
@@ -52,19 +58,29 @@ export function createCodeApplication(dependencies:CodeDependencies) {
     try { return codeGit(location, ['symbolic-ref', '--short', 'HEAD']).toString().trim() + ' · 当前文件'; }
     catch { try { return codeGit(location, ['rev-parse', '--short', 'HEAD']).toString().trim() + ' · 当前文件'; } catch { return '当前文件'; } }
   }
-  function repositoryScope(root:string,taskId?:string,repositoryId?:string,readIdentity=true) {
-    const catalogVersion=readIdentity?dependencies.assetCatalogVersion?.(root):undefined;
-    const catalog=dependencies.assetCatalog(root);
-    if(catalogVersion!==undefined&&dependencies.assetCatalogVersion!(root)!==catalogVersion)throw codeFailure('code_worktree_identity_changed','读取期间代码库登记已变化，请刷新后继续。',409);
+  // A single bounded entry per application/worker. Only validated declarations
+  // are retained; clone and Git observations never enter this cache.
+  let registrationCache: {root:string; version:string; catalog:Catalog} | undefined;
+  function repositoryScope(root:string,taskId?:string,repositoryId?:string,readIdentity=true,sourceControl=false) {
+    const catalogVersion=readIdentity || dependencies.assetRegistration ? dependencies.assetCatalogVersion?.(root) : undefined;
+    const cached=registrationCache;
+    const reusable=dependencies.assetRegistration && catalogVersion!==undefined && cached?.root===root && cached.version===catalogVersion;
+    const catalog=reusable ? cached!.catalog : dependencies.assetRegistration ? dependencies.assetRegistration(root) : dependencies.assetCatalog(root);
+    if(!reusable && catalogVersion!==undefined && dependencies.assetCatalogVersion!(root)!==catalogVersion)throw codeFailure('code_worktree_identity_changed','读取期间代码库登记已变化，请刷新后继续。',409);
+    if(!reusable && dependencies.assetRegistration && catalogVersion!==undefined)registrationCache={root,version:catalogVersion,catalog};
     const diagnostics:Array<{code:string;message:string;repositoryId:string|null}>=[];
     if(repositoryId!==undefined&&!catalog.repositories.some(repo=>repo.id===repositoryId))throw codeFailure('code_repository_not_registered','代码库不在当前工作空间的登记范围内。',404);
     const gitReader=createGitCommitReader();
     const items=catalog.repositories.filter(repo=>repositoryId===undefined||repo.id===repositoryId).map(repo=>{
-      let location='',available=false,gitId:string|null=null,commonDirectory:string|undefined;
+      let location='',available=false,gitId:string|null=null,commonDirectory:string|undefined,clone:CodeRepositoryCloneStatus|null=null;
       try {
         location=dependencies.resolveSourceRoot(root,repo.source);
         if(readIdentity){
-          assertRepositoryPrepared(root, repo.id);
+          clone=cloneStatus(root,repo) || null;
+          if(clone?.state) {
+            if(sourceControl) return {id:repo.id,code:repo.code,name:repo.name,location,available,gitId,clone};
+            throw codeFailure('code_repository_unavailable', clone.diagnostic || '代码库正在克隆，尚未准备完成。', 409);
+          }
           if(!fs.statSync(location).isDirectory())throw codeFailure('code_repository_unavailable',repo.name+' 的登记目录不是有效目录。',404);
           const gitRepository=gitReader.repository(location);gitId=gitRepository.id;location=gitRepository.root;commonDirectory=gitRepository.commonDir;available=true;
         }
@@ -73,7 +89,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
         if((error as {code?:string})?.code==='code_repository_unavailable')diagnostics.push({code:'code_repository_unavailable',message:(error as Error).message,repositoryId:repo.id});
         else diagnostics.push({code:'code_repository_unavailable',message:location&&fs.existsSync(location)?repo.name+' 的 Git 身份当前不可读取。':repo.name+' 的登记目录不存在，代码库可能尚未克隆到本机。',repositoryId:repo.id});
       }
-      const item={id:repo.id,code:repo.code,name:repo.name,location,available,gitId};
+      const item={id:repo.id,code:repo.code,name:repo.name,location,available,gitId,...(sourceControl?{clone}:{})};
       if(commonDirectory)repositoryCommonDirectories.set(item,commonDirectory);
       if(readIdentity)repositoryRegistrations.set(item,()=>{
         if(catalogVersion!==undefined&&dependencies.assetCatalogVersion!(root)!==catalogVersion)throw codeFailure('code_worktree_identity_changed','读取期间代码库登记已变化，请刷新后继续。',409);
@@ -226,7 +242,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
       prepareVerification(sources: CodeSource[]) {
         const repository = registration?registration():dependencies.assetCatalog(root).repositories.find(item => item.id === repositoryId);
         if (!repository) throw codeFailure('code_repository_not_registered', '代码库不在当前工作空间的登记范围内。', 404);
-        assertRepositoryPrepared(root, repository.id);
+        assertRepositoryPrepared(root, repository.id, repository);
         let location = dependencies.resolveSourceRoot(root, repository.source);
         try { location = fs.realpathSync(location); } catch { throw codeFailure('code_repository_unavailable', '代码库本机目录当前不可读取。', 404); }
         if(registration&&sameFilesystemPath(location,registered.location)){
@@ -256,7 +272,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
       async prepareVerificationAsync(sources: CodeSource[]) {
         const repository = registration ? registration() : dependencies.assetCatalog(root).repositories.find(item => item.id === repositoryId);
         if (!repository) throw codeFailure('code_repository_not_registered', '代码库不在当前工作空间的登记范围内。', 404);
-        assertRepositoryPrepared(root, repository.id);
+        assertRepositoryPrepared(root, repository.id, repository);
         let location = dependencies.resolveSourceRoot(root, repository.source);
         try { location = await fs.promises.realpath(location); } catch { throw codeFailure('code_repository_unavailable', '代码库本机目录当前不可读取。', 404); }
         if (registration && sameFilesystemPath(location, registered.location)) {
@@ -271,7 +287,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
       },
     };
   }
-  const sourceControlApplication=createSourceControlApplication({repositories:repositoryScope,inventory:(root,taskId)=>repositoryScope(root,taskId,undefined,false),source:(root,input)=>source(root,input as CodeInput),worktrees:sourceControlWorktrees,worktreesAsync:sourceControlWorktreesAsync,taskAssociations:(root,repositories,taskId,deadline)=>readSourceControlTaskAssociations(root,repositories,dependencies,taskId,deadline),readTask:dependencies.readTask,repositoryCloneStatus:dependencies.repositoryCloneStatus,repositoryCloneRequest:dependencies.repositoryCloneRequest});
+  const sourceControlApplication=createSourceControlApplication({repositories:(root,taskId,repositoryId)=>repositoryScope(root,taskId,repositoryId,true,true),inventory:(root,taskId)=>repositoryScope(root,taskId,undefined,false),source:(root,input)=>source(root,input as CodeInput),worktrees:sourceControlWorktrees,worktreesAsync:sourceControlWorktreesAsync,taskAssociations:(root,repositories,taskId,deadline)=>readSourceControlTaskAssociations(root,repositories,dependencies,taskId,deadline),readTask:dependencies.readTask,repositoryCloneStatus:dependencies.repositoryCloneStatus,repositoryCloneRequest:dependencies.repositoryCloneRequest});
   const syncApplication = createCodeSyncApplication({ source: (root, input) => source(root, input as CodeInput), observation: (root, input) => {
     const location = input as CodeInput;
     if (location.taskId || location.commitHash || location.checkoutId !== undefined) return undefined;

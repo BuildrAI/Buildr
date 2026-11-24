@@ -56,6 +56,7 @@ test('owned runtime environment has no inherited account or source selection and
   const f=fixture(t),env=smokePeerEnvironment({root:f.root,workspace:path.join(f.root,'workspace'),appData:path.join(f.root,'app'),productData:path.join(f.root,'product')},process.execPath);
   for(const key of ['NPM_TOKEN','NODE_AUTH_TOKEN','NODE_OPTIONS','NODE_PATH','BUILDR_SOURCE_ROOT'])assert.equal(env[key],undefined);
   for(const key of ['HOME','USERPROFILE','APPDATA','LOCALAPPDATA','XDG_STATE_HOME','XDG_CONFIG_HOME','TMPDIR','NPM_CONFIG_CACHE'])assert.ok(env[key]?.startsWith(f.root));
+  assert.equal(env.BUILDR_DETACHED_ISOLATION,'off');
   assert.equal(readFileSync(env.NPM_CONFIG_USERCONFIG!,'utf8'),'');assert.equal(readFileSync(env.NPM_CONFIG_GLOBALCONFIG!,'utf8'),'');
 });
 test('full verifier requires one explicit peer and supports manifest-only environment inputs',()=>{

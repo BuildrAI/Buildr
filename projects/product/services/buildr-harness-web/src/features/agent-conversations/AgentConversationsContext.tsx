@@ -11,7 +11,7 @@ import { createConversationHistoryCache, conversationHistorySignature, activityW
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ConnectionDiscovery, type ConnectionDiscoveryState } from './connection-discovery.ts';
 import { agentConversationsApi, type ConversationPage, type AgentConversationsClient } from './api/agent-conversations-api.ts';
-import { conversationObservationKey, needsConversationObservation, nextConversationPanel, createdConversationVisibility, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, rememberContextReport, resolveInitialStandaloneView, sameConversationSelection, shouldPersistStandaloneHistoryPreference, shouldPreserveFocusHistory, type ConversationContextReport, type ConversationSelection } from './conversation-state.ts';
+import { canSplitFocusHistory, conversationObservationKey, needsConversationObservation, nextConversationPanel, createdConversationVisibility, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, rememberContextReport, resolveInitialStandaloneView, sameConversationSelection, shouldPreserveFocusHistory, type ConversationContextReport, type ConversationSelection } from './conversation-state.ts';
 import { readOptionalPreference, writeOptionalPreference } from '../../lib/optional-preferences.ts';
 import type { CatalogModel, ConnectionView, ConversationEvent, ConversationView, PendingConversation } from './types.ts';
 import { conversationProductActionSelection, recoverConversationProductAction, startConversationProductAction } from './conversation-product-action.ts';
@@ -104,10 +104,18 @@ function savePanel(open: boolean, scope: Scope | null, full?: boolean, view?: 'c
     sessionStorage.setItem(panelStateKey(), JSON.stringify({ open, scope, ...(full !== undefined ? { full } : {}), ...(view !== undefined ? { view } : {}) }));
   } catch { /* Input remains usable when browser storage is denied. */ }
 }
+function canSplitCurrentHistoryPanel(viewportWidth: number): boolean {
+  if (typeof document === 'undefined') return canSplitFocusHistory(Math.max(0, viewportWidth - 52), viewportWidth);
+  const panel = document.getElementById('agent-conversation-panel');
+  if (panel?.dataset.canSplitHistory === 'true') return true;
+  if (panel?.dataset.canSplitHistory === 'false') return false;
+  const panelWidth = panel?.getBoundingClientRect().width || Math.max(0, viewportWidth - 52);
+  return canSplitFocusHistory(panelWidth, viewportWidth);
+}
 function currentFocusSplitPreservesHistory(full: boolean, view: 'conversation' | 'history'): boolean {
   if (typeof window === 'undefined' || typeof document === 'undefined') return shouldPreserveFocusHistory(full, view);
-  const panelWidth = document.getElementById('agent-conversation-panel')?.getBoundingClientRect().width || Math.max(0, window.innerWidth - 52);
-  return shouldPreserveFocusHistory(full, view, panelWidth, window.innerWidth);
+  if (!full || view !== 'history') return false;
+  return canSplitCurrentHistoryPanel(window.innerWidth);
 }
 
 export function AgentConversationsProvider({children, client = agentConversationsApi, initialLayout, standalone = false}: {children: ReactNode; client?: AgentConversationsClient; initialLayout?: {open: boolean; full: boolean; view: 'conversation' | 'history'}; standalone?: boolean}) {
@@ -138,10 +146,7 @@ export function AgentConversationsProvider({children, client = agentConversation
     setViewState(next);
     if (standalone) {
       const viewportWidth = typeof window === 'undefined' ? 1280 : window.innerWidth;
-      const panelWidth = typeof document === 'undefined'
-        ? Math.max(0, viewportWidth - 52)
-        : document.getElementById('agent-conversation-panel')?.getBoundingClientRect().width || Math.max(0, viewportWidth - 52);
-      if (shouldPersistStandaloneHistoryPreference(next, panelWidth, viewportWidth)) {
+      if (next === 'history' || canSplitCurrentHistoryPanel(viewportWidth)) {
         writeStandaloneHistoryPreference(next === 'history');
       }
     } else {

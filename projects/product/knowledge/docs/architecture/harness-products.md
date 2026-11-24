@@ -1,38 +1,55 @@
 # Buildr Harness 与 Development：产品、代码与发行边界
 
-当前重构采用两层产品关系：**Harness 负责 Agent 执行及完整网页；Development 为 Harness 准备工程现场和上下文。** 本页解释实现边界，不代替任务验证、人工验收或公开发布批准。
-
-整体关系见[双产品系统图](../../archify/system/buildr-system-overview.html)。
+本页解释 **Buildr Harness 的目录级工作环境**与 **Buildr Development 的软件工程开发套件**，区分产品责任、实际源码和发行形态，不代替规范、验证或发布证据。
 
 ## 产品关系
 
-| 产品 | 拥有的功能 | 不承担的职责 |
+| 产品 | 权责 | 典型入口 |
 | --- | --- | --- |
-| Buildr Harness | 原生 Harness/执行程序和多模型来源接入、独立账号、对话、附件、问题与审批、停止、接续、恢复、普通工作目录，以及完整网页 | 工程任务、知识、工作空间治理与工程成果状态 |
-| Buildr Development | 工程工作空间、任务、知识、代码与成果；向 Harness 交接准确目录和工程上下文 | 第二套对话 UI、原生执行状态机、模型账号管理 |
+| Buildr Harness | 原生执行内核接入、模型账号和来源、自己的编排与交互、对话和执行控制，以及内置本机工作空间/目录与文件、Git 工作环境 | 独立 Harness 网页和 CLI；也可向其他产品提供明确的组合入口 |
+| Buildr Development | 软件工程的组织、知识、任务、验证和交付。它维护工程工作空间及其项目、服务、代码库与任务关系，分配、关联并安全回收任务工作树 | CLI 和技能可脱离网页与 Harness 使用；Development Web 可同页装配 Harness 并增加工程能力 |
 
-两种产品界面统一称“工作空间”，都是从目录开始。Harness 接受普通本机目录，Development 提供自身管理的目录及工程上下文；同名不代表工程对象由 Harness 管理。独立 Harness 不要求目录先初始化为 Development 工作空间。
+```mermaid
+flowchart LR
+  Person[人] --> HW[Harness 网页]
+  Person --> DW[Development Web]
+  HW --> Dir[资源管理器和源代码管理]
+  DW --> Dir
+  DW --> Engineering[Development 工程应用]
+  HW --> Harness[Harness 编排和交互]
+  DW --> Harness
+  Harness --> Native[受支持的原生执行内核]
+  Native --> CLI[Development CLI 和技能]
+  External[外部 Codex 或 Claude Code] --> CLI
+  CLI --> Engineering
+  Dir --> Artifacts[真实目录、文件与 Git]
+  Engineering --> Artifacts
+```
 
-## 四个目录
+图中从执行内核到 CLI 的箭头表示智能体可在已准备的工程工作空间选择调用 CLI，并非所有对话都要求 Development。原生 Codex/Claude Code 可以独立消费该 CLI；人可只用 Harness 完成本地修改、审阅和本地提交，不需要创设工程任务。原生内核保有推理循环与工具权限；模型接入允许用户按实际支持选择原生账号、订阅或自带密钥（BYOK），不承诺所有内核与账号任意组合。
 
-- `services/buildr-harness/`：原 buildr-agent 核心，合并 CLI、启动器及独立包工具；公开包名 `@buildr-ai/buildr-harness`。
-- `services/buildr-harness-web/`：完整唯一网页，包含全部对话、设置及目录交互；原独立 buildr-harness-ui 服务删除。
-- `services/buildr/`：Development CLI、后端、工程应用、资源和发行。
-- `services/buildr-web/`：Development 工程页面，`src/features/harness-ui/` 专门维护工程集成。
+两种入口可能称工作范围为“工作空间”。独立目录只保存明确选择的本机目录和身份，不创建 Development 工程登记；对于同数据域中已登记在本机 `workspace-registry.json` 的工作空间及默认工作空间（`@default`），Harness 也可直接读取其名称与目录并按同一文件系统摘要核验，使离线无 Development 运行时仍可浏览工作区、新建及接续无业务任务依赖的对话。Harness 从已选择的本机目录发现真实 Git 仓库，不需要 Development 登记。Development 的代码库登记表达与项目、服务、任务和交付策略的工程关系，不是 Git 仓库的发现机制。任务工作树是普通 Git 工作树；按任务分配、关联及决定何时安全回收仍由 Development 组织。
 
-开发对话输入、工具展示、模型设置或执行控制时修改 Harness；开发任务、知识、工作空间或工程导航时修改 Development。Development 的 harness-ui 只是集成模块，不是可复用对话组件包。
+## 四个实现目录
 
-## 网页集成
+- `services/buildr-harness/`：原生执行接入、编排与私有交互、目录宿主；`@buildr-ai/buildr-harness/workbench` 提供无执行后台依赖的文件编辑保护、只读分段核验、Git 发现与工作树检查、分支/同步/提交/放弃更改与提交说明生成通用能力。
+- `services/buildr-harness-web/`：唯一完整对话实现及独立网页；`explorer.ts`、`source-control.ts` 与 `workbench-editor.ts` 分别公开资源管理器、源代码管理与 CodeMirror 6 文件/差异编辑器共享视图。
+- `services/buildr/`：Development CLI、工程应用、工作范围解析、资源和发行；使用 `@buildr-ai/buildr-harness/workbench` 共享文件/Git 底层实现，保留工程接口、任务关联（`Buildr-Task:`）和副作用边界。
+- `services/buildr-web/`：Development 工程页面。`harness-ui` 装配对话；工程代码入口通过重导出与薄适配直接复用 `buildr-harness-web` 通用资源管理器、源代码管理与编辑器，并补充多仓库、任务深链、项目文件、发布和同步相关操作。
 
-Harness 提供完整唯一对话实现、侧边导轨（含展开与收起态）、分屏宽度分隔条和通用外壳。独立网页自行装配；Development 通过公开 `conversation.ts` 入口装配完整对话组件，第一方组合使用同一 React 页面树，不再加载对话 iframe，也不在外壳复制第二套导轨或分隔条。工程区域开合、专注/分屏与左右停靠只调整布局并保持全套对话及列表通用能力可用，保留同一对话实例、草稿、阅读位置和执行身份。当前产品启动、路由与组合入口仍在 Development，尚未完成 Harness 独立主入口接入可选环境的全套装配。
+实现定位见[双产品代码地图](../../code-map/harness-products.md)。
 
-Harness 的可选工作上下文区域不是“任务专属空位”，没有内容时不留固定占位。Development 提供任务关联和工程参与控件，自行维护工程对象与已观察修订；Harness 不管理任务状态，也不因呈现关联而获得新的执行授权。上下文组件故障局部显示提示，不卸载对话或停止控件。
+## 网页组合与实际操作
 
-文件能力和工作对象打开使用不同的明确接口，由装配层接线：当前 Development 继续核验准确工程来源，并打开现有文件浏览器或任务页面；普通网址仍按网页链接处理。现有文件浏览器不搬入 Harness，也不重复实现。独立 Harness 已有目录文件读取和预览，不等于已有完整文件管理器。未来 DSH 若提供可用能力可按实际接口适配，不以当前接线认定所有宿主必须由 Development 打开文件。
+独立 Harness 的对话右侧是可收起的工作区，从对话标题行右侧打开；工作区首页提供“资源管理器”和“源代码管理”，两个模块可同时打开为标签并独立切换或关闭。“＋”在标签下方打开同一首页，点击已打开的模块会激活其原标签。切换对话工作空间时，标签保留，文件与 Git 内容随之切换。两者可独立装配；在对话中共用其工作空间解析出的目录，已有的本机目录或 Development 工作空间不需要重复登记。新对话选定范围后也能先浏览，再决定是否发送消息。普通目录可以浏览、搜索、打开和保存文件；Git 操作要求明确选中工作树根。上级仓库、失效检出和任务旧路径不作为自动回退；选定浏览来源不会改变对话的执行位置。用户或智能体通过原生工具修改文件后，网页可刷新真实内容；写入重核实际位置、文件和已观察的版本，冲突保留草稿。智能体继续使用现有文件工具和原生 Git；不需要通过新的网页私有接口工作。
 
-显式工程上下文交接继续由 Harness 自己执行首次提交和恢复，未知响应不自动重发。独立网页及旧窗口兼容路径仍保留准确 origin、父/子窗口及消息类型校验；Development 同页路径不使用窗口消息或数值坐标覆盖。流程图安全渲染 iframe 保留，不是完整对话的嵌套。
+独立工作台可从获准目录自动发现本机仓库，列出实际 Git 工作树；文件与 Git 面板共享明确选择的浏览来源，不切换对话执行目录。文件标签和草稿区分检出身份，Git 差异可定位到同一来源的当前文件；大文件续读钉住已读版本。仓库发现有边界，不跟随目录链接扫描，也不把部分清单当作完整观察。
 
-上述接口是可信第一方的构建时装配边界，不是动态插件平台或权限沙箱；不加载任意远程工作环境，不下发长期后台密钥。本步不建设插件市场、多环境管理中心、通用链接注册中心或 DSH 适配。
+源代码管理显示实际变更层、差异与固定提交历史。独立入口可显式暂存、取消暂存、仅提交暂存内容，选择本地或跟踪分支，创建或移除普通工作树，以及按已核对配置获取远程、推送或同步。浏览和刷新不触发这些写入；移除不删除分支，不强制清除改动或忽略文件。Development 通过工程适配保留项目、服务、任务、工程指引及交付语义，不迁移这些记录或权限。
+
+Development 以一条顶栏区分空间选择和布局切换：品牌后依次是「工作台 / 工作空间」模式入口和当前工作空间下拉，右侧保留原有全局操作。工作台中的对话标题可打开右侧工作区，资源管理器和源代码管理继续使用已登记的工程来源与原工具；工作空间保持工程页面与侧边对话，只有左右分栏时才允许将对话栏移到另一侧。切换不会新建或提交对话，对话历史、草稿和工程页面继续由原模块保留。
+
+Development 通过 `conversation.ts` 接入完整对话，并分别装配共享文件与 Git 视图；第一方组合使用同一 React 页面树，而不是另建对话或文件差异实现。任务、文件深链和工程操作通过明确适配器提供，复核工程范围而不自动切换到独立目录。独立网页的兼容文件预览和 Development 原路由保持。可选工作环境的故障局部呈现；可信的同页装配不构成不可信插件的安全沙箱。
 
 ## 核心与数据兼容
 
@@ -42,13 +59,13 @@ Harness 的可选工作上下文区域不是“任务专属空位”，没有内
 
 Harness 本机包携带编译核心、CLI、启动器、完整网页、运行依赖和许可证据；不含 Development 工程业务、用户账号或工作空间私人资料。Development 主包 `@buildr-ai/buildr` 携带工程实现与网页、工程资源，并携带所用 Harness 运行负载及完整网页，无需用户手动先装另一份独立 CLI。
 
-Node 最低要求仍为 `24.15.0`；原生程序管理、真实模型账号和使用权是各自边界，不因制包成功自动取得。Harness 独立包当前仍 `private:true`，本机验收包不是正式公开发布旁路；许可证据和平台批准不能代填。Windows 实测不在本轮范围。
+Node 最低要求仍为 `24.15.0`；原生程序管理、真实模型账号和使用权是各自边界，不因制包成功自动取得。Harness 源服务保留 `private:true`，正式候选只在独立发行暂存区生成公开包元数据；本机预演原包不进入公开流程。许可证据和平台批准不能代填。Windows 实测不在本轮范围。
 
 ## DSH 插件组合
 
-清楚的上下层边界允许未来独立提供 Harness 插件、只准备工程现场的 Development 插件，以及两者组合的插件。本轮只保证代码职责可区分，不声称已经实现或发行三套新插件；现有 dsh-plugin 服务仍独立。
+DSH 是一个可选的生态宿主，也可以是 Harness 选择的原生执行入口；这两种角色不同。插件接入不复制对话权威，不把两套编排施加给同一执行；现有 `dsh-plugin` 继续服务 Development Web。[DSH Buildr Harness](../../../services/buildr-harness-dsh-plugin/README.md) 是独立发行目标 `@buildr-ai/dsh-buildr-harness`，使用核验后的本机正式 Harness；本机开发入口 Buildr Harness Dev 使用明确绑定的开发域。DSH 0.2.x 的宿主范围与实际桌面验收版本分开记录。日常兼容激活不需要重装插件；已有交互的页面先保留现场并提示刷新。
 
-文件定位见[代码地图](../../code-map/harness-products.md)。具体承诺见[网页集成变更](../../../openspec/changes/archive/2026-11-16-extract-harness-web/proposal.md)、[核心变更](../../../openspec/changes/archive/2026-11-16-split-buildr-harness-product/proposal.md)和[发行变更](../../../openspec/changes/archive/2026-11-16-distribute-harness-products/proposal.md)。
+既有拆分规范见[产品边界](../../../openspec/specs/harness-product/spec.md)、[网页装配](../../../openspec/specs/harness-web-composition/spec.md)和[独立发行](../../../openspec/specs/harness-independent-distribution/spec.md)；目录工作台和共享视图的本次演进见[工作台变更](../../../openspec/changes/archive/2026-11-20-harness-directory-workbench/proposal.md)。本页描述当前源码能力，不把候选实现当作所有渠道已交付。
 
 ## 独立网页端口
 

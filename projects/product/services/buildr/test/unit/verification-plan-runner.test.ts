@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { bundleBrowserExecutionSteps, executePlan, localExecutionStep, reusedExecutionStep, prepareVerificationReuse } from '../verification/plan-runner.ts';
+import { bundleBrowserExecutionSteps, executePlan, localExecutionStep, reusedExecutionStep, prepareVerificationReuse, withObservedSchedulingCost } from '../verification/plan-runner.ts';
+import { createLocalHistoryBudget } from '../verification/verification-reuse.ts';
 import { resolveVerificationExecutionProfile, verificationSteps } from '../verification/registry.ts';
 import { runVerificationDag } from '../verification/dag-scheduler.ts';
 
@@ -25,6 +26,35 @@ test('preparation changing a dependency also prepares checks whose cached proof 
 });
 
 const step = (id: string, dependsOn: string[] = []) => ({ id, name: id, dependsOn, contexts: [], resources: [], concurrencyClass: 'default' });
+
+test('a cache miss with no new preparation does not repeat the source observation', async () => {
+  let observations = 0;
+  const original = { hits: new Map() };
+  const result = await prepareVerificationReuse({ steps: [step('fresh')] }, async checks => {
+    assert.deepEqual(checks.map(check => check.id), ['fresh']);
+    return false;
+  }, () => { observations++; return original; });
+  assert.equal(result, original);
+  assert.equal(observations, 1);
+});
+
+test('local history work has one cumulative budget; a costly read never fabricates another hit', () => {
+  let time = 0;
+  const budget = createLocalHistoryBudget(10, () => time);
+  assert.equal(budget.observe(() => { time += 6; return 'proof-one'; }), 'proof-one');
+  time += 100; // preparation is not historical observation
+  assert.equal(budget.observe(() => { time += 5; return 'proof-two'; }), 'proof-two');
+  assert.equal(budget.observe(() => assert.fail('history budget exhausted')), null);
+  assert.deepEqual(budget.stats(), { elapsedMs: 11, limited: true });
+});
+
+test('measured scheduling estimates change local priority, never admission or candidate settings', () => {
+  const check = { ...step('a'), schedulingCostMs: 10, resourceDemand: { git: 1 } };
+  const observed = { estimateSource: 'prior-execution', estimatedDurationMs: 80 };
+  assert.deepEqual(withObservedSchedulingCost(check, { id: 'local-auto' }, observed), { ...check, schedulingCostMs: 80 });
+  assert.equal(withObservedSchedulingCost(check, { id: 'ci' }, observed), check);
+  assert.equal(withObservedSchedulingCost(check, { id: 'local' }, { ...observed, estimatedDurationMs: 0 }), check);
+});
 function options(execute: (check: any) => Promise<any>) {
   const events: string[] = [];
   return {
@@ -178,14 +208,21 @@ test('independent conversation and storage owners share the existing IO capacity
   assert.equal(result.every((value:any)=>value.status==='passed'),true);assert.equal(overlap,true);
   const [storage,conversations]=definitions;
   assert.equal(storage.resourceDemand.workers+conversations.resourceDemand.workers,3);
-  assert.equal(storage.executor.discoveredFiles.includes('../buildr-harness/test/integration/conversations.test.ts'),false);
-  assert.deepEqual(conversations.executor.discoveredFiles,['../buildr-harness/test/integration/conversations.test.ts']);
+  const expectedConversationFiles = [
+    '../buildr-harness/test/integration/conversations.test.ts',
+    '../buildr-harness/test/integration/conversations-controls-and-models.test.ts',
+    '../buildr-harness/test/integration/conversations-handoff.test.ts',
+    '../buildr-harness/test/integration/conversations-history-titles.test.ts',
+    '../buildr-harness/test/integration/conversations-recovery.test.ts',
+  ];
+  for (const file of expectedConversationFiles) assert.equal(storage.executor.discoveredFiles.includes(file), false);
+  assert.deepEqual(conversations.executor.discoveredFiles, expectedConversationFiles);
 });
 
 
-test('a cached two-browser owner executes without browser or IO reservation', async () => {
-  const definition = verificationSteps.find((check: any) => check.id === 'e2e-browser:agent-conversations');
-  const cached = reusedExecutionStep(definition);
+test('a cached browser owner executes without browser or IO reservation', async () => {
+  const definition = verificationSteps.find((check: any) => check.id === 'e2e-browser:core');
+  const cached = reusedExecutionStep({ ...definition, resourceUnits: { 'browser-runtime': 1 } });
   assert.deepEqual(cached.resources, []);
   assert.deepEqual(cached.resourceUnits, {});
   const results = await runVerificationDag({ steps: [cached] }, {
@@ -215,4 +252,19 @@ test('browser bundle keeps one real host while focused single-selector checks st
   assert.equal(focused.steps[0].browserSelectors, undefined);
   assert.equal(focused.steps[0].dependsOn.length, 0);
   assert.equal(focused.coveredBy.size, 0);
+});
+
+test('standalone playwright checks declare browser-runtime resource and task selectors stay independent', () => {
+  for (const id of ['development-live-browser', 'harness-frame-browser', 'harness-shell-composition', 'harness-standalone-browser']) {
+    const step = verificationSteps.find((check: any) => check.id === id);
+    assert.ok(step, `expected check ${id} in registry`);
+    assert.ok(Array.isArray(step.resources) && step.resources.includes('browser-runtime'), `${id} must declare browser-runtime resource`);
+  }
+  const taskMembers = ['task', 'task-materials'].map((selector: string) =>
+    verificationSteps.find((check: any) => check.id === `e2e-browser:${selector}`));
+  assert.equal(taskMembers.length, 2);
+  const bundled = bundleBrowserExecutionSteps(taskMembers);
+  assert.equal(bundled.steps.length, 2);
+  assert.equal(bundled.coveredBy.size, 0);
+  for (const step of bundled.steps) assert.equal(step.browserSelectors, undefined);
 });

@@ -36,8 +36,9 @@ test('默认 providers 与 bindings 可解析，当前认知与收尾只按实�
   const packageManifest: any = YAML.parse(read(path.join(SERVICE_ROOT, 'resources/manifest.yml')));
   const knowledge: any = packageManifest.builtins.skills.find((item: any) => item.id === 'current-knowledge-maintenance');
   const packagedFinish: any = packageManifest.builtins.skills.find((item: any) => item.id === 'task-finish');
-  assert.deepEqual(knowledge.requires, [{ capability: 'buildr.terminology-governance', version: 1, mode: 'optional' }]);
-  assert.equal(packageManifest.initialSkillBindings.find((item: any) => item.capability === 'buildr.terminology-governance').provider, 'terminology-governance');
+  assert.ok(knowledge.provides.some((item: any) => item.capability === 'buildr.terminology-governance' && item.version === 1));
+  assert.equal(knowledge.requires?.some((item: any) => item.capability === 'buildr.terminology-governance') ?? false, false);
+  assert.equal(packageManifest.initialSkillBindings.find((item: any) => item.capability === 'buildr.terminology-governance').provider, 'current-knowledge-maintenance');
   assert.equal(packageManifest.builtins.skills.some((item: any) => item.id === 'task-development'), false);
   assert.equal(packageManifest.capabilityContracts.some((item: any) => item.id === 'buildr.task-development'), false);
   assert.equal(packageManifest.initialSkillBindings.some((item: any) => item.capability === 'buildr.task-development'), false);
@@ -66,7 +67,7 @@ test('默认 providers 与 bindings 可解析，当前认知与收尾只按实�
 test('当前知识的参考文件均在交付清单中，默认绑定只选择 v4', () => {
   const manifest = YAML.parse(read(path.join(SERVICE_ROOT, 'resources/manifest.yml')));
   const provider = manifest.builtins.skills.find((item: any) => item.id === 'current-knowledge-maintenance');
-  assert.deepEqual(provider.provides, [{ capability: 'buildr.current-knowledge-maintenance', version: 4 }]);
+  assert.deepEqual(provider.provides, [{ capability: 'buildr.current-knowledge-maintenance', version: 4 }, { capability: 'buildr.terminology-governance', version: 1 }]);
   assert.deepEqual(manifest.initialSkillBindings.filter((item: any) => item.capability === 'buildr.current-knowledge-maintenance'), [
     { capability: 'buildr.current-knowledge-maintenance', version: 4, provider: 'current-knowledge-maintenance' },
   ]);

@@ -8,6 +8,20 @@ import {connectHarnessProcess,resolveHarnessProfile,prepareAgentRuntimeAsync,act
 import {installHarnessLauncher,readHarnessLauncher,uninstallHarnessLauncher,verifyHarnessLauncherFile} from './launcher.ts';
 import {inspectDistributionEvidence} from './distribution-evidence.ts';
 const execute=promisify(execFile);
+function findLiveHarnessWebRoot(fromDir:string):string|undefined{
+  let current=path.resolve(fromDir);
+  for(let depth=0;depth<6;depth+=1){
+    const candidate=path.join(current,'buildr-harness-web');
+    try{
+      const pkg=JSON.parse(fs.readFileSync(path.join(candidate,'package.json'),'utf8')) as {name?:unknown};
+      if(pkg?.name==='@buildr-ai/buildr-harness-web'&&fs.existsSync(path.join(candidate,'src'))&&fs.existsSync(path.join(candidate,'tools/dev-server.mjs')))return fs.realpathSync(candidate);
+    }catch{}
+    const parent=path.dirname(current);
+    if(parent===current)break;
+    current=parent;
+  }
+  return undefined;
+}
 export async function main(args:string[]){
   if(['--help','-h','help'].includes(args[0]??'')){
     console.log('Buildr Harness\n用法：buildr-harness web|activate|launcher install|status|uninstall|distribution-check\n--profile released|development  --data-root <绝对目录>  --port <端口>  --no-open  --live（仅开发源码网页）\n独立网页默认端口：development 9519，released 9518；Development入口不变。\n普通 web 复用已有后台；activate 才显式采用候选。关闭或卸载入口不删除共享历史与账号。\nlauncher 使用 macOS .app 或 Windows .lnk；支持状态与许可需分别验收。\ndistribution-check --json 只读核对当前安装包，不授予发布或模型使用权。');
@@ -48,10 +62,8 @@ export async function main(args:string[]){
   const port=harnessWebPort(profile as 'released'|'development',flags.has('--port')?Number(flags.get('--port')):undefined);
   let developmentRoot:string|undefined;
   if(flags.has('--live')){
-    developmentRoot=fs.realpathSync(path.resolve(import.meta.dirname,'../../buildr-harness-web'));
-    if(JSON.parse(fs.readFileSync(path.join(developmentRoot,'package.json'),'utf8')).name!=='@buildr-ai/buildr-harness-web'
-      ||!fs.existsSync(path.join(developmentRoot,'src'))||!fs.existsSync(path.join(developmentRoot,'tools/dev-server.mjs'))
-      ||!fs.existsSync(path.resolve(import.meta.dirname,'../build/harness-web-dist/index.html')))
+    developmentRoot=findLiveHarnessWebRoot(import.meta.dirname);
+    if(!developmentRoot||!fs.existsSync(path.resolve(import.meta.dirname,'../build/harness-web-dist/index.html')))
       throw new Error('源码网页需要已准备的产品检出目录和静态回退产物，请先执行项目准备。');
     // Explicit source mode must not silently reuse an older core that cannot
     // install its renderer. Adopt compatibly; existing executions keep their owner.

@@ -1,128 +1,14 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { spawn, spawnSync } from 'node:child_process';
-import test, { after } from 'node:test';
-import { createTestContextPool } from '../context/runtime.ts';
-import { defaultExecute, runDirectSelfBootstrapCloseout, runSelfBootstrapCloseoutCommand, SELF_BOOTSTRAP_SYNC_RESUME_SCHEMA } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs';
-import { DEFAULT_DEVELOPMENT_WEB_PORT, restartDevelopmentInstance, inspectDevelopmentInstance } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
+import test from 'node:test';
+import { runDirectSelfBootstrapCloseout, runSelfBootstrapCloseoutCommand } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs';
+import { DEFAULT_DEVELOPMENT_WEB_PORT } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
 import { parseTaskCommitTrailer } from '../../src/modules/task/commits/domain/task-commit.ts';
-import { readDevelopmentRuntimeIdentity } from '../../src/modules/installation/infrastructure/development-runtime-inputs.ts';
-import { runDetachedCloseout } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/detached-execution.mjs';
+import { git, executor, writeSyncResume, createSelfBootstrapCloseoutFixtures } from '../helpers/self-bootstrap-closeout-fixture.ts';
 
-function run(executable: any, args: any, cwd: any, binary = false): any  {
-  const result: any = spawnSync(executable, args, { cwd, encoding: binary ? null : 'utf8' });
-  return { status: result.status, stdout: result.stdout || '', stderr: result.stderr || '' };
-}
-
-function git(root: any, ...args: any[]): any  {
-  const result: any = run('git', args, root);
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-  return result.stdout.trim();
-}
-
-function prepareFixture(base: string): void {
-  const root: any = path.join(base, 'workspace');
-  const remote: any = path.join(base, 'remote.git');
-  fs.mkdirSync(path.join(root, 'components', 'workspace', 'buildr-self-bootstrap'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'resources'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'tools', 'development'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'bin'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'tools', 'build', 'launcher'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'skills', 'generated'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'skills/buildr-self-bootstrap-sync/scripts'), { recursive: true });
-  fs.copyFileSync(path.resolve(import.meta.dirname, '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs'), path.join(root, 'skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs'));
-  fs.copyFileSync(path.resolve(import.meta.dirname, '../../../../../../skills/buildr-self-bootstrap-sync/scripts/detached-launch.mjs'), path.join(root, 'skills/buildr-self-bootstrap-sync/scripts/detached-launch.mjs'));
-  fs.mkdirSync(path.join(root, '.buildr'), { recursive: true });
-  const projectBridge: any = path.join(root, 'projects', 'product', 'buildr');
-  const launcher: any = path.join(root, 'projects', 'product', 'services', 'buildr', 'tools', 'development', 'run-development-cli');
-  const cliEntry: any = path.join(root, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs');
-  const sourceServiceRoot: any = path.resolve(import.meta.dirname, '../..');
-  const policy = 'src/modules/installation/infrastructure/development-runtime-inputs.ts';
-  fs.mkdirSync(path.dirname(path.join(root, 'projects/product/services/buildr', policy)), { recursive: true });
-  fs.copyFileSync(path.join(sourceServiceRoot, policy), path.join(root, 'projects/product/services/buildr', policy));
-  const defaultBin: any = path.join(base, 'default-bin');
-  fs.writeFileSync(path.join(root, 'components', 'workspace', 'buildr-self-bootstrap', 'component.yml'), 'schemaVersion: buildr.component/v1\nid: buildr-self-bootstrap\n');
-  fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'resources', 'manifest.yml'), 'schemaVersion: buildr.package/v1\n');
-  fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package.json'), JSON.stringify({ name: '@buildr-ai/buildr', version: '0.1.0-test' }));
-  fs.writeFileSync(projectBridge, `#!/bin/sh
-exec "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/services/buildr/tools/development/run-development-cli" "$@"
-`, { mode: 0o755 });
-  fs.copyFileSync(path.join(sourceServiceRoot, 'tools', 'development', 'run-development-cli'), launcher);
-  fs.chmodSync(launcher, 0o755);
-  fs.writeFileSync(cliEntry, `#!/usr/bin/env node
-const args = process.argv.slice(2);
-if (args[0] === 'version') console.log(JSON.stringify({ package: '@buildr-ai/buildr', version: '0.1.0-test' }));
-else if (args[0] === 'doctor') console.log(JSON.stringify({ health: { ready: true } }));
-else if (args[0] === 'task' && args[1] === 'finish' && args[2] === 'run') console.log(JSON.stringify({ status: 'complete', runId: 'closeout-run', resolvedContext: { identity: 'sha256-context' }, resumePreflight: 'passed', doctor: 'ready' }));
-else if (args[0] === 'sync') console.log(JSON.stringify({ status: 'synced' }));
-else process.exitCode = 2;
-`, { mode: 0o755 });
-  fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'node_modules', 'yaml'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'node_modules', 'yaml', 'package.json'), JSON.stringify({ name: 'yaml', version: '0.0.0-test', type: 'module', exports: './index.mjs' }));
-  fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'node_modules', 'yaml', 'index.mjs'), 'export default {};\n');
-  fs.writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n.buildr/local/\n');
-  fs.writeFileSync(path.join(root, 'AGENTS.md'), '# Self-bootstrap closeout test fixture\n');
-  fs.writeFileSync(path.join(root, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
-  fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1
-id: 123e4567-e89b-42d3-a456-426614174008
-name: Self-bootstrap closeout fixture
-description: Self-bootstrap closeout fixture
-runtime:
-  node:
-    version: ${process.versions.node}
-`);
-  fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'tools', 'build', 'launcher', 'manage.ts'), '#!/usr/bin/env node\n', { mode: 0o755 });
-  fs.writeFileSync(path.join(root, 'projects/product/services/buildr/tools/development/prepare-development-agent.ts'), 'console.log(JSON.stringify({status:"passed"}));\n');
-  fs.mkdirSync(defaultBin);
-  fs.writeFileSync(path.join(defaultBin, 'buildr'), '#!/bin/sh\nexit 97\n', { mode: 0o755 });
-  fs.writeFileSync(path.join(root, 'skills', 'generated', 'SKILL.md'), 'v1\n');
-  git(root, 'init', '-b', 'dev');
-  git(root, 'config', 'user.name', 'Buildr Test');
-  git(root, 'config', 'user.email', 'buildr-test@example.com');
-  git(root, 'add', '--', '.');
-  git(root, 'commit', '-m', 'baseline');
-  run('git', ['init', '--bare', remote], base);
-  git(root, 'remote', 'add', 'origin', remote);
-  git(root, 'push', '-u', 'origin', 'dev');
-  git(root, 'rev-parse', 'HEAD');
-}
-
-const fixturePool = createTestContextPool({ providers: [{
-  key: 'self-bootstrap-closeout/v1', isolationMode: 'sandbox', resetStrategy: 'recreate', parallelSafety: 'worker-safe',
-  prepare({ seedRoot }: any) { prepareFixture(seedRoot); },
-  inspect({ seedRoot }: any) {
-    assert.ok(fs.statSync(path.join(seedRoot, 'workspace/.git/HEAD')).isFile());
-    assert.ok(fs.statSync(path.join(seedRoot, 'remote.git/HEAD')).isFile());
-  },
-}] });
-after(() => fixturePool.cleanup());
-
-function fixture(t: any): any {
-  const lease = fixturePool.acquire('self-bootstrap-closeout/v1');
-  t.after(() => lease.release());
-  const base = lease.root, root = path.join(base, 'workspace'), remote = path.join(base, 'remote.git');
-  // Each sandbox owns independent Git objects, refs, index and remote. No hard
-  // links or alternates can let one destructive recovery case pollute another.
-  git(root, 'remote', 'set-url', 'origin', remote);
-  const baseRef = git(root, 'rev-parse', 'HEAD');
-  const projectBridge = path.join(root, 'projects/product/buildr');
-  const launcher = path.join(root, 'projects/product/services/buildr/tools/development/run-development-cli');
-  const cliEntry = path.join(root, 'projects/product/services/buildr/bin/buildr.mjs');
-  const defaultBin = path.join(base, 'default-bin');
-  return {
-    root,
-    remote,
-    baseRef,
-    projectBridge,
-    launcher,
-    cliEntry,
-    defaultBuildr: path.join(defaultBin, 'buildr'),
-    environment: { ...process.env, BUILDR_CLI_INSTALL_DIR: defaultBin, PATH: `${defaultBin}${path.delimiter}${process.env.PATH || ''}` },
-  };
-}
+const { fixture, directFixture, syncResumeFixture } = createSelfBootstrapCloseoutFixtures();
 
 test('prepared closeout sandboxes isolate files, Git refs, indexes and remotes', t => {
   const first = fixture(t), second = fixture(t);
@@ -136,239 +22,6 @@ test('prepared closeout sandboxes isolate files, Git refs, indexes and remotes',
   assert.notEqual(git(first.root, 'rev-parse', 'HEAD'), second.baseRef);
   assert.notEqual(first.remote, second.remote);
 });
-
-function executor(root: any, options: any = {}): any  {
-  const canonicalRoot: any = fs.realpathSync(root);
-  let finishResumeIndex: any = 0;
-  let successfulPushes: any = 0;
-  let postPushReadbacks: any = 0;
-  let developmentHealthy = options.runningDevelopmentInstance === true;
-  let developmentPid = options.previousDevelopmentPid || 71173;
-  let developmentPort = 4317;
-  let restartAttempts = 0;
-  let agentPrepared = false;
-  return (executable: any, args: any, context: any) => {
-    if (executable === 'git') {
-      if (args[0] === 'add' && options.failStage) return { status: 128, stdout: '', stderr: 'simulated index.lock contention' };
-      if (args[0] === 'push' && options.failPush) return { status: 1, stdout: '', stderr: 'simulated push failure' };
-      if (args[0] === 'ls-remote' && successfulPushes > 0 && postPushReadbacks < (options.failRemoteReadbackAttempts || 0)) {
-        postPushReadbacks += 1;
-        return { status: 1, stdout: '', stderr: 'simulated transient remote readback failure' };
-      }
-      const result: any = run(executable, args, context.cwd, context.binary);
-      if (args[0] === 'push' && result.status === 0) successfulPushes += 1;
-      return result;
-    }
-    const productScript: any = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs');
-    const projectBridge: any = path.join(canonicalRoot, 'projects', 'product', 'buildr');
-    const launcher: any = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'tools', 'development', 'run-development-cli');
-    const launcherManager: any = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'tools', 'build', 'launcher', 'manage.ts');
-    const continuityHelper: any = path.join(canonicalRoot, 'skills', 'buildr-self-bootstrap-sync', 'scripts', 'development-web-continuity.mjs');
-    const agentPreparation = path.join(canonicalRoot, 'projects/product/services/buildr/tools/development/prepare-development-agent.ts');
-    if (executable === process.execPath && args[0] === agentPreparation) {
-      if (options.failAgentPreparation) return { status: 1, stdout: '', stderr: 'agent package preparation failed' };
-      agentPrepared = true;
-      return { status: 0, stdout: '{"status":"passed"}', stderr: '' };
-    }
-    let resolvedExecutable: any = null;
-    try { resolvedExecutable = fs.realpathSync(executable); } catch { /* unexpected commands are handled below */ }
-    if (resolvedExecutable === fs.realpathSync(projectBridge)) {
-      if (context.env?.BUILDR_INTERNAL_DEVELOPMENT_CLI_IDENTITY_JSON === '1') {
-        if (options.failCliInspection) return { status: 1, stdout: '', stderr: 'inspection failed' };
-        return {
-          status: 0,
-          stdout: JSON.stringify({
-            schemaVersion: 'buildr.development-cli-identity/v1',
-            launcher: options.observedLauncher || launcher,
-            cliEntry: options.observedCliEntry || productScript,
-            nodeExecutable: options.observedNodeExecutable || process.execPath,
-          }),
-          stderr: '',
-        };
-      }
-      if (args[0] === 'version') {
-        if (options.failCliVersion) return { status: 1, stdout: '', stderr: 'version failed' };
-        return { status: 0, stdout: JSON.stringify({
-          package: options.observedPackage || '@buildr-ai/buildr',
-          version: options.observedVersion || '0.1.0-test',
-          channel: options.observedChannel || 'development',
-          sourceCommit: options.observedSourceCommit || git(canonicalRoot, 'rev-parse', 'HEAD'),
-          runtime: { executable: options.observedVersionNode || process.execPath },
-        }), stderr: '' };
-      }
-      if (args[0] === 'doctor') return { status: 0, stdout: JSON.stringify({ health: { ready: true } }), stderr: '' };
-      if (args[0] === 'task') {
-        const payload: any = options.finishResumeResults?.[finishResumeIndex++] || { status: 'complete', runId: 'closeout-run', resolvedContext: { identity: 'sha256-context' }, resumePreflight: 'passed', doctor: 'ready' };
-        return { status: 0, stdout: JSON.stringify(payload), stderr: '' };
-      }
-    }
-    if (executable === process.execPath && args[0] === productScript) {
-      const productArgs: any = args.slice(1);
-      if (productArgs[0] === 'task' && productArgs[1] === 'inspect') {
-        const inspectedTask: any = productArgs[2];
-        if (options.taskInspectionFailures?.includes(inspectedTask)) return { status: 1, stdout: '', stderr: `task inspection failed: ${inspectedTask}` };
-        const inspection: any = options.taskInspections?.[inspectedTask] ?? { record: { status: options.defaultTaskStatus || 'active' } };
-        return { status: 0, stdout: JSON.stringify(inspection), stderr: '' };
-      }
-      if (productArgs[0] === 'task' && productArgs[1] === 'finish' && productArgs[2] === 'inspect') {
-        const inspectedRun: any = productArgs[productArgs.indexOf('--run') + 1];
-        if (options.finishInspectionFailures?.includes(inspectedRun)) return { status: 1, stdout: '', stderr: `inspection failed: ${inspectedRun}` };
-        const inspection: any = options.finishInspections?.[inspectedRun] ?? options.finishInspection;
-        return { status: 0, stdout: JSON.stringify(inspection), stderr: '' };
-      }
-      if (productArgs[0] === 'task' && productArgs[1] === 'finish' && productArgs[2] === 'run') {
-        const payload: any = options.finishResumeResults?.[finishResumeIndex++] || { status: 'complete', runId: 'closeout-run', resolvedContext: { identity: 'sha256-context' }, resumePreflight: 'passed', doctor: 'ready' };
-        return { status: 0, stdout: JSON.stringify(payload), stderr: '' };
-      }
-      if (productArgs[0] === 'sync') {
-        if (options.requiresAgentPreparation && !agentPrepared) return { status: 1, stdout: '', stderr: "Cannot read properties of undefined (reading '$id')" };
-        for (const [relative, content] of Object.entries(options.syncFiles || { 'skills/generated/SKILL.md': 'v2\n' })) {
-          const file = path.join(root, relative);
-          fs.mkdirSync(path.dirname(file), { recursive: true });
-          fs.writeFileSync(file, content as any);
-        }
-        return { status: options.failSync ? 1 : 0, stdout: '{"status":"synced"}', stderr: options.failSync ? 'sync failed' : '' };
-      }
-    }
-    if (executable === process.execPath && args[0] === launcherManager) {
-      if (args[1] === 'install') {
-        if (!args.includes('--no-stop-instance')) developmentHealthy = false;
-        if (options.failLauncherInstall) return { status: 1, stdout: '', stderr: 'launcher manager failed' };
-      }
-      return {
-        status: 0,
-        stdout: JSON.stringify({
-          schemaVersion: 'buildr.launcher-status/v1',
-          channel: 'development',
-          installed: true,
-          platform: process.platform,
-          target: path.join(canonicalRoot, 'Buildr Web Dev.app'),
-          identity: {
-            schemaVersion: 'buildr.launcher-identity/v1',
-            channel: 'development',
-            webPort: DEFAULT_DEVELOPMENT_WEB_PORT,
-            source: 'checkout',
-            sourceRoot: options.observedLauncherSourceRoot || path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr'),
-            developmentRuntime: { executable: options.observedLauncherNode || process.execPath },
-            checkout: { head: options.observedLauncherHead || git(canonicalRoot, 'rev-parse', 'HEAD') },
-          },
-        }),
-        stderr: '',
-      };
-    }
-    if (executable === process.execPath && args[0] === continuityHelper) {
-      if (args[1] === 'inspect') {
-        if (options.failContinuityInspect) return { status: 1, stdout: '', stderr: 'continuity inspection failed' };
-        const healthy: any = developmentHealthy;
-        return {
-          status: 0,
-          stdout: JSON.stringify({
-            schemaVersion: 'buildr.development-web-continuity/v1',
-            action: 'inspect',
-            status: healthy ? 'healthy-development' : (options.continuityStatus || 'not-running'),
-            reason: healthy ? null : (options.continuityStatus || 'instance-record-absent'),
-            pageVerification: healthy ? { status: options.badDevelopmentPage ? 'failed' : 'passed', reason: options.badDevelopmentPage ? 'invalid-html' : null, resourceCount: 1, durationMs: 1 } : null,
-            instance: healthy ? {
-              url: `http://127.0.0.1:${developmentPort}`,
-              port: developmentPort,
-              pid: developmentPid,
-              launcherIdentity: { channel: 'development', sourceRoot: path.join(canonicalRoot, 'projects/product/services/buildr'), developmentRuntime: { executable: process.execPath } },
-              productIdentity: null,
-            } : null,
-          }),
-          stderr: '',
-        };
-      }
-      if (args[1] === 'restart') {
-        restartAttempts += 1;
-        developmentHealthy = false;
-        if (options.occupiedDevelopmentPort) {
-          return { status: 1, stdout: '', stderr: JSON.stringify({ code: 'EADDRINUSE', message: `listen EADDRINUSE: 127.0.0.1:${DEFAULT_DEVELOPMENT_WEB_PORT}` }) };
-        }
-        if (options.failDevelopmentRestart || restartAttempts <= (options.developmentRestartFailures || 0)) {
-          return { status: 1, stdout: '', stderr: JSON.stringify({ code: 'development-web-continuity.start-timeout', details: { cleanup: { pid: 72200, status: 'requested' } } }) };
-        }
-        const value: any = (name: any) => args[args.indexOf(name) + 1];
-        const previousPid: any = Number(value('--previous-pid'));
-        const port: any = Number(value('--port'));
-        const previousPort: any = Number(value('--previous-port'));
-        developmentHealthy = true;
-        developmentPid = options.restartedDevelopmentPid || previousPid + 1;
-        developmentPort = port;
-        return {
-          status: 0,
-          stdout: JSON.stringify({
-            schemaVersion: 'buildr.development-web-continuity/v1',
-            action: 'restart',
-            status: 'passed',
-            previous: { pid: previousPid, port: previousPort },
-            instance: {
-              url: `http://127.0.0.1:${port}`,
-              port,
-              pid: options.restartedDevelopmentPid || previousPid + 1,
-              launcherIdentity: { channel: 'development' },
-              productIdentity: { developmentRuntimeIdentity: options.observedRestartRuntimeIdentity || readDevelopmentRuntimeIdentity(path.join(canonicalRoot, 'projects/product/services/buildr'), canonicalRoot) },
-            },
-            launcherIdentity: {
-              schemaVersion: 'buildr.launcher-identity/v1',
-              channel: 'development',
-              source: 'checkout',
-              sourceRoot: options.observedRestartSourceRoot || path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr'),
-              developmentRuntime: { executable: options.observedRestartNode || process.execPath },
-              checkout: { head: options.observedRestartHead || git(canonicalRoot, 'rev-parse', 'HEAD') },
-            },
-            cleanup: null,
-          }),
-          stderr: '',
-        };
-      }
-    }
-    return { status: 1, stdout: '', stderr: `unexpected command: ${executable} ${args.join(' ')}` };
-  };
-}
-
-function directFixture(t: any): any  {
-  const current: any = fixture(t);
-  fs.appendFileSync(path.join(current.root, 'projects/product/services/buildr/resources/manifest.yml'), '# delivered change\n');
-  git(current.root, 'add', '--', 'projects/product/services/buildr/resources/manifest.yml');
-  git(current.root, 'commit', '-m', 'delivered product');
-  git(current.root, 'push', 'origin', 'dev');
-  const deliveredRef: any = git(current.root, 'rev-parse', 'HEAD');
-  const taskId: any = 'direct-closeout';
-  const options: any = { taskInspections: { [taskId]: { record: { taskId, status: 'completed', result: { summary: 'Delivered.' }, scope: { projects: ['product'] } } } } };
-  const input: any = { workspaceRoot: current.root, taskId, baseRef: current.baseRef, deliveredRef, targetBranch: 'dev', remote: 'origin', agent: 'codex', nodeExecutable: process.execPath, environment: current.environment };
-  return { ...current, input, options };
-}
-
-function syncResumeFixture(t: any): any {
-  const current = directFixture(t);
-  const syncFiles = {
-    '.buildr/builtin-receipts.json': '{"synced":true}\n',
-    'skills/manifest.yml': 'skills: []\n',
-    'skills/buildr/generated/SKILL.md': '已同步的源文件\n',
-  };
-  const failed: any = runDirectSelfBootstrapCloseout({ ...current.input, execute: executor(current.root, { failStage: true, syncFiles }) });
-  assert.partialDeepStrictEqual(failed.diagnostic, { code: 'self-bootstrap-closeout.stage-failed' });
-  assert.equal(failed.phases.find((stage: any) => stage.id === 'sync').status, 'passed');
-  const request = {
-    schemaVersion: SELF_BOOTSTRAP_SYNC_RESUME_SCHEMA,
-    workspaceRoot: current.root,
-    baseRef: current.input.baseRef,
-    deliveredRef: current.input.deliveredRef,
-    targetBranch: current.input.targetBranch,
-    remote: current.input.remote,
-    agent: current.input.agent,
-    expectedHead: git(current.root, 'rev-parse', 'HEAD'),
-    stagedPaths: [],
-    files: Object.keys(syncFiles).sort().map(relative => ({ path: relative, sha256: `sha256-${crypto.createHash('sha256').update(fs.readFileSync(path.join(current.root, relative))).digest('hex')}` })),
-  };
-  const resumeSync = path.join(path.dirname(current.root), 'resume-sync.json');
-  return { ...current, request, resumeSync };
-}
-
-function writeSyncResume(current: any): void {
-  fs.writeFileSync(current.resumeSync, JSON.stringify(current.request));
-}
 
 test('explicit sync resume commits the reviewed snapshot at a fresh delivered HEAD without repeating sync', (t: any) => {
   const current = syncResumeFixture(t);
@@ -905,6 +558,7 @@ for (const relative of ['projects/product/services/buildr-web/test/runtime.test.
     assert.equal(calls.some(args => args.includes('restart') || args.includes('--channel')), false);
   });
 }
+
 for (const relative of ['projects/product/services/buildr-harness/src/index.ts', 'projects/product/services/buildr-harness/package-lock.json', 'projects/product/services/buildr/package-lock.json', 'projects/product/services/buildr-web/vite.config.ts', 'projects/product/services/buildr-web/tsconfig.app.json', 'projects/product/services/buildr-harness-web/src/HarnessApp.tsx', 'projects/product/services/buildr-harness-web/vite.config.ts', 'projects/product/services/buildr-harness-web/tools/build.ts', 'projects/product/services/buildr/tools/development/prepare-development-web.ts']) {
   test(`shared runtime policy restarts for ${relative}`, t => {
     const f = fixture(t), file = path.join(f.root, relative);
@@ -913,256 +567,6 @@ for (const relative of ['projects/product/services/buildr-harness/src/index.ts',
     const result = runDirectSelfBootstrapCloseout({ workspaceRoot: f.root, baseRef: f.baseRef, deliveredRef: git(f.root, 'rev-parse', 'HEAD'), targetBranch: 'dev', remote: 'origin', agent: 'codex', nodeExecutable: process.execPath, environment: f.environment, execute: executor(f.root, { runningDevelopmentInstance: true }) });
     assert.equal(result.status, 'passed', JSON.stringify(result));
     assert.ok(result.phases.some((phase: any) => phase.id === 'install-buildr-web' && phase.status === 'passed'));
-  });
-}
-
-test('a projected closeout script loads runtime policy from the explicit product root', async t => {
-  const f = fixture(t), projected = path.join(path.dirname(f.root), 'agent-runtime', 'closeout.mjs');
-  fs.mkdirSync(path.dirname(projected), { recursive: true });
-  fs.copyFileSync(path.resolve(import.meta.dirname, '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), projected);
-  fs.copyFileSync(path.resolve(import.meta.dirname, '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs'), path.join(path.dirname(projected), 'development-web-continuity.mjs'));
-  fs.copyFileSync(path.resolve(import.meta.dirname, '../../../../../../skills/buildr-self-bootstrap-sync/scripts/detached-launch.mjs'), path.join(path.dirname(projected), 'detached-launch.mjs'));
-  const { runDirectSelfBootstrapCloseout: runProjected } = await import((await import('node:url')).pathToFileURL(projected).href);
-  fs.writeFileSync(path.join(f.root, 'README.md'), 'documentation\n');
-  git(f.root, 'add', '.'); git(f.root, 'commit', '-m', 'documentation'); git(f.root, 'push', 'origin', 'dev');
-  const result = runProjected({ workspaceRoot: f.root, baseRef: f.baseRef, deliveredRef: git(f.root, 'rev-parse', 'HEAD'), targetBranch: 'dev', remote: 'origin', agent: 'codex', nodeExecutable: process.execPath, environment: f.environment, execute: executor(f.root) });
-  assert.equal(result.status, 'not-applicable', JSON.stringify(result));
-});
-
-test('a restarted instance with a different runtime proof cannot pass closeout', t => {
-  const f = fixture(t), file = path.join(f.root, 'projects/product/services/buildr/package-lock.json');
-  fs.writeFileSync(file, '{}\n'); git(f.root, 'add', '.'); git(f.root, 'commit', '-m', 'dependency change'); git(f.root, 'push', 'origin', 'dev');
-  const result = runDirectSelfBootstrapCloseout({ workspaceRoot: f.root, baseRef: f.baseRef, deliveredRef: git(f.root, 'rev-parse', 'HEAD'), targetBranch: 'dev', remote: 'origin', agent: 'codex', nodeExecutable: process.execPath, environment: f.environment, execute: executor(f.root, { runningDevelopmentInstance: true, observedRestartRuntimeIdentity: 'sha256-' + '0'.repeat(64) }) });
-  assert.equal(result.diagnostic?.code, 'self-bootstrap-closeout.development-web-restart-identity-mismatch');
-  assert.equal(result.phases.some((phase: any) => phase.id === 'finalize'), false);
-});
-
-function runtimeRecoveryFixture(t: any): any {
-  const f = fixture(t);
-  fs.writeFileSync(path.join(f.root, 'projects/product/services/buildr/package-lock.json'), '{}\n');
-  git(f.root, 'add', '--', 'projects/product/services/buildr/package-lock.json');
-  git(f.root, 'commit', '-m', 'runtime change');
-  git(f.root, 'push', 'origin', 'dev');
-  return { ...f, pending: path.join(f.root, '.buildr/local/self-bootstrap-development-web-recovery.json'),
-    input: { workspaceRoot: f.root, baseRef: f.baseRef, deliveredRef: git(f.root, 'rev-parse', 'HEAD'),
-      targetBranch: 'dev', remote: 'origin', agent: 'codex', nodeExecutable: process.execPath, environment: f.environment } };
-}
-
-for (const [options, code] of [
-  [{ failLauncherInstall: true }, 'self-bootstrap-closeout.local-app-install-failed'],
-  [{ observedLauncherHead: '0'.repeat(40) }, 'self-bootstrap-closeout.local-app-identity-mismatch'],
-] as const) {
-  test(`failed update preserves the running app: ${code}`, t => {
-    const f = runtimeRecoveryFixture(t), calls: string[][] = [];
-    const perform = executor(f.root, { runningDevelopmentInstance: true, ...options });
-    const result = runDirectSelfBootstrapCloseout({ ...f.input, execute: (command: string, args: string[], context: any) => {
-      calls.push(args); return perform(command, args, context);
-    } });
-    assert.equal(result.status, 'blocked');
-    assert.partialDeepStrictEqual(result.diagnostic, { code: code });
-    assert.partialDeepStrictEqual(result.diagnostic, { details: { developmentWebRecovery: { disposition: 'preserved' } } });
-    assert.partialDeepStrictEqual(result.diagnostic, { details: { developmentWebRecovery: { instance: { pid: 71173 } } } });
-    assert.equal(calls.some(args => args.includes('restart')), false);
-    assert.equal(fs.existsSync(f.pending), false);
-  });
-}
-
-for (const badDevelopmentPage of [true, 'missing']) {
-  test(`failed installation cannot clear pending on healthy identity with ${badDevelopmentPage} page evidence`, t => {
-    const f = runtimeRecoveryFixture(t);
-    const perform = executor(f.root, { runningDevelopmentInstance: true, failLauncherInstall: true, badDevelopmentPage: true });
-    const result = runDirectSelfBootstrapCloseout({ ...f.input, execute: (executable: string, args: string[], context: any) => {
-      const output = perform(executable, args, context);
-      if (badDevelopmentPage === 'missing' && args[1] === 'inspect') {
-        const payload = JSON.parse(output.stdout); delete payload.pageVerification; output.stdout = JSON.stringify(payload);
-      }
-      return output;
-    } });
-    assert.equal(result.status, 'blocked');
-    assert.equal(result.diagnostic?.code, 'self-bootstrap-closeout.local-app-install-failed');
-    assert.partialDeepStrictEqual(result.diagnostic, { details: { developmentWebRecovery: {
-      status: 'failed', code: 'self-bootstrap-closeout.development-web-recovery-page-failed', pending: path.join(fs.realpathSync(f.root), '.buildr/local/self-bootstrap-development-web-recovery.json'),
-    } } });
-    assert.equal(fs.existsSync(f.pending), true);
-    assert.doesNotMatch(result.diagnostic!.message, /已确认运行/);
-  });
-}
-
-test('failed restart retains the recovery obligation and a fresh invocation restores an absent instance', t => {
-  const f = runtimeRecoveryFixture(t);
-  const failed = runDirectSelfBootstrapCloseout({ ...f.input, execute: executor(f.root, { runningDevelopmentInstance: true, failDevelopmentRestart: true }) });
-  assert.equal(failed.status, 'blocked');
-  assert.partialDeepStrictEqual(failed.diagnostic, { details: { developmentWebRecovery: { status: 'failed' } } });
-  assert.equal(JSON.parse(fs.readFileSync(f.pending, 'utf8')).continuity.instance.pid, 71173);
-  const calls: string[][] = [], perform = executor(f.root);
-  const recovered = runDirectSelfBootstrapCloseout({ ...f.input, execute: (command: string, args: string[], context: any) => {
-    calls.push(args); return perform(command, args, context);
-  } });
-  assert.equal(recovered.status, 'passed', JSON.stringify(recovered));
-  const restart = calls.find(args => args[1] === 'restart')!;
-  assert.equal(restart[restart.indexOf('--previous-pid') + 1], '71173');
-  assert.equal(fs.existsSync(f.pending), false);
-  assert.equal(recovered.phases.find((p: any) => p.id === 'install-buildr-web').effects[0].status, 'passed');
-});
-
-test('a transient restart failure recovers immediately while retaining the original update failure', t => {
-  const f = runtimeRecoveryFixture(t);
-  const result = runDirectSelfBootstrapCloseout({ ...f.input, execute: executor(f.root, { runningDevelopmentInstance: true, developmentRestartFailures: 1 }) });
-  assert.equal(result.status, 'blocked');
-  assert.partialDeepStrictEqual(result.diagnostic, { code: 'self-bootstrap-closeout.development-web-restart-failed' });
-  assert.partialDeepStrictEqual(result.diagnostic, { details: { developmentWebRecovery: { status: 'passed' } } });
-  assert.partialDeepStrictEqual(result.diagnostic, { details: { developmentWebRecovery: { instance: { pid: 71174 } } } });
-  assert.equal(fs.existsSync(f.pending), false);
-});
-
-test('an installation failure on retry still restores the app from the persisted obligation', t => {
-  const f = runtimeRecoveryFixture(t);
-  runDirectSelfBootstrapCloseout({ ...f.input, execute: executor(f.root, { runningDevelopmentInstance: true, failDevelopmentRestart: true }) });
-  assert.equal(fs.existsSync(f.pending), true);
-  const result = runDirectSelfBootstrapCloseout({ ...f.input, execute: executor(f.root, { failLauncherInstall: true }) });
-  assert.partialDeepStrictEqual(result.diagnostic, { code: 'self-bootstrap-closeout.local-app-install-failed' });
-  assert.partialDeepStrictEqual(result.diagnostic, { details: { developmentWebRecovery: { status: 'passed' } } });
-  assert.equal(fs.existsSync(f.pending), false);
-});
-
-test('an invalid recovery obligation is preserved and cannot trigger installation or restart', t => {
-  const f = runtimeRecoveryFixture(t);
-  fs.mkdirSync(path.dirname(f.pending), { recursive: true }); fs.writeFileSync(f.pending, '{broken');
-  const calls: string[][] = [], perform = executor(f.root);
-  const result = runDirectSelfBootstrapCloseout({ ...f.input, execute: (command: string, args: string[], context: any) => {
-    calls.push(args); return perform(command, args, context);
-  } });
-  assert.partialDeepStrictEqual(result.diagnostic, { code: 'self-bootstrap-closeout.development-web-recovery-invalid' });
-  assert.equal(fs.readFileSync(f.pending, 'utf8'), '{broken');
-  assert.equal(calls.some(args => ['install', 'restart'].includes(args[1])), false);
-});
-
-test('a recovery obligation cannot switch its application data root during retry', t => {
-  const f = runtimeRecoveryFixture(t);
-  runDirectSelfBootstrapCloseout({ ...f.input, execute: executor(f.root, { runningDevelopmentInstance: true, failDevelopmentRestart: true }) });
-  const before = fs.readFileSync(f.pending, 'utf8'), calls: string[][] = [], perform = executor(f.root);
-  const result = runDirectSelfBootstrapCloseout({ ...f.input,
-    environment: { ...f.environment, BUILDR_APP_DATA_DIR: path.join(f.root, '.buildr/local/other-app') },
-    execute: (command: string, args: string[], context: any) => { calls.push(args); return perform(command, args, context); } });
-  assert.partialDeepStrictEqual(result.diagnostic, { code: 'self-bootstrap-closeout.development-web-recovery-root-mismatch' });
-  assert.equal(fs.readFileSync(f.pending, 'utf8'), before);
-  assert.equal(calls.some(args => ['install', 'restart'].includes(args[1])), false);
-});
-
-test('changed recovery metadata is preserved without denying that the app recovered', t => {
-  const f = runtimeRecoveryFixture(t), perform = executor(f.root, { runningDevelopmentInstance: true });
-  let changed = '';
-  const result = runDirectSelfBootstrapCloseout({ ...f.input, execute: (command: string, args: string[], context: any) => {
-    const output = perform(command, args, context);
-    if (args[1] === 'restart') {
-      const pending = JSON.parse(fs.readFileSync(f.pending, 'utf8'));
-      pending.continuity.instance.pid += 100;
-      changed = JSON.stringify(pending); fs.writeFileSync(f.pending, changed);
-    }
-    return output;
-  } });
-  assert.partialDeepStrictEqual(result.diagnostic, { code: 'self-bootstrap-closeout.development-web-recovery-changed' });
-  assert.partialDeepStrictEqual(result.diagnostic, { details: { developmentWebRecovery: { status: 'passed' } } });
-  assert.partialDeepStrictEqual(result.diagnostic, { details: { developmentWebRecovery: { cleanup: { status: 'failed' } } } });
-  assert.equal(fs.readFileSync(f.pending, 'utf8'), changed);
-});
-
-for (const failFirstStart of [false, true]) {
-  test(`real isolated development process recovers and is reused after handoff (first start fails: ${failFirstStart})`, async t => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-web-continuity-'));
-    const dataRoot = path.join(directory, 'data'), sourceRoot = path.join(directory, 'source');
-    fs.mkdirSync(dataRoot); fs.mkdirSync(sourceRoot);
-    const identity = { schemaVersion: 'buildr.launcher-identity/v1', channel: 'development', source: 'checkout',
-      sourceRoot, developmentRuntime: { executable: process.execPath }, checkout: { head: 'a'.repeat(40) } };
-    const identityFile = path.join(directory, 'identity.json'); fs.writeFileSync(identityFile, JSON.stringify(identity));
-    const configFile = path.join(directory, 'config.json'), instanceFile = path.join(dataRoot, 'instance.json');
-    const oldProof = `sha256-${'1'.repeat(64)}`, newProof = `sha256-${'2'.repeat(64)}`;
-    const configure = (proof: string) => fs.writeFileSync(configFile, JSON.stringify({ dataRoot, identity, proof }));
-    configure(oldProof);
-    const children: ReturnType<typeof spawn>[] = [];
-    const serverProgram = `
-      const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
-      const config = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
-      const file = path.join(config.dataRoot, 'instance.json'), secret = 'isolated-secret';
-      const server = http.createServer((request, response) => {
-        if (request.url === '/') {
-          if (request.headers['x-buildr-instance']) { response.writeHead(403).end(); return; }
-          response.setHeader('content-type', 'text/html');
-          response.end('<html><head><link rel="stylesheet" href="/assets/app.css"></head><body><div id="root"></div><script type="module" src="/assets/app.js"></script></body></html>'); return;
-        }
-        if (request.url === '/assets/app.js' || request.url === '/assets/app.css') {
-          if (request.headers['x-buildr-instance']) { response.writeHead(403).end(); return; }
-          response.setHeader('content-type', request.url.endsWith('.js') ? 'text/javascript' : 'text/css');
-          response.end(request.url.endsWith('.js') ? 'export {};' : 'body {}'); return;
-        }
-        if (request.headers['x-buildr-instance'] !== secret) { response.writeHead(403).end(); return; }
-        if (request.url === '/api/v1/app/quit-instance' && request.method === 'POST') {
-          response.writeHead(202).end(); setImmediate(() => server.close(() => {
-            if (JSON.parse(fs.readFileSync(file, 'utf8')).pid === process.pid) fs.unlinkSync(file);
-          })); return;
-        }
-        response.setHeader('content-type', 'application/json');
-        response.end(JSON.stringify({ schemaVersion: 'buildr.local-app-health/v1', status: 'ready', pid: process.pid, launcherIdentity: config.identity, productIdentity: { developmentRuntimeIdentity: config.proof } }));
-      });
-      server.listen(0, '127.0.0.1', () => fs.writeFileSync(file, JSON.stringify({
-        url: 'http://127.0.0.1:4458', testingUrl: 'http://127.0.0.1:' + server.address().port,
-        pid: process.pid, secret, launcherIdentity: config.identity, productIdentity: { developmentRuntimeIdentity: config.proof }
-      })));
-    `;
-    const launch = () => {
-      const child = spawn(process.execPath, ['-e', serverProgram, configFile], { stdio: 'ignore' }); children.push(child); return child;
-    };
-    t.after(async () => {
-      await Promise.all(children.map(child => new Promise<void>(resolve => {
-        if (child.exitCode !== null || child.signalCode !== null) return resolve();
-        child.once('exit', () => resolve()); child.kill('SIGKILL');
-      })));
-      fs.rmSync(directory, { recursive: true, force: true });
-    });
-    const previous = launch();
-    assert.ok(previous.pid);
-    for (let attempt = 0; !fs.existsSync(instanceFile) && attempt < 100; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
-    assert.equal(fs.existsSync(instanceFile), true);
-    // Only this isolated receipt is routed to its ephemeral HTTP listener.
-    // The everyday development port is never contacted or occupied.
-    const fetchImpl: typeof fetch = async (url: any, options: any) => {
-      const state = JSON.parse(fs.readFileSync(instanceFile, 'utf8'));
-      const response = await fetch(new URL(new URL(url).pathname, state.testingUrl), options);
-      // The explicit test transport maps the logical instance origin to its
-      // ephemeral listener; do not present that mapping as a server redirect.
-      return new Response(response.body, { status: response.status, headers: response.headers });
-    };
-    configure(newProof);
-    let attempts = 0;
-    const input = { projectBridge: path.join(directory, 'buildr'), launcherIdentityPath: identityFile,
-      expectedSourceRoot: sourceRoot, expectedHead: identity.checkout.head, expectedRuntimeIdentity: newProof,
-      nodeExecutable: process.execPath, previousPid: previous.pid, dataRoot, fetchImpl, releasePort: async () => [],
-      spawnImpl: (_program: any, args: any) => {
-        assert.deepEqual(args, ['web', '--port', '4458', '--no-open']);
-        attempts++;
-        if (failFirstStart && attempts === 1) {
-          const child = spawn(process.execPath, ['-e', 'process.exit(1)'], { stdio: 'ignore' }); children.push(child); return child;
-        }
-        return launch();
-      } };
-    const beforeInvalid = attempts;
-    await assert.rejects(restartDevelopmentInstance({ ...input, previousPid: 0, timeoutMs: 2000 }), /Invalid previous Development Web PID/);
-    assert.equal(attempts, beforeInvalid);
-    assert.equal(attempts, 0);
-    assert.equal((await inspectDevelopmentInstance({ dataRoot, fetchImpl })).instance?.pid, previous.pid);
-    if (failFirstStart) await assert.rejects(restartDevelopmentInstance({ ...input, timeoutMs: 300 }), (error: any) => error.code === 'development-web-continuity.start-timeout');
-    const result = await restartDevelopmentInstance({ ...input, timeoutMs: 2000 });
-    assert.equal(result.status, 'passed'); assert.ok(result.instance); assert.notEqual(result.instance.pid, previous.pid);
-    assert.equal((await inspectDevelopmentInstance({ dataRoot, fetchImpl })).status, 'healthy-development');
-    const beforeReuse = attempts;
-    const reused = await restartDevelopmentInstance({ ...input, timeoutMs: 2000 });
-    assert.equal(reused.disposition, 'reused'); assert.ok(reused.instance); assert.equal(reused.instance.pid, result.instance.pid);
-    assert.equal(attempts, beforeReuse);
-    const forced = await restartDevelopmentInstance({ ...input, previousPid: result.instance.pid, forceRestart: true, timeoutMs: 2000 });
-    assert.equal(forced.status, 'passed');
-    assert.notEqual(forced.instance?.pid, result.instance.pid);
-    assert.equal(attempts, beforeReuse + 1);
-    assert.equal((await inspectDevelopmentInstance({ dataRoot, fetchImpl })).instance?.pid, forced.instance?.pid);
   });
 }
 
@@ -1177,208 +581,195 @@ test('自举技能源变更必须同步组件完整性声明', async () => {
   }
 });
 
-async function waitForExecutionFile(file: string, timeoutMs = 10000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!fs.existsSync(file)) {
-    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${file}`);
-    await new Promise(resolve => setTimeout(resolve, 15));
-  }
-}
-
-function detachedFixture(t: any) {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-closeout-handoff-test-'));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const runnerModule = path.join(directory, 'runner.mjs');
-  fs.writeFileSync(runnerModule, `
-    import fs from 'node:fs';
-    import path from 'node:path';
-    export async function runSelfBootstrapCloseoutCommand({args}) {
-      const [directory, mode] = args;
-      const lock = path.join(directory, 'activation.lock');
-      fs.mkdirSync(lock);
-      fs.writeFileSync(path.join(directory, 'worker-ready'), String(process.pid));
-      if (mode === 'crash') process.exit(23);
-      try {
-        if (mode === 'wait') {
-          while (!fs.existsSync(path.join(directory, 'continue'))) await new Promise(resolve => setTimeout(resolve, 15));
-          fs.writeFileSync(path.join(directory, 'replacement-started'), 'healthy');
-        }
-        if (mode === 'throw') throw Object.assign(new Error('identity changed; preserved'), {code:'owner-mismatch'});
-        return {schemaVersion:'buildr.self-bootstrap-closeout-result/v1',status:mode === 'blocked'?'blocked':'passed',args};
-      } finally { fs.rmdirSync(lock); }
+test('DSH 开发插件自举只换装已核对的本地旧包，运行时准备候选但不改配置', async t => {
+  const { isDshDevelopmentPluginInput, updateDshDevelopmentPlugin } = await import('../../../../../../skills/buildr-self-bootstrap-sync/scripts/dsh-development-plugin.mjs');
+  const f = fixture(t);
+  const home = path.join(f.root, 'dsh-home');
+  const owner = path.join(f.root, '.buildr/local/buildr-harness-dsh-plugin');
+  const profile = path.join(home, '.dsh/profiles/desktop');
+  const name = '@buildr-ai/buildr-harness-dsh-plugin-dev';
+  const installed = path.join(profile, 'node_modules', name);
+  const manifest = path.join(profile, 'package.json');
+  const hostCli = path.join(f.root, 'dsh');
+  fs.writeFileSync(hostCli, 'fixture');
+  const old = path.join(owner, 'old.tgz');
+  fs.mkdirSync(owner, { recursive:true });
+  fs.mkdirSync(path.join(installed, 'lib'), { recursive:true });
+  fs.writeFileSync(old, 'old');
+  const files = ['package.json', 'cordis.patch.yml', 'lib/client.js', 'lib/index.js', 'lib/launcher.js'];
+  const contents = (version: string, file: string) => file === 'package.json' ? JSON.stringify({name, version}) : version;
+  const install = (archive: string, version: string) => {
+    fs.writeFileSync(manifest, JSON.stringify({dependencies: {[name]: `file:${archive}`, unrelated:'1.0.0'}}));
+    for (const file of files) fs.writeFileSync(path.join(installed, file), contents(version, file));
+  };
+  install(old, '0.0.1');
+  let running = true, installs = 0;
+  let installBehavior: 'normal' | 'failure' | 'unknown' | 'unknown-after-write' = 'normal';
+  const lifecycle: string[] = [];
+  const run = (_exe: string, args: string[], id: string) => {
+    let stdout: string | Buffer = '';
+    if (id === 'dsh-host-version') stdout = '0.2.2-rc.5';
+    else if (id === 'dsh-processes') stdout = running ? '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness' : '/sbin/launchd';
+    else if (id === 'dsh-build-plugin') {
+      const file = path.join(args.at(-1)!, 'built.tgz'); fs.writeFileSync(file, 'new'); stdout = JSON.stringify({name,path:file});
+    } else if (id.startsWith('dsh-verify-')) stdout = Buffer.from(contents(args[1] === old ? '0.0.1' : '0.0.2', args.at(-1)!.slice('package/'.length)));
+    else if (id === 'dsh-install-plugin') {
+      installs++; lifecycle.push('install');
+      if (installBehavior === 'unknown') return { status:1, errorCode:'ETIMEDOUT', stdout };
+      if (installBehavior === 'failure') return { status:1, stdout };
+      install(args.at(-1)!, '0.0.2');
+      if (installBehavior === 'unknown-after-write') return { status:1, errorCode:'ETIMEDOUT', stdout };
     }
-  `);
-  return { directory, runnerModule };
-}
+    else assert.fail(id);
+    return {status:0,stdout};
+  };
+  const activate = () => updateDshDevelopmentPlugin({ root:f.root, nodeExecutable:process.execPath, run, environment:{ HOME:home }, platform:'darwin', hostCli });
+  assert.equal(isDshDevelopmentPluginInput('projects/product/services/buildr-harness-dsh-plugin/src/client.tsx'), true);
+  assert.equal(isDshDevelopmentPluginInput('projects/product/services/buildr-harness-dsh-plugin/test/desktop-acceptance.md'), false);
+  assert.equal(isDshDevelopmentPluginInput('projects/product/services/buildr-harness-web/src/main.tsx'), false);
+  const pending = activate();
+  assert.equal(pending.status, 'pending', JSON.stringify(pending));
+  assert.equal(installs, 0);
+  assert.equal(JSON.parse(fs.readFileSync(manifest,'utf8')).dependencies[name], `file:${old}`);
+  running = false;
+  const next = activate();
+  assert.equal(next.status, 'installed', JSON.stringify(next));
+  assert.ok('desktopLoaded' in next && 'archive' in pending);
+  assert.equal(next.desktopLoaded, false);
+  assert.equal(next.archive, pending.archive);
+  assert.equal(activate().status, 'unchanged');
+  assert.equal(installs, 1);
+  fs.writeFileSync(path.join(installed, 'lib/client.js'), 'not from package');
+  assert.equal(activate().status, 'blocked');
+  assert.equal(installs, 1);
+  const activateAndReopen = (quitStatus: string, loaded = true) => updateDshDevelopmentPlugin({
+    root:f.root, nodeExecutable:process.execPath, run, environment:{ HOME:home }, platform:'darwin', hostCli, restartDsh:true,
+    continuity: () => ({
+      quit(_: string, beforeQuit: () => boolean) {
+        assert.equal(beforeQuit(), true);
+        lifecycle.push('quit');
+        if (quitStatus === 'exited') { running = false; return {status:quitStatus, verified:{}}; }
+        return {status:quitStatus};
+      },
+      reopen() { assert.equal(running,false); lifecycle.push('reopen'); running = true; return {status:loaded ? 'reopened' : 'opened-load-unconfirmed', desktopLoaded:loaded}; },
+    }) as any,
+  });
+  const reset = () => { install(old, '0.0.1'); running = true; lifecycle.length = 0; installBehavior = 'normal'; };
+  for (const status of ['unconfirmed','not-accepted','not-exited']) {
+    reset(); assert.equal(activateAndReopen(status).status, 'pending'); assert.deepEqual(lifecycle,['quit']);
+  }
+  reset(); const restarted = activateAndReopen('exited');
+  assert.equal(restarted.status,'installed'); assert.ok('desktopLoaded' in restarted && restarted.desktopLoaded === true);
+  assert.deepEqual(lifecycle,['quit','install','reopen']);
+  lifecycle.length = 0;
+  assert.equal(activateAndReopen('exited').status, 'unchanged'); assert.deepEqual(lifecycle,[]);
+  reset(); const unconfirmed = activateAndReopen('exited',false);
+  assert.equal(unconfirmed.status,'installed'); assert.ok('desktopLoaded' in unconfirmed && unconfirmed.desktopLoaded === false);
+  reset(); installBehavior = 'failure';
+  assert.equal(activateAndReopen('exited').status,'blocked'); assert.deepEqual(lifecycle,['quit','install','reopen']);
+  reset(); installBehavior = 'unknown';
+  assert.equal(activateAndReopen('exited').status,'blocked'); assert.deepEqual(lifecycle,['quit','install']);
+  reset(); installBehavior = 'unknown-after-write';
+  const partial = activateAndReopen('exited');
+  assert.equal(partial.status,'installed'); assert.ok('desktopLoaded' in partial && partial.desktopLoaded === false);
+  assert.deepEqual(lifecycle,['quit','install']);
+});
 
-for (const mode of ['passed', 'blocked']) {
-  test(`detached closeout returns the original ${mode} result and preserves a readable output`, async (t: any) => {
-    const fixture = detachedFixture(t);
-    let handoff: any;
-    const result = await runDetachedCloseout({args:[fixture.directory,mode,'literal value with spaces'],runnerModule:fixture.runnerModule,onHandoff(value: any){handoff=value;}});
-    t.after(() => fs.rmSync(path.dirname(handoff.resultFile), { recursive: true, force: true }));
-    assert.equal(result.status, mode === 'passed'?'passed':'blocked');
-    assert.deepEqual(JSON.parse(fs.readFileSync(handoff.resultFile,'utf8')),result);
-    assert.equal(fs.existsSync(path.join(fixture.directory,'activation.lock')),false);
-    assert.deepEqual(result.args,[fixture.directory,mode,'literal value with spaces']);
-    if (process.platform !== 'win32') assert.equal(fs.statSync(path.dirname(handoff.resultFile)).mode & 0o777,0o700);
+for (const [relative, web, plugin] of [
+  ['projects/product/services/buildr-harness-web/src/fixture.ts', true, false],
+  ['projects/product/services/buildr-harness-dsh-plugin/src/client.tsx', false, true],
+  ['projects/product/services/buildr-harness-dsh-plugin/README.md', false, false],
+] as const) {
+  test(`自举预检只读区分网页和插件：${relative}`, t => {
+    const f = fixture(t), target = path.join(f.root, relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, 'change\n');
+    git(f.root, 'add', '--', relative); git(f.root, 'commit', '-m', 'delivery'); git(f.root, 'push', 'origin', 'dev');
+    const tip = git(f.root, 'rev-parse', 'HEAD');
+    const result = runSelfBootstrapCloseoutCommand({ args: [
+      '--plan', 'true', '--restart-dsh', 'true', '--target', f.root, '--base-ref', f.baseRef, '--delivered-ref', tip, '--branch', 'dev', '--remote', 'origin', '--agent', 'codex',
+    ], environment: f.environment, execute: (executable, args, context) => {
+      assert.equal(executable, 'git');
+      assert.ok(['check-ref-format', 'rev-parse', 'diff', 'symbolic-ref', 'merge-base', 'ls-remote'].includes(args[0]), JSON.stringify(args));
+      return executor(f.root)(executable, args, context);
+    }});
+    assert.equal(result.status, 'planned', JSON.stringify(result));
+    assert.deepEqual(result.updateScope?.harnessRuntimePaths, web ? [relative] : []);
+    assert.equal(result.updateScope?.developmentWebRequested, web);
+    assert.equal(result.updateScope?.restartDshRequested, plugin);
+    assert.deepEqual(result.updateScope?.paths['update-dsh-development-plugin'], plugin ? [relative] : []);
+    assert.equal(git(f.root, 'status', '--porcelain'), '');
+    assert.equal(fs.existsSync(path.join(f.root, '.git/buildr/self-bootstrap-direct.lock')), false);
   });
 }
 
-test('detached closeout preserves driver exceptions and saves their original diagnostic', async (t: any) => {
-  const fixture=detachedFixture(t);let handoff: any;
-  await assert.rejects(runDetachedCloseout({args:[fixture.directory,'throw'],runnerModule:fixture.runnerModule,onHandoff(value: any){handoff=value;}}),
-    (error: any) => error.code === 'owner-mismatch' && error.message === 'identity changed; preserved');
-  t.after(()=>fs.rmSync(path.dirname(handoff.resultFile),{recursive:true,force:true}));
-  assert.equal(JSON.parse(fs.readFileSync(handoff.resultFile,'utf8')).diagnostic.code,'owner-mismatch');
-  assert.equal(fs.existsSync(path.join(fixture.directory,'activation.lock')),false);
-});
-
-test('detached closeout never reports success when the worker exits without a result', async (t: any) => {
-  const fixture=detachedFixture(t);let handoff: any;
-  await assert.rejects(runDetachedCloseout({args:[fixture.directory,'crash'],runnerModule:fixture.runnerModule,onHandoff(value: any){handoff=value;}}),
-    (error: any) => error.code === 'self-bootstrap-closeout.worker-result-missing' && error.details.code === 23);
-  t.after(() => fs.rmSync(path.dirname(handoff.resultFile), { recursive: true, force: true }));
-  assert.equal(fs.existsSync(path.join(fixture.directory,'activation.lock')),true,'an uncompleted operation keeps its recovery evidence');
-});
-
-test('independent closeout finishes restoration and releases its lock after the initiating process group is terminated', {skip:process.platform === 'win32'}, async (t: any) => {
-  const fixture=detachedFixture(t),handoffFile=path.join(fixture.directory,'handoff.json');
-  const entry=path.join(fixture.directory,'caller.mjs');
-  const helper=path.resolve(import.meta.dirname,'../../../../../../skills/buildr-self-bootstrap-sync/scripts/detached-execution.mjs');
-  fs.writeFileSync(entry, `
-    import fs from 'node:fs';
-    import {runDetachedCloseout} from ${JSON.stringify(helper)};
-    await runDetachedCloseout({args:${JSON.stringify([fixture.directory,'wait'])},runnerModule:${JSON.stringify(fixture.runnerModule)},
-      onHandoff(value){fs.writeFileSync(${JSON.stringify(handoffFile)},JSON.stringify(value));}});
-  `);
-  const caller=spawn(process.execPath,[entry],{detached:true,stdio:'ignore'});
-  const callerExit=new Promise(resolve=>caller.once('exit',resolve));
-  t.after(()=>{try{process.kill(-caller.pid!,'SIGKILL');}catch{}});
-  await waitForExecutionFile(handoffFile);
-  const handoff=JSON.parse(fs.readFileSync(handoffFile,'utf8'));
-  t.after(()=>{try{process.kill(handoff.pid,'SIGKILL');}catch{}fs.rmSync(path.dirname(handoff.resultFile),{recursive:true,force:true});});
-  await waitForExecutionFile(path.join(fixture.directory,'worker-ready'));
-  process.kill(-caller.pid!,'SIGTERM');
-  await callerExit;
-  process.kill(handoff.pid,0);
-  fs.writeFileSync(path.join(fixture.directory,'continue'),'old host has exited');
-  await waitForExecutionFile(handoff.resultFile);
-  assert.equal(fs.readFileSync(path.join(fixture.directory,'replacement-started'),'utf8'),'healthy');
-  assert.equal(fs.existsSync(path.join(fixture.directory,'activation.lock')),false);
-  assert.equal(JSON.parse(fs.readFileSync(handoff.resultFile,'utf8')).status,'passed');
-});
-
-test('the real closeout CLI transfers ownership before parsing and returns the worker failure unchanged', async (t: any) => {
-  const script=path.resolve(import.meta.dirname,'../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs');
-  const result=run(process.execPath,[script,'--unsupported','value'],process.cwd());
-  assert.equal(result.status,1);
-  const [handoffLine,...errorLines]=result.stderr.trim().split('\n');
-  const handoff=JSON.parse(handoffLine);
-  t.after(()=>fs.rmSync(path.dirname(handoff.resultFile),{recursive:true,force:true}));
-  assert.equal(handoff.schemaVersion,'buildr.self-bootstrap-execution/v1');
-  assert.equal(result.stdout,'');
-  const output=JSON.parse(errorLines.join('\n'));
-  assert.equal(output.status,'blocked');
-  assert.equal(output.primaryFailure.code,'self-bootstrap-closeout.option-unknown');
-  assert.equal(JSON.parse(fs.readFileSync(handoff.resultFile,'utf8')).diagnostic.code,'self-bootstrap-closeout.option-unknown');
-});
-
-
-test('file-backed command capture parses complete large JSON and preserves binary, failure and signal evidence', () => {
-  const output: any = defaultExecute(process.execPath, ['-e', `
-    const fs = require('node:fs');
-    if (process.platform !== 'win32' && [1,2].some(fd => (fs.fstatSync(fd).mode & 0o777) !== 0o600)) process.exit(9);
-    process.stdout.write(JSON.stringify({ value: 'x'.repeat(3 * 1024 * 1024) }));
-    process.stderr.write('e'.repeat(2 * 1024 * 1024));
-  `], { cwd: process.cwd() });
-  assert.equal(output.status, 0); assert.equal(output.signal, null);
-  assert.equal(JSON.parse(output.stdout).value.length, 3 * 1024 * 1024);
-  assert.equal(output.stderr.length, 2 * 1024 * 1024);
-  const binary = defaultExecute(process.execPath, ['-e', 'process.stdout.write(Buffer.from([0,255,1]))'], { cwd: process.cwd(), binary: true });
-  assert.deepEqual(binary.stdout, Buffer.from([0,255,1]));
-  const failed = defaultExecute(process.execPath, ['-e', 'process.exit(23)'], { cwd: process.cwd() });
-  assert.equal(failed.status, 23);
-  const missing = defaultExecute(path.join(os.tmpdir(), 'buildr-nonexistent-executable'), [], { cwd: process.cwd() });
-  assert.equal(missing.status, 1); assert.equal(missing.errorCode, 'ENOENT');
-  if (process.platform !== 'win32') {
-    const killed = defaultExecute(process.execPath, ['-e', "process.kill(process.pid, 'SIGTERM')"], { cwd: process.cwd() });
-    assert.equal(killed.status, 1); assert.equal(killed.signal, 'SIGTERM');
+test('DSH 待安装接续仅换包、验证入口并拒绝保留提交漂移', t => {
+  const f = fixture(t);
+  const inputs = ['projects/product/services/buildr-harness-web/src/fixture.ts', 'projects/product/services/buildr-harness-dsh-plugin/src/client.tsx'];
+  for (const relative of inputs) {
+    const file = path.join(f.root, relative); fs.mkdirSync(path.dirname(file), { recursive:true }); fs.writeFileSync(file, 'change\n');
   }
+  git(f.root, 'add', '--', ...inputs); git(f.root, 'commit', '-m', 'delivery'); git(f.root, 'push', 'origin', 'dev');
+  const deliveredRef = git(f.root, 'rev-parse', 'HEAD');
+  const input = { workspaceRoot:f.root, baseRef:f.baseRef, deliveredRef, targetBranch:'dev', remote:'origin', agent:'codex', nodeExecutable:process.execPath, environment:f.environment };
+  const pending = runDirectSelfBootstrapCloseout({ ...input, execute:executor(f.root), updateDshPlugin: () => ({ status:'pending', archive:'candidate', reason:'DSH is running' }) });
+  assert.equal(pending.diagnostic?.code, 'self-bootstrap-closeout.dsh-plugin-pending', JSON.stringify(pending));
+  assert.ok(pending.phases.some((phase: { id:string; status:string }) => phase.id === 'install-buildr-web' && phase.status === 'passed'));
+  const receipt = path.join(path.dirname(f.root), 'pending-result.json'); fs.writeFileSync(receipt, JSON.stringify(pending));
+  let attempts = 0;
+  const resume = () => {
+    const perform = executor(f.root);
+    return runDirectSelfBootstrapCloseout({ ...input, resumeDsh:receipt, execute:(exe,args,ctx) => {
+      assert.ok(!args.some((arg: string) => /prepare-development-agent\.ts$|launcher\/manage\.ts$/.test(arg)));
+      assert.ok(!args.includes('sync') && !args.includes('push'));
+      return perform(exe,args,ctx);
+    }, updateDshPlugin:() => { attempts++; return { status:'installed', archive:'candidate', desktopLoaded:false }; }});
+  };
+  const resumed = resume();
+  assert.equal(resumed.status, 'passed', JSON.stringify(resumed));
+  assert.deepEqual(resumed.phases.map((phase: { id:string }) => phase.id), ['preflight','verify-development-entry','finalize','update-dsh-development-plugin']);
+  assert.equal(attempts, 1);
+  fs.writeFileSync(receipt, JSON.stringify({ ...pending, phases: pending.phases.map((phase: { id:string }) => phase.id === 'update-dsh-development-plugin' ? {...phase,operations:[{id:'dsh-install-plugin'}]} : phase) }));
+  assert.equal(resume().diagnostic?.code, 'self-bootstrap-closeout.dsh-resume-mismatch');
+  fs.writeFileSync(receipt, JSON.stringify(pending));
+  git(f.root, 'commit', '--allow-empty', '-m', 'checkout advanced'); git(f.root, 'push', 'origin', 'dev');
+  assert.equal(resume().diagnostic?.code, 'self-bootstrap-closeout.dsh-resume-mismatch');
+  assert.equal(attempts, 1);
 });
 
-test('phase and operation timing remains nonnegative with a regressing wall clock and summaries stay bounded', t => {
-  const f = directFixture(t), perform = executor(f.root);
-  const originalNow = Date.now; let wall = originalNow();
-  Date.now = () => wall -= 100000;
-  let result: any;
-  try {
-    result = runDirectSelfBootstrapCloseout({ ...f.input, execute: (executable: string, args: string[], context: any) => {
-      const output = perform(executable, args, context);
-      if (args[0]?.endsWith('/prepare-development-agent.ts')) output.stdout = 'x'.repeat(3 * 1024 * 1024);
-      return output;
-    } });
-  } finally { Date.now = originalNow; }
-  assert.equal(result.status, 'passed');
-  assert.ok(result.durationMs > 0, 'a regressing wall clock must not clamp real execution duration to zero');
-  assert.ok(result.phases.some((stage: any) => stage.durationMs > 0));
-  for (const item of [result, ...result.phases, ...result.phases.flatMap((stage: any) => stage.operations)]) {
-    assert.equal(Number.isNaN(Date.parse(item.startedAt)), false);
-    assert.equal(Number.isNaN(Date.parse(item.finishedAt)), false);
-    assert.ok(Number.isFinite(item.durationMs) && item.durationMs >= 0);
-  }
-  for (const item of result.phases.flatMap((stage: any) => stage.operations)) {
-    assert.ok(item.stdout.length <= 2000); assert.ok(item.stderr.length <= 2000);
-  }
-});
-
-test('worker log exposes fixed phase and operation start before a synchronous child completes without secrets', async t => {
-  const f = directFixture(t), directory = path.dirname(f.root), runnerModule = path.join(directory, 'progress-runner.mjs');
-  const ready = path.join(directory, 'synchronous-child-ready'), release = path.join(directory, 'release-child');
-  const helper = path.resolve(import.meta.dirname, '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs');
-  fs.writeFileSync(runnerModule, `
-    import fs from 'node:fs';
-    import { runDirectSelfBootstrapCloseout, defaultExecute } from ${JSON.stringify(helper)};
-    export function runSelfBootstrapCloseoutCommand({args}) {
-      return runDirectSelfBootstrapCloseout({ ...JSON.parse(args[0]), execute(executable, argv, options) {
-        if (argv[0]?.endsWith('/prepare-development-agent.ts')) return defaultExecute(process.execPath, ['-e',
-          ${JSON.stringify(`const fs = require('node:fs'); if (process.env.BUILDR_DEVELOPMENT_PROGRESS_FD !== '3') process.exit(13); fs.writeSync(3, JSON.stringify({schemaVersion:'buildr.self-bootstrap-progress/v1',scope:'phase',event:'started',id:'nested-web-preparation',phaseId:null,status:null,startedAt:new Date().toISOString(),finishedAt:null,durationMs:null}) + '\\n'); process.stdout.write('secret-raw-output'); process.stderr.write('secret-raw-stderr'); fs.writeFileSync(${JSON.stringify(ready)}, 'ready'); while (!fs.existsSync(${JSON.stringify(release)})) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15);`)}, 'secret-argument'], { ...options, env: { ...options.env, SECRET_ENV: 'secret-environment' } });
-        return defaultExecute(executable, argv, options);
-      } });
+test('DSH 原生重开仅采用可验证的宿主绑定和本次加载回执', { skip: process.platform === 'win32' }, async t => {
+  const { dshDesktopContinuity } = await import('../../../../../../skills/buildr-self-bootstrap-sync/scripts/dsh-desktop-continuity.mjs');
+  const f = fixture(t), root = fs.realpathSync(f.root), home = path.join(root,'home'), dataRoot = path.join(home,'data');
+  const dshHome = path.join(home,'.dsh'), packageRoot = path.join(root,'projects/product/services/buildr/node_modules/@buildr-ai/buildr-harness');
+  const app = '/Applications/DeepSeek Harness.app', executable = `${app}/Contents/MacOS/DeepSeek Harness`;
+  fs.mkdirSync(dshHome,{recursive:true}); fs.mkdirSync(packageRoot,{recursive:true}); fs.mkdirSync(path.join(dataRoot,'agent-service'),{recursive:true});
+  const receipt = path.join(dataRoot,'agent-service/dsh-development-desktop.json');
+  const binding = {schemaVersion:'buildr.dsh-development-desktop/v1',desktopPid:33,hostPid:34,observedAt:2005,node:fs.realpathSync(process.execPath),packageRoot,dataRoot,dshHome,port:'9519',entryDigest:'old',nonce:null as string|null};
+  const writeReceipt = () => fs.writeFileSync(receipt,JSON.stringify(binding),{mode:0o600});
+  let front = {pid:33,app,startedAt:2000,ready:true};
+  let exited = false, exits = 0, starts = 0, issueNonce = true, extraInstance = false;
+  const run = (_exe:string,args:string[],id:string) => {
+    if (id === 'dsh-desktop-inspect') return {status:0,stdout:JSON.stringify(exited ? [] : extraInstance ? [front,front] : [front])};
+    if (id === 'dsh-desktop-processes') return {status:0,stdout:`${front.pid} 1 ${process.getuid?.()} ${executable}\n${binding.hostPid} ${front.pid} ${process.getuid?.()} ${executable}`};
+    if (id === 'dsh-desktop-original-launch') return {status:0,stdout:executable};
+    if (id === 'dsh-desktop-quit') { assert.equal(args.at(-3),String(front.pid)); exits++; exited = true; return {status:0,stdout:'accepted'}; }
+    if (id === 'dsh-desktop-reopen') {
+      starts++; assert.equal(exited,true);
+      assert.ok(args.includes(`BUILDR_HARNESS_DSH_DATA_ROOT=${dataRoot}`)); assert.ok(args.includes('BUILDR_HARNESS_DSH_PORT=9519'));
+      front = {...front,pid:55,startedAt:3000}; exited = false;
+      Object.assign(binding,{desktopPid:55,hostPid:56,observedAt:3001,entryDigest:'new',nonce:issueNonce ? args.at(-1)?.split('=')[1] : null});
+      writeReceipt(); return {status:0,stdout:''};
     }
-  `);
-  let handoff: any;
-  const pending = runDetachedCloseout({ args: [JSON.stringify(f.input)], runnerModule, onHandoff(value: any) { handoff = value; } });
-  try {
-    await waitForExecutionFile(ready);
-    const log = fs.readFileSync(handoff.logFile, 'utf8');
-    const events = log.trim().split('\n').map(line => JSON.parse(line));
-    assert.ok(events.some(event => event.scope === 'phase' && event.event === 'started' && event.id === 'preflight'));
-    assert.ok(events.some(event => event.scope === 'operation' && event.event === 'started' && event.id === 'prepare-agent-package'));
-    assert.ok(events.some(event => event.scope === 'phase' && event.event === 'started' && event.id === 'nested-web-preparation'));
-    assert.equal(events.some(event => event.event === 'finished' && event.id === 'prepare-agent-package'), false);
-    assert.doesNotMatch(log, /secret-argument|secret-environment|secret-raw-output|secret-raw-stderr|SECRET_ENV/);
-    for (const event of events) assert.deepEqual(Object.keys(event).sort(), ['schemaVersion','scope','event','id','phaseId','status','startedAt','finishedAt','durationMs'].sort());
-  } finally {
-    fs.writeFileSync(release, 'continue');
-    await pending;
-    if (handoff) t.after(() => fs.rmSync(path.dirname(handoff.resultFile), { recursive: true, force: true }));
-  }
-  const finalLog = fs.readFileSync(handoff.logFile, 'utf8');
-  assert.doesNotMatch(finalLog, /secret-argument|secret-environment|secret-raw-output|secret-raw-stderr|SECRET_ENV/);
-  assert.ok(finalLog.includes('"event":"finished","id":"prepare-agent-package"'));
-});
-
-test('explicit restart reaches the owned continuity path even without runtime changes', t => {
-  const f=fixture(t),calls: any[]=[];
-  const perform=executor(f.root,{runningDevelopmentInstance:true});
-  const result=runSelfBootstrapCloseoutCommand({
-    args:['--target',f.root,'--base-ref',f.baseRef,'--delivered-ref',git(f.root,'rev-parse','HEAD'),'--branch','dev','--remote','origin','--agent','codex','--node-executable',process.execPath,'--restart-development-web','true'],
-    environment:f.environment,execute:(executable: string,args: string[],context: any)=>{calls.push(args);return perform(executable,args,context);},
-  });
-  assert.equal(result.status,'passed',JSON.stringify(result));
-  assert.ok(result.phases.some((p: any)=>p.id==='install-buildr-web'));
-  const restart=calls.find(args=>args[0].endsWith('development-web-continuity.mjs')&&args[1]==='restart');
-  assert.ok(restart);assert.deepEqual(restart.slice(-2),['--force-restart','true']);
-  assert.throws(()=>runSelfBootstrapCloseoutCommand({args:['--target',f.root,'--node-executable',process.execPath,'--restart-development-web','yes']}), (e: any)=>e.code==='self-bootstrap-closeout.restart-value-invalid');
+    assert.fail(id);
+  };
+  const control = dshDesktopContinuity({root,home,dataRoot,nodeExecutable:process.execPath,run,env:{},exited:() => exited,boundMs:0});
+  assert.equal(control.quit('old').status,'unconfirmed');
+  writeReceipt(); extraInstance = true; assert.equal(control.quit('old').status,'unconfirmed');
+  extraInstance = false; assert.equal(control.quit('different').status,'unconfirmed');
+  assert.equal(control.quit('old',()=>false).status,'unconfirmed'); assert.equal(exits,0);
+  const quit = control.quit('old'); assert.equal(quit.status,'exited'); assert.ok(quit.verified);
+  assert.deepEqual(control.reopen(quit.verified,'new'),{status:'reopened',desktopLoaded:true});
+  const secondQuit = control.quit('new'); assert.ok(secondQuit.verified);
+  issueNonce = false;
+  assert.deepEqual(control.reopen(secondQuit.verified,'new'),{status:'opened-load-unconfirmed',desktopLoaded:false});
+  assert.equal(exits,2); assert.equal(starts,2);
 });

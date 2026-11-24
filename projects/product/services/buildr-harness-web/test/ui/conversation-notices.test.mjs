@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {conversationFailureImpact, visibleConversationEntries, latestVisibleConversationMessage, conversationModelWarning, conversationActionError, conversationHandoffReceipt, conversationNativeSessionDiagnostic, conversationNativeSessionIssue, conversationNativeSessionSummary, conversationSystemNoticeText} from '../../src/features/agent-conversations/conversation-notices.ts';
+import {isQuietAutomaticContinuation, conversationFailureImpact, conversationFailureReason, visibleConversationEntries, latestVisibleConversationMessage, conversationModelWarning, conversationActionError, conversationHandoffReceipt, conversationNativeSessionDiagnostic, conversationNativeSessionIssue, conversationNativeSessionSummary, conversationSystemNoticeText} from '../../src/features/agent-conversations/conversation-notices.ts';
 
 const receipt=(id, extra={})=>({id,kind:'notice',role:'system',text:'已请求重试上次未送达的要求。',participantId:'codex',...extra});
+test('宿主未连接时说明原因，并按原输入记录区分未送达和待确认',()=>{
+  const diagnostic='执行环境提供方暂时不可达（verifyWorkObject；no_registered_peer）；原执行和记录已保留。';
+  const run={status:'failed',accepted:false,tools:[],diagnostic};
+  assert.match(conversationFailureReason(diagnostic).summary,/执行环境提供方暂时不可达/);
+  assert.match(conversationFailureImpact(run,'failed'),/未送达/);
+  assert.match(conversationFailureImpact(run,'unknown'),/尚未确认/);
+  assert.match(conversationFailureImpact(run),/尚未确认/);
+});
 test('连续重试仅显示最后一条，保留原始记录与后续回复',()=>{
   const entries=[receipt('one'),receipt('two'),receipt('three'),{id:'reply',kind:'message',role:'assistant',text:'继续执行'}];
   const original=structuredClone(entries);
@@ -134,4 +142,21 @@ test('失败提示不把未确认受理当未送达，也不把未知工具当�
   assert.match(text,/结果待确认/);assert.doesNotMatch(text,/可以发送新的要求/);
  }
  assert.equal(conversationFailureImpact({...accepted,status:'completed'}),undefined);
+});
+
+test('自动接续默认不显示内部指令，但保留原执行记录和异常',()=>{
+  for(const prefix of ['系统自动恢复：','系统自动重试：']){
+    const entry={id:'retry',runId:'next',kind:'notice',role:'system',text:prefix+'请核对当前成果。',continuedFrom:{runId:'original',userEntryId:'user'}};
+    for(const status of ['sending','accepted']){
+      const current={...entry,status};
+      assert.equal(isQuietAutomaticContinuation(current),true);
+      assert.deepEqual(visibleConversationEntries([current]),[current]);
+      assert.doesNotMatch(conversationSystemNoticeText(current),/请核对当前成果/);
+    }
+    for(const extra of [{status:'failed'},{status:'unknown'},{status:'accepted',deliveryDiagnostic:'需要核对'}]){
+      assert.equal(isQuietAutomaticContinuation({...entry,...extra}),false);
+    }
+    assert.equal(isQuietAutomaticContinuation({...entry,role:'user'}),false);
+    assert.equal(isQuietAutomaticContinuation({...entry,text:'已请求继续上次执行。'}),false);
+  }
 });

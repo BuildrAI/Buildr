@@ -43,7 +43,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 查看待办/正式Task、Parent/Child、复盘文档状态与各专业当前状态 | `buildr.task-record/v4`及Review、Verification公开read model；复盘正文从`.buildr/local/task-retrospectives/<task-id>.md`读取 |
 | 启动或继续已有active Formal Task | `buildr task inspect <task-id> --json`核对目标与scope；Agent再按真实Git/文件现场选择直接工作或matching Worktree |
 | 查看 Parent/Child 关系、旧 Parent Plan 与整体完成观察 | `task parent inspect`；关系和终态由 Task Record 管理，旧 Parent Plan 只读 |
-| 按需生成或查看已结束Task的执行效率复盘 | `task-retrospective`纯Skill基于当前可见事实写本机Markdown；Task Record v4的复盘字段只登记文档摘要和人的决定状态 |
+| 按需生成或查看已结束Task的执行效率复盘 | `task-manager` 按需生成本机复盘 Markdown；Task Record v4的复盘字段只登记文档摘要和人的决定状态 |
 | 建设或维护项目测试、四类边界、稳定入口及 `verification.yml` 测试登记 | `project-testing` 技能（Skill），同时维护测试登记与稳定入口 |
 | 按任意用户请求或任务目标选择并执行检查，交付证据，或记录与查看已有任务验证报告 | `buildr.task-verification/v4` selected provider；Agent直接调用项目测试工具 |
 | 显式创建、检查或清理 Task 的 Git worktree/provider evidence | `buildr.git-worktree-provider/v1` selected provider |
@@ -63,7 +63,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 
 ## 检查智能体程序更新
 
-用户要检查智能体（Agent）命令行程序（CLI）或应用服务端（App Server）的新版本时，使用 Buildr 顶部“检查更新…”中的“智能体”列表，或“智能体与模型”的“智能体”页。两处复用受认证的 `GET /api/v1/app/agent-service/program-updates` 观察与 `POST /api/v1/app/agent-service/program-updates/check` 主动检查；后者接受空对象检查全部，或 `{connectionId}` 检查单项。非网页调用者复用现有宿主认证，不自行猜测端口或凭证。
+用户要检查智能体（Agent）命令行程序（CLI）或应用服务端（App Server）的新版本时，使用 Buildr 顶部“检查更新…”中的“智能体”列表，或“设置”的“智能体”页。两处复用受认证的 `GET /api/v1/app/agent-service/program-updates` 观察与 `POST /api/v1/app/agent-service/program-updates/check` 主动检查；后者接受空对象检查全部，或 `{connectionId}` 检查单项。非网页调用者复用现有宿主认证，不自行猜测端口或凭证。
 
 核对绑定路径、连接修订（Revision）、观察时间和版本口径。Codex 两种运行方式共用同一程序；Qoder 比较配套软件包版本，不将程序版本直接混比。固定安装版本不是最新版，官方默认发布版本也不代表 Buildr 已验证可安装。检查未知、网络失败或绑定漂移时重查原对象，不报告“已最新”。检查接口保持只读。用户明确要求升级时，可在同一条目的“更新”操作使用 `POST /api/v1/app/agent-service/connections/<connectionId>/program-upgrades`，输入 `{expectedRevision,expectedVersion}` 钉住已观察接入及版本，通过原检查结果中的 `upgrade` 读取下载、等待、重启与结果。不得换用任意包名或命令。
 

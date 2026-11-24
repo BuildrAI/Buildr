@@ -91,7 +91,7 @@ labelled as such; do not run the project only to time it.
 
 ## Choose an example by structure
 
-Select the main example in the [Type router](../SKILL.md#type-router) before
+Select the main example in the [Type router](../AUTHORING.md#type-router) before
 loading its content, using the request and repository metadata already needed
 for source inspection. Selection fits the existing read batch and needs no extra
 message, command, or repository-wide scan. For mixed or unclear tasks, use the

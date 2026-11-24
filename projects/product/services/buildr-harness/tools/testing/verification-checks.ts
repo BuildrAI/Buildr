@@ -14,6 +14,7 @@ const storageRuntimeFiles = integrationTests(
   'conversation-storage.test.ts',
   'diagnostic-storage.test.ts',
   'directory-host.test.ts',
+  'directory-workbench.test.ts',
   'host-contract.test.ts',
   'native-session-storage.test.ts',
   'native-state-storage.test.ts',
@@ -43,15 +44,25 @@ const modelsAccountsFiles = integrationTests(
   'model-login-completion.test.ts',
   'model-preferences.test.ts',
   'model-providers.test.ts',
+  'magpie-model-provider.test.ts',
   'native-content.test.ts',
   'qoder-cn-login.test.ts',
   'qoder-upgrade-pair.test.ts',
   'shared-native-models.test.ts',
 );
-const excludedRootTests = new Set(['test/integration/conversations.test.ts', ...storageRuntimeFiles, ...modelsAccountsFiles, ...harnessProductFiles]);
+const conversationFiles = integrationTests(
+  'conversations.test.ts',
+  'conversations-controls-and-models.test.ts',
+  'conversations-handoff.test.ts',
+  'conversations-history-titles.test.ts',
+  'conversations-recovery.test.ts',
+);
+const excludedRootTests = new Set([...conversationFiles, ...storageRuntimeFiles, ...modelsAccountsFiles, ...harnessProductFiles]);
 const rootTests = fs.globSync('test/integration/*.test.ts', { cwd: root }).filter(file => !excludedRootTests.has(file)).sort();
 const nativeRuntimeFiles = executorTests(
   'antigravity.test.ts',
+  'antigravity-continuations-and-recovery.test.ts',
+  'antigravity-streaming-and-approvals.test.ts',
   'claude.test.ts',
   'codex.test.ts',
   'codex-questions.test.ts',
@@ -80,7 +91,7 @@ export const agentIntegrationChecks = [
     // Database/cache/filesystem lifecycles are real IO, not a lightweight model protocol.
     resourceDemand: { workers: 2, processes: 2, workspaceIo: 2 } },
   { id: 'agent-integration-conversations', name: 'Agent conversation lifecycle and authenticated input contracts',
-    testFiles: ['test/integration/conversations.test.ts'], schedulingCostMs: 50000, timeoutMs: 90000,
+    testFiles: conversationFiles, schedulingCostMs: 50000, timeoutMs: 150000,
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 } },
   { id: 'agent-integration-native-runtime', name: 'Agent native executor runtime and gateway protocols',
     testFiles: nativeRuntimeFiles, schedulingCostMs: 45000, timeoutMs: 120000,

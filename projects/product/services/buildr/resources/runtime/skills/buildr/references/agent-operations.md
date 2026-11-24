@@ -22,7 +22,7 @@
 
 ## Buildr Harness 系统提示词
 
-在“智能体与模型 → 系统提示词”编辑、启停或恢复当前配置域的默认文案；默认简洁高效表达，但不能省略重要风险、失败和未完成事项。仅影响经 Buildr 管理的工作对话，不替换原生规则或权限，也不控制独立打开的应用。
+在“设置 → 系统提示词”编辑、启停或恢复当前配置域的默认文案；默认简洁高效表达，但不能省略重要风险、失败和未完成事项。仅影响经 Buildr 管理的工作对话，不替换原生规则或权限，也不控制独立打开的应用。
 
 已有宿主认证调用者可读取 `GET /api/v1/app/agent-service/system-prompt`，修改用 `POST` 同一路径并提交 `{expectedRevision,enabled,text}`；先读当前修订，冲突重新核对，不直接编辑私有配置。文本上限为16000字符，恢复默认使用读取结果的 `defaultText` 并显式保存。配置变化从下一轮应用，已有执行保持原版本和控制；必要时系统重建原生上下文并保留同一对话历史，不重发旧请求。对话头部可查看当前轮 `systemPrompt{revision,enabled,text,delivery}`：`native` 只表示通过原生通道提交，`unsupported` 不冒充已注入；旧轮未采集时不补造。Antigravity 按握手能力判断，不支持时不退化为普通用户消息。
 
@@ -122,7 +122,7 @@ Buildr 隔离 DSH 的前台 shell 命令超时会真正终止，不会自动转�
 
 ## 对话事件回推（按凭据）
 
-对话关键事件按程序接入凭据回推，不再是全局单一目标。人在「智能体与模型 → 程序接入」展开凭据详情配置接收地址、密钥、启停与速率上限，并可发送独立测试通知；管理入口仅网页会话可用，不向 Bearer 或 CLI 开放。原全局「事件通知 / Webhook」已退役，既有 `~/.buildr-webhook.json` / `BUILDR_AGENT_WEBHOOK_CONFIG` 的地址与密钥启动时迁移到 GrokBot 凭据并保持停用，幂等；不保留两份活动配置。不要在命令参数、聊天、日志或源资产中填写真实秘密，不打印响应正文。
+对话关键事件按程序接入凭据回推，不再是全局单一目标。人在「设置 → 程序接入」展开凭据详情配置接收地址、密钥、启停与速率上限，并可发送独立测试通知；管理入口仅网页会话可用，不向 Bearer 或 CLI 开放。原全局「事件通知 / Webhook」已退役，既有 `~/.buildr-webhook.json` / `BUILDR_AGENT_WEBHOOK_CONFIG` 的地址与密钥启动时迁移到 GrokBot 凭据并保持停用，幂等；不保留两份活动配置。不要在命令参数、聊天、日志或源资产中填写真实秘密，不打印响应正文。
 
 只有被该凭据接管（首次经 API 创建/发送/续聊/补充即标记）的对话才回推。业务事件为 decision.requested（问题或审批）、run.progress（新的 assistant 中间消息）、run.completed、run.failed、run.stopped（非该凭据发起的停止）和 run.stalled（当前对话中仍存在且状态为 starting/running/tools-active，并连续 20 分钟没有新记录）。不推工具调用明细、流式 token、思考、starting/running 状态转换或标题生成。每条事件含 eventId、type、occurredAt、machine{id,name}、workspaceId、conversationId、title、runId、runStatus、summary（≤500 字符）、detailUrl、scopes 与 allowFullAccess；scopes/allowFullAccess 为事件生成时的当前凭据权限快照。run.completed、run.failed、run.stopped 另含 finalReply（完整最终 assistant 回复，不截断）与 finalReplyUrl；GET finalReplyUrl 只需 read 权限，返回 {runId,finalReply}。decision.requested 的 request 含 requestId、kind、title、description、runId、participantId、generation、conversationRevision，以及全部 questions/options；description 始终存在，卡片没有说明时为空字符串；GET 对话与 observe 的 requests[] 同样始终含 description；审批卡 options 和问题卡 questions 内选项均使用 optionId、label、description，问题项使用 questionId、question、allowOther、multiple。machine.id 为本机稳定标识、name 为主机名，不用模型或执行器身份替代。不含密钥或接收地址；内部思考、原始工具正文不外发，关闭卡片不表示回答或同意。程序发现入口返回 buildId；/operations 与单操作文档（x-buildr-build-id）及 /help 显示当前构建标识，完整 OpenAPI 正文不写入 buildId，contractVersion 仍只摘要 API 契约内容。`BUILDR_AGENT_PUSHBACK_TEST_STALLED_THRESHOLD_MS`（1000..86400000）与 `BUILDR_AGENT_PUSHBACK_TEST_CHECK_INTERVAL_MS`（250..60000）仅供复测缩短阈值/检查间隔，设置后重启 Agent 后台生效，删除变量并重启恢复产品默认；从 Finder 启动开发版时变量不会自动继承，可先用 launchctl setenv 写入同名变量，卸载时用 launchctl unsetenv 删除。
 

@@ -29,6 +29,15 @@ test('logical page sessions persist; tickets are target-bound, single use, expir
   const disk=fs.readFileSync(path.join(dataRoot,'agent-service/harness-web/session-state.json'),'utf8');assert.ok(!disk.includes(session.token)&&!disk.includes(first.ticket));
 });
 
+test('a retired web listener can release twice without claiming storage or rewriting its successor',t=>{
+  const dataRoot=root(t),store=new HarnessWebSessions(dataRoot);
+  const old={instanceId:'old',generation:'g1',pid:process.pid,released:false};
+  const next={instanceId:'next',generation:'g2',pid:process.pid,released:false};
+  store.enable(48000);store.listening(old,48000);store.released(old);store.listening(next,48000);
+  const before=store.read();store.released(old);
+  assert.deepEqual(store.read(),before);
+});
+
 test('page sessions slide with authenticated activity; expiry, revocation and rebind are never undone by renewal',t=>{
   const dataRoot=root(t);let now=1_000_000;const store=new HarnessWebSessions(dataRoot,()=>now),identity={instanceId:'a',generation:'g1',pid:process.pid,released:false};
   store.enable(48010);store.listening(identity,48010);const origin='http://127.0.0.1:48010';
@@ -101,6 +110,17 @@ test('loopback endpoint is explicit, stable across generation handoff, keeps old
   const forgedHost=await new Promise<number|undefined>((resolve,reject)=>{const request=httpRequest(origin+'/api/v1/harness/scopes',{headers:{cookie,host:'evil.invalid'}},response=>{response.resume();response.once('end',()=>resolve(response.statusCode));});request.once('error',reject);request.end();});assert.equal(forgedHost,403);
   response=await fetch(origin+'/api/v1/harness/directories',{method:'POST',headers:{cookie,origin,'content-type':'application/json'},body:JSON.stringify({path:work})});assert.equal(response.status,403,'cookie without exact write header cannot mutate');
   response=await fetch(origin+'/api/v1/harness/files',{method:'POST',headers:{cookie,origin,'x-buildr-session':token,'content-type':'application/json'},body:JSON.stringify({conversationId:conversation.id,path:path.join(work,'note.md')})});assert.equal(response.status,200);assert.match((await response.json()).content,/source checked/);
+  // A space in the workspace-external path keeps the decoded local file link covered.
+  const externalDir=fs.mkdtempSync(path.join(os.tmpdir(),'harness external files '));t.after(()=>fs.rmSync(externalDir,{recursive:true,force:true}));
+  const externalMd=path.join(externalDir,'external.md'),externalHtml=path.join(externalDir,'prototype.html');
+  const fullHtml='<!doctype html><html><body><!-- buildr:ui-prototype --><div>'+'p'.repeat(1024*1024+256)+'</div></body></html>';
+  fs.writeFileSync(externalMd,'# outside workspace');fs.writeFileSync(externalHtml,fullHtml);
+  response=await fetch(origin+'/api/v1/harness/files',{method:'POST',headers:{cookie,origin,'x-buildr-session':token,'content-type':'application/json'},body:JSON.stringify({conversationId:conversation.id,path:externalMd})});assert.equal(response.status,200);const extMdJson=await response.json();assert.equal(extMdJson.kind,'markdown');assert.match(extMdJson.content,/outside workspace/);
+  response=await fetch(origin+'/api/v1/harness/files',{method:'POST',headers:{cookie,origin,'x-buildr-session':token,'content-type':'application/json'},body:JSON.stringify({conversationId:conversation.id,path:externalHtml})});assert.equal(response.status,200);const extHtmlJson=await response.json();assert.equal(extHtmlJson.kind,'html');assert.equal(extHtmlJson.truncated,true);assert.ok(extHtmlJson.htmlUrl);
+  const htmlPage=await fetch(origin+extHtmlJson.htmlUrl,{headers:{cookie}});assert.equal(htmlPage.status,200);assert.equal(await htmlPage.text(),fullHtml);
+  const htmlCsp=htmlPage.headers.get('content-security-policy')||'';assert.ok(htmlCsp.includes('sandbox allow-scripts')&&htmlCsp.includes("connect-src 'none'")&&htmlCsp.includes("frame-ancestors 'self'")&&!htmlCsp.includes('allow-same-origin'),htmlCsp);
+  assert.equal((await fetch(origin+extHtmlJson.htmlUrl)).status,403);
+  assert.equal((await fetch(origin+`/api/v1/harness/files/html?conversationId=${encodeURIComponent(conversation.id)}&path=${encodeURIComponent(path.join(work,'note.md'))}`,{headers:{cookie}})).status,415);
   await assert.rejects(early.enable(),{code:'agent_web_not_ready'});assert.equal(early.status().ready,false);assert.equal(early.status().origin,origin);assert.equal(a.status().ready,true,'port conflicts do not replace the owner');
   await a.releaseListener();fs.writeFileSync(path.join(staticRoot,'assets/main.js'),'export const page="new"');
   b=new HarnessWebEndpoint({...options,instanceId:'b',generation:'g2'});assert.equal((await b.resume()).origin,origin);assert.equal(b.status().ready,true);

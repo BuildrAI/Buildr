@@ -885,7 +885,7 @@ Buildr-owned OpenSpec contributions MUST只把归档前可完成的实现、知�
 - **AND** MUST不要求Task Candidate、Development Handoff或旧Finish运行
 
 ### Requirement: 任务复盘必须由Agent按用户意图直接完成
-用户明确要求复盘终态Task时，Agent MUST使用`task-retrospective` Skill读取当前事实、生成固定本机Markdown并通过Task Record登记。Task完成本身 MUST不自动提示、生成、登记或要求复盘。
+用户明确要求复盘终态Task时，Agent MUST使用`task-manager` 的复盘指南读取当前事实、生成固定本机Markdown并通过Task Record登记。Task完成本身 MUST不自动提示、生成、登记或要求复盘。
 
 #### Scenario: 用户在任务完成后要求复盘
 - **WHEN** 用户明确要求复盘指定终态Task
@@ -1186,7 +1186,7 @@ Buildr SHALL 交付 `project-testing` 与 `project-verification` 两个测试技
 - **THEN** project-testing SHALL 完成建设与登记，project-verification SHALL 读取当前事实选择执行，不经过独立声明接入技能（Skill）
 
 ### Requirement: 验证必须支持开发推送前和用户显式请求
-智能体（Agent）SHALL 在开发中根据任务目标和真实影响选齐四类必要验证，在推送 Buildr 产品代码前完整覆盖四服务当前源码静态与单元检查，并按用户显式要求执行指定类型、检查或完整集合。自动路径选择 SHALL 只提供辅助；需要真实技术连接、构建安装后或用户流程证明时 SHALL 追加对应检查。授权内可修复问题 SHALL 自行处理；新的外部副作用、业务语义冲突或例外放行 SHALL 向用户说明准确影响请求决定。
+智能体（Agent）SHALL 在开发中根据任务目标和真实影响选齐四类必要验证，在推送 Buildr 产品代码前完整覆盖已登记服务当前源码静态与单元检查，并按用户显式要求执行指定类型、检查或完整集合。自动路径选择 SHALL 只提供辅助；需要真实技术连接、构建安装后或用户流程证明时 SHALL 追加对应检查。授权内可修复问题 SHALL 自行处理；新的外部副作用、业务语义冲突或例外放行 SHALL 向用户说明准确影响请求决定。
 
 #### Scenario: 用户没有任务只要求一个检查
 - **WHEN** 用户明确要求运行有效检查身份或类型
@@ -1195,3 +1195,22 @@ Buildr SHALL 交付 `project-testing` 与 `project-verification` 两个测试技
 #### Scenario: 推送前检查不完整
 - **WHEN** 推送前必要检查失败或环境缺项
 - **THEN** 智能体（Agent）SHALL 不声称通过或自行略过，继续独立安全工作，反馈真实失败、未覆盖和所需决定
+
+#### Scenario: 用户只要求运行现有检查
+- **WHEN** 某项目已有合适的检查，用户只要求运行它
+- **THEN** `project-verification` SHALL 按该项目真实入口执行，不要求先开始持久修改、建设测试、创建正式任务或触发交付
+- **AND** 通用分流和收尾说明 MUST NOT 抄写 Buildr 自用服务名单；要求全量时相关子集不能代替当前项目声明的完整证据
+
+### Requirement: 收尾必须检查同一对话前序已完成任务的遗留资源
+
+触发 `task-finish` 时，智能体 MUST 按当前对话中可核验的任务关联或既有明确记录，核对前序任务的工作空间和任务身份，逐项读取正式状态，并检查其中 `completed` 任务的遗留预览、工作树和任务分支。智能体 MUST 在核实归属、用途已结束、删除授权有效、成果确实合入约定集成分支、相关工作树无未保存内容且资源无其他使用方后，使用已有的所有者入口清理并回读结果。远端任务引用仍 MUST 满足既有授权和远端安全约束。证据不足、存在保留理由或处置失败时，智能体 MUST 保留受影响的资源并报告原因，同时继续其他可安全完成的收尾动作。
+
+#### Scenario: 同一对话的旧试用资源可以清理
+
+- **WHEN** 同一对话的前序已完成任务仍有归属可核验的预览、工作树和本地任务分支，试用用途已结束，成果已合入约定分支，工作树干净，且已有清理授权
+- **THEN** 智能体 MUST 在本次收尾定向清理并回读这些资源，并按任务报告实际结果
+
+#### Scenario: 旧资源仍有用途或证据不完整
+
+- **WHEN** 前序任务的资源仍用于试用或被占用、存在未提交或未集成内容，或者任务身份、资源归属或授权无法核验
+- **THEN** 智能体 MUST 保留受影响的资源及其依赖，报告具体原因并继续当前任务的安全收尾

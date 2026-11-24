@@ -15,7 +15,9 @@ import {createProgrammaticHttpContribution} from '../interfaces/http/programmati
 import {eventStreamResponse} from '../interfaces/http/stream-response.ts';
 import type {AgentProcessConnection} from './client.ts';
 import {chooseHarnessDirectory} from './directory-picker.ts';
-import {defaultHarnessWorkspaceRoot} from '../profile.ts';
+import {readLocalHtmlFile,writeIsolatedLocalHtml} from '../application/local-file-preview.ts';
+import {EDITABLE_FILE_JSON_BYTES} from '../workbench/editable-file.ts';
+import {resolveLocalDefaultWorkspaceRoot} from '../application/local-workspaces.ts';
 
 export interface HarnessWebStatus {enabled:boolean;ready:boolean;endpointId?:string;origin?:string;generation:string;diagnostic?:string;mode?:'live'|'static'}
 interface Options {dataRoot:string;profileId?:string;generation:string;instanceId:string;staticRoot:string;runtimeDigest?:string;ownsListener():boolean;connect():Promise<AgentProcessConnection>}
@@ -186,7 +188,7 @@ export class HarnessWebEndpoint {
   private error(res:ServerResponse,error:unknown):void {
     if(res.headersSent){res.destroy();return;}
     const known=error instanceof AgentServiceError;
-    json(res,known?error.status:500,{error:{code:known?error.code:'agent_web_failed',message:known?error.message:'独立网页请求未完成；原工作保留，请核对当前状态。'}});
+    json(res,known?error.status:500,{error:{code:known?error.code:'agent_web_failed',message:known?error.message:'独立网页请求未完成；原工作保留，请核对当前状态。',...(known&&error.details!==undefined?{details:error.details}:{})}});
   }
   private html(res:ServerResponse,content:string,nonce?:string):void {
     res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','content-security-policy':`default-src 'self'; script-src 'self'${nonce?" 'nonce-"+nonce+"'":''}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'`});res.end(content);
@@ -258,9 +260,34 @@ export class HarnessWebEndpoint {
       if(req.method==='GET'){this.authorize(req);json(res,200,{directories:await connection.directories.list()});return;}
       if(req.method==='POST'){this.authorize(req,true);const input=await body(req,16384);this.authorize(req,true);if(!Object.hasOwn(input,'path')||Object.keys(input).some(key=>!['path','name'].includes(key)))throw new AgentServiceError('agent_directory_path_invalid','请选择准确目录。');json(res,201,await connection.directories.register(input.path,input.name));return;}
     }
-    if(url.pathname==='/api/v1/harness/files'&&req.method==='POST'){this.authorize(req,true);const input=await body(req,16384);this.authorize(req,true);if(Object.keys(input).some(key=>!['conversationId','path'].includes(key)))throw new AgentServiceError('agent_directory_file_invalid','文件请求无效。');json(res,200,await connection.directories.preview(input));return;}
+    if(url.pathname==='/api/v1/harness/files'&&req.method==='POST'){
+      this.authorize(req,true);const input=await body(req,16384);this.authorize(req,true);
+      if(Object.keys(input).some(key=>!['conversationId','path'].includes(key)))throw new AgentServiceError('agent_directory_file_invalid','文件请求无效。');
+      const preview=await connection.directories.preview(input);
+      const resolvedPath=typeof preview.path==='string'&&preview.path?preview.path:input.path;
+      json(res,200,preview.kind==='html'?{...preview,path:resolvedPath,htmlUrl:`/api/v1/harness/files/html?conversationId=${encodeURIComponent(input.conversationId)}&path=${encodeURIComponent(resolvedPath)}`}:preview);return;
+    }
+    if(url.pathname==='/api/v1/harness/files/html'&&req.method==='GET'){
+      this.authorize(req);
+      const keys=[...url.searchParams.keys()];
+      if(keys.some(key=>!['conversationId','path'].includes(key))||url.searchParams.getAll('conversationId').length!==1||url.searchParams.getAll('path').length!==1)throw new AgentServiceError('agent_directory_file_invalid','文件请求无效。');
+      const conversationId=url.searchParams.get('conversationId')!,filePath=url.searchParams.get('path')!;
+      if(!conversationId||!filePath)throw new AgentServiceError('agent_directory_file_invalid','文件请求无效。');
+      const preview=await connection.directories.preview({conversationId,path:filePath});
+      if(preview.kind!=='html')throw new AgentServiceError('agent_directory_file_unsupported','仅支持预览 HTML 文件。',415);
+      const {html}=await readLocalHtmlFile({path:preview.path||filePath});
+      writeIsolatedLocalHtml(res,html);return;
+    }
+    const workbench=url.pathname.match(/^\/api\/v1\/harness\/directory-workbench\/([a-z-]+)$/);
+    if(workbench && req.method==='POST') {
+      this.authorize(req,true);
+      const operation=workbench[1], input=await body(req,operation==='save'?EDITABLE_FILE_JSON_BYTES:operation==='commit-changes'?128*1024:32768);
+      this.authorize(req,true);
+      json(res,200,await connection.directories.workbench(operation,input));
+      return;
+    }
     if(!this.handlers){
-      const defaultWorkspace=()=>{const rootPath=defaultHarnessWorkspaceRoot(this.options.dataRoot);return {rootPath:fs.existsSync(rootPath)?fs.realpathSync(rootPath):rootPath};};
+      const defaultWorkspace=()=>{const rootPath=resolveLocalDefaultWorkspaceRoot(this.options.dataRoot);return {rootPath:fs.existsSync(rootPath)?fs.realpathSync(rootPath):rootPath};};
       const common=createAgentServiceHttpContribution(async()=>(await this.options.connect()).operations,{defaultWorkspace,prepareDefaultWorkspace:()=>{fs.mkdirSync(defaultWorkspace().rootPath,{recursive:true});},executionScopeKeys:async()=>[...new Set(['@default',...(await (await this.options.connect()).scopeCatalog()).scopes.map(value=>value.key)])],runtimeStatus:async()=>agentRuntimeStatus(await (await this.options.connect()).lifecycle.status()),restartRuntime:async input=>(await this.options.connect()).web.restart(input)});
       const programmatic=createProgrammaticHttpContribution(async()=>(await this.options.connect()).operations,common,{dataRoot:()=>this.options.dataRoot,workspaces:()=>[],scopeKeys:async()=>[...new Set(['@default',...(await (await this.options.connect()).scopeCatalog()).scopes.map(value=>value.key)])],version:()=>'harness',buildId:()=>this.options.runtimeDigest??null});
       this.handlers={common,programmatic};

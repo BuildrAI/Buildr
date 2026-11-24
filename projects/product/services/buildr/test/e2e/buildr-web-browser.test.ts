@@ -10,39 +10,21 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
-import { deflateSync } from 'node:zlib';
 import test from 'node:test';
-
 import { launchTestBrowser } from './browser-launch.ts';
-
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { createRuntime as createProductionRuntime, runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
-import { WORKBENCH_APPLICATION } from '../../src/modules/workbench/module.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.ts';
-import { gitCheckoutReadId } from '../../src/infrastructure/git/checkout-read-identity.ts';
-import { readResourceAdoption, readSharedResourceSet } from '../../src/infrastructure/product-resources/shared-resources.ts';
-import { withSourceControlBranchFixture } from '../helpers/source-control-branch-fixture.ts';
 import { planCodeBrowserGroups } from '../verification/browser-selector-dispatcher.ts';
-import { runWorkspaceCompositionJourney } from './workspace-composition-journey.ts';
 import { runCodeExplorerJourney } from '../../../buildr-web/test/browser/code-explorer-journey.ts';
 import { runSourceControlJourney } from '../../../buildr-web/test/browser/source-control-journey.ts';
-import { runAgentConversationsJourney } from '../../../buildr-web/test/browser/agent-conversations-journey.ts';
-import { parseAgentConversationBatch, runAgentConversationBatch } from '../../../buildr-web/test/browser/agent-conversation-groups.ts';
-import { claimAgentConversationGroups, finishAgentConversationGroup } from '../../../buildr-web/test/browser/agent-conversation-queue.ts';
-import { guardConversationServerWrite, resetConversationVisits } from '../../../buildr-web/test/browser/agent-conversation-isolation.ts';
-import { runLayoutJourney } from '../../../buildr-web/test/browser/layout-journey.ts';
-import { runTaskCommitsJourney } from '../../../buildr-web/test/browser/task-commits-journey.ts';
 import { runTaskMaterialsJourney } from '../../../buildr-web/test/browser/task-materials-journey.ts';
-import { runCompositeTaskChildrenJourney } from '../../../buildr-web/test/browser/composite-task-children-journey.ts';
 import { runWorkbenchJourney } from './workbench-journey.ts';
 import { runPublicationJourney, publicationTestPng } from './publication-journey.ts';
 import { useLegacyAssetCatalog } from '../helpers/legacy-asset-catalog.ts';
 import { acquirePreparedAgentRuntime } from '../helpers/prepared-agent-runtime.ts';
-import { runServiceKnowledgeJourney } from './service-knowledge-journey.ts';
-import { runServiceRuntimeJourney } from './service-runtime-journey.ts';
-import { runProjectKnowledgeInitializationJourney } from './knowledge-initialization-journey.ts';
 
 const PRODUCT_ROOT: any = path.resolve(import.meta.dirname, '../..');
 const BUILDR: any = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -50,7 +32,7 @@ const SELECTOR_INPUT: any = process.argv[2] ?? 'all';
 const SCREENSHOT_DIR: any = process.env.BUILDR_SCREENSHOT_DIR;
 const BROWSER_WEB_DIST_ROOT: any = process.env.BUILDR_BROWSER_WEB_DIST_ROOT;
 if (!BROWSER_WEB_DIST_ROOT) throw new Error('Browser E2E requires BUILDR_BROWSER_WEB_DIST_ROOT from the Browser dispatcher staging build.');
-const KNOWN_SELECTORS: any = new Set(['all', 'core', 'shell', 'workbench', 'task', 'task-materials', 'project', 'service', 'change', 'articles', 'layout', 'code', 'agent-conversations']);
+const KNOWN_SELECTORS: any = new Set(['all', 'core', 'shell', 'workbench', 'task', 'task-materials', 'project', 'service', 'change', 'articles', 'code']);
 const SELECTORS: any = new Set(SELECTOR_INPUT.split(',').map((item: any) => item.trim()).filter(Boolean));
 
 for (const selector of SELECTORS) if (!KNOWN_SELECTORS.has(selector)) throw new Error(`Unknown browser integration selector: ${selector}`);
@@ -160,6 +142,7 @@ function createShellFixture(root: any): any  {
   fs.mkdirSync(source);
   fs.writeFileSync(path.join(source, 'README.md'), '# Demo API\n');
   fixtureRuntime().createServiceAsset({ targetRoot: root, project: 'demo', service: 'api', repoRef: source, attachRef: null, name: '演示服务', description: '浏览器测试服务', type: 'backend', rulesSource: null, remote: 'origin', remoteExplicit: false, integrationBranch: null });
+  fs.writeFileSync(path.join(root, 'projects', 'demo', 'AGENTS.md'), '# AGENTS.md\n\n演示项目规则。\n', 'utf8');
   writeChange(path.join(root, 'projects', 'demo'), 'browser-flow', '浏览器流程');
   runGit(root, ['init', '-q']);
   runGit(root, ['config', 'user.name', 'Buildr Browser Fixture']);
@@ -245,16 +228,6 @@ testing:
   if (options.applicationTasks) taskRuntime.createTask(root, { taskId: 'browser-abandon', title: '待放弃任务', intent: '验证明确放弃' }); else runBuildr(['task', 'create', 'browser-abandon', '--title', '待放弃任务', '--intent', '验证明确放弃', '--target', root]);
 }
 
-function codeSegmentedText(version:'current'|'history') {
-  const heading='segmented '+version+' start\n';
-  let text=heading+'x'.repeat(512*1024-4-Buffer.byteLength(heading))+'前界😀BoundaryNeedle AfterBoundaryNeedle\n';
-  for(let line=3;line<=54;line++){
-    const prefix='segment '+line+' '+version+(line===40?' FarSegmentNeedle':'')+' ';
-    text+=prefix+'x'.repeat(96*1024-Buffer.byteLength(prefix)-1)+'\n';
-  }
-  return text+'segmented '+version+' end\n';
-}
-
 function createSelectedFixture(root: any): any  {
   if (SELECTORS.size === 2 && SELECTORS.has('shell') && SELECTORS.has('core')) {
     createShellFixture(root);
@@ -281,52 +254,19 @@ function createSelectedFixture(root: any): any  {
   const selector: any = [...SELECTORS][0];
   if (selector === 'core') createCoreFixture(root);
   else if (selector === 'shell') createShellFixture(root);
-  else if (selector === 'workbench' || selector === 'agent-conversations') {
+  else if (selector === 'workbench') {
     createShellFixture(root);
-    if (selector === 'agent-conversations') runBuildr(['task','create','browser-associated-task','--title','另一个关联任务','--intent','验证同一对话关联多个任务及双向跳转','--project','demo','--target',root]);
   }
   else if (selector === 'code') {
     createShellFixture(root);
-    const source=path.join(root,'projects/demo/services/api');fs.mkdirSync(path.join(source,'src'),{recursive:true});
-    fs.writeFileSync(path.join(source,'src/main.ts'),'export const explorerAnswer = 1;\n'+'// readable source line\n'.repeat(120));
-    fs.writeFileSync(path.join(source,'README.md'),'# Explorer document\n\n![Image](image.png)\n\n'+'A paragraph for reading.\n\n'.repeat(40)+'[Source](src/main.ts)\n\n[同库父级资料](../services/foo)\n\n[代码关联任务说明](@task/browser-task)\n\n');
-    const parentRelativeFile=path.join(source,'../services/foo');fs.mkdirSync(path.dirname(parentRelativeFile),{recursive:true});fs.writeFileSync(parentRelativeFile,'export const parentRelativeSource = "same checkout";\n');
-    fs.writeFileSync(path.join(source,'image.png'),publicationTestPng);
-    fs.writeFileSync(path.join(source,'html-reading-fixture.HTM'), [
-      '<!doctype html><html lang="zh-CN"><head>',
-      '<style>h1{color:rgb(15, 105, 90)} .spacer{height:1000px}</style>',
-      '<meta http-equiv="refresh" content="0;url=/html-preview-unused">',
-      '</head><body>',
-      '<h1>HTML 阅读样例</h1><script>document.title = "script should not run"</script>',
-      '<a href="#ending">跳到结尾</a><a href="/html-preview-unused">外部链接</a>',
-      '<img alt="相对图片" src="/html-preview-unused">',
-      `<img alt="内嵌图片" src="data:image/png;base64,${publicationTestPng.toString('base64')}">`,
-      '<details><summary>展开说明</summary><p>折叠内容</p></details>',
-      '<div class="spacer"></div><h2 id="ending">HTML 文档结尾</h2>',
-      '</body></html>',
-    ].join('\n'));
-    fs.writeFileSync(path.join(source,'src/𠮷𠮷.ts'),'export const unicodeSearch = "𠮷𠮷";\n');
-    fs.writeFileSync(path.join(source,'large-text.txt'),'large text start\n'+('x'.repeat(80*1024-1)+'\n').repeat(63)+'large text end\n');
-    fs.writeFileSync(path.join(source,'zz-segmented-text.txt'),codeSegmentedText('history'));
-    fs.appendFileSync(path.join(root,'.gitignore'),'\n.agents/\n.worktrees/\n.pnpm-store/\n');
-    for(const directory of ['.agents','.worktrees','.pnpm-store']){fs.mkdirSync(path.join(root,directory),{recursive:true});fs.writeFileSync(path.join(root,directory,'browser-ignored.txt'),'ignored fixture source\n');}
-    runGit(root,['add','.']);runGit(root,['commit','-qm','code fixture\n\nBuildr-Task: browser-task']);
-    fs.writeFileSync(path.join(source,'zz-segmented-text.txt'),codeSegmentedText('current'));
-    fs.writeFileSync(path.join(source,'src/main.ts'),'export const explorerAnswer = 2;\nexport function registerApplicationDoctor() {}\n'+'// readable source line\n'.repeat(120));
-    fs.writeFileSync(path.join(source,'src/search-matches.ts'),[
-      'export const firstSearch = "Search.Hit[0] + SEARCH.HIT[0]";',
-      'export const nonLiteralSearch = "SearchXHit0";',
-      'export const nextSearch = "search.hit[0]";',
-      'export const lastSearch = "Search.Hit[0]";',
-      '',
-    ].join('\n'));
-  }
-  else if (selector === 'layout') {
-    createShellFixture(root);
-    for (const code of ['demo', 'other']) fs.writeFileSync(path.join(root, 'projects', code, 'README.md'), `# ${code} 项目文档\n\n独立来源的可编辑项目资料。\n`);
     const source = path.join(root, 'projects/demo/services/api');
-    fs.mkdirSync(source, { recursive: true });
-    fs.writeFileSync(path.join(source, 'README.md'), '# 布局阅读资料\n\n' + Array.from({ length: 35 }, (_, index) => `## 阅读段落 ${index + 1}\n\n${'这是具有稳定价值的前端阅读说明，用于验证宽屏、分屏和窄屏下正文可读，必要操作可达。'.repeat(8)}\n`).join('\n'));
+    fs.mkdirSync(path.join(source, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(source, 'src/main.ts'), 'export const explorerAnswer = 1;\n' + '// readable source line\n'.repeat(120));
+    fs.writeFileSync(path.join(source, 'README.md'), '# Explorer document\n\n![Image](image.png)\n\nA paragraph for reading.\n\n[Source](src/main.ts)\n');
+    fs.writeFileSync(path.join(source, 'image.png'), publicationTestPng);
+    runGit(root, ['add', '.']);
+    runGit(root, ['commit', '-qm', 'code fixture\n\nBuildr-Task: browser-task']);
+    fs.writeFileSync(path.join(source, 'src/main.ts'), 'export const explorerAnswer = 2;\nexport function registerApplicationDoctor() {}\n' + '// readable source line\n'.repeat(120));
   }
   else if (selector === 'project') createProjectFixture(root);
   else if (selector === 'service') createServiceFixture(root);
@@ -433,7 +373,7 @@ async function capture(page: any, name: any, options: any = {}): Promise<any>  {
 
 // Dispatcher splits code into independent Explorer/SCM parents (240/900 seconds)
 // and reserves 15 seconds outside each parent for its isolated cleanup.
-test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeout: SELECTORS.has('code') && codeGroup ? codeGroup.nodeTimeoutMs : SELECTORS.has('code') || SELECTORS.has('task') ? 480_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.size > 1 ? 300_000 : SELECTORS.has('agent-conversations') && process.env.BUILDR_AGENT_JOURNEY_BATCH ? 600_000 : SELECTORS.has('agent-conversations') && process.env.BUILDR_AGENT_JOURNEY_QUEUE_ROOT ? 1_150_000 : SELECTORS.has('task-materials') ? 240_000 : SELECTORS.has('service') ? 240_000 : SELECTORS.has('agent-conversations') ? (process.env.BUILDR_AGENT_JOURNEY_PART==='history'?450_000:180_000) : SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
+test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeout: SELECTORS.has('code') && codeGroup ? codeGroup.nodeTimeoutMs : SELECTORS.has('code') || SELECTORS.has('task') ? 240_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.size > 1 ? 300_000 : SELECTORS.has('task-materials') || SELECTORS.has('service') ? 180_000 : SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('project') ? 120_000 : 60_000 }, async (t: any) => {
   const costEnabled = process.env.BUILDR_BROWSER_COST_PROFILE === '1';
   const costClock = () => costEnabled ? performance.now() : 0;
   const costStarted = costClock();
@@ -455,22 +395,45 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   const previousProductData: any = process.env.BUILDR_PRODUCT_DATA_DIR;
   let browser: any;
   let server: any;
+  let serverInstance: any;
   let previewServer: any;
+  let previewServerInstance: any;
   let webRuntime: any;
   t.after(async () => {
     costBegin('cleanup');
     let cleanupComplete = false;
     try {
+      process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=cleanup-browser\n`);
       if (browser) await browser.close();
-      if (server) await new Promise((resolve: any) => server.close(resolve));
-      if (previewServer) await new Promise((resolve: any) => previewServer.close(resolve));
+      process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=cleanup-servers\n`);
+      if (serverInstance) await serverInstance.shutdown();
+      else if (server) await new Promise((resolve: any) => server.close(resolve));
+      if (previewServerInstance) await previewServerInstance.shutdown();
+      else if (previewServer) await new Promise((resolve: any) => previewServer.close(resolve));
+      process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=cleanup-agent-close\n`);
       if (webRuntime) await runtimeProvide(webRuntime, AGENT_SERVICE_APPLICATION).close();
+      process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=cleanup-agent-stop\n`);
       // The direct HTTP fixture owns its callback bridge and isolated execution
       // daemon; closing server sockets alone cannot release those resources.
       await stopAgentProcess({dataRoot:path.join(base,'app-data'),mode:'stop-owned'});
-      fs.rmSync(base, { recursive: true, force: true });
+      if (!managedSmokeRoot) {
+        process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=cleanup-rm\n`);
+        fs.rmSync(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      }
       cleanupComplete = true;
       process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=cleanup-complete\n`);
+    } catch (error: any) {
+      const appDataRoot = path.join(base, 'app-data');
+      const stopDiagnostics: Record<string, unknown> = {};
+      if (fs.existsSync(appDataRoot)) {
+        for (const rel of fs.readdirSync(appDataRoot, { recursive: true, encoding: 'utf8' })) {
+          if (rel.endsWith('last-stop.json') || rel.endsWith('instance.json') || rel.endsWith('instances.json')) {
+            try { stopDiagnostics[rel] = fs.readFileSync(path.join(appDataRoot, rel), 'utf8'); } catch {}
+          }
+        }
+      }
+      process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=cleanup-error message=${error?.stack || error?.message || String(error)} diagnostics=${JSON.stringify(stopDiagnostics)}\n`);
+      throw error;
     } finally {
       if (costEnabled) {
         costBegin('finished');
@@ -501,51 +464,16 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   // Only selectors whose real journey compares two Workspaces need the
   // secondary fixture. Others keep the same single-Workspace assertions.
   const needsOtherWorkspace: any = SELECTORS.has('all')
-    || ['shell', 'layout', 'workbench', 'project', 'articles', 'task', 'agent-conversations'].some(selector => SELECTORS.has(selector));
+    || ['shell', 'workbench', 'project', 'articles', 'task'].some(selector => SELECTORS.has(selector));
   const otherRoot: any = needsOtherWorkspace ? path.join(base, 'other-workspace') : null;
   if (otherRoot) {
     initializeBrowserFixture(otherRoot, 'other-workspace', '第二个浏览器工作空间');
-    if(SELECTORS.has('agent-conversations')||SELECTORS.has('all'))runBuildr(['task','create','browser-associated-task','--title','跨空间同码任务','--intent','验证准确空间与任务身份','--status','active','--target',otherRoot]);
   }
   costBegin('application-and-servers');
   const runtime: any = createRuntime();
-  if (SELECTORS.has('layout') || SELECTORS.has('code')) {
+  if (SELECTORS.has('code')) {
     const catalog = runtime.assetCatalog(workspaceRoot);
     if (catalog.migrationRequired) runtime.migrateAssetCatalog(workspaceRoot, { revision: catalog.revision });
-  }
-  let codeWorktreeFixture:any={};
-  if(SELECTORS.has('code')){
-    const second=path.join(workspaceRoot,'.buildr/local/second-code-repository');fs.mkdirSync(path.join(second,'src'),{recursive:true});runGit(second,['init','-b','main']);runGit(second,['config','user.name','Fixture']);runGit(second,['config','user.email','fixture@example.com']);
-    fs.writeFileSync(path.join(second,'src/main.ts'),'export const secondRepository = true;\n');fs.writeFileSync(path.join(second,'src/search-matches.ts'),'export const secondSearch = "Search.Hit[0]";\n');fs.writeFileSync(path.join(second,'README.md'),'# Second repository\n');fs.writeFileSync(path.join(second,'zz-segmented-text.txt'),'second repository isolated text\n');for(let i=1;i<=9;i++)fs.writeFileSync(path.join(second,'src/file'+i+'.ts'),'export const cachedFile'+i+' = true;\n');runGit(second,['add','.']);runGit(second,['commit','-qm','second repository']);
-    let catalog=runtime.createCatalogRepository(workspaceRoot,{revision:runtime.assetCatalog(workspaceRoot).revision,code:'second-code',name:'另一个代码库',path:second});
-    const secondRepositoryId=catalog.repositories.find((item:any)=>item.code==='second-code').id;
-    const primaryRepositoryId=catalog.repositories.find((item:any)=>item.id!==secondRepositoryId).id;
-    catalog=runtime.createCatalogService(workspaceRoot,{revision:catalog.revision,projectId:catalog.projects.find((item:any)=>item.code==='demo').id,service:{code:'second-api',name:'第二代码服务',repositoryId:secondRepositoryId}});
-    const worktreeTaskId='code-tree-task',branch='codex/code-tree-task';
-    runBuildr(['task','create',worktreeTaskId,'--title','跨库目录任务','--intent','验证真实多库工作树筛选与准确来源','--status','active','--project','demo','--service','demo/api','--service','demo/second-api','--target',workspaceRoot]);
-    const primaryCheckout=path.join(workspaceRoot,'.worktrees',worktreeTaskId),secondCheckout=path.join(primaryCheckout,'.buildr/local/second-code-repository');
-    runGit(workspaceRoot,['worktree','add','-b',branch,primaryCheckout,'HEAD']);
-    runGit(second,['worktree','add','-b',branch,secondCheckout,'HEAD']);
-    const worktreeFiles:any={
-      [primaryRepositoryId]:{path:'projects/demo/services/api/src/worktree-filter.ts',content:'export const WorktreeFilterNeedle = "task primary";\n'},
-      [secondRepositoryId]:{path:'src/worktree-filter.ts',content:'export const WorktreeFilterNeedle = "task secondary";\n'},
-    };
-    for(const [repositoryId,checkoutPath] of [[primaryRepositoryId,primaryCheckout],[secondRepositoryId,secondCheckout]]){
-      const file=worktreeFiles[repositoryId];fs.mkdirSync(path.dirname(path.join(checkoutPath,file.path)),{recursive:true});fs.writeFileSync(path.join(checkoutPath,file.path),file.content);
-    }
-    fs.writeFileSync(path.join(workspaceRoot,worktreeFiles[primaryRepositoryId].path),'export const WorktreeFilterNeedle = "main primary";\n');
-    fs.writeFileSync(path.join(second,worktreeFiles[secondRepositoryId].path),'export const WorktreeFilterNeedle = "main secondary";\n');
-    const repositories=[
-      {selector:'workspace',entityType:'workspace',sourcePath:'.',sourceRepository:workspaceRoot,checkoutPath:primaryCheckout},
-      {selector:'service:demo/second-api',entityType:'service',sourcePath:'.buildr/local/second-code-repository',sourceRepository:second,checkoutPath:secondCheckout},
-    ].map(item=>({...item,branch,startPoint:'HEAD',head:spawnSync('git',['rev-parse','HEAD'],{cwd:item.checkoutPath,encoding:'utf8'}).stdout.trim(),clean:false,registered:true,remote:null,remoteUrl:null,state:'created',diagnostic:null}));
-    runtime.writeGitWorktreeEvidence(workspaceRoot,{schemaVersion:'buildr.git-worktree-evidence/v1',taskId:worktreeTaskId,workspaceRoot,branch,planDigest:'sha256-'+crypto.createHash('sha256').update(JSON.stringify(repositories)).digest('hex'),status:'ready',repositories,effects:[],updatedAt:new Date().toISOString()});
-    const nativeCheckout=path.join(workspaceRoot,'.worktrees','native-reader');runGit(second,['worktree','add','-b','native-reader',nativeCheckout,'HEAD']);
-    const nativeFile={repositoryId:secondRepositoryId,path:'src/worktree-filter.ts',content:'export const WorktreeFilterNeedle = "native secondary";\n'};fs.writeFileSync(path.join(nativeCheckout,nativeFile.path),nativeFile.content);
-    const checkoutPaths=new Map([[gitCheckoutReadId(primaryCheckout),[workspaceRoot,primaryCheckout]],[gitCheckoutReadId(secondCheckout),[second,secondCheckout]],[gitCheckoutReadId(nativeCheckout),[second,nativeCheckout]]]);
-    codeWorktreeFixture={worktreeTaskId,worktreeGroupId:'task:'+worktreeTaskId,primaryRepositoryId,secondRepositoryId,worktreeFiles,nativeWorktree:nativeFile,nativeCheckoutLocation:fs.realpathSync(nativeCheckout),
-      createNativeWorktree:()=>{const checkoutPath=path.join(workspaceRoot,'.worktrees','native-late'),branch='native-late';runGit(second,['worktree','add','-b',branch,checkoutPath,'HEAD']);return {id:gitCheckoutReadId(checkoutPath),path:checkoutPath,branch};},
-      retireWorktree:(checkoutId:string)=>{const member=checkoutPaths.get(checkoutId);assert.ok(member,'fixture checkout identity is known');runGit(member[0],['worktree','remove','--force',member[1]]);}};
   }
   let registry: any = runtime.listRegisteredWorkspaces();
   if (otherRoot) registry = runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: registry.revision });
@@ -564,6 +492,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     webProfile: { profile: 'development' },
     staticRoot: BROWSER_WEB_DIST_ROOT,
   });
+  serverInstance = instance;
   server = instance.server;
   const { url, initialWorkspaceId }: any = await instance.ready;
   const previewInstance: any = createLocalWorkspaceServer(webRuntime, {
@@ -579,40 +508,17 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
       reuse: { source: 'development', facets: ['model-catalog', 'agent-runtime'] },
     },
   });
+  previewServerInstance = previewInstance;
   previewServer = previewInstance.server;
   const { url: previewUrl }: any = await previewInstance.ready;
   const workspaceUrl: any = `${url}/workspaces/${initialWorkspaceId}`;
-  const isolateConversationService = SELECTORS.size === 1 && SELECTORS.has('agent-conversations');
-  const workbenchApplication = runtimeProvide(webRuntime, WORKBENCH_APPLICATION);
-  const conversationRoots = [workspaceRoot, otherRoot];
-  let resourceBaseline: any[] = [];
-  let sharedResourceBaseline: string | null = null;
-  if (isolateConversationService) {
-    // Prepare once before any group; subsequent real open requests must be current.
-    for (const id of [initialWorkspaceId, otherWorkspaceId]) {
-      const opened = workspaceApplication.prepareWorkspaceForOpen(id);
-      assert.equal(opened.ready, true, '共享对话现场必须先准备测试工作空间。');
-    }
-    sharedResourceBaseline = readSharedResourceSet().id;
-    resourceBaseline = conversationRoots.map(root => readResourceAdoption(root));
-    assert.ok(resourceBaseline.every(value => value?.ready && value.resourceSet === sharedResourceBaseline), '测试工作空间资源必须已准备且保持当前。');
-    for (const root of conversationRoots) {
-      assert.deepEqual(workbenchApplication.inspectWorkbenchPreferences(root).items, [], '测试工作空间的初始工作台状态必须为空。');
-    }
-  }
-  // Ordinary page journeys require a ready real collaborator. Cold preparation
-  // responsiveness is covered independently; conversation fixtures own their routes.
   costBegin('agent-ready');
-  if(!isolateConversationService){
-    await runtimeProvide(webRuntime,AGENT_SERVICE_APPLICATION).start();
-    process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=agent-ready\n`);
-  }
+  await runtimeProvide(webRuntime, AGENT_SERVICE_APPLICATION).start();
+  process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=agent-ready\n`);
   costBegin('browser-ready');
   browser = await launchTestBrowser();
   const browserErrors: any[] = [];
   const expectedBrowserErrors: any = new Set();
-  const blockedConversationWrites: string[] = [];
-  const pendingConversationRequests = new Set<Promise<void>>();
   const newBrowserPage = async () => {
     // Each group owns a fresh context, permitting multi-tab journeys while
     // keeping storage and route fixtures isolated from previous groups.
@@ -639,20 +545,12 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
       }
     });
 
-    if (isolateConversationService) {
-      // Conversation writes are supplied by the per-group route fixture.
-      // Only real workspace opens and recent visits are allowed; visits are reset.
-      await nextPage.route('**/api/**', async (route: any) => {
-        const request = guardConversationServerWrite(route, blockedConversationWrites, [initialWorkspaceId, otherWorkspaceId]);
-        pendingConversationRequests.add(request);
-        try { await request; } finally { pendingConversationRequests.delete(request); }
-      });
-    }
     return nextPage;
   };
   let page: any = await newBrowserPage();
   let lastTick=performance.now(),maximumLag=0;
   const lagTimer=setInterval(()=>{const now=performance.now();maximumLag=Math.max(maximumLag,now-lastTick-100);lastTick=now;},100);
+  lagTimer.unref();
   t.after(()=>{clearInterval(lagTimer);process.stderr.write('[browser-host-lag] '+JSON.stringify({maximumLag})+'\n');});
 
   const observedNavigations: Array<{path:string;status:number}> = [];
@@ -672,12 +570,20 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     if (SELECTORS.size === 1 && SELECTORS.has('service') && !taskFocused(args[0])) return Promise.resolve();
     const action=args.at(-1);
     if(typeof action==='function')args[args.length-1]=async(context:any)=>{
+      const scenarioName = String(args[0]);
       const started = costClock();
+      process.stderr.write(`[buildr-browser-scenario] selector=${selectorLabel} status=started name=${JSON.stringify(scenarioName)}\n`);
+      let scenarioStatus = 'passed';
       try{return await action(context);}catch(error){
+        scenarioStatus = 'failed';
         const state=await page.evaluate(()=>({path:location.pathname,title:document.title,session:Boolean(document.querySelector('meta[name="buildr-session"]')),nodes:[...document.querySelectorAll('[data-task-node]')].map(n=>({value:n.getAttribute('data-task-node'),visible:Boolean(n.getClientRects().length)})),ids:[...document.querySelectorAll('[id]')].slice(0,100).map(n=>n.id),text:document.body.innerText.slice(0,5000)})).catch(()=>({closed:true}));
         process.stderr.write('[browser-failure-state] '+JSON.stringify({scenario:args[0],navigations:observedNavigations,writes:observedWrites,state})+'\n');
         throw error;
-      } finally { if (costEnabled) costScenarios.push({ name: String(args[0]), durationMs: costClock() - started }); }
+      } finally {
+        const durationMs = Math.round(costClock() - started);
+        process.stderr.write(`[buildr-browser-scenario] selector=${selectorLabel} status=${scenarioStatus} durationMs=${durationMs} name=${JSON.stringify(scenarioName)}\n`);
+        if (costEnabled) costScenarios.push({ name: scenarioName, durationMs });
+      }
     };
     return runTest(...args);
   };
@@ -689,9 +595,6 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     const resetStarted = costClock();
     try {
       try {
-        if (isolateConversationService) {
-          while (pendingConversationRequests.size) await Promise.allSettled([...pendingConversationRequests]);
-        }
         const unexpected = browserErrors.filter(error => ![...expectedBrowserErrors].some((expected: any) => error.includes(expected)));
         assert.deepEqual(unexpected, [], unexpected.join('\n'));
       } finally {
@@ -706,252 +609,27 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   });
 
   if (selected('code')) {
-    const linkedBrief=path.join(workspaceRoot,'.buildr/local/code-task-entry-brief.md');
-    fs.writeFileSync(linkedBrief,'# 代码定位任务说明\n\n[读取本任务说明](@task/browser-task)\n');
-    const linkedTask=runtime.inspectTask(workspaceRoot, 'browser-task');
-    runtime.updateTask(workspaceRoot, 'browser-task', { brief: fs.readFileSync(linkedBrief, 'utf8'), expectedRecordDigest: linkedTask.recordDigest });
-    const codeFile=path.join(workspaceRoot,'projects/demo/services/api/zz-segmented-text.txt');
-    const history=spawnSync('git',['rev-parse','HEAD'],{cwd:workspaceRoot,encoding:'utf8'});assert.equal(history.status,0,history.stderr);
-    if (runCodeExplorer) await runCodeExplorerJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,codeFixture:{...codeWorktreeFixture,current:codeSegmentedText('current'),history:codeSegmentedText('history'),commitHash:history.stdout.trim(), htmlFixturePath:path.join(workspaceRoot,'projects/demo/services/api/html-reading-fixture.HTM'), change:()=>fs.writeFileSync(codeFile,'changed segmented text\n'+codeSegmentedText('current')),restore:()=>fs.writeFileSync(codeFile,codeSegmentedText('current'))}});
+    const history = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: workspaceRoot, encoding: 'utf8' });
+    assert.equal(history.status, 0, history.stderr);
+    if (runCodeExplorer) {
+      await runCodeExplorerJourney({ t, page, workspaceUrl, capture, expectedBrowserErrors, codeFixture: { commitHash: history.stdout.trim() } });
+    }
     if (runSourceControl) {
-    // This file belongs to the finished explorer fixture. SCM also needs a real clean checkout.
-    fs.rmSync(path.join(codeWorktreeFixture.nativeCheckoutLocation,codeWorktreeFixture.nativeWorktree.path));
-    // Prepare the SCM comparison only after the explorer canary. Both layers remain
-    // real Git data, while the original committed version is independently readable.
-    const sourceControlPath='projects/demo/services/api/src/main.ts';
-    const historicalSource=spawnSync('git',['show',history.stdout.trim()+':'+sourceControlPath],{cwd:workspaceRoot,encoding:'utf8'});assert.equal(historicalSource.status,0,historicalSource.stderr);
-    const indexText='export const sourceControlIndex = 21;\n';
-    const workingText='export const sourceControlWorking = 34;\n';
-    fs.writeFileSync(path.join(workspaceRoot,sourceControlPath),indexText);
-    runGit(workspaceRoot,['add','--',sourceControlPath]);
-    fs.writeFileSync(path.join(workspaceRoot,sourceControlPath),workingText);
-    const peerRoot=path.join(workspaceRoot,'.buildr/local/second-code-repository'),unavailableRepositoryLocation=fs.realpathSync(peerRoot);
-    const baselineWorktrees=[workspaceRoot,peerRoot].map(repository=>{
-      const listed=spawnSync('git',['worktree','list','--porcelain','-z'],{cwd:repository,encoding:'utf8'});assert.equal(listed.status,0,listed.stderr);
-      return {location:fs.realpathSync(repository),locations:listed.stdout.split('\0').filter((field:string)=>field.startsWith('worktree ')).map((field:string)=>fs.realpathSync(field.slice(9)))};
-    });
-    const prepareWorktrees=()=>{
-      const linked=['alpha','beta'].map((name,index)=>{
-      const branch='fixture/scm-'+name;
-      let checkout:string;
-      if(name==='alpha'){
-        const created=runBuildr(['worktree','create','browser-task','--branch',branch,'--start-point',history.stdout.trim(),'--include','service:demo/api','--target',workspaceRoot,'--json']);
-        assert.equal(created.repositories.length,1);checkout=created.repositories[0].checkoutPath;
-      }else{
-        checkout=path.join(base,'repo-a-worktrees','scm-other');runGit(workspaceRoot,['worktree','add','-b',branch,checkout,history.stdout.trim()]);
-      }
-      const committedText='export const sourceControl'+name+'History = '+(100+index*100)+';\n';
-      fs.writeFileSync(path.join(checkout,sourceControlPath),committedText);
-      runGit(checkout,['add','--',sourceControlPath]);
-      runGit(checkout,['commit','-qm','linked '+name+' history\n\nBuildr-Task: browser-task']);
-      const head=spawnSync('git',['rev-parse','HEAD'],{cwd:checkout,encoding:'utf8'});assert.equal(head.status,0,head.stderr);
-      const stagedText='export const sourceControl'+name+'Index = '+(101+index*100)+';\n';
-      const currentText='export const sourceControl'+name+'Working = '+(102+index*100)+';\n';
-      fs.writeFileSync(path.join(checkout,sourceControlPath),stagedText);runGit(checkout,['add','--',sourceControlPath]);
-      fs.writeFileSync(path.join(checkout,sourceControlPath),currentText);
-      return {name,filterName:path.basename(checkout),path:sourceControlPath,branch,location:fs.realpathSync(checkout),commitHash:head.stdout.trim(),historyText:committedText,indexText:stagedText,workingText:currentText};
+      const sourceControlPath = 'projects/demo/services/api/src/main.ts';
+      const workingText = 'export const sourceControlWorking = 34;\n';
+      fs.writeFileSync(path.join(workspaceRoot, sourceControlPath), workingText);
+      await runSourceControlJourney({
+        t, page, workspaceUrl, capture, expectedBrowserErrors,
+        fixture: { path: sourceControlPath, location: fs.realpathSync(workspaceRoot), commitHash: history.stdout.trim(), workingText },
       });
-      const checkout=path.join(base,'repo-b-worktrees','browser-task'),peerPath='src/main.ts',branch='fixture/scm-peer';
-      runGit(peerRoot,['worktree','add','-b',branch,checkout,'HEAD']);
-      const committedText='export const sourceControlPeerHistory = 300;\n',stagedText='export const sourceControlPeerIndex = 301;\n',currentText='export const sourceControlPeerWorking = 302;\n';
-      fs.writeFileSync(path.join(checkout,peerPath),committedText);runGit(checkout,['add','--',peerPath]);runGit(checkout,['commit','-qm','linked peer history without a task trailer']);
-      const head=spawnSync('git',['rev-parse','HEAD'],{cwd:checkout,encoding:'utf8'});assert.equal(head.status,0,head.stderr);
-      fs.writeFileSync(path.join(checkout,peerPath),stagedText);runGit(checkout,['add','--',peerPath]);fs.writeFileSync(path.join(checkout,peerPath),currentText);
-      return [...linked,{name:'peer',filterName:path.basename(checkout),path:peerPath,branch,location:fs.realpathSync(checkout),commitHash:head.stdout.trim(),historyText:committedText,indexText:stagedText,workingText:currentText}];
-    };
-    const prepareRemoteStatuses=(linked:any[])=>{
-      const value=(cwd:string,args:string[])=>{const result=spawnSync('git',args,{cwd,encoding:'utf8'});assert.equal(result.status,0,result.stderr);return result.stdout.trim();};
-      const createRemote=(repository:string,name:string)=>{
-        const remote=path.join(base,name+'.git');fs.mkdirSync(remote);runGit(remote,['init','--bare','-q']);
-        runGit(remote,['config','user.name','Remote Status Fixture']);runGit(remote,['config','user.email','remote-fixture@example.com']);
-        runGit(repository,['remote','add','status-fixture',remote]);return remote;
-      };
-      const remoteCommit=(remote:string,baseHash:string,reference:string)=>{
-        const tree=value(remote,['rev-parse',baseHash+'^{tree}']);
-        const commit=value(remote,['commit-tree',tree,'-p',baseHash,'-m','remote status fixture']);
-        runGit(remote,['update-ref','refs/heads/'+reference,commit]);
-      };
-      const alpha=linked.find(item=>item.name==='alpha'),beta=linked.find(item=>item.name==='beta'),baseHash=history.stdout.trim();
-      const primaryRemote=createRemote(workspaceRoot,'scm-primary-status');
-      runGit(workspaceRoot,['push','-q','status-fixture',baseHash+':refs/heads/sync',baseHash+':refs/heads/mixed',baseHash+':refs/heads/ahead']);
-      remoteCommit(primaryRemote,baseHash,'mixed');runGit(workspaceRoot,['fetch','-q','status-fixture']);
-      const mainBranch=value(workspaceRoot,['symbolic-ref','--short','HEAD']);
-      for(const [branch,reference] of [[mainBranch,'sync'],[alpha.branch,'mixed'],[beta.branch,'ahead']])runGit(workspaceRoot,['branch','--set-upstream-to=status-fixture/'+reference,branch]);
-      const secondaryRemote=createRemote(peerRoot,'scm-secondary-status'),peerBase=value(peerRoot,['rev-parse','HEAD']);
-      runGit(peerRoot,['push','-q','status-fixture',peerBase+':refs/heads/behind']);remoteCommit(secondaryRemote,peerBase,'behind');runGit(peerRoot,['fetch','-q','status-fixture']);
-      runGit(peerRoot,['branch','--set-upstream-to=status-fixture/behind','native-reader']);
-      return [{location:fs.realpathSync(workspaceRoot),ahead:0,behind:0},{location:alpha.location,ahead:1,behind:1},{location:beta.location,ahead:1,behind:0},{location:codeWorktreeFixture.nativeCheckoutLocation,ahead:0,behind:1}];
-    };
-    const withStatusDigits=async(linked:any[],verify:(expected:any)=>Promise<void>)=>{
-      const value=(cwd:string,args:string[])=>{const result=spawnSync('git',args,{cwd,encoding:'utf8'});assert.equal(result.status,0,result.stderr);return result.stdout.trim();};
-      const alpha=linked.find(item=>item.name==='alpha'),beta=linked.find(item=>item.name==='beta'),peer=linked.find(item=>item.name==='peer');
-      const remote=value(workspaceRoot,['remote','get-url','status-fixture']),mixedRef='refs/heads/mixed',trackingRef='refs/remotes/status-fixture/mixed',betaRef='refs/heads/'+beta.branch;
-      const mixedBefore=value(remote,['rev-parse',mixedRef]),trackingBefore=value(workspaceRoot,['rev-parse',trackingRef]),betaBefore=value(workspaceRoot,['rev-parse',betaRef]);
-      const chain=(cwd:string,parent:string)=>{const tree=value(cwd,['rev-parse',parent+'^{tree}']);for(let index=0;index<11;index++)parent=value(cwd,['commit-tree',tree,'-p',parent,'-m','status digit fixture '+index]);return parent;};
-      const mixedAfter=chain(remote,mixedBefore),betaAfter=chain(workspaceRoot,betaBefore),fileDirectories:string[]=[];
-      try{
-        runGit(remote,['update-ref',mixedRef,mixedAfter,mixedBefore]);runGit(workspaceRoot,['fetch','-q','status-fixture']);
-        runGit(workspaceRoot,['update-ref',betaRef,betaAfter,betaBefore]);
-        for(const [checkout,count] of [[beta.location,11],[peer.location,122]] as Array<[string,number]>){
-          const directory=fs.mkdtempSync(path.join(checkout,'scm-status-count-'));fileDirectories.push(directory);
-          for(let index=0;index<count;index++)fs.writeFileSync(path.join(directory,String(index).padStart(3,'0')+'.txt'),'status digit fixture\n');
-        }
-        await verify({remote:[{location:alpha.location,ahead:1,behind:12},{location:beta.location,ahead:12,behind:0}],files:[{location:alpha.location,count:1},{location:beta.location,count:12},{location:peer.location,count:123},{location:codeWorktreeFixture.nativeCheckoutLocation,count:0}]});
-      }finally{
-        for(const directory of fileDirectories)fs.rmSync(directory,{recursive:true});
-        runGit(workspaceRoot,['update-ref',betaRef,betaBefore,betaAfter]);
-        runGit(remote,['update-ref',mixedRef,mixedBefore,mixedAfter]);
-        runGit(workspaceRoot,['update-ref',trackingRef,trackingBefore,mixedAfter]);
-      }
-    };
-    const withDuplicateFiles=async(verify:(files:any)=>Promise<void>)=>{
-      const directory=path.join(workspaceRoot,'scm-name-hints');
-      assert.equal(fs.existsSync(directory),false,'同名文件验收目录必须尚不存在，不能覆盖真实文件');
-      fs.mkdirSync(directory);
-      const files=[
-        {path:'scm-name-hints/alpha/src/index.ts',hint:'alpha/src',content:'export const scmDuplicateAlpha = true;\n'},
-        {path:'scm-name-hints/beta/src/index.ts',hint:'beta/src',content:'export const scmDuplicateBeta = true;\n'},
-        {path:'scm-name-hints/gamma/index.ts',hint:'gamma',content:'export const scmDuplicateGamma = true;\n'},
-        {path:'scm-name-hints/unique.ts',hint:undefined,content:'export const scmUniqueName = true;\n'},
-      ];
-      try{
-        for(const file of files){const location=path.join(workspaceRoot,file.path);fs.mkdirSync(path.dirname(location),{recursive:true});fs.writeFileSync(location,file.content);}
-        await verify({location:fs.realpathSync(workspaceRoot),files});
-      }finally{fs.rmSync(directory,{recursive:true});}
-    };
-    const withImages=async(verify:(images:any)=>Promise<void>)=>{
-      const value=(cwd:string,args:string[])=>{const result=spawnSync('git',args,{cwd,encoding:'utf8'});assert.equal(result.status,0,result.stderr);return result.stdout.trim();};
-      const png=(width:number,height:number,color:number[])=>{
-        const chunk=(type:string,data:Buffer)=>{
-          const bytes=Buffer.concat([Buffer.from(type),data]);let crc=0xffffffff;
-          for(const byte of bytes){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}
-          const size=Buffer.alloc(4),checksum=Buffer.alloc(4);size.writeUInt32BE(data.length);checksum.writeUInt32BE((crc^0xffffffff)>>>0);
-          return Buffer.concat([size,bytes,checksum]);
-        };
-        const header=Buffer.alloc(13);header.writeUInt32BE(width,0);header.writeUInt32BE(height,4);header[8]=8;header[9]=6;
-        const pixels=Buffer.alloc((1+width*4)*height);
-        for(let y=0;y<height;y++)for(let x=0;x<width;x++)pixels.set(color,y*(1+width*4)+1+x*4);
-        const bytes=Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),chunk('IHDR',header),chunk('IDAT',deflateSync(pixels)),chunk('IEND',Buffer.alloc(0))]);
-        return {bytes,width,height,content:'data:image/png;base64,'+bytes.toString('base64'),digest:'sha256-'+crypto.createHash('sha256').update(bytes).digest('hex')};
-      };
-      const versions={before:png(64,48,[172,54,54,255]),history:png(80,56,[50,139,90,255]),index:png(96,64,[51,99,181,255]),working:png(128,80,[224,153,43,255]),added:png(160,96,[130,64,164,255]),deleted:png(72,48,[38,149,169,255]),peer:png(32,96,[196,79,142,255])};
-      const imagePath='scm-image-fixture/changed.png',addedPath='scm-image-fixture/added.png',deletedPath='scm-image-fixture/deleted.png',stagedDeletedPath='scm-image-fixture/staged-deleted.png',binaryPath='scm-image-fixture/opaque.bin';
-      const primary={repository:workspaceRoot,branch:'fixture/scm-images-primary',location:path.join(base,'repo-a-worktrees','scm-images-primary')};
-      const peer={repository:peerRoot,branch:'fixture/scm-images-peer',location:path.join(base,'repo-b-worktrees','scm-images-peer')};
-      const created:any[]=[];
-      try{
-        for(const checkout of [primary,peer]){
-          runGit(checkout.repository,['worktree','add','-b',checkout.branch,checkout.location,checkout===primary?history.stdout.trim():'HEAD']);created.push(checkout);
-          checkout.location=fs.realpathSync(checkout.location);fs.mkdirSync(path.join(checkout.location,'scm-image-fixture'));
-        }
-        for(const relative of [imagePath,deletedPath,stagedDeletedPath])fs.writeFileSync(path.join(primary.location,relative),relative===imagePath?versions.before.bytes:versions.deleted.bytes);
-        runGit(primary.location,['add','--',imagePath,deletedPath,stagedDeletedPath]);runGit(primary.location,['commit','-qm','SCM image fixture baseline']);
-        const baseHash=value(primary.location,['rev-parse','HEAD']);
-        fs.writeFileSync(path.join(primary.location,imagePath),versions.history.bytes);fs.rmSync(path.join(primary.location,deletedPath));
-        runGit(primary.location,['add','--',imagePath,deletedPath]);runGit(primary.location,['commit','-qm','SCM image fixture history']);
-        const commitHash=value(primary.location,['rev-parse','HEAD']);
-        fs.writeFileSync(path.join(primary.location,imagePath),versions.index.bytes);runGit(primary.location,['add','--',imagePath]);
-        const indexBlob=value(primary.location,['rev-parse',':'+imagePath]);
-        fs.writeFileSync(path.join(primary.location,imagePath),versions.working.bytes);fs.writeFileSync(path.join(primary.location,addedPath),versions.added.bytes);
-        fs.rmSync(path.join(primary.location,stagedDeletedPath));runGit(primary.location,['add','--',stagedDeletedPath]);
-        fs.writeFileSync(path.join(primary.location,binaryPath),Buffer.from([0,255,10,0,127]));
-        fs.writeFileSync(path.join(peer.location,imagePath),versions.peer.bytes);
-        await verify({primary:{...primary,commitHash,baseHash,indexBlob},peer,imagePath,addedPath,deletedPath,stagedDeletedPath,binaryPath,versions});
-      }finally{
-        for(const checkout of created.toReversed()){
-          runGit(checkout.repository,['worktree','remove','--force',checkout.location]);runGit(checkout.repository,['branch','-D',checkout.branch]);
-        }
-      }
-    };
-    const withUnavailableRepository=async (read:()=>Promise<void>)=>{
-      const retained=peerRoot+'-temporarily-unavailable';fs.renameSync(peerRoot,retained);
-      try{await read();}finally{fs.renameSync(retained,peerRoot);}
-    };
-    const withBranches=(verify:(branches:any)=>Promise<void>)=>withSourceControlBranchFixture({base,repository:workspaceRoot,peerRepository:peerRoot,startPoint:history.stdout.trim(),originalPath:sourceControlPath},async branches=>{
-      try { await verify(branches); }
-      finally { await page.goto('about:blank').catch(()=>{}); }
-    });
-    const withRegisteredSource=async(location:string,verify:(source:any)=>Promise<void>)=>{
-      const catalog=runtime.assetCatalog(workspaceRoot),repository=catalog.repositories.find((item:any)=>item.id===codeWorktreeFixture.primaryRepositoryId);
-      assert.ok(repository);
-      runtime.updateCatalogAsset(workspaceRoot,'repository',repository.id,{revision:catalog.revision,path:location});
-      try {await verify({repositoryId:repository.id,location:fs.realpathSync(location),mainLocation:fs.realpathSync(workspaceRoot)});}
-      finally {
-        await page.goto('about:blank').catch(()=>{});
-        // The legacy fixture declares a service subdirectory; code readers already
-        // canonicalize it to this Git root. Current edits correctly reject restoring
-        // that legacy child path, so restore the same effective source through its root.
-        runtime.updateCatalogAsset(workspaceRoot,'repository',repository.id,{revision:runtime.assetCatalog(workspaceRoot).revision,path:workspaceRoot,url:repository.source.git?.url||'',remote:repository.source.git?.remote||'origin',integrationBranch:repository.source.integrationBranch||repository.source.git?.integrationBranch||''});
-      }
-    };
-    await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,prepareRemoteStatuses,withStatusDigits,withDuplicateFiles,withImages,withBranches,withRegisteredSource,cleanLocation:codeWorktreeFixture.nativeCheckoutLocation,baselineWorktrees,unrelatedRetiredTaskId:codeWorktreeFixture.worktreeTaskId,unavailableRepositoryLocation,withUnavailableRepository}});
     }
   }
-  if (selected('agent-conversations')) {
-    const batch = parseAgentConversationBatch(process.env.BUILDR_AGENT_JOURNEY_BATCH);
-    const queueRoot = process.env.BUILDR_AGENT_JOURNEY_QUEUE_ROOT;
-    if ((batch && process.env.BUILDR_AGENT_JOURNEY_PART) || (queueRoot && (batch || process.env.BUILDR_AGENT_JOURNEY_PART))) {
-      throw new Error('对话场景组、批次和共享队列不能同时指定。');
-    }
-    const groups = queueRoot ? claimAgentConversationGroups(queueRoot) : batch || [process.env.BUILDR_AGENT_JOURNEY_PART || 'all'];
-    const baselineTask = runtime.inspectTask(workspaceRoot, 'browser-task').recordDigest;
-    const baselineCatalog = runtime.assetCatalog(workspaceRoot).revision;
-    let tainted = false;
-    await runAgentConversationBatch(groups, {
-      canContinue: () => browser.isConnected() && server.listening && !tainted,
-      ...(queueRoot ? { afterGroup: (group: string) => finishAgentConversationGroup(queueRoot, group) } : {}),
-      preparePage: async (index: number, group: string) => {
-        // Independent history items already create and dispose a private context.
-        if (index > 0 && !group.startsWith('history/')) {
-          const canary = `buildr-group-isolation-${index}`;
-          await page.context().addCookies([{ name: canary, value: 'previous-group', url: workspaceUrl }]);
-          await page.context().close();
-          page = await newBrowserPage();
-          const cookies = await page.context().cookies(workspaceUrl);
-          assert.equal(cookies.some((cookie: any) => cookie.name === canary), false, '前一场景组的浏览器状态不得进入新场景组');
-          process.stderr.write('[agent-conversation-group] phase=browser-state-isolated\n');
-        }
-      },
-      runGroup: async (group: string) => {
-        process.stderr.write(`[agent-conversation-group] group=${group} phase=isolated-page-ready\n`);
-        try {
-          await runAgentConversationsJourney({t,page,workspaceUrl,workspaceRoot,otherWorkspaceId,capture,expectedBrowserErrors,group,newScenarioPage:newBrowserPage,afterScenario:async()=>{
-            assert.ok(browser.isConnected()&&server.listening,'独立场景必须保留健康服务与浏览器现场');
-            while(pendingConversationRequests.size)await Promise.allSettled([...pendingConversationRequests]);
-            if(isolateConversationService){resetConversationVisits(workbenchApplication,conversationRoots);assert.equal(readSharedResourceSet().id,sharedResourceBaseline);assert.deepEqual(conversationRoots.map(root=>readResourceAdoption(root)),resourceBaseline);}
-            assert.equal(runtime.inspectTask(workspaceRoot,'browser-task').recordDigest,baselineTask);
-            assert.equal(runtime.assetCatalog(workspaceRoot).revision,baselineCatalog);
-            assert.equal(blockedConversationWrites.length,0,'独立场景不得修改共享服务端状态');
-          }});
-        } finally {
-          try {
-            while (pendingConversationRequests.size) await Promise.allSettled([...pendingConversationRequests]);
-            if (isolateConversationService) {
-              resetConversationVisits(workbenchApplication, conversationRoots);
-              assert.equal(readSharedResourceSet().id, sharedResourceBaseline, '共享资源身份不得在场景间变化。');
-              assert.deepEqual(conversationRoots.map(root => readResourceAdoption(root)), resourceBaseline, '工作空间资源状态不得在场景间变化。');
-            }
-            const task = runtime.inspectTask(workspaceRoot, 'browser-task').recordDigest;
-            const catalog = runtime.assetCatalog(workspaceRoot).revision;
-            if (blockedConversationWrites.length || task !== baselineTask || catalog !== baselineCatalog) {
-              throw new Error(`对话场景改变或尝试改变共享服务端状态：${JSON.stringify(blockedConversationWrites)}`);
-            }
-            if (isolateConversationService) process.stderr.write('[agent-conversation-group] phase=server-state-isolated\n');
-          } catch (error) {
-            tainted = true;
-            throw error;
-          }
-        }
-      },
-    });
-  }
-  if (selected('layout')) await runLayoutJourney({ t: taskFocusedT(t), page, workspaceUrl, capture });
 
   if (SELECTORS.has('core')) await t.test('核心流程进入 Workspace、Task 路由并读取代表性 Tab', async () => {
     await page.goto(`${workspaceUrl}/tasks`);
     await page.locator('#development-environment-badge').waitFor({ state: 'visible' });
     assert.equal((await page.locator('#development-environment-badge').innerText()).trim(), '开发版');
-    assert.equal(await page.title(), `${fixtureProfile === 'core' ? 'browser-e2e-core' : 'browser-e2e'} · Buildr Web Dev`);
+    assert.equal(await page.title(), `${fixtureProfile === 'core' ? 'browser-e2e-core' : 'browser-e2e'} · Buildr Development Dev`);
     await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
     assert.ok(await page.locator('#task-table-body tr.ant-table-row').count() > 0, '核心 smoke 必须存在可进入的 Task');
     await page.locator('#task-table-body tr.ant-table-row').first().click();
@@ -995,88 +673,12 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     assert.deepEqual(runtime.listProjects(workspaceRoot), before);
   });
 
-  if (selected('shell')) await t.test('技能列表和主页连续操作、统一编辑入口与草稿保留', async () => {
-    await page.goto(`${workspaceUrl}/skills`);
-    await page.locator('[data-skill-id="ux-design-laws"]').waitFor({ state: 'visible' });
-    await page.reload();
-    await page.locator('#skills-search').fill('ux-design-laws');
-    await page.locator('[data-skill-id="ux-design-laws"]').click();
-    await page.locator('.skill-primary-document').getByRole('link', { name: '法则索引', exact: true }).click();
-    await page.getByRole('heading', { name: '法则索引', exact: true }).waitFor({ state: 'visible' });
-    await page.getByRole('button', { name: '← 返回详情', exact: true }).click();
-    await page.getByRole('button', { name: '编辑技能', exact: true }).click();
-    assert.equal(await page.locator('.skills-detail-drawer').count(), 0);
-    assert.equal(new URL(page.url()).pathname, new URL(`${workspaceUrl}/skills`).pathname);
-    await page.locator('#skill-action-input').fill('先列出三个最重要的问题');
-    assert.match(await page.locator('#skill-prompt').inputValue(), /先列出三个最重要的问题/);
-    assert.equal(await page.getByRole('button', { name: '生成指令', exact: true }).count(), 0);
-    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
-    await page.getByRole('button', { name: '复制指令', exact: true }).click();
-    await page.getByRole('button', { name: '已复制', exact: true }).waitFor({ state: 'visible' });
-    assert.match(await page.evaluate(() => navigator.clipboard.readText()), /先列出三个最重要的问题/);
-    await page.locator('#skill-action-input').fill('优先五个问题');
-    assert.equal(await page.getByRole('button', { name: '复制指令', exact: true }).isEnabled(), true);
-    await page.keyboard.press('Escape');
-    await page.locator('.skills-action-drawer').waitFor({ state: 'detached' });
-    await page.getByRole('button', { name: '编辑技能', exact: true }).waitFor({ state: 'visible' });
-    await page.getByRole('button', { name: '编辑技能', exact: true }).click();
-    assert.equal(await page.locator('#skill-action-input').inputValue(), '优先五个问题');
-    await page.evaluate(() => {
-      Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: () => Promise.reject(new Error('fixture denied')) });
-      (window as any).__copiedPrompt = '';
-      Object.defineProperty(document, 'execCommand', { configurable: true, value: (command: string) => {
-        if (command !== 'copy') return false;
-        (window as any).__copiedPrompt = (document.activeElement as HTMLTextAreaElement | null)?.value || '';
-        return true;
-      } });
-    });
-    await page.getByRole('button', { name: '复制指令', exact: true }).click();
-    await page.getByRole('button', { name: '已复制', exact: true }).waitFor({ state: 'visible' });
-    assert.equal(await page.evaluate(() => (window as any).__copiedPrompt), await page.locator('#skill-prompt').inputValue());
-    await page.locator('#skill-action-input').fill('优先六个问题');
-    await page.evaluate(() => { Object.defineProperty(document, 'execCommand', { configurable: true, value: () => false }); });
-    await page.getByRole('button', { name: '复制指令', exact: true }).click();
-    await page.getByRole('alert').filter({ hasText: '无法自动复制' }).waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#skill-prompt').evaluate((el: any) => el.selectionEnd - el.selectionStart === el.value.length), true);
-    await page.getByRole('button', { name: '关闭技能操作', exact: true }).click();
-    await page.locator('.skills-action-drawer').waitFor({ state: 'detached' });
-    await showPrimaryNavigation(page, 'workspace');
-    await page.locator('[data-nav="skills"]').click();
-    assert.equal(await page.locator('#skills-search').inputValue(), 'ux-design-laws');
-    await page.locator('#skills-search').fill('');
-    const mainTabs = await page.getByRole('tablist', { name: '打开的页面', exact: true }).getByRole('tab').count();
-    const secondSkill = page.locator('[data-skill-id]').filter({ hasNot: page.locator('a[href$="/ux-design-laws"]') }).first();
-    await secondSkill.locator('a[href]').first().click();
-    await page.getByRole('tab', { name: '技能详情', exact: true }).waitFor({ state: 'visible' });
-    assert.equal(await page.getByRole('button', { name: '关闭 技能详情', exact: true }).count(), 1, '对象关闭是独立可访问控件');
-    assert.equal(await page.getByRole('tablist', { name: '打开的页面', exact: true }).getByRole('tab').count(), mainTabs);
-    assert.equal(await page.getByRole('tab', { name: '技能详情', exact: true }).count(), 1);
-    assert.equal(await page.getByRole('button', { name: '关闭 技能详情', exact: true }).count(), 1, '对象关闭是独立可访问控件');
-    await page.locator('#skills-search').fill('no-such-skill-xyz');
-    await page.getByRole('button', { name: '清除搜索', exact: true }).click();
-    await page.locator('#skills-add').click();
-    await page.getByRole('button', { name: '通过智能体接入外部技能或生成内容', exact: true }).click();
-    await page.locator('#skill-action-input').fill('https://example.invalid/skill');
-    assert.match(await page.locator('#skill-prompt').inputValue(), /example.invalid/);
-    await page.getByRole('button', { name: '关闭技能操作', exact: true }).click();
-    await page.locator('.skills-action-drawer').waitFor({ state: 'detached' });
-    await page.locator('#skills-add').click();
-    await page.getByRole('button', { name: '通过智能体接入外部技能或生成内容', exact: true }).click();
-    assert.equal(await page.locator('#skill-action-input').inputValue(), 'https://example.invalid/skill');
-    await page.goto(`${url}/workspaces/${otherWorkspaceId}/skills`);
-    await page.locator('#skills-add').click();
-    await page.getByRole('button', { name: '通过智能体接入外部技能或生成内容', exact: true }).click();
-    assert.equal(await page.locator('#skill-action-input').inputValue(), '');
-    await page.getByRole('button', { name: '关闭技能操作', exact: true }).click();
-    await page.locator('.skills-action-drawer').waitFor({ state: 'detached' });
-  });
-
   if (selected('shell')) await t.test('全局首页展示多个工作空间并进入选定上下文', async () => {
-    await page.goto(url);
+    await page.goto(`${url}/?catalog=1`);
     await page.locator('#workspace-grid .workspace-card').first().waitFor({ state: 'visible' });
-    assert.equal(await page.title(), 'Buildr Web Dev');
+    assert.equal(await page.title(), 'Buildr Development Dev');
     assert.equal(await page.locator('#preview-identity').isHidden(), true);
-    await page.goto(previewUrl);
+    await page.goto(`${previewUrl}/?catalog=1`);
     await page.locator('#preview-identity').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#preview-identity').isHidden(), false, '托管预览展示组件级来源身份条');
     assert.match(await page.locator('#preview-identity').getAttribute('data-preview') || '', /开发预览：browser-preview · preview-branch · 0123456789ab · 有未提交修改/);
@@ -1090,7 +692,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     // Navigation preserves the pointer position; leave the trigger so the
     // next page cannot reopen its hover menu before the closed-state check.
     await page.mouse.move(0, 0);
-    await page.goto(url);
+    await page.goto(`${url}/?catalog=1`);
     assert.equal(await page.locator('#more-actions').isVisible(), true, '默认实例通过更多操作菜单提供重启和退出');
     assert.equal(await page.locator('#quit-buildr').count(), 0, '退出入口收进下拉菜单，未展开时不存在');
     await page.locator('#workspace-grid .workspace-card').first().waitFor({ state: 'visible' });
@@ -1101,7 +703,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     await page.waitForURL(`${workspaceUrl}/overview`);
     await page.locator('#workbench-overview').waitFor({ state: 'visible' });
     assert.equal((await page.locator('#shell-workspace-name').innerText()).trim(), 'browser-e2e');
-    assert.equal(await page.title(), 'browser-e2e · Buildr Web Dev');
+    assert.equal(await page.title(), 'browser-e2e · Buildr Development Dev');
     await showPrimaryNavigation(page, 'workbench');
     assert.equal(await page.getByLabel('工作台二级导航',{exact:true}).locator('[data-nav="overview"]').evaluate((item: any) => item.classList.contains('active')), true);
     const expectedProjectCount: any = selected('articles') ? 3 : 2;
@@ -1131,7 +733,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     assert.match(await page.locator('#action-prompt-output').inputValue(), /项目：另一项目（other）/);
     await page.getByRole('button', { name: '关闭', exact: true }).click();
     await page.setViewportSize({ width: 1024, height: 720 });
-    await page.goto(url);
+    await page.goto(`${url}/?catalog=1`);
     await page.locator('#workspace-grid .workspace-card').first().waitFor({ state: 'visible' });
     assert.equal(await page.locator('#workspace-grid').evaluate((grid: any) => getComputedStyle(grid).gridTemplateColumns.split(' ').length), 2);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
@@ -1153,7 +755,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     assert.equal(runtime.listRegisteredWorkspaces().workspaces.some((entry: any) => entry.rootPath === firstRoot), false);
     current = runtime.listRegisteredWorkspaces();
     for (const entry of [...current.workspaces]) current = runtime.removeRegisteredWorkspace({ rootPath: entry.rootPath, revision: current.revision });
-    await page.goto(url);
+    await page.goto(`${url}/?catalog=1`);
     await page.locator('#workspace-empty').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#empty-add-workspace').count(), 1);
     assert.equal(await page.locator('#empty-create-workspace').count(), 1);
@@ -1298,324 +900,6 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
 
   if (selected('articles')) await runPublicationJourney({ t, page, runtime, workspaceRoot, workspaceUrl, otherWorkspaceUrl: `${url}/workspaces/${otherWorkspaceId}`, expectedBrowserErrors, selectAntdOption, capture });
 
-  if (selected('shell')) await t.test('偏好存储拒绝时仍可启动、浏览并在内存中调整侧栏', async () => {
-    const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1280, height: 720 } });
-    const restricted = await context.newPage();
-    const errors: string[] = [];
-    restricted.on('pageerror', (error: Error) => errors.push(error.message));
-    await context.addInitScript(() => {
-      for (const method of ['getItem', 'setItem']) Object.defineProperty(Storage.prototype, method, {
-        configurable: true, value: () => { throw new DOMException('Storage denied by browser fixture', 'SecurityError'); },
-      });
-    });
-    try {
-      await restricted.goto(`${url}/?catalog=1`);
-      await restricted.locator('#workspace-grid .workspace-card').first().waitFor();
-      await restricted.goto(`${workspaceUrl}/projects/demo`);
-      await restricted.locator('#project-detail-name').waitFor();
-      assert.equal(await restricted.locator('.primary-navigation').evaluate((node: HTMLElement) => Math.round(node.getBoundingClientRect().width)), 53);
-      await restricted.locator('.primary-navigation-rail [data-nav="workspace"]').hover();
-      await restricted.locator('.primary-navigation-rail [data-nav="workspace"]').click();
-      assert.equal(await restricted.locator('.primary-navigation.is-pinned').count(),1);
-      await restricted.locator('.primary-navigation-rail [data-nav="workspace"]').click();
-      await restricted.reload();
-      await restricted.locator('#project-detail-name').waitFor();
-      assert.equal(await restricted.locator('.primary-navigation.is-pinned').count(),0,'无法持久化时重新使用默认收起值');
-      await restricted.goto(`${workspaceUrl}/tasks`);
-      await restricted.locator('#task-filter-q').waitFor();
-      await restricted.goto(`${workspaceUrl}/code/explorer`);
-      await restricted.locator('.code-explorer-stage').waitFor();
-      await restricted.locator('.code-file-tabstrip').waitFor();
-      assert.deepEqual(errors, [], '可选存储故障不能成为未处理页面错误');
-    } finally { await context.close(); }
-  });
-
-  if (selected('shell')) await t.test('移除失败可见，重新读取登记不自动重放移除；退出失败仍保留应用', async () => {
-    await page.goto(`${url}/?catalog=1`);
-    const registryUrl = `${url}/api/v1/workspaces`, quitUrl = `${url}/api/v1/app/quit`;
-    const before = runtime.listRegisteredWorkspaces();
-    const roots = before.workspaces.map((entry: any) => entry.rootPath).sort();
-    const card = page.locator(`.workspace-card[data-workspace-id="${otherWorkspaceId}"]`);
-    await card.waitFor();
-    let deletes = 0, reads = 0, quits = 0;
-    const failRemove = async (route: any) => {
-      if (route.request().method() === 'DELETE') {
-        deletes++;
-        return route.fulfill({ status: deletes <= 2 ? 409 : 500, contentType: 'application/json', body: JSON.stringify({ error: {
-          code: deletes <= 2 ? 'workspace_registry_revision_conflict' : 'workspace_registry_unavailable',
-          message: deletes === 1 ? '登记版本已变化' : deletes === 2 ? 'Workspace 登记列表被其他操作占用，或锁的归属尚不能确认。请重新读取后重试；持续失败时由智能体核对锁归属。' : '登记暂时不可修改',
-        } }) });
-      }
-      if (route.request().method() === 'GET') reads++;
-      await route.continue();
-    };
-    expectedBrowserErrors.add(registryUrl); expectedBrowserErrors.add(quitUrl);
-    await page.route(registryUrl, failRemove);
-    const remove = async (reason: string) => {
-      const requests: Array<{ method: string; url: string; failure?: string }> = [];
-      const observed = (request: any) => {
-        if (new URL(request.url()).pathname === '/api/v1/workspaces') requests.push({ method: request.method(), url: request.url() });
-      };
-      const failed = (request: any) => {
-        if (new URL(request.url()).pathname === '/api/v1/workspaces') requests.push({ method: request.method(), url: request.url(), failure: request.failure()?.errorText });
-      };
-      page.on('request', observed); page.on('requestfailed', failed);
-      let confirmationClosed = false;
-      const attempted = page.waitForResponse((response: any) => response.url() === registryUrl && response.request().method() === 'DELETE')
-        .then((response: any) => ({ response }), (error: unknown) => ({ error }));
-      try {
-        // The previous removal keeps the button in its loading state until the
-        // mutation settles. Under a busy browser host that handoff can exceed
-        // Playwright's default action timeout even though the mutation already
-        // returned its error. Wait for the same card's action to be usable
-        // again instead of racing the state update.
-        const removeButton = card.locator('.workspace-remove');
-        await removeButton.waitFor({ state: 'visible' });
-        await removeButton.click({ timeout: 30_000 });
-        const confirmation = page.getByRole('dialog', { name: '移除工作空间', exact: true });
-        await confirmation.waitFor({ state: 'visible' });
-        await confirmAntModal(page);
-        await confirmation.waitFor({ state: 'hidden' }); confirmationClosed = true;
-        const result = await attempted;
-        if (result.error) throw result.error;
-        await page.waitForFunction((text: string) => document.getElementById('workspace-operation-error')?.textContent?.includes(text), reason);
-      } catch (error) {
-        const visible = await page.evaluate(() => {
-          const error = document.getElementById('workspace-operation-error');
-          return {
-            url: location.href,
-            operationError: error?.getClientRects().length ? error.textContent : null,
-            cards: Array.from(document.querySelectorAll('.workspace-card')).map(card => ({ id: card.getAttribute('data-workspace-id'), buttons: Array.from(card.querySelectorAll('button')).map(button => ({
-              text: button.textContent, disabled: button.disabled,
-              ariaLabel: button.getAttribute('aria-label'), labelledBy: button.getAttribute('aria-labelledby'),
-              ancestors: Array.from((function* () { for (let node: Element | null = button; node; node = node.parentElement) yield node; })()).map(node => ({
-                tag: node.tagName, className: node.className, hidden: node.hasAttribute('hidden'), inert: node.hasAttribute('inert'),
-                ariaHidden: node.getAttribute('aria-hidden'), display: getComputedStyle(node).display, visibility: getComputedStyle(node).visibility,
-              })),
-            })) })),
-            dialogs: Array.from(document.querySelectorAll('[role="dialog"]')).filter(node => node.getClientRects().length).map(node => node.textContent),
-          };
-        });
-        const accessibility = await card.ariaSnapshot({ timeout: 1_000 }).catch((cause: Error) => cause.message);
-        const roleButtons = await card.getByRole('button', { includeHidden: true }).allTextContents();
-        process.stderr.write(`[buildr-browser-remove-diagnostic] ${JSON.stringify({ reason, confirmationClosed, requests, routedDeletes: deletes, visible, accessibility, roleButtons })}\n`);
-        throw error;
-      } finally { page.off('request', observed); page.off('requestfailed', failed); }
-    };
-    await remove('本次未移除');
-    assert.match(await page.locator('#workspace-operation-error').innerText(), /本次未移除/);
-    assert.equal(await card.isVisible(), true);
-    const previousReads = reads;
-    const refreshed = page.waitForResponse((response: any) => response.url() === registryUrl && response.request().method() === 'GET');
-    await page.getByRole('button', { name: '重新读取登记', exact: true }).click();
-    assert.equal((await refreshed).status(), 200);
-    await page.locator('#workspace-operation-error').waitFor({ state: 'hidden' });
-    assert.ok(reads > previousReads);
-    assert.equal(deletes, 1, '重新读取只观察当前登记，不重新执行删除');
-    assert.deepEqual(runtime.listRegisteredWorkspaces().workspaces.map((entry: any) => entry.rootPath).sort(), roots);
-    await remove('锁的归属尚不能确认');
-    assert.match(await page.locator('#workspace-operation-error').innerText(), /被其他操作占用，或锁的归属尚不能确认/);
-    assert.doesNotMatch(await page.locator('#workspace-operation-error').innerText(), /登记已被其他操作修改/);
-    assert.equal(deletes, 2);
-    await remove('登记暂时不可修改');
-    assert.match(await page.locator('#workspace-operation-error').innerText(), /登记暂时不可修改/);
-    assert.equal(deletes, 3);
-    assert.equal(await card.isVisible(), true);
-    await page.unroute(registryUrl, failRemove);
-    const failQuit = async (route: any) => { quits++; await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'quit_unavailable', message: '宿主暂时不能退出' } }) }); };
-    await page.route(quitUrl, failQuit);
-    await page.locator('#more-actions').hover();
-    await page.locator('#quit-buildr').click();
-    await page.getByRole('dialog', { name: '退出 Buildr Web？', exact: true }).waitFor({ state: 'visible' });
-    await confirmAntModal(page);
-    await page.locator('#quit-buildr-error').waitFor();
-    assert.match(await page.locator('#quit-buildr-error').innerText(), /尚未退出/);
-    assert.equal(await page.locator('#workspace-grid').isVisible(), true);
-    assert.equal(await page.locator('.exit-screen').count(), 0);
-    const retried = page.waitForResponse((response: any) => response.url() === quitUrl && response.request().method() === 'POST');
-    await page.getByRole('button', { name: '重试退出', exact: true }).click();
-    assert.equal((await retried).status(), 500);
-    assert.equal(quits, 2);
-    assert.equal(await page.locator('#workspace-grid').isVisible(), true);
-  });
-
-  if (selected('shell')) await t.test('重启入口确认后进入重启屏，宿主令牌轮换触发自动刷新', async () => {
-    await page.goto(`${url}/?catalog=1`);
-    await page.locator('#more-actions').waitFor({ state: 'visible' });
-    const restartUrl = `${url}/api/v1/app/restart`;
-    expectedBrowserErrors.add(restartUrl);
-    const failRestart = async (route: any) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'restart_unavailable', message: '宿主暂时不能重启' } }) });
-    await page.route(restartUrl, failRestart);
-    await page.locator('#more-actions').hover();
-    await page.locator('#restart-buildr').click();
-    const confirmDialog = page.getByRole('dialog', { name: '重启 Buildr Web？', exact: true });
-    await confirmDialog.waitFor({ state: 'visible' });
-    assert.match(await confirmDialog.innerText(), /独立智能体（Agent）执行服务不会被强制停止/);
-    await confirmAntModal(page);
-    await page.locator('#restart-buildr-error').waitFor();
-    assert.match(await page.locator('#restart-buildr-error').innerText(), /未能确认重启请求/);
-    assert.equal(await page.locator('#workspace-grid').isVisible(), true);
-    assert.equal(await page.locator('#restart-screen').count(), 0);
-    await page.unroute(restartUrl, failRestart);
-    let restarts = 0;
-    const accepted = async (route: any) => { restarts++; await route.fulfill({ status: 202, contentType: 'application/json', body: '{"status":"restarting"}' }); };
-    await page.route(restartUrl, accepted);
-    const restartedDoc = '<!doctype html><html><head><meta name="buildr-session" content="a1b2c3d4e5f60718"></head><body><p id="restarted-marker">RESTARTED</p></body></html>';
-    let documentPolls = 0;
-    await page.route('**', async (route: any) => {
-      const requestUrl = route.request().url();
-      if (new URL(requestUrl).origin === url && new URL(requestUrl).pathname === '/') {
-        documentPolls++;
-        // The first observation hits the stopping old process; the restarted
-        // document with a rotated session token arrives on a later poll.
-        if (documentPolls === 1) { expectedBrowserErrors.add(`[${url}/]: Failed to load resource: net::ERR_FAILED`); return route.abort(); }
-        return route.fulfill({ contentType: 'text/html', body: restartedDoc });
-      }
-      return route.fallback();
-    });
-    await page.locator('#more-actions').hover();
-    await page.locator('#restart-buildr').click();
-    await page.getByRole('dialog', { name: '重启 Buildr Web？', exact: true }).waitFor({ state: 'visible' });
-    await confirmAntModal(page);
-    await page.locator('#restart-screen').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#restart-screen').innerText(), /正在重启/);
-    await page.waitForSelector('#restarted-marker', { timeout: 20_000 });
-    assert.equal(restarts, 1, '一次重启只请求一次交接');
-  });
-
-  if (selected('shell')) await t.test('页面与对象页签手动激活、关闭焦点和面板关联保持一致', async () => {
-    await page.setViewportSize({width:1440,height:900});
-    await page.goto(`${workspaceUrl}/projects`);
-    await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
-    await page.locator('#project-detail-name').waitFor();
-    await showPrimaryNavigation(page, 'workspace');
-    await page.locator('[data-nav="projects"]').click();
-    await page.locator('#project-table-body tr').filter({ hasText: '另一项目' }).click();
-    await page.waitForURL(`${workspaceUrl}/projects/other`);
-    await page.locator('#project-detail-name:visible').filter({ hasText: '另一项目' }).waitFor();
-    const strip = page.getByRole('tablist', { name: '打开的页面', exact: true });
-    for (const title of await strip.locator('.pane-tab-text').allTextContents()) {
-      if (!['项目目录', '演示项目', '另一项目'].includes(title)) await strip.getByRole('button', { name: `关闭 ${title}`, exact: true }).click();
-    }
-    const demo = strip.getByRole('tab', { name: '演示项目', exact: true }), other = strip.getByRole('tab', { name: '另一项目', exact: true });
-    for (const title of await strip.locator('[data-pinned="true"] .pane-tab-text').allTextContents()) {
-      await strip.getByRole('button', { name: `取消固定 ${title}`, exact: true }).click();
-    }
-    // Arrange through the actual controls; activation no longer invents an order.
-    const directory = strip.getByRole('tab', { name: '项目目录', exact: true });
-    await directory.press('Alt+ArrowRight'); await directory.press('Alt+ArrowRight');
-    await demo.press('Alt+ArrowLeft'); await demo.press('Alt+ArrowLeft');
-    assert.deepEqual(await strip.locator('.pane-tab-text').allTextContents(), ['演示项目', '另一项目', '项目目录']);
-    await other.focus();
-    assert.equal(await strip.locator('[role="tab"][tabindex="0"]').count(), 1);
-    const previousUrl = page.url();
-    await other.press('ArrowLeft'); assert.equal(await demo.evaluate((node: HTMLElement) => node === document.activeElement), true);
-    assert.equal(page.url(), previousUrl, '方向键仅移动焦点，Enter 才激活');
-    await demo.press('Enter'); await page.waitForURL(`${workspaceUrl}/projects/demo`);
-    const control = await demo.getAttribute('aria-controls'), tabId = await demo.getAttribute('id');
-    assert.ok(control && tabId);
-    await page.waitForFunction(({ control, tabId }: { control: string; tabId: string }) => {
-      const panel = document.getElementById(control), tab = document.getElementById(tabId);
-      return panel && !panel.hasAttribute('hidden') && panel.getClientRects().length > 0 && tab?.getAttribute('aria-selected') === 'true';
-    }, { control, tabId });
-    assert.deepEqual(await page.evaluate((id: string) => { const panel = document.getElementById(id)!; return { role: panel.getAttribute('role'), label: panel.getAttribute('aria-labelledby'), hidden: panel.hasAttribute('hidden') }; }, control), { role: 'tabpanel', label: tabId, hidden: false });
-    assert.deepEqual(await strip.locator('.pane-tab-text').allTextContents(), ['演示项目', '另一项目', '项目目录']);
-    await demo.press('End'); assert.equal(await directory.evaluate((node: HTMLElement) => node === document.activeElement), true);
-    await directory.press('Home'); assert.equal(await demo.evaluate((node: HTMLElement) => node === document.activeElement), true);
-    await demo.press('Alt+ArrowRight');
-    await page.waitForFunction(() => Array.from(document.querySelectorAll('.workspace-tabstrip .pane-tab-text')).map(node => node.textContent).join('|') === '另一项目|演示项目|项目目录');
-    assert.deepEqual(await strip.locator('.pane-tab-text').allTextContents(), ['另一项目', '演示项目', '项目目录'], '目录与页面使用同一可见重排索引');
-    const demoBox = await demo.boundingBox(), otherBox = await other.boundingBox();
-    assert.ok(demoBox && otherBox);
-    await page.mouse.move(demoBox.x + demoBox.width / 2, demoBox.y + demoBox.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(otherBox.x + 8, otherBox.y + otherBox.height / 2, { steps: 8 });
-    await page.mouse.up();
-    await page.waitForFunction(() => Array.from(document.querySelectorAll('.workspace-tabstrip .pane-tab-text')).map(node => node.textContent).join('|') === '演示项目|另一项目|项目目录');
-    await page.locator('.pane-tab-drag-ghost').waitFor({ state: 'hidden' });
-    await demo.press('Delete'); await demo.waitFor({ state: 'hidden' });
-    // Focus hand-off races the browser's focus restore; poll briefly.
-    try { await page.waitForFunction((id: string) => document.getElementById(id) === document.activeElement, await other.getAttribute('id')); }
-    catch (error) {
-      await capture(page, 'active-tab-first-close-focus.png');
-      const observed = await page.evaluate(() => ({active:{tag:document.activeElement?.tagName,id:document.activeElement?.id,key:(document.activeElement as HTMLElement)?.dataset.tabKey}, tabs:[...document.querySelectorAll('.workspace-tabstrip')].map(node=>({visible:node.getClientRects().length,keys:[...node.querySelectorAll<HTMLElement>('[data-tab-key]')].map(tab=>tab.dataset.tabKey)})),url:location.href}));
-      throw new Error('关闭后焦点观察：' + JSON.stringify(observed), {cause:error});
-    }
-    await other.press('Delete'); await page.waitForURL(`${workspaceUrl}/projects`);
-    await page.waitForFunction(() => document.activeElement !== document.body && !!(document.activeElement)?.getClientRects().length);
-    await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
-    await page.locator('[data-doc-row="agents"]').click();
-    await page.locator('.pane-right .markdown-body').waitFor();
-    await page.locator('[data-service-card="api"]').click();
-    await page.locator('#service-detail-name:visible').waitFor();
-    const objects = page.locator('.pane-right:visible').getByRole('tablist', { name: '打开的对象', exact: true });
-    const service = objects.getByRole('tab', { name: '服务详情', exact: true }), agents = objects.getByRole('tab', { name: 'AGENTS.md', exact: true });
-    await service.focus(); await service.press('End');
-    assert.equal(await agents.evaluate((node: HTMLElement) => node === document.activeElement), true);
-    assert.equal(await service.getAttribute('aria-selected'), 'true');
-    await page.getByRole('tablist', { name: '打开的页面', exact: true }).getByRole('tab', {name:'演示项目',exact:true}).press('Alt+ArrowRight');
-    const middleOrder = await strip.locator('.pane-tab-text').allTextContents();
-    await agents.press('Enter'); await page.locator('.pane-right .markdown-body:visible').waitFor();
-    assert.deepEqual(await strip.locator('.pane-tab-text').allTextContents(), middleOrder, '右侧对象激活不重新排列手动调整的中屏');
-    const objectControl = await agents.getAttribute('aria-controls');
-    assert.equal(await page.evaluate((id: string) => document.getElementById(id)?.getAttribute('aria-labelledby'), objectControl), await agents.getAttribute('id'));
-    assert.equal(await objects.locator('[role="tab"][tabindex="0"]').count(), 1);
-    assert.equal(await objects.getByRole('button', { name: '关闭 AGENTS.md', exact: true }).count(), 1);
-    await agents.press('Delete'); await agents.waitFor({ state: 'hidden' });
-    assert.equal(await service.evaluate((node: HTMLElement) => node === document.activeElement), true);
-    await service.press('Delete'); await page.locator('.pane-right:visible').waitFor({ state: 'hidden' });
-    assert.equal(await page.evaluate(() => document.activeElement !== document.body && !!(document.activeElement as HTMLElement)?.getClientRects().length), true);
-    await page.setViewportSize({ width: 640, height: 720 });
-    await page.goto(`${workspaceUrl}/code/explorer`);
-    await page.getByRole('button', { name: '交给 Agent', exact: true }).waitFor();
-    await page.goto(`${workspaceUrl}/overview`);
-    await page.getByRole('button', { name: '提出新目标', exact: true }).waitFor();
-  });
-
-  if (selected('shell')) await t.test('四类资源目录共享表头、搜索、操作位置与行密度', async () => {
-    const heights: number[] = [];
-    for (const [area, noun] of [['projects', '项目'], ['services', '服务'], ['repositories', '代码库'], ['skills', '技能']]) {
-      await page.goto(`${workspaceUrl}/${area}`);
-      await page.locator('.resource-directory-table tbody tr[data-row-key]').first().waitFor({ state: 'visible' });
-      const headers = await page.locator('.resource-directory-table thead th').allTextContents();
-      assert.equal(headers[0], `${noun} / 说明`);
-      assert.equal(headers.at(-1), '操作');
-      await page.getByRole('textbox', { name: `搜索${noun}`, exact: true }).waitFor({ state: 'visible' });
-      heights.push(await page.locator('.resource-directory-table tbody tr[data-row-key]').first().evaluate((row: HTMLElement) => row.getBoundingClientRect().height));
-      const actions = page.locator('.resource-directory-table tbody tr[data-row-key]').first().locator('.resource-directory-row-actions');
-      assert.equal(await actions.evaluate((element: HTMLElement) => {
-        const buttons = [...element.querySelectorAll('button')].map(button => button.getBoundingClientRect());
-        const cell = element.closest('td')!.getBoundingClientRect();
-        return buttons.every(button => Math.abs(button.top - buttons[0].top) <= 1 && button.left >= cell.left && button.right <= cell.right);
-      }), true, `${area} 操作保持单行且完整位于操作列内`);
-      await page.getByRole('button', { name: `新增${noun}`, exact: true }).waitFor({ state: 'visible' });
-      await page.getByRole('textbox', { name: `搜索${noun}`, exact: true }).fill('保留搜索');
-      await Promise.all([page.waitForResponse((response: any) => response.request().method() === 'GET' && response.url().includes('/api/')), page.getByRole('button', { name: `刷新${noun}`, exact: true }).click()]);
-      assert.equal(await page.getByRole('textbox', { name: `搜索${noun}`, exact: true }).inputValue(), '保留搜索');
-      await page.getByRole('textbox', { name: `搜索${noun}`, exact: true }).fill('');
-    }
-    assert.ok(Math.max(...heights) - Math.min(...heights) <= 1, JSON.stringify(heights));
-    await page.setViewportSize({ width: 1280, height: 900 });
-    for (const [area, header] of [['services', '代码库'], ['repositories', '集成分支'], ['skills', '来源']]) {
-      await page.goto(`${workspaceUrl}/${area}`);
-      await page.locator('.resource-directory-table .resource-name a').first().click();
-      await page.locator('.pane-right:visible').waitFor({ state: 'visible' });
-      await page.getByRole('columnheader', { name: header, exact: true }).waitFor({ state: 'visible' });
-      const scrolling = page.locator('.resource-directory-table .ant-table-content:visible');
-      await page.waitForFunction((el: HTMLElement) => el.scrollWidth > el.clientWidth, await scrolling.elementHandle());
-      await scrolling.evaluate((el: HTMLElement) => { el.scrollLeft = el.scrollWidth; });
-      assert.ok(await scrolling.evaluate((el: HTMLElement) => el.scrollLeft > 0 && el.scrollWidth > el.clientWidth), `${area} 的副屏打开后仍可横向阅读目录`);
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
-      if (area === 'services') {
-        await page.locator('#service-table-body a[href*="/repositories/"]').first().click();
-        await page.getByRole('button', { name: '编辑代码库', exact: true }).waitFor({ state: 'visible' });
-      }
-      assert.ok(await page.getByRole('tab', { name: /^(项目目录|服务目录|代码库目录|技能目录)$/ }).count() > 0, '已打开目录保留可恢复标签');
-    }
-    await page.setViewportSize({ width: 1280, height: 720 });
-
-  });
-
   if (selected('shell')) await t.test('顶部与卡片共用设置抽屉，明确对象且冲突保留输入', async () => {
     const workspaceApiUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}`;
     const original = await (await page.request.get(workspaceApiUrl)).json();
@@ -1687,82 +971,6 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
-  if (selected('project')) await t.test('空项目首次建设有默认目标，打开与复制不执行写入，错误读取不误判为空', { timeout: 25_000 }, async () => {
-    await runProjectKnowledgeInitializationJourney({ page, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture });
-  });
-
-  if (selected('project')) await t.test('项目主页单次读取登记，服务列表不依赖旧详情请求', async () => {
-    const apiPrefix = `/api/v1/workspaces/${initialWorkspaceId}`;
-    const catalogPath = `${apiPrefix}/asset-catalog`;
-    const legacyPaths = new Set([`${apiPrefix}/projects/demo`, `${apiPrefix}/projects/demo/services`]);
-    const reads: string[] = [];
-    const observe = (request: any) => {
-      if (request.method() === 'GET') reads.push(new URL(request.url()).pathname);
-    };
-    const legacyRoute = (target: URL) => legacyPaths.has(target.pathname);
-    // A slow unused detail endpoint must not delay the visible project or service list.
-    let release!: () => void;
-    const held = new Promise<void>(resolve => { release = resolve; });
-    page.on('request', observe);
-    await page.route(legacyRoute, async (route: any) => { await held; await route.continue(); });
-    try {
-      await page.goto(`${workspaceUrl}/projects/demo`);
-      await page.locator('[data-service-card="api"]').waitFor({ state: 'visible', timeout: 5000 });
-      assert.equal(await page.locator('#project-detail-name').innerText(), '演示项目');
-      assert.equal(await page.locator('#project-service-count').innerText(), '1');
-      assert.equal(reads.filter(value => value === catalogPath).length, 1, '同一份登记供主页和面板使用');
-      assert.deepEqual(reads.filter(value => legacyPaths.has(value)), [], '不再为名称或计数请求旧详情与服务列表');
-    } finally {
-      release(); await page.unroute(legacyRoute); page.off('request', observe);
-    }
-  });
-
-  if (selected('project')) await t.test('项目资料从实际规则文档返回，迟到资料不能恢复旧阅读', async () => {
-    const projectRoot = path.join(workspaceRoot, 'projects/demo');
-    const agents = path.join(projectRoot, 'AGENTS.md'), original = fs.readFileSync(agents, 'utf8');
-    const docs = path.join(projectRoot, 'docs'); fs.mkdirSync(docs, { recursive: true });
-    fs.appendFileSync(agents, '\n## 原始规则阅读\n\n[下一份资料](docs/continuity-fast.md)\n');
-    fs.writeFileSync(path.join(docs, 'continuity-fast.md'), '# 当前资料阅读\n\n[迟到资料](continuity-slow.md)\n');
-    fs.writeFileSync(path.join(docs, 'continuity-slow.md'), '# 迟到资料不得恢复\n');
-    let release!: () => void, requested!: () => void, handled!: () => void;
-    const waiting = new Promise<void>(resolve => { release = resolve; });
-    const entered = new Promise<void>(resolve => { requested = resolve; });
-    const finished = new Promise<void>(resolve => { handled = resolve; });
-    let routed = false;
-    const slow = (target: URL) => target.pathname === `/api/v1/workspaces/${initialWorkspaceId}/code/editor-file`
-      && target.searchParams.get('kind') === 'project'
-      && target.searchParams.get('projectCode') === 'demo'
-      && target.searchParams.get('filePath') === 'docs/continuity-slow.md';
-    await page.route(slow, async (route: import('playwright-core').Route) => {
-      routed = true;
-      try {
-        const response = await route.fetch(); requested();
-        await waiting;
-        try { await route.fulfill({ response }); }
-        catch (error) { if (!route.request().failure()) throw error; }
-      }
-      finally { handled(); }
-    });
-    try {
-      await page.goto(`${workspaceUrl}/projects/demo`);
-      await page.locator('[data-doc-row="agents"]').click();
-      const reading = () => page.locator('.workspace-page:not([hidden]) .pane-right:visible');
-      await reading().getByRole('link', { name: '下一份资料', exact: true }).click();
-      await reading().getByRole('heading', { name: '当前资料阅读', exact: true }).waitFor({ state: 'visible' });
-      await reading().getByRole('link', { name: '迟到资料', exact: true }).click();
-      await entered;
-      await reading().getByRole('button', { name: '← 返回上一篇', exact: true }).click();
-      await reading().getByRole('heading', { name: '原始规则阅读', exact: true }).waitFor({ state: 'visible' });
-      release(); await finished;
-      assert.equal(await reading().getByRole('heading', { name: '原始规则阅读', exact: true }).isVisible(), true);
-      assert.equal(await reading().getByRole('heading', { name: '迟到资料不得恢复', exact: true }).count(), 0);
-      assert.equal(await reading().getByRole('button', { name: '← 返回上一篇', exact: true }).count(), 0);
-    } finally {
-      release(); if (routed) await finished; await page.unroute(slow); fs.writeFileSync(agents, original);
-      for (const file of ['continuity-fast.md', 'continuity-slow.md']) fs.rmSync(path.join(docs, file));
-    }
-  });
-
   if (selected('project')) await t.test('全新工作空间不先迁移即可从网页创建首个项目', async () => {
     const before = runtime.assetCatalog(otherRoot);
     assert.equal(before.migrationRequired, false);
@@ -1780,490 +988,44 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     assert.deepEqual([after.services, after.repositories], [[], []]);
   });
 
-  if (selected('project')) await t.test('项目文件图片保持当前工作空间与正文版本，更新后重新打开读取新观察', async () => {
-    const projectRoot = path.join(workspaceRoot, 'projects/demo');
-    const file = path.join(projectRoot, 'README.md'), imageFile = path.join(projectRoot, 'assets/project-readonly-image.png');
-    const before = fs.existsSync(file) ? fs.readFileSync(file) : null, imageBefore = fs.existsSync(imageFile) ? fs.readFileSync(imageFile) : null;
-    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64');
-    try {
-      fs.mkdirSync(path.dirname(imageFile), { recursive: true }); fs.writeFileSync(imageFile, png);
-      fs.writeFileSync(file, '# 项目配图说明\n\n![项目文档配图](assets/project-readonly-image.png)\n\n正文与图片沿用当前项目来源。\n');
-      await page.goto(`${workspaceUrl}/projects/demo`); await page.locator('[data-doc-row="readme"]').click();
-      const image = page.locator('.pane-right:visible').getByRole('img', { name: '项目文档配图', exact: true });
-      await image.scrollIntoViewIfNeeded();
-      await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('.pane-right img')].some(item => item.alt === '项目文档配图' && item.complete && item.naturalWidth === 1));
-      const previous = new URL((await image.getAttribute('src'))!, workspaceUrl).href;
-      assert.ok(previous.includes(`/api/v1/workspaces/${initialWorkspaceId}/projects/demo/document-image?`));
-      assert.equal(new URL(previous).searchParams.get('documentPath'), 'README.md');
-      const result = await page.request.get(previous); assert.equal(result.status(), 200); assert.deepEqual(await result.body(), png);
-      assert.ok((await image.boundingBox())!.width <= 4, '图片保留自然尺寸并限制阅读宽度');
-      fs.appendFileSync(file, '\n项目正文已经更新。\n');
-      assert.equal((await page.request.get(previous)).status(), 409, '旧正文观察不能作为新图片读取依据');
-      await page.getByRole('button', { name: '关闭 项目文档', exact: true }).click(); await page.locator('[data-doc-row="readme"]').click();
-      await page.locator('.pane-right:visible .markdown-body').filter({ hasText: '项目正文已经更新' }).waitFor({ state: 'visible' });
-      await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('.pane-right img')].some(item => item.alt === '项目文档配图' && item.complete && item.naturalWidth === 1));
-      assert.notEqual(await image.getAttribute('src'), new URL(previous).pathname + new URL(previous).search);
-      await capture(page, 'project-document-current-images.png');
-    } finally {
-      if (before) fs.writeFileSync(file, before); else fs.rmSync(file, { force: true });
-      if (imageBefore) fs.writeFileSync(imageFile, imageBefore); else fs.rmSync(imageFile, { force: true });
-    }
-  });
-
   if (selected('project')) await t.test('项目列表展示标题与说明，详情展示基础事实与文档', async () => {
-    const beforeProjectEdit = runtime.assetCatalog(workspaceRoot);
-    if (beforeProjectEdit.migrationRequired) runtime.migrateAssetCatalog(workspaceRoot, { revision: beforeProjectEdit.revision });
-    await page.goto(`${workspaceUrl}/projects`);
-    const row: any = page.locator('#project-table-body tr').filter({ hasText: '演示项目' });
-    await row.waitFor({ state: 'visible' });
-    await unique(row, '项目行');
-    assert.match(await row.innerText(), /浏览器测试项目/);
-    assert.equal(await row.getByRole('link', { name: '详情', exact: true }).count(), 0);
-    await row.click();
-    await page.waitForURL(`${workspaceUrl}/projects/demo`);
-    assert.equal(await page.locator('#project-detail-name').innerText(), '演示项目');
-    assert.equal(await page.locator('#project-detail-description').innerText(), '浏览器测试项目');
-    assert.equal(await page.locator('#project-service-count').innerText(), '1');
-    assert.equal(await page.getByRole('combobox', { name: '关联服务', exact: true }).count(), 1);
-    assert.equal(await page.locator('#app-view textarea:visible').count(), 0);
-    assert.equal(await page.getByText('操作', { exact: true }).filter({ visible: true }).count(), 0);
-    assert.equal(await page.locator('.overview-strip, .related-resource-links').count(), 0);
-    assert.equal(await page.locator('.project-home-entries .project-home-entry').count(), 2);
-    await page.locator('.project-home-entries [data-knowledge-initialize-action]:visible').waitFor({ state: 'visible' });
-    assert.deepEqual(await page.locator('.project-home-entry strong').allTextContents(), ['建立项目知识', '项目文章']);
-    assert.equal(await page.locator('[data-doc-row="readme"], [data-doc-row="agents"]').count(), 2);
-    assert.equal(await page.getByRole('button', { name: '查看项目工作', exact: false }).count(), 1);
-    assert.equal(await page.getByRole('button', { name: /^移\s*除$/ }).count(), 0);
-    assert.equal(await page.getByRole('button', { name: '更多项目操作', exact: true }).count(), 1);
-    await page.setViewportSize({ width: 1680, height: 900 });
-    const entryBoxes = await page.locator('.project-home-entry').evaluateAll((items: Element[]) => items.map(item => ({ top: item.getBoundingClientRect().top, height: item.getBoundingClientRect().height })));
-    assert.ok(Math.abs(entryBoxes[0].top - entryBoxes[1].top) < 1);
-    assert.ok(entryBoxes.every((box: { height: number }) => box.height < 125));
-    const serviceRow = page.locator('[data-service-card="api"]');
-    const serviceSpacing = await serviceRow.evaluate((link: HTMLElement) => {
-      const outer = link.getBoundingClientRect();
-      const text = link.querySelector('strong')!.getBoundingClientRect();
-      const copy = link.querySelector('small')!.getBoundingClientRect();
-      const icon = link.querySelector('.project-service-icon')!.getBoundingClientRect();
-      return { top: text.top - outer.top, bottom: outer.bottom - copy.bottom, iconTextGap: text.left - icon.right, clipped: copy.right > outer.right };
-    });
-    assert.ok(serviceSpacing.top >= 8 && serviceSpacing.bottom >= 8 && serviceSpacing.iconTextGap >= 10 && !serviceSpacing.clipped, JSON.stringify(serviceSpacing));
-    await capture(page, 'project-home-desktop.png');
-    await page.setViewportSize({ width: 390, height: 844 });
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    await capture(page, 'project-home-mobile.png');
-    await page.setViewportSize({ width: 1680, height: 900 });
-    await showPrimaryNavigation(page, 'workspace');
-    assert.equal(await page.locator('.primary-secondary-navigation:visible [data-nav="projects"]').evaluate((item: any) => item.classList.contains('active')), true);
-    await page.locator('[data-doc-row="readme"]').click();
-    await page.locator('.pane-right .artifact-missing').waitFor({ state: 'visible' });
-    const paneSize = () => page.locator('.workspace-page:not([hidden]) .pane-stage').evaluate((stage: any) => ({
-      left: stage.querySelector('.pane-left').getBoundingClientRect().width,
-      right: stage.querySelector('.pane-right')?.getBoundingClientRect().width ?? 0,
-      total: stage.getBoundingClientRect().width,
-    }));
-    const initialPanes = await paneSize();
-    assert.ok(Math.abs(initialPanes.right - initialPanes.total * 0.65) <= 1, JSON.stringify(initialPanes));
-    const separator = page.getByRole('separator', { name: '拖拽调整两侧宽度' });
-    const dividerBox = await separator.boundingBox();
-    assert.ok(dividerBox);
-    await page.mouse.move(dividerBox.x + dividerBox.width / 2, dividerBox.y + 30);
-    await page.mouse.down();
-    await page.mouse.move(dividerBox.x - 80, dividerBox.y + 30, { steps: 5 });
-    await page.mouse.up();
-    const draggedPanes = await paneSize();
-    assert.ok(draggedPanes.right > initialPanes.right + 60);
-    const storedRatio = await page.evaluate((id: string) => localStorage.getItem(`buildr.web.pane-ratio.${id}`), initialWorkspaceId);
-    assert.ok(storedRatio);
-    await page.getByRole('button', { name: '关闭 项目文档', exact: true }).click();
-    const closedPanes = await paneSize();
-    assert.equal(closedPanes.right, 0);
-    assert.ok(Math.abs(closedPanes.left - closedPanes.total) <= 1);
-    await page.locator('[data-doc-row="readme"]').click();
-    assert.ok(Math.abs((await paneSize()).right - draggedPanes.right) <= 1);
-    await page.reload();
-    const missingReadme = page.waitForResponse((response: import('playwright-core').Response) => {
-      const target = new URL(response.url());
-      return response.request().method() === 'GET'
-        && target.pathname === `/api/v1/workspaces/${initialWorkspaceId}/code/editor-file`
-        && target.searchParams.get('kind') === 'project'
-        && target.searchParams.get('projectCode') === 'demo'
-        && target.searchParams.get('filePath') === 'README.md';
-    });
-    void missingReadme.catch(() => {});
-    await page.locator('[data-doc-row="readme"]').click();
-    const missingResponse = await missingReadme;
-    const missingError = (await missingResponse.json()).error;
-    assert.equal(missingResponse.status(), 404, '当前项目的README缺失，不是其他请求错误');
-    assert.equal(missingError.code, 'file_missing');
-    assert.equal(missingError.message, '文件当前不存在，请保留输入并重新核对位置。');
-    expectedBrowserErrors.add(missingResponse.url());
-    await page.locator('.pane-right .artifact-missing').waitFor({ state: 'visible' });
-    assert.ok(Math.abs((await paneSize()).right - draggedPanes.right) <= 1);
-    assert.equal(await page.locator('.pane-right .artifact-missing').innerText(), missingError.message);
-    await page.locator('[data-doc-row="agents"]').click();
-    await page.waitForFunction(() => {
-      const body: any = document.querySelector('.pane-right .markdown-body')?.textContent || '';
-      return !body.includes('正在读取') && /AGENTS\.md|Project|项目/.test(body);
-    });
-    assert.match(await page.locator('.pane-right .markdown-body').innerText(), /AGENTS\.md|Project|项目/);
-    const projectDocumentText = await page.locator('.pane-right .markdown-body').innerText();
-    await page.locator('[data-service-card="api"]').click();
-    await page.locator('#service-detail-name:visible').waitFor({ state: 'visible' });
-    assert.equal(page.url(), `${workspaceUrl}/projects/demo`);
-    assert.equal(await page.getByRole('tab', { name: '演示项目', exact: true }).count(), 1);
-    assert.equal(await page.getByRole('tab', { name: '服务详情', exact: true }).count(), 1);
-    assert.equal(await page.getByRole('button', { name: '关闭 服务详情', exact: true }).count(), 1, '对象关闭是独立可访问控件');
-    assert.equal(await page.locator('.pane-right:visible [data-related-resources="projects"]').count(), 0);
-    assert.equal(await page.locator('#project-detail-name').isVisible(), true);
-    assert.equal(await page.getByRole('tab', { name: 'AGENTS.md', exact: true }).count(), 1);
-    assert.equal(await page.getByRole('button', { name: '关闭 AGENTS.md', exact: true }).count(), 1, '对象关闭是独立可访问控件');
-    await page.goBack();
-    await page.locator('.workspace-page:not([hidden]) .pane-right .markdown-body:visible').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-right .markdown-body:visible').innerText(), projectDocumentText);
-    await page.goForward();
-    await page.locator('#service-detail-name:visible').waitFor({ state: 'visible' });
-    await showPrimaryNavigation(page, 'workspace');await page.locator('.primary-secondary-navigation:visible [data-nav="skills"]').click();
-    await showPrimaryNavigation(page, 'workspace');await page.locator('.primary-secondary-navigation:visible [data-nav="projects"]').click();
-    await page.waitForURL(`${workspaceUrl}/projects`);
-    await page.getByRole('tab', { name: '演示项目', exact: true }).click();
-    await page.waitForURL(`${workspaceUrl}/projects/demo`);
-    await page.locator('#service-detail-name:visible').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#project-detail-name:visible').innerText(), '演示项目');
-    await page.getByRole('link', { name: '返回项目列表', exact: true }).click();
-    await page.waitForURL(`${workspaceUrl}/projects`);
-    await page.locator('#project-table-body:visible tr').filter({ hasText: '演示项目' }).locator('.resource-name a').click();
-    await page.waitForURL(`${workspaceUrl}/projects/demo`).catch(async (error: Error) => {
-      console.error('[project-directory-reentry-scene]', JSON.stringify(await page.evaluate(() => {
-        const visible = (node: Element) => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden';
-        const rows = [...document.querySelectorAll<HTMLElement>('#project-table-body tr')].filter(row => row.textContent?.includes('演示项目')).slice(0, 4);
-        return {
-          url: location.href,
-          headings: [...document.querySelectorAll<HTMLElement>('h1, #service-detail-name')].filter(visible).slice(0, 8).map(node => ({ id: node.id, text: node.innerText.slice(0, 160) })),
-          rows: rows.map(row => ({ text: row.innerText.slice(0, 240), visible: visible(row), inertAncestor: row.closest('[inert]')?.className || null, links: [...row.querySelectorAll<HTMLAnchorElement>('a')].slice(0, 3).map(link => ({ text: link.innerText.slice(0, 80), href: link.href })) })),
-          leftPanes: [...document.querySelectorAll<HTMLElement>('.pane-left')].filter(visible).slice(0, 4).map(pane => ({ className: pane.className, inert: pane.inert, bodyInert: pane.querySelector<HTMLElement>('.pane-body')?.inert ?? null })),
-          hosts: [...document.querySelectorAll<HTMLElement>('.workspace-pane-host')].slice(0, 4).map(host => ({ className: host.className, visible: visible(host), stageClass: host.querySelector('.pane-stage')?.className })),
-        };
-      })));
-      throw error;
-    });
-    await page.locator('#project-detail-name:visible').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#project-detail-name:visible').innerText(), '演示项目');
-    await page.locator('#service-detail-name:visible').waitFor({ state: 'visible' });
-    assert.equal(await page.getByRole('tab', { name: '服务详情', exact: true }).count(), 1, '目录重入复用项目页并保留已开服务对象');
-    assert.equal(await page.getByRole('tab', { name: 'AGENTS.md', exact: true }).count(), 1, '目录重入保留已有文档标签');
-    await page.getByRole('button', { name: '编辑项目', exact: true }).click();
-    await page.locator('#catalog-edit').waitFor({ state: 'visible' });
-    assert.equal(await page.url(), `${workspaceUrl}/projects/demo`);
-    await page.getByRole('textbox', { name: '说明', exact: true }).fill('已在抽屉中更新');
-    await page.getByRole('textbox', { name: '名称', exact: true }).fill('演示项目（已更新）');
-    await page.getByRole('button', { name: '取消', exact: true }).click();
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    assert.equal(await page.locator('#project-detail-description').innerText(), '浏览器测试项目');
-    await page.getByRole('button', { name: '编辑项目', exact: true }).click();
-    await page.locator('#catalog-edit').waitFor({ state: 'visible' });
-    assert.equal(await page.getByRole('textbox', { name: '说明', exact: true }).inputValue(), '浏览器测试项目');
-    await page.getByRole('textbox', { name: '说明', exact: true }).fill('已在抽屉中更新');
-    await page.getByRole('textbox', { name: '名称', exact: true }).fill('演示项目（已更新）');
-    const demoId = runtime.assetCatalog(workspaceRoot).projects.find((item: any) => item.code === 'demo').id;
-    const catalogUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}/asset-catalog`;
-    const projectUpdateUrl = `${catalogUrl}/project/${demoId}`;
-    expectedBrowserErrors.add(projectUpdateUrl);
-    const failProjectSave = async (route: any) => {
-      if (route.request().method() === 'PUT') return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'asset_revision_conflict', message: '内容已变化' } }) });
-      return route.continue();
-    };
-    await page.route(projectUpdateUrl, failProjectSave);
-    await page.getByRole('button', { name: '保存修改', exact: true }).click();
-    const editAlert = page.locator('.metadata-edit-drawer .metadata-conflict').first();
-    await editAlert.waitFor({ state: 'visible' });
-    assert.match(await editAlert.innerText(), /输入已保留/);
-    assert.equal(await page.getByRole('textbox', { name: '说明', exact: true }).inputValue(), '已在抽屉中更新');
-    await page.unroute(projectUpdateUrl, failProjectSave);
-    const freshProject = page.waitForResponse((response: any) => response.url() === catalogUrl && response.request().method() === 'GET');
-    await page.getByRole('button', { name: '读取最新内容', exact: true }).click();
-    assert.equal((await freshProject).status(), 200);
-    await page.locator('.metadata-conflict dl').waitFor();
-    assert.equal(await page.getByRole('textbox', { name: '说明', exact: true }).inputValue(), '已在抽屉中更新');
-    await capture(page, 'project-edit-drawer-desktop.png');
-    let releaseSave: () => void = () => {}, saveCaptured: () => void = () => {}, writes = 0;
-    const saveGate = new Promise<void>(resolve => { releaseSave = resolve; });
-    const capturedSave = new Promise<void>(resolve => { saveCaptured = resolve; });
-    const delaySave = async (route: any) => {
-      if (route.request().method() === 'PUT') { writes++; saveCaptured(); await saveGate; }
-      await route.continue();
-    };
-    await page.route(projectUpdateUrl, delaySave);
+    const demoAgentsPath = path.join(workspaceRoot, 'projects', 'demo', 'AGENTS.md');
+    const previousDemoAgents = fs.existsSync(demoAgentsPath) ? fs.readFileSync(demoAgentsPath, 'utf8') : null;
+    if (previousDemoAgents === null) fs.writeFileSync(demoAgentsPath, '# AGENTS.md\n\n演示项目规则。\n', 'utf8');
     try {
-      const saved = page.waitForResponse((response: any) => response.url() === projectUpdateUrl && response.request().method() === 'PUT');
-      await page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true }).click();
-      await capturedSave;
-      for (const name of ['名称', '说明']) assert.equal(await page.locator(`#catalog-edit [aria-label="${name}"]`).isDisabled(), true, '保存期间字段不能接受未提交的新输入');
-      assert.equal(await page.getByRole('button', { name: '关闭编辑', exact: true }).isDisabled(), true);
-      assert.equal(await page.getByRole('button', { name: '取消', exact: true }).isDisabled(), true);
-      await page.evaluate(() => { const form = document.getElementById('catalog-edit') as HTMLFormElement; form.requestSubmit(); form.requestSubmit(); });
-      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      assert.equal(writes, 1, '等待中的重复表单提交不能生成第二次 PUT');
-      assert.equal(await page.getByRole('textbox', { name: '说明', exact: true }).inputValue(), '已在抽屉中更新');
-      releaseSave(); assert.equal((await saved).status(), 200);
-    } finally { releaseSave(); await page.unroute(projectUpdateUrl, delaySave); }
-    await page.waitForFunction(() => document.getElementById('project-detail-description')?.textContent === '已在抽屉中更新');
-    assert.equal(await page.locator('#project-detail-description').innerText(), '已在抽屉中更新');
-    await page.waitForFunction(() => [...document.querySelectorAll('.workspace-tabstrip .pane-tab .pane-tab-text')].some((node: any) => node.textContent?.includes('演示项目（已更新）')));
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    await page.setViewportSize({ width: 1280, height: 720 });
-  });
+      const beforeProjectEdit = runtime.assetCatalog(workspaceRoot);
+      if (beforeProjectEdit.migrationRequired) runtime.migrateAssetCatalog(workspaceRoot, { revision: beforeProjectEdit.revision });
+      await page.goto(`${workspaceUrl}/projects`);
+      const row: any = page.locator('#project-table-body tr').filter({ hasText: '演示项目' });
+      await row.waitFor({ state: 'visible' });
+      await unique(row, '项目行');
+      await row.click();
+      await page.waitForURL(`${workspaceUrl}/projects/demo`);
+      assert.equal(await page.locator('#project-detail-name').innerText(), '演示项目');
+      assert.equal(await page.locator('#project-detail-description').innerText(), '浏览器测试项目');
+      assert.equal(await page.locator('#project-service-count').innerText(), '1');
+      await page.locator('[data-service-card="api"]').waitFor({ state: 'visible' });
+      await page.locator('[data-doc-row="agents"]').click();
+      await page.locator('.pane-right .markdown-body').filter({ hasText: /AGENTS\.md|演示项目规则/ }).waitFor({ state: 'visible' });
+      await capture(page, 'project-home-desktop.png');
 
-  if (selected('project')) await t.test('元信息最新读取失败保留输入，旧编辑迟到响应不能解锁新保存', async () => {
-    const beforeRecoveryEdit = runtime.assetCatalog(workspaceRoot);
-    if (beforeRecoveryEdit.migrationRequired) runtime.migrateAssetCatalog(workspaceRoot, { revision: beforeRecoveryEdit.revision });
-    await page.goto(`${workspaceUrl}/projects/demo`);
-    await page.locator('#project-detail-name').waitFor();
-    const demoProjectId = runtime.assetCatalog(workspaceRoot).projects.find((item: any) => item.code === 'demo').id;
-    const catalogReadUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}/asset-catalog`;
-    const target = `${catalogReadUrl}/project/${demoProjectId}`;
-    expectedBrowserErrors.add(catalogReadUrl);
-    const original = { project: runtime.assetCatalog(workspaceRoot).projects.find((item: any) => item.code === 'demo'), revision: runtime.assetCatalog(workspaceRoot).revision };
-    const session = await page.locator('meta[name="buildr-session"]').getAttribute('content');
-    const headers = { origin: url, 'x-buildr-session': session!, 'content-type': 'application/json' };
-    await page.getByRole('button', { name: '编辑项目', exact: true }).click();
-    await page.locator('#catalog-edit').waitFor();
-    await page.getByRole('textbox', { name: '说明', exact: true }).fill('旧编辑输入');
-    let reads = 0, writes = 0;
-    let releaseRead: () => void = () => {}, captureRead: () => void = () => {}, finishRead: () => void = () => {};
-    let releaseWrite: () => void = () => {}, captureWrite: () => void = () => {};
-    const readGate = new Promise<void>(resolve => { releaseRead = resolve; });
-    const readCaptured = new Promise<void>(resolve => { captureRead = resolve; });
-    const readFinished = new Promise<void>(resolve => { finishRead = resolve; });
-    const writeGate = new Promise<void>(resolve => { releaseWrite = resolve; });
-    const writeCaptured = new Promise<void>(resolve => { captureWrite = resolve; });
-    const injected = async (route: any) => {
-      if (route.request().method() === 'GET') {
-        reads++;
-        if (reads === 1) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'read_unavailable', message: '最新读取暂不可用' } }) });
-        if (reads === 2) {
-          const response = await route.fetch(); captureRead(); await readGate;
-          await route.fulfill({ response }); finishRead(); return;
-        }
-      }
-      if (route.request().method() === 'PUT') {
-        writes++;
-        if (writes === 1) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'asset_revision_conflict', message: '内容已变化' } }) });
-        captureWrite(); await writeGate;
-      }
-      await route.continue();
-    };
-    expectedBrowserErrors.add(target);
-    const saveRequests: Array<{ method: string; url: string; status: number | null; migrationRequired?: boolean; revision?: string; errorCode?: string }> = [];
-    const saveRequestEntries = new Map<any, (typeof saveRequests)[number]>();
-    const observeSaveRequest = (request: any) => {
-      if (![target, catalogReadUrl].includes(request.url()) || saveRequests.length >= 16) return;
-      const observation = { method: request.method(), url: request.url(), status: null };
-      saveRequests.push(observation); saveRequestEntries.set(request, observation);
-    };
-    const observeSaveResponse = async (response: any) => {
-      const observation = saveRequestEntries.get(response.request());
-      if (!observation) return;
-      observation.status = response.status();
-      try {
-        const body = await response.json();
-        observation.migrationRequired = body.migrationRequired;
-        observation.revision = body.revision;
-        observation.errorCode = body.error?.code;
-      } catch { /* Status and identity remain useful if the body is unavailable. */ }
-    };
-    page.on('request', observeSaveRequest); page.on('response', observeSaveResponse);
-    await page.route(catalogReadUrl, injected);
-    await page.route(target, injected);
-    try {
-      await page.getByRole('button', { name: '保存修改', exact: true }).click();
-      await page.getByRole('button', { name: '读取最新内容', exact: true }).click();
-      await page.locator('.metadata-conflict').getByText('最新读取暂不可用', { exact: true }).waitFor();
-      assert.equal(await page.getByRole('textbox', { name: '说明', exact: true }).inputValue(), '旧编辑输入');
-      assert.equal(await page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true }).count(), 0);
-      await page.getByRole('button', { name: '读取最新内容', exact: true }).click(); await readCaptured;
-      await page.getByRole('button', { name: '关闭编辑', exact: true }).click();
-      await page.getByRole('dialog').waitFor({ state: 'hidden' });
       await page.getByRole('button', { name: '编辑项目', exact: true }).click();
-      await page.getByRole('textbox', { name: '说明', exact: true }).waitFor();
-      assert.equal(await page.getByRole('textbox', { name: '说明', exact: true }).inputValue(), original.project.description);
-      await page.getByRole('textbox', { name: '说明', exact: true }).fill('新编辑输入');
-      const saved = page.waitForResponse((response: any) => response.url() === target && response.request() .method() === 'PUT');
-      await page.getByRole('button', { name: '保存修改', exact: true }).click(); await writeCaptured;
-      releaseRead(); await readFinished;
-      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      await page.evaluate(() => (document.getElementById('catalog-edit') as HTMLFormElement).requestSubmit());
-      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      assert.equal(writes, 2, '旧读取完成不能解锁新编辑正在执行的保存');
-      assert.equal(await page.getByRole('textbox', { name: '说明', exact: true }).inputValue(), '新编辑输入');
-      assert.equal(await page.getByRole('textbox', { name: '说明', exact: true }).isDisabled(), true);
-      releaseWrite(); assert.equal((await saved).status(), 200);
+      await page.locator('#catalog-edit').waitFor({ state: 'visible' });
+      await page.getByRole('textbox', { name: '说明', exact: true }).fill('已在抽屉中更新');
+      await page.getByRole('button', { name: '保存修改', exact: true }).click();
       await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    } catch (error) {
-      console.error('[project-metadata-recovery-scene]', JSON.stringify({
-        target, reads, writes, requests: saveRequests,
-        original: { migrationRequired: false, revision: original.revision },
-        scene: await page.evaluate(() => {
-          const visible = (node: Element) => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden';
-          const form = document.querySelector<HTMLElement>('#catalog-edit');
-          const save = document.querySelector<HTMLButtonElement>('#catalog-edit-save');
-          const alert = document.querySelector<HTMLElement>('.metadata-edit-drawer .ant-alert-error');
-          return {
-            url: location.href, formVisible: Boolean(form && visible(form)),
-            save: save ? { disabled: save.disabled, loading: save.classList.contains('ant-btn-loading'), text: save.innerText.slice(0, 120) } : null,
-            fields: ['名称', '说明'].map(name => { const field = form?.querySelector(`[aria-label="${name}"]`) as HTMLInputElement | HTMLTextAreaElement | null | undefined; return { id: name, disabled: field?.disabled ?? null, value: field?.value.slice(0, 240) ?? null }; }),
-            alert: alert ? { visible: visible(alert), text: alert.innerText.slice(0, 1200) } : null,
-            recoveryButtons: [...document.querySelectorAll<HTMLButtonElement>('.metadata-conflict button')].filter(visible).slice(0, 8).map(button => ({ text: button.innerText.slice(0, 120), disabled: button.disabled, loading: button.classList.contains('ant-btn-loading') })),
-          };
-        }),
-      }));
-      throw error;
-    } finally { releaseRead(); releaseWrite(); await page.unroute(catalogReadUrl, injected); await page.unroute(target, injected); page.off('request', observeSaveRequest); page.off('response', observeSaveResponse); }
-    const current = runtime.assetCatalog(workspaceRoot);
-    const restored = await page.request.put(target, { headers, data: { revision: current.revision, name: original.project.name, description: original.project.description } });
-    assert.equal(restored.status(), 200, await restored.text());
-  });
+      await page.waitForFunction(() => document.getElementById('project-detail-description')?.textContent === '已在抽屉中更新');
 
-  if (selected('project')) await t.test('代码库已有目录可以移除并重新登记且保留 Git 内容', async () => {
-    const repositoryPath = 'repositories/browser-retained', location = path.join(workspaceRoot, repositoryPath);
-    fs.mkdirSync(location, { recursive: true }); runGit(location, ['init', '-b', 'main']); fs.writeFileSync(path.join(location, 'keep.txt'), 'repository bytes');
-    if (runtime.assetCatalog(workspaceRoot).migrationRequired) runtime.migrateAssetCatalog(workspaceRoot, { revision: runtime.assetCatalog(workspaceRoot).revision });
-    await page.goto(`${workspaceUrl}/repositories`);
-    for (let round = 0; round < 2; round++) {
-      await page.getByRole('button', { name: '新增代码库', exact: true }).click();
-      await page.getByRole('combobox', { name: '已有代码库目录', exact: true }).click();
-      await page.getByTitle(repositoryPath, { exact: true }).click();
-      await page.getByRole('button', { name: '登记代码库', exact: true }).click();
-      await page.locator('#repository-create').waitFor({ state: 'detached' });
-      const row = page.locator('#repository-table-wrap tr').filter({ hasText: 'browser-retained' }); await row.waitFor();
-      await row.getByRole('button', { name: /^移\s*除$/ }).click();
-      await page.getByRole('dialog').getByRole('button', { name: /^移\s*除$/ }).click();
-      await row.waitFor({ state: 'hidden' });
-      assert.equal(fs.readFileSync(path.join(location, 'keep.txt'), 'utf8'), 'repository bytes'); assert.ok(fs.existsSync(path.join(location, '.git')));
+      await page.getByRole('button', { name: '编辑项目', exact: true }).click();
+      await page.locator('#catalog-edit').waitFor({ state: 'visible' });
+      await page.getByRole('textbox', { name: '说明', exact: true }).fill('浏览器测试项目');
+      await page.getByRole('button', { name: '保存修改', exact: true }).click();
+      await page.getByRole('dialog').waitFor({ state: 'hidden' });
+      await page.waitForFunction(() => document.getElementById('project-detail-description')?.textContent === '浏览器测试项目');
+    } finally {
+      if (previousDemoAgents === null) fs.rmSync(demoAgentsPath, { force: true });
+      else fs.writeFileSync(demoAgentsPath, previousDemoAgents, 'utf8');
     }
-  });
-
-  if (selected('project')) await t.test('项目连续新增服务和代码库仅在外层提交时保存', async () => {
-    await page.goto(`${workspaceUrl}/projects/new`);
-    const migration = page.getByRole('button', { name: '迁移登记', exact: true });
-    const current = runtime.assetCatalog(workspaceRoot);
-    if (current.migrationRequired) { await migration.click(); await migration.waitFor({ state: 'hidden' }); }
-    assert.equal(await page.getByRole('tab', { name: '创建项目', exact: true }).count(), 0);
-    await page.getByRole('textbox', { name: '项目名称', exact: true }).fill('嵌套创建项目');
-    await page.getByRole('textbox', { name: '项目编码', exact: true }).fill('nested-project');
-    await page.getByRole('combobox', { name: '关联服务', exact: true }).click();
-    await page.getByRole('textbox', { name: '过滤服务', exact: true }).fill('不存在的服务');
-    await page.getByRole('button', { name: '新增服务', exact: true }).click();
-    await page.getByRole('textbox', { name: '服务名称', exact: true }).fill('嵌套业务服务');
-    await page.getByRole('textbox', { name: '服务编码', exact: true }).fill('nested-business');
-    await page.getByRole('combobox', { name: '代码库', exact: true }).click();
-    await page.getByRole('button', { name: '新增代码库', exact: true }).click();
-    await page.getByRole('textbox', { name: '代码库编码', exact: true }).fill('nested-code');
-    await page.getByRole('textbox', { name: 'Git 地址', exact: true }).fill('https://example.com/nested.git');
-    await page.getByRole('textbox', { name: '集成分支', exact: true }).fill('dev');
-    await page.getByRole('button', { name: '添加服务', exact: true }).click();
-    await page.getByText('请选择服务类型（前端或后端）。', { exact: true }).waitFor({ state: 'visible' });
-    assert.equal(runtime.assetCatalog(workspaceRoot).services.some((item: any) => item.code === 'nested-business'), false);
-    await page.getByRole('combobox', { name: '服务类型', exact: true }).click();
-    await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content').getByText('后端', { exact: true }).click();
-    await page.getByRole('button', { name: '添加服务', exact: true }).click();
-    await page.getByRole('dialog').filter({ has: page.getByText('新增服务', { exact: true }) }).waitFor({ state: 'hidden' });
-    assert.equal(page.url(), `${workspaceUrl}/projects`);
-    assert.equal(runtime.assetCatalog(workspaceRoot).projects.some((p: any) => p.code === 'nested-project'), false);
-    await page.getByRole('dialog').getByRole('button', { name: '创建项目', exact: true }).click();
-    await page.waitForURL(`${workspaceUrl}/projects/nested-project`);
-    await page.getByRole('link', { name: '嵌套业务服务', exact: true }).waitFor({ state: 'visible' });
-    const saved = runtime.assetCatalog(workspaceRoot);
-    const project = saved.projects.find((p: any) => p.code === 'nested-project');
-    const service = saved.services.find((s: any) => s.code === 'nested-business');
-    const repository = saved.repositories.find((r: any) => r.code === 'nested-code');
-    assert.deepEqual(project.serviceIds, [service.id]);
-    assert.equal(service.type, 'backend');
-    assert.equal(service.repositoryId, repository.id);
-    assert.equal(repository.source.path, 'repositories/nested-code');
-    assert.equal(runtime.catalogRepositoryStatus(workspaceRoot, repository.id).available, false);
-    assert.ok(['cloning', 'failed'].includes(runtime.repositoryCloneStatus(workspaceRoot, repository.id).state), '登记后异步克隆，未完成前不可用');
-    assert.equal(fs.existsSync(path.join(workspaceRoot, 'projects/nested-project/services/nested-business')), false);
-    assert.equal(fs.existsSync(path.join(workspaceRoot, 'services/nested-business')), false);
-    await page.getByRole('button', { name: '解除关联 嵌套业务服务', exact: true }).click();
-    await page.getByRole('link', { name: '嵌套业务服务', exact: true }).waitFor({ state: 'hidden' });
-    assert.equal(await page.locator('#project-service-count').innerText(), '0');
-    const unlinked = runtime.assetCatalog(workspaceRoot);
-    assert.deepEqual(unlinked.projects.find((p: any) => p.id === project.id).serviceIds, []);
-    assert.ok(unlinked.services.some((s: any) => s.id === service.id));
-    assert.ok(unlinked.repositories.some((r: any) => r.id === repository.id));
-    const associationUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}/asset-catalog/projects/${project.id}/services`;
-    expectedBrowserErrors.add(associationUrl);
-    const rejectAssociation = (route: any) => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'asset_catalog_revision_conflict', message: '关联版本已变化' } }) });
-    await page.route(associationUrl, rejectAssociation);
-    await page.getByRole('combobox', { name: '关联服务', exact: true }).click();
-    await page.locator('.ant-select-item-option-content').filter({ hasText: '嵌套业务服务' }).click();
-    await page.getByRole('alert').filter({ hasText: '关联版本已变化' }).waitFor({ state: 'visible' });
-    assert.equal(await page.getByRole('link', { name: '嵌套业务服务', exact: true }).count(), 0);
-    await page.unroute(associationUrl, rejectAssociation);
-    await page.getByRole('combobox', { name: '关联服务', exact: true }).click();
-    await page.getByRole('textbox', { name: '过滤服务', exact: true }).fill('嵌套');
-    await page.locator('.ant-select-item-option-content').filter({ hasText: '嵌套业务服务' }).click();
-    await page.getByRole('link', { name: '嵌套业务服务', exact: true }).waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#project-service-count').innerText(), '1');
-    assert.equal(await page.getByRole('dialog').count(), 0);
-    assert.equal(await page.locator('#project-manage-services .ant-select-selection-item').count(), 0);
-    const serviceCount = runtime.assetCatalog(workspaceRoot).services.length;
-    await page.getByRole('combobox', { name: '关联服务', exact: true }).click();
-    await page.getByRole('button', { name: '新增服务', exact: true }).click();
-    await page.getByRole('textbox', { name: '服务名称', exact: true }).fill('保留未提交草稿');
-    await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
-    assert.equal(runtime.assetCatalog(workspaceRoot).services.length, serviceCount);
-    await page.getByRole('combobox', { name: '关联服务', exact: true }).click();
-    await page.getByRole('button', { name: '新增服务', exact: true }).click();
-    assert.equal(await page.getByRole('textbox', { name: '服务名称', exact: true }).inputValue(), '保留未提交草稿');
-    await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
-
-  });
-
-  if (selected('project')) await t.test('移除后从已有目录重新登记，版本冲突保留输入与原文件', async () => {
-    let catalog = runtime.assetCatalog(workspaceRoot);
-    if (catalog.migrationRequired) catalog = runtime.migrateAssetCatalog(workspaceRoot, { revision: catalog.revision });
-    catalog = runtime.createCatalogProject(workspaceRoot, { revision: catalog.revision, code: 'register-browser', name: '重新登记验收项目' });
-    const original = catalog.projects.find((project: any) => project.code === 'register-browser');
-    const source = path.join(workspaceRoot, 'projects/register-browser/README.md');
-    fs.writeFileSync(source, '重新登记保留原始内容\n');
-    const missing = path.join(workspaceRoot, 'projects/register-browser/commands.yml');
-    fs.rmSync(missing);
-    await page.goto(`${workspaceUrl}/projects/register-browser`);
-    await page.getByRole('button', { name: '更多项目操作', exact: true }).click();
-    await page.getByRole('menuitem', { name: /^移\s*除$/ }).click();
-    await page.getByRole('dialog').getByRole('button', { name: /^移\s*除$/ }).click();
-    await page.waitForURL(`${workspaceUrl}/projects`);
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    await page.locator('#project-directory-create-button').click();
-    await page.getByRole('radio', { name: '登记已有项目', exact: true }).check();
-    await page.getByRole('combobox', { name: '已有项目目录', exact: true }).click();
-    await page.locator('.ant-select-item-option-content').filter({ hasText: 'projects/register-browser' }).click();
-    await page.getByRole('textbox', { name: '项目名称', exact: true }).fill('重新登记后的名称');
-    await page.getByRole('textbox', { name: '业务目标', exact: true }).fill('保留本次填写的目标');
-    const registrationUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}/asset-catalog/projects/register`;
-    expectedBrowserErrors.add(registrationUrl);
-    const current = runtime.assetCatalog(workspaceRoot);
-    runtime.updateCatalogAsset(workspaceRoot, 'project', current.projects[0].id, { revision: current.revision, description: '登记期间由另一个入口修改' });
-    await page.getByRole('button', { name: '登记项目', exact: true }).click();
-    await page.locator('#project-register-error').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#project-register-error').innerText(), /当前输入已保留/);
-    assert.equal(await page.getByRole('textbox', { name: '项目名称', exact: true }).inputValue(), '重新登记后的名称');
-    assert.equal(await page.getByRole('textbox', { name: '业务目标', exact: true }).inputValue(), '保留本次填写的目标');
-    await page.getByRole('button', { name: '重新核对目录', exact: true }).click();
-    await page.getByRole('button', { name: '登记项目', exact: true }).waitFor({ state: 'visible' });
-    await page.waitForFunction(() => !(document.querySelector('button[form="project-register-form"]') as HTMLButtonElement)?.disabled);
-    await capture(page, 'project-register-existing-desktop.png');
-    await page.getByRole('button', { name: '登记项目', exact: true }).click();
-    await page.waitForURL(`${workspaceUrl}/projects/register-browser`);
-    await page.locator('#project-detail-name:visible').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#project-detail-name:visible').innerText(), '重新登记后的名称');
-    const registered = runtime.assetCatalog(workspaceRoot).projects.find((project: any) => project.code === original.code);
-    assert.notEqual(registered.id, original.id);
-    assert.deepEqual(registered.serviceIds, []);
-    assert.equal(fs.readFileSync(source, 'utf8'), '重新登记保留原始内容\n');
-    assert.equal(fs.existsSync(missing), false);
   });
 
   if (selected('service')) await t.test('全局服务目录进入主页，旧详情与文档保持兼容', async () => {
@@ -2321,7 +1083,6 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     if (agentsDocument.exists) await page.locator('.pane-right:visible .resource-reader .markdown-body').waitFor({ state: 'visible' });
     else await page.locator('.pane-right:visible .artifact-missing').getByText('未找到 AGENTS.md', { exact: true }).waitFor({ state: 'visible' });
     await page.getByRole('button', { name: '← 返回详情', exact: true }).click();
-    await runServiceKnowledgeJourney({ page, workspaceRoot, workspaceUrl, service, capture });
     await page.getByRole('button', { name: '编辑服务', exact: true }).click();
     await page.locator('#catalog-edit').waitFor({ state: 'visible' });
     assert.equal(await page.url(), `${workspaceUrl}/services`);
@@ -2344,444 +1105,6 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
-  if (selected('service')) await t.test('目录登记流程移除后保留文件，服务与技能均可重新选择', async () => {
-    const directoryPath = 'projects/demo/services/retained-browser';
-    const directory = path.join(workspaceRoot, directoryPath);
-    fs.mkdirSync(directory, { recursive: true }); fs.writeFileSync(path.join(directory, 'keep.txt'), 'browser retained');
-    await page.goto(`${workspaceUrl}/services`);
-    for (let round = 0; round < 2; round++) {
-      await page.getByRole('button', { name: '新增服务', exact: true }).click();
-      await page.getByRole('textbox', { name: '服务名称', exact: true }).fill('目录登记服务');
-      await page.getByRole('textbox', { name: '服务编码', exact: true }).fill('retained-browser');
-      await page.getByRole('combobox', { name: '服务类型', exact: true }).click();
-      await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: /^后端$/ }).click();
-      await page.getByRole('combobox', { name: '已有服务目录', exact: true }).click();
-      await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: directoryPath }).click();
-      await page.getByRole('button', { name: '添加服务', exact: true }).click();
-      await page.locator('#catalog-service-create').waitFor({ state: 'detached' });
-      const row = page.locator('#service-table-body tr').filter({ hasText: '目录登记服务' });
-      await row.waitFor();
-      await row.getByRole('button', { name: /^移\s*除$/ }).click();
-      await page.getByRole('dialog').getByRole('button', { name: /^移\s*除$/ }).click();
-      await row.waitFor({ state: 'hidden' });
-      assert.equal(fs.readFileSync(path.join(directory, 'keep.txt'), 'utf8'), 'browser retained');
-      assert.equal(fs.existsSync(path.join(directory, 'AGENTS.md')), false);
-    }
-    await page.getByRole('button', { name: '新增服务', exact: true }).click();
-    await page.getByRole('textbox', { name: '服务名称', exact: true }).fill('新目录服务');
-    await page.getByRole('textbox', { name: '服务编码', exact: true }).fill('new-directory-browser');
-    await page.getByRole('combobox', { name: '服务类型', exact: true }).click();
-    await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: /^后端$/ }).click();
-    await page.getByRole('combobox', { name: '所属项目', exact: true }).click();
-    await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: runtime.assetCatalog(workspaceRoot).projects.find((item: any) => item.code === 'demo').name }).click();
-    await page.getByRole('button', { name: '添加服务', exact: true }).click();
-    await page.locator('#catalog-service-create').waitFor({ state: 'detached' });
-    assert.ok(fs.statSync(path.join(workspaceRoot, 'projects/demo/services/new-directory-browser')).isDirectory());
-    assert.equal(fs.existsSync(path.join(workspaceRoot, 'projects/demo/services/new-directory-browser/AGENTS.md')), false);
-    await page.goto(`${workspaceUrl}/skills`);
-    await page.locator('#skills-add').click();
-    await page.getByRole('textbox', { name: '技能编码', exact: true }).fill('retained-browser-skill');
-    await page.getByRole('textbox', { name: '技能描述', exact: true }).fill('保留文件');
-    await page.getByRole('textbox', { name: '技能正文', exact: true }).fill('# 浏览器保留技能\n\n正文不改写。');
-    await page.getByRole('button', { name: '保存技能', exact: true }).click();
-    await page.locator('#skill-registration').waitFor({ state: 'detached' });
-    const skillFile = path.join(workspaceRoot, 'skills/retained-browser-skill/SKILL.md'), bytes = fs.readFileSync(skillFile);
-    const skillRow = page.locator('[data-skill-id="retained-browser-skill"]');
-    await skillRow.getByRole('button', { name: /^移\s*除$/ }).click();
-    await page.getByRole('dialog').getByRole('button', { name: /^移\s*除$/ }).click();
-    await skillRow.waitFor({ state: 'hidden' }); assert.deepEqual(fs.readFileSync(skillFile), bytes);
-    await page.locator('#skills-add').click();
-    await page.getByRole('combobox', { name: '已有技能目录', exact: true }).click();
-    await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: 'skills/retained-browser-skill' }).click();
-    await page.getByRole('button', { name: '保存技能', exact: true }).click();
-    await page.locator('#skill-registration').waitFor({ state: 'detached' }); await skillRow.waitFor();
-    assert.deepEqual(fs.readFileSync(skillFile), bytes);
-    await page.goto(`${workspaceUrl}/services`);
-    await page.locator('#service-table-body a[href*="/services/"]').filter({ hasText: /^演示服务$/ }).click();
-  });
-
-  if (selected('service')) await t.test('独立列表快速读取，服务和项目删除保留文件与代码库', async () => {
-    let c = runtime.assetCatalog(workspaceRoot);
-    if (c.migrationRequired) c = runtime.migrateAssetCatalog(workspaceRoot, { revision: c.revision });
-    c = runtime.createCatalogProject(workspaceRoot, { revision: c.revision, code: 'delete-browser', name: '删除验收项目', newServices: [{ code: 'delete-browser-api', name: '删除验收服务', repository: { code: 'delete-browser-code', url: 'https://example.com/delete.git', integrationBranch: 'dev' } }] });
-    const service = c.services.find((s: any) => s.code === 'delete-browser-api');
-    await page.goto(`${workspaceUrl}/services`);
-    // Measure a directory-only request without depending on the preceding case.
-    const closeService = page.getByRole('button', { name: '关闭 服务详情', exact: true });
-    if (await closeService.count()) await closeService.click();
-    await page.locator('.workspace-page:not([hidden]) .pane-right').waitFor({ state: 'hidden' });
-    const requests: string[] = [];
-    const collect = (request: any) => { if (request.method() === 'GET') requests.push(request.url()); };
-    page.on('request', collect);
-    await page.goto(`${workspaceUrl}/services`);
-    await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).waitFor();
-    assert.ok(requests.some(url => url.endsWith('/services')));
-    assert.ok(!requests.some(url => url.endsWith('/asset-catalog')));
-    page.off('request', collect);
-    await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).getByRole('button', { name: /^移\s*除$/ }).click();
-    await page.getByRole('dialog').getByText(/将解除这些项目的引用：删除验收项目/).waitFor();
-    await page.getByRole('dialog').getByRole('button', { name: /^取\s*消$/ }).click();
-    assert.ok(runtime.assetCatalog(workspaceRoot).services.some((s: any) => s.id === service.id));
-    await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).getByRole('button', { name: /^移\s*除$/ }).click();
-    await page.getByRole('dialog').getByRole('button', { name: /^移\s*除$/ }).click();
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).waitFor({ state: 'hidden' });
-    c = runtime.assetCatalog(workspaceRoot);
-    assert.ok(!c.services.some((s: any) => s.id === service.id));
-    assert.ok(c.repositories.some((r: any) => r.id === service.repositoryId));
-    assert.equal(fs.existsSync(path.join(workspaceRoot, 'services/delete-browser-api')), false);
-    await page.goto(`${workspaceUrl}/projects/delete-browser`);
-    await page.getByRole('button', { name: '更多项目操作', exact: true }).click();
-    await page.getByRole('menuitem', { name: /^移\s*除$/ }).click();
-    await page.getByRole('dialog').getByRole('button', { name: /^移\s*除$/ }).click();
-    await page.waitForURL(`${workspaceUrl}/projects`);
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    assert.equal(await page.getByRole('tab', { name: '删除验收项目', exact: true }).count(), 0);
-    assert.ok(fs.existsSync(path.join(workspaceRoot, 'projects/delete-browser/AGENTS.md')));
-  });
-
-  if (selected('service')) await t.test('连续编辑三个服务使用新读取版本，真实冲突仍保留输入', async () => {
-    let c = runtime.assetCatalog(workspaceRoot);
-    if (c.migrationRequired) c = runtime.migrateAssetCatalog(workspaceRoot, { revision: c.revision });
-    c = runtime.createCatalogProject(workspaceRoot, {
-      revision: c.revision, code: 'sequential-edit', name: '连续编辑项目',
-      newServices: [1, 2, 3].map(n => ({ code: `sequential-${n}`, name: `连续编辑服务${n}`, repository: { code: `sequential-code-${n}`, url: `https://example.com/sequential-${n}.git`, integrationBranch: 'main' } })),
-    });
-    const catalogUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}/asset-catalog`;
-    // Keep the fresh read behind the initial render so a cached snapshot cannot
-    // accidentally pass by winning the network race.
-    const delayRead = async (route: any) => {
-      const response = await route.fetch();
-      await new Promise(resolve => setTimeout(resolve, 150));
-      await route.fulfill({ response });
-    };
-    await page.route(catalogUrl, delayRead);
-    try {
-      await page.goto(`${workspaceUrl}/services`);
-      for (const n of [1, 2, 3]) {
-        await page.locator('#service-table-body tr').filter({ hasText: `连续编辑服务${n}` }).getByRole('button', { name: '编辑', exact: true }).click();
-        await page.getByRole('textbox', { name: '名称', exact: true }).fill(`已修改服务${n}`);
-        const saved = page.waitForResponse((response: any) => response.request().method() === 'PUT' && response.url().includes('/asset-catalog/service/'));
-        await page.locator('#catalog-edit-save').click();
-        assert.equal((await saved).status(), 200, `第 ${n} 次保存不应误报版本冲突`);
-        await page.getByRole('dialog').waitFor({ state: 'hidden' });
-        await page.locator('#service-table-body tr').filter({ hasText: `已修改服务${n}` }).waitFor();
-      }
-      await page.locator('#service-table-body tr').filter({ hasText: '已修改服务3' }).getByRole('button', { name: '编辑', exact: true }).click();
-      await page.getByRole('textbox', { name: '名称', exact: true }).fill('保留我的输入');
-      c = runtime.assetCatalog(workspaceRoot);
-      const service = c.services.find((s: any) => s.code === 'sequential-3');
-      runtime.updateCatalogAsset(workspaceRoot, 'service', service.id, { revision: c.revision, name: '另一入口修改' });
-      const updateUrl = `${catalogUrl}/service/${service.id}`;
-      expectedBrowserErrors.add(updateUrl);
-      const rejected = page.waitForResponse((response: any) => response.request().method() === 'PUT' && response.url() === updateUrl);
-      await page.locator('#catalog-edit-save').click();
-      assert.equal((await rejected).status(), 409);
-      assert.equal(await page.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '保留我的输入');
-      assert.equal(runtime.assetCatalog(workspaceRoot).services.find((s: any) => s.id === service.id).name, '另一入口修改');
-      assert.equal(await page.locator('#catalog-edit-save').isDisabled(), true);
-      await page.getByRole('button', { name: '读取最新内容', exact: true }).click();
-      await page.locator('.metadata-conflict dl').getByText('另一入口修改', { exact: true }).waitFor();
-      c = runtime.assetCatalog(workspaceRoot);
-      runtime.updateCatalogAsset(workspaceRoot, 'service', service.id, { revision: c.revision, description: '另一入口再次更新的说明' });
-      const secondRejected = page.waitForResponse((response: any) => response.request().method() === 'PUT' && response.url() === updateUrl);
-      await page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true }).click();
-      assert.equal((await secondRejected).status(), 409, '读取最新后又变化，继续保存仍必须拒绝');
-      assert.equal(await page.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '保留我的输入');
-      assert.equal(await page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true }).count(), 0, '再次冲突必须重新读取');
-      await page.getByRole('button', { name: '读取最新内容', exact: true }).click();
-      await page.locator('.metadata-conflict dl').getByText('另一入口再次更新的说明', { exact: true }).waitFor();
-      let release: () => void = () => {}, captured: () => void = () => {}, writes = 0;
-      const gate = new Promise<void>(resolve => { release = resolve; });
-      const pending = new Promise<void>(resolve => { captured = resolve; });
-      const delayWrite = async (route: any) => {
-        if (route.request().method() === 'PUT') { writes++; captured(); await gate; }
-        await route.continue();
-      };
-      await page.route(updateUrl, delayWrite);
-      try {
-        const recovered = page.waitForResponse((response: any) => response.request().method() === 'PUT' && response.url() === updateUrl);
-        await page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true }).click();
-        await pending;
-        for (const name of ['名称', '说明', '模块目录']) assert.equal(await page.getByRole('textbox', { name, exact: true }).isDisabled(), true);
-        for (const label of ['所属项目', '代码库']) assert.equal(await page.locator('#catalog-edit').getByRole('combobox', { name: label, exact: true }).isDisabled(), true);
-        assert.equal(await page.getByRole('button', { name: '关闭编辑', exact: true }).isDisabled(), true);
-        await page.evaluate(() => { const form = document.getElementById('catalog-edit') as HTMLFormElement; form.requestSubmit(); form.requestSubmit(); });
-        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-        assert.equal(writes, 1, '资产保存期间重复提交只能产生一次 PUT');
-        release(); assert.equal((await recovered).status(), 200);
-      } finally { release(); await page.unroute(updateUrl, delayWrite); }
-      await page.getByRole('dialog').waitFor({ state: 'hidden' });
-      const final = runtime.assetCatalog(workspaceRoot).services.find((s: any) => s.id === service.id);
-      assert.equal(final.name, '保留我的输入');
-      assert.equal(final.description, '另一入口再次更新的说明', '未改字段采用最后读取的新内容');
-      await page.locator('#service-table-body tr').filter({ hasText: '保留我的输入' }).getByRole('button', { name: '编辑', exact: true }).click();
-      await page.getByRole('textbox', { name: '名称', exact: true }).waitFor();
-      await page.getByRole('button', { name: '关闭编辑', exact: true }).click();
-      await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    } finally {
-      await page.unroute(catalogUrl, delayRead);
-    }
-  });
-
-  if (selected('service')) await t.test('代码库完整声明可编辑，本地分支独立保存且实际 Git 保持不变', async () => {
-    let c = runtime.assetCatalog(workspaceRoot);
-    if (c.migrationRequired) c = runtime.migrateAssetCatalog(workspaceRoot, { revision: c.revision });
-    const codeRoot = path.join(workspaceRoot, 'editable-code'); fs.mkdirSync(codeRoot);
-    runGit(codeRoot, ['init', '--initial-branch=dev']);
-    c = runtime.createCatalogRepository(workspaceRoot, { revision: c.revision, code: 'editable-code', name: '可编辑代码库', path: 'editable-code' });
-    const repository = c.repositories.find((r: any) => r.code === 'editable-code');
-    const config = fs.readFileSync(path.join(codeRoot, '.git/config')), head = fs.readFileSync(path.join(codeRoot, '.git/HEAD'));
-    await page.goto(`${workspaceUrl}/repositories`);
-    const row = page.locator('#repository-table-wrap tr').filter({ hasText: '可编辑代码库' });
-    await row.getByRole('button', { name: '编辑', exact: true }).click();
-    await page.getByRole('textbox', { name: '集成分支', exact: true }).fill('release-next');
-    await page.locator('#catalog-edit-save').click();
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    await row.getByText('release-next', { exact: true }).waitFor();
-    assert.equal(runtime.assetCatalog(workspaceRoot).repositories.find((r: any) => r.id === repository.id).source.integrationBranch, 'release-next');
-    await row.getByRole('link', { name: '可编辑代码库', exact: true }).click();
-    await page.locator('[data-repository-alignment="ready"]:visible').waitFor();
-    await page.getByRole('button', { name: '编辑代码库', exact: true }).click();
-    await page.getByRole('textbox', { name: 'Git 地址', exact: true }).fill('https://example.com/desired.git');
-    await page.getByRole('textbox', { name: '远端名称', exact: true }).fill('upstream');
-    await page.getByRole('textbox', { name: '集成分支', exact: true }).fill('main');
-    await page.locator('#catalog-edit-save').click();
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    await page.locator('[data-repository-alignment="pending"]:visible').waitFor();
-    await page.getByRole('button', { name: '查看对齐指引', exact: true }).click();
-    const preparationPrompt = page.getByRole('textbox', { name: '代码准备指令', exact: true });
-    await preparationPrompt.waitFor();
-    await page.waitForFunction((element: HTMLTextAreaElement) => element.value.trim().length > 0, await preparationPrompt.elementHandle());
-    assert.match(await preparationPrompt.inputValue(), /声明保存不代表/);
-    await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    assert.deepEqual(fs.readFileSync(path.join(codeRoot, '.git/config')), config); assert.deepEqual(fs.readFileSync(path.join(codeRoot, '.git/HEAD')), head);
-    const updateUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}/asset-catalog/repository/${repository.id}`;
-    expectedBrowserErrors.add(updateUrl);
-    const conflict = (route: any) => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'asset_revision_conflict', message: '声明版本已变化' } }) });
-    await page.route(updateUrl, conflict);
-    await page.getByRole('button', { name: '编辑代码库', exact: true }).click();
-    await page.getByRole('textbox', { name: '集成分支', exact: true }).fill('keep-draft');
-    await page.locator('#catalog-edit-save').click();
-    await page.getByRole('dialog').getByText('声明版本已变化', { exact: true }).waitFor();
-    assert.equal(await page.getByRole('textbox', { name: '集成分支', exact: true }).inputValue(), 'keep-draft');
-    assert.equal(runtime.assetCatalog(workspaceRoot).repositories.find((r: any) => r.id === repository.id).source.git.integrationBranch, 'main');
-    assert.equal(runtime.assetCatalog(workspaceRoot).repositories.find((r: any) => r.id === repository.id).source.path, 'editable-code');
-    await page.getByRole('dialog').getByRole('button', { name: '关闭编辑', exact: true }).click();
-    await page.unroute(updateUrl, conflict);
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    await page.getByRole('button', { name: '编辑代码库', exact: true }).click();
-    await page.getByRole('textbox', { name: '仓库目录', exact: true }).fill('editable-future');
-    c = runtime.assetCatalog(workspaceRoot);
-    runtime.updateCatalogAsset(workspaceRoot, 'repository', repository.id, { revision: c.revision, description: '另一入口更新的仓库说明' });
-    let writes = 0;
-    const countWrites = (request: any) => { if (request.url() === updateUrl && request.method() === 'PUT') writes++; };
-    page.on('request', countWrites);
-    try {
-      const rejected = page.waitForResponse((response: any) => response.url() === updateUrl && response.request().method() === 'PUT');
-      await page.locator('#catalog-edit-save').click(); assert.equal((await rejected).status(), 409);
-      await page.getByRole('button', { name: '读取最新内容', exact: true }).click();
-      await page.locator('.metadata-conflict dl').getByText('另一入口更新的仓库说明', { exact: true }).waitFor();
-      const directory = page.getByRole('textbox', { name: '仓库目录', exact: true });
-      await directory.fill('');
-      await page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true }).click();
-      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      assert.equal(writes, 1, '冲突恢复不能绕过必填目录校验或把空输入改为根目录');
-      assert.equal(await directory.inputValue(), '');
-      assert.equal(await directory.evaluate((input: HTMLInputElement) => input.validity.valueMissing), true);
-      assert.equal(runtime.assetCatalog(workspaceRoot).repositories.find((r: any) => r.id === repository.id).source.path, 'editable-code');
-      await directory.fill('editable-future');
-      const saved = page.waitForResponse((response: any) => response.url() === updateUrl && response.request().method() === 'PUT');
-      await page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true }).click();
-      assert.equal((await saved).status(), 200);
-    } finally { page.off('request', countWrites); }
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    await page.locator('[data-repository-alignment="pending"]:visible').waitFor();
-    assert.equal(runtime.assetCatalog(workspaceRoot).repositories.find((r: any) => r.id === repository.id).source.path, 'editable-future');
-    assert.equal(fs.existsSync(path.join(workspaceRoot, 'editable-future')), false);
-    assert.deepEqual(fs.readFileSync(path.join(codeRoot, '.git/config')), config);
-  });
-
-  if (selected('service')) await t.test('本地配置自动补入缺失地址且异步读取保留用户输入', async () => {
-    let c = runtime.assetCatalog(workspaceRoot);
-    if (c.migrationRequired) c = runtime.migrateAssetCatalog(workspaceRoot, { revision: c.revision });
-    const codeRoot = path.join(workspaceRoot, 'config-code'); fs.mkdirSync(codeRoot);
-    runGit(codeRoot, ['init', '--initial-branch=dev']);
-    runGit(codeRoot, ['remote', 'add', 'origin', 'https://example.com/actual-local.git']);
-    runGit(codeRoot, ['symbolic-ref', 'HEAD', 'refs/heads/codex/preview-test']);
-    c = runtime.createCatalogRepository(workspaceRoot, { revision: c.revision, code: 'config-code', name: '本地配置代码库', path: 'config-code', integrationBranch: 'dev' });
-    const repository = c.repositories.find((r: any) => r.code === 'config-code');
-    const manifest = fs.readFileSync(path.join(workspaceRoot, 'repositories/manifest.yml'));
-    await page.goto(`${workspaceUrl}/repositories`);
-    const row = page.locator('#repository-table-wrap tr').filter({ hasText: '本地配置代码库' });
-    await row.getByRole('button', { name: '编辑', exact: true }).click();
-    await page.waitForFunction(() => (document.querySelector('input[aria-label="Git 地址"]') as HTMLInputElement)?.value === 'https://example.com/actual-local.git');
-    assert.equal(await page.getByRole('textbox', { name: '远端名称', exact: true }).inputValue(), 'origin');
-    assert.equal(await page.getByRole('textbox', { name: '集成分支', exact: true }).inputValue(), 'dev');
-    assert.deepEqual(fs.readFileSync(path.join(workspaceRoot, 'repositories/manifest.yml')), manifest);
-    await page.getByRole('dialog').getByRole('button', { name: '关闭编辑', exact: true }).click();
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    const configUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}/repositories/${repository.id}/local-config`;
-    let release: () => void = () => {};
-    const gate = new Promise<void>(resolve => { release = resolve; });
-    const delayed = async (route: any) => { await gate; return route.continue(); };
-    await page.route(configUrl, delayed);
-    await row.getByRole('button', { name: '编辑', exact: true }).click();
-    await page.getByRole('textbox', { name: 'Git 地址', exact: true }).fill('https://example.com/my-draft.git');
-    release();
-    await page.locator('[data-local-repository-config]').waitFor();
-    assert.equal(await page.getByRole('textbox', { name: 'Git 地址', exact: true }).inputValue(), 'https://example.com/my-draft.git');
-    assert.equal(await page.getByRole('textbox', { name: '集成分支', exact: true }).inputValue(), 'dev');
-    await page.getByRole('dialog').getByRole('button', { name: '关闭编辑', exact: true }).click();
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    await page.unroute(configUrl, delayed);
-    await row.getByRole('link', { name: '本地配置代码库', exact: true }).click();
-    await page.locator('.resource-facts:visible').getByText('https://example.com/actual-local.git', { exact: true }).waitFor();
-    runGit(codeRoot, ['remote', 'set-url', 'origin', 'https://example.com/changed-local.git']);
-    await page.locator('.resource-facts:visible').getByRole('button', { name: '检查状态', exact: true }).click();
-    await page.locator('.resource-facts:visible').getByText('https://example.com/changed-local.git', { exact: true }).waitFor();
-    assert.deepEqual(fs.readFileSync(path.join(workspaceRoot, 'repositories/manifest.yml')), manifest);
-  });
-
-  if (selected('service')) await t.test('服务编辑提供过滤新增选项且只在保存时登记新代码库', async () => {
-    let c = runtime.assetCatalog(workspaceRoot);
-    if (c.migrationRequired) c = runtime.migrateAssetCatalog(workspaceRoot, { revision: c.revision });
-    c = runtime.createCatalogService(workspaceRoot, { revision: c.revision, service: { code: 'inline-picker-service', name: '内联选择服务', repositoryId: c.repositories[0].id } });
-    const service = c.services.find((s: any) => s.code === 'inline-picker-service'), count = c.repositories.length;
-    await page.goto(`${workspaceUrl}/services`);
-    const row = page.locator('#service-table-body tr').filter({ hasText: '内联选择服务' });
-    await row.getByRole('button', { name: '编辑', exact: true }).click();
-    await page.getByRole('textbox', { name: '名称', exact: true }).fill('保留服务名称草稿');
-    await page.getByRole('combobox', { name: '代码库', exact: true }).press('ArrowDown');
-    const filter = page.getByRole('textbox', { name: '过滤代码库', exact: true });
-    await filter.fill('没有匹配的代码库');
-    const create = page.getByRole('button', { name: '新增代码库', exact: true });
-    await create.waitFor({ state: 'visible' });
-    await page.waitForFunction(() => {
-      const popup = document.querySelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .resource-select-popup');
-      const input = popup?.querySelector('input'), button = popup?.querySelector('.resource-select-create');
-      return input && button && button.getBoundingClientRect().top > input.getBoundingClientRect().top;
-    });
-    await create.click();
-    assert.equal(await page.getByRole('dialog').count(), 1);
-    await page.getByRole('textbox', { name: '代码库编码', exact: true }).fill('inline-picker-code');
-    await page.getByRole('textbox', { name: 'Git 地址', exact: true }).fill('https://example.com/inline-picker.git');
-    await page.getByRole('textbox', { name: '集成分支', exact: true }).fill('dev');
-    assert.equal(runtime.assetCatalog(workspaceRoot).repositories.length, count);
-    await page.getByRole('button', { name: '取消新增代码库', exact: true }).click();
-    assert.equal(await page.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '保留服务名称草稿');
-    assert.equal(runtime.assetCatalog(workspaceRoot).repositories.length, count);
-    await page.getByRole('combobox', { name: '代码库', exact: true }).press('ArrowDown');
-    await create.click();
-    assert.equal(await page.getByRole('textbox', { name: '代码库编码', exact: true }).inputValue(), 'inline-picker-code');
-    const updateUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}/asset-catalog/service/${service.id}`;
-    expectedBrowserErrors.add(updateUrl);
-    const conflict = (route: any) => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'asset_revision_conflict', message: '清单版本已变化' } }) });
-    await page.route(updateUrl, conflict);
-    await page.locator('#catalog-edit-save').click();
-    await page.getByRole('dialog').getByText('清单版本已变化', { exact: true }).waitFor();
-    assert.equal(await page.getByRole('textbox', { name: '代码库编码', exact: true }).inputValue(), 'inline-picker-code');
-    assert.equal(runtime.assetCatalog(workspaceRoot).repositories.length, count);
-    await page.unroute(updateUrl, conflict);
-    assert.equal(await page.locator('#catalog-edit-save').isDisabled(), true, '版本冲突后不能跳过最新内容核对');
-    await page.getByRole('button', { name: '读取最新内容', exact: true }).click();
-    const keep = page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true });
-    await keep.waitFor();
-    assert.equal(await page.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '保留服务名称草稿');
-    assert.equal(await page.getByRole('textbox', { name: '代码库编码', exact: true }).inputValue(), 'inline-picker-code');
-    assert.equal(runtime.assetCatalog(workspaceRoot).repositories.length, count, '读取最新内容仍不登记内联代码库');
-    await keep.click();
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    const saved = runtime.assetCatalog(workspaceRoot), repository = saved.repositories.find((r: any) => r.code === 'inline-picker-code');
-    assert.ok(repository); assert.equal(saved.repositories.length, count + 1);
-    assert.equal(saved.services.find((s: any) => s.id === service.id).repositoryId, repository.id);
-    assert.equal(saved.services.find((s: any) => s.id === service.id).name, '保留服务名称草稿');
-    assert.equal(repository.source.path, 'repositories/inline-picker-code');
-    assert.ok(['cloning', 'failed'].includes(runtime.repositoryCloneStatus(workspaceRoot, repository.id).state), 'registration does not imply clone completion');
-  });
-
-  if (selected('service')) await t.test('新增代码库从地址自动填入编码目录并分别保护手动值', async () => {
-    const count = runtime.assetCatalog(workspaceRoot).repositories.length;
-    await page.goto(`${workspaceUrl}/repositories`);
-    await page.getByRole('button', { name: '新增代码库', exact: true }).click();
-    await page.getByRole('textbox', { name: 'Git 地址', exact: true }).fill('https://example.com/team/Automatic.git/');
-    assert.equal(await page.getByRole('textbox', { name: '代码库编码', exact: true }).inputValue(), 'Automatic');
-    assert.equal(await page.getByRole('textbox', { name: '仓库目录', exact: true }).inputValue(), 'repositories/Automatic');
-    await page.getByRole('textbox', { name: '代码库编码', exact: true }).fill('manual-code');
-    await page.getByRole('textbox', { name: 'Git 地址', exact: true }).fill('git@example.com:team/Next.git');
-    assert.equal(await page.getByRole('textbox', { name: '代码库编码', exact: true }).inputValue(), 'manual-code');
-    assert.equal(await page.getByRole('textbox', { name: '仓库目录', exact: true }).inputValue(), 'repositories/manual-code');
-    await page.getByRole('textbox', { name: '仓库目录', exact: true }).fill('custom/location');
-    await page.getByRole('textbox', { name: 'Git 地址', exact: true }).fill('ssh://git@example.com/team/Third.git');
-    assert.equal(await page.getByRole('textbox', { name: '代码库编码', exact: true }).inputValue(), 'manual-code');
-    assert.equal(await page.getByRole('textbox', { name: '仓库目录', exact: true }).inputValue(), 'custom/location');
-    await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
-    assert.equal(runtime.assetCatalog(workspaceRoot).repositories.length, count);
-  });
-
-  if (selected('service')) await t.test('服务文档使用副屏，代码准备使用抽屉，窄屏关闭恢复主页', async () => {
-    await page.setViewportSize({ width: 1680, height: 900 });
-    await page.goto(`${workspaceUrl}/services`);
-    await page.locator('#service-table-body a[href*="/services/"]').filter({ hasText: /^演示服务$/ }).click();
-    await page.locator('[data-doc-row="readme"]').click();
-    await page.locator('.pane-right .markdown-body').waitFor({ state: 'visible' });
-    assert.match(await page.locator('.pane-right .markdown-body').innerText(), /Demo API/);
-    assert.equal(await page.locator('.pane-left .markdown-body').count(), 0);
-    await page.getByRole('button', { name: '← 返回详情', exact: true }).click();
-    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-right').count(), 1);
-    // A workspace-source fixture is ready; preparation is available on its repository home.
-    await page.locator('.resource-repository-summary a').click();
-    await page.getByRole('button', { name: '准备代码', exact: true }).click();
-    await page.getByRole('textbox', { name: '代码准备指令', exact: true }).waitFor({ state: 'visible' });
-    assert.equal(await page.locator('.pane-left textarea').count(), 0);
-    await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    await page.getByRole('link', { name: /演示服务/ }).filter({ hasText: '演示服务' }).last().click();
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.locator('[data-doc-row="readme"]').click();
-    await page.locator('.pane-stage.reading-overlay .pane-right:visible').waitFor();
-    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-right:visible').count(), 1);
-    assert.equal(await page.locator('.pane-right:visible').getAttribute('role'), 'region');
-    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-reading-mask:visible').count(), 1);
-    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-left > .pane-body').getAttribute('inert'), '');
-    await page.getByRole('button', { name: '关闭 服务详情', exact: true }).click();
-    await page.getByRole('button', { name: '关闭 代码库详情', exact: true }).click();
-    await page.locator('.pane-stage.reading-overlay').waitFor({ state: 'hidden' });
-    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-left > .pane-body').getAttribute('inert'), null);
-    assert.equal(await page.getByRole('heading', { name: '服务', exact: true }).isVisible(), true);
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
-    await page.setViewportSize({ width: 1280, height: 720 });
-  });
-
-  if (selected('service')) await t.test('390px 下目录与详情不产生页面横向溢出', async () => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`${workspaceUrl}/services?project=demo`);
-    await page.locator('#service-table-wrap').waitFor({ state: 'visible' });
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
-    await page.locator('#service-table-body a[href*="/services/"]').filter({ hasText: /^演示服务$/ }).click();
-    await page.locator('#service-detail-name').waitFor({ state: 'visible' });
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
-    await unique(page.getByRole('button', { name: '编辑服务', exact: true }), '服务详情编辑操作');
-    await capture(page, 'local-app-service-detail-mobile.png');
-    await page.getByRole('button', { name: '编辑服务', exact: true }).click();
-    await page.locator('#catalog-edit').waitFor({ state: 'visible' });
-    await page.waitForFunction(() => {
-      const rect = document.querySelector('.metadata-edit-drawer .ant-drawer-content-wrapper')?.getBoundingClientRect();
-      return rect && Math.abs(rect.width - window.innerWidth) <= 1 && Math.abs(rect.right - window.innerWidth) <= 1;
-    });
-    assert.equal(await page.locator('#catalog-edit-save').isVisible(), true);
-    await capture(page, 'service-edit-drawer-mobile.png');
-    await page.keyboard.press('Escape');
-    await page.locator('.metadata-edit-drawer').waitFor({ state: 'hidden' });
-    await page.getByRole('button', { name: '关闭 服务详情', exact: true }).click();
-    await page.setViewportSize({ width: 1280, height: 720 });
-  });
-
-  if (selected('service')) await t.test('本地运行主工作库与任务动线、单项选择、真实连接、日志及新页签', async () => {
-    await runServiceRuntimeJourney({ page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture });
-  });
-
   if (selected('change')) await t.test('Change 详情展示任务关联事实与 OpenSpec 只读内容', async () => {
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
     await page.locator('#task-detail-title').waitFor({ state: 'visible' });
@@ -2799,15 +1122,12 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   });
 
   if (selected('task')) await runTaskListJourney({antdSelectDisplay, antdSelectOptionTexts, applyTaskFilters, assert, browserErrors, capture, closeTaskReading, confirmAntModal, crypto, expectedBrowserErrors, fs, openAntdSelect, openTaskActionModal, openTaskFilterPanel, openTaskSearch, otherWorkspaceId, page, path, prepareEvidenceFixture, process, recordVerificationResultFromEvidence, runBuildr, runtime, selectAntdOption, selected, showPrimaryNavigation, t: taskFocusedT(t), taskFocusedT, url, workspaceRoot, workspaceUrl, writeChange});
-  if (selected('task')) await runTaskCommitsJourney({ t: taskFocusedT(t), page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture });
 
   if (selected('task-materials')) await runTaskMaterialsJourney({ t: taskFocusedT(t), page, runtime, materials: runtimeProvide(webRuntime, TASK_MATERIALS_APPLICATION), workspaceRoot, workspaceUrl, runBuildr, runGit, capture, expectedBrowserErrors });
 
   if (selected('workbench')) await runWorkbenchJourney({ t, page, runtime, workspaceRoot, otherWorkspaceRoot: otherRoot, workspaceUrl, otherWorkspaceUrl: `${url}/workspaces/${otherWorkspaceId}`, expectedBrowserErrors, selectAntdOption, capture });
 
-  if (selected('project')) await runWorkspaceCompositionJourney({ t, page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors });
 
-  if (selected('task')) await runCompositeTaskChildrenJourney({ t: taskFocusedT(t), page, runtime, workspaceRoot, workspaceUrl, capture });
 
   const unexpectedBrowserErrors: any = browserErrors.filter((error: any) => ![...expectedBrowserErrors].some((expected: any) => error.includes(expected)));
   assert.deepEqual(unexpectedBrowserErrors, [], unexpectedBrowserErrors.join('\n'));

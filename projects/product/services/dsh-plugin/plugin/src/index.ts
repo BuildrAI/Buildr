@@ -105,7 +105,16 @@ export default class BuildrGateway extends TypertRemoteService {
   @Remote('activation')
   activation(): ActivationStatus {
     const status = this.qualification.status();
-    if (!status.active || this.captureRegistered) return status;
+    if (!status.active) return status;
+    const composition = (this.hostContext.get('buildrCompositionRuntime' as never) as {
+      status?: () => { state?: unknown; reason?: unknown; detail?: unknown };
+    } | undefined)?.status?.();
+    const enriched: ActivationStatus = composition?.state === 'degraded'
+      && (composition.reason === 'incompatible-host' || composition.reason === 'activation-failed' || composition.reason === 'circuit-breaker')
+      && typeof composition.detail === 'string'
+      ? { ...status, compositionDegraded: { reason: composition.reason, detail: composition.detail } }
+      : status;
+    if (this.captureRegistered) return enriched;
     this.ensureBridge();
     this.captureRegistered = true;
     const capture = createEventSourceCapture({
@@ -123,7 +132,7 @@ export default class BuildrGateway extends TypertRemoteService {
         return mergeCapturedSources(source, other);
       } catch { return source; }
     });
-    return status;
+    return enriched;
   }
 
   /** Read only the selected record's original events and captured Buildr fragments. */

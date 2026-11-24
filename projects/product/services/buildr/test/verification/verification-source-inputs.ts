@@ -154,6 +154,10 @@ export function createVerificationSourceInputReader(repositoryRoot: string, prod
 
 export function collectVerificationSourceInputs(repositoryRoot: string, productRoot: string, steps: VerificationReuseStep[], commit?: string, legacyDeclarations = false) {
   const reader = createVerificationSourceInputReader(repositoryRoot, productRoot, commit, undefined, { legacyDeclarations });
+  return selectVerificationSourceInputs(reader, repositoryRoot, steps);
+}
+
+export function selectVerificationSourceInputs(reader: ReturnType<typeof createVerificationSourceInputReader>, repositoryRoot: string, steps: VerificationReuseStep[]) {
   return {
     contentIdentities: reader.contentIdentities, unavailableScopes: reader.unavailableScopes, fileIdentities: reader.fileIdentities,
     stepInputs: Object.fromEntries(steps.filter(step => step.reuse && step.reuse.inputMode === 'runtime-check').map(step => [step.id, reader.inputs(step, false)])),

@@ -1,0 +1,18 @@
+/* Shared launcher and module tabs for trusted workbench hosts. */
+.harness-workspace-loading{display:flex;align-items:center;justify-content:center;gap:8px;padding:28px;color:var(--soft-muted)}
+.harness-workspace-bar{display:flex;align-items:center;gap:4px;height:43px;flex:none;padding:0 10px;border-bottom:1px solid var(--soft-line)}
+.harness-workspace-view-label{display:inline-flex;align-items:center;gap:7px;padding:4px 8px;border-radius:6px;font-weight:600;color:var(--soft-ink);background:var(--soft-bg)}
+.harness-workspace-location{min-width:0;margin-inline-start:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--soft-muted);font-size:var(--font-size-meta)}
+.harness-workspace-home{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;min-height:0;padding:16px;text-align:center}
+.harness-workspace-home h2{margin:0;color:var(--soft-ink);font-size:var(--font-size-heading,18px)}
+.harness-workspace-home p{margin:7px 0 20px;color:var(--soft-muted)}
+.harness-workspace-home nav{display:grid;grid-template-columns:repeat(2,minmax(104px,142px));gap:10px}
+.harness-workspace-home button{display:flex;flex-direction:column;align-items:flex-start;gap:12px;min-height:76px;padding:12px;border:1px solid var(--soft-line);border-radius:12px;background:var(--soft-bg);color:var(--soft-ink);font:inherit;cursor:pointer;text-align:left}
+.harness-workspace-home button:hover,.harness-workspace-home button:focus-visible{border-color:var(--soft-primary);color:var(--soft-primary)}
+.harness-workspace-tabs{display:flex;align-items:center;gap:4px;min-width:0;overflow-x:auto;scrollbar-width:thin}
+.harness-workspace-tab{display:flex;align-items:center;gap:2px;flex:none;padding-inline-end:2px;border:1px solid transparent;border-radius:7px;color:var(--soft-muted)}
+.harness-workspace-tab.is-active{border-color:var(--soft-line);background:var(--soft-bg);color:var(--soft-ink)}
+.harness-workspace-tab>:is([role=tab],.development-tool-tab){display:flex;align-items:center;gap:7px;min-width:100px;padding:4px 9px;border:0;border-radius:6px;background:none;color:inherit;font:inherit;cursor:pointer}
+.harness-workspace-tab>:is([role=tab],.development-tool-tab):focus-visible{outline:2px solid var(--soft-primary);outline-offset:-2px}
+.harness-workspace-tab>.ant-btn{color:inherit;font-size:var(--font-size-meta);width:22px;min-width:22px}
+.harness-workspace-home button small{color:var(--soft-muted);font-size:var(--font-size-meta)}

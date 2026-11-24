@@ -98,11 +98,21 @@ export function assertReleaseExecutorRecoverySource(context: any, options: { rep
   return validateReleaseExecutorRecovery(context, { ...options, verifyGit: true }, dependencies);
 }
 
+/** Older receipts keep the existing retry rule; a first failure needs explicit no-write evidence. */
+export function permitsExecutorRecoveryAttempt(evidence: any): boolean {
+  return evidence?.publish?.runAttempt >= 2 || (evidence?.publish?.runAttempt === 1
+    && evidence.attempt?.npmAttempted === false && evidence.release?.registryPublished === false
+    && evidence.release?.registryObservation === 'absent'
+    && Array.isArray(evidence.attempt.effects)
+    && evidence.attempt.effects.every((effect: any) => ['local-tag-created', 'local-tag-reused', 'remote-tag-pushed', 'tag-reused'].includes(effect.type)
+      && effect.state === 'confirmed'));
+}
+
 export function assertReleaseExecutorRecoveryEvidence(context: any, previous: any, run?: any): void {
   const recovery = validateReleaseExecutorRecovery(context);
   if (!recovery) throw new Error('Release executor recovery evidence requires its bound context.');
   const { identity, ...unsigned } = previous ?? {};
-  if (previous?.schemaVersion !== 'buildr.release-transaction-evidence/v2' || previous.status !== 'failed'
+  if (!permitsExecutorRecoveryAttempt(previous) || previous?.schemaVersion !== 'buildr.release-transaction-evidence/v2' || previous.status !== 'failed'
       || previous.context?.identity !== recovery.originalContextIdentity || previous.context?.executorRecovery
       || hash(JSON.stringify(unsigned)) !== identity || identity !== recovery.previousEvidenceIdentity
       || previous.aggregateEligible !== false || previous.publish?.repository !== 'BuildrAI/Buildr'

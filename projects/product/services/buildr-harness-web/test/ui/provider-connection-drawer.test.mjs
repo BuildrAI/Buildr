@@ -98,3 +98,21 @@ test('AgentConnectionSettings saveProvider preserves underlying failure message 
   assert.match(source, /let failureMessage='';/);
   assert.match(source, /if\(!saved\)throw new Error\(failureMessage\|\|'供应商配置未完成。'\);/);
 });
+
+test('Magpie offers connection and explicit local setup without subscription or API Key fields',()=>{
+ const html=renderToStaticMarkup(React.createElement(ProviderConnectionDrawer,{open:true,initial:{kind:'magpie',label:'Magpie',baseUrl:''},providers:[{id:'magpie',label:'Magpie',custom:true}],onClose(){},async onSave(){}}));
+ assert.match(html,/连接 Magpie/);
+ assert.match(html,/下载并启动/);
+ assert.doesNotMatch(html,/保存并登录|API Key|API 协议/);
+});
+
+
+test('Magpie quota shows distinct accounts, original units, observed times and unknown windows',async()=>{
+ const {MagpieQuotaRows}=await import('../../src/features/agent-conversations/MagpieQuotaPanel.tsx');
+ const html=renderToStaticMarkup(React.createElement(MagpieQuotaRows,{snapshot:{readAt:'2026-11-23T00:00:00Z',accounts:[
+  {provider:'codex',providerLabel:'Codex',accountLabel:'a•••@example.test',balance:'12.35 credits',observedAt:'2026-11-23T00:00:00Z',windows:[{label:'7d',remainingPercent:0}]},
+  {provider:'codex',providerLabel:'Codex',accountLabel:'a•••@example.test',balance:'$4.10',windows:[{label:'5h'}],unavailable:true},
+  {provider:'claude',providerLabel:'Claude',windows:[]},
+ ]}}));
+ for(const value of ['账号 1','账号 2','12.35 credits','$4.10','剩余 0%','剩余未知','Magpie 观察于','上游读取未完成','Buildr 读取于','Claude'])assert.ok(html.includes(value),value);
+});

@@ -10,20 +10,25 @@ import test, { after } from 'node:test';
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.ts';
+import { runCliJsonInProcess } from '../helpers/in-process-cli.ts';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
 
-function run(args, expected = 0) {
+function realRun(args, expected = 0) {
   const result = spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8' });
   assert.equal(result.status, expected, `buildr ${args.join(' ')}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
   return result;
 }
 
-function json(args, expected = 0) {
-  const result = run([...args, '--json'], expected);
+function realJson(args, expected = 0) {
+  const result = realRun([...args, '--json'], expected);
   assert.equal(result.stderr, '');
   return JSON.parse(result.stdout);
+}
+
+function json(args, expected = 0) {
+  return runCliJsonInProcess(args, expected);
 }
 
 after(() => cleanupLocalTaskLifecycleSystemContext());
@@ -34,15 +39,15 @@ function fixture(t) {
   return { base, root };
 }
 
-test('Task Review CLI 提供单一稳定 JSON、两槽位与CAS写入', (t) => {
+test('Task Review CLI 提供单一稳定 JSON、两槽位与CAS写入', async (t) => {
   const { root } = fixture(t);
   const runtime = createRuntime();
-  let response = json(['task', 'review', 'inspect', 'review-task', '--target', root]);
+  let response = realJson(['task', 'review', 'inspect', 'review-task', '--target', root]);
   assert.equal(response.schemaVersion, 'buildr.task-review-operation-result/v2');
   assert.equal(response.status, 'inspected');
   assert.equal(response.slots.planning.present, false);
 
-  response = json(['task', 'review', 'record', 'review-task', '--type', 'planning', '--subject-identity', 'plan:v1', '--method', 'self', '--reviewed', 'task intent', '--uncovered', 'browser::not relevant', '--finding', 'No blocking finding', '--outcome', 'accepted', '--summary', 'Plan is accepted', '--expected-current', 'absent', '--target', root]);
+  response = await json(['task', 'review', 'record', 'review-task', '--type', 'planning', '--subject-identity', 'plan:v1', '--method', 'self', '--reviewed', 'task intent', '--uncovered', 'browser::not relevant', '--finding', 'No blocking finding', '--outcome', 'accepted', '--summary', 'Plan is accepted', '--expected-current', 'absent', '--target', root]);
   assert.equal(response.status, 'recorded');
   assert.equal(response.slots.planning.result.subjectIdentity, 'plan:v1');
   assert.deepEqual(response.effects, [{ type: 'created', path: 'workspace-sqlite:task-review/review-task/planning' }]);
@@ -50,7 +55,7 @@ test('Task Review CLI 提供单一稳定 JSON、两槽位与CAS写入', (t) => {
 
   assert.equal('applicability' in response.slots.planning, false);
 
-  const missingIdentity = json(['task', 'review', 'record', 'review-task', '--type', 'completion', '--method', 'self', '--reviewed', 'result', '--outcome', 'accepted', '--summary', 'done', '--expected-current', 'absent', '--target', root], 1);
+  const missingIdentity = await json(['task', 'review', 'record', 'review-task', '--type', 'completion', '--method', 'self', '--reviewed', 'result', '--outcome', 'accepted', '--summary', 'done', '--expected-current', 'absent', '--target', root], 1);
   assert.equal(missingIdentity.status, 'blocked');
   assert.equal(missingIdentity.diagnostic.code, 'task_review_field_invalid');
   assert.deepEqual(missingIdentity.effects, []);

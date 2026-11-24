@@ -66,6 +66,11 @@ export interface ModelQuotaObservation {
   balances?: Array<{currency:string;total:string;toppedUp?:string;granted?:string}>;
   windows?: Array<{id:string;label:string;groupLabel?:string;remainingPercent:number;resetsAt?:string;limitWindowSeconds?:number;/** Platform-reported credit amounts; omitted when the source only reports percentages. */remainingCredits?:number;totalCredits?:number}>;
 }
+/** Read-only observations from a bound gateway, never used by model admission. */
+export interface GatewayQuotaSnapshot {
+  readAt:string;
+  accounts:Array<{provider:string;providerLabel:string;accountLabel?:string;plan?:string;balance?:string;observedAt?:string;unavailable?:boolean;windows:Array<{label:string;remainingPercent?:number;resetsAt?:string}>}>;
+}
 export interface CustomProviderModel {
   /** Upstream model id, sent verbatim. */
   id: string;
@@ -82,6 +87,7 @@ export interface CustomProviderConfig {
 }
 export interface CustomProviderConfigureInput {
   expectedRevision?: string;
+  prepareLocalGateway?:boolean;
   label: string;
   baseUrl: string;
   protocol: string;
@@ -92,6 +98,7 @@ export interface CustomProviderConfigureInput {
   modelsPath?: string;
   models?: CustomProviderModel[];
 }
+export interface ModelAccountAddInput { provider:string; label?:string; custom?:CustomProviderConfigureInput; prepareLocalGateway?:boolean; }
 export interface CustomProviderDiscoveryInput {
   /** Reuse the stored key of an existing custom account when `apiKey` is omitted. */
   accountId?: string;
@@ -133,6 +140,8 @@ export interface ProviderInferenceInput {
   context: { accountId: string; agentId: string; conversationId: string; runId: string; requestId: string };
 }
 export interface ModelProviderRuntime {
+  openSettings?(): Promise<void>;
+  readGatewayQuota?(): Promise<GatewayQuotaSnapshot>;
   readonly protocol: ModelProtocol;
   protocolForModel?(modelId: string): ModelProtocol;
   inspect(): Promise<ModelProviderObservation>;
@@ -180,6 +189,8 @@ export interface ModelProvider {
   readonly refreshOnStart?: boolean;
   /** Accounts of this provider carry user-declared endpoint configuration. */
   readonly custom?: boolean;
+  /** Resolve locally discovered or explicitly prepared gateway configuration. */
+  resolveCustom?(input:CustomProviderConfigureInput|undefined, prepare:boolean, signal:AbortSignal):Promise<CustomProviderConfigureInput>;
   /** Optional on-demand preparation (e.g. downloading local proxy binary/config) when adding an account. */
   prepare?(input: { configRoot: string; environment: Readonly<Record<string, string>>; signal?: AbortSignal }): Promise<void>;
   open(input: { accountId: string; configRoot: string; environment: Readonly<Record<string, string>>; custom?: CustomProviderConfig }): Promise<ModelProviderRuntime>;

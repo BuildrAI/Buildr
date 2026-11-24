@@ -16,6 +16,12 @@ export const CANDIDATE_SOURCE_REUSE_POLICY = Object.freeze({
 });
 export const MAX_SOURCE_IMPORT_CHARACTERS = 56_000;
 const MAX_DECODED_BYTES = 2 * 1024 * 1024;
+// Frozen handoff files are not GitHub dispatch inputs. Keep both the encoded
+// field and the decompressed proof bounded without truncating records.
+export const MAX_SOURCE_FILE_IMPORT_CHARACTERS = 1024 * 1024;
+export type SourceProofTransport = 'inline' | 'file';
+const sourceLimit = (transport: SourceProofTransport) => transport === 'file'
+  ? MAX_SOURCE_FILE_IMPORT_CHARACTERS : MAX_SOURCE_IMPORT_CHARACTERS;
 const BUNDLE_SCHEMA = 'buildr.verification-source-bundle/v1';
 const PACKET_SCHEMA = 'buildr.candidate-source-import/v1';
 
@@ -38,7 +44,7 @@ export function assertSourceBundle(value: any): asserts value is SourceBundle {
   }
 }
 
-export function encodeCandidateSourceImport(bundle: SourceBundle): string {
+export function encodeCandidateSourceImport(bundle: SourceBundle, transport: SourceProofTransport = 'inline'): string {
   assertSourceBundle(bundle);
   const body = JSON.stringify(bundle);
   const packet = JSON.stringify({ schemaVersion: PACKET_SCHEMA, digest: digest(body), bundle });
@@ -46,14 +52,16 @@ export function encodeCandidateSourceImport(bundle: SourceBundle): string {
   // Brotli keeps a full round under the dispatch budget; gzip exceeded it once
   // file-level proofs accumulated. Decoding still accepts older gzip packets.
   const encoded = brotliCompressSync(packet).toString('base64');
-  if (encoded.length > MAX_SOURCE_IMPORT_CHARACTERS) {
-    throw new Error('Source verification exceeds the workflow input budget; no Candidate was dispatched.');
+  if (encoded.length > sourceLimit(transport)) {
+    throw new Error(transport === 'file'
+      ? 'Source verification exceeds the handoff file budget.'
+      : 'Source verification exceeds the workflow input budget; no Candidate was dispatched.');
   }
   return encoded;
 }
 
-export function decodeCandidateSourceImport(encoded: string): SourceBundle {
-  if (!encoded || encoded.length > MAX_SOURCE_IMPORT_CHARACTERS || !/^[A-Za-z0-9+/]+={0,2}$/u.test(encoded)) {
+export function decodeCandidateSourceImport(encoded: string, transport: SourceProofTransport = 'inline'): SourceBundle {
+  if (typeof encoded !== 'string' || !encoded || encoded.length > sourceLimit(transport) || !/^[A-Za-z0-9+/]+={0,2}$/u.test(encoded)) {
     throw new Error('Source verification transport is invalid or exceeds its input budget.');
   }
   let packet: any;
@@ -82,7 +90,7 @@ export function candidateSourceImportFromEnvironment(env: Record<string, string 
   if (env.GITHUB_EVENT_NAME && env.GITHUB_EVENT_NAME !== 'workflow_dispatch') {
     throw new Error('Imported source verification requires the controlled manual Candidate entry.');
   }
-  const log = decodeCandidateSourceImport(input);
+  const log = decodeCandidateSourceImport(input, file ? 'file' : 'inline');
   if (log.schemaVersion === ROUND_SCHEMA) assertCandidateRound(log, env.BUILDR_SELECTION_ID ?? env.BUILDR_VERIFICATION_ROUND);
   return log;
 }

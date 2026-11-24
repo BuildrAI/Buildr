@@ -113,3 +113,53 @@ for(const callback of ['onScroll','followLayout'])test('发送重排期间先钳
  assert.equal(bottom.current,true);hook.followLayout();
  assert.equal(node.scrollTop,4000);assert.equal(position.current,4000);
 });
+
+const {locateConversationContent}=await import('../../src/features/agent-conversations/conversation-reading.ts');
+function createLocateFixture(t,{headerPosition='sticky',headPosition='sticky',withHeader=true,targetInsideHead=false}={}){
+ const prevGetComputedStyle=globalThis.getComputedStyle;
+ const header=withHeader?{offsetHeight:43,position:headerPosition,contains:()=>false}:null;
+ const head={offsetHeight:96,position:headPosition,contains:node=>targetInsideHead&&node===target};
+ const turn={querySelector:selector=>selector===':scope > .ac-turn-head'?head:null};
+ const stream={
+  scrollTop:500,
+  scrollCalls:[],
+  getBoundingClientRect:()=>({top:100}),
+  querySelector:selector=>selector===':scope > .ac-thread-header-in-stream'?header:null,
+  scrollTo(options){this.scrollCalls.push(options);this.scrollTop=options.top;},
+ };
+ const target={
+  tabIndex:-1,
+  focusedWith:null,
+  hasAttribute:()=>false,
+  getBoundingClientRect:()=>({top:420}),
+  closest:selector=>selector==='.ac-stream'?stream:selector==='.ac-turn'?turn:null,
+  focus(options){this.focusedWith=options;},
+ };
+ globalThis.getComputedStyle=node=>({position:node.position||'static'});
+ t.after(()=>{if(prevGetComputedStyle)globalThis.getComputedStyle=prevGetComputedStyle;else delete globalThis.getComputedStyle;});
+ return {stream,target};
+}
+test('独立对话流存在粘性内嵌顶栏时定位轮次额外扣除顶栏高度',t=>{
+ const {stream,target}=createLocateFixture(t,{withHeader:true,headerPosition:'sticky',headPosition:'sticky'});
+ locateConversationContent(target,false);
+ assert.equal(stream.scrollTop,500+420-100-43);
+ assert.deepEqual(target.focusedWith,{preventScroll:true});
+});
+test('独立对话流定位执行中助手内容同时扣除粘性顶栏与轮次头部高度',t=>{
+ const {stream,target}=createLocateFixture(t,{withHeader:true,headerPosition:'sticky',headPosition:'sticky'});
+ locateConversationContent(target,true);
+ assert.equal(stream.scrollTop,500+420-100-43-(96+8));
+});
+test('目标在轮次头部内时只扣除粘性内嵌顶栏高度，不重复扣除轮次头部',t=>{
+ const {stream,target}=createLocateFixture(t,{withHeader:true,headerPosition:'sticky',headPosition:'sticky',targetInsideHead:true});
+ locateConversationContent(target,true);
+ assert.equal(stream.scrollTop,500+420-100-43);
+});
+test('无内嵌顶栏或顶栏非粘性时保持原定位偏移不变',t=>{
+ const embedded=createLocateFixture(t,{withHeader:false,headPosition:'sticky'});
+ locateConversationContent(embedded.target,false);
+ assert.equal(embedded.stream.scrollTop,500+420-100);
+ const nonSticky=createLocateFixture(t,{withHeader:true,headerPosition:'static',headPosition:'sticky'});
+ locateConversationContent(nonSticky.target,true);
+ assert.equal(nonSticky.stream.scrollTop,500+420-100-(96+8));
+});

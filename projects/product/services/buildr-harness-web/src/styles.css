@@ -33,3 +33,7 @@ html,body,#root{height:100%;margin:0;min-width:360px;font-family:ui-sans-serif,-
 .harness-workspace-modal .ant-input{height:38px;border-color:#dbe3df;border-radius:8px;background:#fff;box-shadow:none}
 .harness-workspace-modal .ant-input:hover{border-color:#93b2a6}
 .harness-workspace-modal .ant-input:focus{border-color:#397d74;box-shadow:0 0 0 2px #397d7412}
+
+.harness-dsh-tool { height: 100dvh; min-height: 0; display: flex; flex-direction: column; }
+.harness-dsh-tool > .harness-directory-workbench { flex: 1; }
+.harness-dsh-link-fallback { position: fixed; z-index: 1300; inset: 8px 8px auto; }

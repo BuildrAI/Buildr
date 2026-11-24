@@ -1,3 +1,4 @@
+import {HARNESS_MOBILE_BREAKPOINT} from '../../shell/harness-layout';
 import {ConversationContextSlot, useConversationHost} from '../../integration/ConversationHost';
 import {useHarnessDirectoryFiles} from '../../directory-files.tsx';
 import { ConversationCompactionNotice } from './ConversationCompactionNotice.tsx';
@@ -18,7 +19,7 @@ import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRe
 import { SplitDivider } from '../../components/SplitDivider.tsx';
 import { readOptionalPreference, writeOptionalPreference } from '../../lib/optional-preferences.ts';
 import { Alert, App, Button, Dropdown, Input, Modal, Popover, Select, Spin, Tag } from 'antd';
-import { ArrowDownOutlined, ArrowUpOutlined, CommentOutlined, EllipsisOutlined, MinusOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, StopOutlined, TeamOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { ApartmentOutlined, ArrowDownOutlined, ArrowUpOutlined, CommentOutlined, EllipsisOutlined, MinusOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, StopOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { MarkdownHost } from '../../components/MarkdownHost.tsx';
 import type { MarkdownRenderOptions } from '../../markdown.ts';
 import type { ApiError } from '../../api/index.ts';
@@ -57,9 +58,12 @@ import type { ConversationEntry, ConversationRun, ConversationView, SendDraft, S
 import {conversationReplyText} from './conversation-reply.ts';
 import {ConversationHandoffDrawer} from './ConversationHandoffDrawer.tsx';
 import {ConversationHandoffReview} from './ConversationHandoffReview.tsx';
+import { ConversationSubagentOverview, ConversationTurnSubagents } from './ConversationSubagentOverview.tsx';
+import { ConversationSubagentPane, SubagentDispatchCard } from './ConversationSubagents.tsx';
+import { conversationSubagents, subagentWaitingLabel } from './conversation-subagents.ts';
 import { ConversationProcessBlock } from './ConversationProcessBlock.tsx';
 import {modelPreferenceFromChoice,preferredConversationChoice,readConversationModelPreference,readConversationModulePreference,rememberConversationAgent,rememberConversationPermission,rememberedConversationPermission,writeConversationModelPreference,writeConversationModulePreference} from './conversation-preferences.ts';
-import {conversationSystemNoticeText,visibleConversationEntries,conversationModelWarning,conversationActionError,conversationHandoffReceipt,conversationNativeSessionDiagnostic,conversationNativeSessionIssue,conversationNativeSessionSummary,latestVisibleConversationMessage} from './conversation-notices.ts';
+import {isQuietAutomaticContinuation,conversationSystemNoticeText,visibleConversationEntries,conversationModelWarning,conversationActionError,conversationHandoffReceipt,conversationNativeSessionDiagnostic,conversationNativeSessionIssue,conversationNativeSessionSummary,latestVisibleConversationMessage} from './conversation-notices.ts';
 import { findSeenFallbackTarget, isConversationViewVisible } from './seen-activity-refresh.ts';
 import './agent-conversations.css';
 import {AgentConnectionSettings} from './AgentConnectionSettings';
@@ -68,8 +72,8 @@ const statusLabels = {starting:'正在准备执行',running:'正在执行','wait
 const unconfirmedSupplementMessage='消息是否送达仍待确认，请勿重复发送；输入已保留。';
 type Prepared = {conversation:ConversationView;input:SendDraft;preview:SendPreview;clientRequestId:string;selection:ConversationSelection;recovery:ConversationSendRecovery};
 type SendOperation={selection:ConversationSelection;continueRunId?:string};
-type Props={development?:boolean;workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;portalTarget?:HTMLElement|null;embedded?:boolean;accessory?:ReactNode;onCreateChild?:()=>void};
-export function ConversationPanel({development=false,workspaces,defaultWorkspaceId,portalTarget,embedded=false,accessory,onCreateChild}:Props){
+type Props={development?:boolean;workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;portalTarget?:HTMLElement|null;embedded?:boolean;accessory?:ReactNode|((conversationVisible:boolean)=>ReactNode);headerAction?:ReactNode;onReturnToHost?:()=>void;onCreateChild?:()=>void};
+export function ConversationPanel({development=false,workspaces,defaultWorkspaceId,portalTarget,embedded=false,accessory,headerAction,onReturnToHost,onCreateChild}:Props){
   const context=useAgentConversations(),chat=context.conversation;
   const {message:appMessage}=App.useApp();
   const engineeringAnchor=useRef<HTMLSpanElement>(null);
@@ -82,8 +86,10 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
   const [historyWidth,setHistoryWidth]=useState<number>(()=>{const saved=Number(readOptionalPreference(focusHistoryWidthKey));return Number.isFinite(saved)&&saved>=FOCUS_HISTORY_MIN_WIDTH?saved:FOCUS_HISTORY_DEFAULT_WIDTH;});
   const [panelWidth,setPanelWidth]=useState<number>(()=>(typeof window!=='undefined'?Math.max(0,window.innerWidth-52):0));
   const [viewportWidth,setViewportWidth]=useState<number>(()=>(typeof window!=='undefined'?window.innerWidth:1280));
-  const historyDrag=useRef<{pointerId:number;x:number;width:number}|null>(null);
+  const historyDrag=useRef<{pointerId:number;x:number;width:number;latest:number;moved:boolean}|null>(null);
   const [historyResizing,setHistoryResizing]=useState(false);
+  const threePane=!embedded?composition.threePane:undefined;
+  const threePaneWorkspaceOpen=Boolean(threePane?.workspaceOpen);
   useLayoutEffect(()=>{
     if(embedded)return;
     const element=document.getElementById(panelId);
@@ -98,13 +104,17 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     observer?.observe(element!);
     window.addEventListener('resize',measure);
     return()=>{observer?.disconnect();window.removeEventListener('resize',measure);};
-  },[embedded,panelId,context.full,context.open,context.view]);
+  },[embedded,panelId,context.full,context.open,context.view,threePaneWorkspaceOpen]);
   const ownsSettings=!embedded&&(standalone||development);
   const focusSettings=ownsSettings&&context.full;
   const showFocusSettings=focusSettings&&context.settings;
-  const focusSplit=Boolean(context.full&&!embedded&&canSplitFocusHistory(panelWidth,viewportWidth));
-  const historyMaxWidth=focusHistoryMaxWidth(panelWidth);
-  const effectiveHistoryWidth=clampFocusHistoryWidth(historyWidth,panelWidth);
+  const effectivePanelWidth=!threePaneWorkspaceOpen&&threePane?.panelWidth&&threePane.panelWidth>0?threePane.panelWidth:panelWidth;
+  const canSplitHistory=threePaneWorkspaceOpen?Boolean(threePane?.canSplitHistory):canSplitFocusHistory(effectivePanelWidth,viewportWidth);
+  const focusSplit=Boolean(context.full&&!embedded&&canSplitHistory);
+  const effectiveHistoryMinWidth=threePaneWorkspaceOpen?threePane!.historyMinWidth:FOCUS_HISTORY_MIN_WIDTH;
+  const effectiveHistoryDefaultWidth=threePaneWorkspaceOpen?threePane!.defaultHistoryWidth:FOCUS_HISTORY_DEFAULT_WIDTH;
+  const historyMaxWidth=threePaneWorkspaceOpen?threePane!.historyMaxWidth:focusHistoryMaxWidth(effectivePanelWidth);
+  const effectiveHistoryWidth=threePaneWorkspaceOpen?threePane!.historyWidth:clampFocusHistoryWidth(historyWidth,effectivePanelWidth);
   useLayoutEffect(()=>{
     if(window.parent===window)return;
     const anchor=engineeringAnchor.current;if(!anchor)return;
@@ -118,7 +128,6 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     setHistoryWidth(clamped);
     writeOptionalPreference(focusHistoryWidthKey,String(clamped));
   },[panelId,panelWidth]);
-  const stopHistoryResize=useCallback(()=>{historyDrag.current=null;setHistoryResizing(false);},[]);
   const [modulePreference,setModulePreference]=useState(readConversationModulePreference);
   const [modelPreference,setModelPreference]=useState(readConversationModelPreference);
   const draft=useConversationDraft(context.scope?.workspaceId||defaultWorkspaceId||'@default',context.scope?.conversationId||null);
@@ -175,7 +184,26 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
   const actionKey=(value:ConversationView,action:string,identity=value.run?.id||'')=>conversationActionKey({workspaceId:value.workspaceId,conversationId:value.id},action,identity);
   const uploadKey=chat?actionKey(chat,'upload',''):conversationActionKey({workspaceId:draftWorkspaceId,conversationId:'new'},'upload');
   const [stoppedOutput,setStoppedOutput]=useState<StoppedConversationOutput|null>(null);
-  const visibleEntries=useMemo(()=>chat?visibleConversationEntries(stoppedConversationEntries(chat,stoppedOutput)):[],[chat,stoppedOutput]);
+  const observedEntries=useMemo(()=>chat?stoppedConversationEntries(chat,stoppedOutput):[],[chat,stoppedOutput]);
+  const subagents=useMemo(()=>conversationSubagents(observedEntries,[...(chat?.retainedRuns??[]),...(chat?.run?[chat.run]:[])]),[observedEntries,chat?.run,chat?.retainedRuns]);
+  const visibleEntries=useMemo(()=>visibleConversationEntries(observedEntries).filter(entry=>!subagents.owned.has(entry.id)),[observedEntries,subagents]);
+  const [subagentView,setSubagentView]=useState<{kind:'overview';focusRunId?:string}|{kind:'detail';id:string}>();
+  const subagentTrigger=useRef<HTMLElement>(null);
+  const subagentMenu=useRef<HTMLButtonElement>(null);
+  const subagentId=subagentView?.kind==='detail'?subagentView.id:undefined;
+  const selectedSubagent=subagents.agents.find(agent=>agent.entry.id===subagentId);
+  const subagentOverviewOpen=subagentView?.kind==='overview';
+  const subagentPaneOpen=subagentOverviewOpen||Boolean(selectedSubagent);
+  useEffect(()=>{setSubagentView(undefined);subagentTrigger.current=null;},[chat?.id,chat?.workspaceId]);
+  function openSubagent(id:string,trigger?:HTMLElement){
+    if(trigger)subagentTrigger.current=trigger;
+    setSubagentView({kind:'detail',id});
+  }
+  function openSubagentOverview(trigger?:HTMLElement,focusRunId?:string){
+    if(trigger)subagentTrigger.current=trigger;
+    setSubagentView({kind:'overview',focusRunId});
+  }
+
   const outputPaused=Boolean(chat&&stoppedOutput&&stoppedOutput.workspaceId===chat.workspaceId&&stoppedOutput.conversationId===chat.id&&(stoppedOutput.runIds??[stoppedOutput.runId]).includes(chat.run?.id??''));
   const stopping=Boolean(chat&&actions.has(actionKey(chat,'stop'))),observing=Boolean(chat&&actions.has(actionKey(chat,'observe'))),uploading=actions.has(uploadKey);
   const stopControl=conversationStopControlState(chat,stopping);
@@ -259,7 +287,6 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     if(entry?.status!=='accepted')return;
     inputAttempts.finish(chat,pending.clientRequestId);
     setError(previous=>previous===unconfirmedSupplementMessage?'':previous);
-    setFeedback('上条追加消息已确认接收，无需重复发送。');
     draft.clearSubmitted(chat.workspaceId,chat.id,pending.text);
     setAttachments(previous=>({...previous,[chat.id]:removeSubmittedAttachments(previous[chat.id]||[],ids)}));
   },[chat?.id,chat?.workspaceId,chat?.entries,inputAttempts,setAttachments]);
@@ -285,9 +312,9 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
   };
   useLayoutEffect(()=>{setError('');setFeedback('');setFileLinkFailure(null);setOpeningFile(null);setImageLink(null);setExpandedToolGroups({});const active=activeSend.current;if(!active||!context.isSelectionCurrent(active.selection)){activeSend.current=null;setSending(false);setPreparing(false);setPrepared(null);setSelectedHandoff(null);setReviewOpen(false);}bottom.current=true;readPosition.current=0;setAtBottom(true);},[context.selectionGeneration,context.scope?.workspaceId,context.scope?.conversationId,context.isSelectionCurrent]);
   useEffect(()=>()=>fileOpenRequest.current?.abort(),[context.selectionGeneration,context.scope?.workspaceId,context.scope?.conversationId]);
-  useEffect(()=>{setMoreOpen(false);setLocationOpen(false);},[context.selectionGeneration,context.open,context.side,context.full,context.view]);
+  useEffect(()=>{setMoreOpen(false);setLocationOpen(false);},[context.selectionGeneration,context.open,context.side,context.full,context.view,context.settings]);
   useEffect(()=>{earlier.followLayout();setAtBottom(bottom.current);},[chat?.id,chat?.entries.length,chat?.entries.at(-1)?.text,chat?.requests.length,chat?.run?.status,chat?.pendingSend?.id]);
-  const conversationVisible=isConversationViewVisible(context.open,context.view,focusSplit);
+  const conversationVisible=!showFocusSettings&&isConversationViewVisible(context.open,context.view,focusSplit);
   useLayoutEffect(()=>{const node=stream.current;if(!node?.getClientRects().length)return;if(bottom.current)earlier.followLayout();else{node.scrollTop=readPosition.current;earlier.remember();}setAtBottom(bottom.current);},[portalTarget,context.view,focusSplit,context.open]);
   const hasMessageList=Boolean(chat?.entries.length)&&!context.loading;
   useEffect(()=>{
@@ -316,7 +343,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     if(file.kind!=='image'||file.truncated||!/^data:image\/(?:png|jpeg|gif|webp|avif|bmp|x-icon);base64,/i.test(file.content))throw new Error('来源不是可完整预览的图片。');
     return file.content;
   },[host.readFile,chat?.workspaceId,chat?.id,chat?.cwd]);
-  const openProcessFile=async(path:string,literal=false)=>{
+  const openProcessFile=async(path:string,literal=false,fileUrl?:string)=>{
     if(!chat)return;
     fileOpenRequest.current?.abort();
     const selection=context.getSelection(), request=new AbortController();
@@ -328,11 +355,23 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
       if(image){setOpeningFile(null);setImageLink({selection,reference:path,load:signal=>loadImage(image,signal)});return;}
       if(!host.openFile)throw new Error('此入口未提供来源文件打开，请复制路径核对。');
       setOpeningFile(selection);
-      await host.openFile(chat,path,literal,request.signal);
-      if(stillCurrent())context.setFull(false);
+      const shouldExitFull=await host.openFile(chat,fileUrl??path,literal,request.signal);
+      if(stillCurrent()&&shouldExitFull!==false)context.setFull(false);
     }catch(failure){if(stillCurrent())setFileLinkFailure({selection,reference:path,message:failure instanceof Error?failure.message:'无法打开来源文件。'});}
     finally{if(stillCurrent()){fileOpenRequest.current=null;setOpeningFile(null);}}
   };
+  const findFileAction=chat&&host.findExplorerFile?async(reference:string,signal:AbortSignal)=>{
+    const selection=context.getSelection();
+    const open=await host.findExplorerFile!(chat,reference,signal);
+    if(!open||!context.isSelectionCurrent(selection))return null;
+    return async()=>{
+      if(signal.aborted||!context.isSelectionCurrent(selection))return;
+      try {await open();}
+      catch (failure) {
+        if(!signal.aborted&&context.isSelectionCurrent(selection))setFileLinkFailure({selection,reference,message:failure instanceof Error?failure.message:'无法在资源管理器中打开。'});
+      }
+    };
+  }:undefined;
   const recoverConflict=async(failure:unknown)=>{
     const api=failure as ApiError;if(api?.status!==409)return false;
     const selection=context.getSelection();
@@ -553,7 +592,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
               draft.clearSubmitted(current.workspaceId,current.id,pendingInput.text);
               setAttachments(previous=>({...previous,[current.id]:removeSubmittedAttachments(previous[current.id]||[],pendingInput.images.map(image=>image.id))}));
             }
-            setFeedback('上条追加消息已确认接收，无需重复发送。');return;
+            return;
           }
           throw new Error(unconfirmedSupplementMessage);
         }
@@ -561,7 +600,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
           if(conversationInputAttemptMatches(pendingInput,current,sendText,requestImages)){
             draft.clearSubmitted(current.workspaceId,current.id,pendingInput.text);
             setAttachments(previous=>({...previous,[current.id]:removeSubmittedAttachments(previous[current.id]||[],pendingInput.images.map(image=>image.id))}));
-            setFeedback('上条追加消息已确认接收，无需重复发送。');return;
+            return;
           }
         }
         if(!await refreshLatest())return;
@@ -590,7 +629,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
               if(conversationInputAttemptAccepted(beforeRefresh,current,attempt)){
                 draft.clearSubmitted(current.workspaceId,current.id,sendText);
                 setAttachments(previous=>({...previous,[current.id]:removeSubmittedAttachments(previous[current.id]||[],requestImages.map(item=>item.id))}));
-                setFeedback('消息已进入当前执行，并已确认原生接收。');return;
+                return;
               }
             }
             const refusal='conversation' in result?result.conversation.entries.slice().reverse().find(entry=>entry.runId===attempt.runId&&entry.kind==='message'&&entry.role==='user'&&entry.status==='failed'&&entry.text===sendText)?.deliveryDiagnostic:result.diagnostic;
@@ -782,6 +821,11 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     return()=>{cancelAnimationFrame(frame);observer.disconnect();element.removeEventListener('scroll',check);document.removeEventListener('visibilitychange',check);window.removeEventListener('focus',check);};
   },[chat,visibleEntries,conversationVisible,context.markSeen]);
   const run=chat?.run;
+  const failedRunInputStatus=run?.status==='failed'
+    ? visibleEntries.find(entry=>entry.runId===run.id&&entry.kind==='message'&&entry.role==='user')?.status
+    : undefined;
+  const backgroundSubagents=run?.status==='tools-active'?subagents.agents.filter(({entry,dispatch})=>entry.runId===run.id&&entry.participantId===run.participantId&&dispatch.status==='running'):[];
+  const backgroundSubagentKeys=new Set(backgroundSubagents.map(agent=>agent.dispatch.key));
   const showExecutionNotice=(!outputPaused||!stopping)&&(run?.status==='unknown'||run?.status==='tools-active');
   const noticeHasStop=showExecutionNotice&&!run?.resourcesReleased&&!run?.stopRequested;
   const runConnection=context.connections.find(item=>item.id===chat?.participants.find(participant=>participant.id===run?.participantId)?.connectionId);
@@ -827,11 +871,27 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
     const source=conversationImageSource(chat?.cwd,href);
     return source?.path?{load:(signal:AbortSignal)=>loadImage(source.path,signal)}:source?.href?{href:source.href}:null;
   },[chat?.cwd,loadImage]);
-  const markdownOptions:MarkdownRenderOptions={allowRelativeLinks:true,allowParentRelativeLinks:true,allowAbsoluteFileLinks:true,taskLinkPathname:chat&&chat.workspaceId!=='@default'?'/workspaces/'+encodeURIComponent(chat.workspaceId):null,onRelativeLinkClick:reference=>void openProcessFile(reference),imageResolver:markdownImageResolver,onImageClick:image=>{if(!chat||!image.src)return;setFileLinkFailure(null);setImageLink({selection:context.getSelection(),reference:image.reference||image.src,href:image.src});}};
+  const markdownOptions:MarkdownRenderOptions={allowRelativeLinks:true,allowParentRelativeLinks:true,allowAbsoluteFileLinks:true,taskLinkPathname:chat&&chat.workspaceId!=='@default'?'/workspaces/'+encodeURIComponent(chat.workspaceId):null,onRelativeLinkClick:(reference,_event,fileUrl)=>void openProcessFile(reference,false,fileUrl),imageResolver:markdownImageResolver,onImageClick:image=>{if(!chat||!image.src)return;setFileLinkFailure(null);setImageLink({selection:context.getSelection(),reference:image.reference||image.src,href:image.src});}};
   const forkableReplies = forkableReplyIds(chat);
   const finalReplies = finalReplyIds(chat);
   const loadToolEntry=useCallback((entry:ConversationEntry,signal?:AbortSignal)=>context.api.entry(chat!.workspaceId,chat!.id,entry,signal),[context.api,chat?.workspaceId,chat?.id]);
+  const subagentPaneId=panelId+'-subagents';
+  function closeSubagent(locate=false){
+    const anchorId=selectedSubagent?.entry.id;
+    const trigger=subagentTrigger.current;
+    setSubagentView(undefined);
+    requestAnimationFrame(()=>{
+      const dispatch=locate&&anchorId?stream.current?.querySelector<HTMLButtonElement>(`[data-subagent-dispatch="${CSS.escape(anchorId)}"], [data-subagent-summary="${CSS.escape(anchorId)}"]`):null;
+      if(dispatch){dispatch.scrollIntoView({block:'center'});dispatch.focus({preventScroll:true});}
+      else if(!locate&&trigger?.isConnected)trigger.focus({preventScroll:true});
+      else subagentMenu.current?.focus({preventScroll:true});
+    });
+  }
   const renderEntry=(entry:ConversationEntry)=>{
+    if(entry.subagent){
+      const agent=subagents.agents.find(row=>row.entry.id===entry.id);
+      return agent?<SubagentDispatchCard key={entry.id} agent={agent} active={agent.entry.id===subagentId} onOpen={trigger=>openSubagent(entry.id,trigger)}/>:null;
+    }
     if(entry.kind==='handoff'){
       if(entry.nativeSession){
         const issue=conversationNativeSessionIssue(entry),summary=conversationNativeSessionSummary(entry);
@@ -847,42 +907,33 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
       return text?<div className="ac-handoff-receipt" key={entry.id}><span>{text}</span>{Boolean(entry.handoff?.changes.length)&&<Button type="link" size="small" onClick={()=>{setSelectedHandoff(entry);}}>交接内容</Button>}</div>:null;
     }
     const text=entry.kind==='notice'&&entry.id.startsWith('reply-')?conversationReplyText(entry.text):conversationSystemNoticeText(entry);
-    const body=<>{entry.role==='assistant'?<MarkdownHost markdown={entry.text} className="markdown-body" options={markdownOptions}/>:<p>{text}</p>}{entry.attachments?.length?<ConversationMessageImages conversation={chat!} ids={entry.attachments} read={context.api.readImage}/>:null}{entry.deliveryDiagnostic&&<small className="ac-input-diagnostic" role="status">{entry.deliveryDiagnostic}</small>}{entry.status==='unknown'&&<Tag color="warning">是否送达待确认</Tag>}</>;
+    const body=<>{entry.role==='assistant'?<MarkdownHost markdown={entry.text} className="markdown-body" options={markdownOptions} findFileAction={findFileAction}/>:<p>{text}</p>}{entry.attachments?.length?<ConversationMessageImages conversation={chat!} ids={entry.attachments} read={context.api.readImage}/>:null}{entry.deliveryDiagnostic&&<small className="ac-input-diagnostic" role="status">{entry.deliveryDiagnostic}</small>}{entry.status==='unknown'&&<Tag color="warning">是否送达待确认</Tag>}</>;
     return <article key={entry.id} className={'ac-message is-'+entry.role} data-entry-id={entry.id} data-message-provider={entry.provider}>{entry.role==='user'?<div className="ac-user-bubble">{body}</div>:body}{entry.role==='user'&&text&&<span className="ac-reply-actions ac-user-actions"><CopyButton type="text" text={text} ariaLabel="复制消息" failureMessage="复制失败，请手动选择文字。"/></span>}{entry.role==='assistant'&&finalReplies.has(entry.id)&&<span className="ac-reply-actions"><CopyButton type="text" text={entry.text} ariaLabel="复制回复" failureMessage="复制失败，请手动选择文字。"/>{chat&&forkableReplies.has(entry.id)&&<ConversationForkAction conversation={chat} entryId={entry.id}/>}</span>}</article>;
   };
   const fileError=fileLinkFailure&&context.isSelectionCurrent(fileLinkFailure.selection)&&<Alert type="warning" message={fileLinkFailure.message} description={<code>{fileLinkFailure.reference}</code>} closable onClose={()=>setFileLinkFailure(null)} action={<CopyButton type="text" text={fileLinkFailure.reference} ariaLabel="复制来源路径" failureMessage="复制失败，请手动复制来源路径。"/>}/>;
-  const panel=<section id={panelId} className={'ac-panel'+(context.full?' is-full':'')+(historyResizing?' is-resizing':'')+(embedded?' ac-child-panel':'')} aria-label={embedded?'子对话':'内部对话'} data-dock={context.side} data-conversation-id={chat?.id}>
-    {context.view==='history'&&!focusSplit&&<ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} hiddenBySettings={showFocusSettings}/>}
-    {focusSplit&&context.view==='history'&&<>
-      <aside id={focusHistoryPaneId} className="ac-focus-history-pane" style={{width:effectiveHistoryWidth}}><ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} keepHistoryOpen/></aside>
-      <SplitDivider className={'ac-focus-history-divider'+(historyResizing?' is-dragging':'')} aria-label="调整专注模式对话列表宽度" aria-controls={focusHistoryPaneId} aria-orientation="vertical" aria-valuemin={FOCUS_HISTORY_MIN_WIDTH} aria-valuemax={historyMaxWidth} aria-valuenow={Math.round(effectiveHistoryWidth)} aria-valuetext={`${Math.round(effectiveHistoryWidth)} 像素`} title={`拖拽调整对话列表宽度（${FOCUS_HISTORY_MIN_WIDTH}–${historyMaxWidth}px）；方向键微调，双击恢复`}
-        onPointerDown={event=>{if(event.button!==0||historyDrag.current)return;event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);historyDrag.current={pointerId:event.pointerId,x:event.clientX,width:effectiveHistoryWidth};setHistoryResizing(true);}}
-        onPointerMove={event=>{const start=historyDrag.current;if(start?.pointerId===event.pointerId)commitHistoryWidth(start.width+event.clientX-start.x);}}
-        onPointerUp={event=>{if(historyDrag.current?.pointerId===event.pointerId){stopHistoryResize();if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}}}
-        onPointerCancel={event=>{if(historyDrag.current?.pointerId===event.pointerId)stopHistoryResize();}}
-        onLostPointerCapture={event=>{if(historyDrag.current?.pointerId===event.pointerId)stopHistoryResize();}}
-        onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();commitHistoryWidth(event.key==='Home'?FOCUS_HISTORY_MIN_WIDTH:event.key==='End'?historyMaxWidth:effectiveHistoryWidth+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?32:16));}}
-        onDoubleClick={()=>commitHistoryWidth(FOCUS_HISTORY_DEFAULT_WIDTH)}/>
-    </>}
-    {ownsSettings&&<AgentConnectionSettings inMain={focusSettings}/>}
-    <div className="ac-conversation-view" hidden={showFocusSettings||context.view==='history'&&!focusSplit}>
-      <header className="ac-thread-header" data-run-status={run&&['running','completed'].includes(run.status)?run.status:undefined}>
+  const threadHeader=<header className={"ac-thread-header"+(standalone?" ac-thread-header-in-stream":"")} data-run-status={run&&['running','completed'].includes(run.status)?run.status:undefined}>
         {!embedded&&!context.open&&<Button type="text" icon={<UnorderedListOutlined/>} aria-label="查看对话列表" title="对话列表" onClick={()=>context.openHistory(null,{preserveVisibility:true})}/>}
         <div className="ac-thread-heading">
         {chat?<button type="button" className="ac-thread-title" aria-label="重命名对话" title={chat.title} onClick={()=>{setTitle(chat.title);setRename(true);}}>{chat.title}</button>:<strong className="ac-thread-title ac-thread-title-static">{context.loading?'正在读取对话…':context.scope?'对话':'新对话'}</strong>}
         </div>
         <div className="ac-thread-actions">
-          {accessory}
-          {participantPairs.length>0&&<Popover rootClassName="ac-panel-popup ac-participant-history" title="参与过此对话" trigger="click" content={<div className="ac-participants" aria-label="参与过此对话的智能体与模型">{participantPairs.map(pair=><span key={pair.key}>{pair.label||context.connections.find(item=>item.id===pair.connectionId)?.label||executionAgentName(pair.provider)} · {pair.modelName}</span>)}</div>}>
-            <Button type="text" icon={<TeamOutlined/>} aria-label="参与过此对话的智能体与模型" title="参与过此对话"/>
-          </Popover>}
+          {typeof accessory==='function'?accessory(conversationVisible):accessory}
+          {subagents.agents.length>0&&<Button ref={subagentMenu} type="text" className="ac-subagent-entry" icon={<ApartmentOutlined aria-hidden="true"/>} title="子智能体总览" aria-label={`子智能体（${subagents.agents.length}）`} aria-expanded={subagentPaneOpen} aria-controls={subagentPaneOpen?subagentPaneId:undefined} onClick={event=>{
+            if(subagentOverviewOpen)closeSubagent();
+            else openSubagentOverview(event.currentTarget);
+          }}><span className="ac-subagent-entry-label">子智能体</span><span className="ac-subagent-entry-count" aria-hidden="true">{subagents.agents.length}{chat?.nextEntryCursor!==undefined?'+':''}</span></Button>}
           {embedded?<Button type="text" icon={<MinusOutlined/>} aria-label="收起子对话" title="收起子对话" onClick={()=>context.setOpen(false)}/>:!context.open&&<Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" title="新建对话" onClick={()=>context.newConversation({preserveVisibility:true})}/>}
-          <Dropdown overlayClassName="ac-panel-popup" trigger={['click']} open={moreOpen} onOpenChange={setMoreOpen} menu={{items:[
+          <Dropdown overlayClassName="ac-panel-popup" trigger={['click']} open={moreOpen} onOpenChange={setMoreOpen}
+            popupRender={participantPairs.length>0?(menu=><div className="ac-more-menu-popup">{menu}<div className="ac-participant-history"><div className="ac-participant-history-title">参与过此对话</div><div className="ac-participants" aria-label="参与过此对话的智能体与模型">{participantPairs.map(pair=><span key={pair.key}>{pair.label||context.connections.find(item=>item.id===pair.connectionId)?.label||executionAgentName(pair.provider)} · {pair.modelName}</span>)}</div></div></div>):undefined}
+            menu={{items:[
+            ...(onReturnToHost?[{key:'return-to-host',label:'返回 DSH'},{type:'divider' as const}]:[]),
             ...(onCreateChild?[{key:'create-child',label:'创建子对话',icon:<PlusOutlined aria-hidden/>},{type:'divider' as const}]:[]),
             ...(!standalone?[
               {key:'collapse',label:'收起对话'},
-              {key:'full',label:context.full?'恢复分屏':'专注对话'},
-              {key:'side',label:context.side==='right'?'对话移到最左侧':'对话移到右侧'},
+              ...(!composition.modeSwitchInHost?[{key:'full',label:context.full?'恢复分屏':'专注对话'}]:[]),
+              ...(!composition.modeSwitchInHost || (!context.full && viewportWidth > HARNESS_MOBILE_BREAKPOINT) ? [{key:'side',label:composition.modeSwitchInHost
+                ? (context.side==='right'?'将对话栏移到左侧':'将对话栏移到右侧')
+                : (context.side==='right'?'对话移到最左侧':'对话移到右侧')}] : []),
               {type:'divider' as const},
             ]:[]),
             {key:'generate-title',label:generatingTitle?'正在生成标题…':'生成简短标题',disabled:generatingTitle||!canGenerateConversationTitle(chat)},
@@ -892,28 +943,58 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
           ].filter(item=>!embedded||!['full','side','hide'].includes(item.key||'')),onClick:({key})=>{
             setMoreOpen(false);
             if(standalone&&['collapse','full','side'].includes(key))return;
-            if(composition.requestLayout&&(key==='collapse'||key==='full')){composition.requestLayout(key,key==='full'?!context.full:undefined);return;}
-            if(window.parent!==window&&['collapse','full'].includes(key)){window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'layout',action:key,...(key==='full'?{full:!context.full}:{})},location.origin);return;}
+            if(!embedded&&composition.requestLayout&&(key==='collapse'||key==='full')){composition.requestLayout(key,key==='full'?!context.full:undefined);return;}
+            if(!embedded&&window.parent!==window&&['collapse','full'].includes(key)){window.parent.postMessage({protocol:'buildr.harness-frame/v1',event:'layout',action:key,...(key==='full'?{full:!context.full}:{})},location.origin);return;}
             if(key==='collapse')context.setOpen(false);
             else if(key==='side')context.move();
             else if(key==='full'){context.setOpen(true);context.setFull(!context.full);}
+            else if(key==='return-to-host')onReturnToHost?.();
             else if(key==='create-child')onCreateChild?.();
             else if(key==='generate-title')void generateTitle();
             else if(key==='rename'&&chat){setTitle(chat.title);setRename(true);}
             else if(key==='copy-id'&&chat)void copyText(chat.id).then(copied=>copied?appMessage.success('对话 ID 已复制'):appMessage.warning('复制失败，请手动选择对话 ID 复制。'));
             else if(key==='hide'&&chat){if(!chat.hidden&&canCloseUncertainConversation(chat))void closeConversation();else void updateMetadata({hidden:!chat.hidden});}
           }}}><Button type="text" icon={<EllipsisOutlined/>} aria-label="更多对话操作" title="更多"/></Dropdown>
+          {headerAction}
         </div>
-      </header>
+      </header>;
+  const finishHistoryResize=(element?:HTMLButtonElement,pointerId?:number)=>{
+    const drag=historyDrag.current;
+    if(!drag||(pointerId!==undefined&&drag.pointerId!==pointerId))return;
+    historyDrag.current=null;
+    setHistoryResizing(false);
+    if(element&&pointerId!==undefined&&element.hasPointerCapture(pointerId))element.releasePointerCapture(pointerId);
+    if(drag.moved&&threePaneWorkspaceOpen)threePane?.onResizeHistory(drag.latest,true);
+    threePane?.onHistoryDragChange?.(false);
+  };
+  const panel=<section id={panelId} className={'ac-panel'+(context.full?' is-full':'')+(historyResizing?' is-resizing':'')+(embedded?' ac-child-panel':'')} aria-label={embedded?'子对话':'内部对话'} data-dock={context.side} data-conversation-id={chat?.id} data-can-split-history={canSplitHistory?'true':'false'} data-three-pane={focusSplit&&threePaneWorkspaceOpen?'true':undefined}>
+    {context.view==='history'&&!focusSplit&&<ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} hiddenBySettings={showFocusSettings}
+      headerAction={onReturnToHost&&<><Dropdown trigger={['click']} menu={{items:[{key:'return-to-host',label:'返回 DSH'}],onClick:onReturnToHost}}><Button type="text" icon={<EllipsisOutlined/>} aria-label="更多对话操作" title="更多"/></Dropdown>{headerAction}</>}/>}
+    {focusSplit&&context.view==='history'&&<>
+      <aside id={focusHistoryPaneId} className="ac-focus-history-pane" style={{width:effectiveHistoryWidth}} hidden={showFocusSettings}><ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId} keepHistoryOpen hiddenBySettings={showFocusSettings}/></aside>
+      {!showFocusSettings&&<SplitDivider className={'ac-focus-history-divider'+(historyResizing?' is-dragging':'')} aria-label="调整专注模式对话列表宽度" aria-controls={focusHistoryPaneId} aria-orientation="vertical" aria-valuemin={effectiveHistoryMinWidth} aria-valuemax={historyMaxWidth} aria-valuenow={Math.round(effectiveHistoryWidth)} aria-valuetext={`${Math.round(effectiveHistoryWidth)} 像素`} title={`拖拽调整对话列表宽度（${effectiveHistoryMinWidth}–${historyMaxWidth}px）；方向键微调，双击恢复`}
+        onPointerDown={event=>{if(event.button!==0||historyDrag.current)return;event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);historyDrag.current={pointerId:event.pointerId,x:event.clientX,width:effectiveHistoryWidth,latest:effectiveHistoryWidth,moved:false};setHistoryResizing(true);if(threePaneWorkspaceOpen)threePane?.onHistoryDragChange?.(true);}}
+        onPointerMove={event=>{const start=historyDrag.current;if(start?.pointerId!==event.pointerId)return;const next=start.width+event.clientX-start.x;start.latest=next;start.moved=true;if(threePaneWorkspaceOpen)threePane!.onResizeHistory(next,false);else commitHistoryWidth(next);}}
+        onPointerUp={event=>finishHistoryResize(event.currentTarget,event.pointerId)}
+        onPointerCancel={event=>finishHistoryResize(event.currentTarget,event.pointerId)}
+        onLostPointerCapture={event=>finishHistoryResize(event.currentTarget,event.pointerId)}
+        onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const next=event.key==='Home'?effectiveHistoryMinWidth:event.key==='End'?historyMaxWidth:effectiveHistoryWidth+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?32:16);if(threePaneWorkspaceOpen)threePane!.onResizeHistory(next,true);else commitHistoryWidth(next);}}
+        onDoubleClick={()=>{if(threePaneWorkspaceOpen)threePane!.onResizeHistory(effectiveHistoryDefaultWidth,true);else commitHistoryWidth(effectiveHistoryDefaultWidth);}}/>}
+    </>}
+    {ownsSettings&&<AgentConnectionSettings inMain={focusSettings}/>}
+    <div className="ac-conversation-split" hidden={showFocusSettings||context.view==='history'&&!focusSplit}>
+    <div className="ac-conversation-view">
+      {!standalone&&threadHeader}
       {chat?.childOf&&<div className="ac-child-origin"><span title={chat.childOf.title}>背景来自「{chat.childOf.title}」 · {new Date(chat.childOf.createdAt).toLocaleString()}</span><span>仅继承创建时背景；后续按你的新要求独立处理。</span></div>}
       {chat&&<ConversationForkOrigin conversation={chat}/>}
       <div className="ac-stream" ref={stream} tabIndex={0} aria-label="对话记录" aria-busy={context.loading||earlier.loading} onScroll={()=>{earlier.onScroll();followBottom();}} onPointerDown={earlier.onPointerDown} onPointerUp={earlier.onPointerUp} onPointerCancel={earlier.onPointerCancel} onWheel={earlier.onWheel} onKeyDown={earlier.onKeyDown} onTouchStart={earlier.onTouchStart} onTouchMove={earlier.onTouchMove} onTouchEnd={earlier.onTouchEnd} onTouchCancel={earlier.onTouchCancel}>
+        {standalone&&threadHeader}
         {earlier.loading&&<div className="ac-history-loading" role="status" aria-label="正在加载更早记录"><Spin size="small"/></div>}
         <div className="ac-stream-content" ref={streamContent}>
         {context.error&&<Alert type="error" showIcon message={context.error} action={<Button onClick={()=>void context.refresh().catch(fail)}>重新读取</Button>}/>}
         {run?.systemPrompt?.enabled&&run.systemPrompt.delivery==='unsupported'&&<Alert type="info" showIcon message="当前智能体不支持追加系统提示词，本轮未注入。"/>}
         <ConversationTranscript loading={context.loading}>
-        {context.error&&!chat?null:!chat||!visibleEntries.length?<div className="ac-welcome"><CommentOutlined/><h1>{chat?.taskId||boundTaskId?'从这项任务继续':'今天想做什么？'}</h1><p>了解一个问题，或者交办一件事。</p>{!chat&&settings}</div>:<div className="ac-message-list">
+        {context.error&&!chat?null:!chat||!visibleEntries.length?<div className="ac-welcome"><CommentOutlined/><h1>{chat?.taskId||boundTaskId?'从这项任务继续':'今天想做什么？'}</h1><p>了解一个问题，或者交办一件事。</p>{!chat&&!showFocusSettings&&settings}</div>:<div className="ac-message-list">
           {turns.map((turn,index)=>{
             const first=turn.items.find(item=>item.type==='process-block'||item.type==='entry'&&item.entry.role==='assistant');
             const assistant=first?.type==='process-block'?first.entries[0]:first?.entry;
@@ -927,6 +1008,7 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
             const settled=turn.items.filter(item=>item.type==='process-block'&&!item.active);
             const hasSupplement=turn.items.some(item=>item.type==='entry'&&item.entry.kind==='message'&&item.entry.role==='user');
             const hasProcess=turn.items.some(item=>item.type==='process-block');
+            const hasQuietContinuation=turn.items.some(item=>item.type==='entry'&&isQuietAutomaticContinuation(item.entry));
             const turnExpansionKey=conversationTurnExpansionKey(turn,run);
             const turnExpanded=conversationTurnExpanded(turn,run,expandedToolGroups);
             const turnRuns=[...(chat.retainedRuns??[]),...(run?[run]:[])];
@@ -938,12 +1020,17 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
             const turnRun=turnRuns.find(value=>value.id===resolvedRunId)??turnRuns.find(value=>value.status==='unknown'&&!value.supersededBy&&turnEntryRunIds.has(value.id));
             const turnPaused=Boolean(stoppedOutput&&stoppedOutput.workspaceId===chat.workspaceId&&stoppedOutput.conversationId===chat.id&&(stoppedOutput.runIds??[stoppedOutput.runId]).includes(turnRun?.id??''));
             const unverified=Boolean(turnRun&&turnRun.status==='unknown'&&!execution.current&&!turnRun.supersededBy);
+            const turnSubagents=subagents.agents.filter(agent=>agent.entry.runId&&turnEntryRunIds.has(agent.entry.runId));
+            const turnWaiting=subagentWaitingLabel(execution.current?run:undefined,subagents.agents)??(execution.current&&backgroundSubagents.length?'后台子智能体仍在运行':execution.waiting);
             return <ConversationTurn key={turn.key} id={turn.key} runId={resolvedRunId} prompt={shownPrompt?{id:shownPrompt.id,text:shownPrompt.text,images:shownPrompt.attachments?.length?<ConversationMessageImages conversation={chat} ids={shownPrompt.attachments} read={context.api.readImage}/>:undefined,diagnostic:prompt?(prompt.deliveryDiagnostic?<small className="ac-input-diagnostic" role="status">{prompt.deliveryDiagnostic}</small>:prompt.status==='failed'?<small className="ac-input-diagnostic" role="status">未送达</small>:prompt.status==='unknown'&&(execution.current||turnExpanded)?<Tag color={execution.current?'warning':'default'}>{execution.current?'是否送达待确认':'历史送达未确认'}</Tag>:undefined):<small className="ac-continuation-prompt-label">继续上次要求</small>}:undefined}
-              onCollapseProcess={processKeys.some(key=>expandedToolGroups[key]===true)?()=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(processKeys.map(key=>[key,false]))})):undefined} collapseLabel={hasExpandedProcess?'收起处理过程':'收起工具调用'} identity={execution.current?runIdentity:turnIdentity(latestAssistant||assistant||latestEntry||prompt)} executing={executing&&!turnPaused} showExecutionIndicator={Boolean(assistant||hasProcess||executing)} startedAt={timing.startedAt} finishedAt={timing.finishedAt} processExpanded={turnExpanded} onToggleProcess={hasProcess||hasSupplement?()=>setExpandedToolGroups(previous=>({...previous,[turnExpansionKey]:!turnExpanded,...Object.fromEntries(settled.flatMap(item=>item.type==='process-block'?[[processBlockKey(item.entries),!turnExpanded]]:[]))})):undefined}>
-              {executing&&execution.waiting&&<small className="ac-input-diagnostic" role="status">{execution.waiting}</small>}
+              onCollapseProcess={processKeys.some(key=>expandedToolGroups[key]===true)?()=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(processKeys.map(key=>[key,false]))})):undefined} collapseLabel={hasExpandedProcess?'收起处理过程':'收起工具调用'} identity={execution.current?runIdentity:turnIdentity(latestAssistant||assistant||latestEntry||prompt)} executing={executing&&!turnPaused} showExecutionIndicator={Boolean(assistant||hasProcess||executing)} startedAt={timing.startedAt} finishedAt={timing.finishedAt} processExpanded={turnExpanded} summary={!turnExpanded&&turnSubagents.length>0?<ConversationTurnSubagents agents={turnSubagents} onSelect={openSubagent} onOverview={openSubagentOverview}/>:undefined} onToggleProcess={hasProcess||hasQuietContinuation||hasSupplement||turnSubagents.length>0?()=>setExpandedToolGroups(previous=>({...previous,[turnExpansionKey]:!turnExpanded,...Object.fromEntries(settled.flatMap(item=>item.type==='process-block'?[[processBlockKey(item.entries),!turnExpanded]]:[]))})):undefined}>
+              {executing&&turnWaiting&&<small className="ac-input-diagnostic" role="status">{turnWaiting}</small>}
               {unverified&&turnExpanded&&<small className="ac-input-diagnostic" title={turnRun?.diagnostic}>{turnRun?.attentionSettled?'历史执行提醒已结束；原记录仍保留。':<>历史执行结果未确认，不影响当前对话。原记录保留在可展开的处理过程中。{canSettleRetainedRun(chat,turnRun)&&<Button type="link" size="small" loading={Boolean(chat&&actions.has(actionKey(chat,'settle-retained',turnRun!.id)))} onClick={()=>void settleRetained(turnRun!)} title="仅结束提醒：原执行结果仍未知，不终止可能仍在运行的进程，不会重发原操作。">结束提醒</Button>}</>}</small>}
               {turn.items.map(item=>{
-                if(item.type==='entry')return item.entry.kind==='message'&&item.entry.role==='user'&&!turnExpanded?null:renderEntry(item.entry);
+                if(item.type==='entry'){
+                  if(isQuietAutomaticContinuation(item.entry)&&expandedToolGroups[turnExpansionKey]!==true)return null;
+                  return !turnExpanded&&(item.entry.subagent||item.entry.kind==='message'&&item.entry.role==='user')?null:renderEntry(item.entry);
+                }
                 const key=processBlockKey(item.entries);
                 return <Fragment key={key}><ConversationProcessBlock hidden={!turnExpanded} loadEntry={loadToolEntry} markdownOptions={markdownOptions} headerless groupsOpen={expandedToolGroups} onGroupToggle={(ids,open)=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(ids.map(id=>['tool-group:'+id,open]))}))} toolsOpen={expandedToolGroups} onToolToggle={(id,open)=>setExpandedToolGroups(previous=>({...previous,['tool:'+id]:open}))} blockKey={key} entries={item.entries} active={item.active&&!turnPaused} liveToolId={liveToolId} finishedAt={item.finishedAt} onOpenFile={path=>void openProcessFile(path)} open={turnExpanded} onToggle={(name,open)=>setExpandedToolGroups(previous=>({...previous,[name]:open}))}/><ConversationPresentedFiles key={chat.id+':'+key} entries={item.entries} read={readPresentedFile} onOpen={path=>void openProcessFile(path,true)}/></Fragment>;
               })}
@@ -958,8 +1045,8 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
       {!atBottom&&<div className="ac-scroll-latest"><Button className="ac-scroll-latest-button" shape="circle" icon={<ArrowDownOutlined/>} aria-label="向下到底" title="向下到底，回到最新消息" onClick={scrollToLatest}/></div>}
       <div className="ac-compose-wrap" data-run-status={run?.status==='stopped'?'stopped':undefined}>{fileError}{openingFile&&context.isSelectionCurrent(openingFile)&&<div role="status" className="ac-input-diagnostic">正在打开文件…</div>}
 
-        {showExecutionNotice&&run?.status==='tools-active'&&<ConversationActiveToolsNotice key={run.id} tools={run.tools} resourcesReleased={run.resourcesReleased} stopRequested={run.stopRequested===true} feedback={feedback} diagnostic={run.diagnostic} canContinue={Boolean(chat&&conversationSendRoute(chat,executionChanged)==='send')} observing={observing} stopping={stopping} onObserve={()=>void observe()} onStop={toolId=>void stop(toolId)}/>}
-        {showExecutionNotice&&run?.status==='unknown'&&<ConversationExecutionNotice run={run} feedback={feedback} streamError={context.streamError} continuing={sending} continueDisabled={!canSend} onContinue={canContinueConversation(chat)&&!executionChanged?()=>void prepare(false,false,run.id):undefined} observing={observing} stopping={stopping} onObserve={()=>void observe()} onStop={()=>void stop()}/>}{!outputPaused&&<ConversationCompactionNotice run={run}/>}{(!outputPaused||Boolean(actionError))&&run&&locked&&run.status!=='unknown'&&run.status!=='tools-active'&&<div className="ac-execution-statusbar" role="status" data-execution-state={run.status}>{run.stopRequested?<span>停止已请求，等待结束确认</span>:!waitingQuestions.length&&run.status!=='running'&&<span>{statusLabels[run.status]}</span>}</div>}{!chat&&newImages.error&&<Alert type="warning" message={newImages.error} action={<Button size="small" onClick={()=>void newImages.refresh().catch(fail)}>重新读取图片</Button>}/>} {!chat&&unconfirmedFirst&&<ConversationFirstSubmissionNotice submission={unconfirmedFirst} busy={sending} onRetry={()=>void prepare(false,false,undefined,true)}/>}{!outputPaused&&run&&run.status!=='stopped'&&run.status!=='running'&&run.status!=='completed'&&run.status!=='unknown'&&run.status!=='tools-active'&&(!locked||Boolean(run.diagnostic))&&<div className="ac-run-status" role="status" data-run-status={run.status}>{!locked&&<>{run.interrupted?'执行未完成':statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}</>}{run.status==='failed'?<ConversationFailureNotice run={run}/>:run.diagnostic&&<p>{run.diagnostic}</p>}</div>} {connectionWarning}{modelWarning&&<Alert type="warning" showIcon message={modelWarning}/>}{earlier.error&&<Alert type="warning" showIcon message={earlier.error}/>} {actionError&&<Alert type="warning" showIcon message={actionError} closable onClose={()=>{setError('');setReplyFailure(null);setDefaultRootError('');}}/>} {feedback&&run?.status!=='unknown'&&run?.status!=='tools-active'&&<small role="status">{feedback}</small>}{(!draft.available||!attachmentsAvailable)&&<Alert type="warning" message="浏览器存储不可用，刷新后无法恢复未发送草稿。"/>}
+        {showExecutionNotice&&run?.status==='tools-active'&&<ConversationActiveToolsNotice key={run.id} tools={run.tools.filter(tool=>!backgroundSubagentKeys.has(tool.id))} subagents={backgroundSubagents.length} onOpenSubagents={backgroundSubagents.length?()=>openSubagent(backgroundSubagents[0].entry.id):undefined} resourcesReleased={run.resourcesReleased} stopRequested={run.stopRequested===true} feedback={feedback} diagnostic={run.diagnostic} canContinue={Boolean(chat&&conversationSendRoute(chat,executionChanged)==='send')} observing={observing} stopping={stopping} onObserve={()=>void observe()} onStop={toolId=>void stop(toolId)}/>}
+        {showExecutionNotice&&run?.status==='unknown'&&<ConversationExecutionNotice run={run} feedback={feedback} streamError={context.streamError} continuing={sending} continueDisabled={!canSend} onContinue={canContinueConversation(chat)&&!executionChanged?()=>void prepare(false,false,run.id):undefined} observing={observing} stopping={stopping} onObserve={()=>void observe()} onStop={()=>void stop()}/>}{!outputPaused&&<ConversationCompactionNotice run={run}/>}{(!outputPaused||Boolean(actionError))&&run&&locked&&run.status!=='unknown'&&run.status!=='tools-active'&&<div className="ac-execution-statusbar" role="status" data-execution-state={run.status}>{run.stopRequested?<span>停止已请求，等待结束确认</span>:!waitingQuestions.length&&run.status!=='running'&&<span>{statusLabels[run.status]}</span>}</div>}{!chat&&newImages.error&&<Alert type="warning" message={newImages.error} action={<Button size="small" onClick={()=>void newImages.refresh().catch(fail)}>重新读取图片</Button>}/>} {!chat&&unconfirmedFirst&&<ConversationFirstSubmissionNotice submission={unconfirmedFirst} busy={sending} onRetry={()=>void prepare(false,false,undefined,true)}/>}{!outputPaused&&run&&run.status!=='stopped'&&run.status!=='running'&&run.status!=='completed'&&run.status!=='unknown'&&run.status!=='tools-active'&&(!locked||Boolean(run.diagnostic))&&<div className="ac-run-status" role="status" data-run-status={run.status}>{!locked&&<>{run.interrupted?'执行未完成':statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}</>}{run.status==='failed'?<ConversationFailureNotice run={run} inputStatus={failedRunInputStatus}/>:run.diagnostic&&<p>{run.diagnostic}</p>}</div>} {connectionWarning}{modelWarning&&<Alert type="warning" showIcon message={modelWarning}/>}{earlier.error&&<Alert type="warning" showIcon message={earlier.error}/>} {actionError&&<Alert type="warning" showIcon message={actionError} closable onClose={()=>{setError('');setReplyFailure(null);setDefaultRootError('');}}/>} {feedback&&run?.status!=='unknown'&&run?.status!=='tools-active'&&<small role="status">{feedback}</small>}{(!draft.available||!attachmentsAvailable)&&<Alert type="warning" message="浏览器存储不可用，刷新后无法恢复未发送草稿。"/>}
         {recovery&&!chat?.pendingSend&&run?.status!=='unknown'&&run?.status!=='tools-active'&&<div className="ac-recovery-action" data-recovery-kind={recovery.kind}>{!run?.diagnostic&&<span>{recovery.kind==='observe'?'原执行状态仍待核对。':'上次执行未正常答复。'}</span>}<Button type="text" size="small" icon={<ReloadOutlined/>} autoInsertSpace={false} aria-label={recovery.kind==='recover'&&executionChanged?'继续':recovery.label} disabled={Boolean(review)||!canSend||observing} loading={recovery.kind==='observe'?observing:sending} onClick={()=>recovery.kind==='observe'?void observe():void prepare(false,false,chat!.run!.id)}>{recovery.kind==='recover'&&executionChanged?'继续':recovery.label}</Button>{recovery.kind==='recover'&&executionChanged&&!review&&<><span className="ac-recovery-target">{transferNoticeText}</span><Button type="link" size="small" disabled={!canSend} onClick={()=>void prepare(true,false,chat!.run!.id)}>交接内容</Button></>}</div>}
         <ConversationConnectionNotice ready={context.connectionsReady} loading={context.connectionsLoading} error={context.connectionsError} connection={connection} onSettings={()=>context.setSettings(true)}/>
         {sendGatePaused&&<Alert type={connection?.sendGate?.reason==='account-unconfirmed'?'warning':'info'} showIcon message={connection?.sendGate?.reason==='account-unconfirmed'?'账号状态待核对，新发送已暂停':'账号切换或退出进行中，新发送已暂停'} description={connection?.sendGate?.diagnostic||'请先完成账号操作或核对状态；当前草稿已保留。'} action={<Button size="small" onClick={()=>context.setSettings(true)}>查看账号状态</Button>}/>}
@@ -983,6 +1070,9 @@ export function ConversationPanel({development=false,workspaces,defaultWorkspace
       </div>
     <ConversationHandoffDrawer loadHistory={chat?(input,signal)=>context.api.historySource(chat.workspaceId,chat.id,input,signal):undefined} loadEntry={chat?(entry,signal)=>context.api.entry(chat.workspaceId,chat.id,entry,signal,viewedHandoff?.handoff?.sourceId):undefined} onOpenFile={path=>void openProcessFile(path)} open={Boolean(viewedHandoff)} side={context.side} material={viewedHandoff?.handoff??null} delivery={viewedHandoff&&viewedHandoff.status!=='accepted'?viewedHandoff.status==='failed'?'failed':'unknown':undefined} received={viewedHandoff?.status==='accepted'} issue={viewedHandoff&&viewedHandoff.status!=='accepted'?'尚未确认接收，请先核对原执行。':undefined} onClose={()=>setSelectedHandoff(null)}/>
     <Modal open={rename} title="重命名对话" centered getContainer={false} styles={{mask:{position:'absolute'},wrapper:{position:'absolute'}}} onCancel={()=>setRename(false)} onOk={()=>void updateMetadata({title:title.trim()})} okButtonProps={{disabled:!title.trim()}} okText="保存" cancelText="取消"><Input aria-label="对话名称" value={title} onChange={event=>setTitle(event.target.value)}/></Modal>
+    </div>
+    {subagentOverviewOpen&&<ConversationSubagentOverview id={subagentPaneId} agents={subagents.agents} currentRunId={run?.id} focusRunId={subagentView.focusRunId} hasEarlier={chat?.nextEntryCursor!==undefined} loading={earlier.loading} error={earlier.error} onLoadEarlier={earlier.readEarlierFromOverview} onSelect={openSubagent} onClose={()=>closeSubagent()}/>}
+    {selectedSubagent&&<ConversationSubagentPane id={subagentPaneId} agents={subagents.agents} agent={selectedSubagent} onSelect={openSubagent} onOverview={()=>openSubagentOverview(undefined,selectedSubagent.entry.runId)} onClose={closeSubagent} onOpenFile={path=>void openProcessFile(path)} loadEntry={loadToolEntry} markdownOptions={markdownOptions}/>}
     </div>
   </section>;
   return <>{embedded?panel:<ConversationDock focusSettings={focusSettings} panel={panel} portalTarget={portalTarget} workspaces={workspaces}/>}

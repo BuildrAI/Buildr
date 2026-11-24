@@ -200,7 +200,7 @@ test('真实生产页面重启恢复、已知失败真正重试及未知状态�
     await page.clock.fastForward(31_000);
     await page.getByRole('heading', { name: '尚未确认重启完成', exact: true }).waitFor();
     assert.equal(await page.locator('#restart-again').count(), 0);
-    assert.match(await page.locator('#restart-screen').innerText(), /重新打开 Buildr Web 应用/);
+    assert.match(await page.locator('#restart-screen').innerText(), /重新打开 Buildr Development 应用/);
     await screenshot(page, 'restart-browser-unknown');
     await page.locator('#restart-retry').click();
     await page.clock.fastForward(31_000);

@@ -56,15 +56,27 @@ export async function runCliInProcess(args: readonly string[], expected?: number
   const originalCwd: string = process.cwd();
   const restoreEnvironment: any = applyEnvironment(options.env ?? {});
   let status: number = 0;
-  (process.stdout as any).write = (chunk: any): boolean => { stdout.push(String(chunk)); return true; };
-  (process.stderr as any).write = (chunk: any): boolean => { stderr.push(String(chunk)); return true; };
-  (process as any).exit = (code?: number): never => {
-    throw { [EXIT_SENTINEL]: true, code: typeof code === 'number' ? code : 0 };
-  };
-  process.exitCode = undefined;
   try {
     if (options.cwd) process.chdir(options.cwd);
     const { runCli, reportCliFailure }: any = await import('../../src/bootstrap/cli/main.ts');
+    (process.stdout as any).write = function (chunk: any, ...rest: any[]): boolean {
+      if (typeof chunk !== 'string') return originalStdoutWrite.call(process.stdout, chunk, ...rest);
+      stdout.push(chunk);
+      const cb = typeof rest[0] === 'function' ? rest[0] : typeof rest[1] === 'function' ? rest[1] : null;
+      if (cb) cb();
+      return true;
+    };
+    (process.stderr as any).write = function (chunk: any, ...rest: any[]): boolean {
+      if (typeof chunk !== 'string') return originalStderrWrite.call(process.stderr, chunk, ...rest);
+      stderr.push(chunk);
+      const cb = typeof rest[0] === 'function' ? rest[0] : typeof rest[1] === 'function' ? rest[1] : null;
+      if (cb) cb();
+      return true;
+    };
+    (process as any).exit = (code?: number): never => {
+      throw { [EXIT_SENTINEL]: true, code: typeof code === 'number' ? code : 0 };
+    };
+    process.exitCode = undefined;
     const argv: string[] = ['node', 'buildr', ...args];
     try {
       assertTestWrite(process.env.BUILDR_APP_DATA_DIR!, process.env.BUILDR_PRODUCT_DATA_DIR!);

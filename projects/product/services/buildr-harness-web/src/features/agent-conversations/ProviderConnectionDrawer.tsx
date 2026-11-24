@@ -23,6 +23,7 @@ export interface ProviderConnectionInput {
   modelsPath?:string;
   useApiKey?:boolean;
   apiKey?:string;
+  prepareLocalGateway?:boolean;
 }
 export interface ProviderConnectionInitial extends ProviderConnectionInput {
   credentialConfigured?:boolean;
@@ -30,6 +31,7 @@ export interface ProviderConnectionInitial extends ProviderConnectionInput {
 
 function providerInitial(provider:ProviderConnectionOption|undefined):ProviderConnectionInitial {
   if(!provider)return {kind:'custom',label:'',baseUrl:'',protocol:'chat-completions',modelsPath:DEFAULT_CUSTOM_MODELS_PATH,useApiKey:false};
+  if(provider.id==='magpie')return {kind:'magpie',label:'Magpie',baseUrl:''};
   if(provider.custom)return {kind:provider.id,label:'',baseUrl:'',protocol:'chat-completions',modelsPath:DEFAULT_CUSTOM_MODELS_PATH,useApiKey:false};
   return {kind:provider.id,label:provider.label};
 }
@@ -66,7 +68,8 @@ export function ProviderConnectionDrawer({open,initial,providers,connections,con
   const modelsPath=Form.useWatch('modelsPath',form)??initial?.modelsPath??DEFAULT_CUSTOM_MODELS_PATH;
   const editing=Boolean(initial?.accountId);
   const provider=providers.find(item=>item.id===kind);
-  const custom=Boolean(provider?.custom);
+  const magpie=kind==='magpie';
+  const custom=Boolean(provider?.custom)&&!magpie;
   const apiKey=provider?.authentication?.type==='api-key';
   const hasKey=Boolean(initial?.credentialConfigured&&initial.kind===kind);
   const [saving,setSaving]=useState(false),[error,setError]=useState('');
@@ -75,21 +78,21 @@ export function ProviderConnectionDrawer({open,initial,providers,connections,con
   const options=[
     {label:'订阅账号',options:providers.filter(item=>!item.custom&&item.authentication?.type!=='api-key').map(item=>({value:item.id,label:providerLabel(item,configured(item.id),connections),disabled:!editing&&(Boolean(item.connectionId)||configured(item.id))}))},
     {label:'API Key',options:providers.filter(item=>!item.custom&&item.authentication?.type==='api-key').map(item=>({value:item.id,label:providerLabel(item,configured(item.id),connections),disabled:!editing&&configured(item.id)}))},
-    {label:'其他',options:providers.filter(item=>item.custom).map(item=>({value:item.id,label:providerLabel(item,false,connections),disabled:false}))},
+    {label:'其他',options:providers.filter(item=>item.custom).map(item=>({value:item.id,label:item.id==='magpie'&&configured(item.id)?'Magpie（已接入）':providerLabel(item,false,connections),disabled:!editing&&configured(item.id)}))},
   ].filter(group=>group.options.length);
-  const hint=custom
+  const hint=magpie?'连接本机 Magpie，登录和额度在 Magpie 中管理。地址留空时自动发现。':custom
     ?'配置显示名称、协议、Base URL 与模型列表路径。'
     :provider?.authentication?.description
       ??(provider?.connectionId?`由${connectionName(provider.connectionId,connections)}智能体接入管理；请在“智能体”页完成登录。`
         :provider?.authentication?.type==='oauth'?'保存后使用官方账号登录，并自动发现可用的模型与额度。'
           :'保存后开始官方登录，并自动发现可用的模型与额度。');
-  const connect=!custom&&!apiKey&&!provider?.connectionId;
+  const connect=!magpie&&!custom&&!apiKey&&!provider?.connectionId;
 
-  async function save(values:ProviderConnectionInput){
+  async function save(values:ProviderConnectionInput,prepareLocalGateway=false){
     if(locked)return;
     setSaving(true);setError('');
     try{
-      const next:ProviderConnectionInput=custom
+      const next:ProviderConnectionInput=magpie?{kind:'magpie',label:'Magpie',accountId:initial?.accountId,baseUrl:values.baseUrl?.trim(),prepareLocalGateway}:custom
         ?{kind:values.kind,label:values.label.trim(),baseUrl:values.baseUrl?.trim(),protocol:values.protocol,modelsPath:values.modelsPath?.trim()||DEFAULT_CUSTOM_MODELS_PATH,useApiKey:Boolean(values.apiKey?.trim()||(hasKey&&!clearKey)),...(values.apiKey?.trim()?{apiKey:values.apiKey.trim()}:{})}
         :{kind:values.kind,label:provider?.label??values.label,...(values.apiKey?.trim()?{apiKey:values.apiKey.trim()}:{})};
       await onSave(next);
@@ -97,10 +100,11 @@ export function ProviderConnectionDrawer({open,initial,providers,connections,con
     finally{setSaving(false);}
   }
 
-  return <DrawerShell open={open} title={editing?'编辑自定义供应商':'添加供应商'} onClose={()=>{if(!saving)onClose();}} closeAriaLabel="关闭供应商配置"
-    width="min(460px,100vw)" footer={<Space><Button disabled={saving} onClick={onClose}>取消</Button><Button type="primary" loading={saving} disabled={Boolean(busy)} onClick={()=>form.submit()}>{connect?'保存并登录':'保存供应商'}</Button></Space>}>
-    <Form form={form} layout="vertical" requiredMark={false} initialValues={initial??providerInitial(fallback)} onFinish={save} onValuesChange={()=>setError('')}>
+  return <DrawerShell open={open} title={editing?(magpie?'编辑 Magpie 连接':'编辑自定义供应商'):'添加供应商'} onClose={()=>{if(!saving)onClose();}} closeAriaLabel="关闭供应商配置"
+    width="min(460px,100vw)" footer={<Space><Button disabled={saving} onClick={onClose}>取消</Button>{magpie&&(editing?baseUrl===initial?.baseUrl:!baseUrl.trim())&&<Button disabled={locked} onClick={()=>void form.validateFields().then(values=>save(values,true)).catch(()=>{})}>{editing?'启动并连接':'下载并启动'}</Button>}<Button type="primary" loading={saving} disabled={Boolean(busy)} onClick={()=>form.submit()}>{magpie?'连接 Magpie':connect?'保存并登录':'保存供应商'}</Button></Space>}>
+    <Form form={form} layout="vertical" requiredMark={false} initialValues={initial??providerInitial(fallback)} onFinish={values=>void save(values)} onValuesChange={()=>setError('')}>
       {error&&<p className="amm-provider-form-error" role="alert">{error}</p>}
+      {saving&&magpie&&<p className="amm-provider-form-hint" role="status">正在连接 Magpie；首次下载可能需要一些时间。</p>}
       {saving&&connect&&<p className="amm-provider-form-hint" role="status">正在准备本地代理组件并初始化配置，首次下载可能需要数十秒，请稍候…</p>}
       <Form.Item label="接入方式" name="kind" rules={[{required:true,message:'请选择接入方式'}]}>
         <Select aria-label="接入方式" options={options} virtual={false} disabled={editing} onChange={value=>{
@@ -110,6 +114,7 @@ export function ProviderConnectionDrawer({open,initial,providers,connections,con
         }}/>
       </Form.Item>
       <p className="amm-provider-form-hint">{hint}</p>
+      {magpie&&<Form.Item label="本机地址（可选）" name="baseUrl" rules={editing?[{required:true,whitespace:true,message:'请输入本机 Magpie 地址'}]:undefined}><Input aria-label="本机 Magpie 地址" placeholder="自动发现，例如 http://127.0.0.1:3425" maxLength={2048}/></Form.Item>}
       {custom&&<>
         <Form.Item label="显示名称" name="label" rules={[{required:true,whitespace:true,message:'请输入显示名称'}]}>
           <Input aria-label="显示名称" placeholder="例如：公司模型网关" maxLength={160}/>

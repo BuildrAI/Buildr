@@ -15,10 +15,9 @@ export type WorkspaceTabsState = {
   setRatio: (ratio: number) => void;
 };
 export const WorkspaceTabsContext = createContext<WorkspaceTabsState | null>(null);
-/** Cached views stay mounted; their portal surfaces follow the visible page and resource. */
-export const WorkspaceViewActiveContext = createContext(true);
-/** Temporary panes remain operable; consumers may suppress automatic focus or routing. */
-export const WorkspaceViewTransientContext = createContext(false);
+/** Cached views stay mounted; their portal surfaces follow the visible page and resource.
+ * Temporary panes remain operable; consumers may suppress automatic focus or routing. */
+export { WorkspaceViewActiveContext, WorkspaceViewTransientContext } from '../../../buildr-harness-web/src/workbench-ui';
 export function useWorkspacePageTabs(_workspaceId?: string | null): WorkspaceTabsState {
   const state = useContext(WorkspaceTabsContext);
   if (!state) throw new Error('Workspace page tabs require the workspace page host');

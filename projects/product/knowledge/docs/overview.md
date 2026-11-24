@@ -6,6 +6,17 @@
 
 过去，人需要理解工作环境、学习和应用方法、操作工具，再完成交付。引入智能体（Agent）后，具体执行可以交给它承担，人继续表达目标、参与判断、授权和验收。Buildr 把开展工作所需的资料、方法和工具组织起来，供双方共同使用。
 
+## 两个独立、可组合的产品
+
+| 产品 | 用户用它做什么 | 不要求什么 |
+| --- | --- | --- |
+| **Buildr Harness** | 在一个目录里与智能体工作。它拥有自己的编排与交互，接入受支持的原生执行内核及订阅或自带密钥（BYOK），并提供资源管理器（Explorer）和源代码管理（Source Control）。 | 不要求安装 Development，不要求先登记项目、仓库或任务；看文件和本地 Git 也不要求配置模型或创建对话。 |
+| **Buildr Development** | 把软件工作组织成可持续的工程：维护工作空间、项目、服务、代码库登记和任务，组织验证与交付。 | 工程能力可经命令行（CLI）和技能（Skills）使用，不依赖 Development Web 或 Harness 正在运行。 |
+
+你可以只在 Harness 打开普通目录，也可以在原生 Codex、Claude Code 等工具里用 CLI 和技能维护 Development 工程，同时在浏览器查看 Development Web。需要一个更紧密的现场时，Development 在同页装配 Harness 对话与通用工作界面，接上自己的工程范围；换工作入口不会换掉工程记录。DSH 插件是可选的生态组合路径，不是独立使用的前提；用户可以组合其他工作台和工具，Buildr 不必包办全部能力。
+
+原生执行内核负责自身推理循环、工具和原生会话；Harness 负责跨内核选择、对话和交互。订阅、密钥和内核不是任意互换，按实际兼容、许可和账号范围使用。详见[双产品架构](architecture/harness-products.md)。
+
 ## 它为谁提供什么价值
 
 ### 对人：看清情况，参与工作
@@ -63,7 +74,7 @@ Buildr 把资料、团队方法和系统入口衔接起来，供人和智能体�
 
 你继续使用熟悉的智能体（Agent）工具，从一句自然语言目标开始，让它协助准备工作环境并进入任务（Task）。Buildr 组织长期资料和发现入口，并按适配方式将规则（Rule）、技能（Skill）准备到工具可使用的位置。智能体（Agent）负责理解目标、选择信息、形成工作依据和推进执行。也可以在 Buildr 的全局“对话”入口使用独立配置的 Codex、DSH、Qoder、Claude Code 或 Antigravity，围绕同一段对话持续执行，并按需要关联任务（Task）。历史按对话组织，各执行方分别保有原生上下文；切换参与者仍要重读当前成果。内部对话、单次生成和可选任务关联的边界见[智能体接入](architecture/agent-integration.md)。
 
-[系统全景图](../archify/system/buildr-system-overview.html)展示主要组成与职责；不熟悉的概念可以查[术语表](glossary.md)。
+[当前双产品架构](architecture/harness-products.md)展示组合关系；[原系统全景图](../archify/system/buildr-system-overview.html)用于回看拆分时的结构，未包含目录工作台。不熟悉的概念可以查[术语表](glossary.md)。
 
 ## 当前边界
 

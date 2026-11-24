@@ -5,7 +5,7 @@ export const programmaticGuide = `# Buildr Harness 本机程序 API
 来源化入口为 /api/v1/programmatic/sources/:sourceId/scopes/:scopeId/conversations；Development 的旧 /workspaces/:workspaceId 路径继续兼容。发现结果 executionScopes 给出凭据可见的准确引用；目录只使用已登记的 harness-local 引用，不能提交任意路径。凭据由共享 Harness 唯一维护，旧 workspaceIds 修改只影响 buildr 子集并保留其他来源。来源和操作权限分别校验，程序凭据不能管理账号、后台或网页登录。
 
 ## 开始
-在 Buildr「智能体与模型 → 程序接入」中创建凭据，选择工作空间及权限。创建后宿主自动将令牌保存到当前实例的私有文件（目录700、文件600），在接入条目中可随时查看路径和复制接入信息；无需手工保存。不要把令牌放进聊天、URL或日志。旧版仅哈希凭据无法恢复原令牌，须由人在页面明确确认重新生成并保存，原令牌随之失效。撤销即时影响后续调用，**不会取消已受理工作**。
+在 Buildr「设置 → 程序接入」中创建凭据，选择工作空间及权限。创建后宿主自动将令牌保存到当前实例的私有文件（目录700、文件600），在接入条目中可随时查看路径和复制接入信息；无需手工保存。不要把令牌放进聊天、URL或日志。旧版仅哈希凭据无法恢复原令牌，须由人在页面明确确认重新生成并保存，原令牌随之失效。撤销即时影响后续调用，**不会取消已受理工作**。
 固定发现路径为 GET /api/v1/programmatic。API地址显示在设置中；Web宿主需要运行，但不需要打开浏览器。程序调用不访问首页、不用x-buildr-session、无需Origin。仍拒绝跨站来源和错误Host。开发版、发布版和预览凭据各自隔离。
 
 以下命令只从文件设置Header，不把令牌放进进程参数或聊天：
@@ -46,7 +46,7 @@ GET对话与/entries支持before、limit分页；较早消息通过nextBefore续
 本期不提供程序实时事件流；除回推外仍按轮询观察，通常2秒即可，按响应节流。回推与事件补读见下节，不改变恢复原标识的原则。
 
 ## 事件回推
-回推按凭据配置：在「智能体与模型 → 程序接入」展开凭据详情，设置接收地址、密钥、启停、速率上限、中间进度与停滞提醒开关，并可发送测试通知。中间进度和停滞提醒默认开启。原全局“事件通知”已退役，既有配置自动迁移到历史兼容凭据并保持停用。密钥只保存在本机私有文件（600），界面默认隐藏、日志不输出明文；投递以 Authorization: Bearer 携带密钥。管理入口仅网页会话可用，不向 Bearer 开放。
+回推按凭据配置：在「设置 → 程序接入」展开凭据详情，设置接收地址、密钥、启停、速率上限、中间进度与停滞提醒开关，并可发送测试通知。中间进度和停滞提醒默认开启。原全局“事件通知”已退役，既有配置自动迁移到历史兼容凭据并保持停用。密钥只保存在本机私有文件（600），界面默认隐藏、日志不输出明文；投递以 Authorization: Bearer 携带密钥。管理入口仅网页会话可用，不向 Bearer 开放。
 只有被该凭据接管（首次 API 创建/发送/续聊/补充即标记）的对话才会回推。业务事件为 decision.requested（问题或审批）、run.progress（新的 assistant 中间消息）、run.completed、run.failed、run.stopped（非该凭据发起的停止）和 run.stalled（运行中连续 20 分钟没有新记录）。不推工具调用明细、流式 token、思考、starting/running 状态转换或标题生成。
 每条事件正文都含 eventId（全局唯一）、type、occurredAt、machine{id,name}、workspaceId、conversationId、title、runId、runStatus、summary（≤500 字符）、detailUrl（完整对话读取地址）、scopes（当前凭据权限数组）和 allowFullAccess（当前凭据“允许全部授权执行”开关）。scopes 与 allowFullAccess 在每次程序调用或回推配置操作时更新，是事件生成时的凭据权限快照；接收方仍应以发现入口的当前值为准。不含任何密钥或接收地址。
 run.completed、run.failed 和 run.stopped 另含 finalReply（该 run 最终 assistant 回复的完整文本，不截断）和 finalReplyUrl。finalReplyUrl 是相对本机 API 根路径的轻量读取地址，GET 该地址只需 read 权限，返回 {runId,finalReply}，不返回整个对话。示例：
@@ -80,7 +80,7 @@ POST observe只更新观察；首发、send、supplement可启动本机工具；
 ## 文档
 先阅读本指南，再读取轻量操作目录 GET /api/v1/programmatic/operations；需要哪个操作，再按目录中的documentationUrl读取 GET /api/v1/programmatic/operations/{operationId}。单操作描述是自包含的OpenAPI，只包含该操作与全部传递依赖模型，无需下载其他文档来解析引用。例如start是首发，observe是重新观察；具体字段以对应描述为准。
 目录与发现返回contractVersion与buildId，单操作描述包含x-buildr-contract-version与x-buildr-build-id。调用方可缓存文档；contractVersion只反映API契约内容摘要，未变不必重读，变化后再更新所需操作。buildId用于确认当前运行的构建，可随重建变化但不参与contractVersion摘要，也不写入完整OpenAPI正文。它们都不是实时工作状态的缓存版本，不能代替重新观察修订与执行身份。
-完整OpenAPI：/api/v1/programmatic/openapi.json，使用components.schemas和$ref共享模型，供完整导入或生成客户端，不要求每次调用前读取。可运行示例：/api/v1/programmatic/example.py。所有程序文档均需要Bearer。已登录的人可在「智能体与模型 → 程序接入」直接查看指南、操作目录/单操作和完整OpenAPI并下载，无需输入Bearer；网页文档入口使用现有网页会话，不向程序开放凭据管理权限。API主版本在路径和发现中明确；第二期仅对显式列出的程序操作承诺，不代表所有网页API已对外开放。
+完整OpenAPI：/api/v1/programmatic/openapi.json，使用components.schemas和$ref共享模型，供完整导入或生成客户端，不要求每次调用前读取。可运行示例：/api/v1/programmatic/example.py。所有程序文档均需要Bearer。已登录的人可在「设置 → 程序接入」直接查看指南、操作目录/单操作和完整OpenAPI并下载，无需输入Bearer；网页文档入口使用现有网页会话，不向程序开放凭据管理权限。API主版本在路径和发现中明确；第二期仅对显式列出的程序操作承诺，不代表所有网页API已对外开放。
 `;
 
 /** The guide is static; the current build identity is prepended so /help can identify the running build. */

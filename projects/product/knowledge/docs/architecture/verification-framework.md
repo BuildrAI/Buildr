@@ -1,15 +1,15 @@
 # Buildr 测试与验证框架
 
-Buildr 产品使用四类检查：静态检查（Static Check）、单元测试（Unit Test）、集成测试（Integration Test）、端到端测试（End-to-End Test，E2E）。日常开发按用户目标定向选择检查，推送前取得四服务全部静态检查（Static Check）与单元测试（Unit Test）的有效完整证明。发布核对准确交付物及真实平台差异，不另造第五类测试。
+Buildr 产品使用四类检查：静态检查（Static Check）、单元测试（Unit Test）、集成测试（Integration Test）、端到端测试（End-to-End Test，E2E）。日常开发按用户目标定向选择检查，推送前取得已登记服务全部静态检查（Static Check）与单元测试（Unit Test）的有效完整证明。发布核对准确交付物及真实平台差异，不另造第五类测试。
 
-本页解释产品自身执行方式；[项目声明](../../../verification.yml)公开少量稳定入口，[准备声明](../../../preparation.yml)记录真实准备命令。四服务是 `buildr`、`buildr-web`、`buildr-harness` 与 `dsh-plugin`，成员发现、类型和相关选择由[实际执行登记](../../../services/buildr/test/verification/registry.ts)与项目程序负责，不在说明和地图各复制一份文件清单。
+本页解释产品自身执行方式；[项目声明](../../../verification.yml)公开少量稳定入口，[准备声明](../../../preparation.yml)记录真实准备命令。适用服务以项目声明的 `scope.services` 为准，成员发现、类型和相关选择由[实际执行登记](../../../services/buildr/test/verification/registry.ts)与项目程序负责，不在说明和地图各复制一份文件清单。
 
 ## 三层职责
 
 | 层次 | 负责什么 | 与下一层的关系 |
 | --- | --- | --- |
 | Buildr 产品提供的通用项目测试能力 | 测试建设技能维护项目自己的测试与`verification.yml`；验证技能选择并执行项目入口，应用保存可选任务报告。 | Buildr 自身是使用这套能力的一个项目；普通用户项目不必采用Buildr内部执行器。 |
-| Buildr 项目的具体测试框架 | 四服务检查登记、发现与选组、准备、依赖调度、多维资源、隔离执行、内容适用性、失败与计时证据。 | 日常开发与发布都消费这些检查；测试类型本身不构成阶段屏障。 |
+| Buildr 项目的具体测试框架 | 已登记服务检查登记、发现与选组、准备、依赖调度、多维资源、隔离执行、内容适用性、失败与计时证据。 | 日常开发与发布都消费这些检查；测试类型本身不构成阶段屏障。 |
 | Buildr 发布编排 | 冻结准确来源和原包，选择所需源码/原包/平台检查，消费有效证明，再执行另行授权的发布动作。 | 不复制第二份测试清单，不把源码成功当作原包或跨平台成功。 |
 
 具体执行从`cli.ts`取得请求，经`planner.ts`与`registry.ts`选组；`plan-runner.ts`组织准备、上下文和执行，`dag-scheduler.ts`只在依赖与预算允许时准入，`executor.ts`调用真实检查。`resource-coordinator.ts`协调跨执行租约；计时、覆盖及内容适用性分别保留原始结果和有效复用来源。各模块位于[验证实现目录](../../../services/buildr/test/verification/)，正式任务报告仍由应用保存。
@@ -33,9 +33,9 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 | 需求 | 入口 |
 | --- | --- |
-| 四服务全量单元测试（Unit Test） | `npm test` |
-| 推送前四服务全部静态检查（Static Check）与单元测试（Unit Test） | `npm run check` |
-| 四服务全量静态检查（Static Check） | `npm run test:static` |
+| 已登记服务全量单元测试（Unit Test） | `npm test` |
+| 推送前已登记服务全部静态检查（Static Check）与单元测试（Unit Test） | `npm run check` |
+| 已登记服务全量静态检查（Static Check） | `npm run test:static` |
 | 全量集成测试（Integration Test） | `npm run test:integration` |
 | 全量端到端测试（End-to-End Test，E2E） | `npm run test:e2e` |
 | 集成与端到端共同调度，覆盖两类完整并集 | `npm run test:system` |
@@ -43,11 +43,11 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 用户可指定具体检查、类型、全量或相关范围，不要求先创建正式任务或先提供 Git 基线。已知检查直接执行；需要比较才使用明确来源。相关选择须依据实际公共行为、调用方、依赖及交付边界补足自动路径选择，零匹配不能冒充目标已验证。
 
-日常自动 `test:related -- --base <ref>` 保守发现全部候选后，最多执行10组（包含依赖），不满不凑数。独立改动的测试优先，预算可容纳时为直接行为检查预留最多2项，其余优先基础检查，同级优先已登记短测试；未知耗时不当作零。共享测试脚本不提升所有旅程的优先级。计划和执行证据的 `selectionBudget` 保留未选候选及原因，成功只证明定向范围。显式 `--check`、`--tag`、失败接续及全量/发布入口不截断；用户要求全量或发布时实际执行完整检查，推送前四服务Static/Unit政策不变。
+日常自动 `test:related -- --base <ref>` 保守发现全部候选后，最多执行10组（包含依赖），不满不凑数。独立改动的测试优先，预算可容纳时为直接行为检查预留最多2项，其余优先基础检查，同级优先已登记短测试；未知耗时不当作零。共享测试脚本不提升所有旅程的优先级。计划和执行证据的 `selectionBudget` 保留未选候选及原因，成功只证明定向范围。显式 `--check`、`--tag`、失败接续及全量/发布入口不截断；用户要求全量或发布时实际执行完整检查，推送前已登记服务Static/Unit政策不变。
 
 `--list` 列出检查标识，`--plan` 或 `--json` 只查看计划。`test:related -- --base <ref> --check <id>` 在相关集合中追加显式检查；只有 `--check` 时直接执行指定集合。`check` 包含全部不依赖外部运行时的源码静态检查（Static Check）与单元测试（Unit Test），添加 `--check` 不会缩小推送前范围。
 
-静态检查（Static Check）同时检查四服务测试及辅助脚本：JavaScript 做语法解析，TypeScript 做严格类型检查。`test-typecheck` 检查主体、网页和智能体测试，并随 `npm run check` 自动执行。`plugin-typecheck` 与 `plugin-test-typecheck` 使用准确的软件开发工具包（SDK）与已生成的协议声明，按入口分别检查插件宿主端和客户端，避免两端同名类型相互干扰；它们依赖本机准备的外部 DSH SDK，登记为仅显式选择，由插件服务自己的 `test:static` 与发布/候选验证（`tools/verify-all.ts --source-sdk`）执行，不进入日常全量检查。
+静态检查（Static Check）同时检查已登记服务测试及辅助脚本：JavaScript 做语法解析，TypeScript 做严格类型检查。`test-typecheck` 检查主体、网页和智能体测试，并随 `npm run check` 自动执行。`plugin-typecheck` 与 `plugin-test-typecheck` 使用准确的软件开发工具包（SDK）与已生成的协议声明，按入口分别检查插件宿主端和客户端，避免两端同名类型相互干扰；它们依赖本机准备的外部 DSH SDK，登记为仅显式选择，由插件服务自己的 `test:static` 与发布/候选验证（`tools/verify-all.ts --source-sdk`）执行，不进入日常全量检查。
 
 ## 测试内容与并行
 
@@ -61,11 +61,7 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 `e2e-browser:code-explorer` 与 `e2e-browser:code` 是文件浏览和源代码管理两个独立检查。源码浏览器检查按上述档位准入，仍受全局进程、工作线程和工作空间读写额度约束；它们共享不可变前端产物，各自使用临时工作空间、随机端口、浏览器和清理责任。其他共享可变资源的检查继续互斥。开始结束时间必须证明实际并行，准备去重不能被误算为测试通过。
 
-兼容选择器可以在确证不引入状态污染、不跳过断言且清理完整时复用同一隔离宿主。当前只合并`core,shell,workbench`为`browser:bundle:reading`：代表步骤执行完整场景，其余成员以零成本结果回填；单独聚焦任一成员时仍保持窄范围。`project+service`因service运行时目录污染、`task+task-materials`因Task列表响应等待超时未采用，继续使用独立现场。调度器在`browser-runtime`有空闲槽位时优先准入待执行浏览器步骤，槽位满后恢复普通成本顺序，避免普通检查被永久饿死。
-
-对话 `history` 的独立成员由 `buildr-web/test/browser/agent-conversations-history-scenarios.ts` 声明，稳定身份形如 `history/workspace-order`。完整运行不再由一个进程承包整个对话组，而是使用两个静态隔离批次：批次A保留`setup,tasks,recovery`顺序并只分配约三分之一history场景，批次B承载其余组和剩余history场景；两个批次各用独立进程与互斥场景集合。每个成员仍新建浏览器上下文和夹具，独立失败同轮收集；领取后崩溃不会自动重放，清理或共享服务状态异常会明确留下未运行项。通过 `BUILDR_AGENT_JOURNEY_PART=history` 和 `BUILDR_AGENT_SCENARIO_FOCUS=<身份，多个用 | 分隔>` 可在同一 `test:e2e -- --check e2e-browser:agent-conversations` 入口定点诊断；未知筛选报错，子集通过不能作为整组通过，coverage会标记focused，失败接续仍选择未完整证明的父检查。较重的服务和生产构建仍由本轮共享，场景结果与耗时保存在现有诊断日志。
-
-对话父组的 `resourceUnits.browser-runtime=2` 与 `workers/processes=2` 记录两个子现场的真实占用；外层按数量准入、释放和估算，物理浏览器租约仍由子进程分别持有，父组不重复申请。`workspaceIo=2` 保证外层预算不会把两个内层现场压成串行。浏览器只有两个槽位，另一个浏览器检查占用时第二个对话批次仍会等待；缓存命中不执行子进程，同时清空数量与资源声明，避免占住其他检查的读写预算。
+兼容选择器可以在确证不引入状态污染、不跳过断言且清理完整时复用同一隔离宿主。当前只合并`core,shell,workbench,change`为`browser:bundle:reading`：代表步骤执行完整场景，其余成员以零成本结果回填；单独聚焦任一成员时仍保持窄范围。`project+service`因service运行时目录污染、`task+task-materials`因Task列表响应等待超时已移除`task-records`打包，继续使用独立现场。`e2e-browser:*`与`development-live-browser`、`harness-frame-browser`、`harness-shell-composition`、`harness-standalone-browser`等独立Playwright检查共用`browser-runtime`资源槽位，调度器在`browser-runtime`有空闲槽位时优先准入待执行浏览器步骤，槽位满后恢复普通成本顺序，避免普通检查被永久饿死。
 
 自动语义关注点区分产品实现与测试路径；测试变化保留真实直接归属，不再仅因文件名包含conversation就追加无关原生进程组。显式 `--tag` 继续扩大集合。内容快照的检出目录身份与交付比较基线分开：基线变化仍比较实际内容，旧成功采用仍须通过配方、发现成员和环境校验。
 

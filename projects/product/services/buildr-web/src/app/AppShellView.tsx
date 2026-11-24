@@ -4,9 +4,9 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { Button, Dropdown, type MenuProps } from 'antd';
 import { CaretDownFilled, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
-type HeaderProps = { isGlobal?:boolean; primaryNavigation?: 'top' | 'rail'; brandHref:string; development?:boolean; workspaceName:string; workspaceMenuItems:MenuProps['items']; area:'workspace'|'workbench'|'code';codeHref?:string; workbenchHref:string; workspaceDestination:{to:string;state?:unknown}; actions:ReactNode };
+type HeaderProps = { isGlobal?:boolean; primaryNavigation?: 'top' | 'rail'; brandHref:string; development?:boolean; workspaceName:string; workspaceMenuItems:MenuProps['items']; area:'workspace'|'workbench'|'code';codeHref?:string; workbenchHref:string; workspaceDestination:{to:string;state?:unknown}; actions:ReactNode; modeNavigation?:ReactNode };
 /** Shared product chrome; all business effects remain in the caller. */
-export function AppShellHeader({isGlobal,primaryNavigation='top',brandHref,development,workspaceName,workspaceMenuItems,area,codeHref,workbenchHref,workspaceDestination,actions}:HeaderProps) {
+export function AppShellHeader({isGlobal,primaryNavigation='top',brandHref,development,workspaceName,workspaceMenuItems,area,codeHref,workbenchHref,workspaceDestination,actions,modeNavigation}:HeaderProps) {
   const headerRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (primaryNavigation !== 'rail' || !headerRef.current) return;
@@ -18,26 +18,26 @@ export function AppShellHeader({isGlobal,primaryNavigation='top',brandHref,devel
     observer.observe(header);
     return () => observer.disconnect();
   }, [primaryNavigation]);
-  return (
-        <header className="topbar" ref={headerRef}>
+  const identity = <>
           <Link
             className="brand-link"
             to={brandHref}
             aria-label="当前工作空间概览"
           >
-            <span className="brand-mark">B</span>
-            <strong>Buildr Web</strong>
+            <span className="brand-mark">D</span>
+            <strong>Buildr Development</strong>
           </Link>
           {development ? (
             <span
               id="development-environment-badge"
               className="development-environment-badge"
-              title="当前运行的是 Buildr Web 开发版"
+              title="当前运行的是 Buildr Development 开发版"
             >
               开发版
             </span>
           ) : null}
 
+          {modeNavigation}
             <Dropdown overlayClassName="workspace-switcher-popup" menu={{ items: workspaceMenuItems }} trigger={['click']}>
               <button type="button" className="workspace-switcher" aria-label="切换工作空间">
                 <span className="context-label">工作空间</span>
@@ -47,6 +47,10 @@ export function AppShellHeader({isGlobal,primaryNavigation='top',brandHref,devel
                 <CaretDownFilled aria-hidden />
               </button>
             </Dropdown>
+          </>;
+  return (
+        <header className={"topbar" + (modeNavigation ? " development-topbar" : "")} ref={headerRef}>
+          {modeNavigation ? <div className="topbar-identity">{identity}</div> : identity}
           {!isGlobal && primaryNavigation === 'top' ? <nav className="top-nav" aria-label="主导航">
             <Link to={workbenchHref} data-area="workbench" aria-current={area === 'workbench' ? 'page' : undefined} className={area === 'workbench' ? 'active' : ''}
               >工作台</Link>

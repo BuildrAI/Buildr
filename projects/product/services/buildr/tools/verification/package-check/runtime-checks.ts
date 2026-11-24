@@ -49,6 +49,7 @@ export function createPackageRuntimeChecks(deps: any): any  {
       buildrSelf.exec(['project', 'create', 'demo', '--target', recursiveRoot], { cwd: root, stdio: 'ignore' });
       fs.writeFileSync(path.join(recursiveRoot, 'AGENTS.md'), '# User root rules\n', 'utf8');
       const recursiveProjectRoot = path.join(recursiveRoot, 'projects', 'demo');
+      fs.writeFileSync(path.join(recursiveProjectRoot, 'AGENTS.md'), '# User project rules\n');
       const apiRoot = path.join(recursiveProjectRoot, 'services', 'api');
       const webRoot = path.join(recursiveProjectRoot, 'services', 'web');
       const customRoot = path.join(apiRoot, 'modules', 'custom');
@@ -188,8 +189,9 @@ export function createPackageRuntimeChecks(deps: any): any  {
   function verifyWorkspaceAssetLifecycle(context: any, tempRoot: any, kind: any, finalize: any = true): any  {
     const { root, manifest, problems, parseJsonOutput } = context;
     if (kind === 'runtime') {
-    // Bridge metadata requires explicit user rules; init no longer injects them.
+    // Both reference bridges require explicit rules at their own scope.
     fs.writeFileSync(path.join(tempRoot, 'AGENTS.md'), '# User workspace rules\n');
+    fs.writeFileSync(path.join(tempRoot, 'projects', 'demo', 'AGENTS.md'), '# User project rules\n');
     buildrSelf.exec(['rules', 'render', 'claude-code', '--scope', 'projects/demo', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
     const oldReferenceBlock = [
       '<!-- BEGIN Buildr managed Claude Code rules bridge; hash: 0000000000000000000000000000000000000000000000000000000000000000 -->',
