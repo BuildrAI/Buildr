@@ -1,12 +1,17 @@
 import { label, panelId as PANEL, released } from './channel.ts';
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentType } from 'react';
-import { attachHarnessGuest, desktopBridge, type DesktopBridge } from './guest.ts';
+import { attachHarnessGuest, desktopBridge, desktopKeyboard, type DesktopBridge } from './guest.ts';
+import { detectDesktopPlatform, resolveRefreshBinding, shouldRefreshCenterHarness, toolTabTitle, type ShortcutCatalogEntry } from './refresh.ts';
 import { linkDestination, liveCarrier, preferredCarrier, sessionSelection, toolAddress, toolId, type GuestMessage, type Reveal, type Scope, type SessionCatalog, type Tool } from './workspace.ts';
 
 const ANCHOR = '--buildr-harness-dsh';
 const KEY = released ? 'buildr.harness-dsh.released.carriers.v1' : 'buildr.harness-dsh.carriers.v1';
-const toolLabels: Record<Tool, string> = { explorer: '资源管理器', 'source-control': '源代码管理' };
 interface Observable<T> { subscribe(listener: () => void): () => void; getSnapshot(): T }
+interface ShortcutsContext {
+  catalog?: Observable<readonly ShortcutCatalogEntry[]>;
+  config?: Observable<{ revision?: string }>;
+  platform?: 'macos' | 'windows' | 'linux';
+}
 interface Context {
   slots: { inject(name: string, mount: () => unknown): () => void; register(options: Record<string, unknown>, component: unknown): unknown };
   layout: { selectPanel(id: string | null): void; panelInfo: Observable<{ activePanelId: string | null }> };
@@ -24,6 +29,7 @@ interface Context {
   };
   sidebarRightTabs: { get(kind: string): unknown; register(definition: object): () => void };
   configForms: { get(name: string): Observable<{ value?: { linkOpening?: string } }> };
+  inject?(deps: readonly string[], callback: (scope: { shortcuts?: ShortcutsContext; effect(callback: () => () => void, name: string): void }) => void): void;
   effect(callback: () => () => void, name: string): void;
 }
 export const inject = ['slots', 'layout', 'sessions', 'workspaces', 'uiWorkspace', 'uiSession', 'sidebarRight', 'sidebarRightTabs', 'configForms'];
@@ -70,27 +76,30 @@ const messages: Record<string, string> = {
   'harness-timeout': '打开 Harness 超时。请核对当前运行状态后重试。',
   'harness-navigation': 'Harness 网页未能加载。现有对话和执行不受影响。',
 };
-function Guest({ bridge, tool, onMessage, onControl }: { bridge: DesktopBridge; tool?: { kind: Tool; workspaceId: string }; onMessage?: (m: GuestMessage) => void; onControl?: (send: (d: object) => void) => void }) {
+function Guest({ bridge, tool, onMessage, onControl, onRefresh }: { bridge: DesktopBridge; tool?: { kind: Tool; workspaceId: string }; onMessage?: (m: GuestMessage) => void; onControl?: (send: (d: object) => void) => void; onRefresh?: (handle: { lease?: string; reload: () => void } | undefined) => void }) {
   const mount = useRef<HTMLDivElement>(null);
-  const latest = useRef({ onMessage, onControl }); latest.current = { onMessage, onControl };
+  const latest = useRef({ onMessage, onControl, onRefresh }); latest.current = { onMessage, onControl, onRefresh };
   const [attempt, setAttempt] = useState(0);
-  const [reload, setReload] = useState<(() => void) | undefined>();
   const [state, setState] = useState<{ ready: boolean; error?: string }>({ ready: false });
   const kind = tool?.kind, workspaceId = tool?.workspaceId;
+  const retry = () => { setState({ ready: false }); setAttempt(n => n + 1); };
   useEffect(() => {
     if (!mount.current) return;
     return attachHarnessGuest(mount.current, bridge, error => setState(error ? { ready: false, error } : { ready: true }), {
       tool: kind && workspaceId ? { kind, workspaceId } : undefined,
       onMessage: message => latest.current.onMessage?.(message), onControl: send => latest.current.onControl?.(send),
-      onUpdate: action => setReload(() => action),
+      onRefresh: handle => latest.current.onRefresh?.(handle),
     });
   }, [attempt, bridge, kind, workspaceId]);
+  useEffect(() => {
+    if (!state.ready && state.error) latest.current.onRefresh?.({ reload: retry });
+  }, [state.ready, state.error]);
+  useEffect(() => () => { latest.current.onRefresh?.(undefined); }, []);
   return <div style={{ minHeight: 0, position: 'relative', flex: 1 }}>
     <div ref={mount} style={{ position: 'absolute', inset: 0 }} />
-    {state.ready && reload && <div role="status" style={{position: "absolute", inset: "auto 12px 12px auto", background: "Canvas", padding: 8, zIndex: 1}}>开发版已更新。请保存当前编辑后再刷新。 <button type="button" onClick={reload}>刷新</button></div>}
     {!state.ready && <div role={state.error ? 'alert' : 'status'} style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', padding: 20, background: 'Canvas', gap: 8 }}>
       {state.error ? (messages[state.error] ?? messages['harness-unavailable']) : `正在打开 ${label}…`}
-      {state.error && <button type="button" onClick={() => { setState({ ready: false }); setAttempt(n => n + 1); }}>重新检查</button>}
+      {state.error && <button type="button" onClick={retry}>重新检查</button>}
     </div>}
   </div>;
 }
@@ -112,7 +121,17 @@ export function apply(ctx: Context) {
   let pendingFile: Reveal | undefined;
   const explorerControls = new Map<string, (data: object) => void>();
   let sendToChat: ((data: object) => void) | undefined;
+  let chatRefresh: { lease?: string; reload: () => void } | undefined;
+  let shortcuts: ShortcutsContext | undefined;
   let syncToolEntries: (visible: boolean) => void = () => {};
+  if (typeof ctx.inject === 'function') {
+    ctx.inject(['shortcuts'], scope => {
+      scope.effect(() => {
+        shortcuts = scope.shortcuts;
+        return () => { if (shortcuts === scope.shortcuts) shortcuts = undefined; };
+      }, 'buildr-harness: shortcuts');
+    });
+  }
   const currentSession = () => uiSession.adapter.current.getSnapshot().key;
   const archived = () => workspaces.list.getSnapshot().archivedSessionIds;
   const mountAvailable = () => state.active && !!state.carrier && sidebarRight.mounted.getSnapshot() === state.carrier
@@ -195,7 +214,7 @@ export function apply(ctx: Context) {
     if (existing) { sidebarRight.focus(existing.tabId); if (!sidebarRight.isExpanded()) sidebarRight.toggleExpanded(); }
     else sidebarRight.openTab(toolId(kind));
   }
-  function ToolPane({ kind, sessionId, useTabInfo }: { kind: Tool; sessionId: string; useTabInfo(): { tab: { id: string; visible: boolean; actions: { close(): void } } } }) {
+  function ToolPane({ kind, sessionId, useTabInfo }: { kind: Tool; sessionId: string; useTabInfo(): { tab: { id: string; visible: boolean; actions: { close(): void; bindCommands?(commands: { refresh?: () => void }): () => void } } } }) {
     const observed = useSyncExternalStore(store.subscribe, store.getSnapshot);
     const inventory = useSyncExternalStore(sidebarRight.openTabs.subscribe, sidebarRight.openTabs.getSnapshot);
     const mounted = useSyncExternalStore(sidebarRight.mounted.subscribe, sidebarRight.mounted.getSnapshot);
@@ -207,11 +226,16 @@ export function apply(ctx: Context) {
     if (observed.active && observed.carrier === sessionId && observed.scope) initial.current = observed.scope.id;
     const id = initial.current;
     const send = useRef<((data: object) => void) | undefined>(undefined);
+    const refreshRef = useRef<(() => void) | undefined>(undefined);
     const toolActive = !duplicate && tab.visible && observed.active && observed.carrier === sessionId && observed.scope?.id === id;
     useEffect(() => { send.current?.({ active: toolActive }); }, [toolActive]);
     useEffect(() => () => { if (kind === 'explorer' && explorerControls.get(sessionId) === send.current) explorerControls.delete(sessionId); }, [kind, sessionId, id]);
-    if (duplicate) return null;
     const matching = observed.active && observed.carrier === sessionId && observed.scope?.id === id;
+    useEffect(() => {
+      if (!matching || duplicate || typeof tab.actions.bindCommands !== 'function') return;
+      return tab.actions.bindCommands({ refresh: () => { refreshRef.current?.(); } });
+    }, [matching, duplicate, tab.actions]);
+    if (duplicate) return null;
     return <>{!matching && <div role="status" style={{padding:12}}>在绑定此工作空间的 Buildr Harness 中使用此标签。</div>}
       {id && <div hidden={!matching} style={{ height: '100%', display: matching ? 'flex' : 'none', flexDirection: 'column' }}><Guest bridge={bridge!} key={id} tool={{ kind, workspaceId: id }}
       onMessage={message => {
@@ -219,7 +243,7 @@ export function apply(ctx: Context) {
           send.current?.({ active: toolActive });
           if (kind === 'explorer' && send.current) { explorerControls.set(sessionId, send.current); flushExplorer(); }
         } else if (mountAvailable() && state.carrier === sessionId && state.scope?.id === id) accept(message, send.current);
-      }} onControl={fn => { send.current = fn; fn({ active: toolActive }); }} /></div>}</>;
+      }} onControl={fn => { send.current = fn; fn({ active: toolActive }); }} onRefresh={handle => { refreshRef.current = handle?.reload; }} /></div>}</>;
   }
   function Shell() {
     const observed = useSyncExternalStore(store.subscribe, store.getSnapshot);
@@ -228,7 +252,7 @@ export function apply(ctx: Context) {
       position: 'fixed', ...{ positionAnchor: ANCHOR, top: 'max(anchor(top), var(--dsh-frame-top-clearance, 0px))', bottom: 'anchor(bottom)', left: 'anchor(left)', width: 'anchor-size(width)' },
       pointerEvents: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--dsw-alias-bg-base, Canvas)', color: 'CanvasText',
     } : { display: 'none' }}>
-      <Guest bridge={bridge!} onMessage={accept} onControl={fn => { sendToChat = fn; tellGuest(); }} />
+      <Guest bridge={bridge!} onMessage={accept} onControl={fn => { sendToChat = fn; tellGuest(); }} onRefresh={handle => { chatRefresh = handle; }} />
     </section>;
   }
   ctx.effect(() => {
@@ -245,10 +269,7 @@ export function apply(ctx: Context) {
         slots.inject('sidebar.right.pane.tab', () => slots.register({ name: 'sidebar.right.pane.tab', key: id },
           (props: Omit<Parameters<typeof ToolPane>[0], 'kind'>) => <ToolPane {...props} kind={kind} />)),
         slots.inject('sidebar.right.pane.tab.title', () => slots.register({ name: 'sidebar.right.pane.tab.title', key: id },
-          ({ useTabInfo }: { useTabInfo(): { tab: { title: string } } }) => {
-            const { tab } = useTabInfo();
-            return <><Icon size={16} />{tab.title}</>;
-          })),
+          () => <><Icon size={16} />{toolTabTitle(kind)}</>)),
       ];
     });
     let visibleEntries: boolean | undefined;
@@ -261,9 +282,9 @@ export function apply(ctx: Context) {
       for (const dispose of disposeTypes) dispose();
       disposeTypes = toolKinds.map(kind => {
         const id = toolId(kind);
-        return ctx.sidebarRightTabs.register({ id, kind: id, title: () => `Buildr ${toolLabels[kind]}`, patterns: [toolAddress(kind)],
+        return ctx.sidebarRightTabs.register({ id, kind: id, title: () => toolTabTitle(kind), patterns: [toolAddress(kind)],
           canOpen: (address: string) => address === toolAddress(kind), keepMounted: true,
-          ...(visible ? { guide: [{ id, title: () => toolLabels[kind], icon: guideIcons[kind], order: kind === 'explorer' ? 5 : 6 }] } : {}) });
+          ...(visible ? { guide: [{ id, title: () => toolTabTitle(kind), icon: guideIcons[kind], order: kind === 'explorer' ? 5 : 6 }] } : {}) });
       });
     };
     syncToolEntries(false);
@@ -302,8 +323,58 @@ export function apply(ctx: Context) {
     };
     document.addEventListener('click', nativeRow, true);
     document.addEventListener('keydown', nativeRow, true);
+    const modalSelector = '[role="dialog"], [role="alertdialog"], dialog[open], [aria-modal="true"]';
+    const activeElement = () => {
+      let target: Element | null = document.activeElement;
+      while (target?.shadowRoot?.activeElement && !target.matches('webview[data-sidebar-browser-frame]')) {
+        target = target.shadowRoot.activeElement;
+      }
+      return target;
+    };
+    const inRightSidebar = () => Boolean(activeElement()?.closest('[data-sidebar-right-session], [data-dockkit-pane], [data-dockkit-float]'));
+    const hasModal = () => Boolean(document.querySelector(modalSelector));
+    const refreshBinding = () => resolveRefreshBinding(shortcuts?.catalog?.getSnapshot(), shortcuts?.platform ?? detectDesktopPlatform());
+    const keyboard = desktopKeyboard();
+    const stopRefresh = keyboard
+      ? keyboard.subscribe(event => {
+          if (shouldRefreshCenterHarness({
+            active: state.active,
+            hasModal: hasModal(),
+            inRightSidebar: inRightSidebar(),
+            chatLease: chatRefresh?.lease,
+            expectedRevision: shortcuts?.config?.getSnapshot().revision,
+            binding: refreshBinding(),
+            event,
+          })) chatRefresh?.reload();
+        })
+      : (() => {
+          const onKeyDown = (event: KeyboardEvent) => {
+            if (event.defaultPrevented || event.isComposing) return;
+            if (shouldRefreshCenterHarness({
+              active: state.active,
+              hasModal: hasModal(),
+              inRightSidebar: inRightSidebar(),
+              chatLease: chatRefresh?.lease,
+              binding: refreshBinding(),
+              event: {
+                kind: 'keyboard',
+                code: event.code,
+                repeat: event.repeat,
+                control: event.ctrlKey,
+                alt: event.altKey,
+                shift: event.shiftKey,
+                meta: event.metaKey,
+              },
+            })) {
+              event.preventDefault();
+              chatRefresh?.reload();
+            }
+          };
+          window.addEventListener('keydown', onKeyDown);
+          return () => window.removeEventListener('keydown', onKeyDown);
+        })();
     const stop = [store.subscribe(() => { syncSlots(); tellGuest(); }), layout.panelInfo.subscribe(() => { syncPanel(); tellGuest(); }), sessions.list.subscribe(align), workspaces.list.subscribe(align), uiSession.adapter.current.subscribe(syncSession), sidebarRight.mounted.subscribe(tellGuest),
-      () => { document.removeEventListener('click', nativeRow, true); document.removeEventListener('keydown', nativeRow, true); }];
+      stopRefresh, () => { document.removeEventListener('click', nativeRow, true); document.removeEventListener('keydown', nativeRow, true); }];
     syncPanel();
     return () => {
       syncToolEntries = () => {};

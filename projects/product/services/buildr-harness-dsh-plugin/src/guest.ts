@@ -1,11 +1,15 @@
 import { label, panelId, released } from './channel.ts';
 import { CHANNEL, parseGuestMessage, type GuestMessage, type Tool } from './workspace.ts';
 import { DESKTOP_HEADER, handoff, OPEN_PATH } from './handoff.ts';
+import type { DesktopKeyboardInput } from './refresh.ts';
 
 interface Reservation { lease: string; partition: string }
 export interface DesktopBridge {
   acquire(key: string): Promise<Reservation>;
   release(lease: string): Promise<void>;
+}
+export interface DesktopKeyboardBridge {
+  subscribe(listener: (input: DesktopKeyboardInput) => void): () => void;
 }
 interface Webview extends HTMLElement {
   loadURL(url: string): Promise<void>;
@@ -20,17 +24,24 @@ export function desktopBridge(): DesktopBridge | undefined {
   return typeof browser?.acquire === 'function' && typeof browser.release === 'function' ? browser : undefined;
 }
 
+export function desktopKeyboard(): DesktopKeyboardBridge | undefined {
+  if (location.origin !== 'dsh-app://app') return undefined;
+  const keyboard = (window as unknown as { dshDesktop?: { keyboard?: DesktopKeyboardBridge } }).dshDesktop?.keyboard;
+  return typeof keyboard?.subscribe === 'function' ? keyboard : undefined;
+}
+
 export function attachHarnessGuest(mount: HTMLElement, bridge: DesktopBridge, onState: (error?: string) => void, options?: {
   tool?: { kind: Tool; workspaceId: string };
   onMessage?: (message: GuestMessage) => void;
   onControl?: (send: (data: object) => void) => void;
-  onUpdate?: (reload: (() => void) | undefined) => void;
+  onRefresh?: (handle: { lease: string; reload: () => void } | undefined) => void;
 }) {
   const abort = new AbortController();
   let lease: string | undefined;
   let guest: Webview | undefined;
   let probeTimer: ReturnType<typeof setTimeout> | undefined;
   const release = () => {
+    options?.onRefresh?.(undefined);
     if (probeTimer) clearTimeout(probeTimer);
     guest?.remove(); guest = undefined;
     const id = lease; lease = undefined;
@@ -104,8 +115,10 @@ export function attachHarnessGuest(mount: HTMLElement, bridge: DesktopBridge, on
     };
     const probe = async () => {
       if (!isTrusted() || abort.signal.aborted) return;
+      let keepWatching = true;
       try {
         const state = await view.executeJavaScript(`(async () => {
+          if (window.__buildrDshEdited === true) return 'edited';
           const bundle = d => [...d.querySelectorAll('script[src],link[rel="stylesheet"][href]')]
             .map(e => e.getAttribute('src') || e.getAttribute('href')).filter(v => v && v.startsWith('/bundles/')).sort().join('\\n');
           const current = bundle(document);
@@ -114,22 +127,17 @@ export function attachHarnessGuest(mount: HTMLElement, bridge: DesktopBridge, on
           if (!response.ok || response.redirected) return 'unknown';
           const next = bundle(new DOMParser().parseFromString(await response.text(),'text/html'));
           if (!next || next === current) return 'unchanged';
-          const editing = window.__buildrDshEdited !== false || !!document.querySelector('dialog[open], [aria-modal="true"]');
-          if (editing) return 'defer';
+          if (window.__buildrDshEdited !== false || !!document.querySelector('dialog[open], [aria-modal="true"]')) return 'defer';
           location.reload();
           return 'adopting';
         })()`);
-        if (!abort.signal.aborted && isTrusted()) {
-          if (state === 'defer') options?.onUpdate?.(reload);
-          else if (state === 'unchanged' || state === 'adopting') options?.onUpdate?.(undefined);
-        }
+        if (state === 'edited') { watching = false; keepWatching = false; }
       } catch { /* The incumbent page stays usable during a backend handoff. */ }
-      finally { if (!abort.signal.aborted) probeTimer = setTimeout(() => { void probe(); }, 8000); }
+      finally { if (keepWatching && !abort.signal.aborted) probeTimer = setTimeout(() => { void probe(); }, 8000); }
     };
     const ready = () => {
       if (!abort.signal.aborted && isTrusted()) {
         if (!released) {
-          options?.onUpdate?.(undefined);
           void view.executeJavaScript(`if (window.__buildrDshEdited === undefined) {
             window.__buildrDshEdited = false;
             for (const type of ['beforeinput','input','change','compositionstart','drop','paste','keydown','pointerdown'])
@@ -138,6 +146,7 @@ export function attachHarnessGuest(mount: HTMLElement, bridge: DesktopBridge, on
           if (!watching) { watching = true; probeTimer = setTimeout(() => { void probe(); }, 8000); }
         }
         view.clearHistory(); clearTimeout(timeout); onState(); options?.onControl?.(send);
+        options?.onRefresh?.({ lease: reserved.lease, reload });
       }
     };
     view.addEventListener('did-navigate-in-page', ready);
