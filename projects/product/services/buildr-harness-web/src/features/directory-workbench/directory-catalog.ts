@@ -5,16 +5,16 @@ export async function loadDirectoryCatalog(request: DirectoryRequest, previous: 
   const cursor = more ? previous?.nextCursor : undefined;
   if (more && !cursor) return previous!;
   const inventory = keepDiscovery && previous ? {repositories:previous.repositories, nextCursor:previous.nextCursor ?? null,
-    limited:!!previous.limited, diagnostic:previous.diagnostic, readAt:previous.readAt}
+    limited:!!previous.limited, registered:previous.registered, diagnostic:previous.diagnostic, readAt:previous.readAt}
     : await request<DirectoryInventory>('inventory', cursor ? {cursor} : {}, signal);
   signal.throwIfAborted();
   const old = new Map(previous?.repositories.map(repo => [repo.path, repo]));
   const paths = new Map<string, DirectoryCatalogRepository>(more ? old : []);
   for (const hint of inventory.repositories) paths.set(hint.path, {...(old.get(hint.path) ?? {
     id:'pending:' + hint.path, checkouts:{defaultId:null,members:[],truncated:false,diagnostic:null}, gitId:null, members:[], pending:true,
-  }), path:hint.path, name:hint.name});
+  }), path:hint.path, code:hint.code ?? old.get(hint.path)?.code, name:hint.name});
   const readAt = inventory.readAt;
-  const snapshot = (): DirectoryCatalog => ({repositories:[...paths.values()], nextCursor:inventory.nextCursor, limited:inventory.limited,
+  const snapshot = (): DirectoryCatalog => ({repositories:[...paths.values()], nextCursor:inventory.nextCursor, limited:inventory.limited, registered:inventory.registered,
     diagnostic:inventory.diagnostic, truncated:[...paths.values()].some(repo => repo.checkouts.truncated || repo.members.some(member => member.truncated)), readAt});
   publish(snapshot());
   const remaining = new Set(more ? inventory.repositories.map(repo => repo.path) : paths.keys());
@@ -30,7 +30,7 @@ export async function loadDirectoryCatalog(request: DirectoryRequest, previous: 
         signal.throwIfAborted();
         const verified = result.repositories.find(item => item.path === path);
         if (!verified) throw new Error('未返回所选仓库。');
-        paths.set(path, {...verified, name:repo.name, readAt:result.readAt, topologyRevision:result.topologyRevision});
+        paths.set(path, {...verified, code:repo.code ?? verified.code, name:repo.name, readAt:result.readAt, topologyRevision:result.topologyRevision});
       } catch (error) {
         signal.throwIfAborted();
         paths.set(path, {...repo, gitId:null, pending:false, members:repo.members.map(member => ({...member, status:'offline'})),

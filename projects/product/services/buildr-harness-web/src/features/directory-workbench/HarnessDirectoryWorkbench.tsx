@@ -174,6 +174,13 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
   const repos = catalog.data?.repositories ?? [];
   catalogRef.current = catalog.data;
   const refreshCatalog = catalog.refresh;
+  const [discoveringMore, setDiscoveringMore] = useState(false);
+  const discoverMore = useCallback(async () => {
+    if (discoveringMore) return;
+    setDiscoveringMore(true);
+    try { await refreshCatalog({ more: true }); }
+    finally { setDiscoveringMore(false); }
+  }, [discoveringMore, refreshCatalog]);
   const observingGit = active && (module === 'source-control' || !module && !tabs.home && tabs.selected === 'source-control');
   const observation = useRef({ catalog, observingGit });
   observation.current = { catalog, observingGit };
@@ -323,7 +330,8 @@ function DirectoryPanels({ scope, workspaceId, active, tabs, setTabs, reveal, mo
           catalogError={catalog.error}
           catalogLoading={catalog.loading}
           refreshCatalog={async () => { await refreshCatalog(); bump(v => v + 1); }}
-          discoverMore={() => catalog.refresh({more:true})}
+          discoverMore={discoverMore}
+          discoveringMore={discoveringMore}
           prioritizeRepository={repositoryPath => { priority.current = repositoryPath; }}
           onSelectCheckout={selectSource}
           onOpenCurrent={openFromGit}

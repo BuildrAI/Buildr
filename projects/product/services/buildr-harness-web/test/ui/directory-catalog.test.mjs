@@ -51,3 +51,42 @@ test('multi-repo explorer keeps tree collapsed and loads only expanded directori
     [{ browserId: 'r1', relative: '' }, { browserId: 'r1', relative: 'docs' }],
   );
 });
+
+test('registered repository codes and names survive pending publish, single-repo resolution, and continuation', async () => {
+  const snapshots = [];
+  const request = (operation, input) => {
+    if (operation === 'inventory') {
+      return Promise.resolve({
+        repositories: input.cursor
+          ? [{ path: 'extra/tool', code: 'tool', name: 'tool' }]
+          : [{ path: 'repositories/feishu-companion', code: 'feishu-companion', name: '办公平台' }],
+        readAt: 'now',
+        registered: true,
+        nextCursor: input.cursor ? null : 'cont',
+        limited: false,
+        diagnostic: null,
+      });
+    }
+    const dirName = input.repositoryPath.split('/').at(-1);
+    return Promise.resolve({
+      readAt: 'later',
+      repositories: [{ path: input.repositoryPath, code: dirName, name: dirName, id: 'actual:' + input.repositoryPath, gitId: 'git:' + input.repositoryPath, checkouts: { defaultId: dirName, members: [], truncated: false }, members: [] }],
+    });
+  };
+  const signal = new AbortController().signal;
+  const first = await loadDirectoryCatalog(request, null, false, false, () => undefined, signal, value => snapshots.push(value));
+  assert.equal(snapshots[0].registered, true);
+  assert.deepEqual(snapshots[0].repositories.map(repo => ({ path: repo.path, code: repo.code, name: repo.name })), [
+    { path: 'repositories/feishu-companion', code: 'feishu-companion', name: '办公平台' },
+  ]);
+  assert.equal(first.registered, true);
+  assert.deepEqual(first.repositories.map(repo => ({ path: repo.path, code: repo.code, name: repo.name })), [
+    { path: 'repositories/feishu-companion', code: 'feishu-companion', name: '办公平台' },
+  ]);
+  const more = await loadDirectoryCatalog(request, first, true, false, () => undefined, signal, value => snapshots.push(value));
+  assert.equal(more.registered, true);
+  assert.deepEqual(more.repositories.map(repo => ({ path: repo.path, code: repo.code, name: repo.name })), [
+    { path: 'repositories/feishu-companion', code: 'feishu-companion', name: '办公平台' },
+    { path: 'extra/tool', code: 'tool', name: 'tool' },
+  ]);
+});

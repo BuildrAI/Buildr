@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Alert, App, Button, Dropdown, Input, Modal } from 'antd';
-import { CloudDownloadOutlined, DeleteOutlined, MoreOutlined, PlusOutlined, SyncOutlined } from '@ant-design/icons';
+import { CloudDownloadOutlined, DeleteOutlined, MoreOutlined, PlusOutlined, SearchOutlined, SyncOutlined } from '@ant-design/icons';
 import { useFileEditingContext } from '../../workbench/editor/FileEditingContext';
 import { formatShortDateTime } from '../../workbench/ui/date-format';
 import { BranchManagementPopover } from '../../workbench/source-control/BranchManagementPopover';
@@ -70,6 +70,7 @@ type Props = {
   catalogLoading: boolean;
   refreshCatalog(): Promise<void>;
   discoverMore(): Promise<void>;
+  discoveringMore?: boolean;
   prioritizeRepository(repositoryPath: string): void;
   onSelectCheckout(target: DirectorySelection): void;
   onOpenCurrent?(target: SourceControlFileTarget): void;
@@ -213,7 +214,7 @@ function DirectoryHistoryControls({ active, repository, worktree, version, branc
   </>;
 }
 
-export function DirectorySourceControl({ workspaceId, scope, baseRequest, requestFor, active, version, current, explicitSelection, catalog, catalogError, catalogLoading, refreshCatalog, discoverMore, prioritizeRepository, onSelectCheckout, onOpenCurrent }: Props) {
+export function DirectorySourceControl({ workspaceId, scope, baseRequest, requestFor, active, version, current, explicitSelection, catalog, catalogError, catalogLoading, refreshCatalog, discoverMore, discoveringMore = false, prioritizeRepository, onSelectCheckout, onOpenCurrent }: Props) {
   const { message } = App.useApp();
   const editing = useFileEditingContext();
   const conversations = useOptionalAgentConversations();
@@ -260,8 +261,9 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
         diagnostics: member.diagnostics,
       }));
       const registered = worktrees.find(item => item.isRegistered) || worktrees.find(item => item.isMain) || worktrees[0];
-      const name = repo.path ? repo.name : scope.name || repo.name;
-      if (!registered) return [{id:repo.id, discoveryKey:repo.path, location:repo.path, code:name, name,
+      const displayCode = repo.path ? (repo.code || repo.name) : (scope.name || repo.code || repo.name);
+      const displayName = repo.path ? repo.name : (scope.name || repo.name);
+      if (!registered) return [{id:repo.id, discoveryKey:repo.path, location:repo.path, code:displayCode, name:displayName,
         status:'offline' as const, branch:null, branches:[], pending:repo.pending, fileCount:null,
         services:[], simulated:false, ahead:null, behind:null, changes:[], commits:[], worktrees:[], worktreeCount:null,
         diagnostics:repo.error ? [repo.error] : [], _isRoot:repo.path === ''}];
@@ -273,8 +275,8 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
         checkoutId: repo.checkouts.defaultId ?? registered.worktreeId,
         readVersion: `${repo.readAt ?? catalog!.readAt}:${version}`,
         refsVersion: `${repo.readAt ?? catalog!.readAt}:${version}`,
-        code: name,
-        name,
+        code: displayCode,
+        name: displayName,
         branches: [],
         simulated: false,
         services: [],
@@ -283,7 +285,7 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
         _isRoot: repo.path === '',
       }];
     });
-    mapped.sort((a, b) => Number(b._isRoot) - Number(a._isRoot) || Number(sourceControlRepositoryHasChanges(b)) - Number(sourceControlRepositoryHasChanges(a)) || a.name.localeCompare(b.name));
+    mapped.sort((a, b) => Number(b._isRoot) - Number(a._isRoot) || Number(sourceControlRepositoryHasChanges(b)) - Number(sourceControlRepositoryHasChanges(a)) || a.code.localeCompare(b.code));
     return mapped.map(({ _isRoot: _, ...repo }) => repo);
   }, [catalog, scope.name, version]);
 
@@ -617,8 +619,13 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
     ?? selectedRepositoryForModal?.worktrees.find(w => w.isMain)
     ?? selectedRepositoryForModal?.worktrees[0];
 
-  const discoveryControl = catalog?.nextCursor ? <Button size="small" type="link" loading={catalogLoading} onClick={() => void discoverMore()}>查找更多仓库</Button>
-    : catalog?.limited ? <p className="source-control-catalog-note">目录查找已达到本次范围，可能还有仓库未发现。</p> : null;
+  const showInlineDiscoverMore = Boolean(catalog?.nextCursor && (!catalog?.registered || !repositories.length));
+  const showMenuDiscoverMore = Boolean(catalog?.nextCursor && catalog?.registered && repositories.length > 0);
+  const discoveryControl = showInlineDiscoverMore
+    ? <div className="source-control-catalog-more"><Button size="small" type="link" loading={discoveringMore} disabled={discoveringMore} onClick={() => void discoverMore()}>查找更多仓库</Button></div>
+    : !catalog?.nextCursor && catalog?.limited
+      ? <p className="source-control-catalog-note">目录查找已达到本次范围，可能还有仓库未发现。</p>
+      : null;
   if (!repositories.length && !catalogLoading && !catalog?.nextCursor) {
     return <Alert type="warning" showIcon message="源代码管理暂不可用" description={catalogError || catalog?.diagnostic || '当前目录不是 Git 代码库，也未发现嵌套代码库。'} action={<Button onClick={() => void refreshCatalog()}>重新读取</Button>} />;
   }
@@ -637,7 +644,7 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
         loading: catalogLoading,
         error: catalogError,
         readAt: catalog?.readAt ?? '',
-        diagnostics: [...(catalog?.diagnostic ? [catalog.diagnostic] : []), ...(catalog?.repositories.flatMap(repo => repo.error ? [`${repo.name}：${repo.error}`] : []) ?? [])],
+        diagnostics: [...(catalog?.diagnostic ? [catalog.diagnostic] : []), ...(catalog?.repositories.flatMap(repo => repo.error ? [`${codeRepositoryLabel({ name: repo.name, code: repo.code })}：${repo.error}`] : []) ?? [])],
         truncated: catalog?.truncated,
       }}
       currentSourceSelection={explicitSelection?.checkoutId ? { key: explicitSelection.checkoutId, targets, preferredTarget: targets[0] } : null}
@@ -660,6 +667,10 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
         items: [
           { key: 'sync', icon: <SyncOutlined aria-hidden spin={syncing} />, label: syncing ? '正在同步…' : '全部同步', disabled: fetching || syncing || !repositories.length },
           { key: 'fetch', icon: <CloudDownloadOutlined aria-hidden spin={fetching} />, label: fetching ? '正在获取远程…' : '全部获取远程', disabled: fetching || syncing || !repositories.length },
+          ...(showMenuDiscoverMore ? [
+            { type: 'divider' as const },
+            { key: 'discover-more', icon: <SearchOutlined aria-hidden />, label: discoveringMore ? '正在查找更多仓库…' : '查找更多仓库', disabled: discoveringMore || fetching || syncing },
+          ] : []),
           ...(selectedRepositoryForModal && selectedWorktreeForModal ? [
             { type: 'divider' as const },
             { key: 'create-worktree', icon: <PlusOutlined aria-hidden />, label: '新建工作树', disabled: fetching || syncing },
@@ -669,9 +680,10 @@ export function DirectorySourceControl({ workspaceId, scope, baseRequest, reques
           setCatalogMenuOpen(false);
           if (key === 'sync') void runSyncAll(repositories);
           else if (key === 'fetch') void runFetch(repositories);
+          else if (key === 'discover-more') void discoverMore();
           else if (key === 'create-worktree' && selectedRepositoryForModal && selectedWorktreeForModal) void openWorktreeModal('create', selectedRepositoryForModal, selectedWorktreeForModal);
         },
-      }}><Button type="text" size="small" icon={<MoreOutlined rotate={90} />} loading={fetching || syncing} aria-label="源代码管理操作菜单" title="源代码管理操作菜单" aria-expanded={catalogMenuOpen} aria-haspopup="menu" /></Dropdown>}
+      }}><Button type="text" size="small" icon={<MoreOutlined rotate={90} />} loading={fetching || syncing || discoveringMore} aria-label="源代码管理操作菜单" title="源代码管理操作菜单" aria-expanded={catalogMenuOpen} aria-haspopup="menu" /></Dropdown>}
       renderChangeActions={(repository, worktree, panelVisible) => <SourceControlCommitPanel active={panelVisible} workspaceId={workspaceId} repository={repository} worktree={worktree} actions={actions} version={repository.readVersion || ''} modelCatalog={modelCatalog} modelsLoading={modelsLoading} modelError={modelError} />}
       fileEditing={{
         renderDiff: (diff, diffReader, mode) => <SourceControlDiffEditor workspaceId={workspaceId} diff={diff} reader={diffReader} mode={mode} editing={editing} active={active} readEditableFile={readDiffEditableFile} />,

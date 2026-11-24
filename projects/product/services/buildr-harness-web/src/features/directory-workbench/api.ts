@@ -10,7 +10,7 @@ import type {
 export type DirectoryScope = { ref: { sourceId: string; id: string }; rootPath: string; revision: string; name?: string };
 export type DirectoryCheckout = { id: string; location: string; name: string; branch: string | null; head: string | null; isMain: boolean };
 type DirectoryCheckouts = { defaultId: string | null; members: DirectoryCheckout[]; truncated: boolean; diagnostic: string | null };
-export type DirectoryRepository = { id: string; path: string; name: string; checkouts: DirectoryCheckouts };
+export type DirectoryRepository = { id: string; path: string; code?: string; name: string; checkouts: DirectoryCheckouts };
 export type DirectoryRepositories = { repositories: DirectoryRepository[]; truncated: boolean; diagnostic: string | null };
 export type DirectoryCatalogMember = {
   id: string;
@@ -33,8 +33,8 @@ export type DirectoryCatalogMember = {
   readAt: string;
 };
 export type DirectoryCatalogRepository = DirectoryRepository & { gitId: string | null; members: DirectoryCatalogMember[]; pending?: boolean; error?: string; readAt?: string; topologyRevision?: string | null };
-export type DirectoryInventory = { repositories: Array<{path: string; name: string}>; nextCursor: string | null; limited: boolean; diagnostic: string | null; readAt: string };
-export type DirectoryCatalog = { nextCursor?: string | null; limited?: boolean; repositories: DirectoryCatalogRepository[]; topologyPaths?: string[]; topologyRevision?: string | null; truncated: boolean; diagnostic: string | null; readAt: string };
+export type DirectoryInventory = { repositories: Array<{path: string; code?: string; name: string}>; nextCursor: string | null; limited: boolean; registered?: boolean; diagnostic: string | null; readAt: string };
+export type DirectoryCatalog = { nextCursor?: string | null; limited?: boolean; registered?: boolean; repositories: DirectoryCatalogRepository[]; topologyPaths?: string[]; topologyRevision?: string | null; truncated: boolean; diagnostic: string | null; readAt: string };
 export type DirectorySelection = { repositoryId: string; checkoutId: string };
 export type DirectoryRequest = <T>(operation: string, input?: object, signal?: AbortSignal) => Promise<T>;
 export type DirectoryListing = { entries: Array<{ name: string; path: string; kind: 'directory' | 'file' | 'link'; ignored: boolean }>; truncated: boolean };

@@ -328,7 +328,8 @@ export function createDirectoryWorkbench(
             codeGitAsync(repoInfo.location, ['for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads'], 2 * 1024 * 1024),
           ]);
           const checkouts = await observeDirectoryCheckoutsAsync(repoInfo.location, { anchor: repoInfo.git, worktreeOutput: trees });
-          const repo = { id: repoInfo.id, path: targetRelative, name: path.basename(repoInfo.location), checkouts };
+          const baseName = path.basename(repoInfo.location);
+          const repo = { id: repoInfo.id, path: targetRelative, code: baseName, name: baseName, checkouts };
           const gitId = 'sha256-' + sha256Hex(repoInfo.git.commonDir);
           const members: CatalogMember[] = new Array(checkouts.members.length);
           let cursor = 0;

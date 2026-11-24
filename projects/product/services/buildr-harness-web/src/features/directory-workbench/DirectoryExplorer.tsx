@@ -113,9 +113,10 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
       }];
     }
     return repos.flatMap(repo => {
-      const displayName = repo.path ? repo.name : scope.name || repo.name;
-      const code = codeRepositoryCode({ name: displayName, code: displayName });
-      const fullName = codeRepositoryLabel({ name: displayName, code: displayName });
+      const displayCode = repo.path ? (repo.code || repo.name) : (scope.name || repo.code || repo.name);
+      const displayName = repo.path ? repo.name : (scope.name || repo.name);
+      const code = codeRepositoryCode({ name: displayName, code: displayCode });
+      const fullName = codeRepositoryLabel({ name: displayName, code: displayCode });
       return repo.members.map(member => ({
         id: member.id,
         repositoryId: repo.id,
@@ -474,8 +475,9 @@ export function DirectoryExplorer({ workspaceId, scope, scopeKey, catalog, catal
 
   // Source filters in CodeTreePane (right sidebar top)
   const repositoryOptions = repos.map(repo => {
-    const label = repo.path ? repo.name : scope.name || repo.name;
-    return { value: repo.path, label: codeRepositoryCode({ name: label, code: label }), title: codeRepositoryLabel({ name: label, code: label }) };
+    const displayCode = repo.path ? (repo.code || repo.name) : (scope.name || repo.code || repo.name);
+    const displayName = repo.path ? repo.name : (scope.name || repo.name);
+    return { value: repo.path, label: codeRepositoryCode({ name: displayName, code: displayCode }), title: codeRepositoryLabel({ name: displayName, code: displayCode }) };
   });
   const worktreeMembers = useMemo(() => singleRepo?.members ?? [], [singleRepo]);
   const selectedWorktree = singleRepoId && visibleSources.length === 1 ? worktreeMembers.find(m => m.id === visibleSources[0].checkoutId) : undefined;

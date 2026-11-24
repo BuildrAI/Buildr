@@ -175,7 +175,7 @@ async function discoverGitCandidateDirectoriesAsync(location: string): Promise<s
 /** Discover Git roots in the selected directory, not Development registrations. */
 export function observeDirectoryRepositories(root: string, scopeId: string) {
   const queue = [''], seen = new Set<string>(), skipLocations = new Set<string>(), queuedLocations = new Set<string>([normalizeFilesystemPath(root)]);
-  const repositories: Array<{id:string;path:string;name:string;checkouts:ReturnType<typeof observeDirectoryCheckouts>}> = [];
+  const repositories: Array<{id:string;path:string;code?:string;name:string;checkouts:ReturnType<typeof observeDirectoryCheckouts>}> = [];
   let visited = 0, entries = 0, truncated = false, unavailable = false;
   while (queue.length) {
     if (visited++ >= maxDirectories || repositories.length >= SOURCE_CONTROL_LIMITS.repositories || entries >= 32768) { truncated = true; break; }
@@ -195,7 +195,8 @@ export function observeDirectoryRepositories(root: string, scopeId: string) {
             const checkouts = observeDirectoryCheckouts(location);
             skipLocations.add(normalized);
             for (const member of checkouts.members) skipLocations.add(normalizeFilesystemPath(member.location));
-            repositories.push({id: relative ? git.id : scopeId,path:relative,name:path.basename(location),checkouts});
+            const baseName = path.basename(location);
+            repositories.push({id: relative ? git.id : scopeId,path:relative,code:baseName,name:baseName,checkouts});
           }
           try {
             for (const sub of discoverGitCandidateDirectories(location)) {
@@ -235,7 +236,7 @@ export function observeDirectoryRepositories(root: string, scopeId: string) {
 
 export async function observeDirectoryRepositoriesAsync(root: string, scopeId: string) {
   const queue = [''], seen = new Set<string>(), skipLocations = new Set<string>(), queuedLocations = new Set<string>([normalizeFilesystemPath(root)]);
-  const repositories: Array<{id:string;path:string;name:string;checkouts:ReturnType<typeof observeDirectoryCheckouts>}> = [];
+  const repositories: Array<{id:string;path:string;code?:string;name:string;checkouts:ReturnType<typeof observeDirectoryCheckouts>}> = [];
   let visited = 0, entries = 0, truncated = false, unavailable = false;
   while (queue.length && !truncated) {
     const availableSlots = Math.min(8, queue.length, maxDirectories - visited);
@@ -286,7 +287,8 @@ export async function observeDirectoryRepositoriesAsync(root: string, scopeId: s
           seen.add(item.git.commonDir);
           skipLocations.add(item.normalized);
           for (const member of item.checkouts.members) skipLocations.add(normalizeFilesystemPath(member.location));
-          repositories.push({ id: item.relative ? item.git.id : scopeId, path: item.relative, name: path.basename(item.location), checkouts: item.checkouts });
+          const baseName = path.basename(item.location);
+          repositories.push({ id: item.relative ? item.git.id : scopeId, path: item.relative, code: baseName, name: baseName, checkouts: item.checkouts });
         }
         if (item.kind === 'git') {
           for (const sub of item.subDirs) {
@@ -334,7 +336,7 @@ async function readNonGitChildrenAsync(location: string): Promise<string[]> {
   return children;
 }
 
-export type DirectoryRepositoryHint = { path: string; name: string };
+export type DirectoryRepositoryHint = { path: string; code: string; name: string };
 
 /** The workspace document only supplies in-scope path hints, never Git identity or permission. */
 function registeredHints(directory: HarnessDirectory): DirectoryRepositoryHint[] | null {
@@ -364,11 +366,14 @@ function registeredHints(directory: HarnessDirectory): DirectoryRepositoryHint[]
     if (workspace?.schemaVersion !== 'buildr.workspace/v1' || workspace.id !== ref.id) return null;
     const manifest = read('repositories/manifest.yml');
     if (manifest?.schemaVersion !== 'buildr.repositories/v1' || !manifest.repositories || typeof manifest.repositories !== 'object' || Array.isArray(manifest.repositories)) return null;
-    return Object.values(manifest.repositories as Record<string, {workspaceId?: string; name?: string; source?: {path?: string}}>).flatMap(item => {
+    return Object.values(manifest.repositories as Record<string, {workspaceId?: string; code?: string; name?: string; source?: {path?: string}}>).flatMap(item => {
       if (!item || item.workspaceId !== ref.id || typeof item.source?.path !== 'string' || path.isAbsolute(item.source.path)) return [];
       try {
         const relative = item.source.path === '.' ? '' : relativeCodePath(item.source.path, true);
-        return [{path:relative, name:typeof item.name === 'string' && item.name.trim() ? item.name : path.basename(relative || directory.rootPath)}];
+        const fallback = path.basename(relative || directory.rootPath);
+        const code = typeof item.code === 'string' && item.code.trim() ? item.code.trim() : fallback;
+        const name = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : code;
+        return [{path:relative, code, name}];
       } catch { return []; }
     }).sort((a, b) => Number(a.path !== '') - Number(b.path !== ''));
   } catch { return null; }
@@ -377,7 +382,7 @@ function registeredHints(directory: HarnessDirectory): DirectoryRepositoryHint[]
 type ScanItem = { path: string; depth: number };
 type Discovery = {
   binding: string; expiresAt: number; queue: ScanItem[]; seen: Set<string>; reported: Set<string>;
-  entries: number; limited: boolean; unavailable: boolean;
+  entries: number; limited: boolean; unavailable: boolean; registered: boolean;
 };
 const discoveryTtl = 5 * 60_000;
 const discoveryPage = 64;
@@ -387,7 +392,7 @@ const discoveryEntryLimit = 32768;
 /** One bounded read session per cursor. No filesystem handles survive a request. */
 export function createDirectoryRepositoryDiscovery(now = Date.now) {
   const sessions = new Map<string, Discovery>();
-  const receipts = new Map<string, {binding:string; expiresAt:number; result:{repositories:DirectoryRepositoryHint[]; nextCursor:string|null; limited:boolean; diagnostic:string|null; readAt:string}}>();
+  const receipts = new Map<string, {binding:string; expiresAt:number; result:{repositories:DirectoryRepositoryHint[]; nextCursor:string|null; limited:boolean; registered:boolean; diagnostic:string|null; readAt:string}}>();
   return (directory: HarnessDirectory, cursor?: string) => {
     const time = now();
     for (const [id, scan] of sessions) if (scan.expiresAt <= time) sessions.delete(id);
@@ -397,8 +402,8 @@ export function createDirectoryRepositoryDiscovery(now = Date.now) {
     if (receipt?.binding === binding) return receipt.result;
     const resume = cursor ? sessions.get(cursor) : undefined;
     if (cursor && (!resume || resume.binding !== binding)) throw codeFailure('code_directory_discovery_expired', '查找进度已过期或不属于当前目录，请重新读取后再查找。', 409);
-    const scan: Discovery = resume ?? {binding, expiresAt:time+discoveryTtl, queue:[{path:'',depth:0}], seen:new Set(['']), reported:new Set(), entries:0, limited:false, unavailable:false};
     const hints = !cursor ? registeredHints(directory) : null;
+    const scan: Discovery = resume ?? {binding, expiresAt:time+discoveryTtl, queue:[{path:'',depth:0}], seen:new Set(['']), reported:new Set(), entries:0, limited:false, unavailable:false, registered:Boolean(hints)};
     const results: DirectoryRepositoryHint[] = [];
     const report = (hint: DirectoryRepositoryHint) => {
       if (scan.reported.has(hint.path)) return;
@@ -424,7 +429,8 @@ export function createDirectoryRepositoryDiscovery(now = Date.now) {
         if (!lexicalPath(fs.realpathSync(location), location)) continue;
         const marker = fs.lstatSync(path.join(location, '.git'), {throwIfNoEntry:false});
         if (marker?.isDirectory() || marker?.isFile()) {
-          report({path:item.path, name:path.basename(location)});
+          const baseName = path.basename(location);
+          report({path:item.path, code:baseName, name:baseName});
           // Do not walk tracked source trees eagerly. Defer even Git's candidate
           // inspection of the shallow repositories until the user asks for more.
           if (!cursor) { scan.queue.push({...item, depth:2}); continue; }
@@ -449,7 +455,7 @@ export function createDirectoryRepositoryDiscovery(now = Date.now) {
       sessions.set(nextCursor, scan);
       while (sessions.size > 8) sessions.delete(sessions.keys().next().value!);
     }
-    const result = {repositories:results, nextCursor, limited:scan.limited,
+    const result = {repositories:results, nextCursor, limited:scan.limited, registered:scan.registered,
       diagnostic:scan.unavailable ? '部分目录暂不可核对，已保留找到的仓库。' : null, readAt:new Date(time).toISOString()};
     if (cursor) {
       receipts.set(cursor,{binding,expiresAt:time+discoveryTtl,result});
