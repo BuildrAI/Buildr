@@ -3,7 +3,7 @@ import { applyConfirmedSeenActivity, executionStatsSignature } from './conversat
 import { useConversationDraftPresenceDetail, useConversationDraftSubmittedIds } from './useConversationDraftPresence.ts';
 import { ConversationExecutionSummary } from './ConversationExecutionSummary.tsx';
 import { conversationModelSourceLabel, conversationModelLabel } from './conversation-model-label.ts';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Alert, Button, Empty, Tooltip } from 'antd';
 import { ArrowLeftOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext.tsx';
@@ -20,6 +20,7 @@ import { ConversationHistoryGroup } from './ConversationHistoryGroup.tsx';
 import { useConversationHistoryPage } from './useConversationHistoryPage.ts';
 import { useDebouncedValue } from './useDebouncedValue.ts';
 import { isElementFocusVisible, isKeyboardNavigationKey, shouldOpenConversationTooltipOnFocus } from './conversation-row-tooltip.ts';
+import { canShowOverlay, createOverlayDelay, createMouseMoveIntent } from '../../lib/overlay-intent.ts';
 import './conversation-activity.css';
 export type ConversationWorkspace = {id:string;name:string;rootPath:string};
 type HistoryGroupResult = {total?:number;busy:boolean;error:boolean};
@@ -61,33 +62,51 @@ function ConversationHistoryRowTooltip({
   const [hoverOpen, setHoverOpen] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
 
-  useEffect(() => {
+  const enter = useMemo(createOverlayDelay, []);
+  const mouseMoved = useMemo(createMouseMoveIntent, []);
+  const leave = useMemo(createOverlayDelay, []);
+  const dismiss = () => {
+    enter.cancel();
+    leave.cancel();
     setHoverOpen(false);
     setKeyboardOpen(false);
-  }, [dismissNonce, hidden]);
+  };
+
+  useLayoutEffect(() => {
+    setHoverOpen(false);
+    setKeyboardOpen(false);
+    return () => { enter.cancel(); leave.cancel(); };
+  }, [dismissNonce, enter, hidden, leave, meta]);
+
+  const scheduleHoverClose = () => {
+    enter.cancel();
+    leave.start(250, () => setHoverOpen(false));
+  };
 
   return (
     <Tooltip
-      title={meta || null}
-      trigger={['hover']}
-      mouseEnterDelay={0.55}
-      mouseLeaveDelay={0.25}
+      title={meta ? <span className="ac-history-tooltip-content" onPointerEnter={leave.cancel} onPointerLeave={scheduleHoverClose}>{meta}</span> : null}
+      trigger={[]}
       placement="right"
       open={Boolean(meta) && !hidden && (hoverOpen || keyboardOpen)}
-      onOpenChange={next => setHoverOpen(Boolean(meta) && !hidden && next)}
       destroyOnHidden
     >
       <div
         className="ac-history-row-main"
         data-conversation-id={rowId}
+        onPointerMove={event => {
+          if (!mouseMoved(event) || !meta || hidden || !canShowOverlay(document)) return;
+          leave.cancel();
+          if (!hoverOpen) enter.start(550, () => { if (canShowOverlay(document)) setHoverOpen(true); });
+        }}
+        onPointerLeave={scheduleHoverClose}
         onPointerDown={() => {
           keyboardNavRef.current = false;
-          setHoverOpen(false);
-          setKeyboardOpen(false);
+          dismiss();
         }}
         onFocus={event => {
           if (!(event.target instanceof Element) || !event.target.matches('.ac-history-row-open')) return;
-          if (shouldOpenConversationTooltipOnFocus({
+          if (canShowOverlay(document) && shouldOpenConversationTooltipOnFocus({
             hasMeta: Boolean(meta),
             hidden,
             keyboardNavActive: keyboardNavRef.current,
@@ -97,7 +116,7 @@ function ConversationHistoryRowTooltip({
           }
         }}
         onBlur={event => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          if (event.target instanceof Element && event.target.matches('.ac-history-row-open')) {
             setKeyboardOpen(false);
           }
         }}
@@ -134,6 +153,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
         dismissRowTooltips();
       }
     };
+    const onKeyUp = () => { keyboardNavRef.current = false; };
     const onPointerDown = () => {
       keyboardNavRef.current = false;
     };
@@ -144,11 +164,13 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
       if (document.hidden) dismissRowTooltips();
     };
     window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('keyup', onKeyUp, true);
     window.addEventListener('pointerdown', onPointerDown, true);
     window.addEventListener('blur', onBlur);
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('keyup', onKeyUp, true);
       window.removeEventListener('pointerdown', onPointerDown, true);
       window.removeEventListener('blur', onBlur);
       document.removeEventListener('visibilitychange', onVisibilityChange);

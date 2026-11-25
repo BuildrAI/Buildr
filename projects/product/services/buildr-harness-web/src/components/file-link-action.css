@@ -1,8 +1,18 @@
 .harness-file-link-action { position: relative; }
 .harness-file-link-action > button:not([hidden]) {
   position: absolute; inset-block-start: 100%; inset-inline-start: 0; z-index: 3;
-  background: var(--surface, #fff); color: var(--text, #24382f);
-  border: 1px solid var(--line, #cfdbd3); border-radius: 6px;
-  padding: 5px 9px; white-space: nowrap; font: inherit; cursor: pointer;
-  box-shadow: 0 3px 12px #0002;
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface, #fff); color: var(--soft-primary, #246653);
+  border: 1px solid var(--line, #cfdbd3); border-radius: 7px;
+  min-height: 28px; padding: 4px 8px; white-space: nowrap;
+  font: inherit; font-size: var(--font-size-meta); font-weight: 500; line-height: 1.4;
+  cursor: pointer; box-shadow: 0 2px 8px #152e221a;
 }
+.harness-file-link-action > button > svg {
+  width: 14px; height: 14px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 1.6;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.harness-file-link-action > button:not(:disabled):hover { background: var(--surface-hover, #edf5f1); }
+.harness-file-link-action > button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.harness-file-link-action > button:disabled { opacity: .65; cursor: wait; }
