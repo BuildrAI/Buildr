@@ -434,6 +434,25 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     },
   ];
 
+  const desktopMode = isDevelopmentDesktop();
+  const desktopSidebar = useDesktopNativeSidebar();
+  const desktopScope = useMemo(() => {
+    if (!workspaceId) return null;
+    if (workspace?.rootPath) {
+      return { id: workspaceId, path: workspace.rootPath, name: workspace.name };
+    }
+    const entry = registry.find(item => item.workspace?.id === workspaceId);
+    if (entry?.workspace && entry.rootPath) {
+      return { id: entry.workspace.id, path: entry.rootPath, name: entry.workspace.name };
+    }
+    return undefined;
+  }, [workspaceId, workspace, registry]);
+
+  useEffect(() => {
+    if (!desktopMode || desktopScope === undefined) return;
+    reportDesktopWorkspace(desktopScope);
+  }, [desktopMode, desktopScope]);
+
   if (exited) {
     return (
       <div className="exit-screen">
@@ -472,25 +491,6 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
       </div>
     );
   }
-
-  const desktopMode = isDevelopmentDesktop();
-  const desktopSidebar = useDesktopNativeSidebar();
-  const desktopScope = useMemo(() => {
-    if (!workspaceId) return null;
-    if (workspace?.rootPath) {
-      return { id: workspaceId, path: workspace.rootPath, name: workspace.name };
-    }
-    const entry = registry.find(item => item.workspace?.id === workspaceId);
-    if (entry?.workspace && entry.rootPath) {
-      return { id: entry.workspace.id, path: entry.rootPath, name: entry.workspace.name };
-    }
-    return undefined;
-  }, [workspaceId, workspace, registry]);
-
-  useEffect(() => {
-    if (!desktopMode || desktopScope === undefined) return;
-    reportDesktopWorkspace(desktopScope);
-  }, [desktopMode, desktopScope]);
 
   return (
     <AppShellContext.Provider value={shellValue}>
