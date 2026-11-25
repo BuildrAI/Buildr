@@ -1,35 +1,19 @@
-import { label, ORDER, panelId as PANEL, released } from './channel.ts';
+import { conversationPriority, label, ORDER, panelId as PANEL, released } from './channel.ts';
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentType } from 'react';
 import { attachDevelopmentGuest, desktopBridge, desktopKeyboard, type DesktopBridge } from './guest.ts';
+import { createPanelController, type Observable, type PanelHostContext } from './panel-controller.ts';
 import { detectDesktopPlatform, resolveRefreshBinding, shouldRefreshCenterDevelopment, TOOL_LABELS, toolTabTitle, type ShortcutCatalogEntry } from './refresh.ts';
-import { linkDestination, liveCarrier, preferredCarrier, sessionSelection, shouldNotifyChatActive, toolAddress, toolId, workspaceDisplayName, type GuestMessage, type Reveal, type Scope, type SessionCatalog, type Tool } from './workspace.ts';
+import { shouldNotifyChatActive, toolAddress, toolId, workspaceDisplayName, type GuestMessage, type Tool } from './workspace.ts';
 
 const ANCHOR = '--buildr-development-dsh';
 const KEY = released ? 'buildr.development-dsh.released.carriers.v1' : 'buildr.development-dsh.carriers.v1';
 
-interface Observable<T> { subscribe(listener: () => void): () => void; getSnapshot(): T }
 interface ShortcutsContext {
   catalog?: Observable<readonly ShortcutCatalogEntry[]>;
   config?: Observable<{ revision?: string }>;
   platform?: 'macos' | 'windows' | 'linux';
 }
-interface Context {
-  slots: { inject(name: string, mount: () => unknown): () => void; register(options: Record<string, unknown>, component: unknown): unknown };
-  layout: { selectPanel(id: string | null): void; panelInfo: Observable<{ activePanelId: string | null }> };
-  sessions: { list: Observable<SessionCatalog> };
-  workspaces: { list: Observable<{ archivedSessionIds: readonly string[] }> };
-  uiWorkspace: { openSession(id: string): void };
-  uiSession: { adapter: { current: Observable<{ key?: string }> } };
-  sidebarRight: {
-    mounted: Observable<string | undefined>;
-    openTabs: Observable<readonly { sessionId: string; tabId: string; kind: string }[]>;
-    openTab(kind: string, options?: { params: { url: string } }): void;
-    focus(id: string): void;
-    toggleExpanded(): void;
-    isExpanded(): boolean;
-  };
-  sidebarRightTabs: { get(kind: string): unknown; register(definition: object): () => void };
-  configForms: { get(name: string): Observable<{ value?: { linkOpening?: string } }> };
+interface Context extends PanelHostContext {
   inject?(deps: readonly string[], callback: (scope: { shortcuts?: ShortcutsContext; effect(callback: () => () => void, name: string): void }) => void): void;
   effect(callback: () => () => void, name: string): void;
 }
@@ -63,15 +47,6 @@ const guideIcons: Record<Tool, ComponentType<IconProps>> = {
   explorer: props => <ExplorerIcon {...props} color="#d97706" />,
   'source-control': props => <SourceControlIcon {...props} color="#8b5cf6" />,
 };
-
-function readBindings() {
-  const result = new Map<string, string>();
-  try {
-    const pairs: unknown = JSON.parse(localStorage.getItem(KEY) ?? '[]');
-    if (Array.isArray(pairs)) for (const pair of pairs) if (Array.isArray(pair) && pair.length === 2 && pair.every(item => typeof item === 'string')) result.set(pair[0], pair[1]);
-  } catch { /* This installation may only support memory preferences. */ }
-  return result;
-}
 
 const messages: Record<string, string> = {
   'binding-missing': '尚未绑定本机 Buildr Development。请使用配置好开发环境变量的入口重新打开 DSH。',
@@ -127,20 +102,9 @@ export function apply(ctx: Context) {
   if (!bridge || typeof ctx.slots?.inject !== 'function' || typeof ctx.slots?.register !== 'function'
       || typeof ctx.layout?.selectPanel !== 'function' || typeof ctx.layout?.panelInfo?.subscribe !== 'function'
       || typeof ctx.sidebarRightTabs?.register !== 'function' || typeof ctx.configForms?.get !== 'function') return;
-  const { layout, slots, sidebarRight, sessions, workspaces, uiSession } = ctx;
-  const bindings = readBindings();
-  const settings = ctx.configForms.get('ui-chat');
-  const listeners = new Set<() => void>();
-  let state: { active: boolean; opened: boolean; scope: Scope | null; carrier?: string } = { active: false, opened: false, scope: null };
-  let priorSession: string | undefined;
-  let expected: string | undefined;
-  let registering = false;
-  let pendingFile: Reveal | undefined;
-  const explorerControls = new Map<string, (data: object) => void>();
-  let sendToChat: ((data: object) => void) | undefined;
+  const { slots, sidebarRight } = ctx;
   let chatRefresh: { lease?: string; reload: () => void } | undefined;
   let shortcuts: ShortcutsContext | undefined;
-  let syncToolEntries: (visible: boolean) => void = () => {};
   if (typeof ctx.inject === 'function') {
     ctx.inject(['shortcuts'], scope => {
       scope.effect(() => {
@@ -149,141 +113,9 @@ export function apply(ctx: Context) {
       }, 'buildr-development: shortcuts');
     });
   }
-  const currentSession = () => uiSession.adapter.current.getSnapshot().key;
-  const archived = () => workspaces.list.getSnapshot().archivedSessionIds;
-  const mountAvailable = () => state.active && !!state.carrier && sidebarRight.mounted.getSnapshot() === state.carrier
-    && currentSession() === state.carrier && layout.panelInfo.getSnapshot().activePanelId === null
-    && liveCarrier(state.scope, bindings, sessions.list.getSnapshot(), archived()) === state.carrier;
-  function remember(scope: Scope, carrier: string) {
-    if (bindings.get(scope.id) === carrier) return;
-    bindings.set(scope.id, carrier);
-    try { localStorage.setItem(KEY, JSON.stringify([...bindings])); } catch { /* Keep the window's mapping usable. */ }
-  }
-  function publish(next = state) {
-    state = { ...next };
-    for (const listener of [...listeners]) listener();
-  }
-  const store: Observable<typeof state> = { subscribe(fn) { listeners.add(fn); return () => { listeners.delete(fn); }; }, getSnapshot: () => state };
-  function tellGuest() {
-    const native = mountAvailable();
-    syncToolEntries(native);
-    sendToChat?.({ native });
-  }
-  function align() {
-    if (!state.active) return;
-    const carrier = preferredCarrier(state.scope, bindings, sessions.list.getSnapshot(), archived(), currentSession());
-    if (carrier && state.scope) remember(state.scope, carrier);
-    if (carrier !== state.carrier) {
-      pendingFile = undefined;
-      publish({ ...state, carrier });
-    }
-    if (carrier && currentSession() !== carrier) {
-      if (layout.panelInfo.getSnapshot().activePanelId !== PANEL) layout.selectPanel(PANEL);
-      if (expected !== carrier) { expected = carrier; ctx.uiWorkspace.openSession(carrier); }
-    } else {
-      expected = undefined;
-      const target = carrier ? null : PANEL;
-      if (target !== layout.panelInfo.getSnapshot().activePanelId) layout.selectPanel(target);
-    }
-    tellGuest();
-  }
-  function leave(restore = true) {
-    if (!state.active) return;
-    expected = undefined; pendingFile = undefined;
-    publish({ ...state, active: false, carrier: undefined });
-    if (restore && priorSession && priorSession !== currentSession() && sessions.list.getSnapshot().byId[priorSession]) ctx.uiWorkspace.openSession(priorSession);
-    else if (layout.panelInfo.getSnapshot().activePanelId === PANEL) layout.selectPanel(null);
-    priorSession = undefined;
-  }
-  function accept(message: GuestMessage, send = sendToChat) {
-    if (!state.active) return;
-    if (message.kind === 'tool-ready' || message.kind === 'image-preview') return;
-    if (message.kind === 'shell') {
-      if (message.action === 'leave') leave();
-      else if (message.action === 'toggle-right' && mountAvailable()) sidebarRight.toggleExpanded();
-      return;
-    }
-    if (message.kind === 'reveal') {
-      if (!mountAvailable() || message.file.workspaceId !== state.scope?.id) return;
-      pendingFile = message.file; launchTool('explorer'); flushExplorer(); return;
-    }
-    if (message.kind === 'workspace') {
-      if (state.scope?.id !== message.scope?.id || state.scope?.path !== message.scope?.path) {
-        pendingFile = undefined;
-        publish({ ...state, scope: message.scope, carrier: undefined }); align();
-      } else {
-        if (state.scope?.name !== message.scope?.name) publish({ ...state, scope: message.scope });
-        tellGuest();
-      }
-      return;
-    }
-    const native = mountAvailable() && ctx.sidebarRightTabs.get('browser') !== undefined;
-    const mode = linkDestination(settings.getSnapshot().value?.linkOpening, message.external, native);
-    if (mode === 'external') window.open(message.url, '_blank', 'noopener,noreferrer');
-    else if (mode === 'sidebar') sidebarRight.openTab('browser', { params: { url: message.url } });
-    else send?.({ fallback: message.url });
-  }
-  function flushExplorer() {
-    if (!pendingFile || !mountAvailable() || pendingFile.workspaceId !== state.scope?.id) return;
-    const control = explorerControls.get(state.carrier!);
-    if (control) { control({ reveal: pendingFile }); pendingFile = undefined; }
-  }
-  function launchTool(kind: Tool) {
-    if (!mountAvailable()) return;
-    const existing = sidebarRight.openTabs.getSnapshot().find(tab => tab.sessionId === state.carrier && tab.kind === toolId(kind));
-    if (existing) { sidebarRight.focus(existing.tabId); if (!sidebarRight.isExpanded()) sidebarRight.toggleExpanded(); }
-    else sidebarRight.openTab(toolId(kind));
-  }
-  function ToolPane({ kind, sessionId, useTabInfo }: {
-    kind: Tool;
-    sessionId: string;
-    useTabInfo(): { tab: { id: string; visible: boolean; actions: { close(): void; bindCommands?(commands: { refresh?: () => void }): () => void } } };
-  }) {
-    const observed = useSyncExternalStore(store.subscribe, store.getSnapshot);
-    const inventory = useSyncExternalStore(sidebarRight.openTabs.subscribe, sidebarRight.openTabs.getSnapshot);
-    const mounted = useSyncExternalStore(sidebarRight.mounted.subscribe, sidebarRight.mounted.getSnapshot);
-    const { tab } = useTabInfo();
-    const first = inventory.find(item => item.sessionId === sessionId && item.kind === toolId(kind));
-    const duplicate = !!first && first.tabId !== tab.id;
-    useEffect(() => { if (duplicate && mounted === sessionId && mountAvailable()) { sidebarRight.focus(first!.tabId); tab.actions.close(); } }, [duplicate, mounted, observed.active, observed.carrier, sessionId, first?.tabId, tab.id]);
-    const initial = useRef<string | undefined>(undefined);
-    if (observed.active && observed.carrier === sessionId && observed.scope) initial.current = observed.scope.id;
-    const id = initial.current;
-    const send = useRef<((data: object) => void) | undefined>(undefined);
-    const refreshRef = useRef<(() => void) | undefined>(undefined);
-    const toolActive = !duplicate && tab.visible && observed.active && observed.carrier === sessionId && observed.scope?.id === id;
-    useEffect(() => { send.current?.({ active: toolActive }); }, [toolActive]);
-    useEffect(() => () => { if (kind === 'explorer' && explorerControls.get(sessionId) === send.current) explorerControls.delete(sessionId); }, [kind, sessionId, id]);
-    const matching = observed.active && observed.carrier === sessionId && observed.scope?.id === id;
-    useEffect(() => {
-      if (!matching || duplicate || typeof tab.actions.bindCommands !== 'function') return;
-      return tab.actions.bindCommands({ refresh: () => { refreshRef.current?.(); } });
-    }, [matching, duplicate, tab.actions]);
-    if (duplicate) return null;
-    return <>{!matching && <div role="status" style={{ padding: 12 }}>在绑定此工作空间的 Buildr Development 中使用此标签。</div>}
-      {id && <div hidden={!matching} style={{ height: '100%', display: matching ? 'flex' : 'none', flexDirection: 'column' }}><Guest bridge={bridge!} key={id} tool={{ kind, workspaceId: id }}
-      onMessage={message => {
-        if (message.kind === 'tool-ready') {
-          send.current?.({ active: toolActive });
-          if (kind === 'explorer' && send.current) { explorerControls.set(sessionId, send.current); flushExplorer(); }
-        } else if (mountAvailable() && state.carrier === sessionId && state.scope?.id === id) accept(message, send.current);
-      }} onControl={fn => { send.current = fn; fn({ active: toolActive }); }} onRefresh={handle => { refreshRef.current = handle?.reload; }} /></div>}</>;
-  }
-  function Shell() {
-    const observed = useSyncExternalStore(store.subscribe, store.getSnapshot);
-    useEffect(() => {
-      if (observed.opened) sendToChat?.({ active: observed.active });
-    }, [observed.opened, observed.active]);
-    if (!observed.opened) return null;
-    return <section aria-label={label} className="buildr-development-dsh-center" hidden={!observed.active} style={observed.active ? {
-      position: 'fixed', ...{ positionAnchor: ANCHOR, top: 'max(anchor(top), var(--dsh-frame-top-clearance, 0px))', bottom: 'anchor(bottom)', left: 'anchor(left)', width: 'anchor-size(width)' },
-      pointerEvents: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--dsw-alias-bg-base, Canvas)', color: 'CanvasText',
-    } : { display: 'none' }}>
-      <Guest bridge={bridge!} canPreviewImage={() => state.active} onMessage={accept} onControl={fn => { sendToChat = fn; tellGuest(); fn({ active: state.active }); }} onRefresh={handle => { chatRefresh = handle; }} />
-    </section>;
-  }
+
   function Anchor() {
-    const observed = useSyncExternalStore(store.subscribe, store.getSnapshot);
+    const observed = useSyncExternalStore(controller.store.subscribe, controller.store.getSnapshot);
     const darwin = typeof document !== 'undefined' && document.documentElement.dataset.platform === 'darwin';
     const workspaceName = workspaceDisplayName(observed.scope);
     return <div style={{ height: '100%', width: '100%', ...{ anchorName: ANCHOR } }}>
@@ -316,6 +148,68 @@ export function apply(ctx: Context) {
       </header>}
     </div>;
   }
+
+  const controller = createPanelController({
+    ctx,
+    panelId: PANEL,
+    conversationPriority,
+    storageKey: KEY,
+    anchor: Anchor,
+  });
+
+  function ToolPane({ kind, sessionId, useTabInfo }: {
+    kind: Tool;
+    sessionId: string;
+    useTabInfo(): { tab: { id: string; visible: boolean; actions: { close(): void; bindCommands?(commands: { refresh?: () => void }): () => void } } };
+  }) {
+    const observed = useSyncExternalStore(controller.store.subscribe, controller.store.getSnapshot);
+    const inventory = useSyncExternalStore(sidebarRight.openTabs.subscribe, sidebarRight.openTabs.getSnapshot);
+    const mounted = useSyncExternalStore(sidebarRight.mounted.subscribe, sidebarRight.mounted.getSnapshot);
+    const { tab } = useTabInfo();
+    const first = inventory.find(item => item.sessionId === sessionId && item.kind === toolId(kind));
+    const duplicate = !!first && first.tabId !== tab.id;
+    useEffect(() => { if (duplicate && mounted === sessionId && controller.mountAvailable()) { sidebarRight.focus(first!.tabId); tab.actions.close(); } }, [duplicate, mounted, observed.active, observed.carrier, sessionId, first?.tabId, tab.id]);
+    const initial = useRef<string | undefined>(undefined);
+    if (observed.active && observed.carrier === sessionId && observed.scope) initial.current = observed.scope.id;
+    const id = initial.current;
+    const send = useRef<((data: object) => void) | undefined>(undefined);
+    const refreshRef = useRef<(() => void) | undefined>(undefined);
+    const toolActive = !duplicate && tab.visible && observed.active && observed.carrier === sessionId && observed.scope?.id === id;
+    useEffect(() => { send.current?.({ active: toolActive }); }, [toolActive]);
+    useEffect(() => () => { if (kind === 'explorer') controller.clearExplorerControl(sessionId, send.current); }, [kind, sessionId, id]);
+    const matching = observed.active && observed.carrier === sessionId && observed.scope?.id === id;
+    useEffect(() => {
+      if (!matching || duplicate || typeof tab.actions.bindCommands !== 'function') return;
+      return tab.actions.bindCommands({ refresh: () => { refreshRef.current?.(); } });
+    }, [matching, duplicate, tab.actions]);
+    if (duplicate) return null;
+    return <>{!matching && <div role="status" style={{ padding: 12 }}>在绑定此工作空间的 Buildr Development 中使用此标签。</div>}
+      {id && <div hidden={!matching} style={{ height: '100%', display: matching ? 'flex' : 'none', flexDirection: 'column' }}><Guest bridge={bridge!} key={id} tool={{ kind, workspaceId: id }}
+      onMessage={message => {
+        if (message.kind === 'tool-ready') {
+          send.current?.({ active: toolActive });
+          if (kind === 'explorer' && send.current) { controller.setExplorerControl(sessionId, send.current); controller.flushExplorer(); }
+        } else {
+          const current = controller.store.getSnapshot();
+          if (controller.mountAvailable() && current.carrier === sessionId && current.scope?.id === id) controller.accept(message, send.current);
+        }
+      }} onControl={fn => { send.current = fn; fn({ active: toolActive }); }} onRefresh={handle => { refreshRef.current = handle?.reload; }} /></div>}</>;
+  }
+
+  function Shell() {
+    const observed = useSyncExternalStore(controller.store.subscribe, controller.store.getSnapshot);
+    useEffect(() => {
+      if (observed.opened) controller.sendToChat({ active: observed.active });
+    }, [observed.opened, observed.active]);
+    if (!observed.opened) return null;
+    return <section aria-label={label} className="buildr-development-dsh-center" hidden={!observed.active} style={observed.active ? {
+      position: 'fixed', ...{ positionAnchor: ANCHOR, top: 'max(anchor(top), var(--dsh-frame-top-clearance, 0px))', bottom: 'anchor(bottom)', left: 'anchor(left)', width: 'anchor-size(width)' },
+      pointerEvents: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--dsw-alias-bg-base, Canvas)', color: 'CanvasText',
+    } : { display: 'none' }}>
+      <Guest bridge={bridge!} canPreviewImage={() => controller.store.getSnapshot().active} onMessage={controller.accept} onControl={fn => { controller.setChatControl(fn); }} onRefresh={handle => { chatRefresh = handle; }} />
+    </section>;
+  }
+
   ctx.effect(() => {
     const stable = [
       slots.inject('main', () => slots.register({ name: 'main', key: PANEL }, Anchor)),
@@ -335,7 +229,7 @@ export function apply(ctx: Context) {
     });
     let visibleEntries: boolean | undefined;
     let disposeTypes: Array<() => void> = [];
-    syncToolEntries = visible => {
+    const syncToolEntries = (visible: boolean) => {
       if (visible === visibleEntries) return;
       visibleEntries = visible;
       for (const dispose of disposeTypes) dispose();
@@ -352,37 +246,14 @@ export function apply(ctx: Context) {
         });
       });
     };
+    controller.setSyncToolEntries(syncToolEntries);
     syncToolEntries(false);
-    const slotDispose: Array<() => void> = [];
-    const syncSlots = () => {
-      if (registering) return;
-      registering = true;
-      try {
-        if (state.active && !slotDispose.length) {
-          slotDispose.push(slots.inject('main.conversation', () => slots.register({ name: 'main.conversation', priority: -100 }, Anchor)));
-        } else if (!state.active) for (const dispose of slotDispose.splice(0)) dispose();
-      } finally { registering = false; }
-    };
-    const syncPanel = () => {
-      const id = layout.panelInfo.getSnapshot().activePanelId;
-      if (!state.active && id === PANEL) {
-        priorSession = currentSession(); publish({ ...state, active: true, opened: true }); syncSlots(); align();
-      } else if (state.active && id !== PANEL && id !== null) {
-        expected = undefined; pendingFile = undefined; priorSession = undefined;
-        publish({ ...state, active: false, carrier: undefined }); syncSlots();
-      }
-    };
-    const syncSession = () => {
-      if (!state.active) return;
-      if (sessionSelection(expected, currentSession()) === 'align') { expected = undefined; tellGuest(); }
-      else if (currentSession() !== state.carrier) leave(false);
-    };
     const nativeRow = (event: MouseEvent | KeyboardEvent) => {
-      if (!state.active || !(event.target instanceof Element) || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (!controller.store.getSnapshot().active || !(event.target instanceof Element) || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       const row = event.target.closest('[role="treeitem"][data-row-key^="session:"]');
       if (!row || row.getAttribute('aria-description')) return;
       if (event instanceof MouseEvent ? event.button !== 0 || !!event.target.closest('button,a,input,[role="button"]') : event.target !== row || !['Enter', ' '].includes(event.key)) return;
-      leave(false);
+      controller.leave(false);
     };
     document.addEventListener('click', nativeRow, true);
     document.addEventListener('keydown', nativeRow, true);
@@ -401,7 +272,7 @@ export function apply(ctx: Context) {
     const stopRefresh = keyboard
       ? keyboard.subscribe(event => {
           if (shouldRefreshCenterDevelopment({
-            active: state.active,
+            active: controller.store.getSnapshot().active,
             hasModal: hasModal(),
             inRightSidebar: inRightSidebar(),
             chatLease: chatRefresh?.lease,
@@ -414,7 +285,7 @@ export function apply(ctx: Context) {
           const onKeyDown = (event: KeyboardEvent) => {
             if (event.defaultPrevented || event.isComposing) return;
             if (shouldRefreshCenterDevelopment({
-              active: state.active,
+              active: controller.store.getSnapshot().active,
               hasModal: hasModal(),
               inRightSidebar: inRightSidebar(),
               chatLease: chatRefresh?.lease,
@@ -437,29 +308,19 @@ export function apply(ctx: Context) {
           return () => window.removeEventListener('keydown', onKeyDown);
         })();
     const notifyChatActive = () => {
-      if (shouldNotifyChatActive(state.active, document.visibilityState)) sendToChat?.({ active: true });
+      if (shouldNotifyChatActive(controller.store.getSnapshot().active, document.visibilityState)) controller.sendToChat({ active: true });
     };
     window.addEventListener('focus', notifyChatActive);
     document.addEventListener('visibilitychange', notifyChatActive);
-    const stop = [
-      store.subscribe(() => { syncSlots(); tellGuest(); }),
-      layout.panelInfo.subscribe(() => { syncPanel(); tellGuest(); }),
-      sessions.list.subscribe(align),
-      workspaces.list.subscribe(align),
-      uiSession.adapter.current.subscribe(syncSession),
-      sidebarRight.mounted.subscribe(tellGuest),
-      stopRefresh,
-      () => {
-        window.removeEventListener('focus', notifyChatActive);
-        document.removeEventListener('visibilitychange', notifyChatActive);
-        document.removeEventListener('click', nativeRow, true);
-        document.removeEventListener('keydown', nativeRow, true);
-      },
-    ];
-    syncPanel();
+    const disconnectController = controller.connect();
     return () => {
-      syncToolEntries = () => {};
-      for (const call of [...stop, ...slotDispose, ...tools, ...disposeTypes, ...stable].reverse()) call();
+      disconnectController();
+      window.removeEventListener('focus', notifyChatActive);
+      document.removeEventListener('visibilitychange', notifyChatActive);
+      document.removeEventListener('click', nativeRow, true);
+      document.removeEventListener('keydown', nativeRow, true);
+      stopRefresh();
+      for (const call of [...tools, ...disposeTypes, ...stable].reverse()) call();
     };
   }, 'buildr-development: workspace sidebar');
 }

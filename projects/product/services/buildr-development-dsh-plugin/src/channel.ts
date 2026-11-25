@@ -6,3 +6,4 @@ export const released = typeof __BUILDR_DEVELOPMENT_DSH_RELEASED__ === 'boolean'
 export const panelId = released ? 'dsh-buildr-development' : 'buildr-development-dev';
 export const label = released ? 'Buildr Development' : 'Buildr Development Dev';
 export const ORDER = 11;
+export const conversationPriority = released ? -102 : -103;

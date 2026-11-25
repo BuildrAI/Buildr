@@ -58,8 +58,7 @@ Harness MUST 保留 DSH 原生左栏、右栏及开合；在 macOS 下不得在�
 - **THEN** Harness 主工作区只占中栏下方区域，macOS 顶部轻量顶栏清晰显示当前名称与工作空间且左栏收起时自动右移避让不遮挡系统红绿灯和左栏按钮，空白处可正常拖动窗口与双击放大/缩小 DSH，两侧仍由 DSH 管理，Harness 对话和草稿保持
 
 ### Requirement: 自举采用同工作空间的 DSH 开发插件
-
-自举 SHALL 在已交付范围命中开发插件包输入时更新本工作空间已安装的同源 DSH 开发插件。不得注册新插件、改绑其他工作空间、更新正式版或发布。默认 MUST 不停止桌面进程；只有用户显式选择重开开发插件宿主且确认同源实例，才可请求正常退出。安装证明与桌面加载证明 MUST 分开。
+自举 SHALL 在已交付范围命中开发插件包输入时更新本工作空间已安装的同源 DSH 开发插件（`@buildr-ai/dsh-buildr-harness-dev` 与 `@buildr-ai/dsh-buildr-development-dev`，并兼容将本工作空间已安装的旧包名 `@buildr-ai/buildr-harness-dsh-plugin-dev` 与 `@buildr-ai/buildr-development-dsh-plugin-dev` 先卸载再安装新包名）。不得注册新插件、改绑其他工作空间、更新正式版或发布。默认 MUST 不停止桌面进程；只有用户显式选择重开开发插件宿主且确认同源实例，才可请求正常退出。安装证明与桌面加载证明 MUST 分开。
 
 #### Scenario: 交付开发插件且 DSH 仍在运行
 - **WHEN** 自举确认同源插件且桌面仍运行，或无法确认其已退出
@@ -82,11 +81,9 @@ Harness MUST 保留 DSH 原生左栏、右栏及开合；在 macOS 下不得在�
 - **THEN** 独立执行器 MUST 在候选就绪后正常请求退出，确认退出后换包，并以原开发绑定重开；分别核对安装与插件宿主加载。绑定不明、拒绝退出或未验证退出时 MUST 保留待安装，不强杀。
 
 ### Requirement: 正式与开发入口使用相应 Harness
-
-正式插件 SHALL 核对本机正式安装与启动身份，通过受认证桌面桥连接对应 Harness；开发插件 SHALL 显示 Buildr Harness Dev 并连接已明确配置的开发域。两者在 DSH 左侧入口均 SHALL 使用 Buildr Harness 官方彩色 H 品牌图标（无白底方框）。缺失、漂移或不兼容时 MUST 提供修复及复查入口，不静默安装、升级或接管其他实例。
+正式插件 SHALL 核对本机正式安装与启动身份，通过受认证桌面桥连接对应 Harness；开发插件（本机开发包名 `@buildr-ai/dsh-buildr-harness-dev`）SHALL 显示 Buildr Harness Dev 并连接已明确配置的开发域。两者均 SHALL 在产物中导出 `locale/en.json`、`locale/zh.json` 与 `icon.svg` 元数据供 DSH 插件管理页展示可读名称、简介与 Buildr Harness 官方彩色 H 品牌图标（左侧入口同样无白底方框）。缺失、漂移或不兼容时 MUST 提供修复及复查入口，不静默安装、升级或接管其他实例。
 
 #### Scenario: 先装插件后装 Harness
-
 - **WHEN** 用户打开正式插件而正式 Harness 未就绪，随后按提示安装并重试
 - **THEN** 插件 MUST 从缺失状态转为连接核验后的正式 Harness，无须重装插件
 
@@ -115,3 +112,10 @@ DSH 新建资源管理器或源代码管理右栏标签时 MUST 立即给出对�
 
 - **WHEN** 用户在当前绑定工作空间打开一个尚未挂载的工具
 - **THEN** 标签立即显示对应的加载状态，认证成功后进入目标工具，不先打开对话视图
+
+### Requirement: 双插件共存时任意顺序切换不冲突
+Buildr Harness 与 Buildr Development（含各自开发版与正式版）在同一 DSH 配置目录共存时，MUST 为 `main.conversation` 单槽位分配互不冲突的优先级，将槽位切换后的会话对齐延后到面板广播之外执行，并隔离单个状态订阅异常。从 Buildr Development 切换到 Buildr Harness 或反向、反复切换（包括同一工作空间目录共用 DSH 会话时）MUST 正常释放旧占位与浮层并展示目标工作区，不抛出单槽位同优先级冲突或导致中栏白屏。
+
+#### Scenario: 先打开 Buildr Development 后再切换到 Buildr Harness
+- **WHEN** 用户在 DSH 中先激活 Buildr Development（无论两插件在加载器中的初始化与订阅顺序如何），随后点击左侧栏 Buildr Harness 入口
+- **THEN** Buildr Development 立即释放 `main.conversation` 与中心浮层，Buildr Harness 正常注册其独立优先级槽位、完成会话对齐并渲染中心工作区，不因同步广播顺序产生白屏。

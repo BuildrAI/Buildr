@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { pluginIconSvg, pluginLocales, pluginPackageName } from '../src/metadata.ts';
 
 const root = path.resolve(import.meta.dirname, '..');
 const buildRoot = path.join(root, 'build');
@@ -10,7 +11,7 @@ const { build } = require('esbuild') as { build: (options: object) => Promise<un
 
 const released = process.argv.includes('--release');
 const { version: devVersion } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as { version: string };
-const name = released ? '@buildr-ai/dsh-buildr-development' : '@buildr-ai/buildr-development-dsh-plugin-dev';
+const name = pluginPackageName(released);
 const version = released ? process.argv[3] : devVersion;
 if (!version || !/^\d+\.\d+\.\d+(?:-rc\.[1-9]\d*)?$/.test(version) || (released && !process.argv[4])) {
   throw Error('Usage: build-dev.ts [<output> | --release <version> <output>]');
@@ -34,6 +35,11 @@ try {
     banner: { js: `window.__ModuleLoader__.load({id:${JSON.stringify(name)},factory:(require)=>{var module={exports:{}};var exports=module.exports;` },
     footer: { js: 'return module.exports;}});' },
   });
+  const locales = pluginLocales(released);
+  fs.mkdirSync(path.join(stage, 'locale'), { recursive: true });
+  fs.writeFileSync(path.join(stage, 'locale', 'en.json'), JSON.stringify(locales.en, null, 2) + '\n');
+  fs.writeFileSync(path.join(stage, 'locale', 'zh.json'), JSON.stringify(locales.zh, null, 2) + '\n');
+  fs.writeFileSync(path.join(stage, 'icon.svg'), pluginIconSvg);
   fs.writeFileSync(path.join(stage, 'package.json'), JSON.stringify({
     name,
     version,
@@ -41,6 +47,7 @@ try {
     ...(released ? { publishConfig: { access: 'public' } } : { private: true }),
     type: 'module',
     description: released ? 'DSH Buildr Development' : 'Buildr Development Dev',
+    icon: './icon.svg',
     repository: {
       type: 'git',
       url: 'git+https://github.com/BuildrAI/Buildr.git',
@@ -60,8 +67,14 @@ try {
       },
     } : {}),
     main: './lib/index.js',
-    exports: { '.': './lib/index.js', './client': './lib/client.js', './package.json': './package.json' },
-    files: ['lib', 'cordis.patch.yml', 'LICENSE', 'README.md'],
+    exports: {
+      '.': './lib/index.js',
+      './client': './lib/client.js',
+      './icon': './icon.svg',
+      './locale/*.json': './locale/*.json',
+      './package.json': './package.json',
+    },
+    files: ['lib', 'locale', 'icon.svg', 'cordis.patch.yml', 'LICENSE', 'README.md'],
     engines: { dsh: '>=0.2.0-0 <0.3.0-0' },
     dsh: {
       manifestVersion: 1,
@@ -84,7 +97,7 @@ try {
   for (const file of ['README.md', 'LICENSE']) fs.copyFileSync(path.join(root, file), path.join(stage, file));
   const patch = fs.readFileSync(path.join(root, 'cordis.patch.yml'), 'utf8');
   fs.writeFileSync(path.join(stage, 'cordis.patch.yml'), released
-    ? patch.replaceAll('buildr-development-dev', 'dsh-buildr-development').replace('@buildr-ai/buildr-development-dsh-plugin-dev', name)
+    ? patch.replace('@buildr-ai/dsh-buildr-development-dev', name).replace('id: buildr-development-dev', 'id: dsh-buildr-development')
     : patch);
   const packed = spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', out], { cwd: stage, encoding: 'utf8', timeout: 120_000 });
   if (packed.error || packed.status !== 0) throw packed.error ?? Error(packed.stderr);
