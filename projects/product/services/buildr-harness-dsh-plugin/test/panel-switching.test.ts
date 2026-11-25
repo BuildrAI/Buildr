@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { conversationPriority as devConversationPriority, panelId as devPanelId } from '../../buildr-development-dsh-plugin/src/channel.ts';
+import { ORDER as devOrder, conversationPriority as devConversationPriority, panelId as devPanelId } from '../../buildr-development-dsh-plugin/src/channel.ts';
 import { createPanelController as createDevelopmentPanelController, type Observable, type PanelHostContext } from '../../buildr-development-dsh-plugin/src/panel-controller.ts';
-import { conversationPriority as harnessConversationPriority, panelId as harnessPanelId } from '../src/channel.ts';
+import { ORDER as harnessOrder, conversationPriority as harnessConversationPriority, panelId as harnessPanelId } from '../src/channel.ts';
 import { createPanelController as createHarnessPanelController } from '../src/panel-controller.ts';
 
 function createObservable<T>(initial: T): Observable<T> & { set(next: T): void } {
@@ -229,4 +229,28 @@ test('a throwing slot registration does not prevent Shell subscribers from recei
   assert.equal(shellObservedActive, true);
   assert.equal(harness.mountAvailable(), false);
   assert.equal(errors.length > 0, true);
+});
+
+test('sidebar ORDER keeps Buildr Harness before Buildr Development directly below Plugins and above Schedules', async () => {
+  assert.equal(harnessOrder, 5);
+  assert.equal(devOrder, 7);
+  assert.ok(harnessOrder > 0 && harnessOrder < devOrder && devOrder < 10);
+
+  const globals = globalThis as Record<string, unknown>;
+  const prevHarness = globals.__BUILDR_HARNESS_DSH_RELEASED__;
+  const prevDev = globals.__BUILDR_DEVELOPMENT_DSH_RELEASED__;
+  try {
+    globals.__BUILDR_HARNESS_DSH_RELEASED__ = true;
+    globals.__BUILDR_DEVELOPMENT_DSH_RELEASED__ = true;
+    const releasedHarness = await import(`../src/channel.ts?released-order=${Date.now()}`);
+    const releasedDev = await import(`../../buildr-development-dsh-plugin/src/channel.ts?released-order=${Date.now()}`);
+    assert.equal(releasedHarness.ORDER, 4);
+    assert.equal(releasedDev.ORDER, 6);
+    assert.ok(releasedHarness.ORDER > 0 && releasedHarness.ORDER < releasedDev.ORDER && releasedDev.ORDER < 10);
+  } finally {
+    if (prevHarness === undefined) delete globals.__BUILDR_HARNESS_DSH_RELEASED__;
+    else globals.__BUILDR_HARNESS_DSH_RELEASED__ = prevHarness;
+    if (prevDev === undefined) delete globals.__BUILDR_DEVELOPMENT_DSH_RELEASED__;
+    else globals.__BUILDR_DEVELOPMENT_DSH_RELEASED__ = prevDev;
+  }
 });

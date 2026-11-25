@@ -57,10 +57,9 @@ function pruneProfileBundle(manifestPath, legacyName) {
   } catch { /* Non-fatal if profile manifest lacks a bundles array. */ }
 }
 
-function updateSinglePlugin(plugin, { root, nodeExecutable, run, environment, platform, hostCli, restartDsh, continuity, home, dshHome, profile, manifest, env, appExited }) {
+function createPluginHelper(plugin, { root, profile, manifest, run, env }) {
   const ownerRoot = path.join(root, plugin.ownerDir);
   const installed = path.join(profile, 'node_modules', plugin.name);
-  let archive;
   const readBinding = () => {
     const bytes = readFile(manifest);
     const parsed = JSON.parse(bytes);
@@ -82,85 +81,90 @@ function updateSinglePlugin(plugin, { root, nodeExecutable, run, environment, pl
     const expected = run('/usr/bin/tar', ['-xOzf', targetArchive, `package/${file}`], `dsh-verify-${file}`, env, { binary: true }, false);
     return expected.status === 0 && readFile(path.join(installedDir, file)).equals(Buffer.from(expected.stdout));
   });
-  let staging;
+  return { plugin, ownerRoot, installed, readBinding, matches };
+}
+
+function preparePluginCandidate(plugin, context) {
+  const { root, nodeExecutable, run, hostCli, manifest, env } = context;
+  const helper = createPluginHelper(plugin, context);
+  let archive, staging;
   try {
-    if (!fs.existsSync(manifest)) return { status: 'skipped', reason: '未发现已安装的 DSH 开发插件。' };
-    const initial = readBinding();
-    if (!initial) return { status: 'skipped', reason: '未发现已安装的 DSH 开发插件。' };
+    if (!fs.existsSync(manifest)) return { plugin: plugin.name, status: 'skipped', reason: '未发现已安装的 DSH 开发插件。' };
+    const initial = helper.readBinding();
+    if (!initial) return { plugin: plugin.name, status: 'skipped', reason: '未发现已安装的 DSH 开发插件。' };
     const host = fs.existsSync(hostCli) && securePath(hostCli) && run(hostCli, ['--version'], 'dsh-host-version', env);
     if (!host || host.status !== 0 || String(host.stdout).trim() !== hostVersion) {
-      return blocked('当前 DSH 桌面版本不在开发插件支持范围内。');
+      return { plugin: plugin.name, ...blocked('当前 DSH 桌面版本不在开发插件支持范围内。') };
     }
-    if (!matches(initial.archive, initial.installedDir)) return blocked('已装插件与工作空间绑定的旧包不一致，未覆盖。');
-    staging = fs.mkdtempSync(path.join(ownerRoot, 'prepare-'));
+    if (!helper.matches(initial.archive, initial.installedDir)) {
+      return { plugin: plugin.name, ...blocked('已装插件与工作空间绑定的旧包不一致，未覆盖。') };
+    }
+    staging = fs.mkdtempSync(path.join(helper.ownerRoot, 'prepare-'));
     const build = run(nodeExecutable, [path.join(root, plugin.service, 'tools/build-dev.ts'), staging], 'dsh-build-plugin', env);
-    if (build.status !== 0) return blocked('构建 DSH 开发插件失败，未更改安装。');
+    if (build.status !== 0) return { plugin: plugin.name, ...blocked('构建 DSH 开发插件失败，未更改安装。') };
     const output = JSON.parse(String(build.stdout).trim().split('\n').at(-1));
-    if (output.name !== plugin.name || path.dirname(output.path) !== staging || !output.path.endsWith('.tgz')) return blocked('DSH 候选包身份不匹配。');
+    if (output.name !== plugin.name || path.dirname(output.path) !== staging || !output.path.endsWith('.tgz')) {
+      return { plugin: plugin.name, ...blocked('DSH 候选包身份不匹配。') };
+    }
     const bytes = readFile(output.path);
     const identity = hash(bytes);
-    archive = path.join(ownerRoot, `${plugin.archivePrefix}${identity}.tgz`);
+    archive = path.join(helper.ownerRoot, `${plugin.archivePrefix}${identity}.tgz`);
     if (!fs.existsSync(archive)) fs.copyFileSync(output.path, archive, fs.constants.COPYFILE_EXCL);
-    if (hash(readFile(archive)) !== identity) return blocked('DSH 候选包已变化，未更改安装。');
-    if (!initial.isLegacy && matches(archive, installed)) return { status: 'unchanged', archive, desktopLoaded: false };
-    const originalUnchanged = () => {
-      const current = readBinding();
-      return current?.digest === initial.digest && current?.activeName === initial.activeName && matches(initial.archive, initial.installedDir);
-    };
-    const initialEntryDigest = () => hash(readFile(path.join(initial.installedDir, 'lib/index.js')));
-    const currentEntryDigest = () => hash(readFile(path.join(installed, 'lib/index.js')));
-    if (!originalUnchanged()) return blocked('DSH 安装配置或插件文件在准备期间已变化，未覆盖。');
-    let continuityController, verified;
-    if (!appExited()) {
-      if (!restartDsh || !plugin.supportsContinuity) {
-        return { status: 'pending', archive, reason: 'DSH 桌面仍在运行或未确认已退出；候选包已准备。' };
-      }
-      continuityController = continuity({ root, home, nodeExecutable, dataRoot: developmentWebDataRoot(environment, platform, home), run, env, exited: appExited });
-      const quit = continuityController.quit(initialEntryDigest(), originalUnchanged);
-      if (quit.status !== 'exited') return { status: 'pending', archive, desktop: quit.status, reason: '未能确认同源 DSH 实例已正常退出；候选包已准备，未换包。' };
-      verified = quit.verified;
-      if (!originalUnchanged() || !appExited()) return { ...blocked('DSH 退出后配置或运行状态已变化，未换包、未自动重开。'), archive, desktop: 'exited' };
+    if (hash(readFile(archive)) !== identity) return { plugin: plugin.name, ...blocked('DSH 候选包已变化，未更改安装。'), archive };
+    if (!initial.isLegacy && helper.matches(archive, helper.installed)) {
+      return { plugin: plugin.name, status: 'unchanged', archive, desktopLoaded: false, _helper: helper, _initial: initial };
     }
-    if (initial.isLegacy) {
-      let removeResult;
-      try { removeResult = run(hostCli, ['plugin', '--profile', 'desktop', 'remove', initial.activeName], 'dsh-remove-legacy-plugin', env, { timeout: 120000 }); }
-      catch { removeResult = { status: 1, errorCode: 'unknown' }; }
-      if (removeResult.status !== 0) {
-        const restored = verified && !removeResult.signal && !removeResult.errorCode && originalUnchanged() ? continuityController.reopen(verified, initialEntryDigest()) : null;
-        return {
-          ...blocked('移除旧版 DSH 开发插件失败，未安装新版。'),
-          archive,
-          ...(verified ? { desktop: restored?.status || 'exited', desktopLoaded: false } : {}),
-        };
-      }
-      pruneProfileBundle(manifest, initial.activeName);
-    }
-    let result;
-    try { result = run(hostCli, ['plugin', '--profile', 'desktop', 'add', '--ignore-scripts', archive], 'dsh-install-plugin', env, { timeout: 120000 }); }
-    catch { result = { status: 1, errorCode: 'unknown' }; }
-    const after = readBinding();
-    if (!after || after.isLegacy || after.activeName !== plugin.name || after.archive !== archive || !matches(archive, installed)) {
-      const stillOriginal = verified && !result.signal && !result.errorCode && originalUnchanged();
-      const restored = stillOriginal ? continuityController.reopen(verified, initialEntryDigest()) : null;
-      return {
-        ...blocked(result.status === 0 ? 'DSH 安装结果回读不一致。' : 'DSH 换装未确认；已回读配置，不自动重试。'),
-        archive,
-        ...(verified ? { desktop: restored?.status || 'exited', desktopLoaded: false } : {}),
-      };
-    }
-    if (verified && (result.signal || result.errorCode)) {
-      return { status: 'installed', archive, desktop: 'install-result-unconfirmed', desktopLoaded: false };
-    }
-    if (verified) {
-      const opened = continuityController.reopen(verified, currentEntryDigest());
-      return { status: 'installed', archive, desktop: opened.status, desktopLoaded: opened.desktopLoaded };
-    }
-    return { status: 'installed', archive, desktopLoaded: false };
+    return { plugin: plugin.name, status: 'prepared', archive, _helper: helper, _initial: initial };
   } catch (error) {
-    return { ...blocked(error instanceof Error ? error.message : '无法核验 DSH 开发插件。'), ...(archive ? { archive } : {}) };
+    return { plugin: plugin.name, ...blocked(error instanceof Error ? error.message : '无法核验 DSH 开发插件。'), ...(archive ? { archive } : {}) };
   } finally {
     if (staging) fs.rmSync(staging, { recursive: true, force: true });
   }
+}
+
+function summarizeResults(rawResults) {
+  const results = rawResults.map(({ _helper, _initial, ...clean }) => clean);
+  const active = results.filter(item => item.status !== 'skipped');
+  if (!active.length) {
+    const { plugin: _ignored, ...skipped } = results[0];
+    return skipped;
+  }
+  if (active.length === 1) {
+    const { plugin: _ignored, ...single } = active[0];
+    return single;
+  }
+  const blockedResult = active.find(item => item.status === 'blocked');
+  if (blockedResult) {
+    return {
+      status: 'blocked',
+      reason: blockedResult.reason,
+      ...('archive' in blockedResult ? { archive: blockedResult.archive } : {}),
+      ...('desktop' in blockedResult ? { desktop: blockedResult.desktop } : {}),
+      plugins: results,
+    };
+  }
+  const pendingResult = active.find(item => item.status === 'pending');
+  if (pendingResult) {
+    return {
+      status: 'pending',
+      reason: pendingResult.reason,
+      archive: pendingResult.archive,
+      ...('desktop' in pendingResult ? { desktop: pendingResult.desktop } : {}),
+      plugins: results,
+    };
+  }
+  const installedResults = active.filter(item => item.status === 'installed');
+  if (installedResults.length) {
+    const lastInstalled = installedResults.at(-1);
+    return {
+      status: 'installed',
+      archive: lastInstalled.archive,
+      desktopLoaded: installedResults.some(item => item.desktopLoaded),
+      ...('desktop' in lastInstalled ? { desktop: lastInstalled.desktop } : {}),
+      plugins: results,
+    };
+  }
+  return { status: 'unchanged', archive: active.at(-1).archive, desktopLoaded: false, plugins: results };
 }
 
 /** Called only by the retained checkout's self-bootstrap runner, under its lock. */
@@ -192,33 +196,200 @@ export function updateDshDevelopmentPlugin({
     : PLUGINS;
   if (!selected.length) return { status: 'skipped', reason: '未命中任何 DSH 开发插件构建输入。' };
 
-  const results = selected.map(plugin => ({
-    plugin: plugin.name,
-    ...updateSinglePlugin(plugin, { root, nodeExecutable, run, environment, platform, hostCli, restartDsh, continuity, home, dshHome, profile, manifest, env, appExited }),
-  }));
+  const sharedContext = { root, nodeExecutable, run, hostCli, profile, manifest, env };
+  const results = selected.map(plugin => preparePluginCandidate(plugin, sharedContext));
   const active = results.filter(item => item.status !== 'skipped');
-  if (!active.length) {
-    const { plugin: _ignored, ...skipped } = results[0];
-    return skipped;
+  if (!active.length || active.some(item => item.status === 'blocked')) {
+    return summarizeResults(results);
   }
-  if (active.length === 1) {
-    const { plugin: _ignored, ...single } = active[0];
-    return single;
+
+  const pendingIndices = results.flatMap((item, index) => item.status === 'prepared' ? [index] : []);
+  if (!pendingIndices.length) {
+    return summarizeResults(results);
   }
-  const blockedResult = active.find(item => item.status === 'blocked');
-  if (blockedResult) return { status: 'blocked', reason: blockedResult.reason, plugins: results };
-  const pendingResult = active.find(item => item.status === 'pending');
-  if (pendingResult) return { status: 'pending', reason: pendingResult.reason, archive: pendingResult.archive, plugins: results };
-  const installedResults = active.filter(item => item.status === 'installed');
-  if (installedResults.length) {
-    const lastInstalled = installedResults.at(-1);
-    return {
-      status: 'installed',
-      archive: lastInstalled.archive,
-      desktopLoaded: installedResults.some(item => item.desktopLoaded),
-      ...('desktop' in lastInstalled ? { desktop: lastInstalled.desktop } : {}),
-      plugins: results,
+
+  const setAllPending = (update) => {
+    for (const index of pendingIndices) {
+      const current = results[index];
+      results[index] = { plugin: current.plugin, archive: current.archive, ...update(current) };
+    }
+    return summarizeResults(results);
+  };
+
+  try {
+    const pendingItems = pendingIndices.map(index => ({ index, ...results[index] }));
+    let continuityAnchor = pendingItems.find(item => item._helper.plugin.supportsContinuity) || null;
+    if (!continuityAnchor) {
+      const unchangedAnchor = results.find(item => item._helper?.plugin?.supportsContinuity);
+      if (unchangedAnchor) {
+        continuityAnchor = unchangedAnchor;
+      } else {
+        const continuityPlugin = PLUGINS.find(plugin => plugin.supportsContinuity);
+        if (continuityPlugin && fs.existsSync(manifest)) {
+          const helper = createPluginHelper(continuityPlugin, sharedContext);
+          const initial = helper.readBinding();
+          if (initial && helper.matches(initial.archive, initial.installedDir)) {
+            continuityAnchor = { _helper: helper, _initial: initial };
+          }
+        }
+      }
+    }
+
+    const baseManifestDigest = hash(readFile(manifest));
+    const monitoredItems = continuityAnchor && !pendingItems.some(item => item._helper.plugin.name === continuityAnchor._helper.plugin.name)
+      ? [...pendingItems, continuityAnchor]
+      : pendingItems;
+    const itemBindingMatches = (item, expectedManifestDigest) => {
+      const current = item._helper.readBinding();
+      return Boolean(
+        current
+        && current.digest === expectedManifestDigest
+        && current.activeName === item._initial.activeName
+        && current.archive === item._initial.archive
+        && item._helper.matches(item._initial.archive, item._initial.installedDir),
+      );
     };
+    const allOriginalUnchanged = () => monitoredItems.every(item => itemBindingMatches(item, baseManifestDigest));
+    const entryDigest = (item, dir) => hash(readFile(path.join(dir, 'lib/index.js')));
+    const anchorIsPending = continuityAnchor ? pendingItems.some(item => item._helper.plugin.name === continuityAnchor._helper.plugin.name) : false;
+    const anchorInitialEntryDigest = () => entryDigest(continuityAnchor, continuityAnchor._initial.installedDir);
+    const anchorCurrentEntryDigest = () => entryDigest(continuityAnchor, anchorIsPending ? continuityAnchor._helper.installed : continuityAnchor._initial.installedDir);
+
+    if (!allOriginalUnchanged()) {
+      return setAllPending(() => blocked('DSH 安装配置或插件文件在准备期间已变化，未覆盖。'));
+    }
+
+    let continuityController, verified;
+    if (!appExited()) {
+      if (!restartDsh) {
+        return setAllPending(() => ({ status: 'pending', reason: 'DSH 桌面仍在运行或未确认已退出；候选包已准备。' }));
+      }
+      if (!continuityAnchor) {
+        return setAllPending(() => ({ status: 'pending', reason: '未能确认同源 DSH 实例已正常退出；候选包已准备，未换包。' }));
+      }
+      continuityController = continuity({
+        root,
+        home,
+        nodeExecutable,
+        dataRoot: developmentWebDataRoot(environment, platform, home),
+        run,
+        env,
+        exited: appExited,
+      });
+      const quit = continuityController.quit(anchorInitialEntryDigest(), allOriginalUnchanged);
+      if (quit.status !== 'exited') {
+        return setAllPending(() => ({ status: 'pending', desktop: quit.status, reason: '未能确认同源 DSH 实例已正常退出；候选包已准备，未换包。' }));
+      }
+      verified = quit.verified;
+      if (!allOriginalUnchanged() || !appExited()) {
+        return setAllPending(() => ({ ...blocked('DSH 退出后配置或运行状态已变化，未换包、未自动重开。'), desktop: 'exited' }));
+      }
+    }
+
+    let expectedManifestDigest = baseManifestDigest;
+    let anyMutated = false;
+    let unconfirmedInstall = false;
+
+    for (let pos = 0; pos < pendingItems.length; pos++) {
+      const item = pendingItems[pos];
+      if ((verified && !appExited()) || !itemBindingMatches(item, expectedManifestDigest)) {
+        const failReason = 'DSH 退出后配置或运行状态已变化，未换包、未自动重开。';
+        const restored = verified && !anyMutated && allOriginalUnchanged()
+          ? continuityController.reopen(verified, anchorInitialEntryDigest())
+          : null;
+        const desktop = verified ? (restored?.status || 'exited') : undefined;
+        for (let k = pos; k < pendingItems.length; k++) {
+          const rem = pendingItems[k];
+          results[rem.index] = {
+            plugin: rem.plugin,
+            ...blocked(failReason),
+            archive: rem.archive,
+            ...(verified ? { desktop, desktopLoaded: false } : {}),
+          };
+        }
+        return summarizeResults(results);
+      }
+
+      if (item._initial.isLegacy) {
+        let removeResult;
+        try { removeResult = run(hostCli, ['plugin', '--profile', 'desktop', 'remove', item._initial.activeName], 'dsh-remove-legacy-plugin', env, { timeout: 120000 }); }
+        catch { removeResult = { status: 1, errorCode: 'unknown' }; }
+        if (removeResult.status !== 0) {
+          const restored = verified && !anyMutated && !removeResult.signal && !removeResult.errorCode && allOriginalUnchanged()
+            ? continuityController.reopen(verified, anchorInitialEntryDigest())
+            : null;
+          const desktop = verified ? (restored?.status || 'exited') : undefined;
+          for (let k = pos; k < pendingItems.length; k++) {
+            const rem = pendingItems[k];
+            results[rem.index] = {
+              plugin: rem.plugin,
+              ...blocked('移除旧版 DSH 开发插件失败，未安装新版。'),
+              archive: rem.archive,
+              ...(verified ? { desktop, desktopLoaded: false } : {}),
+            };
+          }
+          return summarizeResults(results);
+        }
+        pruneProfileBundle(manifest, item._initial.activeName);
+        anyMutated = true;
+      }
+
+      let result;
+      try { result = run(hostCli, ['plugin', '--profile', 'desktop', 'add', '--ignore-scripts', item.archive], 'dsh-install-plugin', env, { timeout: 120000 }); }
+      catch { result = { status: 1, errorCode: 'unknown' }; }
+      const after = item._helper.readBinding();
+      if (!after || after.isLegacy || after.activeName !== item._helper.plugin.name || after.archive !== item.archive || !item._helper.matches(item.archive, item._helper.installed)) {
+        const stillOriginal = verified && !anyMutated && !result.signal && !result.errorCode && allOriginalUnchanged();
+        const restored = stillOriginal ? continuityController.reopen(verified, anchorInitialEntryDigest()) : null;
+        const desktop = verified ? (restored?.status || 'exited') : undefined;
+        const reason = result.status === 0 ? 'DSH 安装结果回读不一致。' : 'DSH 换装未确认；已回读配置，不自动重试。';
+        for (let k = pos; k < pendingItems.length; k++) {
+          const rem = pendingItems[k];
+          results[rem.index] = {
+            plugin: rem.plugin,
+            ...blocked(reason),
+            archive: rem.archive,
+            ...(verified ? { desktop, desktopLoaded: false } : {}),
+          };
+        }
+        return summarizeResults(results);
+      }
+
+      anyMutated = true;
+      expectedManifestDigest = after.digest;
+      if (verified && (result.signal || result.errorCode)) {
+        unconfirmedInstall = true;
+      }
+      results[item.index] = {
+        plugin: item.plugin,
+        status: 'installed',
+        archive: item.archive,
+        desktopLoaded: false,
+      };
+    }
+
+    if (verified) {
+      if (unconfirmedInstall) {
+        for (const item of pendingItems) {
+          results[item.index] = {
+            ...results[item.index],
+            desktop: 'install-result-unconfirmed',
+            desktopLoaded: false,
+          };
+        }
+        return summarizeResults(results);
+      }
+      const opened = continuityController.reopen(verified, anchorCurrentEntryDigest());
+      for (const item of pendingItems) {
+        results[item.index] = {
+          ...results[item.index],
+          desktop: opened.status,
+          desktopLoaded: item._helper.plugin.supportsContinuity ? opened.desktopLoaded : false,
+        };
+      }
+    }
+    return summarizeResults(results);
+  } catch (error) {
+    return setAllPending(() => blocked(error instanceof Error ? error.message : '无法核验 DSH 开发插件。'));
   }
-  return { status: 'unchanged', archive: active.at(-1).archive, desktopLoaded: false, plugins: results };
 }

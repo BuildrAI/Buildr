@@ -4,7 +4,7 @@
 
 1. **未授权保护与左栏激活**
    - 直接以普通浏览器/缺失桌面头部向 `POST /buildr-development-desktop/open` 或 `POST /dsh-buildr-development/open` 发请求，确认均返回 `403`。
-   - 启动支持版本的 DSH Desktop，确认左侧导航栏 `Buildr Harness Dev`（顺序 10）之后独立呈现 `Buildr Development Dev`（顺序 11）与官方彩色 D 形图标，名称/图标无混淆且不覆盖旧插件配置。
+   - 启动支持版本的 DSH Desktop，确认左侧导航栏紧挨在 `插件`（顺序 0）下方、`自动化任务`（顺序 10）上方，按顺序呈现 `Buildr Harness Dev`（顺序 5）与 `Buildr Development Dev`（顺序 7）与官方彩色图标，名称/图标无混淆且不覆盖旧插件配置。
    - 点击左栏入口，中心区域挂载 `<webview>` 载入 Buildr Development Web（无 `X-Frame-Options` / `CSP` 禁止嵌入错误）；macOS 48px 可拖动顶部栏展示 `Buildr Development` + `Dev` 徽章（正式版无 `Dev` 徽章）。
 
 2. **工作空间联动与原生右侧工作区**
