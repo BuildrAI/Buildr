@@ -9,7 +9,7 @@ const services = path.join(repo, 'projects/product/services');
 const targets = {
   harness: {name:'@buildr-ai/buildr-harness', directory:'buildr-harness', builder:'tools/pack-local.ts', filename:'buildr-ai-buildr-harness', requiresPackage: null},
   'dsh-buildr-harness': {name:'@buildr-ai/dsh-buildr-harness', directory:'buildr-harness-dsh-plugin', builder:'tools/build-dev.ts', filename:'buildr-ai-dsh-buildr-harness', requiresPackage: '@buildr-ai/buildr-harness'},
-  'dsh-buildr-development': {name:'@buildr-ai/dsh-buildr-development', directory:'buildr-development-dsh-plugin', builder:'tools/build-dev.ts', filename:'buildr-ai-dsh-buildr-development', requiresPackage: '@buildr-ai/buildr'},
+  'dsh-buildr': {name:'@buildr-ai/dsh-buildr', directory:'buildr-development-dsh-plugin', builder:'tools/build-dev.ts', filename:'buildr-ai-dsh-buildr', requiresPackage: '@buildr-ai/buildr'},
 } as const;
 export type Target = keyof typeof targets;
 const versionPattern = /^\d+\.\d+\.\d+(?:-rc\.[1-9]\d*)?$/;
@@ -86,7 +86,7 @@ function prepare(target: Target, version: string, dir: string, rehearsal: boolea
 if (import.meta.main) {
   const [command, ...args] = process.argv.slice(2);
   if (!command || command === '--help') {
-    console.log('harness-release.ts prepare <harness|dsh-buildr-harness|dsh-buildr-development> <version> <artifact-directory> [--rehearsal]\n'+
+    console.log('harness-release.ts prepare <harness|dsh-buildr-harness|dsh-buildr> <version> <artifact-directory> [--rehearsal]\n'+
       'harness-release.ts inspect <artifact-directory>');
   } else if (command === 'prepare' && (args.length === 3 || args.length === 4 && args[3] === '--rehearsal')) {
     console.log(JSON.stringify(prepare(args[0] as Target,args[1]!,path.resolve(args[2]!),args[3]==='--rehearsal'),null,2));

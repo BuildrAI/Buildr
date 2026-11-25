@@ -1,6 +1,6 @@
 # Buildr DSH 桌面插件（历史形态）
 
-> 若需使用新一代零 DSH SDK 依赖与独立 `<webview>` 架构的 Buildr Development DSH 插件，请优先参见 [`@buildr-ai/dsh-buildr-development`](../../buildr-development-dsh-plugin/README.md)。
+> 若需使用新一代零 DSH SDK 依赖与独立 `<webview>` 架构的 Buildr DSH 插件，请优先参见 [`@buildr-ai/dsh-buildr`](../../buildr-development-dsh-plugin/README.md)。
 
 本插件（Plugin）在 DSH（DeepSeek Harness）桌面版侧栏底部提供 Buildr 按钮。点击后，主机端（Host）发现本机 Buildr、查询健康状态，客户端（Client）在右侧浏览器打开页面。正式版包 `@buildr-ai/buildr-dsh-plugin` 只服务 npm 安装的 Buildr；开发版包 `@buildr-ai/buildr-dsh-plugin-dev` 只服务本机源码。官方安装管理器正常管理包；合作的新版本在同一运行域核对共同业务资格，冲突版本提供诊断，不自动停用或卸载其他包。
 

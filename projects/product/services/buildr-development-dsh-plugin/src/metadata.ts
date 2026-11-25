@@ -1,5 +1,5 @@
 export function pluginPackageName(released: boolean): string {
-  return released ? '@buildr-ai/dsh-buildr-development' : '@buildr-ai/dsh-buildr-development-dev';
+  return released ? '@buildr-ai/dsh-buildr' : '@buildr-ai/dsh-buildr-dev';
 }
 
 export function pluginLocales(released: boolean): {
@@ -9,27 +9,27 @@ export function pluginLocales(released: boolean): {
   return {
     en: {
       meta: {
-        title: released ? 'Buildr Development' : 'Buildr Development Dev',
+        title: released ? 'Buildr' : 'Buildr Dev',
         description: released
-          ? 'Use your local Buildr Development workbench inside DeepSeek Harness.'
-          : 'Local development Buildr Development workbench in DeepSeek Harness.',
+          ? 'Use your local Buildr workbench inside DeepSeek Harness.'
+          : 'Local development Buildr workbench in DeepSeek Harness.',
       },
     },
     zh: {
       meta: {
-        title: released ? 'Buildr Development' : 'Buildr Development Dev',
+        title: released ? 'Buildr' : 'Buildr Dev',
         description: released
-          ? '在 DeepSeek Harness 中打开并使用本机 Buildr Development 工作台。'
-          : '在 DeepSeek Harness 中连接本机开发版 Buildr Development 工作台。',
+          ? '在 DeepSeek Harness 中打开并使用本机 Buildr 工作台。'
+          : '在 DeepSeek Harness 中连接本机开发版 Buildr 工作台。',
       },
     },
   };
 }
 
 export const pluginIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
-  <path d="M4 5.2A2.2 2.2 0 0 1 6.2 3h4.5v8.1H4V5.2Z" fill="#0a4fb3"/>
-  <path d="M4 12.9h6.7V21H6.2A2.2 2.2 0 0 1 4 18.8v-5.9Z" fill="#0a4fb3"/>
-  <path d="M12.3 3h3.9l4.3 4.3v3.8h-4.2V8.6L14.8 7.1h-2.5V3Z" fill="#f29e04"/>
-  <path d="M12.3 21h3.9l4.3-4.3v-3.8h-4.2v2.5l-1.5 1.5h-2.5V21Z" fill="#0c84f6"/>
+  <path d="M6.2 4.9 11.2 2 14.8 4.1 9.8 7v2.6L6.2 7.5Z" fill="#1f92f6"/>
+  <path d="M10.9 6.36 14.8 4.1 18.3 6.1Q19 6.5 19 7.4V10.5L15.2 12.7V8.8Z" fill="#f8af08"/>
+  <path d="M10.7 11.4 13.2 10 18.3 12.9Q19 13.3 19 14.2V16.7Q19 17.6 18.3 18L16.3 19.1 13.5 17.5 15.2 16.5V15.3L10.7 12.7Z" fill="#14b3a4"/>
+  <path d="M6.2 8.7 9.8 10.8V17.2L11.8 18.4 13.5 17.5 16.5 19.2 11.8 22 4.8 18V16.8L6.2 16Z" fill="#1f92f6"/>
 </svg>
 `;

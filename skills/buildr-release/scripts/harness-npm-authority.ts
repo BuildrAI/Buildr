@@ -3,7 +3,7 @@ export async function checkHarnessNpmAuthority(env = process.env, request = glob
   const target = env.RELEASE_TARGET;
   const name = target === 'harness' ? '@buildr-ai/buildr-harness'
     : target === 'dsh-buildr-harness' ? '@buildr-ai/dsh-buildr-harness'
-    : target === 'dsh-buildr-development' ? '@buildr-ai/dsh-buildr-development' : null;
+    : target === 'dsh-buildr' ? '@buildr-ai/dsh-buildr' : null;
   if (!name || env.GITHUB_ACTIONS !== 'true' || env.RUNNER_ENVIRONMENT !== 'github-hosted' ||
       env.GITHUB_REPOSITORY !== 'BuildrAI/Buildr' || env.GITHUB_REPOSITORY_ID !== '993537957' ||
       env.GITHUB_WORKFLOW_REF !== 'BuildrAI/Buildr/.github/workflows/publish-harness.yml@refs/heads/main' ||

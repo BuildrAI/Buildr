@@ -89,8 +89,9 @@ test('duplicate candidates and non-RC evidence cannot substitute for first relea
   next.admissions[0].version = '0.1.0-rc.3';
   assert.throws(() => verifyHarnessFirstReleasePR(event, repo, '.', evidence({ raw: JSON.stringify(next) })), /first-release-pair-invalid/);
   const devPlugin = JSON.parse(fixtureAdmissions);
+  devPlugin.admissions.push({ ...original, target: 'dsh-buildr', version: '0.1.0-rc.1' });
   devPlugin.admissions.push({ ...original, target: 'dsh-buildr-development', version: '0.1.0-rc.1' });
-  assert.equal(parseAdmissions(JSON.stringify(devPlugin)).length, 3);
+  assert.equal(parseAdmissions(JSON.stringify(devPlugin)).length, 4);
 });
 
 const setup = structuredClone(event);
@@ -121,6 +122,9 @@ test('follow-up admission appends only the selected version, without product or 
   assert.throws(() => verifyHarnessReleaseAdmissionPR(update, repo, '.', evidence({ ...valid, raw: JSON.stringify(candidate) })), /version-mismatch/);
   candidate.admissions[0].proofSha256 = 'a'.repeat(64);
   assert.throws(() => verifyHarnessReleaseAdmissionPR(update, repo, '.', evidence({ ...valid, raw: JSON.stringify(candidate) })), /not-append-only/);
+  const retired = JSON.parse(fixtureAdmissions);
+  retired.admissions.push({ ...original, target: 'dsh-buildr-development', version: '0.1.0-rc.3', sha256: 'b'.repeat(64) });
+  assert.throws(() => verifyHarnessReleaseAdmissionPR(update, repo, '.', evidence({ paths: dataPaths, raw: JSON.stringify(retired) })), /admission-invalid/);
 });
 
 const hosted = {
@@ -137,7 +141,7 @@ const hosted = {
 };
 
 test('authority checks each exact package with no upload or credential in the result', async () => {
-  for (const [target, name] of [['harness', '@buildr-ai/buildr-harness'], ['dsh-buildr-harness', '@buildr-ai/dsh-buildr-harness'], ['dsh-buildr-development', '@buildr-ai/dsh-buildr-development']]) {
+  for (const [target, name] of [['harness', '@buildr-ai/buildr-harness'], ['dsh-buildr-harness', '@buildr-ai/dsh-buildr-harness'], ['dsh-buildr', '@buildr-ai/dsh-buildr']]) {
     let calls = 0;
     const result = await checkHarnessNpmAuthority({ ...hosted, RELEASE_TARGET: target }, async (input, options) => {
       const url = new URL(String(input));

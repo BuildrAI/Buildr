@@ -21,10 +21,10 @@ export const inject = ['slots', 'layout', 'sessions', 'workspaces', 'uiWorkspace
 
 function Mark({ size = 18 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="none" style={{ flexShrink: 0, display: 'block' }}>
-    <path d="M4 5.2A2.2 2.2 0 0 1 6.2 3h4.5v8.1H4V5.2Z" fill="#0a4fb3" />
-    <path d="M4 12.9h6.7V21H6.2A2.2 2.2 0 0 1 4 18.8v-5.9Z" fill="#0a4fb3" />
-    <path d="M12.3 3h3.9l4.3 4.3v3.8h-4.2V8.6L14.8 7.1h-2.5V3Z" fill="#f29e04" />
-    <path d="M12.3 21h3.9l4.3-4.3v-3.8h-4.2v2.5l-1.5 1.5h-2.5V21Z" fill="#0c84f6" />
+    <path d="M6.2 4.9 11.2 2 14.8 4.1 9.8 7v2.6L6.2 7.5Z" fill="#1f92f6" />
+    <path d="M10.9 6.36 14.8 4.1 18.3 6.1Q19 6.5 19 7.4V10.5L15.2 12.7V8.8Z" fill="#f8af08" />
+    <path d="M10.7 11.4 13.2 10 18.3 12.9Q19 13.3 19 14.2V16.7Q19 17.6 18.3 18L16.3 19.1 13.5 17.5 15.2 16.5V15.3L10.7 12.7Z" fill="#14b3a4" />
+    <path d="M6.2 8.7 9.8 10.8V17.2L11.8 18.4 13.5 17.5 16.5 19.2 11.8 22 4.8 18V16.8L6.2 16Z" fill="#1f92f6" />
   </svg>;
 }
 
@@ -49,14 +49,14 @@ const guideIcons: Record<Tool, ComponentType<IconProps>> = {
 };
 
 const messages: Record<string, string> = {
-  'binding-missing': '尚未绑定本机 Buildr Development。请使用配置好开发环境变量的入口重新打开 DSH。',
-  'development-unavailable': '无法连接已绑定的 Buildr Development。请确认安装和运行状态后重试。',
+  'binding-missing': '尚未绑定本机 Buildr。请使用配置好开发环境变量的入口重新打开 DSH。',
+  'development-unavailable': '无法连接已绑定的 Buildr。请确认安装和运行状态后重试。',
   'development-not-installed': '尚未找到正式版 @buildr-ai/buildr。请先全局安装受支持版本的 Buildr，再重新检查。',
   'development-installation-invalid': '无法核对正式版 Buildr 安装或启动器。请修复安装后重试。',
   'development-incompatible': '已安装的 Buildr 版本不在当前插件支持范围内。请升级后重新检查。',
-  'development-platform': '当前平台尚无已支持的正式 Buildr Development 发现入口。',
-  'development-timeout': '打开 Buildr Development 超时。请核对当前运行状态后重试。',
-  'development-navigation': 'Buildr Development 网页未能加载。已有后端服务与会话不受影响。',
+  'development-platform': '当前平台尚无已支持的正式 Buildr 发现入口。',
+  'development-timeout': '打开 Buildr 超时。请核对当前运行状态后重试。',
+  'development-navigation': 'Buildr 网页未能加载。已有后端服务与会话不受影响。',
 };
 
 function Guest({ bridge, tool, onMessage, onControl, onRefresh, canPreviewImage }: {
@@ -129,7 +129,7 @@ export function apply(ctx: Context) {
         userSelect: 'none', WebkitUserSelect: 'none', overflow: 'hidden',
       }}>
         <Mark size={16} />
-        <span style={{ fontWeight: 500, flexShrink: 0, whiteSpace: 'nowrap' }}>Buildr Development</span>
+        <span style={{ fontWeight: 500, flexShrink: 0, whiteSpace: 'nowrap' }}>Buildr</span>
         {!released && <span style={{
           fontSize: 10, lineHeight: '16px', fontWeight: 500, flexShrink: 0,
           padding: '0 5px', borderRadius: 4,
@@ -183,7 +183,7 @@ export function apply(ctx: Context) {
       return tab.actions.bindCommands({ refresh: () => { refreshRef.current?.(); } });
     }, [matching, duplicate, tab.actions]);
     if (duplicate) return null;
-    return <>{!matching && <div role="status" style={{ padding: 12 }}>在绑定此工作空间的 Buildr Development 中使用此标签。</div>}
+    return <>{!matching && <div role="status" style={{ padding: 12 }}>在绑定此工作空间的 Buildr 中使用此标签。</div>}
       {id && <div hidden={!matching} style={{ height: '100%', display: matching ? 'flex' : 'none', flexDirection: 'column' }}><Guest bridge={bridge!} key={id} tool={{ kind, workspaceId: id }}
       onMessage={message => {
         if (message.kind === 'tool-ready') {

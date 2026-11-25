@@ -10,7 +10,7 @@ import { extractReleaseNotes } from './release-notes.ts';
 import { parseAdmissions } from './harness-release-admission.ts';
 
 export const RELEASE_PREFLIGHT_SCHEMA = 'buildr.release-preflight/v1';
-export type PreflightTarget = 'buildr' | 'harness' | 'dsh-buildr-harness' | 'dsh-buildr-development';
+export type PreflightTarget = 'buildr' | 'harness' | 'dsh-buildr-harness' | 'dsh-buildr';
 
 export interface ReleasePreflightCheck {
   id: string;
@@ -37,11 +37,11 @@ export interface ReleasePreflightResult {
   checks: ReleasePreflightCheck[];
 }
 
-const VALID_TARGETS = new Set<PreflightTarget>(['buildr', 'harness', 'dsh-buildr-harness', 'dsh-buildr-development']);
+const VALID_TARGETS = new Set<PreflightTarget>(['buildr', 'harness', 'dsh-buildr-harness', 'dsh-buildr']);
 
 export function releasePreflightUsage(): string {
   return [
-    'Usage: release-preflight.ts [--repo <workspace-root>] --targets <buildr,harness,dsh-buildr-harness,dsh-buildr-development> [--buildr-version <v>] [--harness-version <v>] [--plugin-version <v>] [--dev-plugin-version <v>]',
+    'Usage: release-preflight.ts [--repo <workspace-root>] --targets <buildr,harness,dsh-buildr-harness,dsh-buildr> [--buildr-version <v>] [--harness-version <v>] [--plugin-version <v>] [--dev-plugin-version <v>]',
     '',
     'Read-only pre-worktree release preflight:',
     '  - Verifies package.json / package-lock.json alignment & CHANGELOG section for buildr',
@@ -320,25 +320,25 @@ export function runReleasePreflight(options: ReleasePreflightOptions): ReleasePr
       }
     }
 
-    if (targets.includes('dsh-buildr-development')) {
+    if (targets.includes('dsh-buildr')) {
       const builderPath = path.join(servicesRoot, 'buildr-development-dsh-plugin/tools/build-dev.ts');
       checks.push({
-        id: 'dsh-buildr-development-builder',
-        target: 'dsh-buildr-development',
+        id: 'dsh-buildr-builder',
+        target: 'dsh-buildr',
         status: fs.existsSync(builderPath) ? 'passed' : 'action-required',
         message: fs.existsSync(builderPath)
-          ? 'dsh-buildr-development 独立打包入口存在。'
+          ? 'dsh-buildr 独立打包入口存在。'
           : '缺少 projects/product/services/buildr-development-dsh-plugin/tools/build-dev.ts。',
       });
       if (options.devPluginVersion) {
-        const admitted = admissions.some(item => item.target === 'dsh-buildr-development' && item.version === options.devPluginVersion);
+        const admitted = admissions.some(item => item.target === 'dsh-buildr' && item.version === options.devPluginVersion);
         checks.push({
-          id: 'dsh-buildr-development-admission-status',
-          target: 'dsh-buildr-development',
+          id: 'dsh-buildr-admission-status',
+          target: 'dsh-buildr',
           status: 'info',
           message: admitted
-            ? `dsh-buildr-development@${options.devPluginVersion} 已存在于准入清单。`
-            : `dsh-buildr-development@${options.devPluginVersion} 尚未写入 main 准入清单。`,
+            ? `dsh-buildr@${options.devPluginVersion} 已存在于准入清单。`
+            : `dsh-buildr@${options.devPluginVersion} 尚未写入 main 准入清单。`,
           details: { admitted, version: options.devPluginVersion },
         });
       }

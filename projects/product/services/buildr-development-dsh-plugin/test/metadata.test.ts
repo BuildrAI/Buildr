@@ -29,7 +29,7 @@ test('build-dev emits DSH metadata (package name, locales, icon) for both dev an
     cwd: serviceRoot,
     encoding: 'utf8',
   }));
-  assert.equal(devMeta.name, '@buildr-ai/dsh-buildr-development-dev');
+  assert.equal(devMeta.name, '@buildr-ai/dsh-buildr-dev');
   const devTar = inspectTarball(devMeta.path);
   assert.equal(devTar.pkg.name, pluginPackageName(false));
   assert.equal(devTar.pkg.icon, './icon.svg');
@@ -37,25 +37,29 @@ test('build-dev emits DSH metadata (package name, locales, icon) for both dev an
   assert.equal(devTar.pkg.exports['./locale/*.json'], './locale/*.json');
   assert.ok(devTar.pkg.files.includes('locale'));
   assert.ok(devTar.pkg.files.includes('icon.svg'));
-  assert.match(devTar.patch, /name: ['"]?@buildr-ai\/dsh-buildr-development-dev['"]?/);
+  assert.match(devTar.patch, /id: buildr-dev\b/);
+  assert.match(devTar.patch, /name: ['"]?@buildr-ai\/dsh-buildr-dev['"]?/);
+  assert.equal(devTar.en.meta?.title, 'Buildr Dev');
   assert.deepEqual(devTar.en, pluginLocales(false).en);
   assert.deepEqual(devTar.zh, pluginLocales(false).zh);
   assert.equal(devTar.icon, pluginIconSvg);
   assert.ok(Buffer.byteLength(devTar.icon, 'utf8') <= 256 * 1024);
-  assert.ok(devTar.client.includes(JSON.stringify('@buildr-ai/dsh-buildr-development-dev')));
+  assert.ok(devTar.client.includes(JSON.stringify('@buildr-ai/dsh-buildr-dev')));
 
   const relOut = path.join(tmpDir, 'rel');
   const relMeta = JSON.parse(execFileSync(process.execPath, [path.join(serviceRoot, 'tools/build-dev.ts'), '--release', '0.1.0-rc.1', relOut], {
     cwd: serviceRoot,
     encoding: 'utf8',
   }));
-  assert.equal(relMeta.name, '@buildr-ai/dsh-buildr-development');
+  assert.equal(relMeta.name, '@buildr-ai/dsh-buildr');
   const relTar = inspectTarball(relMeta.path);
   assert.equal(relTar.pkg.name, pluginPackageName(true));
   assert.equal(relTar.pkg.icon, './icon.svg');
-  assert.match(relTar.patch, /name: ['"]?@buildr-ai\/dsh-buildr-development['"]?/);
+  assert.match(relTar.patch, /id: dsh-buildr\b/);
+  assert.match(relTar.patch, /name: ['"]?@buildr-ai\/dsh-buildr['"]?/);
+  assert.equal(relTar.en.meta?.title, 'Buildr');
   assert.deepEqual(relTar.en, pluginLocales(true).en);
   assert.deepEqual(relTar.zh, pluginLocales(true).zh);
   assert.equal(relTar.icon, pluginIconSvg);
-  assert.ok(relTar.client.includes(JSON.stringify('@buildr-ai/dsh-buildr-development')));
+  assert.ok(relTar.client.includes(JSON.stringify('@buildr-ai/dsh-buildr')));
 });

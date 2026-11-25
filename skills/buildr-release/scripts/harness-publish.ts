@@ -123,7 +123,7 @@ export async function runHarnessPublish(
           item.feature === 'desktop-entry' && item.contracts?.includes('buildr.harness-desktop-web/v1'))) {
       throw Error('verified-harness-peer-not-published');
     }
-  } else if (candidate.target === 'dsh-buildr-development') {
+  } else if (candidate.target === 'dsh-buildr') {
     const provider = await queryVersion('@buildr-ai/buildr', proof.buildrVersion);
     if (!provider || provider.dist.integrity !== proof.buildrIntegrity) {
       throw Error('verified-buildr-peer-not-published');
@@ -211,11 +211,11 @@ export async function runHarnessPublish(
   }
 
   let releaseTag: string | undefined;
-  if (candidate.target === 'dsh-buildr-harness' || candidate.target === 'dsh-buildr-development') {
+  if (candidate.target === 'dsh-buildr-harness' || candidate.target === 'dsh-buildr') {
     const tag = `${candidate.target}-v${candidate.version}`;
     releaseTag = tag;
-    const title = candidate.target === 'dsh-buildr-development'
-      ? `DSH Buildr Development ${candidate.version}`
+    const title = candidate.target === 'dsh-buildr'
+      ? `DSH Buildr ${candidate.version}`
       : `DSH Buildr Harness ${candidate.version}`;
     const gh = (...args: string[]) => String(runExec('gh', [...args, '--repo', HARNESS_PUBLISH_REPOSITORY], { encoding: 'utf8', timeout: 60_000 }));
     let release = await github(`releases/tags/${tag}`);

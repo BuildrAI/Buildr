@@ -17,10 +17,10 @@ const PLUGINS = [
   {
     id: 'development',
     service: 'projects/product/services/buildr-development-dsh-plugin',
-    name: '@buildr-ai/dsh-buildr-development-dev',
-    legacyNames: ['@buildr-ai/buildr-development-dsh-plugin-dev'],
+    name: '@buildr-ai/dsh-buildr-dev',
+    legacyNames: ['@buildr-ai/dsh-buildr-development-dev', '@buildr-ai/buildr-development-dsh-plugin-dev'],
     ownerDir: '.buildr/local/buildr-development-dsh-plugin',
-    archivePrefix: 'dsh-buildr-development-dev-',
+    archivePrefix: 'dsh-buildr-dev-',
     supportsContinuity: false,
   },
 ];
