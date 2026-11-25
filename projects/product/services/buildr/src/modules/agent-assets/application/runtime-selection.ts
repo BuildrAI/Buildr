@@ -27,13 +27,75 @@ function containsReceipt(directory: string): boolean {
   return false;
 }
 
-function containsManagedSkill(directory: string): boolean {
+function isPathInsideDirectory(parent: string, candidate: string): boolean {
+  const relative = path.relative(parent, candidate);
+  return Boolean(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+function isSameWorkspacePeerSkillMirror(root: string, file: string, peerSkillRoots: string[]): boolean {
+  let linkTarget: string;
+  try { linkTarget = fs.readlinkSync(file); } catch { return false; }
+  const lexicalTarget = path.resolve(path.dirname(file), linkTarget);
+  let realRoot: string;
+  try { realRoot = fs.realpathSync(root); } catch { return false; }
+
+  for (const peerRoot of peerSkillRoots) {
+    const peerRelFromRoot = path.relative(root, peerRoot);
+    const peerUnderRealRoot = path.join(realRoot, peerRelFromRoot);
+    let matchedPeerRoot: string | null = null;
+    if (isPathInsideDirectory(peerRoot, lexicalTarget)) matchedPeerRoot = peerRoot;
+    else if (isPathInsideDirectory(peerUnderRealRoot, lexicalTarget)) matchedPeerRoot = peerUnderRealRoot;
+    if (!matchedPeerRoot) continue;
+
+    // Peer skills root and its ancestors inside `root` must not traverse symlinks.
+    try { assertEvidencePath(root, peerRoot); } catch { continue; }
+    let peerStat: ReturnType<typeof statIfPresent>;
+    try { peerStat = statIfPresent(peerRoot); } catch { continue; }
+    if (peerStat && !peerStat.isDirectory()) continue;
+
+    // Walk every existing segment under `peerRoot` down to the target: reject chained symlinks.
+    const subRelative = path.relative(matchedPeerRoot, lexicalTarget);
+    let current = peerRoot;
+    let traversesSymlink = false;
+    for (const part of subRelative.split(path.sep).filter(Boolean)) {
+      current = path.join(current, part);
+      let stat: ReturnType<typeof statIfPresent>;
+      try { stat = statIfPresent(current); } catch { traversesSymlink = true; break; }
+      if (!stat) break;
+      if (stat.isSymbolicLink()) { traversesSymlink = true; break; }
+    }
+    if (traversesSymlink) continue;
+
+    // If target exists, verify its realpath stays strictly inside realpath(peerRoot).
+    let targetStat: ReturnType<typeof statIfPresent>;
+    try { targetStat = statIfPresent(current); } catch { continue; }
+    if (targetStat) {
+      try {
+        if (!isPathInsideDirectory(fs.realpathSync(peerRoot), fs.realpathSync(current))) continue;
+      } catch {
+        continue;
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
+function containsManagedSkill(
+  directory: string,
+  topLevelMirrorCheck?: { root: string; peerSkillRoots: string[] },
+): boolean {
   const stat = statIfPresent(directory);
   if (!stat) return false;
   if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`Runtime Skill evidence must be a directory, not a symbolic link: ${directory}`);
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const file = path.join(directory, entry.name);
-    if (entry.isSymbolicLink()) throw new Error(`Runtime Skill evidence must not traverse a symbolic link: ${file}`);
+    if (entry.isSymbolicLink()) {
+      if (topLevelMirrorCheck && isSameWorkspacePeerSkillMirror(topLevelMirrorCheck.root, file, topLevelMirrorCheck.peerSkillRoots)) {
+        continue;
+      }
+      throw new Error(`Runtime Skill evidence must not traverse a symbolic link: ${file}`);
+    }
     if (entry.isDirectory() && containsManagedSkill(file)) return true;
     if (entry.isFile() && entry.name === 'SKILL.md' && hasManagedSkillMarker(fs.readFileSync(file, 'utf8'))) return true;
   }
@@ -69,11 +131,17 @@ export function detectManagedRuntimeAdapters(targetRoot: string): string[] {
   if (!rootStat.isDirectory()) throw new Error(`Target directory does not exist: ${root}`);
   const present = new Set<string>();
   const descriptors = Object.values(RUNTIME_ADAPTERS) as any[];
+  const skillRootsByAdapter = descriptors
+    .filter((adapter) => adapter.id === 'agents-standard' || adapter.traits.skills.root !== '.agents')
+    .map((adapter) => ({ adapterId: adapter.id, skillsDir: path.join(root, adapter.traits.skills.root, 'skills') }));
   for (const adapter of descriptors) {
     if (adapter.id === 'agents-standard' || adapter.traits.skills.root !== '.agents') {
       const skills = path.join(root, adapter.traits.skills.root, 'skills');
       assertEvidencePath(root, skills);
-      if (containsManagedSkill(skills)) present.add(adapter.id);
+      const peerSkillRoots = skillRootsByAdapter
+        .filter((item) => item.adapterId !== adapter.id && item.skillsDir !== skills)
+        .map((item) => item.skillsDir);
+      if (containsManagedSkill(skills, { root, peerSkillRoots })) present.add(adapter.id);
     }
     const ids = adapter.id === 'agents-standard' ? ['agents-standard', 'codex'] : [adapter.id];
     for (const id of ids) {
