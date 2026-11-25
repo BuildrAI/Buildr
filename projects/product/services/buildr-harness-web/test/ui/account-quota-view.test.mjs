@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {accountBillingUrl,accountQuotaView,accountQuotaWarning,accountSourceName,formatQuotaPercent,magpieQuotaOverviewGroups,OPENAI_BILLING_URL,quotaOverviewAccounts,quotaResetCountdown} from '../../src/features/agent-conversations/account-quota-view.ts';
+import {accountBillingUrl,accountQuotaView,accountQuotaWarning,accountSourceName,formatQuotaPercent,magpieQuotaOverviewGroups,OPENAI_BILLING_URL,quotaOverviewAccounts,quotaOverviewSections,quotaResetCountdown} from '../../src/features/agent-conversations/account-quota-view.ts';
 import {modelSourceViews} from '../../src/features/agent-conversations/account-model-view.ts';
 const now=Date.parse('2026-10-30T00:00:00Z');
 const account={id:'a',identity:'i',provider:'deepseek',label:'DeepSeek',accountLabel:'已登录账号',revision:'r',enabled:false,status:'ready',models:[],observedAt:new Date(now).toISOString()};
@@ -110,8 +110,28 @@ test('额度百分比最多保留两位小数且整数不补零，Magpie 浮窗�
   ],
  });
  assert.deepEqual(groups.map(group=>[group.provider,group.label,group.accounts.length]),[
-  ['codex','Codex · Magpie',2],
+  ['codex','Codex',2],
   ['magpie','Magpie',1],
-  ['qoder','Qoder · Magpie',1],
+  ['qoder','Qoder',1],
  ]);
+ assert.ok(groups.every(group=>group.accounts.every(row=>!Object.hasOwn(row,'accountLabel'))));
+ assert.deepEqual(groups[0].accounts.map(row=>row.windows[0].remainingPercent),[92,50]);
+ assert.equal(groups[0].accounts[0].balance,'73523.98 credits');
+ assert.equal(groups[2].accounts[0].plan,'teams');
+});
+
+
+test('浮窗把 Magpie 的上游额度和读取状态集中置底，保留各区块内的原顺序',()=>{
+ const entries=[
+  {kind:'standard',key:'claude-gpt'},
+  {kind:'magpie-group',key:'grok'},
+  {kind:'magpie-fallback',key:'gateway-unavailable'},
+  {kind:'standard',key:'qoder-direct'},
+  {kind:'magpie-group',key:'qoder-gateway'},
+ ];
+ const {standard,magpie}=quotaOverviewSections(entries);
+ assert.deepEqual(standard.map(row=>row.key),['claude-gpt','qoder-direct']);
+ assert.deepEqual(magpie.map(row=>row.key),['grok','gateway-unavailable','qoder-gateway']);
+ assert.deepEqual(quotaOverviewSections([entries[0]]).magpie,[]);
+ assert.deepEqual(quotaOverviewSections([entries[1]]).standard,[]);
 });

@@ -3,7 +3,6 @@ import {
   fallbackApiKeySourceName,
   fallbackBillingLink,
   fallbackKnownSourceName,
-  magpieSourceGroupLabel,
 } from '../../lib/model-picker.ts';
 import type { ModelAccount } from './types.ts';
 
@@ -144,15 +143,21 @@ export type GatewayQuotaSnapshot = {
   }>;
 };
 
+export function quotaOverviewSections<T extends { kind: string }>(entries: readonly T[]) {
+  const standard: T[] = [], magpie: T[] = [];
+  for (const entry of entries) (entry.kind === 'standard' ? standard : magpie).push(entry);
+  return { standard, magpie };
+}
+
 export type MagpieQuotaOverviewGroup = {
   provider: string;
   label: string;
-  accounts: GatewayQuotaSnapshot['accounts'];
+  accounts: Array<Omit<GatewayQuotaSnapshot['accounts'][number], 'accountLabel'>>;
 };
 
 export function magpieQuotaOverviewGroups(snapshot: GatewayQuotaSnapshot): MagpieQuotaOverviewGroup[] {
-  const groups = new Map<string, GatewayQuotaSnapshot['accounts']>();
-  for (const account of snapshot.accounts) {
+  const groups = new Map<string, MagpieQuotaOverviewGroup['accounts']>();
+  for (const { accountLabel: _accountLabel, ...account } of snapshot.accounts) {
     const list = groups.get(account.provider) ?? [];
     list.push(account);
     groups.set(account.provider, list);
@@ -160,7 +165,7 @@ export function magpieQuotaOverviewGroups(snapshot: GatewayQuotaSnapshot): Magpi
   return [...groups.entries()]
     .map(([provider, accounts]) => ({
       provider,
-      label: magpieSourceGroupLabel(accounts[0]?.providerLabel || provider),
+      label: (accounts[0]?.providerLabel || provider),
       accounts,
     }))
     .sort((left, right) => compareSourceNames(left.label, right.label) || left.provider.localeCompare(right.provider));

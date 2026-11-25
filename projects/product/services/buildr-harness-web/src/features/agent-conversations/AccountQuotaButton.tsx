@@ -12,6 +12,7 @@ import {
   groupQuotaWindows,
   magpieQuotaOverviewGroups,
   quotaOverviewAccounts,
+  quotaOverviewSections,
   quotaResetCountdown,
   type GatewayQuotaSnapshot,
   type MagpieQuotaOverviewGroup,
@@ -146,88 +147,95 @@ export function AccountQuotaButton({ onClick, dedicated=false }: Props) {
     || left.key.localeCompare(right.key),
   );
 
+  const { standard, magpie } = quotaOverviewSections(overviewEntries);
+  const renderEntry = (item: OverviewEntry) => {
+    if (item.kind === 'magpie-group') {
+      const { account, group, snapshot, staleError } = item;
+      const single = group.accounts.length === 1;
+      const singleAccount = single ? group.accounts[0]! : undefined;
+      const singlePlan = singleAccount?.plan;
+      const observed = singleAccount?.observedAt ?? snapshot.readAt;
+      const observedText = observed ? new Date(observed).toLocaleString() : '尚未读取';
+      return <section key={item.key} className="is-grouped" data-account-id={account.id} data-magpie-provider={group.provider} title={`额度最近更新：${observedText}`}>
+        <header>
+          <strong>{group.provider === 'magpie' && group.label === 'Magpie' ? '网关额度' : group.label}</strong>
+          {singlePlan && <small className="ac-account-quota-meta" title={singlePlan}>{singlePlan}</small>}
+        </header>
+        {group.accounts.map((acc, index) => <div className="ac-account-quota-rows" key={index}>
+          {!single && <strong className="ac-account-quota-group">{[`账号 ${index + 1}`, acc.plan].filter(Boolean).join(' · ')}</strong>}
+          {acc.balance && <div className="ac-account-quota-row">
+            <span className="ac-account-quota-label">余额</span>
+            <span className="ac-account-quota-value">{acc.balance}</span>
+          </div>}
+          {acc.windows.map((window, windowIndex) => <div className="ac-account-quota-row" key={windowIndex}>
+            <span className="ac-account-quota-label">
+              {window.label}
+              {window.resetsAt && <small className="ac-account-quota-reset" title={new Date(window.resetsAt).toLocaleString()}>{quotaResetCountdown(window.resetsAt)}</small>}
+            </span>
+            <span className="ac-account-quota-value">
+              {window.remainingPercent === undefined ? '剩余未知' : `剩余 ${formatQuotaPercent(window.remainingPercent)}%`}
+            </span>
+          </div>)}
+          {!acc.balance && !acc.windows.length && <div className="ac-account-quota-row">
+            <span className="ac-account-quota-label">暂无额度记录</span>
+            <span className="ac-account-quota-value">未知</span>
+          </div>}
+          {acc.unavailable && <small className="ac-account-quota-warning">上游读取未完成，所列值仅供参考</small>}
+        </div>)}
+        {staleError && <small className="ac-account-quota-warning">本次额度未能更新，显示上次观察</small>}
+      </section>;
+    }
+    if (item.kind === 'magpie-fallback') {
+      const text = item.status === 'loading' ? '正在读取额度…' : item.status === 'empty' ? '尚无额度记录' : '额度暂不可读取';
+      return <section key={item.key} data-account-id={item.account.id}>
+        <strong>{item.sortName === 'Magpie' ? '网关额度' : item.sortName}</strong>
+        <div className="ac-account-quota-value"><p>{text}</p></div>
+      </section>;
+    }
+    const account = item.account;
+    const view = accountQuotaView(account, Date.now(), true), warning = accountQuotaWarning(account);
+    const billing = account.quota?.available ? undefined : accountBillingLink(account);
+    const grouped = view.lines.length > 1;
+    const name = accountSourceName(account);
+    const groups = groupQuotaWindows(view.lines);
+    // 缓存额度直接展示；观察时间保留在悬停标题，不额外提示非实时。
+    return <section key={account.id} className={grouped ? 'is-grouped' : undefined} data-account-id={account.id} title={`额度最近更新：${view.observedLabel}`}>
+      {grouped ? <>
+        <header><strong>{name}</strong></header>
+        {[...groups].map(([title, lines]) => <div className="ac-account-quota-rows" key={title ?? 'windows'}>
+          {title && <strong className="ac-account-quota-group">{title}</strong>}
+          {lines.map((line, index) => <div className="ac-account-quota-row" key={index}>
+            <span className="ac-account-quota-label">
+              {line.label ?? line.text}
+              {line.resetsAt && <small className="ac-account-quota-reset" title={new Date(line.resetsAt).toLocaleString()}>{quotaResetCountdown(line.resetsAt)}</small>}
+            </span>
+            <span className="ac-account-quota-value">
+              {line.percent === undefined ? line.text : `剩余 ${formatQuotaPercent(line.percent)}%`}
+              {line.credits && <span className="ac-account-quota-credits">· {line.credits}</span>}
+            </span>
+          </div>)}
+        </div>)}
+        {warning && <small className="ac-account-quota-warning" title={account.quota?.diagnostic}>{warning}</small>}
+      </> : <>
+        <strong>{name}</strong>
+        <div className="ac-account-quota-value">
+          {billing ? <Button type="default" size="small" href={billing.url} data-harness-web-link target="_blank" rel="noopener noreferrer" icon={<ExportOutlined/>} title={billing.label}>{billing.label}</Button>
+            : view.lines.map((line, index) => <p key={index}>{line.text}{line.resetsAt && <small className="ac-account-quota-reset" title={new Date(line.resetsAt).toLocaleString()}>{quotaResetCountdown(line.resetsAt)}</small>}{line.credits && <span className="ac-account-quota-credits">· {line.credits}</span>}</p>)}
+          {warning && <small className="ac-account-quota-warning" title={account.quota?.diagnostic}>{warning}</small>}
+        </div>
+      </>}
+    </section>;
+  };
+
   const content = <div className="ac-account-quota-overview" data-testid="account-quota-overview">
     {error && <Alert type="warning" showIcon message={error}/>}
     {googleRefreshFailed && <Alert type="warning" showIcon message="Google AI 刷新未完成，保留上次额度"/>}
     {!loaded && !error ? <Spin size="small"/> : !overviewEntries.length && !error ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚无已接入的供应商，点击图标接入"/> : null}
-    {overviewEntries.map(item => {
-      if (item.kind === 'magpie-group') {
-        const { account, group, snapshot, staleError } = item;
-        const single = group.accounts.length === 1;
-        const singleAccount = single ? group.accounts[0]! : undefined;
-        const singleMeta = singleAccount ? [singleAccount.accountLabel, singleAccount.plan].filter(Boolean).join(' · ') : '';
-        const observed = singleAccount?.observedAt ?? snapshot.readAt;
-        const observedText = observed ? new Date(observed).toLocaleString() : '尚未读取';
-        return <section key={item.key} className="is-grouped" data-account-id={account.id} data-magpie-provider={group.provider} title={`额度最近更新：${observedText}`}>
-          <header>
-            <strong>{group.label}</strong>
-            {singleMeta && <small className="ac-account-quota-meta" title={singleMeta}>{singleMeta}</small>}
-          </header>
-          {group.accounts.map((acc, index) => <div className="ac-account-quota-rows" key={index}>
-            {!single && <strong className="ac-account-quota-group">{[acc.accountLabel ? `${acc.accountLabel}（账号 ${index + 1}）` : `账号 ${index + 1}`, acc.plan].filter(Boolean).join(' · ')}</strong>}
-            {acc.balance && <div className="ac-account-quota-row">
-              <span className="ac-account-quota-label">余额</span>
-              <span className="ac-account-quota-value">{acc.balance}</span>
-            </div>}
-            {acc.windows.map((window, windowIndex) => <div className="ac-account-quota-row" key={windowIndex}>
-              <span className="ac-account-quota-label">
-                {window.label}
-                {window.resetsAt && <small className="ac-account-quota-reset" title={new Date(window.resetsAt).toLocaleString()}>{quotaResetCountdown(window.resetsAt)}</small>}
-              </span>
-              <span className="ac-account-quota-value">
-                {window.remainingPercent === undefined ? '剩余未知' : `剩余 ${formatQuotaPercent(window.remainingPercent)}%`}
-              </span>
-            </div>)}
-            {!acc.balance && !acc.windows.length && <div className="ac-account-quota-row">
-              <span className="ac-account-quota-label">暂无额度记录</span>
-              <span className="ac-account-quota-value">未知</span>
-            </div>}
-            {acc.unavailable && <small className="ac-account-quota-warning">上游读取未完成，所列值仅供参考</small>}
-          </div>)}
-          {staleError && <small className="ac-account-quota-warning">本次额度未能更新，显示上次观察</small>}
-        </section>;
-      }
-      if (item.kind === 'magpie-fallback') {
-        const text = item.status === 'loading' ? '正在读取额度…' : item.status === 'empty' ? '尚无额度记录' : '额度暂不可读取';
-        return <section key={item.key} data-account-id={item.account.id}>
-          <strong>{item.sortName}</strong>
-          <div className="ac-account-quota-value"><p>{text}</p></div>
-        </section>;
-      }
-      const account = item.account;
-      const view = accountQuotaView(account, Date.now(), true), warning = accountQuotaWarning(account);
-      const billing = account.quota?.available ? undefined : accountBillingLink(account);
-      const grouped = view.lines.length > 1;
-      const name = accountSourceName(account);
-      const groups = groupQuotaWindows(view.lines);
-      // 缓存额度直接展示；观察时间保留在悬停标题，不额外提示非实时。
-      return <section key={account.id} className={grouped ? 'is-grouped' : undefined} data-account-id={account.id} title={`额度最近更新：${view.observedLabel}`}>
-        {grouped ? <>
-          <header><strong>{name}</strong></header>
-          {[...groups].map(([title, lines]) => <div className="ac-account-quota-rows" key={title ?? 'windows'}>
-            {title && <strong className="ac-account-quota-group">{title}</strong>}
-            {lines.map((line, index) => <div className="ac-account-quota-row" key={index}>
-              <span className="ac-account-quota-label">
-                {line.label ?? line.text}
-                {line.resetsAt && <small className="ac-account-quota-reset" title={new Date(line.resetsAt).toLocaleString()}>{quotaResetCountdown(line.resetsAt)}</small>}
-              </span>
-              <span className="ac-account-quota-value">
-                {line.percent === undefined ? line.text : `剩余 ${formatQuotaPercent(line.percent)}%`}
-                {line.credits && <span className="ac-account-quota-credits">· {line.credits}</span>}
-              </span>
-            </div>)}
-          </div>)}
-          {warning && <small className="ac-account-quota-warning" title={account.quota?.diagnostic}>{warning}</small>}
-        </> : <>
-          <strong>{name}</strong>
-          <div className="ac-account-quota-value">
-            {billing ? <Button type="default" size="small" href={billing.url} data-harness-web-link target="_blank" rel="noopener noreferrer" icon={<ExportOutlined/>} title={billing.label}>{billing.label}</Button>
-              : view.lines.map((line, index) => <p key={index}>{line.text}{line.resetsAt && <small className="ac-account-quota-reset" title={new Date(line.resetsAt).toLocaleString()}>{quotaResetCountdown(line.resetsAt)}</small>}{line.credits && <span className="ac-account-quota-credits">· {line.credits}</span>}</p>)}
-            {warning && <small className="ac-account-quota-warning" title={account.quota?.diagnostic}>{warning}</small>}
-          </div>
-        </>}
-      </section>;
-    })}
+    {standard.map(renderEntry)}
+    {magpie.length > 0 && <div className="ac-account-quota-magpie" role="group" aria-label="Magpie">
+      <strong className="ac-account-quota-magpie-title">Magpie</strong>
+      {magpie.map(renderEntry)}
+    </div>}
   </div>;
   return <Popover title="供应商额度" content={content} placement={full || side === 'left' ? 'topLeft' : 'topRight'} trigger={['hover']} open={previewOpen} mouseEnterDelay={0.2} mouseLeaveDelay={0.5}
     onOpenChange={next => {
