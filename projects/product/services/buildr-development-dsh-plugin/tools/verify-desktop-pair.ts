@@ -333,7 +333,7 @@ export async function verifyDesktopPair(opts: VerifyDesktopPairOptions): Promise
     const launcherOut = await execFileAsync(process.execPath, [buildrEntry, 'web', 'launcher', 'install', '--target', launcherTarget, '--port', String(webPort), '--json'], {
       cwd: env1Dir, env: env1, encoding: 'utf8', timeout: 60_000,
     });
-    assert.equal(JSON.parse(launcherOut.stdout).status, 'installed');
+    assert.equal(JSON.parse(launcherOut.stdout).status, 'ready');
 
     const openRes = await fetch(`${dshOrigin}/dsh-buildr-development/open`, {
       method: 'POST', headers: { cookie: cookieHeader, 'x-buildr-development-desktop': '1' }, signal: AbortSignal.timeout(45_000),
