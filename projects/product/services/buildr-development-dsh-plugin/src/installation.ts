@@ -13,7 +13,7 @@ export function supportsDevelopment(version: unknown): boolean {
   if (!match) return false;
   const minor = Number(match[1]);
   const rc = match[2] === undefined ? null : Number(match[2]);
-  if (minor === 0 && rc !== null) return rc >= 65;
+  if (minor === 0 && rc !== null) return rc >= 67;
   return true;
 }
 
@@ -46,10 +46,10 @@ function discoverFromLauncher(
   dataRoot: string,
 ): Discovery | null {
   const candidates = [
-    path.join(systemApplications, 'Buildr Development.app'),
     path.join(realHome, 'Applications', 'Buildr Development.app'),
-    path.join(systemApplications, 'Buildr Web.app'),
+    path.join(systemApplications, 'Buildr Development.app'),
     path.join(realHome, 'Applications', 'Buildr Web.app'),
+    path.join(systemApplications, 'Buildr Web.app'),
   ];
   for (const target of candidates) {
     if (!fs.lstatSync(target, { throwIfNoEntry: false })) continue;

@@ -5,7 +5,7 @@
 ## 兼容范围
 
 - DSH Desktop: `>=0.2.0-0 <0.3.0-0`（当前 macOS 桌面验收基线 `0.2.2-rc.5`）
-- 正式通道关联产品: `@buildr-ai/buildr` `>=0.1.0-rc.65 <0.2.0-0`
+- 正式通道关联产品: `@buildr-ai/buildr` `>=0.1.0-rc.67 <0.2.0-0`
 - 开发通道（`@buildr-ai/dsh-buildr-development-dev`）: 通过本机受信任 `BUILDR_DEVELOPMENT_DSH_*` 环境变量与默认 `http://127.0.0.1:4458` 连接仓库开发版 Buildr，与 `@buildr-ai/dsh-buildr-harness` / `@buildr-ai/dsh-buildr-harness-dev` 通道、对话槽位优先级与标识完全隔离，可并存安装并任意顺序互切。
 
 ## 主要能力

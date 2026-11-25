@@ -61,7 +61,7 @@ try {
           packageName: '@buildr-ai/buildr',
           feature: 'desktop-entry',
           required: true,
-          versions: { minInclusive: '0.1.0-rc.65', maxExclusive: '0.2.0-0', includePrerelease: true },
+          versions: { minInclusive: '0.1.0-rc.67', maxExclusive: '0.2.0-0', includePrerelease: true },
           contracts: ['buildr.web-protocol/v1'],
         }],
       },

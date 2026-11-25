@@ -212,6 +212,16 @@
       "reason": "Buildr Development 自有组件随该版本按 MIT 公开分发批准。"
     },
     {
+      "name": "@buildr-ai/buildr",
+      "version": "0.1.0-rc.67",
+      "disposition": "approved",
+      "authority": {
+        "name": "陈俊",
+        "source": "Buildr conversation aeddd2dd-3590-38a0-f3f1-a10ee571f0d0 (2026-11-25)"
+      },
+      "reason": "Buildr Development 自有组件随该版本按 MIT 公开分发批准。"
+    },
+    {
       "name": "@chevrotain/cst-dts-gen",
       "version": "13.2.0",
       "disposition": "approved",
