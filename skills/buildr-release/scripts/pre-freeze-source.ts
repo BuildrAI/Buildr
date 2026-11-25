@@ -1,16 +1,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createSourceVerificationPlan } from '../../../projects/product/services/buildr/test/verification/source.ts';
-import { prepareLocalSourceVerification } from '../../../projects/product/services/buildr/test/verification/local-source-verification.ts';
-import { changedVerificationSourcePaths, verificationStepAffectedBy } from '../../../projects/product/services/buildr/test/verification/source-change-applicability.ts';
-import { readCandidateRound } from '../../../projects/product/services/buildr/test/verification/candidate-round.ts';
-import { runVerificationStep } from '../../../projects/product/services/buildr/test/verification/timing/parallel-runner.ts';
+import { importFrozenVerificationModule } from './frozen-verification-modules.ts';
 
 export async function verifySourceBeforeFreeze(input: {
   repo: string; workspace: string; roundId: string; base: string; head: string; options: any; scope?: any;
 }, dependencies: any = {}) {
   const { repo, workspace, roundId, base, head, options, scope } = input;
   const platform = dependencies.platform ?? process.platform;
+  const [
+    { createSourceVerificationPlan },
+    { prepareLocalSourceVerification },
+    { changedVerificationSourcePaths, verificationStepAffectedBy },
+    { readCandidateRound },
+    { runVerificationStep },
+  ] = await Promise.all([
+    importFrozenVerificationModule(repo, 'source.ts', () => import('../../../projects/product/services/buildr/test/verification/source.ts')),
+    importFrozenVerificationModule(repo, 'local-source-verification.ts', () => import('../../../projects/product/services/buildr/test/verification/local-source-verification.ts')),
+    importFrozenVerificationModule(repo, 'source-change-applicability.ts', () => import('../../../projects/product/services/buildr/test/verification/source-change-applicability.ts')),
+    importFrozenVerificationModule(repo, 'candidate-round.ts', () => import('../../../projects/product/services/buildr/test/verification/candidate-round.ts')),
+    importFrozenVerificationModule(repo, 'timing/parallel-runner.ts', () => import('../../../projects/product/services/buildr/test/verification/timing/parallel-runner.ts')),
+  ]);
   const plan = createSourceVerificationPlan(platform);
   if (plan.status !== 'ready') return { status: 'local-verification-required', diagnostic: plan.diagnostic,
     nextActions: ['在声明支持的本机平台执行冻结前源码检查。'] };

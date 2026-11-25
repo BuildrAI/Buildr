@@ -24,16 +24,16 @@
 
 公开 RC 与内部准备使用相同的原包流程，但目标终点不同。公开 RC 请求中的 `prepare` 完成只是中间结果，应接续既有公开步骤，直到核对公开结果或遇到具体阻塞；不能把内部阶段结束当作用户目标完成。已有准确版本、源码范围和公开授权且未变化时沿用原授权，不因跨阶段或换对话重复询问；只准备候选、讨论发布或说“以后在新对话发布”不授权本次公开。未来接续先核对已保存选择与未知副作用，不能因新对话而重建或重发旧请求。
 
-开始耗时验证前，先只读核对发布目标、版本和来源，以及当前适用的发行决定与平台支持声明，尽早说明已知缺口；源码检查通过不等于原包验收或发行资格通过。公开所需决定缺失时，不替负责人批准、不自动放宽门槛；不依赖该决定的内部准备仍可按授权继续。最终公开判断仍以准确原包自身证据为准，不用源码声明替代，也不新增另一套发布门禁或状态。
+开始耗时验证前，先只读核对发布目标、版本和来源，以及当前适用的发行决定与平台支持声明（可通过 `skills/buildr-release/scripts/release-preflight.ts` 在隔离工作树创建前执行只读预检），尽早说明已知缺口；源码检查通过不等于原包验收或发行资格通过。公开所需决定缺失时，不替负责人批准、不自动放宽门槛；不依赖该决定的内部准备仍可按授权继续。最终公开判断仍以准确原包自身证据为准，不用源码声明替代，也不新增另一套发布门禁或状态。
 
 ## 独立 Harness 与 DSH 插件
 
-`harness`、`dsh-buildr-harness` 与 `dsh-buildr-development` 三个目标独立于 `buildr` 和旧 `dsh-plugin`。在规范检出的仓库根使用项目 Node 运行 `node skills/buildr-release/scripts/harness-release.ts prepare <harness|dsh-buildr-harness|dsh-buildr-development> <version> <空目录>`，用 `inspect <目录>` 只读回看。未提交源码只能用 `--rehearsal`，不得把其摘要用作正式候选。
+`harness`、`dsh-buildr-harness` 与 `dsh-buildr-development` 三个目标独立于 `buildr` 和旧 `dsh-plugin`。在规范检出的仓库根使用项目 Node 运行 `node skills/buildr-release/scripts/harness-release.ts prepare <harness|dsh-buildr-harness|dsh-buildr-development> <version> <空目录>`，或通过统一编排入口 `node skills/buildr-release/scripts/harness-release-runner.ts --help` 串联 `preflight`、`prepare`、`handoff`、`admit`、`preserve`、`publish`、`readback` 与 `cleanup`，用 `inspect <目录>` 只读回看。未提交源码只能用 `--rehearsal`，不得把其摘要用作正式候选。
 
-1. 固定对应源码与版本，仅生产一次原包；Harness 用实际 Node 24.15.0 运行 `harness-package-smoke.ts <目录>`，并完成真实启动器、共存和资料保全验收。插件按桌面验收做准确对端、两种安装入口和宿主能力检查。保留绑定原包摘要的 `verification.json` 和真实日志，未通过不登记成功。
+1. 固定对应源码与版本，仅生产一次原包；Harness 用实际 Node 24.15.0 运行 `harness-package-smoke.ts <目录>`，并完成真实启动器、共存和资料保全验收。`dsh-buildr-harness` 与 Harness 配对可使用 `projects/product/services/buildr-harness-dsh-plugin/tools/verify-desktop-pair.ts` 在隔离桌面配置文件运行完整宿主边界与安装链路验收。保留绑定原包摘要的 `verification.json` 和真实日志，未通过不登记成功。
 2. `harness-handoff.ts pack <候选目录> <sha256>` 只建不可变本机数据对象，不写源码引用。按真实 Git 身份、明确授权和精确引用交接返回的 commit 与 ref；调用 `preserve-harness.yml` 校验并保全原包和证明，不重建。仅在本机验包不需要交接远端。
 3. 获得针对包名、版本、原包和渠道的公开授权，核对 npm Trusted Publishing 已绑定 `publish-harness.yml` 和 `npm-production`。受保护 `main` 只采用准入清单精确绑定的交接 run、原包 SHA-256 与验证证明。用同库 `codex/release-harness-admission-v<版本>` PR 逐版本追加已验原包，保留首发与既有记录；准入 PR 只改清单，不宽放普通主线检查。先确认独立 Harness 从官方源可安装，再发配对通过的插件。RC 使用 `next`；插件的 GitHub Release 资产与 npm 原包逐字节一致。
-4. 超时或未知后以原候选选择 `readback`，不自动重传。只在确认相应动作未发出、重新获得准确发布依据后才发新的写入请求。局部失败保留已知事实，按失败渠道补齐，不覆盖既有资产。候选临时 Git 数据引用按精确归属保全后清理。
+4. `publish-harness.yml` 将受 `npm-production` 保护的 `publish`（OIDC 上传 npm）与无需二次环境审批、无 `id-token: write` 的 `finalize`（最长 15 分钟 npm 退避回读与 DSH GitHub Release 创建校验）解耦；若 npm CDN 传播仍未完成，`finalize` 明确返回 `npm-propagation-pending`，后续只需以原候选运行 `mode=readback` 即可无审批补齐，不自动重传。超时或未知后只回读同一候选，局部失败保留已知事实并按失败渠道补齐，候选临时 Git 数据引用按精确归属保全后清理。
 
 ### GitHub 直接上传 npm
 

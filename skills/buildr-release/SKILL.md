@@ -18,11 +18,11 @@ description: 准备、检查、发布或恢复 Buildr Development 主包版本�
 
 ## 独立 Harness 与 DSH 插件首发及更新
 
-独立目标为 `harness`（`@buildr-ai/buildr-harness`）、`dsh-buildr-harness`（`@buildr-ai/dsh-buildr-harness`）和 `dsh-buildr-development`（`@buildr-ai/dsh-buildr-development`）。从规范检出的仓库根以项目 Node 运行 `node skills/buildr-release/scripts/harness-release.ts --help`，按[独立目标流程](../../projects/product/knowledge/docs/flows/open-source-release.md#独立-harness-与-dsh-插件)准备/读取原包、验包、交接和受保护公开。未提交实现的本机 `--rehearsal` 永不进入公开。各个独立目标分别验收和记录，不要求 Development 跟发。`readback` 不发起 npm 上传；公开边界与发布环境审批保持独立。
+独立目标为 `harness`（`@buildr-ai/buildr-harness`）、`dsh-buildr-harness`（`@buildr-ai/dsh-buildr-harness`）和 `dsh-buildr-development`（`@buildr-ai/dsh-buildr-development`）。从规范检出的仓库根以项目 Node 运行 `node skills/buildr-release/scripts/harness-release.ts --help` 或统一编排入口 `node skills/buildr-release/scripts/harness-release-runner.ts --help`（支持 `preflight|prepare|handoff|admit|preserve|publish|readback|cleanup`），按[独立目标流程](../../projects/product/knowledge/docs/flows/open-source-release.md#独立-harness-与-dsh-插件)准备/读取原包、验包、交接和受保护公开。Harness 与 `dsh-buildr-harness` 联合桌面验收使用 `projects/product/services/buildr-harness-dsh-plugin/tools/verify-desktop-pair.ts`。未提交实现的本机 `--rehearsal` 永不进入公开。各个独立目标分别验收和记录，不要求 Development 跟发。`publish-harness.yml` 已拆开受保护上传（`publish`，`npm-production`）与无审批回读收口（`finalize`）；`readback` 不发起 npm 上传且不需要二次 `npm-production` 审批。
 
 ## 日常执行顺序
 
-1. **固定候选**：以冻结检出为准，核对包、版本、分支、提交、比较基线和准确对端。不跟随移动中的 `dev`；日常受影响检查先做，不等发布。冻结后源码变化须重新核对身份和证明，不能覆盖原证据。
+1. **只读发布前预检与固定候选**：创建工作树前可运行 `node skills/buildr-release/scripts/release-preflight.ts --targets ...` 只读核对版本、变更日志、平台支持与第三方许可闭环。再以冻结检出为准，核对包、版本、分支、提交、比较基线和准确对端；不跟随移动中的 `dev`，也不消费外部活跃检出的验证规则。冻结后源码变化须重新核对身份和证明，不能覆盖原证据。
 2. **本机检查、制包、验包**：新主包用 `buildr.local-package/v1`。采用同轮仍适用的源码证明，独立失败收齐后再修复；补失败、未执行或实际失效项。不在验证中改源码。只制一份原包，做通用及本机系统验收；本机验包用实际 Node `24.15.0`。插件或联合候选由插件入口在本机准备准确 SDK 并验收。缓存不能代替检查。
 3. **保全而不重建**：新主包由 GitHub 校验保全同一原包和证明，不在远端重建或补跑重型验包。另一系统为可选独立冒烟，未执行如实记 `not-verified`。正式消费预演或保全失败只修对应环节；保留原包和已有效证据。
 4. **获准公开后核对收尾**：公开同一已验原包，回读官方包、对应 GitHub 发布和逐包结果。检查失败只补检查，汇总失败只补汇总，登记或清理失败不撤销已确认公开事实。保留过程报告，不为补齐报告重跑；本机开发应用激活是另一项工作。

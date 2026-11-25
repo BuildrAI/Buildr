@@ -1,32 +1,31 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { runVerificationStep } from '../../../projects/product/services/buildr/test/verification/timing/parallel-runner.ts';
 import { readReleaseArtifact } from './release-artifact.ts';
 import { artifactFromTarball, packageArtifactInputSchema } from './package-artifact-observation.ts';
 import { prepareLocalPlugin, prepareRegistryPlugin } from './local-plugin-preparation.ts';
-import { prepareLocalSourceVerification } from '../../../projects/product/services/buildr/test/verification/local-source-verification.ts';
-import { decodeCandidateSourceImport } from '../../../projects/product/services/buildr/test/verification/candidate-source-reuse.ts';
-import { readCandidateArtifactImports } from '../../../projects/product/services/buildr/test/verification/candidate-artifact-reuse.ts';
-import { assertFrozenCandidateCheckout } from '../../../projects/product/services/buildr/test/verification/candidate-artifact-reuse.ts';
+import { importFrozenVerificationModule } from './frozen-verification-modules.ts';
 import { parseCandidateDeclaredScope } from '../../../projects/product/services/buildr/test/verification/candidate-declared-scope.ts';
 import { verificationSteps, CANDIDATE_CI_HOST_NODE_TUPLES } from '../../../projects/product/services/buildr/test/verification/registry.ts';
 import { assertPublicHandoffData, createPackageHandoff, localPackagePlatform, LOCAL_PACKAGE_MODEL, LOCAL_PLATFORM_POLICY } from './local-package-handoff.ts';
-import { currentVerificationRules, retainVerificationRules } from '../../../projects/product/services/buildr/test/verification/release/verification-rules.ts';
-import { readCandidateRound } from '../../../projects/product/services/buildr/test/verification/candidate-round.ts';
 import { preflightLocalConsumption } from './local-consumption-preflight.ts';
 
 const write = (file: string, value: any) => fs.writeFileSync(file, JSON.stringify(value) + '\n');
 
-/** One frozen decision is consumed by source, local artifact, remote artifact and publication. */
-export function localPackageVerificationScope(options: any, previous?: any): any {
+function buildVerificationScope(
+  options: any,
+  tuples: readonly any[],
+  steps: readonly any[],
+  parseScope: (raw: string) => any,
+  previous?: any,
+): any {
   const requested = options.excludedBoundaries?.length || options.selectedChecks?.length;
   if (!requested) return previous ?? null;
   const selected = options.selectedChecks ? new Set<string>(options.selectedChecks) : null;
-  const value = parseCandidateDeclaredScope(JSON.stringify({
+  const value = parseScope(JSON.stringify({
     excludedBoundaries: options.excludedBoundaries ?? [],
     excludedEvidenceIds: options.excludedBoundaries?.includes('E2E') || selected && !selected.has('host-node-compatibility')
-      ? CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => tuple.id) : [],
-    excludedStepIds: selected ? verificationSteps.filter((step: any) => step.profiles.includes('candidate')
+      ? tuples.map((tuple: any) => tuple.id) : [],
+    excludedStepIds: selected ? steps.filter((step: any) => step.profiles.includes('candidate')
       && step.executor?.type !== 'candidate-artifact' && !selected.has(step.id)).map((step: any) => step.id) : [],
     statement: options.scopeStatement || (selected ? `用户指定本轮只执行：${[...selected].sort().join(', ')}` : ''),
   }));
@@ -34,10 +33,45 @@ export function localPackageVerificationScope(options: any, previous?: any): any
   return value;
 }
 
+/** One frozen decision is consumed by source, local artifact, remote artifact and publication. */
+export function localPackageVerificationScope(options: any, previous?: any): any {
+  return buildVerificationScope(options, CANDIDATE_CI_HOST_NODE_TUPLES, verificationSteps, parseCandidateDeclaredScope, previous);
+}
+
+/** Frozen-checkout-aware variant that prefers the candidate worktree's registry and scope parser. */
+export async function resolveLocalPackageVerificationScope(options: any, previous?: any, repo?: string): Promise<any> {
+  const requested = options.excludedBoundaries?.length || options.selectedChecks?.length;
+  if (!requested) return previous ?? null;
+  const [registryMod, scopeMod] = await Promise.all([
+    importFrozenVerificationModule(repo, 'registry.ts', () => import('../../../projects/product/services/buildr/test/verification/registry.ts')),
+    importFrozenVerificationModule(repo, 'candidate-declared-scope.ts', () => import('../../../projects/product/services/buildr/test/verification/candidate-declared-scope.ts')),
+  ]);
+  return buildVerificationScope(options, registryMod.CANDIDATE_CI_HOST_NODE_TUPLES, registryMod.verificationSteps, scopeMod.parseCandidateDeclaredScope, previous);
+}
+
 export async function prepareLocalMainPackage(options: {
   repo: string; workspace: string; roundId: string; sourceCommit: string; sourceTree: string;
   sourceFile?: string; base?: string; platform?: NodeJS.Platform; scope?: any; plan?: any; previous?: any; peer?: any;
 }, dependencies: any = {}): Promise<any> {
+  const [
+    { runVerificationStep },
+    { prepareLocalSourceVerification },
+    { decodeCandidateSourceImport },
+    { readCandidateArtifactImports, assertFrozenCandidateCheckout },
+    { verificationSteps: frozenSteps },
+    { currentVerificationRules, retainVerificationRules },
+    { readCandidateRound },
+    { createLocalArtifactPlan },
+  ] = await Promise.all([
+    importFrozenVerificationModule(options.repo, 'timing/parallel-runner.ts', () => import('../../../projects/product/services/buildr/test/verification/timing/parallel-runner.ts')),
+    importFrozenVerificationModule(options.repo, 'local-source-verification.ts', () => import('../../../projects/product/services/buildr/test/verification/local-source-verification.ts')),
+    importFrozenVerificationModule(options.repo, 'candidate-source-reuse.ts', () => import('../../../projects/product/services/buildr/test/verification/candidate-source-reuse.ts')),
+    importFrozenVerificationModule(options.repo, 'candidate-artifact-reuse.ts', () => import('../../../projects/product/services/buildr/test/verification/candidate-artifact-reuse.ts')),
+    importFrozenVerificationModule(options.repo, 'registry.ts', () => import('../../../projects/product/services/buildr/test/verification/registry.ts')),
+    importFrozenVerificationModule(options.repo, 'release/verification-rules.ts', () => import('../../../projects/product/services/buildr/test/verification/release/verification-rules.ts')),
+    importFrozenVerificationModule(options.repo, 'candidate-round.ts', () => import('../../../projects/product/services/buildr/test/verification/candidate-round.ts')),
+    importFrozenVerificationModule(options.repo, 'artifact.ts', () => import('../../../projects/product/services/buildr/test/verification/artifact.ts')),
+  ]);
   const platforms = localPackagePlatform(options.platform);
   const service = path.join(options.repo, 'projects/product/services/buildr');
   const directory = path.join(service, 'build/verification/candidates', options.sourceCommit);
@@ -48,7 +82,7 @@ export async function prepareLocalMainPackage(options: {
   const sourceFile = options.sourceFile ?? path.join(options.workspace, 'projects/product/services/buildr/build/verification/candidate-rounds', `${options.roundId}.json`);
   const excluded = new Set<string>(options.scope?.excludedBoundaries ?? []);
   const excludedSteps = new Set<string>(options.scope?.excludedStepIds ?? []);
-  const selectedStepIds = options.scope ? verificationSteps.filter((step: any) => step.profiles.includes('candidate')
+  const selectedStepIds = options.scope ? frozenSteps.filter((step: any) => step.profiles.includes('candidate')
     && (step.executor?.type === 'candidate-artifact' || !excluded.has(step.testing?.executionBoundary) && !excludedSteps.has(step.id))).map((step: any) => step.id) : undefined;
   const source = await (dependencies.prepareSource ?? prepareLocalSourceVerification)({
     repo: options.repo, sourceFile, roundId: options.roundId, base: options.base, platform: options.platform,
@@ -137,7 +171,6 @@ export async function prepareLocalMainPackage(options: {
   fs.mkdirSync(directory, { recursive: true });
   const artifactImports = (dependencies.readArtifactImports ?? readCandidateArtifactImports)(evidenceDirectory);
   // A green child exit alone never substitutes for the actual complete proof.
-  const { createLocalArtifactPlan } = await import('../../../projects/product/services/buildr/test/verification/artifact.ts');
   const localPlan = createLocalArtifactPlan(options.platform, { verificationScope: options.scope });
   if (localPlan.nodes.some((node: any) => !artifactImports.some((item: any) => item.id === node.id && item.status === 'passed'))) {
     throw new Error('Local package verification returned without its complete evidence.');

@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { createPackageHandoff, createPackageHandoffCommit, restorePackageHandoff, validatePackageHandoff, LOCAL_PLATFORM_POLICY } from '../../../../../../skills/buildr-release/scripts/local-package-handoff.ts';
 import { continueLocalPackageCandidate } from '../../../../../../skills/buildr-release/scripts/local-package-operation.ts';
@@ -527,4 +528,77 @@ test('plugin SDK preparation waits for the asynchronous executor result', async 
     },
   }), /ensure-release-sdk\.ts failed/);
   assert.deepEqual(commands, ['ensure-release-sdk.ts']);
+});
+
+test('frozen release verification isolation loads registry, rules, and pre-freeze planners from frozen repo before canonical fallback', async t => {
+  const { resolveFrozenVerificationModuleUrl, importFrozenVerificationModule } = await import('../../../../../../skills/buildr-release/scripts/frozen-verification-modules.ts');
+  const { verifySourceBeforeFreeze } = await import('../../../../../../skills/buildr-release/scripts/pre-freeze-source.ts');
+  const { resolveLocalPackageVerificationScope } = await import('../../../../../../skills/buildr-release/scripts/local-package-preparation.ts');
+
+  const frozenRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-frozen-isolation-'));
+  t.after(() => fs.rmSync(frozenRepo, { recursive: true, force: true }));
+  const writeFrozen = (rel: string, code: string) => {
+    const file = path.join(frozenRepo, 'projects/product/services/buildr/test/verification', rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, code);
+  };
+
+  writeFrozen('registry.ts', `
+    export const CANDIDATE_CI_HOST_NODE_TUPLES = [{ id: 'frozen-host-node' }];
+    export const verificationSteps = [
+      { id: 'frozen-step-only', profiles: ['candidate'], executor: { type: 'node-test' }, testing: { executionBoundary: 'Unit' } },
+    ];
+  `);
+  writeFrozen('candidate-declared-scope.ts', `
+    export function parseCandidateDeclaredScope(raw) {
+      const value = JSON.parse(raw);
+      return { ...value, identity: 'sha256-' + 'f'.repeat(64) };
+    }
+  `);
+  writeFrozen('source.ts', `
+    export function createSourceVerificationPlan(platform) {
+      return { status: 'ready', platform, steps: [{ id: 'frozen-pre-freeze-check', testing: { executionBoundary: 'Unit' } }] };
+    }
+  `);
+  writeFrozen('source-change-applicability.ts', `
+    export function changedVerificationSourcePaths() { return ['projects/product/services/buildr/src/frozen.ts']; }
+    export function verificationStepAffectedBy(step) { return step.id === 'frozen-pre-freeze-check'; }
+  `);
+  writeFrozen('local-source-verification.ts', `
+    export async function prepareLocalSourceVerification(input) {
+      return { status: 'ready', fromFrozenRepo: true, selectedStepIds: input.selectedStepIds };
+    }
+  `);
+  writeFrozen('candidate-round.ts', 'export function readCandidateRound() { return { records: [] }; }\n');
+  writeFrozen('timing/parallel-runner.ts', 'export async function runVerificationStep() { return { status: "passed" }; }\n');
+
+  assert.equal(
+    resolveFrozenVerificationModuleUrl(frozenRepo, 'registry.ts'),
+    pathToFileURL(path.join(frozenRepo, 'projects/product/services/buildr/test/verification/registry.ts')).href,
+  );
+  assert.equal(resolveFrozenVerificationModuleUrl(path.join(frozenRepo, 'missing-tree'), 'registry.ts'), null);
+
+  const loaded = await importFrozenVerificationModule<any>(frozenRepo, 'registry.ts', async () => assert.fail('must prefer frozen repo module'));
+  assert.equal(loaded.verificationSteps[0].id, 'frozen-step-only');
+
+  const scope = await resolveLocalPackageVerificationScope({ selectedChecks: ['frozen-step-only'], excludedBoundaries: ['E2E'] }, undefined, frozenRepo);
+  assert.deepEqual(scope.excludedEvidenceIds, ['frozen-host-node']);
+  assert.deepEqual(scope.excludedStepIds, []);
+
+  const preFreeze = await verifySourceBeforeFreeze({
+    repo: frozenRepo,
+    workspace: frozenRepo,
+    roundId: 'isolated-round',
+    base: 'a'.repeat(40),
+    head: 'b'.repeat(40),
+    options: {},
+  });
+  assert.equal(preFreeze.fromFrozenRepo, true);
+  assert.deepEqual(preFreeze.selectedStepIds, ['frozen-pre-freeze-check']);
+
+  // Fallback remains intact when minimal fixture repo lacks projects/product tree
+  const minimalRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-minimal-fixture-'));
+  t.after(() => fs.rmSync(minimalRepo, { recursive: true, force: true }));
+  const fallbackScope = await resolveLocalPackageVerificationScope({ excludedBoundaries: ['E2E', 'Static', 'Integration', 'Unit'], scopeStatement: 'fixture fallback' }, undefined, minimalRepo);
+  assert.ok(fallbackScope.identity.startsWith('sha256-'));
 });

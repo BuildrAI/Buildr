@@ -45,6 +45,7 @@ try{
   // The receipt can become ready before the supervisor registers its source watchers.
   const startupAnnouncement = `Buildr dev: ${origin} (same-origin source + API + HMR)`;
   await until(() => read(statusFile)?.phase === 'ready' && output.includes(startupAnnouncement), 'live host and source watcher startup');
+  await new Promise(resolve => setTimeout(resolve, 300));
   const initial=read(instanceFile),runtimeFile=path.join(process.env.BUILDR_APP_DATA_DIR!,'agent-service/process/instance.json'),generation=read(runtimeFile).identity.generation;
   assert.equal(initial.url,origin);
   if (!recoveryOnly) {
