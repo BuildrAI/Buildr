@@ -73,9 +73,9 @@ export function harnessReleaseRunnerUsage(): string {
   return [
     'Usage: harness-release-runner.ts <command> [options]',
     '',
-    'Unified local orchestrator for harness, dsh-buildr-harness, and dsh-buildr-development:',
+    'Unified local orchestrator for harness, dsh-buildr-harness, and dsh-buildr:',
     '  preflight   --targets <list> [--buildr-version <v>] [--harness-version <v>] [--plugin-version <v>] [--repo <dir>]',
-    '  prepare     --target <harness|dsh-buildr-harness|dsh-buildr-development> --version <v> --dir <empty-dir> [--rehearsal]',
+    '  prepare     --target <harness|dsh-buildr-harness|dsh-buildr> --version <v> --dir <empty-dir> [--rehearsal]',
     '  handoff     --dir <candidate-dir> [--push] [--repo <dir>]',
     '  admit       --version <v> --dir <candidate-dir> [--dir <dir2> ...] [--write] [--push] [--create-pr] [--local-base] [--branch <name>] [--repo <dir>]',
     '  preserve    --dir <candidate-dir> [--wait] [--repo <dir>]',
@@ -270,7 +270,7 @@ export async function verifyPublicHarnessRelease(
 
   let releaseTag: string | null = null;
   let releaseUrl: string | null = null;
-  if (candidate.target === 'dsh-buildr-harness' || candidate.target === 'dsh-buildr-development') {
+  if (candidate.target === 'dsh-buildr-harness' || candidate.target === 'dsh-buildr') {
     const cwd = options.repo ?? process.cwd();
     releaseTag = `${candidate.target}-v${candidate.version}`;
     const release = JSON.parse(runCommand('gh', ['release', 'view', releaseTag, '--repo', HARNESS_RUNNER_REPO, '--json', 'tagName,url,assets'], cwd, deps));

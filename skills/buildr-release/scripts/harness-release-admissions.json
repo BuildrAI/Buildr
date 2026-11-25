@@ -36,15 +36,6 @@
       "sha256": "b2a97d9b8887a25078605d5f378b9998ed1767cff0c6547e33b4eecf7fb53968",
       "integrity": "sha512-Gi4nBmEdwCWirrLzYiD0z1tBGkL0cUi7mTcqaNS+A7A114cUXfM/d9cXGVwPu5SSTD9qifr7o3qVtpTCdMTKsQ==",
       "proofSha256": "bbaaaacc231e74c6361b1a44efb7c7982c0d0a1c226a41fde69fc4c18a104b99"
-    },
-    {
-      "target": "dsh-buildr-development",
-      "version": "0.1.0-rc.1",
-      "sourceCommit": "23d1379fd969fe5dd4dfeeba4150def66178873b",
-      "sourceTree": "166fe91ad0ce95cacd4ee012260c4bc818176728",
-      "sha256": "5f12dc4e06a8ec7d308bc7060ae576deba1488ae289b4f30112c4966cb334ea6",
-      "integrity": "sha512-3e7506m8eoXK7v86TqykxNt5PVK3CakZOUQPj8U8w3XMUodaBx5ghZvbWpicIRN7pkEgudCjhtnn3uSjI689CA==",
-      "proofSha256": "7a35c483070dbc55e4d3d62377ce4021066c2cc68bbda92e9e4e0060638db7de"
     }
   ]
 }

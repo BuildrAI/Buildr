@@ -26,7 +26,7 @@ export function verifyDesktopPairUsage(): string {
   return [
     'Usage: verify-desktop-pair.ts --buildr-tarball <tgz> --plugin-dir <dir> [--buildr-version <v>] [--buildr-integrity <sha512>] [--output <verification.json>] [--summary <desktop-pair.json>] [--dsh-app <app-path>]',
     '',
-    'Runs isolated macOS DSH Desktop acceptance against a published Buildr package tarball and DSH Buildr Development candidate:',
+    'Runs isolated macOS DSH Desktop acceptance against a published Buildr package tarball and DSH Buildr candidate:',
     '  1. Initializes isolated DSH desktop profiles and installs the plugin via local HTTP npm registry & direct tarball URL',
     '  2. Verifies desktop boundary checks (403 without desktop header, 403 with Origin, 409 when @buildr-ai/buildr is absent)',
     '  3. Installs the Buildr tarball + launcher without reinstalling the plugin and verifies 200 handoff & guest web assets',
@@ -227,7 +227,7 @@ export async function verifyDesktopPair(opts: VerifyDesktopPairOptions): Promise
       res.end(pluginBytes);
       return;
     }
-    if (reqUrl === '/@buildr-ai%2Fdsh-buildr-development' || reqUrl === '/@buildr-ai/dsh-buildr-development') {
+    if (reqUrl === '/@buildr-ai%2Fdsh-buildr' || reqUrl === '/@buildr-ai/dsh-buildr') {
       const pkgMeta = JSON.parse(execFileSync('tar', ['-xOzf', pluginTarball, 'package/package.json'], { encoding: 'utf8' }));
       const body = JSON.stringify({
         name: pluginCandidate.packageName,
@@ -278,7 +278,7 @@ export async function verifyDesktopPair(opts: VerifyDesktopPairOptions): Promise
       cwd: env1Dir, env: env1, timeout: 120_000, maxBuffer: 16 * 1024 * 1024,
     });
     const desktopProfile1 = path.join(dshHome1, 'profiles', 'desktop');
-    verifyInstalledPluginMatchesTarball(path.join(desktopProfile1, 'node_modules', '@buildr-ai', 'dsh-buildr-development'), pluginTarball);
+    verifyInstalledPluginMatchesTarball(path.join(desktopProfile1, 'node_modules', '@buildr-ai', 'dsh-buildr'), pluginTarball);
 
     const child = fork(dshHostEntry, [dshRuntimeDir, desktopProfile1, dshPrimaryRuntime, dshPnpm, dshRuntimeBin], {
       cwd: desktopProfile1,
@@ -305,18 +305,18 @@ export async function verifyDesktopPair(opts: VerifyDesktopPairOptions): Promise
     const cookieHeader = authRes.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');
     assert.ok(cookieHeader.length > 0, `Expected session cookie from ${ready.url}, status=${authRes.status}`);
 
-    const rejectNoHeader = await fetch(`${dshOrigin}/dsh-buildr-development/open`, {
+    const rejectNoHeader = await fetch(`${dshOrigin}/dsh-buildr/open`, {
       method: 'POST', headers: { cookie: cookieHeader }, signal: AbortSignal.timeout(5000),
     });
     assert.equal(rejectNoHeader.status, 403);
     assert.equal(((await rejectNoHeader.json()) as { code: string }).code, 'desktop-required');
 
-    const rejectWithOrigin = await fetch(`${dshOrigin}/dsh-buildr-development/open`, {
+    const rejectWithOrigin = await fetch(`${dshOrigin}/dsh-buildr/open`, {
       method: 'POST', headers: { cookie: cookieHeader, 'x-buildr-development-desktop': '1', origin: dshOrigin }, signal: AbortSignal.timeout(5000),
     });
     assert.equal(rejectWithOrigin.status, 403);
 
-    const missingPeerRes = await fetch(`${dshOrigin}/dsh-buildr-development/open`, {
+    const missingPeerRes = await fetch(`${dshOrigin}/dsh-buildr/open`, {
       method: 'POST', headers: { cookie: cookieHeader, 'x-buildr-development-desktop': '1' }, signal: AbortSignal.timeout(10_000),
     });
     assert.equal(missingPeerRes.status, 409);
@@ -333,9 +333,9 @@ export async function verifyDesktopPair(opts: VerifyDesktopPairOptions): Promise
     const launcherOut = await execFileAsync(process.execPath, [buildrEntry, 'web', 'launcher', 'install', '--target', launcherTarget, '--port', String(webPort), '--json'], {
       cwd: env1Dir, env: env1, encoding: 'utf8', timeout: 60_000,
     });
-    assert.equal(JSON.parse(launcherOut.stdout).status, 'installed');
+    assert.equal(JSON.parse(launcherOut.stdout).status, 'ready');
 
-    const openRes = await fetch(`${dshOrigin}/dsh-buildr-development/open`, {
+    const openRes = await fetch(`${dshOrigin}/dsh-buildr/open`, {
       method: 'POST', headers: { cookie: cookieHeader, 'x-buildr-development-desktop': '1' }, signal: AbortSignal.timeout(45_000),
     });
     assert.equal(openRes.status, 200);
@@ -376,7 +376,7 @@ export async function verifyDesktopPair(opts: VerifyDesktopPairOptions): Promise
     await execFileAsync(dshCli, ['plugin', '--profile', 'desktop', 'add', `${baseUrl}/${pluginCandidate.file}`], {
       cwd: env2Dir, env: env2, timeout: 120_000, maxBuffer: 16 * 1024 * 1024,
     });
-    verifyInstalledPluginMatchesTarball(path.join(dshHome2, 'profiles', 'desktop', 'node_modules', '@buildr-ai', 'dsh-buildr-development'), pluginTarball);
+    verifyInstalledPluginMatchesTarball(path.join(dshHome2, 'profiles', 'desktop', 'node_modules', '@buildr-ai', 'dsh-buildr'), pluginTarball);
 
     const proof = {
       dshVersion,

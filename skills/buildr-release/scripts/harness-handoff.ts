@@ -32,7 +32,7 @@ if(mode==='pack'){
   const received=new Set<string>();
   if(entries.length!==3)throw Error('transport must contain exactly three ordinary files');
   for(const entry of entries){
-    const match=/^100644 blob [a-f0-9]{40}\t(candidate\.json|verification\.json|buildr-ai-(?:buildr-harness|dsh-buildr-harness|dsh-buildr-development)-\d+\.\d+\.\d+(?:-rc\.[1-9]\d*)?\.tgz)$/.exec(entry);
+    const match=/^100644 blob [a-f0-9]{40}\t(candidate\.json|verification\.json|buildr-ai-(?:buildr-harness|dsh-buildr-harness|dsh-buildr)-\d+\.\d+\.\d+(?:-rc\.[1-9]\d*)?\.tgz)$/.exec(entry);
     if(!match||received.has(match[1]!))throw Error('unsafe transport entry');
     const name=match[1]!; received.add(name);
     const value=git(['show',`${commit}:${name}`]);

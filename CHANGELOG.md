@@ -2,6 +2,12 @@
 
 本项目遵循语义化版本。正式发布前的变更可以在 `0.1.x` 内调整，但会在 release notes 中说明用户可观察差异。
 
+## 0.1.0-rc.68 - 2026-11-25
+
+- 将 Buildr 的独立 DSH 插件包名及发布目标重命名为 `@buildr-ai/dsh-buildr`（本地开发变体 `@buildr-ai/dsh-buildr-dev`），界面展示名同步精简为 `Buildr` / `Buildr Dev`，并将图标更换为与 `H` 标同色系的亮色等距 `B` 标。
+- 同步更新受保护发布流水线（`publish-harness.yml`、`harness-release*`、`release-preflight.ts`），并在准入解析中保持对已有历史记录的向后兼容读取。
+- 自举插件更新机制新增对 `@buildr-ai/dsh-buildr-development-dev` 到 `@buildr-ai/dsh-buildr-dev` 的平滑卸载迁移支持。
+
 ## 0.1.0-rc.67 - 2026-11-25
 
 - 新增并集成 DSH Buildr Development 桌面能力：网页端提供受控桌面桥接、会话模式持久化、顶部栏工作空间同步、「返回 DSH」菜单及原生右侧栏“文件 / 代码库”工具视图，并在工作空间提供自包含、零 DSH SDK 依赖的独立插件（`@buildr-ai/dsh-buildr-development`）与本机开发包（`@buildr-ai/dsh-buildr-development-dev`）。

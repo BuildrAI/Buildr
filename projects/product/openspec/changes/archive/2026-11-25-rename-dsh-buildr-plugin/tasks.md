@@ -1,0 +1,5 @@
+- [x] 将插件包名、Cordis 配置、面板 ID、展示名称与握手路径改名为 `@buildr-ai/dsh-buildr` / `@buildr-ai/dsh-buildr-dev` 与 `Buildr` / `Buildr Dev`
+- [x] 将插件图标替换为亮色等距彩色 `B` 标并校验 `icon.svg` 与 `client.tsx` 一致性
+- [x] 更新自举迁移脚本与集成测试支持从 `@buildr-ai/dsh-buildr-development-dev` 平滑迁移到 `@buildr-ai/dsh-buildr-dev`
+- [x] 将 `.github/workflows/publish-harness.yml` 与 `skills/buildr-release/scripts/` 发布目标切换为 `dsh-buildr`，保持准入清单对历史条目的向后解析兼容
+- [x] 更新文档、`development-dsh-desktop-plugin` / `harness-dsh-desktop-plugin` 主规范及 `@buildr-ai/buildr@0.1.0-rc.68` 版本说明

@@ -12,7 +12,8 @@ const sha256 = /^[a-f0-9]{64}$/u;
 const versionPattern = /^\d+\.\d+\.\d+(?:-rc\.[1-9]\d*)?$/u;
 const integrityPattern = /^sha512-[A-Za-z0-9+/]{86}==$/u;
 const keys = ['target','version','sourceCommit','sourceTree','sha256','integrity','proofSha256'] as const;
-const targets = ['harness','dsh-buildr-harness','dsh-buildr-development'];
+const targets = ['harness','dsh-buildr-harness','dsh-buildr'];
+const historicalTargets = ['dsh-buildr-development'];
 const trustedPublishingSetupRef = 'codex/release-harness-admission-trusted-publishing';
 const authorityProbePath = 'skills/buildr-release/scripts/harness-npm-authority.ts';
 export const trustedPublishingSetupPaths = [
@@ -45,7 +46,7 @@ export function parseAdmissions(raw: string) {
   const seen = new Set<string>();
   for (const item of value.admissions) {
     if (!item || Object.keys(item).length !== keys.length || keys.some(key => typeof item[key] !== 'string') ||
-        !targets.includes(item.target) || !versionPattern.test(item.version) || !commitId.test(item.sourceCommit) ||
+        !(targets.includes(item.target) || historicalTargets.includes(item.target)) || !versionPattern.test(item.version) || !commitId.test(item.sourceCommit) ||
         !commitId.test(item.sourceTree) || !sha256.test(item.sha256) || !sha256.test(item.proofSha256) || !integrityPattern.test(item.integrity)) {
       throw Error('harness-admission-invalid');
     }
@@ -80,10 +81,12 @@ export function assertAdmittedHarnessOriginal(candidate: any, proofBytes: Buffer
     const harness = all.find(item => item.target === 'harness' && item.version === proof.harnessVersion && item.integrity === proof.harnessIntegrity);
     if (proof.check !== 'installed-dsh-npm-and-github' || proof.installEvidence !== 'isolated-npm-and-http-tarball' ||
         !/^0\.2\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(proof.dshVersion) || !harness) throw Error('harness-pair-proof-invalid');
-  } else {
+  } else if (approved.target === 'dsh-buildr') {
     if (proof.check !== 'installed-dsh-npm-and-github' || proof.installEvidence !== 'isolated-npm-and-http-tarball' ||
         !/^0\.2\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(proof.dshVersion) ||
         typeof proof.buildrVersion !== 'string' || typeof proof.buildrIntegrity !== 'string') throw Error('harness-pair-proof-invalid');
+  } else {
+    throw Error('harness-original-not-admitted');
   }
   return proof;
 }
@@ -132,6 +135,7 @@ export function verifyHarnessReleaseAdmissionPR(event: any, repository: string, 
       before.some((item, index) => keys.some(key => item[key] !== after[index]?.[key]))) throw Error('harness-release-admission-not-append-only');
   const added = after.slice(before.length);
   if (added.some(item => item.version !== version)) throw Error('harness-release-admission-version-mismatch');
+  if (added.some(item => !targets.includes(item.target))) throw Error('harness-admission-invalid');
   verifySources(added, git);
   return {status:'passed',kind:'harness-independent-release-admission',targets:added.map(({target,version})=>({target,version}))};
 }

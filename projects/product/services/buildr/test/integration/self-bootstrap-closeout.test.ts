@@ -774,21 +774,21 @@ test('DSH 原生重开仅采用可验证的宿主绑定和本次加载回执', {
   assert.equal(exits,2); assert.equal(starts,2);
 });
 
-test('DSH 开发插件自举同时识别并按交付范围更新 Buildr Development Dev 插件，并支持旧包名平滑迁移', async t => {
+test('DSH 开发插件自举同时识别并按交付范围更新 Buildr Dev 插件，并支持旧包名平滑迁移', async t => {
   const { isDshDevelopmentPluginInput, updateDshDevelopmentPlugin } = await import('../../../../../../skills/buildr-self-bootstrap-sync/scripts/dsh-development-plugin.mjs');
   const f = fixture(t);
   const home = path.join(f.root, 'dsh-home');
   const owner = path.join(f.root, '.buildr/local/buildr-development-dsh-plugin');
   const profile = path.join(home, '.dsh/profiles/desktop');
-  const name = '@buildr-ai/dsh-buildr-development-dev';
-  const legacyName = '@buildr-ai/buildr-development-dsh-plugin-dev';
+  const name = '@buildr-ai/dsh-buildr-dev';
+  const legacyName = '@buildr-ai/dsh-buildr-development-dev';
   const installed = path.join(profile, 'node_modules', name);
   const legacyInstalled = path.join(profile, 'node_modules', legacyName);
   const hostCli = path.join(f.root, 'bin/dsh');
   fs.mkdirSync(path.dirname(hostCli), { recursive: true }); fs.writeFileSync(hostCli, '');
   fs.mkdirSync(owner, { recursive: true });
   fs.mkdirSync(legacyInstalled, { recursive: true });
-  const initialArchive = path.join(owner, 'buildr-development-dsh-plugin-dev-initial.tgz');
+  const initialArchive = path.join(owner, 'dsh-buildr-development-dev-initial.tgz');
   fs.writeFileSync(initialArchive, 'v1');
   fs.mkdirSync(path.join(profile, 'node_modules'), { recursive: true });
   fs.writeFileSync(path.join(profile, 'package.json'), JSON.stringify({
@@ -816,9 +816,9 @@ test('DSH 开发插件自举同时识别并按交付范围更新 Buildr Developm
     }
     if (id === 'dsh-build-plugin') {
       const staging = args[1];
-      const tgz = path.join(staging, 'buildr-ai-dsh-buildr-development-dev-0.1.0-dev.tgz');
+      const tgz = path.join(staging, 'buildr-ai-dsh-buildr-dev-0.1.0-dev.tgz');
       fs.writeFileSync(tgz, 'v2');
-      payloads[path.join(owner, `dsh-buildr-development-dev-${crypto.createHash('sha256').update('v2').digest('hex')}.tgz`)] = {
+      payloads[path.join(owner, `dsh-buildr-dev-${crypto.createHash('sha256').update('v2').digest('hex')}.tgz`)] = {
         'package.json': JSON.stringify({ name }), 'cordis.patch.yml': 'v2', 'lib/client.js': 'client2', 'lib/index.js': 'index2', 'lib/launcher.js': 'launcher2',
       };
       return { status: 0, stdout: JSON.stringify({ name, version: '0.1.0-dev', path: tgz }) + '\n' };
@@ -856,7 +856,7 @@ test('DSH 开发插件自举同时识别并按交付范围更新 Buildr Developm
   assert.equal('desktopLoaded' in res ? res.desktopLoaded : undefined, false);
   assert.equal(calls.length, 2);
   assert.equal(calls[0], `remove:${legacyName}`);
-  assert.ok(calls[1].startsWith('add:dsh-buildr-development-dev-'));
+  assert.ok(calls[1].startsWith('add:dsh-buildr-dev-'));
   const updatedManifest = JSON.parse(fs.readFileSync(path.join(profile, 'package.json'), 'utf8'));
   assert.equal(updatedManifest.dependencies[legacyName], undefined);
   assert.ok(updatedManifest.dependencies[name]);
@@ -894,11 +894,11 @@ test('双 DSH 开发插件同时更新且启用 restartDsh 时仅退出一次、
       nextTag: 'v2-harness',
     },
     {
-      name: '@buildr-ai/dsh-buildr-development-dev',
-      legacyName: '@buildr-ai/buildr-development-dsh-plugin-dev',
+      name: '@buildr-ai/dsh-buildr-dev',
+      legacyName: '@buildr-ai/dsh-buildr-development-dev',
       owner: path.join(f.root, '.buildr/local/buildr-development-dsh-plugin'),
-      prefix: 'dsh-buildr-development-dev-',
-      legacyArchive: 'buildr-development-dsh-plugin-dev-initial.tgz',
+      prefix: 'dsh-buildr-dev-',
+      legacyArchive: 'dsh-buildr-development-dev-initial.tgz',
       serviceSub: 'buildr-development-dsh-plugin',
       version: 'v1-dev',
       nextTag: 'v2-dev',
@@ -1021,20 +1021,20 @@ test('双 DSH 开发插件同时更新且启用 restartDsh 时仅退出一次、
     'quit',
     'remove:@buildr-ai/buildr-harness-dsh-plugin-dev',
     'add:@buildr-ai/dsh-buildr-harness-dev',
-    'remove:@buildr-ai/buildr-development-dsh-plugin-dev',
-    'add:@buildr-ai/dsh-buildr-development-dev',
+    'remove:@buildr-ai/dsh-buildr-development-dev',
+    'add:@buildr-ai/dsh-buildr-dev',
     'reopen',
   ]);
   const expectedHarnessEntryDigest = crypto.createHash('sha256').update('v2-harness-index').digest('hex');
   assert.equal(reopenEntryDigest, expectedHarnessEntryDigest);
   const updatedManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   assert.deepEqual(Object.keys(updatedManifest.dependencies).sort(), [
-    '@buildr-ai/dsh-buildr-development-dev',
+    '@buildr-ai/dsh-buildr-dev',
     '@buildr-ai/dsh-buildr-harness-dev',
   ]);
   assert.deepEqual(updatedManifest.dsh.profile.bundles, [
     '@deepseek-ai/dsh-base',
     '@buildr-ai/dsh-buildr-harness-dev',
-    '@buildr-ai/dsh-buildr-development-dev',
+    '@buildr-ai/dsh-buildr-dev',
   ]);
 });

@@ -46,7 +46,7 @@ try {
     license: 'MIT',
     ...(released ? { publishConfig: { access: 'public' } } : { private: true }),
     type: 'module',
-    description: released ? 'DSH Buildr Development' : 'Buildr Development Dev',
+    description: released ? 'DSH Buildr' : 'Buildr Dev',
     icon: './icon.svg',
     repository: {
       type: 'git',
@@ -97,7 +97,7 @@ try {
   for (const file of ['README.md', 'LICENSE']) fs.copyFileSync(path.join(root, file), path.join(stage, file));
   const patch = fs.readFileSync(path.join(root, 'cordis.patch.yml'), 'utf8');
   fs.writeFileSync(path.join(stage, 'cordis.patch.yml'), released
-    ? patch.replace('@buildr-ai/dsh-buildr-development-dev', name).replace('id: buildr-development-dev', 'id: dsh-buildr-development')
+    ? patch.replace('@buildr-ai/dsh-buildr-dev', name).replace('id: buildr-dev', 'id: dsh-buildr')
     : patch);
   const packed = spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', out], { cwd: stage, encoding: 'utf8', timeout: 120_000 });
   if (packed.error || packed.status !== 0) throw packed.error ?? Error(packed.stderr);

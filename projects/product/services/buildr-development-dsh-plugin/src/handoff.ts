@@ -1,6 +1,6 @@
 import { released } from './channel.ts';
 
-export const OPEN_PATH = released ? '/dsh-buildr-development/open' : '/buildr-development-desktop/open';
+export const OPEN_PATH = released ? '/dsh-buildr/open' : '/buildr-development-desktop/open';
 export const DESKTOP_HEADER = 'x-buildr-development-desktop';
 
 export type OpenCode =
