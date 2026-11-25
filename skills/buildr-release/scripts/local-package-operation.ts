@@ -1,4 +1,4 @@
-import { prepareLocalMainPackage, localPackageVerificationScope } from './local-package-preparation.ts';
+import { prepareLocalMainPackage, resolveLocalPackageVerificationScope } from './local-package-preparation.ts';
 import { createPackageHandoffCommit, LOCAL_PACKAGE_DISPATCH_WORKFLOW, LOCAL_PLATFORM_POLICY } from './local-package-handoff.ts';
 import { pushReleaseBranch } from './release-git-convergence.ts';
 import fs from 'node:fs';
@@ -11,7 +11,7 @@ import { readReleaseCandidate } from './dsh-plugin/release-candidate.ts';
 /** New preparation has one local producer and one data-only remote consumer. */
 export async function continueLocalPackageCandidate(input: any, dependencies: any): Promise<any> {
   const { state, save, effects, git, gh, execute } = dependencies;
-  state.localPackageScope = localPackageVerificationScope(input.options, state.localPackageScope);
+  state.localPackageScope = await resolveLocalPackageVerificationScope(input.options, state.localPackageScope, input.repo);
   save();
   const retained = state.localPackage?.sourceCommit === input.sourceCommit && state.candidate?.dispatchRequested;
   let prepared = state.localPackage;

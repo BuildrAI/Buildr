@@ -26,3 +26,6 @@
 .ac-account-quota-overview section.is-grouped>header{gap:8px}
 .ac-account-quota-meta{color:var(--soft-muted);font-size:var(--font-size-meta);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
 .ac-account-quota-rows+.ac-account-quota-rows{margin-top:8px;padding-top:8px;border-top:1px dashed var(--soft-line)}
+
+.ac-account-quota-magpie{padding-top:10px}
+.ac-account-quota-magpie-title{display:block;margin-bottom:4px;font-weight:700}

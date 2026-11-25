@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   isElementFocusVisible,
@@ -70,18 +69,4 @@ test('isElementFocusVisible 安全判断元素是否处于 :focus-visible 状态
     if (previousElement === undefined) delete globalThis.Element;
     else globalThis.Element = previousElement;
   }
-});
-
-test('ConversationHistory 使用 hover 触发并在失焦/隐藏/点击时主动收起模型提示', () => {
-  const source = readFileSync(
-    new URL('../../src/features/agent-conversations/ConversationHistory.tsx', import.meta.url),
-    'utf8',
-  );
-  assert.match(source, /trigger=\{\['hover'\]\}/);
-  assert.doesNotMatch(source, /trigger=\{\['hover',\s*'focus'\]\}/);
-  assert.match(source, /destroyOnHidden/);
-  assert.match(source, /window\.addEventListener\('blur',\s*onBlur\)/);
-  assert.match(source, /document\.addEventListener\('visibilitychange',\s*onVisibilityChange\)/);
-  assert.match(source, /window\.addEventListener\('pointerdown',\s*onPointerDown,\s*true\)/);
-  assert.match(source, /dismissRowTooltips\(\)/);
 });

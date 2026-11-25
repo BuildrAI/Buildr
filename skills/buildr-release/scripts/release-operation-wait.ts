@@ -31,6 +31,17 @@ const WAITING_RELEASE_STATUSES = new Set([
   'publication-readback-required', 'publication-unknown', 'main-merge-readback-required',
 ]);
 
+export function extractMainMergePendingRunId(record: Record<string, any>): string | undefined {
+  const checks = Array.isArray(record.mainPullRequest?.checks) ? record.mainPullRequest.checks : [];
+  for (const check of checks) {
+    if (check?.bucket !== 'pending' || typeof check.link !== 'string') continue;
+    const match = /\/actions\/runs\/([1-9][0-9]*)(?:\/|$)/u.exec(check.link);
+    if (match?.[1]) return match[1];
+  }
+  const explicit = record.mainPullRequest?.runId;
+  return /^[1-9][0-9]*$/u.test(String(explicit ?? '')) ? String(explicit) : undefined;
+}
+
 /** Wait on one native command; cancellation only stops the local watcher, never the remote run. */
 export async function watchReleaseRun(request: ReleaseRunWatch): Promise<ReleaseRunWatchResult> {
   if (!/^[1-9][0-9]*$/u.test(String(request.runId)) || !Number.isSafeInteger(request.timeoutMs) || request.timeoutMs < 1
@@ -75,6 +86,7 @@ export async function waitForReleaseOperation(options: ReleaseWaitOptions, depen
   const startedAt = now(), allEffects: unknown[] = [];
   let pollWorkMs = 0, sleepMs = 0;
   let completedWatchRun: string | number | undefined;
+  let postWatchSettledRun: string | number | undefined;
   let watchMs = 0;
   let polls = 0, previousPhase: string | null = null, action = options.action;
   let latest: ReleaseOperationObservation | null = null;
@@ -104,12 +116,15 @@ export async function waitForReleaseOperation(options: ReleaseWaitOptions, depen
     const record = value as Record<string, any>;
     const runId = value.run?.id ?? (value.status.startsWith('publication-')
       ? record.packagePublications?.[value.package ?? '']?.runId ?? record.publication?.runId
-      : !/main-merge|dispatch-unconfirmed|readback-required/u.test(value.status) ? record.candidate?.runId : undefined);
+      : value.status === 'main-merge-pending'
+        ? extractMainMergePendingRunId(record)
+        : !/main-merge|dispatch-unconfirmed|readback-required/u.test(value.status) ? record.candidate?.runId : undefined);
     const finish = (status: string, diagnostic?: unknown) => ({ ...value, effects: allEffects,
       waiting: { status, polls, durationMs: now() - startedAt, pollWorkMs, sleepMs, watchMs }, ...(diagnostic ? { diagnostic } : {}) });
     if (!runId) return finish('readback-required');
     if ((value.effects ?? []).some((effect: any) => effect.type === 'publication-failed-jobs-rerun')) completedWatchRun = undefined;
-    if (completedWatchRun === runId && value.status === 'publication-retry-unconfirmed') {
+    if (completedWatchRun === runId && (value.status === 'publication-retry-unconfirmed'
+        || (value.status === 'main-merge-pending' && postWatchSettledRun !== runId))) {
       const sleepStartedAt = now();
       try { await delay(Math.min(timeoutMs - durationMs, intervalMs, 5000), undefined, { signal: dependencies.signal }); }
       catch (error) {
@@ -117,6 +132,7 @@ export async function waitForReleaseOperation(options: ReleaseWaitOptions, depen
         throw error;
       }
       sleepMs += now() - sleepStartedAt;
+      if (value.status === 'main-merge-pending') postWatchSettledRun = runId;
       completedWatchRun = undefined;
       continue;
     }

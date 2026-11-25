@@ -5,10 +5,8 @@ import { isDeepStrictEqual } from 'node:util';
 import { observePublishedPackageArtifact, packageArtifactInputSchema } from './package-artifact-observation.ts';
 import { parseCompatibilityArtifact } from './package-compatibility.ts';
 import { readReleaseCandidate } from './dsh-plugin/release-candidate.ts';
-import { assertBoundPluginVerification } from '../../../projects/product/services/buildr/test/verification/release/verify-pr-candidate.ts';
-import { assertFrozenCandidateCheckout } from '../../../projects/product/services/buildr/test/verification/candidate-artifact-reuse.ts';
+import { importFrozenVerificationModule } from './frozen-verification-modules.ts';
 import { createPackageHandoff, LOCAL_PACKAGE_MODEL, localPackagePlatform } from './local-package-handoff.ts';
-import { currentVerificationRules, retainVerificationRules } from '../../../projects/product/services/buildr/test/verification/release/verification-rules.ts';
 import { preflightLocalConsumption } from './local-consumption-preflight.ts';
 
 /** Shared by standalone and joint release; no GitHub SDK producer remains in new preparations. */
@@ -16,6 +14,11 @@ export async function prepareLocalPlugin(options: {
   repo: string; sourceCommit: string; roundId: string; plan: any; peer: any; peerFile: string;
   scope?: any; sourcePacket?: string;
 }, dependencies: any = {}): Promise<any> {
+  const { assertBoundPluginVerification } = await importFrozenVerificationModule(
+    options.repo,
+    'release/verify-pr-candidate.ts',
+    () => import('../../../projects/product/services/buildr/test/verification/release/verify-pr-candidate.ts'),
+  );
   const root = path.join(options.repo, 'projects/product/services/dsh-plugin');
   const directory = path.join(root, 'build/release-candidates', options.sourceCommit);
   const verificationFile = path.join(directory, 'plugin-full-verification.json');
@@ -92,6 +95,13 @@ export async function prepareRegistryPlugin(options: any, dependencies: any = {}
 }
 
 export async function prepareLocalPluginPackage(options: any, dependencies: any = {}): Promise<any> {
+  const [
+    { assertFrozenCandidateCheckout },
+    { currentVerificationRules, retainVerificationRules },
+  ] = await Promise.all([
+    importFrozenVerificationModule(options.repo, 'candidate-artifact-reuse.ts', () => import('../../../projects/product/services/buildr/test/verification/candidate-artifact-reuse.ts')),
+    importFrozenVerificationModule(options.repo, 'release/verification-rules.ts', () => import('../../../projects/product/services/buildr/test/verification/release/verification-rules.ts')),
+  ]);
   const service = path.join(options.repo, 'projects/product/services/buildr');
   const assertCheckout = dependencies.assertCheckout ?? assertFrozenCandidateCheckout;
   assertCheckout(service, options.sourceCommit);

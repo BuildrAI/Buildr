@@ -587,7 +587,7 @@ test('DSH 开发插件自举只换装已核对的本地旧包，运行时准备�
   const home = path.join(f.root, 'dsh-home');
   const owner = path.join(f.root, '.buildr/local/buildr-harness-dsh-plugin');
   const profile = path.join(home, '.dsh/profiles/desktop');
-  const name = '@buildr-ai/buildr-harness-dsh-plugin-dev';
+  const name = '@buildr-ai/dsh-buildr-harness-dev';
   const installed = path.join(profile, 'node_modules', name);
   const manifest = path.join(profile, 'package.json');
   const hostCli = path.join(f.root, 'dsh');
@@ -772,4 +772,269 @@ test('DSH 原生重开仅采用可验证的宿主绑定和本次加载回执', {
   issueNonce = false;
   assert.deepEqual(control.reopen(secondQuit.verified,'new'),{status:'opened-load-unconfirmed',desktopLoaded:false});
   assert.equal(exits,2); assert.equal(starts,2);
+});
+
+test('DSH 开发插件自举同时识别并按交付范围更新 Buildr Development Dev 插件，并支持旧包名平滑迁移', async t => {
+  const { isDshDevelopmentPluginInput, updateDshDevelopmentPlugin } = await import('../../../../../../skills/buildr-self-bootstrap-sync/scripts/dsh-development-plugin.mjs');
+  const f = fixture(t);
+  const home = path.join(f.root, 'dsh-home');
+  const owner = path.join(f.root, '.buildr/local/buildr-development-dsh-plugin');
+  const profile = path.join(home, '.dsh/profiles/desktop');
+  const name = '@buildr-ai/dsh-buildr-development-dev';
+  const legacyName = '@buildr-ai/buildr-development-dsh-plugin-dev';
+  const installed = path.join(profile, 'node_modules', name);
+  const legacyInstalled = path.join(profile, 'node_modules', legacyName);
+  const hostCli = path.join(f.root, 'bin/dsh');
+  fs.mkdirSync(path.dirname(hostCli), { recursive: true }); fs.writeFileSync(hostCli, '');
+  fs.mkdirSync(owner, { recursive: true });
+  fs.mkdirSync(legacyInstalled, { recursive: true });
+  const initialArchive = path.join(owner, 'buildr-development-dsh-plugin-dev-initial.tgz');
+  fs.writeFileSync(initialArchive, 'v1');
+  fs.mkdirSync(path.join(profile, 'node_modules'), { recursive: true });
+  fs.writeFileSync(path.join(profile, 'package.json'), JSON.stringify({
+    dependencies: { [legacyName]: `file:${path.relative(profile, initialArchive)}` },
+    dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', legacyName] } },
+  }));
+  const payloads: Record<string, Record<string, string>> = {
+    [initialArchive]: { 'package.json': JSON.stringify({ name: legacyName }), 'cordis.patch.yml': 'v1', 'lib/client.js': 'client1', 'lib/index.js': 'index1', 'lib/launcher.js': 'launcher1' },
+  };
+  const writeInstalled = (dir: string, files: Record<string, string>) => {
+    for (const [rel, body] of Object.entries(files)) {
+      const target = path.join(dir, rel);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, body);
+    }
+  };
+  writeInstalled(legacyInstalled, payloads[initialArchive]);
+  const calls: string[] = [];
+  const run = (_exe: string, args: string[], id: string) => {
+    if (id === 'dsh-host-version') return { status: 0, stdout: '0.2.2-rc.5\n' };
+    if (id === 'dsh-processes') return { status: 0, stdout: 'login\n' };
+    if (id.startsWith('dsh-verify-')) {
+      const file = args[2].replace(/^package\//, '');
+      return { status: 0, stdout: Buffer.from(payloads[args[1]][file]) };
+    }
+    if (id === 'dsh-build-plugin') {
+      const staging = args[1];
+      const tgz = path.join(staging, 'buildr-ai-dsh-buildr-development-dev-0.1.0-dev.tgz');
+      fs.writeFileSync(tgz, 'v2');
+      payloads[path.join(owner, `dsh-buildr-development-dev-${crypto.createHash('sha256').update('v2').digest('hex')}.tgz`)] = {
+        'package.json': JSON.stringify({ name }), 'cordis.patch.yml': 'v2', 'lib/client.js': 'client2', 'lib/index.js': 'index2', 'lib/launcher.js': 'launcher2',
+      };
+      return { status: 0, stdout: JSON.stringify({ name, version: '0.1.0-dev', path: tgz }) + '\n' };
+    }
+    if (id === 'dsh-remove-legacy-plugin') {
+      calls.push(`remove:${args.at(-1)}`);
+      assert.equal(args.at(-1), legacyName);
+      const manifestPath = path.join(profile, 'package.json');
+      const current = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      delete current.dependencies[legacyName];
+      fs.writeFileSync(manifestPath, JSON.stringify(current));
+      fs.rmSync(legacyInstalled, { recursive: true, force: true });
+      return { status: 0, stdout: '' };
+    }
+    if (id === 'dsh-install-plugin') {
+      const tgz = args.at(-1)!;
+      calls.push(`add:${path.basename(tgz)}`);
+      writeInstalled(installed, payloads[tgz]);
+      const manifestPath = path.join(profile, 'package.json');
+      const current = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      current.dependencies[name] = `file:${path.relative(profile, tgz)}`;
+      current.dsh.profile.bundles.push(name);
+      fs.writeFileSync(manifestPath, JSON.stringify(current));
+      return { status: 0, stdout: '' };
+    }
+    assert.fail(id);
+  };
+  assert.equal(isDshDevelopmentPluginInput('projects/product/services/buildr-development-dsh-plugin/src/client.tsx'), true);
+  assert.equal(isDshDevelopmentPluginInput('projects/product/services/buildr-development-dsh-plugin/test/desktop-acceptance.md'), false);
+  const res = updateDshDevelopmentPlugin({
+    root: f.root, nodeExecutable: process.execPath, run, environment: { HOME: home }, platform: 'darwin', hostCli,
+    files: ['projects/product/services/buildr-development-dsh-plugin/src/client.tsx'],
+  });
+  assert.equal(res.status, 'installed', JSON.stringify(res));
+  assert.equal('desktopLoaded' in res ? res.desktopLoaded : undefined, false);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0], `remove:${legacyName}`);
+  assert.ok(calls[1].startsWith('add:dsh-buildr-development-dev-'));
+  const updatedManifest = JSON.parse(fs.readFileSync(path.join(profile, 'package.json'), 'utf8'));
+  assert.equal(updatedManifest.dependencies[legacyName], undefined);
+  assert.ok(updatedManifest.dependencies[name]);
+  assert.deepEqual(updatedManifest.dsh.profile.bundles, ['@deepseek-ai/dsh-base', name]);
+
+  // Dual presence of legacy and new packages must block safely without modifying profile.
+  updatedManifest.dependencies[legacyName] = updatedManifest.dependencies[name];
+  fs.writeFileSync(path.join(profile, 'package.json'), JSON.stringify(updatedManifest));
+  const blocked = updateDshDevelopmentPlugin({
+    root: f.root, nodeExecutable: process.execPath, run, environment: { HOME: home }, platform: 'darwin', hostCli,
+    files: ['projects/product/services/buildr-development-dsh-plugin/src/client.tsx'],
+  });
+  assert.equal(blocked.status, 'blocked');
+});
+
+test('双 DSH 开发插件同时更新且启用 restartDsh 时仅退出一次、顺序迁移安装全部插件并仅重开 DSH 一次', async t => {
+  const { updateDshDevelopmentPlugin } = await import('../../../../../../skills/buildr-self-bootstrap-sync/scripts/dsh-development-plugin.mjs');
+  const f = fixture(t);
+  const home = path.join(f.root, 'dsh-home');
+  const profile = path.join(home, '.dsh/profiles/desktop');
+  const hostCli = path.join(f.root, 'bin/dsh');
+  fs.mkdirSync(path.dirname(hostCli), { recursive: true });
+  fs.writeFileSync(hostCli, '');
+  fs.mkdirSync(path.join(profile, 'node_modules'), { recursive: true });
+
+  const specs = [
+    {
+      name: '@buildr-ai/dsh-buildr-harness-dev',
+      legacyName: '@buildr-ai/buildr-harness-dsh-plugin-dev',
+      owner: path.join(f.root, '.buildr/local/buildr-harness-dsh-plugin'),
+      prefix: 'dsh-buildr-harness-dev-',
+      legacyArchive: 'buildr-harness-dsh-plugin-dev-initial.tgz',
+      serviceSub: 'buildr-harness-dsh-plugin',
+      version: 'v1-harness',
+      nextTag: 'v2-harness',
+    },
+    {
+      name: '@buildr-ai/dsh-buildr-development-dev',
+      legacyName: '@buildr-ai/buildr-development-dsh-plugin-dev',
+      owner: path.join(f.root, '.buildr/local/buildr-development-dsh-plugin'),
+      prefix: 'dsh-buildr-development-dev-',
+      legacyArchive: 'buildr-development-dsh-plugin-dev-initial.tgz',
+      serviceSub: 'buildr-development-dsh-plugin',
+      version: 'v1-dev',
+      nextTag: 'v2-dev',
+    },
+  ];
+
+  const payloads: Record<string, Record<string, string>> = {};
+  const deps: Record<string, string> = {};
+  const bundles = ['@deepseek-ai/dsh-base'];
+  const writeInstalled = (dir: string, files: Record<string, string>) => {
+    for (const [rel, body] of Object.entries(files)) {
+      const target = path.join(dir, rel);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, body);
+    }
+  };
+
+  for (const s of specs) {
+    fs.mkdirSync(s.owner, { recursive: true });
+    const oldTgz = path.join(s.owner, s.legacyArchive);
+    fs.writeFileSync(oldTgz, s.version);
+    payloads[oldTgz] = {
+      'package.json': JSON.stringify({ name: s.legacyName }),
+      'cordis.patch.yml': s.version,
+      'lib/client.js': `${s.version}-client`,
+      'lib/index.js': `${s.version}-index`,
+      'lib/launcher.js': `${s.version}-launcher`,
+    };
+    writeInstalled(path.join(profile, 'node_modules', s.legacyName), payloads[oldTgz]);
+    deps[s.legacyName] = `file:${path.relative(profile, oldTgz)}`;
+    bundles.push(s.legacyName);
+  }
+  const manifestPath = path.join(profile, 'package.json');
+  fs.writeFileSync(manifestPath, JSON.stringify({ dependencies: deps, dsh: { profile: { bundles } } }, null, 2));
+
+  let running = true;
+  const lifecycle: string[] = [];
+  let reopenEntryDigest = '';
+
+  const run = (_exe: string, args: string[], id: string) => {
+    if (id === 'dsh-host-version') return { status: 0, stdout: '0.2.2-rc.5\n' };
+    if (id === 'dsh-processes') return { status: 0, stdout: running ? '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness\n' : '/sbin/launchd\n' };
+    if (id.startsWith('dsh-verify-')) {
+      const file = args[2].replace(/^package\//, '');
+      return { status: 0, stdout: Buffer.from(payloads[args[1]][file]) };
+    }
+    if (id === 'dsh-build-plugin') {
+      const staging = args[1];
+      const spec = specs.find(s => staging.includes(s.serviceSub))!;
+      const tgz = path.join(staging, `${spec.prefix}0.1.0-dev.tgz`);
+      fs.writeFileSync(tgz, spec.nextTag);
+      const digest = crypto.createHash('sha256').update(spec.nextTag).digest('hex');
+      payloads[path.join(spec.owner, `${spec.prefix}${digest}.tgz`)] = {
+        'package.json': JSON.stringify({ name: spec.name }),
+        'cordis.patch.yml': spec.nextTag,
+        'lib/client.js': `${spec.nextTag}-client`,
+        'lib/index.js': `${spec.nextTag}-index`,
+        'lib/launcher.js': `${spec.nextTag}-launcher`,
+      };
+      return { status: 0, stdout: JSON.stringify({ name: spec.name, version: '0.1.0-dev', path: tgz }) + '\n' };
+    }
+    if (id === 'dsh-remove-legacy-plugin') {
+      assert.equal(running, false);
+      const targetName = args.at(-1)!;
+      lifecycle.push(`remove:${targetName}`);
+      const current = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      delete current.dependencies[targetName];
+      fs.writeFileSync(manifestPath, JSON.stringify(current));
+      fs.rmSync(path.join(profile, 'node_modules', targetName), { recursive: true, force: true });
+      return { status: 0, stdout: '' };
+    }
+    if (id === 'dsh-install-plugin') {
+      assert.equal(running, false);
+      const tgz = args.at(-1)!;
+      const spec = specs.find(s => path.basename(tgz).startsWith(s.prefix))!;
+      lifecycle.push(`add:${spec.name}`);
+      writeInstalled(path.join(profile, 'node_modules', spec.name), payloads[tgz]);
+      const current = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      current.dependencies[spec.name] = `file:${path.relative(profile, tgz)}`;
+      current.dsh.profile.bundles.push(spec.name);
+      fs.writeFileSync(manifestPath, JSON.stringify(current));
+      return { status: 0, stdout: '' };
+    }
+    assert.fail(id);
+  };
+
+  const res = updateDshDevelopmentPlugin({
+    root: f.root,
+    nodeExecutable: process.execPath,
+    run,
+    environment: { HOME: home },
+    platform: 'darwin',
+    hostCli,
+    restartDsh: true,
+    continuity: () => ({
+      quit(_initialDigest: string, beforeQuit: () => boolean) {
+        assert.equal(beforeQuit(), true);
+        lifecycle.push('quit');
+        running = false;
+        return { status: 'exited', verified: {} };
+      },
+      reopen(_verified: unknown, currentDigest: string) {
+        assert.equal(running, false);
+        reopenEntryDigest = currentDigest;
+        lifecycle.push('reopen');
+        running = true;
+        return { status: 'reopened', desktopLoaded: true };
+      },
+    }) as any,
+    files: [
+      'projects/product/services/buildr-harness-dsh-plugin/src/channel.ts',
+      'projects/product/services/buildr-development-dsh-plugin/src/channel.ts',
+    ],
+  });
+
+  assert.equal(res.status, 'installed', JSON.stringify(res));
+  assert.equal('desktopLoaded' in res ? res.desktopLoaded : undefined, true);
+  assert.equal('desktop' in res ? res.desktop : undefined, 'reopened');
+  assert.deepEqual(lifecycle, [
+    'quit',
+    'remove:@buildr-ai/buildr-harness-dsh-plugin-dev',
+    'add:@buildr-ai/dsh-buildr-harness-dev',
+    'remove:@buildr-ai/buildr-development-dsh-plugin-dev',
+    'add:@buildr-ai/dsh-buildr-development-dev',
+    'reopen',
+  ]);
+  const expectedHarnessEntryDigest = crypto.createHash('sha256').update('v2-harness-index').digest('hex');
+  assert.equal(reopenEntryDigest, expectedHarnessEntryDigest);
+  const updatedManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  assert.deepEqual(Object.keys(updatedManifest.dependencies).sort(), [
+    '@buildr-ai/dsh-buildr-development-dev',
+    '@buildr-ai/dsh-buildr-harness-dev',
+  ]);
+  assert.deepEqual(updatedManifest.dsh.profile.bundles, [
+    '@deepseek-ai/dsh-base',
+    '@buildr-ai/dsh-buildr-harness-dev',
+    '@buildr-ai/dsh-buildr-development-dev',
+  ]);
 });

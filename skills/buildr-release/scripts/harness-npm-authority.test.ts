@@ -16,7 +16,7 @@ const hosted = {
   ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'fake-request-token',
 };
 test('authority checks each exact package with no upload or credential in the result', async () => {
-  for (const [target, name] of [['harness', '@buildr-ai/buildr-harness'], ['dsh-buildr-harness', '@buildr-ai/dsh-buildr-harness']]) {
+  for (const [target, name] of [['harness', '@buildr-ai/buildr-harness'], ['dsh-buildr-harness', '@buildr-ai/dsh-buildr-harness'], ['dsh-buildr-development', '@buildr-ai/dsh-buildr-development']]) {
     let calls = 0;
     const result = await checkHarnessNpmAuthority({...hosted, RELEASE_TARGET:target}, async (input, options) => {
       const url = new URL(String(input));

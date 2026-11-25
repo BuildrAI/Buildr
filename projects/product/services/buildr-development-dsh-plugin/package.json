@@ -1,0 +1,11 @@
+{
+  "name": "@buildr-ai/buildr-development-dsh-plugin-source",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build:dev": "node tools/build-dev.ts",
+    "test": "node --test test/*.test.ts"
+  }
+}

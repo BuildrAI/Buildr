@@ -4,10 +4,11 @@ import { observePublicationRun } from './publication-run-evidence.ts';
 import { withdrawLocalCandidate } from './local-candidate-withdrawal.ts';
 import { waitForReleaseOperation } from './release-operation-wait.ts';
 import { continueLocalPackageCandidate } from './local-package-operation.ts';
-import { localPackageVerificationScope } from './local-package-preparation.ts';
+import { localPackageVerificationScope, resolveLocalPackageVerificationScope } from './local-package-preparation.ts';
 import { LOCAL_PACKAGE_MODEL, isCandidateVerificationWorkflow } from './local-package-handoff.ts';
 import { releaseContextSchema } from './release-readiness.ts';
 import { recoverQueuedRelease, releaseQueuePolicy } from './github-queue-recovery.ts';
+import { isRetryableReadOnlyGhArgs, isTransientGhNetworkFailure, pauseSync } from './gh-read-retry.ts';
 
 import crypto from 'node:crypto';
 import { writeReleaseProcessReports } from './release-process-report.ts';
@@ -565,27 +566,40 @@ function finishCandidatePreparation(workspace: string, state: any, selection: an
   }
 }
 
+export { isRetryableReadOnlyGhArgs, isTransientGhNetworkFailure } from './gh-read-retry.ts';
+
 export async function waitForReleaseMainPullRequest(options: any, dependencies: any = {}): Promise<any> {
   const now = dependencies.now ?? Date.now;
   const startedAt = now(), deadline = startedAt + 30_000;
   const execute = dependencies.execute ?? spawnSync;
+  const retryDelay = (attempt: number) => dependencies.ghRetryDelayMs ?? (dependencies.execute ? 0 : 1_000 * attempt);
   let pullRequest: any = null, checks: any[] = [];
   const finish = (status: string, diagnostic?: any) => ({ status, pullRequest, checks, durationMs: now() - startedAt,
     ...(diagnostic ? { diagnostic } : {}) });
   const read = (args: string[]) => {
-    const value = execute(options.ghCommand || 'gh', args, { cwd: options.repo, encoding: 'utf8',
-      timeout: Math.max(1, deadline - now()), maxBuffer: 1024 * 1024 });
-    if (!value.error && args[1] === 'checks' && value.status === 1 && !String(value.stdout || '').trim()
-        && /^no (?:required )?checks reported on the '[^'\r\n]+' branch$/u.test(String(value.stderr || '').trim())) return [];
-    let parsed: any;
-    try { parsed = JSON.parse(String(value.stdout || '')); } catch { /* report the bounded command cause below */ }
-    // gh pr checks uses 8 for pending and 1 for completed failing checks.
-    if (value.error || parsed === undefined || (value.status !== 0 && !(args[1] === 'checks' && [1, 8].includes(value.status)))) {
-      throw Object.assign(new Error('Protected pull request readback failed.'), {
-        diagnostic: releaseCommandDiagnostic(options.ghCommand || 'gh', args, value),
-      });
+    const retryable = isRetryableReadOnlyGhArgs(args);
+    for (let attempt = 1; ; attempt += 1) {
+      const value = execute(options.ghCommand || 'gh', args, { cwd: options.repo, encoding: 'utf8',
+        timeout: Math.max(1, deadline - now()), maxBuffer: 1024 * 1024 });
+      if (!value.error && args[1] === 'checks' && value.status === 1 && !String(value.stdout || '').trim()
+          && /^no (?:required )?checks reported on the '[^'\r\n]+' branch$/u.test(String(value.stderr || '').trim())) return [];
+      let parsed: any;
+      try { parsed = JSON.parse(String(value.stdout || '')); } catch { /* report the bounded command cause below */ }
+      // gh pr checks uses 8 for pending and 1 for completed failing checks.
+      if (value.error || parsed === undefined || (value.status !== 0 && !(args[1] === 'checks' && [1, 8].includes(value.status)))) {
+        if (retryable && attempt < 3 && isTransientGhNetworkFailure(value)) {
+          const waitMs = Math.min(Math.max(0, deadline - now()), retryDelay(attempt));
+          if (waitMs > 0 || retryDelay(attempt) === 0) {
+            pauseSync(waitMs);
+            continue;
+          }
+        }
+        throw Object.assign(new Error('Protected pull request readback failed.'), {
+          diagnostic: releaseCommandDiagnostic(options.ghCommand || 'gh', args, value),
+        });
+      }
+      return parsed;
     }
-    return parsed;
   };
   try {
     for (let observation = 0; observation < 2; observation++) {
@@ -668,14 +682,21 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     }))],
   }, value);
   const execute = dependencies.execute ?? ((command: string, args: string[], spawnOptions: any) => spawnSync(command, args, { timeout: 30_000, ...spawnOptions, encoding: 'utf8' }));
+  const ghRetryDelay = (attempt: number) => dependencies.ghRetryDelayMs ?? (dependencies.execute ? 0 : 1_000 * attempt);
   const command = (executable: string, args: string[], cwd = workspace) => {
-    const timeout = executable === (options.ghCommand || 'gh') && args.includes('--log-failed') ? 90_000 : 30_000;
-    const value = execute(executable, args, { cwd, timeout, maxBuffer: 8 * 1024 * 1024 });
-    if (value.status !== 0 || value.error) {
+    const ghExecutable = options.ghCommand || 'gh';
+    const timeout = executable === ghExecutable && args.includes('--log-failed') ? 90_000 : 30_000;
+    const maxAttempts = executable === ghExecutable && isRetryableReadOnlyGhArgs(args) ? 3 : 1;
+    for (let attempt = 1; ; attempt += 1) {
+      const value = execute(executable, args, { cwd, timeout, maxBuffer: 8 * 1024 * 1024 });
+      if (value.status === 0 && !value.error) return String(value.stdout || '').trim();
+      if (attempt < maxAttempts && isTransientGhNetworkFailure(value)) {
+        pauseSync(ghRetryDelay(attempt));
+        continue;
+      }
       const diagnostic = releaseCommandDiagnostic(executable, args, value);
       throw Object.assign(new Error(`${executable} ${args[0]} failed: ${diagnostic.stderr || diagnostic.message || diagnostic.exitCode}`), { diagnostic });
     }
-    return String(value.stdout || '').trim();
   };
   const git = (args: string[], cwd = workspace) => command('git', args, cwd);
   const gh = (args: string[], cwd = workspace) => command(options.ghCommand || 'gh', args, cwd);
@@ -1092,7 +1113,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       for (const source of state.sources) take(selectReleaseCommit({ ...selectionArgs, repo, source, devRef: 'origin/dev', executionBinding: binding() }));
       selection = inspectReleaseSelection({ ...selectionArgs, repo, devRef: 'origin/dev' });
       if (selection.status === 'ready' && targets.packages.includes('buildr')) {
-        const scope = localPackageMode ? localPackageVerificationScope(options, state.localPackageScope) : null;
+        const scope = localPackageMode ? await resolveLocalPackageVerificationScope(options, state.localPackageScope, repo) : null;
         changePhase('pre-freeze-source');
         const localSource = await (dependencies.verifySourceBeforeFreeze ?? verifySourceBeforeFreeze)({
           repo, workspace, roundId: key, base: selection.devBaseline, head: selection.releaseHead, options, scope,
@@ -1130,7 +1151,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     if (targets.packages.includes('buildr')) extractReleaseNotes(git(['show', `${sourceCommit}:CHANGELOG.md`, '--'], repo), targets.versions.buildr);
     state.sourceCommit = sourceCommit;
     if (localPackageMode) {
-      state.localPackageScope = localPackageVerificationScope(options, state.localPackageScope);
+      state.localPackageScope = await resolveLocalPackageVerificationScope(options, state.localPackageScope, repo);
       save();
     }
     let plan: any = null;

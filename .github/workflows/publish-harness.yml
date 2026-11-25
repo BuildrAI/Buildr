@@ -11,6 +11,7 @@ on:
         options:
           - harness
           - dsh-buildr-harness
+          - dsh-buildr-development
       version:
         description: Exact approved package version (required for publish/readback)
         required: false
@@ -71,12 +72,13 @@ jobs:
           node --input-type=module -e "import { checkHarnessNpmAuthority } from './skills/buildr-release/scripts/harness-npm-authority.ts'; console.log(JSON.stringify(await checkHarnessNpmAuthority()));"
 
   publish:
-    if: (inputs.mode == 'publish' || inputs.mode == 'readback') && github.ref == 'refs/heads/main' && github.repository == 'BuildrAI/Buildr'
+    if: inputs.mode == 'publish' && github.ref == 'refs/heads/main' && github.repository == 'BuildrAI/Buildr'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: npm-production
     permissions:
       actions: read
-      contents: write
+      contents: read
       id-token: write
     steps:
       - name: Check candidate source run
@@ -109,12 +111,58 @@ jobs:
           path: ${{ runner.temp }}/harness-original
           run-id: ${{ inputs.candidate_run_id }}
           github-token: ${{ github.token }}
-      - name: Publish or read back approved original
+      - name: Upload approved original to npm
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_COMMIT: ${{ inputs.source_commit }}
           ORIGINAL_SHA256: ${{ inputs.original_sha256 }}
           RELEASE_TARGET: ${{ inputs.release_target }}
           RELEASE_VERSION: ${{ inputs.version }}
-          RELEASE_MODE: ${{ inputs.mode }}
-        run: node skills/buildr-release/scripts/harness-publish.ts "$RUNNER_TEMP/harness-original" "$SOURCE_COMMIT" "$ORIGINAL_SHA256" "$RELEASE_MODE"
+        run: node skills/buildr-release/scripts/harness-publish.ts "$RUNNER_TEMP/harness-original" "$SOURCE_COMMIT" "$ORIGINAL_SHA256" publish
+
+  finalize:
+    needs: [publish]
+    if: always() && (inputs.mode == 'readback' || (inputs.mode == 'publish' && needs.publish.result == 'success')) && github.ref == 'refs/heads/main' && github.repository == 'BuildrAI/Buildr'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check candidate source run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.candidate_run_id }}
+          ARTIFACT_NAME: ${{ inputs.candidate_artifact }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          ORIGINAL_SHA256: ${{ inputs.original_sha256 }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          [[ "$RUN_ID" =~ ^[1-9][0-9]*$ && "$SOURCE_COMMIT" =~ ^[a-f0-9]{40}$ && "$ORIGINAL_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[1-9][0-9]*)?$ ]]
+          test "$ARTIFACT_NAME" = "harness-original-$ORIGINAL_SHA256"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" | jq -e '
+            .path == ".github/workflows/preserve-harness.yml" and
+            .head_branch == "main" and .repository.id == 993537957 and
+            .event == "workflow_dispatch" and .conclusion == "success"'
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+          package-manager-cache: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.candidate_artifact }}
+          path: ${{ runner.temp }}/harness-original
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+      - name: Read back npm propagation and finalize GitHub Release without npm-production approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          ORIGINAL_SHA256: ${{ inputs.original_sha256 }}
+          RELEASE_TARGET: ${{ inputs.release_target }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: node skills/buildr-release/scripts/harness-publish.ts "$RUNNER_TEMP/harness-original" "$SOURCE_COMMIT" "$ORIGINAL_SHA256" readback

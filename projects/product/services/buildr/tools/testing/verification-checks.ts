@@ -20,7 +20,7 @@ export const serviceVerificationChecks = [
   {id:'development-live-recovery',type:'Integration',name:'Development live supervisor adoption, rollback and Harness continuity',
     sourcePaths:['test/e2e/development-live.ts','tools/development/dev-*','src/web/http/**','services/buildr-harness/src/process/**'],
     command:node('tools/development/run-isolated-workspace-check.ts','--script',path.join(root,'test/e2e/development-live.ts'),'--','--recovery'),
-    schedulingCostMs:90000,timeoutMs:300000,prepare:sharedCheckPreparation},
+    resources:['workspace-saturating','app-runtime'],schedulingCostMs:90000,timeoutMs:300000,prepare:sharedCheckPreparation},
  {id:'harness-frame-browser',type:'E2E',name:'Development composes the complete Harness conversation',sourcePaths:['src/web/http/**','services/buildr-web/src/features/harness-ui/**','services/buildr-harness-web/src/**'],command:{file:process.execPath,args:['tools/development/run-isolated-workspace-check.ts','--script','test/e2e/harness-frame.ts'],cwd:'.'},resources:['browser-runtime'],schedulingCostMs:60000,timeoutMs:180000},
   {
     id: 'harness-products-consumption', type: 'E2E', name: 'Real Harness and Development package coexistence and retained restart',

@@ -1127,6 +1127,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
       if (drift.length) throw closeoutError('self-bootstrap-closeout.dsh-source-drift', '保留检出包含交付范围以外的插件改动，未换包。', { paths: drift });
       const plugin = updateDshPlugin({
         root, nodeExecutable, environment, restartDsh,
+        files: actions['update-dsh-development-plugin'],
         run: (exe, args, id, env, opts = {}, record = true) => record
           ? command(execute, exe, args, root, id, active, {}, env, opts)
           : execute(exe, args, { cwd: root, env, ...opts }),

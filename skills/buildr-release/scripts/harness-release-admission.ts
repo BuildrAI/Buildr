@@ -12,7 +12,7 @@ const sha256 = /^[a-f0-9]{64}$/u;
 const versionPattern = /^\d+\.\d+\.\d+(?:-rc\.[1-9]\d*)?$/u;
 const integrityPattern = /^sha512-[A-Za-z0-9+/]{86}==$/u;
 const keys = ['target','version','sourceCommit','sourceTree','sha256','integrity','proofSha256'] as const;
-const targets = ['harness','dsh-buildr-harness'];
+const targets = ['harness','dsh-buildr-harness','dsh-buildr-development'];
 const trustedPublishingSetupRef = 'codex/release-harness-admission-trusted-publishing';
 const authorityProbePath = 'skills/buildr-release/scripts/harness-npm-authority.ts';
 export const trustedPublishingSetupPaths = [
@@ -76,10 +76,14 @@ export function assertAdmittedHarnessOriginal(candidate: any, proofBytes: Buffer
   if (proof?.status !== 'passed' || proof.sha256 !== approved.sha256 || proof.platform !== 'darwin' || proof.arch !== 'arm64') throw Error('harness-proof-invalid');
   if (approved.target === 'harness') {
     if (proof.check !== 'installed-cli-launcher-web' || proof.node !== 'v24.15.0') throw Error('harness-proof-invalid');
-  } else {
+  } else if (approved.target === 'dsh-buildr-harness') {
     const harness = all.find(item => item.target === 'harness' && item.version === proof.harnessVersion && item.integrity === proof.harnessIntegrity);
     if (proof.check !== 'installed-dsh-npm-and-github' || proof.installEvidence !== 'isolated-npm-and-http-tarball' ||
         !/^0\.2\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(proof.dshVersion) || !harness) throw Error('harness-pair-proof-invalid');
+  } else {
+    if (proof.check !== 'installed-dsh-npm-and-github' || proof.installEvidence !== 'isolated-npm-and-http-tarball' ||
+        !/^0\.2\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(proof.dshVersion) ||
+        typeof proof.buildrVersion !== 'string' || typeof proof.buildrIntegrity !== 'string') throw Error('harness-pair-proof-invalid');
   }
   return proof;
 }

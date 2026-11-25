@@ -337,3 +337,115 @@ test('watch errors and missing terminal evidence return without repeated command
     assert.equal(watches, 1); assert.equal(value.waiting.status, status === 'failed' ? 'watch-failed' : 'readback-required');
   }
 });
+
+test('main-merge-pending watches pending required check runId when exposed and resumes prepare', async () => {
+  const { runReleaseOperationUntilSettled } = await import('../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts');
+  const watchedIds: Array<string | number> = [];
+  const results = [
+    {
+      status: 'main-merge-pending',
+      mainPullRequest: {
+        checks: [{
+          name: 'Candidate gate',
+          bucket: 'pending',
+          state: 'IN_PROGRESS',
+          link: 'https://github.com/BuildrAI/Buildr/actions/runs/45451507431/job/12345',
+        }],
+      },
+      effects: [],
+    },
+    { status: 'passed', effects: [{ type: 'release-main-merge', state: 'confirmed' }] },
+  ];
+  let now = 0;
+  const value = await runReleaseOperationUntilSettled({ action: 'prepare', wait: true, waitIntervalMs: 10, waitTimeoutMs: 100 }, {
+    now: () => now,
+    runReleaseOperation: async () => results.shift()!,
+    watchRun: async (request: any) => {
+      watchedIds.push(request.runId);
+      now += 15;
+      return { status: 'completed', exitCode: 0 };
+    },
+  });
+  assert.deepEqual(watchedIds, ['45451507431']);
+  assert.equal(value.status, 'passed');
+  assert.equal(value.waiting.status, 'settled');
+});
+
+test('transient EOF retry applies only to strictly read-only gh queries and never mutating commands', async () => {
+  const {
+    isRetryableReadOnlyGhArgs,
+    isTransientGhNetworkFailure,
+    waitForReleaseMainPullRequest,
+  } = await import('../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts');
+
+  for (const readOnly of [
+    ['api', 'repos/BuildrAI/Buildr/actions/runs/1'],
+    ['api', '--method', 'GET', 'repos/BuildrAI/Buildr/actions/runs/1'],
+    ['run', 'view', '1'],
+    ['run', 'list', '--repo', 'BuildrAI/Buildr'],
+    ['pr', 'view', 'https://github.com/BuildrAI/Buildr/pull/120'],
+    ['pr', 'checks', 'https://github.com/BuildrAI/Buildr/pull/120', '--required'],
+    ['release', 'view', 'v0.1.0'],
+  ]) {
+    assert.equal(isRetryableReadOnlyGhArgs(readOnly), true, readOnly.join(' '));
+  }
+  for (const mutating of [
+    ['workflow', 'run', 'publish.yml'],
+    ['pr', 'create'],
+    ['pr', 'merge', '120'],
+    ['run', 'rerun', '1'],
+    ['release', 'create', 'v0.1.0'],
+    ['api', '-X', 'POST', 'repos/BuildrAI/Buildr/actions/runs/1/pending_deployments'],
+    ['api', '-F', 'state=approved', 'repos/BuildrAI/Buildr/actions/runs/1/pending_deployments'],
+    ['pr', 'checks', '120', '--watch'],
+  ]) {
+    assert.equal(isRetryableReadOnlyGhArgs(mutating), false, mutating.join(' '));
+  }
+
+  assert.equal(isTransientGhNetworkFailure({ stderr: 'Get "https://api.github.com/repos/BuildrAI/Buildr/actions/runs/45450989059": EOF' }), true);
+  assert.equal(isTransientGhNetworkFailure({ stderr: 'HTTP 502 Bad Gateway' }), true);
+  assert.equal(isTransientGhNetworkFailure({ stderr: 'HTTP 404 Not Found' }), false);
+
+  const sourceCommit = 'a'.repeat(40);
+  let viewCalls = 0;
+  const observation = await waitForReleaseMainPullRequest({
+    url: 'https://github.com/BuildrAI/Buildr/pull/120',
+    sourceCommit,
+    branch: 'codex/release-main-fixture',
+    repo: '.',
+  }, {
+    ghRetryDelayMs: 0,
+    execute: (_cmd: string, args: string[]) => {
+      if (args[0] === 'pr' && args[1] === 'view') {
+        viewCalls += 1;
+        if (viewCalls === 1) {
+          return { status: 1, stdout: '', stderr: 'Get "https://api.github.com/graphql": EOF' };
+        }
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            state: 'OPEN',
+            headRefOid: sourceCommit,
+            headRefName: 'codex/release-main-fixture',
+            baseRefName: 'main',
+            url: 'https://github.com/BuildrAI/Buildr/pull/120',
+            mergeStateStatus: 'CLEAN',
+            mergeable: 'MERGEABLE',
+            isDraft: false,
+          }),
+          stderr: '',
+        };
+      }
+      if (args[0] === 'pr' && args[1] === 'checks') {
+        return {
+          status: 0,
+          stdout: JSON.stringify([{ name: 'Candidate gate', state: 'SUCCESS', bucket: 'pass', link: '' }]),
+          stderr: '',
+        };
+      }
+      throw new Error(`unexpected execute ${args.join(' ')}`);
+    },
+  });
+  assert.equal(viewCalls, 2);
+  assert.equal(observation.status, 'ready');
+});

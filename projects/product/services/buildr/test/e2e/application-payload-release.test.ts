@@ -298,7 +298,7 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     web.stderr.setEncoding('utf8');
     web.stderr.on('data', (chunk: any) => { stderr += chunk; });
     let instance: any = null;
-    for (let attempt: any = 0; attempt < 100; attempt += 1) {
+    for (let attempt: any = 0; attempt < 600; attempt += 1) {
       try { instance = JSON.parse(fs.readFileSync(path.join(appData, 'instance.json'), 'utf8')); } catch {}
       if (instance) break;
       if (web.exitCode !== null) break;

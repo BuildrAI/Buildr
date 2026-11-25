@@ -1,0 +1,4 @@
+- insert:
+    - id: buildr-development-dev
+      name: '@buildr-ai/dsh-buildr-development-dev'
+      disabled: false
