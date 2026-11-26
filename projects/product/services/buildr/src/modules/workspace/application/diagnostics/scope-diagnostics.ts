@@ -160,13 +160,14 @@ export function createScopeDiagnostics(deps: any) {
     };
   }
 
-  function missingProjectBaselineAssets(status: any) {
+  function missingProjectBaselineAssets(status: any, options: { requireServicesDirectory?: boolean } = {}) {
+    const { requireServicesDirectory = true } = options;
     const labels: Record<string, string> = {
       openspecSpecs: 'openspec/specs',
       knowledge: 'knowledge',
       openspecChanges: 'openspec/changes',
       servicesMetadata: 'services/manifest.yml',
-      servicesDirectory: 'services',
+      ...(requireServicesDirectory ? { servicesDirectory: 'services' } : {}),
     };
     return Object.entries(status)
       .filter(([key]: any) => Object.hasOwn(labels, key))
@@ -380,7 +381,8 @@ export function createScopeDiagnostics(deps: any) {
 
       if (!item.project) continue;
 
-      const effectiveMetadataPath = registry?.schemaVersion === 'buildr.projects/v3'
+      const isGlobalAssetCatalog = registry?.schemaVersion === 'buildr.projects/v3';
+      const effectiveMetadataPath = isGlobalAssetCatalog
         ? servicesManifestPath(targetRoot)
         : metadataPath;
 
@@ -396,7 +398,7 @@ export function createScopeDiagnostics(deps: any) {
         source: registryEntry?.source || null,
         exists: existsDirectory(projectRoot),
         servicesMetadata: toPosixRelative(targetRoot, effectiveMetadataPath),
-        servicesDirectory: toPosixRelative(targetRoot, servicesRoot),
+        servicesDirectory: isGlobalAssetCatalog ? null : toPosixRelative(targetRoot, servicesRoot),
         baseline: projectBaselineStatus(projectRoot, effectiveMetadataPath),
         openspec: existsDirectory(path.join(projectRoot, 'openspec')),
       };
@@ -422,7 +424,9 @@ export function createScopeDiagnostics(deps: any) {
 
       if (!project.registered) continue;
 
-      const missingBaseline = missingProjectBaselineAssets(project.baseline);
+      const missingBaseline = missingProjectBaselineAssets(project.baseline, {
+        requireServicesDirectory: !isGlobalAssetCatalog,
+      });
       if (missingBaseline.length > 0) {
         addDoctorFinding(result, 'warning', 'project.baseline_incomplete', `Project baseline 不完整：${item.project}`, {
           path: project.path,
