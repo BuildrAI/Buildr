@@ -629,7 +629,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     await page.goto(`${workspaceUrl}/tasks`);
     await page.locator('#development-environment-badge').waitFor({ state: 'visible' });
     assert.equal((await page.locator('#development-environment-badge').innerText()).trim(), '开发版');
-    assert.equal(await page.title(), `${fixtureProfile === 'core' ? 'browser-e2e-core' : 'browser-e2e'} · Buildr Development Dev`);
+    assert.equal(await page.title(), `${fixtureProfile === 'core' ? 'browser-e2e-core' : 'browser-e2e'} · Buildr Dev`);
     await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
     assert.ok(await page.locator('#task-table-body tr.ant-table-row').count() > 0, '核心 smoke 必须存在可进入的 Task');
     await page.locator('#task-table-body tr.ant-table-row').first().click();
@@ -676,7 +676,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   if (selected('shell')) await t.test('全局首页展示多个工作空间并进入选定上下文', async () => {
     await page.goto(`${url}/?catalog=1`);
     await page.locator('#workspace-grid .workspace-card').first().waitFor({ state: 'visible' });
-    assert.equal(await page.title(), 'Buildr Development Dev');
+    assert.equal(await page.title(), 'Buildr Dev');
     assert.equal(await page.locator('#preview-identity').isHidden(), true);
     await page.goto(`${previewUrl}/?catalog=1`);
     await page.locator('#preview-identity').waitFor({ state: 'visible' });
@@ -698,7 +698,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     await page.waitForURL(`${workspaceUrl}/overview`);
     await page.locator('#workbench-overview').waitFor({ state: 'visible' });
     assert.equal((await page.locator('#shell-workspace-name').innerText()).trim(), 'browser-e2e');
-    assert.equal(await page.title(), 'browser-e2e · Buildr Development Dev');
+    assert.equal(await page.title(), 'browser-e2e · Buildr Dev');
     await showPrimaryNavigation(page, 'workbench');
     assert.equal(await page.getByLabel('工作台二级导航',{exact:true}).locator('[data-nav="overview"]').evaluate((item: any) => item.classList.contains('active')), true);
     const expectedProjectCount: any = selected('articles') ? 3 : 2;

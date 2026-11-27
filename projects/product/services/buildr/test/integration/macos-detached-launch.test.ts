@@ -104,7 +104,7 @@ test('launchDetachedProcess 在真实 macOS 通过 launchd 启动独立 coalitio
   assert.notEqual(afterPrint.status, 0, 'bootout must unload temporary launchd job');
 });
 
-test('Buildr Development Dev.app macOS 入口在真实 launchd 模式下以独立作业运行并保留私有辅助 PATH', { skip: process.platform !== 'darwin' }, async (t) => {
+test('Buildr Dev.app macOS 入口在真实 launchd 模式下以独立作业运行并保留私有辅助 PATH', { skip: process.platform !== 'darwin' }, async (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-macos-app-launchd-'));
   const home = path.join(base, 'home');
   const jobsDir = path.join(home, 'Library', 'Logs', 'Buildr Dev', 'launchd-jobs');
@@ -161,7 +161,7 @@ test('Buildr Development Dev.app macOS 入口在真实 launchd 模式下以独�
     },
   });
 
-  const wrapper = path.join(output, 'Buildr Development Dev.app/Contents/MacOS/Buildr');
+  const wrapper = path.join(output, 'Buildr Dev.app/Contents/MacOS/Buildr');
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     HOME: home,

@@ -19,7 +19,7 @@ function currentNpmRegistration(runtime: any) {
     payloadManifest: readApplicationPayloadManifest(payloadRoot),
   });
   if (origin.channel !== 'npm') {
-    const error: Error & Record<string, any> = new Error(`Buildr Development Launcher management requires a verified npm installation; current channel is ${origin.channel}.`);
+    const error: Error & Record<string, any> = new Error(`Buildr Launcher management requires a verified npm installation; current channel is ${origin.channel}.`);
     error.code = 'launcher.npm_installation_required';
     throw error;
   }
@@ -38,9 +38,9 @@ function currentNpmRegistration(runtime: any) {
 
 function printLauncherResult(result: any) {
   const location = result.target || '-';
-  if (result.status === 'ready') console.log(`npm Buildr Development Launcher ready: ${location}`);
-  else if (result.status === 'absent') console.log(`npm Buildr Development Launcher absent: ${location}`);
-  else console.log(`npm Buildr Development Launcher ${result.status}: ${result.diagnostic?.message || location}`);
+  if (result.status === 'ready') console.log(`npm Buildr Launcher ready: ${location}`);
+  else if (result.status === 'absent') console.log(`npm Buildr Launcher absent: ${location}`);
+  else console.log(`npm Buildr Launcher ${result.status}: ${result.diagnostic?.message || location}`);
   for (const action of result.nextActions || []) console.log(`next: ${action}`);
 }
 
@@ -79,11 +79,11 @@ export function createLauncherCliContributions(application: any = null) {
     {
       key: 'web launcher install',
       surface: 'primary',
-      summary: '从当前已验证的 npm installation 显式生成不复制 Node 或 package 的 Buildr Development Launcher。',
+      summary: '从当前已验证的 npm installation 显式生成不复制 Node 或 package 的 Buildr Launcher。',
       help: [
         'Usage: buildr web launcher install [--target <path>] [--port <0..65535>] [--json]',
         '',
-        'macOS 生成本机 Buildr Development.app（默认 /Applications；默认位置不可写时报错并可用 --target 指定其他路径），Windows 生成 Start Menu shortcut；两者只绑定已登记的 Host Node、package entry、npm prefix 与 installation identity。',
+        'macOS 生成本机 Buildr.app（默认 /Applications；默认位置不可写时报错并可用 --target 指定其他路径），Windows 生成 Start Menu shortcut；两者只绑定已登记的 Host Node、package entry、npm prefix 与 installation identity。',
         '默认首选 127.0.0.1:4457；--port 0 直接使用随机 loopback 端口，非零首选端口占用时只随机回退一次。',
         '普通 npm install 不会创建图形入口；已有同 ownership Launcher 才会在 npm 更新后刷新 binding。',
         'status、repair、uninstall 省略 --target 时按真实位置操作：先查 /Applications，再查 ~/Applications 与既有旧名入口。',
@@ -94,7 +94,7 @@ export function createLauncherCliContributions(application: any = null) {
     {
       key: 'web launcher status',
       surface: 'primary',
-      summary: '只读验证 npm Buildr Development Launcher 的 binding、Host Node、package entry、prefix 与 ownership。',
+      summary: '只读验证 npm Buildr Launcher 的 binding、Host Node、package entry、prefix 与 ownership。',
       help: [
         'Usage: buildr web launcher status [--target <path>] [--json]',
         '',
@@ -119,7 +119,7 @@ export function createLauncherCliContributions(application: any = null) {
     {
       key: 'web launcher uninstall',
       surface: 'primary',
-      summary: '只移除 ownership 精确匹配的 npm Buildr Development Launcher，保留 npm package 与 Workspace 数据。',
+      summary: '只移除 ownership 精确匹配的 npm Buildr Launcher，保留 npm package 与 Workspace 数据。',
       help: [
         'Usage: buildr web launcher uninstall [--target <path>] [--json]',
         '',

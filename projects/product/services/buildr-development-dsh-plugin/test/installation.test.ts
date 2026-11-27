@@ -20,7 +20,7 @@ test('supportsDevelopment accepts >= 0.1.0-rc.67 and < 0.2.0-0', () => {
   assert.equal(supportsDevelopment('0.2.0-rc.1'), false);
 });
 
-test('discoverReleased verifies Buildr Development launcher binding or product-installations registry', () => {
+test('discoverReleased verifies Buildr launcher binding or product-installations registry', () => {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-dev-discovery-')));
   const systemApps = path.join(home, 'SystemApplications');
   fs.mkdirSync(systemApps, { recursive: true });
@@ -55,7 +55,7 @@ test('discoverReleased verifies Buildr Development launcher binding or product-i
     assert.deepEqual(discoverReleased(home, 'darwin', systemApps), { code: 'development-incompatible' });
 
     writeManifest('0.1.0-rc.67');
-    const appTarget = path.join(systemApps, 'Buildr Development.app');
+    const appTarget = path.join(systemApps, 'Buildr.app');
     const marker = path.join(appTarget, 'Contents', 'Resources', 'launcher-binding.json');
     fs.mkdirSync(path.dirname(marker), { recursive: true });
     const binding = {
@@ -74,7 +74,7 @@ test('discoverReleased verifies Buildr Development launcher binding or product-i
     });
 
     // Per-user ~/Applications takes precedence over system /Applications when present.
-    const userAppTarget = path.join(home, 'Applications', 'Buildr Development.app');
+    const userAppTarget = path.join(home, 'Applications', 'Buildr.app');
     const userMarker = path.join(userAppTarget, 'Contents', 'Resources', 'launcher-binding.json');
     fs.mkdirSync(path.dirname(userMarker), { recursive: true });
     fs.writeFileSync(userMarker, JSON.stringify({

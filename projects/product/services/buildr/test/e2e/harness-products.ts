@@ -58,7 +58,7 @@ for (const order of ['harness-first', 'development-first'] as const) {
     if (!fs.existsSync(receiptPath)) return;
     const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
     if (!receipt.launcherIdentity) return;
-    assert.equal(receipt.launcherIdentity.target, path.join(directory, 'Applications/Buildr Development.app'));
+    assert.equal(receipt.launcherIdentity.target, path.join(directory, 'Applications/Buildr.app'));
     if (launcherWebPid) assert.equal(receipt.pid, launcherWebPid, 'cleanup cannot stop an unobserved replacement');
     await requestBuildrWebInstanceShutdown(receipt);
     assert.equal((await waitForBuildrWebInstanceExit(receipt, {attempts: 200, intervalMs: 50})).status, 'exited');
@@ -144,7 +144,7 @@ for (const order of ['harness-first', 'development-first'] as const) {
     };
     if (nativeLaunchers && process.platform === 'darwin') {
       const applications = path.join(directory, 'Applications'), home = path.join(directory, 'launcher-home');
-      const harnessApp = path.join(applications, 'Buildr Harness.app'), developmentApp = path.join(applications, 'Buildr Development.app');
+      const harnessApp = path.join(applications, 'Buildr Harness.app'), developmentApp = path.join(applications, 'Buildr.app');
       fs.mkdirSync(home, {recursive: true});
       run(process.execPath, [harnessEntry, 'launcher', 'install', '--target', harnessApp, '--data-root', dataRoot], env, work);
       run(process.execPath, [developmentEntry, 'web', 'launcher', 'install', '--target', developmentApp, '--port', '0', '--json'], env, work);

@@ -70,7 +70,7 @@ function fixture(t: any) {
     runtime: { role: profile === 'released' ? 'host' : 'development' },
   }, { dataRoot: dataRoots[profile], env: {} })]));
   const entryPath = npmEntry(root);
-  const developmentLauncherRoot = path.join(root, 'Buildr Development Dev');
+  const developmentLauncherRoot = path.join(root, 'Buildr Dev');
   const options = (cwd = root, env: NodeJS.ProcessEnv = {}) => ({
     cwd, home: root, env: { PATH: process.env.PATH, ...env }, dataRoots,
     entryPath, developmentLauncherRoot,
@@ -547,23 +547,28 @@ test('a later termination signal still reaches a child that handled an earlier i
   assert.equal(fs.readFileSync(terminated, 'utf8'), 'terminated');
 });
 
-test('development launcher resolution prefers Buildr Development Dev and falls back to legacy Buildr Web Dev', async (t) => {
+test('development launcher resolution prefers Buildr Dev and falls back to legacy Buildr Development Dev and Buildr Web Dev', async (t) => {
   const { resolveDevelopmentLauncherRoot } = await import('../../src/modules/installation/contracts/web-profile.ts');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-dev-launcher-resolve-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const programs = path.join(root, 'Programs');
   const env = { LOCALAPPDATA: root };
-  assert.equal(resolveDevelopmentLauncherRoot('win32', { env }), path.join(programs, 'Buildr Development Dev'));
+  assert.equal(resolveDevelopmentLauncherRoot('win32', { env }), path.join(programs, 'Buildr Dev'));
 
-  const legacyIdentity = path.join(programs, 'Buildr Web Dev', 'launcher-identity.json');
-  fs.mkdirSync(path.dirname(legacyIdentity), { recursive: true });
-  fs.writeFileSync(legacyIdentity, '{}\n');
+  const legacyWebIdentity = path.join(programs, 'Buildr Web Dev', 'launcher-identity.json');
+  fs.mkdirSync(path.dirname(legacyWebIdentity), { recursive: true });
+  fs.writeFileSync(legacyWebIdentity, '{}\n');
   assert.equal(resolveDevelopmentLauncherRoot('win32', { env }), path.join(programs, 'Buildr Web Dev'));
 
-  const preferredIdentity = path.join(programs, 'Buildr Development Dev', 'launcher-identity.json');
+  const legacyDevIdentity = path.join(programs, 'Buildr Development Dev', 'launcher-identity.json');
+  fs.mkdirSync(path.dirname(legacyDevIdentity), { recursive: true });
+  fs.writeFileSync(legacyDevIdentity, '{}\n');
+  assert.equal(resolveDevelopmentLauncherRoot('win32', { env }), path.join(programs, 'Buildr Development Dev'));
+
+  const preferredIdentity = path.join(programs, 'Buildr Dev', 'launcher-identity.json');
   fs.mkdirSync(path.dirname(preferredIdentity), { recursive: true });
   fs.writeFileSync(preferredIdentity, '{}\n');
-  assert.equal(resolveDevelopmentLauncherRoot('win32', { env }), path.join(programs, 'Buildr Development Dev'));
+  assert.equal(resolveDevelopmentLauncherRoot('win32', { env }), path.join(programs, 'Buildr Dev'));
 });
 
 test('development-source.json routes without a launcher and takes precedence over stale launcher metadata', (t) => {

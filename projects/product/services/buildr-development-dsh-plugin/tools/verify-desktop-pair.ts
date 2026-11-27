@@ -329,7 +329,7 @@ export async function verifyDesktopPair(opts: VerifyDesktopPairOptions): Promise
     const buildrPkgRoot = path.join(prefix1, 'lib', 'node_modules', '@buildr-ai', 'buildr');
     const buildrEntry = path.join(buildrPkgRoot, 'bin', 'buildr.mjs');
     const webPort = await reserveLoopbackPort();
-    const launcherTarget = path.join(fs.realpathSync(home1), 'Applications', 'Buildr Development.app');
+    const launcherTarget = path.join(fs.realpathSync(home1), 'Applications', 'Buildr.app');
     const launcherOut = await execFileAsync(process.execPath, [buildrEntry, 'web', 'launcher', 'install', '--target', launcherTarget, '--port', String(webPort), '--json'], {
       cwd: env1Dir, env: env1, encoding: 'utf8', timeout: 60_000,
     });

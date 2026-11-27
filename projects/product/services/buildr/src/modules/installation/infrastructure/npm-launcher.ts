@@ -32,16 +32,22 @@ function commandValue(value: any) {
 /** Windows Start Menu shortcut 指向 wscript.exe 隐藏执行的 .vbs；.vbs 再隐藏运行 .cmd runner。 */
 function windowsLauncherWrapperFiles(bindingDir: any) {
   return {
-    runner: path.join(bindingDir, 'Buildr Development Runner.cmd'),
-    host: path.join(bindingDir, 'Buildr Development.vbs'),
+    runner: path.join(bindingDir, 'Buildr Runner.cmd'),
+    host: path.join(bindingDir, 'Buildr.vbs'),
   };
 }
 
 function legacyWindowsLauncherWrapperFiles(bindingDir: any) {
-  return {
-    runner: path.join(bindingDir, 'Buildr Web Runner.cmd'),
-    host: path.join(bindingDir, 'Buildr Web.vbs'),
-  };
+  return [
+    {
+      runner: path.join(bindingDir, 'Buildr Development Runner.cmd'),
+      host: path.join(bindingDir, 'Buildr Development.vbs'),
+    },
+    {
+      runner: path.join(bindingDir, 'Buildr Web Runner.cmd'),
+      host: path.join(bindingDir, 'Buildr Web.vbs'),
+    },
+  ];
 }
 
 function windowsWscriptPath(env: any = process.env) {
@@ -114,7 +120,7 @@ If runError <> 0 Then
 End If
 If runError <> 0 Or exitCode <> 0 Then
   If shell.ExpandEnvironmentStrings("%BUILDR_LAUNCHER_NO_NOTIFY%") <> "1" Then
-    MsgBox "Buildr Development 无法启动。请在终端运行 buildr web launcher status 查看诊断，或执行 buildr web launcher repair 修复。", 16, "Buildr Development"
+    MsgBox "Buildr 无法启动。请在终端运行 buildr web launcher status 查看诊断，或执行 buildr web launcher repair 修复。", 16, "Buildr"
   End If
   WScript.Quit 1
 End If
@@ -131,6 +137,8 @@ export function npmLauncherTargetCandidates(platform: any = process.platform, op
     const home = options.homedir || os.homedir();
     const system = options.systemApplications || '/Applications';
     return [
+      path.join(system, 'Buildr.app'),
+      path.join(home, 'Applications', 'Buildr.app'),
       path.join(system, 'Buildr Development.app'),
       path.join(home, 'Applications', 'Buildr Development.app'),
       path.join(system, 'Buildr Web.app'),
@@ -140,11 +148,12 @@ export function npmLauncherTargetCandidates(platform: any = process.platform, op
   if (platform === 'win32') {
     const appData = options.appData || process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
     return [
+      path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Buildr.lnk'),
       path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Buildr Development.lnk'),
       path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Buildr Web.lnk'),
     ];
   }
-  throw new Error(`Buildr Development Launcher is not supported on ${platform}.`);
+  throw new Error(`Buildr Launcher is not supported on ${platform}.`);
 }
 
 export function defaultNpmLauncherTarget(platform: any = process.platform, options: any = {}) {
@@ -209,7 +218,7 @@ notify() {
 }
 fail() {
   printf '%s\n' "$1" >>"\${LOG_FILE}"
-  notify 'display alert "Buildr Development 无法启动" message "npm installation 或 Launcher binding 已漂移。请在终端运行 buildr web launcher status，然后执行 buildr web launcher repair。" as critical'
+  notify 'display alert "Buildr 无法启动" message "npm installation 或 Launcher binding 已漂移。请在终端运行 buildr web launcher status，然后执行 buildr web launcher repair。" as critical'
   exit 1
 }
 [ -x "\${NODE}" ] || fail "Host Node unavailable: \${NODE}"
@@ -254,14 +263,14 @@ if [ "\${STATUS}" -eq 0 ] && [ -n "\${LAUNCH_NODE}" ]; then
   STATUS=$?
 fi
 if [ "\${STATUS}" -ne 0 ]; then
-  printf "%s\\n" "Buildr Development exited with status \${STATUS}" >>"\${LOG_FILE}"
+  printf "%s\\n" "Buildr exited with status \${STATUS}" >>"\${LOG_FILE}"
   if [ "\${NO_NOTIFY}" != "1" ]; then
-    /usr/bin/osascript -e "display alert \\"Buildr Development 无法启动\\" message \\"正式 Launcher 启动失败。请在终端运行 buildr web launcher status，然后执行 buildr web launcher repair。\\" as critical" >/dev/null 2>&1 || true
+    /usr/bin/osascript -e "display alert \\"Buildr 无法启动\\" message \\"正式 Launcher 启动失败。请在终端运行 buildr web launcher status，然后执行 buildr web launcher repair。\\" as critical" >/dev/null 2>&1 || true
   fi
 fi
 ' buildr-web-launcher "\${LABEL}" "\${NODE}" "\${NODE_BIN}" "\${ENTRY}" "\${BINDING}" "\${LOG_FILE}" "\${APP_DATA}" "\${PRODUCT_DATA}" "\${NO_OPEN}" "\${NO_NOTIFY}" "\${SHARED_NODE_SCRIPT}"
 STATUS=$?
-[ "\${STATUS}" -eq 0 ] || fail "Could not submit Buildr Development background runner: status \${STATUS}"
+[ "\${STATUS}" -eq 0 ] || fail "Could not submit Buildr background runner: status \${STATUS}"
 exit 0
 `;
 }
@@ -274,13 +283,13 @@ function macInfoPlist(binding: any) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-<key>CFBundleName</key><string>Buildr Development</string>
-<key>CFBundleDisplayName</key><string>Buildr Development</string>
+<key>CFBundleName</key><string>Buildr</string>
+<key>CFBundleDisplayName</key><string>Buildr</string>
 <key>CFBundleIdentifier</key><string>${macBundleIdentifier(binding)}</string>
 <key>CFBundleShortVersionString</key><string>${binding.version}</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleExecutable</key><string>Buildr Development</string>
+<key>CFBundleExecutable</key><string>Buildr</string>
 <key>CFBundleIconFile</key><string>Buildr.icns</string>
 <key>LSUIElement</key><true/>
 </dict></plist>
@@ -289,7 +298,7 @@ function macInfoPlist(binding: any) {
 
 function writeMacLauncherCandidate(stage: any, binding: any) {
   const contents = path.join(stage, 'Contents');
-  const executable = path.join(contents, 'MacOS', 'Buildr Development');
+  const executable = path.join(contents, 'MacOS', 'Buildr');
   const resources = path.join(contents, 'Resources');
   fs.mkdirSync(path.dirname(executable), { recursive: true });
   fs.mkdirSync(resources, { recursive: true });
@@ -298,7 +307,7 @@ function writeMacLauncherCandidate(stage: any, binding: any) {
   fs.copyFileSync(resolveProductResource('product/resources/installation/launcher/Buildr.icns'), path.join(resources, 'Buildr.icns'));
   atomicWriteJson(path.join(resources, 'launcher-binding.json'), binding, { mode: 0o600 });
   const signed = spawnSync('/usr/bin/codesign', ['--force', '--sign', '-', '--timestamp=none', stage], { encoding: 'utf8' });
-  if (process.platform === 'darwin' && signed.status !== 0) throw new Error(`Cannot ad-hoc sign Buildr Development Launcher: ${(signed.stderr || '').trim()}`);
+  if (process.platform === 'darwin' && signed.status !== 0) throw new Error(`Cannot ad-hoc sign Buildr Launcher: ${(signed.stderr || '').trim()}`);
 }
 
 function windowsShortcutScript(target: any, binding: any, icon: any, options: any = {}) {
@@ -315,7 +324,7 @@ function windowsShortcutScript(target: any, binding: any, icon: any, options: an
     `$shortcut.Arguments = ${quotePowerShell(argumentsValue)}`,
     `$shortcut.WorkingDirectory = ${quotePowerShell(binding.packageRoot)}`,
     `$shortcut.IconLocation = ${quotePowerShell(`${icon},0`)}`,
-    '$shortcut.Description = "Open Buildr Development from the registered npm installation"',
+    '$shortcut.Description = "Open Buildr from the registered npm installation"',
     '$shortcut.Save()',
   ].join('; ');
 }
@@ -351,12 +360,12 @@ function writeWindowsLauncherCandidate(target: any, binding: any, options: any =
     else {
       if (process.platform !== 'win32') throw new Error('Windows Launcher shortcut creation requires a Windows host.');
       const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', windowsShortcutScript(target, binding, icon, options)], { encoding: 'utf8', windowsHide: true });
-      if (result.status !== 0) throw new Error(`Cannot create Buildr Development shortcut: ${(result.stderr || '').trim()}`);
+      if (result.status !== 0) throw new Error(`Cannot create Buildr shortcut: ${(result.stderr || '').trim()}`);
     }
     const shortcut = readWindowsShortcut(target, options);
     const expected = expectedWindowsShortcut(binding, options.env);
     if (!shortcut || !Object.entries(expected).every(([field, value]: any) => String(shortcut[field] || '').toLowerCase() === String(value).toLowerCase())) {
-      throw new Error('Created Buildr Development shortcut does not match its npm Launcher binding.');
+      throw new Error('Created Buildr shortcut does not match its npm Launcher binding.');
     }
     for (const { backup } of originals) fs.rmSync(backup, { force: true });
   } catch (error: any) {
@@ -379,7 +388,7 @@ function readWindowsShortcut(target: any, options: any = {}) {
     encoding: 'utf8',
     env: { ...process.env, BUILDR_LAUNCHER_SHORTCUT: target },
   });
-  if (result.status !== 0) throw new Error(`Cannot inspect Buildr Development shortcut: ${(result.stderr || '').trim()}`);
+  if (result.status !== 0) throw new Error(`Cannot inspect Buildr shortcut: ${(result.stderr || '').trim()}`);
   return JSON.parse(result.stdout);
 }
 
@@ -395,7 +404,7 @@ function expectedWindowsShortcut(binding: any, env: any = process.env) {
 function launcherStructure(platform: any, target: any, observed: any, options: any = {}) {
   if (observed.status !== 'ready') return observed;
   if (platform === 'darwin') {
-    const executable = path.join(target, 'Contents', 'MacOS', 'Buildr Development');
+    const executable = path.join(target, 'Contents', 'MacOS', 'Buildr');
     const plist = path.join(target, 'Contents', 'Info.plist');
     const icon = path.join(target, 'Contents', 'Resources', 'Buildr.icns');
     for (const file of [executable, plist, icon]) {
@@ -511,7 +520,7 @@ export function installNpmLauncher({ registration, platform = process.platform, 
       }
     } else if (platform === 'win32') {
       writeWindowsLauncherCandidate(resolvedTarget, expected, { writeShortcut, readShortcut, env });
-    } else throw new Error(`Buildr Development Launcher is not supported on ${platform}.`);
+    } else throw new Error(`Buildr Launcher is not supported on ${platform}.`);
   } catch (error: any) {
     if (platform === 'darwin' && !target && !repair && resolvedTarget === npmLauncherTargetCandidates(platform, { homedir, systemApplications })[0]
         && ['EACCES', 'EPERM', 'EROFS'].includes(error?.code)) {
@@ -543,16 +552,18 @@ export function installNpmLauncher({ registration, platform = process.platform, 
       }
     }
   } else if (platform === 'win32') {
-    const legacyWrapper = legacyWindowsLauncherWrapperFiles(path.dirname(bindingPath));
-    fs.rmSync(legacyWrapper.runner, { force: true });
-    fs.rmSync(legacyWrapper.host, { force: true });
+    const legacyWrappers = legacyWindowsLauncherWrapperFiles(path.dirname(bindingPath));
+    for (const legacyWrapper of legacyWrappers) {
+      fs.rmSync(legacyWrapper.runner, { force: true });
+      fs.rmSync(legacyWrapper.host, { force: true });
+    }
     if (!repair && !target) {
-      const legacyShortcut = npmLauncherTargetCandidates('win32', { appData })[1];
-      if (legacyShortcut && !sameFilesystemPath(legacyShortcut, resolvedTarget) && fs.existsSync(legacyShortcut)) {
+      const wrapper = windowsLauncherWrapperFiles(path.dirname(bindingPath));
+      const expectedHosts = [wrapper.host, ...legacyWrappers.map((item) => item.host)].map((file) => `"${file}"`.toLowerCase());
+      for (const legacyShortcut of npmLauncherTargetCandidates('win32', { appData }).slice(1)) {
+        if (!legacyShortcut || sameFilesystemPath(legacyShortcut, resolvedTarget) || !fs.existsSync(legacyShortcut)) continue;
         let legacyInfo: any = null;
         try { legacyInfo = readWindowsShortcut(legacyShortcut, { readShortcut }); } catch { legacyInfo = null; }
-        const wrapper = windowsLauncherWrapperFiles(path.dirname(bindingPath));
-        const expectedHosts = [legacyWrapper.host, wrapper.host].map((file) => `"${file}"`.toLowerCase());
         const matchesOwned = legacyInfo
           && String(legacyInfo.target || '').toLowerCase() === windowsWscriptPath(env).toLowerCase()
           && expectedHosts.includes(String(legacyInfo.arguments || '').trim().toLowerCase())
@@ -598,12 +609,13 @@ export function uninstallNpmLauncher({ registration, platform = process.platform
     fs.rmSync(resolvedTarget, { force: true });
     fs.rmSync(bindingPath, { force: true });
     const wrapper = windowsLauncherWrapperFiles(path.dirname(bindingPath));
-    const legacyWrapper = legacyWindowsLauncherWrapperFiles(path.dirname(bindingPath));
     fs.rmSync(path.join(path.dirname(bindingPath), 'Buildr.ico'), { force: true });
     fs.rmSync(wrapper.runner, { force: true });
     fs.rmSync(wrapper.host, { force: true });
-    fs.rmSync(legacyWrapper.runner, { force: true });
-    fs.rmSync(legacyWrapper.host, { force: true });
+    for (const legacyWrapper of legacyWindowsLauncherWrapperFiles(path.dirname(bindingPath))) {
+      fs.rmSync(legacyWrapper.runner, { force: true });
+      fs.rmSync(legacyWrapper.host, { force: true });
+    }
   }
   return { ...npmLauncherStatus({ platform, target: resolvedTarget }), action: observed.status === 'absent' ? 'absent' : 'uninstalled' };
 }
@@ -617,8 +629,8 @@ export function refreshInstalledNpmLauncher({ registration, platform = process.p
   const existing = readAndInspectNpmLauncherBinding(bindingPath, { target: resolvedTarget });
   if (!ownershipMatches(existing, expected)) return { action: 'blocked', reason: 'Existing Launcher ownership does not match this npm installation slot' };
   const baseName = path.basename(resolvedTarget);
-  const migratedTarget = !target && (baseName === 'Buildr Web.app' || baseName === 'Buildr Web.lnk')
-    ? path.join(path.dirname(resolvedTarget), platform === 'darwin' ? 'Buildr Development.app' : 'Buildr Development.lnk')
+  const migratedTarget = !target && ['Buildr Development.app', 'Buildr Web.app', 'Buildr Development.lnk', 'Buildr Web.lnk'].includes(baseName)
+    ? path.join(path.dirname(resolvedTarget), platform === 'darwin' ? 'Buildr.app' : 'Buildr.lnk')
     : resolvedTarget;
   return installNpmLauncher({
     registration,
@@ -637,7 +649,7 @@ export function refreshInstalledNpmLauncher({ registration, platform = process.p
 
 export function assertCurrentNpmLauncherBinding(file: any, productIdentity: any) {
   const observed = readAndInspectNpmLauncherBinding(file);
-  if (observed.status !== 'ready') throw new Error(`Buildr Development Launcher binding is ${observed.status}: ${observed.message || observed.code}.`);
+  if (observed.status !== 'ready') throw new Error(`Buildr Launcher binding is ${observed.status}: ${observed.message || observed.code}.`);
   const binding = validateNpmLauncherBinding(observed.binding);
   const mismatches = [
     ['version', binding.version, productIdentity.version],
@@ -645,6 +657,6 @@ export function assertCurrentNpmLauncherBinding(file: any, productIdentity: any)
     ['applicationPayloadDigest', binding.applicationPayloadDigest, productIdentity.applicationPayloadDigest],
     ['installationIdentity', binding.installationOwnershipIdentity, productIdentity.installationIdentity],
   ].filter(([, expected, actual]: any) => expected !== actual);
-  if (mismatches.length) throw new Error(`Buildr Development Launcher does not match the current npm Buildr (${mismatches.map(([field]: any) => field).join(', ')}).`);
+  if (mismatches.length) throw new Error(`Buildr Launcher does not match the current npm Buildr (${mismatches.map(([field]: any) => field).join(', ')}).`);
   return binding;
 }

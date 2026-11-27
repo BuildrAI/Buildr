@@ -99,7 +99,7 @@ function createDevelopmentSource(base: string, dataRoot: string): { sourceRoot: 
     protocolIdentity: 'buildr.web-protocol/v1',
     sourceRoot,
     workspaceRoot: gitRoot,
-    launcherTarget: path.join(base, 'Buildr Development Dev'),
+    launcherTarget: path.join(base, 'Buildr Dev'),
     buildId: 'fixture-dev',
     version: '9.9.9-dev',
     updatedAt: '2026-11-24T00:00:00.000Z',

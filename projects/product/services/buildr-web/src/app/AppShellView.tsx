@@ -24,14 +24,21 @@ export function AppShellHeader({isGlobal,primaryNavigation='top',brandHref,devel
             to={brandHref}
             aria-label="当前工作空间概览"
           >
-            <span className="brand-mark">D</span>
-            <strong>Buildr Development</strong>
+            <span className="brand-mark" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0, display: 'block' }}>
+                <path d="M6.2 4.9 11.2 2 14.8 4.1 9.8 7v2.6L6.2 7.5Z" fill="#1f92f6" />
+                <path d="M10.9 6.36 14.8 4.1 18.3 6.1Q19 6.5 19 7.4V10.5L15.2 12.7V8.8Z" fill="#f8af08" />
+                <path d="M10.7 11.4 13.2 10 18.3 12.9Q19 13.3 19 14.2V16.7Q19 17.6 18.3 18L16.3 19.1 13.5 17.5 15.2 16.5V15.3L10.7 12.7Z" fill="#14b3a4" />
+                <path d="M6.2 8.7 9.8 10.8V17.2L11.8 18.4 13.5 17.5 16.5 19.2 11.8 22 4.8 18V16.8L6.2 16Z" fill="#1f92f6" />
+              </svg>
+            </span>
+            <strong>Buildr</strong>
           </Link>
           {development ? (
             <span
               id="development-environment-badge"
               className="development-environment-badge"
-              title="当前运行的是 Buildr Development 开发版"
+              title="当前运行的是 Buildr 开发版"
             >
               开发版
             </span>

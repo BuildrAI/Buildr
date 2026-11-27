@@ -68,7 +68,7 @@ function routingError(code: string, message: string, details?: unknown, nextActi
   return Object.assign(new Error(message), {
     code: `workspace_cli.${code}`,
     ...(details === undefined ? {} : { details }),
-    nextAction: nextAction ?? '核对目标工作空间的现有管理登记或开发来源；开发来源不可用时恢复已登记源码或重新安装 Buildr Development Dev。不要直接改写本机归属或 SQLite。',
+    nextAction: nextAction ?? '核对目标工作空间的现有管理登记或开发来源；开发来源不可用时恢复已登记源码或重新安装 Buildr Dev。不要直接改写本机归属或 SQLite。',
   });
 }
 
@@ -122,11 +122,12 @@ function realDirectory(value: string): string | null {
 export function developmentLauncherCandidates(platform: NodeJS.Platform = process.platform, options: { env?: NodeJS.ProcessEnv; home?: string } = {}): string[] {
   const env = options.env ?? process.env;
   if (platform === 'darwin') {
-    return ['/Applications/Buildr Development Dev.app', '/Applications/Buildr Web Dev.app'];
+    return ['/Applications/Buildr Dev.app', '/Applications/Buildr Development Dev.app', '/Applications/Buildr Web Dev.app'];
   }
   if (platform === 'win32') {
     const localAppData = env.LOCALAPPDATA || path.win32.join(options.home ?? os.homedir(), 'AppData', 'Local');
     return [
+      path.win32.join(localAppData, 'Programs', 'Buildr Dev'),
       path.win32.join(localAppData, 'Programs', 'Buildr Development Dev'),
       path.win32.join(localAppData, 'Programs', 'Buildr Web Dev'),
     ];
@@ -556,14 +557,14 @@ function resolveDevelopmentSourceInvocation(
   let identity: Record<string, any>;
   try { identity = JSON.parse(fs.readFileSync(identityFile, 'utf8')) as Record<string, any>; }
   catch (error) {
-    throw routingError('development_unavailable', usingSourceRecord ? `无法读取已登记的开发来源：${identityFile}。` : `无法读取已登记的 Buildr Development Dev 来源：${identityFile}。`, String(error));
+    throw routingError('development_unavailable', usingSourceRecord ? `无法读取已登记的开发来源：${identityFile}。` : `无法读取已登记的 Buildr Dev 来源：${identityFile}。`, String(error));
   }
   const expectedSchema = usingSourceRecord ? DEVELOPMENT_SOURCE_SCHEMA : LAUNCHER_IDENTITY_SCHEMA;
   if (identity?.schemaVersion !== expectedSchema || identity.channel !== 'development'
       || identity.runtimeRole !== 'development' || identity.source !== 'checkout' || identity.platform !== platform
       || identity.protocolIdentity !== PROTOCOL_IDENTITY
       || typeof identity.sourceRoot !== 'string' || !path.isAbsolute(identity.sourceRoot)) {
-    throw routingError('development_identity_invalid', usingSourceRecord ? `开发来源登记无效：${identityFile}。` : `Buildr Development Dev 的来源登记无效：${identityFile}。`);
+    throw routingError('development_identity_invalid', usingSourceRecord ? `开发来源登记无效：${identityFile}。` : `Buildr Dev 的来源登记无效：${identityFile}。`);
   }
   const clean = cleanSourceEnvironment(env);
   const sourceRoot = realDirectory(identity.sourceRoot);

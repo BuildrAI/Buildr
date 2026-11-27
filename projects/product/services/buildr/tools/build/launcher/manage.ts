@@ -55,10 +55,10 @@ function developmentRuntime(runtime: any): any  {
   };
 }
 function assertDevelopmentChannel(channel: any): any  {
-  if (channel !== 'development') throw new Error('Formal npm Buildr Development Launcher is managed only by `buildr web launcher`; tools/build/launcher manages development only.');
+  if (channel !== 'development') throw new Error('Formal npm Buildr Launcher is managed only by `buildr web launcher`; tools/build/launcher manages development only.');
 }
-function appName(channel: any): any  { return channel === 'development' ? 'Buildr Development Dev' : 'Buildr Development'; }
-function legacyAppNames(channel: any): string[] { return channel === 'development' ? ['Buildr Web Dev', 'Buildr Dev'] : ['Buildr Web', 'Buildr']; }
+function appName(channel: any): any  { return channel === 'development' ? 'Buildr Dev' : 'Buildr'; }
+function legacyAppNames(channel: any): string[] { return channel === 'development' ? ['Buildr Development Dev', 'Buildr Web Dev'] : ['Buildr Development', 'Buildr Web']; }
 function defaultInstallRoot(platform: any): any  {
   if (process.env.BUILDR_LAUNCHER_INSTALL_DIR) return path.resolve(process.env.BUILDR_LAUNCHER_INSTALL_DIR);
   if (platform === 'darwin') return '/Applications';
@@ -184,7 +184,7 @@ export function inspectGlobalCliCompatibility({
   if (content.includes(DEVELOPMENT_SOURCE_SCHEMA)) {
     return { status: 'compatible', registryFile, version, entryPath, routerFile, warning: null };
   }
-  if (content.includes('Buildr Development Dev')) {
+  if (content.includes('Buildr Dev') || content.includes('Buildr Development Dev')) {
     return {
       status: 'launcher_only',
       registryFile,
@@ -253,7 +253,7 @@ function validateBundle(bundle: any, platform: any, expected: any): any  {
 function launcherDiagnostics(identity: any): any  {
   if (!identity || identity.channel !== 'development') return [];
   const findings: any[] = [];
-  if (identity.webPort !== DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT) findings.push({ code: 'development.web_port_mismatch', message: `Buildr Development Dev Launcher未绑定固定端口 ${DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT}。`, suggestion: '重新安装 Development Launcher。' });
+  if (identity.webPort !== DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT) findings.push({ code: 'development.web_port_mismatch', message: `Buildr Dev Launcher未绑定固定端口 ${DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT}。`, suggestion: '重新安装 Development Launcher。' });
   if (!identity.sourceRoot || !path.isAbsolute(identity.sourceRoot) || !fs.existsSync(identity.sourceRoot)) findings.push({ code: 'development.source_missing', message: `Buildr checkout 不存在：${identity.sourceRoot || 'unknown'}`, suggestion: '在保留的Buildr checkout中重新运行 npm run install:development。' });
   else if (!fs.existsSync(path.join(identity.sourceRoot, 'bin', 'buildr.mjs'))) findings.push({ code: 'development.cli_missing', message: `Buildr CLI 不存在：${path.join(identity.sourceRoot, 'bin', 'buildr.mjs')}`, suggestion: '确认当前 checkout 完整后重新安装 launcher。' });
   else if (!fs.existsSync(path.join(identity.sourceRoot, 'package.json')) || !fs.existsSync(path.join(identity.sourceRoot, 'src')) || !fs.existsSync(path.join(identity.sourceRoot, 'resources', 'manifest.yml'))) findings.push({ code: 'development.checkout_invalid', message: `Buildr Service checkout 不完整：${identity.sourceRoot}`, suggestion: '确认当前 checkout 完整后重新安装 launcher。' });

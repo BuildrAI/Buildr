@@ -84,10 +84,8 @@ a {
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: var(--soft-primary);
-  color: #fff;
-  font-size: var(--icon-size-label);
-  font-weight: 650;
+  background: #fbfaf7;
+  border: 1px solid #dbe4ee;
 }
 
 .app-shell .brand-link strong {

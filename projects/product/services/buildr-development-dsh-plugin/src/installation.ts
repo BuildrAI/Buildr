@@ -46,6 +46,8 @@ function discoverFromLauncher(
   dataRoot: string,
 ): Discovery | null {
   const candidates = [
+    path.join(realHome, 'Applications', 'Buildr.app'),
+    path.join(systemApplications, 'Buildr.app'),
     path.join(realHome, 'Applications', 'Buildr Development.app'),
     path.join(systemApplications, 'Buildr Development.app'),
     path.join(realHome, 'Applications', 'Buildr Web.app'),

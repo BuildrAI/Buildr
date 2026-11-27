@@ -58,7 +58,7 @@
 - **AND** MUST NOT 为选版自动登记工作空间（Workspace）或新建本机记录
 
 ### Requirement: 目标执行来源必须可验证且保持安装所有权
-发布版归属 MUST 使用已验证的当前 npm 来源；开发版归属 MUST 优先读取目标开发数据目录下的稳定开发来源登记（`development-source.json`），在其不存在时兼容回退读取本机 `Buildr Development Dev` 启动器（Launcher）的有效登记，再在其不存在时兼容回退读取已登记的 `Buildr Web Dev` 启动器，并校验其当前来源与可执行性。当目标开发数据目录下存在 `development-source.json` 但内容损坏、格式无效或身份不匹配时，MUST 非零退出并报告可定位原因与恢复方向，MUST NOT 静默回退桌面启动器登记。MUST NOT 写死开发目录、从网页进程反推程序或把仅接受 npm 的安装登记冒充双版统一登记。默认 `buildr` 的机器入口所有权 MUST 继续属于 npm。
+发布版归属 MUST 使用已验证的当前 npm 来源；开发版归属 MUST 优先读取目标开发数据目录下的稳定开发来源登记（`development-source.json`），在其不存在时兼容回退读取本机 `Buildr Dev` 启动器（Launcher）的有效登记，再在其不存在时兼容回退读取已登记的 `Buildr Development Dev` 或 `Buildr Web Dev` 启动器，并校验其当前来源与可执行性。当目标开发数据目录下存在 `development-source.json` 但内容损坏、格式无效或身份不匹配时，MUST 非零退出并报告可定位原因与恢复方向，MUST NOT 静默回退桌面启动器登记。MUST NOT 写死开发目录、从网页进程反推程序或把仅接受 npm 的安装登记冒充双版统一登记。默认 `buildr` 的机器入口所有权 MUST 继续属于 npm。
 
 #### Scenario: 通过稳定数据目录来源登记完成路由
 - **WHEN** 开发数据目录存在有效的 `development-source.json`，且桌面开发启动器不存在或尚未升级到最新名称
@@ -76,7 +76,7 @@
 - **AND** MUST NOT 依赖之前开发目录或运行实例
 
 #### Scenario: 仅存在旧名开发启动器时保持路由兼容
-- **WHEN** 开发数据目录尚未写入 `development-source.json` 且本机尚未重装 `Buildr Development Dev`，但存在有效的 `Buildr Web Dev` 启动器登记
+- **WHEN** 开发数据目录尚未写入 `development-source.json` 且本机尚未重装 `Buildr Dev`，但存在有效的 `Buildr Development Dev` 或 `Buildr Web Dev` 启动器登记
 - **THEN** 默认入口 MUST 兼容读取该旧名开发启动器登记并路由到已验证的开发来源
 
 #### Scenario: 所选来源不可用

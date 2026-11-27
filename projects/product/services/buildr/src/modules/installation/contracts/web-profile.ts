@@ -142,14 +142,15 @@ export function sameWebProfile(left: any, right: any) {
   return Boolean(left?.schemaVersion === WEB_PROFILE_SCHEMA && right?.schemaVersion === WEB_PROFILE_SCHEMA && left.identity === right.identity);
 }
 
-/** Prefer the current Buildr Development Dev launcher, falling back to legacy Buildr Web Dev. */
+/** Prefer the current Buildr Dev launcher, falling back to legacy Buildr Development Dev / Buildr Web Dev. */
 export function developmentLauncherCandidates(platform: any = process.platform, options: any = {}) {
   const env = options.env || process.env;
   if (platform === 'darwin') {
-    return ['/Applications/Buildr Development Dev.app', '/Applications/Buildr Web Dev.app'];
+    return ['/Applications/Buildr Dev.app', '/Applications/Buildr Development Dev.app', '/Applications/Buildr Web Dev.app'];
   }
   const localAppData = env.LOCALAPPDATA || path.join(options.home ?? os.homedir(), 'AppData', 'Local');
   return [
+    path.join(localAppData, 'Programs', 'Buildr Dev'),
     path.join(localAppData, 'Programs', 'Buildr Development Dev'),
     path.join(localAppData, 'Programs', 'Buildr Web Dev'),
   ];

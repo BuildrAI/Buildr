@@ -44,7 +44,7 @@ function routingError(code: string, message: string, details?: unknown): Error &
   return Object.assign(new Error(message), {
     code: `workspace_cli.${code}`,
     ...(details === undefined ? {} : { details }),
-    nextAction: '核对目标工作空间的现有管理登记；开发来源不可用时恢复已登记源码或重新安装 Buildr Development Dev。不要直接改写本机归属或 SQLite。',
+    nextAction: '核对目标工作空间的现有管理登记；开发来源不可用时恢复已登记源码或重新安装 Buildr Dev。不要直接改写本机归属或 SQLite。',
   });
 }
 
@@ -268,20 +268,20 @@ function developmentInvocation(options: WorkspaceCliRoutingOptions, profiles: Re
   let identity;
   try { identity = JSON.parse(fs.readFileSync(identityFile, 'utf8')); }
   catch (error) {
-    throw routingError('development_unavailable', usingSourceRecord ? `无法读取已登记的开发来源：${identityFile}。` : `无法读取已登记的 Buildr Development Dev 来源：${identityFile}。`, String(error));
+    throw routingError('development_unavailable', usingSourceRecord ? `无法读取已登记的开发来源：${identityFile}。` : `无法读取已登记的 Buildr Dev 来源：${identityFile}。`, String(error));
   }
   const expectedSchema = usingSourceRecord ? DEVELOPMENT_SOURCE_SCHEMA : 'buildr.launcher-identity/v1';
   if (identity?.schemaVersion !== expectedSchema || identity.channel !== 'development'
       || identity.runtimeRole !== 'development' || identity.source !== 'checkout' || identity.platform !== platform
       || typeof identity.sourceRoot !== 'string' || !path.isAbsolute(identity.sourceRoot)) {
-    throw routingError('development_identity_invalid', usingSourceRecord ? `开发来源登记无效：${identityFile}。` : `Buildr Development Dev 的来源登记无效：${identityFile}。`);
+    throw routingError('development_identity_invalid', usingSourceRecord ? `开发来源登记无效：${identityFile}。` : `Buildr Dev 的来源登记无效：${identityFile}。`);
   }
   const clean = cleanSourceEnvironment(env);
   const sourceRoot = realDirectory(identity.sourceRoot);
-  if (!sourceRoot) throw routingError('development_unavailable', `Buildr Development Dev 已登记源码目录不可用：${identity.sourceRoot}。`);
+  if (!sourceRoot) throw routingError('development_unavailable', `Buildr Dev 已登记源码目录不可用：${identity.sourceRoot}。`);
   const origin = readCurrentInstallationOrigin(sourceRoot, { includeWorkingTree: false, env: { ...clean, BUILDR_INSTALLATION_IDENTITY: '' } });
   if (origin.channel !== 'development' || origin.runtimeRole !== 'development' || origin.protocolIdentity !== identity.protocolIdentity) {
-    throw routingError('development_identity_invalid', `无法核验 Buildr Development Dev 的当前源码身份：${sourceRoot}。`, origin.blockingReasons);
+    throw routingError('development_identity_invalid', `无法核验 Buildr Dev 的当前源码身份：${sourceRoot}。`, origin.blockingReasons);
   }
   let entry: string;
   let command: string;
@@ -301,7 +301,7 @@ function developmentInvocation(options: WorkspaceCliRoutingOptions, profiles: Re
     if (version !== runtime.version || runtime.identity !== `development-host:${command}:${version}`) throw new Error('development Node differs from its registered runtime identity');
     const minimum = fs.readFileSync(path.resolve(sourceRoot, '..', '..', '.node-version'), 'utf8').trim();
     assertMinimumNodeVersion(version, minimum);
-  } catch (error) { throw routingError('development_unavailable', `Buildr Development Dev 的已登记程序或 Node 不可用：${sourceRoot}。`, String(error)); }
+  } catch (error) { throw routingError('development_unavailable', `Buildr Dev 的已登记程序或 Node 不可用：${sourceRoot}。`, String(error)); }
   const sameRoot = (left: string, right: string) => path.resolve(left) === path.resolve(right) || sameFilesystemPath(left, right);
   const parameters = { platform, env: clean, home: options.home ?? os.homedir() };
   if (sameRoot(profiles.development.dataRoot, defaultWebDataRoot('development', parameters))
@@ -364,7 +364,7 @@ export async function dispatchWorkspaceCli(argv: readonly string[], options: Wor
     const cleanup = () => { for (const { signal, handler } of handlers) process.off(signal, handler); };
     child.once('error', error => {
       cleanup();
-      reject(routingError('forward_failed', `无法启动已选择的 Buildr Development Dev：${plan.args[0]}。`, String(error)));
+      reject(routingError('forward_failed', `无法启动已选择的 Buildr Dev：${plan.args[0]}。`, String(error)));
     });
     child.once('close', (code, signal) => {
       cleanup();

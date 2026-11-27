@@ -182,7 +182,7 @@ async function updateFixture(t: any, { launcher = false, shutdownDelayMs = 0 }: 
   const npmCliPath = path.join(value.prefix, 'npm-cli.js');
   const npmLog = path.join(value.root, 'npm-commands.jsonl');
   const entryLog = path.join(value.root, 'entry-invocations.jsonl');
-  const launcherTarget = launcher ? path.join(value.root, 'Applications', 'Buildr Development.app') : null;
+  const launcherTarget = launcher ? path.join(value.root, 'Applications', 'Buildr.app') : null;
   const appData = process.env.BUILDR_APP_DATA_DIR!;
   const receiptFile = path.join(appData, 'instance.json');
   copyFixture(templates.next, nextPackageRoot);
@@ -357,7 +357,7 @@ async function stopFixtureChild(child: any) {
 
 test('macOS npm Launcher is an owned projection and repair refreshes drift without copying product bytes', async () => {
   const value: any = await fixture();
-  const target: any = path.join(value.root, 'Applications', 'Buildr Development.app');
+  const target: any = path.join(value.root, 'Applications', 'Buildr.app');
   assert.equal(fs.existsSync(target), false, 'npm staging must not create a graphical Launcher');
 
   const installed: any = installNpmLauncher({ registration: value.registration, platform: 'darwin', target });
@@ -367,7 +367,7 @@ test('macOS npm Launcher is an owned projection and repair refreshes drift witho
   assert.deepEqual(installed.binding.webPort, { preferred: 4457, fallback: 'random' });
   assert.equal(installed.binding.packageRoot, path.join(value.packageRoot, 'payload', 'product'));
   assert.equal(installed.binding.hostNode.path, process.execPath);
-  const wrapper: any = fs.readFileSync(path.join(target, 'Contents', 'MacOS', 'Buildr Development'), 'utf8');
+  const wrapper: any = fs.readFileSync(path.join(target, 'Contents', 'MacOS', 'Buildr'), 'utf8');
   assert.match(wrapper, /\/bin\/launchctl submit -l/);
   assert.match(wrapper, /trap cleanup 0/);
   assert.match(wrapper, /NODE_BIN=\$\(\/usr\/bin\/dirname "\$\{NODE\}"\)/);
@@ -383,7 +383,7 @@ test('macOS npm Launcher is an owned projection and repair refreshes drift witho
   assert.doesNotMatch(wrapper, /\/usr\/bin\/nohup/);
   const plist: any = fs.readFileSync(path.join(target, 'Contents', 'Info.plist'), 'utf8');
   assert.match(plist, /<key>CFBundleIdentifier<\/key><string>ai\.buildr\.web\.npm-launcher\.slot[a-f0-9]{24}<\/string>/);
-  assert.match(plist, /<key>CFBundleDisplayName<\/key><string>Buildr Development<\/string>/);
+  assert.match(plist, /<key>CFBundleDisplayName<\/key><string>Buildr<\/string>/);
 
   const inventory: any[] = [];
   const visit: any = (directory: any) => {
@@ -396,13 +396,13 @@ test('macOS npm Launcher is an owned projection and repair refreshes drift witho
   visit(target);
   for (const required of [
     'Contents/Info.plist',
-    'Contents/MacOS/Buildr Development',
+    'Contents/MacOS/Buildr',
     'Contents/Resources/Buildr.icns',
     'Contents/Resources/launcher-binding.json',
   ]) assert.ok(inventory.includes(required));
   assert.equal(inventory.every((file: any) => [
     'Contents/Info.plist',
-    'Contents/MacOS/Buildr Development',
+    'Contents/MacOS/Buildr',
     'Contents/Resources/Buildr.icns',
     'Contents/Resources/launcher-binding.json',
   ].includes(file) || file.startsWith('Contents/_CodeSignature/')), true);
@@ -443,14 +443,14 @@ test('macOS npm Launcher is an owned projection and repair refreshes drift witho
 
 test('Launcher refuses foreign targets and Windows shortcut binds exact Host Node, entry and binding', async () => {
   const value: any = await fixture();
-  const foreign: any = path.join(value.root, 'foreign', 'Buildr Development.app');
+  const foreign: any = path.join(value.root, 'foreign', 'Buildr.app');
   fs.mkdirSync(foreign, { recursive: true });
   assert.throws(
     () => installNpmLauncher({ registration: value.registration, platform: 'darwin', target: foreign }),
     /Refusing to replace foreign Launcher target/,
   );
 
-  const shortcut: any = path.join(value.root, 'Start Menu', 'Buildr Development.lnk');
+  const shortcut: any = path.join(value.root, 'Start Menu', 'Buildr.lnk');
   let shortcutValue: any = null;
   const writeShortcut: any = ({ target, binding, wrapper }: any) => {
     fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -466,12 +466,12 @@ test('Launcher refuses foreign targets and Windows shortcut binds exact Host Nod
   assert.equal(installed.status, 'ready');
   // 快捷方式必须隐藏启动：TargetPath 指向 wscript.exe 托管的 .vbs，而不是会分配控制台的 node.exe。
   assert.match(shortcutValue.target, /wscript\.exe$/i);
-  assert.match(shortcutValue.arguments, /Buildr Development\.vbs"$/);
+  assert.match(shortcutValue.arguments, /Buildr\.vbs"$/);
 
   const bindingPath: any = installed.bindingPath;
   const bindingDir: any = path.dirname(bindingPath);
-  const runnerPath: any = path.join(bindingDir, 'Buildr Development Runner.cmd');
-  const hostPath: any = path.join(bindingDir, 'Buildr Development.vbs');
+  const runnerPath: any = path.join(bindingDir, 'Buildr Runner.cmd');
+  const hostPath: any = path.join(bindingDir, 'Buildr.vbs');
   const runnerScript: any = fs.readFileSync(runnerPath, 'utf8');
   assert.match(runnerScript, /web --launcher-binding "%BINDING%"/);
   assert.match(runnerScript, /set "BINDING=/);
@@ -525,7 +525,7 @@ test('Launcher refuses foreign targets and Windows shortcut binds exact Host Nod
 
 test('released npm Launcher falls back once from an occupied preferred port while direct CLI stays strict', async (t: any) => {
   const value: any = await fixture();
-  const target: any = path.join(value.root, 'Applications', 'Buildr Development.app');
+  const target: any = path.join(value.root, 'Applications', 'Buildr.app');
   const occupied: any = net.createServer();
   await new Promise((resolve: any, reject: any) => {
     occupied.once('error', reject);
@@ -576,7 +576,7 @@ test('released npm Launcher falls back once from an occupied preferred port whil
 
 test('concurrent npm Launchers retry ownership after an old CLI releases its startup lock', async (t: any) => {
   const value: any = await fixture();
-  const installed: any = installNpmLauncher({ registration: value.registration, platform: 'darwin', target: path.join(value.root, 'Applications', 'Buildr Development.app'), port: 0 });
+  const installed: any = installNpmLauncher({ registration: value.registration, platform: 'darwin', target: path.join(value.root, 'Applications', 'Buildr.app'), port: 0 });
   const productIdentity = productIdentityFor(installed.binding);
   const runtime: any = createRuntime();
   registerWebInstanceLifecycle(runtime, { readProductIdentity: () => productIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget: root => ensureRegisteredTarget(runtime, root) });
@@ -605,7 +605,7 @@ test('concurrent npm Launchers retry ownership after an old CLI releases its sta
 
 test('npm Launcher takes over CLI ownership, serializes concurrent opens, reuses exact binding and replaces an old same-slot binding', async (t: any) => {
   const value: any = await fixture({ runnable: true });
-  const target: any = path.join(value.root, 'Applications', 'Buildr Development.app');
+  const target: any = path.join(value.root, 'Applications', 'Buildr.app');
   const installed: any = installNpmLauncher({ registration: value.registration, platform: 'darwin', target, port: 0 });
   const entry: any = value.registration.entry.entryPath;
   const receiptFile: any = path.join(process.env.BUILDR_APP_DATA_DIR!, 'instance.json');
@@ -807,7 +807,7 @@ test('installed npm update preserves package success and the old receipt when au
 
 test('npm Launcher preserves foreign ownership and a non-stopping handoff receipt', async (t: any) => {
   const value: any = await fixture();
-  const target: any = path.join(value.root, 'Applications', 'Buildr Development.app');
+  const target: any = path.join(value.root, 'Applications', 'Buildr.app');
   const installed: any = installNpmLauncher({ registration: value.registration, platform: 'darwin', target, port: 0 });
   const productIdentity: any = productIdentityFor(installed.binding);
   const foreignIdentity: any = { ...productIdentity, installationIdentity: `sha256-${'f'.repeat(64)}` };
@@ -886,7 +886,7 @@ test('macOS Launcher 默认装入 /Applications 并可迁移 ~/Applications 的�
   const homedir: any = path.join(value.root, 'home');
   fs.mkdirSync(systemApplications, { recursive: true });
   fs.mkdirSync(path.join(homedir, 'Applications'), { recursive: true });
-  const legacyTarget: any = path.join(homedir, 'Applications', 'Buildr Development.app');
+  const legacyTarget: any = path.join(homedir, 'Applications', 'Buildr.app');
 
   // 旧版本曾装在 ~/Applications；显式 --target 路径行为不变。
   const legacy: any = installNpmLauncher({ registration: value.registration, platform: 'darwin', target: legacyTarget });
@@ -899,7 +899,7 @@ test('macOS Launcher 默认装入 /Applications 并可迁移 ~/Applications 的�
 
   // install 默认写入 /Applications，并移除同一安装槽位的旧位置入口。
   const installed: any = installNpmLauncher({ registration: value.registration, platform: 'darwin', homedir, systemApplications });
-  const expectedTarget: any = path.join(systemApplications, 'Buildr Development.app');
+  const expectedTarget: any = path.join(systemApplications, 'Buildr.app');
   assert.equal(installed.target, expectedTarget);
   assert.equal(installed.status, 'ready');
   assert.equal(fs.existsSync(expectedTarget), true);
@@ -913,14 +913,16 @@ test('macOS Launcher 默认装入 /Applications 并可迁移 ~/Applications 的�
   assert.equal(after.status, 'ready');
 });
 
-test('macOS Launcher 升级兼容发现旧名 Buildr Web.app 并平滑迁移至 Buildr Development.app', async () => {
+test('macOS Launcher 升级兼容发现旧名 Buildr Development.app / Buildr Web.app 并平滑迁移至 Buildr.app', async () => {
   const value: any = await fixture();
   const systemApplications: any = path.join(value.root, 'system-Applications');
   const homedir: any = path.join(value.root, 'home');
   fs.mkdirSync(systemApplications, { recursive: true });
   fs.mkdirSync(path.join(homedir, 'Applications'), { recursive: true });
-  const legacyNamed: any = path.join(systemApplications, 'Buildr Web.app');
+  const legacyNamed: any = path.join(systemApplications, 'Buildr Development.app');
   installNpmLauncher({ registration: value.registration, platform: 'darwin', target: legacyNamed });
+  const olderLegacy: any = path.join(systemApplications, 'Buildr Web.app');
+  installNpmLauncher({ registration: value.registration, platform: 'darwin', target: olderLegacy });
 
   const resolved: any = npmLauncherStatus({ platform: 'darwin', homedir, systemApplications });
   assert.equal(resolved.target, legacyNamed);
@@ -931,11 +933,12 @@ test('macOS Launcher 升级兼容发现旧名 Buildr Web.app 并平滑迁移至 
   fs.writeFileSync(path.join(foreignOld, 'foreign'), 'keep');
 
   const refreshed: any = refreshInstalledNpmLauncher({ registration: value.registration, platform: 'darwin', homedir, systemApplications });
-  const migratedTarget: any = path.join(systemApplications, 'Buildr Development.app');
+  const migratedTarget: any = path.join(systemApplications, 'Buildr.app');
   assert.equal(refreshed.target, migratedTarget);
   assert.equal(refreshed.status, 'ready');
   assert.equal(fs.existsSync(migratedTarget), true);
-  assert.equal(fs.existsSync(legacyNamed), false, '同槽位旧名 Buildr Web.app 应被迁移清理');
+  assert.equal(fs.existsSync(legacyNamed), false, '同槽位旧名 Buildr Development.app 应被迁移清理');
+  assert.equal(fs.existsSync(olderLegacy), false, '同槽位旧名 Buildr Web.app 应被迁移清理');
   assert.equal(fs.readFileSync(path.join(foreignOld, 'foreign'), 'utf8'), 'keep', '归属不明的旧名入口应保留');
 });
 
@@ -947,7 +950,7 @@ test('macOS Launcher 默认目标不可写时 fail closed 并指引 --target', a
   fs.mkdirSync(systemApplications, { recursive: true });
   fs.chmodSync(systemApplications, 0o555);
   onFixtureCleanup(t, () => fs.chmodSync(systemApplications, 0o755));
-  const legacyTarget: any = path.join(homedir, 'Applications', 'Buildr Development.app');
+  const legacyTarget: any = path.join(homedir, 'Applications', 'Buildr.app');
   try {
     installNpmLauncher({ registration: value.registration, platform: 'darwin', homedir, systemApplications });
     assert.fail('default-target install on a read-only /Applications must fail');
@@ -960,7 +963,7 @@ test('macOS Launcher 默认目标不可写时 fail closed 并指引 --target', a
 
 test('页面更新启动入口：核对真实安装、不创建缺失入口、只修复本安装拥有的入口', async () => {
   const value: any = await fixture({ runnable: true });
-  const target = path.join(value.root, 'Applications', 'Buildr Development.app');
+  const target = path.join(value.root, 'Applications', 'Buildr.app');
   const entry = value.registration.entry;
   enrollProductInstallation({ envelopePath: entry.envelopePath, productRoot: entry.productRoot, entryPath: entry.entryPath, runtimeExecutable: entry.runtime.executable, updateAuthority: entry.updateAuthority });
   const updater = createUpdateLauncher({ platform: 'darwin', target });
@@ -970,7 +973,7 @@ test('页面更新启动入口：核对真实安装、不创建缺失入口、�
   assert.equal(fs.existsSync(target), false);
   installNpmLauncher({ registration: value.registration, platform: 'darwin', target });
   assert.equal(updater.inspect(job).status, 'ready');
-  fs.rmSync(path.join(target, 'Contents', 'MacOS', 'Buildr Development'));
+  fs.rmSync(path.join(target, 'Contents', 'MacOS', 'Buildr'));
   assert.equal(updater.inspect(job).status, 'failed');
   assert.equal(updater.repair(job).status, 'ready');
   const before = fs.readFileSync(path.join(target, 'Contents', 'Info.plist'), 'utf8');

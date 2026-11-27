@@ -29,7 +29,7 @@ function writeIdentity(file: any, identity: any): any  { fs.writeFileSync(file, 
 
 function assertDevelopmentIdentity(identity: any): any  {
   if (!identity || identity.schemaVersion !== 'buildr.launcher-identity/v1') throw new Error('Launcher identity is required.');
-  if (identity.channel !== 'development') throw new Error('Formal npm Buildr Development Launcher is installed only by `buildr web launcher install`; tools/build/launcher is development-only.');
+  if (identity.channel !== 'development') throw new Error('Formal npm Buildr Launcher is installed only by `buildr web launcher install`; tools/build/launcher is development-only.');
   if (identity.runtimeRole !== 'development' || identity.protocolIdentity !== 'buildr.web-protocol/v1') throw new Error('Development launcher requires matching development runtime role and Web protocol identity.');
   if (!path.isAbsolute(identity.sourceRoot) || !identity.developmentRuntime?.executable || !identity.developmentRuntime?.version || !identity.developmentRuntime?.identity) {
     throw new Error('Development launcher source and development host runtime identity are required.');
@@ -59,7 +59,7 @@ const MAC_LAUNCHD_BOOTSTRAP_SCRIPT: string = [
 ].join('\n');
 
 function buildMac(output: any, identity: any): any  {
-  const root: any = path.join(output, 'Buildr Development Dev.app', 'Contents');
+  const root: any = path.join(output, 'Buildr Dev.app', 'Contents');
   const executableRoot: any = path.join(root, 'MacOS');
   const resources: any = path.join(root, 'Resources');
   fs.mkdirSync(executableRoot, { recursive: true });
@@ -81,16 +81,16 @@ function buildMac(output: any, identity: any): any  {
     '[ "${BUILDR_LAUNCHER_NO_OPEN-}" = "1" ] && NO_OPEN_ARG="--no-open"',
     'mkdir -p "$LOG_DIR"',
     'if [ ! -d "$SOURCE_ROOT" ] || [ ! -f "$CLI_ENTRY" ] || [ ! -f "$SOURCE_ROOT/resources/manifest.yml" ] || [ ! -d "$SOURCE_ROOT/src" ] || [ ! -d "$SOURCE_ROOT/resources" ]; then',
-    '  echo "Buildr Development Dev checkout 不可用：${SOURCE_ROOT}。请在保留的Buildr checkout中重新运行 npm run install:development。" >&2',
+    '  echo "Buildr Dev checkout 不可用：${SOURCE_ROOT}。请在保留的Buildr checkout中重新运行 npm run install:development。" >&2',
     '  exit 1',
     'fi',
     'if [ ! -x "$NODE_EXECUTABLE" ]; then',
-    '  echo "Buildr Development Dev development host Node 不可用：${NODE_EXECUTABLE}。请使用 identity 绑定的兼容 Node 重新安装 Launcher。" >&2',
+    '  echo "Buildr Dev development host Node 不可用：${NODE_EXECUTABLE}。请使用 identity 绑定的兼容 Node 重新安装 Launcher。" >&2',
     '  exit 1',
     'fi',
     'ACTUAL_NODE_VERSION=$("$NODE_EXECUTABLE" -p \'process.versions.node\' 2>&1)',
     'if [ "$ACTUAL_NODE_VERSION" != "$EXPECTED_NODE_VERSION" ]; then',
-    '  echo "Buildr Development Dev development host Node 版本不匹配：期望 $EXPECTED_NODE_VERSION，实际 ${ACTUAL_NODE_VERSION}。请重新安装 Launcher。" >&2',
+    '  echo "Buildr Dev development host Node 版本不匹配：期望 $EXPECTED_NODE_VERSION，实际 ${ACTUAL_NODE_VERSION}。请重新安装 Launcher。" >&2',
     '  exit 1',
     'fi',
     'PATH="$SOURCE_ROOT/tools/development/programs:${NODE_EXECUTABLE%/*}${PATH:+:$PATH}"',
@@ -113,19 +113,19 @@ function buildMac(output: any, identity: any): any  {
     '',
   ].join('\n');
   fs.writeFileSync(path.join(executableRoot, 'Buildr'), macWrapper, { mode: 0o755 });
-  fs.writeFileSync(path.join(root, 'Info.plist'), `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>CFBundleName</key><string>Buildr Development Dev</string><key>CFBundleDisplayName</key><string>Buildr Development Dev</string><key>CFBundleIdentifier</key><string>${DEVELOPMENT_BUNDLE_IDENTIFIER}</string><key>CFBundleShortVersionString</key><string>${identity.version}</string><key>CFBundleVersion</key><string>${identity.buildNumber}</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleExecutable</key><string>Buildr</string><key>CFBundleIconFile</key><string>Buildr.icns</string><key>LSUIElement</key><true/></dict></plist>\n`);
+  fs.writeFileSync(path.join(root, 'Info.plist'), `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>CFBundleName</key><string>Buildr Dev</string><key>CFBundleDisplayName</key><string>Buildr Dev</string><key>CFBundleIdentifier</key><string>${DEVELOPMENT_BUNDLE_IDENTIFIER}</string><key>CFBundleShortVersionString</key><string>${identity.version}</string><key>CFBundleVersion</key><string>${identity.buildNumber}</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleExecutable</key><string>Buildr</string><key>CFBundleIconFile</key><string>Buildr.icns</string><key>LSUIElement</key><true/></dict></plist>\n`);
   return path.dirname(root);
 }
 
 function buildWindows(output: any, identity: any): any  {
-  const root: any = path.join(output, 'Buildr Development Dev');
+  const root: any = path.join(output, 'Buildr Dev');
   fs.mkdirSync(root, { recursive: true });
   fs.copyFileSync(path.join(ASSET_ROOT, 'Buildr.ico'), path.join(root, 'Buildr.ico'));
   writeIdentity(path.join(root, 'launcher-identity.json'), identity);
   const cliEntry: any = path.win32.join(identity.sourceRoot, 'bin', 'buildr.mjs');
-  fs.writeFileSync(path.join(root, 'Launch-Buildr.cmd'), `@echo off\nset "BUILDR_LAUNCHER_IDENTITY=%~dp0launcher-identity.json"\nset "SOURCE_ROOT=${commandValue(identity.sourceRoot)}"\nset "NODE_EXECUTABLE=${commandValue(identity.developmentRuntime.executable)}"\nset "CLI_ENTRY=${commandValue(cliEntry)}"\nset "EXPECTED_NODE_VERSION=${commandValue(identity.developmentRuntime.version)}"\nset "NO_OPEN_ARG="\nif "%BUILDR_LAUNCHER_NO_OPEN%"=="1" set "NO_OPEN_ARG=--no-open"\nif not exist "%LOCALAPPDATA%\\Buildr Dev\\Logs" mkdir "%LOCALAPPDATA%\\Buildr Dev\\Logs"\nif not exist "%CLI_ENTRY%" (\n  echo Buildr Development Dev checkout 不可用：%SOURCE_ROOT%。请重新安装 Launcher。 1>&2\n  exit /b 1\n)\nif not exist "%NODE_EXECUTABLE%" (\n  echo Buildr Development Dev development host Node 不可用：%NODE_EXECUTABLE%。 1>&2\n  exit /b 1\n)\nfor /f "delims=" %%V in ('"%NODE_EXECUTABLE%" -p "process.versions.node" 2^>^&1') do set "ACTUAL_NODE_VERSION=%%V"\nif not "%ACTUAL_NODE_VERSION%"=="%EXPECTED_NODE_VERSION%" exit /b 1\n"%NODE_EXECUTABLE%" "%CLI_ENTRY%" web --port ${DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT} %NO_OPEN_ARG% >>"%LOCALAPPDATA%\\Buildr Dev\\Logs\\launcher.log" 2>&1\nexit /b %ERRORLEVEL%\n`);
-  fs.writeFileSync(path.join(root, 'Buildr.vbs'), Buffer.from(`\uFEFFSet shell = CreateObject("WScript.Shell")\nbase = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)\ncommand = Chr(34) & base & "\\Launch-Buildr.cmd" & Chr(34)\nexitCode = shell.Run(command, 0, True)\nIf exitCode <> 0 Then MsgBox "Buildr Development Dev 无法启动。", 16, "Buildr Development Dev"\n`, 'utf16le'));
-  fs.writeFileSync(path.join(root, 'Install-Buildr-Shortcuts.ps1'), `﻿$ErrorActionPreference = "Stop"\n$root = Split-Path -Parent $MyInvocation.MyCommand.Path\n$start = Join-Path $env:APPDATA "Microsoft\\Windows\\Start Menu\\Programs"\n$shell = New-Object -ComObject WScript.Shell\n$shortcutPath = Join-Path $start "Buildr Development Dev.lnk"\n$expectedScript = [IO.Path]::GetFullPath((Join-Path $root "Buildr.vbs"))\nif (Test-Path -LiteralPath $shortcutPath) {\n  $existing = $shell.CreateShortcut($shortcutPath)\n  $existingScript = $existing.Arguments.Trim().Trim([char]34)\n  $owned = ([IO.Path]::GetFileName($existing.TargetPath) -ieq "wscript.exe") -and ([IO.Path]::GetFullPath($existingScript) -ieq $expectedScript)\n  if (-not $owned) { throw "Refusing to overwrite shortcut without matching Buildr ownership: $shortcutPath" }\n}\n$shortcut = $shell.CreateShortcut($shortcutPath)\n$shortcut.TargetPath = "$env:WINDIR\\System32\\wscript.exe"\n$shortcut.Arguments = '"' + (Join-Path $root "Buildr.vbs") + '"'\n$shortcut.WorkingDirectory = $root\n$shortcut.IconLocation = (Join-Path $root "Buildr.ico") + ",0"\n$shortcut.Description = "打开 Buildr Development Dev"\n$shortcut.Save()\n`);
+  fs.writeFileSync(path.join(root, 'Launch-Buildr.cmd'), `@echo off\nset "BUILDR_LAUNCHER_IDENTITY=%~dp0launcher-identity.json"\nset "SOURCE_ROOT=${commandValue(identity.sourceRoot)}"\nset "NODE_EXECUTABLE=${commandValue(identity.developmentRuntime.executable)}"\nset "CLI_ENTRY=${commandValue(cliEntry)}"\nset "EXPECTED_NODE_VERSION=${commandValue(identity.developmentRuntime.version)}"\nset "NO_OPEN_ARG="\nif "%BUILDR_LAUNCHER_NO_OPEN%"=="1" set "NO_OPEN_ARG=--no-open"\nif not exist "%LOCALAPPDATA%\\Buildr Dev\\Logs" mkdir "%LOCALAPPDATA%\\Buildr Dev\\Logs"\nif not exist "%CLI_ENTRY%" (\n  echo Buildr Dev checkout 不可用：%SOURCE_ROOT%。请重新安装 Launcher。 1>&2\n  exit /b 1\n)\nif not exist "%NODE_EXECUTABLE%" (\n  echo Buildr Dev development host Node 不可用：%NODE_EXECUTABLE%。 1>&2\n  exit /b 1\n)\nfor /f "delims=" %%V in ('"%NODE_EXECUTABLE%" -p "process.versions.node" 2^>^&1') do set "ACTUAL_NODE_VERSION=%%V"\nif not "%ACTUAL_NODE_VERSION%"=="%EXPECTED_NODE_VERSION%" exit /b 1\n"%NODE_EXECUTABLE%" "%CLI_ENTRY%" web --port ${DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT} %NO_OPEN_ARG% >>"%LOCALAPPDATA%\\Buildr Dev\\Logs\\launcher.log" 2>&1\nexit /b %ERRORLEVEL%\n`);
+  fs.writeFileSync(path.join(root, 'Buildr.vbs'), Buffer.from(`\uFEFFSet shell = CreateObject("WScript.Shell")\nbase = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)\ncommand = Chr(34) & base & "\\Launch-Buildr.cmd" & Chr(34)\nexitCode = shell.Run(command, 0, True)\nIf exitCode <> 0 Then MsgBox "Buildr Dev 无法启动。", 16, "Buildr Dev"\n`, 'utf16le'));
+  fs.writeFileSync(path.join(root, 'Install-Buildr-Shortcuts.ps1'), `﻿$ErrorActionPreference = "Stop"\n$root = Split-Path -Parent $MyInvocation.MyCommand.Path\n$start = Join-Path $env:APPDATA "Microsoft\\Windows\\Start Menu\\Programs"\n$shell = New-Object -ComObject WScript.Shell\n$shortcutPath = Join-Path $start "Buildr Dev.lnk"\n$expectedScript = [IO.Path]::GetFullPath((Join-Path $root "Buildr.vbs"))\nif (Test-Path -LiteralPath $shortcutPath) {\n  $existing = $shell.CreateShortcut($shortcutPath)\n  $existingScript = $existing.Arguments.Trim().Trim([char]34)\n  $owned = ([IO.Path]::GetFileName($existing.TargetPath) -ieq "wscript.exe") -and ([IO.Path]::GetFullPath($existingScript) -ieq $expectedScript)\n  if (-not $owned) { throw "Refusing to overwrite shortcut without matching Buildr ownership: $shortcutPath" }\n}\n$shortcut = $shell.CreateShortcut($shortcutPath)\n$shortcut.TargetPath = "$env:WINDIR\\System32\\wscript.exe"\n$shortcut.Arguments = '"' + (Join-Path $root "Buildr.vbs") + '"'\n$shortcut.WorkingDirectory = $root\n$shortcut.IconLocation = (Join-Path $root "Buildr.ico") + ",0"\n$shortcut.Description = "打开 Buildr Dev"\n$shortcut.Save()\n`);
   return root;
 }
 
@@ -140,7 +140,7 @@ export function buildLauncher({ platform = process.platform, output, identity }:
 async function main(args: any = process.argv.slice(2)): Promise<any>  {
   const packageData: any = JSON.parse(fs.readFileSync(path.join(PRODUCT_ROOT, 'package.json'), 'utf8'));
   const channel: any = option(args, '--channel', 'development');
-  if (channel !== 'development') throw new Error('tools/build/launcher only builds Buildr Development Dev; use `buildr web launcher install` from a verified npm installation for the formal local Launcher.');
+  if (channel !== 'development') throw new Error('tools/build/launcher only builds Buildr Dev; use `buildr web launcher install` from a verified npm installation for the formal local Launcher.');
   const runtime: any = path.resolve(option(args, '--runtime', process.execPath));
   const version: any = spawnSync(runtime, ['-p', 'process.versions.node'], { encoding: 'utf8' }).stdout.trim();
   const sourceRoot: any = path.resolve(option(args, '--source-root', PRODUCT_ROOT));
