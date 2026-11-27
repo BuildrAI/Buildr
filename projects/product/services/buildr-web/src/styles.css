@@ -151,7 +151,7 @@ a {
   min-height: 56px;
   padding: 0 var(--page-gutter);
   border-bottom: 1px solid var(--soft-line);
-  background: var(--soft-surface);
+  background: var(--cindy-workspace-sidebar, var(--soft-surface));
 }
 
 .app-shell .topbar-actions {
@@ -1767,20 +1767,20 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: var(--font
 }
 
 /* Shared scope and quiet, contextual navigation. */
-.app-shell .topbar { position: sticky; top: 0; z-index: 20; gap: 14px; border-color: #e8ebee; }
+.app-shell .topbar { position: sticky; top: 0; z-index: 20; gap: 14px; border-color: var(--cindy-workspace-border, #e8ebee); }
 .app-shell .brand-link { font-size: var(--font-size-body); letter-spacing: -.02em; }
 .app-shell .brand-mark { width: 26px; height: 26px; border-radius: 7px; }
-.app-shell .workspace-switcher { height: 30px; font-size: var(--font-size-body); background: #f7f8f9; border-color: #e6e9ed; }
+.app-shell .workspace-switcher { height: 30px; font-size: var(--font-size-body); background: var(--soft-bg); color: var(--soft-ink); border-color: var(--cindy-workspace-border, #e6e9ed); }
 .app-shell .top-nav { gap: 4px; align-items: center; }
 .app-shell .top-nav a { height: 32px; padding: 0 12px; border: 0; border-radius: 6px; transition: background 120ms ease, color 120ms ease; }
 .app-shell .top-nav a.active { background: #edf3f1; color: #306b62; }
 .app-shell .topbar-actions { gap: 8px; }
 .app-frame { display: flex; flex: 1; min-height: 0; min-width: 0; }
-.app-frame:not(.is-global) > #app-view { background: #fff; }
+.app-frame:not(.is-global) > #app-view { background: var(--cindy-workspace-canvas, #fff); }
 .app-sidebar { flex: 0 0 var(--sidebar-width); width: var(--sidebar-width); min-width: 0; align-self: flex-start; position: sticky; top: 56px; height: calc(100dvh - 56px); overflow-y: auto; background: var(--soft-sidebar); }
 .app-sidebar.is-resizing { user-select: none; }
 /* 侧栏头带与页面页签条同层同高；下方各区由统一竖线分隔。 */
-.app-sidebar-head { display: flex; align-items: center; height: 43px; position: sticky; top: 0; z-index: 3; background: #f4f6f7; border-bottom: 1px solid var(--soft-line); }
+.app-sidebar-head { display: flex; align-items: center; height: 43px; position: sticky; top: 0; z-index: 3; background: var(--cindy-workspace-sidebar, #f4f6f7); border-bottom: 1px solid var(--soft-line); }
 .sidebar-toggle { display: block; margin: 0 8px 0 auto; }
 .app-shell:has(.resource-cockpit) .app-sidebar { position: static; height: 100%; }
 .shell-navigation { padding: 12px 10px 18px; }
@@ -1843,11 +1843,11 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: var(--font
 
 /* ===== 双栏组页签工作台（workspace pane framework） ===== */
 /* 全域白底：侧栏与内容区统一，分区仅由线条表达。 */
-.app-sidebar { background: #fff; }
+.app-sidebar { background: var(--cindy-workspace-canvas, #fff); }
 .app-shell:has(.workspace-page:not([hidden]) .pane-stage) { height: 100vh; overflow: hidden; }
 #app-view:has(.workspace-page:not([hidden]) .pane-stage) { padding: 0; overflow: hidden; }
 
-.pane-stage { display: flex; flex: 1; min-width: 0; min-height: 0; height: 100%; background: #fff; }
+.pane-stage { display: flex; flex: 1; min-width: 0; min-height: 0; height: 100%; background: var(--cindy-workspace-canvas, #fff); }
 .pane-stage.resizing, .pane-stage.resizing * { cursor: col-resize !important; user-select: none !important; }
 .pane-group { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; }
 .pane-left { flex: 1; }
@@ -1869,7 +1869,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: var(--font
 .task-diff-reader.is-resizing .split-divider::before { background:var(--soft-primary); }
 
 @media (max-width: 1440px) {
-  .pane-right { position: fixed; top: 56px; right: 0; bottom: 0; z-index: 40; width: min(760px, 100vw) !important; background: #fff; box-shadow: -12px 0 32px rgba(20, 26, 30, .12); }
+  .pane-right { position: fixed; top: 56px; right: 0; bottom: 0; z-index: 40; width: min(760px, 100vw) !important; background: var(--cindy-workspace-canvas, #fff); box-shadow: -12px 0 32px rgba(20, 26, 30, .12); }
   .pane-divider { display: none; }
 }
 

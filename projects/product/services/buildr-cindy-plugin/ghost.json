@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 3,
+  "minCindyVersion": "0.0.0",
+  "id": "buildr-workspace",
+  "name": "Buildr",
+  "version": "0.1.2",
+  "kind": "chip",
+  "description": "在 Cindy 桌面按工作空间打开 Buildr 的正式页面。",
+  "whenToUse": "在 Cindy 桌面查看 Buildr 的工作空间、任务和项目。",
+  "entry": "main.js",
+  "icon": "icon.png",
+  "mainView": {
+    "title": "Buildr",
+    "html": "compat.html",
+    "icon": "folder",
+    "multiple": true,
+    "workspaceWeb": "http://127.0.0.1:4458"
+  },
+  "sessionContext": true,
+  "preview": { "hosts": ["127.0.0.1"] },
+  "node": { "entry": "worker.cjs", "protocol": "json-rpc-stdio" }
+}

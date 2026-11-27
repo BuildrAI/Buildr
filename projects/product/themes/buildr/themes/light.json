@@ -1,0 +1,17 @@
+{
+  "id": "f2a5856df75242718384bd709c803d2b",
+  "family": "988181981e85472fb2ca7a9d63aeb85c",
+  "name": "Buildr",
+  "type": "light",
+  "colors": {
+    "surface": "#f7f8f9",
+    "content-area": "#f7f8f9",
+    "panel-bg": "#f7f8f9",
+    "sidebar": "#f6f7f8",
+    "surface-elevated": "#ffffff",
+    "text-primary": "#252a31",
+    "text-secondary": "#5e6873",
+    "border-default": "#e1e5e9",
+    "sidebar-border": "#e1e5e9"
+  }
+}

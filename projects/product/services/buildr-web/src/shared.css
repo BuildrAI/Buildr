@@ -1,11 +1,11 @@
 :root {
-  --soft-bg: #f7f8f9;
-  --soft-surface: #ffffff;
-  --soft-ink: #252a31;
-  --soft-muted: #5e6873;
-  --soft-line: #e1e5e9;
+  --soft-bg: var(--cindy-workspace-canvas, #f7f8f9);
+  --soft-surface: var(--cindy-workspace-surface, #ffffff);
+  --soft-ink: var(--cindy-workspace-text, #252a31);
+  --soft-muted: var(--cindy-workspace-muted, #5e6873);
+  --soft-line: var(--cindy-workspace-border, #e1e5e9);
   --soft-primary: #397d74;
-  --soft-sidebar: #f6f7f8;
+  --soft-sidebar: var(--cindy-workspace-sidebar, #f6f7f8);
   --soft-development-bg: #fff6dc;
   --soft-development-ink: #805817;
   --soft-development-line: #e2bc67;

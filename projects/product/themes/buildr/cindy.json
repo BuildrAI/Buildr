@@ -1,0 +1,8 @@
+{
+  "formatVersion": 2,
+  "type": "theme",
+  "themes": [
+    "themes/light.json",
+    "themes/dark.json"
+  ]
+}
