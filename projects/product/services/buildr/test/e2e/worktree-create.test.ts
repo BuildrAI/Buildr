@@ -461,6 +461,34 @@ test('多独立仓库要求成对覆盖全部selector并按nested-first清理', 
       services: { api: { source: { type: 'git', path: 'projects/demo/services/api', git: { integrationBranch: 'main' } } } },
     }),
   });
+  const legacyTask = 'legacy-service';
+  const legacyBranch = `codex/${legacyTask}`;
+  const legacyCheckout = path.join(root, '.worktrees', 'historical-service-checkout');
+  git(service, ['worktree', 'add', '-b', legacyBranch, legacyCheckout, 'main']);
+  const legacyHead = git(service, ['rev-parse', 'HEAD']);
+  const observedCheckouts = [{
+    selector: 'service:demo/api', sourceRepository: service, checkoutPath: legacyCheckout, branch: legacyBranch,
+  }];
+  const legacyInput = { workspaceRoot: root, taskId: legacyTask, observedCheckouts };
+  const legacy = provider.inspectGitWorktrees(legacyInput);
+  assert.equal(legacy.status, 'ready');
+  assert.equal(legacy.evidenceSource, 'observed');
+  assert.deepEqual(legacy.repositories.map(({ selector }) => selector), ['service:demo/api']);
+  const cleanup = () => provider.cleanupGitWorktrees({
+    ...legacyInput, allowCompleted: true,
+    cleanupDelivery: { expectedSources: { 'service:demo/api': legacyHead }, deliveredRefs: { 'service:demo/api': legacyHead } },
+  });
+  const unexpected = path.join(legacyCheckout, 'unexpected');
+  fs.mkdirSync(unexpected);
+  git(unexpected, ['init', '-b', 'main']);
+  assert.equal(cleanup().diagnostic?.code, 'git_worktree_identity_mismatch');
+  assert.equal(fs.existsSync(unexpected), true);
+  fs.rmSync(unexpected, { recursive: true });
+  assert.equal(cleanup().status, 'cleaned');
+  assert.equal(fs.existsSync(legacyCheckout), false);
+  git(service, ['show-ref', '--verify', '--quiet', `refs/heads/${legacyBranch}`], 1);
+  assert.equal(fs.existsSync(legacy.evidencePath!), false);
+
   const taskId = 'multi-repository';
   const prepared = provider.prepareGitWorktrees({ workspaceRoot: root, taskId, branch: `codex/${taskId}`, includes: ['service:demo/api'] });
   assert.equal(prepared.status, 'ready');
@@ -502,6 +530,9 @@ test('多独立仓库要求成对覆盖全部selector并按nested-first清理', 
   const omitted = provider.cleanupGitWorktrees({ workspaceRoot: root, taskId, allowCompleted: true, observedCheckouts: observed.filter((item) => item.selector === 'workspace'), cleanupDelivery: { expectedSources: { workspace: sourceHeads.workspace }, deliveredRefs: { workspace: targetHeads.workspace } } });
   assert.equal(omitted.diagnostic?.code, 'git_worktree_identity_mismatch');
   assert.deepEqual(omitted.effects, []);
+  assert.equal(provider.inspectGitWorktrees({ workspaceRoot: root, taskId,
+    observedCheckouts: observed.filter((item) => item.selector === 'service:demo/api'),
+  }).diagnostic?.code, 'git_worktree_identity_mismatch');
   const observedPartial = provider.cleanupGitWorktrees({ workspaceRoot: root, taskId, allowCompleted: true, observedCheckouts: observed, cleanupDelivery: { expectedSources: { workspace: sourceHeads.workspace }, deliveredRefs: { workspace: targetHeads.workspace } } });
   assert.equal(observedPartial.diagnostic?.code, 'git_worktree_cleanup_delivery_invalid');
   const recovered = provider.cleanupGitWorktrees({ workspaceRoot: root, taskId, allowCompleted: true, observedCheckouts: observed, cleanupDelivery: { expectedSources: sourceHeads, deliveredRefs: targetHeads } });

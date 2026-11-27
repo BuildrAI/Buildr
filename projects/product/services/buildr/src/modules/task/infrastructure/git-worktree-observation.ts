@@ -35,7 +35,7 @@ export function assertLiteralWorktreePath(value: string): void {
   }
 }
 
-export function assertObservedCheckoutSet(observed: GitWorktreeObservedCheckout[], repositories: Repository[]): string {
+export function assertObservedCheckoutSet(observed: GitWorktreeObservedCheckout[], repositories: Repository[], workspaceRoot: string): string {
   if (observed.length !== repositories.length) fail('当前对象必须精确包含全部选定的独立仓库。');
   const paths = new Set<string>();
   let groupRoot: string | null = null;
@@ -44,9 +44,12 @@ export function assertObservedCheckoutSet(observed: GitWorktreeObservedCheckout[
     assertLiteralWorktreePath(item.checkoutPath);
     const expected = repositories.find((entry) => entry.selector === item.selector);
     if (!expected || !sameFilesystemPath(expected.sourceRepository, item.sourceRepository)) fail(`来源与当前声明不符：${item.selector}`);
+    const standalone = observed.length === 1 && expected.sourcePath !== '.'
+      && path.dirname(item.checkoutPath) === path.join(workspaceRoot, '.worktrees');
+    const layoutPath = standalone ? '.' : expected.sourcePath;
     let candidateRoot = item.checkoutPath;
-    if (expected.sourcePath !== '.') for (const _part of expected.sourcePath.split('/')) candidateRoot = path.dirname(candidateRoot);
-    if (item.checkoutPath !== path.resolve(candidateRoot, expected.sourcePath) || (groupRoot !== null && candidateRoot !== groupRoot)) fail(`嵌套路径与当前来源不符：${item.selector}`);
+    if (layoutPath !== '.') for (const _part of layoutPath.split('/')) candidateRoot = path.dirname(candidateRoot);
+    if (item.checkoutPath !== path.resolve(candidateRoot, layoutPath) || (groupRoot !== null && candidateRoot !== groupRoot)) fail(`嵌套路径与当前来源不符：${item.selector}`);
     groupRoot = candidateRoot;
     if (paths.has(item.checkoutPath)) fail(`检出路径重复：${item.checkoutPath}`);
     paths.add(item.checkoutPath);

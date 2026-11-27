@@ -29,6 +29,7 @@ const allowedProjectRootEntries: any = new Set([
   'preparation.yml',
   'services',
   'tasks',
+  'themes',
   'verification.yml',
 ]);
 

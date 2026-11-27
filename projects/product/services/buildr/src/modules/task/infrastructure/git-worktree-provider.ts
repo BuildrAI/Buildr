@@ -907,16 +907,20 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
     if (!observed) throw Object.assign(new Error('缺少历史登记。请核对任务归属、实际 Git 路径与分支，并通过 --observed-checkouts <json-file> 提供当前对象；不能据此认定已清理。'), { code: 'git_worktree_evidence_missing' });
     const branch = observed[0].branch;
     const plan = planGitWorktrees({ workspaceRoot: root, taskId, branch, includes: observed.filter((item) => item.selector !== 'workspace').map((item) => item.selector) });
-    const groupRoot = assertObservedCheckoutSet(observed, plan.repositories);
+    // The creation plan supplies source identities, but its implicit workspace checkout
+    // is not evidence that a historical standalone checkout ever included one.
+    const selected = plan.repositories.filter((item) => item.selector !== 'workspace'
+      || observed.some((checkout) => checkout.selector === 'workspace'));
+    const groupRoot = assertObservedCheckoutSet(observed, selected, root);
     assertNoUnlistedNestedRepositories(observed, git, { groupRoot });
-    const repositories = plan.repositories.map((descriptor): RepositoryEvidence => {
+    const repositories = selected.map((descriptor): RepositoryEvidence => {
       const item = observed.find((entry) => entry.selector === descriptor.selector)!;
       const record = { ...descriptor, ...item };
       assertCurrentCheckoutIdentity(record, git, parseGitWorktreeList);
       const identity = fs.existsSync(item.checkoutPath) ? worktreeIdentity(item.checkoutPath) : null;
       return { ...record, startPoint: null, head: identity?.head ?? gitText(item.sourceRepository, ['rev-parse', '--verify', `refs/heads/${item.branch}^{commit}`]), clean: identity?.clean ?? null, registered: identity?.registered ?? false, state: identity ? 'ready' : 'blocked', diagnostic: identity ? null : '当前检出位置不存在。' };
     });
-    return { file: evidencePathForRepositories(taskId, plan.repositories), repositories, evidenceSource: 'observed', status: 'ready' };
+    return { file: evidencePathForRepositories(taskId, selected), repositories, evidenceSource: 'observed', status: 'ready' };
   }
 
   function inspectGitWorktrees({ workspaceRoot, taskId, observedCheckouts, includeClean = true }: InspectInput): WorktreeResult {
