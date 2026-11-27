@@ -3,6 +3,61 @@
 
 
 
+/* Ant controls and portaled menus consume the same live workspace palette. */
+:root .buildr-web-theme {
+  --ant-color-bg-container: var(--cindy-workspace-surface, #ffffff);
+  --ant-color-bg-elevated: var(--cindy-workspace-surface, #f8f8f8);
+  --ant-color-bg-layout: var(--soft-bg);
+  --ant-color-border: var(--soft-line);
+  --ant-color-border-secondary: var(--cindy-workspace-border, #eceef1);
+  --ant-color-text: var(--soft-ink);
+  --ant-color-text-heading: var(--soft-ink);
+  --ant-color-text-label: var(--soft-muted);
+  --ant-color-text-description: var(--cindy-workspace-muted, rgba(0, 0, 0, .45));
+  --ant-color-text-secondary: var(--soft-muted);
+  --ant-color-text-tertiary: var(--cindy-workspace-muted, rgba(0, 0, 0, .45));
+  --ant-color-text-placeholder: var(--cindy-workspace-muted, rgba(0, 0, 0, .25));
+  --ant-color-primary: var(--soft-primary);
+  --ant-color-primary-hover: var(--cindy-workspace-accent-hover, #558a81);
+  --ant-color-primary-active: var(--cindy-workspace-accent-hover, #245752);
+  --ant-color-primary-text: var(--soft-primary);
+  --ant-color-primary-bg: var(--cindy-workspace-selected, #edf5f1);
+  --ant-control-item-bg-active: var(--cindy-workspace-selected, #edf5f1);
+  --ant-control-item-bg-hover: var(--cindy-workspace-hover, rgba(0, 0, 0, .04));
+}
+
+:root .buildr-web-theme.ant-btn {
+  --ant-button-primary-color: var(--cindy-workspace-accent-text, #fff);
+  --ant-button-default-bg: var(--soft-surface);
+  --ant-button-default-color: var(--soft-ink);
+  --ant-button-default-border-color: var(--soft-line);
+  --ant-button-default-hover-bg: var(--soft-surface);
+  --ant-button-default-active-bg: var(--soft-surface);
+  --ant-button-text-text-color: var(--soft-ink);
+  --ant-button-text-text-hover-color: var(--soft-ink);
+  --ant-button-text-text-active-color: var(--soft-ink);
+  --ant-button-text-hover-bg: var(--cindy-workspace-hover, rgba(0, 0, 0, .04));
+}
+
+:root .buildr-web-theme.ant-select {
+  --ant-select-selector-bg: var(--soft-surface);
+}
+
+:root .buildr-web-theme.ant-select-dropdown {
+  --ant-select-option-selected-bg: var(--cindy-workspace-selected, #edf5f1);
+  --ant-select-option-selected-color: var(--soft-selected-ink);
+  --ant-select-option-active-bg: var(--cindy-workspace-hover, #f4f6f7);
+}
+
+:root .buildr-web-theme.ant-segmented {
+  --ant-segmented-track-bg: var(--soft-bg);
+  --ant-segmented-item-color: var(--soft-muted);
+  --ant-segmented-item-hover-color: var(--soft-ink);
+  --ant-segmented-item-hover-bg: var(--cindy-workspace-hover, rgba(0, 0, 0, .06));
+  --ant-segmented-item-selected-bg: var(--cindy-workspace-selected, #f8f8f8);
+  --ant-segmented-item-selected-color: var(--cindy-workspace-selected-text, #252a31);
+}
+
 *,
 *::before,
 *::after {
@@ -1773,7 +1828,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: var(--font
 .app-shell .workspace-switcher { height: 30px; font-size: var(--font-size-body); background: var(--soft-bg); color: var(--soft-ink); border-color: var(--cindy-workspace-border, #e6e9ed); }
 .app-shell .top-nav { gap: 4px; align-items: center; }
 .app-shell .top-nav a { height: 32px; padding: 0 12px; border: 0; border-radius: 6px; transition: background 120ms ease, color 120ms ease; }
-.app-shell .top-nav a.active { background: #edf3f1; color: #306b62; }
+.app-shell .top-nav a.active { background: var(--cindy-workspace-selected, #edf3f1); color: var(--soft-selected-ink); }
 .app-shell .topbar-actions { gap: 8px; }
 .app-frame { display: flex; flex: 1; min-height: 0; min-width: 0; }
 .app-frame:not(.is-global) > #app-view { background: var(--cindy-workspace-canvas, #fff); }
@@ -1785,11 +1840,12 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: var(--font
 .app-shell:has(.resource-cockpit) .app-sidebar { position: static; height: 100%; }
 .shell-navigation { padding: 12px 10px 18px; }
 .shell-nav-caption { margin: 0 10px 10px; color: var(--soft-muted); font-size: var(--font-size-meta); font-weight: 550; text-align: center; }
-.shell-nav-item { display: flex; align-items: center; gap: 9px; min-height: 34px; padding: 7px 10px; margin: 2px 0; border-radius: 6px; color: #58616c; font-size: var(--font-size-body); line-height: 20px; text-decoration: none; transition: background 120ms ease, color 120ms ease; }
+.shell-nav-item { display: flex; align-items: center; gap: 9px; min-height: 34px; padding: 7px 10px; margin: 2px 0; border-radius: 6px; color: var(--cindy-workspace-muted, #58616c); font-size: var(--font-size-body); line-height: 20px; text-decoration: none; transition: background 120ms ease, color 120ms ease; }
 .shell-nav-item > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.shell-nav-item > .anticon { color: #7b858e; font-size: var(--icon-size-label); }
-.shell-nav-item:hover { color: var(--soft-ink); background: #ebedf0; }
-.shell-nav-item.active { color: #306b62; background: #e7efec; font-weight: 600; }
+.shell-nav-item > .anticon { color: var(--cindy-workspace-muted, #7b858e); font-size: var(--icon-size-label); }
+.shell-nav-item:hover { color: var(--soft-ink); background: var(--cindy-workspace-hover, #ebedf0); }
+.shell-nav-item.active { color: var(--soft-selected-ink); background: var(--soft-selected); font-weight: 600; }
+.shell-nav-item.active > .anticon { color: var(--cindy-workspace-selected-text, #7b858e); }
 .shell-nav-item:focus-visible { outline: 2px solid var(--soft-primary); outline-offset: -2px; }
 .shell-nav-status-icon { position:relative; display:inline-flex; flex:none; color:#7b858e; font-size:var(--icon-size-label); }
 .shell-nav-change-dot { position:absolute; top:-3px; right:-4px; width:6px; height:6px; border-radius:50%; background:var(--soft-primary); box-shadow:0 0 0 2px var(--soft-surface,#fff); }
@@ -1842,8 +1898,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: var(--font
 }
 
 /* ===== 双栏组页签工作台（workspace pane framework） ===== */
-/* 全域白底：侧栏与内容区统一，分区仅由线条表达。 */
-.app-sidebar { background: var(--cindy-workspace-canvas, #fff); }
+.app-sidebar { background: var(--cindy-workspace-sidebar, #fff); }
 .app-shell:has(.workspace-page:not([hidden]) .pane-stage) { height: 100vh; overflow: hidden; }
 #app-view:has(.workspace-page:not([hidden]) .pane-stage) { padding: 0; overflow: hidden; }
 
@@ -1938,7 +1993,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: var(--font
 .ws-hero-code { margin: 2px 0 0; color: var(--soft-muted); font-size: var(--font-size-code); font-family: ui-monospace, Menlo, monospace; }
 
 /* Retain visited route instances; only the selected page participates in layout. */
-.workspace-pages { display:flex; flex-direction:column; height:100%; min-height:0; background:linear-gradient(to bottom,#f4f6f7 0 42px,var(--soft-line) 42px 43px,#fff 43px); }
+.workspace-pages { display:flex; flex-direction:column; height:100%; min-height:0; background:linear-gradient(to bottom,var(--cindy-workspace-sidebar, #f4f6f7) 0 42px,var(--soft-line) 42px 43px,var(--cindy-workspace-canvas, #fff) 43px); }
 .workspace-pages[hidden], .workspace-page[hidden] { display:none !important; }
 #app-view:has(> .workspace-pages:not([hidden])) { padding:0; overflow:hidden; }
 .app-shell:has(.workspace-pages:not([hidden])) { height:100vh; overflow:hidden; }
@@ -1966,6 +2021,12 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: var(--font
 .ws-obj-toolbar { display:flex; justify-content:flex-end; margin:0 0 12px; }
 @keyframes workspace-pane-enter { from { opacity:.65; transform:translateX(6px); } to { opacity:1; transform:none; } }
 .workspace-tabstrip { position:relative; flex:none; min-height:43px; touch-action:pan-x; }
+#app-view .workspace-tabstrip { background: var(--cindy-workspace-sidebar, #f4f6f7); }
+#app-view .workspace-tabstrip .pane-tab:hover { background: var(--cindy-workspace-hover, rgba(255, 255, 255, .65)); }
+#app-view .workspace-tabstrip .pane-tab.on {
+  background: var(--cindy-workspace-canvas, #fff);
+  box-shadow: 0 1px 0 var(--cindy-workspace-canvas, #fff);
+}
 .workspace-tabstrip .pane-tab-pin { position:absolute; top:5px; left:4px; display:inline-flex; align-items:center; justify-content:center; width:22px; height:26px; padding:0; border:0; border-radius:5px; background:transparent; color:var(--soft-muted); font-size: var(--font-size-body); cursor:pointer; opacity:0; }
 .workspace-tabstrip .can-pin:hover .pane-tab-pin, .workspace-tabstrip .can-pin:focus-within .pane-tab-pin, .workspace-tabstrip .is-pinned .pane-tab-pin { opacity:1; }
 .workspace-tabstrip .can-pin:hover .pane-tab-dot, .workspace-tabstrip .can-pin:focus-within .pane-tab-dot, .workspace-tabstrip .is-pinned .pane-tab-dot { visibility:hidden; }
@@ -1992,7 +2053,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: var(--font
 @media (prefers-reduced-motion:reduce) { .workspace-page .pane-right { animation:none; } .pane-tab-drag-ghost.landing { transition:none; } }
 
 /* The object strip shares the persistent page strip's row. */
-.workspace-page-tabs { flex:none; height:43px; background:#f4f6f7; }
+.workspace-page-tabs { flex:none; height:43px; background:var(--cindy-workspace-sidebar, #f4f6f7); }
 .workspace-page:has(.pane-stage) { overflow:visible; }
 .workspace-page .pane-right > .pane-tabstrip { position:absolute; top:-43px; left:0; right:0; height:43px; }
 .workspace-page .pane-right > .pane-body { height:100%; }

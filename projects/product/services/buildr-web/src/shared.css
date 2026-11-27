@@ -4,7 +4,9 @@
   --soft-ink: var(--cindy-workspace-text, #252a31);
   --soft-muted: var(--cindy-workspace-muted, #5e6873);
   --soft-line: var(--cindy-workspace-border, #e1e5e9);
-  --soft-primary: #397d74;
+  --soft-primary: var(--cindy-workspace-accent, #397d74);
+  --soft-selected: var(--cindy-workspace-selected, #e7efec);
+  --soft-selected-ink: var(--cindy-workspace-selected-text, #306b62);
   --soft-sidebar: var(--cindy-workspace-sidebar, #f6f7f8);
   --soft-development-bg: #fff6dc;
   --soft-development-ink: #805817;

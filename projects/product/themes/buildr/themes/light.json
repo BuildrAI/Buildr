@@ -12,6 +12,20 @@
     "text-primary": "#252a31",
     "text-secondary": "#5e6873",
     "border-default": "#e1e5e9",
-    "sidebar-border": "210.0 15.4% 89.8%"
+    "sidebar-border": "210.0 15.4% 89.8%",
+    "surface-hover": "#edf3f1",
+    "settings-bg": "var(--content-area)",
+    "settings-theme-card-bg": "var(--surface-elevated)",
+    "sidebar-item-hover": "160.000 20.000% 94.118%",
+    "sidebar-item-active": "157.500 20.000% 92.157%",
+    "sidebar-item-active-foreground": "#306b62",
+    "sidebar-item-active-border": "transparent",
+    "settings-menu-bg-selected": "#e7efec",
+    "settings-menu-text-selected": "var(--sidebar-item-active-foreground)",
+    "settings-menu-border-selected": "transparent",
+    "accent-cta-bg": "#397d74",
+    "accent-cta-bg-pure": "var(--accent-cta-bg)",
+    "accent-hover": "#2f6961",
+    "accent-pure-cta-fg": "#ffffff"
   }
 }

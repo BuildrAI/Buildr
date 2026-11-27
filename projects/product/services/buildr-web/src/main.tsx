@@ -21,7 +21,7 @@ const router = desktopTool ? null : createBrowserRouter([{ path: '*', element: <
 createRoot(root).render(
   <ConfigProvider
     locale={zhCN}
-    theme={{ ...softProductTheme, cssVar: true, hashed: false }}
+    theme={{ ...softProductTheme, cssVar: { key: 'buildr-web-theme' }, hashed: false }}
     wave={{ disabled: true }}
   >
     <AntdApp>

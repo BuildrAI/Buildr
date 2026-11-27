@@ -20,6 +20,7 @@
 .development-engineering-content>.app-shell.has-primary-navigation>.app-frame{height:auto}
 .development-conversation-slot{position:relative;z-index:10;display:flex;flex:0 0 calc(var(--development-conversation-width) + 52px);max-width:100%;min-height:0;min-width:0}
 .is-conversation-collapsed .development-conversation-slot{flex-basis:52px}
+.development-conversation-slot .ac-collapsed-rail{background:var(--cindy-workspace-sidebar, #fff)}
 .is-workbench .development-conversation-slot{flex:1}
 .has-workbench-tools .development-engineering-region{flex:0 1 49%;border-inline-start:1px solid var(--soft-line);background:var(--soft-surface)}
 .has-workbench-tools .harness-workspace-home{flex:1;min-height:0}
