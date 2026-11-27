@@ -3,6 +3,7 @@ const { execFile } = require('node:child_process');
 const { realpath } = require('node:fs/promises');
 const path = require('node:path');
 const readline = require('node:readline');
+const { setTimeout: delay } = require('node:timers/promises');
 const { promisify } = require('node:util');
 const manifest = require('./ghost.json');
 
@@ -33,11 +34,11 @@ async function getMainCheckout(directory) {
   }
 }
 
-async function readWorkspaceRegistry() {
+async function readWorkspaceRegistry(timeoutMs = 4000) {
   const origin = manifest.mainView.workspaceWeb;
   const response = await fetch(origin + '/api/v1/workspaces', {
     redirect: 'error',
-    signal: AbortSignal.timeout(4000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) throw new Error('Buildr registry unavailable');
   const registry = await response.json();
@@ -52,8 +53,46 @@ async function readWorkspaceRegistry() {
   })))).filter(row => row.root).sort((left, right) => right.root.length - left.root.length);
 }
 
+let startingRegistry;
+
+function isConnectionRefused(error) {
+  return error?.cause?.code === 'ECONNREFUSED';
+}
+
+async function startDevelopmentRegistry() {
+  const deadline = Date.now() + 7000;
+  // Use the existing developer installation's process owner and fixed port.
+  await exec('/Applications/Buildr Dev.app/Contents/MacOS/Buildr', [], {
+    timeout: 3000,
+    env: { ...process.env, BUILDR_LAUNCHER_NO_OPEN: '1' },
+  });
+  for (;;) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error('Buildr startup timed out');
+    try {
+      return await readWorkspaceRegistry(Math.min(remaining, 1000));
+    } catch (error) {
+      if (!isConnectionRefused(error) && error.name !== 'TimeoutError') throw error;
+    }
+    await delay(Math.min(150, remaining));
+  }
+}
+
+async function ensureWorkspaceRegistry() {
+  if (startingRegistry) return startingRegistry;
+  try {
+    return await readWorkspaceRegistry();
+  } catch (error) {
+    if (process.platform !== 'darwin' ||
+        manifest.mainView.workspaceWeb !== 'http://127.0.0.1:4458' ||
+        !isConnectionRefused(error)) throw error;
+    startingRegistry ??= startDevelopmentRegistry().finally(() => { startingRegistry = undefined; });
+    return startingRegistry;
+  }
+}
+
 async function resolveWorkspace(workdir) {
-  const [directory, registry] = await Promise.all([canonicalDirectory(workdir), readWorkspaceRegistry()]);
+  const [directory, registry] = await Promise.all([canonicalDirectory(workdir), ensureWorkspaceRegistry()]);
   if (!directory) return { workspaceId: null, path: '/?catalog=1' };
   const direct = registry.find(row => contains(row.root, directory));
   // For a linked checkout use the repository's primary checkout as a second

@@ -3,7 +3,7 @@
   "minCindyVersion": "0.0.0",
   "id": "buildr-workspace",
   "name": "Buildr",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "kind": "chip",
   "description": "在 Cindy 桌面按工作空间打开 Buildr 的正式页面。",
   "whenToUse": "在 Cindy 桌面查看 Buildr 的工作空间、任务和项目。",
